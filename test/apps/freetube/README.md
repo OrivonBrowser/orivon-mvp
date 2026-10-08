@@ -18,9 +18,9 @@ per-origin, with nothing installed to disk: search, channels, watch metadata, th
 video playback** all work, reaching live YouTube through the broker. Proven by
 `test/ported-apps/e2e-freetube-live-origin.test.ts`.
 
-Opening its URL raises the real consent prompt, and accepting it is the last step -- see §Consent
+Opening its URL raises the real consent prompt, and accepting it is the last step -- see section Consent
 without installing. Playback still depends on YouTube serving a stream at
-all, which for most videos it will not (§Wall 2).
+all, which for most videos it will not (section Wall 2).
 
 ## Consent without installing
 
@@ -68,7 +68,7 @@ imports no Node builtin and no `electron` module. `npm run verify` (below) exerc
 end to end.
 
 It also found things the reconnaissance could not, because it read source rather than running
-it. Those are §The two walls.
+it. Those are section The two walls.
 
 ## What works
 
@@ -85,7 +85,7 @@ Verified by `node verify.mjs`, 11/11 passing on 2026-09-17 against live YouTube:
 | Running with a refused `fs` grant | Works: every collection falls back to memory and says so |
 | Running with a refused `https` grant | Works: the app loads and names what is missing |
 | Stream URL resolution | Works for videos YouTube will answer for -- see wall 2 |
-| **Video playback** | **Works on a live origin** (measured: `readyState 4`, 213s duration), for videos YouTube will serve at all -- see §Wall 2. Blocked for an INSTALLED copy of this app, whose manifest names no CDN host -- see §Wall 1 |
+| **Video playback** | **Works on a live origin** (measured: `readyState 4`, 213s duration), for videos YouTube will serve at all -- see section Wall 2. Blocked for an INSTALLED copy of this app, whose manifest names no CDN host -- see section Wall 1 |
 
 ## The two walls
 
@@ -195,7 +195,7 @@ detected" banner and makes no request, since a browser would refuse the origin u
 strip the headers YouTube needs.
 
 **In Orivon, until the prompt is answered**, the first load runs in an ordinary tab: the origin
-is not registered yet, and `fetch` is not rerouted (§Consent without installing). `lib/views.js`
+is not registered yet, and `fetch` is not rerouted (section Consent without installing). `lib/views.js`
 names that state on screen before any request, rather than letting a doomed one report
 `Failed to fetch`.
 

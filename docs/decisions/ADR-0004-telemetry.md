@@ -84,7 +84,7 @@ measurement efficiency matters more than the opt-in ceremony.
   unfalsifiable. Measuring is the reason for building it.
 - **Disclosed opt-out** (on, with a way to turn it off). Rejected: an identifier that is sent
   before the person answers is not consent in the EU. A box that starts ticked is the same thing
-  in a smaller form, and the choice that stands is two equal buttons ([ADR-0063](ADR-0063-telemetry-v2.md) §Alternatives).
+  in a smaller form, and the choice that stands is two equal buttons ([ADR-0063](ADR-0063-telemetry-v2.md) section Alternatives).
 - **Silent opt-out** (no first-run disclosure). Rejected. It retains essentially the same data
   as *disclosed* opt-out while carrying all of the reputational risk, and is strictly dominated.
 - **A third-party analytics SaaS** (Google Analytics, Mixpanel, PostHog Cloud). Rejected

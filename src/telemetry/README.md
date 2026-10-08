@@ -5,7 +5,7 @@ two screens [`ADR-0004`](../../docs/decisions/ADR-0004-telemetry.md) makes non-o
 disclosure and the "what has been sent" page. [`ADR-0063`](../../docs/decisions/ADR-0063-telemetry-v2.md)
 holds the payloads, the identity and the consent rule; [`docs/privacy/notice.md`](../../docs/privacy/notice.md)
 is the text people read, and its field table is compared with the payload types by a unit test.
-[`testing.md`](../../docs/development/testing.md) §6 says why the accounting is a pure fold with
+[`testing.md`](../../docs/development/testing.md) section 6 says why the accounting is a pure fold with
 its own tests.
 
 The screens exist. On a first run, "Enter Orivon" on the welcome screen opens a popup over the

@@ -4,7 +4,7 @@
 `prefixOnly` row: only `node:sqlite` resolves here, the bare name is another npm package):
 `DatabaseSync` and `StatementSync` over the SQLite WebAssembly build,
 [`@sqlite.org/sqlite-wasm`](https://www.npmjs.com/package/@sqlite.org/sqlite-wasm), pinned to one
-exact version ([`shim-dependency-review.md`](../../../docs/planning/shim-dependency-review.md) §Later
+exact version ([`shim-dependency-review.md`](../../../docs/planning/shim-dependency-review.md) section Later
 additions says why this package). Durable: WebAssembly and the synchronous file calls, no Electron API.
 
 | File | Holds |
@@ -44,7 +44,7 @@ Code written for the npm package `better-sqlite3` (synchronous, v9 to v12) runs 
 [`better-sqlite3.ts`](better-sqlite3.ts), which wraps `DatabaseSync` and `StatementSync`. **A bundle
 points the name `better-sqlite3` at that file.** [`../bundler/`](../bundler/README.md)'s plugin does
 it for a port; another build aliases `better-sqlite3` to the file itself, and for a CommonJS
-`require('better-sqlite3')` exports the default. Everything in §What an app must do applies: the
+`require('better-sqlite3')` exports the default. Everything in section What an app must do applies: the
 engine is loaded first, and a database file works only in a forked child or thread of an isolated app.
 
 **Built:** `new Database(filename, options)` and `Database(filename, options)` (options `readonly`,
@@ -63,7 +63,7 @@ on a throw, a savepoint when nested, the `.deferred`, `.immediate` and `.exclusi
 **Different from `better-sqlite3`:** `verbose` receives each statement's SQL with its parameters
 filled in, after the statement ran; `prepare` does not refuse a string of several statements (the
 first is prepared); a missing directory is the engine's `SQLITE_CANTOPEN`, not a `TypeError`; a
-statement used while an iterator is open is not refused; the limits of §What works, and where apply.
+statement used while an iterator is open is not refused; the limits of section What works, and where apply.
 
 ## What works, and where
 

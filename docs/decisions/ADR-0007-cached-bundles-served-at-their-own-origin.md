@@ -22,7 +22,7 @@ needed settling **before the first grant is persisted**.
 
 `ADR-0005` decided apps are URL-addressed, fetched, cached, and run from that cache. It never
 said what origin the cached copy runs under. `ADR-0003` calls the origin *"the single most
-consequential detail in the storage model"*, and `capability-api.md` §Origin states that origin
+consequential detail in the storage model"*, and `capability-api.md` section Origin states that origin
 keys four separate things at once: the storage domain, the session partition, the grant ledger
 entry, and the derived identity key from `orivon.id`.
 

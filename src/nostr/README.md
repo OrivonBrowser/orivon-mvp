@@ -2,7 +2,7 @@
 
 **What lives here.** The NIP-07 injection, backed by `orivon.id`'s **named identities**: an npub
 must be the same on every client site, which a per-origin app key cannot give
-([`capability-api.md`](../../docs/architecture/capability-api.md) §Two kinds of identity).
+([`capability-api.md`](../../docs/architecture/capability-api.md) section Two kinds of identity).
 
 **What it depends on.** [`src/contracts/`](../contracts/).
 

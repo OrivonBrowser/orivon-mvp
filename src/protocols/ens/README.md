@@ -22,7 +22,7 @@ offchain lookup may go.
 
 **[`resolver.ts`](resolver.ts) proves at the newest verified block, not the finalized one**
 ([`ADR-0030`](../../../docs/decisions/ADR-0030-a-eth-name-is-an-origin-served-by-a-verifier.md)
-§Decision, *provisional*). What it gives up is resistance to a reorg of the last few blocks, which
+section Decision, *provisional*). What it gives up is resistance to a reorg of the last few blocks, which
 could only matter for a name whose record changed in them.
 
 **Do not swap in viem's own ENS actions.** They read every Universal Resolver revert as "no

@@ -63,7 +63,7 @@ Please don't report these; they are documented design positions.
   An accepted, disclosed trade-off.
 - **Apps are unsigned in v0.** Integrity rests on hash-pinning (trust on first use). Signing
   returns when a second publisher exists
-  ([`capability-api.md`](docs/architecture/capability-api.md) §Signing is not in v0).
+  ([`capability-api.md`](docs/architecture/capability-api.md) section Signing is not in v0).
 
 ### Current state
 

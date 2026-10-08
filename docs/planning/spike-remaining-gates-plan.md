@@ -4,7 +4,7 @@
 > gate 4 and the write-up. Steps use checkbox (`- [ ]`) syntax.
 >
 > **Companion documents:** [`week-0-spike-plan.md`](week-0-spike-plan.md) (original plan and
-> the known-good renderer recipe) · the retired build plan's §Week 0 (gate criteria).
+> the known-good renderer recipe) · the retired build plan's section Week 0 (gate criteria).
 
 **Goal:** finish the week-0 spike and produce a verdict the owner can act on.
 
@@ -197,7 +197,7 @@ protocol.registerSchemesAsPrivileged([{
 }])
 ```
 The handler **must** honour `Range` and return `206` with a correct `Content-Range`, or
-Chromium will not seek. This path is also what `build-plan.md` §5 chooses for the product, so
+Chromium will not seek. This path is also what `build-plan.md` section 5 chooses for the product, so
 a working implementation here is directly reusable.
 
 - [ ] **Step 5: Measure and record**
@@ -292,9 +292,9 @@ against controls; they can only reveal additional real-world friction.
 | Correction | Where |
 |---|---|
 | webtorrent is **3.0.21**, not 2.x | `build-plan.md`, `CLAUDE.md` (done) |
-| Transferable `ArrayBuffer`s are unavailable renderer → main | `capability-api.md` §Throughput (done) |
+| Transferable `ArrayBuffer`s are unavailable renderer → main | `capability-api.md` section Throughput (done) |
 | MSE **works** via `crypto-browserify`; ship `secure: 1` | `build-plan.md` (done) |
-| `createServer(opts, force)` takes `'browser' \| 'node'` | `build-plan.md` §5 |
+| `createServer(opts, force)` takes `'browser' \| 'node'` | `build-plan.md` section 5 |
 | **A shim must export the full module surface** (`net.isIP`) | `capability-api.md`, and it belongs in the **A10 handle contract** |
 | **`process.nextTick` polyfill changes error visibility** | the project skill, and A10's error taxonomy |
 | The renderer needs 9 polyfill aliases | the project skill |

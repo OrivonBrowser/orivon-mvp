@@ -19,7 +19,7 @@ in** ([`ADR-0036`](../decisions/ADR-0036-an-app-qualifies-by-running-in-the-node
 In this build that environment is Node's, as the shim reproduces it. Node runs WebAssembly
 natively, and so does an Orivon app's renderer, so a component compiled to WebAssembly from
 Rust, C or Go qualifies on the same terms as JavaScript. A native addon does not carry over, and
-is replaced per library (§Where WASM fits). Where Orivon's Node environment falls short of real
+is replaced per library (section Where WASM fits). Where Orivon's Node environment falls short of real
 Node, [`compatibility-matrix.md`](../planning/compatibility-matrix.md) lists the gap, and each
 gap is taken case by case.
 

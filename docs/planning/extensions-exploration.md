@@ -416,7 +416,7 @@ New rows for `security-model.md`, in its shape:
 - `docs/scope.md`: an IN row when D1 is answered, stating what this build loads and what it does not.
 - An ADR for the extension principal and the `orivon` manifest key; one for the session model (D2).
 - `security-model.md`: the rows in section 9, and T4 rewritten to match the code.
-- `ARCHITECTURE.md` §Where things live: `src/main/extensions/` (tied) and the manifest policy
+- `ARCHITECTURE.md` section Where things live: `src/main/extensions/` (tied) and the manifest policy
   (durable).
 - `docs/planning/compatibility-matrix.md`: a line for Chrome extensions, with what works.
 

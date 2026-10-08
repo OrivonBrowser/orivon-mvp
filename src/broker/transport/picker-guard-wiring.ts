@@ -58,7 +58,7 @@ export function privateSessionGuard (): { readonly tempDir: string, readonly isP
 export interface Notice { readonly title: string, readonly message: string }
 
 /**
- * §Contracts' "the picker says why" -- shown to the PERSON, never to the
+ * section Contracts' "the picker says why" -- shown to the PERSON, never to the
  * app: by the time this runs, `fs.userSelected` has already resolved the
  * app's own call as a plain cancellation (`null` or `[]`), indistinguishable
  * from one the person chose themselves. Nothing downstream of a refused pick

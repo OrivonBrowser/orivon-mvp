@@ -62,7 +62,7 @@ is where dates and decision IDs live.
 > **Several carry amendments that supersede parts of their own text.** ADR-0002, ADR-0005
 > and ADR-0009 have inline amendments; ADR-0008 rescopes ADR-0002's mirror-Node's-shapes rule to
 > the shim rather than the capability layer. Read the amendment blocks; they are not
-> decoration. ADR-0009's is the sharpest example: its §Reasoning argues for a sort-order rule
+> decoration. ADR-0009's is the sharpest example: its section Reasoning argues for a sort-order rule
 > that its amendment then shows cannot be reached, while the rule that *was* load-bearing had a
 > bug nobody caught until the code existed.
 

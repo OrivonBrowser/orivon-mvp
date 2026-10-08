@@ -1,6 +1,6 @@
 # ADR-0009: The bundle hash is an app's content identity
 
-- **Status:** accepted, **amended 2026-08-27, 2026-09-04 and 2026-09-22** (see §Amendment)
+- **Status:** accepted, **amended 2026-08-27, 2026-09-04 and 2026-09-22** (see section Amendment)
 - **Date:** 2026-08-26
 - **Type:** architecture / security
 - **Decided by:** owner (manifest-as-leaf, scope, and the case-collision rule), AI recommendation
@@ -8,8 +8,8 @@
 
 > **Amendment 2026-08-27 supersedes parts of the text below.** Two rounds of review found that
 > the case-collision rule was not firing at all, and that path validation checked only the
-> encoded spelling and not the decoded one. Four decisions followed. **Read §Amendment at the
-> foot of this document before relying on §Decision or §Reasoning**: specifically, §Reasoning's
+> encoded spelling and not the decoded one. Four decisions followed. **Read section Amendment at the
+> foot of this document before relying on section Decision or section Reasoning**: specifically, section Reasoning's
 > `Manifest.entry` rejection rule is withdrawn, and its sort-order argument is downgraded.
 
 ## Decision
@@ -52,7 +52,7 @@ broker to persist the full path→digest map regardless of tree shape, which rem
 tree's only real advantage (verifying membership without holding the whole list). A flat list
 hash also avoids two well-known Merkle footguns a third-party reimplementer would have to get
 right independently: the odd-node-duplication class (CVE-2012-2459) and leaf/internal domain
-separation (RFC 6962 §2.1). A flat construction has no tree shape to get wrong.
+separation (RFC 6962 section 2.1). A flat construction has no tree shape to get wrong.
 
 **CIDv1 / UnixFS as the root encoding**, rejected. It reads as "D3 comes free," but CIDv1+UnixFS
 is a chunking and DAG-layout specification, not an encoding, so matching it means matching a
@@ -79,7 +79,7 @@ layer does not tie itself to the disposable one (`ADR-0002`). `crypto.subtle.dig
 stream, so each asset is briefly whole in memory. Accepted, with explicit byte caps, given
 `ADR-0005`'s stated 2-4 MB frontend size and that torrent payloads live in `files/`, never in the
 pinned set. *(Amended 2026-09-22: the rejection stands for `bundle-hash.ts`, but the loader now
-streams; see the last §Amendment.)*
+streams; see the last section Amendment.)*
 
 ## Reasoning
 
@@ -124,7 +124,7 @@ static (files in the cached bundle). DDOC's trust anchor is DNS, forgeable on IC
 already records DDOC's unlisted-file rule as unsound, and the fail-closed pinned-asset set this ADR
 enables is the strict-mode rule that gap needs, should DDOC ever return. *(Amended 2026-09-24:
 DDOC ships over this construction, and it never depended on trustless resolution; see the last
-§Amendment.)*
+section Amendment.)*
 
 ## Consequences
 
@@ -158,7 +158,7 @@ DDOC ships over this construction, and it never depended on trustless resolution
   v0 accepts `"sha256:"` only: a namespace, not a negotiation.
 - **AI recommendation, owner to confirm separately:** the specific per-asset and per-bundle byte
   caps needed because `crypto.subtle.digest` holds each asset whole in memory. *(Amended
-  2026-09-22: the owner set them, and they no longer bound memory; see the last §Amendment.)*
+  2026-09-22: the owner set them, and they no longer bound memory; see the last section Amendment.)*
 
 ## Reversibility
 - **Cost to reverse:** one-way door once the first pin is persisted, the same class as the origin
@@ -239,7 +239,7 @@ its checks could be undone afterwards. Both closed. **The general rule, now writ
 `bundle-hash.md`: the module reading untrusted bytes off disk must never be the laxer of the
 two.**
 
-**Consequence worth recording, because this ADR overstated it.** §Reasoning argues at length that
+**Consequence worth recording, because this ADR overstated it.** section Reasoning argues at length that
 sorting must compare UTF-8 bytes rather than UTF-16 code units. With canonical form enforced,
 every path is ASCII, and for ASCII the two orders are identical, so the divergence cannot be
 reached, no legal bundle distinguishes them, and V5 no longer demonstrates it. Verified by
@@ -250,7 +250,7 @@ lives in the collision key, which is where the actual bug was.
 
 ## Amendment, 2026-09-04
 
-**§Consequences said `versionFloor` "must survive an uninstalled/reinstalled app... a floor that
+**section Consequences said `versionFloor` "must survive an uninstalled/reinstalled app... a floor that
 dies with the pin is a rollback oracle."** That is now wrong in one direction, found while
 building the floor's actual persistence (A57, `stream/broker-21-version-floor-persistence`) and
 confirmed directly with the owner rather than assumed: **a full "remove this app" action is meant
@@ -277,11 +277,11 @@ frontend (ASGARDEX: a 31 MB wasm-heavy chunk in a 37 MB bundle) did not fit the 
 this ADR's whole-buffer digest needed. The owner set the caps at 64 MiB per asset and 512 MiB per
 bundle (`open-questions.md` A15, `d-0051`), and at that size an asset must never be held whole.
 
-§Alternatives rejected a streaming `node:crypto` digest so that the durable construction would
+section Alternatives rejected a streaming `node:crypto` digest so that the durable construction would
 not tie itself to a disposable runtime (`ADR-0002`). That reason still governs
 `src/broker/policy/bundle-hash.ts`, which keeps WebCrypto and still digests whole buffers for a
 caller already holding them. The loader is not the durable layer: fetching and caching are
-Electron-specific machinery (`ARCHITECTURE.md` §Where things live). It streams each response to
+Electron-specific machinery (`ARCHITECTURE.md` section Where things live). It streams each response to
 the origin's staging area and hashes the file back through `src/loader/leaf-hash.ts`, which feeds
 `node:crypto`'s incremental SHA-256 with `bundle-hash.ts`'s own `leafPrefix`. The byte layout is
 defined once, in the durable file; only the engine differs. `bundle-hash-leaves.test.ts` holds a

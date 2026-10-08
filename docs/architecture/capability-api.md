@@ -36,7 +36,7 @@
    `queueMicrotask`-based polyfill does not route into the same handlers, so an exception
    thrown from inside a `nextTick` callback vanishes instead of crashing loudly. This is exactly
    backwards from what a security-relevant shim needs: a broker-side error should be *louder*
-   than Node's default, not quieter. **Both traps are binding requirements; see `handle-contracts.md` §What the shim must do.**
+   than Node's default, not quieter. **Both traps are binding requirements; see `handle-contracts.md` section What the shim must do.**
 2. **Network operations are async, with no exception. `fs` gets exactly one narrow,
    deliberate synchronous exception.**
    > **Why the exception is `fs`-only** (`ADR-0016`). The async rule is reasoned entirely from
@@ -231,7 +231,7 @@ under.
 `Manifest.version` is a **semver core plus optional prerelease**, build metadata stripped and
 ignored (per semver, `1.2.3+a` and `1.2.3+b` are the same version and neither is a rollback of the
 other). Two versions compare by release components in order (missing trailing components are
-zero, so `1.2` and `1.2.0` are equal), then by prerelease per semver §11.3-11.4 (a prerelease
+zero, so `1.2` and `1.2.0` are equal), then by prerelease per semver section 11.3-11.4 (a prerelease
 sorts below its release; numeric identifiers sort below alphanumeric ones).
 
 This is not a new rule; it transcribes what `src/broker/policy/update.ts`'s `compareVersions`
@@ -394,7 +394,7 @@ orivon.web.setEmbedScript(source)    // => Promise<void>  the script that runs f
 
 ### `connectSecure`'s TLS options
 
-`connectSecure` takes Node's own `tls.connect` options, and `handle-contracts.md` §TcpSocket
+`connectSecure` takes Node's own `tls.connect` options, and `handle-contracts.md` section TcpSocket
 defines the `SecureTcpSocket` it returns. By default the broker validates the certificate chain
 against the runtime's built-in roots and the certificate against `host`, and checks `host`
 against the `https.connect` grant by name: that verification is what binds the name to whoever
@@ -674,7 +674,7 @@ Two consequences:
    mode of this transport is silence, not an error.
 
 **`MessagePortMain` has no documented backpressure**, so without flow control of its own a fast
-swarm would grow renderer memory without bound. `handle-contracts.md` §TcpSocket "Backpressure:
+swarm would grow renderer memory without bound. `handle-contracts.md` section TcpSocket "Backpressure:
 a credit window" is that flow control: a byte-credit window on top of `ReadableStream`/`WritableStream`
 (`ADR-0008`), with the broker stopping the underlying OS socket read once credit is exhausted
 rather than buffering in the main process.
@@ -740,7 +740,7 @@ conflated:
 > Additionally, record a per-origin **version floor** and flag any lower version, so a
 > validly-hash-pinned *older* bundle is never installed unnoticed (`security-model.md` T19).
 > Flagged, not rejected: a below-floor version is warned and offered as a choice, never silently
-> blocked. See this document's §`version` section.
+> blocked. See this document's `version` section.
 
 ### 3. Is `fs.quotaBytes` enforced or advisory? → **Enforced**
 Advisory means a buggy or hostile app fills the user's disk, which is threat **T11** in

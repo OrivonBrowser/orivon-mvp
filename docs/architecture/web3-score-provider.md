@@ -45,7 +45,7 @@ Two kinds of file, both JSON in UTF-8, each at most 1 MiB.
 |---|---|---|
 | `standard` | yes | Exactly `orivon-web3-score/1` |
 | `name` | yes | 1 to 80 characters. Shown beside every level this provider judges |
-| `bucketHexChars` | yes | 1 or 2: how many hex characters name a bucket (16 or 256 buckets). A client refuses any other value, for the reason §What the provider learns gives |
+| `bucketHexChars` | yes | 1 or 2: how many hex characters name a bucket (16 or 256 buckets). A client refuses any other value, for the reason section What the provider learns gives |
 | `about` | no | An address where a person reads who runs the provider and how it judges |
 
 ### `P/<subject>/<bucket>.json`

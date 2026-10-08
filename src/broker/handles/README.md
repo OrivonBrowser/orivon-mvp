@@ -17,8 +17,8 @@ resource. Everything with a real socket or file descriptor behind it arrives as 
 ## The four properties this directory guarantees
 
 Each fails silently when it goes wrong. The specification and the reasoning are
-[`handle-contracts.md`](../../../docs/architecture/handle-contracts.md) §Common shape,
-§Revocation and §Limits.
+[`handle-contracts.md`](../../../docs/architecture/handle-contracts.md) section Common shape,
+section Revocation and section Limits.
 
 1. **Every operation re-checks ownership** (T11c). A handle id presented by another origin is
    rejected, never ignored.

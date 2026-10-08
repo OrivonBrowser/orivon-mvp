@@ -6,7 +6,7 @@ real `safeStorage` and exposes the result as a
 [`Keychain`](../../broker/secrets-contracts.ts)
 ([`ADR-0033`](../../../docs/decisions/ADR-0033-an-app-may-hold-an-origin-bound-secret-in-the-os-keyring.md)).
 No reachable keyring means a session-only seed, never plaintext on disk
-([`security-model.md`](../../../docs/architecture/security-model.md) §Cross-platform note).
+([`security-model.md`](../../../docs/architecture/security-model.md) section Cross-platform note).
 
 **Tied to Electron.** `electron-keychain.ts` only; `seed-store.ts` takes a `SafeStorageLike` and
 is tested against a real temp directory.

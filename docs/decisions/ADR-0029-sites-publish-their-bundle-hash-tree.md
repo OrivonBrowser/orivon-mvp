@@ -102,7 +102,7 @@ first use rather than proven.)*
 
 ## Consequences
 
-- **The file format is a publisher contract**, specified in `bundle-hash.md` §Where a publisher
+- **The file format is a publisher contract**, specified in `bundle-hash.md` section Where a publisher
   declares it: the path, the JSON shape, the parse rules and the size cap. Anything that fails to
   parse counts as not published.
 - **The loader fetches the tree after the manifest, and never after a 304.** It stores the tree

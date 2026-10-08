@@ -2,7 +2,7 @@
 
 Everything the Orivon shell is made of. Each subdirectory is one **stream**, a unit of work one
 person or agent session owns end to end
-([`parallel-work.md`](../docs/development/parallel-work.md) §The ownership map). How a call
+([`parallel-work.md`](../docs/development/parallel-work.md) section The ownership map). How a call
 travels through them, and which are tied to Electron: [`ARCHITECTURE.md`](../ARCHITECTURE.md).
 
 | Directory | What it is | Build step |

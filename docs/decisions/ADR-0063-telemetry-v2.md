@@ -142,7 +142,7 @@ stays in the payload for the metric, from the time zone, and decides nothing in 
 - The welcome cannot be dismissed without answering, which is one forced press for every new
   person; the cost is accepted for valid consent.
 - The identifier is a stable device identifier. It must be treated as personal data, and the
-  notice says so (`docs/privacy/dpia-screening.md` §Result).
+  notice says so (`docs/privacy/dpia-screening.md` section Result).
 - The system-wide consent means one choice applies to every profile of an operating-system user,
   and a profile cannot opt out alone.
 - Time-zone region is wrong for some people. It is a count by region, not an identity, and no

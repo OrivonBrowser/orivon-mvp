@@ -8,7 +8,7 @@ is the same thing as a fill-in form, and the pinned issue on the Issues tab is a
 both. **If the three ever disagree, this document wins** and the other two get corrected.
 
 > The title rule, the section list, the label taxonomy and the enforcement position are
-> settled. §Open points is what is **still open**.
+> settled. section Open points is what is **still open**.
 
 > **The body scales to a PR carrying several changes.** A single-change PR has a single entry
 > and reads almost as simply; every anti-pattern below holds at any size, and
@@ -177,7 +177,7 @@ Three rules:
    section of [`handle-contracts.md`](../architecture/handle-contracts.md), cite it and describe
    only where the code and the document meet.
 2. **Name the one file to read first.** With no dedicated reviewer, the highest-value sentence
-   in a large PR is often "if you read one thing, read `handles.ts` §ownership check".
+   in a large PR is often "if you read one thing, read `handles.ts` section ownership check".
 3. **Explain *why*, not *what*.** This is [`code-guidelines.md`](code-guidelines.md) Rule 1 in a
    different medium, and the standard is the same: that document carries the reasoning and is
    not restated here.
@@ -363,7 +363,7 @@ subsections for three unrelated things, that is three PRs.
 
 ### The short form is the default
 
-**Every PR keeps the five required sections within the 400-word ceiling** of §The body. A PR
+**Every PR keeps the five required sections within the 400-word ceiling** of section The body. A PR
 that genuinely stands alone and is small (a revert, a hotfix, a `type:chore`) may collapse
 further, to three sections: `## What changes for the user`, `## Changes` with a single entry,
 and `## How it was verified`.
@@ -375,7 +375,7 @@ regardless of size: no ceiling, and never the three-section collapse.
 ### Nothing enforces this mechanically
 
 **Rules first, enforcement later.** The same call, for the same
-reason, as [`code-guidelines.md`](code-guidelines.md) §Status. No CI check parses the PR
+reason, as [`code-guidelines.md`](code-guidelines.md) section Status. No CI check parses the PR
 body, no workflow requires a label. One rule is enforced from the changed files instead of the
 body: `check:app-behaviours -- --base` fails a pull request that rewrites or removes a row of
 [`app-behaviours/catalogue.md`](../../test/app-behaviours/catalogue.md), and `check:contracts-surface -- --base` one that changes
@@ -404,7 +404,7 @@ it. The template deliberately carries no reasoning, because reasoning is the par
 
 ## Open points
 
-**The template cannot be enforced on `gh pr create --body`.** See §Nothing enforces this
+**The template cannot be enforced on `gh pr create --body`.** See section Nothing enforces this
 mechanically. Known, accepted, and the reason the blueprint is also a document an agent reads
 rather than only a file GitHub injects.
 

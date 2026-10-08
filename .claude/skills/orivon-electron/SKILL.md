@@ -362,7 +362,7 @@ hypotheses from scratch.
 ## Two smoke-test traps — written up in full in `testing.md`, not repeated here
 
 Both cost real time and are easy to reintroduce, but the complete write-up already lives in
-`docs/development/testing.md` §"What `npm run smoke` is, and what it is not" — read that; this
+`docs/development/testing.md` section "What `npm run smoke` is, and what it is not" — read that; this
 is only the pointer:
 
 - **A `waitFor` helper must never be pointed at a condition the pre-action state already
@@ -380,7 +380,7 @@ is only the pointer:
 - `docs/planning/spike-results/gate-{0,1a,1b,2,3,4}.json` — raw measured evidence.
 - `docs/planning/week-0-spike-plan.md` and `spike-remaining-gates-plan.md` — the spike's
   execution plans, with its state table and traps list.
-- `docs/architecture/capability-api.md` §Design rules, §Throughput — where the durable lessons
+- `docs/architecture/capability-api.md` section Design rules, section Throughput — where the durable lessons
   (shim completeness, error visibility, transferables) are folded into the actual spec.
 - `spike/launch.mjs`, `spike/gate1b/vite.config.js`, `spike/gate1b/shim/*.js` — the reference
   implementations. The `spike/` directory is throwaway; this skill and the docs above are what

@@ -10,7 +10,7 @@
 > easily recoverable, so it is not forgotten. **This file is that place.**
 
 > **Reversal recorded.** The owner withdrew this decision. Neither the torrent app nor the Nostr
-> fast-follow is a build step; both are ideas (`scope.md` §LATER). The text below is kept
+> fast-follow is a build step; both are ideas (`scope.md` section LATER). The text below is kept
 > unchanged as the case for a torrent app, which is what this file exists to preserve, and the
 > Amendment at the end says what replaced it.
 

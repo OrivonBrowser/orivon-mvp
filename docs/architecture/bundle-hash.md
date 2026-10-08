@@ -57,7 +57,7 @@ that is refused outright and can never be pinned. `new URL(...).pathname` leaves
 `)`, `,`, `=`, `+`, `$`, `&` and `'` **unencoded**, so `/img/logo@2x.png` is canonical and
 `/img/logo%402x.png` is not, even though a server would serve either. Derive asset paths by
 running the fetch URL through a URL parser. A tool that starts from filenames follows
-§Writing one from a static folder, below, which says exactly which characters to escape first.
+section Writing one from a static folder, below, which says exactly which characters to escape first.
 
 **Only `https:` and `http:` URLs yield a canonical path.** Every other scheme returns nothing.
 A `file:` URL parses perfectly well and has a `pathname` that reads exactly like an asset path,
@@ -399,7 +399,7 @@ manifest whose `assets` names it is refused.
 }
 ```
 
-- `bundleHash` is the root, encoded as §Encoding the root as a string says.
+- `bundleHash` is the root, encoded as section Encoding the root as a string says.
 - `leaves` has one key per leaf, including the manifest and the entry. The key is the canonical
   path and the value is that leaf's digest, in the same encoding.
 - **It is read strictly.** Each field must be an own property of the right type. A digest must be
@@ -413,7 +413,7 @@ manifest whose `assets` names it is refused.
 
 ### Writing one from a static folder
 
-The rules in §Canonical path reject and never repair. A tool that starts from filenames must
+The rules in section Canonical path reject and never repair. A tool that starts from filenames must
 therefore derive each path the way a request would carry it:
 
 1. **Split** the file's path, relative to the folder, into segments.
@@ -426,7 +426,7 @@ therefore derive each path the way a request would carry it:
    whose name makes it do any of that has no canonical path. Refuse it, rather than publish a
    path that serves a different file.
 
-Then apply §Rejection table and §Collision key.
+Then apply section Rejection table and section Collision key.
 
 The manifest's `assets` lists every file except the manifest, the tree and the entry, each as its
 canonical path without the leading `/`. It follows these rules:

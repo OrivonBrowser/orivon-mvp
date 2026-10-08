@@ -21,7 +21,7 @@ conditions:
 ---
 
 **This file opens with more than 25 lines of comment; `npm run check:comments` will fail it
-(`docs/development/code-guidelines.md` Rule 1, §The budget).**
+(`docs/development/code-guidelines.md` Rule 1, section The budget).**
 
 A comment that stops a maintainer breaking the line in front of it belongs in the source, next
 to that line. A comment explaining why the file has the shape it has is rationale: move it to

@@ -20,7 +20,7 @@ prompt / reject).
 
 **What it must never import.** [`src/shim/`](../shim/).
 
-**Tied to Electron?** Partly ([`ARCHITECTURE.md`](../../ARCHITECTURE.md) §Where things live):
+**Tied to Electron?** Partly ([`ARCHITECTURE.md`](../../ARCHITECTURE.md) section Where things live):
 the update decision is pure policy, fetching and serving the cache are Electron-specific
 machinery, and only `electron/` imports `electron`.
 
@@ -29,12 +29,12 @@ machinery, and only `electron/` imports `electron`.
 **Never probe automatically.** An unsolicited request to every origin visited is an attributable
 *"this visitor runs Orivon"* signal. The one discovery trigger is a `<link
 rel="orivon-manifest">` hint in HTML already delivered, and the well-known path is fetched
-**only after** seeing it (`capability-api.md` §How a URL becomes an app).
+**only after** seeing it (`capability-api.md` section How a URL becomes an app).
 
 **The update decision is where a silent failure is a security failure.** Its failure mode is "no
 prompt appeared", which no manual checklist catches, and the capability at stake is
 `tcp.connect *:*`. Re-consent triggers on a **subset check over the granted pattern set**, not on
-capability kinds ([`capability-api.md`](../../docs/architecture/capability-api.md) A9 §2). Two
+capability kinds ([`capability-api.md`](../../docs/architecture/capability-api.md) A9 section 2). Two
 inputs stop an answered question being asked again, and neither grants anything: a kind switched
 off in the site-info popover while unheld (`LoadContext.declinedCapabilities`), and what the
 pinned manifest already declared (`previouslyDeclaredPatterns`). A manifest widening a capability
@@ -67,5 +67,5 @@ advisory.
 
 **The site's published hash tree is carried, never judged**
 ([`ADR-0029`](../../docs/decisions/ADR-0029-sites-publish-their-bundle-hash-tree.md)
-§Consequences). Nothing here reads it to decide anything: a 404, an unreadable file and a
+section Consequences). Nothing here reads it to decide anything: a 404, an unreadable file and a
 mismatch all install as they would without it.

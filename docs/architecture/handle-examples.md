@@ -19,10 +19,10 @@ import type {
 declare const orivon: Orivon // the preload injects this; not written by app code
 ```
 
-## §TcpSocket
+## TcpSocket
 
 Connect, write with real backpressure, half-close, then keep reading: the peer-wire shape
-`handle-contracts.md` §TcpSocket calls out: a BitTorrent peer keeps sending choke/interested
+`handle-contracts.md` section TcpSocket calls out: a BitTorrent peer keeps sending choke/interested
 messages long after this side has sent its last request, so closing `writable` must not take
 `readable` down with it.
 
@@ -60,7 +60,7 @@ async function talkToPeer(host: string, port: number, handshake: Uint8Array): Pr
 declare function handlePeerMessage(chunk: Uint8Array): void
 ```
 
-## §TcpServer
+## TcpServer
 
 Accept by reading `connections`, not by listening for an event. The read *is* the accept: stop
 calling it and the broker stops accepting, and the OS listen backlog pushes back on whoever is
@@ -86,7 +86,7 @@ declare function handlePeer(peer: TcpSocket): Promise<void>
 declare function reportPeerError(err: unknown): void
 ```
 
-## §UdpSocket
+## UdpSocket
 
 Send a `Datagram`, read whatever comes back, and check `droppedInbound`. UDP already drops
 packets on the wire; this is the same loss happening one layer up, silent by design because
@@ -119,7 +119,7 @@ declare function handleDhtReply(datagram: Datagram): void
 declare function reportDroppedDatagrams(count: number): void
 ```
 
-## §FileHandle
+## FileHandle
 
 `position` is explicit and required on every call, because a torrent writes piece *N* at
 `N × pieceLength`, not wherever a cursor happens to be, and several pieces are routinely in
@@ -146,7 +146,7 @@ async function storePiece(pieceIndex: number, pieceLength: number, data: Uint8Ar
 declare function verifyPieceHash(pieceIndex: number, data: Uint8Array): void
 ```
 
-## §IdentityHandle
+## IdentityHandle
 
 `signEvent` takes and returns a structured event object, never raw bytes to sign. The broker
 itself performs the serialisation and screens `kind`. Note that `object` is a loose enough type

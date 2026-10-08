@@ -26,8 +26,8 @@ seconds, and a test would be paying rent to tell you something you already know.
 | `npm run typecheck` | `tsc --noEmit`. Strict mode with `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`, so the compiler is doing a lot of the work a test suite would elsewhere. `tsconfig.json`'s `include` covers `test/**/*.ts`, so this also type-checks `test/capabilities/e2e-capability-boundary.test.ts`, and a type error there fails this always-on check even on a push that never runs the separate `e2e` job below |
 | `npm test` | Vitest. `environment: 'node'`, no DOM. Picks up `src/**/*.test.ts` and `scripts/**/*.test.ts` |
 | `npm run smoke` | Builds and drives the real shell with real clicks. The only check that proves a window appears |
-| `npm run test:e2e` | Builds, then runs every spec under `test/` (the TCP and UDP boundary specs among them) via [`test/vitest.e2e.config.ts`](../../test/vitest.e2e.config.ts); see §The end-to-end test below. CI runs it in shards: only the specs a change can reach on a pull request, everything on `main` and nightly (§CI). Needs a display; on Linux with `xvfb-run` installed it uses a virtual one automatically (see [setup.md](setup.md) "The no-focus switch"), so a plain `npm run test:e2e` is safe with no wrapper, and on a platform with no virtual display it runs directly instead, without stealing your keyboard focus |
-| `npm run qa` · `qa:visual` · `qa:report` | The QA specs and the inspection sheet; §Visual QA and failure evidence |
+| `npm run test:e2e` | Builds, then runs every spec under `test/` (the TCP and UDP boundary specs among them) via [`test/vitest.e2e.config.ts`](../../test/vitest.e2e.config.ts); see section The end-to-end test below. CI runs it in shards: only the specs a change can reach on a pull request, everything on `main` and nightly (section CI). Needs a display; on Linux with `xvfb-run` installed it uses a virtual one automatically (see [setup.md](setup.md) "The no-focus switch"), so a plain `npm run test:e2e` is safe with no wrapper, and on a platform with no virtual display it runs directly instead, without stealing your keyboard focus |
+| `npm run qa` · `qa:visual` · `qa:report` | The QA specs and the inspection sheet; section Visual QA and failure evidence |
 
 Unit tests are **colocated** with what they test: `src/main/tests/omnibox.test.ts` sits beside
 `src/main/browsing/omnibox.ts`.
@@ -35,7 +35,7 @@ Unit tests are **colocated** with what they test: `src/main/tests/omnibox.test.t
 ### What `npm run smoke` is, and what it is not
 
 It is the **shell's** regression check, a different thing from the unit tests below, held to a
-different bar. §The six security-critical areas argues for testing only where failure is
+different bar. section The six security-critical areas argues for testing only where failure is
 *silent*; that argument governs the unit tests. `smoke.mjs` also asserts loud things (a window
 opens, the back button works), on purpose: it launches the real app either way, so the extra
 assertions are nearly free once the launch is paid for.
@@ -59,7 +59,7 @@ Three properties it is required to keep:
   *not* happen, cannot be polled for at all; only waited out.
 
 It is **not** an end-to-end test of the capability stack; that is the separate one described in
-§The end-to-end test.
+section The end-to-end test.
 
 ---
 
@@ -241,7 +241,7 @@ does; it binds 9000 and 6667. The server's release check may reach `api.github.c
 
 **They run automatically.** `npm run test:e2e` runs every `test/**/*.test.ts` outside `test/apps/` under
 `test/vitest.e2e.config.ts`, and `.github/workflows/ci.yml`'s `e2e` job runs it on every push and
-pull request (see §How to run above).
+pull request (see section How to run above).
 
 ### Playwright's `_electron` driver and this shell
 
@@ -410,7 +410,7 @@ what each one enforces.
 `check:natives` · `check:contracts` · `check:secrets` · `check:vectors` · `check:comments` ·
 `check:size` · `check:questions` · `check:manifest-parity` · `check:page-globals` ·
 `check:dev-grant-absent` · `check:advisories` · `check:devlog` · `check:native-dialogs` ·
-`check:test-paths` · `check:impact-map` · `check:app-behaviours` · `check:contracts-surface` (the last two: §App behaviours)
+`check:test-paths` · `check:impact-map` · `check:app-behaviours` · `check:contracts-surface` (the last two: section App behaviours)
 
 Every one is an exported pure function over a root directory, unit tested against temp fixtures
 (`scripts/tests/`, or `tests/` beside a guard that has its own folder under `scripts/`), with a CLI block
@@ -474,7 +474,7 @@ exercises and it is the one most likely to break silently.
   server (`xvfb-run`; no display server on `ubuntu-latest` otherwise). The specs are split by recorded duration
   ([`test/spec-weights.json`](../../test/spec-weights.json)) into at most ten shards of about four minutes, so the
   whole suite takes about five minutes of wall time. Each runner is its own machine, so the fixed fixture ports
-  cannot clash. A failed shard uploads `qa-artifacts/latest/` (§Visual QA and failure evidence).
+  cannot clash. A failed shard uploads `qa-artifacts/latest/` (section Visual QA and failure evidence).
 - **`e2e`** is the one e2e status: it passes when every selected shard passed or nothing was selected. **`e2e-ordinary`**
   runs the specs that need the build without the developer-only hooks, whenever any e2e is selected.
 

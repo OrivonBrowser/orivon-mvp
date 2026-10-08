@@ -1,6 +1,6 @@
 # ADR-0016: Synchronous file reads are permitted, and "everything is async" is narrowed to the network
 
-- **Status:** accepted, **amended 2026-09-29 (see §Amendment)**
+- **Status:** accepted, **amended 2026-09-29 (see section Amendment)**
 - **Date:** 2026-09-09
 - **Type:** architecture
 - **Decided by:** owner

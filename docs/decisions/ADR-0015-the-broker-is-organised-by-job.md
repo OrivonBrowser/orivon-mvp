@@ -25,7 +25,7 @@ no single one of them. Tests live in a `tests/` folder **inside** the directory 
 
 > **Amendment, 2026-09-07.** The test-placement half of this decision was generalised to the
 > whole repository in `stream/backlog-14-test-layout` and now lives in
-> [`code-guidelines.md`](../development/code-guidelines.md) §Where a test file lives, which is
+> [`code-guidelines.md`](../development/code-guidelines.md) section Where a test file lives, which is
 > the copy that wins. Nothing in this ADR changed; the rule simply stopped being the broker's.
 > The five-directory decomposition below remains broker-specific and is **not** claimed as a
 > template for other directories; most are far too small to want it.
@@ -38,7 +38,7 @@ no single one of them. Tests live in a `tests/` folder **inside** the directory 
 > what it must never import, carry a README on the shared template — now has a second
 > application.
 >
-> **Amendment, 2026-09-25.** Both predictions in this ADR's own §Reversibility fired.
+> **Amendment, 2026-09-25.** Both predictions in this ADR's own section Reversibility fired.
 > [`ADR-0035`](ADR-0035-src-source-directories-are-organised-by-job.md) is the decision record;
 > the short version: `capabilities/` becomes this directory's sixth, holding what used to sit
 > loose at the top level as `net-capability.ts`, `fs-capability.ts`, `user-selected-capability.ts`,

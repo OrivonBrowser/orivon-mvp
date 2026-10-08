@@ -36,7 +36,7 @@ a design belongs here instead.
 
 The DDOC verdict, the Website level and the Delivery level are explained in their own files
 (`ddoc.ts`, `website-level.ts`, `delivery-ladder.ts`) and in
-[`ADR-0029`](../../docs/decisions/ADR-0029-sites-publish-their-bundle-hash-tree.md) §Reasoning.
+[`ADR-0029`](../../docs/decisions/ADR-0029-sites-publish-their-bundle-hash-tree.md) section Reasoning.
 
 **One entry shape for all three capability surfaces**
 ([`connection-log.ts`](connection-log.ts)). A network connect, an `orivon.fs` operation and an
@@ -46,7 +46,7 @@ consumer merging three arrays back together to answer "what did this app do, in 
 
 **Byte counts are part of that shape, and the connection ladder never exports a bare pattern
 label.** Without bytes the ladder was cheaper to fake than to earn: exfiltrating files over many
-short connections to many hosts earned the best grade (ADR-0006's amendment to §The insight this
+short connections to many hosts earned the best grade (ADR-0006's amendment to section The insight this
 rests on, finding 2). Real swarm traffic is roughly symmetric and exfiltration is not, so
 [`connection-ladder.ts`](connection-ladder.ts) always returns `evidence` (the raw counts) and
 `patternHeuristic` (the label) together, on every path. There must never be a function that

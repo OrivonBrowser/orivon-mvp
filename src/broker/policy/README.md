@@ -55,7 +55,7 @@ connect. Provisional: A88.
 secp256k1, and hand-rolling variable-time scalar multiplication over the secret behind every
 identity is unacceptable. A pure-JS curve library breaks no rule, but it belongs in `src/nostr/`,
 which needs one anyway
-([`ADR-0010`](../../../docs/decisions/ADR-0010-key-derivation-frozen-at-v1.md) §Reversibility).
+([`ADR-0010`](../../../docs/decisions/ADR-0010-key-derivation-frozen-at-v1.md) section Reversibility).
 The scalar, frozen by golden vectors, pins the identity either way.
 
 **[`origin.ts`](origin.ts)'s `ORIGIN_BEARING_SCHEMES` is an allowlist, never a denylist.**
@@ -92,7 +92,7 @@ port, and nothing else** ([`connect-patterns.ts`](connect-patterns.ts)'s `LOCALH
 where it leads:
 
 - **`localhost` is never resolved.** `checkConnect` substitutes the two literals and
-  `checkLookup` returns them, so no nameserver or hosts file has a say (RFC 6761 §6.3). Rebinding
+  `checkLookup` returns them, so no nameserver or hosts file has a say (RFC 6761 section 6.3). Rebinding
   needs an answer somebody else chose; this one is a constant, which is also why
   `connect('localhost', p)` dials only the literals the grant covers.
 - **It grants what the two literal patterns would, and the person saw it:** `localhost:8080`
@@ -136,7 +136,7 @@ grant (`app.grants()`) and can replay it through `connect`.
 
 Why `https.connect` is not in that union: `OUTBOUND_CAPABILITIES`'s doc in
 [`../capabilities/net.ts`](../capabilities/net.ts). The refusal stays a uniform `'denied'`
-([`handle-contracts.md`](../../../docs/architecture/handle-contracts.md) §How much failure detail
+([`handle-contracts.md`](../../../docs/architecture/handle-contracts.md) section How much failure detail
 an app receives); `src/shim/net/dns.ts`'s `describeLookupDenial` names it for a ported app from
 the app's own grants.
 

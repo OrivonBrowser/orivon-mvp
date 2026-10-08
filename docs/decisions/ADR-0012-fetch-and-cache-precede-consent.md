@@ -1,7 +1,7 @@
 # ADR-0012: Fetch-and-cache is automatic and silent; consent is asked once, before the app runs
 
 - **Status:** accepted; second half amended 2026-09-13 (see the amendment below); the per-app
-  cap and the pruning point amended 2026-09-22 (§Consequences)
+  cap and the pruning point amended 2026-09-22 (section Consequences)
 - **Date:** 2026-09-03
 - **Type:** architecture / security
 - **Decided by:** owner
@@ -22,7 +22,7 @@ capability is usable without a grant and grants are unaffected by any of this.
 **Stated plainly, because it is the uncomfortable part:** an origin the user merely visited, one
 carrying a manifest hint and nothing more, can have its code written to the user's disk with **zero
 explicit consent** at that point. This ADR accepts that consequence deliberately, for the reasons
-in §Reasoning, and states its one currently-unmitigated cost in §Consequences rather than treating
+in section Reasoning, and states its one currently-unmitigated cost in section Consequences rather than treating
 it as free.
 
 > **Amendment, 2026-09-13 (owner decision `d-0025`). The second half of this decision is
@@ -88,7 +88,7 @@ The owner has now decided, in plain language: *"Download quietly first; ask perm
 the app actually tries to do something. This is what #63 already assumes, and ADR-0005 gets formally
 amended (in place, dated correction block, this repo's own convention) to match, not the other way
 around."* This ADR records that decision formally and amends `ADR-0005` to agree with it (see
-§Consequences and the amendment block in `ADR-0005` itself).
+section Consequences and the amendment block in `ADR-0005` itself).
 
 ## Alternatives considered
 
@@ -232,7 +232,7 @@ turn one visit into an unbounded stream of fetches.
   and in the fact that, once real users have experienced silent installs, reintroducing an
   install-time prompt reads as the product becoming more invasive, not less, which is a harder sell than
   shipping it that way from the start.
-- **What would make us revisit:** either (a) the quota/cleanup work in §Consequences turns out to
+- **What would make us revisit:** either (a) the quota/cleanup work in section Consequences turns out to
   be genuinely hard to build correctly before the discovery trigger needs wiring, making "ship
   fetch-then-defer without a quota" the practical default under schedule pressure, at which point
   the tradeoff this ADR accepts needs re-examining with real deadline pressure in the room, not

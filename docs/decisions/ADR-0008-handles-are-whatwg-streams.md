@@ -68,7 +68,7 @@ engine backend or by every app author working around a leaky abstraction.
 - `capability-api.md` design rule 1 ("mirror Node's API shapes") is **rescoped, not
   reversed**: it now applies to `orivon-node-shim`'s output, not to the capability layer
   itself. The capability layer's actual durable shape is what this ADR states. See the
-  correction recorded in `capability-api.md` §Design rules.
+  correction recorded in `capability-api.md` section Design rules.
 - `handle-contracts.md` is the full specification built on this decision: the credit-window
   backpressure design, the close/half-close semantics keyed off `readable`/`writable`
   lifecycle, and the derived-handle-as-child-stream model for `TcpServer.connections` all
@@ -76,7 +76,7 @@ engine backend or by every app author working around a leaky abstraction.
 - `orivon-node-shim`'s job grows: every Node-shaped entry point (`net.Socket`, `dgram.Socket`,
   `fs.promises.FileHandle`) is now a wrapper reconstructed from a stream pair plus captured
   synchronous properties, not a renamed pass-through. This is accounted for in
-  `handle-contracts.md` §What the shim must do.
+  `handle-contracts.md` section What the shim must do.
 
 ## Reversibility
 

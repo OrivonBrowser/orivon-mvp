@@ -6,7 +6,7 @@
 // the result. qa-setup.ts decides in afterEach whether to write the held
 // bundles (failure) or drop them (pass). Nothing here may throw into a launch
 // or a teardown: every Playwright call is time-boxed and its error recorded.
-// docs/development/testing.md §Visual QA and failure evidence has the layout.
+// docs/development/testing.md section Visual QA and failure evidence has the layout.
 
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

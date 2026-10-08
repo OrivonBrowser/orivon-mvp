@@ -88,7 +88,7 @@ prove.
 | `support/qa-layout-audit.mjs` | The in-page layout audit. Plain JavaScript and self-contained: Playwright serialises the function, so it may close over nothing |
 | `support/qa-visual.ts` | The audit wrapper, the machine-local pixel baseline, `captureState` and `checkState` |
 | `support/qa-helpers.ts` | A port-0 fixture server, a launched shell, and navigation that waits on what it asserts |
-| `qa/` | The specs (`e2e-qa-*`, `qa-visual`, `qa-evidence`); `docs/development/testing.md` §Visual QA and failure evidence lists what each proves |
+| `qa/` | The specs (`e2e-qa-*`, `qa-visual`, `qa-evidence`); `docs/development/testing.md` section Visual QA and failure evidence lists what each proves |
 
 `launchElectron({ reuseProfile })` relaunches on a profile that `closeElectron(app, { keepProfile: true })`
 kept, for a test that needs the first run's state on disk; only a temp `orivon-test-*` directory the

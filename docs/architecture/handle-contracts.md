@@ -1,7 +1,7 @@
 # Handle contracts specification
 
 > This document defines the five handle types named but not specified in
-> `capability-api.md` §v0 surface: `TcpSocket`, `TcpServer`, `UdpSocket`, `FileHandle`,
+> `capability-api.md` section v0 surface: `TcpSocket`, `TcpServer`, `UdpSocket`, `FileHandle`,
 > `IdentityHandle`. It is a sibling of that document, not a section inside it, and the same
 > care level applies (ADR-0002: the Electron shell is tied to one engine, this interface is not),
 > kept separate so the policy content in `capability-api.md` stays readable at its current
@@ -15,7 +15,7 @@
 > [`../planning/compatibility-matrix.md`](../planning/compatibility-matrix.md) carries it,
 > re-derived from the tree. This document says what each handle *does*.
 
-## §Common shape
+## Common shape
 
 Every handle returned by `orivon.*` shares this base:
 
@@ -34,9 +34,9 @@ interface Handle {
 - **Every operation re-checks ownership** against the per-origin handle table before it runs
   (T11c). A handle ID from one origin is meaningless presented by another.
 - **Every handle records the grant ID that authorised it**, captured at acquisition. This is
-  what §Revocation walks.
+  what section Revocation walks.
 
-## §Errors: a closed enum
+## Errors: a closed enum
 
 ```ts
 class OrivonError extends Error {
@@ -65,7 +65,7 @@ class OrivonError extends Error {
 
 - **Closed.** An app may switch on `code` exhaustively and treat an unrecognised value as a
   bug, not a case to silently ignore. Adding a code is a breaking change once
-  `orivonApiVersion` reaches 1; see §Versioning.
+  `orivonApiVersion` reaches 1; see section Versioning.
 - `platformCode` carries the underlying engine's own detail, a Node errno today
   (`ECONNREFUSED`, `ENOENT`, ...), whatever another host exposes later. **Advisory and
   unversioned.** An app that branches on `platformCode` is coding against the engine
@@ -74,7 +74,7 @@ class OrivonError extends Error {
   `orivon-node-shim` can reconstruct a faithful Node `Error` (`err.code === 'ECONNREFUSED'`
   is a real Node idiom and must keep working through the shim).
 - **`denied` never carries a `platformCode`, and is uniform across every reason for denial.**
-  This is deliberate, not an oversight; see §How much failure detail an app receives below.
+  This is deliberate, not an oversight; see section How much failure detail an app receives below.
 - Every other code, for an address or resource the app was **permitted** to attempt, carries
   the real `platformCode`. See the section immediately below for why.
 
@@ -103,7 +103,7 @@ class is blocked, turning the permission boundary itself into a probe target. Th
 not conflict: detail is owed for attempts inside the grant, and the boundary itself stays
 uninformative.
 
-## §TcpSocket
+## TcpSocket
 
 > **Implemented end to end**: `src/broker/capabilities/net.ts`'s `connect`, `src/broker/transport/ipc.ts`'s
 > control-channel dispatch and real `MessageChannelMain` port, `src/broker/transport/relay/port-pump.ts`'s
@@ -234,7 +234,7 @@ choke/interested handshake and keeps reading long after it has stopped writing n
 > - Renderer read side: `src/preload/ports/socket.ts`'s `reportConsumed` flushes a
 >   `CreditMessage` once `CREDIT_COALESCE_BYTES` has been consumed, and otherwise coalesces.
 > - Broker write side: `src/broker/transport/relay/port-sink.ts` coalesces `WriteAckMessage` against the same
->   constant (see §Write direction below).
+>   constant (see section Write direction below).
 >
 > **One deliberate departure from the text below, made knowingly.** This section specifies
 > coalescing as "at most one credit message per 64 KiB consumed, **or once per animation
@@ -243,7 +243,7 @@ choke/interested handshake and keeps reading long after it has stopped writing n
 > ordinary case for this browser rather than an edge one. Coalescing must not depend on the tab
 > being visible. `open-questions.md` A48 records the whole resolution.
 
-This is the flow control `capability-api.md` §Throughput requires, because `MessagePortMain` has
+This is the flow control `capability-api.md` section Throughput requires, because `MessagePortMain` has
 no documented backpressure of its own.
 
 - The broker sends at most `WINDOW` bytes (default **1 MiB**) ahead of what the renderer has
@@ -264,7 +264,7 @@ no documented backpressure of its own.
 - Credit updates are **coalesced**: at most one credit message per 64 KiB consumed, or once
   per animation frame, whichever comes first. A 52 MB/s stream (gate 4's measured throughput)
   must not emit a broker message per chunk of data, because that reintroduces the per-message IPC
-  cost `capability-api.md` §Throughput moved off the main channel in the first place.
+  cost `capability-api.md` section Throughput moved off the main channel in the first place.
 
 ### Backpressure: write direction
 
@@ -291,7 +291,7 @@ particular broker or preload implements them.
   the broker emits a `bytesAccepted: 0` `WriteAckMessage` at this interval. This is what lets a
   genuinely slow-but-healthy peer (a choked BitTorrent connection can legitimately stall for
   minutes) be told apart from a dead transport, whose failure mode is silence rather than an
-  error (see §What the shim must do).
+  error (see section What the shim must do).
 - **The silence timeout (`WRITE_SILENCE_TIMEOUT_MS`, 15 s).** Scoped to **outstanding writes
   only**, so it runs while at least one posted `WriteMessage` has not yet been resolved by a
   `WriteAckMessage` (including a heartbeat) or a `WriteFailedMessage`, and is cleared the
@@ -306,7 +306,7 @@ particular broker or preload implements them.
   silence is terminal rather than something to resynchronise after, so nothing needs a
   sequence number to recover.
 
-## §TcpServer
+## TcpServer
 
 > **Built at the broker layer, correcting the "not implemented" banner this replaced.** That
 > version described the state before 2026-09-09. `listen()` is `src/broker/capabilities/net.ts`;
@@ -353,13 +353,13 @@ interface TcpServer extends Handle {
   connection the app has not asked for by reading. Each `read()` on the stream accepts
   exactly one pending connection.
 - Sockets delivered through `connections` are **derived handles**: they inherit the server's
-  grant (see §Revocation), and closing the server closes every socket it produced that is
+  grant (see section Revocation), and closing the server closes every socket it produced that is
   still open.
 - The bound `localPort` is resolved before the acquisition promise for the server settles, so
   requesting `port: 0` (ask the OS to pick one) still yields a real, populated `localPort`,
   the same synchronous-property rule as `TcpSocket`.
 
-## §UdpSocket
+## UdpSocket
 
 > **Implemented, correcting the "not implemented" banner this replaced.** That version described
 > the contract-only landing of 2026-09-07's first hours; the implementation landed the same day.
@@ -417,11 +417,11 @@ interface UdpSocket extends Handle {
   `WritableStream` can report one failed write, and it errors the stream permanently; a DHT peer
   list routinely names addresses outside a grant, so the first excluded peer would kill a working
   swarm. Counting keeps `denied` uniform as well: the app learns *that* a send was dropped, never
-  which pattern excluded it (§Errors). Not yet confirmed; `open-questions.md` A87.
+  which pattern excluded it (section Errors). Not yet confirmed; `open-questions.md` A87.
 - No multicast support (`addMembership`/`dropMembership` are not part of this
   contract), matching the recorded limitation that local peer discovery is unavailable.
 
-## §FileHandle
+## FileHandle
 
 > **Where this shape stops today.** `orivon.fs.open` and `orivon.fs.userSelected`'s FILE shape
 > both produce the `FileHandle` below (`src/broker/capabilities/fs.ts`,
@@ -437,7 +437,7 @@ interface UdpSocket extends Handle {
 > methods, with `fs.dirOpen` resolving files inside it through the same mechanism as `fs.open`.
 > **Provisional:** its method set is not yet confirmed (A167 item 2, A195). A picked path is
 > confined to what was picked, persists across a restart, and is revocable from the settings
-> list; §Revocation's cascade covers both shapes.
+> list; section Revocation's cascade covers both shapes.
 
 ```ts
 interface FileStat {
@@ -475,16 +475,16 @@ interface FileHandle extends Handle {
 - Paths are resolved and confined to the app's files directory **in the broker, never trusted
   from the renderer.** `..` segments, absolute paths, and symlinks that would escape the
   confinement are rejected with `denied` (`security-model.md` T1/T10).
-- Writes are checked against the running per-origin quota counter (`capability-api.md` A9 §3)
+- Writes are checked against the running per-origin quota counter (`capability-api.md` A9 section 3)
   before they land; exceeding it yields `limit`.
 - **Exception to the revocation cascade:** a `FileHandle` obtained through
   `orivon.fs.userSelected` is authorised by the user's one-time OS picker choice, not by the
   standing `fs` grant. Revoking the `fs` capability does **not** close a handle obtained this
   way, but it also does not survive an app restart; it is a session-scoped exception, not a
-  standing grant of its own. Stated explicitly here because §Revocation's cascade rule would
+  standing grant of its own. Stated explicitly here because section Revocation's cascade rule would
   otherwise silently and incorrectly include it.
 
-## §IdentityHandle
+## IdentityHandle
 
 > **No `IdentityHandle` is ever constructed**: `orivon.id.requestIdentity`, the only thing that
 > returns one, is unbuilt (A111), so `publicKey()`/`signEvent()` on this handle exist only as the
@@ -523,7 +523,7 @@ interface IdentityHandle extends Handle {
   rule, an app could force a fresh connect on demand by closing and immediately
   re-requesting, which is exactly the prompt-fatigue outcome named identities exist to avoid.
 
-## §Revocation: the cascade
+## Revocation: the cascade
 
 - The broker maintains, per origin, a map from `grantId` to the set of live handle IDs it
   authorised.
@@ -545,7 +545,7 @@ interface IdentityHandle extends Handle {
   whatever it claims to be doing. The cost of immediate revocation is a discarded in-flight
   torrent piece, which is cheap to re-fetch from another peer.
 - Revocation is **idempotent** and safe to call against an origin holding zero live handles.
-- **Exception:** `fs.userSelected` handles are not in any grant's set; see §FileHandle.
+- **Exception:** `fs.userSelected` handles are not in any grant's set; see section FileHandle.
 
 ### Revocation is not a one-shot sweep
 
@@ -567,7 +567,7 @@ granted again after being withdrawn clears its entry; see `open-questions.md` A1
 The revoke call settles as soon as the app has
 been told, that is, after the synchronous unlink and promise-rejection pass, and does *not* wait
 for the injected teardown callbacks to finish. The broker awaits it on the UI thread to update the
-permissions panel, and §What the shim must do rule 3 records that this transport's failure mode is
+permissions panel, and section What the shim must do rule 3 records that this transport's failure mode is
 silence rather than an error, so a revoke that waited would leave the permissions UI stuck
 mid-revoke with no timeout anywhere in the path. Teardown failures are reported out of band.
 
@@ -575,7 +575,7 @@ mid-revoke with no timeout anywhere in the path. Teardown failures are reported 
 
 An app being closed, navigated away from, or
 restarted takes *all* its handles, including the `fs.userSelected` ones a grant revocation cannot
-reach, which is the other half of the §FileHandle exception, and what "does not survive a restart"
+reach, which is the other half of the section FileHandle exception, and what "does not survive a restart"
 means. But it is **graceful**: FIN rather than RST, buffered writes flushed rather than discarded.
 Nobody withdrew anything, and treating a user clicking a link away from a torrent app as a
 revocation would reset every peer connection and drop a half-written piece on the floor.
@@ -587,7 +587,7 @@ dead origin, and the `fs.userSelected` handle it registered survived the session
 ### A handle can also die on its own
 
 Every path above is initiated by the app or by
-the user. §TcpSocket's close table also requires `closed` to reject with `reset` when the peer
+the user. section TcpSocket's close table also requires `closed` to reject with `reset` when the peer
 resets or aborts, which no app-initiated or user-initiated path can express, so the broker needs
 an entry point for "this resource died underneath us", carrying the real `platformCode`. Without
 it a peer RST is reported to the app as a clean, successful close, which is the *common* way a
@@ -596,7 +596,7 @@ socket ends.
 The handle table does not itself model half-close. `closed` settles when the handle is released;
 deciding that both directions have reached a terminal state is the socket layer's job.
 
-## §Limits (T11, T11b)
+## Limits (T11, T11b)
 
 Enforced per origin, with defaults chosen against gate 4's measured numbers (100 concurrent
 sockets exercised cleanly) with headroom:
@@ -607,8 +607,8 @@ sockets exercised cleanly) with headroom:
 | concurrent open `FileHandle`s | 64 |
 | concurrent open `IdentityHandle`s | 64 |
 | in-flight broker operations, **per origin** | 256 |
-| per-socket read window (§TcpSocket backpressure `WINDOW`) | 1 MiB |
-| per-socket write window (`LIMITS.writeWindowBytes`, §Backpressure: write direction) | 256 KiB |
+| per-socket read window (section TcpSocket backpressure `WINDOW`) | 1 MiB |
+| per-socket write window (`LIMITS.writeWindowBytes`, section Backpressure: write direction) | 256 KiB |
 | `orivon.secrets.encrypt` plaintext (`LIMITS.secretBytes`, `ADR-0033`) | 64 KiB. **Provisional**, AI-chosen |
 
 Exceeding any of these yields `limit`.
@@ -642,7 +642,7 @@ misbehaving origin freezes every tab. A waiting operation runs nothing and holds
 arguments, so the number running never passes the cap, and one origin's queue never delays
 another's (`src/broker/handles/README.md`, "The in-flight cap queues briefly").
 
-## §What the shim must do
+## What the shim must do
 
 The spike surfaced four failure modes that are easy to reintroduce if the lesson lives only
 in `.claude/skills/orivon-electron/SKILL.md`. Promoted here to binding requirements on
@@ -675,13 +675,13 @@ in `.claude/skills/orivon-electron/SKILL.md`. Promoted here to binding requireme
    own (313-1134 MB/s measured, against a 1-5 MB/s product need).
 5. Every synchronous Node accessor this shim presents (`socket.address()`,
    `socket.remoteAddress`, and equivalents) is served from a value captured at handle
-   acquisition, per §TcpSocket and §UdpSocket above, never from a cache an event fills in
+   acquisition, per section TcpSocket and section UdpSocket above, never from a cache an event fills in
    later.
 6. **The raw `MessagePortMain` never crosses into the main world.** The preload holds it in
    the isolated world and exposes only `contextBridge` closures over it (T17). This is a
    security rule, not a throughput optimisation left for later.
 
-## §Versioning
+## Versioning
 
 The versioned surface, subject to `orivonApiVersion` major-bump-plus-ADR rules once it
 reaches 1, is: the `OrivonErrorCode` enum, the five handle interfaces in this document, and
@@ -690,7 +690,7 @@ part of the versioned surface; they may change as the underlying engine changes 
 today, another host's equivalents later) without that counting as a breaking change to this
 specification.
 
-## §Conformance checklist
+## Conformance checklist
 
 Testable assertions build steps 2 (broker) and 3 (shim) should drive as TDD targets
 (`test-driven-development` per the tooling table), not an exhaustive test plan:
@@ -720,8 +720,8 @@ Testable assertions build steps 2 (broker) and 3 (shim) should drive as TDD targ
 
 ## Reference
 
-- `docs/architecture/capability-api.md`: the parent specification; §v0 surface names these
-  five handle types, §Throughput records the backpressure question this document answers.
+- `docs/architecture/capability-api.md`: the parent specification; section v0 surface names these
+  five handle types, section Throughput records the backpressure question this document answers.
 - `docs/decisions/ADR-0008-handles-are-whatwg-streams.md`: why streams, not `EventEmitter`
   or raw `MessagePort`, and the alternatives rejected.
 - `docs/architecture/security-model.md`: T1, T10 (path confinement), T11/T11b (resource
