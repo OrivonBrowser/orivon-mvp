@@ -69,10 +69,10 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Developer tools now dock beside the page as set; Explore keeps each site in one section and is republished on IPFS.
 - New profiles start set up: uBlock Origin pinned, five Web3 bookmarks with icons, Attila scoring, and an "Orivon Featured" apps row on the new tab.
 - Telemetry now asks in a calm popup over the blurred browser after "Enter Orivon"; the default-browser question arrives 30 s into first use.
+- Re-aligned the whole repo with today's Orivon: early-access product, two equal pillars, roadmap replaces scope, 54 open questions closed.
 
 ### In my head
 
-- Re-aligned the whole repo with today's Orivon: early-access product, two equal pillars, roadmap replaces scope, 54 open questions closed.
 - AI runs were slow from process, not code: a fast lane for small changes, related-only local tests, and a session time report.
 - Asking for telemetry with a forced choice, not a pre-ticked box: legal in Europe, and people say yes almost as often.
 
