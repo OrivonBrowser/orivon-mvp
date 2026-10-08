@@ -16,7 +16,7 @@ today: `docs/planning/compatibility-matrix.md`.
 |---|---|
 | Proposing a design | `ARCHITECTURE.md` |
 | Choosing what to build | `docs/roadmap.md` (Now, Expected next, Later) |
-| Writing against the API | `src/contracts/`: the product surface in nine files |
+| Writing against the API | `src/contracts/`: the product surface in ten files |
 | Editing in a directory | its `README.md`: what it may depend on and must never import |
 | Writing code | `docs/development/code-guidelines.md` section Rules, nothing else |
 | Adding a test or a `check:*` guard | `test/README.md` (where a spec goes), then `docs/development/testing.md` |
