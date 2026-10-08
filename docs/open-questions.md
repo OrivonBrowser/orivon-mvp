@@ -1642,3 +1642,16 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner, who does not know the plan's data terms yet. Until they are settled, an agent
   redacts personal data from a bug report before reading it.
 - **Blocks:** nothing in the code; the notice's AI paragraph is *provisional* until it is settled
+
+### A409: Why the new-tab page's own script is refused when many tabs open at once **[RESEARCH]**
+
+- **Question:** `e2e-qa-visual`'s crowded tab strip (24 new tabs at once) now and then logs `ERR_BLOCKED_BY_CLIENT`
+  for `newtab-*.js`, on Linux CI and on macOS. Load alone does not do it: a live macOS session opened 168 tabs in
+  bursts of 24 with no refusal and no blank dashboard. The shell gate (`src/main/pages/shell-scheme.ts`) cancels a
+  request whose frame is not the new-tab page's top frame or cannot be read; which of the two it was is not measured.
+- **Why it matters:** if the frame is a new tab still committing, that tab's dashboard stays blank; if it is being
+  torn down, the refusal is right and only the check is wrong.
+- **Options:** log the refused request's frame URL and state from the gate, and run the spec until it shows (rec.);
+  then fix the gate or the check, whichever it shows.
+- **Who decides:** research first
+- **Blocks:** a QA states spec that passes on every run

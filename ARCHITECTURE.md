@@ -233,7 +233,7 @@ resolution overrides in `electron.vite.config.ts`.
 
 | | |
 |---|---|
-| [`src/contracts/`](src/contracts/) | The product surface, in nine files |
+| [`src/contracts/`](src/contracts/) | The product surface, in eleven files |
 | [`docs/architecture/capability-api.md`](docs/architecture/capability-api.md) | The specification those files transcribe |
 | [`docs/architecture/handle-contracts.md`](docs/architecture/handle-contracts.md) | What each handle does: backpressure, close semantics, errors, revocation |
 | [`docs/architecture/security-model.md`](docs/architecture/security-model.md) | The threat model. Today's model is authorisation, not containment; stronger sandboxing is expected later; see [`SECURITY.md`](SECURITY.md) |

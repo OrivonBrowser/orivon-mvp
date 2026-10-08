@@ -1,9 +1,9 @@
 # ADR-0070: An app's page shows its own files by URL
 
-- **Status:** accepted, provisional
+- **Status:** accepted
 - **Date:** 2026-10-08
 - **Type:** security
-- **Decided by:** AI recommendation accepted by default; provisional until the owner confirms
+- **Decided by:** AI recommendation, confirmed by the owner on 2026-10-08
 
 ## Decision
 A page of an origin that holds a live `fs` grant may load its own files, read-only, as images and

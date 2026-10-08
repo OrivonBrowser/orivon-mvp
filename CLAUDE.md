@@ -16,7 +16,7 @@ today: `docs/planning/compatibility-matrix.md`.
 |---|---|
 | Proposing a design | `ARCHITECTURE.md` |
 | Choosing what to build | `docs/roadmap.md` (Now, Expected next, Later) |
-| Writing against the API | `src/contracts/`: the product surface in nine files |
+| Writing against the API | `src/contracts/`: the product surface in eleven files |
 | Editing in a directory | its `README.md`: what it may depend on and must never import |
 | Writing code | `docs/development/code-guidelines.md` section Rules, nothing else |
 | Adding a test or a `check:*` guard | `test/README.md` (where a spec goes), then `docs/development/testing.md` |
@@ -100,6 +100,9 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
 20. **A gap a port finds is fixed generically in Orivon, never patched in the port**; the port
     stays upstream plus a bridge. Tests are generic and named after the behaviour; the app that
     inspired one is named only in a code comment.
+21. **Node-shaped, never browser-shaped**: a port bundles for Node, and Orivon's Node layer presents
+    to an app as Node, so a library takes the path it takes under Node and Electron (d-0594). A
+    port's original behaviour is the target: where Node gives it, Orivon gives it too.
 
 ## Commands
 

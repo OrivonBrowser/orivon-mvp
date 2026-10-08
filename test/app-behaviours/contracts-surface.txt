@@ -1,3 +1,17 @@
+== app.ts
+import type { Grant, Manifest, Pattern } from './manifest.js'
+export interface OrivonApp {
+  manifest(): Promise<Manifest>
+  grants(): Promise<readonly Grant[]>
+  requestGrant(capability: CapabilityRequest): Promise<boolean>
+  onOpenUrl(listener: (url: string) => void): () => void
+  requestSchemeHandler(scheme: string): Promise<boolean>
+  isSchemeHandler(scheme: string): Promise<boolean>
+}
+export interface CapabilityRequest {
+  readonly capability: string
+  readonly patterns?: readonly Pattern[]
+}
 == capability-api.ts
 import type {
   DirectoryHandle,
@@ -11,8 +25,10 @@ import type {
   UdpSocket,
   WebContext
 } from './handles.js'
-import type { Grant, Manifest, Pattern } from './manifest.js'
+import type { OrivonApp } from './app.js'
+import type { ConnectOptions, SecureConnectOptions } from './net-options.js'
 import type { OrivonTrust } from './trust.js'
+export type { ConnectOptions, SecureConnectOptions }
 export interface Orivon {
   readonly version: 0
   readonly app: OrivonApp
@@ -23,30 +39,9 @@ export interface Orivon {
   readonly secrets: OrivonSecrets
   readonly trust: OrivonTrust
 }
-export interface OrivonApp {
-  manifest(): Promise<Manifest>
-  grants(): Promise<readonly Grant[]>
-  requestGrant(capability: CapabilityRequest): Promise<boolean>
-}
-export interface CapabilityRequest {
-  readonly capability: string
-  readonly patterns?: readonly Pattern[]
-}
-export interface SecureConnectOptions {
-  readonly host: string
-  readonly port: number
-  readonly rejectUnauthorized?: boolean
-  readonly ca?: string | readonly string[]
-  readonly cert?: string
-  readonly key?: string
-  readonly pfx?: Uint8Array
-  readonly passphrase?: string
-  readonly servername?: string
-  readonly alpnProtocols?: readonly string[]
-}
 export type BindScope = 'local' | 'network'
 export interface OrivonNet {
-  connect(opts: { host: string, port: number }): Promise<TcpSocket>
+  connect(opts: ConnectOptions): Promise<TcpSocket>
   connectSecure(opts: SecureConnectOptions): Promise<SecureTcpSocket>
   listen(opts: { port: number, scope?: BindScope }): Promise<TcpServer>
   udpBind(opts: { port: number, scope?: BindScope }): Promise<UdpSocket>
@@ -271,7 +266,6 @@ export type {
 } from './manifest.js'
 export type {
   Orivon,
-  OrivonApp,
   OrivonNet,
   OrivonFs,
   OrivonId,
@@ -281,10 +275,11 @@ export type {
   EmbedEventMap,
   WebContextOptions,
   OrivonSecrets,
-  CapabilityRequest,
+  ConnectOptions,
   SecureConnectOptions,
   BindScope
 } from './capability-api.js'
+export type { OrivonApp, CapabilityRequest } from './app.js'
 export type { OrivonTrust, WebsiteScore } from './trust.js'
 export type { DevicesCapability, HidDeviceFilter } from './devices.js'
 export type { Limits } from './limits.js'
@@ -561,6 +556,25 @@ export type CapabilityKind =
   | 'secrets'
   | 'trust.score'
   | 'devices.hid'
+== net-options.ts
+export interface ConnectOptions {
+  readonly host: string
+  readonly port: number
+  readonly signal?: AbortSignal
+}
+export interface SecureConnectOptions {
+  readonly host: string
+  readonly port: number
+  readonly signal?: AbortSignal
+  readonly rejectUnauthorized?: boolean
+  readonly ca?: string | readonly string[]
+  readonly cert?: string
+  readonly key?: string
+  readonly pfx?: Uint8Array
+  readonly passphrase?: string
+  readonly servername?: string
+  readonly alpnProtocols?: readonly string[]
+}
 == trust.ts
 export interface OrivonTrust {
   websiteScore(address: string): Promise<WebsiteScore>
