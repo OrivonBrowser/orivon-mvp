@@ -72,6 +72,7 @@ export type {
   EmbedEventMap,
   WebContextOptions,
   OrivonSecrets,
+  ConnectOptions,
   SecureConnectOptions,
   BindScope
 } from './capability-api.js'

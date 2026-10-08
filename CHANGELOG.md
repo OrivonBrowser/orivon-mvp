@@ -55,6 +55,9 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 - **`ipfs-url-opens`**: an `ipns://` key now opens the site its signed record names, as an `ipns://` DNSLink name
   already did; nothing changes for apps already published. Apps that keep grants across releases may ship under a key.
   Recheck: none.
+- **`contracts/capability-api.ts`**, **`contracts/net-options.ts`** and **`contracts/index.ts`**: `orivon.net.connect` and `orivon.net.connectSecure` take an optional `signal`
+  (an `AbortSignal`); aborting it before the call settles abandons the dial and rejects with `'closed'`. Nothing changes
+  for a call that passes none. Recheck: none.
 - **`contracts/manifest.ts`**: a manifest may carry `domain`, the one ENS name or DNS host the app calls home; a
   malformed value rejects the manifest and absence is allowed. Apps published under a name set `domain` to that name,
   as a lower-case host with no scheme, port or path. Recheck: every port.

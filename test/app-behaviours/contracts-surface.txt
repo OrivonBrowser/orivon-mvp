@@ -26,7 +26,9 @@ import type {
   WebContext
 } from './handles.js'
 import type { OrivonApp } from './app.js'
+import type { ConnectOptions, SecureConnectOptions } from './net-options.js'
 import type { OrivonTrust } from './trust.js'
+export type { ConnectOptions, SecureConnectOptions }
 export interface Orivon {
   readonly version: 0
   readonly app: OrivonApp
@@ -37,21 +39,9 @@ export interface Orivon {
   readonly secrets: OrivonSecrets
   readonly trust: OrivonTrust
 }
-export interface SecureConnectOptions {
-  readonly host: string
-  readonly port: number
-  readonly rejectUnauthorized?: boolean
-  readonly ca?: string | readonly string[]
-  readonly cert?: string
-  readonly key?: string
-  readonly pfx?: Uint8Array
-  readonly passphrase?: string
-  readonly servername?: string
-  readonly alpnProtocols?: readonly string[]
-}
 export type BindScope = 'local' | 'network'
 export interface OrivonNet {
-  connect(opts: { host: string, port: number }): Promise<TcpSocket>
+  connect(opts: ConnectOptions): Promise<TcpSocket>
   connectSecure(opts: SecureConnectOptions): Promise<SecureTcpSocket>
   listen(opts: { port: number, scope?: BindScope }): Promise<TcpServer>
   udpBind(opts: { port: number, scope?: BindScope }): Promise<UdpSocket>
@@ -285,6 +275,7 @@ export type {
   EmbedEventMap,
   WebContextOptions,
   OrivonSecrets,
+  ConnectOptions,
   SecureConnectOptions,
   BindScope
 } from './capability-api.js'
@@ -565,6 +556,25 @@ export type CapabilityKind =
   | 'secrets'
   | 'trust.score'
   | 'devices.hid'
+== net-options.ts
+export interface ConnectOptions {
+  readonly host: string
+  readonly port: number
+  readonly signal?: AbortSignal
+}
+export interface SecureConnectOptions {
+  readonly host: string
+  readonly port: number
+  readonly signal?: AbortSignal
+  readonly rejectUnauthorized?: boolean
+  readonly ca?: string | readonly string[]
+  readonly cert?: string
+  readonly key?: string
+  readonly pfx?: Uint8Array
+  readonly passphrase?: string
+  readonly servername?: string
+  readonly alpnProtocols?: readonly string[]
+}
 == trust.ts
 export interface OrivonTrust {
   websiteScore(address: string): Promise<WebsiteScore>

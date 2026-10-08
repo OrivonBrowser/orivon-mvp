@@ -39,7 +39,10 @@ import type {
   WebContext
 } from './handles.js'
 import type { OrivonApp } from './app.js'
+import type { ConnectOptions, SecureConnectOptions } from './net-options.js'
 import type { OrivonTrust } from './trust.js'
+
+export type { ConnectOptions, SecureConnectOptions }
 
 /** The root object injected into an app's page as `orivon`. */
 export interface Orivon {
@@ -51,54 +54,6 @@ export interface Orivon {
   readonly web: OrivonWeb
   readonly secrets: OrivonSecrets
   readonly trust: OrivonTrust
-}
-
-/**
- * `orivon.net.connectSecure`'s argument. Every field past `port` is
- * optional and carries Node's own `tls.connect` meaning under Node's own
- * name, except `alpnProtocols` (Node's `ALPNProtocols`). PEM values are
- * strings and binary ones `Uint8Array`, and each is bounded in size: an
- * oversized or malformed option rejects the call with `'invalid'` naming it.
- * Key material serves this one connection only: it is never written to disk
- * and never logged.
- */
-export interface SecureConnectOptions {
-  readonly host: string
-  readonly port: number
-  /**
-   * Default true. `false` completes the handshake whatever the certificate
-   * says, and the connection is then ENCRYPTED BUT UNAUTHENTICATED: anyone
-   * on the network path can impersonate the server, read everything and
-   * change it. That is the app's own choice, made in its own code (Electrum
-   * servers, LND nodes and LAN services commonly present self-signed
-   * certificates), and nothing the person granting the app was shown.
-   * `SecureTcpSocket.authorized`/`authorizationError` still report what
-   * verification found.
-   */
-  readonly rejectUnauthorized?: boolean
-  /**
-   * Trust anchors in PEM, one per string or several concatenated. They
-   * REPLACE the runtime's built-in roots for this one connection, exactly as
-   * Node's `ca` does; an app that wants both passes both.
-   */
-  readonly ca?: string | readonly string[]
-  /** A client certificate chain in PEM, presented when the server asks for one. Paired with `key`; `pfx` is the alternative. */
-  readonly cert?: string
-  /** The private key for `cert`, in PEM. */
-  readonly key?: string
-  /** A PKCS#12 bundle holding a client certificate and its key. */
-  readonly pfx?: Uint8Array
-  /** Decrypts `key` or `pfx`. */
-  readonly passphrase?: string
-  /**
-   * The name sent as SNI and verified against the certificate, when it
-   * differs from `host`. Absent, it is `host` when that is a name; `''`
-   * sends no SNI and verifies against `host`. Never an address literal.
-   * What the connection reaches is decided by `host` alone.
-   */
-  readonly servername?: string
-  /** Protocols offered through ALPN, most preferred first (`['h2', 'http/1.1']`). The one agreed is `SecureTcpSocket.alpnProtocol`. */
-  readonly alpnProtocols?: readonly string[]
 }
 
 /**
@@ -116,9 +71,10 @@ export interface OrivonNet {
    * Opens an outbound TCP connection. `host` may be a hostname or an address
    * literal; it is checked against the app's granted `tcp.connect` patterns
    * by the RESOLVED address, never by this string (security-model.md T12).
-   * Rejects with `'denied'` if no granted pattern authorises the result.
+   * Rejects with `'denied'` if no granted pattern authorises the result, and
+   * with `'closed'` if `opts.signal` is aborted first.
    */
-  connect(opts: { host: string, port: number }): Promise<TcpSocket>
+  connect(opts: ConnectOptions): Promise<TcpSocket>
   /**
    * Opens an outbound TCP connection and performs the TLS handshake IN THE
    * BROKER, on the trusted side, using the encryption stack already in the
@@ -159,7 +115,9 @@ export interface OrivonNet {
    * certificate/hostname mismatch rejects with `'unreachable'` and a real
    * `platformCode` -- the attempt was one the app was permitted to make, so
    * it gets the true, specific reason (handle-contracts.md's Errors-section
-   * owner decision, 2026-08-26), not a generic denial.
+   * owner decision, 2026-08-26), not a generic denial. `opts.signal` abandons
+   * the attempt, handshake included, exactly as `ConnectOptions.signal`
+   * says: the call rejects with `'closed'`.
    */
   connectSecure(opts: SecureConnectOptions): Promise<SecureTcpSocket>
   /**
