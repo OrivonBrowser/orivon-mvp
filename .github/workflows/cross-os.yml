@@ -1,0 +1,124 @@
+name: Cross-OS
+
+# Runs Orivon from source on Windows and macOS (Linux when asked), the way a person on that system runs it: `npm ci`
+# with no compiler for npm to reach, the build `npm start` makes, `smoke` (the real shell driven by clicks and
+# typing), then e2e specs, by default the QA states spec, which saves a screenshot of every state it reaches. Each
+# system uploads what it saw as `cross-os-<system>`. Start and read it from a terminal with
+# `node scripts/ci/cross-os.mjs` (scripts/ci/README.md); release.yml covers the packages.
+on:
+  workflow_dispatch:
+    inputs:
+      systems:
+        description: 'windows, macos, linux, or a comma list'
+        default: 'windows,macos'
+      specs:
+        description: 'e2e spec files to run after smoke, space-separated, or none'
+        default: 'test/qa/e2e-qa-visual.test.ts'
+  pull_request:
+    paths:
+      - .github/workflows/cross-os.yml
+      - scripts/ci/cross-os.mjs
+      - package.json
+      - package-lock.json
+      - scripts/install-electron.mjs
+      - scripts/check-no-native-modules.mjs
+      - scripts/build-ordinary.mjs
+      - scripts/run-headless.mjs
+      - scripts/smoke.mjs
+      - src/main/os/**
+  schedule:
+    - cron: '41 4 * * *'
+
+concurrency:
+  group: cross-os-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: scripts
+          persist-credentials: false
+
+      - name: Systems to run on
+        id: matrix
+        env:
+          SYSTEMS: ${{ inputs.systems || 'windows,macos' }}
+        run: echo "matrix=$(node scripts/ci/cross-os.mjs --matrix "$SYSTEMS")" >> "$GITHUB_OUTPUT"
+
+  run:
+    name: from source (${{ matrix.system }})
+    needs: plan
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      SPECS: ${{ inputs.specs || 'test/qa/e2e-qa-visual.test.ts' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+
+      # npm builds a native addon through node-gyp. Pointed at a script that fails, a dependency that needs a compiler
+      # fails the install here, instead of being built by the toolchain the runner happens to carry (Rule 8). An
+      # optional one is dropped, as it would be on a machine with no compiler.
+      - name: Install from source, with no compiler for npm to reach
+        id: install
+        run: |
+          mkdir -p cross-os
+          echo 'console.error("cross-os: a dependency tried to compile a native addon"); process.exit(1)' > "$RUNNER_TEMP/no-node-gyp.js"
+          npm_config_node_gyp="$RUNNER_TEMP/no-node-gyp.js" npm ci 2>&1 | tee cross-os/install.log
+
+      - name: Install a virtual display and Chromium's setuid sandbox helper
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update && sudo apt-get install -y xvfb
+          sudo chown root:root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+
+      - name: Build as npm start does
+        run: node scripts/build-ordinary.mjs
+
+      # Its JSON result goes to cross-os/smoke.out; the failure list is printed to the log as well.
+      - name: Smoke
+        run: node scripts/run-headless.mjs node scripts/smoke.mjs > cross-os/smoke.out
+
+      - name: Build with the developer-only hooks the specs need
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && env.SPECS != 'none' }}
+        run: node scripts/build-e2e.mjs
+
+      - name: e2e specs
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && env.SPECS != 'none' }}
+        run: node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts $SPECS
+
+      - name: Inspection sheet of the captured states
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && env.SPECS != 'none' }}
+        run: node scripts/qa-report.mjs
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ !cancelled() }}
+        with:
+          name: cross-os-${{ matrix.system }}
+          path: |
+            cross-os/
+            qa-artifacts/latest/
+          if-no-files-found: warn
+          retention-days: 7
