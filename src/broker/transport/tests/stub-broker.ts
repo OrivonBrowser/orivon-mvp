@@ -10,7 +10,13 @@
 import type { Broker, FailableSecureTcpSocket, RawFileStat } from '../../broker-contracts.js'
 import { LIMITS } from '../../../contracts/index.js'
 import { fail } from '../../errors.js'
-import type { Grant, LookupAddress, Manifest, SecureConnectOptions } from '../../../contracts/index.js'
+
+/** A recorded dial without its cancel signal, which every dial carries and no assertion on the other options cares about. */
+function withoutSignal<T extends { signal?: AbortSignal }> (opts: T): Omit<T, 'signal'> {
+  const { signal: _signal, ...rest } = opts
+  return rest
+}
+import type { ConnectOptions, Grant, LookupAddress, Manifest, SecureConnectOptions } from '../../../contracts/index.js'
 import type { FailableDirectoryHandle, FailableFileHandle, FailableTcpServer, FailableTcpSocket, FailableUdpSocket } from '../../handles/handle-contracts.js'
 
 export interface BrokerCall { readonly method: string, readonly origin: string, readonly args: unknown }
@@ -45,7 +51,7 @@ export function stubBroker (
     hasGrantsSync: (origin: string) => boolean
     /** SYNCHRONOUS, same reasoning as `isRegisteredSync`/`hasGrantsSync` above -- A200's `Broker.app.socketAllowanceSync` has no CONTROL_CHANNEL method (its one caller is electron/serve.ts's loader-side reach path, never ipc.ts), but the stub still needs to satisfy Broker's shape. */
     socketAllowanceSync: (origin: string) => number
-    connect: (origin: string, opts: { host: string, port: number }) => Promise<FailableTcpSocket>
+    connect: (origin: string, opts: ConnectOptions) => Promise<FailableTcpSocket>
     /** A plain `FailableTcpSocket` is given a verified handshake's facts, so a test about the byte relay need not spell them out. */
     connectSecure: (origin: string, opts: SecureConnectOptions) => Promise<FailableTcpSocket | FailableSecureTcpSocket>
     udpBind: (origin: string, opts: { port: number }) => Promise<FailableUdpSocket>
@@ -132,11 +138,11 @@ export function stubBroker (
     },
     net: {
       connect: async (origin, opts) => {
-        calls.push({ method: 'net.connect', origin, args: opts })
+        calls.push({ method: 'net.connect', origin, args: withoutSignal(opts) })
         return await (overrides.connect?.(origin, opts) ?? notStubbed())
       },
       connectSecure: async (origin, opts) => {
-        calls.push({ method: 'net.connectSecure', origin, args: opts })
+        calls.push({ method: 'net.connectSecure', origin, args: withoutSignal(opts) })
         const socket = await (overrides.connectSecure?.(origin, opts) ?? notStubbed())
         return 'authorized' in socket ? socket : Object.assign(socket, { authorized: true, alpnProtocol: false as const, peerCertificate: null })
       },

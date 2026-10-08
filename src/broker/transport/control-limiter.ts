@@ -14,7 +14,7 @@ import type { RateLimiter } from './token-bucket.js'
  */
 const HANDLE_IO_METHODS: ReadonlySet<string> = new Set<ControlMethod>([
   'fs.read', 'fs.write', 'fs.fstat', 'fs.truncate', 'fs.sync', 'fs.close',
-  'net.close', 'net.setNoDelay', 'net.setKeepAlive'
+  'net.close', 'net.setNoDelay', 'net.setKeepAlive', 'net.cancel'
 ])
 
 export interface ControlLimiter extends RateLimiter {

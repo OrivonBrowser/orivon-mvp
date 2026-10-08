@@ -130,6 +130,10 @@ builds (`deniedRejection`/`deniedThrow`) keeps its real shape -- an app's own `t
 window.orivon.fs.open === 'function'` feature check still passes -- but refuses instead of
 forwarding, and it logs once so a silently fail-closed `window.orivon` still shows in devtools.
 
+**`net.connect`'s `signal` is split off in the main world** (`dial` in `main-world-socket.ts`, `ADR-0071`). An `AbortSignal`
+cannot cross `contextBridge`, so the isolated side gets a function that registers a listener instead; the abort becomes a
+`net.cancel` message for the pending request (`control-call.ts`'s `call`), and the broker answers that request `'closed'`.
+
 **`net.connect`/`net.connectSecure`'s own unwrapped implementations reach `../routed/dial.ts`
 through a private symbol on `target`, never through `window.orivon.net`.** `dial.ts` is
 serialised into the main world separately from `installOrivon` (`../routed/wire.ts`'s own

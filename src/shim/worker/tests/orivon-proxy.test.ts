@@ -248,3 +248,44 @@ describe('child_process\'s spawnSync request kind', () => {
     expect(killCalls).toBe(0)
   })
 })
+
+describe('a net.connect the Worker abandons (ADR-0071)', () => {
+  it('reaches the page as a signal that aborts when the Worker aborts, and the signal never crosses the port', async () => {
+    const seen: Array<{ opts: Record<string, unknown>, signal: AbortSignal | undefined }> = []
+    const client = connect({
+      net: {
+        connect: async (opts: { signal?: AbortSignal }) => await new Promise((_resolve, reject) => {
+          seen.push({ opts, signal: opts.signal })
+          opts.signal?.addEventListener('abort', () => { reject(Object.assign(new Error('abandoned'), { name: 'OrivonError', code: 'closed' })) }, { once: true })
+        })
+      }
+    })
+    const controller = new AbortController()
+    const dial = client.net.connect({ host: 'x', port: 443, signal: controller.signal })
+    await vi.waitFor(() => { expect(seen).toHaveLength(1) })
+    expect(seen[0]?.signal?.aborted).toBe(false)
+
+    controller.abort()
+
+    await expect(dial).rejects.toMatchObject({ code: 'closed' })
+    expect(seen[0]?.signal?.aborted).toBe(true)
+    expect(seen[0]?.opts).toMatchObject({ host: 'x', port: 443 })
+  })
+
+  it('rejects closed for a signal that is already aborted', async () => {
+    const client = connect({
+      net: { connect: async (opts: { signal?: AbortSignal }) => await new Promise((_resolve, reject) => { opts.signal?.addEventListener('abort', () => { reject(Object.assign(new Error('abandoned'), { name: 'OrivonError', code: 'closed' })) }, { once: true }) }) }
+    })
+
+    await expect(client.net.connect({ host: 'x', port: 443, signal: AbortSignal.abort() })).rejects.toMatchObject({ code: 'closed' })
+  })
+
+  it('leaves a call without a signal as it was', async () => {
+    const seen: unknown[] = []
+    const client = connect({ net: { connect: async (opts: unknown) => { seen.push(opts); return fakeHandle('s9') } } })
+
+    await client.net.connect({ host: 'x', port: 443 })
+
+    expect(seen).toEqual([{ host: 'x', port: 443 }])
+  })
+})

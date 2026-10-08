@@ -17,7 +17,7 @@ import { createDatagramRelay } from '../relay/datagram.js'
 import { deliverPort } from '../relay/deliver-port.js'
 import { deliverTcpServer } from '../relay/server.js'
 import {
-  isNetCloseParams, isNetConnectParams, isNetLookupParams, isNetSetKeepAliveParams, isNetSetNoDelayParams,
+  isNetCancelParams, isNetCloseParams, isNetConnectParams, isNetLookupParams, isNetSetKeepAliveParams, isNetSetNoDelayParams,
   isNetUdpBindParams
 } from '../ipc-validation.js'
 import type { NetUdpBindParams } from '../ipc-validation.js'
@@ -108,6 +108,11 @@ function handshakeOf (socket: FailableSecureTcpSocket): SecureHandshake {
     : { authorized, authorizationError, alpnProtocol, peerCertificate }
 }
 
+/** `options` plus the page's cancel signal, left out rather than set to undefined when there is none. */
+function withSignal<T extends object> (options: T, signal: AbortSignal | undefined): T & { signal?: AbortSignal } {
+  return signal === undefined ? options : { ...options, signal }
+}
+
 /** A validated bind payload as the broker takes it: `scope` left out, not set to undefined, when the app omitted it. */
 function bindOptions (payload: NetUdpBindParams): { port: number, scope?: BindScope } {
   return payload.scope === undefined ? { port: payload.port } : { port: payload.port, scope: payload.scope }
@@ -120,13 +125,15 @@ export async function dispatchNet (
   method: NetControlMethod,
   payload: unknown,
   event: ControlEvent,
-  transport: PortTransport | undefined
+  transport: PortTransport | undefined,
+  /** Aborts when the page cancels this `net.connect` or `net.connectSecure` request (../pending-dials.ts). */
+  dialAbandoned?: AbortSignal
 ): Promise<unknown> {
   switch (method) {
     case 'net.connect': {
       if (!isNetConnectParams(payload)) throw fail('invalid', 'net.connect requires { host: string, port: number }')
       if (transport === undefined) throw fail('internal', 'no port transport configured for this broker')
-      const socket = await broker.net.connect(origin, { host: payload.host, port: payload.port })
+      const socket = await broker.net.connect(origin, withSignal({ host: payload.host, port: payload.port }, dialAbandoned))
       return await deliverTcpSocket(origin, socket, event, transport)
     }
     // A SIBLING of net.connect above, not a variant: the payload's TLS
@@ -139,7 +146,7 @@ export async function dispatchNet (
       const parsed = parseSecureConnectParams(payload)
       if (!parsed.ok) throw fail('invalid', `net.connectSecure: ${parsed.problem}`)
       if (transport === undefined) throw fail('internal', 'no port transport configured for this broker')
-      const socket = await broker.net.connectSecure(origin, parsed.params)
+      const socket = await broker.net.connectSecure(origin, withSignal(parsed.params, dialAbandoned))
       const descriptor = await deliverTcpSocket(origin, socket, event, transport)
       return { ...descriptor, tls: handshakeOf(socket) }
     }
@@ -194,6 +201,13 @@ export async function dispatchNet (
       if (transport === undefined) throw fail('internal', 'no port transport configured for this broker')
       const server = await broker.net.listen(origin, bindOptions(payload))
       return await deliverTcpServer(origin, server, event, transport)
+    }
+    // The page withdrawing one of its own pending dials. Only the frame that sent the dial, under the origin derived
+    // for it, can find it (../pending-dials.ts); anything else is a silent no-op, as net.close is for a stranger's id.
+    case 'net.cancel': {
+      if (!isNetCancelParams(payload)) throw fail('invalid', 'net.cancel requires { requestId: string }')
+      if (event.senderFrame !== null) transport?.dials.cancel(event.senderFrame, origin, payload.requestId)
+      return undefined
     }
     case 'net.close': {
       if (!isNetCloseParams(payload)) throw fail('invalid', 'net.close requires { id: string }')

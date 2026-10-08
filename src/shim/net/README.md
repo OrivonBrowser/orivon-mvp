@@ -28,9 +28,10 @@ queued write never reaches an unverified peer (`tls-options.ts`). STARTTLS and a
 `secureContext` refuse by name: the broker has no in-place upgrade (A226).
 
 **`Socket#connect` queues its dial** (`../limit-retry.ts`'s `dialQueue`: at most a quarter of the broker's in-flight
-bound, 64, at a time, in order). A dial holds an operation slot until the broker's 30 s dial timeout even after the
-program has destroyed the socket, so a program that abandons many dials would otherwise fill the origin's slots
-and fail its file calls. A socket destroyed while its dial waits is never dialled.
+bound, 64, at a time, in order). A socket destroyed while it is connecting aborts its dial (`orivon.net.connect`'s
+`signal`, `ADR-0071`), so the broker stops the attempt and frees its slot at once, as Node closes a connecting socket.
+The queue stays for the dials nobody abandons: a program that dials hundreds of silent addresses and waits on them
+would otherwise fill the origin's slots and fail its file calls. A socket destroyed while its dial waits is never dialled.
 
 **[`server.ts`](server.ts) and [`dgram-socket.ts`](dgram-socket.ts) map a bind address onto a
 scope, and refuse an address that is neither loopback nor "every interface"**

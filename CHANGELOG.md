@@ -24,6 +24,10 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 - **`file-calls-complete-beside-hung-dials`**: asynchronous `fs` calls queue in the shim under half the per-origin
   operation bound and socket dials under a quarter, so a program that writes at full speed or abandons many dials
   waits where Node would, and no longer meets `limit`. Apps that retried `limit` on files may drop it. Recheck: webtorrent.
+- **`socket-destroy-abandons-dial`** and **`connect-signal-abandons-dial`**: `socket.destroy()` on a `net.Socket` that is
+  still connecting now abandons its connection attempt at once, as in Node, and `orivon.net.connect` and `connectSecure`
+  take a `signal` that does the same; the origin's in-flight slot is free at once instead of after the 30 s dial timeout.
+  Apps that destroyed abandoned sockets and waited for the timeout need no change. Recheck: webtorrent.
 - **`node-constants-and-exec-path`**: `require('constants')` resolves to Node's table (Linux values) and `process.execPath`
   is `''` rather than `undefined`. Apps that stubbed either for their bundle: remove the stub. Recheck: webtorrent.
 - **`page-shows-own-files-by-url`**: an app that holds `fs` may point `<img>`, a CSS image, `<audio>` and `<video>` at
