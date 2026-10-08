@@ -1,6 +1,6 @@
 // Runs as root inside the container (see virtual-hid/README.md): creates the uhid device, opens its
 // hidraw node to every user on the host, prints one ready line, and answers reports until stopped.
-import { chmodSync, closeSync, openSync, readFileSync, readdirSync, read, writeSync } from 'node:fs'
+import { chmodSync, closeSync, existsSync, openSync, readFileSync, readdirSync, read, writeSync } from 'node:fs'
 import { loadResponder, serialQueue } from './responder.ts'
 import {
   READY_PREFIX, UHID_CLOSE, UHID_EVENT_SIZE, UHID_OPEN, UHID_START, bytesToHex, hidrawNameOf, packCreate2,
@@ -31,6 +31,10 @@ async function findNode (options: VirtualHidDeviceOptions): Promise<string> {
   throw new Error('the hidraw node did not appear within 10 s')
 }
 
+async function waitForNode (path: string): Promise<void> {
+  for (let attempt = 0; attempt < 100 && !existsSync(path); attempt++) await new Promise((resolve) => setTimeout(resolve, 100))
+}
+
 async function main (): Promise<void> {
   const options = JSON.parse(argument('--options') ?? '{}') as VirtualHidDeviceOptions
   const responder = await loadResponder(argument('--responder') ?? 'echo')
@@ -51,6 +55,8 @@ async function main (): Promise<void> {
 
   writeSync(fd, packCreate2(options))
   const node = await findNode(options)
+  // The sysfs entry can show before the kernel's devtmpfs node does (seen on a hosted CI runner).
+  await waitForNode(`${HOST_DEV}/${node}`)
   chmodSync(`${HOST_DEV}/${node}`, 0o666)
 
   const answer = serialQueue(
