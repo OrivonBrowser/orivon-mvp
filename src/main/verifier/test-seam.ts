@@ -70,3 +70,15 @@ export function parseUpdateWatchMs (env: Readonly<Record<string, string | undefi
 export function updateWatchMs (): number | undefined {
   return SEAM_ENABLED ? parseUpdateWatchMs(process.env) : undefined
 }
+
+export function parseBackgroundPinDelayMs (env: Readonly<Record<string, string | undefined>>): number | undefined {
+  const raw = env['ORIVON_TEST_BACKGROUND_PIN_DELAY_MS']
+  if (raw === undefined || raw.trim() === '') return undefined
+  const delay = Number(raw)
+  return Number.isFinite(delay) && delay >= 0 ? delay : undefined
+}
+
+/** Test builds only: how long after an app's tab is let in its whole bundle waits to download, so a suite can look at the page before the rest arrives; undefined in an ordinary build. */
+export function backgroundPinDelayMs (): number | undefined {
+  return SEAM_ENABLED ? parseBackgroundPinDelayMs(process.env) : undefined
+}

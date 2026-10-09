@@ -9,9 +9,13 @@ import { MAX_ASSET_BYTES, MAX_BUNDLE_BYTES } from '../broker/policy/bundle-hash.
 import { MANIFEST_PATH } from '../broker/policy/canonical-path.js'
 import { originFromUrl } from '../broker/policy/origin.js'
 import type { ContentAddress } from '../broker/policy/pin.js'
+import { MAX_DDOC_BYTES, fetchDdocDeclaration } from './ddoc-declaration.js'
 import type { DdocDeclaration } from './ddoc-declaration.js'
 import { fetchBundle } from './fetch/bundle.js'
+import { BUNDLE_TIMEOUT_MS, ByteBudget } from './fetch/budget.js'
 import type { FetchBundleRejected } from './fetch/budget.js'
+import { ensurePublicUnicastOrigin } from './fetch/install-origin.js'
+import { RETRY_BACKOFF_MS, retryTransient } from './fetch/retry.js'
 import type { StagedAsset } from './fetch/bundle.js'
 import { pinnedToRoot } from './fetch/content-root.js'
 import { fetchManifestAtRoot } from './fetch/manifest-at-root.js'
@@ -19,6 +23,9 @@ import type { ManifestAtRoot } from './fetch/manifest-at-root.js'
 import type { CreateLoaderOptions } from './index.js'
 import { leafOf } from './leaf-hash.js'
 import type { LoadRejected } from './load-result.js'
+import type { LiveBundle } from './serve/live-serve.js'
+
+interface InstallOriginRefusal { readonly ok: false, readonly reason: string }
 
 /** What the manifest of a first visit says. `website`: the content was proven to have none. `unread`: the read failed, which proves nothing. */
 export type FirstManifest =
@@ -56,7 +63,32 @@ export type FirstBundle =
    */
   | { readonly ok: false, readonly reason: string, readonly transient?: true, readonly tooLarge?: true, readonly integrity?: true }
 
+/**
+ * What a site's declared tree (`/.well-known/orivon-ddoc.json`) gives a first visit to check files against.
+ * `none`: the site publishes nothing readable, so its files are let in on Orivon's own checks alone. `mismatch`:
+ * the tree gives the manifest the person was asked about another leaf, or none. `failed`: it could not be read,
+ * which is no leave to skip the check (`integrity`: the verifier proved the content is not what its address names).
+ */
+export type FirstDeclaration =
+  | { readonly kind: 'declared', readonly declaration: DdocDeclaration }
+  | { readonly kind: 'none' }
+  | { readonly kind: 'mismatch', readonly differing: readonly string[] }
+  | { readonly kind: 'failed', readonly reason: string, readonly integrity?: true }
+
 export interface FirstVisitApi {
+  /**
+   * The tree the site declares for the app `read` described, read from the same root and with the same retries a
+   * download gets, and compared with the manifest bytes already in hand. Reads that file and no other. Never throws.
+   */
+  readDeclaration(read: FirstManifestApp, signal?: AbortSignal): Promise<FirstDeclaration>
+  /**
+   * Has the origin's own partition answer for it from the verifier, so a tab opened on it before its files are
+   * pinned runs as the app, every file checked against `declaration` as it is served. `false`: this run has no
+   * way to (nothing was set up). `onBadData` is called once, when a file turns out not to be what was declared.
+   */
+  serveLive(read: FirstManifestApp, declaration: DdocDeclaration | undefined, onBadData: LiveBundle['onBadData']): Promise<boolean>
+  /** Ends what `serveLive` set up for an origin whose files turned out bad; a no-op for one served from its pin. */
+  endLive(origin: string): Promise<void>
   /**
    * The manifest of the app at `hintedUrl`'s origin and nothing else of its files. Never throws. `boundMs`
    * stops waiting for an answer after that long and reads as `unread`; the read itself goes on and keeps what
@@ -122,5 +154,40 @@ export function createFirstVisit (
     return { ok: true, canonicalOrigin: fetched.canonicalOrigin, manifest: fetched.manifest, tree: fetched.tree, entries: fetched.entries, declaration: fetched.declaration, content: read.content, discard }
   }
 
-  return { readManifest, fetchForInstall }
+  async function readDeclaration (read: FirstManifestApp, signal?: AbortSignal): Promise<FirstDeclaration> {
+    const origin = read.canonicalOrigin
+    const guard = await ensurePublicUnicastOrigin(origin, options.resolve).catch((error: unknown): InstallOriginRefusal => ({ ok: false, reason: error instanceof Error ? error.message : String(error) }))
+    if (!guard.ok) return { kind: 'failed', reason: guard.reason }
+    const controller = new AbortController()
+    const forwardLeft = (): void => { controller.abort() }
+    if (signal?.aborted === true) controller.abort()
+    signal?.addEventListener('abort', forwardLeft, { once: true })
+    const timer = setTimeout(() => { controller.abort() }, BUNDLE_TIMEOUT_MS)
+    try {
+      const fetchFn = pinnedToRoot(options.fetch, read.content?.cid)
+      const fetched = await retryTransient(async () => await fetchDdocDeclaration(fetchFn, origin, guard.addresses, new ByteBudget(MAX_DDOC_BYTES), controller.signal, true), RETRY_BACKOFF_MS, controller.signal)
+      if (fetched !== undefined && 'ok' in fetched) return { kind: 'failed', reason: fetched.reason, ...(fetched.integrity === true ? { integrity: true as const } : {}) }
+      if (fetched === undefined) return { kind: 'none' }
+      const shown = await leafOf(MANIFEST_PATH, read.bytes.length, [read.bytes])
+      if (fetched.leaves.find((entry) => entry.path === MANIFEST_PATH)?.leaf !== shown) return { kind: 'mismatch', differing: [MANIFEST_PATH] }
+      return { kind: 'declared', declaration: fetched }
+    } catch (error) {
+      return { kind: 'failed', reason: error instanceof Error ? error.message : String(error) }
+    } finally {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', forwardLeft)
+    }
+  }
+
+  async function serveLive (read: FirstManifestApp, declaration: DdocDeclaration | undefined, onBadData: LiveBundle['onBadData']): Promise<boolean> {
+    if (options.serveLive === undefined) return false
+    await options.serveLive({ origin: read.canonicalOrigin, manifest: read.manifest, declaration, content: read.content?.cid, onBadData })
+    return true
+  }
+
+  async function endLive (origin: string): Promise<void> {
+    await options.endLive?.(origin)
+  }
+
+  return { readManifest, fetchForInstall, readDeclaration, serveLive, endLive }
 }

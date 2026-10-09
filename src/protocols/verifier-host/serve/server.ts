@@ -14,9 +14,10 @@ import type { ProtocolAddresses } from '../../address.js'
 import type { ProtocolRegistry } from '../../registry.js'
 import { contentTypeFor } from '../../../loader/serve/content-type.js'
 import { parseRange } from '../../../loader/serve/range.js'
-import { CONTENT_ROOT_HEADER, FAILURE_HEADER, PARTITION_HEADER } from '../../../loader/fetch/content-root.js'
+import { CONTENT_ROOT_HEADER, DDOC_MISMATCH, FAILURE_HEADER, PARTITION_HEADER } from '../../../loader/fetch/content-root.js'
 import type { RunCertificate } from './certificate.js'
 import { ERROR_PAGE_CSP, renderErrorPage } from './error-pages.js'
+import { checkLeaf, expectedLeafOf, sliceChunks } from './leaf-check.js'
 import type { Sites } from './sites.js'
 
 /** A file up to this size is read and verified whole before its first byte is sent to a page, so a failure is an error page, never half a document. */
@@ -57,6 +58,10 @@ const MAX_TOTAL_BUFFERED_BYTES = 16 * MAX_BUFFERED_BYTES
  */
 export const BUFFERED_RESPONSE_DEADLINE_MS = 30_000
 
+/** How long a file whose leaf is checked waits for room in the buffer budget before it is refused: a page loads many files at once, and a refused script breaks the app. */
+const LEAF_CHECK_WAIT_MS = 10_000
+const BUDGET_POLL_MS = 25
+
 /**
  * Buffered bytes held right now, kept per partition (the same key
  * `sites.ts` mounts by) so one page's unread requests cost only that
@@ -76,6 +81,16 @@ class BufferBudget {
     if (current + length > MAX_PARTITION_BUFFERED_BYTES || this.total + length > MAX_TOTAL_BUFFERED_BYTES) return false
     this.perPartition.set(key, current + length)
     this.total += length
+    return true
+  }
+
+  /** `reserve`, waiting up to `waitMs` for a response held by someone else to finish and free its share. */
+  async reserveWithin (partition: string | undefined, length: number, waitMs: number): Promise<boolean> {
+    const until = Date.now() + waitMs
+    while (!this.reserve(partition, length)) {
+      if (Date.now() >= until) return false
+      await new Promise((resolve) => setTimeout(resolve, BUDGET_POLL_MS))
+    }
     return true
   }
 
@@ -249,6 +264,35 @@ async function sendBody (res: ServerResponse, status: number, headers: Record<st
   }
 }
 
+/**
+ * A file whose leaf the caller named: read whole (and so verified against its address) and hashed before a byte is
+ * sent. A file of any size is held, up to the largest an app may carry, because a leaf cannot be known from a
+ * prefix. On a mismatch nothing of it is sent and the answer says it was the declared tree that failed, which the
+ * caller treats as bad data.
+ */
+async function sendChecked (res: ServerResponse, host: string, target: string, expected: string, status: number, headers: Record<string, string>, file: GatheredFile, range: { readonly start: number, readonly end: number } | undefined, head: boolean, budget: BufferBudget, partition: string | undefined, bufferedResponseDeadlineMs: number): Promise<void> {
+  if (!await budget.reserveWithin(partition, file.size, LEAF_CHECK_WAIT_MS)) {
+    res.writeHead(503, { 'content-type': 'text/plain', 'cache-control': 'no-store', 'retry-after': '1' }).end('the verifier is holding too many responses right now')
+    return
+  }
+  try {
+    const chunks = await collect(file.body)
+    const verdict = await checkLeaf(host, target, file.size, chunks, expected)
+    if (!verdict.ok) {
+      res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': SERVED_CONTENT_CSP, [FAILURE_HEADER]: DDOC_MISMATCH }).end(`${verdict.path} is not the file the declared tree names`)
+      return
+    }
+    if (head) {
+      res.writeHead(status, headers).end()
+      return
+    }
+    res.writeHead(status, headers)
+    await writeBufferedChunks(res, range === undefined ? chunks : sliceChunks(chunks, range.start, range.end), bufferedResponseDeadlineMs)
+  } finally {
+    budget.release(partition, file.size)
+  }
+}
+
 function redirectTo (res: ServerResponse, origin: string, path: string, search: string): void {
   res.writeHead(301, { location: `${origin}${path}${search}`, 'cache-control': 'no-store', 'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}` }).end()
 }
@@ -300,6 +344,11 @@ async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMe
     redirectToCanonical(registry, scheme, url, res)
     return
   }
+  const expectedLeaf = expectedLeafOf(req.headers)
+  if (expectedLeaf === 'invalid') {
+    res.writeHead(400, { 'content-type': 'text/plain' }).end('the expected leaf is not a leaf')
+    return
+  }
   const shown = registry.addresses.displayOrigin(`https://${host}`)
   // Whatever this request set going stops when its client leaves.
   const left = new AbortController()
@@ -341,11 +390,15 @@ async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMe
       res.writeHead(416, { ...common, 'content-range': `bytes */${String(file.size)}` }).end()
       return
     }
-    if (range.kind === 'satisfiable') file = await site.open(url.pathname, range.range, left.signal)
+    if (range.kind === 'satisfiable' && expectedLeaf === undefined) file = await site.open(url.pathname, range.range, left.signal)
     const length = range.kind === 'satisfiable' ? range.range.end - range.range.start + 1 : file.size
     const headers: Record<string, string> = { ...common, 'content-length': String(length) }
     if (range.kind === 'satisfiable') headers['content-range'] = `bytes ${String(range.range.start)}-${String(range.range.end)}/${String(file.size)}`
     const status = range.kind === 'satisfiable' ? 206 : 200
+    if (expectedLeaf !== undefined) {
+      await sendChecked(res, host, req.url ?? url.pathname, expectedLeaf, status, headers, file, range.kind === 'satisfiable' ? range.range : undefined, req.method === 'HEAD', budget, partition, bufferedResponseDeadlineMs)
+      return
+    }
     if (req.method === 'HEAD') {
       res.writeHead(status, headers).end()
       return

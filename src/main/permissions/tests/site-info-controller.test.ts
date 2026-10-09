@@ -65,6 +65,9 @@ function fakeLoader (overrides: Partial<Loader> = {}): Loader {
     manifestAt: async () => ({ kind: 'website' }),
     readManifest: async () => ({ kind: 'website' }),
     fetchForInstall: async () => ({ ok: false, reason: 'unused' }),
+    readDeclaration: async () => ({ kind: 'none' }),
+    serveLive: async () => false,
+    endLive: async () => {},
     ...overrides
   }
 }

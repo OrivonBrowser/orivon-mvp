@@ -13,12 +13,12 @@ describe('displayName', () => {
 describe('coverFor', () => {
   it('words each stage with the app\'s name', () => {
     expect(coverFor({ kind: 'asking', name: 'Ledger' })).toMatchObject({ title: 'Opening Ledger', busy: true })
-    expect(coverFor({ kind: 'verifying', name: 'Ledger' })).toMatchObject({ title: 'Setting up Ledger', busy: true })
-    expect(coverFor({ kind: 'verifying', name: 'Ledger' }).detail).toMatch(/checks/i)
+    expect(coverFor({ kind: 'verifying', name: 'Ledger' })).toMatchObject({ title: 'Opening Ledger', busy: true })
+    expect(coverFor({ kind: 'verifying', name: 'Ledger' }).detail).toMatch(/each one can be checked/i)
   })
 
   it('says nothing is moving once a sheet explains what happened', () => {
-    expect(coverFor({ kind: 'blocked', name: 'Ledger' })).toMatchObject({ title: 'Ledger was not opened', busy: false })
+    expect(coverFor({ kind: 'blocked', name: 'Ledger' })).toMatchObject({ title: 'Ledger was stopped', busy: false })
     expect(coverFor({ kind: 'download-failed', name: 'Ledger' })).toMatchObject({ title: 'Ledger was not opened', busy: false })
   })
 })
@@ -31,8 +31,9 @@ describe('sheetView', () => {
     expect(view).toMatchObject({ token: 'token-1', kind: 'blocked', canRetry: false, files: ['/app.js', '/index.html'], address: 'ipfs://abc/' })
     expect(view.title).toMatch(/security warning/i)
     expect(view.body).toMatch(/Ledger/)
-    expect(view.body).toMatch(/Nothing was granted/)
-    expect(view.body).toMatch(/removed/)
+    expect(view.body).toMatch(/stopped/)
+    expect(view.body).toMatch(/permission it held has been removed/)
+    expect(coverFor({ kind: 'blocked', name: 'Ledger' })).toMatchObject({ title: 'Ledger was stopped', busy: false })
   })
 
   it('counts the files it does not list', () => {
@@ -40,13 +41,6 @@ describe('sheetView', () => {
     const view = sheetView(many, 'ipfs://abc/', 't')
     expect(view.files).toHaveLength(MAX_LISTED_FILES)
     expect(view.more).toBe(`and ${String(31 - MAX_LISTED_FILES)} more`)
-  })
-
-  it('is plain news, with no warning and no Try again, for an app over the size Orivon allows', () => {
-    const view = sheetView({ kind: 'too-large', name: 'Ledger' }, 'ipfs://abc/', 't')
-    expect(view).toMatchObject({ kind: 'too-large', title: 'Ledger is too large', canRetry: false, files: [] })
-    expect(view.title).not.toMatch(/security/i)
-    expect(coverFor({ kind: 'too-large', name: 'Ledger' })).toMatchObject({ title: 'Ledger was not opened', busy: false })
   })
 
   it('names an invalid bundle by its reason, and lists no files', () => {
@@ -64,7 +58,7 @@ describe('sheetView', () => {
 
   it('is a retry sheet for a download that failed, and says the permissions are kept', () => {
     const view = sheetView({ kind: 'download-failed', name: 'Ledger', reason: 'gateway answered 502' }, 'ipfs://abc/', 't')
-    expect(view).toMatchObject({ kind: 'download-failed', canRetry: true, title: "Couldn't download Ledger" })
+    expect(view).toMatchObject({ kind: 'download-failed', canRetry: true, title: "Couldn't check Ledger" })
     expect(view.body).toMatch(/answer is kept/)
   })
 

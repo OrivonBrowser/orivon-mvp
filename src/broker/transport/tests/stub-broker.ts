@@ -320,6 +320,7 @@ export function stubBroker (
     // Satisfies `Broker`; no ipc.ts-facing test here drives a live-update
     // listener, so subscribing is a no-op that never fires.
     onGrantsChanged: () => () => {},
+    forgetOrigin: notStubbed,
     dropOrigin: async (origin) => {
       calls.push({ method: 'dropOrigin', origin, args: undefined })
       await (overrides.dropOrigin?.(origin) ?? Promise.resolve())

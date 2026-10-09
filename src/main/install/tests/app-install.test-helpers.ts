@@ -99,7 +99,10 @@ export function fakeLoader (
     manifestFor: async () => undefined,
     manifestAt: async () => ({ kind: 'website' as const }),
     readManifest: async () => ({ kind: 'website' as const }),
-    fetchForInstall: async () => ({ ok: false as const, reason: 'unused' })
+    fetchForInstall: async () => ({ ok: false as const, reason: 'unused' }),
+    readDeclaration: async () => ({ kind: 'none' as const }),
+    serveLive: async () => false,
+    endLive: async () => {}
   }
 }
 

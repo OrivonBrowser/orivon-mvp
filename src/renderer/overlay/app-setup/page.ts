@@ -14,7 +14,7 @@ const ADDRESS_FIT = 56
 export function isSetupSheetView (value: unknown): value is SetupSheetView {
   if (typeof value !== 'object' || value === null) return false
   const view = value as Record<string, unknown>
-  return typeof view['token'] === 'string' && (view['kind'] === 'blocked' || view['kind'] === 'download-failed' || view['kind'] === 'too-large') &&
+  return typeof view['token'] === 'string' && (view['kind'] === 'blocked' || view['kind'] === 'download-failed') &&
     typeof view['title'] === 'string' && typeof view['body'] === 'string' && Array.isArray(view['files']) &&
     view['files'].every((file) => typeof file === 'string') && typeof view['more'] === 'string' &&
     typeof view['address'] === 'string' && typeof view['note'] === 'string' && typeof view['canRetry'] === 'boolean'

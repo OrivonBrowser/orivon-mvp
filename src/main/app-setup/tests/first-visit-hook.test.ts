@@ -77,7 +77,7 @@ describe('firstVisitBeforeRequest', () => {
   })
 
   it('cancels the request and takes the tab into the app when the files are in', async () => {
-    const { handler, screens } = rig({ run: async (host) => { host.enter(); return { outcome: 'entered', installed: {} as never } } })
+    const { handler, screens } = rig({ run: async (host) => { host.enter(); return { outcome: 'entered', background: Promise.resolve('pinned' as const) } } })
     expect(await handler(details(), CONTINUE)).toEqual({ cancel: true })
     expect(screens.calls).toEqual([`navigate:${URL_}`])
   })

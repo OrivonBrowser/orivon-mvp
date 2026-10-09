@@ -46,6 +46,8 @@ const EMPTY_SITE_INFO = (origin: string, extensionsOnSite: readonly string[] = [
  * testable against a fake rather than a live Electron session. */
 export interface SiteTrustSources {
   readonly isOriginServedFromCacheSync: (origin: string) => boolean
+  /** Whether the origin's files are served from its pin; an app served from the verifier before its pin lands is in its own partition but not delivered from a cache. Defaults to `isOriginServedFromCacheSync`. */
+  readonly isOriginPinnedSync?: (origin: string) => boolean
   readonly pinCoverageFor: (origin: string) => PinCoverageEvidence | undefined
   /** How a `.eth` name led to this origin's content; undefined for any other origin. */
   readonly nameEvidenceFor: (origin: string, pin: PinRecord | null, servedFromCache: boolean) => Promise<NameEvidence | undefined>
@@ -145,7 +147,7 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
       const origin = originFromUrl(url)
       if (loader === undefined || origin === null) return null
       const [pin, published] = await Promise.all([loader.pinFor(origin), loader.ddocFor(origin)])
-      const servedFromCache = trustSources.isOriginServedFromCacheSync(origin)
+      const servedFromCache = (trustSources.isOriginPinnedSync ?? trustSources.isOriginServedFromCacheSync)(origin)
       const [name, localDevHash] = await Promise.all([
         trustSources.nameEvidenceFor(origin, pin, servedFromCache),
         pin === null ? trustSources.localDdocHashFor(origin) : undefined

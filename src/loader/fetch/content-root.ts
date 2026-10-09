@@ -11,6 +11,15 @@ export const CONTENT_ROOT_HEADER = 'x-orivon-content-root'
 /** Set by the verifier on an answer that proves the content is not what its name or address names (`unverifiable`), and on no other: a gateway's outage reads as `unavailable`. */
 export const FAILURE_HEADER = 'x-orivon-failure'
 
+/** The failure a request fails with when the file it named is not the file the app's declared tree says it is (`EXPECT_LEAF_HEADER`). */
+export const DDOC_MISMATCH = 'ddoc-mismatch'
+
+/**
+ * The leaf (`sha256:<hex>`) the app's declared tree gives the file this request names. The verifier buffers that
+ * one file, hashes it with the loader's own leaf function and sends none of it unless the two agree.
+ */
+export const EXPECT_LEAF_HEADER = 'x-orivon-expect-leaf'
+
 /**
  * The top-level page origin a request to the verifier belongs to. The
  * verifier keeps one cache per value, so no site can time what another

@@ -15,7 +15,7 @@
 import { net, session } from 'electron'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { publishAppUpdates, publishInstallApp } from '../registry.js'
-import { publishFirstVisit } from '../app-setup/tab-setup-ref.js'
+import { publishFirstVisit, tabSetupNow } from '../app-setup/tab-setup-ref.js'
 import { join } from 'node:path'
 import { DeclinedApps, installDeclinedApps } from './declined-apps.js'
 import { createFirstVisit } from './first-visit.js'
@@ -27,7 +27,7 @@ import type { UpdateOutcomeDeps } from '../consent/update-outcomes.js'
 import { createAppUpdates } from './app-updates.js'
 import { dialogCallerFor } from './dialog-caller.js'
 import { OPEN_TAB_CHECK_MS, startUpdateWatch } from './update-watch.js'
-import { updateWatchMs } from '../verifier/test-seam.js'
+import { backgroundPinDelayMs, updateWatchMs } from '../verifier/test-seam.js'
 import { grantableWithoutInstall, grantWithoutInstall } from './grant-without-install.js'
 import { grantLocalFile } from './local-file-grant.js'
 import { createLocalFileConsentPrompt } from '../consent/local-file-consent.js'
@@ -42,6 +42,7 @@ import { scoreLevelOverrideFor } from '../dev/score-levels.js'
 import { extensionNamesForOrigin } from '../extensions/site-reach-runner.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { outsideOriginQueue, withOriginQueue } from './origin-queue.js'
+import { blockOpenTabs } from '../app-setup/block-tabs.js'
 import { MAX_MANIFEST_BYTES } from '../../loader/manifest/manifest.js'
 
 const GRANT_MANIFEST_TIMEOUT_MS = 5_000
@@ -150,13 +151,13 @@ export const appInstallSubsystem: Subsystem = {
       },
       intervalMs: updateWatchMs() ?? OPEN_TAB_CHECK_MS
     })
-    // A page's first visit (ADR-0074): asks, then downloads and checks, before the tab is let into the app. It
+    // A page's first visit (ADR-0075): asks, lets the tab into the app at once with every file checked as it is served, and pins the app in the background. It
     // leaves alone the origins that never install: a local file, loopback and developer origins, anything not https.
     // The refusals are kept in `declined-apps.json`, and in memory only in a private session.
     const declined = new DeclinedApps(ctx.privateSession ? undefined : join(ctx.app.getPath('userData'), 'declined-apps.json'))
     installDeclinedApps(declined)
     publishFirstVisit(createFirstVisit({
-      deps: { broker, loader, consent, perCapabilityConsent, declined },
+      deps: { broker, loader, consent, perCapabilityConsent, declined, blocked: blockOpenTabs({ tabsOn: (origin) => ctx.openTabs?.on(origin) ?? [], setup: tabSetupNow }), backgroundDelayMs: backgroundPinDelayMs() },
       untouched: (origin) => isLocalFileKey(origin) || grantableWithoutInstall(origin, devModeEnabled()) || !origin.startsWith('https://'),
       servedFromCache: isOriginServedFromCacheSync
     }))

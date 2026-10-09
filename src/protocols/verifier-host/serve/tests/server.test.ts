@@ -12,6 +12,8 @@ import { IPFS } from '../../../ipfs/descriptor.js'
 import { createIpfsAddressResolvers } from '../../../ipfs/address-resolver.js'
 import { CID } from 'multiformats/cid'
 import { createRunCertificate } from '../certificate.js'
+import { DDOC_MISMATCH, EXPECT_LEAF_HEADER, FAILURE_HEADER } from '../../../../loader/fetch/content-root.js'
+import { leafOf } from '../../../../loader/leaf-hash.js'
 import { MAX_BUFFERED_BYTES, createVerifierServer } from '../server.js'
 import { Sites } from '../sites.js'
 
@@ -360,5 +362,67 @@ describe('the loopback server, for an address scheme', () => {
     const reply = await get('/vitalik.eth/p?q=1', { host: 'ipns.orivon' })
     expect(reply.status).toBe(301)
     expect(reply.headers.location).toBe('https://vitalik.eth/p?q=1')
+  })
+})
+
+describe('the loopback server, for a file whose leaf the caller expects', () => {
+  const leafOfFile = async (path: string): Promise<string> => {
+    const bytes = FILES[path]!.bytes
+    return await leafOf(path, bytes.length, [bytes])
+  }
+
+  it('sends the file once its leaf matches, whole and by range', async () => {
+    const leaf = await leafOfFile('/app.js')
+    const whole = await get('/app.js', { headers: { [EXPECT_LEAF_HEADER]: leaf } })
+    expect(whole.status).toBe(200)
+    expect(whole.body.toString()).toBe('run()')
+    const part = await get('/app.js', { headers: { [EXPECT_LEAF_HEADER]: leaf, range: 'bytes=1-3' } })
+    expect(part.status).toBe(206)
+    expect(part.body.toString()).toBe('un(')
+    expect(part.headers['content-range']).toBe('bytes 1-3/5')
+  })
+
+  it('sends none of a file whose leaf differs, and says it was the declared tree that it failed', async () => {
+    const wrong = await leafOfFile('/index.html')
+    const reply = await get('/app.js', { headers: { [EXPECT_LEAF_HEADER]: wrong } })
+    expect(reply.status).toBe(502)
+    expect(reply.headers[FAILURE_HEADER]).toBe(DDOC_MISMATCH)
+    expect(reply.body.toString()).not.toContain('run()')
+    const ranged = await get('/app.js', { headers: { [EXPECT_LEAF_HEADER]: wrong, range: 'bytes=0-1' } })
+    expect(ranged.status).toBe(502)
+    expect(ranged.body.toString()).not.toContain('ru')
+  })
+
+  it('hashes the file under the canonical path of the request, so the same bytes at another path do not match', async () => {
+    const bytes = FILES['/app.js']!.bytes
+    const elsewhere = await leafOf('/other.js', bytes.length, [bytes])
+    expect((await get('/app.js', { headers: { [EXPECT_LEAF_HEADER]: elsewhere } })).status).toBe(502)
+  })
+
+  it('checks a file an install fetches too, however large the install would have let it stream', async () => {
+    const leaf = await leafOfFile('/app.js')
+    expect((await get('/app.js', { headers: { [EXPECT_LEAF_HEADER]: leaf, 'x-orivon-content-root': ROOT } })).status).toBe(200)
+    expect((await get('/app.js', { headers: { [EXPECT_LEAF_HEADER]: await leafOfFile('/docs/index.html'), 'x-orivon-content-root': ROOT } })).status).toBe(502)
+  })
+
+  it('answers HEAD only after the file was checked', async () => {
+    const leaf = await leafOfFile('/app.js')
+    expect((await get('/app.js', { method: 'HEAD', headers: { [EXPECT_LEAF_HEADER]: leaf } })).status).toBe(200)
+    expect((await get('/app.js', { method: 'HEAD', headers: { [EXPECT_LEAF_HEADER]: await leafOfFile('/docs/index.html') } })).status).toBe(502)
+  })
+
+  it('refuses a leaf that is no leaf, rather than serving the file unchecked', async () => {
+    const reply = await get('/app.js', { headers: { [EXPECT_LEAF_HEADER]: 'not-a-leaf' } })
+    expect(reply.status).toBe(400)
+    expect(reply.body.toString()).not.toContain('run()')
+  })
+
+  it('still gives a file that fails verification part-way the error page, not the declared-tree failure', async () => {
+    const reply = await get('/bad.js', { headers: { [EXPECT_LEAF_HEADER]: await leafOfFile('/app.js') } })
+    expect(reply.headers[FAILURE_HEADER]).toBe('unverifiable')
+  })
+
+  it('does not hold a file against the leaf of a path that does not exist', async () => {
+    expect((await get('/missing.js', { headers: { [EXPECT_LEAF_HEADER]: await leafOfFile('/app.js') } })).status).toBe(404)
   })
 })

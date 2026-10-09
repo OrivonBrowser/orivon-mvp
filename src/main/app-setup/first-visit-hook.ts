@@ -58,7 +58,7 @@ export function firstVisitBeforeRequest (deps: HookDeps): (details: OnBeforeRequ
         end: () => { answer({ cancel: true }, () => { screens.stop() }) }
       }
       const settle = (result: FirstVisitResult): void => {
-        if (result.outcome === 'known') host.enter()
+        if (result.outcome === 'known' || result.outcome === 'settling') host.enter()
         else if (result.outcome === 'declined') host.plain()
         else host.end()
       }

@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Fetch } from '../fetch/bundle.js'
 import { createLoader } from '../index.js'
 import { DDOC_PATH } from '../ddoc-declaration.js'
+import { leafOf } from '../leaf-hash.js'
+import { MANIFEST_PATH } from '../../broker/policy/canonical-path.js'
 import { MANIFEST_URL, ORIGIN, PUBLIC_RESOLVER, manifestJson, memoryStorage, stubFetch, utf8 } from './test-helpers.js'
 import type { RouteSpec } from './test-helpers.js'
 
@@ -184,5 +186,93 @@ describe('Loader.fetchForInstall', () => {
     if (read.kind !== 'app') throw new Error('expected an app')
     const fetched = await loader.fetchForInstall(read, ORIGIN)
     expect(fetched.ok && fetched.declaration?.bundleHash).toBe(`sha256:${'a'.repeat(64)}`)
+  })
+})
+
+describe('Loader.readDeclaration', () => {
+  const manifestBytes = utf8(manifestJson({ assets: ['app.js'] }))
+
+  async function declaring (leaves: Record<string, string>): Promise<Record<string, RouteSpec>> {
+    return routes({ [`${ORIGIN}${DDOC_PATH}`]: { body: utf8(JSON.stringify({ bundleHash: `sha256:${'a'.repeat(64)}`, leaves })) } })
+  }
+
+  async function readOf (fetch: Fetch): Promise<{ loader: ReturnType<typeof createLoader>, read: Extract<Awaited<ReturnType<ReturnType<typeof createLoader>['readManifest']>>, { kind: 'app' }> }> {
+    const loader = loaderOver(fetch, undefined, true)
+    const read = await loader.readManifest(ORIGIN)
+    if (read.kind !== 'app') throw new Error('expected an app')
+    return { loader, read }
+  }
+
+  it('reads the declared tree and nothing else, from the root the manifest came from', async () => {
+    const declared = { [MANIFEST_PATH]: await leafOf(MANIFEST_PATH, manifestBytes.length, [manifestBytes]) }
+    const sent: Array<Record<string, string> | undefined> = []
+    const { fetch, urls } = counting(stubFetch(await declaring(declared)))
+    const { loader, read } = await readOf(async (url, addresses, signal, headers) => { sent.push(headers); return await fetch(url, addresses, signal, headers) })
+    urls.length = 0
+    sent.length = 0
+    const result = await loader.readDeclaration(read)
+    expect(result).toMatchObject({ kind: 'declared' })
+    expect(result.kind === 'declared' && result.declaration.leaves).toEqual([{ path: MANIFEST_PATH, leaf: declared[MANIFEST_PATH] }])
+    expect(urls).toEqual([`${ORIGIN}${DDOC_PATH}`])
+    expect(sent[0]?.[ROOT]).toBe(CID)
+  })
+
+  it('says none for a site that publishes no tree: nothing to check its files against', async () => {
+    const { loader, read } = await readOf(stubFetch(routes()))
+    expect(await loader.readDeclaration(read)).toEqual({ kind: 'none' })
+  })
+
+  it('says it could not be read, after its attempts, for a host that fails: that is no permission to skip the check', async () => {
+    vi.useFakeTimers()
+    try {
+      const { loader, read } = await readOf(stubFetch(routes({ [`${ORIGIN}${DDOC_PATH}`]: { status: 502, body: utf8('') } })))
+      const pending = loader.readDeclaration(read)
+      await vi.runAllTimersAsync()
+      expect(await pending).toMatchObject({ kind: 'failed' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('says the manifest differs when the tree gives it another leaf, and when it gives it none', async () => {
+    const other = { [MANIFEST_PATH]: `sha256:${'c'.repeat(64)}` }
+    const { loader, read } = await readOf(stubFetch(await declaring(other)))
+    expect(await loader.readDeclaration(read)).toEqual({ kind: 'mismatch', differing: [MANIFEST_PATH] })
+    const missing = await readOf(stubFetch(await declaring({ '/app.js': `sha256:${'d'.repeat(64)}` })))
+    expect(await missing.loader.readDeclaration(missing.read)).toEqual({ kind: 'mismatch', differing: [MANIFEST_PATH] })
+  })
+
+  it('says the content is not what its address names when the verifier says so', async () => {
+    const verified = `https://${CID}.ipfs.orivon`
+    const fetch = stubFetch({
+      [`${verified}/.well-known/orivon.json`]: { body: manifestBytes },
+      [`${verified}${DDOC_PATH}`]: { status: 502, body: utf8(''), headers: { 'x-orivon-failure': 'unverifiable' } }
+    })
+    const loader = loaderOver(fetch, undefined, true)
+    const read = await loader.readManifest(verified)
+    if (read.kind !== 'app') throw new Error('expected an app')
+    expect(await loader.readDeclaration(read)).toMatchObject({ kind: 'failed', integrity: true })
+  })
+})
+
+describe('Loader.serveLive', () => {
+  it('hands the shell what the page of an app needs to run before its files are pinned, and ends it on request', async () => {
+    const served = vi.fn(async () => {})
+    const ended = vi.fn(async () => {})
+    const loader = createLoader({ fetch: stubFetch(routes()), storage: memoryStorage(), now: () => 1, resolve: PUBLIC_RESOLVER, contentAddress: async () => ({ cid: CID, via: 'ipns-key' as const, pointersVerified: true }), serveLive: served, endLive: ended })
+    const read = await loader.readManifest(ORIGIN)
+    if (read.kind !== 'app') throw new Error('expected an app')
+    const onBadData = vi.fn()
+    expect(await loader.serveLive(read, undefined, onBadData)).toBe(true)
+    expect(served).toHaveBeenCalledWith({ origin: ORIGIN, manifest: read.manifest, declaration: undefined, content: CID, onBadData })
+    await loader.endLive(ORIGIN)
+    expect(ended).toHaveBeenCalledWith(ORIGIN)
+  })
+
+  it('says nothing was set up in a run that has no way to', async () => {
+    const loader = loaderOver(stubFetch(routes()))
+    const read = await loader.readManifest(ORIGIN)
+    if (read.kind !== 'app') throw new Error('expected an app')
+    expect(await loader.serveLive(read, undefined, () => {})).toBe(false)
   })
 })

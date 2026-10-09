@@ -768,3 +768,31 @@ describe('registerServingFor -- A200 real wiring (reach socket allowance)', () =
     vi.doUnmock('electron')
   })
 })
+
+describe('an origin served from the verifier before its pin', () => {
+  it('has a partition of its own as soon as its handler is registered, yet is not served from a pin', async () => {
+    const { registerAppOrigin, isOriginServedFromCacheSync, isOriginPinnedSync } = await import('../serve.js')
+    const session = fakeSession()
+    registerAppOrigin(session, 'https://live.example', async () => new Response(null), 'verifier')
+    expect(isOriginServedFromCacheSync('https://live.example')).toBe(true)
+    expect(isOriginPinnedSync('https://live.example')).toBe(false)
+  })
+
+  it('is served from a pin once the pin\'s handler replaces it in place', async () => {
+    const { registerAppOrigin, isOriginPinnedSync } = await import('../serve.js')
+    const session = fakeSession()
+    registerAppOrigin(session, 'https://pinning.example', async () => new Response(null), 'verifier')
+    registerAppOrigin(session, 'https://pinning.example', async () => new Response(null))
+    expect(session.calls.unhandle).toEqual(['https'])
+    expect(isOriginPinnedSync('https://pinning.example')).toBe(true)
+  })
+
+  it('leaves the partition for the shared session when it is ended', async () => {
+    const { registerAppOrigin, unregisterAppOrigin, isOriginServedFromCacheSync } = await import('../serve.js')
+    const session = fakeSession()
+    registerAppOrigin(session, 'https://ended.example', async () => new Response(null), 'verifier')
+    unregisterAppOrigin(session, 'https://ended.example')
+    expect(session.calls.unhandle).toEqual(['https'])
+    expect(isOriginServedFromCacheSync('https://ended.example')).toBe(false)
+  })
+})

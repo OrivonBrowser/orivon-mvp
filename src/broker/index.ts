@@ -464,6 +464,16 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     if (persistError !== undefined) throw fail('internal', 'the revocation could not be persisted', undefined, errnoOf(persistError))
   }
 
+  /** See `Broker.forgetOrigin`'s own doc. */
+  async function forgetOrigin (origin: string): Promise<void> {
+    const key = canonical(origin)
+    // One capability at a time, through the revoke that closes what each authorised: a failure names itself and stops here, before anything is forgotten.
+    for (const { capability } of await grants(key)) await revokePersisted(key, capability)
+    await handleTable.dropOrigin(key)
+    ledger.forgetOrigin(key)
+    grantsChanged.emit(key)
+  }
+
   /** See `Broker.dropOrigin`'s own doc. Nothing here touches the ledger:
    * unlike `revoke`, a session ending withdraws no grant, so what is
    * persisted on disk is untouched -- only the in-memory handles go. */
@@ -481,6 +491,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     trust,
     fs,
     registerApp,
+    forgetOrigin,
     versionFloorFor,
     rollbackAcknowledgedVersionFor,
     acknowledgeRollback,
