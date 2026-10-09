@@ -68,6 +68,8 @@ function fakeLoader (overrides: Partial<Loader> = {}): Loader {
     readDeclaration: async () => ({ kind: 'none' }),
     serveLive: async () => false,
     endLive: async () => {},
+    rememberConsent: async () => {},
+    pendingConsents: async () => [],
     ...overrides
   }
 }

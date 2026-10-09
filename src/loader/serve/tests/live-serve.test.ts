@@ -145,11 +145,39 @@ describe('the handler an app runs on before its files are pinned', () => {
     expect(seen).toHaveLength(1)
   })
 
-  it('passes a failure that is not bad data on as one, without blocking: a name that moved, a gateway that is down', async () => {
-    const { fetchVerified, seen } = verifier(() => new Response('moved', { status: 409 }))
-    const { handle, badData } = await handlerOver({}, { fetchVerified, seen })
-    expect((await handle('/app.js')).status).toBe(409)
+  it('is a failed load, not bad data, when a gateway lied and no honest one holds the block, or a host is unwell', async () => {
+    for (const status of [500, 502, 503]) {
+      const { fetchVerified, seen } = verifier(() => new Response('a source lied', { status }))
+      const { handle, badData } = await handlerOver({}, { fetchVerified, seen })
+      expect((await handle('/app.js')).type, String(status)).toBe('error')
+      expect(badData, String(status)).not.toHaveBeenCalled()
+      // The next file still loads: nothing was ended.
+      expect(await handle('/index.html').then((response) => response.type)).toBe('error')
+      expect(seen, String(status)).toHaveLength(2)
+    }
+    const refusing = verifier(() => { throw new Error('connection refused') })
+    const { handle, badData } = await handlerOver({}, refusing)
+    expect((await handle('/app.js')).type).toBe('error')
     expect(badData).not.toHaveBeenCalled()
+  })
+
+  it('says the name has moved, once and without calling it bad data, when the verifier answers that the root is not the one asked for', async () => {
+    const { fetchVerified, seen } = verifier(() => new Response('now points elsewhere', { status: 409 }))
+    const moved = vi.fn()
+    const { handle, badData } = await handlerOver({ onMoved: moved }, { fetchVerified, seen })
+    expect((await handle('/app.js')).type).toBe('error')
+    expect((await handle('/index.html')).status).toBe(404)
+    expect(moved).toHaveBeenCalledTimes(1)
+    expect(badData).not.toHaveBeenCalled()
+  })
+
+  it('says the app is in use once, when its first file is delivered', async () => {
+    const served = vi.fn()
+    const { handle } = await handlerOver({ onServed: served })
+    expect(served).not.toHaveBeenCalled()
+    await handle('/')
+    await handle('/app.js')
+    expect(served).toHaveBeenCalledTimes(1)
   })
 
   it('sends a request for another origin to the reach gate, which refuses what the app was not granted', async () => {
@@ -164,5 +192,124 @@ describe('the handler an app runs on before its files are pinned', () => {
     const response = await handle('/')
     expect(response.status).toBe(302)
     expect(response.headers.get('location')).toBe('/app/index.html')
+  })
+})
+
+/** An ordinary host that serves FILES, noting what it was asked and answering as `answer` says. */
+function host (answer?: (url: string) => Response | undefined): { fetchNetwork: NonNullable<LiveServeDeps['fetchNetwork']>, seen: Seen[] } {
+  const seen: Seen[] = []
+  return {
+    seen,
+    fetchNetwork: async (url, init) => {
+      seen.push({ url, headers: init.headers, method: init.method })
+      const custom = answer?.(url)
+      if (custom !== undefined) return custom
+      const body = FILES[new URL(url).pathname]
+      if (body === undefined) return new Response('not found', { status: 404 })
+      return new Response(body, { status: 200, headers: { 'content-length': String(body.length) } })
+    }
+  }
+}
+
+async function networkHandler (overrides: Partial<LiveServeDeps> = {}, used = host()): Promise<{ handle: (path: string, init?: RequestInit) => Promise<Response>, seen: Seen[], badData: ReturnType<typeof vi.fn> }> {
+  const badData = vi.fn()
+  const handler = createLiveRequestHandler({ origin: ORIGIN, manifest: manifestOf(), declaration: await declared(), content: undefined, fetchNetwork: used.fetchNetwork, onBadData: badData, ...overrides })
+  return { handle: async (path, init) => await handler(new Request(`${ORIGIN}${path}`, init)), seen: used.seen, badData }
+}
+
+describe('the handler an app on an ordinary site runs on before its files are pinned', () => {
+  it('delivers the very bytes it hashed, once they match the declared leaf, and asks the host for nothing of its own making', async () => {
+    const { handle, seen } = await networkHandler()
+    const response = await handle('/app.js')
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe('run()')
+    expect(response.headers.get('content-security-policy')).toContain("default-src 'self'")
+    expect(seen).toHaveLength(1)
+    expect(seen[0]?.url).toBe(`${ORIGIN}/app.js`)
+    expect(Object.keys(seen[0]?.headers ?? {})).toEqual([])
+  })
+
+  it('never delivers a file whose bytes are not the declared ones, whatever the host sends beside them', async () => {
+    const lying = host((url) => url.endsWith('/app.js') ? new Response('steal()', { status: 200, headers: { 'x-orivon-failure': 'nothing' } }) : undefined)
+    const { handle, badData } = await networkHandler({}, lying)
+    const response = await handle('/app.js')
+    expect(response.type).toBe('error')
+    expect(badData).toHaveBeenCalledWith({ differing: ['/app.js'] })
+    expect((await handle('/index.html')).status).toBe(404)
+  })
+
+  it('serves a range of the checked file, cut from what it held', async () => {
+    const { handle, seen } = await networkHandler()
+    const response = await handle('/app.js', { headers: { range: 'bytes=1-3' } })
+    expect(response.status).toBe(206)
+    expect(await response.text()).toBe('un(')
+    expect(response.headers.get('content-range')).toBe('bytes 1-3/5')
+    expect(seen[0]?.headers['range']).toBeUndefined()
+    expect((await handle('/app.js', { headers: { range: 'bytes=10-20' } })).status).toBe(416)
+  })
+
+  it('answers HEAD with the headers of a file it checked', async () => {
+    const { handle } = await networkHandler()
+    const response = await handle('/app.js', { method: 'HEAD' })
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-length')).toBe('5')
+    expect(await response.text()).toBe('')
+  })
+
+  it('believes no header the host sends: one that says the content failed verification is just a header', async () => {
+    const sending = host((url) => url.endsWith('/app.js') ? new Response('run()', { status: 200, headers: { 'x-orivon-failure': 'unverifiable' } }) : undefined)
+    const { handle, badData } = await networkHandler({}, sending)
+    expect(await (await handle('/app.js')).text()).toBe('run()')
+    const failing = host(() => new Response('', { status: 502, headers: { 'x-orivon-failure': 'ddoc-mismatch' } }))
+    const second = await networkHandler({}, failing)
+    expect((await second.handle('/app.js')).type).toBe('error')
+    expect(second.badData).not.toHaveBeenCalled()
+    expect(badData).not.toHaveBeenCalled()
+  })
+
+  it('treats a host that is unwell, or cannot be reached, as a failed load and judges nothing', async () => {
+    const unwell = await networkHandler({}, host(() => new Response('', { status: 503 })))
+    expect((await unwell.handle('/app.js')).type).toBe('error')
+    const gone = await networkHandler({}, host(() => { throw new Error('ECONNREFUSED') }))
+    expect((await gone.handle('/app.js')).type).toBe('error')
+    expect(unwell.badData).not.toHaveBeenCalled()
+    expect(gone.badData).not.toHaveBeenCalled()
+  })
+
+  it('passes a 404 on as one, and denies a path the manifest does not list without asking the host', async () => {
+    const { handle, seen } = await networkHandler({}, host(() => new Response('', { status: 404 })))
+    expect((await handle('/app.js')).status).toBe(404)
+    expect((await handle('/secret.js')).status).toBe(404)
+    expect(seen).toHaveLength(1)
+  })
+
+  it('treats a file past what an app may carry as not the declared one, never holding more than its share', async () => {
+    const huge = host(() => new Response('x', { status: 200, headers: { 'content-length': String(65 * 1024 * 1024) } }))
+    const { handle, badData } = await networkHandler({}, huge)
+    expect((await handle('/app.js')).type).toBe('error')
+    expect(badData).toHaveBeenCalledWith({ differing: ['/app.js'] })
+  })
+
+  it('serves a site that declares no tree on Orivon\'s own checks, passing a range on and streaming', async () => {
+    const { handle, seen } = await networkHandler({ declaration: undefined })
+    expect((await handle('/app.js', { headers: { range: 'bytes=1-3' } })).status).toBe(200)
+    expect(seen[0]?.headers['range']).toBe('bytes=1-3')
+    expect((await handle('/secret.js')).status).toBe(404)
+  })
+
+  it('treats a manifest-listed file the tree has no leaf for as bad data, as for a verifier', async () => {
+    const tree = await declared()
+    const { handle, seen, badData } = await networkHandler({ declaration: { ...tree, leaves: tree.leaves.filter((entry) => entry.path !== '/app.js') } })
+    expect((await handle('/app.js')).type).toBe('error')
+    expect(seen).toEqual([])
+    expect(badData).toHaveBeenCalledWith({ differing: ['/app.js'] })
+  })
+
+  it('says the app is in use once, when its first checked file is delivered', async () => {
+    const served = vi.fn()
+    const { handle } = await networkHandler({ onServed: served })
+    await handle('/app.js')
+    await handle('/')
+    expect(served).toHaveBeenCalledTimes(1)
   })
 })

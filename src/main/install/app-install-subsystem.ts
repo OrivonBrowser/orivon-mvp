@@ -42,7 +42,8 @@ import { scoreLevelOverrideFor } from '../dev/score-levels.js'
 import { extensionNamesForOrigin } from '../extensions/site-reach-runner.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { outsideOriginQueue, withOriginQueue } from './origin-queue.js'
-import { blockOpenTabs } from '../app-setup/block-tabs.js'
+import { blockOpenTabs, moveOpenTabs } from '../app-setup/block-tabs.js'
+import { pagesInPartitionOf } from '../app-setup/pages-in-partition.js'
 import { MAX_MANIFEST_BYTES } from '../../loader/manifest/manifest.js'
 
 const GRANT_MANIFEST_TIMEOUT_MS = 5_000
@@ -90,7 +91,7 @@ async function fetchGrantManifest (url: string): Promise<{ ok: boolean, status: 
 
 export const appInstallSubsystem: Subsystem = {
   name: 'app-install',
-  afterReady: (ctx: SubsystemContext) => {
+  afterReady: (ctx: SubsystemContext): void | Promise<void> => {
     if (ctx.broker === undefined) {
       throw new Error('app-install subsystem requires ctx.broker -- check its position in subsystems.ts')
     }
@@ -156,11 +157,12 @@ export const appInstallSubsystem: Subsystem = {
     // The refusals are kept in `declined-apps.json`, and in memory only in a private session.
     const declined = new DeclinedApps(ctx.privateSession ? undefined : join(ctx.app.getPath('userData'), 'declined-apps.json'))
     installDeclinedApps(declined)
-    publishFirstVisit(createFirstVisit({
-      deps: { broker, loader, consent, perCapabilityConsent, declined, blocked: blockOpenTabs({ tabsOn: (origin) => ctx.openTabs?.on(origin) ?? [], setup: tabSetupNow }), backgroundDelayMs: backgroundPinDelayMs() },
+    const firstVisit = createFirstVisit({
+      deps: { broker, loader, consent, perCapabilityConsent, declined, blocked: blockOpenTabs({ tabsOn: (origin) => ctx.openTabs?.on(origin) ?? [], pagesOf: pagesInPartitionOf, setup: tabSetupNow }), moved: moveOpenTabs({ tabsOn: (origin) => ctx.openTabs?.on(origin) ?? [], setup: tabSetupNow }), backgroundDelayMs: backgroundPinDelayMs() },
       untouched: (origin) => isLocalFileKey(origin) || grantableWithoutInstall(origin, devModeEnabled()) || !origin.startsWith('https://'),
       servedFromCache: isOriginServedFromCacheSync
-    }))
+    })
+    publishFirstVisit(firstVisit)
     const localFileConsent = createLocalFileConsentPrompt()
     const localFileRefusals = new Set<string>()
     publishInstallApp(ctx, async (hintingOrigin, hintedUrl, caller) => {
@@ -208,5 +210,7 @@ export const appInstallSubsystem: Subsystem = {
       }
       return result
     })
+    // An app allowed and not yet pinned is served again, checked, before any tab can ask for it (a restored tab included).
+    return firstVisit.resume().catch((error: unknown) => { console.error('[app-install] apps allowed before a restart could not be served again', error) })
   }
 }

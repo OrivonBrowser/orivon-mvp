@@ -68,7 +68,7 @@ export interface ContentAddress {
   readonly pointersVerified: boolean
 }
 
-function parseContentAddress (raw: unknown): ContentAddress | null {
+export function parseContentAddress (raw: unknown): ContentAddress | null {
   if (typeof raw !== 'object' || raw === null) return null
   const cid = ownProperty(raw, 'cid', isString)
   const via = ownProperty(raw, 'via', isString)

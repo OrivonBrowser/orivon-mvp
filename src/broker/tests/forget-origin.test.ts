@@ -26,6 +26,19 @@ describe('Broker.forgetOrigin', () => {
     expect(storage.grants.size).toBe(0)
   })
 
+  it('forgets what the person picked for it too: no pick listed, nothing left on disk', async () => {
+    const storage = memoryLedgerStorage()
+    const broker = createBroker(baseDeps({ ledgerStorage: storage, pickPath: async () => ({ canceled: false, paths: ['/home/user/Downloads'] }) }))
+    await broker.registerApp(APP, manifestWith({}))
+    await broker.fs.userSelected(APP, { directory: true })
+    expect(await broker.app.pickedPaths(APP)).toHaveLength(1)
+
+    await broker.forgetOrigin(APP)
+
+    expect(await broker.app.pickedPaths(APP)).toEqual([])
+    expect(storage.pickedPaths.get(APP) ?? {}).toEqual({})
+  })
+
   it('says so to a view of the grants, once', async () => {
     const broker = createBroker(baseDeps())
     await broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['*:*'] } } }))

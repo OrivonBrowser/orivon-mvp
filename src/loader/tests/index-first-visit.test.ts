@@ -262,9 +262,9 @@ describe('Loader.serveLive', () => {
     const loader = createLoader({ fetch: stubFetch(routes()), storage: memoryStorage(), now: () => 1, resolve: PUBLIC_RESOLVER, contentAddress: async () => ({ cid: CID, via: 'ipns-key' as const, pointersVerified: true }), serveLive: served, endLive: ended })
     const read = await loader.readManifest(ORIGIN)
     if (read.kind !== 'app') throw new Error('expected an app')
-    const onBadData = vi.fn()
-    expect(await loader.serveLive(read, undefined, onBadData)).toBe(true)
-    expect(served).toHaveBeenCalledWith({ origin: ORIGIN, manifest: read.manifest, declaration: undefined, content: CID, onBadData })
+    const hooks = { onBadData: vi.fn(), onMoved: vi.fn(), onServed: vi.fn() }
+    expect(await loader.serveLive(read, undefined, hooks)).toBe(true)
+    expect(served).toHaveBeenCalledWith(expect.objectContaining({ origin: ORIGIN, manifest: read.manifest, declaration: undefined, content: CID, ...hooks }))
     await loader.endLive(ORIGIN)
     expect(ended).toHaveBeenCalledWith(ORIGIN)
   })
@@ -273,6 +273,84 @@ describe('Loader.serveLive', () => {
     const loader = loaderOver(stubFetch(routes()))
     const read = await loader.readManifest(ORIGIN)
     if (read.kind !== 'app') throw new Error('expected an app')
-    expect(await loader.serveLive(read, undefined, () => {})).toBe(false)
+    expect(await loader.serveLive(read, undefined, { onBadData: () => {} })).toBe(false)
+  })
+})
+
+describe('Loader.serveLive, for where the files come from', () => {
+  it('gives an app on an ordinary site a way to fetch its own files from main, through the install guard, and an app a verifier serves none', async () => {
+    const served = vi.fn(async (_bundle: unknown) => {})
+    const seen: string[] = []
+    const fetch: Fetch = async (url, ...rest) => { seen.push(url); return await stubFetch(routes())(url, ...rest) }
+    const loader = createLoader({ fetch, storage: memoryStorage(), now: () => 1, resolve: PUBLIC_RESOLVER, serveLive: served })
+    const read = await loader.readManifest(ORIGIN)
+    if (read.kind !== 'app') throw new Error('expected an app')
+    seen.length = 0
+    await loader.serveLive(read, undefined, { onBadData: () => {} })
+    const bundle = served.mock.calls[0]?.[0] as { fetchNetwork?: (url: string, init: { method: string, headers: Record<string, string>, signal: AbortSignal }) => Promise<{ status: number }> }
+    const answered = await bundle.fetchNetwork?.(`${ORIGIN}/app.js`, { method: 'GET', headers: {}, signal: new AbortController().signal })
+    expect(answered?.status).toBe(200)
+    expect(seen).toEqual([`${ORIGIN}/app.js`])
+
+    const verified = `https://${CID}.ipfs.orivon`
+    const onVerifier = createLoader({ fetch: stubFetch({ [`${verified}/.well-known/orivon.json`]: { body: utf8(manifestJson({ assets: ['app.js'] })) } }), storage: memoryStorage(), now: () => 1, resolve: PUBLIC_RESOLVER, serveLive: served })
+    const verifiedRead = await onVerifier.readManifest(verified)
+    if (verifiedRead.kind !== 'app') throw new Error('expected an app')
+    await onVerifier.serveLive(verifiedRead, undefined, { onBadData: () => {} })
+    expect((served.mock.calls[1]?.[0] as { fetchNetwork?: unknown }).fetchNetwork).toBeUndefined()
+  })
+})
+
+describe('the consent that outlives a restart', () => {
+  const declaration = { bundleHash: `sha256:${'a'.repeat(64)}`, leaves: [{ path: '/index.html', leaf: `sha256:${'b'.repeat(64)}` }] }
+
+  async function consented (): Promise<{ loader: ReturnType<typeof createLoader>, storage: ReturnType<typeof memoryStorage>, read: Extract<Awaited<ReturnType<ReturnType<typeof createLoader>['readManifest']>>, { kind: 'app' }> }> {
+    const storage = memoryStorage()
+    const loader = createLoader({ fetch: stubFetch(routes()), storage, now: () => 1_700_000_000_000, resolve: PUBLIC_RESOLVER, contentAddress: async () => ({ cid: CID, via: 'ipns-key' as const, pointersVerified: true }) })
+    const read = await loader.readManifest(ORIGIN)
+    if (read.kind !== 'app') throw new Error('expected an app')
+    return { loader, storage, read }
+  }
+
+  it('brings back the manifest, the root and the declared tree that were allowed, byte for byte', async () => {
+    const { loader, read } = await consented()
+    await loader.rememberConsent(read, declaration)
+    const [again] = await loader.pendingConsents()
+    expect(again?.read.canonicalOrigin).toBe(ORIGIN)
+    expect(again?.read.manifest).toEqual(read.manifest)
+    expect(Array.from(again?.read.bytes ?? [])).toEqual(Array.from(read.bytes))
+    expect(again?.read.content).toEqual(read.content)
+    expect(again?.declaration).toEqual(declaration)
+  })
+
+  it('remembers an app that declares no tree as one that does not', async () => {
+    const { loader, read } = await consented()
+    await loader.rememberConsent(read, undefined)
+    expect((await loader.pendingConsents())[0]?.declaration).toBeUndefined()
+  })
+
+  it('is gone once the app is pinned, taken away, or cannot be read', async () => {
+    const { loader, storage, read } = await consented()
+    await loader.rememberConsent(read, declaration)
+    const fetched = await loader.fetchForInstall(read, ORIGIN)
+    if (!fetched.ok) throw new Error(fetched.reason)
+    await loader.installFetched(fetched.canonicalOrigin, fetched.manifest, fetched.tree, fetched.entries, fetched.declaration, fetched.content)
+    expect(await loader.pendingConsents()).toEqual([])
+    expect(await storage.readPending(ORIGIN)).toBeUndefined()
+
+    await loader.rememberConsent(read, declaration)
+    await loader.endLive(ORIGIN)
+    expect(await storage.readPending(ORIGIN)).toBeUndefined()
+
+    await storage.writePending(ORIGIN, { schema: 1, origin: ORIGIN, manifestBytes: 'not a manifest' })
+    expect(await loader.pendingConsents()).toEqual([])
+    expect(await storage.readPending(ORIGIN)).toBeUndefined()
+  })
+
+  it('drops a record whose pin was written by another path before the consent was cleared', async () => {
+    const { loader, storage, read } = await consented()
+    await loader.rememberConsent(read, declaration)
+    await storage.writePin(ORIGIN, { schema: 1, origin: ORIGIN, bundleHash: `sha256:${'c'.repeat(64)}`, assets: [{ path: '/.well-known/orivon.json', leaf: `sha256:${'d'.repeat(64)}` }], version: '1.0.0', pinnedAt: 0, content: { cid: CID, via: 'ipns-key', pointersVerified: true } })
+    expect(await loader.pendingConsents()).toEqual([])
   })
 })

@@ -4,6 +4,7 @@
 // seam's gateway.
 import { afterAll, expect, it } from 'vitest'
 import { existsSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
 import { findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from '../support/e2e-helpers.js'
@@ -92,6 +93,78 @@ it('[app:first-visit-pins-in-the-background] [app:first-visit-background-mismatc
     } finally {
       if (app !== undefined) await closeElectronApp(app)
       if (gatewayOpen) await gateway.close()
+    }
+  })
+}, TEST_TIMEOUT_MS)
+
+it('[app:first-visit-resumes-after-a-restart] serves an app that was allowed and not yet pinned again after a restart, every file still checked, asks nothing, and finishes its pin for the root that was allowed', async () => {
+  await runPhase('first-visit-resume', async (check) => {
+    const bad = files('Late app', 'first.visit.late.resume')
+    const gateway = await startFixtureGateway({
+      good: await withDeclaredTree(files('Resumed app', 'first.visit.resumed')),
+      late: await withDeclaredTree(bad, { ...bad, 'later.js': 'document.title = "what was declared"' })
+    })
+    let app: Awaited<ReturnType<typeof launchElectron>> | undefined
+    let profile: string | undefined
+    const env = (delay: string): Record<string, string> => ({ ORIVON_TEST_ETH_FIXTURES: '{}', ORIVON_TEST_IPFS_GATEWAYS: gateway.url, ORIVON_TEST_BACKGROUND_PIN_DELAY_MS: delay })
+    const startVerifier = async (running: Awaited<ReturnType<typeof launchElectron>>): Promise<void> => {
+      const listening = await waitFor(async () => await running.evaluate(() => { const seam = (globalThis as { __orivonDevEthFixtures?: { listening: boolean, start?: () => void } }).__orivonDevEthFixtures; seam?.start?.(); return seam?.listening === true }), 20_000)
+      if (!listening) throw new Error('the verifier host never reported listening')
+    }
+    try {
+      const goodRoot = gateway.roots['good']!
+      const lateRoot = gateway.roots['late']!
+      const goodOrigin = `https://${goodRoot}.ipfs.orivon`
+      const lateOrigin = `https://${lateRoot}.ipfs.orivon`
+
+      // 1. Both apps are allowed and neither is pinned, because the download is held back for the whole run.
+      app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], env: env('600000') })
+      const first = app
+      await stubNativeDialogs(first)
+      await startVerifier(first)
+      profile = await first.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))
+      await waitFor(() => first.windows().length === 2)
+      const chrome = findChrome(first)
+      await waitForAddressBarStable(chrome)
+      for (const [root, title] of [[goodRoot, 'Resumed app'], [lateRoot, 'Late app']] as const) {
+        await clickAddressBarRetrying(chrome, `ipfs://${root}`)
+        await waitQuestion(first, 60_000)
+        await answerQuestion(first, 'Allow')
+        const opened = await waitForTab(chrome, { address: `ipfs://${root}/`, title }, 60_000)
+        check(`${title} opened (${JSON.stringify(opened.info)})`, opened.ok)
+      }
+      check('neither is pinned', !existsSync(pinPath(profile, goodOrigin)) && !existsSync(pinPath(profile, lateOrigin)))
+      check('both are granted', savedGrants(profile, goodOrigin).includes('fs') && savedGrants(profile, lateOrigin).includes('fs'))
+      app = undefined
+      await closeElectronApp(first, APP_CLOSE_RACE_MS, { keepProfile: true })
+
+      // 2. After the restart each is served again, asking nothing; the pin resumes once the app is used.
+      app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], env: env('500'), reuseProfile: profile })
+      const second = app
+      await stubNativeDialogs(second)
+      await watchPages(second)
+      await startVerifier(second)
+      await waitFor(() => second.windows().length === 2)
+      const again = findChrome(second)
+      await waitForAddressBarStable(again)
+      await clickAddressBarRetrying(again, `ipfs://${goodRoot}/`)
+      let facts = null as PageFacts | null
+      await waitFor(async () => { facts = await pageAt(second, `${goodOrigin}/`); return facts?.ran === 'ran' }, 40_000)
+      check(`the app runs as an app tab again, with no question (${JSON.stringify(facts)})`, facts?.ran === 'ran' && facts.hasProcess && await questionGone(second))
+      check('its pin lands, for the root that was allowed', await waitFor(() => existsSync(pinPath(profile as string, goodOrigin)), 60_000))
+      check('its grants are the ones it was allowed', savedGrants(profile, goodOrigin).includes('fs'))
+
+      await clickAddressBarRetrying(again, `ipfs://${lateRoot}/`)
+      const warning = await waitSheet(second, 60_000)
+      check(`the file the first run never loaded is still checked: a security warning is shown (${warning.text.title})`, /security warning/i.test(warning.text.title) && warning.text.files.includes('/later.js'))
+      check('nothing was pinned for it, and no grant is left', !existsSync(pinPath(profile, lateOrigin)) && savedGrants(profile, lateOrigin).length === 0)
+      await pressSheet(warning.page, 'Go back')
+      check('Go back takes the sheet away', await waitFor(() => sheetGone(second), 10_000))
+      expect(await noNativeDialogs(second)).toEqual([])
+    } finally {
+      if (app !== undefined) await closeElectronApp(app)
+      await gateway.close()
+      if (profile !== undefined) await rm(profile, { recursive: true, force: true })
     }
   })
 }, TEST_TIMEOUT_MS)

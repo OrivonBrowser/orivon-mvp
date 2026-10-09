@@ -52,6 +52,7 @@ import { readQuietOffers, writeQuietOffer } from './update-offer.js'
 
 export type { Fetch, FetchResponse } from './fetch/bundle.js'
 export type { FirstBundle, FirstDeclaration, FirstManifest, FirstManifestApp } from './first-visit.js'
+export type { PendingConsent } from './pending-consent.js'
 export type { LoadInstalled, LoadNeedsCapabilityPrompt, LoadNeedsReconsent, LoadNeedsRollbackChoice, LoadRejected, LoadResult, LoadUpToDate, LoadUpdateAvailable } from './load-result.js'
 export type { LoaderStorage } from './cache/storage.js'
 export { appRootDirectoryName } from './cache/storage.js'

@@ -33,9 +33,9 @@ import { createAppRequestHandler, fetchThirdParty, resolveVerifiedBundle } from 
 import { createLiveRequestHandler } from '../serve/live-serve.js'
 import type { LiveBundle } from '../serve/live-serve.js'
 import { fetchFromVerifier } from './fetch.js'
-import { isOriginPinnedSync, isOriginServedFromCacheSync, registerAppOrigin, unregisterAppOrigin } from './app-partitions.js'
+import { isOriginPinnedSync, isOriginServedFromCacheSync, registerAppOrigin, retireAppOrigin } from './app-partitions.js'
 
-export { forEachAppSession, isOriginPinnedSync, isOriginServedFromCacheSync, registerAppOrigin, unregisterAppOrigin } from './app-partitions.js'
+export { forEachAppSession, isOriginPinnedSync, isOriginServedFromCacheSync, registerAppOrigin, retireAppOrigin } from './app-partitions.js'
 import { saveCheckRecord } from '../fetch/update-check.js'
 import type { AppRequestHandler, AuthoriseReach } from '../serve/serve.js'
 import { cspHeaderValue } from '../serve/csp.js'
@@ -268,7 +268,7 @@ export async function serveLiveFor (bundle: LiveBundle, broker?: Broker): Promis
   const reachSlots = broker === undefined ? undefined : reachSlotsFor(broker, origin)
   const handler = createLiveRequestHandler({
     ...bundle,
-    fetchVerified: fetchFromVerifier,
+    fetchVerified: bundle.fetchNetwork === undefined ? fetchFromVerifier : undefined,
     grantedConnectPatterns: broker === undefined ? undefined : async () => await grantedConnectPatternsFor(broker, origin),
     grantedSecurePatterns: broker === undefined ? undefined : async () => await secureHeaderPatternsFor(broker, origin),
     grantedMediaSources: broker === undefined ? undefined : async () => await liveMediaSources(broker, origin),
@@ -289,7 +289,7 @@ export async function endLiveFor (origin: string): Promise<void> {
   if (isOriginPinnedSync(origin)) return
   const { session } = await import('electron')
   const appSession = session.fromPartition(partitionFor(origin))
-  unregisterAppOrigin(appSession, origin)
+  retireAppOrigin(appSession, origin)
   coverageTrackers.delete(origin)
   await appSession.clearStorageData().catch((error: unknown) => { console.error('[loader] the storage of a blocked app could not be cleared', origin, error) })
   await appSession.clearCache().catch(() => {})

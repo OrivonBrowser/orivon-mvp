@@ -28,6 +28,7 @@ const FILES: Record<string, StubFile> = {
   '/app.js': { bytes: Buffer.from('run()') },
   '/bad.js': { bytes: Buffer.from('x'.repeat(100)), failAfter: 10, failure: new ResolutionError('unverifiable', 'block does not hash to its CID') },
   '/lied.js': { bytes: Buffer.from('x'.repeat(100)), failAfter: 10, failure: new ResolutionError('unverifiable', 'every gateway sent bytes that failed their hash', true) },
+  '/mid.bin': { bytes: Buffer.alloc(5 * 1024 * 1024, 3) },
   '/big.bin': { bytes: Buffer.alloc(BIG, 7), failAfter: 1024 * 1024, failure: new ResolutionError('unverifiable', 'tampered') },
   '/cut.js': { bytes: Buffer.alloc(CUT, 7), failAfter: 64 * 1024, failure: new ResolutionError('unverifiable', 'tampered') }
 }
@@ -415,6 +416,16 @@ describe('the loopback server, for a file whose leaf the caller expects', () => 
     const reply = await get('/app.js', { headers: { [EXPECT_LEAF_HEADER]: 'not-a-leaf' } })
     expect(reply.status).toBe(400)
     expect(reply.body.toString()).not.toContain('run()')
+  })
+
+  it('gives every byte it held back, so many large files one after another never fill the budget', async () => {
+    const leaf = await leafOfFile('/mid.bin')
+    for (let each = 0; each < 20; each++) {
+      expect((await get('/mid.bin', { headers: { [EXPECT_LEAF_HEADER]: leaf, range: 'bytes=0-9' } })).status).toBe(206)
+    }
+    const failing = await leafOfFile('/app.js')
+    for (let each = 0; each < 20; each++) expect((await get('/mid.bin', { headers: { [EXPECT_LEAF_HEADER]: failing } })).status).toBe(502)
+    expect((await get('/mid.bin', { headers: { [EXPECT_LEAF_HEADER]: leaf } })).status).toBe(200)
   })
 
   it('still gives a file that fails verification part-way the error page, not the declared-tree failure', async () => {

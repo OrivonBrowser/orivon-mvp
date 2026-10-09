@@ -36,12 +36,14 @@ export function registerAppOrigin (appSession: Session, origin: string, handler:
 }
 
 /**
- * Takes an origin's handler off its partition and out of both registries: the origin is no app of this process any
- * more, and its next tab is built on the shared session. Never for an origin served from its pin.
+ * An origin that turned out bad is no app of this process any more: its next tab is built on the shared session
+ * and its next visit is a first visit. What stays on its partition is a handler that refuses everything, so a page,
+ * a worker or a popup still alive there reaches nothing, the network included. Never for an origin served from its pin.
  */
-export function unregisterAppOrigin (appSession: Session, origin: string): void {
+export function retireAppOrigin (appSession: Session, origin: string): void {
   const scheme = new URL(origin).protocol.replace(':', '')
   if (appSession.protocol.isProtocolHandled(scheme)) appSession.protocol.unhandle(scheme)
+  appSession.protocol.handle(scheme, async () => new Response('Orivon: this app was stopped', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } }))
   servedPartitions.delete(partitionFor(origin))
   pinnedPartitions.delete(partitionFor(origin))
 }
@@ -69,7 +71,7 @@ const pinnedPartitions = new Set<string>()
  * canonical spelling: `partitionFor` is already the one function that decides
  * what "the same app" means, and tab-view.ts computes the identical string.
  *
- * An entry leaves only through `unregisterAppOrigin`, for an app that was served from
+ * An entry leaves only through `retireAppOrigin`, for an app that was served from
  * the verifier and then blocked; `registerAppOrigin` otherwise re-registers in place
  * (see its own doc), and a handler lives for the process.
  */

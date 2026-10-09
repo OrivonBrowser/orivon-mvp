@@ -27,7 +27,7 @@ function rig (options: { kind?: 'first' | 'declined' | 'known' | 'settling', res
   const hosts: SetupHost[] = []
   const callers: Array<DialogCaller | undefined> = []
   const run = vi.fn(async (_origin: string, _url: string, caller: DialogCaller | undefined, host: SetupHost, _signal?: AbortSignal): Promise<FirstVisitResult> => { hosts.push(host); callers.push(caller); return options.result ?? { outcome: 'left' } })
-  const visit: FirstVisit = { kindOf: async () => options.kind ?? 'first', run: run as unknown as FirstVisit['run'] }
+  const visit: FirstVisit = { kindOf: async () => options.kind ?? 'first', run: run as unknown as FirstVisit['run'], resume: async () => {} }
   const screens: TabScreens = {
     show: vi.fn(), blank: vi.fn(async () => {}), sheet: async () => 'leave', end: vi.fn(), moved: () => options.moved === true, signal: new AbortController().signal, tab: () => ({ window: {}, tabId: 't' }) as never,
     navigate: vi.fn(), leavePage: vi.fn(), stop: vi.fn()

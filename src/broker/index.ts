@@ -472,7 +472,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     await handleTable.dropOrigin(canonical(origin))
   }
 
-  const forgetOrigin = createForgetOrigin({ canonical, grants, revokePersisted, handleTable, ledger, grantsChanged })
+  const forgetOrigin = createForgetOrigin({ canonical, grants, revokePersisted, pickedPaths: pickedPathsFor, revokeUserSelectedPath, handleTable, ledger, grantsChanged })
   return {
     app: { manifest, grants, isRegisteredSync, hasGrantsSync, heldSync, grantedPatternsSync, registeredOriginsSync, persistedAppsSync, hydrateFromPinnedManifest, pickedPaths: pickedPathsFor, socketAllowanceSync },
     net,

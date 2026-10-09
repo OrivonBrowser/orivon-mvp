@@ -271,12 +271,21 @@ async function sendBody (res: ServerResponse, status: number, headers: Record<st
  * caller treats as bad data.
  */
 async function sendChecked (res: ServerResponse, host: string, target: string, expected: string, status: number, headers: Record<string, string>, file: GatheredFile, range: { readonly start: number, readonly end: number } | undefined, head: boolean, budget: BufferBudget, partition: string | undefined, bufferedResponseDeadlineMs: number): Promise<void> {
-  if (!await budget.reserveWithin(partition, file.size, LEAF_CHECK_WAIT_MS)) {
-    res.writeHead(503, { 'content-type': 'text/plain', 'cache-control': 'no-store', 'retry-after': '1' }).end('the verifier is holding too many responses right now')
-    return
-  }
+  // Held against the app's own origin, never the shared key, and taken as the bytes arrive: a large cold file must not
+  // keep its whole size from the scripts the page asked for beside it.
+  const key = partition ?? `https://${host}`
+  const until = Date.now() + LEAF_CHECK_WAIT_MS
+  let held = 0
   try {
-    const chunks = await collect(file.body)
+    const chunks: Uint8Array[] = []
+    for await (const chunk of file.body) {
+      if (!await budget.reserveWithin(key, chunk.length, Math.max(0, until - Date.now()))) {
+        res.writeHead(503, { 'content-type': 'text/plain', 'cache-control': 'no-store', 'retry-after': '1' }).end('the verifier is holding too many responses right now')
+        return
+      }
+      held += chunk.length
+      chunks.push(chunk)
+    }
     const verdict = await checkLeaf(host, target, file.size, chunks, expected)
     if (!verdict.ok) {
       res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': SERVED_CONTENT_CSP, [FAILURE_HEADER]: DDOC_MISMATCH }).end(`${verdict.path} is not the file the declared tree names`)
@@ -289,7 +298,7 @@ async function sendChecked (res: ServerResponse, host: string, target: string, e
     res.writeHead(status, headers)
     await writeBufferedChunks(res, range === undefined ? chunks : sliceChunks(chunks, range.start, range.end), bufferedResponseDeadlineMs)
   } finally {
-    budget.release(partition, file.size)
+    budget.release(key, held)
   }
 }
 

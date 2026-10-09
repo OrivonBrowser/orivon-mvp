@@ -34,7 +34,9 @@ const fakeLoader: Loader = {
   fetchForInstall: async () => ({ ok: false as const, reason: 'unused' }),
   readDeclaration: async () => ({ kind: 'none' as const }),
   serveLive: async () => false,
-  endLive: async () => {}
+  endLive: async () => {},
+  rememberConsent: async () => {},
+  pendingConsents: async () => []
 }
 
 describe('appInstallSubsystem', () => {

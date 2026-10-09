@@ -36,7 +36,12 @@ export async function pageAt (app: App, url: string): Promise<PageFacts | null> 
     const newest = webContents.getAllWebContents().filter((contents) => !contents.isDestroyed() && contents.getURL() === address).sort((a, b) => b.id - a.id)[0]
     if (newest === undefined) return null
     try {
-      return await newest.executeJavaScript('({ ran: document.body?.dataset.app ?? null, hasProcess: typeof process !== "undefined" })') as { ran: string | null, hasProcess: boolean }
+      // A page that is being replaced never answers: a read that does not come back is no answer, and the caller asks again.
+      const answered = await Promise.race([
+        newest.executeJavaScript('({ ran: document.body?.dataset.app ?? null, hasProcess: typeof process !== "undefined" })') as Promise<{ ran: string | null, hasProcess: boolean }>,
+        new Promise<null>((resolve) => setTimeout(() => { resolve(null) }, 2_500))
+      ])
+      return answered
     } catch {
       return null
     }

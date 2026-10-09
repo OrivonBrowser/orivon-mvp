@@ -170,7 +170,9 @@ describe('installFromHint', () => {
       fetchForInstall: vi.fn(async () => ({ ok: false as const, reason: 'unused' })),
       readDeclaration: vi.fn(async () => ({ kind: 'none' as const })),
       serveLive: vi.fn(async () => false),
-      endLive: vi.fn(async () => {})
+      endLive: vi.fn(async () => {}),
+      rememberConsent: vi.fn(async () => {}),
+      pendingConsents: vi.fn(async () => [])
     }
     const deps: AppInstallDeps = { broker, loader }
 

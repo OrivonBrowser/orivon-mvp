@@ -787,12 +787,27 @@ describe('an origin served from the verifier before its pin', () => {
     expect(isOriginPinnedSync('https://pinning.example')).toBe(true)
   })
 
-  it('leaves the partition for the shared session when it is ended', async () => {
-    const { registerAppOrigin, unregisterAppOrigin, isOriginServedFromCacheSync } = await import('../serve.js')
+  it('leaves the shared session to a retired origin, and answers nothing from its partition', async () => {
+    const { registerAppOrigin, retireAppOrigin, isOriginServedFromCacheSync } = await import('../serve.js')
     const session = fakeSession()
-    registerAppOrigin(session, 'https://ended.example', async () => new Response(null), 'verifier')
-    unregisterAppOrigin(session, 'https://ended.example')
-    expect(session.calls.unhandle).toEqual(['https'])
+    registerAppOrigin(session, 'https://ended.example', async () => new Response('the app'), 'verifier')
+    retireAppOrigin(session, 'https://ended.example')
     expect(isOriginServedFromCacheSync('https://ended.example')).toBe(false)
+    // A page or worker still alive in that partition is answered with a refusal, never with the network.
+    expect(session.calls.unhandle).toEqual(['https'])
+    expect(session.calls.handle).toEqual(['https', 'https'])
+    const answer = await session.handlers.get('https')!(new Request('https://ended.example/app.js'))
+    expect(answer.status).toBe(404)
+    expect(await answer.text()).not.toContain('the app')
+  })
+
+  it('is served again, in place of the refusal, when the origin is consented anew', async () => {
+    const { registerAppOrigin, retireAppOrigin, isOriginServedFromCacheSync } = await import('../serve.js')
+    const session = fakeSession()
+    registerAppOrigin(session, 'https://again.example', async () => new Response('first'), 'verifier')
+    retireAppOrigin(session, 'https://again.example')
+    registerAppOrigin(session, 'https://again.example', async () => new Response('second'), 'verifier')
+    expect(isOriginServedFromCacheSync('https://again.example')).toBe(true)
+    expect(await (await session.handlers.get('https')!(new Request('https://again.example/'))).text()).toBe('second')
   })
 })
