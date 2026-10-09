@@ -16,6 +16,7 @@ function routes (overrides: Record<string, RouteSpec> = {}): Record<string, Rout
     [MANIFEST_URL]: { body: utf8(manifestJson({ assets: ['app.js'] })) },
     [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') },
     [`${ORIGIN}/app.js`]: { body: utf8('run()') },
+    [`${ORIGIN}${DDOC_PATH}`]: { status: 404, body: utf8('') },
     ...overrides
   }
 }

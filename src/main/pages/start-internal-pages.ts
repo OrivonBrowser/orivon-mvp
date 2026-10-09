@@ -50,6 +50,7 @@ import { siteDataDomain } from '../privacy/site-data-domain.js'
 import { localFilesDomain } from '../privacy/local-files-domain.js'
 import { deleteLocalFileData } from '../local-files/delete-local-file-data.js'
 import { localFileApps } from '../local-files/local-file-apps.js'
+import { declinedApps } from '../install/declined-apps.js'
 import { LOCAL_FILES_PARTITION } from '../local-files/partition.js'
 import { siteSettingsControllerFor } from '../site-settings/site-settings-runner.js'
 import { createDeviceRows } from '../devices/hid-rows.js'
@@ -163,7 +164,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
         .map((app) => session.fromPartition(partitionFor(app.origin))),
       now: Date.now
     }),
-    sites: sitesDomain(siteSettings, { isPrivate: services.isPrivate, devices: deviceRows }),
+    sites: sitesDomain(siteSettings, { isPrivate: services.isPrivate, devices: deviceRows, declinedApps: { list: () => declinedApps()?.list() ?? [], remove: (origin) => declinedApps()?.remove(origin) === true } }),
     siteData: siteDataDomain(() => session.defaultSession),
     localFileData: localFilesDomain({
       list: () => localFileApps()?.list() ?? [],

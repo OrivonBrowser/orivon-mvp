@@ -274,6 +274,12 @@ describe('the .eth loopback server', () => {
     expect(reply.body.toString()).toContain('Cannot verify this site')
   })
 
+  it('says a failed verification in a header of its own, and never for a name that merely does not resolve or a light client still syncing', async () => {
+    expect((await get('/bad.js')).headers['x-orivon-failure']).toBe('unverifiable')
+    expect((await get('/', { host: 'syncing.eth' })).headers['x-orivon-failure']).toBeUndefined()
+    expect((await get('/missing.js')).headers['x-orivon-failure']).toBeUndefined()
+  })
+
   it('streams even a small file to an install, which names its root and checks every byte itself, so a slow gateway still reads as progress', async () => {
     expect((await get('/cut.js')).status).toBe(502)
     const install = await get('/cut.js', { headers: { 'x-orivon-content-root': ROOT } })

@@ -11,20 +11,19 @@ export interface VisitState {
   readonly pinned: boolean
   /** `'0.0.0'` for an origin no version was ever registered for. */
   readonly versionFloor: string
-  /** The person answered the install question no. */
+  /** The person pressed Deny on this origin's first-visit question (`./declined-apps.ts`). */
   readonly declined: boolean
-  readonly holdsGrants: boolean
 }
 
 /**
  * `first`: ask, download, verify, then enter. `declined`: the person said no, so the site is a plain
  * website and nothing here starts. `known`: an app Orivon has held before; its updates, floor and
- * re-consent follow the ordinary install path. A visit that stopped after the answer (a failed
- * download) holds grants without a pin and is `first` again, so it resumes.
+ * re-consent follow the ordinary install path. A visit that stopped before the files were let in
+ * granted nothing and recorded nothing, so it is `first` again and asks again.
  */
 export function visitKind (state: VisitState): 'first' | 'declined' | 'known' {
   if (state.registered || state.pinned || state.versionFloor !== '0.0.0') return 'known'
-  return state.declined && !state.holdsGrants ? 'declined' : 'first'
+  return state.declined ? 'declined' : 'first'
 }
 
 export type BundleJudgement =

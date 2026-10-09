@@ -31,5 +31,6 @@ or stop the pending navigation (the app was not opened: cancelling alone commits
 **The visit follows the tab, not the page.** A question about a page that has not committed cannot ask the page which origin it is on, so the tab
 counts as still there until it starts another navigation or is destroyed (`TabScreens.moved`).
 
-**A hint-started visit stops the page only once the manifest says it is an app.** An origin whose manifest cannot be read keeps its page (and so does not
-reload in a loop on the hint it sends again).
+**A hint-started visit replaces the page only once the manifest says it is an app.** `stop()` leaves a running page's script alone, so the first stage puts an empty page in its place (`location.replace` from an isolated world, one history entry) and waits for it before anything is asked; an origin whose manifest cannot be read keeps its page (and so does not reload in a loop on the hint it sends again). That emptied page is not the person moving on, so `TabScreens` ignores the one navigation it makes itself.
+
+**Nothing acts on a tab the person left.** `navigate`, `leavePage` and `stop` end the screens first, then act only if the tab is still where the visit began; `signal` aborts the download when it is not.

@@ -10,6 +10,7 @@ import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetryi
 import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
 import type { PageFacts } from './first-visit-support.js'
+import type { Page } from 'playwright'
 import { anyDocumentAt, coverTitle, pageAt, pinPath, savedGrants, withDeclaredTree } from './first-visit-support.js'
 
 const files = (name: string, id: string): Record<string, string> => ({
@@ -84,6 +85,27 @@ it('[app:first-visit-asks-before-any-file] [app:first-visit-verifies-before-ente
       await clickAddressBarRetrying(chrome, `ipfs://${refusedRoot}/`)
       await delay(ABSENCE_SETTLE_MS)
       check('visiting it again asks nothing', await questionGone(running))
+
+      // 4. Settings, Sites lists the refusal, and Ask again gives the question back; Escape records nothing.
+      await chrome.evaluate(() => { (window as unknown as { orivonShell: { runCommand: (id: string) => void } }).orivonShell.runCommand('siteSettings.open') })
+      const settingsOf = (): Page | undefined => running.windows().find((page) => page.url().startsWith('orivon://settings') && !page.isClosed())
+      check('Settings opened', await waitFor(() => settingsOf() !== undefined, 20_000))
+      const settings = settingsOf() as Page
+      await settings.waitForSelector('#row-sites-list .declined-app', { timeout: 20_000 })
+      const listed = await settings.locator('#row-sites-list .declined-app .site-host').allTextContents()
+      check(`Settings, Sites lists the refused app (${JSON.stringify(listed)})`, listed.length === 1 && refusedOrigin.endsWith(listed[0] ?? '?'))
+      await settings.click('#row-sites-list .declined-app button:text-is("Ask again")')
+      check('Ask again takes it off the list', await waitFor(async () => await settings.locator('#row-sites-list .declined-app').count() === 0, 10_000))
+      await clickAddressBarRetrying(chrome, `ipfs://${refusedRoot}/`)
+      const again = await waitQuestion(running, 60_000)
+      check('the next visit asks again', true)
+      // The panel closes under the key, which Playwright reports as a closed target.
+      await again.keyboard.press('Escape').catch((error: unknown) => { if (!/closed|destroyed/.test(String(error))) throw error })
+      await clickAddressBarRetrying(chrome, `ipfs://${refusedRoot}/`)
+      const escaped = await waitQuestion(running, 60_000)
+      check('Escape recorded nothing: the visit after it asks again', true)
+      await answerQuestion(running, 'Deny')
+      void escaped
 
       expect(asked.buttons).toContain('Allow')
       expect(filesAsked('allowed', 'app.js')).toBeGreaterThanOrEqual(1)

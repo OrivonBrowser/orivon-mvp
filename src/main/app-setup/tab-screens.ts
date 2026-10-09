@@ -15,16 +15,22 @@ import type { CoverState } from './setup-text.js'
 
 export interface TabScreens {
   show: (stage: SetupStage) => void
+  /** Replaces the page the tab is running with an empty one, in place: the history keeps one entry, and nothing of the page runs on. Resolves once that has committed, or a moment's wait has passed. */
+  blank: () => Promise<void>
   /** Resolves what the person chose; `leave` too when the sheet went away without an answer. */
   sheet: (sheet: SetupSheet) => Promise<SheetChoice>
   /** Takes every screen of this visit away. Idempotent. */
   end: () => void
   /** The tab started another navigation or was destroyed: whatever was asked of it is no longer about this page. */
   moved: () => boolean
-  /** The tab goes to `url` through the address bar's own path, which puts it in the session an app of that address runs in. */
+  /** Aborts when the tab moves on: a download that nobody is waiting for stops. */
+  readonly signal: AbortSignal
+  /** Ends the screens, then sends the tab to `url` through the address bar's own path, which puts it in the session an app of that address runs in. Does nothing to a tab that moved on. */
   navigate: (url: string) => void
-  /** The tab leaves its page: back when it can, else home. */
+  /** Ends the screens, then the tab leaves its page: back when it can, else home. Does nothing to a tab that moved on. */
   leavePage: () => void
+  /** Ends the screens, and stops the navigation still pending in the tab. Does nothing to a tab that moved on. */
+  stop: () => void
 }
 
 /** The screens for `contents`' visit to `address`, or undefined for a web contents no window holds as a tab. */
@@ -38,6 +44,10 @@ export interface TabSetupDeps {
   readonly newToken: () => string
   readonly navigate: (window: ShellWindow, tabId: string, url: string) => void
   readonly leavePage: (window: ShellWindow, tabId: string) => void
+  /** Puts an empty page in place of the one the contents run; resolves when it has committed (or given up waiting). */
+  readonly blank: (contents: WebContents) => Promise<void>
+  /** Stops the navigation the contents have pending. */
+  readonly stop: (contents: WebContents) => void
 }
 
 export function createTabSetup (deps: TabSetupDeps): TabSetup {
@@ -47,6 +57,8 @@ export function createTabSetup (deps: TabSetupDeps): TabSetup {
     const { window, tabId } = found
     let ended = false
     let moved = false
+    let blanking = 0
+    const gone = new AbortController()
     let cover: { cancel: () => void } | undefined
     let sheet: { cancel: () => void } | undefined
     let release: (() => void) | undefined
@@ -77,10 +89,21 @@ export function createTabSetup (deps: TabSetupDeps): TabSetup {
 
     const moveOn = (): void => {
       moved = true
+      gone.abort()
       end()
     }
     const onNavigation = (details: { isMainFrame: boolean, isSameDocument: boolean }): void => {
-      if (details.isMainFrame && !details.isSameDocument) moveOn()
+      if (!details.isMainFrame || details.isSameDocument) return
+      // The empty page this visit put in place of the app's is not the person moving on.
+      if (blanking > 0) { blanking -= 1; return }
+      moveOn()
+    }
+    const live = (): boolean => !moved && !ended && !contents.isDestroyed()
+    /** Ends the screens, and says whether the tab is still the one this visit began in: the caller may then act on it. */
+    const handOver = (): boolean => {
+      const still = !moved && !contents.isDestroyed()
+      end()
+      return still
     }
     const onDestroyed = (): void => { moveOn() }
     contents.on('did-start-navigation', onNavigation as never)
@@ -105,10 +128,21 @@ export function createTabSetup (deps: TabSetupDeps): TabSetup {
           sheet = mine
         })
       },
+      blank: async () => {
+        if (!live()) return
+        blanking += 1
+        try {
+          await deps.blank(contents)
+        } finally {
+          blanking = 0
+        }
+      },
       end,
-      moved: () => moved,
-      navigate: (url) => { deps.navigate(window, tabId, url) },
-      leavePage: () => { deps.leavePage(window, tabId) }
+      moved: () => moved || contents.isDestroyed(),
+      signal: gone.signal,
+      navigate: (url) => { if (handOver()) deps.navigate(window, tabId, url) },
+      leavePage: () => { if (handOver()) deps.leavePage(window, tabId) },
+      stop: () => { if (handOver()) deps.stop(contents) }
     }
   }
 }

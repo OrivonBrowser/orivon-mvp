@@ -5,7 +5,7 @@ const leaf = (character: string): string => `sha256:${character.repeat(64)}`
 const TREE = { root: leaf('r'), assets: [{ path: '/index.html', leaf: leaf('a') }, { path: '/app.js', leaf: leaf('b') }] }
 
 describe('visitKind', () => {
-  const never = { registered: false, pinned: false, versionFloor: '0.0.0', declined: false, holdsGrants: false }
+  const never = { registered: false, pinned: false, versionFloor: '0.0.0', declined: false }
 
   it('is first for an origin Orivon has never held', () => {
     expect(visitKind(never)).toBe('first')
@@ -19,11 +19,6 @@ describe('visitKind', () => {
 
   it('is declined when the person said no and holds nothing: the site stays a plain website', () => {
     expect(visitKind({ ...never, declined: true })).toBe('declined')
-  })
-
-  it('stays first when something is granted as well, so a visit that stopped part-way resumes', () => {
-    expect(visitKind({ ...never, declined: true, holdsGrants: true })).toBe('first')
-    expect(visitKind({ ...never, holdsGrants: true })).toBe('first')
   })
 
   it('is known, never declined, for an installed app whose widening the person refused', () => {

@@ -22,7 +22,7 @@ export interface CoverText {
   readonly busy: boolean
 }
 
-export type CoverState = SetupStage | { readonly kind: 'blocked' | 'download-failed', readonly name: string }
+export type CoverState = SetupStage | { readonly kind: 'blocked' | 'download-failed' | 'too-large', readonly name: string }
 
 export function coverFor (state: CoverState): CoverText {
   const name = displayName(state.name)
@@ -30,7 +30,8 @@ export function coverFor (state: CoverState): CoverText {
     case 'asking': return { title: `Opening ${name}`, detail: 'Orivon is asking what this app may do before it downloads anything.', busy: true }
     case 'verifying': return { title: `Setting up ${name}`, detail: 'Orivon downloads the app\'s files and checks them before it opens.', busy: true }
     case 'blocked':
-    case 'download-failed': return { title: `${name} was not opened`, detail: '', busy: false }
+    case 'download-failed':
+    case 'too-large': return { title: `${name} was not opened`, detail: '', busy: false }
   }
 }
 
@@ -59,12 +60,25 @@ function withoutAddresses (reason: string): string {
 export function sheetView (sheet: SetupSheet, address: string, token: string): SetupSheetView {
   const name = displayName(sheet.name)
   const shown = address.slice(0, ADDRESS_LIMIT)
+  if (sheet.kind === 'too-large') {
+    return {
+      token,
+      kind: 'too-large',
+      title: `${name} is too large`,
+      body: `${name} is larger than Orivon allows an app to be, so nothing was opened and nothing was granted.`,
+      files: [],
+      more: '',
+      address: shown,
+      note: '',
+      canRetry: false
+    }
+  }
   if (sheet.kind === 'blocked' && sheet.invalid !== undefined) {
     return {
       token,
       kind: 'blocked',
-      title: 'Security warning: this app\'s files could not be accepted',
-      body: `${name} was not opened. Its files are incomplete or not acceptable, and every permission you gave it has been removed.`,
+      title: 'Security warning: this app\'s files could not be verified',
+      body: `${name} was not opened. Orivon could not verify its files against the address they came from, so someone may be tampering with them. Nothing was granted to it, and any permission it held has been removed.`,
       files: [],
       more: '',
       address: shown,
@@ -80,8 +94,8 @@ export function sheetView (sheet: SetupSheet, address: string, token: string): S
       kind: 'blocked',
       title: 'Security warning: this app\'s files do not match',
       body: sheet.rootMatches || sheet.differingCount > 0
-        ? `${name} was not opened. Its files are not the ones its publisher declared, and every permission you gave it has been removed.`
-        : `${name} was not opened. The hash tree its publisher declared contradicts its own files, and every permission you gave it has been removed.`,
+        ? `${name} was not opened. Its files are not the ones its publisher declared. Nothing was granted to it, and any permission it held has been removed.`
+        : `${name} was not opened. The hash tree its publisher declared contradicts its own files. Nothing was granted to it, and any permission it held has been removed.`,
       files: listed,
       more: left > 0 ? `and ${String(left)} more` : '',
       address: shown,
@@ -93,7 +107,7 @@ export function sheetView (sheet: SetupSheet, address: string, token: string): S
     token,
     kind: 'download-failed',
     title: `Couldn't download ${name}`,
-    body: 'Orivon could not download all of the app\'s files, so nothing was opened. The permissions you gave are kept.',
+    body: 'Orivon could not download all of the app\'s files, so nothing was opened. Your answer is kept while you try again.',
     files: [],
     more: '',
     address: shown,

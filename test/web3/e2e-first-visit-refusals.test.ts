@@ -60,7 +60,7 @@ it('[app:first-visit-blocks-files-that-differ-from-the-declaration] [app:first-v
       check(`it offers no way forward (${JSON.stringify(warning.text.buttons)})`, warning.text.buttons.length === 1 && warning.text.buttons[0] === 'Go back')
       check('the page was never entered', !(await anyDocumentAt(running, badOrigin)) && (await pageAt(running, `${badOrigin}/`)) === null)
       check('nothing was pinned', !existsSync(pinPath(userData, badOrigin)))
-      check(`every grant was removed (${JSON.stringify(savedGrants(userData, badOrigin))})`, savedGrants(userData, badOrigin).length === 0)
+      check(`nothing was ever granted (${JSON.stringify(savedGrants(userData, badOrigin))})`, savedGrants(userData, badOrigin).length === 0)
       await pressSheet(warning.page, 'Go back')
       check('Go back takes the sheet away', await waitFor(() => sheetGone(running), 10_000))
       await delay(ABSENCE_SETTLE_MS)
@@ -81,7 +81,7 @@ it('[app:first-visit-blocks-files-that-differ-from-the-declaration] [app:first-v
       check(`a retry sheet names the failed download (${retry.text.title})`, /couldn't download/i.test(retry.text.title))
       check(`it offers Try again (${JSON.stringify(retry.text.buttons)})`, retry.text.buttons.includes('Try again'))
       check('it is no security warning', !/security warning/i.test(retry.text.title))
-      check(`the grants are kept (${JSON.stringify(savedGrants(userData, flakyOrigin))})`, savedGrants(userData, flakyOrigin).includes('fs'))
+      check(`nothing is granted yet: the answer waits for the files (${JSON.stringify(savedGrants(userData, flakyOrigin))})`, savedGrants(userData, flakyOrigin).length === 0)
       check('nothing was pinned and the page was never entered', !existsSync(pinPath(userData, flakyOrigin)) && !(await anyDocumentAt(running, flakyOrigin)))
       gateway.failNext('flaky', 'app.js', 502, 0)
       await pressSheet(retry.page, 'Try again')
@@ -90,7 +90,7 @@ it('[app:first-visit-blocks-files-that-differ-from-the-declaration] [app:first-v
       let facts = null as PageFacts | null
       await waitFor(async () => { facts = await pageAt(running, `${flakyOrigin}/`); return facts?.ran === 'ran' }, 20_000)
       check(`it runs as an app tab (${JSON.stringify(facts)})`, facts?.ran === 'ran' && facts.hasProcess)
-      check('it is pinned', existsSync(pinPath(userData, flakyOrigin)))
+      check('it is pinned, and the answer given before the download is granted now', existsSync(pinPath(userData, flakyOrigin)) && savedGrants(userData, flakyOrigin).includes('fs'))
       check('Try again asked nothing again', await questionGone(running))
 
       expect(warning.text.title).toMatch(/security warning/i)

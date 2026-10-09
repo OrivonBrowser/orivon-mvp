@@ -26,7 +26,7 @@ export function answerSheet (token: string, choice: SheetChoice): boolean {
   return true
 }
 
-const KINDS: ReadonlySet<unknown> = new Set(['blocked', 'download-failed'])
+const KINDS: ReadonlySet<unknown> = new Set(['blocked', 'download-failed', 'too-large'])
 
 function isView (value: unknown): value is SetupSheetView {
   if (typeof value !== 'object' || value === null) return false

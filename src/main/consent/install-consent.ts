@@ -39,6 +39,10 @@ import type { DialogCaller } from './request-grant.js'
  * everything at once -- see `PerCapabilityConsentPrompt` below for the
  * per-row answer A138's `'per-capability'` manifest value asks for.
  *
+ * `true` is the person's Allow and `false` their pressing Deny. `'dismissed'` is any way out
+ * that is neither (Escape, a closed tab, a navigation): the first-visit order reads it as "ask
+ * again next visit" and records nothing, where `requestInstallConsent` below treats it as a no.
+ *
  * `held` (A170) is the SUBSET of `capabilities` already granted through
  * that other door -- Deny still applies only to the rest, so the real
  * dialog (./install-consent-prompt.ts) marks those rows rather than
@@ -50,7 +54,7 @@ export type InstallConsentPrompt = (
   capabilities: readonly CapabilityKind[],
   held: readonly CapabilityKind[],
   caller?: DialogCaller
-) => Promise<boolean>
+) => Promise<boolean | 'dismissed'>
 
 /**
  * A138's 'per-capability' path: asks about exactly `capabilities` -- already
@@ -71,7 +75,7 @@ export type PerCapabilityConsentPrompt = (
   manifest: Manifest,
   capabilities: readonly CapabilityKind[],
   caller?: DialogCaller
-) => Promise<readonly CapabilityKind[]>
+) => Promise<readonly CapabilityKind[] | null>
 
 /**
  * What the question came to: `granted` (something was allowed), `declined` (the person said no, now
@@ -148,9 +152,9 @@ export async function requestInstallConsent (
     // The held SUBSET of it goes along too (A170), so the real dialog can
     // mark those rows -- Deny below only ever covers `outstanding`, never
     // a row already held through the other door.
-    accepted = caller === undefined
+    accepted = (caller === undefined
       ? await consent(origin, manifest, capabilities, held.map((grant) => grant.capability))
-      : await consent(origin, manifest, capabilities, held.map((grant) => grant.capability), caller)
+      : await consent(origin, manifest, capabilities, held.map((grant) => grant.capability), caller)) === true
   } catch (error) {
     console.error('[install-consent] the consent prompt threw; treating this visit as declined', origin, error)
     return 'left'
@@ -250,9 +254,9 @@ async function runPerCapabilityConsent (
 ): Promise<InstallConsentOutcome> {
   let acceptedRaw: readonly CapabilityKind[]
   try {
-    acceptedRaw = caller === undefined
+    acceptedRaw = (caller === undefined
       ? await perCapabilityConsent(origin, manifest, outstanding)
-      : await perCapabilityConsent(origin, manifest, outstanding, caller)
+      : await perCapabilityConsent(origin, manifest, outstanding, caller)) ?? []
   } catch (error) {
     console.error('[install-consent] the per-capability consent prompt threw; nothing decided this visit', origin, error)
     return 'left'

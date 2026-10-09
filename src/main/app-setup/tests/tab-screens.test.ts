@@ -10,8 +10,9 @@ import { createTabSetup } from '../tab-screens.js'
 const WINDOW = {} as unknown as ShellWindow
 const ADDRESS = 'https://abc.ipfs.orivon/'
 
-function rig (): { contents: EventEmitter, asks: SlotAsk[], cancels: Array<ReturnType<typeof vi.fn>>, navigated: string[], setup: ReturnType<typeof createTabSetup> } {
-  const contents = new EventEmitter()
+function rig (): { contents: EventEmitter & { isDestroyed: () => boolean }, asks: SlotAsk[], cancels: Array<ReturnType<typeof vi.fn>>, navigated: string[], acted: string[], setup: ReturnType<typeof createTabSetup> } {
+  const contents = Object.assign(new EventEmitter(), { isDestroyed: () => false })
+  const acted: string[] = []
   const asks: SlotAsk[] = []
   const cancels: Array<ReturnType<typeof vi.fn>> = []
   const navigated: string[] = []
@@ -27,9 +28,15 @@ function rig (): { contents: EventEmitter, asks: SlotAsk[], cancels: Array<Retur
     prewarm: () => {},
     newToken: () => `token-${String(tokens++)}`,
     navigate: (_window, _tabId, url) => { navigated.push(url) },
-    leavePage: () => {}
+    leavePage: () => { acted.push('leave') },
+    blank: async (target) => {
+      acted.push('blank')
+      // What the real replacement does: a main-frame navigation of the tab's own.
+      ;(target as unknown as EventEmitter).emit('did-start-navigation', { isMainFrame: true, isSameDocument: false })
+    },
+    stop: () => { acted.push('stop') }
   })
-  return { contents, asks, cancels, navigated, setup }
+  return { contents, asks, cancels, navigated, acted, setup }
 }
 
 const asContents = (contents: EventEmitter): WebContents => contents as unknown as WebContents
@@ -118,5 +125,60 @@ describe('createTabSetup', () => {
     const screens = setup(asContents(contents), ADDRESS)!
     screens.navigate('https://abc.ipfs.orivon/page')
     expect(navigated).toEqual(['https://abc.ipfs.orivon/page'])
+  })
+
+  it('puts an empty page in place of the running one without taking that for the person moving on', async () => {
+    const { contents, acted, setup } = rig()
+    const screens = setup(asContents(contents), ADDRESS)!
+    await screens.blank()
+    expect(acted).toEqual(['blank'])
+    expect(screens.moved()).toBe(false)
+    contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false })
+    expect(screens.moved()).toBe(true)
+  })
+
+  it('aborts its signal when the tab moves on or is destroyed, and not before', () => {
+    const { contents, setup } = rig()
+    const screens = setup(asContents(contents), ADDRESS)!
+    expect(screens.signal.aborted).toBe(false)
+    contents.emit('destroyed')
+    expect(screens.signal.aborted).toBe(true)
+  })
+
+  it('ends its screens before it sends the tab anywhere, and sends it only if it is still where the visit began', () => {
+    const { contents, navigated, acted, setup } = rig()
+    const screens = setup(asContents(contents), ADDRESS)!
+    screens.show({ kind: 'asking', name: 'L' })
+    screens.navigate('https://abc.ipfs.orivon/x')
+    expect(navigated).toEqual(['https://abc.ipfs.orivon/x'])
+    expect(isCoverClaimed(contents)).toBe(false)
+
+    const moved = rig()
+    const away = moved.setup(asContents(moved.contents), ADDRESS)!
+    moved.contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false })
+    away.navigate('https://abc.ipfs.orivon/x')
+    away.leavePage()
+    away.stop()
+    expect(moved.navigated).toEqual([])
+    expect(moved.acted).toEqual([])
+    expect(acted).toEqual([])
+  })
+
+  it('leaves the page and stops the pending navigation only for a tab that has not moved', () => {
+    const { contents, acted, setup } = rig()
+    const screens = setup(asContents(contents), ADDRESS)!
+    screens.stop()
+    expect(acted).toEqual(['stop'])
+    const again = rig()
+    const second = again.setup(asContents(again.contents), ADDRESS)!
+    second.leavePage()
+    expect(again.acted).toEqual(['leave'])
+  })
+
+  it('counts a destroyed tab as moved on', () => {
+    const { contents, setup } = rig()
+    const screens = setup(asContents(contents), ADDRESS)!
+    contents.isDestroyed = () => true
+    expect(screens.moved()).toBe(true)
   })
 })

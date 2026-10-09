@@ -14,7 +14,7 @@ import type { ProtocolAddresses } from '../../address.js'
 import type { ProtocolRegistry } from '../../registry.js'
 import { contentTypeFor } from '../../../loader/serve/content-type.js'
 import { parseRange } from '../../../loader/serve/range.js'
-import { CONTENT_ROOT_HEADER, PARTITION_HEADER } from '../../../loader/fetch/content-root.js'
+import { CONTENT_ROOT_HEADER, FAILURE_HEADER, PARTITION_HEADER } from '../../../loader/fetch/content-root.js'
 import type { RunCertificate } from './certificate.js'
 import { ERROR_PAGE_CSP, renderErrorPage } from './error-pages.js'
 import type { Sites } from './sites.js'
@@ -157,6 +157,7 @@ function sendError (res: ServerResponse, shown: string, error: unknown, servedRo
     'x-content-type-options': 'nosniff'
   }
   if (failure === 'not-synced') headers['retry-after'] = '10'
+  if (failure === 'unverifiable') headers[FAILURE_HEADER] = failure
   if (servedRoot !== undefined) headers[CONTENT_ROOT_HEADER] = servedRoot
   res.writeHead(status, headers).end(html)
 }

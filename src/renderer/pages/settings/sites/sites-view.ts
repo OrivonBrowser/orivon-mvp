@@ -71,6 +71,17 @@ function siteItem (site: SiteSummary, part: SitesPart): HTMLElement {
   return item
 }
 
+/** An app the person refused: its host, and the one thing to do about it. */
+function declinedItem (origin: string, part: SitesPart): HTMLElement {
+  const host = hostOf(origin)
+  const again = h('button', { className: 'btn small', type: 'button', textContent: 'Ask again', onclick: () => { void part.askAgain(origin) } })
+  again.setAttribute('aria-label', `Ask again about ${host} as an app`)
+  again.dataset['focusKey'] = `${origin}:ask-again`
+  const item = h('li', { className: 'site-item declined-app' }, h('div', { className: 'site-line' }, h('span', { className: 'site-host', textContent: host, title: origin }), again))
+  item.dataset['origin'] = origin
+  return item
+}
+
 const skeletonRow = (): HTMLElement => h('li', { className: 'site-skeleton' }, h('span', { className: 'skeleton site-skeleton-mark' }), h('span', { className: 'skeleton site-skeleton-line' }))
 
 function emptyState (text: string): HTMLElement {
@@ -93,7 +104,10 @@ function build (part: SitesPart): HTMLElement {
   const showAll = h('button', { className: 'link-btn sites-show-all', type: 'button', onclick: () => { part.showEverything() } })
   const resetAll = h('button', { className: 'btn danger', type: 'button', onclick: () => { void part.pressResetAll() } })
   resetAll.dataset['focusKey'] = 'reset-all'
-  const root = h('div', { className: 'sites-list' }, h('div', { className: 'sites-head' }, search), notice, list, showAll, h('div', { className: 'btn-row sites-foot' }, resetAll))
+  const declinedHead = h('h3', { className: 'sites-declined-head', textContent: 'Apps you refused' })
+  const declinedNote = h('p', { className: 'sites-declined-note', textContent: 'These open as plain websites. Ask again to be asked what each may do the next time you visit it.' })
+  const declined = h('ul', { className: 'sites-ul sites-declined', role: 'list' })
+  const root = h('div', { className: 'sites-list' }, h('div', { className: 'sites-head' }, search), notice, list, showAll, h('div', { className: 'btn-row sites-foot' }, resetAll), declinedHead, declinedNote, declined)
   // The page hands the keyboard back to a control inside this element after it redraws.
   root.dataset['keepFocus'] = 'true'
 
@@ -118,6 +132,8 @@ function build (part: SitesPart): HTMLElement {
     resetAll.hidden = part.sites.length === 0
     resetAll.className = part.armedResetAll ? 'btn danger armed' : 'btn danger'
     resetAll.textContent = part.armedResetAll ? 'Click again to reset' : 'Reset all site settings'
+    declinedHead.hidden = declinedNote.hidden = declined.hidden = part.declinedApps.length === 0
+    replaceChildren(declined, ...part.declinedApps.map((origin) => declinedItem(origin, part)))
     if (focused !== undefined) (root.querySelector<HTMLElement>(`[data-focus-key="${CSS.escape(focused)}"]`) ?? search).focus()
   }
   part.subscribe(update)

@@ -17,19 +17,22 @@ function screensFake (): TabScreens & { calls: string[] } {
   return {
     calls,
     show: () => { calls.push('show') },
+    blank: async () => { calls.push('blank') },
     sheet: async () => 'leave',
     end: () => { calls.push('end') },
     moved: () => false,
+    signal: new AbortController().signal,
     navigate: (url) => { calls.push(`navigate:${url}`) },
-    leavePage: () => { calls.push('leavePage') }
+    leavePage: () => { calls.push('leavePage') },
+    stop: () => { calls.push('stop') }
   }
 }
 
 function rig (options: { kind?: 'first' | 'declined' | 'known', run?: (host: SetupHost) => Promise<FirstVisitResult>, screens?: boolean, contents?: boolean } = {}): { handler: ReturnType<typeof firstVisitBeforeRequest>, screens: ReturnType<typeof screensFake>, visit: FirstVisit, run: ReturnType<typeof vi.fn> } {
   const screens = screensFake()
-  const run = vi.fn(async (_origin: string, _url: string, _caller: unknown, host: SetupHost): Promise<FirstVisitResult> => await (options.run ?? (async () => { host.plain(); return { outcome: 'plain', why: 'website' } }))(host))
+  const run = vi.fn(async (_origin: string, _url: string, _caller: unknown, host: SetupHost, _signal?: AbortSignal): Promise<FirstVisitResult> => await (options.run ?? (async () => { host.plain(); return { outcome: 'plain', why: 'website' } }))(host))
   const visit: FirstVisit = { kindOf: vi.fn(async () => options.kind ?? 'first'), run: run as unknown as FirstVisit['run'] }
-  const contents = { isDestroyed: () => false, stop: () => { screens.calls.push('stop') } } as unknown as WebContents
+  const contents = { isDestroyed: () => false } as unknown as WebContents
   const handler = firstVisitBeforeRequest({
     firstVisit: () => visit,
     tabSetup: () => options.screens === false ? () => undefined : () => screens,
@@ -76,19 +79,19 @@ describe('firstVisitBeforeRequest', () => {
   it('cancels the request and takes the tab into the app when the files are in', async () => {
     const { handler, screens } = rig({ run: async (host) => { host.enter(); return { outcome: 'entered', installed: {} as never } } })
     expect(await handler(details(), CONTINUE)).toEqual({ cancel: true })
-    expect(screens.calls).toEqual(['end', `navigate:${URL_}`])
+    expect(screens.calls).toEqual([`navigate:${URL_}`])
   })
 
   it('cancels the request when the visit ends with the app not opened', async () => {
     const { handler, screens } = rig({ run: async (host) => { host.end(); return { outcome: 'blocked', differing: [] } } })
     expect(await handler(details(), CONTINUE)).toEqual({ cancel: true })
-    expect(screens.calls).toEqual(['end', 'stop'])
+    expect(screens.calls).toEqual(['stop'])
   })
 
   it('goes into the app when another tab finished the visit first, and opens a plain website when it was refused there', async () => {
     const known = rig({ run: async () => ({ outcome: 'known' }) })
     expect(await known.handler(details(), CONTINUE)).toEqual({ cancel: true })
-    expect(known.screens.calls).toEqual(['end', `navigate:${URL_}`])
+    expect(known.screens.calls).toEqual([`navigate:${URL_}`])
     const declined = rig({ run: async () => ({ outcome: 'declined' }) })
     expect(await declined.handler(details(), CONTINUE)).toBe(CONTINUE)
   })
@@ -109,5 +112,6 @@ describe('firstVisitBeforeRequest', () => {
     const { handler, run } = rig()
     await handler(details(), CONTINUE)
     expect(run.mock.calls[0]!.slice(0, 2)).toEqual([ORIGIN, URL_])
+    expect(run.mock.calls[0]![4]).toBeInstanceOf(AbortSignal)
   })
 })

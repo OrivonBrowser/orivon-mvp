@@ -16,6 +16,8 @@ import { net, session } from 'electron'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { publishAppUpdates, publishInstallApp } from '../registry.js'
 import { publishFirstVisit } from '../app-setup/tab-setup-ref.js'
+import { join } from 'node:path'
+import { DeclinedApps, installDeclinedApps } from './declined-apps.js'
 import { createFirstVisit } from './first-visit.js'
 import { installFromHint } from './app-install.js'
 import { createInstallConsentPrompt, createPerCapabilityConsentPrompt } from '../consent/install-consent-prompt.js'
@@ -150,8 +152,11 @@ export const appInstallSubsystem: Subsystem = {
     })
     // A page's first visit (ADR-0074): asks, then downloads and checks, before the tab is let into the app. It
     // leaves alone the origins that never install: a local file, loopback and developer origins, anything not https.
+    // The refusals are kept in `declined-apps.json`, and in memory only in a private session.
+    const declined = new DeclinedApps(ctx.privateSession ? undefined : join(ctx.app.getPath('userData'), 'declined-apps.json'))
+    installDeclinedApps(declined)
     publishFirstVisit(createFirstVisit({
-      deps: { broker, loader, consent, perCapabilityConsent },
+      deps: { broker, loader, consent, perCapabilityConsent, declined },
       untouched: (origin) => isLocalFileKey(origin) || grantableWithoutInstall(origin, devModeEnabled()) || !origin.startsWith('https://'),
       servedFromCache: isOriginServedFromCacheSync
     }))

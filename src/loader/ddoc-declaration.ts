@@ -9,7 +9,7 @@ import type { PathLeaf } from '../broker/policy/canonical-path.js'
 import { isString, ownProperty } from '../broker/policy/own-property.js'
 import { BUNDLE_HASH_PATTERN } from '../broker/policy/pin.js'
 import { fetchWithBudget, joinChunks } from './fetch/budget.js'
-import type { ByteBudget, Fetch } from './fetch/budget.js'
+import type { ByteBudget, Fetch, FetchBundleRejected } from './fetch/budget.js'
 
 /** Beside the manifest, and never a leaf: a root cannot describe the file that holds it. */
 export const DDOC_PATH = '/.well-known/orivon-ddoc.json'
@@ -56,19 +56,25 @@ export function ddocToJson (declaration: DdocDeclaration): { bundleHash: string,
  * error, an over-cap body, or a host that answers every missing path with
  * its index page. Only a body that arrived and failed to parse is logged,
  * since the other cases are simply a site that publishes nothing.
+ *
+ * With `strict`, a caller that must judge the tree (a first visit, ADR-0074)
+ * is told of a download that failed, any way but a 404: the site may well
+ * publish one, and treating the failure as "not published" would let files
+ * in unchecked. A 404 and a body that is no declaration stay "not published".
  */
 export async function fetchDdocDeclaration (
   fetchFn: Fetch,
   canonicalOrigin: string,
   pinnedAddresses: readonly string[],
   budget: ByteBudget,
-  bundleSignal: AbortSignal
-): Promise<DdocDeclaration | undefined> {
+  bundleSignal: AbortSignal,
+  strict = false
+): Promise<DdocDeclaration | undefined | FetchBundleRejected> {
   const url = `${canonicalOrigin}${DDOC_PATH}`
   const chunks: Uint8Array[] = []
   const fetched = await fetchWithBudget(fetchFn, url, pinnedAddresses, MAX_DDOC_BYTES, budget, 'DDOC hash tree', bundleSignal,
     async (chunk) => { chunks.push(chunk) })
-  if ('ok' in fetched) return undefined
+  if ('ok' in fetched) return strict && fetched.status !== 404 ? fetched : undefined
 
   const text = new TextDecoder('utf-8', { fatal: false }).decode(joinChunks(chunks, fetched.byteLength))
   let raw: unknown

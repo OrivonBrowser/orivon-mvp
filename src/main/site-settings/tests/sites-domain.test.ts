@@ -132,3 +132,43 @@ describe('the sites domain with approved devices', () => {
     expect(rows.size).toBe(0)
   })
 })
+
+describe('the sites domain: apps whose first visit was refused', () => {
+  function withDeclined (initial: string[], isPrivate = false): { ask: (command: unknown) => unknown, held: Set<string> } {
+    const held = new Set(initial)
+    const controller = createSiteSettingsController({
+      store: new SiteSettingsStore(null),
+      notifications: { get: () => undefined, set: () => {}, forget: () => {}, clear: () => {}, entries: () => [], onChange: () => () => {} },
+      defaultFor: (kind) => kind.values[0] ?? 'ask',
+      isApp: () => false
+    })
+    const domain = sitesDomain(controller, { isPrivate, declinedApps: { list: () => [...held].sort(), remove: (origin) => held.delete(origin) } })
+    return { ask: (command) => domain.handle(command, caller), held }
+  }
+
+  it('lists the origins whose question the person answered Deny, beside the sites with answers', () => {
+    const { ask } = withDeclined(['https://b.ipfs.orivon', 'https://a.ipfs.orivon'])
+    expect((ask({ type: 'list' }) as { declinedApps: string[] }).declinedApps).toEqual(['https://a.ipfs.orivon', 'https://b.ipfs.orivon'])
+  })
+
+  it('asks again by removing one origin, and says whether it was there', () => {
+    const { ask, held } = withDeclined(['https://a.ipfs.orivon'])
+    expect(ask({ type: 'askAgain', origin: 'https://a.ipfs.orivon' })).toEqual({ ok: true })
+    expect(held.size).toBe(0)
+    expect(ask({ type: 'askAgain', origin: 'https://a.ipfs.orivon' })).toEqual({ ok: false })
+  })
+
+  it('refuses a request whose origin is not a string', () => {
+    const { ask, held } = withDeclined(['https://a.ipfs.orivon'])
+    expect(ask({ type: 'askAgain', origin: 7 })).toBeUndefined()
+    expect(ask({ type: 'askAgain' })).toBeUndefined()
+    expect(held.size).toBe(1)
+  })
+
+  it('lists none, and refuses to ask again, where no record is kept', () => {
+    const { ask } = setup()
+    expect((ask({ type: 'list' }) as { declinedApps: string[] }).declinedApps).toEqual([])
+    expect(ask({ type: 'askAgain', origin: 'https://a.ipfs.orivon' })).toEqual({ ok: false })
+  })
+})
+

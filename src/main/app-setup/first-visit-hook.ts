@@ -24,7 +24,7 @@ function callerFor (contents: WebContents, screens: TabScreens, windowForSender:
     window: () => windowForSender(contents),
     contents: () => contents,
     hold: () => holdNavigation(contents),
-    stillOn: () => !contents.isDestroyed() && !screens.moved()
+    stillOn: () => !screens.moved()
   }
 }
 
@@ -42,27 +42,27 @@ export function firstVisitBeforeRequest (deps: HookDeps): (details: OnBeforeRequ
 
     return await new Promise<CallbackResponse>((resolve) => {
       let answered = false
-      const answer = (response: CallbackResponse, then?: () => void): void => {
+      // `then` acts on the tab through the screens, which end themselves first and do nothing to a tab that moved on.
+      const answer = (response: CallbackResponse, then: () => void): void => {
         if (answered) return
         answered = true
-        screens.end()
-        then?.()
+        then()
         resolve(response)
       }
       const host: SetupHost = {
         show: (stage) => { screens.show(stage) },
         sheet: async (sheet) => await screens.sheet(sheet),
         enter: () => { answer({ cancel: true }, () => { screens.navigate(details.url) }) },
-        plain: () => { answer(current) },
-        // Stopped first: a request cancelled under a navigation that is still pending commits an error page for the address, and the tab should stay on the page it was on.
-        end: () => { answer({ cancel: true }, () => { if (!contents.isDestroyed()) contents.stop() }) }
+        plain: () => { answer(current, () => { screens.end() }) },
+        // Stopped, not just cancelled: a request cancelled under a navigation that is still pending commits an error page for the address, and the tab should stay on the page it was on.
+        end: () => { answer({ cancel: true }, () => { screens.stop() }) }
       }
       const settle = (result: FirstVisitResult): void => {
         if (result.outcome === 'known') host.enter()
         else if (result.outcome === 'declined') host.plain()
         else host.end()
       }
-      visit.run(origin, details.url, callerFor(contents, screens, deps.windowForSender), host).then(settle).catch((error: unknown) => {
+      visit.run(origin, details.url, callerFor(contents, screens, deps.windowForSender), host, screens.signal).then(settle).catch((error: unknown) => {
         console.error('[first-visit] the visit failed; the page loads as an ordinary website', origin, error)
         host.plain()
       })

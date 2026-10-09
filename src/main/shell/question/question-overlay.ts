@@ -155,6 +155,7 @@ export function createQuestionPanel (name: string, now: () => number = Date.now)
         if (answer.checkbox !== undefined && spec.checkboxLabel === undefined) return undefined
         entry.settle({
           response: answer.button,
+          clicked: true,
           checkboxChecked: answer.checkbox === true,
           ...(spec.input === undefined ? {} : { text: answer.text ?? spec.input.initial })
         })

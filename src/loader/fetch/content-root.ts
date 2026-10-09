@@ -8,6 +8,9 @@ import type { Fetch } from './budget.js'
 /** The request header the verifier's loopback server checks against the root it is serving. */
 export const CONTENT_ROOT_HEADER = 'x-orivon-content-root'
 
+/** Set by the verifier on an answer that proves the content is not what its name or address names (`unverifiable`), and on no other: a gateway's outage reads as `unavailable`. */
+export const FAILURE_HEADER = 'x-orivon-failure'
+
 /**
  * The top-level page origin a request to the verifier belongs to. The
  * verifier keeps one cache per value, so no site can time what another

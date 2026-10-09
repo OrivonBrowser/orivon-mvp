@@ -58,7 +58,7 @@ describe('the question handler', () => {
     expect(r.close).not.toHaveBeenCalled()
     r.clock.now += 1
     r.handler.request({ id: r.id, button: 0 })
-    expect(r.results).toEqual([{ response: 0, checkboxChecked: false }])
+    expect(r.results).toEqual([{ clicked: true, response: 0, checkboxChecked: false }])
     expect(r.close).toHaveBeenCalledTimes(1)
   })
 
@@ -74,7 +74,7 @@ describe('the question handler', () => {
     expect(r.results).toEqual([])
     r.clock.now += 1
     r.handler.request({ id: r.id, button: 0 })
-    expect(r.results).toEqual([{ response: 0, checkboxChecked: false }])
+    expect(r.results).toEqual([{ clicked: true, response: 0, checkboxChecked: false }])
   })
 
   it('refuses a guarded button within the guard of the last key, however long since the page drew', () => {
@@ -90,7 +90,7 @@ describe('the question handler', () => {
     expect(r.results).toEqual([])
     r.clock.now += GUARD_MS
     r.handler.request({ id: r.id, button: 0 })
-    expect(r.results).toEqual([{ response: 0, checkboxChecked: false }])
+    expect(r.results).toEqual([{ clicked: true, response: 0, checkboxChecked: false }])
   })
 
   it('takes the letters typed into a question\'s own text box as its answer, so Enter right after them answers', () => {
@@ -104,7 +104,7 @@ describe('the question handler', () => {
     }
     r.handler.key?.({ key: 'Enter', isAutoRepeat: false })
     r.handler.request({ id: r.id, button: 0, text: 'Ada' })
-    expect(r.results).toEqual([{ response: 0, checkboxChecked: false, text: 'Ada' }])
+    expect(r.results).toEqual([{ clicked: true, response: 0, checkboxChecked: false, text: 'Ada' }])
   })
 
   it('still waits after a Tab in a question with a text box', () => {
@@ -126,7 +126,7 @@ describe('the question handler', () => {
     r.clock.now += GUARD_MS
     expect(r.handler.key?.({ key: 'Enter', isAutoRepeat: false })).toBe(false)
     r.handler.request({ id: r.id, button: 0 })
-    expect(r.results).toEqual([{ response: 0, checkboxChecked: false }])
+    expect(r.results).toEqual([{ clicked: true, response: 0, checkboxChecked: false }])
   })
 
   it('never answers from a held Enter or Space: its repeats are swallowed and restart the guard', () => {
@@ -158,14 +158,14 @@ describe('the question handler', () => {
     draw(r)
     r.clock.now += 1
     r.handler.request({ id: r.id, button: 0 })
-    expect(r.results).toEqual([{ response: 0, checkboxChecked: false }])
+    expect(r.results).toEqual([{ clicked: true, response: 0, checkboxChecked: false }])
   })
 
   it('takes an unguarded button at once', () => {
     const r = rig()
     r.handler.show?.({ id: r.id })
     r.handler.request({ id: r.id, button: 1 })
-    expect(r.results).toEqual([{ response: 1, checkboxChecked: false }])
+    expect(r.results).toEqual([{ clicked: true, response: 1, checkboxChecked: false }])
   })
 
   it('starts the guard over on every show, so a tab switch back does not leave a ready button', () => {
@@ -223,7 +223,7 @@ describe('the question handler', () => {
     const r = rig(spec)
     r.handler.show?.({ id: r.id })
     r.handler.request({ id: r.id, button: 0, text: 'ada', checkbox: true })
-    expect(r.results).toEqual([{ response: 0, checkboxChecked: true, text: 'ada' }])
+    expect(r.results).toEqual([{ clicked: true, response: 0, checkboxChecked: true, text: 'ada' }])
   })
 
   it('refuses a text longer than a box can hold', () => {
@@ -243,7 +243,7 @@ describe('the question handler', () => {
     draw(r)
     r.clock.now += GUARD_MS
     r.handler.request({ id: r.id, button: 0, text: 'x'.repeat(5000) })
-    expect(r.results).toEqual([{ response: 0, checkboxChecked: false, text: 'x'.repeat(5000) }])
+    expect(r.results).toEqual([{ clicked: true, response: 0, checkboxChecked: false, text: 'x'.repeat(5000) }])
   })
 
   it('settles every question held for its window as a cancel when the window goes', () => {
@@ -285,7 +285,7 @@ describe('a question whose button needs two presses', () => {
     expect(r.send).toHaveBeenCalledWith({ type: 'pressed', button: 0, ms: DOUBLE_PRESS_MS })
     r.clock.now += 200
     r.handler.request({ id: r.id, button: 0 })
-    expect(r.results).toEqual([{ response: 0, checkboxChecked: false }])
+    expect(r.results).toEqual([{ clicked: true, response: 0, checkboxChecked: false }])
     expect(r.close).toHaveBeenCalledOnce()
   })
 
@@ -294,7 +294,7 @@ describe('a question whose button needs two presses', () => {
     r.handler.request({ id: r.id, button: 0 })
     r.handler.request({ type: 'enter', id: r.id, button: 0 })
     r.handler.request({ id: r.id, button: 0 })
-    expect(r.results).toEqual([{ response: 0, checkboxChecked: false }])
+    expect(r.results).toEqual([{ clicked: true, response: 0, checkboxChecked: false }])
   })
 
   it('takes a second press after the window as a first one again', () => {
@@ -393,7 +393,7 @@ describe('a question whose button needs two presses', () => {
   it('answers a single press on a button that is not a double-press one', () => {
     const r = ready()
     r.handler.request({ id: r.id, button: 1 })
-    expect(r.results).toEqual([{ response: 1, checkboxChecked: false }])
+    expect(r.results).toEqual([{ clicked: true, response: 1, checkboxChecked: false }])
   })
 
   it('takes an arrival report only as { type, id, button } for the question on screen', () => {

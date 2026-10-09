@@ -15,6 +15,8 @@ interface ListReply {
   readonly isPrivate: boolean
   readonly defaults: readonly DefaultRow[]
   readonly sites: readonly SiteSummary[]
+  /** The apps whose first-visit question was answered Deny, as origins. */
+  readonly declinedApps?: readonly string[]
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
@@ -43,6 +45,8 @@ export class SitesPart implements SettingsPart {
   isPrivate = false
   defaults: readonly DefaultRow[] = []
   sites: readonly SiteSummary[] = []
+  /** Origins refused as apps: each opens as a plain website until it is asked about again. */
+  declinedApps: readonly string[] = []
   query = ''
   showAll = false
   /** The sites open to their own rows, and those rows as main last gave them. */
@@ -65,6 +69,7 @@ export class SitesPart implements SettingsPart {
     this.isPrivate = reply.isPrivate
     this.defaults = reply.defaults
     this.sites = reply.sites
+    this.declinedApps = Array.isArray(reply.declinedApps) ? reply.declinedApps.filter((origin): origin is string => typeof origin === 'string') : []
     this.loaded = true
     // A site that lost its last answer has nothing left to open.
     for (const origin of [...this.open]) if (!reply.sites.some((site) => site.origin === origin)) this.close(origin)
@@ -128,6 +133,12 @@ export class SitesPart implements SettingsPart {
       this.rows.set(origin, rows)
       this.devices.set(origin, devicesOf(reply))
     }
+    await this.refresh()
+  }
+
+  /** Takes an origin out of the refused apps, so its next visit asks the question again. */
+  async askAgain (origin: string): Promise<void> {
+    await this.bridge.request('sites', { type: 'askAgain', origin })
     await this.refresh()
   }
 

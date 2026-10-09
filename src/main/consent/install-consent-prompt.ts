@@ -42,12 +42,12 @@ export function createInstallConsentPrompt (levelOverrideFor: LevelOverrideFor =
     // closed, by the time this actually runs (the lookup above included) --
     // never show a dialog for a page the person is no longer looking at
     // (request-grant.ts's own `DialogCaller` doc).
-    if (caller !== undefined && !caller.stillOn(origin)) return false
+    if (caller !== undefined && !caller.stillOn(origin)) return 'dismissed'
 
     const content = describeInstallConsent(origin, manifest, capabilities, held, levelOverrideFor(origin), names)
     const release = holdCaller(caller)
     try {
-      const { response } = await askCaller(caller, {
+      const { response, clicked } = await askCaller(caller, {
         kind: 'consent',
         origin: formatOriginForDisplay(origin),
         warning: content.warning,
@@ -59,7 +59,8 @@ export function createInstallConsentPrompt (levelOverrideFor: LevelOverrideFor =
         guarded: [0],
         focus: 'dialog'
       })
-      return response === 0
+      // Only the pressed Deny is a no: Escape, a closed tab and a navigation answer with the same index.
+      return response === 0 ? true : clicked === true ? false : 'dismissed'
     } finally {
       release()
     }
@@ -98,7 +99,7 @@ export function createPerCapabilityConsentPrompt (levelOverrideFor: LevelOverrid
     // Checked before the FIRST screen of this staged sequence, after the
     // lookup above -- the whole sequence never starts for a page the person
     // is no longer looking at.
-    if (caller !== undefined && !caller.stillOn(origin)) return []
+    if (caller !== undefined && !caller.stillOn(origin)) return null
 
     const release = holdCaller(caller)
     try {
@@ -116,6 +117,8 @@ export function createPerCapabilityConsentPrompt (levelOverrideFor: LevelOverrid
         focus: 'dialog'
       })
       if (overview.response === ALLOW_ALL) return capabilities
+      // Only a pressed button answers; Escape, a closed tab and a navigation answer with the same index as Deny all.
+      if (overview.clicked !== true) return null
       if (overview.response === DENY_ALL) return []
 
       const declared = patternSetFromCapabilities(manifest.capabilities)
@@ -126,7 +129,7 @@ export function createPerCapabilityConsentPrompt (levelOverrideFor: LevelOverrid
         // Re-checked before EACH screen: the person can close or navigate the
         // tab partway through this multi-screen sequence, not only before it
         // started.
-        if (caller !== undefined && !caller.stillOn(origin)) return []
+        if (caller !== undefined && !caller.stillOn(origin)) return null
         const screen = describeCapabilityChoice(origin, manifest, declared, capabilities, index, decided, level)
         const choice = await askCaller(caller, {
           kind: 'consent',
@@ -140,6 +143,7 @@ export function createPerCapabilityConsentPrompt (levelOverrideFor: LevelOverrid
           guarded: [0],
           focus: 'dialog'
         })
+        if (choice.response !== 0 && choice.clicked !== true) return null
         decided.set(capability, choice.response === 0)
       }
       return capabilities.filter((capability) => decided.get(capability) === true)

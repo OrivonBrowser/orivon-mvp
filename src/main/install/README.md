@@ -47,8 +47,7 @@ manifest is read, then downloaded and checked against the tree its site declares
 rollback paths of an app Orivon already holds. A first visit that began from a page's hint (`hint-host.ts`, the `https` apps, and the fallback for
 a first page that could not be held) runs after the page's scripts have run up to `DOMContentLoaded`: it stops the page when it has read an app's
 manifest, and enters through the address bar's own path. The verifier-served origins are held earlier, in
-[`../app-setup/`](../app-setup/README.md), so nothing runs. A refused origin (`visitKind` `declined`) is ignored by the hint listener; `revoke-all-grants.ts` is what
-a block takes back.
+[`../app-setup/`](../app-setup/README.md), so nothing runs. A refused origin (`visitKind` `declined`, the record in `declined-apps.ts`, written by a pressed Deny only) is ignored by the hint listener. Nothing is granted until the files are let in (`../consent/install-consent-ask.ts`); `revoke-all-grants.ts` takes back what an earlier version left to a blocked origin.
 
 **[`app-install-subsystem.ts`](app-install-subsystem.ts) is the one wiring of
 `installFromHint`.** Two call sites building their own deps could drift, one forgetting

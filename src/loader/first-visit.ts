@@ -5,11 +5,13 @@
 
 import type { Manifest } from '../contracts/index.js'
 import type { BundleTree } from '../broker/policy/bundle-hash.js'
+import { MAX_ASSET_BYTES, MAX_BUNDLE_BYTES } from '../broker/policy/bundle-hash.js'
 import { MANIFEST_PATH } from '../broker/policy/canonical-path.js'
 import { originFromUrl } from '../broker/policy/origin.js'
 import type { ContentAddress } from '../broker/policy/pin.js'
 import type { DdocDeclaration } from './ddoc-declaration.js'
 import { fetchBundle } from './fetch/bundle.js'
+import type { FetchBundleRejected } from './fetch/budget.js'
 import type { StagedAsset } from './fetch/bundle.js'
 import { pinnedToRoot } from './fetch/content-root.js'
 import { fetchManifestAtRoot } from './fetch/manifest-at-root.js'
@@ -47,18 +49,37 @@ export type FirstBundle =
     /** Empties the staging area when the bundle is not going to be installed. */
     readonly discard: () => Promise<void>
   }
-  /** `transient`: the download failed in a way that may pass (a gateway's 502, a dropped connection, a manifest that moved meanwhile) after its attempts; otherwise the bundle itself is bad. */
-  | { readonly ok: false, readonly reason: string, readonly transient?: true }
+  /**
+   * `transient`: the download failed in a way that may pass (a gateway's 502, a dropped connection, a manifest that
+   * moved meanwhile) after its attempts. `tooLarge`: a file or the bundle is over a cap. `integrity`: the verifier
+   * proved the content is not what its address names. Any other failure is simply a download that did not finish.
+   */
+  | { readonly ok: false, readonly reason: string, readonly transient?: true, readonly tooLarge?: true, readonly integrity?: true }
 
 export interface FirstVisitApi {
-  /** The manifest of the app at `hintedUrl`'s origin and nothing else of its files. Never throws. */
-  readManifest(hintedUrl: string): Promise<FirstManifest>
+  /**
+   * The manifest of the app at `hintedUrl`'s origin and nothing else of its files. Never throws. `boundMs`
+   * stops waiting for an answer after that long and reads as `unread`; the read itself goes on and keeps what
+   * it learns (a verified absence is remembered per root).
+   */
+  readManifest(hintedUrl: string, boundMs?: number): Promise<FirstManifest>
   /**
    * Downloads every file of the app `read` described, from the same root, into staging. Nothing is
    * pinned, registered or served. Fails when a file cannot be downloaded, and when the manifest it
    * received is not the one `read` holds.
    */
-  fetchForInstall(read: FirstManifestApp, hintedUrl: string): Promise<FirstBundle>
+  fetchForInstall(read: FirstManifestApp, hintedUrl: string, signal?: AbortSignal): Promise<FirstBundle>
+}
+
+/** `read`, or an `unread` once `ms` have passed; the read is left running. */
+async function withinBound (read: Promise<ManifestAtRoot>, ms: number): Promise<ManifestAtRoot> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<ManifestAtRoot>((resolve) => { timer = setTimeout(() => { resolve({ kind: 'unread', reason: `the manifest was not read within ${String(ms / 1000)} s` }) }, ms) })
+  try {
+    return await Promise.race([read, late])
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 type ContentOf = (origin: string | null) => Promise<ContentAddress | undefined | LoadRejected>
@@ -68,21 +89,26 @@ export function createFirstVisit (
   contentOf: ContentOf,
   manifestAt: (origin: string, cid: string) => Promise<ManifestAtRoot>
 ): FirstVisitApi {
-  async function readManifest (hintedUrl: string): Promise<FirstManifest> {
+  async function readManifest (hintedUrl: string, boundMs?: number): Promise<FirstManifest> {
     const origin = originFromUrl(hintedUrl)
     if (origin === null) return { kind: 'unread', reason: `not a valid app origin: ${hintedUrl}` }
     const content = await contentOf(origin)
     if (content !== undefined && 'outcome' in content) return { kind: 'unread', reason: content.reason }
-    const read = content === undefined
-      ? await fetchManifestAtRoot(options.fetch, options.resolve, origin, undefined)
-      : await manifestAt(origin, content.cid)
+    const asked = content === undefined
+      ? fetchManifestAtRoot(options.fetch, options.resolve, origin, undefined)
+      : manifestAt(origin, content.cid)
+    const read = boundMs === undefined ? await asked : await withinBound(asked, boundMs)
     if (read.kind !== 'app') return read
     return { kind: 'app', canonicalOrigin: origin, manifest: read.manifest, bytes: read.bytes, content }
   }
 
-  async function fetchForInstall (read: FirstManifestApp, hintedUrl: string): Promise<FirstBundle> {
-    const fetched = await fetchBundle(pinnedToRoot(options.fetch, read.content?.cid), hintedUrl, options.resolve, options.storage)
-    if (!fetched.ok) return { ok: false, reason: fetched.reason, ...('transient' in fetched && fetched.transient === true ? { transient: true as const } : {}) }
+  async function fetchForInstall (read: FirstManifestApp, hintedUrl: string, signal?: AbortSignal): Promise<FirstBundle> {
+    const limits = { assetBytes: MAX_ASSET_BYTES, bundleBytes: MAX_BUNDLE_BYTES, strictDeclaration: true, ...(signal === undefined ? {} : { signal }) }
+    const fetched = await fetchBundle(pinnedToRoot(options.fetch, read.content?.cid), hintedUrl, options.resolve, options.storage, limits)
+    if (!fetched.ok) {
+      const kind: Partial<Pick<FetchBundleRejected, 'transient' | 'tooLarge' | 'integrity'>> = 'notModified' in fetched ? {} : fetched
+      return { ok: false, reason: fetched.reason, ...(kind.transient === true ? { transient: true as const } : {}), ...(kind.tooLarge === true ? { tooLarge: true as const } : {}), ...(kind.integrity === true ? { integrity: true as const } : {}) }
+    }
     const discard = async (): Promise<void> => {
       await options.storage.clearStaging(fetched.canonicalOrigin).catch((error: unknown) => {
         console.error('[loader] could not clear a discarded bundle\'s staging area', fetched.canonicalOrigin, error)

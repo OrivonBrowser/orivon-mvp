@@ -4,31 +4,46 @@ import type { HintVisits, InstallApp } from '../manifest-hint.js'
 import { APP, frameFor } from '../../../broker/transport/tests/ipc.test-helpers.js'
 import type { LoadResult } from '../../../loader/index.js'
 import type { TabScreens } from '../../app-setup/tab-screens.js'
+import type { DialogCaller } from '../../consent/request-grant.js'
 import type { FirstVisit, FirstVisitResult, SetupHost } from '../first-visit.js'
 
 // A page that reports its manifest hint is a first visit when Orivon has never held its origin (ADR-0074):
-// the question and the download come before the app is entered, and a refused origin is left alone.
+// the question and the download come before the app is entered, a refused origin is left alone, and the old
+// pin-before-consent path is for an app Orivon already holds, never a first visit.
 
 const REJECTED: LoadResult = { outcome: 'rejected', reason: 'unused' }
 async function flush (): Promise<void> { await new Promise((resolve) => setTimeout(resolve, 0)) }
 
-function rig (options: { kind?: 'first' | 'declined' | 'known', result?: FirstVisitResult, screens?: boolean, wired?: boolean } = {}): {
+function rig (options: { kind?: 'first' | 'declined' | 'known', result?: FirstVisitResult, screens?: boolean, wired?: boolean, moved?: boolean } = {}): {
   listener: ReturnType<typeof createManifestHintListener>
   installApp: ReturnType<typeof vi.fn<InstallApp>>
   run: ReturnType<typeof vi.fn>
   hosts: SetupHost[]
-  stop: ReturnType<typeof vi.fn>
+  callers: Array<DialogCaller | undefined>
+  screens: TabScreens
+  reload: ReturnType<typeof vi.fn>
 } {
   const installApp = vi.fn<InstallApp>(async () => REJECTED)
   const hosts: SetupHost[] = []
-  const run = vi.fn(async (_origin: string, _url: string, _caller: unknown, host: SetupHost): Promise<FirstVisitResult> => { hosts.push(host); return options.result ?? { outcome: 'left' } })
+  const callers: Array<DialogCaller | undefined> = []
+  const run = vi.fn(async (_origin: string, _url: string, caller: DialogCaller | undefined, host: SetupHost, _signal?: AbortSignal): Promise<FirstVisitResult> => { hosts.push(host); callers.push(caller); return options.result ?? { outcome: 'left' } })
   const visit: FirstVisit = { kindOf: async () => options.kind ?? 'first', run: run as unknown as FirstVisit['run'] }
-  const screens: TabScreens = { show: vi.fn(), sheet: async () => 'leave', end: vi.fn(), moved: () => false, navigate: vi.fn(), leavePage: vi.fn() }
+  const screens: TabScreens = {
+    show: vi.fn(), blank: vi.fn(async () => {}), sheet: async () => 'leave', end: vi.fn(), moved: () => options.moved === true, signal: new AbortController().signal,
+    navigate: vi.fn(), leavePage: vi.fn(), stop: vi.fn()
+  }
   const visits: HintVisits = { firstVisit: () => options.wired === false ? undefined : visit, screensFor: () => options.screens === false ? undefined : screens }
-  const stop = vi.fn()
+  const reload = vi.fn()
   const listener = createManifestHintListener(installApp, undefined, undefined, undefined, visits)
-  const original = listener
-  return { listener: (event, url) => { (event.sender as unknown as { stop: unknown }).stop = stop; (event.sender as unknown as { getURL: unknown }).getURL = () => `${APP}/page`; original(event, url) }, installApp, run, hosts, stop }
+  return {
+    listener: (event, url) => {
+      const sender = event.sender as unknown as Record<string, unknown>
+      sender['getURL'] = () => `${APP}/page`
+      sender['reload'] = reload
+      listener(event, url)
+    },
+    installApp, run, hosts, callers, screens, reload
+  }
 }
 
 describe('createManifestHintListener: the first visit', () => {
@@ -38,6 +53,7 @@ describe('createManifestHintListener: the first visit', () => {
     await flush()
     expect(run).toHaveBeenCalledOnce()
     expect(run.mock.calls[0]!.slice(0, 2)).toEqual([APP, `${APP}/.well-known/orivon.json`])
+    expect(run.mock.calls[0]![4]).toBeInstanceOf(AbortSignal)
     expect(installApp).not.toHaveBeenCalled()
   })
 
@@ -57,14 +73,24 @@ describe('createManifestHintListener: the first visit', () => {
     expect(installApp).toHaveBeenCalledOnce()
   })
 
-  it('takes the ordinary path when the first visit is not wired, or the tab has no screens', async () => {
-    for (const options of [{ wired: false }, { screens: false }]) {
-      const { listener, installApp, run } = rig(options)
-      listener(frameFor(APP), `${APP}/.well-known/orivon.json`)
-      await flush()
-      expect(run).not.toHaveBeenCalled()
-      expect(installApp).toHaveBeenCalledOnce()
-    }
+  it('takes the ordinary path only when the first visit is not wired at all', async () => {
+    const { listener, installApp, run } = rig({ wired: false })
+    listener(frameFor(APP), `${APP}/.well-known/orivon.json`)
+    await flush()
+    expect(run).not.toHaveBeenCalled()
+    expect(installApp).toHaveBeenCalledOnce()
+  })
+
+  it('runs the same order for contents no window holds, never the old pin-before-consent path', async () => {
+    const { listener, installApp, run, hosts, reload } = rig({ screens: false })
+    listener(frameFor(APP), `${APP}/.well-known/orivon.json`)
+    await flush()
+    expect(installApp).not.toHaveBeenCalled()
+    expect(run).toHaveBeenCalledOnce()
+    expect(run.mock.calls[0]![4]).toBeUndefined()
+    expect(reload).not.toHaveBeenCalled()
+    hosts[0]!.enter()
+    expect(reload).toHaveBeenCalledOnce()
   })
 
   it('takes the ordinary path when another visit finished the origin first', async () => {
@@ -74,12 +100,23 @@ describe('createManifestHintListener: the first visit', () => {
     expect(installApp).toHaveBeenCalledOnce()
   })
 
-  it('stops the page only when the first visit shows its first stage', async () => {
-    const { listener, hosts, stop } = rig()
+  it('takes the page down only when the first visit shows its first stage', async () => {
+    const { listener, hosts, screens } = rig()
     listener(frameFor(APP), `${APP}/.well-known/orivon.json`)
     await flush()
-    expect(stop).not.toHaveBeenCalled()
-    hosts[0]!.show({ kind: 'asking', name: 'L' })
-    expect(stop).toHaveBeenCalledOnce()
+    expect(screens.blank).not.toHaveBeenCalled()
+    await hosts[0]!.show({ kind: 'asking', name: 'L' })
+    expect(screens.blank).toHaveBeenCalledOnce()
+  })
+
+  it('asks as the tab itself once its page is replaced: it is still there until the tab moves on', async () => {
+    const stays = rig()
+    stays.listener(frameFor(APP), `${APP}/.well-known/orivon.json`)
+    await flush()
+    expect(stays.callers[0]!.stillOn(APP)).toBe(true)
+    const leaves = rig({ moved: true })
+    leaves.listener(frameFor(APP), `${APP}/.well-known/orivon.json`)
+    await flush()
+    expect(leaves.callers[0]!.stillOn(APP)).toBe(false)
   })
 })
