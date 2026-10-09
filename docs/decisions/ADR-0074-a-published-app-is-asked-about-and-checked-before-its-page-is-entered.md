@@ -1,6 +1,6 @@
 # ADR-0074: A published app is asked about, downloaded and checked before its page is entered
 
-- **Status:** accepted. Supersedes [`ADR-0012`](ADR-0012-fetch-and-cache-precede-consent.md)'s order for a first visit; amends [`ADR-0018`](ADR-0018-isolation-follows-consent.md) (a first visit's tab stays on the shared session until the files are in) and [`ADR-0029`](ADR-0029-sites-publish-their-bundle-hash-tree.md) (the declared tree now blocks a first install)
+- **Status:** accepted; D2 to D4 are superseded by [`ADR-0075`](ADR-0075-a-published-app-is-let-in-when-allowed-and-each-file-is-checked-as-it-is-served.md) (the app is let in on Allow and each file is checked as it is served), D1 and D5 stand. Supersedes [`ADR-0012`](ADR-0012-fetch-and-cache-precede-consent.md)'s order for a first visit; amends [`ADR-0018`](ADR-0018-isolation-follows-consent.md) (a first visit's tab stays on the shared session until the files are in) and [`ADR-0029`](ADR-0029-sites-publish-their-bundle-hash-tree.md) (the declared tree now blocks a first install)
 - **Date:** 2026-10-08
 - **Type:** architecture / security
 - **Decided by:** owner (D1 to D5 below); the choices under Consequences are implementation calls, provisional where they say so

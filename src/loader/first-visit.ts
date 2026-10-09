@@ -1,6 +1,7 @@
-// The two reads a first visit to a published app is made of (ADR-0074): the manifest alone, so the
-// person is asked before any file is downloaded, and then the whole bundle, held in staging until
-// the caller decides whether to install it. Nothing here pins, registers or serves: that is
+// The reads a first visit to a published app is made of (ADR-0074, ADR-0075): the manifest alone, so the
+// person is asked before any file is downloaded; the tree the site declares, read beside the question; the
+// serving of the origin from the verifier before its pin; and, in the background, the whole bundle held in
+// staging until the caller decides whether to install it. Nothing here pins or registers: that is
 // `Loader.installFetched`, which the caller runs once it has judged the files.
 
 import type { Manifest } from '../contracts/index.js'

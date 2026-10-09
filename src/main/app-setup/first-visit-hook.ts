@@ -1,8 +1,8 @@
 // The place a verifier-served app's first page is held back (ADR-0074). A tab's top-level GET to an origin
 // Orivon has never held is paused in the default session's `onBeforeRequest`, so no byte of the app's own
-// HTML, and none of its script, reaches the tab until the person has answered and the files are checked.
-// Only then is the request let go (the site is no app), or cancelled while the tab is sent into the app
-// through the address bar's own path, which puts it in the app's session before anything loads.
+// HTML, and none of its script, reaches the tab until the person has answered. Then the request is let go
+// (the site is no app), or cancelled while the tab is sent into the app through the address bar's own path,
+// which puts it in the app's own partition before anything loads (ADR-0075).
 import type { CallbackResponse, OnBeforeRequestListenerDetails, WebContents } from 'electron'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { DialogCaller } from '../consent/request-grant.js'

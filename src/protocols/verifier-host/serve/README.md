@@ -25,3 +25,9 @@ section Alternatives considered and its two amendments. Each limit is explained 
 **The certificate is DER-encoded here** ([`certificate.ts`](certificate.ts)), about sixty lines
 over `node:crypto`; Chromium accepts it by fingerprint alone. `@peculiar/x509` would need a
 process-global `reflect-metadata` polyfill, in the process that holds every untrusted parser.
+
+**A request may name the leaf it expects, and then the file is checked before a byte is sent**
+([`leaf-check.ts`](leaf-check.ts), [`ADR-0075`](../../../../docs/decisions/ADR-0075-a-published-app-is-let-in-when-allowed-and-each-file-is-checked-as-it-is-served.md)).
+The server buffers that one file (waiting a bounded time for room in the same budget the small-file path uses), hashes it with the loader's leaf function
+under the request's canonical path and sends it only if the leaf matches, cutting a range from the buffered file. The expected leaf is on the request
+and nothing is kept in the host, so a restart or a sleep loses nothing. A mismatch is a `502` with `x-orivon-failure: ddoc-mismatch`.

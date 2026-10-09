@@ -383,10 +383,8 @@ export interface Broker {
    */
   registerApp(origin: string, manifest: Manifest): Promise<void>
   /**
-   * Takes an app away as if the broker had never been asked about it: every grant revoked (and the handles each
-   * authorised closed), the registration and the version floor `registerApp` raised deleted, in memory and on
-   * disk. For an app whose files turned out not to be the ones it declared; not an uninstall of a pinned app.
-   * Rejects, having forgotten nothing, when a grant could not be revoked.
+   * Takes an app away as if the broker had never been asked: every grant revoked (and its handles closed), the
+   * registration and the version floor deleted, in memory and on disk. Rejects, leaving the registration, when a grant could not be revoked.
    */
   forgetOrigin(origin: string): Promise<void>
   /**
