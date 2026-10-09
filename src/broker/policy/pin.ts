@@ -68,7 +68,7 @@ export interface ContentAddress {
   readonly pointersVerified: boolean
 }
 
-function parseContentAddress (raw: unknown): ContentAddress | null {
+export function parseContentAddress (raw: unknown): ContentAddress | null {
   if (typeof raw !== 'object' || raw === null) return null
   const cid = ownProperty(raw, 'cid', isString)
   const via = ownProperty(raw, 'via', isString)
@@ -217,7 +217,7 @@ function parseAssets (raw: object): readonly PinnedAsset[] | null {
  * stops "one unsigned `<script>` into a code-split chunk the pinned asset set
  * never covered."
  */
-export function isPinnedPath (pin: PinRecord, canonicalPath: string): boolean {
+export function isPinnedPath (pin: Pick<PinRecord, 'assets'>, canonicalPath: string): boolean {
   return pin.assets.some((asset) => asset.path === canonicalPath)
 }
 

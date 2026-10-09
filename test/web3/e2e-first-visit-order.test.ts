@@ -1,7 +1,7 @@
 // A published app's first visit: the person is asked as soon as its manifest is read, before any of its files
-// comes down and before any of its script runs; Allow downloads and checks the files, and only then is the page
-// entered, as an app tab; Deny opens the site as a plain website and is not asked again. Driven through the
-// test seam's gateway, so nothing leaves the machine.
+// comes down and before any of its script runs; Allow lets the tab into the app at once, as an app tab, while a
+// file the first page never loads is still undownloaded; Deny opens the site as a plain website and is not asked
+// again. Driven through the test seam's gateway, so nothing leaves the machine.
 import { afterAll, expect, it } from 'vitest'
 import { existsSync } from 'node:fs'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
@@ -16,7 +16,9 @@ import { anyDocumentAt, coverTitle, pageAt, pinPath, savedGrants, withDeclaredTr
 const files = (name: string, id: string): Record<string, string> => ({
   'index.html': `<!doctype html><meta charset="utf-8"><title>${name}</title><link rel="orivon-manifest" href="/.well-known/orivon.json"><body>${name}<script src="app.js"></script></body>`,
   'app.js': 'document.body.dataset.app = "ran"',
-  '.well-known/orivon.json': JSON.stringify({ orivonApiVersion: 0, id, name, version: '1.0.0', entry: 'index.html', assets: ['app.js'], capabilities: { fs: { quotaBytes: 1_048_576 } } })
+  // Listed by the manifest and never loaded by the first page: still undownloaded when the page shows.
+  'later.bin': 'x'.repeat(2_000_000),
+  '.well-known/orivon.json': JSON.stringify({ orivonApiVersion: 0, id, name, version: '1.0.0', entry: 'index.html', assets: ['app.js', 'later.bin'], capabilities: { fs: { quotaBytes: 1_048_576 } } })
 })
 
 const TEST_TIMEOUT_MS = ADDRESS_BAR_STABLE_TIMEOUT_MS * 2 + DEFAULT_ACTION_TIMEOUT_MS * 12 + APP_CLOSE_RACE_MS + 120_000
@@ -25,7 +27,7 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-it('[app:first-visit-asks-before-any-file] [app:first-visit-verifies-before-entering] [app:first-visit-deny-is-a-website] asks before any file comes down or script runs, enters only after the files are checked, and opens a refused app as a plain website', async () => {
+it('[app:first-visit-asks-before-any-file] [app:first-visit-enters-at-once] [app:first-visit-deny-is-a-website] asks before any file comes down or script runs, enters at once on Allow with the rest of the bundle still undownloaded, and opens a refused app as a plain website', async () => {
   await runPhase('first-visit-order', async (check) => {
     const gateway = await startFixtureGateway({
       allowed: await withDeclaredTree(files('Allowed app', 'first.visit.allowed')),
@@ -38,7 +40,7 @@ it('[app:first-visit-asks-before-any-file] [app:first-visit-verifies-before-ente
       app = await launchElectron({
         appPath: '.',
         args: [HERMETIC_RESOLVER],
-        env: { ORIVON_TEST_ETH_FIXTURES: '{}', ORIVON_TEST_IPFS_GATEWAYS: gateway.url }
+        env: { ORIVON_TEST_ETH_FIXTURES: '{}', ORIVON_TEST_IPFS_GATEWAYS: gateway.url, ORIVON_TEST_BACKGROUND_PIN_DELAY_MS: '600000' }
       })
       const running = app
       await stubNativeDialogs(running)
@@ -61,15 +63,17 @@ it('[app:first-visit-asks-before-any-file] [app:first-visit-verifies-before-ente
       check('nothing is pinned or granted yet', !existsSync(pinPath(userData, allowedOrigin)) && savedGrants(userData, allowedOrigin).length === 0)
       check('the tab shows the setup cover while the question is open', (await coverTitle(running)) !== null)
 
-      // 2. Allow: the files are downloaded and checked, then the page is entered as an app tab.
+      // 2. Allow: the page is entered as an app tab at once, with the rest of the bundle still to come.
       await answerQuestion(running, 'Allow')
       const entered = await waitForTab(chrome, { address: `ipfs://${allowedRoot}/`, title: 'Allowed app' }, 60_000)
       check(`the app opened (${JSON.stringify(entered.info)})`, entered.ok)
       let facts = null as PageFacts | null
       await waitFor(async () => { facts = await pageAt(running, `${allowedOrigin}/`); return facts?.ran === 'ran' }, 20_000)
       check(`the app's script ran, in an app tab with the Node globals (${JSON.stringify(facts)})`, facts?.ran === 'ran' && facts.hasProcess)
-      check('the app is pinned and its grants are saved', existsSync(pinPath(userData, allowedOrigin)) && savedGrants(userData, allowedOrigin).includes('fs'))
-      check('every file came down after the question', filesAsked('allowed', 'app.js') >= 1)
+      check('its grants are saved at once', savedGrants(userData, allowedOrigin).includes('fs'))
+      check('the files its first page loads came down after the question', filesAsked('allowed', 'app.js') >= 1 && filesAsked('allowed', 'index.html') >= 1)
+      check('a file the first page never loads is still undownloaded while the page shows', filesAsked('allowed', 'later.bin') === 0)
+      check('nothing is pinned yet: the rest of the bundle comes later, in the background', !existsSync(pinPath(userData, allowedOrigin)))
 
       // 3. Deny: a plain website, no Node globals, and not asked again.
       const refusedOrigin = `https://${refusedRoot}.ipfs.orivon`

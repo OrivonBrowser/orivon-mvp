@@ -69,5 +69,13 @@ advisory.
 ([`ADR-0029`](../../docs/decisions/ADR-0029-sites-publish-their-bundle-hash-tree.md),
 [`ADR-0074`](../../docs/decisions/ADR-0074-a-published-app-is-asked-about-and-checked-before-its-page-is-entered.md)).
 Nothing here reads it to decide anything: `load()` installs as it would without it, and a 404, an unreadable file and a mismatch all pass. A
-first visit uses `readManifest` (the manifest alone) and `fetchForInstall` (every file, staged, nothing pinned) instead, and
-`src/main/install/first-visit.ts` compares the tree with the declaration before `installFetched`.
+first visit uses `readManifest` (the manifest alone), `readDeclaration` (the tree alone, compared with the manifest the person was asked about),
+`serveLive` (the origin answers from the verifier on its own partition, [`serve/live-serve.ts`](serve/live-serve.ts), until its pin replaces it) and, in the
+background, `fetchForInstall` (every file, staged, nothing pinned); `src/main/install/first-visit.ts` compares the downloaded tree with the declaration before
+`installFetched` ([`ADR-0075`](../../docs/decisions/ADR-0075-a-published-app-is-let-in-when-allowed-and-each-file-is-checked-as-it-is-served.md)).
+
+**The live handler resolves requests as the pinned one does, and checks them with the verifier.** `serve/live-serve.ts` takes the files the manifest lists
+(its entry, its `assets` and the manifest) as the set a page may reach, answers anything else `404`, and asks the verifier for the rest naming the leaf the
+declared tree gives each (`EXPECT_LEAF_HEADER`) and the root the manifest came from. It sends the headers a pinned response carries
+(`serve/asset.ts`'s `policyHeaders`). A `ddoc-mismatch` or `unverifiable` answer, or a listed file the tree has no leaf for, fails the request, is reported
+once through `onBadData`, and ends everything it would serve. For an app on an ordinary site it is also the check: it fetches the file itself (`fetchNetwork`, the loader's own guarded fetch, never through the handler), holds it whole, hashes it, and delivers those bytes. `pending-consent.ts` is what is kept of an allowed, not yet pinned app across a restart.

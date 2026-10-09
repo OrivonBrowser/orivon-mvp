@@ -23,6 +23,7 @@
 // is the only layer with both the manifest and the grant ledger in hand.
 // See README.md's Design notes for this file's split history and the next seam.
 
+import { createForgetOrigin } from './forget-origin.js'
 import type { PersistedApp } from './grants/ledger-storage.js'
 import { HandleTable } from './handles/handles.js'
 import { errnoOf, fail } from './errors.js'
@@ -471,6 +472,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     await handleTable.dropOrigin(canonical(origin))
   }
 
+  const forgetOrigin = createForgetOrigin({ canonical, grants, revokePersisted, pickedPaths: pickedPathsFor, revokeUserSelectedPath, handleTable, ledger, grantsChanged })
   return {
     app: { manifest, grants, isRegisteredSync, hasGrantsSync, heldSync, grantedPatternsSync, registeredOriginsSync, persistedAppsSync, hydrateFromPinnedManifest, pickedPaths: pickedPathsFor, socketAllowanceSync },
     net,
@@ -481,6 +483,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     trust,
     fs,
     registerApp,
+    forgetOrigin,
     versionFloorFor,
     rollbackAcknowledgedVersionFor,
     acknowledgeRollback,

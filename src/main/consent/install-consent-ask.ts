@@ -1,7 +1,7 @@
 // The install question as a first visit asks it (ADR-0074): the asking and the granting are two steps, because
-// the files are not yet checked when the person answers. `askInstallConsent` decides what to ask, shows it and
-// reports the answer, touching no grant and recording no refusal; `applyInstallConsent` makes the grants once the
-// files are in. `requestInstallConsent` (./install-consent.ts) is both at once, for an app Orivon already holds.
+// the app must be served and registered before anything is granted. `askInstallConsent` decides what to ask, shows it and
+// reports the answer, touching no grant and recording no refusal; `applyInstallConsent` makes the grants once
+// the app is registered. `requestInstallConsent` (./install-consent.ts) is both at once, for an app Orivon already holds.
 //
 // Only a pressed Deny is a no. Escape, a closed tab, a navigation or a prompt that failed answer `left`: nothing is
 // recorded, and the next visit asks again.

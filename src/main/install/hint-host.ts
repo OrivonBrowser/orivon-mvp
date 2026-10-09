@@ -27,14 +27,15 @@ export function hintHost (sender: HintSender, screens: TabScreens): SetupHost {
     // Through the address bar's own path: the app's session is in place before any of its files loads.
     enter: () => { screens.navigate(url) },
     plain: () => { if (blanked) screens.navigate(url); else screens.end() },
-    end: () => { if (blanked) screens.leavePage(); else screens.end() }
+    end: () => { if (blanked) screens.leavePage(); else screens.end() },
+    tab: () => screens.tab()
   }
 }
 
 /**
  * A hint from contents no window holds as a tab: nothing can be drawn over them, so a question is the only screen and
  * a failure is only logged. The page keeps running, as it would before a first visit; entering reloads it, and the
- * tab becomes the app on that reload. The order is the same: ask, download, check, then grant.
+ * tab becomes the app on that reload. The order is the same: ask, then grant and enter, then check the bundle.
  */
 export function headlessHost (sender: { reload: () => void, isDestroyed: () => boolean }): SetupHost {
   return {

@@ -30,6 +30,12 @@ import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import { createPinCoverageTracker } from '../serve/pin-coverage.js'
 import type { PinCoverageSnapshot } from '../serve/pin-coverage.js'
 import { createAppRequestHandler, fetchThirdParty, resolveVerifiedBundle } from '../serve/serve.js'
+import { createLiveRequestHandler } from '../serve/live-serve.js'
+import type { LiveBundle } from '../serve/live-serve.js'
+import { fetchFromVerifier } from './fetch.js'
+import { isOriginPinnedSync, isOriginServedFromCacheSync, registerAppOrigin, retireAppOrigin } from './app-partitions.js'
+
+export { forEachAppSession, isOriginPinnedSync, isOriginServedFromCacheSync, registerAppOrigin, retireAppOrigin } from './app-partitions.js'
 import { saveCheckRecord } from '../fetch/update-check.js'
 import type { AppRequestHandler, AuthoriseReach } from '../serve/serve.js'
 import { cspHeaderValue } from '../serve/csp.js'
@@ -104,74 +110,6 @@ function retainedAssets (origin: string, pin: PinRecord): ReadonlyMap<string, st
   const retained = new Map(servedAssets.get(origin))
   for (const asset of pin.assets) retained.delete(asset.path)
   return retained
-}
-
-/**
- * Registers `handler` as `origin`'s own scheme's handler on `appSession`.
- *
- * IDEMPOTENT ACROSS CALLS, DELIBERATELY. Electron's `protocol.handle` throws
- * "The scheme has been registered" on a second call for a scheme already
- * handled on that session (`protocol_registry.cc`'s `RegisterProtocol` uses
- * `try_emplace`, which only inserts once) -- confirmed against Electron's
- * own source rather than assumed. `partitionFor` keys a session to exactly
- * one canonical origin (origin-hash.ts), so a second registration on the
- * SAME session can only mean this same origin was reinstalled within one
- * process run; `unhandle` first, then `handle` again, so the session always
- * answers with whatever `handler` the caller just built from the freshly
- * re-verified pin, never a stale one left over from before the update.
- */
-export function registerAppOrigin (appSession: Session, origin: string, handler: AppRequestHandler): void {
-  if (!appSessions.has(appSession)) {
-    appSessions.add(appSession)
-    for (const listener of [...appSessionListeners]) listener(appSession)
-  }
-  const scheme = new URL(origin).protocol.replace(':', '')
-  if (appSession.protocol.isProtocolHandled(scheme)) {
-    appSession.protocol.unhandle(scheme)
-  }
-  appSession.protocol.handle(scheme, handler)
-  servedPartitions.add(partitionFor(origin))
-}
-
-/** The sessions `registerAppOrigin` has served an origin from, and who wants to hear of each. */
-const appSessions = new Set<Session>()
-const appSessionListeners = new Set<(appSession: Session) => void>()
-
-/**
- * Calls `listener` with every session an app is served from: the ones already so, and each new one
- * as its first origin registers. A cache-served app's page runs in such a session, so whatever must
- * guard an app's requests there installs through this rather than waiting for a tab to open.
- */
-export function forEachAppSession (listener: (appSession: Session) => void): void {
-  appSessionListeners.add(listener)
-  for (const appSession of [...appSessions]) listener(appSession)
-}
-
-/** Partitions this process has actually installed a cache handler into.
- *
- * Keyed by partition, not origin, so the two sides cannot disagree about
- * canonical spelling: `partitionFor` is already the one function that decides
- * what "the same app" means, and tab-view.ts computes the identical string.
- *
- * There is no removal, because there is no unregistration -- `registerAppOrigin`
- * re-registers in place (see its own doc), and a handler lives for the process.
- */
-const servedPartitions = new Set<string>()
-
-/**
- * Is `origin` being served from the pinned cache right now -- synchronously,
- * with no side effect?
- *
- * Needed because a tab's partition is fixed when its `WebContentsView` is
- * constructed, and because the toolbar's own delivery/level query
- * (`../../main/permissions/site-info-controller.js`) must not itself probe
- * `session.fromPartition(...)` per navigation: that call CREATES the session
- * it asks about, and `partitionFor` yields a `persist:` partition -- so
- * probing it for every ordinary website visited would mint an on-disk app
- * partition for each one, which is the cost A109 removed.
- */
-export function isOriginServedFromCacheSync (origin: string): boolean {
-  return servedPartitions.has(partitionFor(origin))
 }
 
 /**
@@ -317,6 +255,41 @@ export function reachOnlyHandlerFor (broker: Broker, opener: string): (request: 
   const options = { redirects: createRedirectChains() }
   return async (request: Request): Promise<Response> =>
     await fetchThirdParty(request, authoriseReach, reachDial, undefined, reserve, release, options)
+}
+
+/**
+ * Serves `bundle.origin` from the verifier on its own partition, the way a pinned app is served from its pin, so a
+ * consented app opens before its files are down (serve/live-serve.ts has the rules). Replaced in place by
+ * `registerServingFor` when the pin lands. `broker`, when given, supplies the live grants the headers and the
+ * reach gate read, as for a pinned app.
+ */
+export async function serveLiveFor (bundle: LiveBundle, broker?: Broker): Promise<void> {
+  const { origin } = bundle
+  const reachSlots = broker === undefined ? undefined : reachSlotsFor(broker, origin)
+  const handler = createLiveRequestHandler({
+    ...bundle,
+    fetchVerified: bundle.fetchNetwork === undefined ? fetchFromVerifier : undefined,
+    grantedConnectPatterns: broker === undefined ? undefined : async () => await grantedConnectPatternsFor(broker, origin),
+    grantedSecurePatterns: broker === undefined ? undefined : async () => await secureHeaderPatternsFor(broker, origin),
+    grantedMediaSources: broker === undefined ? undefined : async () => await liveMediaSources(broker, origin),
+    authoriseReach: broker === undefined ? undefined : authoriseReachFor(broker, origin),
+    reachDial: nodeReachDial(),
+    reserveReachSlot: reachSlots?.reserve,
+    releaseReachSlot: reachSlots?.release
+  })
+  const { session } = await import('electron')
+  registerAppOrigin(session.fromPartition(partitionFor(origin)), origin, handler, 'verifier')
+}
+
+/**
+ * Takes a live-served origin off its partition (a block), unless its pin already answers for it. What the app stored in
+ * its partition stays: that is the person's data, and a block takes an app's permissions, never its data.
+ */
+export async function endLiveFor (origin: string): Promise<void> {
+  if (isOriginPinnedSync(origin)) return
+  const { session } = await import('electron')
+  retireAppOrigin(session.fromPartition(partitionFor(origin)), origin)
+  coverageTrackers.delete(origin)
 }
 
 /**

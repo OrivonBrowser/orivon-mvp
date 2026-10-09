@@ -1,39 +1,61 @@
-// A published app's first visit (ADR-0074): the person is asked as soon as the manifest is read, the files are
-// downloaded and checked against what the site declared before the page is entered, and a Deny opens the site as a
-// plain website. Nothing is granted, pinned or registered until the files are let in: what the person answered waits
-// as a pending consent. No Electron: the tab's screens and its way into the app are the `SetupHost` the caller brings.
+// A published app's first visit (ADR-0075): the person is asked as soon as the manifest is read, with the tree the
+// site declares for its files read beside the question. Allow grants at once and sends the tab into the app, whose
+// files are loaded on demand and each checked as it is served; the whole bundle is downloaded and pinned in the
+// background afterwards. Any file that is not the declared one is bad data: the origin is taken away entirely. Deny
+// opens the site as a plain website. No Electron: the tab's screens and its way into the app are the `SetupHost`
+// the caller brings.
 
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { Broker } from '../../broker/broker-contracts.js'
-import type { LoadInstalled, Loader } from '../../loader/index.js'
+import type { FirstDeclaration, FirstManifestApp, Loader, PendingConsent } from '../../loader/index.js'
+import type { BadData, LiveHooks, LiveVersion } from '../../loader/serve/live-serve.js'
 import { applyInstallConsent, askInstallConsent } from '../consent/install-consent-ask.js'
 import type { InstallAsk } from '../consent/install-consent-ask.js'
 import type { InstallConsentPrompt, PerCapabilityConsentPrompt } from '../consent/install-consent.js'
 import type { DialogCaller } from '../consent/request-grant.js'
+import type { CapabilityPromptPrompt } from '../consent/update-outcomes.js'
 import type { DeclinedApps } from './declined-apps.js'
 import { judgeBundle, visitKind } from './first-visit-decisions.js'
-import { withOriginQueue } from './origin-queue.js'
+import { outsideOriginQueue, withOriginQueue } from './origin-queue.js'
 import { revokeAllGrants } from './revoke-all-grants.js'
+import { createKeeper, heldOf } from './first-visit-keeper.js'
+
+/** What a block does to the pages of an app: see `FirstVisitDeps.blocked`. */
+export interface Blocking {
+  readonly emptied: Promise<void>
+  readonly dismissed: Promise<void>
+}
 
 export interface FirstVisitDeps {
   readonly broker: Broker
-  readonly loader: Pick<Loader, 'readManifest' | 'fetchForInstall' | 'installFetched' | 'pinFor'>
+  readonly loader: Pick<Loader, 'readManifest' | 'readDeclaration' | 'serveLive' | 'endLive' | 'rememberConsent' | 'pendingConsents' | 'fetchForInstall' | 'installFetched' | 'pinFor'>
   readonly consent?: InstallConsentPrompt | undefined
   readonly perCapabilityConsent?: PerCapabilityConsentPrompt | undefined
   /** The origins whose question was answered Deny: written by a pressed Deny and by nothing else. */
   readonly declined: Pick<DeclinedApps, 'has' | 'add'>
+  /**
+   * Empties every open tab of an origin, and `entered` (the tab this visit let in), closes the other pages of its
+   * partition, and covers the tabs with a sheet, when bad data is found after they were let in. `emptied` settles once
+   * nothing of the app runs any more; `dismissed` once the person has read the sheet.
+   */
+  readonly blocked?: ((origin: string, sheet: SetupSheet, entered: object | undefined) => Blocking) | undefined
+  /** The question a pinned app's update asks when it wants more than it holds, asked of a new version of an app that is not yet pinned; "keep the current version" is a no. Without it a widened version is never followed. */
+  readonly capabilityPrompt?: CapabilityPromptPrompt | undefined
+  /** Who to ask, in which tab, when a new version of an app asks for more than it was granted. */
+  readonly askerFor?: ((origin: string) => DialogCaller | undefined) | undefined
+  /** How long after a tab is let in the background download waits, so it begins once the first page is up. */
+  readonly backgroundDelayMs?: number | undefined
 }
 
-/** What the tab's screen says: the person is being asked, or the files are being downloaded and checked. */
+/** What the tab's screen says: the person is being asked, or the declared tree is being read. */
 export interface SetupStage {
   readonly kind: 'asking' | 'verifying'
   readonly name: string
 }
 
 /**
- * A sheet over the tab. `blocked` has no way forward: the files differ from the declaration, or the verifier
- * proved them not what their address names (`invalid`). `download-failed` offers Try again. `too-large` has no
- * Try again either: no gateway makes the app smaller.
+ * A sheet over the tab. `blocked` has no way forward: a file is not the one the site declared, or the verifier
+ * proved the content not what its address names (`invalid`). `download-failed` offers Try again.
  */
 export type SetupSheet =
   | {
@@ -46,7 +68,6 @@ export type SetupSheet =
     readonly invalid?: string
   }
   | { readonly kind: 'download-failed', readonly name: string, readonly reason: string }
-  | { readonly kind: 'too-large', readonly name: string }
 
 /** The tab a first visit happens in. */
 export interface SetupHost {
@@ -54,18 +75,24 @@ export interface SetupHost {
   show: (stage: SetupStage) => void | Promise<void>
   /** Resolves what the person chose; a sheet with no way forward resolves `leave`. */
   sheet: (sheet: SetupSheet) => Promise<'retry' | 'leave'>
-  /** The files are in: the tab goes into the app. */
+  /** The app is let in: the tab goes into it. */
   enter: () => void
   /** The site opens as a plain website: not an app, or the person said no. */
   plain: () => void
   /** The visit ends with the tab showing neither: the screens are taken away. */
   end: () => void
+  /** The tab this visit is in, as the opaque value `blocked` is handed back: a tab whose first page failed to load shows no address of the origin, yet is the one that must be covered. */
+  tab?: () => object | undefined
 }
 
+/** How the background download ended: `pinned`, `blocked` (bad data, the origin was taken away), or `unfinished` (silent; the next visit finishes it). */
+export type BackgroundOutcome = 'pinned' | 'blocked' | 'unfinished'
+
 export type FirstVisitResult =
-  | { readonly outcome: 'entered', readonly installed: LoadInstalled }
-  /** Another visit finished first: the origin is an app Orivon holds now, or the person said no there. The host was not used. */
-  | { readonly outcome: 'known' | 'declined' }
+  /** The person said yes and the app is let in (or was, had the tab not left); `background` settles when the download has ended. */
+  | { readonly outcome: 'entered', readonly background: Promise<BackgroundOutcome> }
+  /** Another visit finished first: the origin is an app Orivon holds now (`settling`: with its download still going), or the person said no there. The host was not used. */
+  | { readonly outcome: 'known' | 'declined' | 'settling' }
   | { readonly outcome: 'plain', readonly why: 'website' | 'unread' | 'denied' }
   | { readonly outcome: 'blocked', readonly differing: readonly string[] }
   | { readonly outcome: 'failed', readonly reason: string }
@@ -75,16 +102,10 @@ export type FirstVisitResult =
 /** The longest the first look at an address waits to learn whether it is an app: a page that is no app, or a gateway that is slow, is let through as an ordinary page after this. */
 export const MANIFEST_PROBE_MS = 10_000
 
-/** What a question was asked about: a manifest that asks for more than the person was shown must be asked about again. */
-function askedAbout (manifest: { readonly capabilities: unknown, readonly consentGranularity?: string }): string {
-  return JSON.stringify([manifest.capabilities, manifest.consentGranularity])
-}
-
 /**
- * Runs one first visit to `hintedUrl`, whose origin must be `hintingOrigin`. Never rejects. `signal` aborts the
- * download when the tab closes or leaves. Nothing is granted before the files are let in, so a block has nothing
- * live to take back (grants an earlier version of Orivon left are revoked all the same); a failed download keeps
- * the answer for Try again; and the tab is entered only if it is still where the visit began.
+ * Runs one first visit to `hintedUrl`, whose origin must be `hintingOrigin`. Never rejects. `signal` ends the
+ * visit's own reads when the tab closes or leaves; it does not stop the download after entry, which belongs to the
+ * app the person allowed. A tab is entered only if it is still where the visit began.
  */
 export async function runFirstVisit (deps: FirstVisitDeps, hintingOrigin: string, hintedUrl: string, caller: DialogCaller | undefined, host: SetupHost, signal?: AbortSignal): Promise<FirstVisitResult> {
   const origin = originFromUrl(hintedUrl)
@@ -93,116 +114,165 @@ export async function runFirstVisit (deps: FirstVisitDeps, hintingOrigin: string
 
   const gone = (): boolean => signal?.aborted === true || (caller !== undefined && !caller.stillOn(origin))
   const left = (): FirstVisitResult => { host.end(); return { outcome: 'left' } }
-  let pending: { readonly ask: InstallAsk, readonly about: string, readonly name: string } | undefined
-  let rechecked = false
 
-  for (;;) {
-    // Only the first look is bounded: it is the wait of a page that may turn out to be no app at all. Once the person has
-    // answered, a slow read is the path to the files, not a reason to open the site unchecked.
-    const read = await deps.loader.readManifest(hintedUrl, pending === undefined ? MANIFEST_PROBE_MS : undefined)
-    if (gone()) return left()
-    if (read.kind === 'website') { host.plain(); return { outcome: 'plain', why: 'website' } }
-    if (read.kind === 'unread') {
-      if (pending === undefined) { host.plain(); return { outcome: 'plain', why: 'unread' } }
-      const choice = await host.sheet({ kind: 'download-failed', name: pending.name, reason: read.reason })
-      if (choice !== 'retry') { host.end(); return { outcome: 'failed', reason: read.reason } }
-      continue
-    }
-    const { name } = read.manifest
+  // Only the first look is bounded: it is the wait of a page that may turn out to be no app at all.
+  const read = await deps.loader.readManifest(hintedUrl, MANIFEST_PROBE_MS)
+  if (gone()) return left()
+  if (read.kind === 'website') { host.plain(); return { outcome: 'plain', why: 'website' } }
+  if (read.kind === 'unread') { host.plain(); return { outcome: 'plain', why: 'unread' } }
+  const { name } = read.manifest
 
-    const about = askedAbout(read.manifest)
-    if (pending?.about !== about) {
-      pending = undefined
-      await host.show({ kind: 'asking', name })
-      const ask = await askInstallConsent(deps.broker, deps.consent, origin, read.manifest, deps.perCapabilityConsent, caller)
-      if (ask.outcome === 'left' || gone()) return left()
-      if (ask.outcome === 'denied') {
-        deps.declined.add(origin)
-        host.plain()
-        return { outcome: 'plain', why: 'denied' }
-      }
-      pending = { ask, about, name }
-    }
-    if (pending === undefined) return left()
-
-    await host.show({ kind: 'verifying', name })
-    const bundle = await deps.loader.fetchForInstall(read, hintedUrl, signal)
-    if (gone()) {
-      if (bundle.ok) await bundle.discard()
-      return left()
-    }
-
-    const block = async (sheet: SetupSheet): Promise<FirstVisitResult> => {
-      if (bundle.ok) await bundle.discard()
-      pending = undefined
-      await revokeAllGrants(deps.broker, origin).catch((error: unknown) => { console.error('[first-visit] grants of a blocked app remain', origin, error) })
-      await host.sheet(sheet)
-      host.end()
-      return { outcome: 'blocked', differing: sheet.kind === 'blocked' ? sheet.differing : [] }
-    }
-
-    let failure: string
-    if (!bundle.ok) {
-      // Only a failed verification is the content being wrong; a size cap is plain news; every other failure is the path to the files.
-      if (bundle.integrity === true) return await block({ kind: 'blocked', name, differing: [], differingCount: 0, rootMatches: true, invalid: bundle.reason })
-      if (bundle.tooLarge === true) {
-        await host.sheet({ kind: 'too-large', name })
-        host.end()
-        return { outcome: 'failed', reason: bundle.reason }
-      }
-      failure = bundle.reason
-    } else {
-      const judgement = judgeBundle(bundle.tree, bundle.declaration)
-      // An https site may have been deployed while its files came down: look once more before calling it tampering.
-      if (judgement.kind === 'block' && bundle.content === undefined && !rechecked) {
-        rechecked = true
-        await bundle.discard()
-        continue
-      }
-      if (judgement.kind === 'block') return await block({ kind: 'blocked', name, differing: judgement.differing, differingCount: judgement.differingCount, rootMatches: judgement.rootMatches })
-
-      const installed = await deps.loader.installFetched(bundle.canonicalOrigin, bundle.manifest, bundle.tree, bundle.entries, bundle.declaration, bundle.content)
-      if (installed.outcome === 'installed' && installed.servingFailed !== true) {
-        try {
-          await deps.broker.registerApp(installed.canonicalOrigin, installed.manifest)
-        } catch (error) {
-          console.error('[first-visit] registerApp failed after a successful install; the bundle is installed but its version floor was not persisted', installed.canonicalOrigin, error)
-        }
-        await applyInstallConsent(deps.broker, origin, installed.manifest, pending.ask)
-        // The person may have left while the files were being saved: installed, granted, but nobody is there to enter.
-        if (gone()) return left()
-        console.log(`[orivon] installed ${installed.canonicalOrigin}; entering the tab as the app`)
-        host.enter()
-        return { outcome: 'entered', installed }
-      }
-      await bundle.discard()
-      failure = installed.outcome === 'rejected' ? installed.reason : 'the app could not be made ready to open'
-    }
-
-    const choice = await host.sheet({ kind: 'download-failed', name, reason: failure })
-    if (choice !== 'retry') { host.end(); return { outcome: 'failed', reason: failure } }
+  await host.show({ kind: 'asking', name })
+  // The declared tree is read beside the question, so it is ready when the person answers.
+  const reading = new AbortController()
+  const stopReading = (): void => { reading.abort() }
+  signal?.addEventListener('abort', stopReading, { once: true })
+  const track = (): { done: boolean, tree: Promise<FirstDeclaration> } => {
+    const started = deps.loader.readDeclaration(read, reading.signal)
+    const tracked = { done: false, tree: started.catch((error: unknown): FirstDeclaration => ({ kind: 'failed', reason: error instanceof Error ? error.message : String(error) })) }
+    void tracked.tree.then(() => { tracked.done = true })
+    return tracked
   }
+  let declared = track()
+  try {
+    const ask = await askInstallConsent(deps.broker, deps.consent, origin, read.manifest, deps.perCapabilityConsent, caller)
+    if (ask.outcome === 'left' || gone()) return left()
+    if (ask.outcome === 'denied') {
+      deps.declined.add(origin)
+      host.plain()
+      return { outcome: 'plain', why: 'denied' }
+    }
+
+    let declaration: FirstDeclaration
+    for (;;) {
+      if (!declared.done) await host.show({ kind: 'verifying', name })
+      declaration = await declared.tree
+      if (gone()) return left()
+      if (declaration.kind !== 'failed' || declaration.integrity === true) break
+      const choice = await host.sheet({ kind: 'download-failed', name, reason: declaration.reason })
+      if (choice !== 'retry') { host.end(); return { outcome: 'failed', reason: declaration.reason } }
+      declared = track()
+    }
+    if (declaration.kind === 'mismatch') return await blockBeforeEntry(deps, host, origin, { kind: 'blocked', name, differing: declaration.differing, differingCount: declaration.differing.length, rootMatches: true })
+    if (declaration.kind === 'failed') return await blockBeforeEntry(deps, host, origin, { kind: 'blocked', name, differing: [], differingCount: 0, rootMatches: true, invalid: declaration.reason })
+
+    return await letIn(deps, { origin, hintedUrl, read, ask, declaration: declaration.kind === 'declared' ? declaration.declaration : undefined, gone, host })
+  } finally {
+    signal?.removeEventListener('abort', stopReading)
+    reading.abort()
+  }
+}
+
+/** Files, or a manifest, that are not the declared ones before anything was let in: the warning, and no grant an earlier version of Orivon left. */
+async function blockBeforeEntry (deps: FirstVisitDeps, host: SetupHost, origin: string, sheet: Extract<SetupSheet, { kind: 'blocked' }>): Promise<FirstVisitResult> {
+  await revokeAllGrants(deps.broker, origin).catch((error: unknown) => { console.error('[first-visit] grants of a blocked app remain', origin, error) })
+  await host.sheet(sheet)
+  host.end()
+  return { outcome: 'blocked', differing: sheet.differing }
+}
+
+export interface Entry {
+  readonly origin: string
+  readonly hintedUrl: string
+  readonly read: FirstManifestApp
+  readonly ask: InstallAsk
+  readonly declaration: Extract<FirstDeclaration, { kind: 'declared' }>['declaration'] | undefined
+  readonly gone: () => boolean
+  readonly host: SetupHost
+}
+
+/**
+ * The person said yes and the tree is known: serve the app, register it, grant what was accepted, send the tab in,
+ * remember the consent, and begin the download. The order leaves nothing half-done: serving first (so a failure opens
+ * the site as a website with nothing granted), then the registration and grants, then the tab.
+ */
+async function letIn (deps: FirstVisitDeps, entry: Entry): Promise<FirstVisitResult> {
+  const { origin, hintedUrl, read, host } = entry
+  const { name } = read.manifest
+  const keeper = createKeeper(deps, origin, hintedUrl, heldOf(read, entry.declaration))
+
+  let served = false
+  try {
+    served = await deps.loader.serveLive(read, entry.declaration, keeper.hooks)
+  } catch (error) {
+    console.error('[first-visit] the app could not be served before its pin', origin, error)
+  }
+  if (!served) {
+    host.plain()
+    return { outcome: 'failed', reason: `${name} could not be set up to be checked as it loads` }
+  }
+  try {
+    try {
+      await deps.broker.registerApp(origin, read.manifest)
+    } catch (error) {
+      console.error('[first-visit] registerApp failed; the app is registered but its version floor was not persisted', origin, error)
+    }
+    await applyInstallConsent(deps.broker, origin, read.manifest, entry.ask)
+  } catch (error) {
+    console.error('[first-visit] the app could not be granted what was accepted', origin, error)
+    await deps.broker.forgetOrigin(origin).catch(() => {})
+    await deps.loader.endLive(origin).catch(() => {})
+    host.plain()
+    return { outcome: 'failed', reason: `${name} could not be granted what was accepted` }
+  }
+  // Durable from here: a restart before the pin serves this very root again, checked, and finishes the pin.
+  await deps.loader.rememberConsent(read, entry.declaration).catch((error: unknown) => { console.error('[first-visit] the consent could not be kept for a restart', origin, error) })
+
+  if (entry.gone()) host.end()
+  else host.enter()
+  keeper.enteredTab(host.tab?.())
+  console.log(`[orivon] ${origin} is let in as an app; its files follow in the background`)
+  return { outcome: 'entered', background: keeper.start() }
+}
+
+/**
+ * An app that was allowed and whose pin never landed (a restart, a download that did not finish), served again as it
+ * was allowed: the consented manifest and tree, every file checked, grants as they were saved. Its pin resumes, for that
+ * root, when the app is first used. Never the old install path.
+ */
+async function resumeConsent (deps: FirstVisitDeps, consent: PendingConsent, settling: Set<string>): Promise<void> {
+  const { read, declaration } = consent
+  const origin = read.canonicalOrigin
+  const keeper = createKeeper(deps, origin, `${origin}/`, heldOf(read, declaration))
+  // Its download holds the origin's queue while it runs, so a page's own hint installs nothing beside it.
+  const hooks: LiveHooks = {
+    ...keeper.hooks,
+    onServed: () => { void outsideOriginQueue(async () => await withOriginQueue(origin, async () => await keeper.start())).then((outcome) => { if (outcome !== 'unfinished') settling.delete(origin) }) }
+  }
+  const served = await deps.loader.serveLive(read, declaration, hooks).catch((error: unknown) => {
+    console.error('[first-visit] a consented app could not be served again', origin, error)
+    return false
+  })
+  if (!served) return
+  await deps.broker.registerApp(origin, read.manifest).catch((error: unknown) => { console.error('[first-visit] a consented app could not be registered again', origin, error) })
+  // Until the app is used and its download has ended, the origin reads as settling: the old install path never sees it.
+  settling.add(origin)
 }
 
 /** What the tab's two ways in need of a first visit: whether an origin is one, and running it. */
 export interface FirstVisit {
-  kindOf: (origin: string) => Promise<'first' | 'declined' | 'known'>
-  /** Serialised per origin, and judged again when its turn comes: two tabs on one origin ask once. `signal` aborts the download. */
+  /** `settling`: let in as an app, with its download still going. */
+  kindOf: (origin: string) => Promise<'first' | 'declined' | 'known' | 'settling'>
+  /** Serialised per origin, and judged again when its turn comes: two tabs on one origin ask once. `signal` ends the visit's own reads. */
   run: (origin: string, hintedUrl: string, caller: DialogCaller | undefined, host: SetupHost, signal?: AbortSignal) => Promise<FirstVisitResult>
+  /** At start: serves again every app that was allowed and not yet pinned, before any tab can ask for it. */
+  resume: () => Promise<void>
 }
 
 export interface FirstVisitOptions {
   readonly deps: FirstVisitDeps
   /** True for an origin the first visit never applies to: a local file, a loopback or developer origin, anything not https. */
   readonly untouched: (origin: string) => boolean
-  /** The origin is served from Orivon's own copy of an app. */
+  /** The origin runs in a partition of its own, served from its pin or from the verifier. */
   readonly servedFromCache: (origin: string) => boolean
 }
 
 export function createFirstVisit (options: FirstVisitOptions): FirstVisit {
   const { deps } = options
+  const settling = new Set<string>()
 
-  async function kindOf (origin: string): Promise<'first' | 'declined' | 'known'> {
+  async function kindOf (origin: string): Promise<'first' | 'declined' | 'known' | 'settling'> {
+    if (settling.has(origin)) return 'settling'
     if (options.untouched(origin) || deps.broker.app.isRegisteredSync(origin) || options.servedFromCache(origin)) return 'known'
     return visitKind({
       registered: false,
@@ -218,9 +288,25 @@ export function createFirstVisit (options: FirstVisitOptions): FirstVisit {
     return await withOriginQueue(origin, async () => {
       const kind = await kindOf(origin)
       if (kind !== 'first') return { outcome: kind }
-      return await runFirstVisit(deps, origin, hintedUrl, caller, host, signal)
+      const result = await runFirstVisit(deps, origin, hintedUrl, caller, host, signal)
+      if (result.outcome === 'entered') {
+        // The download holds the origin's queue after the visit has returned, so nothing installs the same files beside it.
+        // An app whose download did not finish stays settling for the run: the ordinary install path, which checks no
+        // file, never takes it over; its consent is kept, and the next start serves it again.
+        settling.add(origin)
+        void outsideOriginQueue(async () => await withOriginQueue(origin, async () => await result.background)).then((outcome) => { if (outcome !== 'unfinished') settling.delete(origin) })
+      }
+      return result
     })
   }
 
-  return { kindOf, run }
+  async function resume (): Promise<void> {
+    for (const consent of await deps.loader.pendingConsents()) {
+      const origin = consent.read.canonicalOrigin
+      if (options.untouched(origin) || deps.broker.app.isRegisteredSync(origin) || settling.has(origin)) continue
+      await resumeConsent(deps, consent, settling)
+    }
+  }
+
+  return { kindOf, run, resume }
 }

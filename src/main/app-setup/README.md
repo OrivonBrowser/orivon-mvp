@@ -1,9 +1,10 @@
 # `src/main/app-setup/`: what a tab shows while an app's first visit runs
 
 **What lives here.** The shell's side of a published app's first visit
-([`ADR-0074`](../../../docs/decisions/ADR-0074-a-published-app-is-asked-about-and-checked-before-its-page-is-entered.md)).
-The order itself (ask, download, check, enter) is [`../install/first-visit.ts`](../install/first-visit.ts); this folder is
-what the person sees and where the first page is held. `first-visit-hook.ts` is the default session's `onBeforeRequest`
+([`ADR-0074`](../../../docs/decisions/ADR-0074-a-published-app-is-asked-about-and-checked-before-its-page-is-entered.md),
+[`ADR-0075`](../../../docs/decisions/ADR-0075-a-published-app-is-let-in-when-allowed-and-each-file-is-checked-as-it-is-served.md)).
+The order itself (ask, enter, check each file, pin in the background) is [`../install/first-visit.ts`](../install/first-visit.ts); this folder is
+what the person sees and where the first page is held. `block-tabs.ts` covers the tabs of an app found bad after they were let in. `first-visit-hook.ts` is the default session's `onBeforeRequest`
 handler that holds a tab's top-level GET to an origin Orivon has never held, `tab-screens.ts` is the setup cover and the sheets for one
 tab, `setup-sheet-overlay.ts` is the sheet (a security warning, or "Couldn't download" with Try again), `setup-text.ts` is every word on
 them, `install-app-setup.ts` wires the hook, and `tab-setup-ref.ts` holds what the visit reads from the shell (the screens, and the first visit that `../install/app-install-subsystem.ts` builds). The cover is the loading-screen overlay with the stage's own
@@ -34,3 +35,7 @@ counts as still there until it starts another navigation or is destroyed (`TabSc
 **A hint-started visit replaces the page only once the manifest says it is an app.** `stop()` leaves a running page's script alone, so the first stage puts an empty page in its place (`location.replace` from an isolated world, one history entry) and waits for it before anything is asked; an origin whose manifest cannot be read keeps its page (and so does not reload in a loop on the hint it sends again). That emptied page is not the person moving on, so `TabScreens` ignores the one navigation it makes itself.
 
 **Nothing acts on a tab the person left.** `navigate`, `leavePage` and `stop` end the screens first, then act only if the tab is still where the visit began; `signal` aborts the download when it is not.
+
+**A bad app's tabs are named, not only found.** `block-tabs.ts` finds tabs by the address they show, and adds the tab the visit let in by reference
+(`TabScreens.tab()`): its first page may have failed to load, so it shows no address of the origin, and entering swapped its contents for ones in the
+app's own partition. Each is stopped, emptied in place, covered with the sheet, and sent back or home when the person has read it.

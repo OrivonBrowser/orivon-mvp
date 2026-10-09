@@ -44,7 +44,7 @@ import { createPageScoreLookup } from './browsing/page-score-lookup.js'
 import { installSchemeRouting } from './scheme-routing/install-scheme-routing.js'
 import { netFetchJson } from './browsing/score-provider-client.js'
 import { isDevEthName } from './dev/eth-resolver.js'
-import { isOriginServedFromCacheSync } from '../loader/electron/serve.js'
+import { isOriginPinnedSync } from '../loader/electron/serve.js'
 import type { Runtime } from './launch/start-launch.js'
 import { decideDefaultProfile } from './default-profile/profile-start.js'
 import { recordFatal as recordFatalCrash, setPageClassifier, startDiagnostics } from './diagnostics/diagnostics-runner.js'
@@ -224,7 +224,7 @@ export function boot (runtime: Runtime): void {
     }
     applyThemeSetting(shell.settings, nativeTheme)
     // The host starts only when a .eth address is needed, by which time the settings have been read: the person's choice reaches it.
-    configureVerifier({ lightClientEnabled: () => shell.settings.get('web3.lightClient'), windows: () => shell.windows.all(), servedFromCache: isOriginServedFromCacheSync })
+    configureVerifier({ lightClientEnabled: () => shell.settings.get('web3.lightClient'), windows: () => shell.windows.all(), servedFromCache: isOriginPinnedSync })
     shell.history.prune()
     startInternalPages(shell, ctx)
     setPageClassifier((contents) => ({ internalPage: shell.internalPages.pageOf(contents), isTab: shell.windows.findTab(contents) !== null }))

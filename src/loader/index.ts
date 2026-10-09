@@ -46,11 +46,13 @@ import { rememberingManifestReader } from './fetch/manifest-at-root.js'
 import { createNameUpdates } from './name-update.js'
 import { createFirstVisit } from './first-visit.js'
 import type { FirstVisitApi } from './first-visit.js'
+import type { LiveBundle } from './serve/live-serve.js'
 import type { AppUpdateApi } from './name-update.js'
 import { readQuietOffers, writeQuietOffer } from './update-offer.js'
 
 export type { Fetch, FetchResponse } from './fetch/bundle.js'
-export type { FirstBundle, FirstManifest, FirstManifestApp } from './first-visit.js'
+export type { FirstBundle, FirstDeclaration, FirstManifest, FirstManifestApp } from './first-visit.js'
+export type { PendingConsent } from './pending-consent.js'
 export type { LoadInstalled, LoadNeedsCapabilityPrompt, LoadNeedsReconsent, LoadNeedsRollbackChoice, LoadRejected, LoadResult, LoadUpToDate, LoadUpdateAvailable } from './load-result.js'
 export type { LoaderStorage } from './cache/storage.js'
 export { appRootDirectoryName } from './cache/storage.js'
@@ -85,6 +87,13 @@ export interface CreateLoaderOptions {
    * `installOrReject` itself already takes for storage failures.
    */
   readonly onInstalled?: (origin: string) => Promise<void>
+  /**
+   * Serves an origin from the verifier before its files are pinned (`serveLive` below): electron/serve.ts's
+   * `serveLiveFor`. Absent in a run with no shell, where `serveLive` answers that nothing was set up.
+   */
+  readonly serveLive?: (bundle: LiveBundle) => Promise<void>
+  /** Takes what `serveLive` set up away again (`endLive` below): electron/serve.ts's `endLiveFor`. */
+  readonly endLive?: (origin: string) => Promise<void>
   /**
    * When set, `load()` answers `'up-to-date'` without fetching anything for
    * an origin whose last completed check (any outcome but `'rejected'`) was

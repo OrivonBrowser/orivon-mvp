@@ -165,3 +165,13 @@ export async function netFetch (url: string, signal: AbortSignal, headers?: Requ
     request.end()
   })
 }
+
+/**
+ * One request to the verifier's server for the origin of an app served live (serve/live-serve.ts), made as the
+ * browser itself and not as any page: no credentials, no cache, a redirect an error rather than a hop taken
+ * unseen, and the custom-scheme handler of an app's partition bypassed so the request reaches the network.
+ */
+export async function fetchFromVerifier (url: string, init: { readonly method: string, readonly headers: Record<string, string>, readonly signal: AbortSignal }): Promise<Response> {
+  const { net } = await import('electron')
+  return await net.fetch(url, { method: init.method, headers: init.headers, signal: init.signal, redirect: 'error', credentials: 'omit', cache: 'no-store', bypassCustomProtocolHandlers: true })
+}

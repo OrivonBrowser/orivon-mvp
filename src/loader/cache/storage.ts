@@ -149,6 +149,12 @@ export interface LoaderStorage {
    * there is none or it cannot be read. Never throws; the caller parses it
    * (`ddoc-declaration.ts`), since the file is as untrusted as any other on disk.
    */
+  /** The consent of an app whose pin has not landed (`../pending-consent.ts`), or `undefined`. */
+  readPending(origin: string): Promise<unknown>
+  /** Writes the record, or deletes it when `record` is undefined. */
+  writePending(origin: string, record: object | undefined): Promise<void>
+  /** Every origin that holds a pending record. */
+  listPendingOrigins(): Promise<readonly string[]>
   readDdoc(origin: string): Promise<unknown>
   /** Persists the hash tree `origin` published with its pinned bundle, outside `code/`; `undefined` deletes it. */
   writeDdoc(origin: string, declaration: DdocDeclaration | undefined): Promise<void>

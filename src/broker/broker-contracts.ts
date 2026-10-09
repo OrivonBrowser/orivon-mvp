@@ -383,6 +383,11 @@ export interface Broker {
    */
   registerApp(origin: string, manifest: Manifest): Promise<void>
   /**
+   * Takes an app away as if the broker had never been asked: every grant revoked (and its handles closed), the
+   * registration and the version floor deleted, in memory and on disk. Rejects, leaving the registration, when a grant could not be revoked.
+   */
+  forgetOrigin(origin: string): Promise<void>
+  /**
    * T19's version floor: the highest version `registerApp` has ever recorded
    * for this origin, `'0.0.0'` for one never registered. The app loader's
    * seam, same category as `registerApp`/`grant`/`revoke` -- no `orivon.*`

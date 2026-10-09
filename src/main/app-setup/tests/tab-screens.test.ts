@@ -57,7 +57,7 @@ describe('createTabSetup', () => {
     expect(asks[0]!.payload).toMatchObject({ url: ADDRESS, text: { title: 'Opening Ledger', busy: true } })
     expect(isCoverClaimed(contents)).toBe(true)
     screens.show({ kind: 'verifying', name: 'Ledger' })
-    expect(asks[1]!.payload).toMatchObject({ text: { title: 'Setting up Ledger' } })
+    expect(asks[1]!.payload).toMatchObject({ text: { title: 'Opening Ledger' } })
     screens.end()
     expect(isCoverClaimed(contents)).toBe(false)
   })

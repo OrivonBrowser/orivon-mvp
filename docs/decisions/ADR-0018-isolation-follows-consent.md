@@ -1,6 +1,6 @@
 # ADR-0018: A tab is isolated because the user consented, not because the app is installed
 
-- **Status:** accepted; its grant arm is superseded by [ADR-0044](ADR-0044-a-grant-no-longer-gives-an-origin-its-own-session.md), its cache arm stands; a first visit's tab stays on the shared session until the files are in ([ADR-0074](ADR-0074-a-published-app-is-asked-about-and-checked-before-its-page-is-entered.md))
+- **Status:** accepted; its grant arm is superseded by [ADR-0044](ADR-0044-a-grant-no-longer-gives-an-origin-its-own-session.md), its cache arm stands; a first visit's tab enters its own partition at once, served from the verifier until its pin lands ([ADR-0075](ADR-0075-a-published-app-is-let-in-when-allowed-and-each-file-is-checked-as-it-is-served.md))
 - **Date:** 2026-09-16
 - **Type:** architecture
 - **Decided by:** owner

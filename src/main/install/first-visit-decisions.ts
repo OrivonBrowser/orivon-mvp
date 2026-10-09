@@ -1,5 +1,5 @@
-// The two decisions of a first visit to a published app (ADR-0074), kept pure: whether an origin is
-// one Orivon has never held, and whether the files that came down are the files the site declared.
+// The two decisions of a first visit to a published app (ADR-0074, ADR-0075), kept pure: whether an origin is
+// one Orivon has never held, and whether the bundle that came down in the background is the one the site declared.
 
 import type { BundleTree } from '../../broker/policy/bundle-hash.js'
 import { ddocVerdict } from '../../trust/ddoc.js'

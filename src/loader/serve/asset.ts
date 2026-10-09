@@ -107,6 +107,21 @@ function bodyOf (file: ServableFile, start: number, end: number): ReadableStream
   }, { highWaterMark: 0 }) // the default of 1 would pull, and so open the file, before anyone reads
 }
 
+/** The headers every served app response carries, whether its bytes come off disk or from the verifier: nosniff, the CSP the live grants call for and, for an app that asked for it, isolation. */
+export function policyHeaders (
+  connectPatterns: readonly Pattern[],
+  securePatterns: readonly Pattern[],
+  crossOriginIsolated = false,
+  liveCsp: Pick<CspOptions, 'ownListenerMedia' | 'appFiles'> = {}
+): Record<string, string> {
+  const policy: Record<string, string> = {
+    'content-security-policy': cspHeaderValue(connectPatterns, securePatterns, liveCsp),
+    'x-content-type-options': 'nosniff'
+  }
+  if (crossOriginIsolated) Object.assign(policy, ISOLATION_HEADERS)
+  return policy
+}
+
 /**
  * Turns `file` into the actual `Response`, honouring a `Range` request. A
  * HEAD request gets the headers alone.
@@ -132,11 +147,7 @@ export function buildResponse (
   // pinned asset the manifest never declared as a script (an upload, an
   // image with a polyglot payload) execute as one if it is ever reached
   // through a context that runs what it loads.
-  const policy: Record<string, string> = {
-    'content-security-policy': cspHeaderValue(connectPatterns, securePatterns, liveCsp),
-    'x-content-type-options': 'nosniff'
-  }
-  if (crossOriginIsolated) Object.assign(policy, ISOLATION_HEADERS)
+  const policy = policyHeaders(connectPatterns, securePatterns, crossOriginIsolated, liveCsp)
   const total = file.byteLength
   const range = parseRange(request.headers.get('range'), total)
 
