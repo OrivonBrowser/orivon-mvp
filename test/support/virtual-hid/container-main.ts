@@ -1,6 +1,6 @@
 // Runs as root inside the container (see virtual-hid/README.md): creates the uhid device, opens its
 // hidraw node to every user on the host, prints one ready line, and answers reports until stopped.
-import { chmodSync, closeSync, existsSync, openSync, readdirSync, read, realpathSync, writeSync } from 'node:fs'
+import { chmodSync, closeSync, existsSync, openSync, readdirSync, read, realpathSync, watch, writeSync } from 'node:fs'
 import { basename } from 'node:path'
 import { loadResponder, serialQueue } from './responder.ts'
 import type { DeviceControl } from './responder.ts'
@@ -44,22 +44,33 @@ function matchingInstances (options: VirtualHidDeviceOptions): Map<string, strin
  */
 async function plug (fd: number, options: VirtualHidDeviceOptions): Promise<string> {
   const before = new Set(matchingInstances(options).keys())
-  writeSync(fd, packCreate2(options))
-  for (let attempt = 0; attempt < 100; attempt++) {
+  let opened: string | undefined
+  // A real device's node is usable the moment it exists: udev sets its mode before announcing it. A page that opens
+  // the device as soon as it hears `connect` would race a later chmod, so the node is opened on the kernel's
+  // creation event, and the poll below is the fallback.
+  const openNew = (): void => {
     for (const [instance, node] of matchingInstances(options)) {
-      if (before.has(instance)) continue
-      // The sysfs entry can show before the kernel's devtmpfs node does (seen on a hosted CI runner).
-      await waitForNode(`${HOST_DEV}/${node}`)
+      if (before.has(instance) || !existsSync(`${HOST_DEV}/${node}`)) continue
       chmodSync(`${HOST_DEV}/${node}`, 0o666)
-      return node
+      opened = node
     }
-    await sleep(100)
   }
-  throw new Error('the hidraw node did not appear within 10 s')
-}
-
-async function waitForNode (path: string): Promise<void> {
-  for (let attempt = 0; attempt < 100 && !existsSync(path); attempt++) await sleep(100)
+  const watcher = watch(HOST_DEV, (_event, name) => {
+    if (opened === undefined && typeof name === 'string' && /^hidraw\d+$/.test(name)) {
+      try { openNew() } catch { /* the poll below retries */ }
+    }
+  })
+  try {
+    writeSync(fd, packCreate2(options))
+    for (let attempt = 0; attempt < 2000 && opened === undefined; attempt++) {
+      openNew()
+      if (opened === undefined) await sleep(5)
+    }
+  } finally {
+    watcher.close()
+  }
+  if (opened === undefined) throw new Error('the hidraw node did not appear within 10 s')
+  return opened
 }
 
 async function main (): Promise<void> {

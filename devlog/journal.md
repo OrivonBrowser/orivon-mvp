@@ -81,6 +81,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Apps now see a Node-shaped `process`, so bundled libraries take their Node paths; every port was rechecked against it.
 - A socket an app destroys while still connecting now drops its dial at once, as in Node, freeing room for the next peer.
 - Live sessions: agents here drive Orivon step by step on real Windows, macOS and Linux runners through a token-guarded Cloudflare tunnel.
+- Ledger Wallet adds accounts, verifies an address and signs a transaction on an emulated Nano X through Orivon's WebHID.
 
 ### In my head
 

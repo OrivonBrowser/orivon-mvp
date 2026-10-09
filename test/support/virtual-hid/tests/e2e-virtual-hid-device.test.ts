@@ -103,6 +103,38 @@ export default (report: Uint8Array, send: (r: Uint8Array) => void, device: { rep
   }
 }, 60_000)
 
+withResponder(availability === true ? 'lets the host open and write to the new node the moment the replug ready line appears' : `skipped: ${availability}`, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'vhid-responder-'))
+  writeFileSync(join(dir, 'replug.ts'), `
+export default (report: Uint8Array, send: (r: Uint8Array) => void, device: { replug: () => void }): void => {
+  send(report)
+  if (report[0] === 7) device.replug()
+}`)
+  const device = await startVirtualHidDevice({
+    vendorId: 0x1209, productId: 0x0006, name: 'Test Key', serial: 'SN-FAST', responder: join(dir, 'replug.ts')
+  })
+  try {
+    expect(await roundTrip(device.node, 7)).toBe(7)
+    let node: string | undefined
+    await expect.poll(() => {
+      node = /ORIVON_VIRTUAL_HID_REPLUGGED .*"node":"(hidraw\d+)"/.exec(device.logs())?.[1]
+      return node
+    }, { timeout: 10_000 }).toBeDefined()
+    // No wait and no stat: a page opens the device as soon as it hears `connect`.
+    const handle = await open(`/dev/${node ?? ''}`, 'r+')
+    try {
+      const out = Buffer.alloc(65)
+      out[1] = 3
+      expect((await handle.write(out)).bytesWritten).toBe(65)
+    } finally {
+      await handle.close().catch(() => {})
+    }
+  } finally {
+    await device.stop()
+    rmSync(dir, { recursive: true, force: true })
+  }
+}, 60_000)
+
 withResponder(availability === true ? 'runs a responder from outside the repository, with its environment, answering slow reports in order' : `skipped: ${availability}`, async () => {
   const dir = mkdtempSync(join(tmpdir(), 'vhid-responder-'))
   writeFileSync(join(dir, 'tag.ts'), `
