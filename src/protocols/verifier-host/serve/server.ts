@@ -157,7 +157,8 @@ function sendError (res: ServerResponse, shown: string, error: unknown, servedRo
     'x-content-type-options': 'nosniff'
   }
   if (failure === 'not-synced') headers['retry-after'] = '10'
-  if (failure === 'unverifiable') headers[FAILURE_HEADER] = failure
+  // Only content that is itself wrong: a source that lied while none delivered the real bytes is a source problem, and says so only in the page.
+  if (failure === 'unverifiable' && !(error instanceof ResolutionError && error.sourceFault)) headers[FAILURE_HEADER] = failure
   if (servedRoot !== undefined) headers[CONTENT_ROOT_HEADER] = servedRoot
   res.writeHead(status, headers).end(html)
 }

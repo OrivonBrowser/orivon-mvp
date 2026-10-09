@@ -98,6 +98,28 @@ describe('Loader.fetchForInstall', () => {
     expect((await loader.pinFor(ORIGIN))?.bundleHash).toBe(fetched.tree.root)
   })
 
+  it('says serving could not be set up when onInstalled fails, though the bundle is pinned', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const loader = loaderOver(stubFetch(routes()), async () => { throw new Error('protocol handler refused') })
+    const read = await loader.readManifest(ORIGIN)
+    if (read.kind !== 'app') throw new Error('expected an app')
+    const fetched = await loader.fetchForInstall(read, ORIGIN)
+    if (!fetched.ok) throw new Error(fetched.reason)
+    const installed = await loader.installFetched(fetched.canonicalOrigin, fetched.manifest, fetched.tree, fetched.entries, fetched.declaration, fetched.content)
+    expect(installed).toMatchObject({ outcome: 'installed', servingFailed: true })
+    expect((await loader.pinFor(ORIGIN))?.bundleHash).toBe(fetched.tree.root)
+    error.mockRestore()
+  })
+
+  it('does not say so when serving was set up', async () => {
+    const loader = loaderOver(stubFetch(routes()), async () => {})
+    const read = await loader.readManifest(ORIGIN)
+    if (read.kind !== 'app') throw new Error('expected an app')
+    const fetched = await loader.fetchForInstall(read, ORIGIN)
+    if (!fetched.ok) throw new Error(fetched.reason)
+    expect(await loader.installFetched(fetched.canonicalOrigin, fetched.manifest, fetched.tree, fetched.entries, fetched.declaration, fetched.content)).not.toHaveProperty('servingFailed')
+  })
+
   it('discard clears what a bundle left in staging', async () => {
     const storage = memoryStorage()
     const loader = createLoader({ fetch: stubFetch(routes()), storage, now: () => 1, resolve: PUBLIC_RESOLVER })

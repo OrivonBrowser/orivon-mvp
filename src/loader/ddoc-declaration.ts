@@ -51,6 +51,10 @@ export function ddocToJson (declaration: DdocDeclaration): { bundleHash: string,
   return { bundleHash: declaration.bundleHash, leaves }
 }
 
+function isAnswerOfAMissingFile (status: number | undefined): boolean {
+  return status !== undefined && status >= 400 && status < 500
+}
+
 /**
  * `undefined` for anything short of a well-formed file: a 404, a network
  * error, an over-cap body, or a host that answers every missing path with
@@ -60,7 +64,9 @@ export function ddocToJson (declaration: DdocDeclaration): { bundleHash: string,
  * With `strict`, a caller that must judge the tree (a first visit, ADR-0074)
  * is told of a download that failed, any way but a 404: the site may well
  * publish one, and treating the failure as "not published" would let files
- * in unchecked. A 404 and a body that is no declaration stay "not published".
+ * in unchecked. Any 4xx answer (a host says a missing key 404, 403 or 410, S3 and CloudFront send
+ * 403) and a body that is no declaration stay "not published"; a 5xx, a timeout and a network error
+ * are the failure.
  */
 export async function fetchDdocDeclaration (
   fetchFn: Fetch,
@@ -74,7 +80,7 @@ export async function fetchDdocDeclaration (
   const chunks: Uint8Array[] = []
   const fetched = await fetchWithBudget(fetchFn, url, pinnedAddresses, MAX_DDOC_BYTES, budget, 'DDOC hash tree', bundleSignal,
     async (chunk) => { chunks.push(chunk) })
-  if ('ok' in fetched) return strict && fetched.status !== 404 ? fetched : undefined
+  if ('ok' in fetched) return strict && !isAnswerOfAMissingFile(fetched.status) ? fetched : undefined
 
   const text = new TextDecoder('utf-8', { fatal: false }).decode(joinChunks(chunks, fetched.byteLength))
   let raw: unknown

@@ -145,7 +145,7 @@ export async function resolveIpnsKey (
     return result.value
   }
   const rolledBack = floor !== undefined && result.reasons.some((r) => r.includes('older than'))
-  throw new ResolutionError(result.lied || rolledBack ? 'unverifiable' : 'unavailable', `IPNS name ${key}: ${result.reasons.join('; ') || 'no source left to ask'}`)
+  throw new ResolutionError(result.lied || rolledBack ? 'unverifiable' : 'unavailable', `IPNS name ${key}: ${result.reasons.join('; ') || 'no source left to ask'}`, result.lied || rolledBack)
 }
 
 /** Highest sequences for this session only; the verifier host supplies a persistent one. */

@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { DeclinedApps, MAX_DECLINED_APPS } from '../declined-apps.js'
 
 const A = 'https://abc.ipfs.orivon'
@@ -46,11 +46,30 @@ describe('DeclinedApps', () => {
     expect(new DeclinedApps(path).list()).toEqual([A])
   })
 
-  it('refuses a new origin past its bound, but keeps one it already holds', () => {
-    const apps = new DeclinedApps()
-    for (let i = 0; i < MAX_DECLINED_APPS; i += 1) apps.add(`https://site${String(i)}.ipfs.orivon`)
-    expect(apps.add(A)).toBe(false)
-    expect(apps.add('https://site0.ipfs.orivon')).toBe(true)
+  it('drops the oldest origin to make room past its bound, so the newest refusal is always kept', () => {
+    const path = file()
+    // A record already at its bound, as a profile that has refused that many apps would hold it.
+    writeFileSync(path, JSON.stringify({ version: 1, origins: Array.from({ length: MAX_DECLINED_APPS }, (_, i) => `https://site${String(i)}.ipfs.orivon`) }))
+    const apps = new DeclinedApps(path)
+    expect(apps.list()).toHaveLength(MAX_DECLINED_APPS)
+    expect(apps.add(A)).toBe(true)
+    expect(apps.has(A)).toBe(true)
+    expect(apps.has('https://site0.ipfs.orivon')).toBe(false)
+    expect(apps.has('https://site1.ipfs.orivon')).toBe(true)
+    expect(apps.list()).toHaveLength(MAX_DECLINED_APPS)
+    expect(new DeclinedApps(path).has(A)).toBe(true)
+    expect(apps.add('https://site1.ipfs.orivon')).toBe(true)
+    expect(apps.has('https://site1.ipfs.orivon')).toBe(true)
+  })
+
+  it('keeps a refusal in memory for the run when the disk refuses it', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const blocker = file()
+    writeFileSync(blocker, 'a file, where a folder is needed')
+    const apps = new DeclinedApps(join(blocker, 'inside', 'declined-apps.json'))
+    expect(apps.add(A)).toBe(true)
+    expect(apps.has(A)).toBe(true)
+    error.mockRestore()
   })
 
   it('writes the file atomically in its own shape', () => {

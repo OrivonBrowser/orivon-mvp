@@ -13,6 +13,17 @@ import type { RouteSpec } from '../../tests/test-helpers.js'
 const FAST = { retryBackoffMs: [1, 1] }
 const APP_JS = `${ORIGIN}/app.js`
 const DDOC_URL = `${ORIGIN}${DDOC_PATH}`
+const VERIFIER_ORIGIN = 'https://bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi.ipfs.orivon'
+const VERIFIER_APP_JS = `${VERIFIER_ORIGIN}/app.js`
+
+function verifierRoutes (): Record<string, RouteSpec> {
+  return {
+    [`${VERIFIER_ORIGIN}/.well-known/orivon.json`]: { body: utf8(manifestJson({ assets: ['app.js'] })) },
+    [`${VERIFIER_ORIGIN}/index.html`]: { body: utf8('<!doctype html><title>a</title>') },
+    [VERIFIER_APP_JS]: { body: utf8('console.log(1)') },
+    [`${VERIFIER_ORIGIN}${DDOC_PATH}`]: { status: 404, body: utf8('') }
+  }
+}
 
 function routes (extra: Record<string, RouteSpec> = {}): Record<string, RouteSpec> {
   return {
@@ -34,6 +45,20 @@ describe('fetchBundle: what kind of failure it was', () => {
 
   it('marks a 502 the verifier says is a failed verification as an integrity failure, and does not retry it', async () => {
     let asked = 0
+    const real = stubFetch(verifierRoutes())
+    const fetchFn: Fetch = async (url, pinned, signal, headers) => {
+      if (url !== VERIFIER_APP_JS) return await real(url, pinned, signal, headers)
+      asked += 1
+      return { ok: false, status: 502, url, headers: { get: (name) => name === FAILURE_HEADER ? 'unverifiable' : null }, body: null, arrayBuffer: async () => new ArrayBuffer(0) }
+    }
+    const result = await fetchBundle(fetchFn, VERIFIER_ORIGIN, PUBLIC_RESOLVER, memoryStorage(), { assetBytes: MAX_ASSET_BYTES, bundleBytes: MAX_BUNDLE_BYTES, ...FAST })
+    expect(result).toMatchObject({ ok: false, integrity: true })
+    expect(result).not.toHaveProperty('transient')
+    expect(asked).toBe(1)
+  })
+
+  it('believes that header only from Orivon\'s own verifier, never from an ordinary host that sends it', async () => {
+    let asked = 0
     const real = stubFetch(routes())
     const fetchFn: Fetch = async (url, pinned, signal, headers) => {
       if (url !== APP_JS) return await real(url, pinned, signal, headers)
@@ -41,9 +66,9 @@ describe('fetchBundle: what kind of failure it was', () => {
       return { ok: false, status: 502, url, headers: { get: (name) => name === FAILURE_HEADER ? 'unverifiable' : null }, body: null, arrayBuffer: async () => new ArrayBuffer(0) }
     }
     const result = await fetchBundle(fetchFn, ORIGIN, PUBLIC_RESOLVER, memoryStorage(), { assetBytes: MAX_ASSET_BYTES, bundleBytes: MAX_BUNDLE_BYTES, ...FAST })
-    expect(result).toMatchObject({ ok: false, integrity: true })
-    expect(result).not.toHaveProperty('transient')
-    expect(asked).toBe(1)
+    expect(result).toMatchObject({ ok: false, transient: true })
+    expect(result).not.toHaveProperty('integrity')
+    expect(asked).toBe(3)
   })
 
   it('records the status that refused a request', async () => {
@@ -58,7 +83,7 @@ describe('fetchBundle: a declaration that cannot be downloaded, when the caller 
   const strict = { assetBytes: MAX_ASSET_BYTES, bundleBytes: MAX_BUNDLE_BYTES, strictDeclaration: true, ...FAST }
 
   it('is a failed download, never "not published", for a timeout, a network error or a 5xx', async () => {
-    for (const spec of [{ status: 502, body: utf8('') }, { status: 500, body: utf8('') }, { status: 403, body: utf8('') }] satisfies RouteSpec[]) {
+    for (const spec of [{ status: 502, body: utf8('') }, { status: 500, body: utf8('') }, { status: 503, body: utf8('') }] satisfies RouteSpec[]) {
       const result = await fetchBundle(stubFetch(routes({ [DDOC_URL]: spec })), ORIGIN, PUBLIC_RESOLVER, memoryStorage(), strict)
       expect(result, JSON.stringify(spec)).toMatchObject({ ok: false })
     }
@@ -78,6 +103,12 @@ describe('fetchBundle: a declaration that cannot be downloaded, when the caller 
     }
     expect((await fetchBundle(flaky, ORIGIN, PUBLIC_RESOLVER, memoryStorage(), strict)).ok).toBe(true)
     expect(asked).toBe(2)
+  })
+
+  it.each([401, 403, 404, 410])('is "not published" for a %i: a host answers a missing file that way (S3 and CloudFront send 403)', async (status) => {
+    const result = await fetchBundle(stubFetch(routes({ [DDOC_URL]: { status, body: utf8('') } })), ORIGIN, PUBLIC_RESOLVER, memoryStorage(), strict)
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.declaration).toBeUndefined()
   })
 
   it('is "not published" for a 404, and for a body that is no declaration', async () => {

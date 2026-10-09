@@ -10,7 +10,7 @@ import { createTabSetup } from '../tab-screens.js'
 const WINDOW = {} as unknown as ShellWindow
 const ADDRESS = 'https://abc.ipfs.orivon/'
 
-function rig (): { contents: EventEmitter & { isDestroyed: () => boolean }, asks: SlotAsk[], cancels: Array<ReturnType<typeof vi.fn>>, navigated: string[], acted: string[], setup: ReturnType<typeof createTabSetup> } {
+function rig (options: { blankNavigates?: boolean } = {}): { contents: EventEmitter & { isDestroyed: () => boolean }, asks: SlotAsk[], cancels: Array<ReturnType<typeof vi.fn>>, navigated: string[], acted: string[], setup: ReturnType<typeof createTabSetup> } {
   const contents = Object.assign(new EventEmitter(), { isDestroyed: () => false })
   const acted: string[] = []
   const asks: SlotAsk[] = []
@@ -31,8 +31,9 @@ function rig (): { contents: EventEmitter & { isDestroyed: () => boolean }, asks
     leavePage: () => { acted.push('leave') },
     blank: async (target) => {
       acted.push('blank')
+      if (options.blankNavigates === false) return
       // What the real replacement does: a main-frame navigation of the tab's own.
-      ;(target as unknown as EventEmitter).emit('did-start-navigation', { isMainFrame: true, isSameDocument: false })
+      ;(target as unknown as EventEmitter).emit('did-start-navigation', { isMainFrame: true, isSameDocument: false, url: 'about:blank' })
     },
     stop: () => { acted.push('stop') }
   })
@@ -134,6 +135,25 @@ describe('createTabSetup', () => {
     expect(acted).toEqual(['blank'])
     expect(screens.moved()).toBe(false)
     contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false })
+    expect(screens.moved()).toBe(true)
+  })
+
+  it('does not take a blank that arrives long after the wait, when the person confirms leaving the page, for the person moving on', async () => {
+    const { contents, setup } = rig({ blankNavigates: false })
+    const screens = setup(asContents(contents), ADDRESS)!
+    screens.show({ kind: 'asking', name: 'L' })
+    await screens.blank()
+    contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false, url: 'about:blank' })
+    expect(screens.moved()).toBe(false)
+    contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false, url: 'about:blank' })
+    expect(screens.moved()).toBe(true)
+  })
+
+  it('counts any other main-frame navigation during the wait for the blank as the person moving on', async () => {
+    const { contents, setup } = rig({ blankNavigates: false })
+    const screens = setup(asContents(contents), ADDRESS)!
+    await screens.blank()
+    contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false, url: 'https://elsewhere.example/' })
     expect(screens.moved()).toBe(true)
   })
 

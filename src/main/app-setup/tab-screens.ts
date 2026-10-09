@@ -50,6 +50,9 @@ export interface TabSetupDeps {
   readonly stop: (contents: WebContents) => void
 }
 
+/** What `deps.blank` loads: the address a navigation of this visit's own makes itself known by. */
+const BLANK_URL = 'about:blank'
+
 export function createTabSetup (deps: TabSetupDeps): TabSetup {
   return (contents, address) => {
     const found = deps.findTab(contents)
@@ -57,7 +60,8 @@ export function createTabSetup (deps: TabSetupDeps): TabSetup {
     const { window, tabId } = found
     let ended = false
     let moved = false
-    let blanking = 0
+    /** This visit asked for an empty page and has not yet seen it start loading: a page whose own unload handler objected may let go only when the person confirms, long after the wait. */
+    let blankOutstanding = false
     const gone = new AbortController()
     let cover: { cancel: () => void } | undefined
     let sheet: { cancel: () => void } | undefined
@@ -92,10 +96,10 @@ export function createTabSetup (deps: TabSetupDeps): TabSetup {
       gone.abort()
       end()
     }
-    const onNavigation = (details: { isMainFrame: boolean, isSameDocument: boolean }): void => {
+    const onNavigation = (details: { isMainFrame: boolean, isSameDocument: boolean, url?: string }): void => {
       if (!details.isMainFrame || details.isSameDocument) return
-      // The empty page this visit put in place of the app's is not the person moving on.
-      if (blanking > 0) { blanking -= 1; return }
+      // The empty page this visit put in place of the app's is not the person moving on, however late it arrives.
+      if (blankOutstanding && details.url === BLANK_URL) { blankOutstanding = false; return }
       moveOn()
     }
     const live = (): boolean => !moved && !ended && !contents.isDestroyed()
@@ -130,12 +134,8 @@ export function createTabSetup (deps: TabSetupDeps): TabSetup {
       },
       blank: async () => {
         if (!live()) return
-        blanking += 1
-        try {
-          await deps.blank(contents)
-        } finally {
-          blanking = 0
-        }
+        blankOutstanding = true
+        await deps.blank(contents)
       },
       end,
       moved: () => moved || contents.isDestroyed(),

@@ -162,7 +162,7 @@ export async function runFirstVisit (deps: FirstVisitDeps, hintingOrigin: string
       if (judgement.kind === 'block') return await block({ kind: 'blocked', name, differing: judgement.differing, differingCount: judgement.differingCount, rootMatches: judgement.rootMatches })
 
       const installed = await deps.loader.installFetched(bundle.canonicalOrigin, bundle.manifest, bundle.tree, bundle.entries, bundle.declaration, bundle.content)
-      if (installed.outcome === 'installed') {
+      if (installed.outcome === 'installed' && installed.servingFailed !== true) {
         try {
           await deps.broker.registerApp(installed.canonicalOrigin, installed.manifest)
         } catch (error) {
@@ -176,7 +176,7 @@ export async function runFirstVisit (deps: FirstVisitDeps, hintingOrigin: string
         return { outcome: 'entered', installed }
       }
       await bundle.discard()
-      failure = installed.reason
+      failure = installed.outcome === 'rejected' ? installed.reason : 'the app could not be made ready to open'
     }
 
     const choice = await host.sheet({ kind: 'download-failed', name, reason: failure })

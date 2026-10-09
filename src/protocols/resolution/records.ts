@@ -57,7 +57,11 @@ export type ResolutionFailure = 'invalid-name' | 'not-found' | 'unsupported' | '
 
 export class ResolutionError extends Error {
   override readonly name = 'ResolutionError'
-  constructor (readonly failure: ResolutionFailure, message: string) {
+  /**
+   * `sourceFault`: the source Orivon asked (a gateway, an IPNS source, an RPC provider) sent what failed its proof or its hash, and nothing
+   * better came back. That says the source is bad, not that the content is: an app's own bytes cannot fail a hash they were named by.
+   */
+  constructor (readonly failure: ResolutionFailure, message: string, readonly sourceFault = false) {
     super(message)
   }
 }

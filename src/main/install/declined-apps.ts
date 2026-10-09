@@ -9,7 +9,7 @@ import { originFromUrl } from '../../broker/policy/origin.js'
 
 const FILE_VERSION = 1
 
-/** Past this many origins a new one is refused: a record that grows without bound is no setting. */
+/** Past this many origins the oldest is dropped to make room: a record that grows without bound is no setting, and a person's newest refusal is the one they remember. */
 export const MAX_DECLINED_APPS = 2000
 
 export class DeclinedApps {
@@ -39,11 +39,14 @@ export class DeclinedApps {
     return [...this.origins].sort()
   }
 
-  /** True when `origin` is recorded afterwards: false for a string that is not an origin or a full record. A write that failed still holds for this run. */
+  /** True when `origin` is recorded afterwards: false only for a string that is not an origin. A full record drops its oldest entry, and a write that failed still holds for this run. */
   add (origin: string): boolean {
     if (originFromUrl(origin) !== origin) return false
     if (this.origins.has(origin)) return true
-    if (this.origins.size >= MAX_DECLINED_APPS) return false
+    if (this.origins.size >= MAX_DECLINED_APPS) {
+      const oldest = this.origins.values().next().value
+      if (oldest !== undefined) this.origins.delete(oldest)
+    }
     this.origins.add(origin)
     if (this.persist()) return true
     // Kept in memory for this run even when the disk refused it: the person said no, and being asked again at once would not be an answer.

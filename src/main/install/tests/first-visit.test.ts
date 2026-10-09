@@ -234,6 +234,16 @@ describe('runFirstVisit', () => {
     expect(await grantsOf(h)).toEqual([])
   })
 
+  it('treats a bundle whose serving could not be set up as a failed install: nothing registered, nothing granted, Try again', async () => {
+    const h = harness({ choices: ['leave'] })
+    vi.mocked(h.loader.installFetched).mockImplementationOnce(async (origin, manifest, tree) => ({ outcome: 'installed' as const, canonicalOrigin: origin, manifest, servingFailed: true as const, pin: { schema: 1 as const, origin, bundleHash: tree.root, assets: [], version: manifest.version, pinnedAt: 0 } }))
+    expect(await run(h)).toMatchObject({ outcome: 'failed' })
+    expect(h.host.sheets[0]).toMatchObject({ kind: 'download-failed' })
+    expect(h.events).not.toContain('enter')
+    expect(h.broker.app.isRegisteredSync(ORIGIN)).toBe(false)
+    expect(await grantsOf(h)).toEqual([])
+  })
+
   it('asks nothing of a manifest that declares nothing, and still verifies before entering', async () => {
     const empty: Manifest = { ...MANIFEST, capabilities: {} }
     const h = harness({ reads: [{ ...READ, manifest: empty }], bundles: [bundle({ manifest: empty })] })

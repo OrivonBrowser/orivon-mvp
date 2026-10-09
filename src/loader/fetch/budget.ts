@@ -304,7 +304,7 @@ export async function fetchWithBudget (
     if (!response.ok) {
       const reason = `${label} fetch failed: HTTP ${String(response.status)} (${url})`
       response.body?.cancel().catch(() => {})
-      if (response.headers?.get(FAILURE_HEADER) === 'unverifiable') return { ok: false, reason, integrity: true, status: response.status }
+      if (servedByVerifier(url) && response.headers?.get(FAILURE_HEADER) === 'unverifiable') return { ok: false, reason, integrity: true, status: response.status }
       if (!TRANSIENT_STATUSES.has(response.status)) return { ok: false, reason, status: response.status }
       return { ...transientlyRejected(reason), status: response.status }
     }
