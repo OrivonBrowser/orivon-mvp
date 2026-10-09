@@ -8,7 +8,8 @@ per-host mount cache ([`sites.ts`](sites.ts)); and [`error-pages.ts`](error-page
 **What it depends on.** [`../../registry.ts`](../../registry.ts) and
 [`../../address.ts`](../../address.ts), [`../protocol.ts`](../protocol.ts),
 [`../egress.ts`](../egress.ts) and [`../../../loader/`](../../../loader/)'s range parser,
-content-type map and redirect rule, reused rather than copied.
+content-type map, redirect rule and leaf function (`leaf-hash.ts`, with `fetch/content-root.ts`'s header names), and
+[`../../../broker/policy/`](../../../broker/policy/)'s canonical path and leaf pattern, reused rather than copied.
 
 **What it must never import.** [`../../../main/`](../../../main/) beyond type-only imports, as the
 parent README says.
