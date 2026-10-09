@@ -47,7 +47,7 @@ its whole bundle is downloaded, judged against the declared tree and pinned afte
 `readDeclaration` and `serveLive` are the reads and the serving, `fetchForInstall` and `installFetched` the background install. Bad data from
 anywhere (a served file, the background download) takes the origin away whole through one function, once: the tabs are covered
 (`../app-setup/block-tabs.ts`), `Broker.forgetOrigin` removes the grants, the registration and the version floor, and the handler goes. While the
-background download runs the origin reads as `settling` and holds its queue, so a page's own hint installs nothing beside it. What was allowed is kept (`rememberConsent`) until the pin lands: `resume` serves it again at start, checked, and a name or site that has moved is followed to its current version (`createKeeper`'s `fresh` and `switchTo`), never blocked.
+background download runs the origin reads as `settling` and holds its queue, so a page's own hint installs nothing beside it. What was allowed is kept (`rememberConsent`) until the pin lands: `resume` serves it again at start, checked, and a name or site that has moved is followed to its current version (`first-visit-keeper.ts`'s `fresh` and `switchTo`), never blocked.
 `installFromHint` keeps the update, re-consent and rollback paths of an app Orivon already holds. A first visit that began from a page's hint
 (`hint-host.ts`, the `https` apps, and the fallback for a first page that could not be held) runs after the page's scripts have run up to
 `DOMContentLoaded`: it stops the page when it has read an app's manifest, and enters through the address bar's own path. The verifier-served
