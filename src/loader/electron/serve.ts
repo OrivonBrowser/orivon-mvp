@@ -282,17 +282,14 @@ export async function serveLiveFor (bundle: LiveBundle, broker?: Broker): Promis
 }
 
 /**
- * Takes a live-served origin off its partition (a block), unless its pin already answers for it, and empties the
- * partition: whatever the app wrote while it ran is the work of files that were not the ones declared.
+ * Takes a live-served origin off its partition (a block), unless its pin already answers for it. What the app stored in
+ * its partition stays: that is the person's data, and a block takes an app's permissions, never its data.
  */
 export async function endLiveFor (origin: string): Promise<void> {
   if (isOriginPinnedSync(origin)) return
   const { session } = await import('electron')
-  const appSession = session.fromPartition(partitionFor(origin))
-  retireAppOrigin(appSession, origin)
+  retireAppOrigin(session.fromPartition(partitionFor(origin)), origin)
   coverageTrackers.delete(origin)
-  await appSession.clearStorageData().catch((error: unknown) => { console.error('[loader] the storage of a blocked app could not be cleared', origin, error) })
-  await appSession.clearCache().catch(() => {})
 }
 
 /**

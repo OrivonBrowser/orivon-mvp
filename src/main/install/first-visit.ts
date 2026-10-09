@@ -8,7 +8,7 @@
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import type { FirstDeclaration, FirstManifestApp, Loader, PendingConsent } from '../../loader/index.js'
-import type { BadData, LiveHooks } from '../../loader/serve/live-serve.js'
+import type { BadData, LiveHooks, LiveVersion } from '../../loader/serve/live-serve.js'
 import { applyInstallConsent, askInstallConsent } from '../consent/install-consent-ask.js'
 import type { InstallAsk } from '../consent/install-consent-ask.js'
 import type { InstallConsentPrompt, PerCapabilityConsentPrompt } from '../consent/install-consent.js'
@@ -37,8 +37,8 @@ export interface FirstVisitDeps {
    * nothing of the app runs any more; `dismissed` once the person has read the sheet.
    */
   readonly blocked?: ((origin: string, sheet: SetupSheet, entered: object | undefined) => Blocking) | undefined
-  /** Sends every open tab of an origin through the address bar again: its consent lapsed because what it leads to has moved, so the next load is a first visit. */
-  readonly moved?: ((origin: string) => void) | undefined
+  /** Who to ask, in which tab, when a new version of an app asks for more than it was granted. */
+  readonly askerFor?: ((origin: string) => DialogCaller | undefined) | undefined
   /** How long after a tab is let in the background download waits, so it begins once the first page is up. */
   readonly backgroundDelayMs?: number | undefined
 }
@@ -191,8 +191,8 @@ interface Entry {
 
 /**
  * What keeps an app that was allowed and is not yet pinned: the hooks the live handler reports to, the taking away of
- * the whole origin on bad data or on a name that moved, and the background download of that very root. One of these
- * stands behind an app let in on Allow, and behind one served again after a restart.
+ * the origin on bad data, the following of the app to its next version, and the background download of the version
+ * being served. One of these stands behind an app let in on Allow, and behind one served again after a restart.
  */
 interface Keeper {
   readonly hooks: LiveHooks
@@ -202,14 +202,31 @@ interface Keeper {
   start: () => Promise<BackgroundOutcome>
 }
 
-function createKeeper (deps: FirstVisitDeps, origin: string, hintedUrl: string, read: FirstManifestApp, declaration: Entry['declaration']): Keeper {
-  const { name } = read.manifest
+/** One version of the app the person was asked about, as it was read: what is served, and what is pinned when its turn comes. */
+interface Held {
+  readonly read: FirstManifestApp
+  readonly declaration: Entry['declaration']
+  readonly live: LiveVersion
+}
+
+const heldOf = (read: FirstManifestApp, declaration: Entry['declaration']): Held => ({ read, declaration, live: { manifest: read.manifest, declaration, content: read.content?.cid } })
+
+/** Two versions are the same when they name the same root, the same manifest and the same tree. */
+const versionKey = (version: LiveVersion): string => JSON.stringify([version.content, version.manifest, version.declaration?.bundleHash])
+
+/** How many times one download looks again for the version that is current before it gives up until the next visit. */
+const MAX_REFRESHES = 3
+
+function createKeeper (deps: FirstVisitDeps, origin: string, hintedUrl: string, first: Held): Keeper {
+  const { name } = first.read.manifest
   let ended = false
   let entered: object | undefined
   let started: Promise<BackgroundOutcome> | undefined
+  let current = first
+  const known = new Map<string, Held>([[versionKey(first.live), first]])
   const stopped = new AbortController()
 
-  /** Everything the app held is taken away, and the origin is forgotten: its next visit is a first visit. */
+  /** Everything the app held is taken away, and the origin is forgotten: its next visit is a first visit. Its data stays where it is. */
   const takeAway = async (): Promise<void> => {
     await deps.broker.forgetOrigin(origin).catch(async (error: unknown) => {
       console.error('[first-visit] an app could not be forgotten whole; its grants are revoked instead', origin, error)
@@ -232,22 +249,55 @@ function createKeeper (deps: FirstVisitDeps, origin: string, hintedUrl: string, 
       rootMatches: found.rootMatches ?? true,
       ...(found.invalid === undefined ? {} : { invalid: found.invalid })
     }
-    // The pages go first, so nothing of the app runs while its grants go and its storage is cleared; the person reads the warning meanwhile.
+    // The pages go first, so nothing of the app runs while its grants go; the person reads the warning meanwhile.
     const covering = deps.blocked?.(origin, sheet, entered) ?? { emptied: Promise.resolve(), dismissed: Promise.resolve() }
     await covering.emptied.catch((error: unknown) => { console.error('[first-visit] the pages of a blocked app could not be emptied', origin, error) })
     await takeAway()
     await covering.dismissed.catch((error: unknown) => { console.error('[first-visit] the tabs of a blocked app could not be covered', origin, error) })
   }
 
-  // The name or site no longer leads to what the person allowed: that is an update, never a silent switch. The consent
-  // lapses, and the tabs go through the address bar again, which asks about what is there now.
-  const lapse = async (): Promise<void> => {
-    if (ended) return
-    ended = true
-    stopped.abort()
-    console.log(`[orivon] ${origin} no longer leads to what was allowed; it is asked about again`)
-    await takeAway()
-    deps.moved?.(origin)
+  /** The version that is current now, read afresh from the name or the site, when it is not the one `than` names. Never throws. */
+  const readCurrent = async (than: Held): Promise<Held | undefined> => {
+    try {
+      const read = await deps.loader.readManifest(hintedUrl)
+      if (read.kind !== 'app') return undefined
+      const tree = await deps.loader.readDeclaration(read, stopped.signal)
+      // A new manifest its own tree contradicts, or a tree that cannot be read, is no version to follow.
+      if (tree.kind === 'failed' || tree.kind === 'mismatch') return undefined
+      const next = heldOf(read, tree.kind === 'declared' ? tree.declaration : undefined)
+      if (versionKey(next.live) === versionKey(than.live)) return undefined
+      const held = known.get(versionKey(next.live)) ?? next
+      known.set(versionKey(held.live), held)
+      return held
+    } catch (error) {
+      console.error('[first-visit] the current version of an app could not be read', origin, error)
+      return undefined
+    }
+  }
+
+  /** A person who was asked about an app is asked only about what its new version declares beyond what they hold. */
+  const askForMore = async (held: Held): Promise<void> => {
+    const ask = await askInstallConsent(deps.broker, deps.consent, origin, held.read.manifest, deps.perCapabilityConsent, deps.askerFor?.(origin))
+    await applyInstallConsent(deps.broker, origin, held.read.manifest, ask)
+  }
+
+  /** The app follows its URL to a new version: the manifest is registered, the consent kept for it, the download retargeted. No warning, nothing forgotten. */
+  const switchTo = async (next: Held): Promise<void> => {
+    if (current === next) return
+    current = next
+    known.set(versionKey(next.live), next)
+    console.log(`[orivon] ${origin} has a new version; it is followed`)
+    await deps.broker.registerApp(origin, next.read.manifest).catch((error: unknown) => { console.error('[first-visit] a new version could not be registered', origin, error) })
+    await deps.loader.rememberConsent(next.read, next.declaration).catch((error: unknown) => { console.error('[first-visit] the consent could not be kept for a new version', origin, error) })
+    // Asked beside the app running, never in front of it.
+    void askForMore(next).catch((error: unknown) => { console.error('[first-visit] the question about a new version failed', origin, error) })
+  }
+
+  const refresh = async (): Promise<boolean> => {
+    const next = await readCurrent(current)
+    if (next === undefined) return false
+    await switchTo(next)
+    return true
   }
 
   const run = async (): Promise<BackgroundOutcome> => {
@@ -256,19 +306,22 @@ function createKeeper (deps: FirstVisitDeps, origin: string, hintedUrl: string, 
       if (ended) return 'blocked'
       if (await deps.loader.pinFor(origin) !== null) return 'pinned'
       let rechecked = false
+      let refreshes = 0
+      const refreshed = async (): Promise<boolean> => refreshes++ < MAX_REFRESHES && await refresh()
       for (;;) {
+        const { read, declaration } = current
         const bundle = await deps.loader.fetchForInstall(read, hintedUrl, stopped.signal)
         if (ended) {
           if (bundle.ok) await bundle.discard()
           return 'blocked'
         }
         if (!bundle.ok) {
-          if (bundle.moved === true) { await lapse(); return 'blocked' }
-          // Only a failed verification is the content being wrong; every other failure is a download to finish on the next visit.
+          // Only a failed verification is the content being wrong; every other failure may be a version that came after.
           if (bundle.integrity === true) {
             await block({ differing: [], invalid: bundle.reason })
             return 'blocked'
           }
+          if (bundle.tooLarge !== true && await refreshed()) continue
           console.log(`[orivon] the background download of ${origin} did not finish: ${bundle.reason}`)
           return 'unfinished'
         }
@@ -280,11 +333,11 @@ function createKeeper (deps: FirstVisitDeps, origin: string, hintedUrl: string, 
           await block({ differing: judgement.differing, differingCount: judgement.differingCount, rootMatches: judgement.rootMatches })
           return 'blocked'
         }
-        // Files that are whole and match the tree they came with, but not the tree the person allowed, are another release.
+        // Whole files that match their own tree but not the tree that was allowed are the next version, which is followed.
         if (declaration !== undefined && judgeBundle(bundle.tree, declaration).kind === 'block') {
           await bundle.discard()
-          await lapse()
-          return 'blocked'
+          if (await refreshed()) continue
+          return 'unfinished'
         }
         const installed = await deps.loader.installFetched(bundle.canonicalOrigin, bundle.manifest, bundle.tree, bundle.entries, bundle.declaration, bundle.content)
         if (installed.outcome === 'installed' && installed.servingFailed !== true) return 'pinned'
@@ -302,7 +355,15 @@ function createKeeper (deps: FirstVisitDeps, origin: string, hintedUrl: string, 
   return {
     hooks: {
       onBadData: (found) => { void block(found) },
-      onMoved: () => { void lapse() },
+      // The handler asks what is current when a name moved or a file is not the one the tree names; the download may already know.
+      fresh: async (since) => {
+        if (versionKey(current.live) !== versionKey(since)) return current.live
+        return (await readCurrent(current))?.live
+      },
+      adopt: async (version) => {
+        const held = known.get(versionKey(version))
+        if (held !== undefined) await switchTo(held)
+      },
       onServed: () => {}
     },
     enteredTab: (tab) => { entered = tab },
@@ -318,7 +379,7 @@ function createKeeper (deps: FirstVisitDeps, origin: string, hintedUrl: string, 
 async function letIn (deps: FirstVisitDeps, entry: Entry): Promise<FirstVisitResult> {
   const { origin, hintedUrl, read, host } = entry
   const { name } = read.manifest
-  const keeper = createKeeper(deps, origin, hintedUrl, read, entry.declaration)
+  const keeper = createKeeper(deps, origin, hintedUrl, heldOf(read, entry.declaration))
 
   let served = false
   try {
@@ -362,11 +423,11 @@ async function letIn (deps: FirstVisitDeps, entry: Entry): Promise<FirstVisitRes
 async function resumeConsent (deps: FirstVisitDeps, consent: PendingConsent, settling: Set<string>): Promise<void> {
   const { read, declaration } = consent
   const origin = read.canonicalOrigin
-  const keeper = createKeeper(deps, origin, `${origin}/`, read, declaration)
+  const keeper = createKeeper(deps, origin, `${origin}/`, heldOf(read, declaration))
   // Its download holds the origin's queue while it runs, so a page's own hint installs nothing beside it.
   const hooks: LiveHooks = {
     ...keeper.hooks,
-    onServed: () => { void outsideOriginQueue(async () => await withOriginQueue(origin, async () => { await keeper.start() })).finally(() => { settling.delete(origin) }) }
+    onServed: () => { void outsideOriginQueue(async () => await withOriginQueue(origin, async () => await keeper.start())).then((outcome) => { if (outcome !== 'unfinished') settling.delete(origin) }) }
   }
   const served = await deps.loader.serveLive(read, declaration, hooks).catch((error: unknown) => {
     console.error('[first-visit] a consented app could not be served again', origin, error)
@@ -420,8 +481,10 @@ export function createFirstVisit (options: FirstVisitOptions): FirstVisit {
       const result = await runFirstVisit(deps, origin, hintedUrl, caller, host, signal)
       if (result.outcome === 'entered') {
         // The download holds the origin's queue after the visit has returned, so nothing installs the same files beside it.
+        // An app whose download did not finish stays settling for the run: the ordinary install path, which checks no
+        // file, never takes it over; its consent is kept, and the next start serves it again.
         settling.add(origin)
-        void outsideOriginQueue(async () => await withOriginQueue(origin, async () => { await result.background })).finally(() => { settling.delete(origin) })
+        void outsideOriginQueue(async () => await withOriginQueue(origin, async () => await result.background)).then((outcome) => { if (outcome !== 'unfinished') settling.delete(origin) })
       }
       return result
     })

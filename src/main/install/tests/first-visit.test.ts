@@ -45,7 +45,6 @@ interface Harness {
   /** What the loader was handed to be told by. */
   readonly hooks: () => LiveHooks | undefined
   readonly badData: () => ((found: { differing: readonly string[], invalid?: string }) => void) | undefined
-  readonly moved: ReturnType<typeof vi.fn<NonNullable<FirstVisitDeps['moved']>>>
   readonly grantsAt: Record<string, string[]>
 }
 
@@ -113,9 +112,8 @@ function harness (options: {
     })
   }
   const consent = vi.fn<InstallConsentPrompt>(async () => { events.push('ask'); await noteGrants('ask'); return options.answer ?? true })
-  const moved = vi.fn<NonNullable<FirstVisitDeps['moved']>>(() => { events.push('moved') })
   const blocked = vi.fn<NonNullable<FirstVisitDeps['blocked']>>(() => { events.push('blocked-tabs'); return { emptied: Promise.resolve(), dismissed: Promise.resolve() } })
-  return { origin, url: `${origin}/`, broker, events, host, loader, consent, declined: new DeclinedApps(), blocked, hooks: () => handed, badData: () => handed?.onBadData, moved, grantsAt }
+  return { origin, url: `${origin}/`, broker, events, host, loader, consent, declined: new DeclinedApps(), blocked, hooks: () => handed, badData: () => handed?.onBadData, grantsAt }
 }
 
 const TAB = { id: 'the-tab' }
@@ -123,7 +121,7 @@ const TAB = { id: 'the-tab' }
 const present: DialogCaller = { window: () => undefined, stillOn: () => true }
 
 function depsOf (h: Harness): FirstVisitDeps {
-  return { broker: h.broker, loader: h.loader as Loader, consent: h.consent, declined: h.declined, blocked: h.blocked, moved: h.moved, backgroundDelayMs: 0 }
+  return { broker: h.broker, loader: h.loader as Loader, consent: h.consent, declined: h.declined, blocked: h.blocked, backgroundDelayMs: 0 }
 }
 
 async function run (h: Harness, caller: DialogCaller | undefined = present, signal?: AbortSignal, backgroundDelayMs = 0): ReturnType<typeof runFirstVisit> {
@@ -501,34 +499,111 @@ describe('an app that was allowed and is not yet pinned', () => {
     await settled(result)
   })
 
-  it('lapses, without a warning, when the download finds the name now leads to another root: the consent is taken away and the tabs ask again', async () => {
-    const h = harness({ bundles: [{ ok: false, reason: 'HTTP 409', moved: true }] })
-    expect(await settled(await run(h))).toBe('blocked')
-    await vi.waitFor(() => { expect(h.moved).toHaveBeenCalledWith(h.origin) })
-    expect(h.blocked).not.toHaveBeenCalled()
-    expect(h.host.sheets).toEqual([])
-    expect(h.broker.app.isRegisteredSync(h.origin)).toBe(false)
-    expect(await grantsOf(h)).toEqual([])
-    expect(h.loader.endLive).toHaveBeenCalledWith(h.origin)
-    expect(h.loader.installFetched).not.toHaveBeenCalled()
-  })
+  describe('a new version of the app', () => {
+    const NEXT_CONTENT = { cid: 'bafynext', via: 'ipns-key' as const, pointersVerified: true }
+    const NEXT_TREE = { bundleHash: leaf('n'), leaves: [{ path: '/index.html', leaf: leaf('m') }] }
+    const nextRead = (manifest: Manifest = MANIFEST): FirstManifest => ({ kind: 'app', canonicalOrigin: VERIFIED, manifest, bytes: new Uint8Array([2]), content: NEXT_CONTENT })
+    const WIDER: Manifest = { ...MANIFEST, version: '1.1.0', capabilities: { fs: { quotaBytes: 1024 }, net: { tcp: { connect: ['a.example:443'] } } } }
 
-  it('lapses when the verifier says, to a page, that the name moved', async () => {
-    const h = harness()
-    const result = await run(h, present, undefined, LATE)
-    h.hooks()?.onMoved?.()
-    expect(await settled(result)).toBe('blocked')
-    await vi.waitFor(() => { expect(h.moved).toHaveBeenCalledTimes(1) })
-    expect(h.blocked).not.toHaveBeenCalled()
-    expect(h.broker.app.isRegisteredSync(h.origin)).toBe(false)
-  })
+    /** The app is allowed at the first read, and a later read shows the next version. */
+    function moving (next: FirstManifest = nextRead(), extra: Parameters<typeof harness>[0] = {}): Harness {
+      return harness({ reads: [readOf(VERIFIED), next], declarations: [DECLARED, { kind: 'declared', declaration: NEXT_TREE }], ...extra })
+    }
 
-  it('lapses, never pins silently, when whole files that match their own tree are not the tree the person allowed', async () => {
-    const h = harness({ origin: WEBSITE, declarations: [{ kind: 'declared', declaration: DIFFERENT }], bundles: [bundle(WEBSITE)] })
-    expect(await settled(await run(h))).toBe('blocked')
-    await vi.waitFor(() => { expect(h.moved).toHaveBeenCalledWith(WEBSITE) })
-    expect(h.loader.installFetched).not.toHaveBeenCalled()
-    expect(h.blocked).not.toHaveBeenCalled()
+    const asNext = async (h: Harness): Promise<Awaited<ReturnType<NonNullable<LiveHooks['fresh']>>>> => await h.hooks()?.fresh?.({ manifest: MANIFEST, declaration: DECLARED.declaration, content: undefined })
+
+    it('is followed, not blocked: the live check and the download move to it, no grant or registration is lost, no warning is shown', async () => {
+      const h = moving(undefined, { bundles: [bundle(VERIFIED, { content: NEXT_CONTENT, declaration: NEXT_TREE, tree: { root: NEXT_TREE.bundleHash, assets: [{ path: '/index.html', leaf: leaf('m') }] } })] })
+      const result = await run(h, present, undefined, LATE)
+      const next = await asNext(h)
+      expect(next).toMatchObject({ content: 'bafynext', declaration: NEXT_TREE })
+      await h.hooks()?.adopt?.(next as NonNullable<typeof next>)
+      expect(h.blocked).not.toHaveBeenCalled()
+      expect(h.loader.endLive).not.toHaveBeenCalled()
+      expect(h.host.sheets).toEqual([])
+      expect(h.broker.app.isRegisteredSync(h.origin)).toBe(true)
+      expect(await grantsOf(h)).toEqual(['fs'])
+      expect(vi.mocked(h.loader.rememberConsent).mock.calls.at(-1)?.[1]).toBe(NEXT_TREE)
+      expect(await settled(result)).toBe('pinned')
+      expect(vi.mocked(h.loader.fetchForInstall).mock.calls[0]?.[0]).toMatchObject({ content: NEXT_CONTENT })
+    })
+
+    it('is the same as the one being served when nothing moved: the handler is told so, and a mismatch stays bad data', async () => {
+      const h = harness({ reads: [readOf(VERIFIED)], declarations: [DECLARED] })
+      const result = await run(h, present, undefined, LATE)
+      expect(await asNext(h)).toBeUndefined()
+      h.badData()?.({ differing: ['/app.js'] })
+      expect(await settled(result)).toBe('blocked')
+      expect(h.blocked).toHaveBeenCalled()
+    })
+
+    it('is not followed when its manifest contradicts its own tree, or its tree cannot be read', async () => {
+      for (const declaration of [{ kind: 'mismatch' as const, differing: ['/.well-known/orivon.json'] }, { kind: 'failed' as const, reason: 'HTTP 503' }]) {
+        const h = harness({ reads: [readOf(VERIFIED), nextRead()], declarations: [DECLARED, declaration] })
+        const result = await run(h, present, undefined, LATE)
+        expect(await asNext(h)).toBeUndefined()
+        h.badData()?.({ differing: ['/x'] })
+        await settled(result)
+      }
+    })
+
+    it('asks for what it declares beyond what is held, with the existing question, and for nothing else', async () => {
+      const wider = moving(nextRead(WIDER))
+      const result = await run(wider, present, undefined, LATE)
+      const next = await asNext(wider)
+      await wider.hooks()?.adopt?.(next as NonNullable<typeof next>)
+      await vi.waitFor(() => { expect(wider.consent).toHaveBeenCalledTimes(2) })
+      await vi.waitFor(async () => { expect(await grantsOf(wider)).toContain('tcp.connect') })
+      expect(await grantsOf(wider)).toContain('fs')
+      wider.hooks()?.onBadData({ differing: [] })
+      await settled(result)
+
+      const same = moving()
+      const second = await run(same, present, undefined, LATE)
+      await same.hooks()?.adopt?.((await asNext(same)) as NonNullable<Awaited<ReturnType<typeof asNext>>>)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(same.consent).toHaveBeenCalledTimes(1)
+      same.hooks()?.onBadData({ differing: [] })
+      await settled(second)
+    })
+
+    it('keeps what is held when the person declines the extra, and asks no more', async () => {
+      const h = moving(nextRead(WIDER))
+      const result = await run(h, present, undefined, LATE)
+      h.consent.mockImplementation(async () => { h.events.push('ask'); return false })
+      await h.hooks()?.adopt?.((await asNext(h)) as NonNullable<Awaited<ReturnType<typeof asNext>>>)
+      await vi.waitFor(() => { expect(h.consent).toHaveBeenCalledTimes(2) })
+      expect(await grantsOf(h)).toEqual(['fs'])
+      expect(h.broker.app.isRegisteredSync(h.origin)).toBe(true)
+      h.hooks()?.onBadData({ differing: [] })
+      await settled(result)
+    })
+
+    it('is found by the download when the name moved under it, and pinned instead of the one that was allowed', async () => {
+      const h = moving(undefined, { bundles: [{ ok: false, reason: 'HTTP 409', moved: true }, bundle(VERIFIED, { content: NEXT_CONTENT, declaration: NEXT_TREE, tree: { root: NEXT_TREE.bundleHash, assets: [{ path: '/index.html', leaf: leaf('m') }] } })] })
+      expect(await settled(await run(h))).toBe('pinned')
+      expect(h.blocked).not.toHaveBeenCalled()
+      expect(h.loader.endLive).not.toHaveBeenCalled()
+      expect(vi.mocked(h.loader.fetchForInstall).mock.calls[1]?.[0]).toMatchObject({ content: NEXT_CONTENT })
+      expect(h.broker.app.isRegisteredSync(h.origin)).toBe(true)
+      expect(await grantsOf(h)).toEqual(['fs'])
+    })
+
+    it('is found by the download when whole files match their own tree but not the allowed one: that is a deploy, not tampering', async () => {
+      const deployed = bundle(WEBSITE, { declaration: NEXT_TREE, tree: { root: NEXT_TREE.bundleHash, assets: [{ path: '/index.html', leaf: leaf('m') }] } })
+      const h = harness({ origin: WEBSITE, reads: [readOf(WEBSITE), { ...nextRead(), canonicalOrigin: WEBSITE, content: undefined } as FirstManifest], declarations: [DECLARED, { kind: 'declared', declaration: NEXT_TREE }], bundles: [deployed, deployed] })
+      expect(await settled(await run(h))).toBe('pinned')
+      expect(h.blocked).not.toHaveBeenCalled()
+      expect(h.broker.app.isRegisteredSync(WEBSITE)).toBe(true)
+    })
+
+    it('stays unfinished, quietly, when no newer version can be read: nothing is forgotten', async () => {
+      const h = harness({ bundles: [{ ok: false, reason: 'HTTP 409', moved: true }], reads: [readOf(VERIFIED)] })
+      expect(await settled(await run(h))).toBe('unfinished')
+      expect(h.blocked).not.toHaveBeenCalled()
+      expect(h.loader.endLive).not.toHaveBeenCalled()
+      expect(await grantsOf(h)).toEqual(['fs'])
+    })
   })
 
   it('is served again after a restart as it was allowed, never asked about again, and pins that root once it is used', async () => {

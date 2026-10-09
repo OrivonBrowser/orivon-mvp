@@ -42,7 +42,7 @@ import { scoreLevelOverrideFor } from '../dev/score-levels.js'
 import { extensionNamesForOrigin } from '../extensions/site-reach-runner.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { outsideOriginQueue, withOriginQueue } from './origin-queue.js'
-import { blockOpenTabs, moveOpenTabs } from '../app-setup/block-tabs.js'
+import { blockOpenTabs } from '../app-setup/block-tabs.js'
 import { pagesInPartitionOf } from '../app-setup/pages-in-partition.js'
 import { MAX_MANIFEST_BYTES } from '../../loader/manifest/manifest.js'
 
@@ -158,7 +158,7 @@ export const appInstallSubsystem: Subsystem = {
     const declined = new DeclinedApps(ctx.privateSession ? undefined : join(ctx.app.getPath('userData'), 'declined-apps.json'))
     installDeclinedApps(declined)
     const firstVisit = createFirstVisit({
-      deps: { broker, loader, consent, perCapabilityConsent, declined, blocked: blockOpenTabs({ tabsOn: (origin) => ctx.openTabs?.on(origin) ?? [], pagesOf: pagesInPartitionOf, setup: tabSetupNow }), moved: moveOpenTabs({ tabsOn: (origin) => ctx.openTabs?.on(origin) ?? [], setup: tabSetupNow }), backgroundDelayMs: backgroundPinDelayMs() },
+      deps: { broker, loader, consent, perCapabilityConsent, declined, blocked: blockOpenTabs({ tabsOn: (origin) => ctx.openTabs?.on(origin) ?? [], pagesOf: pagesInPartitionOf, setup: tabSetupNow }), askerFor: (origin) => { const tab = ctx.openTabs?.on(origin)[0]; return tab === undefined ? undefined : dialogCallerFor(tab, (sender) => ctx.windowForSender?.(sender as never)) }, backgroundDelayMs: backgroundPinDelayMs() },
       untouched: (origin) => isLocalFileKey(origin) || grantableWithoutInstall(origin, devModeEnabled()) || !origin.startsWith('https://'),
       servedFromCache: isOriginServedFromCacheSync
     })

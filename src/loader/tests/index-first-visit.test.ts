@@ -262,7 +262,7 @@ describe('Loader.serveLive', () => {
     const loader = createLoader({ fetch: stubFetch(routes()), storage: memoryStorage(), now: () => 1, resolve: PUBLIC_RESOLVER, contentAddress: async () => ({ cid: CID, via: 'ipns-key' as const, pointersVerified: true }), serveLive: served, endLive: ended })
     const read = await loader.readManifest(ORIGIN)
     if (read.kind !== 'app') throw new Error('expected an app')
-    const hooks = { onBadData: vi.fn(), onMoved: vi.fn(), onServed: vi.fn() }
+    const hooks = { onBadData: vi.fn(), fresh: vi.fn(), adopt: vi.fn(), onServed: vi.fn() }
     expect(await loader.serveLive(read, undefined, hooks)).toBe(true)
     expect(served).toHaveBeenCalledWith(expect.objectContaining({ origin: ORIGIN, manifest: read.manifest, declaration: undefined, content: CID, ...hooks }))
     await loader.endLive(ORIGIN)

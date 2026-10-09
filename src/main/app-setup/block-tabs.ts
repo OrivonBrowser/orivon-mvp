@@ -58,19 +58,3 @@ export function blockOpenTabs (deps: BlockTabsDeps): (origin: string, sheet: Set
     return { emptied: Promise.all(emptied).then(() => {}), dismissed: Promise.all(dismissed).then(() => {}) }
   }
 }
-
-export type MoveTabsDeps = Pick<BlockTabsDeps, 'tabsOn' | 'setup'>
-
-/**
- * The consent of an app lapsed because what its name or site leads to has moved: each of its tabs goes through the
- * address bar again, which is a first visit and asks about what is there now. Nothing is covered; nothing is a warning.
- */
-export function moveOpenTabs (deps: MoveTabsDeps): (origin: string) => void {
-  return (origin) => {
-    for (const contents of deps.tabsOn(origin)) {
-      if (contents.isDestroyed()) continue
-      const url = contents.getURL()
-      deps.setup()?.(contents, url)?.navigate(url)
-    }
-  }
-}

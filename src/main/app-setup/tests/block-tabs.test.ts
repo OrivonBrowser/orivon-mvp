@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { WebContents } from 'electron'
 import type { SetupSheet } from '../../install/first-visit.js'
-import { blockOpenTabs, moveOpenTabs } from '../block-tabs.js'
+import { blockOpenTabs } from '../block-tabs.js'
 import type { TabRef, TabScreens, TabSetup } from '../tab-screens.js'
 
 // An app found to be bad after its tabs were let in: each tab showing it is stopped and emptied whatever its
@@ -124,21 +124,5 @@ describe('blockOpenTabs', () => {
     const gone = { stop: () => { throw new Error('Object has been destroyed') }, getURL: () => { throw new Error('Object has been destroyed') }, isDestroyed: () => true } as unknown as WebContents
     await blockOpenTabs({ tabsOn: () => [gone, tab(calls)], pagesOf: none, setup: () => () => screensFake(calls) })(ORIGIN, SHEET, undefined).dismissed
     expect(calls).toContain('sheet:blocked')
-  })
-})
-
-describe('moveOpenTabs', () => {
-  it('sends each tab of the origin through the address bar again, to the address it shows', () => {
-    const calls: string[] = []
-    const screens = { ...screensFake(calls), navigate: (url: string) => { calls.push(`navigate:${url}`) } }
-    moveOpenTabs({ tabsOn: () => [tab(calls, `${ORIGIN}/page`), tab(calls, `${ORIGIN}/other`)], setup: () => () => screens })(ORIGIN)
-    expect(calls).toEqual([`navigate:${ORIGIN}/page`, `navigate:${ORIGIN}/other`])
-  })
-
-  it('leaves a contents no window holds as a tab, and one that is gone, alone', () => {
-    const calls: string[] = []
-    const gone = { getURL: () => { throw new Error('destroyed') }, isDestroyed: () => true } as unknown as WebContents
-    moveOpenTabs({ tabsOn: () => [gone, tab(calls)], setup: () => () => undefined })(ORIGIN)
-    expect(calls).toEqual([])
   })
 })

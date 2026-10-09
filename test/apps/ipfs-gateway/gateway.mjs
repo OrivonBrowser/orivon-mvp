@@ -42,10 +42,13 @@ export async function startFixtureGateway (sites, options = {}) {
   const keys = {}
   /** @type {Map<string, Uint8Array>} */
   const ipnsRecords = new Map()
+  /** @type {Map<string, { key: Awaited<ReturnType<typeof generateKeyPair>>, name: string, sequence: bigint }>} site -> the key that names it, and the newest record's sequence */
+  const ipnsState = new Map()
   for (const site of options.ipnsKeys ?? []) {
     const key = await generateKeyPair('Ed25519')
     const name = CID.createV1(0x72, key.publicKey.toMultihash()).toString(base36)
     ipnsRecords.set(name, marshalIPNSRecord(await createIPNSRecord(key, `/ipfs/${roots[site]}`, 1n, 60 * 60 * 1000)))
+    ipnsState.set(site, { key, name, sequence: 1n })
     keys[site] = name
   }
 
@@ -100,6 +103,13 @@ export async function startFixtureGateway (sites, options = {}) {
     roots,
     keys,
     requests,
+    /** Publishes a newer record for the key that names `site`, pointing at `target`'s root: the name is republished, as every update of a published app is. */
+    republish: async (site, target) => {
+      const state = ipnsState.get(site)
+      if (state === undefined) throw new Error(`${site} has no IPNS key`)
+      state.sequence += 1n
+      ipnsRecords.set(state.name, marshalIPNSRecord(await createIPNSRecord(state.key, `/ipfs/${roots[target]}`, state.sequence, 60 * 60 * 1000)))
+    },
     /** The CID of the block holding this site's file, which is what a refusal of it names. */
     blockOf: (site, path) => {
       const cid = files.get(`${site}/${path}`)

@@ -6,8 +6,10 @@
 // main and never through itself, holds it whole, hashes it with the same leaf function and delivers those very
 // bytes, so the page runs exactly what was checked. A file that did not match, or content the verifier proved is
 // not what its address names, is bad data: the request fails, nothing more of the origin is served, and the block
-// is raised once. A failure to get a file is only a failed load. Third-party requests go through the same reach
-// gate as a pinned app's.
+// is raised once. A failure to get a file is only a failed load. A file that is not the one the allowed tree names
+// may be the next version of the app: the handler asks for the current manifest and tree, and bytes that match
+// those are a new version, adopted, never bad data. Third-party requests go through the same reach gate as a
+// pinned app's.
 
 import { MAX_ASSET_BYTES } from '../../broker/policy/bundle-hash.js'
 import { MANIFEST_PATH } from '../../broker/policy/canonical-path.js'
@@ -47,20 +49,29 @@ const HELD_BYTES = 96 * 1024 * 1024
 /** How long a file waits for room in that, and so for the files beside it to be done. */
 const HELD_WAIT_MS = 10_000
 
-export interface LiveServeDeps {
-  readonly origin: string
+/** One version of an app: what the person was asked about and the tree its site declared for it. */
+export interface LiveVersion {
   readonly manifest: Manifest
-  /** The tree the site declares, or `undefined` when it declares none: its files are then let through on Orivon's own checks. */
+  /** `undefined` when the site declares no tree: its files are then let through on Orivon's own checks. */
   readonly declaration: DdocDeclaration | undefined
-  /** The root the manifest was read from; every request to the verifier names it, so a name that moved fails rather than mixing two releases. */
+  /** The root the manifest was read from; every request to the verifier names it, so a name that moved is told apart from bad data. */
   readonly content: string | undefined
+}
+
+export interface LiveServeDeps extends LiveVersion {
+  readonly origin: string
   /** One request to the verifier's server for this origin, which checks the leaf itself: set for an app a verifier serves. */
   readonly fetchVerified?: FetchUpstream | undefined
   /** One request to the app's own ordinary host, from main: set for an app on an ordinary site, whose files this handler checks itself. */
   readonly fetchNetwork?: FetchUpstream | undefined
   readonly onBadData: (found: BadData) => void
-  /** The name this app is served at now leads somewhere else than the root it was allowed at: an update, not bad data. Called once. */
-  readonly onMoved?: (() => void) | undefined
+  /**
+   * The version of the app that is current now, read afresh, or `undefined` when it is the one `since` names (the one being
+   * served) or cannot be read. Asked when a name no longer leads to the root asked for, and when a file is not the one the tree names.
+   */
+  readonly fresh?: ((since: LiveVersion) => Promise<LiveVersion | undefined>) | undefined
+  /** A newer version is about to be served: what must follow from it (its manifest registered, its consent kept) is done before this resolves. */
+  readonly adopt?: ((version: LiveVersion) => Promise<void>) | undefined
   /** The first file was delivered: the app is in use. Called once. */
   readonly onServed?: (() => void) | undefined
   readonly grantedConnectPatterns?: GrantedConnectPatterns | undefined
@@ -74,30 +85,38 @@ export interface LiveServeDeps {
 }
 
 /** What a caller hands over to have an origin served live: the rest of `LiveServeDeps` is the shell's. */
-export type LiveBundle = Pick<LiveServeDeps, 'origin' | 'manifest' | 'declaration' | 'content' | 'fetchNetwork' | 'onBadData' | 'onMoved' | 'onServed'>
+export type LiveBundle = Pick<LiveServeDeps, 'origin' | 'manifest' | 'declaration' | 'content' | 'fetchNetwork' | 'onBadData' | 'fresh' | 'adopt' | 'onServed'>
 
 /** What a caller says it wants to hear of an app served live. */
-export type LiveHooks = Pick<LiveServeDeps, 'onBadData' | 'onMoved' | 'onServed'>
+export type LiveHooks = Pick<LiveServeDeps, 'onBadData' | 'fresh' | 'adopt' | 'onServed'>
 
 function denyResponse (reason: string, status = 404): Response {
   return new Response(`Orivon: ${reason}`, { status, headers: { 'content-type': 'text/plain; charset=utf-8' } })
 }
 
-export function createLiveRequestHandler (deps: LiveServeDeps): AppRequestHandler {
-  const { origin, manifest, declaration } = deps
-  const entryPath = entryCanonicalPath(origin, manifest.entry)
-  const leaves = new Map(declaration?.leaves.map(({ path, leaf }) => [path, leaf]))
+/** What a version is served by: where its entry is, and the files its manifest lists with the leaves its tree gives them. */
+function derive (origin: string, version: LiveVersion): { readonly entryPath: string | null, readonly leaves: ReadonlyMap<string, string>, readonly files: { readonly assets: ReadonlyArray<{ readonly path: string, readonly leaf: string }> } } {
+  const entryPath = entryCanonicalPath(origin, version.manifest.entry)
+  const leaves = new Map(version.declaration?.leaves.map(({ path, leaf }) => [path, leaf]))
   const listed = new Set<string>([MANIFEST_PATH])
   if (entryPath !== null) listed.add(entryPath)
-  for (const asset of manifest.assets ?? []) {
+  for (const asset of version.manifest.assets ?? []) {
     const path = entryCanonicalPath(origin, asset)
     if (path !== null) listed.add(path)
   }
-  const files = { assets: [...listed].map((path) => ({ path, leaf: leaves.get(path) ?? '' })) }
+  return { entryPath, leaves, files: { assets: [...listed].map((path) => ({ path, leaf: leaves.get(path) ?? '' })) } }
+}
+
+export function createLiveRequestHandler (deps: LiveServeDeps): AppRequestHandler {
+  const { origin } = deps
+  let version: LiveVersion = { manifest: deps.manifest, declaration: deps.declaration, content: deps.content }
+  let state = derive(origin, version)
   const reachOptions: ReachOptions = { appOrigin: origin, redirects: createRedirectChains() }
   const held = new ByteReserve(HELD_BYTES)
   let ended = false
   let served = false
+  let looking: Promise<LiveVersion | undefined> | undefined
+  const adopting = new Map<LiveVersion, Promise<void>>()
 
   const block = (found: BadData): Response => {
     if (!ended) {
@@ -107,16 +126,29 @@ export function createLiveRequestHandler (deps: LiveServeDeps): AppRequestHandle
     return Response.error()
   }
 
-  const moved = (): Response => {
-    if (!ended) {
-      ended = true
-      deps.onMoved?.()
+  /** The current version, read afresh once however many requests ask at the same time. */
+  const current = async (): Promise<LiveVersion | undefined> => {
+    looking ??= (deps.fresh?.(version) ?? Promise.resolve(undefined)).catch(() => undefined).finally(() => { looking = undefined })
+    return await looking
+  }
+
+  /** Serves `next` from now on, once what must follow from it is done. */
+  const adopt = async (next: LiveVersion): Promise<void> => {
+    if (version === next) return
+    let doing = adopting.get(next)
+    if (doing === undefined) {
+      doing = (async () => {
+        await deps.adopt?.(next)
+        version = next
+        state = derive(origin, next)
+      })()
+      adopting.set(next, doing)
     }
-    return Response.error()
+    await doing
   }
 
   /** The headers a pinned response carries, with the file's type taken from its path, never from the host. */
-  const answerHeaders = async (path: string): Promise<Record<string, string>> => {
+  const answerHeaders = async (path: string, manifest: Manifest): Promise<Record<string, string>> => {
     const [connectPatterns, securePatterns, media] = await Promise.all([
       deps.grantedConnectPatterns?.() ?? [],
       deps.grantedSecurePatterns?.() ?? [],
@@ -133,7 +165,44 @@ export function createLiveRequestHandler (deps: LiveServeDeps): AppRequestHandle
     }
   }
 
-  /** A file of the app's own host held whole, hashed, and only then delivered: those bytes, and no others, reach the page. */
+  /** The host could not be reached or said it is unwell: the page sees a failed load, and nothing is judged. */
+  const failedLoad = (): Response => {
+    deps.recordCoverage?.('denied')
+    return Response.error()
+  }
+
+  const refused = (path: string, upstream: UpstreamResponse): Response => {
+    void upstream.body?.cancel().catch(() => {})
+    deps.recordCoverage?.('denied')
+    return denyResponse(`${path} was not served (${String(upstream.status)})`, upstream.status)
+  }
+
+  /** The bytes of a file answered, as the range asked for. */
+  const answered = async (request: Request, path: string, manifest: Manifest, chunks: readonly Uint8Array[], total: number): Promise<Response> => {
+    const range = parseRange(request.headers.get('range'), total)
+    const headers = await answerHeaders(path, manifest)
+    if (range.kind === 'unsatisfiable') return new Response(null, { status: 416, headers: { ...headers, 'content-range': `bytes */${String(total)}` } })
+    const { start, end } = range.kind === 'none' ? { start: 0, end: total - 1 } : range.range
+    const body = new Uint8Array(Math.max(0, end - start + 1))
+    let at = 0
+    let from = 0
+    for (const chunk of chunks) {
+      const lo = Math.max(start - from, 0)
+      const hi = Math.min(end + 1 - from, chunk.length)
+      if (lo < hi) { body.set(chunk.subarray(lo, hi), at); at += hi - lo }
+      from += chunk.length
+    }
+    delivered(body.length)
+    const sent = { ...headers, 'content-length': String(body.length) }
+    const head = request.method === 'HEAD'
+    if (range.kind === 'none') return new Response(head ? null : body, { status: 200, headers: sent })
+    return new Response(head ? null : body, { status: 206, headers: { ...sent, 'content-range': `bytes ${String(start)}-${String(end)}/${String(total)}` } })
+  }
+
+  /**
+   * A file of the app's own host held whole, hashed, and only then delivered: those bytes, and no others, reach the page.
+   * Bytes that are not the declared ones may be the next version's: they are bad data only if the current tree does not name them.
+   */
   async function checkedHere (fetchUpstream: FetchUpstream, request: Request, path: string, expected: string): Promise<Response> {
     let upstream: UpstreamResponse
     try {
@@ -171,44 +240,19 @@ export function createLiveRequestHandler (deps: LiveServeDeps): AppRequestHandle
       } catch {
         return block({ differing: [path] })
       }
-      if (found !== expected) return block({ differing: [path] })
-      const range = parseRange(request.headers.get('range'), total)
-      const headers = await answerHeaders(path)
-      if (range.kind === 'unsatisfiable') return new Response(null, { status: 416, headers: { ...headers, 'content-range': `bytes */${String(total)}` } })
-      const { start, end } = range.kind === 'none' ? { start: 0, end: total - 1 } : range.range
-      const body = new Uint8Array(Math.max(0, end - start + 1))
-      let at = 0
-      let from = 0
-      for (const chunk of chunks) {
-        const lo = Math.max(start - from, 0)
-        const hi = Math.min(end + 1 - from, chunk.length)
-        if (lo < hi) { body.set(chunk.subarray(lo, hi), at); at += hi - lo }
-        from += chunk.length
-      }
-      delivered(body.length)
-      const sent = { ...headers, 'content-length': String(body.length) }
-      const head = request.method === 'HEAD'
-      if (range.kind === 'none') return new Response(head ? null : body, { status: 200, headers: sent })
-      return new Response(head ? null : body, { status: 206, headers: { ...sent, 'content-range': `bytes ${String(start)}-${String(end)}/${String(total)}` } })
+      if (found === expected) return await answered(request, path, version.manifest, chunks, total)
+      const next = await current()
+      const nextState = next === undefined ? undefined : derive(origin, next)
+      if (next === undefined || nextState === undefined || nextState.leaves.get(path) !== found || !nextState.files.assets.some((asset) => asset.path === path)) return block({ differing: [path] })
+      await adopt(next)
+      return await answered(request, path, next.manifest, chunks, total)
     } finally {
       held.give(reserved)
     }
   }
 
-  /** The host could not be reached or said it is unwell: the page sees a failed load, and nothing is judged. */
-  const failedLoad = (): Response => {
-    deps.recordCoverage?.('denied')
-    return Response.error()
-  }
-
-  const refused = (path: string, upstream: UpstreamResponse): Response => {
-    void upstream.body?.cancel().catch(() => {})
-    deps.recordCoverage?.('denied')
-    return denyResponse(`${path} was not served (${String(upstream.status)})`, upstream.status)
-  }
-
   /** A file passed on as it came, its bytes checked before they were sent (a verifier) or not checked at all (a site that declares no tree). */
-  async function passedOn (fetchUpstream: FetchUpstream, request: Request, path: string, headers: Record<string, string>, verifier: boolean): Promise<Response> {
+  async function passedOn (fetchUpstream: FetchUpstream, request: Request, path: string, headers: Record<string, string>, verifier: boolean, started: LiveVersion, retry: () => Promise<Response>): Promise<Response> {
     const range = request.headers.get('range')
     if (range !== null) headers['range'] = range
     const head = request.method === 'HEAD'
@@ -222,12 +266,19 @@ export function createLiveRequestHandler (deps: LiveServeDeps): AppRequestHandle
       const failure = upstream.headers?.get(FAILURE_HEADER) ?? null
       if (failure === DDOC_MISMATCH) { void upstream.body?.cancel().catch(() => {}); return block({ differing: [path] }) }
       if (failure === 'unverifiable') { void upstream.body?.cancel().catch(() => {}); return block({ differing: [], invalid: `${path} is not what its address names` }) }
-      if (upstream.status === 409) { void upstream.body?.cancel().catch(() => {}); return moved() }
+      if (upstream.status === 409) {
+        // The name leads to another root than the one this version was read from: the app's next version, if it can be read.
+        void upstream.body?.cancel().catch(() => {})
+        const next = version !== started ? version : await current()
+        if (next === undefined) return failedLoad()
+        await adopt(next)
+        return await retry()
+      }
     }
     // A host that is unwell, or a gateway that lied with no honest one to say so, is a failed load of this file.
     if (upstream.status >= 500) { void upstream.body?.cancel().catch(() => {}); return failedLoad() }
     if (upstream.status !== 200 && upstream.status !== 206) return refused(path, upstream)
-    const out = await answerHeaders(path)
+    const out = await answerHeaders(path, started.manifest)
     for (const name of ['content-length', 'content-range']) {
       const value = upstream.headers?.get(name) ?? null
       if (value !== null) out[name] = value
@@ -237,11 +288,9 @@ export function createLiveRequestHandler (deps: LiveServeDeps): AppRequestHandle
     return new Response(head ? null : upstream.body, { status: upstream.status, headers: out })
   }
 
-  return async (request) => {
-    if (originFromUrl(request.url) !== origin) {
-      return await fetchThirdParty(request, deps.authoriseReach, deps.reachDial, deps.recordCoverage, deps.reserveReachSlot, deps.releaseReachSlot, reachOptions)
-    }
-    if (ended) return denyResponse('this app was stopped')
+  async function serve (request: Request, again: boolean): Promise<Response> {
+    const started = version
+    const { entryPath, leaves, files } = state
     const resolved = resolveRequestPath(entryPath, files, request.url, isNavigationRequest(request))
     if (!resolved.ok) {
       deps.recordCoverage?.('denied')
@@ -252,17 +301,25 @@ export function createLiveRequestHandler (deps: LiveServeDeps): AppRequestHandle
     const path = resolved.canonicalPath
     const expected = leaves.get(path)
     // The manifest lists a file the declared tree does not: the tree describes other files than this app has.
-    if (declaration !== undefined && expected === undefined) return block({ differing: [path] })
+    if (started.declaration !== undefined && expected === undefined) return block({ differing: [path] })
 
     if (deps.fetchNetwork !== undefined) {
       return expected === undefined
-        ? await passedOn(deps.fetchNetwork, request, path, {}, false)
+        ? await passedOn(deps.fetchNetwork, request, path, {}, false, started, async () => await serve(request, true))
         : await checkedHere(deps.fetchNetwork, request, path, expected)
     }
     if (deps.fetchVerified === undefined) return denyResponse('this app has nowhere to be served from')
     const headers: Record<string, string> = {}
-    if (deps.content !== undefined) headers[CONTENT_ROOT_HEADER] = deps.content
+    if (started.content !== undefined) headers[CONTENT_ROOT_HEADER] = started.content
     if (expected !== undefined) headers[EXPECT_LEAF_HEADER] = expected
-    return await passedOn(deps.fetchVerified, request, path, headers, true)
+    return await passedOn(deps.fetchVerified, request, path, headers, true, started, async () => again ? failedLoad() : await serve(request, true))
+  }
+
+  return async (request) => {
+    if (originFromUrl(request.url) !== origin) {
+      return await fetchThirdParty(request, deps.authoriseReach, deps.reachDial, deps.recordCoverage, deps.reserveReachSlot, deps.releaseReachSlot, reachOptions)
+    }
+    if (ended) return denyResponse('this app was stopped')
+    return await serve(request, false)
   }
 }

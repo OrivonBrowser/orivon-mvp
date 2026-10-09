@@ -1,11 +1,11 @@
 // What the first-visit specs share: an app published to the fixture gateway with the hash tree it declares,
 // the facts about a page read from main, and the app-setup sheet read and pressed the way a person does.
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { expect } from 'vitest'
 import { bundleTreeFromLeaves } from '../../src/broker/policy/bundle-hash.js'
-import { originHash } from '../../src/broker/grants/origin-hash.js'
+import { originHash, partitionFor } from '../../src/broker/grants/origin-hash.js'
 import { leafOf } from '../../src/loader/leaf-hash.js'
 import { waitFor } from '../support/smoke-helpers.mjs'
 
@@ -137,4 +137,22 @@ export async function watchPages (app: App): Promise<void> {
 /** What `watchPages` noted so far. */
 export async function pageLog (app: App): Promise<string[]> {
   return await app.evaluate(() => [...((globalThis as { __pageLog?: string[] }).__pageLog ?? [])])
+}
+
+/** What the newest page at `url` says for `expression`, or null when none answers in time. */
+export async function pageValue (app: App, url: string, expression: string): Promise<unknown> {
+  return await app.evaluate(async ({ webContents }, [address, code]) => {
+    const newest = webContents.getAllWebContents().filter((contents) => !contents.isDestroyed() && contents.getURL() === address).sort((a, b) => b.id - a.id)[0]
+    if (newest === undefined) return null
+    return await Promise.race([newest.executeJavaScript(code as string).catch(() => null), new Promise<null>((resolve) => setTimeout(() => { resolve(null) }, 2_500))])
+  }, [url, expression] as const).catch(() => null)
+}
+
+/** Whether the app's own partition still holds `needle` in its local storage on disk, after what is unwritten was written. */
+export async function partitionHolds (app: App, userData: string, origin: string, needle: string): Promise<boolean> {
+  const partition = partitionFor(origin)
+  await app.evaluate(async ({ session }, name) => { await session.fromPartition(name).flushStorageData() }, partition)
+  const directory = join(userData, 'Partitions', partition.replace(/^persist:/, ''), 'Local Storage', 'leveldb')
+  if (!existsSync(directory)) return false
+  return readdirSync(directory).some((file) => readFileSync(join(directory, file)).includes(needle))
 }

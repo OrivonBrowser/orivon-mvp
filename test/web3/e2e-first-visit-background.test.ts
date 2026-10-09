@@ -3,7 +3,7 @@
 // the declared one blocks the app all the same, even though its first page ran fine. Driven through the test
 // seam's gateway.
 import { afterAll, expect, it } from 'vitest'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
 import { findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
@@ -11,11 +11,11 @@ import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetryi
 import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 import { answerQuestion, noNativeDialogs, questionGone, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
 import type { PageFacts } from './first-visit-support.js'
-import { pageAt, pageLog, pinPath, pressSheet, savedGrants, sheetGone, waitSheet, watchPages, withDeclaredTree } from './first-visit-support.js'
+import { pageAt, pageLog, pageValue, partitionHolds, pinPath, pressSheet, savedGrants, sheetGone, waitSheet, watchPages, withDeclaredTree } from './first-visit-support.js'
 
-const files = (name: string, id: string): Record<string, string> => ({
+const files = (name: string, id: string, script = 'document.body.dataset.app = "ran"'): Record<string, string> => ({
   'index.html': `<!doctype html><meta charset="utf-8"><title>${name}</title><link rel="orivon-manifest" href="/.well-known/orivon.json"><body>${name}<script src="app.js"></script></body>`,
-  'app.js': 'document.body.dataset.app = "ran"',
+  'app.js': script,
   'later.js': 'document.title = "never loaded"',
   '.well-known/orivon.json': JSON.stringify({ orivonApiVersion: 0, id, name, version: '1.0.0', entry: 'index.html', assets: ['app.js', 'later.js'], capabilities: { fs: { quotaBytes: 1_048_576 } } })
 })
@@ -28,7 +28,7 @@ afterAll(async () => {
 
 it('[app:first-visit-pins-in-the-background] [app:first-visit-background-mismatch-blocks] pins the whole app after entering so the next visit needs no gateway, and blocks an app whose unloaded file differs from the declared tree', async () => {
   await runPhase('first-visit-background', async (check) => {
-    const bad = files('Late app', 'first.visit.late')
+    const bad = files('Late app', 'first.visit.late', 'localStorage.setItem("mine", "kept-by-person"); document.body.dataset.app = "ran"')
     const gateway = await startFixtureGateway({
       good: await withDeclaredTree(files('Pinned app', 'first.visit.pinned')),
       late: await withDeclaredTree(bad, { ...bad, 'later.js': 'document.title = "what was declared"' })
@@ -64,6 +64,7 @@ it('[app:first-visit-pins-in-the-background] [app:first-visit-background-mismatc
       check('its first page was let in and parsed before the block', (await pageLog(running)).some((line) => line.startsWith('dom-ready') && line.includes(lateRoot)))
       check('nothing was pinned', !existsSync(pinPath(userData, lateOrigin)))
       check(`no grant is left (${JSON.stringify(savedGrants(userData, lateOrigin))})`, savedGrants(userData, lateOrigin).length === 0)
+      check('what the person\'s app stored is still there: a block takes permissions, never data', await partitionHolds(running, userData, lateOrigin, 'kept-by-person') && !(await partitionHolds(running, userData, lateOrigin, 'a-value-nobody-wrote')))
       await pressSheet(warning.page, 'Go back')
       check('Go back takes the sheet away', await waitFor(() => sheetGone(running), 10_000))
 
@@ -161,6 +162,76 @@ it('[app:first-visit-resumes-after-a-restart] serves an app that was allowed and
       await pressSheet(warning.page, 'Go back')
       check('Go back takes the sheet away', await waitFor(() => sheetGone(second), 10_000))
       expect(await noNativeDialogs(second)).toEqual([])
+    } finally {
+      if (app !== undefined) await closeElectronApp(app)
+      await gateway.close()
+      if (profile !== undefined) await rm(profile, { recursive: true, force: true })
+    }
+  })
+}, TEST_TIMEOUT_MS)
+
+it('[app:first-visit-follows-a-new-version] follows an app whose name is republished while it is allowed and not yet pinned: no warning, nothing forgotten, its data kept, and the new version is what is pinned', async () => {
+  await runPhase('first-visit-follows', async (check) => {
+    const version = (name: string, script: string, number: string): Record<string, string> => ({
+      'index.html': `<!doctype html><meta charset="utf-8"><title>${name}</title><link rel="orivon-manifest" href="/.well-known/orivon.json"><body>${name}<script src="app.js"></script></body>`,
+      'app.js': script,
+      '.well-known/orivon.json': JSON.stringify({ orivonApiVersion: 0, id: 'first.visit.moving', name, version: number, entry: 'index.html', assets: ['app.js'], capabilities: { fs: { quotaBytes: 1_048_576 } } })
+    })
+    const gateway = await startFixtureGateway({
+      first: await withDeclaredTree(version('Moving app', 'localStorage.setItem("mine", "kept-by-person"); document.body.dataset.app = "v1"', '1.0.0')),
+      second: await withDeclaredTree(version('Moving app', 'document.body.dataset.app = "v2"; document.body.dataset.kept = localStorage.getItem("mine") || "lost"', '1.1.0'))
+    }, { ipnsKeys: ['first'] })
+    let app: Awaited<ReturnType<typeof launchElectron>> | undefined
+    let profile: string | undefined
+    const env = (delay: string): Record<string, string> => ({ ORIVON_TEST_ETH_FIXTURES: '{}', ORIVON_TEST_IPFS_GATEWAYS: gateway.url, ORIVON_TEST_BACKGROUND_PIN_DELAY_MS: delay })
+    const startVerifier = async (running: Awaited<ReturnType<typeof launchElectron>>): Promise<void> => {
+      const listening = await waitFor(async () => await running.evaluate(() => { const seam = (globalThis as { __orivonDevEthFixtures?: { listening: boolean, start?: () => void } }).__orivonDevEthFixtures; seam?.start?.(); return seam?.listening === true }), 20_000)
+      if (!listening) throw new Error('the verifier host never reported listening')
+    }
+    try {
+      const key = gateway.keys['first']!
+      const origin = `https://${key}.ipns.orivon`
+
+      // 1. Allowed at the first version, and not pinned.
+      app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], env: env('600000') })
+      const before = app
+      await stubNativeDialogs(before)
+      await startVerifier(before)
+      profile = await before.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))
+      await waitFor(() => before.windows().length === 2)
+      const chrome = findChrome(before)
+      await waitForAddressBarStable(chrome)
+      await clickAddressBarRetrying(chrome, `ipns://${key}`)
+      await waitQuestion(before, 60_000)
+      await answerQuestion(before, 'Allow')
+      let first = null as PageFacts | null
+      await waitFor(async () => { first = await pageAt(before, `${origin}/`); return first?.ran === 'v1' }, 60_000)
+      check(`the first version runs (${JSON.stringify(first)})`, first?.ran === 'v1')
+      check('it is not pinned', !existsSync(pinPath(profile, origin)))
+      app = undefined
+      await closeElectronApp(before, APP_CLOSE_RACE_MS, { keepProfile: true })
+
+      // 2. The name is republished; after the restart the new version is what the address leads to.
+      await gateway.republish('first', 'second')
+      app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], env: env('2000'), reuseProfile: profile })
+      const after = app
+      await stubNativeDialogs(after)
+      await watchPages(after)
+      await startVerifier(after)
+      await waitFor(() => after.windows().length === 2)
+      const again = findChrome(after)
+      await waitForAddressBarStable(again)
+      await clickAddressBarRetrying(again, `ipns://${key}/`)
+      let second = null as PageFacts | null
+      await waitFor(async () => { second = await pageAt(after, `${origin}/`); return second?.ran === 'v2' }, 60_000)
+      check(`the new version runs as an app tab (${JSON.stringify(second)})`, second?.ran === 'v2' && second.hasProcess)
+      check('no warning is shown, and nothing asks', sheetGone(after) && await questionGone(after))
+      check('what the app stored is still there for the new version', await pageValue(after, `${origin}/`, 'document.body.dataset.kept') === 'kept-by-person')
+      check('its grants are still held', savedGrants(profile, origin).includes('fs'))
+      check('the new version is what is pinned', await waitFor(() => existsSync(pinPath(profile as string, origin)), 60_000))
+      const pinned = JSON.parse(readFileSync(pinPath(profile, origin), 'utf8')) as { content?: { cid?: string } }
+      check(`the pin names the new root (${String(pinned.content?.cid)})`, pinned.content?.cid === gateway.roots['second'])
+      expect(await noNativeDialogs(after)).toEqual([])
     } finally {
       if (app !== undefined) await closeElectronApp(app)
       await gateway.close()

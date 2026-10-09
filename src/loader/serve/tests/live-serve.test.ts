@@ -4,7 +4,7 @@ import { CONTENT_ROOT_HEADER, DDOC_MISMATCH, EXPECT_LEAF_HEADER, FAILURE_HEADER 
 import { leafOf } from '../../leaf-hash.js'
 import { parseManifest } from '../../manifest/manifest.js'
 import { createLiveRequestHandler } from '../live-serve.js'
-import type { LiveServeDeps } from '../live-serve.js'
+import type { LiveServeDeps, LiveVersion } from '../live-serve.js'
 import { manifestJson, ORIGIN, utf8 } from '../../tests/test-helpers.js'
 
 const CID = 'bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi'
@@ -161,14 +161,64 @@ describe('the handler an app runs on before its files are pinned', () => {
     expect(badData).not.toHaveBeenCalled()
   })
 
-  it('says the name has moved, once and without calling it bad data, when the verifier answers that the root is not the one asked for', async () => {
-    const { fetchVerified, seen } = verifier(() => new Response('now points elsewhere', { status: 409 }))
-    const moved = vi.fn()
-    const { handle, badData } = await handlerOver({ onMoved: moved }, { fetchVerified, seen })
-    expect((await handle('/app.js')).type).toBe('error')
-    expect((await handle('/index.html')).status).toBe(404)
-    expect(moved).toHaveBeenCalledTimes(1)
-    expect(badData).not.toHaveBeenCalled()
+  describe('when the name leads to another root than the one asked for', () => {
+    const NEXT = 'bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi'
+    const NEW_APP_JS = 'run2()'
+
+    async function movedTo (overrides: { fresh?: LiveServeDeps['fresh'] } = {}): Promise<{ handle: (path: string, init?: RequestInit) => Promise<Response>, seen: Seen[], badData: ReturnType<typeof vi.fn>, adopt: ReturnType<typeof vi.fn>, fresh: ReturnType<typeof vi.fn> }> {
+      const newTree = { bundleHash: `sha256:${'e'.repeat(64)}`, leaves: [{ path: '/app.js', leaf: await leafOf('/app.js', NEW_APP_JS.length, [utf8(NEW_APP_JS)]) }, ...(await declared()).leaves.filter((entry) => entry.path !== '/app.js')] }
+      const next = { manifest: manifestOf(), declaration: newTree, content: NEXT }
+      const fresh = vi.fn(async () => next)
+      const adopt = vi.fn(async () => {})
+      const used = verifier((url, seen) => {
+        if (seen.headers[CONTENT_ROOT_HEADER] === CID) return new Response('now points elsewhere', { status: 409 })
+        return url.endsWith('/app.js') ? new Response(NEW_APP_JS, { status: 200, headers: { 'content-length': String(NEW_APP_JS.length) } }) : undefined
+      })
+      const { handle, badData } = await handlerOver({ fresh: overrides.fresh ?? fresh, adopt }, used)
+      return { handle, seen: used.seen, badData, adopt, fresh }
+    }
+
+    it('is the next version, never bad data: the current version is adopted, and the request is answered from it', async () => {
+      const { handle, seen, badData, adopt, fresh } = await movedTo()
+      const response = await handle('/app.js')
+      expect(response.status).toBe(200)
+      expect(await response.text()).toBe(NEW_APP_JS)
+      expect(adopt).toHaveBeenCalledTimes(1)
+      expect(fresh).toHaveBeenCalledTimes(1)
+      expect(badData).not.toHaveBeenCalled()
+      expect(seen[0]?.headers[CONTENT_ROOT_HEADER]).toBe(CID)
+      expect(seen[1]?.headers[CONTENT_ROOT_HEADER]).toBe(NEXT)
+      expect(seen[1]?.headers[EXPECT_LEAF_HEADER]).toBe(await leafOf('/app.js', NEW_APP_JS.length, [utf8(NEW_APP_JS)]))
+      // Later requests go to the new root at once, without asking again.
+      await handle('/index.html')
+      expect(seen[2]?.headers[CONTENT_ROOT_HEADER]).toBe(NEXT)
+      expect(fresh).toHaveBeenCalledTimes(1)
+    })
+
+    it('asks for the current version once however many requests meet the move together', async () => {
+      const { handle, adopt, fresh } = await movedTo()
+      const answers = await Promise.all([handle('/app.js'), handle('/index.html'), handle('/app.js')])
+      expect(answers.map((response) => response.status)).toEqual([200, 200, 200])
+      expect(fresh).toHaveBeenCalledTimes(1)
+      expect(adopt).toHaveBeenCalledTimes(1)
+    })
+
+    it('is a failed load, and nothing is forgotten, when the current version cannot be read: the next request asks again', async () => {
+      const { handle, badData, fresh } = await movedTo({ fresh: vi.fn(async () => undefined) })
+      expect((await handle('/app.js')).type).toBe('error')
+      expect((await handle('/index.html')).type).toBe('error')
+      expect(badData).not.toHaveBeenCalled()
+      expect(fresh).toBeDefined()
+    })
+
+    it('does not mistake a mismatch the verifier reports for a name that moved: that is bad data', async () => {
+      const { fetchVerified, seen } = verifier(() => new Response('x', { status: 502, headers: { [FAILURE_HEADER]: DDOC_MISMATCH } }))
+      const fresh = vi.fn(async () => ({ manifest: manifestOf(), declaration: undefined, content: CID }))
+      const { handle, badData } = await handlerOver({ fresh }, { fetchVerified, seen })
+      expect((await handle('/app.js')).type).toBe('error')
+      expect(badData).toHaveBeenCalledTimes(1)
+      expect(fresh).not.toHaveBeenCalled()
+    })
   })
 
   it('says the app is in use once, when its first file is delivered', async () => {
@@ -303,6 +353,60 @@ describe('the handler an app on an ordinary site runs on before its files are pi
     expect((await handle('/app.js')).type).toBe('error')
     expect(seen).toEqual([])
     expect(badData).toHaveBeenCalledWith({ differing: ['/app.js'] })
+  })
+
+  describe('bytes that are not the declared ones', () => {
+    const NEW_APP_JS = 'run2()'
+
+    async function deployed (current: (() => Promise<LiveVersion | undefined>) | undefined, bytes = NEW_APP_JS): Promise<{ handle: (path: string, init?: RequestInit) => Promise<Response>, badData: ReturnType<typeof vi.fn>, adopt: ReturnType<typeof vi.fn>, seen: Seen[] }> {
+      const adopt = vi.fn(async () => {})
+      const used = host((url) => url.endsWith('/app.js') ? new Response(bytes, { status: 200 }) : undefined)
+      const handler = await networkHandler({ fresh: current, adopt }, used)
+      return { handle: handler.handle, badData: handler.badData, adopt, seen: used.seen }
+    }
+
+    async function newVersion (listsApp = true, leafBytes = NEW_APP_JS): Promise<LiveVersion> {
+      const tree = await declared()
+      return {
+        manifest: manifestOf(listsApp ? {} : { assets: [] }),
+        declaration: { bundleHash: `sha256:${'f'.repeat(64)}`, leaves: [{ path: '/app.js', leaf: await leafOf('/app.js', leafBytes.length, [utf8(leafBytes)]) }, ...tree.leaves.filter((entry) => entry.path !== '/app.js')] },
+        content: undefined
+      }
+    }
+
+    it('are the next version, not bad data, when the current tree names them: it is adopted and the page gets those very bytes', async () => {
+      const next = await newVersion()
+      const { handle, badData, adopt } = await deployed(async () => next)
+      const response = await handle('/app.js')
+      expect(response.status).toBe(200)
+      expect(await response.text()).toBe(NEW_APP_JS)
+      expect(adopt).toHaveBeenCalledWith(next)
+      expect(badData).not.toHaveBeenCalled()
+      expect((await handle('/app.js')).status).toBe(200)
+      expect(adopt).toHaveBeenCalledTimes(1)
+    })
+
+    it('are bad data when the current tree does not name them, however new it is', async () => {
+      const { handle, badData, adopt } = await deployed(async () => await newVersion(true, 'something else'))
+      expect((await handle('/app.js')).type).toBe('error')
+      expect(badData).toHaveBeenCalledWith({ differing: ['/app.js'] })
+      expect(adopt).not.toHaveBeenCalled()
+    })
+
+    it('are bad data when the current version cannot be read, or is the one already served', async () => {
+      const unread = await deployed(async () => undefined)
+      expect((await unread.handle('/app.js')).type).toBe('error')
+      expect(unread.badData).toHaveBeenCalledTimes(1)
+      const none = await deployed(undefined)
+      expect((await none.handle('/app.js')).type).toBe('error')
+      expect(none.badData).toHaveBeenCalledTimes(1)
+    })
+
+    it('are bad data when the current manifest no longer lists the file, though its tree names the bytes', async () => {
+      const { handle, badData } = await deployed(async () => await newVersion(false))
+      expect((await handle('/app.js')).type).toBe('error')
+      expect(badData).toHaveBeenCalledTimes(1)
+    })
   })
 
   it('says the app is in use once, when its first checked file is delivered', async () => {
