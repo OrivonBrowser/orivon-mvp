@@ -3,7 +3,7 @@
 // when the person has read it. No Electron beyond the types: the tabs and their screens come in.
 import type { WebContents } from 'electron'
 import type { SetupSheet } from '../install/first-visit.js'
-import type { TabSetup } from './tab-screens.js'
+import type { TabRef, TabSetup } from './tab-screens.js'
 
 export interface BlockTabsDeps {
   /** Every live tab, in any window, whose page is on the origin. */
@@ -12,13 +12,18 @@ export interface BlockTabsDeps {
   readonly setup: () => TabSetup | undefined
 }
 
-export function blockOpenTabs (deps: BlockTabsDeps): (origin: string, sheet: SetupSheet) => Promise<void> {
-  return async (origin, sheet) => {
+export function blockOpenTabs (deps: BlockTabsDeps): (origin: string, sheet: SetupSheet, entered: object | undefined) => Promise<void> {
+  return async (origin, sheet, entered) => {
     const shown: Array<Promise<void>> = []
-    for (const contents of deps.tabsOn(origin)) {
+    // The tab the visit let in shows no address of the origin when its first page failed to load, so it is named, not found; and it holds other contents than the visit began with.
+    const ref = entered as TabRef | undefined
+    const named = ref?.window.tabs.liveWebContents(ref.tabId)
+    const tabs = new Set<WebContents>([...deps.tabsOn(origin), ...(named === undefined ? [] : [named])])
+    for (const contents of tabs) {
       if (contents.isDestroyed()) continue
       contents.stop()
-      const screens = deps.setup()?.(contents, contents.getURL())
+      const current = contents.getURL()
+      const screens = deps.setup()?.(contents, current.startsWith(origin) ? current : `${origin}/`)
       if (screens === undefined) continue
       shown.push((async () => {
         await screens.blank()

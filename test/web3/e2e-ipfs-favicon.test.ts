@@ -100,7 +100,7 @@ it('shows the icon a page of an installed ipfs:// app declares, with the gateway
       const loaded = await waitForTab(chrome, { address: `ipfs://${site}/`, title: 'icon app' })
       const pinned = await waitFor(() => existsSync(pinFile), 25_000)
       // The consent question is answered, and the tab reloaded as the app's own, before the next address is typed.
-      const reloaded = await waitFor(() => mainOutput(running).includes('entering the tab as the app'), 25_000)
+      const reloaded = await waitFor(() => mainOutput(running).includes('is let in as an app'), 25_000)
       check(`the app installed (${JSON.stringify(loaded.info)})`, loaded.ok && pinned && reloaded)
       await gateway.close()
       gatewayClosed = true
@@ -228,7 +228,7 @@ it('shows the icon of an installed .eth app from its pin after a restart, with i
       await clickAddressBarRetrying(chrome, 'https://icons.eth/')
       const loaded = await waitForTab(chrome, { title: 'icon app' })
       const pinned = await waitFor(() => existsSync(pinFile), 25_000)
-      const reloaded = await waitFor(() => mainOutput(first).includes('entering the tab as the app'), 25_000)
+      const reloaded = await waitFor(() => mainOutput(first).includes('is let in as an app'), 25_000)
       const remembered = await waitFor(async () => await hasIcon(chrome), 15_000)
       check(`the app installed and its first page showed its icon (${JSON.stringify(loaded.info)})`, loaded.ok && pinned && reloaded && remembered)
       app = undefined

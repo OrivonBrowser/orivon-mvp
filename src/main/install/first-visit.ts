@@ -26,8 +26,8 @@ export interface FirstVisitDeps {
   readonly perCapabilityConsent?: PerCapabilityConsentPrompt | undefined
   /** The origins whose question was answered Deny: written by a pressed Deny and by nothing else. */
   readonly declined: Pick<DeclinedApps, 'has' | 'add'>
-  /** Covers every open tab of an origin with a sheet and stops what they load, when bad data is found after they were let in. Resolves once the person has dismissed it. */
-  readonly blocked?: ((origin: string, sheet: SetupSheet) => Promise<void>) | undefined
+  /** Covers every open tab of an origin, and `entered` (the tab this visit let in), with a sheet and stops what they load, when bad data is found after they were let in. Resolves once the person has dismissed it. */
+  readonly blocked?: ((origin: string, sheet: SetupSheet, entered: object | undefined) => Promise<void>) | undefined
   /** How long after a tab is let in the background download waits, so it begins once the first page is up. */
   readonly backgroundDelayMs?: number | undefined
 }
@@ -66,6 +66,8 @@ export interface SetupHost {
   plain: () => void
   /** The visit ends with the tab showing neither: the screens are taken away. */
   end: () => void
+  /** The tab this visit is in, as the opaque value `blocked` is handed back: a tab whose first page failed to load shows no address of the origin, yet is the one that must be covered. */
+  tab?: () => object | undefined
 }
 
 /** How the background download ended: `pinned`, `blocked` (bad data, the origin was taken away), or `unfinished` (silent; the next visit finishes it). */
@@ -187,6 +189,7 @@ async function letIn (deps: FirstVisitDeps, entry: Entry): Promise<FirstVisitRes
   const { origin, hintedUrl, read, host } = entry
   const { name } = read.manifest
   let ended = false
+  let entered: object | undefined
   const stopped = new AbortController()
 
   // Bad data, from a served file or the background download: the origin is taken away, once.
@@ -194,6 +197,7 @@ async function letIn (deps: FirstVisitDeps, entry: Entry): Promise<FirstVisitRes
     if (ended) return
     ended = true
     stopped.abort()
+    console.warn(`[orivon] ${origin} was stopped, and everything it was granted taken away: ${found.invalid ?? found.differing.join(', ')}`)
     const sheet: Extract<SetupSheet, { kind: 'blocked' }> = {
       kind: 'blocked',
       name,
@@ -203,7 +207,7 @@ async function letIn (deps: FirstVisitDeps, entry: Entry): Promise<FirstVisitRes
       ...(found.invalid === undefined ? {} : { invalid: found.invalid })
     }
     // The tabs are stopped before anything else is undone, so a page does not go on running while its grants go.
-    const covering = (deps.blocked?.(origin, sheet) ?? Promise.resolve()).catch((error: unknown) => { console.error('[first-visit] the tabs of a blocked app could not be covered', origin, error) })
+    const covering = (deps.blocked?.(origin, sheet, entered) ?? Promise.resolve()).catch((error: unknown) => { console.error('[first-visit] the tabs of a blocked app could not be covered', origin, error) })
     await deps.broker.forgetOrigin(origin).catch(async (error: unknown) => {
       console.error('[first-visit] a blocked app could not be forgotten whole; its grants are revoked instead', origin, error)
       await revokeAllGrants(deps.broker, origin).catch((revokeError: unknown) => { console.error('[first-visit] grants of a blocked app remain', origin, revokeError) })
@@ -241,6 +245,7 @@ async function letIn (deps: FirstVisitDeps, entry: Entry): Promise<FirstVisitRes
 
   if (entry.gone()) host.end()
   else host.enter()
+  entered = host.tab?.()
   console.log(`[orivon] ${origin} is let in as an app; its files follow in the background`)
 
   const background = (async (): Promise<BackgroundOutcome> => {

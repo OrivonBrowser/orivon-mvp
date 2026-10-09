@@ -22,13 +22,14 @@ function screensFake (): TabScreens & { calls: string[] } {
     end: () => { calls.push('end') },
     moved: () => false,
     signal: new AbortController().signal,
+    tab: () => ({ window: {}, tabId: 't' }) as never,
     navigate: (url) => { calls.push(`navigate:${url}`) },
     leavePage: () => { calls.push('leavePage') },
     stop: () => { calls.push('stop') }
   }
 }
 
-function rig (options: { kind?: 'first' | 'declined' | 'known', run?: (host: SetupHost) => Promise<FirstVisitResult>, screens?: boolean, contents?: boolean } = {}): { handler: ReturnType<typeof firstVisitBeforeRequest>, screens: ReturnType<typeof screensFake>, visit: FirstVisit, run: ReturnType<typeof vi.fn> } {
+function rig (options: { kind?: 'first' | 'declined' | 'known' | 'settling', run?: (host: SetupHost) => Promise<FirstVisitResult>, screens?: boolean, contents?: boolean } = {}): { handler: ReturnType<typeof firstVisitBeforeRequest>, screens: ReturnType<typeof screensFake>, visit: FirstVisit, run: ReturnType<typeof vi.fn> } {
   const screens = screensFake()
   const run = vi.fn(async (_origin: string, _url: string, _caller: unknown, host: SetupHost, _signal?: AbortSignal): Promise<FirstVisitResult> => await (options.run ?? (async () => { host.plain(); return { outcome: 'plain', why: 'website' } }))(host))
   const visit: FirstVisit = { kindOf: vi.fn(async () => options.kind ?? 'first'), run: run as unknown as FirstVisit['run'] }
@@ -52,7 +53,7 @@ describe('firstVisitBeforeRequest', () => {
   })
 
   it('lets a request through for an origin that is not a first visit, without holding it', async () => {
-    for (const kind of ['known', 'declined'] as const) {
+    for (const kind of ['known', 'declined', 'settling'] as const) {
       const { handler, run } = rig({ kind })
       expect(await handler(details(), CONTINUE)).toBe(CONTINUE)
       expect(run).not.toHaveBeenCalled()

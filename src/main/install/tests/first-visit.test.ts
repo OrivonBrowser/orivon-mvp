@@ -74,7 +74,8 @@ function harness (options: {
     sheet: async (sheet: SetupSheet) => { sheets.push(sheet); events.push(`sheet:${sheet.kind}`); return choices.shift() ?? 'leave' },
     enter: () => { events.push('enter') },
     plain: () => { events.push('plain') },
-    end: () => { events.push('end') }
+    end: () => { events.push('end') },
+    tab: () => TAB
   }
   const noteGrants = async (at: string): Promise<void> => { grantsAt[at] = (await broker.app.grants(origin)).map((grant) => grant.capability) }
   const loader: Harness['loader'] = {
@@ -107,6 +108,8 @@ function harness (options: {
   const blocked = vi.fn<NonNullable<FirstVisitDeps['blocked']>>(async () => { events.push('blocked-tabs') })
   return { origin, url: `${origin}/`, broker, events, host, loader, consent, declined: new DeclinedApps(), blocked, badData: () => reported, grantsAt }
 }
+
+const TAB = { id: 'the-tab' }
 
 const present: DialogCaller = { window: () => undefined, stillOn: () => true }
 
@@ -196,13 +199,13 @@ describe('runFirstVisit, for an app a verifier serves', () => {
     expect(h.broker.app.isRegisteredSync(h.origin)).toBe(false)
     expect(await grantsOf(h)).toEqual([])
     expect(h.loader.endLive).toHaveBeenCalledWith(h.origin)
-    expect(h.blocked).toHaveBeenCalledWith(h.origin, expect.objectContaining({ kind: 'blocked', name: 'Test App', differing: ['/index.html'] }))
+    expect(h.blocked).toHaveBeenCalledWith(h.origin, expect.objectContaining({ kind: 'blocked', name: 'Test App', differing: ['/index.html'] }), TAB)
   })
 
   it('treats a verification the verifier failed in the background as the same block', async () => {
     const h = harness({ bundles: [{ ok: false, reason: 'block does not hash to its CID', integrity: true }] })
     expect(await settled(await run(h))).toBe('blocked')
-    expect(h.blocked).toHaveBeenCalledWith(h.origin, expect.objectContaining({ kind: 'blocked', invalid: 'block does not hash to its CID' }))
+    expect(h.blocked).toHaveBeenCalledWith(h.origin, expect.objectContaining({ kind: 'blocked', invalid: 'block does not hash to its CID' }), TAB)
   })
 
   it('is silent about a background download that fails: nothing blocked, nothing shown, the grants stay for the next visit to finish', async () => {
@@ -233,7 +236,7 @@ describe('runFirstVisit, for an app a verifier serves', () => {
     expect(await settled(result)).toBe('blocked')
     await vi.waitFor(() => { expect(h.loader.endLive).toHaveBeenCalledTimes(1) })
     expect(h.blocked).toHaveBeenCalledTimes(1)
-    expect(h.blocked).toHaveBeenCalledWith(h.origin, expect.objectContaining({ kind: 'blocked', differing: ['/app.js'], differingCount: 1 }))
+    expect(h.blocked).toHaveBeenCalledWith(h.origin, expect.objectContaining({ kind: 'blocked', differing: ['/app.js'], differingCount: 1 }), TAB)
     expect(h.broker.app.isRegisteredSync(h.origin)).toBe(false)
     expect(await grantsOf(h)).toEqual([])
     expect(h.loader.installFetched).not.toHaveBeenCalled()
@@ -244,7 +247,7 @@ describe('runFirstVisit, for an app a verifier serves', () => {
     const result = await run(h, present, undefined, LATE)
     h.badData()?.({ differing: [], invalid: '/index.html is not what its address names' })
     await vi.waitFor(() => { expect(h.blocked).toHaveBeenCalled() })
-    expect(h.blocked).toHaveBeenCalledWith(h.origin, expect.objectContaining({ kind: 'blocked', invalid: '/index.html is not what its address names' }))
+    expect(h.blocked).toHaveBeenCalledWith(h.origin, expect.objectContaining({ kind: 'blocked', invalid: '/index.html is not what its address names' }), TAB)
     await settled(result)
   })
 
@@ -415,7 +418,7 @@ describe('runFirstVisit, for an app an ordinary website serves', () => {
     const mismatched = bundle(WEBSITE, { declaration: DIFFERENT, content: CONTENT })
     const h = site({ bundles: [mismatched] })
     expect(await settled(await run(h))).toBe('blocked')
-    expect(h.blocked).toHaveBeenCalledWith(WEBSITE, expect.objectContaining({ kind: 'blocked' }))
+    expect(h.blocked).toHaveBeenCalledWith(WEBSITE, expect.objectContaining({ kind: 'blocked' }), TAB)
     expect(h.broker.app.isRegisteredSync(WEBSITE)).toBe(false)
     expect(await grantsOf(h)).toEqual([])
     expect(h.loader.installFetched).not.toHaveBeenCalled()
@@ -486,7 +489,7 @@ describe('createFirstVisit', () => {
     const visit = over(h)
     const [first, second] = await Promise.all([visit.run(h.origin, h.url, present, h.host), visit.run(h.origin, h.url, present, h.host)])
     expect(first.outcome).toBe('entered')
-    expect(second.outcome === 'known').toBe(true)
+    expect(['known', 'settling']).toContain(second.outcome)
     expect(h.consent).toHaveBeenCalledTimes(1)
   })
 

@@ -113,3 +113,23 @@ export async function coverTitle (app: App): Promise<string | null> {
   if (page === undefined) return null
   return await page.evaluate(() => document.querySelector('.loading-screen-title')?.textContent ?? null).catch(() => null)
 }
+
+/** Starts noting, in the main process, every page that finishes parsing and every line a page logs, so a spec can say what never happened. */
+export async function watchPages (app: App): Promise<void> {
+  await app.evaluate(({ app: electronApp }) => {
+    const log: string[] = []
+    ;(globalThis as { __pageLog?: string[] }).__pageLog = log
+    electronApp.on('web-contents-created', (_event, contents) => {
+      contents.on('dom-ready', () => { log.push(`dom-ready ${contents.getURL()}`) })
+      contents.on('console-message', (...args: unknown[]) => {
+        const first = args[0] as { message?: unknown } | undefined
+        log.push(`console ${typeof first?.message === 'string' ? first.message : args.filter((arg) => typeof arg === 'string').join(' ')}`)
+      })
+    })
+  })
+}
+
+/** What `watchPages` noted so far. */
+export async function pageLog (app: App): Promise<string[]> {
+  return await app.evaluate(() => [...((globalThis as { __pageLog?: string[] }).__pageLog ?? [])])
+}

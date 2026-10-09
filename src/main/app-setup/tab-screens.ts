@@ -25,12 +25,20 @@ export interface TabScreens {
   moved: () => boolean
   /** Aborts when the tab moves on: a download that nobody is waiting for stops. */
   readonly signal: AbortSignal
+  /** Which tab this is, as a value that outlives its contents: entering an app swaps the contents for ones in the app's own session. */
+  tab: () => TabRef
   /** Ends the screens, then sends the tab to `url` through the address bar's own path, which puts it in the session an app of that address runs in. Does nothing to a tab that moved on. */
   navigate: (url: string) => void
   /** Ends the screens, then the tab leaves its page: back when it can, else home. Does nothing to a tab that moved on. */
   leavePage: () => void
   /** Ends the screens, and stops the navigation still pending in the tab. Does nothing to a tab that moved on. */
   stop: () => void
+}
+
+/** A tab of a window, whatever contents it holds now. */
+export interface TabRef {
+  readonly window: ShellWindow
+  readonly tabId: string
 }
 
 /** The screens for `contents`' visit to `address`, or undefined for a web contents no window holds as a tab. */
@@ -140,6 +148,7 @@ export function createTabSetup (deps: TabSetupDeps): TabSetup {
       end,
       moved: () => moved || contents.isDestroyed(),
       signal: gone.signal,
+      tab: () => ({ window, tabId }),
       navigate: (url) => { if (handOver()) deps.navigate(window, tabId, url) },
       leavePage: () => { if (handOver()) deps.leavePage(window, tabId) },
       stop: () => { if (handOver()) deps.stop(contents) }

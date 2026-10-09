@@ -55,7 +55,8 @@ export function firstVisitBeforeRequest (deps: HookDeps): (details: OnBeforeRequ
         enter: () => { answer({ cancel: true }, () => { screens.navigate(details.url) }) },
         plain: () => { answer(current, () => { screens.end() }) },
         // Stopped, not just cancelled: a request cancelled under a navigation that is still pending commits an error page for the address, and the tab should stay on the page it was on.
-        end: () => { answer({ cancel: true }, () => { screens.stop() }) }
+        end: () => { answer({ cancel: true }, () => { screens.stop() }) },
+        tab: () => screens.tab()
       }
       const settle = (result: FirstVisitResult): void => {
         if (result.outcome === 'known' || result.outcome === 'settling') host.enter()

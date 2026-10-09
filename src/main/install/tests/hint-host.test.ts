@@ -6,6 +6,7 @@ const URL_ = 'https://app.example/page'
 
 function rig (): { host: ReturnType<typeof hintHost>, calls: string[], screens: TabScreens, sender: { getURL: ReturnType<typeof vi.fn<() => string>> } } {
   const calls: string[] = []
+  const TAB = { window: {}, tabId: 't' } as never
   const screens: TabScreens = {
     show: () => { calls.push('show') },
     blank: async () => { calls.push('blank') },
@@ -13,6 +14,7 @@ function rig (): { host: ReturnType<typeof hintHost>, calls: string[], screens: 
     end: () => { calls.push('end') },
     moved: () => false,
     signal: new AbortController().signal,
+    tab: () => TAB,
     navigate: (url) => { calls.push(`navigate:${url}`) },
     leavePage: () => { calls.push('leavePage') },
     stop: () => { calls.push('stop') }

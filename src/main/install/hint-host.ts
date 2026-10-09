@@ -27,7 +27,8 @@ export function hintHost (sender: HintSender, screens: TabScreens): SetupHost {
     // Through the address bar's own path: the app's session is in place before any of its files loads.
     enter: () => { screens.navigate(url) },
     plain: () => { if (blanked) screens.navigate(url); else screens.end() },
-    end: () => { if (blanked) screens.leavePage(); else screens.end() }
+    end: () => { if (blanked) screens.leavePage(); else screens.end() },
+    tab: () => screens.tab()
   }
 }
 
