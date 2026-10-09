@@ -82,6 +82,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - A socket an app destroys while still connecting now drops its dial at once, as in Node, freeing room for the next peer.
 - Live sessions: agents here drive Orivon step by step on real Windows, macOS and Linux runners through a token-guarded Cloudflare tunnel.
 - A published app now asks before any file downloads, then checks its files against the site's declared tree before it opens; mismatches lose every grant.
+- Ledger Wallet adds accounts, verifies an address and signs a transaction on an emulated Nano X through Orivon's WebHID.
 
 ### In my head
 

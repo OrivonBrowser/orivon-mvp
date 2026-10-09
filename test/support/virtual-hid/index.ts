@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs'
 import { dirname, basename, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { READY_PREFIX, bytesToHex } from './uhid.ts'
+import { READY_PREFIX, REPLUGGED_PREFIX, bytesToHex } from './uhid.ts'
 import type { VirtualHidDeviceOptions } from './uhid.ts'
 
 const run = promisify(execFile)
@@ -30,7 +30,7 @@ export interface StartVirtualHidOptions extends Omit<VirtualHidDeviceOptions, 'd
 }
 
 export interface VirtualHidDevice {
-  /** `hidrawN`; the host path is `/dev/${node}` and is mode 0666. */
+  /** `hidrawN` now; the host path is `/dev/${node}` and is mode 0666. A responder's `replug()` can change it. */
   readonly node: string
   /** The container's output so far: open, close and report sizes. */
   logs: () => string
@@ -104,10 +104,14 @@ export async function startVirtualHidDevice (options: StartVirtualHidOptions): P
   let ready: (node: string) => void = () => {}
   let failed: (error: Error) => void = () => {}
   const found = new Promise<string>((resolveNode, reject) => { ready = resolveNode; failed = reject })
+  let latest = ''
+  const nodeOf = (line: string, prefix: string): string => (JSON.parse(line.slice(prefix.length)) as { node: string }).node
   const onData = (chunk: Buffer): void => {
     output += chunk.toString()
-    for (const line of output.split('\n')) {
-      if (line.startsWith(READY_PREFIX)) ready((JSON.parse(line.slice(READY_PREFIX.length)) as { node: string }).node)
+    // The last piece is a line still being written.
+    for (const line of output.split('\n').slice(0, -1)) {
+      if (line.startsWith(READY_PREFIX)) { latest = nodeOf(line, READY_PREFIX); ready(latest) }
+      else if (line.startsWith(REPLUGGED_PREFIX)) latest = nodeOf(line, REPLUGGED_PREFIX)
       else if (line.startsWith('[virtual-hid] failed:')) failed(new Error(line))
     }
   }
@@ -118,16 +122,16 @@ export async function startVirtualHidDevice (options: StartVirtualHidOptions): P
   const timeout = options.readyTimeoutMs ?? 20_000
   let timer: NodeJS.Timeout | undefined
   try {
-    const node = await Promise.race([
+    await Promise.race([
       found,
       new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { reject(new Error(`no virtual HID device after ${timeout} ms:\n${output}`)) }, timeout) })
     ])
     return {
-      node,
+      get node () { return latest },
       logs: () => output,
       stop: async () => {
         await finish()
-        for (let i = 0; i < 50 && !nodeGone(node); i++) await new Promise((r) => setTimeout(r, 100))
+        for (let i = 0; i < 50 && !nodeGone(latest); i++) await new Promise((r) => setTimeout(r, 100))
       }
     }
   } catch (error) {
