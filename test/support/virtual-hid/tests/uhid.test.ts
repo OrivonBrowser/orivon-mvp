@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  DEFAULT_DESCRIPTOR, UHID_CREATE2, UHID_EVENT_SIZE, UHID_INPUT2, UHID_OUTPUT, bytesToHex, hexToBytes, hidId,
-  hidrawNameOf, packCreate2, packDestroy, packInput2, parseEvent, stripReportId, ueventMatches
+  DEFAULT_DESCRIPTOR, UHID_CREATE2, UHID_EVENT_SIZE, UHID_INPUT2, UHID_OUTPUT, bytesToHex, hexToBytes,
+  instanceMatches, packCreate2, packDestroy, packInput2, parseEvent, stripReportId
 } from '../uhid.ts'
 
 const device = { vendorId: 0x1209, productId: 0x0001, name: 'Test Key', serial: 'SN-1' }
@@ -67,20 +67,12 @@ describe('uhid events', () => {
 })
 
 describe('hidraw lookup', () => {
-  it('writes the id as eight uppercase hex digits per half', () => {
-    expect(hidId(0x1209, 0x0a1f)).toBe('0003:00001209:00000A1F')
-  })
-
-  it('matches a uevent by its HID_ID line only', () => {
-    const uevent = 'DRIVER=hid-generic\nHID_ID=0003:00001209:00000001\nHID_NAME=Test Key\n'
-    expect(ueventMatches(uevent, 0x1209, 1)).toBe(true)
-    expect(ueventMatches(uevent, 0x1209, 2)).toBe(false)
-    expect(ueventMatches('HID_NAME=HID_ID=0003:00001209:00000001', 0x1209, 1)).toBe(false)
-  })
-
-  it('names the node from the sysfs path', () => {
-    expect(hidrawNameOf('/sys/class/hidraw/hidraw12/device/uevent')).toBe('hidraw12')
-    expect(hidrawNameOf('/sys/class/input/input1/uevent')).toBeUndefined()
+  it('matches a device instance by bus, ids and any instance number', () => {
+    expect(instanceMatches('0003:1209:0A1F.0007', 0x1209, 0x0a1f)).toBe(true)
+    expect(instanceMatches('0003:2C97:4011.01A3', 0x2c97, 0x4011)).toBe(true)
+    expect(instanceMatches('0003:1209:0A1F.0007', 0x1209, 0x0a20)).toBe(false)
+    expect(instanceMatches('0005:1209:0A1F.0007', 0x1209, 0x0a1f)).toBe(false)
+    expect(instanceMatches('0003:1209:0A1F', 0x1209, 0x0a1f)).toBe(false)
   })
 })
 

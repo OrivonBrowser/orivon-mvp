@@ -32,9 +32,11 @@ Options: `descriptor` (default: vendor page 0xFFA0, one 64-byte input and one 64
 ## Responders
 
 The device answers each report the host writes. The default is `echo` (input = output). `responder` is the path of
-a `.ts` module whose default export is `(report: Uint8Array, send: (report: Uint8Array) => void) => void |
-Promise<void>`; it may itself be a promise. `report` has the leading report-id byte of an unnumbered report
-removed. Reports are handed over one at a time, in arrival order, even when an earlier answer is still pending. The
+a `.ts` module whose default export is `(report: Uint8Array, send: (report: Uint8Array) => void, device: { replug:
+() => void }) => void | Promise<void>`; it may itself be a promise. `report` has the leading report-id byte of an
+unnumbered report removed. `device.replug()` unplugs the device 100 ms after the call, so the host reads what was
+just sent, and plugs it back in 500 ms later with the same ids, as a USB device does when it re-enumerates; the
+host sees `disconnect` and `connect`, and `device.node` follows the new node. Reports are handed over one at a time, in arrival order, even when an earlier answer is still pending. The
 module's directory is mounted read-only at `/responder` and `env` is passed as `-e K=V`. The container shares the
 host network (`--network host`), so a responder can reach an emulator on `127.0.0.1`.
 
@@ -56,3 +58,6 @@ after `stop()`.
 - The device cannot outlive its test: the container destroys it on SIGTERM, after `lifetimeS` (600 s), and the
   kernel destroys it if the container dies, since closing `/dev/uhid` ends the device.
 - An unnumbered output report reaches uhid with a leading `0x00`; the responder never sees it.
+- The node is found by its HID device instance (`0003:1209:0001.0007`, the target of `/sys/class/hidraw/<node>/device`),
+  taking the one that did not exist before the create. The kernel can reuse a `hidrawN` number, and two devices
+  with the same ids share a `HID_ID`; only the instance tells a new device from a twin or from its own earlier plug.

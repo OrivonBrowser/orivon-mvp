@@ -13,6 +13,8 @@ export const UHID_INPUT2 = 12
 
 /** The line the in-container program prints once the node is usable, followed by JSON `{node}`. */
 export const READY_PREFIX = 'ORIVON_VIRTUAL_HID_READY '
+/** The line printed each time a replug has made the device again, followed by JSON `{node}`. */
+export const REPLUGGED_PREFIX = 'ORIVON_VIRTUAL_HID_REPLUGGED '
 
 const BUS_USB = 0x03
 
@@ -96,19 +98,13 @@ export function stripReportId (data: Uint8Array, reportIds: boolean): Uint8Array
   return !reportIds && data.length > 0 && data[0] === 0 ? data.slice(1) : data
 }
 
-export function hidId (vendorId: number, productId: number): string {
-  const hex = (n: number): string => n.toString(16).toUpperCase().padStart(8, '0')
-  return `0003:${hex(vendorId)}:${hex(productId)}`
-}
-
-/** True when a sysfs uevent file describes the USB device with these ids. */
-export function ueventMatches (uevent: string, vendorId: number, productId: number): boolean {
-  return uevent.split('\n').includes(`HID_ID=${hidId(vendorId, productId)}`)
-}
-
-/** `hidraw3` from `/sys/class/hidraw/hidraw3/device/uevent`. */
-export function hidrawNameOf (ueventPath: string): string | undefined {
-  return /\/hidraw\/(hidraw\d+)\//.exec(ueventPath)?.[1]
+/**
+ * True when a HID device instance is a USB device with these ids. The instance is the name a hidraw node's
+ * `device` link resolves to, `0003:1209:0001.0007`; its suffix is new for every device the kernel creates.
+ */
+export function instanceMatches (instance: string, vendorId: number, productId: number): boolean {
+  const hex = (n: number): string => n.toString(16).toUpperCase().padStart(4, '0')
+  return new RegExp(`^0003:${hex(vendorId)}:${hex(productId)}\\.[0-9A-F]+$`).test(instance)
 }
 
 export function hexToBytes (hex: string): Uint8Array {
