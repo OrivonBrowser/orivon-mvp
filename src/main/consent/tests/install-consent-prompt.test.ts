@@ -30,8 +30,15 @@ describe('createInstallConsentPrompt', () => {
     expect(result).toBe(true)
   })
 
-  it('hands the panel a spec whose view names the origin once, while the spec still names it for a native box', async () => {
+  it('resolves false for the pressed Deny, and dismissed for Escape, a closed tab or a navigation, which answer with the same index', async () => {
+    askQuestion.mockResolvedValueOnce({ response: 1, checkboxChecked: false, clicked: true })
+    expect(await createInstallConsentPrompt()(ORIGIN, manifestWith({ fs: {} }), ['fs'], [])).toBe(false)
     askQuestion.mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+    expect(await createInstallConsentPrompt()(ORIGIN, manifestWith({ fs: {} }), ['fs'], [])).toBe('dismissed')
+  })
+
+  it('hands the panel a spec whose view names the origin once, while the spec still names it for a native box', async () => {
+    askQuestion.mockResolvedValueOnce({ response: 1, checkboxChecked: false, clicked: true })
     await createInstallConsentPrompt()(ORIGIN, manifestWith({ fs: {} }), ['fs'], [])
 
     const spec = normaliseSpec(specOf() as never)
@@ -43,7 +50,7 @@ describe('createInstallConsentPrompt', () => {
   })
 
   it('resolves false when the user picks the second (Deny) button', async () => {
-    askQuestion.mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+    askQuestion.mockResolvedValueOnce({ response: 1, checkboxChecked: false, clicked: true })
     const consent = createInstallConsentPrompt()
 
     const result = await consent(ORIGIN, manifestWith({ fs: {} }), ['fs'], [])
@@ -52,7 +59,7 @@ describe('createInstallConsentPrompt', () => {
   })
 
   it('cancels on the Deny button, and the Allow button is guarded -- dismissing the question must never grant', async () => {
-    askQuestion.mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+    askQuestion.mockResolvedValueOnce({ response: 1, checkboxChecked: false, clicked: true })
 
     await createInstallConsentPrompt()(ORIGIN, manifestWith({ fs: {} }), ['fs'], [])
 
@@ -65,17 +72,17 @@ describe('createInstallConsentPrompt', () => {
   })
 
   it('draws the warning style when any declared capability is unlimited, the plain style otherwise', async () => {
-    askQuestion.mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+    askQuestion.mockResolvedValueOnce({ response: 1, checkboxChecked: false, clicked: true })
     await createInstallConsentPrompt()(ORIGIN, manifestWith({ net: { https: { connect: ['a.example:443'] } } }), ['https.connect'], [])
     expect(specOf()).toMatchObject({ warning: false })
 
-    askQuestion.mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+    askQuestion.mockResolvedValueOnce({ response: 1, checkboxChecked: false, clicked: true })
     await createInstallConsentPrompt()(ORIGIN, manifestWith({ net: { https: { connect: ['*:*'] } } }), ['https.connect'], [])
     expect(specOf(1)).toMatchObject({ warning: true })
   })
 
   it('passes the rendered title/message/detail straight through, not a second copy of the words', async () => {
-    askQuestion.mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+    askQuestion.mockResolvedValueOnce({ response: 1, checkboxChecked: false, clicked: true })
     const manifest = manifestWith({ fs: {} })
 
     await createInstallConsentPrompt()(ORIGIN, manifest, ['fs'], [])
@@ -88,7 +95,7 @@ describe('createInstallConsentPrompt', () => {
   })
 
   it('ADR-0037: an injected levelOverrideFor returning 4 for this origin drops the warning style and the ⚠ text', async () => {
-    askQuestion.mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+    askQuestion.mockResolvedValueOnce({ response: 1, checkboxChecked: false, clicked: true })
     const manifest = manifestWith({ net: { https: { connect: ['*:*'] } } })
 
     await createInstallConsentPrompt((origin) => origin === ORIGIN ? 4 : undefined)(ORIGIN, manifest, ['https.connect'], [])
@@ -100,7 +107,7 @@ describe('createInstallConsentPrompt', () => {
   })
 
   it('with no levelOverrideFor injected, defaults to never overriding -- an unlimited grant still warns', async () => {
-    askQuestion.mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+    askQuestion.mockResolvedValueOnce({ response: 1, checkboxChecked: false, clicked: true })
     const manifest = manifestWith({ net: { https: { connect: ['*:*'] } } })
 
     await createInstallConsentPrompt()(ORIGIN, manifest, ['https.connect'], [])
@@ -109,7 +116,7 @@ describe('createInstallConsentPrompt', () => {
   })
 
   it('extensions disclosure: with no extensionsOnSite injected, defaults to naming none', async () => {
-    askQuestion.mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+    askQuestion.mockResolvedValueOnce({ response: 1, checkboxChecked: false, clicked: true })
 
     await createInstallConsentPrompt()(ORIGIN, manifestWith({ fs: {} }), ['fs'], [])
 
@@ -119,7 +126,7 @@ describe('createInstallConsentPrompt', () => {
   })
 
   it('extensions disclosure: an injected extensionsOnSite is fetched for the origin and rendered into detail', async () => {
-    askQuestion.mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+    askQuestion.mockResolvedValueOnce({ response: 1, checkboxChecked: false, clicked: true })
     const extensionsOnSite = vi.fn(async (origin: string) => origin === ORIGIN ? ['Ad Blocker', 'Password Manager'] : [])
 
     await createInstallConsentPrompt(undefined, extensionsOnSite)(ORIGIN, manifestWith({ fs: {} }), ['fs'], [])
@@ -135,7 +142,7 @@ describe('createInstallConsentPrompt', () => {
 
     const result = await createInstallConsentPrompt()(ORIGIN, manifestWith({ fs: {} }), ['fs'], [], caller)
 
-    expect(result).toBe(false)
+    expect(result).toBe('dismissed')
     expect(askQuestion).not.toHaveBeenCalled()
   })
 

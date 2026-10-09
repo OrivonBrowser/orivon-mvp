@@ -25,6 +25,7 @@ const FILES: Record<string, StubFile> = {
   '/docs/index.html': { bytes: Buffer.from('<h1>docs</h1>') },
   '/app.js': { bytes: Buffer.from('run()') },
   '/bad.js': { bytes: Buffer.from('x'.repeat(100)), failAfter: 10, failure: new ResolutionError('unverifiable', 'block does not hash to its CID') },
+  '/lied.js': { bytes: Buffer.from('x'.repeat(100)), failAfter: 10, failure: new ResolutionError('unverifiable', 'every gateway sent bytes that failed their hash', true) },
   '/big.bin': { bytes: Buffer.alloc(BIG, 7), failAfter: 1024 * 1024, failure: new ResolutionError('unverifiable', 'tampered') },
   '/cut.js': { bytes: Buffer.alloc(CUT, 7), failAfter: 64 * 1024, failure: new ResolutionError('unverifiable', 'tampered') }
 }
@@ -272,6 +273,19 @@ describe('the .eth loopback server', () => {
     expect(reply.status).toBe(502)
     expect(reply.body.toString()).not.toContain('xxxx')
     expect(reply.body.toString()).toContain('Cannot verify this site')
+  })
+
+  it('says a failed verification in a header of its own, and never for a name that merely does not resolve or a light client still syncing', async () => {
+    expect((await get('/bad.js')).headers['x-orivon-failure']).toBe('unverifiable')
+    expect((await get('/', { host: 'syncing.eth' })).headers['x-orivon-failure']).toBeUndefined()
+    expect((await get('/missing.js')).headers['x-orivon-failure']).toBeUndefined()
+  })
+
+  it('keeps its error page for a source that lied, and does not say the content failed: no gateway delivered the real bytes', async () => {
+    const reply = await get('/lied.js')
+    expect(reply.status).toBe(502)
+    expect(reply.body.toString()).toContain('Cannot verify this site')
+    expect(reply.headers['x-orivon-failure']).toBeUndefined()
   })
 
   it('streams even a small file to an install, which names its root and checks every byte itself, so a slow gateway still reads as progress', async () => {

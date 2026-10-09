@@ -44,10 +44,13 @@ import type { LoadInstalled, LoadRejected, LoadResult } from './load-result.js'
 import { pinnedToRoot } from './fetch/content-root.js'
 import { rememberingManifestReader } from './fetch/manifest-at-root.js'
 import { createNameUpdates } from './name-update.js'
+import { createFirstVisit } from './first-visit.js'
+import type { FirstVisitApi } from './first-visit.js'
 import type { AppUpdateApi } from './name-update.js'
 import { readQuietOffers, writeQuietOffer } from './update-offer.js'
 
 export type { Fetch, FetchResponse } from './fetch/bundle.js'
+export type { FirstBundle, FirstManifest, FirstManifestApp } from './first-visit.js'
 export type { LoadInstalled, LoadNeedsCapabilityPrompt, LoadNeedsReconsent, LoadNeedsRollbackChoice, LoadRejected, LoadResult, LoadUpToDate, LoadUpdateAvailable } from './load-result.js'
 export type { LoaderStorage } from './cache/storage.js'
 export { appRootDirectoryName } from './cache/storage.js'
@@ -165,7 +168,7 @@ export interface LoadOptions {
   readonly recheck?: true
 }
 
-export interface Loader extends AppUpdateApi {
+export interface Loader extends AppUpdateApi, FirstVisitApi {
   /**
    * `hintedUrl` names the origin to install -- from a `<link
    * rel="orivon-manifest">` hint already in delivered HTML, the only
@@ -483,5 +486,5 @@ export function createLoader (options: CreateLoaderOptions): Loader {
 
   const manifestAt = rememberingManifestReader(options.fetch, options.resolve)
 
-  return { load, reconsider, installFetched, applyUpdate, pinFor, ddocFor, quietOffers: async (origin) => await readQuietOffers(options.storage, origin), keepQuiet: async (origin, offer) => { await writeQuietOffer(options.storage, origin, offer) }, manifestFor, manifestAt }
+  return { ...createFirstVisit(options, contentOf, manifestAt), load, reconsider, installFetched, applyUpdate, pinFor, ddocFor, quietOffers: async (origin) => await readQuietOffers(options.storage, origin), keepQuiet: async (origin, offer) => { await writeQuietOffer(options.storage, origin, offer) }, manifestFor, manifestAt }
 }

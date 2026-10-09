@@ -154,3 +154,28 @@ describe('SitesPart', () => {
     })
   })
 })
+
+describe('SitesPart: apps whose first visit was refused', () => {
+  it('lists them from main, and asks again with a request and a fresh list', async () => {
+    let declined = ['https://a.ipfs.orivon']
+    const request = vi.fn(async (_domain: string, command: { type: string }) => {
+      await Promise.resolve()
+      if (command.type === 'list') return { isPrivate: false, defaults: [], sites: [], declinedApps: declined }
+      if (command.type === 'askAgain') { declined = []; return { ok: true } }
+      return { ok: true }
+    })
+    const part = new SitesPart({ request } as unknown as OrivonInternal, () => {})
+    await part.load()
+    expect(part.declinedApps).toEqual(['https://a.ipfs.orivon'])
+    await part.askAgain('https://a.ipfs.orivon')
+    expect(calls(request, 'askAgain')).toEqual([{ type: 'askAgain', origin: 'https://a.ipfs.orivon' }])
+    expect(part.declinedApps).toEqual([])
+  })
+
+  it('reads a reply from a main that sends no such list as an empty one', async () => {
+    const { part } = setup()
+    await part.load()
+    expect(part.declinedApps).toEqual([])
+  })
+})
+

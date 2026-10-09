@@ -1,0 +1,115 @@
+// What the first-visit specs share: an app published to the fixture gateway with the hash tree it declares,
+// the facts about a page read from main, and the app-setup sheet read and pressed the way a person does.
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import type { ElectronApplication, Page } from 'playwright'
+import { expect } from 'vitest'
+import { bundleTreeFromLeaves } from '../../src/broker/policy/bundle-hash.js'
+import { originHash } from '../../src/broker/grants/origin-hash.js'
+import { leafOf } from '../../src/loader/leaf-hash.js'
+import { waitFor } from '../support/smoke-helpers.mjs'
+
+type App = ElectronApplication
+
+const enc = (text: string): Uint8Array => new TextEncoder().encode(text)
+
+/** An app's files with `/.well-known/orivon-ddoc.json` added: the tree of the files as given, or of `declared` when the site declares files other than the ones it serves. */
+export async function withDeclaredTree (files: Record<string, string>, declared: Record<string, string> = files): Promise<Record<string, string>> {
+  const entries = await Promise.all(Object.entries(declared).map(async ([path, content]) => {
+    const canonical = `/${path}`
+    const bytes = enc(content)
+    return { path: canonical, byteLength: bytes.length, leaf: await leafOf(canonical, bytes.length, [bytes]) }
+  }))
+  const tree = await bundleTreeFromLeaves(entries)
+  const leaves = Object.fromEntries(tree.assets.map((asset) => [asset.path, asset.leaf]))
+  return { ...files, '.well-known/orivon-ddoc.json': JSON.stringify({ bundleHash: tree.root, leaves }) }
+}
+
+export interface PageFacts {
+  readonly ran: string | null
+  readonly hasProcess: boolean
+}
+
+/** What the newest page at `url` shows: whether its script ran, and whether it has the Node globals an app tab gets. Null when no page is there. */
+export async function pageAt (app: App, url: string): Promise<PageFacts | null> {
+  return await app.evaluate(async ({ webContents }, address) => {
+    const newest = webContents.getAllWebContents().filter((contents) => !contents.isDestroyed() && contents.getURL() === address).sort((a, b) => b.id - a.id)[0]
+    if (newest === undefined) return null
+    try {
+      return await newest.executeJavaScript('({ ran: document.body?.dataset.app ?? null, hasProcess: typeof process !== "undefined" })') as { ran: string | null, hasProcess: boolean }
+    } catch {
+      return null
+    }
+  }, url).catch(() => null)
+}
+
+/** Whether any page of the browser has committed a document at an address under `origin`. */
+export async function anyDocumentAt (app: App, origin: string): Promise<boolean> {
+  return await app.evaluate(({ webContents }, prefix) => webContents.getAllWebContents().some((contents) => {
+    if (contents.isDestroyed()) return false
+    const entry = contents.navigationHistory.getEntryAtIndex(contents.navigationHistory.getActiveIndex()) as { url: string } | null
+    return entry?.url.startsWith(prefix) === true
+  }), origin)
+}
+
+export function pinPath (userData: string, origin: string): string {
+  return join(userData, 'apps', originHash(origin), 'pin.json')
+}
+
+/** The capabilities saved as granted to `origin`, or an empty list when nothing is saved. */
+export function savedGrants (userData: string, origin: string): string[] {
+  const file = join(userData, 'grants', originHash(origin), 'grants.json')
+  if (!existsSync(file)) return []
+  const parsed = JSON.parse(readFileSync(file, 'utf8')) as { grants?: Record<string, unknown> }
+  return Object.keys(parsed.grants ?? {})
+}
+
+const sheetPages = (app: App): Page[] => app.windows().filter((page) => page.url().includes('overlay=app-setup-sheet') && !page.isClosed())
+const coverPages = (app: App): Page[] => app.windows().filter((page) => page.url().includes('overlay=loading-screen') && !page.isClosed())
+
+export interface SheetText { title: string, text: string, files: string[], buttons: string[] }
+
+/** Waits for the app-setup sheet and reads it. */
+export async function waitSheet (app: App, timeoutMs = 60_000): Promise<{ page: Page, text: SheetText }> {
+  let found: Page | undefined
+  const ok = await waitFor(async () => {
+    const candidate = sheetPages(app).at(-1)
+    if (candidate === undefined) return false
+    try {
+      await candidate.waitForSelector('.app-setup .btn-row .btn', { timeout: 2_000 })
+      found = candidate
+      return true
+    } catch {
+      return false
+    }
+  }, timeoutMs)
+  expect(ok).toBe(true)
+  const page = found as Page
+  const text = await page.evaluate(() => ({
+    title: document.querySelector('.sheet-title')?.textContent ?? '',
+    text: document.querySelector('.app-setup')?.textContent ?? '',
+    files: Array.from(document.querySelectorAll('.app-setup-files li')).map((item) => item.textContent ?? ''),
+    buttons: Array.from(document.querySelectorAll('.app-setup .btn-row .btn')).map((button) => button.textContent ?? '')
+  }))
+  return { page, text }
+}
+
+export async function pressSheet (page: Page, label: string): Promise<void> {
+  try {
+    await page.click(`.app-setup .btn-row .btn:text-is("${label}")`)
+  } catch (error) {
+    if (!/closed|destroyed/.test(String(error))) throw error
+  }
+}
+
+/** Whether no app-setup sheet is on screen. */
+export function sheetGone (app: App): boolean {
+  return sheetPages(app).length === 0
+}
+
+/** The setup cover's title, or null when none is up. */
+export async function coverTitle (app: App): Promise<string | null> {
+  const page = coverPages(app).at(-1)
+  if (page === undefined) return null
+  return await page.evaluate(() => document.querySelector('.loading-screen-title')?.textContent ?? null).catch(() => null)
+}

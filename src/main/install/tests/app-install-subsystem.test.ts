@@ -18,7 +18,7 @@ import type { App } from 'electron'
 import type { Broker } from '../../../broker/broker-contracts.js'
 import type { Loader } from '../../../loader/index.js'
 
-const fakeApp = {} as unknown as App
+const fakeApp = { getPath: () => '/nonexistent/orivon-test-profile' } as unknown as App
 const fakeLoader: Loader = {
   load: async () => ({ outcome: 'rejected', reason: 'unused' }),
   installFetched: async () => { throw new Error('installFetched was not stubbed for this test') },
@@ -29,7 +29,9 @@ const fakeLoader: Loader = {
   quietOffers: async () => ({ quiet: [] }),
   keepQuiet: async () => {},
   manifestFor: async () => undefined,
-  manifestAt: async () => ({ kind: 'website' as const })
+  manifestAt: async () => ({ kind: 'website' as const }),
+  readManifest: async () => ({ kind: 'website' as const }),
+  fetchForInstall: async () => ({ ok: false as const, reason: 'unused' })
 }
 
 describe('appInstallSubsystem', () => {

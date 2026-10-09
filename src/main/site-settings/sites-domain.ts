@@ -22,7 +22,13 @@ const hostOf = (origin: string): string => {
   }
 }
 
-export function sitesDomain (controller: SiteSettingsController, options: { isPrivate: boolean, devices?: DeviceRows }): InternalDomain {
+/** The origins whose first-visit question was answered Deny (`../install/declined-apps.ts`): listed here so the person can have it asked again. */
+export interface DeclinedAppRows {
+  list: () => string[]
+  remove: (origin: string) => boolean
+}
+
+export function sitesDomain (controller: SiteSettingsController, options: { isPrivate: boolean, devices?: DeviceRows, declinedApps?: DeclinedAppRows }): InternalDomain {
   const devices = options.devices
   /** The sites with an answer, and the ones that only hold an approved device, each with how many devices (ADR-0068). */
   const sites = (): ReturnType<SiteSettingsController['sites']> => {
@@ -43,7 +49,7 @@ export function sitesDomain (controller: SiteSettingsController, options: { isPr
       const request = (typeof command === 'object' && command !== null ? command : {}) as Request
       switch (request.type) {
         case 'list':
-          return { isPrivate: options.isPrivate, defaults: controller.defaults(), sites: sites() }
+          return { isPrivate: options.isPrivate, defaults: controller.defaults(), sites: sites(), declinedApps: options.declinedApps?.list() ?? [] }
         case 'rows':
           return typeof request.origin === 'string' ? rowsOf(request.origin) : undefined
         case 'set': {
@@ -61,6 +67,8 @@ export function sitesDomain (controller: SiteSettingsController, options: { isPr
           const forgotten = devices?.forgetSite(request.origin) === true
           return { ok: controller.resetSite(request.origin) || forgotten }
         }
+        case 'askAgain':
+          return typeof request.origin === 'string' ? { ok: options.declinedApps?.remove(request.origin) === true } : undefined
         case 'resetAll':
           controller.resetAll()
           devices?.forgetAllWebsites()

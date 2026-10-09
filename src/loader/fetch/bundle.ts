@@ -22,7 +22,7 @@ import { ensurePublicUnicastOrigin } from './install-origin.js'
 import type { InstallOriginResult } from './install-origin.js'
 import { isOrivonErrorLike } from '../../broker/errors.js'
 import { MAX_MANIFEST_BYTES, describeValue, parseManifest } from '../manifest/manifest.js'
-import { BUNDLE_TIMEOUT_MS, ByteBudget, NOT_MODIFIED, fetchWithBudget, joinChunks, raceAbort, rejected } from './budget.js'
+import { BUNDLE_TIMEOUT_MS, ByteBudget, NOT_MODIFIED, fetchWithBudget, joinChunks, raceAbort, rejected, tooLargeRejected } from './budget.js'
 import type { Fetch, FetchBundleRejected } from './budget.js'
 import { RETRY_BACKOFF_MS, retryTransient } from './retry.js'
 import { FETCH_CONCURRENCY, fetchAssetToStaging, forEachBounded, resolveUrl, stageBytes } from './asset.js'
@@ -70,6 +70,10 @@ export interface FetchLimits {
   readonly bundleBytes: number
   /** Pauses between attempts at a file that met a transient fault; RETRY_BACKOFF_MS when absent. */
   readonly retryBackoffMs?: readonly number[]
+  /** The caller must judge the site's declared tree, so one that could not be downloaded fails the fetch instead of reading as "not published" (ADR-0074). */
+  readonly strictDeclaration?: boolean
+  /** The caller left: aborting it stops the download at once and fails it. */
+  readonly signal?: AbortSignal
 }
 
 const DEFAULT_LIMITS: FetchLimits = { assetBytes: MAX_ASSET_BYTES, bundleBytes: MAX_BUNDLE_BYTES }
@@ -169,6 +173,9 @@ export async function fetchBundle (
   // against a stalling nameserver. Also aborted by the first failing asset,
   // so its siblings stop instead of downloading for nothing.
   const bundleController = new AbortController()
+  const forwardLeft = (): void => { bundleController.abort() }
+  if (limits.signal?.aborted === true) bundleController.abort()
+  limits.signal?.addEventListener('abort', forwardLeft, { once: true })
   const bundleTimer = setTimeout(() => { bundleController.abort() }, BUNDLE_TIMEOUT_MS)
   let result: FetchBundleResult | undefined
   try {
@@ -176,6 +183,7 @@ export async function fetchBundle (
     return result
   } finally {
     clearTimeout(bundleTimer)
+    limits.signal?.removeEventListener('abort', forwardLeft)
     if (result === undefined || !result.ok) {
       await storage.clearStaging(canonicalOrigin).catch((error: unknown) => {
         console.error('[loader] could not clear a failed fetch\'s staging area', canonicalOrigin, error)
@@ -228,10 +236,13 @@ async function fetchStaged (
   // fits; kept so a bug there cannot become an oversized fetch loop here.
   const assetPaths = [manifest.entry, ...(manifest.assets ?? [])]
   if (assetPaths.length + 1 > MAX_BUNDLE_ENTRIES) {
-    return rejected(`bundle would have ${String(assetPaths.length + 1)} entries, more than MAX_BUNDLE_ENTRIES (${String(MAX_BUNDLE_ENTRIES)})`)
+    return tooLargeRejected(`bundle would have ${String(assetPaths.length + 1)} entries, more than MAX_BUNDLE_ENTRIES (${String(MAX_BUNDLE_ENTRIES)})`)
   }
 
-  const declaration = await fetchDdocDeclaration(fetchFn, canonicalOrigin, pinnedAddresses, budget, bundleController.signal)
+  // Before any file: a declaration that cannot be read, once a caller must judge it, ends the fetch before the bundle comes down.
+  const fetchedDeclaration = await retryTransient(async () => await fetchDdocDeclaration(fetchFn, canonicalOrigin, pinnedAddresses, budget, bundleController.signal, limits.strictDeclaration === true), limits.retryBackoffMs ?? RETRY_BACKOFF_MS, bundleController.signal)
+  if (fetchedDeclaration !== undefined && 'ok' in fetchedDeclaration) return fetchedDeclaration
+  const declaration = fetchedDeclaration
 
   const context = { fetchFn, canonicalOrigin, pinnedAddresses, storage, budget, assetCap: limits.assetBytes, bundleSignal: bundleController.signal, retryBackoffMs: limits.retryBackoffMs ?? RETRY_BACKOFF_MS }
   const assets = await forEachBounded(assetPaths, FETCH_CONCURRENCY, async (path) => await fetchAssetToStaging(context, path), () => { bundleController.abort() })

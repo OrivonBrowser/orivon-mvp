@@ -186,7 +186,7 @@ describe('fetchVerifiedBlock -- passes', () => {
     gateways.missing.add(A)
     gateways.missing.add(B)
     const d = deps(gateways, [A, B])
-    await expect(fetchVerifiedBlock(leaf, d, signal, noRefusal)).rejects.toMatchObject({ failure: 'unavailable' })
+    await expect(fetchVerifiedBlock(leaf, d, signal, noRefusal)).rejects.toMatchObject({ failure: 'unavailable', sourceFault: false })
   })
 
   it('a lie earns no second pass over gateways that already missed, and names the liar', async () => {
@@ -195,7 +195,7 @@ describe('fetchVerifiedBlock -- passes', () => {
     gateways.missing.add(B)
     const d = deps(gateways, [A, B])
     const failure = fetchVerifiedBlock(leaf, d, signal, noRefusal)
-    await expect(failure).rejects.toMatchObject({ failure: 'unverifiable' })
+    await expect(failure).rejects.toMatchObject({ failure: 'unverifiable', sourceFault: true })
     await expect(failure).rejects.toThrow(`${A} sent bytes that failed their hash`)
     expect(gateways.requests.filter((r) => r.startsWith(B))).toHaveLength(1)
   })

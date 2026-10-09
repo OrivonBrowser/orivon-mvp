@@ -40,6 +40,8 @@ export interface QuestionResult {
   readonly response: number
   readonly checkboxChecked: boolean
   readonly text?: string
+  /** The person pressed this button, as opposed to a way out (Escape, a closed tab, a navigation, an abort) answering with `cancelId`. */
+  readonly clicked?: true
 }
 
 /** What the panel's page is told on each show; main alone decides every field. */

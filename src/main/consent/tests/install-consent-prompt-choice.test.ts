@@ -44,7 +44,7 @@ describe('createPerCapabilityConsentPrompt', () => {
   })
 
   it('"Deny all" (response 2) accepts nothing with a single dialog -- no per-item sequence', async () => {
-    askQuestion.mockResolvedValueOnce({ response: 2, checkboxChecked: false })
+    askQuestion.mockResolvedValueOnce({ response: 2, checkboxChecked: false, clicked: true })
     const prompt = createPerCapabilityConsentPrompt()
 
     const accepted = await prompt(ORIGIN, manifest(), CAPABILITIES)
@@ -54,7 +54,7 @@ describe('createPerCapabilityConsentPrompt', () => {
   })
 
   it('the overview offers three buttons, cancelling on "Deny all" with "Allow all" guarded -- dismissing must never grant', async () => {
-    askQuestion.mockResolvedValueOnce({ response: 2, checkboxChecked: false })
+    askQuestion.mockResolvedValueOnce({ response: 2, checkboxChecked: false, clicked: true })
     await createPerCapabilityConsentPrompt()(ORIGIN, manifest(), CAPABILITIES)
 
     expect(specOf()).toMatchObject({
@@ -65,7 +65,7 @@ describe('createPerCapabilityConsentPrompt', () => {
   })
 
   it('the overview renders the same whole-request content describeInstallConsent produces', async () => {
-    askQuestion.mockResolvedValueOnce({ response: 2, checkboxChecked: false })
+    askQuestion.mockResolvedValueOnce({ response: 2, checkboxChecked: false, clicked: true })
     const m = manifest()
     await createPerCapabilityConsentPrompt()(ORIGIN, m, CAPABILITIES)
 
@@ -78,9 +78,9 @@ describe('createPerCapabilityConsentPrompt', () => {
 
   it('"Choose individually" (response 1) runs one Allow/Deny dialog per capability, in order', async () => {
     askQuestion
-      .mockResolvedValueOnce({ response: 1, checkboxChecked: false }) // overview: choose individually
+      .mockResolvedValueOnce({ response: 1, checkboxChecked: false, clicked: true }) // overview: choose individually
       .mockResolvedValueOnce({ response: 0, checkboxChecked: false }) // https.connect -> Allow
-      .mockResolvedValueOnce({ response: 1, checkboxChecked: false }) // fs -> Deny
+      .mockResolvedValueOnce({ response: 1, checkboxChecked: false, clicked: true }) // fs -> Deny
     const prompt = createPerCapabilityConsentPrompt()
 
     const accepted = await prompt(ORIGIN, manifest(), CAPABILITIES)
@@ -91,9 +91,9 @@ describe('createPerCapabilityConsentPrompt', () => {
 
   it('each per-item question uses Allow/Deny, cancelling on Deny with Allow guarded -- same safe default as every other question in this family', async () => {
     askQuestion
-      .mockResolvedValueOnce({ response: 1, checkboxChecked: false })
-      .mockResolvedValueOnce({ response: 1, checkboxChecked: false })
-      .mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+      .mockResolvedValueOnce({ response: 1, checkboxChecked: false, clicked: true })
+      .mockResolvedValueOnce({ response: 1, checkboxChecked: false, clicked: true })
+      .mockResolvedValueOnce({ response: 1, checkboxChecked: false, clicked: true })
     await createPerCapabilityConsentPrompt()(ORIGIN, manifest(), CAPABILITIES)
 
     const itemCalls = askQuestion.mock.calls.slice(1)
@@ -104,9 +104,9 @@ describe('createPerCapabilityConsentPrompt', () => {
 
   it('each per-item dialog\'s content is exactly describeCapabilityChoice\'s own rendering -- one vocabulary, not two', async () => {
     askQuestion
-      .mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+      .mockResolvedValueOnce({ response: 1, checkboxChecked: false, clicked: true })
       .mockResolvedValueOnce({ response: 0, checkboxChecked: false })
-      .mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+      .mockResolvedValueOnce({ response: 1, checkboxChecked: false, clicked: true })
     await createPerCapabilityConsentPrompt()(ORIGIN, manifest(), CAPABILITIES)
 
     const firstItemArgs = askQuestion.mock.calls[1]?.[1]
@@ -131,8 +131,8 @@ describe('createPerCapabilityConsentPrompt', () => {
   it('switches to "warning" for an unlimited declaration, on the overview and on that item\'s own screen', async () => {
     const wide: Manifest = { ...manifestWith({ net: { tcp: { connect: ['*:*'] } } }), consentGranularity: 'per-capability' }
     askQuestion
-      .mockResolvedValueOnce({ response: 1, checkboxChecked: false }) // choose individually
-      .mockResolvedValueOnce({ response: 1, checkboxChecked: false }) // deny the one item
+      .mockResolvedValueOnce({ response: 1, checkboxChecked: false, clicked: true }) // choose individually
+      .mockResolvedValueOnce({ response: 1, checkboxChecked: false, clicked: true }) // deny the one item
     await createPerCapabilityConsentPrompt()(ORIGIN, wide, ['tcp.connect'])
 
     expect(askQuestion.mock.calls[0]?.[1]).toMatchObject({ warning: true })
@@ -146,7 +146,7 @@ describe('createPerCapabilityConsentPrompt', () => {
     const answers = [1, 0, 1]
     askQuestion.mockImplementation(async () => {
       heldDuring.push(release.mock.calls.length === 0)
-      return { response: answers.shift() ?? 1, checkboxChecked: false }
+      return { response: answers.shift() ?? 1, checkboxChecked: false, clicked: true }
     })
     const tab = {}
     const caller = { window: () => undefined, stillOn: () => true, contents: () => tab }
@@ -157,6 +157,13 @@ describe('createPerCapabilityConsentPrompt', () => {
     expect(heldDuring).toEqual([true, true, true])
     expect(release).toHaveBeenCalledOnce()
     expect(askQuestion.mock.calls.every((call) => (call[0] as { contents: unknown }).contents === tab)).toBe(true)
+  })
+
+  it('a dismissed overview or screen answers nothing at all, where a pressed Deny all answers an empty choice', async () => {
+    askQuestion.mockResolvedValueOnce({ response: 2, checkboxChecked: false })
+    expect(await createPerCapabilityConsentPrompt()(ORIGIN, manifest(), CAPABILITIES)).toBeNull()
+    askQuestion.mockResolvedValueOnce({ response: 1, checkboxChecked: false, clicked: true }).mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+    expect(await createPerCapabilityConsentPrompt()(ORIGIN, manifest(), CAPABILITIES)).toBeNull()
   })
 
   it('extensions disclosure: an injected extensionsOnSite reaches the overview screen', async () => {

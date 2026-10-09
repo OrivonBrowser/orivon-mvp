@@ -32,8 +32,8 @@ it('tells the person about a moved DNSLink while the app tab stays where it is',
       const app = await launchPhase(rig, { names: { 'app.eth': 'dnslink://app.example' }, env: { ORIVON_TEST_UPDATE_WATCH_MS: String(WATCH_MS) } })
       await stubNativeDialogs(app)
       await clickAddressBarRetrying(findChrome(app), `${ORIGIN}/`)
-      check('build A loads', (await waitForTab(findChrome(app), { address: SHOWN, title: 'update fixture A' })).ok)
       await answerAccepting(app)
+      check('build A loads', (await waitForTab(findChrome(app), { address: SHOWN, title: 'update fixture A' })).ok)
       check('the first visit pinned build A', await eventually(() => pinOf(app, ORIGIN)?.content?.cid === rig.gateway.roots['a'], 25_000))
 
       rig.dnslinks['app.example'] = 'b'

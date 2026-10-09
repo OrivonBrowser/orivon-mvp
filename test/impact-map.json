@@ -45,6 +45,7 @@
     { "prefix": "src/main/browsing", "run": ["toolbar", "tabs", "sites"] },
     { "prefix": "src/main/browsing/eth-gateway.ts", "run": ["web3"] },
     { "prefix": "src/main/children", "run": ["@core"] },
+    { "prefix": "src/main/app-setup", "run": ["@core", "web3", "tabs"] },
     { "prefix": "src/main/consent", "run": ["@core"] },
     { "prefix": "src/main/dev", "run": ["@core"] },
     { "prefix": "src/main/default-profile", "run": ["window", "extensions", "toolbar", "shell-pages"] },

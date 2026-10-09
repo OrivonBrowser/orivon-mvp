@@ -123,12 +123,14 @@ export async function installAndNotify (
     console.error('[loader] install failed', canonicalOrigin, error)
     return { outcome: 'rejected', reason: `the bundle for ${canonicalOrigin} could not be written to local storage` }
   }
+  let servingFailed = false
   if (options.onInstalled !== undefined) {
     try {
       await options.onInstalled(canonicalOrigin)
     } catch (error) {
       console.error('[loader] onInstalled hook failed', canonicalOrigin, error)
+      servingFailed = true
     }
   }
-  return { outcome: 'installed', canonicalOrigin, manifest, pin: installed.pin }
+  return { outcome: 'installed', canonicalOrigin, manifest, pin: installed.pin, ...(servingFailed ? { servingFailed: true as const } : {}) }
 }

@@ -29,7 +29,11 @@ import { createTokenBucketLimiter } from '../../broker/transport/token-bucket.js
 import type { RateLimiter } from '../../broker/transport/token-bucket.js'
 import { dialogCallerFor } from './dialog-caller.js'
 import type { DialogCaller } from '../consent/request-grant.js'
+import type { TabScreens } from '../app-setup/tab-screens.js'
+import { firstVisitNow, tabSetupNow } from '../app-setup/tab-setup-ref.js'
 import type { Subsystem, SubsystemContext } from '../registry.js'
+import type { FirstVisit } from './first-visit.js'
+import { headlessHost, hintHost } from './hint-host.js'
 
 /** The one shape this file needs from an ipcMain.on event -- structural, matching origin.ts's own SenderFrameLike so a test never needs a real Electron event. */
 export interface ManifestHintEvent {
@@ -41,7 +45,14 @@ export interface ManifestHintEvent {
    * comparison; `session` is read by the injected `attributed` predicate
    * (../../broker/policy/origin.js).
    */
-  readonly sender?: { reload: () => void, isDestroyed: () => boolean, mainFrame: SenderFrameLike | null, session: unknown }
+  readonly sender?: { reload: () => void, isDestroyed: () => boolean, mainFrame: SenderFrameLike | null, session: unknown, stop?: () => void, getURL?: () => string }
+}
+
+/** What the first visit of an app needs of the shell, each read at the moment of use: both are published after this listener is wired. */
+export interface HintVisits {
+  readonly firstVisit: () => FirstVisit | undefined
+  /** The screens for the tab that reported a hint, or undefined for one no window holds. */
+  readonly screensFor: (sender: object, address: string) => TabScreens | undefined
 }
 
 /** The one method this module needs from electron's real `IpcMain` for this channel -- structural, matching ../broker/transport/ipc.ts's own IpcMainLike/IpcMainOnLike, so a test double never needs the real type. */
@@ -83,7 +94,8 @@ export function createManifestHintListener (
     now: () => Date.now()
   }),
   attributed?: (sender: unknown, origin: string) => boolean,
-  windowForSender?: (sender: unknown) => unknown
+  windowForSender?: (sender: unknown) => unknown,
+  visits?: HintVisits
 ): (event: ManifestHintEvent, hintedUrl: unknown) => void {
   return (event, hintedUrl) => {
     if (typeof hintedUrl !== 'string') return
@@ -97,49 +109,77 @@ export function createManifestHintListener (
 
     const caller = dialogCallerFor(event.sender, windowForSender)
 
-    // installFromHint documents itself as never rejecting outside its own
-    // exhaustiveness guard (app-install.ts's own header) -- caught anyway,
-    // matching src/main/tabs.ts's captureFavicon: an ipcMain.on listener
-    // that throws becomes an unhandled rejection nothing in this process
-    // catches, and this channel is reachable from any ordinary tab.
-    installApp(origin, hintedUrl, caller)
-      .then((result) => {
-        // Driving needs-reconsent/needs-capability-prompt/needs-rollback-
-        // choice/rejected toward a user-visible outcome is a later lane's
-        // job (this file's own header), not this one's -- but a real
-        // outcome nobody acts on yet must still be visible, never silently
-        // dropped.
-        // ADR-0018: isolation follows consent. The app-tab flag and the
-        // partition are both fixed when a view is built, so the tab that
-        // reported this hint was built before its origin was registered and
-        // is still an ordinary one, running without its shims. `tab-view.ts`'s
-        // own did-navigate handler rebuilds it on the next navigation -- so
-        // one reload is what turns it into the app tab the person just
-        // installed or consented to. Only on a NEW registration: a
-        // registered origin's tab already carries its flag, and reloading
-        // it again would loop.
-        // Only while the tab is still on the page that reported the hint: the
-        // person may have gone elsewhere while the question was open, and
-        // that page is not the one that was asked about.
-        const reloadable = caller.stillOn(origin)
-        if (result.outcome === 'granted-without-install') {
-          console.log(`[orivon] granted ${origin} without installing (newly registered: ${String(result.newlyRegistered)}, reloading: ${String(result.newlyRegistered && reloadable)})`)
-          if (result.newlyRegistered && reloadable) event.sender?.reload()
-          return
-        }
-        if (result.outcome === 'installed') {
-          if (result.newlyRegistered === true && reloadable) {
-            console.log(`[orivon] installed ${origin}; reloading the tab that reported it so it runs as the app`)
-            event.sender?.reload()
-          }
-          return
-        }
-        if (result.outcome !== 'up-to-date') console.log(`[orivon] manifest hint from ${origin} did not install: ${result.outcome}`)
+    const install = (): void => { installLegacy(installApp, event, origin, hintedUrl, caller) }
+    const visit = visits?.firstVisit()
+    if (visit === undefined || event.sender === undefined) { install(); return }
+    const sender = event.sender
+    // A page reporting its hint is a first visit when Orivon has never held its origin (ADR-0074): the person is
+    // asked, then the files are downloaded and checked, before the tab is let into the app.
+    visit.kindOf(origin)
+      .then(async (kind) => {
+        if (kind === 'declined') { console.log(`[orivon] ${origin} was refused; it stays a plain website`); return }
+        if (kind !== 'first') { install(); return }
+        const screens = visits?.screensFor(sender, sender.getURL?.() ?? hintedUrl)
+        // The page is replaced by an empty one while the question is up, so "still there" is the tab's own account of whether the person moved on.
+        const asker: DialogCaller = screens === undefined ? caller : { ...caller, stillOn: () => !screens.moved() }
+        const host = screens === undefined ? headlessHost({ reload: () => { sender.reload() }, isDestroyed: () => sender.isDestroyed() }) : hintHost({ getURL: () => sender.getURL?.() ?? hintedUrl }, screens)
+        const result = await visit.run(origin, hintedUrl, asker, host, screens?.signal)
+        if (result.outcome === 'known') install()
+        else if (result.outcome !== 'entered') console.log(`[orivon] manifest hint from ${origin} did not install: ${result.outcome}`)
       })
       .catch((error: unknown) => {
-        console.error('[orivon] installFromHint threw unexpectedly for a manifest hint', origin, error)
+        console.error('[orivon] the first visit threw unexpectedly for a manifest hint', origin, error)
       })
   }
+}
+
+/**
+ * The install path for an origin Orivon already holds, and for every origin when the first visit is not
+ * wired (ADR-0074 has the order for a first visit).
+ */
+function installLegacy (installApp: InstallApp, event: ManifestHintEvent, origin: string, hintedUrl: string, caller: DialogCaller): void {
+  // installFromHint documents itself as never rejecting outside its own
+  // exhaustiveness guard (app-install.ts's own header) -- caught anyway,
+  // matching src/main/tabs.ts's captureFavicon: an ipcMain.on listener
+  // that throws becomes an unhandled rejection nothing in this process
+  // catches, and this channel is reachable from any ordinary tab.
+  installApp(origin, hintedUrl, caller)
+    .then((result) => {
+      // Driving needs-reconsent/needs-capability-prompt/needs-rollback-
+      // choice/rejected toward a user-visible outcome is a later lane's
+      // job (this file's own header), not this one's -- but a real
+      // outcome nobody acts on yet must still be visible, never silently
+      // dropped.
+      // ADR-0018: isolation follows consent. The app-tab flag and the
+      // partition are both fixed when a view is built, so the tab that
+      // reported this hint was built before its origin was registered and
+      // is still an ordinary one, running without its shims. `tab-view.ts`'s
+      // own did-navigate handler rebuilds it on the next navigation -- so
+      // one reload is what turns it into the app tab the person just
+      // installed or consented to. Only on a NEW registration: a
+      // registered origin's tab already carries its flag, and reloading
+      // it again would loop.
+      // Only while the tab is still on the page that reported the hint: the
+      // person may have gone elsewhere while the question was open, and
+      // that page is not the one that was asked about.
+      const reloadable = caller.stillOn(origin)
+      if (result.outcome === 'granted-without-install') {
+        console.log(`[orivon] granted ${origin} without installing (newly registered: ${String(result.newlyRegistered)}, reloading: ${String(result.newlyRegistered && reloadable)})`)
+        if (result.newlyRegistered && reloadable) event.sender?.reload()
+        return
+      }
+      if (result.outcome === 'installed') {
+        if (result.newlyRegistered === true && reloadable) {
+          console.log(`[orivon] installed ${origin}; reloading the tab that reported it so it runs as the app`)
+          event.sender?.reload()
+        }
+        return
+      }
+      if (result.outcome !== 'up-to-date') console.log(`[orivon] manifest hint from ${origin} did not install: ${result.outcome}`)
+    })
+    .catch((error: unknown) => {
+      console.error('[orivon] installFromHint threw unexpectedly for a manifest hint', origin, error)
+    })
 }
 
 /** Thin wiring: one `ipcMain.on` registration over createManifestHintListener. */
@@ -147,9 +187,10 @@ export function registerManifestHintIpc (
   ipc: IpcMainOnLike,
   installApp: InstallApp,
   attributed?: (sender: unknown, origin: string) => boolean,
-  windowForSender?: (sender: unknown) => unknown
+  windowForSender?: (sender: unknown) => unknown,
+  visits?: HintVisits
 ): void {
-  ipc.on(MANIFEST_HINT_CHANNEL, createManifestHintListener(installApp, undefined, attributed, windowForSender))
+  ipc.on(MANIFEST_HINT_CHANNEL, createManifestHintListener(installApp, undefined, attributed, windowForSender, visits))
 }
 
 /**
@@ -176,6 +217,9 @@ export const manifestHintSubsystem: Subsystem = {
     // transport/ipc.ts's own brokerIpcSubsystem wiring: it is published in
     // main/index.ts once the shell exists, well after this subsystem's
     // afterReady runs.
-    registerManifestHintIpc(ipcMain, ctx.installApp, ctx.senderAttributed, (sender) => ctx.windowForSender?.(sender as WebContents))
+    registerManifestHintIpc(ipcMain, ctx.installApp, ctx.senderAttributed, (sender) => ctx.windowForSender?.(sender as WebContents), {
+      firstVisit: firstVisitNow,
+      screensFor: (sender, address) => tabSetupNow()?.(sender as WebContents, address)
+    })
   }
 }

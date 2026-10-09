@@ -136,6 +136,6 @@ export async function fetchVerifiedBlock (cid: CID, deps: FetchDeps, signal: Abo
     if (!result.retryable && unwell.size === 0) break
   }
 
-  if (deps.pool.usable().length === 0) throw new ResolutionError('unverifiable', `block ${key}: every gateway was dropped this session for sending bytes that failed their hash`)
-  throw new ResolutionError(anyLied ? 'unverifiable' : 'unavailable', `block ${key}: ${reasons.join('; ') || 'no gateway answered'}`)
+  if (deps.pool.usable().length === 0) throw new ResolutionError('unverifiable', `block ${key}: every gateway was dropped this session for sending bytes that failed their hash`, true)
+  throw new ResolutionError(anyLied ? 'unverifiable' : 'unavailable', `block ${key}: ${reasons.join('; ') || 'no gateway answered'}`, anyLied)
 }

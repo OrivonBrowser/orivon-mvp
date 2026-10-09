@@ -57,20 +57,20 @@ it('[app:transient-gateway-error-does-not-abort-an-install] installs an app whos
       const chrome = findChrome(running)
       await waitForAddressBarStable(chrome)
       await clickAddressBarRetrying(chrome, `ipfs://${root}`)
-      const loaded = await waitForTab(chrome, { address: `ipfs://${root}/`, title: 'transient app' })
-      check(`the typed ipfs:// address loaded (${JSON.stringify(loaded.info)})`, loaded.ok)
-
-      const pinned = await waitFor(() => existsSync(pinFile), 25_000)
-      check(`the hint installed it: a pin exists for ${origin}`, pinned)
-      const pin = pinned ? JSON.parse(readFileSync(pinFile, 'utf8')) as { content?: { cid: string } } : {}
-      check(`the pin records the root CID (${JSON.stringify(pin.content)})`, pin.content?.cid === root)
-      // The pin lands before the consent step runs, so the question is waited for, never looked for once.
+      // The question comes first (ADR-0074): the page is held back until it is answered and the files are checked.
       let asked: QuestionText | undefined
       try {
         asked = await answerAccepting(running)
       } catch (error) {
         check(`the install consent question appeared (${String(error)})`, false)
       }
+      const loaded = await waitForTab(chrome, { address: `ipfs://${root}/`, title: 'transient app' }, 60_000)
+      check(`the typed ipfs:// address loaded (${JSON.stringify(loaded.info)})`, loaded.ok)
+
+      const pinned = await waitFor(() => existsSync(pinFile), 25_000)
+      check(`the hint installed it: a pin exists for ${origin}`, pinned)
+      const pin = pinned ? JSON.parse(readFileSync(pinFile, 'utf8')) as { content?: { cid: string } } : {}
+      check(`the pin records the root CID (${JSON.stringify(pin.content)})`, pin.content?.cid === root)
       const askedFor = (path: string): number => gateway.requests.filter((r) => r.startsWith(`/ipfs/${gateway.blockOf('app', path)}`)).length
       check(`app.js was asked for again after its 502 (${String(askedFor('app.js'))} requests)`, askedFor('app.js') >= 2)
       check(`style.css was asked for again after its 502s (${String(askedFor('style.css'))} requests)`, askedFor('style.css') >= 4)

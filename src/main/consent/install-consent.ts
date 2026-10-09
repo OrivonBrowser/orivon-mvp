@@ -39,6 +39,10 @@ import type { DialogCaller } from './request-grant.js'
  * everything at once -- see `PerCapabilityConsentPrompt` below for the
  * per-row answer A138's `'per-capability'` manifest value asks for.
  *
+ * `true` is the person's Allow and `false` their pressing Deny. `'dismissed'` is any way out
+ * that is neither (Escape, a closed tab, a navigation): the first-visit order reads it as "ask
+ * again next visit" and records nothing, where `requestInstallConsent` below treats it as a no.
+ *
  * `held` (A170) is the SUBSET of `capabilities` already granted through
  * that other door -- Deny still applies only to the rest, so the real
  * dialog (./install-consent-prompt.ts) marks those rows rather than
@@ -50,7 +54,7 @@ export type InstallConsentPrompt = (
   capabilities: readonly CapabilityKind[],
   held: readonly CapabilityKind[],
   caller?: DialogCaller
-) => Promise<boolean>
+) => Promise<boolean | 'dismissed'>
 
 /**
  * A138's 'per-capability' path: asks about exactly `capabilities` -- already
@@ -71,7 +75,14 @@ export type PerCapabilityConsentPrompt = (
   manifest: Manifest,
   capabilities: readonly CapabilityKind[],
   caller?: DialogCaller
-) => Promise<readonly CapabilityKind[]>
+) => Promise<readonly CapabilityKind[] | null>
+
+/**
+ * What the question came to: `granted` (something was allowed), `declined` (the person said no, now
+ * or earlier, and holds nothing), `not-asked` (nothing declared, everything held, or no prompt
+ * wired) and `left` (nobody answered: the tab moved on or the prompt failed, so nothing is recorded).
+ */
+export type InstallConsentOutcome = 'granted' | 'declined' | 'not-asked' | 'left'
 
 /**
  * Runs d-0025's whole flow for one freshly-installed origin: work out what
@@ -94,13 +105,13 @@ export async function requestInstallConsent (
   manifest: Manifest,
   perCapabilityConsent?: PerCapabilityConsentPrompt,
   caller?: DialogCaller
-): Promise<void> {
+): Promise<InstallConsentOutcome> {
   const declared = patternSetFromCapabilities(manifest.capabilities)
   // Same idiom update.ts's widensAuthority uses for a PatternSet's own keys
   // (that file's own comment on why): every key here was set by
   // patternSetFromCapabilities itself, so this cast trusts nothing untrusted.
   const capabilities = Object.keys(declared) as readonly CapabilityKind[]
-  if (capabilities.length === 0) return // A139 bound 1: nothing declared, nothing to ask
+  if (capabilities.length === 0) return 'not-asked' // A139 bound 1: nothing declared, nothing to ask
 
   const held = await broker.app.grants(origin)
   // A139 bound 2 -- see this file's header. A second door, app.requestGrant,
@@ -111,7 +122,7 @@ export async function requestInstallConsent (
   // unheld -- the same short-circuit an `.every` check across `capabilities`
   // would give, applied per key.
   const notHeld = capabilities.filter((capability) => !held.some((existing) => existing.capability === capability))
-  if (notHeld.length === 0) return
+  if (notHeld.length === 0) return 'not-asked'
 
   // A145's remembered-no check, generalised into OUTSTANDING = covered by
   // NEITHER a live grant NOR a past decline. A decline, in EITHER
@@ -124,14 +135,13 @@ export async function requestInstallConsent (
   // runPerCapabilityConsent's own tests).
   const declined = await broker.declinedCapabilitiesFor(origin)
   const outstanding = declined === undefined ? notHeld : notHeld.filter((capability) => !declined.includes(capability))
-  if (outstanding.length === 0) return
+  if (outstanding.length === 0) return held.length > 0 ? 'not-asked' : 'declined'
 
   if (manifest.consentGranularity === 'per-capability' && perCapabilityConsent !== undefined) {
-    await runPerCapabilityConsent(broker, perCapabilityConsent, origin, manifest, outstanding, declined, caller)
-    return
+    return await runPerCapabilityConsent(broker, perCapabilityConsent, origin, manifest, outstanding, declined, caller)
   }
 
-  if (consent === undefined) return // no prompt wired -- fail closed, same stance request-grant.ts takes
+  if (consent === undefined) return 'not-asked' // no prompt wired -- fail closed, same stance request-grant.ts takes
 
   let accepted: boolean
   try {
@@ -142,12 +152,12 @@ export async function requestInstallConsent (
     // The held SUBSET of it goes along too (A170), so the real dialog can
     // mark those rows -- Deny below only ever covers `outstanding`, never
     // a row already held through the other door.
-    accepted = caller === undefined
+    accepted = (caller === undefined
       ? await consent(origin, manifest, capabilities, held.map((grant) => grant.capability))
-      : await consent(origin, manifest, capabilities, held.map((grant) => grant.capability), caller)
+      : await consent(origin, manifest, capabilities, held.map((grant) => grant.capability), caller)) === true
   } catch (error) {
     console.error('[install-consent] the consent prompt threw; treating this visit as declined', origin, error)
-    return
+    return 'left'
   }
 
   // The page that asked may have navigated away, or closed, before the
@@ -157,7 +167,7 @@ export async function requestInstallConsent (
   // important -- nothing is recorded as declined, since a person who was
   // never actually asked has not said no. A later, genuine visit still
   // prompts in full.
-  if (caller !== undefined && !caller.stillOn(origin)) return
+  if (caller !== undefined && !caller.stillOn(origin)) return 'left'
 
   if (!accepted) {
     // A172(1): record `outstanding`, never the whole `capabilities` --
@@ -171,7 +181,7 @@ export async function requestInstallConsent (
     // wholesale replace -- an earlier decline outside this round (a
     // different manifest shape, or a granularity switch) must survive it.
     await recordDeclined(broker, origin, declined, outstanding)
-    return // A138: all-or-nothing -- the app stays installed, holding nothing
+    return 'declined' // A138: all-or-nothing -- the app stays installed, holding nothing
   }
 
   // The person just said yes to exactly `capabilities` -- any earlier "no"
@@ -187,6 +197,7 @@ export async function requestInstallConsent (
   // said yes to.
   await broker.clearDeclinedConsent(origin)
   await grantChangedCapabilities(broker, origin, manifest, capabilities)
+  return 'granted'
 }
 
 /**
@@ -240,22 +251,22 @@ async function runPerCapabilityConsent (
   outstanding: readonly CapabilityKind[],
   declined: readonly CapabilityKind[] | undefined,
   caller?: DialogCaller
-): Promise<void> {
+): Promise<InstallConsentOutcome> {
   let acceptedRaw: readonly CapabilityKind[]
   try {
-    acceptedRaw = caller === undefined
+    acceptedRaw = (caller === undefined
       ? await perCapabilityConsent(origin, manifest, outstanding)
-      : await perCapabilityConsent(origin, manifest, outstanding, caller)
+      : await perCapabilityConsent(origin, manifest, outstanding, caller)) ?? []
   } catch (error) {
     console.error('[install-consent] the per-capability consent prompt threw; nothing decided this visit', origin, error)
-    return
+    return 'left'
   }
 
   // The page that asked may have navigated away, or closed, during this
   // staged sequence of dialogs -- whatever `acceptedRaw` says, skip both
   // recording and granting: a person who is not there to answer has not
   // declined anything, and a later, genuine visit still asks in full.
-  if (caller !== undefined && !caller.stillOn(origin)) return
+  if (caller !== undefined && !caller.stillOn(origin)) return 'left'
 
   const accepted = outstanding.filter((capability) => acceptedRaw.includes(capability))
   const refused = outstanding.filter((capability) => !accepted.includes(capability))
@@ -267,4 +278,5 @@ async function runPerCapabilityConsent (
   // "no" nobody actually chose.
   await recordDeclined(broker, origin, declined, refused)
   if (accepted.length > 0) await grantChangedCapabilities(broker, origin, manifest, accepted)
+  return accepted.length > 0 ? 'granted' : 'declined'
 }

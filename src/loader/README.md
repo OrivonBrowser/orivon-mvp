@@ -65,7 +65,9 @@ most every 5 minutes per origin on a visit, whatever the hourly record says.
 preimage puts the content's length before the content, and a declared `Content-Length` is
 advisory.
 
-**The site's published hash tree is carried, never judged**
-([`ADR-0029`](../../docs/decisions/ADR-0029-sites-publish-their-bundle-hash-tree.md)
-section Consequences). Nothing here reads it to decide anything: a 404, an unreadable file and a
-mismatch all install as they would without it.
+**The site's published hash tree is carried by the loader and judged by its caller**
+([`ADR-0029`](../../docs/decisions/ADR-0029-sites-publish-their-bundle-hash-tree.md),
+[`ADR-0074`](../../docs/decisions/ADR-0074-a-published-app-is-asked-about-and-checked-before-its-page-is-entered.md)).
+Nothing here reads it to decide anything: `load()` installs as it would without it, and a 404, an unreadable file and a mismatch all pass. A
+first visit uses `readManifest` (the manifest alone) and `fetchForInstall` (every file, staged, nothing pinned) instead, and
+`src/main/install/first-visit.ts` compares the tree with the declaration before `installFetched`.
