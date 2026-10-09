@@ -13,6 +13,7 @@ import { applyInstallConsent, askInstallConsent } from '../consent/install-conse
 import type { InstallAsk } from '../consent/install-consent-ask.js'
 import type { InstallConsentPrompt, PerCapabilityConsentPrompt } from '../consent/install-consent.js'
 import type { DialogCaller } from '../consent/request-grant.js'
+import type { CapabilityPromptPrompt } from '../consent/update-outcomes.js'
 import type { DeclinedApps } from './declined-apps.js'
 import { judgeBundle, visitKind } from './first-visit-decisions.js'
 import { outsideOriginQueue, withOriginQueue } from './origin-queue.js'
@@ -38,6 +39,8 @@ export interface FirstVisitDeps {
    * nothing of the app runs any more; `dismissed` once the person has read the sheet.
    */
   readonly blocked?: ((origin: string, sheet: SetupSheet, entered: object | undefined) => Blocking) | undefined
+  /** The question a pinned app's update asks when it wants more than it holds, asked of a new version of an app that is not yet pinned; "keep the current version" is a no. Without it a widened version is never followed. */
+  readonly capabilityPrompt?: CapabilityPromptPrompt | undefined
   /** Who to ask, in which tab, when a new version of an app asks for more than it was granted. */
   readonly askerFor?: ((origin: string) => DialogCaller | undefined) | undefined
   /** How long after a tab is let in the background download waits, so it begins once the first page is up. */

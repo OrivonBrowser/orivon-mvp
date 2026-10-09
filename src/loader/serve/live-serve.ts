@@ -117,6 +117,8 @@ export function createLiveRequestHandler (deps: LiveServeDeps): AppRequestHandle
   let served = false
   let looking: Promise<LiveVersion | undefined> | undefined
   const adopting = new Map<LiveVersion, Promise<void>>()
+  /** Versions the person was asked about and kept the current one: never served, never asked about again. */
+  const declined = new Set<LiveVersion>()
 
   const block = (found: BadData): Response => {
     if (!ended) {
@@ -145,6 +147,18 @@ export function createLiveRequestHandler (deps: LiveServeDeps): AppRequestHandle
       adopting.set(next, doing)
     }
     await doing
+  }
+
+  /** Whether `next` is served from now on: it is not when the person kept the current version, which is then a failed load, never bad data. */
+  const follow = async (next: LiveVersion): Promise<boolean> => {
+    if (declined.has(next)) return false
+    try {
+      await adopt(next)
+      return true
+    } catch {
+      declined.add(next)
+      return false
+    }
   }
 
   /** The headers a pinned response carries, with the file's type taken from its path, never from the host. */
@@ -244,7 +258,7 @@ export function createLiveRequestHandler (deps: LiveServeDeps): AppRequestHandle
       const next = await current()
       const nextState = next === undefined ? undefined : derive(origin, next)
       if (next === undefined || nextState === undefined || nextState.leaves.get(path) !== found || !nextState.files.assets.some((asset) => asset.path === path)) return block({ differing: [path] })
-      await adopt(next)
+      if (!await follow(next)) return failedLoad()
       return await answered(request, path, next.manifest, chunks, total)
     } finally {
       held.give(reserved)
@@ -270,8 +284,7 @@ export function createLiveRequestHandler (deps: LiveServeDeps): AppRequestHandle
         // The name leads to another root than the one this version was read from: the app's next version, if it can be read.
         void upstream.body?.cancel().catch(() => {})
         const next = version !== started ? version : await current()
-        if (next === undefined) return failedLoad()
-        await adopt(next)
+        if (next === undefined || !await follow(next)) return failedLoad()
         return await retry()
       }
     }

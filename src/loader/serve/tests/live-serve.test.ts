@@ -203,6 +203,34 @@ describe('the handler an app runs on before its files are pinned', () => {
       expect(adopt).toHaveBeenCalledTimes(1)
     })
 
+    it('waits for the question about a version that asks for more, and never serves it before the answer', async () => {
+      let answer = (_kept: boolean): void => {}
+      const adopt = vi.fn(async () => await new Promise<void>((resolve, reject) => { answer = (kept) => { if (kept) resolve(); else reject(new Error('kept the current version')) } }))
+      const next = { manifest: manifestOf(), declaration: { bundleHash: `sha256:${'e'.repeat(64)}`, leaves: (await declared()).leaves }, content: NEXT }
+      const used = verifier((url, seen) => seen.headers[CONTENT_ROOT_HEADER] === CID ? new Response('moved', { status: 409 }) : undefined)
+      const { handle, badData } = await handlerOver({ fresh: async () => next, adopt }, used)
+      let settled = false
+      const pending = handle('/app.js').then((response) => { settled = true; return response })
+      await vi.waitFor(() => { expect(adopt).toHaveBeenCalledTimes(1) })
+      await new Promise((resolve) => setTimeout(resolve, 30))
+      expect(settled).toBe(false)
+      expect(used.seen.every((entry) => entry.headers[CONTENT_ROOT_HEADER] === CID)).toBe(true)
+      answer(true)
+      expect((await pending).status).toBe(200)
+      expect(badData).not.toHaveBeenCalled()
+    })
+
+    it('is a failed load, not bad data, when the person keeps the current version, and the question is not asked again', async () => {
+      const adopt = vi.fn(async () => { throw new Error('kept the current version') })
+      const next = { manifest: manifestOf(), declaration: { bundleHash: `sha256:${'e'.repeat(64)}`, leaves: (await declared()).leaves }, content: NEXT }
+      const used = verifier((url, seen) => seen.headers[CONTENT_ROOT_HEADER] === CID ? new Response('moved', { status: 409 }) : undefined)
+      const { handle, badData } = await handlerOver({ fresh: async () => next, adopt }, used)
+      expect((await handle('/app.js')).type).toBe('error')
+      expect((await handle('/index.html')).type).toBe('error')
+      expect(adopt).toHaveBeenCalledTimes(1)
+      expect(badData).not.toHaveBeenCalled()
+    })
+
     it('is a failed load, and nothing is forgotten, when the current version cannot be read: the next request asks again', async () => {
       const { handle, badData, fresh } = await movedTo({ fresh: vi.fn(async () => undefined) })
       expect((await handle('/app.js')).type).toBe('error')
@@ -384,6 +412,17 @@ describe('the handler an app on an ordinary site runs on before its files are pi
       expect(badData).not.toHaveBeenCalled()
       expect((await handle('/app.js')).status).toBe(200)
       expect(adopt).toHaveBeenCalledTimes(1)
+    })
+
+    it('are a failed load, not bad data, when they are a version the person kept the current one over', async () => {
+      const next = await newVersion()
+      const adopt = vi.fn(async () => { throw new Error('kept the current version') })
+      const used = host((url) => url.endsWith('/app.js') ? new Response(NEW_APP_JS, { status: 200 }) : undefined)
+      const handler = await networkHandler({ fresh: async () => next, adopt }, used)
+      expect((await handler.handle('/app.js')).type).toBe('error')
+      expect((await handler.handle('/app.js')).type).toBe('error')
+      expect(adopt).toHaveBeenCalledTimes(1)
+      expect(handler.badData).not.toHaveBeenCalled()
     })
 
     it('are bad data when the current tree does not name them, however new it is', async () => {

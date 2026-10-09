@@ -41,6 +41,9 @@ interface Harness {
   readonly consent: ReturnType<typeof vi.fn<InstallConsentPrompt>>
   readonly declined: DeclinedApps
   readonly blocked: ReturnType<typeof vi.fn<NonNullable<FirstVisitDeps['blocked']>>>
+  readonly capabilityPrompt: ReturnType<typeof vi.fn<NonNullable<FirstVisitDeps['capabilityPrompt']>>>
+  /** What the capability question answers; a function holds the question open until it resolves. */
+  answerWidening: { current: boolean | (() => Promise<boolean>) }
   /** What the loader was told to call when a served file turns out bad. */
   /** What the loader was handed to be told by. */
   readonly hooks: () => LiveHooks | undefined
@@ -112,8 +115,10 @@ function harness (options: {
     })
   }
   const consent = vi.fn<InstallConsentPrompt>(async () => { events.push('ask'); await noteGrants('ask'); return options.answer ?? true })
+  const answerWidening: Harness['answerWidening'] = { current: true }
+  const capabilityPrompt = vi.fn<NonNullable<FirstVisitDeps['capabilityPrompt']>>(async () => { events.push('widening-question'); return typeof answerWidening.current === 'function' ? await answerWidening.current() : answerWidening.current })
   const blocked = vi.fn<NonNullable<FirstVisitDeps['blocked']>>(() => { events.push('blocked-tabs'); return { emptied: Promise.resolve(), dismissed: Promise.resolve() } })
-  return { origin, url: `${origin}/`, broker, events, host, loader, consent, declined: new DeclinedApps(), blocked, hooks: () => handed, badData: () => handed?.onBadData, grantsAt }
+  return { origin, url: `${origin}/`, broker, events, host, loader, consent, declined: new DeclinedApps(), blocked, capabilityPrompt, answerWidening, hooks: () => handed, badData: () => handed?.onBadData, grantsAt }
 }
 
 const TAB = { id: 'the-tab' }
@@ -121,7 +126,7 @@ const TAB = { id: 'the-tab' }
 const present: DialogCaller = { window: () => undefined, stillOn: () => true }
 
 function depsOf (h: Harness): FirstVisitDeps {
-  return { broker: h.broker, loader: h.loader as Loader, consent: h.consent, declined: h.declined, blocked: h.blocked, backgroundDelayMs: 0 }
+  return { broker: h.broker, loader: h.loader as Loader, consent: h.consent, declined: h.declined, blocked: h.blocked, capabilityPrompt: h.capabilityPrompt, backgroundDelayMs: 0 }
 }
 
 async function run (h: Harness, caller: DialogCaller | undefined = present, signal?: AbortSignal, backgroundDelayMs = 0): ReturnType<typeof runFirstVisit> {
@@ -510,7 +515,7 @@ describe('an app that was allowed and is not yet pinned', () => {
       return harness({ reads: [readOf(VERIFIED), next], declarations: [DECLARED, { kind: 'declared', declaration: NEXT_TREE }], ...extra })
     }
 
-    const asNext = async (h: Harness): Promise<Awaited<ReturnType<NonNullable<LiveHooks['fresh']>>>> => await h.hooks()?.fresh?.({ manifest: MANIFEST, declaration: DECLARED.declaration, content: undefined })
+    const asNext = async (h: Harness, served: Manifest = MANIFEST): Promise<Awaited<ReturnType<NonNullable<LiveHooks['fresh']>>>> => await h.hooks()?.fresh?.({ manifest: served, declaration: DECLARED.declaration, content: undefined })
 
     it('is followed, not blocked: the live check and the download move to it, no grant or registration is lost, no warning is shown', async () => {
       const h = moving(undefined, { bundles: [bundle(VERIFIED, { content: NEXT_CONTENT, declaration: NEXT_TREE, tree: { root: NEXT_TREE.bundleHash, assets: [{ path: '/index.html', leaf: leaf('m') }] } })] })
@@ -547,36 +552,80 @@ describe('an app that was allowed and is not yet pinned', () => {
       }
     })
 
-    it('asks for what it declares beyond what is held, with the existing question, and for nothing else', async () => {
+    /** The manifest the person allowed, then a new version that widens it in one way; what the first holds is granted. */
+    const widenings: Array<{ name: string, before: Manifest, after: Manifest, grants: string[] }> = [
+      { name: 'a new capability kind', before: MANIFEST, after: WIDER, grants: ['fs'] },
+      { name: 'a wider pattern inside a kind that is held', before: { ...MANIFEST, capabilities: { net: { tcp: { connect: ['a.example:443'] } } } }, after: { ...MANIFEST, version: '1.1.0', capabilities: { net: { tcp: { connect: ['*:*'] } } } }, grants: ['tcp.connect'] },
+      { name: 'more concurrent sockets', before: { ...MANIFEST, capabilities: { net: { tcp: { connect: ['a.example:443'] }, concurrentSockets: 4 } } }, after: { ...MANIFEST, version: '1.1.0', capabilities: { net: { tcp: { connect: ['a.example:443'] }, concurrentSockets: 64 } } }, grants: ['tcp.connect'] },
+      { name: 'a bigger storage quota', before: { ...MANIFEST, capabilities: { fs: { quotaBytes: 1024 } } }, after: { ...MANIFEST, version: '1.1.0', capabilities: { fs: { quotaBytes: 1_048_576 } } }, grants: ['fs'] },
+      { name: 'more identity curves', before: { ...MANIFEST, capabilities: { id: { curves: ['secp256k1'] } } }, after: { ...MANIFEST, version: '1.1.0', capabilities: { id: { curves: ['secp256k1', 'ed25519'] } } }, grants: ['id'] }
+    ]
+
+    for (const widening of widenings) {
+      it(`keeps serving the allowed version, registers nothing, until the person answers the question, for ${widening.name}`, async () => {
+        const h = harness({ reads: [{ ...readOf(VERIFIED), manifest: widening.before } as FirstManifest, nextRead(widening.after)], declarations: [DECLARED, { kind: 'declared', declaration: NEXT_TREE }] })
+        let answer = (_value: boolean): void => {}
+        h.answerWidening.current = async () => await new Promise<boolean>((resolve) => { answer = resolve })
+        const result = await run(h, present, undefined, LATE)
+        const next = await asNext(h, widening.before)
+        const adopting = h.hooks()?.adopt?.(next as NonNullable<typeof next>)
+        await vi.waitFor(() => { expect(h.capabilityPrompt).toHaveBeenCalledTimes(1) })
+        // The question is open: the new manifest is not registered, the consent is not kept for it, nothing is granted.
+        expect((await h.broker.app.manifest(h.origin)).version).toBe(widening.before.version)
+        expect(vi.mocked(h.loader.rememberConsent).mock.calls.every((call) => call[1] === DECLARED.declaration)).toBe(true)
+        expect(h.capabilityPrompt.mock.calls[0]?.[1]).toBe(widening.after)
+        answer(true)
+        await adopting
+        expect((await h.broker.app.manifest(h.origin)).version).toBe(widening.after.version)
+        expect(vi.mocked(h.loader.rememberConsent).mock.calls.at(-1)?.[1]).toBe(NEXT_TREE)
+        h.hooks()?.onBadData({ differing: [] })
+        await settled(result)
+      })
+
+      it(`stays on the allowed version, and does not ask again, when the person declines, for ${widening.name}`, async () => {
+        const h = harness({ reads: [{ ...readOf(VERIFIED), manifest: widening.before } as FirstManifest, nextRead(widening.after)], declarations: [DECLARED, { kind: 'declared', declaration: NEXT_TREE }] })
+        h.answerWidening.current = false
+        const result = await run(h, present, undefined, LATE)
+        const next = await asNext(h, widening.before)
+        await expect(h.hooks()?.adopt?.(next as NonNullable<typeof next>)).rejects.toThrow(/kept the current version/)
+        await expect(h.hooks()?.adopt?.(next as NonNullable<typeof next>)).rejects.toThrow(/kept the current version/)
+        expect(h.capabilityPrompt).toHaveBeenCalledTimes(1)
+        expect((await h.broker.app.manifest(h.origin)).version).toBe(widening.before.version)
+        expect(h.blocked).not.toHaveBeenCalled()
+        expect(h.loader.endLive).not.toHaveBeenCalled()
+        expect(await grantsOf(h)).toEqual(expect.arrayContaining(widening.grants))
+        h.hooks()?.onBadData({ differing: [] })
+        await settled(result)
+      })
+    }
+
+    it('grants what the person accepted of a widened version, and asks nothing for a version that widens nothing', async () => {
       const wider = moving(nextRead(WIDER))
       const result = await run(wider, present, undefined, LATE)
       const next = await asNext(wider)
       await wider.hooks()?.adopt?.(next as NonNullable<typeof next>)
-      await vi.waitFor(() => { expect(wider.consent).toHaveBeenCalledTimes(2) })
-      await vi.waitFor(async () => { expect(await grantsOf(wider)).toContain('tcp.connect') })
-      expect(await grantsOf(wider)).toContain('fs')
+      expect(wider.capabilityPrompt).toHaveBeenCalledTimes(1)
+      expect(await grantsOf(wider)).toEqual(expect.arrayContaining(['fs', 'tcp.connect']))
       wider.hooks()?.onBadData({ differing: [] })
       await settled(result)
 
       const same = moving()
       const second = await run(same, present, undefined, LATE)
       await same.hooks()?.adopt?.((await asNext(same)) as NonNullable<Awaited<ReturnType<typeof asNext>>>)
-      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(same.capabilityPrompt).not.toHaveBeenCalled()
       expect(same.consent).toHaveBeenCalledTimes(1)
       same.hooks()?.onBadData({ differing: [] })
       await settled(second)
     })
 
-    it('keeps what is held when the person declines the extra, and asks no more', async () => {
-      const h = moving(nextRead(WIDER))
-      const result = await run(h, present, undefined, LATE)
-      h.consent.mockImplementation(async () => { h.events.push('ask'); return false })
-      await h.hooks()?.adopt?.((await asNext(h)) as NonNullable<Awaited<ReturnType<typeof asNext>>>)
-      await vi.waitFor(() => { expect(h.consent).toHaveBeenCalledTimes(2) })
-      expect(await grantsOf(h)).toEqual(['fs'])
-      expect(h.broker.app.isRegisteredSync(h.origin)).toBe(true)
+    it('treats a widened version as declined when no question is wired, rather than registering it unasked', async () => {
+      const h = harness({ reads: [readOf(VERIFIED), nextRead(WIDER)], declarations: [DECLARED, { kind: 'declared', declaration: NEXT_TREE }] })
+      const result = await runFirstVisit({ ...depsOf(h), capabilityPrompt: undefined, backgroundDelayMs: LATE }, h.origin, h.url, present, h.host)
+      const next = await asNext(h)
+      await expect(h.hooks()?.adopt?.(next as NonNullable<typeof next>)).rejects.toThrow()
+      expect((await h.broker.app.manifest(h.origin)).version).toBe('1.0.0')
       h.hooks()?.onBadData({ differing: [] })
-      await settled(result)
+      if (result.outcome === 'entered') await result.background
     })
 
     it('is found by the download when the name moved under it, and pinned instead of the one that was allowed', async () => {

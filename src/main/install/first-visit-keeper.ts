@@ -5,7 +5,10 @@
 
 import type { FirstManifestApp } from '../../loader/index.js'
 import type { BadData, LiveHooks, LiveVersion } from '../../loader/serve/live-serve.js'
-import { applyInstallConsent, askInstallConsent } from '../consent/install-consent-ask.js'
+import type { CapabilityKind } from '../../contracts/index.js'
+import { decideUpdate, patternSetFromGrants } from '../../broker/policy/update.js'
+import { patternSetFromCapabilities, widensInvisibleLimits, withoutSwitchedOffCapabilities } from '../../broker/policy/manifest-patterns.js'
+import { grantChangedCapabilities } from '../consent/grant-changed-capabilities.js'
 import type { BackgroundOutcome, FirstVisitDeps, SetupSheet } from './first-visit.js'
 import { judgeBundle } from './first-visit-decisions.js'
 import { revokeAllGrants } from './revoke-all-grants.js'
@@ -47,6 +50,9 @@ export const heldOf = (read: FirstManifestApp, declaration: Entry['declaration']
 
 /** Two versions are the same when they name the same root, the same manifest and the same tree. */
 const versionKey = (version: LiveVersion): string => JSON.stringify([version.content, version.manifest, version.declaration?.bundleHash])
+
+/** `decideUpdate` is asked about authority alone: the bundle is taken as the same, so only widening decides. */
+const SAME_BUNDLE = 'sha256:0'
 
 /** How many times one download looks again for the version that is current before it gives up until the next visit. */
 const MAX_REFRESHES = 3
@@ -109,29 +115,74 @@ export function createKeeper (deps: FirstVisitDeps, origin: string, hintedUrl: s
     }
   }
 
-  /** A person who was asked about an app is asked only about what its new version declares beyond what they hold. */
-  const askForMore = async (held: Held): Promise<void> => {
-    const ask = await askInstallConsent(deps.broker, deps.consent, origin, held.read.manifest, deps.perCapabilityConsent, deps.askerFor?.(origin))
-    await applyInstallConsent(deps.broker, origin, held.read.manifest, ask)
+  /**
+   * Whether a new version may be served without asking: it declares nothing beyond what is held. The same decision a pinned
+   * app's update takes (`decideUpdate`'s widening check, plus the three limits it cannot see), made before anything of the
+   * new version is registered. `'refuse'` is a version older than the floor, which is no update.
+   */
+  const needsQuestion = async (next: Held): Promise<'none' | 'ask' | 'refuse'> => {
+    const manifest = next.read.manifest
+    const held = patternSetFromGrants(await deps.broker.app.grants(origin))
+    const declared = withoutSwitchedOffCapabilities(patternSetFromCapabilities(manifest.capabilities), held, await deps.broker.declinedCapabilitiesFor(origin))
+    const decision = decideUpdate({
+      pinnedHash: SAME_BUNDLE,
+      newHash: SAME_BUNDLE,
+      grantedPatterns: held,
+      newPatterns: declared,
+      version: manifest.version,
+      versionFloor: await deps.broker.versionFloorFor(origin),
+      rollbackAcknowledged: false,
+      previouslyDeclaredPatterns: patternSetFromCapabilities(current.read.manifest.capabilities)
+    })
+    if (decision === 'rollback-choice') return 'refuse'
+    return decision === 'capability-prompt' || widensInvisibleLimits(current.read.manifest.capabilities, manifest.capabilities) ? 'ask' : 'none'
   }
 
-  /** The app follows its URL to a new version: the manifest is registered, the consent kept for it, the download retargeted. No warning, nothing forgotten. */
-  const switchTo = async (next: Held): Promise<void> => {
-    if (current === next) return
-    current = next
-    known.set(versionKey(next.live), next)
-    console.log(`[orivon] ${origin} has a new version; it is followed`)
-    await deps.broker.registerApp(origin, next.read.manifest).catch((error: unknown) => { console.error('[first-visit] a new version could not be registered', origin, error) })
-    await deps.loader.rememberConsent(next.read, next.declaration).catch((error: unknown) => { console.error('[first-visit] the consent could not be kept for a new version', origin, error) })
-    // Asked beside the app running, never in front of it.
-    void askForMore(next).catch((error: unknown) => { console.error('[first-visit] the question about a new version failed', origin, error) })
+  /** What the person is asked when a new version declares more: the question a pinned app's update asks, with its answer "keep the current version". */
+  const askWidening = async (next: Held): Promise<boolean> => {
+    if (deps.capabilityPrompt === undefined) return false
+    try {
+      return await deps.capabilityPrompt(origin, next.read.manifest, patternSetFromCapabilities(next.read.manifest.capabilities), deps.askerFor?.(origin))
+    } catch (error) {
+      console.error('[first-visit] the question about a new version threw; the current version is kept', origin, error)
+      return false
+    }
+  }
+
+  const considering = new Map<string, Promise<boolean>>()
+
+  /**
+   * The app follows its URL to a new version, unless that asks for more than is held and the person says keep the current
+   * one. Nothing of the new version is registered or granted before they answer; the answer is asked once. On yes the
+   * manifest is registered, what it declares is granted, the consent is kept for it and the download retargeted.
+   */
+  const consider = async (next: Held): Promise<boolean> => {
+    if (current === next) return true
+    const key = versionKey(next.live)
+    let settled = considering.get(key)
+    if (settled === undefined) {
+      settled = (async () => {
+        const need = await needsQuestion(next)
+        if (need === 'refuse' || (need === 'ask' && !await askWidening(next))) return false
+        current = next
+        console.log(`[orivon] ${origin} has a new version; it is followed`)
+        await deps.broker.registerApp(origin, next.read.manifest).catch((error: unknown) => { console.error('[first-visit] a new version could not be registered', origin, error) })
+        if (need === 'ask') {
+          // The whole declared set was shown and accepted, so an earlier no is stale (as for a pinned update).
+          await deps.broker.clearDeclinedConsent(origin)
+          await grantChangedCapabilities(deps.broker, origin, next.read.manifest, Object.keys(patternSetFromCapabilities(next.read.manifest.capabilities)) as readonly CapabilityKind[])
+        }
+        await deps.loader.rememberConsent(next.read, next.declaration).catch((error: unknown) => { console.error('[first-visit] the consent could not be kept for a new version', origin, error) })
+        return true
+      })()
+      considering.set(key, settled)
+    }
+    return await settled
   }
 
   const refresh = async (): Promise<boolean> => {
     const next = await readCurrent(current)
-    if (next === undefined) return false
-    await switchTo(next)
-    return true
+    return next !== undefined && await consider(next)
   }
 
   const run = async (): Promise<BackgroundOutcome> => {
@@ -196,7 +247,7 @@ export function createKeeper (deps: FirstVisitDeps, origin: string, hintedUrl: s
       },
       adopt: async (version) => {
         const held = known.get(versionKey(version))
-        if (held !== undefined) await switchTo(held)
+        if (held !== undefined && !await consider(held)) throw new Error(`${name}: the person kept the current version, which is no longer served`)
       },
       onServed: () => {}
     },
