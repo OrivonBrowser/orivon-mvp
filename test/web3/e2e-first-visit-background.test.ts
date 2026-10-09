@@ -60,6 +60,7 @@ it('[app:first-visit-pins-in-the-background] [app:first-visit-background-mismatc
       const warning = await waitSheet(running)
       check(`a security warning is shown (${warning.text.title})`, /security warning/i.test(warning.text.title))
       check(`it names the file that differs (${JSON.stringify(warning.text.files)})`, warning.text.files.includes('/later.js'))
+      check('its first page was let in and parsed before the block', (await pageLog(running)).some((line) => line.startsWith('dom-ready') && line.includes(lateRoot)))
       check('nothing was pinned', !existsSync(pinPath(userData, lateOrigin)))
       check(`no grant is left (${JSON.stringify(savedGrants(userData, lateOrigin))})`, savedGrants(userData, lateOrigin).length === 0)
       await pressSheet(warning.page, 'Go back')

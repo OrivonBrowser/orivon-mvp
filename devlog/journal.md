@@ -83,6 +83,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Live sessions: agents here drive Orivon step by step on real Windows, macOS and Linux runners through a token-guarded Cloudflare tunnel.
 - A published app now asks before any file downloads, then checks its files against the site's declared tree before it opens; mismatches lose every grant.
 - Ledger Wallet adds accounts, verifies an address and signs a transaction on an emulated Nano X through Orivon's WebHID.
+- A published app now opens the moment you allow it; each file is checked against its declared tree as it loads, the rest pins in the background.
 
 ### In my head
 
