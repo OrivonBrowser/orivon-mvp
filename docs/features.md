@@ -21,7 +21,7 @@ rely on, row by row. A new feature adds its line here when it lands.
 - **Identity seed and `orivon.secrets`**: a seed kept in the OS keyring and an app's own origin-bound encrypted secret.
 - **Links to an app**: a link of a scheme an app lists in its manifest (`magnet:`) opens in the app the person chooses, with the choice remembered per scheme and listed in Settings, and the app's page receives the link.
 - **Developer mode**: load an unpacked app from a folder.
-- **A published app asks first, opens at once and is checked as it loads**: an `ipfs://`, `ipns://` or `.eth` app asks what it may do before any of its files is fetched, then opens as soon as you allow it. Each file it loads is checked against the hash tree its site declares before the page receives it; one that differs is never delivered, every permission is removed and a security warning is shown. The rest of the app is downloaded and pinned in the background, and Deny opens a plain website.
+- **A published app asks first, opens at once and is checked as it loads**: an `ipfs://`, `ipns://`, `.eth` or https app asks what it may do before any of its files is fetched, then opens as soon as you allow it. Each file it loads is checked against the hash tree its site declares before the page receives it; one that differs is never delivered, every permission is removed and a security warning is shown. The rest of the app is downloaded and pinned in the background, and Deny opens a plain website.
 - **App updates at a name**: an installed app keeps its version until the person accepts a newer one.
 - **Files as apps**: a local HTML, SVG or PDF file opens in a tab, and a file that links a manifest asks once per run.
 

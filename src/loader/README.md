@@ -78,4 +78,4 @@ background, `fetchForInstall` (every file, staged, nothing pinned); `src/main/in
 (its entry, its `assets` and the manifest) as the set a page may reach, answers anything else `404`, and asks the verifier for the rest naming the leaf the
 declared tree gives each (`EXPECT_LEAF_HEADER`) and the root the manifest came from. It sends the headers a pinned response carries
 (`serve/asset.ts`'s `policyHeaders`). A `ddoc-mismatch` or `unverifiable` answer, or a listed file the tree has no leaf for, fails the request, is reported
-once through `onBadData`, and ends everything it would serve.
+once through `onBadData`, and ends everything it would serve. For an app on an ordinary site it is also the check: it fetches the file itself (`fetchNetwork`, the loader's own guarded fetch, never through the handler), holds it whole, hashes it, and delivers those bytes. `pending-consent.ts` is what is kept of an allowed, not yet pinned app across a restart.
