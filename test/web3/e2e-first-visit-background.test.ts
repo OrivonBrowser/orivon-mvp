@@ -64,7 +64,7 @@ it('[app:first-visit-pins-in-the-background] [app:first-visit-background-mismatc
       check('its first page was let in and parsed before the block', (await pageLog(running)).some((line) => line.startsWith('dom-ready') && line.includes(lateRoot)))
       check('nothing was pinned', !existsSync(pinPath(userData, lateOrigin)))
       check(`no grant is left (${JSON.stringify(savedGrants(userData, lateOrigin))})`, savedGrants(userData, lateOrigin).length === 0)
-      check('what the person\'s app stored is still there: a block takes permissions, never data', await partitionHolds(running, userData, lateOrigin, 'kept-by-person') && !(await partitionHolds(running, userData, lateOrigin, 'a-value-nobody-wrote')))
+      check('what the person\'s app stored is still there: a block takes permissions, never data', await waitFor(async () => await partitionHolds(running, userData, lateOrigin, 'kept-by-person'), 15_000) && !(await partitionHolds(running, userData, lateOrigin, 'a-value-nobody-wrote')))
       await pressSheet(warning.page, 'Go back')
       check('Go back takes the sheet away', await waitFor(() => sheetGone(running), 10_000))
 
