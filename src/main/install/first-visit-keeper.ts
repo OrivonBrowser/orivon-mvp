@@ -46,6 +46,8 @@ export interface Keeper {
   landed: () => boolean
   /** The caching ended in bad data, or the app was taken away: nothing more is to be done with this visit. */
   stopped: () => boolean
+  /** Aborts when the app is blocked or the visit ends: a question still open about it is withdrawn. */
+  readonly signal: AbortSignal
   /** Bad data found before anything was asked of the tree: stops the page and shows the warning. */
   block: (found: BadData) => Promise<void>
   /** The answer is no, or the tab left: stops the caching and discards what was staged. */
@@ -326,6 +328,7 @@ export function createKeeper (deps: FirstVisitDeps, origin: string, hintedUrl: s
     cache,
     landed: () => precached,
     stopped: () => ended,
+    signal: stopped.signal,
     block,
     cancel,
     start

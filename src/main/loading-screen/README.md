@@ -27,8 +27,8 @@ and `destroyed`. The rule it applies, and the overlay's validation, need nothing
 
 ## Design notes
 
-**A first visit to an app words the cover itself.** `{ url, text: { title, detail, busy } }` is shown as given, for an address no protocol has a
-screen for, and `claim.ts` keeps the protocol's own screen off that tab while the visit runs ([`../app-setup/`](../app-setup/README.md)).
+**A first visit's sheet words the cover under it.** `{ url, text: { title, detail, busy } }` is shown as given, for an address no protocol has a
+screen for, and `claim.ts` keeps the protocol's own screen off that tab while the sheet is up ([`../app-setup/`](../app-setup/README.md)).
 
 **The screen waits 300 ms.** A load that finishes sooner (a cached site, a reload) never flashes it. The wait
 restarts when a newer navigation to a screened address begins before the screen is up; once it is up, a newer

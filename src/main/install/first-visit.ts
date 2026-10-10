@@ -134,7 +134,7 @@ export async function runFirstVisit (deps: FirstVisitDeps, hintingOrigin: string
   })
   let entered = false
   try {
-    const ask = await askInstallConsent(deps.broker, deps.consent, origin, read.manifest, deps.perCapabilityConsent, caller)
+    const ask = await askInstallConsent(deps.broker, deps.consent, origin, read.manifest, deps.perCapabilityConsent, caller === undefined ? undefined : { ...caller, signal: keeper.signal })
     if (keeper.stopped()) return left()
     if (ask.outcome === 'left' || gone()) return left()
     if (ask.outcome === 'denied') {

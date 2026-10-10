@@ -19,7 +19,7 @@ const files = (name: string, id: string): Record<string, string> => ({
   'index.html': `<!doctype html><meta charset="utf-8"><title>${name}</title><link rel="orivon-manifest" href="/.well-known/orivon.json"><body>${name}<script src="app.js"></script></body>`,
   'app.js': 'document.body.dataset.app = "ran"',
   // Listed by the manifest and never loaded by the first page: only caching asks for it.
-  'later.js': 'document.title = "never loaded"',
+  'later.js': `document.title = "never loaded by ${id}"`,
   '.well-known/orivon.json': JSON.stringify({ orivonApiVersion: 0, id, name, version: '1.0.0', entry: 'index.html', assets: ['app.js', 'later.js'], capabilities: { fs: { quotaBytes: 1_048_576 } } })
 })
 

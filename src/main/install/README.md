@@ -41,17 +41,17 @@ constructs its own `Broker` or `Loader`: read `ctx.broker`/`ctx.loader` from `re
 ## Design notes
 
 **[`first-visit.ts`](first-visit.ts) is the order of a first visit, and [`app-install.ts`](app-install.ts) is every visit after it
-(`ADR-0075`).** An origin Orivon has never held (no registration, pin or saved version, and not refused) is asked about as soon as its
-manifest is read, with the tree its site declares read beside the question; on Allow it is served, registered, granted and entered at once, and
-its whole bundle is downloaded, judged against the declared tree and pinned afterwards in the background (`letIn`). The loader's `readManifest`,
-`readDeclaration` and `serveLive` are the reads and the serving, `fetchForInstall` and `installFetched` the background install. Bad data from
-anywhere (a served file, the background download) takes the origin away whole through one function, once: the tabs are covered
-(`../app-setup/block-tabs.ts`), `Broker.forgetOrigin` removes the grants, the registration and the version floor, and the handler goes. While the
-background download runs the origin reads as `settling` and holds its queue, so a page's own hint installs nothing beside it. What was allowed is kept (`rememberConsent`) until the pin lands: `resume` serves it again at start, checked, and a name or site that has moved is followed to its current version (`first-visit-keeper.ts`'s `fresh` and `switchTo`), never blocked.
+(`ADR-0076`, on `ADR-0075`).** An origin Orivon has never held (no registration, pin or saved version, and not refused) loads at once as an ordinary
+website while it is asked about as soon as its manifest is read, and the app is cached beside the question (`first-visit-keeper.ts`: every file
+downloaded and judged against the tree its site declares, nothing granted or pinned before the answer). On Allow it is served, registered, granted and the
+tab loads the address again as the app (`letIn`), the staged files are pinned (or, when the caching has not finished, the pin follows the live serving), and Deny
+or a pressed Escape drops what was cached. The loader's `readManifest`, `readDeclaration` and `serveLive` are the reads and the serving, `fetchForInstall` and
+`installFetched` the caching and the pin. Bad data from anywhere (a served file, the caching) takes the origin away whole through one function, once: before
+the answer it stops the page and withdraws the question, after it the grants, the registration and the version floor go too (`Broker.forgetOrigin`); the tabs
+are covered (`../app-setup/block-tabs.ts`) and the storage is kept. While the pin is made the origin reads as `settling` and holds its queue, so a page's own hint installs nothing beside it. What was allowed is kept (`rememberConsent`) until the pin lands: `resume` serves it again at start, checked, and a name or site that has moved is followed to its current version (`first-visit-keeper.ts`'s `fresh` and `switchTo`), never blocked.
 `installFromHint` keeps the update, re-consent and rollback paths of an app Orivon already holds. A first visit that began from a page's hint
-(`hint-host.ts`, the `https` apps, and the fallback for a first page that could not be held) runs after the page's scripts have run up to
-`DOMContentLoaded`: it stops the page when it has read an app's manifest, and enters through the address bar's own path. The verifier-served
-origins are held earlier, in [`../app-setup/`](../app-setup/README.md), so nothing runs. A refused origin (`visitKind` `declined`, the record in
+(`hint-host.ts`, the `https` apps) runs after the page has loaded, the same way: the page keeps running as the website it is, and Allow loads the address
+again as the app. A verifier-served origin's visit starts from its first request, in [`../app-setup/`](../app-setup/README.md). A refused origin (`visitKind` `declined`, the record in
 `declined-apps.ts`, written by a pressed Deny only) is ignored by the hint listener. Nothing is granted before the answer is yes
 (`../consent/install-consent-ask.ts`); `revoke-all-grants.ts` takes back what an earlier version left to a blocked origin.
 

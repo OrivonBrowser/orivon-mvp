@@ -1,6 +1,6 @@
 # ADR-0075: A published app is let in as soon as it is allowed, and each file is checked as it is served
 
-- **Status:** accepted. Supersedes [`ADR-0074`](ADR-0074-a-published-app-is-asked-about-and-checked-before-its-page-is-entered.md)'s D2 to D4 (the download and check before entry, and the retry sheet that download needed); D1 and D5 stand. Amends [`ADR-0018`](ADR-0018-isolation-follows-consent.md) (a consented app's tab is in its own partition from its first entry, served from the verifier until its pin lands) and [`ADR-0029`](ADR-0029-sites-publish-their-bundle-hash-tree.md) (the declared tree is checked per file, as the file arrives).
+- **Status:** accepted. Supersedes [`ADR-0074`](ADR-0074-a-published-app-is-asked-about-and-checked-before-its-page-is-entered.md)'s D2 to D4 (the download and check before entry, and the retry sheet that download needed); D1 and D5 stand. Item 7's hold of the first navigation and the hint path's blank page are superseded by [`ADR-0076`](ADR-0076-a-first-visit-loads-as-a-website-while-the-app-is-asked-about-and-cached.md). Amends [`ADR-0018`](ADR-0018-isolation-follows-consent.md) (a consented app's tab is in its own partition from its first entry, served from the verifier until its pin lands) and [`ADR-0029`](ADR-0029-sites-publish-their-bundle-hash-tree.md) (the declared tree is checked per file, as the file arrives).
 - **Date:** 2026-10-09
 - **Type:** architecture / security
 - **Decided by:** owner (the correction below); the choices under How it is done are implementation calls, provisional where they say so
