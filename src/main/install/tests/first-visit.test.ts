@@ -8,11 +8,12 @@ import type { InstallConsentPrompt } from '../../consent/install-consent.js'
 import type { DialogCaller } from '../../consent/request-grant.js'
 import { DeclinedApps } from '../declined-apps.js'
 import { createFirstVisit, MANIFEST_PROBE_MS, runFirstVisit } from '../first-visit.js'
-import type { FirstVisitDeps, SetupHost, SetupSheet, SetupStage } from '../first-visit.js'
+import type { FirstVisitDeps, SetupHost, SetupSheet } from '../first-visit.js'
 
-// The order of a first visit: the person is asked as soon as the manifest is read, with the site's declared tree
-// read beside the question; Allow grants and enters at once, every file is checked as it is served, and the
-// download and pin follow in the background. A mismatch anywhere is bad data: the origin is taken away entirely.
+// The order of a first visit: the page is already on screen as an ordinary website; the person is asked as soon as
+// the manifest is read, with the site's declared tree read and the whole app cached beside the question; Allow
+// grants, pins what was staged and reloads the tab as the app, every file checked as it is served; Deny stops the
+// caching. A mismatch anywhere is bad data: the page is stopped and the origin taken away.
 
 const VERIFIED = 'https://abc.ipfs.orivon'
 const WEBSITE = 'https://app.example.com'
@@ -36,7 +37,7 @@ interface Harness {
   readonly url: string
   readonly broker: ReturnType<typeof createBroker>
   readonly events: string[]
-  readonly host: SetupHost & { sheets: SetupSheet[], stages: SetupStage[] }
+  readonly host: SetupHost & { sheets: SetupSheet[] }
   readonly loader: Pick<Loader, 'readManifest' | 'readDeclaration' | 'serveLive' | 'endLive' | 'rememberConsent' | 'pendingConsents' | 'fetchForInstall' | 'installFetched' | 'pinFor'>
   readonly consent: ReturnType<typeof vi.fn<InstallConsentPrompt>>
   readonly declined: DeclinedApps
@@ -70,15 +71,12 @@ function harness (options: {
   const declarations = [...(options.declarations ?? [DECLARED])]
   const bundles = [...(options.bundles ?? [bundle(origin)])]
   const choices = [...(options.choices ?? ['leave'])]
-  const stages: SetupStage[] = []
   const sheets: SetupSheet[] = []
   const grantsAt: Record<string, string[]> = {}
   let handed: LiveHooks | undefined
   const pendings: PendingConsent[] = options.pending ?? []
   const host = {
-    stages,
     sheets,
-    show: (stage: SetupStage) => { stages.push(stage); events.push(`show:${stage.kind}`) },
     sheet: async (sheet: SetupSheet) => { sheets.push(sheet); events.push(`sheet:${sheet.kind}`); return choices.shift() ?? 'leave' },
     enter: () => { events.push('enter') },
     plain: () => { events.push('plain') },
@@ -125,11 +123,14 @@ const TAB = { id: 'the-tab' }
 
 const present: DialogCaller = { window: () => undefined, stillOn: () => true }
 
-function depsOf (h: Harness): FirstVisitDeps {
-  return { broker: h.broker, loader: h.loader as Loader, consent: h.consent, declined: h.declined, blocked: h.blocked, capabilityPrompt: h.capabilityPrompt, backgroundDelayMs: 0 }
+function depsOf (h: Harness, backgroundDelayMs = SOON): FirstVisitDeps {
+  return { broker: h.broker, loader: h.loader as Loader, consent: h.consent, declined: h.declined, blocked: h.blocked, capabilityPrompt: h.capabilityPrompt, backgroundDelayMs }
 }
 
-async function run (h: Harness, caller: DialogCaller | undefined = present, signal?: AbortSignal, backgroundDelayMs = 0): ReturnType<typeof runFirstVisit> {
+/** The caching begins a moment after the question is asked, so by default the answer comes before it ends. */
+const SOON = 30
+
+async function run (h: Harness, caller: DialogCaller | undefined = present, signal?: AbortSignal, backgroundDelayMs = SOON): ReturnType<typeof runFirstVisit> {
   return await runFirstVisit({ ...depsOf(h), backgroundDelayMs }, h.origin, h.url, caller, h.host, signal)
 }
 
@@ -144,14 +145,106 @@ async function settled (result: Awaited<ReturnType<typeof run>>): Promise<string
 const grantsOf = async (h: Harness): Promise<string[]> => (await h.broker.app.grants(h.origin)).map((grant) => grant.capability)
 
 describe('runFirstVisit, for an app a verifier serves', () => {
-  it('asks as soon as the manifest is read, with the declared tree read beside the question, and downloads nothing before the person is in', async () => {
+  it('caches the app from the moment its manifest is read, beside the question: the tree read, every file fetched, nothing granted, served or pinned', async () => {
+    let answer = (_yes: boolean): void => {}
+    const h = harness()
+    h.consent.mockImplementation(async () => { h.events.push('ask'); await new Promise<boolean>((resolve) => { answer = resolve }); return true })
+    const pending = runFirstVisit(depsOf(h, 0), h.origin, h.url, present, h.host)
+    await vi.waitFor(() => { expect(h.consent).toHaveBeenCalled() })
+    await vi.waitFor(() => { expect(h.loader.fetchForInstall).toHaveBeenCalled() })
+    expect(h.loader.readDeclaration).toHaveBeenCalled()
+    // The question is still open.
+    expect(h.events).not.toContain('serve-live')
+    expect(h.events).not.toContain('enter')
+    expect(h.events).not.toContain('install')
+    expect(h.broker.app.isRegisteredSync(h.origin)).toBe(false)
+    expect(await grantsOf(h)).toEqual([])
+    answer(true)
+    const result = await pending
+    expect(result.outcome).toBe('entered')
+    await settled(result)
+  })
+
+  it('pins what caching staged when the answer is yes, before the tab reloads, so the reload is served from the pin', async () => {
+    let answer = (_yes: boolean): void => {}
+    const h = harness()
+    h.consent.mockImplementation(async () => { h.events.push('ask'); await new Promise<boolean>((resolve) => { answer = resolve }); return true })
+    const pending = runFirstVisit(depsOf(h, 0), h.origin, h.url, present, h.host)
+    await vi.waitFor(() => { expect(h.loader.fetchForInstall).toHaveBeenCalled() })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    answer(true)
+    const result = await pending
+    expect(result.outcome).toBe('entered')
+    expect(h.events.indexOf('serve-live')).toBeLessThan(h.events.indexOf('install'))
+    expect(h.events.indexOf('install')).toBeLessThan(h.events.indexOf('enter'))
+    expect(h.loader.fetchForInstall).toHaveBeenCalledTimes(1)
+    expect(await settled(result)).toBe('pinned')
+  })
+
+  it('reloads the tab as the app at once when the answer comes before caching has ended, and pins when it ends', async () => {
     const h = harness()
     const result = await run(h, present, undefined, LATE)
-    expect(result.outcome).toBe('entered')
-    expect(h.events.slice(0, 7)).toEqual(['read', 'show:asking', 'declaration', 'ask', 'serve-live', 'remember', 'enter'])
-    expect(h.loader.fetchForInstall).not.toHaveBeenCalled()
-    expect(h.grantsAt['ask']).toEqual([])
-    await settled(result)
+    expect(h.events.indexOf('enter')).toBeGreaterThan(-1)
+    expect(h.events).not.toContain('fetch')
+    expect(await settled(result)).toBe('pinned')
+    expect(h.events.slice(-2)).toEqual(['fetch', 'install'])
+  })
+
+  it('stops the caching, discards what it staged and pins nothing on a pressed Deny', async () => {
+    let answer = (_yes: boolean): void => {}
+    const staged = bundle(VERIFIED)
+    const h = harness({ bundles: [staged] })
+    h.consent.mockImplementation(async () => { h.events.push('ask'); return await new Promise<boolean>((resolve) => { answer = resolve }) })
+    const pending = runFirstVisit(depsOf(h, 0), h.origin, h.url, present, h.host)
+    await vi.waitFor(() => { expect(h.loader.fetchForInstall).toHaveBeenCalled() })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    answer(false)
+    expect(await pending).toMatchObject({ outcome: 'plain', why: 'denied' })
+    expect(staged.discard).toHaveBeenCalled()
+    expect(h.loader.installFetched).not.toHaveBeenCalled()
+    expect(h.declined.has(h.origin)).toBe(true)
+    const signal = vi.mocked(h.loader.fetchForInstall).mock.calls[0]?.[2]
+    expect(signal?.aborted).toBe(true)
+  })
+
+  it('stops the caching, with no record, when the person leaves without answering', async () => {
+    const staged = bundle(VERIFIED)
+    const h = harness({ bundles: [staged], answer: 'dismissed' })
+    const result = await runFirstVisit(depsOf(h, 0), h.origin, h.url, present, h.host)
+    expect(result.outcome).toBe('left')
+    await vi.waitFor(() => { expect(staged.discard).toHaveBeenCalled() })
+    expect(h.declined.has(h.origin)).toBe(false)
+    expect(h.loader.installFetched).not.toHaveBeenCalled()
+  })
+
+  it('stops the page, with the warning and nothing granted, when caching finds a file that is not the declared one before the person has answered', async () => {
+    let answer = (_yes: boolean): void => {}
+    const mismatched = bundle(VERIFIED, { declaration: DIFFERENT, content: CONTENT })
+    const h = harness({ bundles: [mismatched] })
+    h.consent.mockImplementation(async () => { h.events.push('ask'); return await new Promise<boolean>((resolve) => { answer = resolve }) })
+    const pending = runFirstVisit(depsOf(h, 0), h.origin, h.url, present, h.host)
+    await vi.waitFor(() => { expect(h.blocked).toHaveBeenCalledTimes(1) })
+    expect(h.blocked).toHaveBeenCalledWith(h.origin, expect.objectContaining({ kind: 'blocked', differing: ['/index.html'] }), undefined)
+    expect(await grantsOf(h)).toEqual([])
+    expect(h.loader.serveLive).not.toHaveBeenCalled()
+    expect(h.loader.installFetched).not.toHaveBeenCalled()
+    expect(mismatched.discard).toHaveBeenCalled()
+    // The page being stopped ends the question; a late answer finds nothing to let in.
+    answer(true)
+    expect((await pending).outcome).toBe('left')
+    expect(h.events).not.toContain('serve-live')
+  })
+
+  it('stops the page before the answer for content the verifier proved wrong, or a manifest its own tree contradicts', async () => {
+    for (const declaration of [{ kind: 'failed' as const, reason: 'block does not hash to its CID', integrity: true as const }, { kind: 'mismatch' as const, differing: ['/.well-known/orivon.json'] }]) {
+      const h = harness({ declarations: [declaration] })
+      h.consent.mockImplementation(async () => { h.events.push('ask'); return await new Promise<boolean>(() => {}) })
+      void runFirstVisit(depsOf(h, 0), h.origin, h.url, present, h.host)
+      await vi.waitFor(() => { expect(h.blocked).toHaveBeenCalledTimes(1) })
+      expect(h.blocked.mock.calls[0]?.[1]).toMatchObject({ kind: 'blocked' })
+      expect(await grantsOf(h)).toEqual([])
+      expect(h.loader.serveLive).not.toHaveBeenCalled()
+    }
   })
 
   it('does not hold the question for the declared tree', async () => {
@@ -184,15 +277,6 @@ describe('runFirstVisit, for an app a verifier serves', () => {
     await settled(result)
   })
 
-  it('pins the whole app in the background, after the tab is in, and says so', async () => {
-    const h = harness()
-    const result = await run(h)
-    expect(h.events.indexOf('enter')).toBeLessThan(h.events.indexOf('fetch'))
-    expect(await settled(result)).toBe('pinned')
-    expect(h.events.slice(-2)).toEqual(['fetch', 'install'])
-    expect(h.loader.endLive).not.toHaveBeenCalled()
-  })
-
   it('does not download an app another path already pinned', async () => {
     const h = harness()
     vi.mocked(h.loader.pinFor).mockResolvedValue({ schema: 1, origin: h.origin, bundleHash: TREE.root, assets: [], version: '1.0.0', pinnedAt: 0 })
@@ -222,7 +306,7 @@ describe('runFirstVisit, for an app a verifier serves', () => {
 
   it('is silent about a background download that fails: nothing blocked, nothing shown, the grants stay for the next visit to finish', async () => {
     for (const failure of [{ reason: 'HTTP 404 (/app.js)' }, { reason: 'timed out' }, { reason: 'bad gateway', transient: true as const }, { reason: 'over its cap', tooLarge: true as const }]) {
-      const h = harness({ bundles: [{ ok: false, ...failure }] })
+      const h = harness({ bundles: [{ ok: false, ...failure }, { ok: false, ...failure }] })
       expect(await settled(await run(h)), failure.reason).toBe('unfinished')
       expect(h.blocked, failure.reason).not.toHaveBeenCalled()
       expect(h.host.sheets, failure.reason).toEqual([])
@@ -289,36 +373,18 @@ describe('runFirstVisit, for an app a verifier serves', () => {
     expect(h.loader.installFetched).not.toHaveBeenCalled()
   })
 
-  it('never enters a tab for a manifest the declared tree gives another leaf: the warning, no grant, no registration', async () => {
-    const h = harness({ declarations: [{ kind: 'mismatch', differing: ['/.well-known/orivon.json'] }] })
-    const result = await run(h)
-    expect(result).toMatchObject({ outcome: 'blocked', differing: ['/.well-known/orivon.json'] })
-    expect(h.events).toEqual(['read', 'show:asking', 'declaration', 'ask', 'sheet:blocked', 'end'])
-    expect(h.loader.serveLive).not.toHaveBeenCalled()
-    expect(h.broker.app.isRegisteredSync(h.origin)).toBe(false)
-    expect(await grantsOf(h)).toEqual([])
-    expect(h.host.sheets[0]).toMatchObject({ kind: 'blocked', differing: ['/.well-known/orivon.json'] })
-  })
-
   it('still revokes what an earlier version of Orivon had granted to an origin it blocks', async () => {
     const h = harness({ declarations: [{ kind: 'mismatch', differing: ['/.well-known/orivon.json'] }] })
     await h.broker.grant(h.origin, 'fs', [])
     await run(h)
-    expect(await grantsOf(h)).toEqual([])
-  })
-
-  it('never enters a tab for content the verifier failed while the tree was read', async () => {
-    const h = harness({ declarations: [{ kind: 'failed', reason: 'block does not hash to its CID', integrity: true }] })
-    expect(await run(h)).toMatchObject({ outcome: 'blocked' })
-    expect(h.host.sheets[0]).toMatchObject({ kind: 'blocked', invalid: 'block does not hash to its CID' })
-    expect(h.loader.serveLive).not.toHaveBeenCalled()
+    await vi.waitFor(async () => { expect(await grantsOf(h)).toEqual([]) })
   })
 
   it('shows a retry sheet when the declared tree cannot be read, keeps the answer, and reads it again without asking again', async () => {
     const h = harness({ declarations: [{ kind: 'failed', reason: 'gateway 502' }, DECLARED], choices: ['retry'] })
     const result = await run(h)
     expect(result.outcome).toBe('entered')
-    expect(h.events.slice(0, 8)).toEqual(['read', 'show:asking', 'declaration', 'ask', 'sheet:download-failed', 'declaration', 'show:verifying', 'serve-live'])
+    expect(h.events.slice(0, 6)).toEqual(['read', 'declaration', 'ask', 'sheet:download-failed', 'declaration', 'serve-live'])
     expect(h.consent).toHaveBeenCalledTimes(1)
     expect(h.host.sheets[0]).toMatchObject({ kind: 'download-failed', name: 'Test App', reason: 'gateway 502' })
     await settled(result)
@@ -350,14 +416,14 @@ describe('runFirstVisit, for an app a verifier serves', () => {
     const result = await run(h)
     expect(result.outcome).toBe('entered')
     expect(h.consent).not.toHaveBeenCalled()
-    expect(h.events.slice(0, 7)).toEqual(['read', 'show:asking', 'declaration', 'show:verifying', 'serve-live', 'remember', 'enter'])
+    expect(h.events.slice(0, 7)).toEqual(['read', 'declaration', 'serve-live', 'remember', 'enter'])
     await settled(result)
   })
 
   it('on a pressed Deny downloads nothing, grants nothing, serves nothing live, records the refusal and opens a plain website', async () => {
     const h = harness({ answer: false })
     expect(await run(h)).toMatchObject({ outcome: 'plain', why: 'denied' })
-    expect(h.events).toEqual(['read', 'show:asking', 'declaration', 'ask', 'plain'])
+    expect(h.events).toEqual(['read', 'declaration', 'ask', 'plain'])
     expect(h.loader.serveLive).not.toHaveBeenCalled()
     expect(h.loader.fetchForInstall).not.toHaveBeenCalled()
     expect(h.broker.app.isRegisteredSync(h.origin)).toBe(false)
@@ -368,7 +434,7 @@ describe('runFirstVisit, for an app a verifier serves', () => {
   it('on Escape, a closed tab or a navigation records nothing: the next visit asks again', async () => {
     const h = harness({ answer: 'dismissed' })
     expect((await run(h)).outcome).toBe('left')
-    expect(h.events).toEqual(['read', 'show:asking', 'declaration', 'ask', 'end'])
+    expect(h.events).toEqual(['read', 'declaration', 'ask', 'end'])
     expect(h.declined.has(h.origin)).toBe(false)
     expect(h.loader.serveLive).not.toHaveBeenCalled()
   })
@@ -437,7 +503,7 @@ describe('runFirstVisit, for an app an ordinary website serves', () => {
   it('is served live as a verifier\'s is, every file checked as it is served, and enters at once', async () => {
     const h = site()
     const result = await run(h, present, undefined, LATE)
-    expect(h.events.slice(0, 7)).toEqual(['read', 'show:asking', 'declaration', 'ask', 'serve-live', 'remember', 'enter'])
+    expect(h.events.slice(0, 7)).toEqual(['read', 'declaration', 'ask', 'serve-live', 'remember', 'enter'])
     expect(vi.mocked(h.loader.serveLive).mock.calls[0]?.[1]).toBe(DECLARED.declaration)
     expect(h.loader.fetchForInstall).not.toHaveBeenCalled()
     expect(await grantsOf(h)).toEqual(['fs'])
@@ -647,7 +713,7 @@ describe('an app that was allowed and is not yet pinned', () => {
     })
 
     it('stays unfinished, quietly, when no newer version can be read: nothing is forgotten', async () => {
-      const h = harness({ bundles: [{ ok: false, reason: 'HTTP 409', moved: true }], reads: [readOf(VERIFIED)] })
+      const h = harness({ bundles: [{ ok: false, reason: 'HTTP 409', moved: true }, { ok: false, reason: 'HTTP 409', moved: true }], reads: [readOf(VERIFIED)] })
       expect(await settled(await run(h))).toBe('unfinished')
       expect(h.blocked).not.toHaveBeenCalled()
       expect(h.loader.endLive).not.toHaveBeenCalled()

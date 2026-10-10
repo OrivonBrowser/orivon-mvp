@@ -69,10 +69,11 @@ it('[app:first-visit-service-worker-is-checked] checks a service worker\'s scrip
       const scriptRoot = gateway.roots['script']!
       await clickAddressBarRetrying(chrome, `ipfs://${scriptRoot}`)
       await waitQuestion(running, 60_000)
+      const beforeScript = (await running.evaluate(() => (globalThis as { __pageLog?: string[] }).__pageLog ?? [])).length
       await answerQuestion(running, 'Allow')
       const scriptWarning = await waitSheet(running, 60_000)
       check(`a security warning names the worker (${JSON.stringify(scriptWarning.text.files)})`, /security warning/i.test(scriptWarning.text.title) && scriptWarning.text.files.includes('/sw.js'))
-      check('its code never ran', !(await running.evaluate(() => (globalThis as { __pageLog?: string[] }).__pageLog ?? [])).some((line) => line.includes('BAD-WORKER-RAN')))
+      check('its code never ran in the app after Allow', !(await running.evaluate(() => (globalThis as { __pageLog?: string[] }).__pageLog ?? [])).slice(beforeScript).some((line) => line.includes('BAD-WORKER-RAN')))
       check('no grant is left', savedGrants(userData, `https://${scriptRoot}.ipfs.orivon`).length === 0)
       await pressSheet(scriptWarning.page, 'Go back')
       check('Go back takes the sheet away', await waitFor(() => sheetGone(running), 10_000))

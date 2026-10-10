@@ -1,12 +1,12 @@
-// What one tab shows while an app's first visit runs (ADR-0074): the cover with the stage's words, then a
-// sheet when the app was not opened, over a tab whose page has not been allowed to run. Follows the tab
-// itself: another navigation or its destruction ends the visit's screens at once.
+// What one tab shows when an app's first visit needs a sheet (ADR-0076): the question or the warning, over a cover
+// that has stopped moving. The page under it is an ordinary website until then. Follows the tab itself: another
+// navigation or its destruction ends the visit's screens at once.
 import type { WebContents } from 'electron'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { LOADING_SCREEN_OVERLAY } from '../loading-screen/loading-screen-watch.js'
 import { claimCover } from '../loading-screen/claim.js'
 import type { requestSlot } from '../overlays/tab-slots.js'
-import type { SetupSheet, SetupStage } from '../install/first-visit.js'
+import type { SetupSheet } from '../install/first-visit.js'
 import type { ShellWindow } from '../shell/window-registry.js'
 import { awaitSheetAnswer, SETUP_SHEET_OVERLAY } from './setup-sheet-overlay.js'
 import type { SheetChoice } from './setup-sheet-overlay.js'
@@ -14,7 +14,6 @@ import { coverFor, sheetView } from './setup-text.js'
 import type { CoverState } from './setup-text.js'
 
 export interface TabScreens {
-  show: (stage: SetupStage) => void
   /** Replaces the page the tab is running with an empty one, in place: the history keeps one entry, and nothing of the page runs on. Resolves once that has committed, or a moment's wait has passed. */
   blank: () => Promise<void>
   /** Resolves what the person chose; `leave` too when the sheet went away without an answer. */
@@ -122,7 +121,6 @@ export function createTabSetup (deps: TabSetupDeps): TabSetup {
     contents.on('destroyed', onDestroyed)
 
     return {
-      show: (stage) => { askCover(stage) },
       sheet: async (shown) => {
         if (ended) return 'leave'
         askCover({ kind: shown.kind, name: shown.name })

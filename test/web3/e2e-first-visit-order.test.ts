@@ -1,7 +1,7 @@
-// A published app's first visit: the person is asked as soon as its manifest is read, before any of its files
-// comes down and before any of its script runs; Allow lets the tab into the app at once, as an app tab, while a
-// file the first page never loads is still undownloaded; Deny opens the site as a plain website and is not asked
-// again. Driven through the test seam's gateway, so nothing leaves the machine.
+// A published app's first visit: the page loads at once as an ordinary website, with no Node globals and no
+// grants, while the person is asked as soon as the manifest is read; Allow reloads the tab as the app, with its
+// grants, while a file the first page never loads is still undownloaded; Deny leaves the site as the plain website
+// it already is and is not asked again. Driven through the test seam's gateway, so nothing leaves the machine.
 import { afterAll, expect, it } from 'vitest'
 import { existsSync } from 'node:fs'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
@@ -27,7 +27,7 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-it('[app:first-visit-asks-before-any-file] [app:first-visit-enters-at-once] [app:first-visit-deny-is-a-website] asks before any file comes down or script runs, enters at once on Allow with the rest of the bundle still undownloaded, and opens a refused app as a plain website', async () => {
+it('[app:first-visit-loads-as-a-website-while-asking] [app:first-visit-enters-at-once] [app:first-visit-deny-is-a-website] loads a first visit as a plain website while it asks, reloads as the app on Allow with the rest of the bundle still undownloaded, and leaves a refused app as the plain website it is', async () => {
   await runPhase('first-visit-order', async (check) => {
     const gateway = await startFixtureGateway({
       allowed: await withDeclaredTree(files('Allowed app', 'first.visit.allowed')),
@@ -51,27 +51,28 @@ it('[app:first-visit-asks-before-any-file] [app:first-visit-enters-at-once] [app
       const chrome = findChrome(running)
       await waitForAddressBarStable(chrome)
 
-      // 1. The question comes first.
+      // 1. The page loads at once as an ordinary website while the question is open.
       const allowedOrigin = `https://${allowedRoot}.ipfs.orivon`
       await clickAddressBarRetrying(chrome, `ipfs://${allowedRoot}`)
       const panel = await waitQuestion(running, 60_000)
       const asked = await readQuestion(panel)
       check(`the question names the app (${JSON.stringify(asked.origin)})`, JSON.stringify(asked).includes(allowedRoot))
       const filesAsked = (site: string, path: string): number => gateway.requests.filter((request) => request.startsWith(`/ipfs/${gateway.blockOf(site, path)}`)).length
-      check('no file of the app was downloaded before the question', filesAsked('allowed', 'app.js') === 0 && filesAsked('allowed', 'index.html') === 0)
-      check('no page of the app has run', !(await anyDocumentAt(running, allowedOrigin)) && (await pageAt(running, `${allowedOrigin}/`)) === null)
+      let website = null as PageFacts | null
+      await waitFor(async () => { website = await pageAt(running, `${allowedOrigin}/`); return website?.ran === 'ran' }, 30_000)
+      check(`the page runs as an ordinary website while the question is open: its script ran and it has no Node globals (${JSON.stringify(website)})`, website?.ran === 'ran' && !website.hasProcess)
+      check('no setup cover hides the page', (await coverTitle(running)) === null)
       check('nothing is pinned or granted yet', !existsSync(pinPath(userData, allowedOrigin)) && savedGrants(userData, allowedOrigin).length === 0)
-      check('the tab shows the setup cover while the question is open', (await coverTitle(running)) !== null)
+      check('a file the first page never loads is still undownloaded', filesAsked('allowed', 'later.bin') === 0)
 
-      // 2. Allow: the page is entered as an app tab at once, with the rest of the bundle still to come.
+      // 2. Allow: the tab reloads as the app, with its grants, and the rest of the bundle is still to come.
       await answerQuestion(running, 'Allow')
       const entered = await waitForTab(chrome, { address: `ipfs://${allowedRoot}/`, title: 'Allowed app' }, 60_000)
       check(`the app opened (${JSON.stringify(entered.info)})`, entered.ok)
       let facts = null as PageFacts | null
-      await waitFor(async () => { facts = await pageAt(running, `${allowedOrigin}/`); return facts?.ran === 'ran' }, 20_000)
-      check(`the app's script ran, in an app tab with the Node globals (${JSON.stringify(facts)})`, facts?.ran === 'ran' && facts.hasProcess)
-      check('its grants are saved at once', savedGrants(userData, allowedOrigin).includes('fs'))
-      check('the files its first page loads came down after the question', filesAsked('allowed', 'app.js') >= 1 && filesAsked('allowed', 'index.html') >= 1)
+      await waitFor(async () => { facts = await pageAt(running, `${allowedOrigin}/`); return facts?.ran === 'ran' && facts.hasProcess }, 30_000)
+      check(`the tab reloaded as an app tab with the Node globals (${JSON.stringify(facts)})`, facts?.ran === 'ran' && facts.hasProcess)
+      check('its grants are saved', savedGrants(userData, allowedOrigin).includes('fs'))
       check('a file the first page never loads is still undownloaded while the page shows', filesAsked('allowed', 'later.bin') === 0)
       check('nothing is pinned yet: the rest of the bundle comes later, in the background', !existsSync(pinPath(userData, allowedOrigin)))
 
@@ -82,9 +83,9 @@ it('[app:first-visit-asks-before-any-file] [app:first-visit-enters-at-once] [app
       await answerQuestion(running, 'Deny')
       const plain = await waitForTab(chrome, { address: `ipfs://${refusedRoot}/`, title: 'Refused app' }, 60_000)
       check(`the refused site opened (${JSON.stringify(plain.info)})`, plain.ok)
-      let website = null as PageFacts | null
-      await waitFor(async () => { website = await pageAt(running, `${refusedOrigin}/`); return website?.ran === 'ran' }, 20_000)
-      check(`it runs as a website: its script ran and it has no Node globals (${JSON.stringify(website)})`, website?.ran === 'ran' && !website.hasProcess)
+      let refused = null as PageFacts | null
+      await waitFor(async () => { refused = await pageAt(running, `${refusedOrigin}/`); return refused?.ran === 'ran' }, 20_000)
+      check(`it stays a website: its script ran and it has no Node globals (${JSON.stringify(refused)})`, refused?.ran === 'ran' && !refused.hasProcess)
       check('nothing was pinned or granted for it', !existsSync(pinPath(userData, refusedOrigin)) && savedGrants(userData, refusedOrigin).length === 0)
       await clickAddressBarRetrying(chrome, `ipfs://${refusedRoot}/`)
       await delay(ABSENCE_SETTLE_MS)

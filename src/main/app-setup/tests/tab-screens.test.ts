@@ -48,24 +48,29 @@ describe('createTabSetup', () => {
     expect(setup(new EventEmitter() as unknown as WebContents, ADDRESS)).toBeUndefined()
   })
 
-  it('covers the tab with the stage\'s words, and holds the protocol\'s own screen off', () => {
+  it('covers the tab under a sheet, and holds the protocol\'s own screen off until the visit ends', () => {
     const { contents, asks, setup } = rig()
     const screens = setup(asContents(contents), ADDRESS)!
-    screens.show({ kind: 'asking', name: 'Ledger' })
-    expect(asks).toHaveLength(1)
-    expect(asks[0]).toMatchObject({ window: WINDOW, tabId: 't1', slot: 'cover', overlay: 'loading-screen' })
-    expect(asks[0]!.payload).toMatchObject({ url: ADDRESS, text: { title: 'Opening Ledger', busy: true } })
+    expect(isCoverClaimed(contents)).toBe(false)
+    void screens.sheet({ kind: 'blocked', name: 'Ledger', differing: [], differingCount: 0, rootMatches: false })
+    const cover = asks.find((ask) => ask.slot === 'cover')!
+    expect(cover).toMatchObject({ window: WINDOW, tabId: 't1', overlay: 'loading-screen' })
+    expect(cover.payload).toMatchObject({ url: ADDRESS })
     expect(isCoverClaimed(contents)).toBe(true)
-    screens.show({ kind: 'verifying', name: 'Ledger' })
-    expect(asks[1]!.payload).toMatchObject({ text: { title: 'Opening Ledger' } })
     screens.end()
+    expect(isCoverClaimed(contents)).toBe(false)
+  })
+
+  it('shows nothing of its own while the page loads as an ordinary website', () => {
+    const { contents, asks, setup } = rig()
+    setup(asContents(contents), ADDRESS)!
+    expect(asks).toHaveLength(0)
     expect(isCoverClaimed(contents)).toBe(false)
   })
 
   it('shows a sheet in the centre over a cover that has stopped moving, and answers what the page answered', async () => {
     const { contents, asks, setup } = rig()
     const screens = setup(asContents(contents), ADDRESS)!
-    screens.show({ kind: 'verifying', name: 'Ledger' })
     const answer = screens.sheet({ kind: 'download-failed', name: 'Ledger', reason: 'gateway 502' })
     const sheet = asks.find((ask) => ask.slot === 'center')!
     expect(sheet.overlay).toBe('app-setup-sheet')
@@ -88,21 +93,19 @@ describe('createTabSetup', () => {
   it('takes every screen away at the end, and shows nothing afterwards', () => {
     const { contents, asks, cancels, setup } = rig()
     const screens = setup(asContents(contents), ADDRESS)!
-    screens.show({ kind: 'asking', name: 'L' })
     void screens.sheet({ kind: 'blocked', name: 'L', differing: [], differingCount: 0, rootMatches: false })
     screens.end()
     // The cover the sheet replaced is the slot's to end; the live cover and the sheet are this visit's.
     expect(cancels.at(-1)).toHaveBeenCalled()
     expect(cancels.at(-2)).toHaveBeenCalled()
     const before = asks.length
-    screens.show({ kind: 'verifying', name: 'L' })
+    void screens.sheet({ kind: 'blocked', name: 'L', differing: [], differingCount: 0, rootMatches: false })
     expect(asks).toHaveLength(before)
   })
 
   it('knows the tab moved on when another page starts loading, and takes its screens away', async () => {
     const { contents, setup } = rig()
     const screens = setup(asContents(contents), ADDRESS)!
-    screens.show({ kind: 'asking', name: 'L' })
     const answer = screens.sheet({ kind: 'blocked', name: 'L', differing: [], differingCount: 0, rootMatches: false })
     expect(screens.moved()).toBe(false)
     contents.emit('did-start-navigation', { isMainFrame: false, isSameDocument: false })
@@ -141,7 +144,6 @@ describe('createTabSetup', () => {
   it('does not take a blank that arrives long after the wait, when the person confirms leaving the page, for the person moving on', async () => {
     const { contents, setup } = rig({ blankNavigates: false })
     const screens = setup(asContents(contents), ADDRESS)!
-    screens.show({ kind: 'asking', name: 'L' })
     await screens.blank()
     contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false, url: 'about:blank' })
     expect(screens.moved()).toBe(false)
@@ -168,7 +170,6 @@ describe('createTabSetup', () => {
   it('ends its screens before it sends the tab anywhere, and sends it only if it is still where the visit began', () => {
     const { contents, navigated, acted, setup } = rig()
     const screens = setup(asContents(contents), ADDRESS)!
-    screens.show({ kind: 'asking', name: 'L' })
     screens.navigate('https://abc.ipfs.orivon/x')
     expect(navigated).toEqual(['https://abc.ipfs.orivon/x'])
     expect(isCoverClaimed(contents)).toBe(false)

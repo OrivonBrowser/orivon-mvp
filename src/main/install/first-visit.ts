@@ -1,9 +1,9 @@
-// A published app's first visit (ADR-0075): the person is asked as soon as the manifest is read, with the tree the
-// site declares for its files read beside the question. Allow grants at once and sends the tab into the app, whose
-// files are loaded on demand and each checked as it is served; the whole bundle is downloaded and pinned in the
-// background afterwards. Any file that is not the declared one is bad data: the origin is taken away entirely. Deny
-// opens the site as a plain website. No Electron: the tab's screens and its way into the app are the `SetupHost`
-// the caller brings.
+// A published app's first visit (ADR-0075, ADR-0076): the page loads at once as an ordinary website, with no grant. The
+// manifest is read beside it and the person is asked as soon as it is; from that same moment the app is cached (the
+// declared tree read, every file downloaded and checked, kept staged), whatever the answer will be. Allow grants, serves
+// the app checked, pins what was staged and reloads the tab as the app; Deny keeps the plain website and stops the
+// caching. Any file that is not the declared one is bad data: the page is stopped and the origin taken away. No
+// Electron: the tab's screens and its way into the app are the `SetupHost` the caller brings.
 
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { Broker } from '../../broker/broker-contracts.js'
@@ -17,8 +17,8 @@ import type { CapabilityPromptPrompt } from '../consent/update-outcomes.js'
 import type { DeclinedApps } from './declined-apps.js'
 import { judgeBundle, visitKind } from './first-visit-decisions.js'
 import { outsideOriginQueue, withOriginQueue } from './origin-queue.js'
-import { revokeAllGrants } from './revoke-all-grants.js'
 import { createKeeper, heldOf } from './first-visit-keeper.js'
+import type { Keeper } from './first-visit-keeper.js'
 
 /** What a block does to the pages of an app: see `FirstVisitDeps.blocked`. */
 export interface Blocking {
@@ -47,12 +47,6 @@ export interface FirstVisitDeps {
   readonly backgroundDelayMs?: number | undefined
 }
 
-/** What the tab's screen says: the person is being asked, or the declared tree is being read. */
-export interface SetupStage {
-  readonly kind: 'asking' | 'verifying'
-  readonly name: string
-}
-
 /**
  * A sheet over the tab. `blocked` has no way forward: a file is not the one the site declared, or the verifier
  * proved the content not what its address names (`invalid`). `download-failed` offers Try again.
@@ -71,13 +65,11 @@ export type SetupSheet =
 
 /** The tab a first visit happens in. */
 export interface SetupHost {
-  /** The first stage may take the running page of an https app down, which is why it is awaited. */
-  show: (stage: SetupStage) => void | Promise<void>
   /** Resolves what the person chose; a sheet with no way forward resolves `leave`. */
   sheet: (sheet: SetupSheet) => Promise<'retry' | 'leave'>
-  /** The app is let in: the tab goes into it. */
+  /** The app is let in: the tab reloads as the app. */
   enter: () => void
-  /** The site opens as a plain website: not an app, or the person said no. */
+  /** The site stays the plain website the tab already shows: not an app, or the person said no. */
   plain: () => void
   /** The visit ends with the tab showing neither: the screens are taken away. */
   end: () => void
@@ -85,7 +77,7 @@ export interface SetupHost {
   tab?: () => object | undefined
 }
 
-/** How the background download ended: `pinned`, `blocked` (bad data, the origin was taken away), or `unfinished` (silent; the next visit finishes it). */
+/** How the download ended: `pinned`, `blocked` (bad data, the origin was taken away), or `unfinished` (silent; the next visit finishes it). */
 export type BackgroundOutcome = 'pinned' | 'blocked' | 'unfinished'
 
 export type FirstVisitResult =
@@ -115,15 +107,16 @@ export async function runFirstVisit (deps: FirstVisitDeps, hintingOrigin: string
   const gone = (): boolean => signal?.aborted === true || (caller !== undefined && !caller.stillOn(origin))
   const left = (): FirstVisitResult => { host.end(); return { outcome: 'left' } }
 
-  // Only the first look is bounded: it is the wait of a page that may turn out to be no app at all.
+  // The page is already on screen. The first look at the manifest is bounded only because the page may turn out to be no app at all.
   const read = await deps.loader.readManifest(hintedUrl, MANIFEST_PROBE_MS)
   if (gone()) return left()
   if (read.kind === 'website') { host.plain(); return { outcome: 'plain', why: 'website' } }
   if (read.kind === 'unread') { host.plain(); return { outcome: 'plain', why: 'unread' } }
   const { name } = read.manifest
 
-  await host.show({ kind: 'asking', name })
-  // The declared tree is read beside the question, so it is ready when the person answers.
+  // From here, beside the question: the app is cached, and the tree it declares is read.
+  const keeper = createKeeper(deps, origin, hintedUrl, heldOf(read, undefined))
+  keeper.cache()
   const reading = new AbortController()
   const stopReading = (): void => { reading.abort() }
   signal?.addEventListener('abort', stopReading, { once: true })
@@ -134,8 +127,15 @@ export async function runFirstVisit (deps: FirstVisitDeps, hintingOrigin: string
     return tracked
   }
   let declared = track()
+  // A manifest its own tree contradicts, or content the verifier proves wrong, is known before the answer: the page stops now.
+  void declared.tree.then(async (tree) => {
+    if (tree.kind === 'mismatch') await keeper.block({ differing: tree.differing })
+    else if (tree.kind === 'failed' && tree.integrity === true) await keeper.block({ differing: [], invalid: tree.reason })
+  })
+  let entered = false
   try {
     const ask = await askInstallConsent(deps.broker, deps.consent, origin, read.manifest, deps.perCapabilityConsent, caller)
+    if (keeper.stopped()) return left()
     if (ask.outcome === 'left' || gone()) return left()
     if (ask.outcome === 'denied') {
       deps.declined.add(origin)
@@ -145,30 +145,26 @@ export async function runFirstVisit (deps: FirstVisitDeps, hintingOrigin: string
 
     let declaration: FirstDeclaration
     for (;;) {
-      if (!declared.done) await host.show({ kind: 'verifying', name })
       declaration = await declared.tree
+      if (keeper.stopped()) return left()
       if (gone()) return left()
       if (declaration.kind !== 'failed' || declaration.integrity === true) break
       const choice = await host.sheet({ kind: 'download-failed', name, reason: declaration.reason })
       if (choice !== 'retry') { host.end(); return { outcome: 'failed', reason: declaration.reason } }
       declared = track()
     }
-    if (declaration.kind === 'mismatch') return await blockBeforeEntry(deps, host, origin, { kind: 'blocked', name, differing: declaration.differing, differingCount: declaration.differing.length, rootMatches: true })
-    if (declaration.kind === 'failed') return await blockBeforeEntry(deps, host, origin, { kind: 'blocked', name, differing: [], differingCount: 0, rootMatches: true, invalid: declaration.reason })
+    // A manifest its own tree contradicts, or content the verifier proved wrong, has already stopped the page (above).
+    if (declaration.kind === 'mismatch' || declaration.kind === 'failed') return left()
 
-    return await letIn(deps, { origin, hintedUrl, read, ask, declaration: declaration.kind === 'declared' ? declaration.declaration : undefined, gone, host })
+    const result = await letIn(deps, { origin, hintedUrl, read, ask, declaration: declaration.kind === 'declared' ? declaration.declaration : undefined, gone, host, keeper })
+    entered = result.outcome === 'entered'
+    return result
   } finally {
     signal?.removeEventListener('abort', stopReading)
     reading.abort()
+    // Whatever was cached for an app nobody let in is thrown away.
+    if (!entered) await keeper.cancel()
   }
-}
-
-/** Files, or a manifest, that are not the declared ones before anything was let in: the warning, and no grant an earlier version of Orivon left. */
-async function blockBeforeEntry (deps: FirstVisitDeps, host: SetupHost, origin: string, sheet: Extract<SetupSheet, { kind: 'blocked' }>): Promise<FirstVisitResult> {
-  await revokeAllGrants(deps.broker, origin).catch((error: unknown) => { console.error('[first-visit] grants of a blocked app remain', origin, error) })
-  await host.sheet(sheet)
-  host.end()
-  return { outcome: 'blocked', differing: sheet.differing }
 }
 
 export interface Entry {
@@ -179,6 +175,7 @@ export interface Entry {
   readonly declaration: Extract<FirstDeclaration, { kind: 'declared' }>['declaration'] | undefined
   readonly gone: () => boolean
   readonly host: SetupHost
+  readonly keeper: Keeper
 }
 
 /**
@@ -187,9 +184,9 @@ export interface Entry {
  * the site as a website with nothing granted), then the registration and grants, then the tab.
  */
 async function letIn (deps: FirstVisitDeps, entry: Entry): Promise<FirstVisitResult> {
-  const { origin, hintedUrl, read, host } = entry
+  const { origin, read, host, keeper } = entry
   const { name } = read.manifest
-  const keeper = createKeeper(deps, origin, hintedUrl, heldOf(read, entry.declaration))
+  keeper.declared(entry.declaration)
 
   let served = false
   try {
@@ -201,6 +198,7 @@ async function letIn (deps: FirstVisitDeps, entry: Entry): Promise<FirstVisitRes
     host.plain()
     return { outcome: 'failed', reason: `${name} could not be set up to be checked as it loads` }
   }
+  keeper.markServed()
   try {
     try {
       await deps.broker.registerApp(origin, read.manifest)
@@ -218,10 +216,12 @@ async function letIn (deps: FirstVisitDeps, entry: Entry): Promise<FirstVisitRes
   // Durable from here: a restart before the pin serves this very root again, checked, and finishes the pin.
   await deps.loader.rememberConsent(read, entry.declaration).catch((error: unknown) => { console.error('[first-visit] the consent could not be kept for a restart', origin, error) })
 
+  // Staged before the answer: pinned now, so the reload is served from the pin.
+  if (keeper.landed()) await keeper.start()
   if (entry.gone()) host.end()
   else host.enter()
   keeper.enteredTab(host.tab?.())
-  console.log(`[orivon] ${origin} is let in as an app; its files follow in the background`)
+  console.log(`[orivon] ${origin} is let in as an app`)
   return { outcome: 'entered', background: keeper.start() }
 }
 
@@ -244,6 +244,7 @@ async function resumeConsent (deps: FirstVisitDeps, consent: PendingConsent, set
     return false
   })
   if (!served) return
+  keeper.markServed()
   await deps.broker.registerApp(origin, read.manifest).catch((error: unknown) => { console.error('[first-visit] a consented app could not be registered again', origin, error) })
   // Until the app is used and its download has ended, the origin reads as settling: the old install path never sees it.
   settling.add(origin)

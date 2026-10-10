@@ -1,13 +1,12 @@
-// The place a verifier-served app's first page is held back (ADR-0074). A tab's top-level GET to an origin
-// Orivon has never held is paused in the default session's `onBeforeRequest`, so no byte of the app's own
-// HTML, and none of its script, reaches the tab until the person has answered. Then the request is let go
-// (the site is no app), or cancelled while the tab is sent into the app through the address bar's own path,
-// which puts it in the app's own partition before anything loads (ADR-0075).
+// Where a verifier-served app's first visit begins (ADR-0076). A tab's top-level GET to an origin Orivon has never
+// held starts the visit in the default session's `onBeforeRequest` and is let go at once: the page loads as an
+// ordinary website, with no grant, while the manifest is read and the app cached beside it. Allow reloads the tab.
 import type { CallbackResponse, OnBeforeRequestListenerDetails, WebContents } from 'electron'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { DialogCaller } from '../consent/request-grant.js'
-import type { FirstVisit, FirstVisitResult, SetupHost } from '../install/first-visit.js'
+import type { FirstVisit } from '../install/first-visit.js'
 import { holdNavigation } from '../shell/navigation-hold.js'
+import { tabHost } from './tab-host.js'
 import type { TabScreens, TabSetup } from './tab-screens.js'
 
 export interface HookDeps {
@@ -36,37 +35,18 @@ export function firstVisitBeforeRequest (deps: HookDeps): (details: OnBeforeRequ
     const contents = details.webContentsId === undefined ? undefined : deps.contentsById(details.webContentsId)
     const origin = originFromUrl(details.url)
     if (visit === undefined || setup === undefined || contents === undefined || origin === null) return current
-    if (await visit.kindOf(origin) !== 'first') return current
-    const screens = setup(contents, details.url)
-    if (screens === undefined) return current
-
-    return await new Promise<CallbackResponse>((resolve) => {
-      let answered = false
-      // `then` acts on the tab through the screens, which end themselves first and do nothing to a tab that moved on.
-      const answer = (response: CallbackResponse, then: () => void): void => {
-        if (answered) return
-        answered = true
-        then()
-        resolve(response)
-      }
-      const host: SetupHost = {
-        show: (stage) => { screens.show(stage) },
-        sheet: async (sheet) => await screens.sheet(sheet),
-        enter: () => { answer({ cancel: true }, () => { screens.navigate(details.url) }) },
-        plain: () => { answer(current, () => { screens.end() }) },
-        // Stopped, not just cancelled: a request cancelled under a navigation that is still pending commits an error page for the address, and the tab should stay on the page it was on.
-        end: () => { answer({ cancel: true }, () => { screens.stop() }) },
-        tab: () => screens.tab()
-      }
-      const settle = (result: FirstVisitResult): void => {
-        if (result.outcome === 'known' || result.outcome === 'settling') host.enter()
-        else if (result.outcome === 'declined') host.plain()
-        else host.end()
-      }
-      visit.run(origin, details.url, callerFor(contents, screens, deps.windowForSender), host, screens.signal).then(settle).catch((error: unknown) => {
-        console.error('[first-visit] the visit failed; the page loads as an ordinary website', origin, error)
-        host.plain()
-      })
+    // The request is never held: the page loads as an ordinary website while the visit reads the manifest beside it.
+    void visit.kindOf(origin).then(async (kind) => {
+      if (kind !== 'first') return
+      const screens = setup(contents, details.url)
+      if (screens === undefined) return
+      const host = tabHost(screens, () => details.url)
+      const result = await visit.run(origin, details.url, callerFor(contents, screens, deps.windowForSender), host, screens.signal)
+      // Another visit of this origin finished first and let it in: this tab, loaded as a website, follows it.
+      if (result.outcome === 'known' || result.outcome === 'settling') host.enter()
+    }).catch((error: unknown) => {
+      console.error('[first-visit] the visit failed; the page stays an ordinary website', origin, error)
     })
+    return current
   }
 }

@@ -1,7 +1,7 @@
 // What the setup cover and the two sheets of a first visit say. The app's name is the app's own text,
 // so it is cut and cleaned here; every other word is fixed.
 import { ADDRESS_LIMIT } from '../sad-tab/sad-tab-text.js'
-import type { SetupSheet, SetupStage } from '../install/first-visit.js'
+import type { SetupSheet } from '../install/first-visit.js'
 
 const NAME_LIMIT = 80
 const NOTE_LIMIT = 160
@@ -22,13 +22,11 @@ export interface CoverText {
   readonly busy: boolean
 }
 
-export type CoverState = SetupStage | { readonly kind: 'blocked' | 'download-failed', readonly name: string }
+export type CoverState = { readonly kind: 'blocked' | 'download-failed', readonly name: string }
 
 export function coverFor (state: CoverState): CoverText {
   const name = displayName(state.name)
   switch (state.kind) {
-    case 'asking': return { title: `Opening ${name}`, detail: 'Orivon is asking what this app may do before it loads any of its files.', busy: true }
-    case 'verifying': return { title: `Opening ${name}`, detail: 'Orivon is reading what the app\'s publisher declares about its files, so each one can be checked as it loads.', busy: true }
     case 'blocked': return { title: `${name} was stopped`, detail: '', busy: false }
     case 'download-failed': return { title: `${name} was not opened`, detail: '', busy: false }
   }

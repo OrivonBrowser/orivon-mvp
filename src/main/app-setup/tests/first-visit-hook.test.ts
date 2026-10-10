@@ -16,7 +16,6 @@ function screensFake (): TabScreens & { calls: string[] } {
   const calls: string[] = []
   return {
     calls,
-    show: () => { calls.push('show') },
     blank: async () => { calls.push('blank') },
     sheet: async () => 'leave',
     end: () => { calls.push('end') },
@@ -65,53 +64,53 @@ describe('firstVisitBeforeRequest', () => {
     expect(await rig({ screens: false }).handler(details(), CONTINUE)).toBe(CONTINUE)
   })
 
-  it('holds the request while the visit runs, and lets it go on when the site opens as a plain website', async () => {
+  it('never holds the request: the page loads as an ordinary website while the visit runs beside it', async () => {
     let release: (() => void) | undefined
-    const { handler, screens } = rig({ run: async (host) => { await new Promise<void>((resolve) => { release = resolve }); host.plain(); return { outcome: 'plain', why: 'denied' } } })
-    let settled = false
-    const held = handler(details(), CONTINUE).then((response) => { settled = true; return response })
-    await new Promise((resolve) => setTimeout(resolve, 10))
-    expect(settled).toBe(false)
+    const { handler, run, screens } = rig({ run: async (host) => { await new Promise<void>((resolve) => { release = resolve }); host.plain(); return { outcome: 'plain', why: 'denied' } } })
+    expect(await handler(details(), CONTINUE)).toBe(CONTINUE)
+    await vi.waitFor(() => { expect(run).toHaveBeenCalled() })
+    // The visit has not ended, and nothing was done to the tab.
+    expect(screens.calls).toEqual([])
     release?.()
-    expect(await held).toBe(CONTINUE)
-    expect(screens.calls).toEqual(['end'])
+    await vi.waitFor(() => { expect(screens.calls).toEqual(['end']) })
   })
 
-  it('cancels the request and takes the tab into the app when the files are in', async () => {
+  it('reloads the tab as the app when the visit lets it in', async () => {
     const { handler, screens } = rig({ run: async (host) => { host.enter(); return { outcome: 'entered', background: Promise.resolve('pinned' as const) } } })
-    expect(await handler(details(), CONTINUE)).toEqual({ cancel: true })
-    expect(screens.calls).toEqual([`navigate:${URL_}`])
+    expect(await handler(details(), CONTINUE)).toBe(CONTINUE)
+    await vi.waitFor(() => { expect(screens.calls).toEqual([`navigate:${URL_}`]) })
   })
 
-  it('cancels the request when the visit ends with the app not opened', async () => {
+  it('leaves the page where it is when the visit ends with the app not opened', async () => {
     const { handler, screens } = rig({ run: async (host) => { host.end(); return { outcome: 'blocked', differing: [] } } })
-    expect(await handler(details(), CONTINUE)).toEqual({ cancel: true })
-    expect(screens.calls).toEqual(['stop'])
+    expect(await handler(details(), CONTINUE)).toBe(CONTINUE)
+    await vi.waitFor(() => { expect(screens.calls).toEqual(['end']) })
   })
 
-  it('goes into the app when another tab finished the visit first, and opens a plain website when it was refused there', async () => {
-    const known = rig({ run: async () => ({ outcome: 'known' }) })
-    expect(await known.handler(details(), CONTINUE)).toEqual({ cancel: true })
-    expect(known.screens.calls).toEqual([`navigate:${URL_}`])
+  it('goes into the app when another tab finished the visit first, and leaves a plain website when it was refused there', async () => {
+    for (const outcome of ['known', 'settling'] as const) {
+      const rigged = rig({ run: async () => ({ outcome }) })
+      expect(await rigged.handler(details(), CONTINUE)).toBe(CONTINUE)
+      await vi.waitFor(() => { expect(rigged.screens.calls).toEqual([`navigate:${URL_}`]) })
+    }
     const declined = rig({ run: async () => ({ outcome: 'declined' }) })
     expect(await declined.handler(details(), CONTINUE)).toBe(CONTINUE)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(declined.screens.calls).toEqual([])
   })
 
-  it('lets the request go on as an ordinary page when the visit itself fails', async () => {
+  it('leaves the page an ordinary website when the visit itself fails', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     const { handler } = rig({ run: async () => { throw new Error('boom') } })
     expect(await handler(details(), CONTINUE)).toBe(CONTINUE)
+    await vi.waitFor(() => { expect(error).toHaveBeenCalled() })
     error.mockRestore()
-  })
-
-  it('does not answer twice when the host is used and the visit then returns', async () => {
-    const { handler } = rig({ run: async (host) => { host.plain(); host.end(); return { outcome: 'plain', why: 'website' } } })
-    expect(await handler(details(), CONTINUE)).toBe(CONTINUE)
   })
 
   it('asks as the origin of the request, with the address being opened', async () => {
     const { handler, run } = rig()
     await handler(details(), CONTINUE)
+    await vi.waitFor(() => { expect(run).toHaveBeenCalled() })
     expect(run.mock.calls[0]!.slice(0, 2)).toEqual([ORIGIN, URL_])
     expect(run.mock.calls[0]![4]).toBeInstanceOf(AbortSignal)
   })
