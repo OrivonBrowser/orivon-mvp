@@ -54,6 +54,7 @@ it('tells the person about an unverified version and keeps the old one, takes it
       await visit(app, `${ORIGIN}/`)
       await answerAccepting(app)
       check('build B loads', (await waitForTab(findChrome(app), { address: SHOWN, title: 'update fixture B' })).ok)
+      check('the tab reloaded as the app', await eventually(async () => await runsAsApp(app, `${ORIGIN}/`), 30_000))
       check('the first visit pinned build B', await eventually(() => pinOf(app, ORIGIN)?.content?.cid === root('b'), 25_000))
       const profile = profileOf(app)
       await closeElectronApp(app, APP_CLOSE_RACE_MS, { keepProfile: true })

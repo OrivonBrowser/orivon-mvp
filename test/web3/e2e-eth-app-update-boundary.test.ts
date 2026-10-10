@@ -12,7 +12,7 @@ import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetryi
 import { BUILTIN_ADDRESSES } from '../../src/protocols/builtin.js'
 import { answerAccepting, answerQuestion, noNativeDialogs, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
 import { updateApp } from '../apps/app-update/site.mjs'
-import { buildsAt, eventually, launchPhase, pinOf, profileOf, startRig } from './app-update-support.js'
+import { buildsAt, eventually, launchPhase, pinOf, profileOf, runsAsApp, startRig } from './app-update-support.js'
 
 const ORIGIN = 'https://app.eth'
 const SHOWN = BUILTIN_ADDRESSES.displayUrl(`${ORIGIN}/`)
@@ -52,6 +52,7 @@ it('keeps the new build out of a link into the app and out of its service worker
       await clickAddressBarRetrying(findChrome(app), `${ORIGIN}/`)
       await answerAccepting(app)
       check('build B loads', (await waitForTab(findChrome(app), { address: SHOWN, title: 'update fixture B' })).ok)
+      check('the tab reloaded as the app', await eventually(async () => await runsAsApp(app, `${ORIGIN}/`), 30_000))
       check('build B is pinned', await eventually(() => pinOf(app, ORIGIN)?.content?.cid === rig.gateway.roots['b'], 25_000))
       check('the app tab runs build B from its pin', await eventually(async () => (await buildsAt(app, `${ORIGIN}/`)).join() === 'B', 20_000))
       const registered = await workerSays(app, 'window.askWorkerBuild()')

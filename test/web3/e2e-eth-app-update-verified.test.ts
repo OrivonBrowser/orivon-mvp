@@ -10,7 +10,7 @@ import { findChrome } from '../support/smoke-helpers.mjs'
 import { BUILTIN_ADDRESSES } from '../../src/protocols/builtin.js'
 import { answerAccepting, answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
 import { updateApp } from '../apps/app-update/site.mjs'
-import { buildsAt, eventually, launchPhase, openTab, pinOf, profileOf, startRig } from './app-update-support.js'
+import { buildsAt, eventually, launchPhase, openTab, pinOf, profileOf, runsAsApp, startRig } from './app-update-support.js'
 
 const ORIGIN = 'https://app.eth'
 const SHOWN = BUILTIN_ADDRESSES.displayUrl(`${ORIGIN}/`)
@@ -36,6 +36,7 @@ it('[app:installed-app-moves-only-when-accepted] asks before a moved name change
       await clickAddressBarRetrying(chrome, `${ORIGIN}/`)
       await answerAccepting(app)
       check('build A loads', (await waitForTab(chrome, { address: SHOWN, title: 'update fixture A' })).ok)
+      check('the tab reloaded as the app', await eventually(async () => await runsAsApp(app, `${ORIGIN}/`), 30_000))
       check('the first visit pinned build A', await eventually(() => pinOf(app, ORIGIN)?.content?.cid === rootA, 25_000))
       const profile = profileOf(app)
       await closeElectronApp(app, APP_CLOSE_RACE_MS, { keepProfile: true })
