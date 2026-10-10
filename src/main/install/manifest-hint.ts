@@ -33,7 +33,8 @@ import type { TabScreens } from '../app-setup/tab-screens.js'
 import { firstVisitNow, tabSetupNow } from '../app-setup/tab-setup-ref.js'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import type { FirstVisit } from './first-visit.js'
-import { headlessHost, hintHost } from './hint-host.js'
+import { headlessHost } from './hint-host.js'
+import { tabHost } from '../app-setup/tab-host.js'
 
 /** The one shape this file needs from an ipcMain.on event -- structural, matching origin.ts's own SenderFrameLike so a test never needs a real Electron event. */
 export interface ManifestHintEvent {
@@ -113,21 +114,24 @@ export function createManifestHintListener (
     const visit = visits?.firstVisit()
     if (visit === undefined || event.sender === undefined) { install(); return }
     const sender = event.sender
-    // A page reporting its hint is a first visit when Orivon has never held its origin (ADR-0074, ADR-0075): the
-    // person is asked, then the tab is let into the app at once and its bundle is checked in the background.
+    // A page reporting its hint is a first visit when Orivon has never held its origin (ADR-0076): the page stays as
+    // it is, an ordinary website, while the person is asked and the app is cached; Allow reloads the tab as the app.
     visit.kindOf(origin)
       .then(async (kind) => {
         if (kind === 'declined') { console.log(`[orivon] ${origin} was refused; it stays a plain website`); return }
+        // Dismissed this run: not asked again until the next one.
+        if (kind === 'later') return
         // Its files are coming down already, checked: a second install beside that one would race it.
         if (kind === 'settling') return
         if (kind !== 'first') { install(); return }
         const screens = visits?.screensFor(sender, sender.getURL?.() ?? hintedUrl)
-        // The page is replaced by an empty one while the question is up, so "still there" is the tab's own account of whether the person moved on.
+        // "Still there" is the tab's own account of whether the person moved on.
         const asker: DialogCaller = screens === undefined ? caller : { ...caller, stillOn: () => !screens.moved() }
-        const host = screens === undefined ? headlessHost({ reload: () => { sender.reload() }, isDestroyed: () => sender.isDestroyed() }) : hintHost({ getURL: () => sender.getURL?.() ?? hintedUrl }, screens)
+        const host = screens === undefined ? headlessHost({ reload: () => { sender.reload() }, isDestroyed: () => sender.isDestroyed() }) : tabHost(screens, () => sender.getURL?.() ?? hintedUrl)
         const result = await visit.run(origin, hintedUrl, asker, host, screens?.signal)
+        if (result.outcome === 'duplicate' || result.outcome === 'later') host.end()
         if (result.outcome === 'known') install()
-        else if (result.outcome !== 'entered' && result.outcome !== 'settling') console.log(`[orivon] manifest hint from ${origin} did not install: ${result.outcome}`)
+        else if (result.outcome !== 'entered' && result.outcome !== 'settling' && result.outcome !== 'duplicate') console.log(`[orivon] manifest hint from ${origin} did not install: ${result.outcome}`)
       })
       .catch((error: unknown) => {
         console.error('[orivon] the first visit threw unexpectedly for a manifest hint', origin, error)

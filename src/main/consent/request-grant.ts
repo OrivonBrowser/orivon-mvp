@@ -66,6 +66,10 @@ export interface DialogCaller {
   contents?: () => unknown
   /** Holds the calling tab's page where it is until the returned function is called. Set where the first-visit flow runs, which takes it from before the origin is registered; the prompts take their own around each question. */
   hold?: () => () => void
+  /** The page keeps running, and navigating, while the question is open (a first visit, where the page is an ordinary website): the prompts hold nothing. */
+  unheld?: boolean
+  /** Aborts when whatever asked no longer wants the answer (a first visit whose page was stopped): the question it opened is withdrawn as a cancel. */
+  signal?: AbortSignal
 }
 
 /**

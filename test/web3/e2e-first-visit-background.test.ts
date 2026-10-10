@@ -1,7 +1,7 @@
-// What follows the entry of a published app, in the background: the whole bundle is downloaded and pinned, after
-// which a visit is served from the pin with the gateway gone; a file the page never loaded that turns out not to be
-// the declared one blocks the app all the same, even though its first page ran fine. Driven through the test
-// seam's gateway.
+// What follows the entry of a published app: the whole bundle is cached and pinned, after which a visit is served
+// from the pin with the gateway gone; a file that turns out not to be the declared one blocks the app all the same,
+// even though its first page ran fine and its data is kept; an app allowed and not yet pinned is served again after
+// a restart and follows its name to a new version. Driven through the test seam's gateway.
 import { afterAll, expect, it } from 'vitest'
 import { existsSync, readFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
@@ -26,18 +26,15 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-it('[app:first-visit-pins-in-the-background] [app:first-visit-background-mismatch-blocks] pins the whole app after entering so the next visit needs no gateway, and blocks an app whose unloaded file differs from the declared tree', async () => {
+it('[app:first-visit-pins-in-the-background] pins the whole app once it is cached and allowed, so the next visit needs no gateway', async () => {
   await runPhase('first-visit-background', async (check) => {
-    const bad = files('Late app', 'first.visit.late', 'localStorage.setItem("mine", "kept-by-person"); document.body.dataset.app = "ran"')
     const gateway = await startFixtureGateway({
-      good: await withDeclaredTree(files('Pinned app', 'first.visit.pinned')),
-      late: await withDeclaredTree(bad, { ...bad, 'later.js': 'document.title = "what was declared"' })
+      good: await withDeclaredTree(files('Pinned app', 'first.visit.pinned'))
     })
     let gatewayOpen = true
     let app: Awaited<ReturnType<typeof launchElectron>> | undefined
     try {
       const goodRoot = gateway.roots['good']!
-      const lateRoot = gateway.roots['late']!
       app = await launchElectron({
         appPath: '.',
         args: [HERMETIC_RESOLVER],
@@ -53,22 +50,7 @@ it('[app:first-visit-pins-in-the-background] [app:first-visit-background-mismatc
       const chrome = findChrome(running)
       await waitForAddressBarStable(chrome)
 
-      // 1. An unloaded file that differs from the declared tree blocks the app, though its first page ran fine.
-      const lateOrigin = `https://${lateRoot}.ipfs.orivon`
-      await clickAddressBarRetrying(chrome, `ipfs://${lateRoot}`)
-      await waitQuestion(running, 60_000)
-      await answerQuestion(running, 'Allow')
-      const warning = await waitSheet(running)
-      check(`a security warning is shown (${warning.text.title})`, /security warning/i.test(warning.text.title))
-      check(`it names the file that differs (${JSON.stringify(warning.text.files)})`, warning.text.files.includes('/later.js'))
-      check('its first page was let in and parsed before the block', (await pageLog(running)).some((line) => line.startsWith('dom-ready') && line.includes(lateRoot)))
-      check('nothing was pinned', !existsSync(pinPath(userData, lateOrigin)))
-      check(`no grant is left (${JSON.stringify(savedGrants(userData, lateOrigin))})`, savedGrants(userData, lateOrigin).length === 0)
-      check('what the person\'s app stored is still there: a block takes permissions, never data', await waitFor(async () => await partitionHolds(running, userData, lateOrigin, 'kept-by-person'), 15_000) && !(await partitionHolds(running, userData, lateOrigin, 'a-value-nobody-wrote')))
-      await pressSheet(warning.page, 'Go back')
-      check('Go back takes the sheet away', await waitFor(() => sheetGone(running), 10_000))
-
-      // 2. Allow, then the background download pins everything, including the file the page never loads.
+      // 1. Allow, then the background download pins everything, including the file the page never loads.
       const goodOrigin = `https://${goodRoot}.ipfs.orivon`
       await clickAddressBarRetrying(chrome, `ipfs://${goodRoot}`)
       await waitQuestion(running, 60_000)
@@ -79,7 +61,7 @@ it('[app:first-visit-pins-in-the-background] [app:first-visit-background-mismatc
       check('the file its page never loads came down too', gateway.requests.some((request) => request.startsWith(`/ipfs/${gateway.blockOf('good', 'later.js')}`)))
       check('its grants are saved', savedGrants(userData, goodOrigin).includes('fs'))
 
-      // 3. The gateway is gone, and the next visit is served from the pin without asking again.
+      // 2. The gateway is gone, and the next visit is served from the pin without asking again.
       await gateway.close()
       gatewayOpen = false
       const loadsOf = async (): Promise<number> => (await pageLog(running)).filter((line) => line.startsWith('dom-ready') && line.includes(goodRoot)).length
@@ -94,6 +76,51 @@ it('[app:first-visit-pins-in-the-background] [app:first-visit-background-mismatc
     } finally {
       if (app !== undefined) await closeElectronApp(app)
       if (gatewayOpen) await gateway.close()
+    }
+  })
+}, TEST_TIMEOUT_MS)
+
+it('[app:first-visit-background-mismatch-blocks] blocks an allowed app whose file differs from the declared tree when its page asks for it after it ran, taking permissions and keeping what the app stored', async () => {
+  await runPhase('first-visit-late-mismatch', async (check) => {
+    const bad = files('Late app', 'first.visit.late', 'localStorage.setItem("mine", "kept-by-person"); document.body.dataset.app = "ran"; setTimeout(() => { fetch("later.js").catch(() => {}) }, 500)')
+    const gateway = await startFixtureGateway({
+      late: await withDeclaredTree(bad, { ...bad, 'later.js': 'document.title = "what was declared"' })
+    })
+    let app: Awaited<ReturnType<typeof launchElectron>> | undefined
+    try {
+      const lateRoot = gateway.roots['late']!
+      // Caching is held back for the whole run, so only the check on what the app's own page loads can find the file.
+      app = await launchElectron({
+        appPath: '.',
+        args: [HERMETIC_RESOLVER],
+        env: { ORIVON_TEST_ETH_FIXTURES: '{}', ORIVON_TEST_IPFS_GATEWAYS: gateway.url, ORIVON_TEST_BACKGROUND_PIN_DELAY_MS: '600000' }
+      })
+      const running = app
+      await stubNativeDialogs(running)
+      const listening = await waitFor(async () => await running.evaluate(() => { const seam = (globalThis as { __orivonDevEthFixtures?: { listening: boolean, start?: () => void } }).__orivonDevEthFixtures; seam?.start?.(); return seam?.listening === true }), 20_000)
+      if (!listening) throw new Error('the verifier host never reported listening')
+      const userData = await running.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))
+      await waitFor(() => running.windows().length === 2)
+      const chrome = findChrome(running)
+      await waitForAddressBarStable(chrome)
+
+      const lateOrigin = `https://${lateRoot}.ipfs.orivon`
+      await clickAddressBarRetrying(chrome, `ipfs://${lateRoot}`)
+      await waitQuestion(running, 60_000)
+      await answerQuestion(running, 'Allow')
+      const warning = await waitSheet(running, 90_000)
+      check(`a security warning is shown (${warning.text.title})`, /security warning/i.test(warning.text.title))
+      check(`it names the file that differs (${JSON.stringify(warning.text.files)})`, warning.text.files.includes('/later.js'))
+      check('nothing was pinned', !existsSync(pinPath(userData, lateOrigin)))
+      check(`no grant is left (${JSON.stringify(savedGrants(userData, lateOrigin))})`, savedGrants(userData, lateOrigin).length === 0)
+      check('what the person\'s app stored is still there: a block takes permissions, never data', await waitFor(async () => await partitionHolds(running, userData, lateOrigin, 'kept-by-person'), 15_000) && !(await partitionHolds(running, userData, lateOrigin, 'a-value-nobody-wrote')))
+      await pressSheet(warning.page, 'Go back')
+      check('Go back takes the sheet away', await waitFor(() => sheetGone(running), 10_000))
+
+      expect(await noNativeDialogs(running)).toEqual([])
+    } finally {
+      if (app !== undefined) await closeElectronApp(app)
+      await gateway.close()
     }
   })
 }, TEST_TIMEOUT_MS)
@@ -133,6 +160,9 @@ it('[app:first-visit-resumes-after-a-restart] serves an app that was allowed and
         await answerQuestion(first, 'Allow')
         const opened = await waitForTab(chrome, { address: `ipfs://${root}/`, title }, 60_000)
         check(`${title} opened (${JSON.stringify(opened.info)})`, opened.ok)
+        let entered = null as PageFacts | null
+        await waitFor(async () => { entered = await pageAt(first, `https://${root}.ipfs.orivon/`); return entered?.ran === 'ran' && entered.hasProcess }, 60_000)
+        check(`${title} reloaded as an app tab (${JSON.stringify(entered)})`, entered?.hasProcess === true)
       }
       check('neither is pinned', !existsSync(pinPath(profile, goodOrigin)) && !existsSync(pinPath(profile, lateOrigin)))
       check('both are granted', savedGrants(profile, goodOrigin).includes('fs') && savedGrants(profile, lateOrigin).includes('fs'))
@@ -205,8 +235,8 @@ it('[app:first-visit-follows-a-new-version] follows an app whose name is republi
       await waitQuestion(before, 60_000)
       await answerQuestion(before, 'Allow')
       let first = null as PageFacts | null
-      await waitFor(async () => { first = await pageAt(before, `${origin}/`); return first?.ran === 'v1' }, 60_000)
-      check(`the first version runs (${JSON.stringify(first)})`, first?.ran === 'v1')
+      await waitFor(async () => { first = await pageAt(before, `${origin}/`); return first?.ran === 'v1' && first.hasProcess }, 60_000)
+      check(`the first version runs as an app tab (${JSON.stringify(first)})`, first?.ran === 'v1' && first.hasProcess)
       check('it is not pinned', !existsSync(pinPath(profile, origin)))
       app = undefined
       await closeElectronApp(before, APP_CLOSE_RACE_MS, { keepProfile: true })

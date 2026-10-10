@@ -53,14 +53,14 @@ describe('createPerCapabilityConsentPrompt', () => {
     expect(askQuestion).toHaveBeenCalledOnce()
   })
 
-  it('the overview offers three buttons, cancelling on "Deny all" with "Allow all" guarded -- dismissing must never grant', async () => {
+  it('the overview offers three buttons, cancelling on "Deny all", with both buttons guarded -- dismissing must never grant, and a stray key must never refuse', async () => {
     askQuestion.mockResolvedValueOnce({ response: 2, checkboxChecked: false, clicked: true })
     await createPerCapabilityConsentPrompt()(ORIGIN, manifest(), CAPABILITIES)
 
     expect(specOf()).toMatchObject({
       buttons: ['Allow all', 'Choose individually', 'Deny all'],
       cancelId: 2,
-      guarded: [0]
+      guarded: [0, 2]
     })
   })
 
@@ -89,7 +89,7 @@ describe('createPerCapabilityConsentPrompt', () => {
     expect(askQuestion).toHaveBeenCalledTimes(3)
   })
 
-  it('each per-item question uses Allow/Deny, cancelling on Deny with Allow guarded -- same safe default as every other question in this family', async () => {
+  it('each per-item question uses Allow/Deny, cancelling on Deny with both buttons guarded -- same safe default as every other question in this family', async () => {
     askQuestion
       .mockResolvedValueOnce({ response: 1, checkboxChecked: false, clicked: true })
       .mockResolvedValueOnce({ response: 1, checkboxChecked: false, clicked: true })
@@ -98,7 +98,7 @@ describe('createPerCapabilityConsentPrompt', () => {
 
     const itemCalls = askQuestion.mock.calls.slice(1)
     for (const [, options] of itemCalls) {
-      expect(options).toMatchObject({ buttons: ['Allow', 'Deny'], cancelId: 1, guarded: [0] })
+      expect(options).toMatchObject({ buttons: ['Allow', 'Deny'], cancelId: 1, guarded: [0, 1] })
     }
   })
 

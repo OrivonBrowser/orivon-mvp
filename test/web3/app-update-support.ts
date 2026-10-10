@@ -124,12 +124,12 @@ export async function buildsAt (app: ElectronApplication, url: string): Promise<
   }, url)
 }
 
-/** True once a tab at `url` has finished loading and runs as an app tab: the reload that follows a first install has ended and the page holds `orivon`. */
+/** True once a tab at `url` has finished loading and runs as an app tab: the page holds `orivon` and the Node globals only an app tab gets. A first visit's page is an ordinary website until it is allowed, so `orivon` alone does not say the reload has ended. */
 export async function runsAsApp (app: ElectronApplication, url: string): Promise<boolean> {
   return await app.evaluate(async ({ webContents }, address) => {
     const tab = webContents.getAllWebContents().find((contents) => !contents.isDestroyed() && contents.getURL() === address)
     if (tab === undefined || tab.isLoading()) return false
-    return await tab.executeJavaScript('typeof window.orivon === "object"').catch(() => false) as boolean
+    return await tab.executeJavaScript('typeof window.orivon === "object" && typeof process !== "undefined"').catch(() => false) as boolean
   }, url)
 }
 

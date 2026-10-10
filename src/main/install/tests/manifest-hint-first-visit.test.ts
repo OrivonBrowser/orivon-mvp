@@ -14,7 +14,7 @@ import type { FirstVisit, FirstVisitResult, SetupHost } from '../first-visit.js'
 const REJECTED: LoadResult = { outcome: 'rejected', reason: 'unused' }
 async function flush (): Promise<void> { await new Promise((resolve) => setTimeout(resolve, 0)) }
 
-function rig (options: { kind?: 'first' | 'declined' | 'known' | 'settling', result?: FirstVisitResult, screens?: boolean, wired?: boolean, moved?: boolean } = {}): {
+function rig (options: { kind?: 'first' | 'declined' | 'known' | 'settling' | 'later', result?: FirstVisitResult, screens?: boolean, wired?: boolean, moved?: boolean } = {}): {
   listener: ReturnType<typeof createManifestHintListener>
   installApp: ReturnType<typeof vi.fn<InstallApp>>
   run: ReturnType<typeof vi.fn>
@@ -29,7 +29,7 @@ function rig (options: { kind?: 'first' | 'declined' | 'known' | 'settling', res
   const run = vi.fn(async (_origin: string, _url: string, caller: DialogCaller | undefined, host: SetupHost, _signal?: AbortSignal): Promise<FirstVisitResult> => { hosts.push(host); callers.push(caller); return options.result ?? { outcome: 'left' } })
   const visit: FirstVisit = { kindOf: async () => options.kind ?? 'first', run: run as unknown as FirstVisit['run'], resume: async () => {} }
   const screens: TabScreens = {
-    show: vi.fn(), blank: vi.fn(async () => {}), sheet: async () => 'leave', end: vi.fn(), moved: () => options.moved === true, signal: new AbortController().signal, tab: () => ({ window: {}, tabId: 't' }) as never,
+    blank: vi.fn(async () => {}), sheet: async () => 'leave', end: vi.fn(), moved: () => options.moved === true, signal: new AbortController().signal, tab: () => ({ window: {}, tabId: 't' }) as never,
     navigate: vi.fn(), leavePage: vi.fn(), stop: vi.fn()
   }
   const visits: HintVisits = { firstVisit: () => options.wired === false ? undefined : visit, screensFor: () => options.screens === false ? undefined : screens }
@@ -59,6 +59,14 @@ describe('createManifestHintListener: the first visit', () => {
 
   it('leaves an origin the person said no to alone: the site stays a plain website', async () => {
     const { listener, installApp, run } = rig({ kind: 'declined' })
+    listener(frameFor(APP), `${APP}/.well-known/orivon.json`)
+    await flush()
+    expect(run).not.toHaveBeenCalled()
+    expect(installApp).not.toHaveBeenCalled()
+  })
+
+  it('asks nothing again for an origin whose question was dismissed this run', async () => {
+    const { listener, installApp, run } = rig({ kind: 'later' })
     listener(frameFor(APP), `${APP}/.well-known/orivon.json`)
     await flush()
     expect(run).not.toHaveBeenCalled()
@@ -108,16 +116,14 @@ describe('createManifestHintListener: the first visit', () => {
     expect(installApp).toHaveBeenCalledOnce()
   })
 
-  it('takes the page down only when the first visit shows its first stage', async () => {
-    const { listener, hosts, screens } = rig()
+  it('leaves the running page alone while the question is open', async () => {
+    const { listener, screens } = rig()
     listener(frameFor(APP), `${APP}/.well-known/orivon.json`)
     await flush()
     expect(screens.blank).not.toHaveBeenCalled()
-    await hosts[0]!.show({ kind: 'asking', name: 'L' })
-    expect(screens.blank).toHaveBeenCalledOnce()
   })
 
-  it('asks as the tab itself once its page is replaced: it is still there until the tab moves on', async () => {
+  it('asks as the tab itself while its page runs on: it is still there until the tab moves on', async () => {
     const stays = rig()
     stays.listener(frameFor(APP), `${APP}/.well-known/orivon.json`)
     await flush()

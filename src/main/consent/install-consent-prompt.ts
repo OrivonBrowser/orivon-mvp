@@ -56,7 +56,7 @@ export function createInstallConsentPrompt (levelOverrideFor: LevelOverrideFor =
         detail: content.detail,
         buttons: ['Allow', 'Deny'],
         cancelId: 1,
-        guarded: [0],
+        guarded: [0, 1],
         focus: 'dialog'
       })
       // Only the pressed Deny is a no: Escape, a closed tab and a navigation answer with the same index.
@@ -113,7 +113,7 @@ export function createPerCapabilityConsentPrompt (levelOverrideFor: LevelOverrid
         detail: overviewContent.detail,
         buttons: OVERVIEW_BUTTONS,
         cancelId: DENY_ALL,
-        guarded: [ALLOW_ALL],
+        guarded: [ALLOW_ALL, DENY_ALL],
         focus: 'dialog'
       })
       if (overview.response === ALLOW_ALL) return capabilities
@@ -140,7 +140,7 @@ export function createPerCapabilityConsentPrompt (levelOverrideFor: LevelOverrid
           detail: screen.detail,
           buttons: ['Allow', 'Deny'],
           cancelId: 1,
-          guarded: [0],
+          guarded: [0, 1],
           focus: 'dialog'
         })
         if (choice.response !== 0 && choice.clicked !== true) return null

@@ -58,14 +58,14 @@ describe('createInstallConsentPrompt', () => {
     expect(result).toBe(false)
   })
 
-  it('cancels on the Deny button, and the Allow button is guarded -- dismissing the question must never grant', async () => {
+  it('cancels on the Deny button, and both buttons are guarded -- dismissing must never grant and a stray key must never persist a refusal', async () => {
     askQuestion.mockResolvedValueOnce({ response: 1, checkboxChecked: false, clicked: true })
 
     await createInstallConsentPrompt()(ORIGIN, manifestWith({ fs: {} }), ['fs'], [])
 
     expect(specOf()).toMatchObject({
       cancelId: 1,
-      guarded: [0],
+      guarded: [0, 1],
       kind: 'consent',
       buttons: ['Allow', 'Deny']
     })
@@ -159,5 +159,28 @@ describe('createInstallConsentPrompt', () => {
     expect(askQuestion.mock.calls[0]?.[0]).toEqual({ contents: tab })
     expect(holdNavigation).toHaveBeenCalledWith(tab)
     expect(release).toHaveBeenCalledOnce()
+  })
+
+  it('holds nothing for a caller whose page keeps running, such as a first visit to an app', async () => {
+    const tab = { id: 'the-tab' }
+    askQuestion.mockResolvedValueOnce({ response: 0, checkboxChecked: false })
+    const caller = { window: () => undefined, stillOn: () => true, contents: () => tab, unheld: true }
+
+    expect(await createInstallConsentPrompt()(ORIGIN, manifestWith({ fs: {} }), ['fs'], [], caller)).toBe(true)
+
+    expect(holdNavigation).not.toHaveBeenCalled()
+    expect(askQuestion.mock.calls[0]?.[0]).toEqual({ contents: tab })
+  })
+
+  it('withdraws the question when the caller\'s signal aborts', async () => {
+    const gone = new AbortController()
+    askQuestion.mockImplementationOnce(async (_target, _spec, options) => {
+      gone.abort()
+      expect((options as { signal?: AbortSignal }).signal?.aborted).toBe(true)
+      return { response: 1, checkboxChecked: false }
+    })
+    const caller = { window: () => undefined, stillOn: () => true, signal: gone.signal }
+
+    expect(await createInstallConsentPrompt()(ORIGIN, manifestWith({ fs: {} }), ['fs'], [], caller)).toBe('dismissed')
   })
 })

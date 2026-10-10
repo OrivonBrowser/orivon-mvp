@@ -84,6 +84,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - A published app now asks before any file downloads, then checks its files against the site's declared tree before it opens; mismatches lose every grant.
 - Ledger Wallet adds accounts, verifies an address and signs a transaction on an emulated Nano X through Orivon's WebHID.
 - A published app opens the moment you allow it; each file is checked against its declared tree as it loads, the rest pins later.
+- A published app no longer waits for your answer: it loads as a website, caches beside the question, and Allow reloads it as the app.
 
 ### In my head
 

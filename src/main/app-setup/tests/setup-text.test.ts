@@ -11,12 +11,6 @@ describe('displayName', () => {
 })
 
 describe('coverFor', () => {
-  it('words each stage with the app\'s name', () => {
-    expect(coverFor({ kind: 'asking', name: 'Ledger' })).toMatchObject({ title: 'Opening Ledger', busy: true })
-    expect(coverFor({ kind: 'verifying', name: 'Ledger' })).toMatchObject({ title: 'Opening Ledger', busy: true })
-    expect(coverFor({ kind: 'verifying', name: 'Ledger' }).detail).toMatch(/each one can be checked/i)
-  })
-
   it('says nothing is moving once a sheet explains what happened', () => {
     expect(coverFor({ kind: 'blocked', name: 'Ledger' })).toMatchObject({ title: 'Ledger was stopped', busy: false })
     expect(coverFor({ kind: 'download-failed', name: 'Ledger' })).toMatchObject({ title: 'Ledger was not opened', busy: false })

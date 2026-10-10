@@ -91,14 +91,15 @@ A normal page stays a normal page. An origin becomes an app when a manifest is f
 the user takes. Its declared files are fetched, hashed and cached automatically and silently; no
 consent is asked at that point.
 
-Consent is asked **once, before the app's own code runs**, for the app's whole declared
+Consent is asked **once**, as soon as the manifest is read, for the app's whole declared
 capability set, in a single dialog. It is not deferred to first use: ported code that has never
 heard of Orivon cannot pause mid-request for a popup, and a denial answered while a person is
 still reading a dialog looks, to that code, identical to a capability that does not exist at
-all. One gap remains, bounded to a first visit: the page's own scripts can start running before
-that dialog is answered, so an early call can still see `'denied'` before consent resolves
-([`A146`](docs/open-questions.md)). Every later visit is unaffected, because the grant is
-already held by the time the app runs.
+all. So a first visit never runs the app with a half-answered question: the page loads at once
+as an ordinary website, with no grants and no Node globals, while the app is cached beside the
+dialog, and the tab reloads as the app, with its grants held from its first line, when the
+person allows it. Every later visit is unaffected, because the grant is already held by the
+time the app runs.
 
 **The manifest is never probed automatically.** An unsolicited request to every origin you visit
 is an active, attributable *"this visitor runs Orivon"* signal, sent from a privacy-branded

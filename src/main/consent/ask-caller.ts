@@ -9,12 +9,15 @@ import type { DialogCaller } from './request-grant.js'
 
 const contentsOf = (caller: DialogCaller | undefined): object | undefined => caller?.contents?.() as object | undefined
 
-/** Asks in the calling tab's panel. An aborted signal withdraws the question as a cancel. */
+/** Asks in the calling tab's panel. An aborted signal, the given one or the caller's own, withdraws the question as a cancel. */
 export async function askCaller (caller: DialogCaller | undefined, spec: QuestionSpec, signal?: AbortSignal): Promise<QuestionResult> {
-  return await askQuestion({ contents: contentsOf(caller) }, spec, signal === undefined ? {} : { signal })
+  const signals = [signal, caller?.signal].filter((candidate): candidate is AbortSignal => candidate !== undefined)
+  const withdrawn = signals.length > 1 ? AbortSignal.any(signals) : signals[0]
+  return await askQuestion({ contents: contentsOf(caller) }, spec, withdrawn === undefined ? {} : { signal: withdrawn })
 }
 
 /** Holds the calling tab's page until the returned release is called. */
 export function holdCaller (caller: DialogCaller | undefined): () => void {
+  if (caller?.unheld === true) return () => {}
   return holdNavigation(contentsOf(caller))
 }
