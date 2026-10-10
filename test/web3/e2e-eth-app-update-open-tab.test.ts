@@ -10,7 +10,7 @@ import { BUILTIN_ADDRESSES } from '../../src/protocols/builtin.js'
 import { answerAccepting, answerQuestion, noNativeDialogs, readQuestion, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
 import { SITE_TTL_MS } from '../../src/protocols/verifier-host/serve/sites.js'
 import { updateApp } from '../apps/app-update/site.mjs'
-import { buildsAt, eventually, launchPhase, pinOf, startRig } from './app-update-support.js'
+import { buildsAt, eventually, launchPhase, pinOf, runsAsApp, startRig } from './app-update-support.js'
 
 const ORIGIN = 'https://app.eth'
 const SHOWN = BUILTIN_ADDRESSES.displayUrl(`${ORIGIN}/`)
@@ -34,6 +34,7 @@ it('tells the person about a moved DNSLink while the app tab stays where it is',
       await clickAddressBarRetrying(findChrome(app), `${ORIGIN}/`)
       await answerAccepting(app)
       check('build A loads', (await waitForTab(findChrome(app), { address: SHOWN, title: 'update fixture A' })).ok)
+      check('the tab reloaded as the app', await eventually(async () => await runsAsApp(app, `${ORIGIN}/`), 30_000))
       check('the first visit pinned build A', await eventually(() => pinOf(app, ORIGIN)?.content?.cid === rig.gateway.roots['a'], 25_000))
 
       rig.dnslinks['app.example'] = 'b'
