@@ -63,7 +63,9 @@ export function expandSpecs (text, specs) {
 /**
  * The `run` job's matrix: one entry per system (live-session.yml), or, given `specs`, `shards` entries per system
  * that share the specs by their recorded seconds, each carrying its job's name, its artifact's name and its specs.
+ * @param {string} text a comma or space list of system names
  * @param {{ specs?: string, shards?: number, weights?: Record<string, number> }} [options]
+ * @returns {{ include: Array<{ system: string, os: string, name?: string, artifact?: string, specs?: string }> }}
  */
 export function matrixFor (text, { specs, shards = 1, weights = {} } = {}) {
   const systems = parseSystems(text)
