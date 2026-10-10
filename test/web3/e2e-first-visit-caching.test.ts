@@ -65,6 +65,13 @@ it('[app:first-visit-caches-beside-the-question] [app:first-visit-deny-stops-cac
       check('a file the page never asks for is fetched before the answer', await waitFor(() => asked('cached', 'later.js') >= 1, 60_000))
       check('the question is still open, and nothing is pinned or granted', !(await questionGone(running)) && !existsSync(pinPath(userData, cachedOrigin)) && savedGrants(userData, cachedOrigin).length === 0)
 
+      // The page is free to reload or follow its own links while it is asked: the same question stays, and nothing asks twice.
+      await clickAddressBarRetrying(chrome, `ipfs://${cachedRoot}/`)
+      await waitFor(async () => (await pageAt(running, `${cachedOrigin}/`))?.ran === 'ran', 30_000)
+      await delay(ABSENCE_SETTLE_MS)
+      const questions = running.windows().filter((page) => page.url().includes('overlay=question') && !page.isClosed())
+      check(`a reload inside the origin left the one question open (${String(questions.length)})`, questions.length === 1)
+
       // 2. Allow: the tab reloads as the app, and what was cached is pinned.
       await answerQuestion(running, 'Allow')
       let facts = null as PageFacts | null

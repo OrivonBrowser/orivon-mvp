@@ -85,6 +85,10 @@ export type FirstVisitResult =
   | { readonly outcome: 'entered', readonly background: Promise<BackgroundOutcome> }
   /** Another visit finished first: the origin is an app Orivon holds now (`settling`: with its download still going), or the person said no there. The host was not used. */
   | { readonly outcome: 'known' | 'declined' | 'settling' }
+  /** The person dismissed the question (Escape, a timeout): nothing is recorded, and for the rest of the run the origin is not asked about again. The staged cache is kept for as long. */
+  | { readonly outcome: 'later', readonly keeper?: Keeper }
+  /** The same tab already has a visit to this origin running (a reload, the page's own hint): this one was dropped. */
+  | { readonly outcome: 'duplicate' }
   | { readonly outcome: 'plain', readonly why: 'website' | 'unread' | 'denied' }
   | { readonly outcome: 'blocked', readonly differing: readonly string[] }
   | { readonly outcome: 'failed', readonly reason: string }
@@ -133,10 +137,18 @@ export async function runFirstVisit (deps: FirstVisitDeps, hintingOrigin: string
     else if (tree.kind === 'failed' && tree.integrity === true) await keeper.block({ differing: [], invalid: tree.reason })
   })
   let entered = false
+  let notNow = false
   try {
-    const ask = await askInstallConsent(deps.broker, deps.consent, origin, read.manifest, deps.perCapabilityConsent, caller === undefined ? undefined : { ...caller, signal: keeper.signal })
+    // The page keeps running while the question is open, and the question goes when the app is stopped or the tab leaves the origin.
+    const withdrawn = signal === undefined ? keeper.signal : AbortSignal.any([keeper.signal, signal])
+    const ask = await askInstallConsent(deps.broker, deps.consent, origin, read.manifest, deps.perCapabilityConsent, caller === undefined ? undefined : { ...caller, signal: withdrawn, unheld: true })
     if (keeper.stopped()) return left()
-    if (ask.outcome === 'left' || gone()) return left()
+    if (gone()) return left()
+    if (ask.outcome === 'left') {
+      notNow = true
+      host.end()
+      return { outcome: 'later', keeper }
+    }
     if (ask.outcome === 'denied') {
       deps.declined.add(origin)
       host.plain()
@@ -163,7 +175,7 @@ export async function runFirstVisit (deps: FirstVisitDeps, hintingOrigin: string
     signal?.removeEventListener('abort', stopReading)
     reading.abort()
     // Whatever was cached for an app nobody let in is thrown away.
-    if (!entered) await keeper.cancel()
+    if (!entered && !notNow) await keeper.cancel()
   }
 }
 
@@ -186,38 +198,51 @@ export interface Entry {
 async function letIn (deps: FirstVisitDeps, entry: Entry): Promise<FirstVisitResult> {
   const { origin, read, host, keeper } = entry
   const { name } = read.manifest
+  const left = (): FirstVisitResult => { host.end(); return { outcome: 'left' } }
   keeper.declared(entry.declaration)
 
-  let served = false
-  try {
-    served = await deps.loader.serveLive(read, entry.declaration, keeper.hooks)
-  } catch (error) {
-    console.error('[first-visit] the app could not be served before its pin', origin, error)
-  }
-  if (!served) {
-    host.plain()
-    return { outcome: 'failed', reason: `${name} could not be set up to be checked as it loads` }
-  }
-  keeper.markServed()
-  try {
+  // The serving, the registration, the grants and the record are one step as far as a block is concerned: one that lands
+  // meanwhile waits for the step's end and then takes it all away, and the step stops at the first sign of it.
+  const prepared = await keeper.exclusive(async (): Promise<FirstVisitResult | undefined> => {
+    if (keeper.stopped()) return left()
+    let served = false
     try {
-      await deps.broker.registerApp(origin, read.manifest)
+      served = await deps.loader.serveLive(read, entry.declaration, keeper.hooks)
     } catch (error) {
-      console.error('[first-visit] registerApp failed; the app is registered but its version floor was not persisted', origin, error)
+      console.error('[first-visit] the app could not be served before its pin', origin, error)
     }
-    await applyInstallConsent(deps.broker, origin, read.manifest, entry.ask)
-  } catch (error) {
-    console.error('[first-visit] the app could not be granted what was accepted', origin, error)
-    await deps.broker.forgetOrigin(origin).catch(() => {})
-    await deps.loader.endLive(origin).catch(() => {})
-    host.plain()
-    return { outcome: 'failed', reason: `${name} could not be granted what was accepted` }
-  }
-  // Durable from here: a restart before the pin serves this very root again, checked, and finishes the pin.
-  await deps.loader.rememberConsent(read, entry.declaration).catch((error: unknown) => { console.error('[first-visit] the consent could not be kept for a restart', origin, error) })
+    if (!served) {
+      host.plain()
+      return { outcome: 'failed', reason: `${name} could not be set up to be checked as it loads` }
+    }
+    keeper.markServed()
+    if (keeper.stopped()) return left()
+    try {
+      try {
+        await deps.broker.registerApp(origin, read.manifest)
+      } catch (error) {
+        console.error('[first-visit] registerApp failed; the app is registered but its version floor was not persisted', origin, error)
+      }
+      if (keeper.stopped()) return left()
+      await applyInstallConsent(deps.broker, origin, read.manifest, entry.ask)
+    } catch (error) {
+      console.error('[first-visit] the app could not be granted what was accepted', origin, error)
+      await deps.broker.forgetOrigin(origin).catch(() => {})
+      await deps.loader.endLive(origin).catch(() => {})
+      host.plain()
+      return { outcome: 'failed', reason: `${name} could not be granted what was accepted` }
+    }
+    if (keeper.stopped()) return left()
+    // Durable from here: a restart before the pin serves this very root again, checked, and finishes the pin.
+    await deps.loader.rememberConsent(read, entry.declaration).catch((error: unknown) => { console.error('[first-visit] the consent could not be kept for a restart', origin, error) })
+    return undefined
+  })
+  if (prepared !== undefined) return prepared
 
   // Staged before the answer: pinned now, so the reload is served from the pin.
   if (keeper.landed()) await keeper.start()
+  // A block that landed meanwhile has the tab and takes the origin away; the tab is not sent into it.
+  if (keeper.stopped()) return left()
   if (entry.gone()) host.end()
   else host.enter()
   keeper.enteredTab(host.tab?.())
@@ -252,8 +277,8 @@ async function resumeConsent (deps: FirstVisitDeps, consent: PendingConsent, set
 
 /** What the tab's two ways in need of a first visit: whether an origin is one, and running it. */
 export interface FirstVisit {
-  /** `settling`: let in as an app, with its download still going. */
-  kindOf: (origin: string) => Promise<'first' | 'declined' | 'known' | 'settling'>
+  /** `settling`: let in as an app, with its download still going. `later`: the question was dismissed this run. */
+  kindOf: (origin: string) => Promise<'first' | 'declined' | 'known' | 'settling' | 'later'>
   /** Serialised per origin, and judged again when its turn comes: two tabs on one origin ask once. `signal` ends the visit's own reads. */
   run: (origin: string, hintedUrl: string, caller: DialogCaller | undefined, host: SetupHost, signal?: AbortSignal) => Promise<FirstVisitResult>
   /** At start: serves again every app that was allowed and not yet pinned, before any tab can ask for it. */
@@ -268,12 +293,20 @@ export interface FirstVisitOptions {
   readonly servedFromCache: (origin: string) => boolean
 }
 
+/** Two references to a tab are one tab when they name the same window and tab id, whatever the objects holding them. */
+const sameTab = (a: object | undefined, b: object): boolean => a !== undefined && Object.entries(b).every(([key, value]) => (a as Record<string, unknown>)[key] === value)
+
 export function createFirstVisit (options: FirstVisitOptions): FirstVisit {
   const { deps } = options
   const settling = new Set<string>()
+  /** Origins whose question was dismissed this run, with the cache each kept staged. Nothing of this is written down. */
+  const notNow = new Map<string, Keeper | undefined>()
+  /** The visits running, by origin and tab: a reload or the page's own hint in a tab that is already being asked is the same visit. */
+  const running: Array<{ origin: string, tab: object | undefined }> = []
 
-  async function kindOf (origin: string): Promise<'first' | 'declined' | 'known' | 'settling'> {
+  async function kindOf (origin: string): Promise<'first' | 'declined' | 'known' | 'settling' | 'later'> {
     if (settling.has(origin)) return 'settling'
+    if (notNow.has(origin)) return 'later'
     if (options.untouched(origin) || deps.broker.app.isRegisteredSync(origin) || options.servedFromCache(origin)) return 'known'
     return visitKind({
       registered: false,
@@ -286,10 +319,15 @@ export function createFirstVisit (options: FirstVisitOptions): FirstVisit {
   async function run (origin: string, hintedUrl: string, caller: DialogCaller | undefined, host: SetupHost, signal?: AbortSignal): Promise<FirstVisitResult> {
     const canonical = originFromUrl(hintedUrl)
     if (canonical === null || canonical !== origin) return await runFirstVisit(deps, origin, hintedUrl, caller, host, signal)
+    const tab = host.tab?.()
+    if (tab !== undefined && running.some((visit) => visit.origin === origin && sameTab(visit.tab, tab))) return { outcome: 'duplicate' }
+    const mine = { origin, tab }
+    running.push(mine)
     return await withOriginQueue(origin, async () => {
       const kind = await kindOf(origin)
       if (kind !== 'first') return { outcome: kind }
       const result = await runFirstVisit(deps, origin, hintedUrl, caller, host, signal)
+      if (result.outcome === 'later') notNow.set(origin, result.keeper)
       if (result.outcome === 'entered') {
         // The download holds the origin's queue after the visit has returned, so nothing installs the same files beside it.
         // An app whose download did not finish stays settling for the run: the ordinary install path, which checks no
@@ -298,7 +336,7 @@ export function createFirstVisit (options: FirstVisitOptions): FirstVisit {
         void outsideOriginQueue(async () => await withOriginQueue(origin, async () => await result.background)).then((outcome) => { if (outcome !== 'unfinished') settling.delete(origin) })
       }
       return result
-    })
+    }).finally(() => { running.splice(running.indexOf(mine), 1) })
   }
 
   async function resume (): Promise<void> {

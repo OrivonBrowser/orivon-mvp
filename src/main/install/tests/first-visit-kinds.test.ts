@@ -68,6 +68,7 @@ describe('runFirstVisit, for an app an ordinary website serves', () => {
 
 
 describe('createFirstVisit', () => {
+  const otherTab = (h: Harness): Harness['host'] => ({ ...h.host, tab: () => ({ id: 'another-tab' }) })
   function over (h: Harness, overrides: Partial<{ untouched: (origin: string) => boolean, servedFromCache: (origin: string) => boolean }> = {}): ReturnType<typeof createFirstVisit> {
     return createFirstVisit({ deps: depsOf(h), untouched: () => false, servedFromCache: () => false, ...overrides })
   }
@@ -105,6 +106,34 @@ describe('createFirstVisit', () => {
     expect(await over(escaped).kindOf(escaped.origin)).toBe('first')
   })
 
+  it('does not ask again this run after Escape, in any tab, and keeps what it staged; nothing is written down', async () => {
+    const staged = bundle(VERIFIED)
+    const h = harness({ bundles: [staged], answer: 'dismissed' })
+    const visit = over(h)
+    const first = await visit.run(h.origin, h.url, present, h.host, undefined)
+    expect(first.outcome).toBe('later')
+    expect(await visit.kindOf(h.origin)).toBe('later')
+    expect((await visit.run(h.origin, h.url, present, h.host)).outcome).toBe('later')
+    expect((await visit.run(h.origin, h.url, present, otherTab(h))).outcome).toBe('later')
+    expect(h.consent).toHaveBeenCalledTimes(1)
+    expect(staged.discard).not.toHaveBeenCalled()
+    expect(h.declined.has(h.origin)).toBe(false)
+    expect(await grantsOf(h)).toEqual([])
+  })
+
+  it('drops a second visit from the tab that is already being asked: a reload or the page\'s own hint is the same visit', async () => {
+    let answer = (_yes: boolean): void => {}
+    const h = harness()
+    h.consent.mockImplementation(async () => { h.events.push('ask'); return await new Promise<boolean>((resolve) => { answer = resolve }) })
+    const visit = over(h)
+    const first = visit.run(h.origin, h.url, present, h.host)
+    await vi.waitFor(() => { expect(h.consent).toHaveBeenCalled() })
+    expect((await visit.run(h.origin, h.url, present, { ...h.host, tab: () => ({ id: 'the-tab' }) })).outcome).toBe('duplicate')
+    answer(true)
+    expect((await first).outcome).toBe('entered')
+    expect(h.consent).toHaveBeenCalledTimes(1)
+  })
+
   it('leaves local files, loopback and developer origins, and an origin served from its partition, alone', async () => {
     const h = harness()
     expect(await over(h, { untouched: () => true }).kindOf(h.origin)).toBe('known')
@@ -114,7 +143,7 @@ describe('createFirstVisit', () => {
   it('serialises two visits to one origin and asks once: the second finds the app known', async () => {
     const h = harness()
     const visit = over(h)
-    const [first, second] = await Promise.all([visit.run(h.origin, h.url, present, h.host), visit.run(h.origin, h.url, present, h.host)])
+    const [first, second] = await Promise.all([visit.run(h.origin, h.url, present, h.host), visit.run(h.origin, h.url, present, otherTab(h))])
     expect(first.outcome).toBe('entered')
     expect(['known', 'settling']).toContain(second.outcome)
     expect(h.consent).toHaveBeenCalledTimes(1)
@@ -123,7 +152,7 @@ describe('createFirstVisit', () => {
   it('tells a second visit that the first was answered no', async () => {
     const h = harness({ answer: false })
     const visit = over(h)
-    const [first, second] = await Promise.all([visit.run(h.origin, h.url, present, h.host), visit.run(h.origin, h.url, present, h.host)])
+    const [first, second] = await Promise.all([visit.run(h.origin, h.url, present, h.host), visit.run(h.origin, h.url, present, otherTab(h))])
     expect(first).toMatchObject({ outcome: 'plain', why: 'denied' })
     expect(second.outcome).toBe('declined')
   })

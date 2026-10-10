@@ -28,7 +28,7 @@ function screensFake (): TabScreens & { calls: string[] } {
   }
 }
 
-function rig (options: { kind?: 'first' | 'declined' | 'known' | 'settling', run?: (host: SetupHost) => Promise<FirstVisitResult>, screens?: boolean, contents?: boolean } = {}): { handler: ReturnType<typeof firstVisitBeforeRequest>, screens: ReturnType<typeof screensFake>, visit: FirstVisit, run: ReturnType<typeof vi.fn> } {
+function rig (options: { kind?: 'first' | 'declined' | 'known' | 'settling' | 'later', run?: (host: SetupHost) => Promise<FirstVisitResult>, screens?: boolean, contents?: boolean } = {}): { handler: ReturnType<typeof firstVisitBeforeRequest>, screens: ReturnType<typeof screensFake>, visit: FirstVisit, run: ReturnType<typeof vi.fn> } {
   const screens = screensFake()
   const run = vi.fn(async (_origin: string, _url: string, _caller: unknown, host: SetupHost, _signal?: AbortSignal): Promise<FirstVisitResult> => await (options.run ?? (async () => { host.plain(); return { outcome: 'plain', why: 'website' } }))(host))
   const visit: FirstVisit = { kindOf: vi.fn(async () => options.kind ?? 'first'), run: run as unknown as FirstVisit['run'], resume: async () => {} }
@@ -52,7 +52,7 @@ describe('firstVisitBeforeRequest', () => {
   })
 
   it('lets a request through for an origin that is not a first visit, without holding it', async () => {
-    for (const kind of ['known', 'declined', 'settling'] as const) {
+    for (const kind of ['known', 'declined', 'settling', 'later'] as const) {
       const { handler, run } = rig({ kind })
       expect(await handler(details(), CONTINUE)).toBe(CONTINUE)
       expect(run).not.toHaveBeenCalled()
@@ -85,6 +85,14 @@ describe('firstVisitBeforeRequest', () => {
     const { handler, screens } = rig({ run: async (host) => { host.end(); return { outcome: 'blocked', differing: [] } } })
     expect(await handler(details(), CONTINUE)).toBe(CONTINUE)
     await vi.waitFor(() => { expect(screens.calls).toEqual(['end']) })
+  })
+
+  it('ends its screens and goes nowhere when the visit was a duplicate of one already asking in the tab, or was dismissed this run', async () => {
+    for (const outcome of ['duplicate', 'later'] as const) {
+      const { handler, screens } = rig({ run: async () => ({ outcome }) })
+      expect(await handler(details(), CONTINUE)).toBe(CONTINUE)
+      await vi.waitFor(() => { expect(screens.calls).toEqual(['end']) })
+    }
   })
 
   it('goes into the app when another tab finished the visit first, and leaves a plain website when it was refused there', async () => {

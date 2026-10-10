@@ -117,6 +117,18 @@ describe('createTabSetup', () => {
     expect(isCoverClaimed(contents)).toBe(false)
   })
 
+  it('does not take the page\'s own reloads and links within the origin for the person moving on, and does take another origin', () => {
+    const { contents, setup } = rig()
+    const screens = setup(asContents(contents), ADDRESS)!
+    contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false, url: 'https://abc.ipfs.orivon/other/page?x=1' })
+    contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false, url: ADDRESS })
+    expect(screens.moved()).toBe(false)
+    expect(screens.signal.aborted).toBe(false)
+    contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false, url: 'https://elsewhere.example/' })
+    expect(screens.moved()).toBe(true)
+    expect(screens.signal.aborted).toBe(true)
+  })
+
   it('knows the tab moved on when it is destroyed', () => {
     const { contents, setup } = rig()
     const screens = setup(asContents(contents), ADDRESS)!

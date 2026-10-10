@@ -42,6 +42,8 @@ export function firstVisitBeforeRequest (deps: HookDeps): (details: OnBeforeRequ
       if (screens === undefined) return
       const host = tabHost(screens, () => details.url)
       const result = await visit.run(origin, details.url, callerFor(contents, screens, deps.windowForSender), host, screens.signal)
+      // A reload or a link inside the origin is the visit already running; the person's dismissal stands for the run.
+      if (result.outcome === 'duplicate' || result.outcome === 'later') { host.end(); return }
       // Another visit of this origin finished first and let it in: this tab, loaded as a website, follows it.
       if (result.outcome === 'known' || result.outcome === 'settling') host.enter()
     }).catch((error: unknown) => {

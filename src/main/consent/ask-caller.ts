@@ -18,5 +18,6 @@ export async function askCaller (caller: DialogCaller | undefined, spec: Questio
 
 /** Holds the calling tab's page until the returned release is called. */
 export function holdCaller (caller: DialogCaller | undefined): () => void {
+  if (caller?.unheld === true) return () => {}
   return holdNavigation(contentsOf(caller))
 }

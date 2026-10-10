@@ -48,6 +48,11 @@ export interface Keeper {
   stopped: () => boolean
   /** Aborts when the app is blocked or the visit ends: a question still open about it is withdrawn. */
   readonly signal: AbortSignal
+  /**
+   * Runs `step` alone as far as the origin's registration is concerned: a block that lands meanwhile has the pages
+   * stopped at once and takes the origin away only when `step` has finished, so what `step` did is undone, never left.
+   */
+  exclusive: <T>(step: () => Promise<T>) => Promise<T>
   /** Bad data found before anything was asked of the tree: stops the page and shows the warning. */
   block: (found: BadData) => Promise<void>
   /** The answer is no, or the tab left: stops the caching and discards what was staged. */
@@ -102,6 +107,13 @@ export function createKeeper (deps: FirstVisitDeps, origin: string, hintedUrl: s
     if (served) await deps.loader.endLive(origin).catch((error: unknown) => { console.error('[first-visit] an app that was taken away is still served', origin, error) })
   }
 
+  let turn: Promise<unknown> = Promise.resolve()
+  const exclusive = async <T>(step: () => Promise<T>): Promise<T> => {
+    const mine = turn.then(step, step)
+    turn = mine.catch(() => {})
+    return await mine
+  }
+
   // Bad data, from a served file or the background download: the origin is taken away, once.
   const block = async (found: BadData & Partial<Pick<Extract<SetupSheet, { kind: 'blocked' }>, 'rootMatches' | 'differingCount'>>): Promise<void> => {
     if (ended) return
@@ -119,7 +131,7 @@ export function createKeeper (deps: FirstVisitDeps, origin: string, hintedUrl: s
     // The pages go first, so nothing of the app runs while its grants go; the person reads the warning meanwhile.
     const covering = deps.blocked?.(origin, sheet, entered) ?? { emptied: Promise.resolve(), dismissed: Promise.resolve() }
     await covering.emptied.catch((error: unknown) => { console.error('[first-visit] the pages of a blocked app could not be emptied', origin, error) })
-    await takeAway()
+    await exclusive(takeAway)
     await covering.dismissed.catch((error: unknown) => { console.error('[first-visit] the tabs of a blocked app could not be covered', origin, error) })
   }
 
@@ -329,6 +341,7 @@ export function createKeeper (deps: FirstVisitDeps, origin: string, hintedUrl: s
     landed: () => precached,
     stopped: () => ended,
     signal: stopped.signal,
+    exclusive,
     block,
     cancel,
     start

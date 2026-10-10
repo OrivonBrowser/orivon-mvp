@@ -14,7 +14,7 @@ import type { FirstVisit, FirstVisitResult, SetupHost } from '../first-visit.js'
 const REJECTED: LoadResult = { outcome: 'rejected', reason: 'unused' }
 async function flush (): Promise<void> { await new Promise((resolve) => setTimeout(resolve, 0)) }
 
-function rig (options: { kind?: 'first' | 'declined' | 'known' | 'settling', result?: FirstVisitResult, screens?: boolean, wired?: boolean, moved?: boolean } = {}): {
+function rig (options: { kind?: 'first' | 'declined' | 'known' | 'settling' | 'later', result?: FirstVisitResult, screens?: boolean, wired?: boolean, moved?: boolean } = {}): {
   listener: ReturnType<typeof createManifestHintListener>
   installApp: ReturnType<typeof vi.fn<InstallApp>>
   run: ReturnType<typeof vi.fn>
@@ -59,6 +59,14 @@ describe('createManifestHintListener: the first visit', () => {
 
   it('leaves an origin the person said no to alone: the site stays a plain website', async () => {
     const { listener, installApp, run } = rig({ kind: 'declined' })
+    listener(frameFor(APP), `${APP}/.well-known/orivon.json`)
+    await flush()
+    expect(run).not.toHaveBeenCalled()
+    expect(installApp).not.toHaveBeenCalled()
+  })
+
+  it('asks nothing again for an origin whose question was dismissed this run', async () => {
+    const { listener, installApp, run } = rig({ kind: 'later' })
     listener(frameFor(APP), `${APP}/.well-known/orivon.json`)
     await flush()
     expect(run).not.toHaveBeenCalled()

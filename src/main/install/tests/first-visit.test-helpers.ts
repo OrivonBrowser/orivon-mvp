@@ -45,6 +45,8 @@ export interface Harness {
   readonly hooks: () => LiveHooks | undefined
   readonly badData: () => ((found: { differing: readonly string[], invalid?: string }) => void) | undefined
   readonly grantsAt: Record<string, string[]>
+  /** What the loader holds for the origin: a live handler, and the record that survives a restart. */
+  readonly state: { live: boolean, pending: boolean }
 }
 
 export function harness (options: {
@@ -68,6 +70,7 @@ export function harness (options: {
   const choices = [...(options.choices ?? ['leave'])]
   const sheets: SetupSheet[] = []
   const grantsAt: Record<string, string[]> = {}
+  const state = { live: false, pending: false }
   let handed: LiveHooks | undefined
   const pendings: PendingConsent[] = options.pending ?? []
   const host = {
@@ -92,10 +95,11 @@ export function harness (options: {
       await noteGrants('serve-live')
       handed = hooks
       if (options.live === 'throws') throw new Error('no partition')
+      state.live = options.live ?? true
       return options.live ?? true
     }),
-    endLive: vi.fn(async () => { events.push('end-live') }),
-    rememberConsent: vi.fn(async () => { events.push('remember') }),
+    endLive: vi.fn(async () => { events.push('end-live'); state.live = false; state.pending = false }),
+    rememberConsent: vi.fn(async () => { events.push('remember'); state.pending = true }),
     pendingConsents: vi.fn(async () => pendings),
     fetchForInstall: vi.fn(async () => {
       events.push('fetch')
@@ -111,7 +115,7 @@ export function harness (options: {
   const answerWidening: Harness['answerWidening'] = { current: true }
   const capabilityPrompt = vi.fn<NonNullable<FirstVisitDeps['capabilityPrompt']>>(async () => { events.push('widening-question'); return typeof answerWidening.current === 'function' ? await answerWidening.current() : answerWidening.current })
   const blocked = vi.fn<NonNullable<FirstVisitDeps['blocked']>>(() => { events.push('blocked-tabs'); return { emptied: Promise.resolve(), dismissed: Promise.resolve() } })
-  return { origin, url: `${origin}/`, broker, events, host, loader, consent, declined: new DeclinedApps(), blocked, capabilityPrompt, answerWidening, hooks: () => handed, badData: () => handed?.onBadData, grantsAt }
+  return { origin, url: `${origin}/`, broker, events, host, loader, consent, declined: new DeclinedApps(), blocked, capabilityPrompt, answerWidening, hooks: () => handed, badData: () => handed?.onBadData, grantsAt, state }
 }
 
 export const TAB = { id: 'the-tab' }

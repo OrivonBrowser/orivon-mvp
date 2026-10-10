@@ -4,6 +4,7 @@ import type { FirstManifest } from '../../../loader/index.js'
 import type { DialogCaller } from '../../consent/request-grant.js'
 import { MANIFEST_PROBE_MS, runFirstVisit } from '../first-visit.js'
 import { VERIFIED, MANIFEST, TREE, CONTENT, DECLARED, DIFFERENT, readOf, bundle, harness, TAB, present, depsOf, run, LATE, settled, grantsOf } from './first-visit.test-helpers.js'
+import type { Harness } from './first-visit.test-helpers.js'
 
 
 // The order of a first visit: the page is already on screen as an ordinary website; the person is asked as soon as
@@ -74,14 +75,29 @@ describe('runFirstVisit, for an app a verifier serves', () => {
     expect(signal?.aborted).toBe(true)
   })
 
-  it('stops the caching, with no record, when the person leaves without answering', async () => {
+  it('stops the caching, with no record, when the tab leaves the origin without an answer', async () => {
     const staged = bundle(VERIFIED)
     const h = harness({ bundles: [staged], answer: 'dismissed' })
-    const result = await runFirstVisit(depsOf(h, 0), h.origin, h.url, present, h.host)
+    const away = new AbortController()
+    h.consent.mockImplementation(async () => { away.abort(); return 'dismissed' })
+    const result = await runFirstVisit(depsOf(h, 0), h.origin, h.url, present, h.host, away.signal)
     expect(result.outcome).toBe('left')
     await vi.waitFor(() => { expect(staged.discard).toHaveBeenCalled() })
     expect(h.declined.has(h.origin)).toBe(false)
     expect(h.loader.installFetched).not.toHaveBeenCalled()
+  })
+
+  it('keeps the page running while it asks, and withdraws the question when the tab leaves the origin', async () => {
+    const away = new AbortController()
+    const h = harness()
+    let asker: DialogCaller | undefined
+    h.consent.mockImplementation(async (_origin, _manifest, _declared, _held, caller) => { asker = caller; return await new Promise<boolean>(() => {}) })
+    void runFirstVisit(depsOf(h), h.origin, h.url, present, h.host, away.signal)
+    await vi.waitFor(() => { expect(asker).toBeDefined() })
+    expect(asker?.unheld).toBe(true)
+    expect(asker?.signal?.aborted).toBe(false)
+    away.abort()
+    expect(asker?.signal?.aborted).toBe(true)
   })
 
   it('stops the page, with the warning and nothing granted, when caching finds a file that is not the declared one before the person has answered', async () => {
@@ -208,6 +224,57 @@ describe('runFirstVisit, for an app a verifier serves', () => {
     expect(h.loader.installFetched).not.toHaveBeenCalled()
   })
 
+  it('ends with no grant, registration, record or live handler, and the warning shown, when a block lands during any step of letting the app in', async () => {
+    const bad = { differing: ['/app.js'] }
+    const fire = (h: Harness): void => { h.hooks()?.onBadData(bad) }
+    const steps: Array<[string, (h: Harness) => void, number]> = [
+      ['serving', (h) => {
+        vi.mocked(h.loader.serveLive).mockImplementationOnce(async (_read, _declaration, hooks) => { h.state.live = true; hooks.onBadData(bad); await new Promise((resolve) => setTimeout(resolve, 15)); return true })
+      }, LATE],
+      ['registering', (h) => {
+        const original = h.broker.registerApp.bind(h.broker)
+        vi.spyOn(h.broker, 'registerApp').mockImplementation(async (...args) => { fire(h); await new Promise((resolve) => setTimeout(resolve, 15)); return await original(...args) })
+      }, LATE],
+      ['granting', (h) => {
+        const original = h.broker.clearDeclinedConsent.bind(h.broker)
+        vi.spyOn(h.broker, 'clearDeclinedConsent').mockImplementation(async (...args) => { fire(h); await new Promise((resolve) => setTimeout(resolve, 15)); return await original(...args) })
+      }, LATE],
+      ['remembering', (h) => {
+        vi.mocked(h.loader.rememberConsent).mockImplementationOnce(async () => { fire(h); await new Promise((resolve) => setTimeout(resolve, 15)); h.state.pending = true })
+      }, LATE],
+      ['pinning what was staged', (h) => {
+        h.consent.mockImplementation(async () => { await vi.waitFor(() => { expect(h.loader.fetchForInstall).toHaveBeenCalled() }); await new Promise((resolve) => setTimeout(resolve, 20)); return true })
+        vi.mocked(h.loader.installFetched).mockImplementationOnce(async (origin, manifest, tree) => {
+          fire(h)
+          await new Promise((resolve) => setTimeout(resolve, 15))
+          return { outcome: 'installed' as const, canonicalOrigin: origin, manifest, pin: { schema: 1 as const, origin, bundleHash: tree.root, assets: [], version: manifest.version, pinnedAt: 0 } }
+        })
+      }, 0]
+    ]
+    for (const [step, arrange, delay] of steps) {
+      const h = harness()
+      arrange(h)
+      const result = await run(h, present, undefined, delay)
+      await vi.waitFor(() => { expect(h.loader.endLive, step).toHaveBeenCalled() })
+      await vi.waitFor(() => { expect(h.blocked, step).toHaveBeenCalledTimes(1) })
+      expect(result.outcome, step).not.toBe('failed')
+      expect(await grantsOf(h), step).toEqual([])
+      expect(h.broker.app.isRegisteredSync(h.origin), step).toBe(false)
+      expect(h.state, step).toEqual({ live: false, pending: false })
+      expect(h.events, step).not.toContain('enter')
+    }
+  })
+
+  it('lets nothing in when a block landed before the answer, though the answer is yes', async () => {
+    const h = harness({ declarations: [{ kind: 'mismatch', differing: ['/index.html'] }] })
+    h.consent.mockImplementation(async () => { await vi.waitFor(() => { expect(h.blocked).toHaveBeenCalled() }); return true })
+    const result = await run(h)
+    expect(result.outcome).toBe('left')
+    expect(await grantsOf(h)).toEqual([])
+    expect(h.state).toEqual({ live: false, pending: false })
+    expect(h.loader.serveLive).not.toHaveBeenCalled()
+  })
+
   it('takes nothing of the app away until its pages are gone, and waits for the person to read the warning last', async () => {
     let emptied = (): void => {}
     let dismissed = (): void => {}
@@ -301,9 +368,9 @@ describe('runFirstVisit, for an app a verifier serves', () => {
     expect(await h.broker.declinedCapabilitiesFor(h.origin)).toBeUndefined()
   })
 
-  it('on Escape, a closed tab or a navigation records nothing: the next visit asks again', async () => {
+  it('on Escape records nothing and means not now: nothing is served, granted or discarded, and the staged cache is kept', async () => {
     const h = harness({ answer: 'dismissed' })
-    expect((await run(h)).outcome).toBe('left')
+    expect((await run(h)).outcome).toBe('later')
     expect(h.events).toEqual(['read', 'declaration', 'ask', 'end'])
     expect(h.declined.has(h.origin)).toBe(false)
     expect(h.loader.serveLive).not.toHaveBeenCalled()

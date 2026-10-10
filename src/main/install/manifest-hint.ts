@@ -119,6 +119,8 @@ export function createManifestHintListener (
     visit.kindOf(origin)
       .then(async (kind) => {
         if (kind === 'declined') { console.log(`[orivon] ${origin} was refused; it stays a plain website`); return }
+        // Dismissed this run: not asked again until the next one.
+        if (kind === 'later') return
         // Its files are coming down already, checked: a second install beside that one would race it.
         if (kind === 'settling') return
         if (kind !== 'first') { install(); return }
@@ -127,8 +129,9 @@ export function createManifestHintListener (
         const asker: DialogCaller = screens === undefined ? caller : { ...caller, stillOn: () => !screens.moved() }
         const host = screens === undefined ? headlessHost({ reload: () => { sender.reload() }, isDestroyed: () => sender.isDestroyed() }) : tabHost(screens, () => sender.getURL?.() ?? hintedUrl)
         const result = await visit.run(origin, hintedUrl, asker, host, screens?.signal)
+        if (result.outcome === 'duplicate' || result.outcome === 'later') host.end()
         if (result.outcome === 'known') install()
-        else if (result.outcome !== 'entered' && result.outcome !== 'settling') console.log(`[orivon] manifest hint from ${origin} did not install: ${result.outcome}`)
+        else if (result.outcome !== 'entered' && result.outcome !== 'settling' && result.outcome !== 'duplicate') console.log(`[orivon] manifest hint from ${origin} did not install: ${result.outcome}`)
       })
       .catch((error: unknown) => {
         console.error('[orivon] the first visit threw unexpectedly for a manifest hint', origin, error)

@@ -3,7 +3,8 @@
 // grants, while a file the first page never loads is still undownloaded; Deny leaves the site as the plain website
 // it already is and is not asked again. Driven through the test seam's gateway, so nothing leaves the machine.
 import { afterAll, expect, it } from 'vitest'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
 import { ABSENCE_SETTLE_MS, delay, findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from '../support/e2e-helpers.js'
@@ -106,11 +107,14 @@ it('[app:first-visit-loads-as-a-website-while-asking] [app:first-visit-enters-at
       check('the next visit asks again', true)
       // The panel closes under the key, which Playwright reports as a closed target.
       await again.keyboard.press('Escape').catch((error: unknown) => { if (!/closed|destroyed/.test(String(error))) throw error })
+      // Escape means not now: nothing is written down, and nothing asks again for the rest of this run, however the page is reached.
       await clickAddressBarRetrying(chrome, `ipfs://${refusedRoot}/`)
-      const escaped = await waitQuestion(running, 60_000)
-      check('Escape recorded nothing: the visit after it asks again', true)
-      await answerQuestion(running, 'Deny')
-      void escaped
+      await delay(ABSENCE_SETTLE_MS)
+      check('Escape means not now for the run: the visit after it asks nothing', await questionGone(running))
+      const declinedFile = join(userData, 'declined-apps.json')
+      check('Escape recorded nothing', !existsSync(declinedFile) || !readFileSync(declinedFile, 'utf8').includes(refusedRoot))
+      const dismissed = await pageAt(running, `${refusedOrigin}/`)
+      check(`the page kept running as the website it is (${JSON.stringify(dismissed)})`, dismissed?.ran === 'ran' && !dismissed.hasProcess)
 
       expect(asked.buttons).toContain('Allow')
       expect(filesAsked('allowed', 'app.js')).toBeGreaterThanOrEqual(1)
