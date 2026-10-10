@@ -86,6 +86,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - A published app opens the moment you allow it; each file is checked against its declared tree as it loads, the rest pins later.
 - A published app no longer waits for your answer: it loads as a website, caches beside the question, and Allow reloads it as the app.
 - Attila's judgements lapse when a .eth site republishes; a daily check now opens an issue, and vitalik.eth plus five moved sites were re-judged.
+- Web3 Score tightened: an app relying on any server stops at Level 3; FreeTube, The Lounge and Element drop, WebTorrent and AirGap stay Web3.
 
 ### In my head
 
