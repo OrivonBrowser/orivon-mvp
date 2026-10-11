@@ -228,8 +228,10 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
       popup.setBounds(popoverBounds(win, currentAnchor, spec.align, contentHeight, maxHeight))
     })
     // Click-away dismissal, the one behaviour that makes this feel like a
-    // toolbar popup rather than a stuck overlay.
-    popup.webContents.on('blur', () => { if (shown === popup) hide() })
+    // toolbar popup rather than a stuck overlay. After the native call, never
+    // inside it: Chromium blurs a view a window resize leaves outside from
+    // within `setSize`, and removing the view there ends the main process.
+    popup.webContents.on('blur', () => { setImmediate(() => { if (shown === popup) hide() }) })
     // A popup whose page is gone (crashed, or its contents destroyed) leaves the window the same way a click away does,
     // so the person's next click on its icon opens a new one instead of closing the dead one.
     const gone = (): void => {
