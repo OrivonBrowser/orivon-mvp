@@ -34,6 +34,7 @@ import { sitePromptPage } from './site-prompt/page.js'
 import { tabGroupPage } from './tab-group/page.js'
 import { tabSearchPage } from './tab-search/page.js'
 import { toastPage } from './toast/page.js'
+import { web3ScorePage } from './web3-score/page.js'
 
 export const OVERLAY_PAGES: Readonly<Record<string, OverlayPage>> = {
   'app-setup-sheet': appSetupPage,
@@ -72,5 +73,6 @@ export const OVERLAY_PAGES: Readonly<Record<string, OverlayPage>> = {
   'site-prompt': sitePromptPage,
   'tab-group': tabGroupPage,
   'tab-search': tabSearchPage,
-  toast: toastPage
+  toast: toastPage,
+  'web3-score': web3ScorePage
 }

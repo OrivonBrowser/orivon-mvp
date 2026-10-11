@@ -7,8 +7,9 @@
 // escape or a local-file-disclosure vector one keystroke away, unlike a
 // normal page navigation which is already sandboxed.
 //
-// Input that is not an address goes to the chosen search engine, DuckDuckGo
-// unless the person picked another (./search-engines.ts).
+// Input that is not an address goes to the search the caller hands in (./search-current.ts decides it from the
+// settings: the Web3 or the Web2 engine, by the search mode). With none handed in, the first Web2 engine
+// (./search-engines.ts).
 
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { DEFAULT_SEARCH_ENGINE, searchUrlFor } from './search-engines.js'

@@ -60,8 +60,11 @@ asking for another path learns nothing about the build. `.vite/` is never served
 `Cross-Origin-Resource-Policy: same-origin` on this scheme (a page and an extension page loaded its script,
 stylesheet and image anyway), so `shell-scheme.ts` registers a `webRequest` handler that cancels every request
 on the scheme except a main-frame navigation and one from the new-tab page's own top frame
-(`shellRequestAllowed`). The tab's `will-frame-navigate` and `will-redirect` refuse a page sending a tab there
-(`../shell/tab-view.ts`). The decision and its measurements are `ADR-0059`.
+(`shellRequestAllowed`). Chromium can hand over a new document's first requests before it records the commit, so
+a tab Orivon opened on the new-tab page is let through while its frame still reads empty, until that first document
+commits or another navigation starts (`dashboard-first-load.ts`, marked by `../shell/tab-factory.ts`). The tab's
+`will-frame-navigate` and `will-redirect` refuse a page sending a tab there (`../shell/tab-view.ts`). The decision
+and its measurements are `ADR-0059`.
 
 **Authorisation compares the frame's address to what the shell recorded, not to what the page says.**
 A webContents is an internal page because `TabManager.openInternal` registered it; `authorizeCall`

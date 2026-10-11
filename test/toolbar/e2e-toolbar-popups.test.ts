@@ -2,7 +2,8 @@
 // list and hands the keyboard back so Mod+F still opens find; the key and the shield swap one popup for the other
 // whichever order they are pressed in, including after the first popup already lost focus to the press. The all-sites
 // popup reopens topmost, sized and painted after every way it can have left the window, among them an overlay or a tab
-// switch closing it without a blur, and its page crashing or being destroyed while it shows.
+// switch closing it without a blur, and its page crashing or being destroyed while it shows. On a new tab the shield
+// opens the card that explains the Web3 Score instead.
 // RUN THIS WITH:
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/toolbar/e2e-toolbar-popups.test.ts
 import type { ElectronApplication, Page } from 'playwright'
@@ -12,7 +13,7 @@ import { pressKey, waitForKeyboardAt, pressCommand } from '../support/e2e-helper
 import { distinctColours } from '../support/qa-visual.js'
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
-import { delay, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, delay, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
 
 let server: FixtureServer
 
@@ -308,3 +309,42 @@ it('the all-sites popup reopens on screen after its renderer crashed or its cont
     await closeElectron(app)
   }
 }, 120_000)
+
+it('on a new tab the shield opens the card that explains the Web3 Score, closes it on a second click, and leads to the provider setting', async () => {
+  const { app, chrome } = await launchShell()
+  const cardShown = async (): Promise<boolean> => await popoverShown(app, 'overlay=web3-score')
+  try {
+    expect(await waitFor(async () => (await chrome.locator('#address').inputValue()) === '' && app.windows().some((w) => w.url().includes('/newtab/')))).toBe(true)
+
+    await chrome.locator('#web3-score-btn').click()
+    expect(await waitFor(cardShown)).toBe(true)
+    expect(await siteInfoShown(app), 'there is no site, so no site card').toBe(false)
+    const card = app.windows().find((w) => w.url().includes('overlay=web3-score')) as Page
+    const levels = await card.evaluate(() => [...document.querySelectorAll('.ws-level')].map((row) => ({
+      shield: row.querySelector<SVGElement>('.web3-shield')?.dataset['level'],
+      mark: row.querySelector('.web3-mark')?.textContent,
+      meaning: (row.querySelector('.ws-level-meaning')?.textContent ?? '').length > 0
+    })))
+    expect(levels).toEqual([
+      { shield: '1', mark: 'Web2', meaning: true },
+      { shield: '2', mark: 'Web2.5', meaning: true },
+      { shield: '3', mark: 'Web2.5', meaning: true },
+      { shield: '4', mark: 'Web3', meaning: true }
+    ])
+
+    // The press takes the focus the card holds and closes it; the click it ends must not open it again.
+    await chrome.locator('#web3-score-btn').click()
+    expect(await waitFor(async () => !(await cardShown()))).toBe(true)
+    await delay(ABSENCE_SETTLE_MS)
+    expect(await cardShown(), 'a second click leaves the card closed').toBe(false)
+
+    await chrome.locator('#web3-score-btn').click()
+    expect(await waitFor(cardShown)).toBe(true)
+    const reopened = app.windows().find((w) => w.url().includes('overlay=web3-score')) as Page
+    await reopened.getByRole('button', { name: 'Choose a score provider' }).click()
+    expect(await waitFor(async () => !(await cardShown()))).toBe(true)
+    expect(await waitFor(async () => (await chrome.locator('#address').inputValue()).includes('settings/web3'))).toBe(true)
+  } finally {
+    await closeElectron(app)
+  }
+}, QA_TEST_TIMEOUT_MS)

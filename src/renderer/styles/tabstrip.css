@@ -164,7 +164,7 @@
   align-self: flex-end;
   width: 28px;
   height: 28px;
-  margin: 0 4px 5px;
+  margin: 0 4px 1px; /* the tabs' own bottom margin, so its middle is theirs */
   border-radius: 6px;
   display: flex;
   align-items: center;

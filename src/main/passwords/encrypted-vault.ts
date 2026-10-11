@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { chmodSync, copyFileSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
-import { NO_REAL_KEYRING } from '../keyring/seed-store.js'
+import { hasRealKeyring } from '../keyring/seed-store.js'
 import type { SafeStorageLike } from '../keyring/seed-store.js'
 import { isStorableOrigin, loginKey, MAX_LOGINS, MAX_NEVER, MAX_PASSWORD, MAX_USERNAME, parsePasswordsFile, printPasswordsFile } from './passwords-file.js'
 import type { StoredLogin } from './passwords-file.js'
@@ -15,6 +15,7 @@ export interface EncryptedVaultOptions {
   readonly path: string
   readonly storage: SafeStorageLike
   readonly now?: () => number
+  readonly platform?: NodeJS.Platform
 }
 
 const toLogin = (stored: StoredLogin): Login => ({ id: stored.id, origin: stored.origin, username: stored.username, created: stored.created, used: stored.used })
@@ -31,6 +32,7 @@ export class EncryptedVault implements PasswordVault {
   readonly never: NeverSaved
   readonly #path: string
   readonly #storage: SafeStorageLike
+  readonly #platform: NodeJS.Platform
   readonly #now: () => number
   readonly #logins = new Map<string, StoredLogin>()
   readonly #neverSaved = new Set<string>()
@@ -44,6 +46,7 @@ export class EncryptedVault implements PasswordVault {
   constructor (options: EncryptedVaultOptions) {
     this.#path = options.path
     this.#storage = options.storage
+    this.#platform = options.platform ?? process.platform
     this.#now = options.now ?? Date.now
     this.never = {
       has: (origin) => this.#neverSaved.has(origin),
@@ -199,7 +202,7 @@ export class EncryptedVault implements PasswordVault {
     if (this.#corrupt) return
     try {
       if (!await this.#storage.isAsyncEncryptionAvailable()) return
-      if (NO_REAL_KEYRING.has(this.#storage.getSelectedStorageBackend())) return
+      if (!hasRealKeyring(this.#storage, this.#platform)) return
       this.#state = 'ready'
       // Watchers that started while the answer was pending learn it only from a change.
       this.#changed()

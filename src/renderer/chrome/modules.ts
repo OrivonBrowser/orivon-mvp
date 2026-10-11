@@ -10,6 +10,7 @@ import { createCluster } from './cluster.js'
 import { createExtensionsButton } from './extensions-button.js'
 import { createDownloadsButton } from './downloads-button.js'
 import { createHomeButton } from './home-button.js'
+import { createMacWindowButtons } from './mac-window-buttons.js'
 import { createNavigation } from './navigation.js'
 import { createPanes } from './panes.js'
 import { createPasswordKey } from './password-key.js'
@@ -17,6 +18,7 @@ import { createContentDot } from './content-dot.js'
 import { createPopupsChip } from './popups-chip.js'
 import { createPromptAnchor } from './prompt-anchor.js'
 import { createReaderButton } from './reader-button.js'
+import { createSearchMode } from './search-mode.js'
 import { createSharingChip } from './sharing-chip.js'
 import { createSidePanelButton } from './side-panel-button.js'
 import { createSiteAccessChip } from './site-access-chip.js'
@@ -43,10 +45,12 @@ export const TAB_DECORATORS: readonly TabDecorator[] = [
 export const CHROME_MODULES: readonly ChromeModule[] = [
   createTabStrip(TAB_DECORATORS, [placeGroupChips]),
   createTabSearchButton(),
+  createMacWindowButtons(),
   createTabGroups(),
   createNavigation(),
   createAddressDisplay(),
   createAddressSuggest(),
+  createSearchMode(),
   createHomeButton(),
   createSiteBadges(),
   createSiteAccessChip(),

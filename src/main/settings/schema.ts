@@ -5,7 +5,7 @@
 import { isAddressList, isEmptyOrAddress, MAX_LISTED_ADDRESSES } from './address-checks.js'
 import { isHostList, MAX_LISTED_HOSTS } from './list-checks.js'
 import { isEmptyOrAbsolutePath } from './path-checks.js'
-import { CUSTOM_SEARCH_ENGINE, DEFAULT_SEARCH_ENGINE, SEARCH_ENGINES, isValidSearchTemplate } from '../browsing/search-engines.js'
+import { CUSTOM_SEARCH_ENGINE, DEFAULT_SEARCH_ENGINE, DEFAULT_SEARCH_MODE, DEFAULT_WEB3_SEARCH_ENGINE, SEARCH_ENGINES, SEARCH_MODES, WEB3_SEARCH_ENGINES, isValidSearchTemplate } from '../browsing/search-engines.js'
 
 /** The official Web3 Score provider, which a profile that never chose one reads; a person who clears the setting asks nobody. */
 export const DEFAULT_SCORE_PROVIDER = 'ipfs://attila.orivonstack.eth/score'
@@ -32,6 +32,15 @@ const SPECS = {
     labels: { 75: '75%', 80: '80%', 90: '90%', 100: '100%', 110: '110%', 125: '125%', 150: '150%', 175: '175%', 200: '200%' }
   },
   'sidePanel.side': { kind: 'enum', options: ['right', 'left'], default: 'right' },
+  // Which list an address-bar search goes to. The Web3 engine and the Web2 engine are kept apart, so switching modes loses neither choice.
+  'search.mode': { kind: 'enum', options: SEARCH_MODES, default: DEFAULT_SEARCH_MODE, labels: { web3: 'Web3', web2: 'Web2' } },
+  'search.web3Engine': {
+    kind: 'enum',
+    options: WEB3_SEARCH_ENGINES.map((engine) => engine.id),
+    default: DEFAULT_WEB3_SEARCH_ENGINE,
+    labels: Object.fromEntries(WEB3_SEARCH_ENGINES.map((engine) => [engine.id, engine.label]))
+  },
+  // The Web2 engine; the key keeps its name from when it was the only one.
   'search.engine': {
     kind: 'enum',
     options: [...SEARCH_ENGINES.map((engine) => engine.id), CUSTOM_SEARCH_ENGINE],

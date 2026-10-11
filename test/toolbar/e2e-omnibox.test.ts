@@ -12,7 +12,7 @@ import { afterAll, beforeAll, expect, it } from 'vitest'
 import { SqliteHistoryStore } from '../../src/main/history/sqlite-history-store.js'
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
 import { runCommand } from '../support/auth-support.js'
-import { clearFocusLog, readFocusLog, startFocusLog } from '../support/focus-helpers.js'
+import { clearFocusLog, readFocusLog, startFocusLog, underVirtualDisplay } from '../support/focus-helpers.js'
 import { html, launchShell, startServer } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
 import { ABSENCE_SETTLE_MS, activeTabInfo, delay, popoverShown, tabIds, tabViews, waitFor } from '../support/smoke-helpers.mjs'
@@ -279,7 +279,8 @@ it('closes on the first Escape with the typed text back, and restores the page\'
   }
 }, TEST_TIMEOUT_MS)
 
-it('goes to a row on a real click without the field losing what was typed first, and opens a background tab on a middle click', async () => {
+// The press comes from an X server's test extension, so it needs the virtual display: no other system has an OS-level click to send from here.
+it.skipIf(!underVirtualDisplay())('goes to a row on a real click without the field losing what was typed first', async () => {
   const { app, chrome } = await launchShell({ seedProfile: async (dir: string) => { await seedPages(dir) } })
   try {
     await go(app, chrome, `${server.origin}/delta`)
@@ -304,7 +305,16 @@ it('goes to a row on a real click without the field losing what was typed first,
     console.log(`[omnibox probe] after a real click the field's value at each blur was ${JSON.stringify(blurs)}; focused: ${JSON.stringify(focus)}`)
     // The press navigated, and the field blurred at most once, afterwards (the page's own address had replaced the text by then).
     expect(blurs.length).toBeLessThanOrEqual(1)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
 
+it('opens a background tab on a middle click, and on a click with the open-in-background modifier', async () => {
+  const { app, chrome } = await launchShell({ seedProfile: async (dir: string) => { await seedPages(dir) } })
+  try {
+    await go(app, chrome, `${server.origin}/delta`)
     // A middle click opens the page in a tab behind this one.
     await openTab(chrome)
     await typeInBar(chrome, '127')
@@ -374,7 +384,7 @@ it('searches for what follows a question mark, and the search key puts one in th
     await chrome.keyboard.type('127.0.0.1', { delay: 25 })
     const rows = await waitForRows(app, 1)
     expect(rows[0]).toContain('127.0.0.1')
-    expect(rows[0]).toContain('Search DuckDuckGo')
+    expect(rows[0]).toContain('Search Explore')
     // A forced search is never finished with a page.
     expect((await field(chrome)).value).toBe('? 127.0.0.1')
     await shoot(app, chrome, 'omnibox-search')

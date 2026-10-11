@@ -103,6 +103,7 @@
     { "prefix": "src/main/tab-groups", "run": ["tabs"] },
     { "prefix": "src/main/tab-search", "run": ["tabs"] },
     { "prefix": "src/main/verifier", "run": ["web3"] },
+    { "prefix": "src/main/web3-score", "run": ["toolbar"] },
     { "prefix": "src/main/window-state", "run": ["window"] },
     { "prefix": "src/main/zoom", "run": ["page"] },
     { "prefix": "electron-builder.yml", "run": [] },

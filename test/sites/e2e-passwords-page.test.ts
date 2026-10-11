@@ -269,7 +269,8 @@ it('updates an open Passwords page when a password is deleted from another windo
   }
 }, TEST_TIMEOUT_MS)
 
-it('says nothing is kept, disables the toggles and writes no file when there is no system keyring', async () => {
+// macOS and Windows always have a system keyring (the Keychain, DPAPI); a Linux run under its own session bus has none.
+it.skipIf(process.platform !== 'linux')('says nothing is kept, disables the toggles and writes no file when there is no system keyring', async () => {
   const { app, chrome } = await launched()
   try {
     const dir = await userData(app)

@@ -6,14 +6,15 @@ folder per overlay with that overlay's page (`auth-sheet/`, `bookmark-edit/`, `b
 `cert-error/`, `certificate/`, `chooser/`, `downloads/`, `extension-permission/`, `extensions-menu/`, `find/`,
 `https-warning/`, `loading-screen/`, `menu/`, `omnibox/`, `password-fill/` (also the page of `password-suggest`), `password-save/`,
 `popups-blocked/`, `qr/`, `question/` (also the page of `question-sheet`), `restore/`, `sad-tab/`, `screen-share-picker/`, `screenshot/`, `sharing-bar/`, `shortcut-sheet/`, `side-panel/`, `site-prompt/`,
-`tab-group/`, `tab-search/`, `toast/`). `pages.ts` maps an overlay's name to its page, one line each, in name order.
+`tab-group/`, `tab-search/`, `toast/`, `web3-score/`). `pages.ts` maps an overlay's name to its page, one line each, in name order.
 `kit.ts` is what a page is written against: `mount(root, overlay)`, the bridge's calls, and the parts that report
 the page's height and close it on Escape. A page that throws leaves an error state, and the next show builds it again. `surface.css` and `style.css` paint the shared surface.
 
 **Tied to Electron, entirely.** A sandboxed renderer document; it reaches main only through the bridge that
 [`../../preload/overlay.ts`](../../preload/overlay.ts) exposes as `window.orivonOverlay`.
 
-**What it depends on.** `kit.ts` and the DOM helpers and icons of [`../pages/shared/`](../pages/shared/). A page may
+**What it depends on.** `kit.ts` and the DOM helpers and icons of [`../pages/shared/`](../pages/shared/), and
+[`../web3-shield.ts`](../web3-shield.ts), the one module every surface draws the Web3 Score shield and mark from. A page may
 import types, never values, from its own feature's `src/main/<feature>/` directory.
 
 **What it must never import.** `electron`, `node:*`, or a value from [`../../main/`](../../main/); another

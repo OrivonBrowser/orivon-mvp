@@ -13,6 +13,8 @@ function originOf (url: string): string | null {
   }
 }
 
+const WEB3_SCORE_OVERLAY = 'web3-score'
+
 /** How soon a shield whose provider was still being asked asks again. */
 const PENDING_RETRY_MS = 2_000
 
@@ -111,12 +113,19 @@ export function createSiteBadges (): ChromeModule {
       sitePermissionsBtn = permissionsBtn
 
       // The site-info popup's two entry points: the shield opens straight to the Web3 Score page, the key to
-      // the main page. Both act on the active tab's own url; a click while there is none, or on the
-      // dashboard, is a no-op -- there is no origin for either page to describe.
-      scoreBtn.addEventListener('pointerdown', (event) => { if (event.button === 0) ctx.shell.press('web3') })
+      // the main page. Both act on the active tab's own url; a click while there is none, or on one of the
+      // shell's own pages, is a no-op -- there is no origin for either page to describe. On the new tab the
+      // shield opens the card that says what the score is instead.
+      scoreBtn.addEventListener('pointerdown', (event) => {
+        if (event.button === 0) ctx.shell.press(ctx.activeTab()?.isNewTab === true ? WEB3_SCORE_OVERLAY : 'web3')
+      })
       permissionsBtn.addEventListener('pointerdown', (event) => { if (event.button === 0) ctx.shell.press('main') })
       scoreBtn.addEventListener('click', () => {
         const active = ctx.activeTab()
+        if (active?.isNewTab === true) {
+          void ctx.shell.act('overlay.toggle', { name: WEB3_SCORE_OVERLAY, anchor: ctx.anchorFor(scoreBtn) })
+          return
+        }
         if (!hasSite(active)) return
         ctx.shell.openSiteInfo(ctx.anchorFor(scoreBtn), 'web3', active.url)
       })
