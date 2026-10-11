@@ -123,11 +123,27 @@ describe('HtmlFullscreen -- which tab, if any, fills the window', () => {
     expect(fx.relayout).toHaveBeenCalledTimes(2)
   })
 
+  // macOS: an Escape during the window's enter animation reports the page left, but its document stays in fullscreen.
+  it('asks the page that was last in fullscreen to leave once the window is out, though it reported leaving', () => {
+    const fx = effects()
+    const fullscreen = new HtmlFullscreen(fx)
+    fullscreen.changed('tab-1', true, 'tab-1')
+    fullscreen.changed('tab-1', false, 'tab-1')
+
+    fullscreen.windowLeft(live)
+
+    expect(fx.exitTab).toHaveBeenCalledWith('tab-1')
+    expect(fx.relayout).toHaveBeenCalledTimes(2)
+    fullscreen.windowLeft(live)
+    expect(fx.exitTab).toHaveBeenCalledTimes(1)
+  })
+
   it('does nothing when the window leaves fullscreen with no page in it, or for a tab that is gone', () => {
     const fx = effects()
     const fullscreen = new HtmlFullscreen(fx)
     fullscreen.windowLeft(live)
     expect(fx.relayout).not.toHaveBeenCalled()
+    expect(fx.exitTab).not.toHaveBeenCalled()
     fullscreen.changed('tab-1', true, 'tab-1')
     fullscreen.windowLeft(gone)
     expect(fx.exitTab).not.toHaveBeenCalled()
