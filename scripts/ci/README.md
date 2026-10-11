@@ -48,13 +48,18 @@ changes the install, the launch scripts, `package.json` or `src/main/os/` (insta
 git push                                         # the runners test the branch as it is on GitHub
 node scripts/ci/cross-os.mjs                     # Windows and macOS, smoke and the QA states
 node scripts/ci/cross-os.mjs --systems windows --specs "test/window/e2e-launch.test.ts"
+node scripts/ci/cross-os.mjs --systems macos --specs "test/tabs test/window" --shards 6   # folders, six runners
 node scripts/ci/cross-os.mjs --specs none        # install, build and smoke only
 node scripts/ci/cross-os.mjs --packaged          # release.yml: build, install and launch each package
 node scripts/ci/cross-os.mjs --run latest        # read main's last nightly run, start nothing
 ```
 
-It polls quietly, so it can run in the background; a run takes about five minutes. The summary names each failed step
-and smoke check; the evidence lands in `qa-artifacts/cross-os/<run id>/<system>/`: `smoke.out`, `install.log`, the
+It polls quietly, so it can run in the background; a run takes about five minutes. A folder stands for every spec under
+it, and `--shards` splits each system's specs across that many runners by their recorded seconds
+(`test/spec-weights.json`), as CI splits its e2e shards; a Windows or macOS runner takes two to three times as long as
+a Linux one, so give each runner about five minutes of recorded seconds. Each run's name carries a tag, so runs started
+at once on one commit each find their own. The summary names each failed step
+and smoke check; the evidence lands in `qa-artifacts/cross-os/<run id>/<system>/` (`<system>-<shard>/` for a shard): `smoke.out`, `install.log`, the
 failed job's `job.log`, and `qa-artifacts/latest/` with the screenshots and `inspect.md`, read as the `orivon-qa`
 skill says. Pixel baselines are never compared there (`CI=true`): read the screenshots, do not diff them.
 

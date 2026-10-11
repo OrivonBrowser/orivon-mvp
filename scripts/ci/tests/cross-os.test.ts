@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { logHighlights, matrixFor, parseSystems, pickRun, smokeResult, summarize } from '../cross-os.mjs'
+import { expandSpecs, jobLabel, logHighlights, matrixFor, parseShards, parseSystems, pickRun, smokeResult, summarize } from '../cross-os.mjs'
 
 describe('parseSystems', () => {
   it('reads a comma or space list once each', () => {
@@ -12,9 +12,52 @@ describe('parseSystems', () => {
   })
 })
 
+describe('parseShards', () => {
+  it('takes a whole number of runners and refuses anything else', () => {
+    expect(parseShards('6')).toBe(6)
+    for (const bad of ['0', '2.5', 'six', '21']) expect(() => parseShards(bad)).toThrow('--shards takes a whole number from 1 to 20')
+  })
+})
+
+describe('expandSpecs', () => {
+  const specs = ['test/tabs/e2e-a.test.ts', 'test/tabs/e2e-b.test.ts', 'test/tabsx/e2e-c.test.ts', 'test/qa/e2e-d.test.ts']
+
+  it('stands a folder for every spec under it, once each and in order, and keeps a file as named', () => {
+    expect(expandSpecs('./test/tabs/ test/qa/e2e-d.test.ts test/tabs/e2e-a.test.ts', specs))
+      .toEqual(['test/tabs/e2e-a.test.ts', 'test/tabs/e2e-b.test.ts', 'test/qa/e2e-d.test.ts'])
+  })
+
+  it('keeps a name it cannot find, so the caller can say it is missing', () => {
+    expect(expandSpecs('test/nothing', specs)).toEqual(['test/nothing'])
+  })
+})
+
 describe('matrixFor', () => {
   it('maps each system to its hosted runner', () => {
     expect(matrixFor('macos,linux')).toEqual({ include: [{ system: 'macos', os: 'macos-latest' }, { system: 'linux', os: 'ubuntu-latest' }] })
+  })
+
+  it('gives each system one runner for its specs, named as the nightly run names it', () => {
+    expect(matrixFor('windows', { specs: 'none', shards: 4 })).toEqual({ include: [{ system: 'windows', os: 'windows-latest', name: 'from source (windows)', artifact: 'cross-os-windows', specs: 'none' }] })
+  })
+
+  it('splits the specs across shards per system by their recorded seconds', () => {
+    const { include } = matrixFor('windows,macos', { specs: 'a b c', shards: 2, weights: { a: 30, b: 20, c: 15 } })
+    expect(include.map((entry) => [entry.name, entry.artifact, entry.specs])).toEqual([
+      ['from source (windows) 1 of 2', 'cross-os-windows-1', 'a'],
+      ['from source (windows) 2 of 2', 'cross-os-windows-2', 'b c'],
+      ['from source (macos) 1 of 2', 'cross-os-macos-1', 'a'],
+      ['from source (macos) 2 of 2', 'cross-os-macos-2', 'b c']
+    ])
+  })
+})
+
+describe('jobLabel', () => {
+  it('names the artifact of a job, a shard included, and nothing for a job that runs no system', () => {
+    expect(jobLabel('from source (windows)')).toBe('windows')
+    expect(jobLabel('from source (macos) 3 of 9')).toBe('macos-3')
+    expect(jobLabel('package (linux)')).toBe('linux')
+    expect(jobLabel('plan')).toBeUndefined()
   })
 })
 
