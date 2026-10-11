@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { expect } from 'vitest'
+import { candidateRoots } from '../../src/main/import/browser-roots.js'
 import { makeChromeHistory, makeFirefoxPlaces } from '../../src/main/import/tests/databases.js'
 import { launchElectron } from '../support/launch-electron.mjs'
 import { findChrome, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
@@ -26,11 +27,21 @@ const chromeBookmarks = (): string => JSON.stringify({ roots: {
   other: { type: 'folder', name: 'Other bookmarks', children: [{ type: 'url', name: 'Other site', url: 'https://other.test/' }] }
 } })
 
+/** Where the detector looks for a browser's profiles under `home` on this system: the product's own table, so the fixture cannot drift from it. */
+function rootOf (browser: 'chrome' | 'firefox', home: string): string {
+  const entry = candidateRoots(process.platform, home, {}).find((candidate) => candidate.browser === browser)
+  if (entry === undefined) throw new Error(`no ${browser} root on ${process.platform}`)
+  return entry.root
+}
+
+/** Chrome's profile directory under `home`, where the detector reads it on this system. */
+export const chromeRoot = (home: string): string => rootOf('chrome', home)
+
 /** A home directory with Chrome (two profiles) and, when asked, Firefox. The pages are dated minutes ago, so they are inside any retention. */
 export async function fakeHome (options: { firefox?: boolean, chrome?: boolean } = {}): Promise<string> {
   const home = await mkdtemp(join(tmpdir(), 'orivon-import-home-'))
   if (options.chrome !== false) {
-    const root = join(home, '.config', 'google-chrome')
+    const root = chromeRoot(home)
     await mkdir(join(root, 'Default'), { recursive: true })
     await mkdir(join(root, 'Profile 1'), { recursive: true })
     await writeFile(join(root, 'Local State'), JSON.stringify({ profile: { info_cache: { Default: { name: 'Person 1' }, 'Profile 1': { name: 'Work' } } } }))
@@ -44,10 +55,12 @@ export async function fakeHome (options: { firefox?: boolean, chrome?: boolean }
     await writeFile(join(root, 'Profile 1', 'Bookmarks'), chromeBookmarks())
   }
   if (options.firefox === true) {
-    const root = join(home, '.mozilla', 'firefox')
-    await mkdir(join(root, 'abc.default-release'), { recursive: true })
-    await writeFile(join(root, 'profiles.ini'), '[Profile0]\nName=default-release\nIsRelative=1\nPath=abc.default-release\n')
-    makeFirefoxPlaces(join(root, 'abc.default-release', 'places.sqlite'), [{ url: 'https://fox-history.test/', title: 'Fox history', visits: 1, at: Date.now() - MINUTE }], [
+    const root = rootOf('firefox', home)
+    // Firefox keeps its profiles beside profiles.ini on Linux and under Profiles/ on macOS and Windows.
+    const profile = process.platform === 'linux' ? 'abc.default-release' : 'Profiles/abc.default-release'
+    await mkdir(join(root, profile), { recursive: true })
+    await writeFile(join(root, 'profiles.ini'), `[Profile0]\nName=default-release\nIsRelative=1\nPath=${profile}\n`)
+    makeFirefoxPlaces(join(root, profile, 'places.sqlite'), [{ url: 'https://fox-history.test/', title: 'Fox history', visits: 1, at: Date.now() - MINUTE }], [
       { id: 1, type: 2, parent: 0, position: 0, title: '', guid: 'root________' },
       { id: 3, type: 2, parent: 1, position: 0, title: 'Toolbar', guid: 'toolbar_____' },
       { id: 4, type: 1, parent: 3, position: 0, title: 'Fox bookmark', guid: 'g4', url: 'https://fox.test/' }
