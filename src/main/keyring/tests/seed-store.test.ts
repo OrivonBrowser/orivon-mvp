@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -91,6 +91,27 @@ describe('SeedStore -- first launch', () => {
     const [a, b, c] = await Promise.all([store.resolve(), store.resolve(), store.resolve()])
     expect(a.seed).toEqual(b.seed)
     expect(b.seed).toEqual(c.seed)
+  })
+})
+
+// Electron's safeStorage has getSelectedStorageBackend on Linux only: on macOS and Windows it is not there to call.
+describe('SeedStore -- a keyring with no backend name', () => {
+  const noBackendName = (): SafeStorageLike => {
+    const { getSelectedStorageBackend: _unused, ...storage } = workingSafeStorage()
+    return storage
+  }
+
+  it.each(['win32', 'darwin'] as const)('persists the seed on %s, where the system keyring is always real', async (platform) => {
+    const first = await new SeedStore(path, noBackendName(), platform).resolve()
+    expect(first.persistent).toBe(true)
+    expect(existsSync(path)).toBe(true)
+    expect(Buffer.from((await new SeedStore(path, noBackendName(), platform).resolve()).seed)).toEqual(Buffer.from(first.seed))
+  })
+
+  it('keeps the seed for the session on Linux, where a backend it cannot read counts as none', async () => {
+    const resolved = await new SeedStore(path, noBackendName(), 'linux').resolve()
+    expect(resolved.persistent).toBe(false)
+    expect(existsSync(path)).toBe(false)
   })
 })
 

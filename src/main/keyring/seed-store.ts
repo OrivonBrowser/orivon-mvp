@@ -19,7 +19,8 @@ export interface SafeStorageLike {
   isAsyncEncryptionAvailable(): Promise<boolean>
   encryptStringAsync(plainText: string): Promise<Buffer>
   decryptStringAsync(encrypted: Buffer): Promise<{ shouldReEncrypt: boolean, result: string }>
-  getSelectedStorageBackend(): string
+  /** Electron has it on Linux only (electron.d.ts marks it `@platform linux`). */
+  getSelectedStorageBackend?: () => string
 }
 
 /** Electron's own two names for "no real keyring is behind this backend"
@@ -28,6 +29,17 @@ export interface SafeStorageLike {
  * failing open here would mean failing OPEN on which backends persist a
  * plaintext-adjacent secret, the wrong direction for this decision. */
 export const NO_REAL_KEYRING = new Set(['basic_text', 'unknown'])
+
+/**
+ * Whether `storage` keeps secrets with a real OS keyring, once it says encryption is available. macOS and Windows
+ * always encrypt with one (the Keychain, DPAPI). On Linux the backend may be Chromium's plain-text fallback, and a
+ * backend this file cannot read counts as none.
+ */
+export function hasRealKeyring (storage: SafeStorageLike, platform: NodeJS.Platform = process.platform): boolean {
+  if (platform !== 'linux') return true
+  const backend = storage.getSelectedStorageBackend?.()
+  return backend !== undefined && !NO_REAL_KEYRING.has(backend)
+}
 
 /** What a private session stores its identity with: nothing that outlives it. `SeedStore` reads it as "no keyring is reachable",
  * so the seed is made fresh in memory, never written down, and `orivon.secrets.available()` is false. */
@@ -79,11 +91,13 @@ function decodeCiphertext (value: unknown): Buffer | undefined {
 export class SeedStore {
   readonly #path: string
   readonly #safeStorage: SafeStorageLike
+  readonly #platform: NodeJS.Platform
   #resolution: Promise<SeedResolution> | undefined
 
-  constructor (path: string, safeStorage: SafeStorageLike) {
+  constructor (path: string, safeStorage: SafeStorageLike, platform: NodeJS.Platform = process.platform) {
     this.#path = path
     this.#safeStorage = safeStorage
+    this.#platform = platform
   }
 
   resolve (): Promise<SeedResolution> {
@@ -111,7 +125,7 @@ export class SeedStore {
 
   async #keyringReachable (): Promise<boolean> {
     if (!await this.#safeStorage.isAsyncEncryptionAvailable()) return false
-    return !NO_REAL_KEYRING.has(this.#safeStorage.getSelectedStorageBackend())
+    return hasRealKeyring(this.#safeStorage, this.#platform)
   }
 
   /** Reached only for `existing.status === 'absent'` -- see `#resolveOnce`'s own doc on why that split matters. */
