@@ -1,7 +1,8 @@
 // Orivon as the computer's browser, in the running shell: a link handed over by another program opens in a tab of
 // the running window, Settings says whether Orivon is the default browser and never registers it from a source
 // run, a newer release is one click away, a page is shared as a copied link or an email, and a site becomes a
-// shortcut in a directory the test chose. The clipboard, the mail program and the default-browser
+// shortcut in a directory the test chose (the applications directory on Linux, the desktop on Windows; macOS makes
+// none). The clipboard, the mail program and the default-browser
 // calls are replaced in the main process, so nothing reaches the machine. Set ORIVON_UI_SHOTS_DIR to also write
 // screenshots of the new surfaces in both colour schemes.
 import { spawn } from 'node:child_process'
@@ -11,7 +12,7 @@ import type { AddressInfo } from 'node:net'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { ElectronApplication, Page } from 'playwright'
+import type { ElectronApplication, Locator, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
 import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
@@ -168,6 +169,31 @@ async function waitSheet (app: App): Promise<Page> {
 
 const entries = (dir: string): string[] => { try { return readdirSync(join(dir, 'applications')).sort() } catch { return [] } }
 
+const WINDOWS = process.platform === 'win32'
+const MAC = process.platform === 'darwin'
+const MAKE_DEFAULT = WINDOWS ? 'Open Windows Settings' : 'Make default'
+const WINDOWS_HANDOFF = 'Choose Orivon for web links in Windows Settings. The button opens them again.'
+const MAC_HANDOFF = 'Confirm in the system\'s prompt to make Orivon the default.'
+
+/** Windows puts a shortcut on the desktop; the test points the desktop at a scratch folder first, so the person's own is never touched. */
+async function redirectDesktop (app: App, dir: string): Promise<void> {
+  await app.evaluate(({ app: electron }, desktop) => { electron.setPath('desktop', desktop) }, dir)
+}
+
+const links = (desktop: string): string[] => { try { return readdirSync(desktop).sort() } catch { return [] } }
+
+/** What the test chose as the place shortcuts go: the applications directory on Linux, the redirected desktop on Windows. */
+const written = (data: string, desktop: string): string[] => WINDOWS ? links(desktop) : entries(data)
+
+interface Link { target: string, args: string, description: string }
+
+const readLinks = async (app: App, desktop: string): Promise<Link[]> => await app.evaluate(({ shell }, paths) => paths.map((path) => {
+  const { target, args, description } = shell.readShortcutLink(path)
+  return { target, args: args ?? '', description: description ?? '' }
+}), links(desktop).map((file) => join(desktop, file)))
+
+const samePath = (a: string, b: string): boolean => a.replace(/\//g, '\\').toLowerCase() === b.replace(/\//g, '\\').toLowerCase()
+
 it('opens an address another program hands over as a tab of the running window, and drops every other scheme', async () => {
   const { app, chrome } = await launched()
   try {
@@ -230,18 +256,29 @@ it('says why Orivon cannot be made the default browser from a run like this one,
   }
 }, TEST_TIMEOUT_MS)
 
-it('registers for both web protocols when the build is installed, and says plainly when the system declines', async () => {
+const rowSays = async (row: Locator, text: string): Promise<boolean> => await waitFor(async () => (await row.locator('.row-control').textContent())?.includes(text) === true, 10_000)
+
+it('registers for both web protocols when the build is installed (on Windows, opens the system\'s settings, where the choice is the person\'s)', async () => {
   const { app, chrome } = await launched({ env: { ORIVON_TEST_DEFAULT_BROWSER: 'can-set' } })
   try {
     const page = await openSettings(app, chrome, '/default-browser')
     const row = page.locator('#row-default-browser')
-    const button = row.getByRole('button', { name: 'Make default' })
+    const button = row.getByRole('button', { name: MAKE_DEFAULT })
     await button.waitFor()
     await shoot(app, page, 'default-browser-can-set')
     await button.click()
-    expect(await waitFor(async () => (await row.locator('.row-control').textContent())?.includes('Orivon is your default browser.') === true, 10_000)).toBe(true)
+    if (WINDOWS) {
+      // Windows lets only the person choose: Orivon opens the page where they do and registers nothing.
+      expect(await rowSays(row, WINDOWS_HANDOFF)).toBe(true)
+      expect(await row.getByRole('button', { name: MAKE_DEFAULT }).isEnabled()).toBe(true)
+      expect(await seamRecording(app)).toMatchObject({ opened: 1, setDefault: [], registered: false })
+      // The person chose Orivon there and came back.
+      await app.evaluate(() => { (globalThis as unknown as { __orivonDevDefaultBrowser: SeamRecording }).__orivonDevDefaultBrowser.registered = true })
+      await page.evaluate(() => { document.dispatchEvent(new Event('visibilitychange')) })
+    }
+    expect(await rowSays(row, 'Orivon is your default browser.')).toBe(true)
     expect(await row.locator('button').count()).toBe(0)
-    expect((await seamRecording(app)).setDefault).toEqual(['http', 'https'])
+    expect((await seamRecording(app)).setDefault).toEqual(WINDOWS ? [] : ['http', 'https'])
     await shoot(app, page, 'default-browser-done')
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
@@ -249,13 +286,24 @@ it('registers for both web protocols when the build is installed, and says plain
   }
 }, TEST_TIMEOUT_MS)
 
-it('says the system did not accept the change, and gives the command to do it by hand', async () => {
+it('says the system did not accept the change and gives the command to do it by hand (Linux), or hands the choice to the person (Windows, macOS)', async () => {
   const { app, chrome } = await launched({ env: { ORIVON_TEST_DEFAULT_BROWSER: 'declined' } })
   try {
     const page = await openSettings(app, chrome, '/default-browser')
-    const button = page.locator('#row-default-browser').getByRole('button', { name: 'Make default' })
+    const button = page.locator('#row-default-browser').getByRole('button', { name: MAKE_DEFAULT })
     await button.waitFor()
     await button.click()
+    if (process.platform !== 'linux') {
+      // Windows opens its settings and never registers; macOS asks for a registration and leaves the confirmation
+      // to the person. Neither calls a refusal an error.
+      const row = page.locator('#row-default-browser')
+      expect(await rowSays(row, WINDOWS ? WINDOWS_HANDOFF : MAC_HANDOFF)).toBe(true)
+      expect(await row.locator('.problem').count()).toBe(0)
+      expect(await row.getByRole('button', { name: MAKE_DEFAULT }).isEnabled()).toBe(true)
+      expect(await seamRecording(app)).toMatchObject(WINDOWS ? { opened: 1, setDefault: [] } : { opened: 0, setDefault: ['http', 'https'] })
+      expect(mainOutput(app)).not.toContain('uncaught exception')
+      return
+    }
     const problem = page.locator('#row-default-browser .problem')
     await problem.waitFor({ timeout: 10_000 })
     expect(await problem.textContent()).toBe('Your system did not accept the change.')
@@ -399,10 +447,12 @@ it('lists Copy link, Email link and the QR code under Share, greyed with the rea
   }
 }, TEST_TIMEOUT_MS)
 
-it('makes a shortcut from the sheet into the applications directory the test chose, cleaned and quoted, and refuses a folder it cannot write', async () => {
+it.skipIf(MAC)('makes a shortcut from the sheet into the directory the test chose (applications on Linux, the desktop on Windows), cleaned and quoted, and refuses a folder it cannot write', async () => {
   const data = scratchDir('xdg')
+  const desktop = scratchDir('desktop')
   const { app, chrome } = await launched({ env: { XDG_DATA_HOME: data } })
   try {
+    if (WINDOWS) await redirectDesktop(app, desktop)
     await stubSystem(app)
     await stubNativeDialogs(app)
     const address = `${origin}/${QUERY}`
@@ -425,28 +475,44 @@ it('makes a shortcut from the sheet into the applications directory the test cho
     await name.press('Enter')
     const banner = sheet.locator('.banner.ok')
     await banner.waitFor({ timeout: 10_000 })
-    expect(await banner.innerText()).toBe('Shortcut added to your applications menu.')
+    expect(await banner.innerText()).toBe(WINDOWS ? 'Shortcut added to your desktop.' : 'Shortcut added to your applications menu.')
     await shoot(app, sheet, 'shortcut-sheet-done')
 
-    const files = entries(data)
+    const files = written(data, desktop)
     expect(files).toHaveLength(1)
-    expect(files[0]).toMatch(/^orivon-127-0-0-1-[0-9a-f]{8}\.desktop$/)
-    const text = readFileSync(join(data, 'applications', files[0] as string), 'utf8')
-    const lines = text.split('\n')
-    expect(lines[0]).toBe('[Desktop Entry]')
-    expect(lines.filter((line) => line.startsWith('Exec='))).toHaveLength(1)
-    expect(lines.filter((line) => line.startsWith('Name='))).toEqual(['Name=My "fixture"\\\\n %f'])
-    const exec = lines.find((line) => line.startsWith('Exec=')) as string
-    // The address is the last argument, quoted, with its `$` and `%` escaped.
-    expect(exec.endsWith(' "' + address.replace('$', '\\\\$').replace('%f', '%%f') + '"')).toBe(true)
-    expect(text).toContain('Icon=orivon\n')
-    expect(text).toContain('Categories=Network;WebBrowser;\n')
-    expect(text.split('\n').every((line) => line === '' || line.startsWith('[') || /^[A-Za-z]+=/.test(line))).toBe(true)
+    if (WINDOWS) {
+      // A .lnk on the desktop: the program, then the address as the last quoted argument; no profile flag for the default profile.
+      expect(files[0]).toMatch(/\.lnk$/)
+      const [link] = await readLinks(app, desktop) as [Link]
+      expect(samePath(link.target, await app.evaluate(() => process.execPath))).toBe(true)
+      expect(link.args.endsWith(` "${address}"`)).toBe(true)
+      expect(link.args).not.toContain('--orivon-profile')
+      expect(link.description).toBe('My "fixture"\\n %f')
+    } else {
+      expect(files[0]).toMatch(/^orivon-127-0-0-1-[0-9a-f]{8}\.desktop$/)
+      const text = readFileSync(join(data, 'applications', files[0] as string), 'utf8')
+      const lines = text.split('\n')
+      expect(lines[0]).toBe('[Desktop Entry]')
+      expect(lines.filter((line) => line.startsWith('Exec='))).toHaveLength(1)
+      expect(lines.filter((line) => line.startsWith('Name='))).toEqual(['Name=My "fixture"\\\\n %f'])
+      const exec = lines.find((line) => line.startsWith('Exec=')) as string
+      // The address is the last argument, quoted, with its `$` and `%` escaped.
+      expect(exec.endsWith(' "' + address.replace('$', '\\\\$').replace('%f', '%%f') + '"')).toBe(true)
+      expect(text).toContain('Icon=orivon\n')
+      expect(text).toContain('Categories=Network;WebBrowser;\n')
+      expect(text.split('\n').every((line) => line === '' || line.startsWith('[') || /^[A-Za-z]+=/.test(line))).toBe(true)
+    }
 
     // Done closes the sheet; a folder that cannot be made is reported, and nothing else is written.
     await sheet.getByRole('button', { name: 'Done' }).click()
     expect(await waitFor(async () => !(await popoverShown(app, 'overlay=shortcut-sheet')))).toBe(true)
-    await app.evaluate(() => { process.env['XDG_DATA_HOME'] = '/dev/null/orivon-not-a-directory' })
+    if (WINDOWS) {
+      // A desktop that sits under a file cannot take a link.
+      const blocker = join(desktop, files[0] as string)
+      await redirectDesktop(app, join(blocker, 'not-a-directory'))
+    } else {
+      await app.evaluate(() => { process.env['XDG_DATA_HOME'] = '/dev/null/orivon-not-a-directory' })
+    }
     await runCommand(chrome, 'site.shortcut')
     const failing = await waitSheet(app)
     await failing.locator('input.text').press('Enter')
@@ -454,7 +520,7 @@ it('makes a shortcut from the sheet into the applications directory the test cho
     await error.waitFor({ timeout: 10_000 })
     expect(await error.innerText()).toBe('Could not create the shortcut. Check that the folder can be written to.')
     await shoot(app, failing, 'shortcut-sheet-error')
-    expect(entries(data)).toEqual(files)
+    expect(written(data, desktop)).toEqual(files)
 
     // Escape cancels.
     await failing.keyboard.press('Escape').catch(() => {})
@@ -465,8 +531,27 @@ it('makes a shortcut from the sheet into the applications directory the test cho
   }
 }, TEST_TIMEOUT_MS)
 
-it('offers to open the shortcut in this profile when it is not the default one, and names the profile only when that stays ticked', async () => {
+it.skipIf(!MAC)('has no site shortcut on macOS: the row is greyed with the reason and the command opens no sheet', async () => {
+  const { app, chrome } = await launched()
+  try {
+    await visit(chrome, `${origin}/mac`)
+    await runCommand(chrome, 'site.shortcut')
+    await delay(ABSENCE_SETTLE_MS)
+    expect(await popoverShown(app, 'overlay=shortcut-sheet')).toBe(false)
+
+    const menu = await menuSubmenu(app, chrome, 'More tools')
+    const row = menu.getByRole('menuitem', { name: /^Create shortcut/ })
+    expect(await row.getAttribute('aria-disabled')).toBe('true')
+    expect(await row.innerText()).toContain('Not available on macOS')
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it.skipIf(MAC)('offers to open the shortcut in this profile when it is not the default one, and names the profile only when that stays ticked', async () => {
   const data = scratchDir('xdg-profile')
+  const desktop = scratchDir('desktop-profile')
   const { app, chrome } = await launched({
     args: [`--orivon-profile=${PROFILE}`],
     env: { XDG_DATA_HOME: data },
@@ -476,6 +561,7 @@ it('offers to open the shortcut in this profile when it is not the default one, 
     }
   })
   try {
+    if (WINDOWS) await redirectDesktop(app, desktop)
     await visit(chrome, `${origin}/profile`)
     await runCommand(chrome, 'site.shortcut')
     const sheet = await waitSheet(app)
@@ -494,10 +580,13 @@ it('offers to open the shortcut in this profile when it is not the default one, 
     await second.getByRole('button', { name: 'Create' }).click()
     await second.locator('.banner.ok').waitFor({ timeout: 10_000 })
 
-    const files = entries(data).map((file) => readFileSync(join(data, 'applications', file), 'utf8'))
-    expect(files).toHaveLength(2)
-    expect(files.filter((text) => text.includes(`"--orivon-profile=${PROFILE}" "${origin}/profile"`))).toHaveLength(1)
-    expect(files.filter((text) => !text.includes('--orivon-profile'))).toHaveLength(1)
+    // What each shortcut starts Orivon with: a desktop entry's whole text on Linux, a link's argument string on Windows.
+    const launches = WINDOWS
+      ? (await readLinks(app, desktop)).map((link) => link.args)
+      : entries(data).map((file) => readFileSync(join(data, 'applications', file), 'utf8'))
+    expect(launches).toHaveLength(2)
+    expect(launches.filter((text) => text.includes(`"--orivon-profile=${PROFILE}" "${origin}/profile"`))).toHaveLength(1)
+    expect(launches.filter((text) => !text.includes('--orivon-profile'))).toHaveLength(1)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
@@ -506,19 +595,22 @@ it('offers to open the shortcut in this profile when it is not the default one, 
 
 it('leaves a private window out of it: no default-browser row, no shortcut, and the menu says why', async () => {
   const data = scratchDir('xdg-private')
+  const desktop = scratchDir('desktop-private')
   const { app, chrome } = await launched({ args: ['--orivon-private'], env: { XDG_DATA_HOME: data } })
   try {
+    if (WINDOWS) await redirectDesktop(app, desktop)
     await stubSystem(app)
     await visit(chrome, `${origin}/private`)
     await runCommand(chrome, 'site.shortcut')
     await delay(ABSENCE_SETTLE_MS)
     expect(await popoverShown(app, 'overlay=shortcut-sheet')).toBe(false)
-    expect(entries(data)).toEqual([])
+    expect(written(data, desktop)).toEqual([])
 
     const menu = await menuSubmenu(app, chrome, 'More tools')
     const row = menu.getByRole('menuitem', { name: /^Create shortcut/ })
     expect(await row.getAttribute('aria-disabled')).toBe('true')
-    expect(await row.innerText()).toContain('Not available in a private window')
+    // macOS has no site shortcut at all, and that reason is the one the row gives.
+    expect(await row.innerText()).toContain(MAC ? 'Not available on macOS' : 'Not available in a private window')
     await shoot(app, menu, 'menu-shortcut-private')
     await menu.keyboard.press('Escape').catch(() => {})
 
