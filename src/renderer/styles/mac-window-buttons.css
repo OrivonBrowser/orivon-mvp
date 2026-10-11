@@ -24,7 +24,7 @@
   color: rgba(0, 0, 0, 0.55);
   box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.18);
 }
-.mac-window-button svg { width: 10px; height: 10px; opacity: 0; }
+.mac-window-button svg { width: 14px; height: 14px; opacity: 0; }
 .mac-window-buttons:hover .mac-window-button:not(:disabled) svg { opacity: 1; }
 .mac-window-button.close { background: #ff5c5f; }
 .mac-window-button.minimize { background: color-mix(in srgb, var(--wink) 22%, transparent); }

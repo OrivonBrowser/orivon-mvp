@@ -2,9 +2,14 @@ import { path, svg } from '../icons.js'
 import type { ChromeModule } from './context.js'
 import { must } from './context.js'
 
-function glyph (...paths: string[]): SVGSVGElement {
+/** Drawn one unit to a pixel, so the marks stay sharp on a screen that does not scale. */
+function glyph (filled: boolean, ...paths: string[]): SVGSVGElement {
   const el = svg('0 0 14 14')
-  el.append(...paths.map((d) => path(d, '1.6')))
+  el.append(...paths.map((d) => {
+    const mark = path(d, filled ? '0' : '1.3')
+    if (filled) mark.setAttribute('fill', 'currentColor')
+    return mark
+  }))
   return el
 }
 
@@ -36,9 +41,9 @@ export function createMacWindowButtons (): ChromeModule {
       group.className = 'mac-window-buttons no-drag'
       group.hidden = true
       group.append(
-        windowButton('close', 'Close window', glyph('M4.5 4.5l5 5', 'M9.5 4.5l-5 5'), () => { ctx.shell.runCommand('window.close') }),
+        windowButton('close', 'Close window', glyph(false, 'M4.5 4.5l5 5', 'M9.5 4.5l-5 5'), () => { ctx.shell.runCommand('window.close') }),
         windowButton('minimize', 'Minimise is not available in full screen', null),
-        windowButton('zoom', 'Exit full screen', glyph('M7.5 3.5v3h3', 'M6.5 10.5v-3h-3'), () => { ctx.shell.runCommand('window.fullscreen') }))
+        windowButton('zoom', 'Exit full screen', glyph(true, 'M6.5 6.5V3L3 6.5z', 'M7.5 7.5V11L11 7.5z'), () => { ctx.shell.runCommand('window.fullscreen') }))
       row.prepend(group)
     },
     render: (state) => {
