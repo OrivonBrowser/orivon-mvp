@@ -10,7 +10,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ElectronApplication } from 'playwright'
-import { launchElectron, profileDirOf } from '../support/launch-electron.mjs'
+import { closeElectron, launchElectron, profileDirOf } from '../support/launch-electron.mjs'
 import { findChrome, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
 import { waitForAddressBarStable } from '../support/e2e-helpers.js'
 import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
@@ -25,8 +25,12 @@ export interface Rig {
   /** The provider's base address, as Settings holds it. */
   readonly providerAddress: string
   readonly dnslinks: Record<string, string>
+  /** Closes whatever phase is still running, then the servers. */
   close: () => Promise<void>
 }
+
+/** Every phase launched against a rig and still running: a spec that fails mid-phase never reaches its own close, and a phase left running fails the next spec's survivor check. */
+const launched = new WeakMap<Rig, ElectronApplication[]>()
 
 const bucketOf = (id: string): string => createHash('sha256').update(id, 'utf8').digest('hex').slice(0, 2)
 
@@ -59,15 +63,19 @@ export async function startRig (sites: Record<string, Record<string, string>>, j
     else res.writeHead(200, { 'content-type': 'application/json' }).end(body)
   })
   const port = await listen(server)
-  return {
+  const rig: Rig = {
     gateway,
     providerAddress: `http://127.0.0.1:${String(port)}/score`,
     dnslinks,
     close: async () => {
+      // Newest first: an older phase's cleanup may remove the profile a newer one still runs on.
+      for (const app of [...(launched.get(rig) ?? [])].reverse()) await closeElectron(app)
       await gateway.close()
       await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
     }
   }
+  launched.set(rig, [])
+  return rig
 }
 
 export interface PhaseOptions {
@@ -92,6 +100,9 @@ export async function launchPhase (rig: Rig, { names, reuse, env = {} }: PhaseOp
     },
     env: { ORIVON_TEST_ETH_FIXTURES: JSON.stringify(fixtures), ORIVON_TEST_IPFS_GATEWAYS: rig.gateway.url, ORIVON_TEST_DOH: `${rig.gateway.url}/dns-query`, ...env }
   })
+  const running = launched.get(rig)
+  running?.push(app)
+  app.once('close', () => { running?.splice(running.indexOf(app), 1) })
   const listening = await waitFor(async () => await app.evaluate(() => { const seam = (globalThis as { __orivonDevEthFixtures?: { listening: boolean, start?: () => void } }).__orivonDevEthFixtures; seam?.start?.(); return seam?.listening === true }), 20_000)
   if (!listening) throw new Error('the verifier host never reported listening')
   await waitFor(() => app.windows().length === 2)
