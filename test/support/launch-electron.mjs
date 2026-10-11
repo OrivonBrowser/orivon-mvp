@@ -18,7 +18,7 @@
 // the load-bearing bit that must survive spike/ being deleted. See
 // .claude/skills/orivon-electron/SKILL.md for the full incident writeup.
 import { _electron as electron } from 'playwright'
-import { rmSync } from 'node:fs'
+import { realpathSync, rmSync } from 'node:fs'
 import { mkdtemp, readdir, readFile, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -58,6 +58,18 @@ const POISON = ['ELECTRON_RUN_AS_NODE']
  */
 const SILENT_AUDIO_ENV = { PULSE_SERVER: 'unix:/nonexistent' }
 const SILENT_AUDIO_SWITCH = '--alsa-output-device=null'
+
+/**
+ * The no-focus default of a launch: on, so a run never takes focus from whoever is at the machine, except on a
+ * macOS CI runner. Nobody sits at one, and macOS gives no window the keyboard while its app is not the active
+ * one, so a window shown inactive there leaves every `isFocused()` false and no key reaches a focused page.
+ * @param {NodeJS.Platform} platform
+ * @param {Record<string, string | undefined>} env
+ * @returns {'0' | '1'}
+ */
+export function noFocusDefault (platform, env) {
+  return platform === 'darwin' && env['CI'] === 'true' ? '0' : '1'
+}
 
 /**
  * Why a launch must not start, or undefined when it may. On a Linux desktop a window only stays off the
@@ -168,8 +180,8 @@ const SEEN_PIDS = new Set()
 export function registerLaunchForTeardown (app, { userDataDir } = {}) {
   if (userDataDir !== undefined) {
     USER_DATA_DIRS.set(app, userDataDir)
-    KNOWN_PROFILES.add(resolve(userDataDir))
-    KEPT_PROFILES.delete(resolve(userDataDir))
+    KNOWN_PROFILES.add(profileKey(userDataDir))
+    KEPT_PROFILES.delete(profileKey(userDataDir))
   }
   const pid = app.process().pid
   if (pid !== undefined) {
@@ -273,7 +285,7 @@ export async function launchElectron ({
   // it -- this is what makes `npm run smoke`/`test:e2e` no-focus even for
   // someone who runs them without xvfb-run, on a platform with no virtual
   // display at all (docs/development/setup.md).
-  if (env['ORIVON_WINDOW_NO_FOCUS'] === undefined) env['ORIVON_WINDOW_NO_FOCUS'] = '1'
+  if (env['ORIVON_WINDOW_NO_FOCUS'] === undefined) env['ORIVON_WINDOW_NO_FOCUS'] = noFocusDefault(process.platform, env)
   // The same for the Ethereum light client: off unless a caller turns it on,
   // so no test run contacts a mainnet RPC or beacon API. Every real `.eth`
   // name then fails closed; fixture names still load in a test build.
@@ -665,16 +677,29 @@ async function rmUserDataDir (dir, context) {
   })
 }
 
+/**
+ * One spelling per profile directory. macOS reaches its temporary folder through a symlink (`/var` is
+ * `/private/var`), and Electron reports the resolved path, so a spec handing back `app.getPath('userData')`
+ * names the same directory this file made under the other spelling.
+ */
+function profileKey (dir) {
+  try {
+    return realpathSync(dir)
+  } catch {
+    return resolve(dir)
+  }
+}
+
 /** True only for a profile directory this process made and has not removed. */
 function isOwnTempProfile (dir) {
-  return KNOWN_PROFILES.has(resolve(dir))
+  return KNOWN_PROFILES.has(profileKey(dir))
 }
 
 function keepProfileOf (app) {
   const dir = USER_DATA_DIRS.get(app)
   if (dir === undefined) return
   USER_DATA_DIRS.delete(app)
-  KEPT_PROFILES.add(resolve(dir))
+  KEPT_PROFILES.add(profileKey(dir))
   if (!sweepKeptAtExit) {
     sweepKeptAtExit = true
     process.once('exit', () => { for (const kept of KEPT_PROFILES) rmSync(kept, { recursive: true, force: true }) })
@@ -696,7 +721,7 @@ async function removeUserDataDirFor (app) {
   const dir = USER_DATA_DIRS.get(app)
   if (dir === undefined) return
   USER_DATA_DIRS.delete(app)
-  KNOWN_PROFILES.delete(resolve(dir))
+  KNOWN_PROFILES.delete(profileKey(dir))
   await rmUserDataDir(dir, 'closeElectron')
 }
 

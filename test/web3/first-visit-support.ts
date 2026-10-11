@@ -61,6 +61,22 @@ export function pinPath (userData: string, origin: string): string {
   return join(userData, 'apps', originHash(origin), 'pin.json')
 }
 
+/** Whether the newest page at `url` has parsed its document: past the dom-ready that takes a protocol's loading screen away. */
+export async function documentParsed (app: App, url: string): Promise<boolean> {
+  return await app.evaluate(async ({ webContents }, address) => {
+    const newest = webContents.getAllWebContents().filter((contents) => !contents.isDestroyed() && contents.getURL() === address).sort((a, b) => b.id - a.id)[0]
+    if (newest === undefined) return false
+    try {
+      return await Promise.race([
+        newest.executeJavaScript('document.readyState !== "loading"') as Promise<boolean>,
+        new Promise<boolean>((resolve) => setTimeout(() => { resolve(false) }, 2_500))
+      ])
+    } catch {
+      return false
+    }
+  }, url).catch(() => false)
+}
+
 /** The capabilities saved as granted to `origin`, or an empty list when nothing is saved. */
 export function savedGrants (userData: string, origin: string): string[] {
   const file = join(userData, 'grants', originHash(origin), 'grants.json')
@@ -112,8 +128,17 @@ export function sheetGone (app: App): boolean {
   return sheetPages(app).length === 0
 }
 
-/** The setup cover's title, or null when none is up. */
+/**
+ * The cover's title while one is on screen, or null. The cover is a `warm` overlay, hidden in place and kept after it
+ * closes, so a cover page that is still open is not a cover on screen: only a visible view of it is.
+ */
 export async function coverTitle (app: App): Promise<string | null> {
+  const shown = await app.evaluate(({ BaseWindow }) => {
+    const visible = (view: { children?: unknown[] }): boolean => ((view.children ?? []) as Array<{ webContents?: { getURL: () => string }, getVisible?: () => boolean, children?: unknown[] }>)
+      .some((child) => (child.webContents?.getURL().includes('overlay=loading-screen') === true && child.getVisible?.() !== false) || visible(child))
+    return BaseWindow.getAllWindows().some((win) => visible(win.contentView as unknown as { children?: unknown[] }))
+  })
+  if (!shown) return null
   const page = coverPages(app).at(-1)
   if (page === undefined) return null
   return await page.evaluate(() => document.querySelector('.loading-screen-title')?.textContent ?? null).catch(() => null)
