@@ -229,10 +229,24 @@ it('keeps a tab awake that plays sound, is pinned, holds typed input or is on a 
     expect(await isSleeping(chrome, pinned)).toBe(false)
 
     const form = await openTab(chrome, '/form')
-    expect(await waitFor(() => findViewShowing(app, chrome, `${origin}/form`) !== undefined)).toBe(true)
-    const formView = findViewShowing(app, chrome, `${origin}/form`) as Page
-    await formView.fill('#f', 'half a message')
-    await formView.evaluate(() => { (document.activeElement as HTMLElement | null)?.blur() })
+    if (process.platform === 'darwin') {
+      // Playwright sometimes never attaches the page of a tab opened later on macOS (test/README.md, Known risk), so the
+      // text goes in from the main process, as typing does: focus the field, then one char event per letter.
+      await app.evaluate(async ({ webContents }, [url, text]) => {
+        const wc = webContents.getAllWebContents().find((candidate) => candidate.getURL() === url)
+        if (wc === undefined) throw new Error(`no webContents at ${url as string}`)
+        wc.focus()
+        await wc.executeJavaScript('document.getElementById("f").focus()')
+        for (const character of text as string) wc.sendInputEvent({ type: 'char', keyCode: character })
+        // The events reach the page asynchronously: leave the field only once it holds the text.
+        for (let tries = 0; tries < 100 && await wc.executeJavaScript('document.getElementById("f").value') !== text; tries += 1) await new Promise((resolve) => setTimeout(resolve, 50))
+        await wc.executeJavaScript('document.activeElement.blur()')
+      }, [`${origin}/form`, 'half a message'] as const)
+    } else {
+      const formView = findViewShowing(app, chrome, `${origin}/form`) as Page
+      await formView.fill('#f', 'half a message')
+      await formView.evaluate(() => { (document.activeElement as HTMLElement | null)?.blur() })
+    }
     await runCommand(chrome, 'tab.sleep')
     const said = await waitForToast(app, 'This tab has unsaved changes, so it stays awake.')
     expect(said).toBe(true)
