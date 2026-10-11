@@ -3,7 +3,7 @@
 // that is not a tab keeps Electron's own answer, which is no.
 import type { ShellInstaller } from '../shell/shell-installers.js'
 import { askChooser } from './ask-chooser.js'
-import { watchCertErrors } from './cert-error-watch.js'
+import { forgetCertErrors, watchCertErrors } from './cert-error-watch.js'
 import { challenges } from './auth-state.js'
 import { handleSelectClientCertificate } from './client-certificate.js'
 import { handleLogin } from './login-handler.js'
@@ -28,7 +28,7 @@ export const installAuth: ShellInstaller = {
     const certErrors = { findTab, ask: requestSlot, claimed: (id: number, url: string, code: number) => upgradeTracker.claims(id, url, code) }
     services.tabLifecycle.subscribe({
       tabCreated: (contents) => { watchCertErrors(contents, certErrors) },
-      viewReplaced: (_old, contents) => { watchCertErrors(contents, certErrors) },
+      viewReplaced: (old, contents) => { forgetCertErrors(old); watchCertErrors(contents, certErrors) },
       tabClosing: ({ id, window }) => {
         const owner = services.windows.all().find((candidate) => candidate.window === window)
         if (owner !== undefined) challenges.dropTab(owner, id)
