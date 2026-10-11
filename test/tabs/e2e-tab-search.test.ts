@@ -11,7 +11,7 @@ import { deflateSync, crc32 } from 'node:zlib'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
-import { pressKey } from '../support/e2e-helpers.js'
+import { bindingOf, pressCommand, shownBinding } from '../support/e2e-helpers.js'
 import { delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 120_000
@@ -112,7 +112,7 @@ const command = async (chrome: Page, id: string): Promise<void> => {
 /** Opens tab search with its key, sent to the page at `url`. */
 async function openList (app: App, url: string): Promise<Page> {
   await settled(app, url)
-  await pressKey(app, url, 'A', ['control', 'shift'])
+  await pressCommand(app, url, 'tab.search')
   return await listPage(app)
 }
 
@@ -342,7 +342,7 @@ it('opens from the main menu and from the strip button, and brings back a closed
     // The strip button carries its name and the key, and toggles the list.
     const button = chrome.locator('#tab-search')
     expect(await button.getAttribute('aria-label')).toBe('Search tabs')
-    expect(await button.getAttribute('title')).toBe('Search tabs (Ctrl+Shift+A)')
+    expect(await button.getAttribute('title')).toBe(`Search tabs (${shownBinding(bindingOf('tab.search'))})`)
     await button.click()
     const fromButton = await listPage(app)
     await expectCount(fromButton, '2 tabs')
