@@ -56,6 +56,14 @@ describe('the settings schema', () => {
     expect(validateSetting(SETTINGS['search.customUrl'], 'http://search.example/?q=%s')).toBeUndefined()
   })
 
+  it('searches the Web3 with Explore by default, and keeps the Web2 engine apart under its own key', () => {
+    expect(SETTINGS['search.mode']).toMatchObject({ kind: 'enum', default: 'web3', options: ['web3', 'web2'], labels: { web3: 'Web3', web2: 'Web2' } })
+    expect(SETTINGS['search.web3Engine']).toMatchObject({ kind: 'enum', default: 'explore', options: ['explore'], labels: { explore: 'Explore' } })
+    expect(SETTINGS['search.engine'].default).toBe('duckduckgo')
+    expect(validateSetting(SETTINGS['search.mode'], 'web2')).toBe('web2')
+    expect(validateSetting(SETTINGS['search.mode'], 'web4')).toBeUndefined()
+  })
+
   it('pins an extension installed from now on only when asked, and keeps the older setting for one with no recorded pin', () => {
     expect(SETTINGS['extensions.pinInstalled']).toEqual({ kind: 'bool', default: false })
     expect(SETTINGS['extensions.pinNew'].default).toBe(true)

@@ -99,6 +99,9 @@
             placeholder="Search or enter address"
           />
           <div class="addressbar-trailing">
+            <!-- Which list a search typed here goes to, Web3 or Web2 (chrome/search-mode.ts). Shown while the field is
+                 in use; the text, label and state come from the pushed state. -->
+            <button id="search-mode" class="search-mode" type="button" hidden aria-pressed="true"></button>
             <div id="address-slot" class="toolbar-slot"></div>
             <!-- The page's zoom, when it is not the default. Choosing it puts the page back to the default zoom. -->
             <button id="zoom-chip" class="zoom-chip" type="button" hidden title="Zoom: click to reset to the default size"></button>

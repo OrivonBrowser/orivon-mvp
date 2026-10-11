@@ -98,6 +98,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
       sendChromeEvent(target, OMNIBOX_MODULE, { type: 'focusSearch' })
       sendChromeEvent(target, NAVIGATION_MODULE, { type: 'focusSearch' })
       return
+    case 'search.toggleMode': services.settings.set('search.mode', services.settings.get('search.mode') === 'web3' ? 'web2' : 'web3'); return
     case 'zoom.in': case 'zoom.out': case 'zoom.reset': {
       const origin = active === undefined ? null : originFromUrl(active.url)
       if (origin === null) return
