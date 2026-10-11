@@ -262,9 +262,12 @@ it('refuses the preload\'s call when the page went around the wrapper first, nat
     expect(await waitFor(async () => (await app.evaluate(() => (globalThis as unknown as { __orivonDevDisplayChooser?: unknown }).__orivonDevDisplayChooser)) !== undefined)).toBe(true)
     await useChooser(app, { kind: 'screen' })
 
-    // A native call through a realm the preload did not wrap, then the wrapped call right after: the picker is never shown.
-    await run(view, "window.native('native'); window.share('wrapped', { video: true })")
+    // A native call through a realm the preload did not wrap, refused, then the wrapped call right after: the picker is
+    // never shown. The wrapped call waits for that refusal, because the two travel to main on different paths and,
+    // started in one step, either can arrive first: that race is the same-step test's below.
+    await run(view, "window.native('native')")
     expect(await result(view, 'native')).toBe('ERR:NotAllowedError')
+    await run(view, "window.share('wrapped', { video: true })")
     expect(await result(view, 'wrapped')).toBe('ERR:NotAllowedError')
     expect(await chooserCalls(app)).toBe(0)
     expect(await liveTracks(view)).toBe(0)
@@ -274,8 +277,9 @@ it('refuses the preload\'s call when the page went around the wrapper first, nat
     await delay(SUSPECT_MS + 500)
     await resetChooser(app)
     await useChooser(app, { kind: 'screen' })
-    await run(view, "window.__r = {}; window.legacy('legacy', { mandatory: { chromeMediaSource: 'desktop' } }); window.share('wrapped', { video: true })")
+    await run(view, "window.__r = {}; window.legacy('legacy', { mandatory: { chromeMediaSource: 'desktop' } })")
     expect(await result(view, 'legacy')).toBe('ERR:NotAllowedError')
+    await run(view, "window.share('wrapped', { video: true })")
     expect(await result(view, 'wrapped')).toBe('ERR:NotAllowedError')
     expect(await chooserCalls(app)).toBe(0)
     expect(await liveTracks(view)).toBe(0)
@@ -285,17 +289,19 @@ it('refuses the preload\'s call when the page went around the wrapper first, nat
   }
 }, E2E_TIMEOUT_MS)
 
-it('refuses the page, or ends its renderer, when its own request races the wrapped call while the picker is open', async () => {
+/**
+ * Starts the page's own request and the wrapped call with the timing `script` sets. Timing decides which safe end this
+ * takes. The page's request before the ticket opens is refused, and so is the wrapped call after it. After the ticket
+ * opens, Blink queues the preload's call behind the page's, the page's is served unconfirmed, and the preload's call is
+ * then refused with no ticket: the preload reports it, and main ends the renderer. Either way nothing keeps a capture.
+ */
+const raceEndsSafely = async (chooser: unknown, script: string): Promise<void> => {
   const { app, chrome } = await launchShell()
   try {
     const view = await visit(app, chrome, `${origins.a}/`)
     expect(await waitFor(async () => (await app.evaluate(() => (globalThis as unknown as { __orivonDevDisplayChooser?: unknown }).__orivonDevDisplayChooser)) !== undefined)).toBe(true)
-    await useChooser(app, { kind: 'screen', delayMs: 1500 })
-    await run(view, "window.__r = {}; window.share('wrapped', { video: true }); setTimeout(() => window.native('native'), 300)")
-    // Timing decides which safe end this takes. The page's request before the ticket opens is refused, and so is the
-    // wrapped call after it. After the ticket opens, Blink queues the preload's call behind the page's, the page's is
-    // served unconfirmed, and the preload's call is then refused with no ticket: the preload reports it, and main ends
-    // the renderer. Either way nothing keeps a capture.
+    await useChooser(app, chooser)
+    await run(view, script)
     let ended = false
     try {
       expect(await result(view, 'native')).toBe('ERR:NotAllowedError')
@@ -310,6 +316,14 @@ it('refuses the page, or ends its renderer, when its own request races the wrapp
   } finally {
     await closeElectron(app)
   }
+}
+
+it('refuses the page, or ends its renderer, when its own request races the wrapped call while the picker is open', async () => {
+  await raceEndsSafely({ kind: 'screen', delayMs: 1500 }, "window.__r = {}; window.share('wrapped', { video: true }); setTimeout(() => window.native('native'), 300)")
+}, E2E_TIMEOUT_MS)
+
+it('refuses the page, or ends its renderer, when its own request and the wrapped call start in the same step', async () => {
+  await raceEndsSafely({ kind: 'screen' }, "window.__r = {}; window.native('native'); window.share('wrapped', { video: true })")
 }, E2E_TIMEOUT_MS)
 
 it('shares honestly once the suspicion that follows a request with no ticket has lapsed', async () => {
