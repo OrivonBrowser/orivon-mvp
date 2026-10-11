@@ -189,6 +189,15 @@ worse than the issue as filed.
   *only* mechanism, and it is fast enough on its own: 313–1134 MB/s measured, against a
   1–5 MB/s product requirement.
 
+## The main-process clipboard writes return nothing, whatever the typings say
+
+Electron 44's `electron.d.ts` types `clipboard.writeText` and `clipboard.write` as `Promise<void>`. In the main
+process they return `undefined`. A `.catch(...)` on the result therefore throws (`Cannot read properties of
+undefined (reading 'catch')`), and every copy command built that way fails: CI's `e2e-os-links` caught it once.
+Call them plainly; `check:floating-promises` allows them for this reason, as it allows `loadURL`. Under this
+machine's xvfb a main-process clipboard call can also hang, so a spec checks what the person sees (a toast, a
+returned outcome), never a clipboard round trip.
+
 ## A shim must mirror the whole surface a dependency touches, not the obvious methods
 
 `bittorrent-dht`'s RPC layer calls `net.isIP(peer.host)` before every send, to decide whether to

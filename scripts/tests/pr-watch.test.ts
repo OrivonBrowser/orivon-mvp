@@ -103,16 +103,24 @@ describe('updateBranch', () => {
 
   it('merges main into the branch and pushes it', () => {
     const { root, mine } = repos('other.txt')
-    const head = updateBranch(mine)
+    const head = updateBranch(mine, 'feature')
     expect(head).toBe(git(mine, 'rev-parse', 'HEAD'))
     expect(git(join(root, 'origin.git'), 'rev-parse', 'feature')).toBe(head)
     expect(git(mine, 'log', '-1', '--format=%P').split(' ')).toHaveLength(2)
   })
 
+  it('pushes to the pull request\'s branch when the local branch has another name, and makes no second branch', () => {
+    const { root, mine } = repos('other.txt')
+    git(mine, 'branch', '-m', 'feature', 'renamed-here')
+    const head = updateBranch(mine, 'feature')
+    expect(git(join(root, 'origin.git'), 'rev-parse', 'feature')).toBe(head)
+    expect(git(join(root, 'origin.git'), 'branch', '--list', 'renamed-here')).toBe('')
+  })
+
   it('leaves the worktree as it was when main does not merge cleanly', () => {
     const { mine } = repos('shared.txt')
     const before = git(mine, 'rev-parse', 'HEAD')
-    expect(updateBranch(mine)).toBeUndefined()
+    expect(updateBranch(mine, 'feature')).toBeUndefined()
     expect(git(mine, 'rev-parse', 'HEAD')).toBe(before)
     expect(git(mine, 'status', '--porcelain')).toBe('')
   })

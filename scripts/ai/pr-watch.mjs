@@ -64,10 +64,11 @@ export function runIds (checks) {
 }
 
 /**
- * Merges `origin/main` into the branch checked out in `worktree` and pushes it; returns the new head, or undefined
- * when the merge conflicts, after aborting it so the worktree is as it was.
+ * Merges `origin/main` into the branch checked out in `worktree` and pushes it to the pull request's own branch,
+ * `headRef`, whatever the local branch is called; returns the new head, or undefined when the merge conflicts, after
+ * aborting it so the worktree is as it was.
  */
-export function updateBranch (worktree) {
+export function updateBranch (worktree, headRef) {
   const git = (...args) => execFileSync('git', ['-C', worktree, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
   git('fetch', '-q', 'origin')
   try {
@@ -76,7 +77,8 @@ export function updateBranch (worktree) {
     try { git('merge', '--abort') } catch {}
     return undefined
   }
-  git('push', '-q', 'origin', 'HEAD')
+  // A plain `push origin HEAD` goes to the local branch's name: renamed locally, it made a second remote branch and left the PR behind.
+  git('push', '-q', 'origin', `HEAD:refs/heads/${headRef}`)
   return git('rev-parse', 'HEAD')
 }
 
@@ -92,8 +94,8 @@ function arg (name) {
 }
 
 function read (pr) {
-  const view = JSON.parse(gh('pr', 'view', pr, '--json', 'headRefOid,mergeStateStatus,statusCheckRollup'))
-  return { head: view.headRefOid, state: view.mergeStateStatus, checks: view.statusCheckRollup.map(normalize) }
+  const view = JSON.parse(gh('pr', 'view', pr, '--json', 'headRefName,headRefOid,mergeStateStatus,statusCheckRollup'))
+  return { headRef: view.headRefName, head: view.headRefOid, state: view.mergeStateStatus, checks: view.statusCheckRollup.map(normalize) }
 }
 
 /** Prints each failed e2e shard's failed specs, and returns them all. */
@@ -145,7 +147,7 @@ async function watch (pr, { maxReruns, merge, stop, worktree }) {
         console.log(`green but ${now.state}: merge main into the branch and push, then watch again`)
         return 2
       }
-      const updated = updateBranch(worktree)
+      const updated = updateBranch(worktree, now.headRef)
       if (updated === undefined) { console.log('main does not merge into the branch cleanly: settle the conflict by hand'); return 2 }
       rounds += 1
       console.log(`round ${String(rounds)}: merged main in and pushed ${updated.slice(0, 8)}`)

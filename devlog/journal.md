@@ -92,6 +92,12 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - A deep UI test on GitHub's Windows and macOS runners: 171 spec files per system, nine runners each, smoke passing on every one.
 - It found and fixed real bugs: local files and cookies from source, the keyring, a macOS crash, blank new tabs, Mac Memory Saver.
 - Windows went from 35 failing UI tests to 4 and macOS from 154 to 19; what remains is mostly flakes and harness limits.
+- An overnight stability pass steadied nine flaky CI specs (the worst failed 9 of 25 runs), including five that failed only on Windows or macOS.
+- A failed first .eth load no longer leaves a "certificate not trusted" sheet over the app, hiding its update notices.
+- The .eth verifier's port can no longer be taken between launch and use, which left every .eth address dead until restart.
+- Orivon no longer quits when a background step fails unnoticed: about a hundred such spots now log, and CI refuses new ones.
+- A page that fails to load drops the previous site's icon, and retried downloads follow the site's download rules again.
+- Narrowing the window while the permissions panel was open quit Orivon every time; the panel now closes first, as the menu does.
 
 ### In my head
 
