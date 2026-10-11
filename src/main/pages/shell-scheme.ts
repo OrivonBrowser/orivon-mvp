@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { session } from 'electron'
 import { createShellHandler } from './serve.js'
 import { reachableFiles, shellDetailsAllowed } from './route.js'
+import { isFirstDashboardLoad } from './dashboard-first-load.js'
 import type { ManifestChunk } from './route.js'
 import { SHELL_PARTITION, SHELL_SCHEME, isShellSchemeUrl, shellEntryFile } from '../shell/shell-session.js'
 import { webRequestOwnerFor } from '../sessions/web-request-owner.js'
@@ -43,6 +44,6 @@ export function installShellScheme (dirname: string): void {
     0,
     { urls: [`${SHELL_SCHEME}://*/*`] },
     isShellSchemeUrl,
-    (details, current) => shellDetailsAllowed(details) ? current : { cancel: true }
+    (details, current) => shellDetailsAllowed(details, isFirstDashboardLoad) ? current : { cancel: true }
   )
 }
