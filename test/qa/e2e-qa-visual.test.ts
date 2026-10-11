@@ -49,8 +49,8 @@ const MANIFEST = JSON.stringify({
 /** Windows lets no program make itself the default browser, so the row there opens Windows' own settings. */
 const MAKE_DEFAULT = process.platform === 'win32' ? 'Open Windows Settings' : 'Make default'
 
-// Local files serve nothing while the binary's file-protocol fuse is on, and a checkout flips it on Linux alone
-// (A394). On Linux, e2e-file-protocol-fuse fails when it is on, so skipping here hides nothing there.
+// Local files serve nothing while the binary's file-protocol fuse is on, as it stays in a checkout whose install
+// could not flip it. e2e-file-protocol-fuse fails when it is on, so skipping here hides nothing.
 const electronPath: string = createRequire(import.meta.url)('electron')
 const localFilesServed = await readFileProtocolFuse(fuseFilePath(electronPath)) === 'off'
 

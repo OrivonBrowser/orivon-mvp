@@ -20,10 +20,10 @@
  * test/support/launch-electron.mjs, so a skip here only moves the download later.
  */
 import { spawnSync } from 'node:child_process'
-import { chmod, copyFile, realpath, rename, rm, stat } from 'node:fs/promises'
+import { chmod, copyFile, cp, realpath, rename, rm, stat } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname, join, sep } from 'node:path'
+import { basename, dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isInvokedDirectly } from './cli.mjs'
 
@@ -110,48 +110,93 @@ async function fusesMatch (path) {
 }
 
 /**
- * Sets the binary's `CHECKOUT_FUSES`, writing a new file and renaming it over `binary`: a worktree's
- * `node_modules` is a hard-linked copy of another checkout's, so a write in place would change that
- * checkout's binary too (and fail with ETXTBSY while it runs). Only Linux is flipped: macOS and
- * Windows are refused until the flip is measured there (docs/open-questions.md A394).
+ * The `.app` bundle an executable inside one belongs to, or undefined. On macOS the fuse wire is in the bundle's
+ * framework, which the bundle's signature covers, so the whole bundle is copied, changed and signed again.
+ * @param {string} binary
+ */
+export function appBundleOf (binary) {
+  const at = binary.lastIndexOf(`.app${sep}Contents${sep}`)
+  return at === -1 ? undefined : binary.slice(0, at + '.app'.length)
+}
+
+/**
+ * Signs a changed bundle again, ad hoc, as `@electron/fuses` does for an arm64 app: macOS runs no code whose
+ * signature no longer matches it.
+ * @param {string} bundle
+ */
+function signAdHoc (bundle) {
+  const result = spawnSync('codesign', ['--sign', '-', '--force', '--preserve-metadata=entitlements,requirements,flags,runtime', '--deep', bundle], { encoding: 'utf8' })
+  if (result.status !== 0) throw new Error(`codesign could not sign the changed bundle: ${(result.stderr || result.error?.message || `status ${String(result.status)}`).trim()}`)
+}
+
+/** The file holding the fuse wire: the executable, or on macOS the framework binary in its bundle. */
+const wireFileOf = (binary, bundle) => bundle === undefined
+  ? binary
+  : join(bundle, 'Contents', 'Frameworks', 'Electron Framework.framework', 'Electron Framework')
+
+/**
+ * Sets the binary's `CHECKOUT_FUSES`, writing a new copy and renaming it over the original: a worktree's
+ * `node_modules` is a hard-linked copy of another checkout's, so a write in place would change that checkout's
+ * binary too (and fail with ETXTBSY while it runs). On Linux and Windows the copy is the executable; Windows
+ * refuses the rename while that executable runs, which fails the flip and leaves it as it was. On macOS it is
+ * the `.app` bundle, signed again ad hoc before it replaces the original.
  *
  * @param {object} options
  * @param {string} options.binary The Electron executable.
  * @param {string} options.checkoutRoot The checkout this script belongs to; a binary outside it is refused.
  * @param {NodeJS.Platform} [options.platform]
- * @param {(path: string) => Promise<void>} [options.flip] Sets the fuses in the file at `path`.
- * @param {(path: string) => Promise<boolean>} [options.match] Whether the file at `path` has them set already.
+ * @param {(path: string) => Promise<void>} [options.flip] Sets the fuses of the Electron executable at `path`.
+ * @param {(path: string) => Promise<boolean>} [options.match] Whether the executable at `path` has them set already.
+ * @param {(bundle: string) => void} [options.sign] Signs a changed macOS bundle again.
  * @returns {Promise<{ status: 'already-set' | 'flipped' | 'refused' | 'failed', reason?: string }>}
  */
 export async function setCheckoutFuses ({
-  binary, checkoutRoot, platform = process.platform, flip = flipWithFuses, match = fusesMatch
+  binary, checkoutRoot, platform = process.platform, flip = flipWithFuses, match = fusesMatch, sign = signAdHoc
 }) {
-  if (platform !== 'linux') {
-    return { status: 'refused', reason: `the flip is not measured on ${platform} yet (A394)` }
+  const bundle = platform === 'darwin' ? appBundleOf(binary) : undefined
+  if (platform === 'darwin' && bundle === undefined) {
+    return { status: 'refused', reason: `the Electron binary is not inside an .app bundle (${binary})` }
   }
-  const file = binary
-  const tmp = `${binary}.fuse-tmp`
+  const target = bundle ?? binary
+  const tmp = bundle === undefined ? `${binary}.fuse-tmp` : join(dirname(bundle), `fuse-tmp-${basename(bundle)}`)
+  const old = bundle === undefined ? undefined : join(dirname(bundle), `fuse-old-${basename(bundle)}`)
   try {
-    const [realFile, realRoot] = await Promise.all([realpath(file), realpath(checkoutRoot)])
-    if (!realFile.startsWith(realRoot + sep)) {
+    const [realTarget, realRoot] = await Promise.all([realpath(target), realpath(checkoutRoot)])
+    if (!realTarget.startsWith(realRoot + sep)) {
       return {
         status: 'refused',
-        reason: `the Electron binary is outside this checkout (${realFile}); flipping it would change a binary other checkouts share`
+        reason: `the Electron binary is outside this checkout (${realTarget}); flipping it would change a binary other checkouts share`
       }
     }
-    if (await match(file)) return { status: 'already-set' }
+    if (await match(binary)) return { status: 'already-set' }
 
-    const before = await stat(file)
+    const wire = wireFileOf(binary, bundle)
+    const before = await stat(wire, { bigint: true })
     try {
-      await copyFile(file, tmp)
-      await chmod(tmp, before.mode & 0o7777)
-      await flip(tmp)
-      await rename(tmp, file)
+      if (bundle === undefined) {
+        await copyFile(binary, tmp)
+        await chmod(tmp, Number(before.mode) & 0o7777)
+        await flip(tmp)
+        await rename(tmp, binary)
+      } else {
+        await rm(tmp, { recursive: true, force: true })
+        await cp(bundle, tmp, { recursive: true, verbatimSymlinks: true })
+        await flip(join(tmp, relative(bundle, binary)))
+        sign(tmp)
+        await rename(bundle, old)
+        try {
+          await rename(tmp, bundle)
+        } catch (error) {
+          await rename(old, bundle)
+          throw error
+        }
+        await rm(old, { recursive: true, force: true })
+      }
     } catch (error) {
-      await rm(tmp, { force: true })
+      await rm(tmp, { recursive: true, force: true })
       throw error
     }
-    if ((await stat(file)).ino === before.ino) {
+    if ((await stat(wire, { bigint: true })).ino === before.ino) {
       return { status: 'failed', reason: 'the binary kept its inode, so it was not replaced' }
     }
     return { status: 'flipped' }
@@ -185,12 +230,11 @@ if (isInvokedDirectly(import.meta.url)) {
 
   if (process.argv.includes('--fuses')) {
     // `npm start` launches this checkout's binary on a profile whose cookies are encrypted (ADR-0057), so it sets the
-    // fuses first. On Linux it launches nothing unless they are set: a binary without cookie encryption deletes every
-    // cookie the profile holds. Elsewhere the flip is not measured yet (A394), so a refusal only warns. With no
-    // binary there is nothing to launch, and `electron-vite preview` says so.
+    // fuses first, and launches nothing unless they are set: a binary without cookie encryption deletes every cookie
+    // the profile holds. With no binary there is nothing to launch, and `electron-vite preview` says so.
     const installer = resolveInstaller()
     const status = installer === undefined ? 'absent' : await reportFuses(installer)
-    if (status === 'failed' || (status === 'refused' && process.platform === 'linux')) process.exit(1)
+    if (status === 'failed' || status === 'refused') process.exit(1)
   } else if (plan.action === 'skip') {
     console.log(`Electron binary: not fetched, ${SKIP} is set.`)
   } else if (plan.action === 'absent') {
