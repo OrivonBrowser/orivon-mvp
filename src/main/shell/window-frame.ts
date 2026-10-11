@@ -125,10 +125,11 @@ export function createWindowFrame (dirname: string, place: Placement = {}, isPri
     backgroundColor: background(),
     titleBarStyle: 'hidden',
     titleBarOverlay: { ...initialOverlay, height: OVERLAY_HEIGHT },
-    // Matches orivon-browser-v2's own tab-row-height traffic-light
-    // position (visual reference only) -- macOS ignores titleBarOverlay
-    // entirely and uses this instead.
-    trafficLightPosition: { x: 20, y: 10 }
+    // The 14px buttons centred on the tabs' middle, 21px down the 36px tab row,
+    // as the + after the tabs is -- macOS ignores titleBarOverlay entirely and
+    // uses this instead. The chrome draws the same three in full screen
+    // (src/renderer/chrome/mac-window-buttons.ts), where the system hides them.
+    trafficLightPosition: { x: 20, y: 14 }
   })
 
   // titleBarOverlay is Windows/Linux only and has no live theme callback

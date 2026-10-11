@@ -41,7 +41,7 @@ rely on, row by row. A new feature adds its line here when it lands.
 - **Tabs**: reorder, move between windows and tear off; pinned, muted and audible tabs; duplicate; reopen closed tabs and windows; tab search; split view.
 - **Tab groups and sleeping tabs**: named, coloured groups that survive a restart, and idle tabs that sleep.
 - **Profiles and private windows**: a profile is a separate browser; a private window starts empty and is deleted when closed.
-- **Start-up and windows**: the new-tab page, the last session or chosen pages, crash restore, a Home button, window placement and `--orivon-kiosk`.
+- **Start-up and windows**: the new-tab page, the last session or chosen pages, crash restore, a Home button, window placement, `--orivon-kiosk`, and on macOS the window buttons kept in the tab strip in full screen.
 - **New-tab dashboard**: a search box, Orivon Featured apps and every bookmark as a tile.
 - **Welcome screen**: shown once per profile before the dashboard.
 - **Address bar**: DuckDuckGo by default or another engine, keywords, suggestions from history, bookmarks and open tabs, a "Not secure" mark for plain http, and a QR code for the page.
