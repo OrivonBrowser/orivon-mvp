@@ -13,6 +13,7 @@ import { SqliteHistoryStore } from '../../src/main/history/sqlite-history-store.
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
 import { runCommand } from '../support/auth-support.js'
 import { clearFocusLog, readFocusLog, startFocusLog, underVirtualDisplay } from '../support/focus-helpers.js'
+import { waitForStartPageLoaded } from '../support/e2e-helpers.js'
 import { html, launchShell, startServer } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
 import { ABSENCE_SETTLE_MS, activeTabInfo, delay, popoverShown, tabIds, tabViews, waitFor } from '../support/smoke-helpers.mjs'
@@ -86,10 +87,11 @@ async function typeInBar (chrome: Page, text: string): Promise<void> {
 const tabAddresses = async (app: App): Promise<string[]> =>
   await app.evaluate(({ webContents }) => webContents.getAllWebContents().map((wc) => wc.getURL()).filter((url) => url.startsWith('http://127.0.0.1')))
 
-async function openTab (chrome: Page): Promise<void> {
+async function openTab (app: App, chrome: Page): Promise<void> {
   const before = (await tabIds(chrome)).length
   await chrome.evaluate(() => { (window as unknown as { orivonShell: { runCommand: (id: string) => void } }).orivonShell.runCommand('tab.new') })
   expect(await waitFor(async () => (await tabIds(chrome)).length === before + 1)).toBe(true)
+  expect(await waitForStartPageLoaded(app)).toBe(true)
 }
 
 async function go (app: App, chrome: Page, address: string): Promise<void> {
@@ -183,7 +185,7 @@ it('builds no overlay before the first keystroke, and finishes what is typed inl
     console.log(`[omnibox probe] fill produced input events: ${JSON.stringify(inputTypes)}`)
 
     // Real typing: the bar shows the text and, selected after it, the rest of the host.
-    await openTab(chrome)
+    await openTab(app, chrome)
     await chrome.evaluate(() => { (window as unknown as { __inputs: string[] }).__inputs.length = 0 })
     await typeInBar(chrome, '127')
     const rows = await waitForRows(app, 4)
@@ -216,7 +218,7 @@ it('moves the selection with the arrows, goes to the selected row on Enter, and 
   const { app, chrome } = await launchShell({ seedProfile: async (dir: string) => { await seedPages(dir) } })
   try {
     await go(app, chrome, `${server.origin}/delta`)
-    await openTab(chrome)
+    await openTab(app, chrome)
     await typeInBar(chrome, '127')
     await waitForRows(app, 4)
     const first = await selectedRow(app)
@@ -284,7 +286,7 @@ it.skipIf(!underVirtualDisplay())('goes to a row on a real click without the fie
   const { app, chrome } = await launchShell({ seedProfile: async (dir: string) => { await seedPages(dir) } })
   try {
     await go(app, chrome, `${server.origin}/delta`)
-    await openTab(chrome)
+    await openTab(app, chrome)
     await chrome.evaluate(() => {
       const input = document.querySelector('#address') as HTMLInputElement
       const log: string[] = []
@@ -316,7 +318,7 @@ it('opens a background tab on a middle click, and on a click with the open-in-ba
   try {
     await go(app, chrome, `${server.origin}/delta`)
     // A middle click opens the page in a tab behind this one.
-    await openTab(chrome)
+    await openTab(app, chrome)
     await typeInBar(chrome, '127')
     await waitForRows(app, 4)
     const before = (await tabIds(chrome)).length
@@ -328,7 +330,7 @@ it('opens a background tab on a middle click, and on a click with the open-in-ba
     expect(await waitFor(async () => !(await shown(app)))).toBe(true)
 
     // Ctrl with a plain click does the same.
-    await openTab(chrome)
+    await openTab(app, chrome)
     await typeInBar(chrome, '127')
     await waitForRows(app, 4)
     const beforeCtrl = (await tabIds(chrome)).length
@@ -345,7 +347,7 @@ it('switches to an open tab from its row and leaves no empty tab behind, and Alt
   const { app, chrome } = await launchShell({ seedProfile: async (dir: string) => { await seedPages(dir) } })
   try {
     await go(app, chrome, `${server.origin}/delta`)
-    await openTab(chrome)
+    await openTab(app, chrome)
     const tabs = await tabIds(chrome)
     expect(tabs).toHaveLength(2)
     await typeInBar(chrome, 'delta')
@@ -430,7 +432,7 @@ it('offers no history in a private window, only the tabs open in it', async () =
   try {
     await go(app, chrome, `${server.origin}/alpha`)
     await go(app, chrome, `${server.origin}/beta`)
-    await openTab(chrome)
+    await openTab(app, chrome)
     await typeInBar(chrome, '127')
     const rows = await waitForRows(app, 2)
     expect(rows.some((row) => row.includes('Beta journal') && row.includes('Switch to this tab'))).toBe(true)

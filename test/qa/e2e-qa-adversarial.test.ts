@@ -18,7 +18,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { clickAddressBarRetrying, runPhase } from '../support/e2e-helpers.js'
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
 import { collected, windowGeometry } from '../support/qa-evidence.mjs'
-import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from '../support/qa-helpers.js'
+import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visitWithoutPage, type FixtureServer } from '../support/qa-helpers.js'
 import { ABSENCE_SETTLE_MS, activeTabInfo, delay, tabIds, tabViews, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 /** Thirty tabs opened or closed in a burst: generous, because a shared CI runner is slower than a desk. */
@@ -62,7 +62,7 @@ describe('damaged profile state: the shell starts and works, never crashes', () 
       await runPhase(`corrupt ${file}`, async (check) => {
         check('the dashboard renders', await waitFor(() => dashboardOf(app) !== undefined))
         const fixture = `${server.origin}/ok`
-        await visit(app, chrome, fixture)
+        await visitWithoutPage(app, chrome, fixture)
         check('the address bar navigates to a page', (await waitForTab(chrome, { address: fixture })).ok)
 
         await chrome.evaluate(() => { (window as unknown as Shell).orivonShell.openInternal('settings') })
@@ -72,7 +72,7 @@ describe('damaged profile state: the shell starts and works, never crashes', () 
         }))
 
         if (file === 'bookmarks.json') {
-          await visit(app, chrome, fixture)
+          await visitWithoutPage(app, chrome, fixture)
           await chrome.click('#bookmark-toggle')
           check('a bookmark can still be added over the damaged store', (await waitForTab(chrome, { bookmarked: true })).ok)
         }
@@ -121,9 +121,9 @@ it('a tab whose renderer is killed does not take the shell or the other tabs wit
     await runPhase('renderer killed', async (check) => {
       const first = `${server.origin}/survivor`
       const doomed = `${server.origin}/doomed`
-      await visit(app, chrome, first)
+      await visitWithoutPage(app, chrome, first)
       await chrome.click('#new-tab')
-      await visit(app, chrome, doomed)
+      await visitWithoutPage(app, chrome, doomed)
       const doomedTab = (await activeTabInfo(chrome)).activeId as string
 
       const osPid = await app.evaluate(({ webContents }, target: string) => webContents.getAllWebContents().find((wc) => wc.getURL() === target)?.getOSProcessId(), doomed)
@@ -159,7 +159,7 @@ it('a navigation abandoned mid-load, then back and forward hammered, never leave
     await runPhase('navigation aborted', async (check) => {
       const a = `${server.origin}/a`
       const b = `${server.origin}/b`
-      await visit(app, chrome, a)
+      await visitWithoutPage(app, chrome, a)
       await clickAddressBarRetrying(chrome, `${server.origin}/hang`)
       check('the hanging load really started', await waitFor(() => hangRequests > 0))
 
