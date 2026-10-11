@@ -47,6 +47,17 @@ export class HtmlFullscreen {
     this.effects.relayout()
   }
 
+  /** The window left fullscreen while a tab's page was still in it: macOS takes the window out on Escape without
+   * the page being told. The page is asked to leave too, so its document does not stay in fullscreen. */
+  windowLeft (isLive: (id: string) => boolean): void {
+    const id = this.current
+    if (id === null) return
+    this.current = null
+    this.effects.hideNotice()
+    if (isLive(id)) this.effects.exitTab(id)
+    this.effects.relayout()
+  }
+
   /** Called on every tab-state push: the fullscreen tab closing, crashing or
    * being switched away from ends fullscreen, whatever the page wants. */
   tabsChanged (activeId: string | null, isLive: (id: string) => boolean): void {

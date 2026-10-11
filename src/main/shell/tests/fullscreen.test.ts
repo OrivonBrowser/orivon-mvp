@@ -108,6 +108,32 @@ describe('HtmlFullscreen -- which tab, if any, fills the window', () => {
     expect(fx.leaveWindowFullscreen).not.toHaveBeenCalled()
   })
 
+  it('asks the page to leave when the window leaves fullscreen under it, and gives the window back to the chrome', () => {
+    const fx = effects()
+    const fullscreen = new HtmlFullscreen(fx)
+    fullscreen.changed('tab-1', true, 'tab-1')
+
+    fullscreen.windowLeft(live)
+
+    expect(fullscreen.tabId).toBeNull()
+    expect(fx.exitTab).toHaveBeenCalledWith('tab-1')
+    expect(fx.hideNotice).toHaveBeenCalledTimes(1)
+    expect(fx.relayout).toHaveBeenCalledTimes(2)
+    fullscreen.changed('tab-1', false, 'tab-1')
+    expect(fx.relayout).toHaveBeenCalledTimes(2)
+  })
+
+  it('does nothing when the window leaves fullscreen with no page in it, or for a tab that is gone', () => {
+    const fx = effects()
+    const fullscreen = new HtmlFullscreen(fx)
+    fullscreen.windowLeft(live)
+    expect(fx.relayout).not.toHaveBeenCalled()
+    fullscreen.changed('tab-1', true, 'tab-1')
+    fullscreen.windowLeft(gone)
+    expect(fx.exitTab).not.toHaveBeenCalled()
+    expect(fullscreen.tabId).toBeNull()
+  })
+
   it('the leave that follows its own exit request changes nothing further', () => {
     const fx = effects()
     const fullscreen = new HtmlFullscreen(fx)
