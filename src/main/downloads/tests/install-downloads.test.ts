@@ -48,6 +48,15 @@ describe('installDownloads', () => {
     expect(track).toHaveBeenCalledWith(item, contents, event)
   })
 
+  it('hands over a download no page started as one with no tab, never as null', () => {
+    const { defaultSession, track } = setup()
+    const event = { preventDefault: vi.fn() }
+    const item = {} as DownloadItem
+    defaultSession.emit('will-download', event, item, null)
+    expect(track).toHaveBeenCalledWith(item, undefined, event)
+    expect(event.preventDefault).not.toHaveBeenCalled()
+  })
+
   it('handles the session of a tab once it is registered as one, and only once', () => {
     const { track, create } = setup()
     const appSession = new FakeSession()
