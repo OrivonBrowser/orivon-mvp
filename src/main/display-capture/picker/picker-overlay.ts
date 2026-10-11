@@ -80,7 +80,7 @@ export function createPicker (deps: PickerDeps, { window, services, close, send 
     if (wanted.length === 0) return
     void Promise.all(wanted.map(async (offer) => { thumbs.set(offer.wc, await deps.captureTab(offer.wc).catch(() => null)) })).then(() => {
       if (asked === question && !asked.settled) push({ type: 'cards', segment: 'tab', cards: tabCards(asked).cards })
-    })
+    }).catch((error: unknown) => { console.error('[display-capture] capturing tab thumbnails failed:', error) })
   }
 
   function deliver (type: 'window' | 'screen', sources: readonly RawSource[]): void {

@@ -50,7 +50,7 @@ export function replaceGrantIn (
     // Absent means a parent's cascade, earlier in this same loop, took it.
     if (record === undefined) continue
     if (stillCovered(table, record, patterns, coversAll)) refile(table, record, replacement)
-    else void table.closeTree(record, 'revoked', onFault)
+    else void table.closeTree(record, 'revoked', onFault).catch((error: unknown) => { console.error('[broker] closing a handle tree failed:', error) })
   }
 
   if (coversAll) {

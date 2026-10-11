@@ -70,7 +70,7 @@ function openLocalAddress (ctx: WindowContext, url: string, disposition: Disposi
     case 'current': {
       const { activeTabId } = tabs.getState()
       if (activeTabId === null) openFromBrowser(tabs, url)
-      else void navigateFromBrowser(tabs, activeTabId, url)
+      else void navigateFromBrowser(tabs, activeTabId, url).catch((error: unknown) => { console.error('[shell] navigate from browser failed:', error) })
       return true
     }
     case 'tab':

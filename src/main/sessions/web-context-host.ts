@@ -289,7 +289,7 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
       // above already surfaces as a rejection there, which the catch block
       // below tears down; this listener is for AFTER open() has returned.
       webContents.on('render-process-gone', (_event, details) => {
-        void handleRenderProcessGone(id, details.reason)
+        void handleRenderProcessGone(id, details.reason).catch((error: unknown) => { console.error('[sessions] handle render process gone failed:', error) })
       })
 
       contexts.set(id, { view, webContents, session: contextSession, opener, slot })

@@ -36,7 +36,7 @@ export function passwordsHost (services: Pick<ShellServices, 'passwords' | 'wind
     clear: () => { clipboard.clear() }
   })
   // The minute's timer never runs in a process that is gone: a password copied just before quitting is cleared here.
-  app.once('before-quit', () => { void secrets.flush() })
+  app.once('before-quit', () => { void secrets.flush().catch((error: unknown) => { console.error('[passwords] saving the vault on quit failed:', error) }) })
   return {
     vault: services.passwords,
     clipboard: secrets,

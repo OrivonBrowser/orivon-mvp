@@ -75,7 +75,7 @@ export async function withOriginQueue<T> (origin: string, task: () => Promise<T>
     // deleting unconditionally would drop that still-in-flight
     // replacement, reopening this file's own interleaving bug.
     if (queues.get(origin) === settled) queues.delete(origin)
-  })
+  }).catch((error: unknown) => { console.error('[install] clearing a settled origin queue entry failed:', error) })
   return await chained
 }
 

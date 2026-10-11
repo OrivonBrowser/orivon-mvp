@@ -207,7 +207,7 @@ export function windowOpenHandler (
       // Only a page that is itself a local file may open another, and it never gets a window to script
       // (a sibling is its own origin), so it is never adopted. A web frame inside a local page cannot
       // reach here: Chromium refuses its `file:` target before any handler runs.
-      if (localFileKey(details.url) !== null && localFileKey(from.url) !== null) void host.openLocalFile?.(details.url, active)
+      if (localFileKey(details.url) !== null && localFileKey(from.url) !== null) void host.openLocalFile?.(details.url, active).catch((error: unknown) => { console.error('[shell] opening a local file from a popup failed:', error) })
       return { action: 'deny' }
     }
     const loadOptions = loadOptionsFor(details)

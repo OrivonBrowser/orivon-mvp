@@ -329,7 +329,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
       if (slot.pageReady) {
         void result.then((reply) => {
           if (slot.open && slot.view === view && reply.shown) view.send(OVERLAY_EVENT_CHANNEL, { type: 'show', payload: reply.payload })
-        })
+        }).catch((error: unknown) => { console.error('[overlays] showing an overlay failed:', error) })
       } else {
         slot.pending = result
       }

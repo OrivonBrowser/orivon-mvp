@@ -137,7 +137,7 @@ export function createWebCapability ({ deps, handleTable, ledger, canonical }: W
     clearIdle(handleId)
     const timer = setTimeout(() => {
       idleTimers.delete(handleId)
-      void handleTable.release(key, handleId)
+      void handleTable.release(key, handleId).catch((error: unknown) => { console.error('[broker] releasing an idle web context failed:', error) })
     }, LIMITS.webContextIdleMs)
     timer.unref?.()
     idleTimers.set(handleId, timer)

@@ -127,7 +127,7 @@ export async function runFirstVisit (deps: FirstVisitDeps, hintingOrigin: string
   const track = (): { done: boolean, tree: Promise<FirstDeclaration> } => {
     const started = deps.loader.readDeclaration(read, reading.signal)
     const tracked = { done: false, tree: started.catch((error: unknown): FirstDeclaration => ({ kind: 'failed', reason: error instanceof Error ? error.message : String(error) })) }
-    void tracked.tree.then(() => { tracked.done = true })
+    void tracked.tree.then(() => { tracked.done = true }).catch((error: unknown) => { console.error('[install] reading a declaration failed:', error) })
     return tracked
   }
   let declared = track()
@@ -135,7 +135,7 @@ export async function runFirstVisit (deps: FirstVisitDeps, hintingOrigin: string
   void declared.tree.then(async (tree) => {
     if (tree.kind === 'mismatch') await keeper.block({ differing: tree.differing })
     else if (tree.kind === 'failed' && tree.integrity === true) await keeper.block({ differing: [], invalid: tree.reason })
-  })
+  }).catch((error: unknown) => { console.error('[install] blocking an app on a bad declaration failed:', error) })
   let entered = false
   let notNow = false
   try {
@@ -262,7 +262,7 @@ async function resumeConsent (deps: FirstVisitDeps, consent: PendingConsent, set
   // Its download holds the origin's queue while it runs, so a page's own hint installs nothing beside it.
   const hooks: LiveHooks = {
     ...keeper.hooks,
-    onServed: () => { void outsideOriginQueue(async () => await withOriginQueue(origin, async () => await keeper.start())).then((outcome) => { if (outcome !== 'unfinished') settling.delete(origin) }) }
+    onServed: () => { void outsideOriginQueue(async () => await withOriginQueue(origin, async () => await keeper.start())).then((outcome) => { if (outcome !== 'unfinished') settling.delete(origin) }).catch((error: unknown) => { console.error('[install] outside origin queue failed:', error) }) }
   }
   const served = await deps.loader.serveLive(read, declaration, hooks).catch((error: unknown) => {
     console.error('[first-visit] a consented app could not be served again', origin, error)
@@ -333,7 +333,7 @@ export function createFirstVisit (options: FirstVisitOptions): FirstVisit {
         // An app whose download did not finish stays settling for the run: the ordinary install path, which checks no
         // file, never takes it over; its consent is kept, and the next start serves it again.
         settling.add(origin)
-        void outsideOriginQueue(async () => await withOriginQueue(origin, async () => await result.background)).then((outcome) => { if (outcome !== 'unfinished') settling.delete(origin) })
+        void outsideOriginQueue(async () => await withOriginQueue(origin, async () => await result.background)).then((outcome) => { if (outcome !== 'unfinished') settling.delete(origin) }).catch((error: unknown) => { console.error('[install] outside origin queue failed:', error) })
       }
       return result
     }).finally(() => { running.splice(running.indexOf(mine), 1) })

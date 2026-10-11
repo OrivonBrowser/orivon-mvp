@@ -129,7 +129,7 @@ export function showIntro (win: BaseWindow, tabs: Pick<TabManager, 'onStateChang
       }).catch((error: unknown) => { console.error('[orivon] intro: could not show the browser under the telemetry popup:', error) })
     } else if (leaving !== undefined) {
       view.setBackgroundColor(TRANSPARENT)
-      void plan.onEntered()
+      void plan.onEntered().catch((error: unknown) => { console.error('[shell] on entered failed:', error) })
       // Only the answer to a question the screen was told to ask: a page that did not ask cannot report one.
       if (plan.offerTelemetry && leaving.telemetry !== undefined) void plan.chooseTelemetry(leaving.telemetry).catch((error: unknown) => { console.error('[orivon] intro: could not record the telemetry choice:', error) })
     } else if (hash === '#entered') {

@@ -901,6 +901,13 @@ directly against the real files, instead of only against a same-shaped local fak
 and `api/common.ts`/`impl.ts` sit on the same import path and needed no patch of their own: measured,
 `npx tsc --noEmit -p tsconfig.json` reports nothing for any of them as authored.
 
+71. **No promise is floated.** `src/browser/index.ts` (`prependPreload`), `src/browser/manifest.ts`
+    (`readUrlOverrides`), `src/browser/router.ts` (the registration wait's `finally`, and the async
+    `crx-add-listener` body), `src/browser/api/browser-action.ts` (`createTab` for the home and
+    options pages), `src/browser/api/tabs.ts` (`insertCSS`) and `src/browser/api/windows.ts`
+    (`removeWindow`): each call whose promise nothing awaited ends in a `.catch` that logs. Reason: the
+    main process exits on an unhandled rejection (`npm run check:floating-promises`).
+
 Nothing else changed; upstream code is not reformatted.
 
 ## Native-code check

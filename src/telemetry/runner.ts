@@ -146,8 +146,8 @@ async function startTelemetry (app: App, servicePromise: Promise<TelemetryServic
       console.error('[orivon] telemetry send failed:', error)
     }
   }
-  setInterval(() => { void checkpointTick() }, tickMs ?? CHECKPOINT_INTERVAL_MS)
-  setInterval(() => { void sendTick() }, tickMs ?? SEND_CHECK_INTERVAL_MS)
+  setInterval(() => { void checkpointTick().catch((error: unknown) => { console.error('[telemetry] checkpoint tick failed:', error) }) }, tickMs ?? CHECKPOINT_INTERVAL_MS)
+  setInterval(() => { void sendTick().catch((error: unknown) => { console.error('[telemetry] send tick failed:', error) }) }, tickMs ?? SEND_CHECK_INTERVAL_MS)
   const sendAtStart = async (): Promise<void> => {
     try {
       await service.sendNow()
@@ -159,7 +159,7 @@ async function startTelemetry (app: App, servicePromise: Promise<TelemetryServic
   // of a month's reports. Delayed because this runs before the first window exists, and the first send
   // reads the machine identifier and the country. A quit inside the delay still sends. A test tick
   // shortens the delay, never lengthens it.
-  void checkpointTick().then(() => { setTimeout(() => { void sendAtStart() }, Math.min(tickMs ?? START_SEND_DELAY_MS, START_SEND_DELAY_MS)) })
+  void checkpointTick().then(() => { setTimeout(() => { void sendAtStart().catch((error: unknown) => { console.error('[telemetry] send at start failed:', error) }) }, Math.min(tickMs ?? START_SEND_DELAY_MS, START_SEND_DELAY_MS)) }).catch((error: unknown) => { console.error('[telemetry] checkpoint tick failed:', error) })
 }
 
 export const telemetrySubsystem: Subsystem = {
@@ -192,7 +192,7 @@ async function running (): Promise<TelemetryService | undefined> {
 
 /** The site now in front, from the shell's tab events. Nothing happens when telemetry does not run. */
 export function noteSite (site: SiteKey): void {
-  void running().then((service) => { service?.noteSite(site) })
+  void running().then((service) => { service?.noteSite(site) }).catch((error: unknown) => { console.error('[telemetry] noting the site in front failed:', error) })
 }
 
 export type StatusReply = { readonly off: OffReason } | { readonly off: undefined, readonly status: TelemetryStatus }

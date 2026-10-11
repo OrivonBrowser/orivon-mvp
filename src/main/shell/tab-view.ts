@@ -173,7 +173,7 @@ export function wireView (id: string, record: TabRecord): void {
   }
   wc.on('will-frame-navigate', refuseShellPage)
   wc.on('will-redirect', refuseShellPage)
-  watchFileNavigation(wc, (url) => { if (shown()) void record.host.openLocalFile(url, true) })
+  watchFileNavigation(wc, (url) => { if (shown()) void record.host.openLocalFile(url, true).catch((error: unknown) => { console.error('[shell] open local file failed:', error) }) })
   repartitionBeforeCommit(wc, id, record, shown)
   repartitionOnFileBlock(wc, id, record, shown)
   wc.on('did-navigate', (_event, navigatedUrl: string) => {
@@ -343,7 +343,7 @@ export function wireView (id: string, record: TabRecord): void {
       ...(services?.kiosk === true ? { kiosk: true } : {}),
       // Beside the page being read, as a middle click opens a link.
       openInNewTab: (url) => { record.host.openTab(url, false) },
-      ...(localFileKey(wc.getURL()) !== null ? { openLocalFile: (url: string) => { void record.host.openLocalFile(url, false) } } : {}),
+      ...(localFileKey(wc.getURL()) !== null ? { openLocalFile: (url: string) => { void record.host.openLocalFile(url, false).catch((error: unknown) => { console.error('[shell] open local file failed:', error) }) } } : {}),
       openInFront: (url) => { record.host.openTab(url) },
       openInSplit: (url) => { record.host.openInSplit(id, url) },
       openInWindow: (url) => { record.host.openWindow(url) },
@@ -363,7 +363,7 @@ export function wireView (id: string, record: TabRecord): void {
       },
       ...(services === undefined ? {} : { services }),
       runCommand,
-      ...(devtools?.allowed(wc) === true ? { inspect: (x: number, y: number) => { void devtools.inspect(wc, x, y) } } : {}),
+      ...(devtools?.allowed(wc) === true ? { inspect: (x: number, y: number) => { void devtools.inspect(wc, x, y).catch((error: unknown) => { console.error('[shell] opening the inspector failed:', error) }) } } : {}),
       extraItems: (menuParams) => pageMenuItems(wc, menuParams)
     })
   })

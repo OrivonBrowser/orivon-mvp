@@ -281,7 +281,7 @@ export class HandleTable {
     if (table === undefined) throw fail('denied', NOT_YOURS, handleId)
     const record = table.record(handleId)
 
-    void table.closeTree(record, reason, this.#onFault, error)
+    void table.closeTree(record, reason, this.#onFault, error).catch((error: unknown) => { console.error('[broker] closing a handle tree failed:', error) })
     this.#reap(key, table)
   }
 
@@ -316,7 +316,7 @@ export class HandleTable {
     // flight under them answers to this grant now (./grant-replacement.ts).
     for (const alias of aliasesOf(table, grantId)) {
       table.grantAliases.delete(alias)
-      void this.revoke(origin, alias)
+      void this.revoke(origin, alias).catch((error: unknown) => { console.error('[broker] revoking a replaced grant alias failed:', error) })
     }
 
     const pending = table.grantOperations.get(grantId)
@@ -333,7 +333,7 @@ export class HandleTable {
         const record = table.handles.get(id)
         // Absent means a sibling's cascade already took it -- a socket
         // reachable both as a member of this grant and as a child of a server.
-        if (record !== undefined) void table.closeTree(record, 'revoked', this.#onFault)
+        if (record !== undefined) void table.closeTree(record, 'revoked', this.#onFault).catch((error: unknown) => { console.error('[broker] closing a handle tree failed:', error) })
       }
       // NOTHING IS DELETED HERE. closeTree removes each id from its grant's
       // set as it goes and drops the set once it empties, so by this point the
@@ -383,7 +383,7 @@ export class HandleTable {
     if (ids !== undefined) {
       for (const id of Array.from(ids)) {
         const record = existing.handles.get(id)
-        if (record !== undefined) void existing.closeTree(record, 'revoked', this.#onFault)
+        if (record !== undefined) void existing.closeTree(record, 'revoked', this.#onFault).catch((error: unknown) => { console.error('[broker] closing a handle tree failed:', error) })
       }
     }
 

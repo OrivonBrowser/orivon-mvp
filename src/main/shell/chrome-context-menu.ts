@@ -22,6 +22,6 @@ export function chromeContextMenuHost (
     openInNewTab,
     ...(pasteAndGo === undefined ? {} : { pasteAndGo }),
     ...(fullAddresses === undefined ? {} : { fullAddresses }),
-    ...(canInspect ? { inspect: (x: number, y: number) => { void devtools?.inspect(chromeContents, x, y) } } : {})
+    ...(canInspect ? { inspect: (x: number, y: number) => { void devtools?.inspect(chromeContents, x, y).catch((error: unknown) => { console.error('[shell] opening the inspector failed:', error) }) } } : {})
   }
 }

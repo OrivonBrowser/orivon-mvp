@@ -43,7 +43,7 @@ export function tabDragActions (parts: WindowParts): TabDragActions {
     }
     void refreshStripLayouts(unread, STRIP_READ_MS).then(() => {
       if (!window.isDestroyed()) dropTab(entry, id, screenPoint, services.windows.all(), openWindow, topHeight)
-    })
+    }).catch((error: unknown) => { console.error('[shell] refresh strip layouts failed:', error) })
   }
 
   /** What a native drag's outcome does to the window it began in. */

@@ -237,7 +237,7 @@ function watch (ctx: ExtensionApiContext, store: BookmarkStoreLike): void {
       queued = true
       queueMicrotask(settle)
     })
-  })
+  }).catch((error: unknown) => { console.error('[extensions] loading the bookmarks for extensions failed:', error) })
 }
 
 export function installBookmarks (ctx: ExtensionApiContext, quota: WriteQuota = createWriteQuota()): void {

@@ -408,14 +408,14 @@ outside `attach-view.ts`.
 
 ## Guards
 
-Seventeen checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,
+Eighteen checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,
 and CI's `check` job runs all of them; [`../../scripts/README.md`](../../scripts/README.md) says
 what each one enforces.
 
 `check:natives` · `check:contracts` · `check:secrets` · `check:vectors` · `check:comments` ·
 `check:size` · `check:questions` · `check:manifest-parity` · `check:page-globals` ·
 `check:dev-grant-absent` · `check:advisories` · `check:devlog` · `check:native-dialogs` ·
-`check:test-paths` · `check:impact-map` · `check:app-behaviours` · `check:contracts-surface` (the last two: section App behaviours)
+`check:floating-promises` · `check:test-paths` · `check:impact-map` · `check:app-behaviours` · `check:contracts-surface` (the last two: section App behaviours)
 
 Every one is an exported pure function over a root directory, unit tested against temp fixtures
 (`scripts/tests/`, or `tests/` beside a guard that has its own folder under `scripts/`), with a CLI block
@@ -424,7 +424,9 @@ another, and add the CI step in the same change: `scripts/tests/check-scripts-in
 suite if a `check:*` script exists with no step to run it.
 
 A guard imports `node:*` builtins and nothing from `src/` -- one that depended on the code it
-guards could be disabled by the change it exists to catch.
+guards could be disabled by the change it exists to catch. The one exception to "builtins only" is
+`check:floating-promises`, which needs the type checker and so drives the `typescript` dev dependency's
+own API (`typescript/unstable/sync`).
 
 ---
 

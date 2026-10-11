@@ -36,6 +36,6 @@ export const childrenSubsystem: Subsystem = {
     })
     // Every host this process ever opened, whatever origin: nothing may
     // outlive the process (ADR-0046's own scope is one running app).
-    app.on('before-quit', () => { void registry.closeAll() })
+    app.on('before-quit', () => { void registry.closeAll().catch((error: unknown) => { console.error('[children] close all failed:', error) }) })
   }
 }

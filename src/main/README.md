@@ -14,6 +14,11 @@ subsystem registry every other stream plugs into, one directory per job
 **What it must never import.** [`src/renderer/`](../renderer/) code. Main and the renderer
 communicate over IPC, never by sharing modules.
 
+**A promise started and let go needs a rejection handler.** `start.ts` ends the whole browser on any
+unhandled rejection, so `void work()` or a bare `work()` that can reject takes every tab with it. End
+the chain with `.catch((error: unknown) => { console.error('[area] what failed:', error) })`, or await
+it; `npm run check:floating-promises` lists the rest (this folder and everything it imports).
+
 **Owner stream.** `shell`. Maintenance only; other streams add themselves via `subsystems.ts`
 rather than editing here.
 
