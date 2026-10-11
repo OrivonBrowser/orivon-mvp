@@ -405,6 +405,14 @@ export async function waitForKeyboardAt (app: ElectronApplication, urlPart: stri
   }, urlPart))
 }
 
+/** Waits until a tab's start page has finished loading. The page takes the keyboard when it runs (src/renderer/newtab/main.ts),
+ * so text typed in the address bar before then is cut off, and the suggestions popup closes under it, on a runner slow
+ * enough to run the page after the keys. */
+export async function waitForStartPageLoaded (app: ElectronApplication): Promise<boolean> {
+  return await waitFor(async () => await app.evaluate(({ webContents }) =>
+    webContents.getAllWebContents().some((contents) => contents.getURL().includes('/newtab/') && !contents.isLoading())))
+}
+
 /** Switches the whole app to a colour scheme at run time, the way the OS theme flipping would. `nativeTheme`
  * is the one source every view reads, so a launch that does not pin the pages' scheme (launch-electron.mjs's
  * `scheme` option) follows it in the chrome, the tabs, the overlays and the main-side backing colours. */
