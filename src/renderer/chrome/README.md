@@ -16,6 +16,7 @@ Electron, entirely: it runs in the chrome's `WebContentsView` on `src/preload/sh
 | `tab-search-button.ts` | the button at the strip's right end that opens tab search |
 | `navigation.ts` | back, forward, reload, the address bar |
 | `address-suggest.ts` | the address field's dropdown from the field's side: what is typed, the arrows, Enter and Escape (the rules are in `address-suggest-model.ts`) |
+| `search-mode.ts` | the Web3 / Web2 chip at the start of the address bar's trailing marks: shown while the field is in use or empty, it runs `search.toggleMode`; a change of engine asks the open dropdown (through `address-suggest.ts`'s `address-refresh` event) to name the new one |
 | `address-display.ts` | the unfocused address over the input: the connection mark and the address in two tones (`address-format.ts` splits it), and when the field selects its text (`address-select.ts`: an entry selects, a window refocus keeps the caret) |
 | `downloads-button.ts` | the downloads button in the cluster: a progress ring, a dot for what wants a look, the bubble on a click; `downloads-ring.ts` is its pure part |
 | `home-button.ts` | the Home button, shown while `toolbar.home` is on |

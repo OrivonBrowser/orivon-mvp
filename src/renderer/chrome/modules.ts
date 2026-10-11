@@ -17,6 +17,7 @@ import { createContentDot } from './content-dot.js'
 import { createPopupsChip } from './popups-chip.js'
 import { createPromptAnchor } from './prompt-anchor.js'
 import { createReaderButton } from './reader-button.js'
+import { createSearchMode } from './search-mode.js'
 import { createSharingChip } from './sharing-chip.js'
 import { createSidePanelButton } from './side-panel-button.js'
 import { createSiteAccessChip } from './site-access-chip.js'
@@ -47,6 +48,7 @@ export const CHROME_MODULES: readonly ChromeModule[] = [
   createNavigation(),
   createAddressDisplay(),
   createAddressSuggest(),
+  createSearchMode(),
   createHomeButton(),
   createSiteBadges(),
   createSiteAccessChip(),

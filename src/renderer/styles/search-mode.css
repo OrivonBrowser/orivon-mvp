@@ -1,0 +1,33 @@
+/* The Web3 / Web2 switch at the start of the address bar's trailing marks (chrome/search-mode.ts). The size is the zoom
+   chip's. Web3 takes the accent, Web2 the neutral ink; the pair is tinted, not filled, so it sits quietly in the pill. */
+
+:root { --wsearch-web3-ink: var(--waccent); }
+@media (prefers-color-scheme: dark) {
+  :root { --wsearch-web3-ink: #a5b4fc; }
+}
+
+.search-mode {
+  height: 20px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 999px;
+  flex: none;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--wink-dim);
+  background: color-mix(in srgb, var(--wink-dim) 14%, transparent);
+  cursor: pointer;
+}
+.search-mode[hidden] { display: none; }
+.search-mode[data-mode='web3'] {
+  color: var(--wsearch-web3-ink);
+  background: color-mix(in srgb, var(--waccent) 16%, transparent);
+}
+.search-mode:hover { color: var(--wink); }
+.search-mode[data-mode='web3']:hover { background: color-mix(in srgb, var(--waccent) 26%, transparent); }
+.search-mode:focus-visible { outline: 2px solid var(--waccent); outline-offset: 1px; }
+
+/* The site's own level mark would read as this chip's level next to it, so it gives way while the chip shows. */
+.search-mode:not([hidden]) ~ .web3-mark { display: none; }

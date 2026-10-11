@@ -125,11 +125,11 @@ it('lets an extension with the permissions manage bookmarks, read history, list 
     expect(await waitFor(async () => !(await historyPage.locator('.entry .title').allTextContents()).includes('Page /one'))).toBe(true)
     expect((await result<Logged>(app, wc, '__libraryEvents')).some((entry) => entry.event === 'history.onVisitRemoved')).toBe(true)
 
-    // search.query opens the default engine's results in a new tab, and refuses both a tab and a disposition.
+    // search.query opens the default engine's results in a new tab, as the address bar would (a fresh profile searches the Web3 with Explore), and refuses both a tab and a disposition.
     const before = await tabCount(chrome)
     await result(app, wc, 'chrome.search.query', [{ text: 'orivon browser', disposition: 'NEW_TAB' }])
     expect(await waitFor(async () => (await tabCount(chrome)) === before + 1)).toBe(true)
-    expect(await waitFor(async () => String((await activeTabInfo(chrome) as { address?: string }).address).startsWith('https://duckduckgo.com/?q=orivon'))).toBe(true)
+    expect(await waitFor(async () => String((await activeTabInfo(chrome) as { address?: string }).address).startsWith('ipfs://explore.orivonstack.eth/#/search?q=orivon+browser'))).toBe(true)
     expect(await rpc(app, wc, 'chrome.search.query', [{ text: 'x', tabId: 1, disposition: 'NEW_TAB' }])).toEqual({ ok: false, error: "Cannot set both 'disposition' and 'tabId'." })
   } finally {
     await closeElectron(app)
