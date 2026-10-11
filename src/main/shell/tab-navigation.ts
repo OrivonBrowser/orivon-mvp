@@ -56,6 +56,7 @@ export function navigateTab (env: NavigationEnv, id: string, rawInput: string): 
 
   const contents = record.view.webContents
   // A page that asks "Leave this page?" and is stayed on rejects the load as aborted: that is the answer, not a failure.
+  // orivon:floating-ok -- `load` swallows every loadURL rejection
   startNavigation(contents, () => { void load(contents, target) })
 }
 

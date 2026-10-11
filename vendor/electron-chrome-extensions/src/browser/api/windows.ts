@@ -59,7 +59,7 @@ export class WindowsAPI {
     window.once('closed', () => {
       this.observedWindows.delete(window)
       this.ctx.store.windowDetailsCache.delete(windowId)
-      this.ctx.store.removeWindow(window)
+      this.ctx.store.removeWindow(window).catch((error: unknown) => { console.error('[extensions] removing a window failed:', error) })
       this.onRemoved(windowId)
     })
 

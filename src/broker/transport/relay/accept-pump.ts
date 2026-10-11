@@ -113,7 +113,7 @@ export function createAcceptPump (options: AcceptPumpOptions): AcceptPump {
       const units = message.bytesConsumed
       if (!Number.isFinite(units) || units <= 0) return
       demand = Math.min(demand + units, maxOutstandingDemand)
-      void pumpLoop()
+      void pumpLoop().catch((error: unknown) => { console.error('[broker] an accept pump failed:', error) })
     },
     stop (code) {
       if (stopped) return

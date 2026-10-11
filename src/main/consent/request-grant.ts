@@ -147,7 +147,7 @@ async function withOriginTurn<T> (origin: string, turns: PendingGrantPrompts, ta
     return await task()
   } finally {
     release()
-    void settled.then(() => { if (turns.get(origin) === settled) turns.delete(origin) })
+    void settled.then(() => { if (turns.get(origin) === settled) turns.delete(origin) }).catch((error: unknown) => { console.error('[consent] clearing a finished consent turn failed:', error) })
   }
 }
 

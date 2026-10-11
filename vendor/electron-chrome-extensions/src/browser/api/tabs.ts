@@ -283,7 +283,7 @@ export class TabsAPI {
 
     // TODO: move to webFrame in renderer?
     if (details.code) {
-      tab.insertCSS(details.code)
+      tab.insertCSS(details.code).catch((error: unknown) => { console.error('[extensions] inserting extension CSS failed:', error) })
     }
   }
 

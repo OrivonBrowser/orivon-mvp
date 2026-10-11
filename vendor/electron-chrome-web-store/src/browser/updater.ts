@@ -368,7 +368,7 @@ async function maybeCheckForUpdates(
   }
   lastUpdateCheck = Date.now()
 
-  void updateExtensions(session, verifyCrx, onUpdateCheck, host)
+  void updateExtensions(session, verifyCrx, onUpdateCheck, host).catch((error: unknown) => { console.error('[web-store] updating the extensions failed:', error) })
 }
 
 export async function initUpdater(state: WebStoreState) {
@@ -385,7 +385,7 @@ export async function initUpdater(state: WebStoreState) {
   }
 
   const updateIntervalId = setInterval(check, UPDATE_CHECK_INTERVAL)
-  check()
+  check().catch((error: unknown) => { console.error('[web-store] the extension update check failed:', error) })
 
   app.on('before-quit', (event) => {
     queueMicrotask(() => {

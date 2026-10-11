@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { chromeContextMenuHost } from '../chrome-context-menu.js'
 
 function devtools (allowed: boolean): { allowed: ReturnType<typeof vi.fn>, inspect: ReturnType<typeof vi.fn> } {
-  return { allowed: vi.fn(() => allowed), inspect: vi.fn() }
+  return { allowed: vi.fn(() => allowed), inspect: vi.fn(async () => {}) }
 }
 
 describe('chromeContextMenuHost -- Inspect on the chrome\'s own right-click menu', () => {

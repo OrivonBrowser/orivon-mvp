@@ -31,5 +31,5 @@ export async function readUrlOverrides(ctx: ExtensionContext, extension: Electro
 }
 
 export function readLoadedExtensionManifest(ctx: ExtensionContext, extension: Electron.Extension) {
-  readUrlOverrides(ctx, extension)
+  readUrlOverrides(ctx, extension).catch((error: unknown) => { console.error('[extensions] reading the extension URL overrides failed:', error) })
 }

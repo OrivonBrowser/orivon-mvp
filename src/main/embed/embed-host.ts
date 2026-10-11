@@ -106,7 +106,7 @@ function configureEmbedSession (embedSession: Session, appOrigin: string, broker
         // The verifier host sleeps when unused: a shown page that names one of its hosts waits for it to listen.
         if (!cancel) await holdForVerifier(details.url).catch(() => {})
         callback({ cancel })
-      })
+      }).catch((error: unknown) => { console.error('[embed] answering a guest request failed:', error) })
   })
   // A shown page reaches the verifier (a `.eth` name, an `ipfs://` address)
   // the same ordinary way any tab does -- unlike an installed app's own

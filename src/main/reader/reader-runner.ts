@@ -84,5 +84,5 @@ export async function toggleReader (tabs: ReaderTabs, deps: ReaderDeps): Promise
   void fetchArticleImages(imageSlots(article), fetcher, article.url, (at, dataUrl) => {
     entry.images.set(at, dataUrl)
     deps.publish('reader.image', { token: entry.token, at, src: dataUrl })
-  }, alive)
+  }, alive).catch((error: unknown) => { console.error('[reader] fetch article images failed:', error) })
 }

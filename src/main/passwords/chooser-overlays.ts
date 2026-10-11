@@ -70,7 +70,7 @@ function chooserHandler (win: OverlayWindow, mode: ChooserView['mode']): Overlay
       return true
     }
     const choice = choices[selected]
-    if (choice !== undefined) void pick(choice)
+    if (choice !== undefined) void pick(choice).catch((error: unknown) => { console.error('[passwords] picking a saved login failed:', error) })
     return true
   }
 

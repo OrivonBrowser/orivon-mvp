@@ -119,7 +119,7 @@ function perform (ctx: WindowContext, outcome: Outcome): void {
   const source = viewSourceTarget(outcome.target)
   if (outcome.disposition === 'current') {
     const active = tabs.getState().activeTabId
-    if (active !== null) void navigateFromBrowser(tabs, active, outcome.target)
+    if (active !== null) void navigateFromBrowser(tabs, active, outcome.target).catch((error: unknown) => { console.error('[omnibox] navigate from browser failed:', error) })
   } else if (internal !== null) {
     tabs.openInternal(internal.page, internal.path)
   } else if (source !== null) {
