@@ -302,7 +302,7 @@ it('says a new profile has no bookmarks and points at the star and at import', a
   try {
     const page = await openWithShortcut(app)
     expect(await page.locator('.empty-state').innerText()).toContain('This folder is empty.')
-    expect(await page.locator('.empty-state').innerText()).toContain('Bookmark a page with the bookmark button next to the address bar (Ctrl+D), or import bookmarks from another browser.')
+    expect(await page.locator('.empty-state').innerText()).toContain(`Bookmark a page with the bookmark button next to the address bar (${process.platform === 'darwin' ? '⌘D' : 'Ctrl+D'}), or import bookmarks from another browser.`)
     expect(await page.locator('.tree-label').allInnerTexts()).toEqual(['Bookmarks bar', 'Other bookmarks'])
     await shoot(page, 'empty')
     expect(mainOutput(app)).not.toContain('uncaught exception')
