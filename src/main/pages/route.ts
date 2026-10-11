@@ -159,12 +159,16 @@ export interface ShellRequest {
   readonly resourceType: string
   /** The frame that started the request; null when none is known. */
   readonly frame: { readonly url: string, readonly isTopFrame: boolean } | null
+  /** It comes from a tab Orivon opened on the new-tab page whose first document has not committed yet, so its
+   * frame's URL can still read empty (dashboard-first-load.ts). */
+  readonly firstDashboardLoad?: boolean
 }
 
 /**
  * Whether a request on the `orivon-shell:` scheme in the default session may proceed. That session is shared
  * with websites, and the scheme is `standard`, so Chromium lets any page load its files as a script, style or
- * image (measured, ADR-0059): only the new-tab page's own top frame may do so. A main-frame navigation passes
+ * image (measured, ADR-0059): only the new-tab page's own top frame may do so, including in the moment before
+ * Chromium records its commit, when a tab Orivon opened on it still reads an empty URL. A main-frame navigation passes
  * here whichever web contents makes it, since the tab itself loads the new-tab page and Back returns to it; a
  * page that tries to send a tab there is stopped earlier, by the tab's `will-frame-navigate` and `will-redirect`
  * (../shell/tab-view.ts). A web contents that is no tab (an extension's popup or background page) is not stopped
@@ -173,23 +177,27 @@ export interface ShellRequest {
 export function shellRequestAllowed (request: ShellRequest): boolean {
   if (request.resourceType === 'mainFrame') return true
   const { frame } = request
-  return frame !== null && frame.isTopFrame && frame.url.split(/[?#]/)[0] === shellEntryUrl('newtab')
+  if (frame === null || !frame.isTopFrame) return false
+  if (frame.url.split(/[?#]/)[0] === shellEntryUrl('newtab')) return true
+  return frame.url === '' && request.firstDashboardLoad === true
 }
 
 /** What the request's `frame` offers; reading either field of a frame that is gone can throw. */
 export interface ShellRequestDetails {
   readonly resourceType: string
   readonly frame?: { readonly url: string, readonly parent: unknown } | null
+  readonly webContentsId?: number
 }
 
 /** `shellRequestAllowed` for Electron's request details, refusing a request whose frame cannot be read: a frame
  * that is being torn down must not let through what the gate exists to stop. */
-export function shellDetailsAllowed (details: ShellRequestDetails): boolean {
+export function shellDetailsAllowed (details: ShellRequestDetails, firstDashboardLoad: (webContentsId: number) => boolean = () => false): boolean {
   try {
     const frame = details.frame ?? null
     return shellRequestAllowed({
       resourceType: details.resourceType,
-      frame: frame === null ? null : { url: frame.url, isTopFrame: frame.parent === null }
+      frame: frame === null ? null : { url: frame.url, isTopFrame: frame.parent === null },
+      firstDashboardLoad: details.webContentsId !== undefined && firstDashboardLoad(details.webContentsId)
     })
   } catch {
     return false
