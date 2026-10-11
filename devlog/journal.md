@@ -89,6 +89,9 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Web3 Score tightened: an app relying on any server stops at Level 3; FreeTube, The Lounge and Element drop, WebTorrent and AirGap stay Web3.
 - From a user's feedback: the address bar searches Web3 by default (Explore), and one click switches it to Web2 (DuckDuckGo).
 - macOS full screen keeps the window buttons in the tab strip, and the new-tab shield opens a card explaining the four Web3 Score levels.
+- A deep UI test on GitHub's Windows and macOS runners: 171 spec files per system, nine runners each, smoke passing on every one.
+- It found and fixed real bugs: local files and cookies from source, the keyring, a macOS crash, blank new tabs, Mac Memory Saver.
+- Windows went from 35 failing UI tests to 4 and macOS from 154 to 19; what remains is mostly flakes and harness limits.
 
 ### In my head
 
