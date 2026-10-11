@@ -29,5 +29,14 @@
 .search-mode[data-mode='web3']:hover { background: color-mix(in srgb, var(--waccent) 26%, transparent); }
 .search-mode:focus-visible { outline: 2px solid var(--waccent); outline-offset: 1px; }
 
+/* A narrow window gives the address field every pixel it can (toolbar.css, the same 640px): the chip is 46px, and with
+   Home and the Extensions button at the 500px minimum it would leave the field under 60px. Settings and the
+   `search.toggleMode` command still switch the mode there. */
+@container (max-width: 640px) {
+  .search-mode { display: none; }
+}
+
 /* The site's own level mark would read as this chip's level next to it, so it gives way while the chip shows. */
-.search-mode:not([hidden]) ~ .web3-mark { display: none; }
+@container (min-width: 641px) {
+  .search-mode:not([hidden]) ~ .web3-mark { display: none; }
+}

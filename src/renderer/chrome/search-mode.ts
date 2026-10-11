@@ -28,6 +28,12 @@ export function chipView (state: Pick<ShellState, 'searchMode' | 'searchWeb3Name
   }
 }
 
+/** The element has the keyboard: it is the document's active element, and the document is the window's focused one. Clicking into
+ * the page leaves the address input as the chrome document's `activeElement`, so the document's own focus is asked too. */
+export function hasKeyboard (doc: { hasFocus: () => boolean, activeElement: unknown }, el: unknown): boolean {
+  return doc.hasFocus() && doc.activeElement === el
+}
+
 /** Whether the chip is shown: while the field has the keyboard (or the chip itself has, reached by Tab), or holds nothing, as on a new tab. */
 export function chipShown (fieldFocused: boolean, chipFocused: boolean, fieldValue: string): boolean {
   return fieldFocused || chipFocused || fieldValue === ''
@@ -68,7 +74,7 @@ export function createSearchMode (): ChromeModule {
       chip.title = view.label
       chip.setAttribute('aria-label', view.label)
       chip.setAttribute('aria-pressed', String(view.pressed))
-      chip.hidden = !chipShown(document.activeElement === input, document.activeElement === chip, input.value)
+      chip.hidden = !chipShown(hasKeyboard(document, input), hasKeyboard(document, chip), input.value)
       // A dropdown that is open names the engine in its first row: ask again so it names the new one.
       const now = view.label
       if (drawn !== undefined && drawn !== now) input.dispatchEvent(new CustomEvent('address-refresh'))
