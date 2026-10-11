@@ -171,6 +171,7 @@ it('gives an ordinary page fullscreen, real popups, a leave prompt and a Chrome 
         check('the page keeps its keyboard focus in fullscreen, under the notice', await webContentsFocused(app, ORIGIN))
       }
 
+      const fullScreenBeforeEscape = (await windowInfo(app)).fullScreen
       await pressEscapeIn(app, ORIGIN)
       let restored: WindowInfo | undefined
       let inPage: boolean | undefined
@@ -187,7 +188,7 @@ it('gives an ordinary page fullscreen, real popups, a leave prompt and a Chrome 
         return inPage && !restored.fullScreen && tab !== undefined && tab.bounds.y > 0 &&
           restored.views.every((v) => (v.visible || isOverlay(v.url)) && !v.url.startsWith('data:'))
       })
-      check('Escape leaves fullscreen and gives the window back to the chrome', left, JSON.stringify({ inPage, mainSees, ...restored }))
+      check('Escape leaves fullscreen and gives the window back to the chrome', left, JSON.stringify({ inPage, mainSees, fullScreenBeforeEscape, ...restored }))
 
       // --- window.open with an opener -----------------------------------
       await view.click('#open')

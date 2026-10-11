@@ -369,8 +369,7 @@ it('splits from the right-click menu of a tab behind the one in front, and lays 
     // The pane that was behind is attached by the split and the other is only resized: each page is laid out at its own pane.
     expect(await waitFor(async () => await pagesFitTheirPanes(app, [`${origin}/a`, `${origin}/b`]))).toBe(true)
     for (const part of [`${origin}/a`, `${origin}/b`]) {
-      const page = app.windows().find((candidate) => candidate.url().includes(part))
-      expect(await page?.evaluate(() => document.visibilityState)).toBe('visible')
+      expect(await inPage(app, part, 'document.visibilityState')).toBe('visible')
     }
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
