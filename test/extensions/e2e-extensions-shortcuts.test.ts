@@ -175,9 +175,9 @@ it('binds suggested keys, runs them through the dispatcher, and lets the shortcu
     const page = await openShortcutsPage(app, chrome)
     expect(await page.locator('.sc-card').count()).toBe(2)
     expect(await page.locator('.sc-card').first().locator('.sc-row').count()).toBe(3)
-    expect(await capsOf(rowFor(page, 'Mark the current tab'))).toEqual(['Alt', 'Shift', 'K'])
+    expect(await capsOf(rowFor(page, 'Mark the current tab'))).toEqual(keyCapsOf('Alt+Shift+K'))
     expect(await rowFor(page, 'Take the new-tab key').locator('.muted').allTextContents()).toEqual([`Suggested: ${keyCapsOf('Mod+T').join('+')} (already in use)`, 'Not set'])
-    expect(await rowFor(page, 'Toggle the sidebar').locator('.sc-hint').textContent()).toBe('Suggested: Alt+Shift+K (already in use)')
+    expect(await rowFor(page, 'Toggle the sidebar').locator('.sc-hint').textContent()).toBe(`Suggested: ${keyCapsOf('Alt+Shift+K').join('+')} (already in use)`)
     await shoot(page, 'list')
 
     // Recording: the field waits, the next chord is the answer, it is stored and survives a relaunch.
