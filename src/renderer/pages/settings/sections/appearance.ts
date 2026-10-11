@@ -54,8 +54,12 @@ export const appearance: Section = {
     {
       id: 'default-zoom',
       label: 'Page zoom',
-      help: 'How large websites are shown, unless you have zoomed a site yourself. Zoom a site with Ctrl and the mouse wheel, or Ctrl + and Ctrl -.',
-      keywords: ['zoom', 'size', 'text', 'larger', 'smaller', 'magnify', 'scale'],
+      help: 'How large websites are shown, unless you have zoomed a site yourself.',
+      // macOS zooms with Command and has no Ctrl-and-wheel zoom.
+      helpFor: (state) => `How large websites are shown, unless you have zoomed a site yourself. ${state.about?.platform === 'darwin'
+        ? 'Zoom a site with ⌘+ and ⌘-.'
+        : 'Zoom a site with Ctrl and the mouse wheel, or Ctrl + and Ctrl -.'}`,
+      keywords: ['zoom', 'size', 'text', 'larger', 'smaller', 'magnify', 'scale', 'wheel', 'ctrl', 'command'],
       control: { type: 'choice', key: 'appearance.defaultZoom' }
     },
     {
