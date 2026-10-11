@@ -114,3 +114,12 @@ Spike gate 3 is **BLOCKED, not failed**: the app works, confirmed by a direct no
 launch, but Playwright's `_electron` driver could not attach to that window, for a cause still
 unidentified ([`open-questions.md`](../docs/open-questions.md) C6). Build step 2's end-to-end
 test uses the same driver. **Check this early**, not the day the test is due.
+
+On a macOS runner, Playwright 1.62 sometimes never attaches a page opened in a later tab: Electron has it loaded
+and on screen, and `app.windows()` does not list it, with or without window focus (measured in a live session). A
+spec that looks such a page up through `findViewShowing` or `app.windows()` can fail there for that reason alone.
+Read the failure's `views.json` and window composite before treating it as a product failure.
+
+Reading `webContents.mainFrame` from the main process while a main-frame navigation is pending can crash Electron
+44 under load (a breakpoint in `electron.exe`, traced on a Windows runner). A spec that polls frames from
+`app.evaluate` skips contents that are still loading.

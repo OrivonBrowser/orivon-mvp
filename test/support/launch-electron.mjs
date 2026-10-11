@@ -233,7 +233,8 @@ export async function launchElectron ({
   // SILENT_AUDIO_ENV/SILENT_AUDIO_SWITCH's own doc in launch-env.mjs. A caller that already
   // set PULSE_SERVER is left alone.
   if (env['PULSE_SERVER'] === undefined) env['PULSE_SERVER'] = SILENT_AUDIO_ENV.PULSE_SERVER
-  if (!args.some((a) => a.startsWith('--alsa-output-device'))) args = [...args, SILENT_AUDIO_SWITCH]
+  // In front of the caller's arguments: after a caller's `--` it would be an operand Chromium never reads.
+  if (!args.some((a) => a.startsWith('--alsa-output-device'))) args = [SILENT_AUDIO_SWITCH, ...args]
 
   // Every launch made through this shared file defaults to the no-focus
   // window path (src/main/window.ts) unless a caller explicitly overrides
