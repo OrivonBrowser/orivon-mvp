@@ -324,7 +324,7 @@ it('reads the answer again when the person comes back to the page', async () => 
   try {
     const page = await openSettings(app, chrome, '/default-browser')
     const row = page.locator('#row-default-browser')
-    await row.getByRole('button', { name: 'Make default' }).waitFor()
+    await row.getByRole('button', { name: MAKE_DEFAULT }).waitFor()
     // The person chose Orivon in the system's own settings while the page was in the background.
     await app.evaluate(() => { (globalThis as unknown as { __orivonDevDefaultBrowser: SeamRecording }).__orivonDevDefaultBrowser.registered = true })
     await page.evaluate(() => { document.dispatchEvent(new Event('visibilitychange')) })
