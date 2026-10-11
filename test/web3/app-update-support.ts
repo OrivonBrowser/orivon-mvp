@@ -129,7 +129,8 @@ export async function runsAsApp (app: ElectronApplication, url: string): Promise
   return await app.evaluate(async ({ webContents }, address) => {
     const tab = webContents.getAllWebContents().find((contents) => !contents.isDestroyed() && contents.getURL() === address)
     if (tab === undefined || tab.isLoading()) return false
-    return await tab.executeJavaScript('typeof window.orivon === "object" && typeof process !== "undefined"').catch(() => false) as boolean
+    // A frame that is reloading may never answer, so the question is bounded and asked again by the caller.
+    return await Promise.race([tab.executeJavaScript('typeof window.orivon === "object" && typeof process !== "undefined"').catch(() => false), new Promise<boolean>((resolve) => { setTimeout(resolve, 3_000, false) })]) as boolean
   }, url)
 }
 
