@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { pressKey } from '../support/e2e-helpers.js'
+import { bindingOf, pressCommand, shownBinding } from '../support/e2e-helpers.js'
 import { closeElectron, assertNoElectronSurvivors, mainOutput } from '../support/launch-electron.mjs'
 import { html, launchShell, startServer, visit, type FixtureServer } from '../support/qa-helpers.js'
 import { ABSENCE_SETTLE_MS, activeTabInfo, delay, evaluateRetrying, findViewShowing, popoverShown, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
@@ -75,7 +75,7 @@ it('shows the Home button when asked, loads the home page in this tab, and opens
   try {
     expect(await waitFor(async () => await homeShown(chrome))).toBe(true)
     expect(await chrome.getAttribute('#home', 'aria-label')).toBe('Home')
-    expect(await chrome.getAttribute('#home', 'title')).toBe('Home (Alt+Home)')
+    expect(await chrome.getAttribute('#home', 'title')).toBe(`Home (${shownBinding(bindingOf('nav.home'))})`)
     // Right of Reload, before the bookmark star.
     const box = async (selector: string): Promise<number> => (await chrome.locator(selector).boundingBox())?.x ?? -1
     expect(await box('#home')).toBeGreaterThan(await box('#reload'))
@@ -93,16 +93,16 @@ it('shows the Home button when asked, loads the home page in this tab, and opens
     expect(await tabIds(chrome)).toHaveLength(1)
 
     await visit(app, chrome, `${server.origin}/a`)
-    await pressKey(app, '/a', 'Home', ['alt'])
+    await pressCommand(app, '/a', 'nav.home')
     expect((await waitForTab(chrome, { address: home })).ok).toBe(true)
     expect(await tabIds(chrome)).toHaveLength(1)
 
-    // A middle click and a Ctrl click each open the home page in a background tab.
+    // A middle click and a Mod click each open the home page in a background tab.
     await visit(app, chrome, `${server.origin}/a`)
     const [current] = await tabIds(chrome)
     await chrome.click('#home', { button: 'middle' })
     expect(await waitFor(async () => (await tabIds(chrome)).length === 2)).toBe(true)
-    await chrome.click('#home', { modifiers: ['Control'] })
+    await chrome.click('#home', { modifiers: ['ControlOrMeta'] })
     expect(await waitFor(async () => (await tabIds(chrome)).length === 3)).toBe(true)
     expect((await activeTabInfo(chrome)).activeId).toBe(current)
     expect(await activeAddress(chrome)).toBe(`${server.origin}/a`)
@@ -386,7 +386,7 @@ it('a kiosk fills the screen with the given address, no chrome, and runs only wh
     expect(layout.views.filter((view) => view.visible).every((view) => view.y === 0)).toBe(true)
     expect(layout.views.some((view) => !view.visible)).toBe(true)
 
-    await pressKey(app, '/a', 'T', ['control'])
+    await pressCommand(app, '/a', 'tab.new')
     await delay(ABSENCE_SETTLE_MS)
     expect(await tabIds(chrome)).toHaveLength(1)
     expect(mainOutput(app)).not.toContain('uncaught exception')

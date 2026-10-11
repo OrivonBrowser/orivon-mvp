@@ -1,5 +1,5 @@
 // The toolbar's popups in the running shell: Escape closes the site card, the Web3 Score page and the all-sites
-// list and hands the keyboard back so Ctrl+F still opens find; the key and the shield swap one popup for the other
+// list and hands the keyboard back so Mod+F still opens find; the key and the shield swap one popup for the other
 // whichever order they are pressed in, including after the first popup already lost focus to the press. The all-sites
 // popup reopens topmost, sized and painted after every way it can have left the window, among them an overlay or a tab
 // switch closing it without a blur, and its page crashing or being destroyed while it shows. On a new tab the shield
@@ -9,7 +9,7 @@
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
-import { pressKey, waitForKeyboardAt } from '../support/e2e-helpers.js'
+import { pressKey, waitForKeyboardAt, pressCommand } from '../support/e2e-helpers.js'
 import { distinctColours } from '../support/qa-visual.js'
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
@@ -57,14 +57,14 @@ async function shownPage (app: ElectronApplication): Promise<string | undefined>
 
 async function expectFindOpensOnTheTab (app: ElectronApplication): Promise<void> {
   expect(await waitFor(async () => await tabFocused(app, server.origin))).toBe(true)
-  await pressKey(app, server.origin, 'F', ['control'])
+  await pressCommand(app, server.origin, 'find.open')
   expect(await waitFor(async () => await findShown(app))).toBe(true)
   expect(await waitForKeyboardAt(app, 'overlay=find')).toBe(true)
   await pressKey(app, 'overlay=find', 'Escape')
   expect(await waitFor(async () => !(await findShown(app)))).toBe(true)
 }
 
-it('Escape closes the key popup and the shield popup, and Ctrl+F then opens find in the page', async () => {
+it('Escape closes the key popup and the shield popup, and Mod+F then opens find in the page', async () => {
   const { app, chrome } = await launchShell()
   try {
     await ready(app, chrome)
@@ -98,7 +98,7 @@ it('Escape closes the all-sites popup and gives the keyboard back to the page', 
   }
 }, QA_TEST_TIMEOUT_MS)
 
-it('a popup closed by the window resizing hands the keyboard back, so Ctrl+F still opens find', async () => {
+it('a popup closed by the window resizing hands the keyboard back, so Mod+F still opens find', async () => {
   const { app, chrome } = await launchShell()
   try {
     await ready(app, chrome)
@@ -236,7 +236,7 @@ it('the all-sites popup reopens on screen after another overlay, a tab switch or
       // Pressed inside the popup, which holds the keyboard: the overlay host closes it, no blur first.
       'the find bar opening': async () => {
         expect(await waitForKeyboardAt(app, '/permissions/')).toBe(true)
-        await pressKey(app, '/permissions/', 'F', ['control'])
+        await pressCommand(app, '/permissions/', 'find.open')
         expect(await waitFor(async () => await findShown(app))).toBe(true)
         expect(await waitForKeyboardAt(app, 'overlay=find')).toBe(true)
         await pressKey(app, 'overlay=find', 'Escape')
@@ -244,11 +244,11 @@ it('the all-sites popup reopens on screen after another overlay, a tab switch or
       },
       'a new tab': async () => {
         expect(await waitForKeyboardAt(app, '/permissions/')).toBe(true)
-        await pressKey(app, '/permissions/', 'T', ['control'])
+        await pressCommand(app, '/permissions/', 'tab.new')
       },
       'a tab switch': async () => {
         expect(await waitForKeyboardAt(app, '/permissions/')).toBe(true)
-        await pressKey(app, '/permissions/', 'Tab', ['control'])
+        await pressCommand(app, '/permissions/', 'tab.next')
       },
       'the site card opening': async () => {
         await chrome.locator('#site-permissions-btn').click()
