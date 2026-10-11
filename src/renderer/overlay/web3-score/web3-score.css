@@ -1,0 +1,84 @@
+/* The Web3 Score card. The level colours and the mark are literal copies of ../../styles/web3-level.css and the
+   .web3-mark rules in ../../styles/toolbar.css (an entry never shares a stylesheet with another): the card must
+   draw each level exactly as the address bar does. */
+
+body[data-overlay='web3-score'] {
+  --wlevel1: #b91c1c;
+  --wlevel2: #ea580c;
+  --wlevel3: #ca8a04;
+  --wlevel4: #15803d;
+}
+
+body[data-overlay='web3-score'] .ws { padding: 16px 18px 12px; }
+body[data-overlay='web3-score'] .ws-head { display: flex; align-items: center; gap: 8px; }
+body[data-overlay='web3-score'] .ws-head .web3-shield { width: 20px; height: 20px; color: var(--wink-dim); }
+body[data-overlay='web3-score'] .sheet-title { margin: 0; }
+body[data-overlay='web3-score'] .ws-lead {
+  margin: 8px 0 12px;
+  color: var(--wink-dim);
+  line-height: 1.5;
+}
+
+body[data-overlay='web3-score'] .ws-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+body[data-overlay='web3-score'] .ws-level { display: flex; align-items: flex-start; gap: 10px; }
+body[data-overlay='web3-score'] .ws-level .web3-shield { flex: none; width: 22px; height: 22px; margin-top: 1px; }
+body[data-overlay='web3-score'] .web3-shield[data-level='1'] { color: var(--wlevel1); }
+body[data-overlay='web3-score'] .web3-shield[data-level='2'] { color: var(--wlevel2); }
+body[data-overlay='web3-score'] .web3-shield[data-level='3'] { color: var(--wlevel3); }
+body[data-overlay='web3-score'] .web3-shield[data-level='4'] { color: var(--wlevel4); }
+body[data-overlay='web3-score'] .ws-level-text { min-width: 0; }
+body[data-overlay='web3-score'] .ws-level-head { display: flex; align-items: center; gap: 8px; }
+body[data-overlay='web3-score'] .ws-level-name { font-weight: 600; }
+body[data-overlay='web3-score'] .ws-level-meaning { margin: 2px 0 0; color: var(--wink-dim); line-height: 1.45; }
+
+body[data-overlay='web3-score'] .ws-note {
+  margin: 14px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--wborder);
+  color: var(--wink-dim);
+  font-size: 12px;
+  line-height: 1.45;
+}
+body[data-overlay='web3-score'] .ws-foot { display: flex; justify-content: space-between; margin-top: 8px; }
+body[data-overlay='web3-score'] .ws-foot .link-btn { padding-left: 0; padding-right: 0; }
+
+body[data-overlay='web3-score'] .web3-mark {
+  --tone: var(--wink-dim);
+  --ink: var(--wink-dim);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 18px;
+  padding: 0 7px 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--tone) 13%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 30%, transparent);
+}
+body[data-overlay='web3-score'] .web3-mark::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--tone);
+}
+body[data-overlay='web3-score'] .web3-mark[data-mark='Web2'] { --tone: #f97316; --ink: #c2410c; }
+body[data-overlay='web3-score'] .web3-mark[data-mark='Web2.5'] { --tone: #eab308; --ink: #a16207; }
+body[data-overlay='web3-score'] .web3-mark[data-mark='Web3'] { --tone: #22c55e; --ink: #15803d; }
+@media (prefers-color-scheme: dark) {
+  body[data-overlay='web3-score'] .web3-mark[data-mark='Web2'] { --ink: #fdba74; }
+  body[data-overlay='web3-score'] .web3-mark[data-mark='Web2.5'] { --ink: #fde047; }
+  body[data-overlay='web3-score'] .web3-mark[data-mark='Web3'] { --ink: #86efac; }
+}

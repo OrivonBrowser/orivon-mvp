@@ -65,8 +65,8 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 ### A34: The tab strip's native-controls inset is an unmeasured guess **[RESEARCH]**
 
-- **Question:** Do the fixed insets (138px right on Windows/Linux, 78px left on macOS) match the
-  real native window controls on every platform?
+- **Question:** Does the fixed 138px right inset on Windows and Linux match the real native window
+  controls there? macOS is measured: its buttons span x 20-79, and the strip starts at 88px.
 - **Why it matters:** `env(titlebar-area-*)` and `windowControlsOverlay` report nothing for a
   `BaseWindow` + `WebContentsView` shell; verified only on Linux/X11. A miss is cosmetic.
 - **Options:** keep the generous fixed insets (rec.); check on real Windows and macOS hardware;

@@ -64,8 +64,9 @@ it('lists an app that holds a permission with what it has stored, and takes the 
     expect(await card.locator('.muted').first().textContent()).toContain('Settings sections e2e fixture')
     expect(await card.locator('.app-stored').textContent()).toContain('Stores 0 bytes of files')
     expect(await card.locator('.perm').count()).toBe(1)
-    // No keyring under the test's password store: the identity key is remade on each start.
-    expect(await page.locator('#row-apps-identity .value').textContent()).toContain('Made again each time')
+    // A Linux run has no keyring under its password store, so the identity key is remade on each start; macOS and
+    // Windows always keep it in theirs (the Keychain, DPAPI).
+    expect(await page.locator('#row-apps-identity .value').textContent()).toContain(process.platform === 'linux' ? 'Made again each time' : 'Kept in your system\'s keyring')
 
     await card.locator('.perm button', { hasText: 'Revoke' }).click()
     expect(await waitFor(async () => (await card.locator('.perm').count()) === 0)).toBe(true)

@@ -4,7 +4,7 @@
 
 /** The toolbar buttons whose presses main hears about: the main menu, the all-sites list, the site-info shield and key,
  * and the buttons that toggle an overlay, each named by the overlay it toggles. */
-export const PRESS_BUTTONS = ['menu', 'permissions', 'web3', 'main', 'bookmark-edit', 'bookmark-folder', 'downloads', 'extensions-menu', 'popups-blocked', 'site-prompt', 'tab-search'] as const
+export const PRESS_BUTTONS = ['menu', 'permissions', 'web3', 'main', 'bookmark-edit', 'bookmark-folder', 'downloads', 'extensions-menu', 'popups-blocked', 'site-prompt', 'tab-search', 'web3-score'] as const
 export type PressButton = typeof PRESS_BUTTONS[number]
 
 export function isPressButton (value: unknown): value is PressButton {
