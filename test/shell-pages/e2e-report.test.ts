@@ -2,10 +2,11 @@
 // crashed tab's card opens it at that crash; a report can be deleted from the server; and a fatal error in the
 // main process is offered for report at the next start. A loopback ingest stands in for the server.
 // Set ORIVON_UI_SHOTS_DIR to also write screenshots in both colour schemes.
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
+import { listDumps } from '../../src/main/diagnostics/dump-files.js'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
@@ -65,6 +66,16 @@ async function previewWhere (page: Page, ok: (report: Record<string, unknown>) =
   return last
 }
 
+/** What each folder under the crash folder holds, for a failure message. */
+const listFolders = (dir: string): Record<string, string[] | string> => {
+  const out: Record<string, string[] | string> = {}
+  try {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) { try { out[entry.name] = readdirSync(join(dir, entry.name)) } catch (error) { out[entry.name] = String(error) } }
+    }
+  } catch (error) { out['.'] = String(error) }
+  return out
+}
 const reportRequests = (): Ingest['requests'] => ingest.requests.filter((request) => request.path.endsWith('/report'))
 
 it('shows the literal report, sends it only on Send, and deletes it from the server on request', async () => {
@@ -174,10 +185,10 @@ it('offers Report on a crashed tab\'s card, which opens the form at that crash',
     await card.waitForSelector('.sad .btn')
     expect(await card.locator('.sad .btn').allTextContents()).toEqual(['Report', 'Close tab', 'Reload'])
     // Crashpad writes the dump a moment after the process dies; the form lists it only if it is there when it opens.
-    expect(await waitFor(async () => await app.evaluate(({ app: electronApp }) => {
-      const fs = process.getBuiltinModule('node:fs')
-      try { return fs.readdirSync(`${electronApp.getPath('crashDumps')}/pending`).some((name) => name.endsWith('.dmp')) } catch { return false }
-    }))).toBe(true)
+    // The folders are the ones the product lists: Windows writes to `reports`, the others to `pending`.
+    const crashDir = await app.evaluate(({ app: electronApp }) => electronApp.getPath('crashDumps'))
+    const dumpFound = await waitFor(() => listDumps(crashDir).length > 0)
+    expect(dumpFound, `no .dmp under ${crashDir}: ${JSON.stringify(listFolders(crashDir))}`).toBe(true)
     await card.getByRole('button', { name: 'Report', exact: true }).click()
 
     const page = await pageAt(app, 'orivon://report/crash/')

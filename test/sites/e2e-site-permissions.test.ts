@@ -30,7 +30,7 @@ import { afterAll, expect, it } from 'vitest'
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
 import { ABSENCE_SETTLE_MS, HERMETIC_RESOLVER, delay, evaluateRetrying, findChrome, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
@@ -128,6 +128,18 @@ const pageState = async (view: Page): Promise<PageState> =>
 const inFullscreen = async (view: Page): Promise<boolean> =>
   await evaluateRetrying(view, () => document.fullscreenElement !== null)
 
+/** Windows hands an allowed link to its shell and macOS to `open`, neither of which looks at PATH for an opener, so there the hand-off is read from a stub of `shell.openExternal` instead of the opener scripts. */
+const OPENERS_ON_PATH = process.platform !== 'win32' && process.platform !== 'darwin'
+
+async function stubOpenExternal (app: ElectronApplication): Promise<() => Promise<string[]>> {
+  await app.evaluate(({ shell }) => {
+    const g = globalThis as unknown as { __opened: string[] }
+    g.__opened = []
+    shell.openExternal = (async (url: string) => { g.__opened.push(url) }) as typeof shell.openExternal
+  })
+  return async () => await app.evaluate(() => (globalThis as unknown as { __opened: string[] }).__opened)
+}
+
 /** A PATH directory whose openers record their argument and launch nothing. */
 function stubOpeners (): { dir: string, log: string, launched: () => string } {
   const dir = mkdtempSync(join(tmpdir(), 'orivon-e2e-openers-'))
@@ -161,8 +173,9 @@ it('lets a page lock the pointer and keyboard with a notice, and open an externa
     const openers = stubOpeners()
     try {
       server = await serveFixture()
-      app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], env: { PATH: `${openers.dir}:${process.env['PATH'] ?? ''}` } })
+      app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], env: { PATH: `${openers.dir}${delimiter}${process.env['PATH'] ?? ''}` } })
       await stubNativeDialogs(app)
+      const handedOver = OPENERS_ON_PATH ? async (): Promise<string[]> => openers.launched().split('\n').filter((line) => line !== '') : await stubOpenExternal(app)
       const view = await navigateToFixture(app, PAGE_URL, TITLE)
 
       // --- External links, before any click --------------------------------
@@ -223,15 +236,15 @@ it('lets a page lock the pointer and keyboard with a notice, and open an externa
       check('a clicked mailto: link is asked about', mail.message === 'Open mailto link with your system\'s default app?', JSON.stringify(mail))
       await answerQuestion(app, 'Cancel')
       await delay(ABSENCE_SETTLE_MS)
-      check('Cancel launches nothing', openers.launched() === '', openers.launched())
+      check('Cancel launches nothing', (await handedOver()).length === 0, JSON.stringify(await handedOver()))
 
       await view.click('#magnet')
       const magnet = await readQuestion(await waitQuestion(app))
       await answerQuestion(app, 'Allow')
-      const launched = await waitFor(() => openers.launched() !== '')
+      const launched = await waitFor(async () => (await handedOver()).length > 0)
       check('Allow hands exactly the URL the person was shown to the OS handler',
-        launched && openers.launched() === `${MAGNET}\n` && magnet.detail === `${ORIGIN} wants to open:\n${MAGNET}`,
-        `${openers.launched()} / ${JSON.stringify(magnet)}`)
+        launched && JSON.stringify(await handedOver()) === JSON.stringify([MAGNET]) && magnet.detail === `${ORIGIN} wants to open:\n${MAGNET}`,
+        `${JSON.stringify(await handedOver())} / ${JSON.stringify(magnet)}`)
       check('no native message box was opened for any of them', (await noNativeDialogs(app)).length === 0)
     } finally {
       if (app !== undefined) await closeElectronApp(app)

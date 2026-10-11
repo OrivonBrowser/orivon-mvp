@@ -266,15 +266,28 @@ it('gives a manifest sandbox.pages document no chrome.tabs, the way real Chrome 
           // so it is reported here, not silently asserted away.
         }
 
-        const casedFrame = await (async () => {
-          await waitFor(() => findFrameByName(framerTab, 'cased')?.url() !== `chrome-extension://${extensionId}/SANDBOX.html`, 15_000)
-          return findFrameByName(framerTab, 'cased')
-        })()
-        check(
-          'measured: Linux\'s case-sensitive filesystem does NOT serve the real file for a differently-cased request -- shows a network-error page instead, not a bypass on this platform (win32/darwin\'s own case-insensitive matching is covered at the unit level, in router-sandbox-page-refusal.test.ts, since this harness only ever runs on Linux)',
-          casedFrame?.url() === 'chrome-error://chromewebdata/',
-          casedFrame?.url()
-        )
+        // Windows and macOS match file names without regard to case, and the router lowercases there
+        // (vendor/electron-chrome-extensions/src/browser/router.ts), so the differently-cased request serves the real page.
+        const caseInsensitive = process.platform === 'win32' || process.platform === 'darwin'
+        if (caseInsensitive) {
+          const casedFrame = findFrameByName(framerTab, 'cased')
+          const casedReport = casedFrame === undefined ? undefined : await frameSandboxReport(casedFrame)
+          check(
+            'measured: a case-insensitive filesystem serves the real file for a differently-cased request, and the page is as sandboxed as the canonical one: no chrome.tabs, an opaque origin',
+            casedReport?.hasTabs === 'false' && casedReport.windowOrigin === 'null',
+            `${String(casedFrame?.url())} ${JSON.stringify(casedReport)}`
+          )
+        } else {
+          const casedFrame = await (async () => {
+            await waitFor(() => findFrameByName(framerTab, 'cased')?.url() !== `chrome-extension://${extensionId}/SANDBOX.html`, 15_000)
+            return findFrameByName(framerTab, 'cased')
+          })()
+          check(
+            'measured: a case-sensitive filesystem does NOT serve the real file for a differently-cased request -- shows a network-error page instead, not a bypass (the case-insensitive systems are asserted in the branch above, and their router matching at the unit level in router-sandbox-page-refusal.test.ts)',
+            casedFrame?.url() === 'chrome-error://chromewebdata/',
+            casedFrame?.url()
+          )
+        }
       }
     } finally {
       if (app !== undefined) await closeElectronApp(app)
