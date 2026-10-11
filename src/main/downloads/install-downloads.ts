@@ -18,9 +18,11 @@ export function installDownloads (app: Pick<App, 'on'>, host: InstallHost): void
   const attach = (target: Session): void => {
     if (attached.has(target)) return
     attached.add(target)
-    target.on('will-download', (event: Event, item: DownloadItem, contents: WebContents | undefined) => {
+    target.on('will-download', (event: Event, item: DownloadItem, contents: WebContents | null | undefined) => {
       try {
-        host.downloads.track(item, contents, event)
+        // A download no page started (Retry, `session.downloadURL`) comes with `null`, whatever the typings say: past
+        // here, no page is `undefined`, which is what every check downstream looks for.
+        host.downloads.track(item, contents ?? undefined, event)
       } catch (error) {
         // A download with no path set would wait for ever, so one the service could not take is refused.
         console.error('[orivon] a download could not be started:', error)

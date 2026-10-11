@@ -73,11 +73,23 @@ async function pinFixture (userDataDir: string): Promise<void> {
   await storage.writePin(ORIGIN, fromBundleTree(ORIGIN, tree.root, tree.assets, '1.0.0', 0))
 }
 
-/** Counts raw TCP accepts: the signal that something really dialled, whatever came after. */
-function countingServer (): { server: Server, count: () => number, reset: () => void } {
+/**
+ * Counts raw TCP accepts: the signal that something really dialled, whatever came after.
+ *
+ * `reset` first waits for the accept of the readiness probe `waitForTcpReady` made. The probe's client resolves
+ * when its own side connects, and the server's accept callback may run after that (it does on macOS), so a bare
+ * reset lets the probe's own connection land after it and count as a dial by the page.
+ */
+function countingServer (): { server: Server, count: () => number, reset: () => Promise<void> } {
   let accepted = 0
   const server = createServer((socket) => { accepted += 1; socket.destroy() })
-  return { server, count: () => accepted, reset: () => { accepted = 0 } }
+  const reset = async (): Promise<void> => {
+    const deadline = Date.now() + 5_000
+    while (accepted === 0 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10))
+    if (accepted === 0) throw new Error('the readiness probe\'s connection was never accepted')
+    accepted = 0
+  }
+  return { server, count: () => accepted, reset }
 }
 
 const wssProbe = countingServer()
@@ -97,8 +109,7 @@ it('[app:wasm-streaming-under-served-csp] [app:blob-worker-runs] a pinned bundle
     new Promise<void>((resolve) => { loopback.server.listen(LOOPBACK_PORT, '127.0.0.1', resolve) })
   ])
   await Promise.all([waitForTcpReady('127.0.0.1', WSS_PROBE_PORT, 10_000), waitForTcpReady('127.0.0.1', LOOPBACK_PORT, 10_000)])
-  wssProbe.reset()
-  loopback.reset()
+  await Promise.all([wssProbe.reset(), loopback.reset()])
 
   const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
   try {
