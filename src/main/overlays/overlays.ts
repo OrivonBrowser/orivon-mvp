@@ -32,6 +32,7 @@ import { restoreOverlay } from '../startup/startup-overlays.js'
 import { sidePanelOverlay } from '../side-panel/side-panel-overlay.js'
 import { tabGroupOverlay } from '../tab-groups/tab-group-overlay.js'
 import { tabSearchOverlay } from '../tab-search/tab-search-overlay.js'
+import { web3ScoreOverlay } from '../web3-score/web3-score-overlay.js'
 import type { OverlayDef } from './overlay-types.js'
 
 export const OVERLAYS: readonly OverlayDef[] = [
@@ -71,5 +72,6 @@ export const OVERLAYS: readonly OverlayDef[] = [
   sitePromptOverlay,
   tabGroupOverlay,
   tabSearchOverlay,
-  toastOverlay
+  toastOverlay,
+  web3ScoreOverlay
 ]
