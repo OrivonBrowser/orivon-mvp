@@ -154,5 +154,6 @@ export async function partitionHolds (app: App, userData: string, origin: string
   await app.evaluate(async ({ session }, name) => { await session.fromPartition(name).flushStorageData() }, partition)
   const directory = join(userData, 'Partitions', partition.replace(/^persist:/, ''), 'Local Storage', 'leveldb')
   if (!existsSync(directory)) return false
-  return readdirSync(directory).some((file) => readFileSync(join(directory, file)).includes(needle))
+  // Only the data files: Windows keeps the store's LOCK file locked, and reading it fails with EBUSY.
+  return readdirSync(directory).filter((file) => /\.(log|ldb)$/.test(file)).some((file) => readFileSync(join(directory, file)).includes(needle))
 }
