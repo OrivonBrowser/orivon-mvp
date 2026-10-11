@@ -133,7 +133,7 @@ function render (focus = false): void {
   if (!state.loaded) replaceChildren(bodyHost, renderSkeleton())
   else if (rows.length === 0) {
     const storeEmpty = state.folders.filter((folder) => folder.depth === 0).every((folder) => folder.items === 0)
-    replaceChildren(bodyHost, renderEmpty({ query: state.query, storeEmpty, importAvailable: state.importAvailable, importBookmarks: () => { void request({ type: 'import' }) } }))
+    replaceChildren(bodyHost, renderEmpty({ query: state.query, storeEmpty, importAvailable: state.importAvailable, importBookmarks: () => { void request({ type: 'import' }) }, platform }))
   } else {
     replaceChildren(bodyHost, renderList(rows, view, rowActions, () => { state.shown += CHUNK; render() }))
     const editing = state.editing
