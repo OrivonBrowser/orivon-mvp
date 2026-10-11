@@ -30,7 +30,7 @@ rely on, row by row. A new feature adds its line here when it lands.
 - **`.eth` names**: resolved by a light client that proves the name's record on this machine; `.eth.limo` and `.eth.link` addresses open as the `.eth` name.
 - **`ipfs://` and `ipns://` addresses**: every block checked against its CID; a protocol registry makes the next protocol an isolated piece of work.
 - **DDOC**: a site publishes its bundle hash tree, anchored in its ENS record, and the Web3 Score page shows whether the pinned bundle matches.
-- **Web3 Score**: a shield in the address bar for the delivery and connection levels, observed by the machine or judged by a provider the person chooses.
+- **Web3 Score**: a shield in the address bar for the delivery and connection levels, observed by the machine or judged by a provider the person chooses. On a new tab it opens a card that explains the four levels.
 - **Web3 Score providers**: static sites built with web3-score-manager, asked by hash bucket so a provider never learns the site.
 
 ## The browser
