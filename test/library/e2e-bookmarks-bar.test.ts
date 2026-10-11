@@ -14,7 +14,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput, profileDirOf } from '../support/launch-electron.mjs'
 import { commandById } from '../../src/main/shortcuts/commands.js'
-import { pressKey } from '../support/e2e-helpers.js'
+import { pressCommand } from '../support/e2e-helpers.js'
 import { removeThroughBubble } from '../support/bookmark-bubble-helpers.js'
 import { bookmarksBarMatches, bookmarkUrls, delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, popoverShown, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
@@ -279,10 +279,10 @@ it('moves what does not fit behind a chevron that lists it, and Mod+Shift+B hide
     })
     expect(await bookmarksBarMatches(chrome, true)).toBe(true)
     expect(await tabTop()).toBe(104)
-    await pressKey(app, '/newtab/', 'B', ['control', 'shift'])
+    await pressCommand(app, '/newtab/', 'bookmarks.toggleBar')
     expect(await waitFor(async () => await bookmarksBarMatches(chrome, false))).toBe(true)
     expect(await waitFor(async () => await tabTop() === 76)).toBe(true)
-    await pressKey(app, '/newtab/', 'B', ['control', 'shift'])
+    await pressCommand(app, '/newtab/', 'bookmarks.toggleBar')
     expect(await waitFor(async () => await bookmarksBarMatches(chrome, true))).toBe(true)
     expect(await waitFor(async () => await tabTop() === 104)).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
@@ -401,9 +401,9 @@ it('manages the rows of an open folder menu: right-click menu, Delete from the k
     expect(await waitFor(async () => (await barTitles(chrome)).includes('Sprint board'))).toBe(true)
     expect(await waitFor(async () => ((await fileOf(app).catch(() => undefined))?.roots['bar'] ?? []).some((node) => node['id'] === 'w2'))).toBe(true)
 
-    // Ctrl+Backspace on a focused row deletes it, before the key means "back"; the folder is listed again.
+    // Mod+Backspace on a focused row deletes it, before the key means "back"; the folder is listed again.
     await menu.focus('.bmf-row[data-key="w3"]')
-    await menu.keyboard.press('Control+Backspace')
+    await menu.keyboard.press('ControlOrMeta+Backspace')
     expect(await waitFor(async () => !(await stored()).includes('"w3"'))).toBe(true)
     expect(await waitFor(async () => !(await rowLabels(menu)).some((label) => label.startsWith('A page whose title')))).toBe(true)
     expect(await folderShown(app)).toBe(true)

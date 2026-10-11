@@ -10,7 +10,8 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
-import { pressKey } from '../support/e2e-helpers.js'
+import type { CommandId } from '../../src/main/shortcuts/commands.js'
+import { bindingOf, pressCommand, shownBinding } from '../support/e2e-helpers.js'
 import { delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 90_000
@@ -82,9 +83,9 @@ async function close (chrome: Page, title: string): Promise<void> {
 }
 
 /** The key goes to the page itself, so the page has to exist and be past loading. */
-async function pressOnPage (app: ElectronApplication, url: string, key: string, modifiers: string[]): Promise<void> {
+async function pressOnPage (app: ElectronApplication, url: string, command: CommandId): Promise<void> {
   expect(await waitFor(async () => await app.evaluate(({ webContents }, part) => webContents.getAllWebContents().some((wc) => wc.getURL() === part && !wc.isLoading()), url))).toBe(true)
-  await pressKey(app, url, key, modifiers)
+  await pressCommand(app, url, command)
 }
 
 const command = async (chrome: Page, id: string): Promise<void> => {
@@ -103,17 +104,17 @@ it('brings a closed tab back where it was, in front, and walks back through seve
 
     await close(chrome, 'page b')
     await waitTitles(chrome, ['New Tab', 'page a', 'page c'])
-    await pressOnPage(app, `${origin}/c`, 'T', ['control', 'shift'])
+    await pressOnPage(app, `${origin}/c`, 'tab.reopen')
     await waitTitles(chrome, ['New Tab', 'page a', 'page b', 'page c'])
     await waitActiveTitle(chrome, 'page b')
 
     await close(chrome, 'page c')
     await close(chrome, 'page a')
     await waitTitles(chrome, ['New Tab', 'page b'])
-    await pressOnPage(app, `${origin}/b`, 'T', ['control', 'shift'])
+    await pressOnPage(app, `${origin}/b`, 'tab.reopen')
     await waitTitles(chrome, ['New Tab', 'page a', 'page b'])
     await waitActiveTitle(chrome, 'page a')
-    await pressOnPage(app, `${origin}/a`, 'T', ['control', 'shift'])
+    await pressOnPage(app, `${origin}/a`, 'tab.reopen')
     await waitTitles(chrome, ['New Tab', 'page a', 'page b', 'page c'])
 
     // Nothing left to reopen: nothing happens.
@@ -331,7 +332,7 @@ it('shows in the main menu what would come back, under History, and nothing when
     const at = labels.indexOf('Reopen closed tab')
     expect(at).toBe(labels.indexOf('History') + 1)
     expect(await menu.locator('.menu-row', { hasText: 'Reopen closed tab' }).locator('.menu-hint').count()).toBe(0)
-    expect(await menu.locator('.menu-row', { hasText: 'Reopen closed tab' }).locator('.menu-keys').textContent()).toBe('Ctrl+Shift+T')
+    expect(await menu.locator('.menu-row', { hasText: 'Reopen closed tab' }).locator('.menu-keys').textContent()).toBe(shownBinding(bindingOf('tab.reopen')))
     await shoot(menu, 'reopen-menu-empty')
     await closeMenu(menu)
 
@@ -342,7 +343,7 @@ it('shows in the main menu what would come back, under History, and nothing when
     const row = menu.locator('.menu-row', { hasText: 'Reopen closed tab' })
     expect(await row.textContent()).toContain('page invoice')
     // The hint goes under the label: the shortcut keeps its column.
-    expect(await row.locator('.menu-keys').textContent()).toBe('Ctrl+Shift+T')
+    expect(await row.locator('.menu-keys').textContent()).toBe(shownBinding(bindingOf('tab.reopen')))
     await shoot(menu, 'reopen-menu-hint')
     await closeMenu(menu)
 

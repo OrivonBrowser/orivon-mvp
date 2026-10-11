@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
-import { clickAddressBarRetrying, pressKey } from '../support/e2e-helpers.js'
+import { bindingOf, clickAddressBarRetrying, pressCommand, shownBinding } from '../support/e2e-helpers.js'
 import { ABSENCE_SETTLE_MS, delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, popoverShown, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 90_000
@@ -104,7 +104,7 @@ it('builds no overlay at launch, builds the menu on the button\'s hover, and lis
     const labels = await rowLabels(menu)
     expect(labels).toEqual(expect.arrayContaining(['New tab', 'New window', 'New private window', 'History', 'Bookmark this page', 'More tools', 'Extensions', 'Profiles', 'Open Settings', 'Quit Orivon']))
     expect(await menu.locator('.menu-zoom').count()).toBe(1)
-    expect(await menu.locator('.menu-row', { hasText: 'New tab' }).locator('.menu-keys').textContent()).toBe('Ctrl+T')
+    expect(await menu.locator('.menu-row', { hasText: 'New tab' }).locator('.menu-keys').textContent()).toBe(shownBinding(bindingOf('tab.new')))
     expect(await menu.locator('[role="menu"]').getAttribute('aria-label')).toBe('Main menu')
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
@@ -244,7 +244,7 @@ it('a browser shortcut pressed inside the menu runs on its window, and the new t
   const { app, chrome } = await launched(true)
   try {
     await openMenu(app, chrome)
-    await pressKey(app, 'overlay=menu', 'T', ['control'])
+    await pressCommand(app, 'overlay=menu', 'tab.new')
     expect(await waitFor(async () => (await tabIds(chrome)).length === 2)).toBe(true)
     expect(await waitFor(async () => !(await menuShown(app)))).toBe(true)
   } finally {

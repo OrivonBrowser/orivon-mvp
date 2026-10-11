@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
-import { clickAddressBarRetrying, pressKey } from '../support/e2e-helpers.js'
+import { clickAddressBarRetrying, pressCommand } from '../support/e2e-helpers.js'
 import { privatePeer } from './private-peer.js'
 import type { PrivatePeer } from './private-peer.js'
 import { ABSENCE_SETTLE_MS, bookmarkUrls, delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
@@ -82,7 +82,7 @@ it('keeps a profile\'s data in a directory of its own, apart from the default pr
 
     await clickAddressBarRetrying(chrome, `${origin}/mine`)
     expect((await waitForTab(chrome, { address: `${origin}/mine` })).ok).toBe(true)
-    await pressKey(app, `${origin}/mine`, 'D', ['control'])
+    await pressCommand(app, `${origin}/mine`, 'bookmark.toggle')
     expect(await waitFor(async () => (await bookmarkUrls(chrome)).length === 1)).toBe(true)
 
     expect(await waitFor(() => existsSync(join(dir, 'bookmarks.json')))).toBe(true)

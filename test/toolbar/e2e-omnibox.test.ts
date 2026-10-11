@@ -78,7 +78,7 @@ const selectedRow = async (app: App): Promise<string> =>
 
 async function typeInBar (chrome: Page, text: string): Promise<void> {
   await chrome.click('#address')
-  await chrome.keyboard.press('Control+A')
+  await chrome.keyboard.press('ControlOrMeta+A')
   await chrome.keyboard.type(text, { delay: 25 })
 }
 
@@ -323,7 +323,7 @@ it('goes to a row on a real click without the field losing what was typed first,
     await waitForRows(app, 4)
     const beforeCtrl = (await tabIds(chrome)).length
     const listed = await rowsOf(app)
-    await (overlayOf(app) as Page).locator('.listbox-item').nth(listed.length - 1).click({ modifiers: ['Control'] })
+    await (overlayOf(app) as Page).locator('.listbox-item').nth(listed.length - 1).click({ modifiers: ['ControlOrMeta'] })
     expect(await waitFor(async () => (await tabIds(chrome)).length === beforeCtrl + 1)).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {

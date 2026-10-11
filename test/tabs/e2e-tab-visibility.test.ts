@@ -111,7 +111,7 @@ it('reads hidden in a page opened in the background, once it has loaded', async 
   try {
     await openTab(chrome, 'a')
     const a = viewOf(app, chrome, 'a')
-    await a.click('#link', { modifiers: ['Control'] })
+    await a.click('#link', { modifiers: ['ControlOrMeta'] })
     expect(await waitFor(async () => (await strip(chrome)).some((tab) => tab.title === 'page c'))).toBe(true)
     expect(await waitFor(() => findViewShowing(app, chrome, `${origin}/c`) !== undefined)).toBe(true)
     const c = await settledAs(viewOf(app, chrome, 'c'), 'hidden')

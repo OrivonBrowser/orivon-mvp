@@ -149,7 +149,7 @@ export type Launched = Awaited<ReturnType<typeof launchElectron>>
  */
 export async function typeInto (page: Page, selector: string, text: string): Promise<void> {
   await page.click(selector)
-  await page.keyboard.press('Control+A')
+  await page.keyboard.press('ControlOrMeta+A')
   await page.keyboard.press('Backspace')
   await page.keyboard.type(text)
 }
