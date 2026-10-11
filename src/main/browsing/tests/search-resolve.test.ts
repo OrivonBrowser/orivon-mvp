@@ -77,7 +77,7 @@ describe('defaultEngineFor', () => {
 describe('resolveCurrent', () => {
   it('reads the settings and the engines it is given', () => {
     const sources = {
-      settings: { get: (key: 'search.engine' | 'search.customUrl') => key === 'search.engine' ? 'custom' : 'https://mine.example/?q=%s' },
+      settings: { get: (key: string) => key === 'search.mode' ? 'web2' : key === 'search.engine' ? 'custom' : 'https://mine.example/?q=%s' },
       searchEngines: { all: () => engines }
     }
     expect(resolveCurrent(sources, 'cats').url).toBe('https://mine.example/?q=cats')

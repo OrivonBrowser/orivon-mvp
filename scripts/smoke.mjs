@@ -70,10 +70,9 @@ import {
   waitForTab
 } from '../test/support/smoke-helpers.mjs'
 
-/** Where the omnibox sends non-address input (src/main/omnibox.ts). Only used
- * to build the expected URL -- the resolver rule blackholes everything that
- * is not loopback, so changing this cannot cause real egress. */
-const SEARCH_HOST = 'duckduckgo.com'
+/** Where the omnibox sends non-address input on a fresh profile: the Web3 search engine
+ * (src/main/browsing/search-engines.ts). Only used to build the expected URL. */
+const SEARCH_TEMPLATE = 'ipfs://explore.orivonstack.eth/#/search?q='
 
 // A 1x1 transparent PNG -- real bytes, real content-type, so the favicon
 // scenario below exercises the actual fetch/cap/encode path
@@ -489,14 +488,13 @@ async function main () {
     }
 
     // ---- Address-bar text that is not a URL resolves to a search ---------
-    // Owner decision: non-address input is sent to DuckDuckGo -- a stated
-    // known limitation, since in the PRODUCT the search text leaves the
-    // machine.
+    // Owner decision: non-address input is searched on the Web3 by default
+    // (Explore), and on the Web2 (DuckDuckGo) when the person switches.
     //
     // What this check proves, precisely: parseOmniboxInput's `search` branch
     // reaches loadURL with the exact right target, through the real
     // renderer -> IPC -> TabManager path. What it does NOT prove, and cannot,
-    // is that DuckDuckGo answered -- the address bar reads
+    // is that the engine answered -- the address bar reads
     // webContents.getURL(), and Chromium commits the REQUESTED url even when
     // it serves an error page instead. An earlier version of this check
     // claimed to exercise a real network round trip and forbade "mocking" it;
@@ -506,7 +504,7 @@ async function main () {
     const SEARCH_QUERY = 'orivon browser smoke check'
     // Built the same way production builds it (omnibox.ts), rather than
     // re-implementing the encoding -- hand-rolled variants diverge on !'()*~
-    const expectedSearchUrl = `https://${SEARCH_HOST}/?${new URLSearchParams({ q: SEARCH_QUERY }).toString()}`
+    const expectedSearchUrl = `${SEARCH_TEMPLATE}${new URLSearchParams({ q: SEARCH_QUERY }).toString().slice(2)}`
 
     const wantSearch = { address: expectedSearchUrl }
     const search = await navigateTo(SEARCH_QUERY, wantSearch)
@@ -517,11 +515,12 @@ async function main () {
     } catch {
       searchUrl = undefined
     }
+    // The query sits in the fragment (`#/search?q=...`), as Explore reads it.
 
-    checkTab('a plain-text address-bar entry resolves to a DuckDuckGo search, not a URL', wantSearch, search)
-    const q = searchUrl?.searchParams.get('q')
+    checkTab('a plain-text address-bar entry resolves to an Explore search, not a URL', wantSearch, search)
+    const q = new URLSearchParams(searchUrl?.hash.split('?')[1] ?? '').get('q')
     check(
-      'the DuckDuckGo query carries the exact typed text',
+      'the Explore query carries the exact typed text',
       q === SEARCH_QUERY,
       q === SEARCH_QUERY ? undefined : `q read ${JSON.stringify(q ?? null)}`
     )

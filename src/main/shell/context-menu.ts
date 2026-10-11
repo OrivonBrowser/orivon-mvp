@@ -13,7 +13,7 @@ import {
 } from './context-menu-groups.js'
 import type { ContextMenuActions, ContextMenuContext, MenuParams } from './context-menu-groups.js'
 import { togglePictureInPictureAt } from '../page-tools/pip.js'
-import { searchUrlFor } from '../browsing/search-engines.js'
+import { currentSearchUrl, web3EngineNow } from '../browsing/search-current.js'
 
 export type { ContextMenuActions, ContextMenuContext } from './context-menu-groups.js'
 
@@ -143,11 +143,11 @@ export function showContextMenu (wc: WebContents, params: ContextMenuParams, hos
     context.readable = host.page.readable?.() ?? false
     if (settings !== undefined) {
       context.spellcheckOn = settings.get('spellcheck.enabled')
-      context.engineLabel = engineLabelFor(settings.get('search.engine'))
+      context.engineLabel = web3EngineNow(settings)?.label ?? engineLabelFor(settings.get('search.engine'))
       actions.toggleSpellcheck = () => { settings.set('spellcheck.enabled', !context.spellcheckOn) }
       const open = openInFront ?? (kiosk ? undefined : host.openInNewTab)
       if (open !== undefined) {
-        actions.search = (query) => { open(searchUrlFor(settings.get('search.engine'), settings.get('search.customUrl'), query)) }
+        actions.search = (query) => { open(currentSearchUrl(settings, query)) }
       }
     }
   }

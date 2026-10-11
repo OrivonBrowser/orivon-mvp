@@ -6,8 +6,8 @@ operation), `bookmark-file.ts` (reading and writing the file, pure),
 `bookmarks-domain.ts` (what the Bookmarks page may ask, each field checked), `bookmarks-undo.ts` (what a delete in it can take back),
 `bookmarks-html-export.ts` (the Netscape bookmark file, pure) and `bookmarks-export-runner.ts` (the save dialog and the write),
 `favicon.ts` (which icon a tab shows, and the capture), `favicon-fetch.ts` (the fetch and its T12 gate), its pure byte-sniffing half `favicon-format.ts` (a tab's icon as a `data:` URL) and `favicon-timeout.ts` (how long a fetch may take),
-`search-engines.ts` (the built-in engines, their keywords and suggestion addresses, and the template rule), `search-resolve.ts` and
-`search-current.ts` (which engine a typed search goes to, pure), `search-engine-store.ts` (the engines a person keeps in
+`search-engines.ts` (the built-in Web2 engines, their keywords and suggestion addresses, the Web3 engines, and the template rule), `search-resolve.ts` and
+`search-current.ts` (which engine a typed search goes to: the Web3 engine or the Web2 one by `search.mode`, with keywords working in both; pure), `search-engine-store.ts` (the engines a person keeps in
 `search-engines.json`; its rules are in `search-engine-rules.ts` and the starting site engines in `site-engines.ts`),
 `favicon-cache.ts` (the icons already fetched), `bookmark-types.ts` (the node, bar item and import shapes, types only), `site-trust.ts` (the Web3 Score page and the
 toolbar shield's data), `site-home.ts` (where the content shown says it lives, which decides whether a judged level counts, `ADR-0056`), `score-provider-client.ts` (asks the chosen Web3 Score provider, `ADR-0054`), `page-score-lookup.ts` (what
