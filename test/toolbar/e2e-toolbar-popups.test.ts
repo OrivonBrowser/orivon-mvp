@@ -320,6 +320,8 @@ it('on a new tab the shield opens the card that explains the Web3 Score, closes 
     expect(await waitFor(cardShown)).toBe(true)
     expect(await siteInfoShown(app), 'there is no site, so no site card').toBe(false)
     const card = app.windows().find((w) => w.url().includes('overlay=web3-score')) as Page
+    // The card counts as shown when it is attached, before its page has mounted the rows.
+    await card.waitForSelector('.ws-level')
     const levels = await card.evaluate(() => [...document.querySelectorAll('.ws-level')].map((row) => ({
       shield: row.querySelector<SVGElement>('.web3-shield')?.dataset['level'],
       mark: row.querySelector('.web3-mark')?.textContent,
