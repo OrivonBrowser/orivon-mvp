@@ -12,7 +12,8 @@ beside the page (`external-panes.ts`) and the page; and caret browsing.
 | `caret-runner.ts` | `toggleCaret` (the F7 command), `setCaret`, and `applyCaret` over every tab of every window |
 | `caret-signal.ts` | the tab signal that gives each page the setting as it is made, returns, or leaves the new-tab page |
 | `caret-confirm-overlay.ts` | the sheet F7 shows before turning it on, through a centre slot of `../overlays/tab-slots.ts` |
-| `install-focus.ts` | the installer: a change to the setting reaches every open tab |
+| `install-focus.ts` | the installer: a change to the setting reaches every open tab, and `wireClosingFocus` on macOS |
+| `closing-focus.ts` | `handOffFocusOnClose`: on macOS, contents that close while holding the keyboard give it to their window's chrome first, since a first responder destroyed under the window kills the main process |
 | `focused-contents-guard.ts` | `installFocusedContentsGuard`: Electron's `webContents.getFocusedWebContents()`, which its menus call on every click, without asking an offscreen contents (that call kills the main process) |
 
 **What it depends on.** `electron` and [`../shell/`](../shell/) (types, `sendChromeEvent`, the tab-signal type and
