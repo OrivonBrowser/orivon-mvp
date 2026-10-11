@@ -1,5 +1,6 @@
 // Watches one tab's web contents for a page that failed on its certificate, and puts the sheet over the tab. The
-// sheet belongs to that failure only: a new navigation of the tab takes it, or its place in the queue, away.
+// sheet belongs to that failure only: a new navigation of the tab, or other web contents taking the tab's place,
+// takes it, or its place in the queue, away.
 import type { WebContents } from 'electron'
 import type { requestSlot } from '../overlays/tab-slots.js'
 import type { ShellWindow } from '../shell/window-registry.js'
@@ -13,7 +14,8 @@ export interface CertErrorDeps {
   readonly claimed?: (contentsId: number, url: string, code: number) => boolean
 }
 
-const watched = new WeakSet<WebContents>()
+/** Each watched web contents, with what takes its sheet away. */
+const watched = new WeakMap<WebContents, () => void>()
 
 /** A host to name: the failing address's host, read here, or nothing when the address is not one. */
 export function hostOfFailure (url: string): string | undefined {
@@ -25,14 +27,19 @@ export function hostOfFailure (url: string): string | undefined {
   }
 }
 
+/** Other web contents took the tab's place (a first visit let in as an app, a sleeping tab): this one's sheet is about a page the tab no longer shows. */
+export function forgetCertErrors (contents: WebContents): void {
+  watched.get(contents)?.()
+}
+
 export function watchCertErrors (contents: WebContents, deps: CertErrorDeps): void {
   if (watched.has(contents)) return
-  watched.add(contents)
   let pending: { cancel: () => void } | undefined
   const withdraw = (): void => {
     pending?.cancel()
     pending = undefined
   }
+  watched.set(contents, withdraw)
   contents.on('did-start-navigation', (details) => {
     if (details.isMainFrame && !details.isSameDocument) withdraw()
   })
