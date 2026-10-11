@@ -18,6 +18,8 @@ export interface FullscreenEffects {
 
 export class HtmlFullscreen {
   private current: string | null = null
+  /** The tab whose page was last in fullscreen, until the window leaves fullscreen (`windowLeft`). */
+  private last: string | null = null
 
   constructor (private readonly effects: FullscreenEffects) {}
 
@@ -37,6 +39,7 @@ export class HtmlFullscreen {
         return
       }
       this.current = id
+      this.last = id
       this.effects.relayout()
       this.effects.showNotice()
       return
@@ -45,6 +48,23 @@ export class HtmlFullscreen {
     this.current = null
     this.effects.hideNotice()
     this.effects.relayout()
+  }
+
+  /**
+   * The window finished leaving fullscreen. The page that was last in it is asked to leave too: on macOS an Escape
+   * pressed while the window is still animating into fullscreen reports the page as left, yet its document stays in
+   * fullscreen until asked again once the window is out (measured on a macOS runner). A page already out refuses,
+   * which changes nothing.
+   */
+  windowLeft (isLive: (id: string) => boolean): void {
+    const id = this.current ?? this.last
+    this.last = null
+    if (this.current !== null) {
+      this.current = null
+      this.effects.hideNotice()
+      this.effects.relayout()
+    }
+    if (id !== null && isLive(id)) this.effects.exitTab(id)
   }
 
   /** Called on every tab-state push: the fullscreen tab closing, crashing or

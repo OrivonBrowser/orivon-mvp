@@ -134,6 +134,8 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     hideNotice: () => { notice.hide() }
   })
 
+  win.on('leave-full-screen', () => { fullscreen.windowLeft((id) => tabs.getState().tabs.some((tab) => tab.id === id)) })
+
   const { chromeHeight, layoutChrome, tabBounds, reachChrome } = createWindowLayout({
     win, chrome, fullscreenTabId: () => fullscreen.tabId, bookmarksBarShown, kiosk, pageInsets: () => sidePanelInsets(win)
   })
