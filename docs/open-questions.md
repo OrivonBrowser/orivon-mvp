@@ -1087,7 +1087,8 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 ### A303: `chrome.tabs.query` still answers a `chrome-extension://<id>//sandbox.html` request **[AI-REC]**
 
-- **Question:** A doubled-slash spelling of a sandbox page gets the sandbox CSP, an opaque origin and no
+- **Question:** A doubled-slash spelling of a sandbox page (and, on Windows and macOS, a differently-cased one such
+  as `SANDBOX.html`) gets the sandbox CSP, an opaque origin and no
   injected `chrome.*` from the vendored library, yet `chrome.tabs.query({})` still returns real tab data there
   (measured through `WebFrameMain.executeJavaScript`, `test/extensions/e2e-extensions-sandbox-page.test.ts`). What answers?
 - **Why it matters:** code in a sandbox page reached by that spelling can still read the person's open tabs.
