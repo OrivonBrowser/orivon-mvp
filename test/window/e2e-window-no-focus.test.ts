@@ -3,7 +3,8 @@
 // showOnce() picks win.showInactive() over win.show() when
 // ORIVON_WINDOW_NO_FOCUS=1 -- launch-electron.mjs defaults that on for
 // every launch made through it, which is the actual fix here: a test run
-// cannot forget to opt in.
+// cannot forget to opt in. A macOS CI runner is the one exception
+// (launch-env.mjs noFocusDefault), so these tests set the switch themselves.
 //
 // WHAT THIS FILE CAN AND CANNOT PROVE. It launches a real Electron process
 // and reads its own main-process console output, so it proves the real
@@ -30,8 +31,8 @@ const SHOW_FALLBACK_MS = 1_000
 
 const TEST_TIMEOUT_MS = 30_000
 
-it('showOnce takes the showInactive() branch under the default test launch (ORIVON_WINDOW_NO_FOCUS=1)', async () => {
-  const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
+it('showOnce takes the showInactive() branch with ORIVON_WINDOW_NO_FOCUS=1, the default of a test launch off a macOS CI runner', async () => {
+  const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], env: { ORIVON_WINDOW_NO_FOCUS: '1' } })
   try {
     await waitFor(() => mainOutput(app).includes(NO_FOCUS_MARKER))
     expect(mainOutput(app)).toContain(NO_FOCUS_MARKER)
@@ -63,7 +64,7 @@ it('showOnce falls back to the ordinary show() when the switch is explicitly off
 // or dev run that opens a second window does not silently mask a real
 // focus-stealing bug in whatever opened it.
 it('a second window always takes the ordinary show() branch, even under the same launch\'s ORIVON_WINDOW_NO_FOCUS=1', async () => {
-  const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
+  const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], env: { ORIVON_WINDOW_NO_FOCUS: '1' } })
   try {
     await waitFor(() => mainOutput(app).includes(NO_FOCUS_MARKER))
     const beforeCount = mainOutput(app).split(NO_FOCUS_MARKER).length - 1
