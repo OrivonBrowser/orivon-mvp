@@ -69,6 +69,7 @@ export const COMMANDS = [
   { id: 'focus.previousPane', label: 'Previous pane', category: 'navigation', default: 'Shift+F6' },
   { id: 'focus.toolbar', label: 'Go to the toolbar', category: 'navigation', default: 'Alt+Shift+T' },
   { id: 'nav.focusSearch', label: 'Search the web', category: 'navigation', default: 'Mod+K', aliases: ['Mod+E'], yieldToApp: true },
+  { id: 'search.toggleMode', label: 'Switch search between Web3 and Web2', category: 'navigation' },
   { id: 'zoom.in', label: 'Zoom in', category: 'navigation', default: 'Mod+=', aliases: ['Mod++'], repeatable: true },
   { id: 'zoom.out', label: 'Zoom out', category: 'navigation', default: 'Mod+-', repeatable: true },
   { id: 'zoom.reset', label: 'Reset zoom', category: 'navigation', default: 'Mod+0' },

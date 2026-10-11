@@ -148,6 +148,12 @@ export function createAddressSuggest (): ChromeModule {
       }
 
       input.addEventListener('input', onInput)
+      // The engine the first row names changed (the search chip, Settings): ask for the same text again, as an edit without a key.
+      input.addEventListener('address-refresh', () => {
+        if (!open || composing) return
+        showText(typed)
+        onInput(new Event('input'))
+      })
       input.addEventListener('compositionstart', () => { composing = true })
       input.addEventListener('compositionend', () => { composing = false })
       // Capture: a chosen row's Enter is taken here, before the form's own submit sees it.

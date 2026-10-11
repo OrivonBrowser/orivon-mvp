@@ -4,13 +4,13 @@ import { fakeContext } from './api-fixtures.js'
 
 const ENGINE_URL = (text: string): string => `https://duckduckgo.com/?q=${encodeURIComponent(text).replace(/%20/g, '+')}`
 
-function setup (opts: { appTab?: boolean, internal?: boolean, noWindow?: boolean } = {}) {
+function setup (opts: { appTab?: boolean, internal?: boolean, noWindow?: boolean, mode?: 'web2' | 'web3' } = {}) {
   const tabs = { createTab: vi.fn(), navigate: vi.fn() }
   const window = { tabs }
   const contents = { getURL: () => (opts.appTab === true ? 'https://app.example/x' : 'https://page.test/') }
   const openWindow = vi.fn()
   const shell = {
-    settings: { get: (key: string) => (key === 'search.engine' ? 'duckduckgo' : '') },
+    settings: { get: (key: string) => ({ 'search.mode': opts.mode ?? 'web2', 'search.web3Engine': 'explore', 'search.engine': 'duckduckgo' } as Record<string, string>)[key] ?? '' },
     windows: { focused: () => (opts.noWindow === true ? undefined : window) },
     commands: { openWindow },
     internalPages: { pageOf: () => (opts.internal === true ? 'settings' : undefined) }
@@ -31,6 +31,12 @@ describe('search.query', () => {
     await s.call('search.query', { text: 'orivon browser' })
     expect(s.tabs.navigate).toHaveBeenCalledWith('t1', ENGINE_URL('orivon browser'))
     expect(s.tabs.createTab).not.toHaveBeenCalled()
+  })
+
+  it('searches the Web3 engine while the address bar does, so the two never disagree', async () => {
+    const s = setup({ mode: 'web3' })
+    await s.call('search.query', { text: 'free speech' })
+    expect(s.tabs.navigate).toHaveBeenCalledWith('t1', 'https://explore.orivonstack.eth/#/search?q=free+speech')
   })
 
   it('opens a new tab or a new window on request', async () => {
@@ -72,7 +78,7 @@ describe('search.query', () => {
     const other = { tabs: { createTab: vi.fn(), navigate: vi.fn() }, window: { id: 6 } }
     const found = { contents: { getURL: () => 'https://page.test/' }, window: own, id: 'own-tab' }
     const shell = {
-      settings: { get: (key: string) => (key === 'search.engine' ? 'duckduckgo' : '') },
+      settings: { get: (key: string) => ({ 'search.mode': 'web2', 'search.engine': 'duckduckgo' } as Record<string, string>)[key] ?? '' },
       windows: { focused: () => other },
       commands: { openWindow: vi.fn() },
       internalPages: { pageOf: () => undefined }
