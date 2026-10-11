@@ -9,7 +9,7 @@ regression check, not a guard, it drives a real Electron app, and it is owned by
 stream rather than `packaging` ([`parallel-work.md`](../docs/development/parallel-work.md)).
 It lives here because `npm run smoke` is where people look for it.
 
-**What it depends on.** `node:*` builtins — plus, for `smoke.mjs` and `perf-probe.mjs` only, `playwright` via
+**What it depends on.** `node:*` builtins — plus `typescript` (its `unstable/sync` API) for `check-floating-promises.mjs` only, and, for `smoke.mjs` and `perf-probe.mjs` only, `playwright` via
 [`test/support/launch-electron.mjs`](../test/support/launch-electron.mjs), and, for `install-electron.mjs`
 only, the `electron` package's own `install.js`.
 
@@ -29,6 +29,7 @@ code it guards could be disabled by the change it exists to catch.
 | `check-comments.mjs` | **Rule 1.** No source file opens with more than 25 lines of comment, and no comment block in `.github/workflows/*.yml` or a root `*.config.ts` runs over 10 lines. `--exemptions` lists every file that opted out and why |
 | `check-page-globals.mjs` | **ADR-0021.** A global Orivon installs on an app's window carries the platform's own descriptor, so an app can replace it. Reads an omitted `writable` as the lock it is; `// orivon:locked-global -- <why>` opts one out |
 | `check-native-dialogs.mjs` | A question to the person is asked through `askQuestion`, in the tab's own window. Fails on `dialog.showMessageBox`, `showMessageBoxSync` or `showErrorBox` in `src/` (bracket, destructured and aliased forms included) outside the question panel's fallback and the start-up failure box; the OS file pickers are not matched |
+| `check-floating-promises.mjs` | No promise is floated in main-process code. `src/main/start.ts` ends the browser on any unhandled rejection, so `void p`, a bare `p` and `p.then(cb)` with no rejection handler are each a crash waiting for a user. Scans the files the main entries import (tests excluded, renderer and preload never reached) with the type checker; `.catch(...)`, `.then(a, b)`, `await`, a returned or stored promise and Electron's `loadURL`/`loadFile` pass; `// orivon:floating-ok -- <why>` opts one out. Needs `typescript`'s API, the one guard that does |
 | `check-questions.mjs` | No question ID is used twice across `docs/open-questions.md` and `docs/decisions/resolved-questions.md`, and no open entry runs past 12 lines |
 | `check-devlog.mjs` | No devlog bullet over 25 words (`.claude/commands/devlog.md` rule C), in the journal and in every update compiled since that rule |
 | [`ci/`](ci/README.md) | **Not one script:** the CI e2e selection: `select-e2e.mjs` (which specs a change reaches, split into shards), `check-impact-map.mjs` (the guard that keeps `test/impact-map.json` in step with the tree) and `refresh-weights.mjs` (rewrites the shard weights from a CI log), with their tests |
