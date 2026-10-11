@@ -149,11 +149,15 @@ afterAll(async () => {
 
 interface LocalPage { readonly url: string, readonly partition: string, readonly origin: string }
 
-/** Every web contents showing something under this run's folder, with the local session it is in ('other' for any other). */
+/**
+ * Every web contents showing something under this run's folder, with the local session it is in ('other' for any other).
+ * A contents still loading is left for the next poll: Electron 44 reading `mainFrame` while a main-frame navigation is
+ * pending can crash the main process under load (measured on a Windows runner, a breakpoint in electron.exe).
+ */
 async function localPages (app: ElectronApplication, partitions: string[] = [SHARED_PARTITION]): Promise<LocalPage[]> {
   return await app.evaluate(({ session, webContents }, { part, names }) => {
     return webContents.getAllWebContents()
-      .filter((wc) => !wc.isDestroyed() && wc.mainFrame.framesInSubtree.some((frame) => frame.url.includes(part)))
+      .filter((wc) => !wc.isDestroyed() && !wc.isLoading() && wc.mainFrame.framesInSubtree.some((frame) => frame.url.includes(part)))
       .map((wc) => ({
         url: wc.getURL(),
         partition: names.find((name) => wc.session === session.fromPartition(name)) ?? 'other',

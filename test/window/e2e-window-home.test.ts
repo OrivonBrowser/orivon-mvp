@@ -313,7 +313,10 @@ it('opens the web addresses and local files it is started with as tabs, in order
   const folder = await mkdtemp(join(await realpath(tmpdir()), 'orivon-start-file-'))
   const local = join(folder, 'local.html')
   await writeFile(local, '<!doctype html><title>Local c</title><p>c</p>')
-  const { app, chrome } = await launchShell({ args: [`${server.origin}/a`, pathToFileURL(local).href, 'javascript:alert(1)', `${server.origin}/b`, 'file://nas/share/x.html'] })
+  const operands = [`${server.origin}/a`, pathToFileURL(local).href, 'javascript:alert(1)', `${server.origin}/b`, 'file://nas/share/x.html']
+  // Electron on Windows exits before any script runs when a URL is followed by another operand with no `--` first, its
+  // guard against arguments smuggled through a protocol link; src/main/launch/launch-request.ts reads past the `--`.
+  const { app, chrome } = await launchShell({ args: process.platform === 'win32' ? ['--', ...operands] : operands })
   try {
     expect(await waitFor(async () => (await tabIds(chrome)).length === 3)).toBe(true)
     expect((await waitForTab(chrome, { address: `${server.origin}/a` })).ok).toBe(true)
