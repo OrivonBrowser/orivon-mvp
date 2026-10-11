@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
@@ -79,7 +79,8 @@ it('keeps a profile\'s data in a directory of its own, apart from the default pr
   const { app, chrome } = await launched([`--orivon-profile=${PROFILE}`], (dir) => { home = dir; seedProfile(dir) })
   try {
     const dir = await userDataOf(app)
-    expect(dir).toBe(join(home, 'profiles', PROFILE))
+    // macOS reports its temp folder through a /private symlink.
+    expect(realpathSync(dir)).toBe(realpathSync(join(home, 'profiles', PROFILE)))
 
     await clickAddressBarRetrying(chrome, `${origin}/mine`)
     expect((await waitForTab(chrome, { address: `${origin}/mine` })).ok).toBe(true)

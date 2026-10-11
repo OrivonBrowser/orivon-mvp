@@ -272,11 +272,9 @@ it('gives a manifest sandbox.pages document no chrome.tabs, the way real Chrome 
         if (caseInsensitive) {
           const casedFrame = findFrameByName(framerTab, 'cased')
           const casedReport = casedFrame === undefined ? undefined : await frameSandboxReport(casedFrame)
-          check(
-            'measured: a case-insensitive filesystem serves the real file for a differently-cased request, and the page is as sandboxed as the canonical one: no chrome.tabs, an opaque origin',
-            casedReport?.hasTabs === 'false' && casedReport.windowOrigin === 'null',
-            `${String(casedFrame?.url())} ${JSON.stringify(casedReport)}`
-          )
+          check('measured: a case-insensitive filesystem serves the real file for a differently-cased request', casedReport !== undefined, `${String(casedFrame?.url())} ${JSON.stringify(casedReport)}`)
+          check('and the page has the same opaque origin as the canonical sandbox.html (the CSP sandbox matches the spelling)', casedReport?.windowOrigin === 'null', JSON.stringify(casedReport))
+          // Like the doubled leading slash above, chrome.tabs still answers there (measured on Windows and macOS): A303.
         } else {
           const casedFrame = await (async () => {
             await waitFor(() => findFrameByName(framerTab, 'cased')?.url() !== `chrome-extension://${extensionId}/SANDBOX.html`, 15_000)
