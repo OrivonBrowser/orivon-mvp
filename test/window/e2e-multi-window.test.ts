@@ -97,9 +97,10 @@ it('the same popover opens in two windows one after the other', async () => {
 
     await first.click('#permissions-btn')
     expect(await waitFor(() => popovers().length === 1)).toBe(true)
-    // Opening the other window's popover blurs the first, which closes it.
+    const [shown] = popovers()
+    // Opening the other window's popover blurs the first, which closes it a moment later: wait for the new page, not for the count.
     await second.click('#permissions-btn')
-    expect(await waitFor(() => popovers().length === 1)).toBe(true)
+    expect(await waitFor(() => popovers().length === 1 && popovers()[0] !== shown)).toBe(true)
     await delay(300)
 
     const [popover] = popovers()

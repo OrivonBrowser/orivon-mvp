@@ -239,14 +239,20 @@ it('chooses the start from Settings, with its help, and keeps a list of pages: a
     await shoot(settings, 'settings-startup-new-tab')
 
     // By key, so the select really has focus: a redraw must give it back.
+    // macOS opens a native popup menu on ArrowUp and ArrowDown, which Playwright cannot drive and which changes nothing
+    // on its own, so there the choice is set on the focused select directly (the same input and change events).
+    const choose = async (key: string, value: string): Promise<void> => {
+      if (process.platform === 'darwin') await settings.selectOption('#row-startup-mode select', value)
+      else await settings.keyboard.press(key)
+    }
     await settings.focus('#row-startup-mode select')
-    await settings.keyboard.press('ArrowDown')
+    await choose('ArrowDown', 'continue')
     await settings.waitForSelector('#row-startup-mode .row-help')
     expect(await settings.textContent('#row-startup-mode .row-help')).toBe('Your windows and tabs from last time reopen. Private windows are never reopened.')
     expect(await settings.locator('#row-startup-pages').count()).toBe(0)
     await shoot(settings, 'settings-startup-continue')
 
-    await settings.keyboard.press('ArrowDown')
+    await choose('ArrowDown', 'pages')
     await settings.waitForSelector('#row-startup-pages .page-list')
     expect(await settings.textContent('#row-startup-mode .row-help')).toBe('These pages open in the first window.')
     // The choice still has the keyboard after the page drew itself again.

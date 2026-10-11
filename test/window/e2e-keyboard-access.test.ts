@@ -8,7 +8,7 @@ import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
 import { pressKey } from '../support/e2e-helpers.js'
 import { focusWebContents, underVirtualDisplay, webContentsFocused } from '../support/focus-helpers.js'
-import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from '../support/qa-helpers.js'
+import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, visitWithoutPage } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
 import { popoverShown, waitFor } from '../support/smoke-helpers.mjs'
 
@@ -96,7 +96,7 @@ async function toastReads (app: App, text: string): Promise<boolean> {
 
 async function newTabAt (app: App, chrome: Page, url: string): Promise<void> {
   await chrome.click('#new-tab')
-  await visit(app, chrome, url)
+  await visitWithoutPage(app, chrome, url)
 }
 
 it('walks the address bar, toolbar, tabs and page with F6, and back with Shift+F6', async () => {
@@ -305,9 +305,9 @@ it('turns caret browsing on from F7 behind a question, on every tab and one open
 
     // A tab opened later has it, and so does one that moves to another origin.
     await chrome.click('#new-tab')
-    await visit(app, chrome, `${server.origin}/third`)
+    await visitWithoutPage(app, chrome, `${server.origin}/third`)
     expect((await caretByPage(app))[`${server.origin}/third`]).toBe(true)
-    await visit(app, chrome, `${other.origin}/`)
+    await visitWithoutPage(app, chrome, `${other.origin}/`)
     expect(await waitFor(async () => (await caretByPage(app))[`${other.origin}/`] === true)).toBe(true)
     expect((await caretByPage(app))[`${server.origin}/first`]).toBe(true)
 
