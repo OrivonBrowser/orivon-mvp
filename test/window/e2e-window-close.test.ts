@@ -27,6 +27,13 @@ it('closing the window with two tabs open exits cleanly', async () => {
     // Not awaited: the window closing takes this call's own target with it.
     void app.evaluate(({ BaseWindow }) => { BaseWindow.getAllWindows()[0]?.close() }).catch(() => {})
 
+    // macOS keeps the app resident when its last window closes (src/main/index.ts, window-all-closed); the
+    // process ends only on an explicit quit.
+    if (process.platform === 'darwin') {
+      expect(await waitFor(async () => (await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows().length)) === 0)).toBe(true)
+      expect(app.process().exitCode).toBeNull()
+      void app.evaluate(({ app: electronApp }) => { electronApp.quit() }).catch(() => {})
+    }
     const outcome = await Promise.race([exit, delay(EXIT_WAIT_MS).then(() => 'still running' as const)])
 
     expect(mainOutput(app)).not.toContain('uncaught exception')

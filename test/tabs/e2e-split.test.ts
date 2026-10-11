@@ -466,6 +466,15 @@ it('keeps the pane that was split in laid out, in its place and painted through 
 
     const site = (name: string): string => origin.replace('127.0.0.1', `${name}.test`)
     const leftPage = (part: string): Page | undefined => app.windows().find((candidate) => !candidate.isClosed() && candidate.url().includes(part))
+    // A press from the main process: it needs no Playwright page, which a macOS runner sometimes never attaches for a pane (test/README.md, Known risk).
+    const pressIn = async (part: string, x: number, y: number): Promise<void> => {
+      await app.evaluate(({ webContents }, [target, px, py]) => {
+        const wc = webContents.getAllWebContents().find((candidate) => candidate.getURL().includes(target as string))
+        if (wc === undefined) throw new Error(`no webContents at ${target as string}`)
+        wc.sendInputEvent({ type: 'mouseDown', x: px as number, y: py as number, button: 'left', clickCount: 1 })
+        wc.sendInputEvent({ type: 'mouseUp', x: px as number, y: py as number, button: 'left', clickCount: 1 })
+      }, [part, x, y] as const)
+    }
     const failures: string[] = []
 
     /** Waits for the left pane to show `part`, then reads everything the person sees of both panes. */
@@ -496,7 +505,7 @@ it('keeps the pane that was split in laid out, in its place and painted through 
     }
 
     // The pane that was split in is the one the person works in.
-    await leftPage(`${origin}/a`)?.mouse.click(120, 200)
+    await pressIn(`${origin}/a`, 120, 200)
     expect(await waitFor(async () => await activeId(chrome) === a)).toBe(true)
     await settled('after the split', `${origin}/a`, `${origin}/b`)
 
@@ -525,7 +534,7 @@ it('keeps the pane that was split in laid out, in its place and painted through 
     await settled('script, into an app', `${appOrigin}/c7`, `${origin}/b`)
 
     // The other pane gets the same: one press makes it the pane the person is in.
-    await leftPage(`${origin}/b`)?.mouse.click(120, 200)
+    await pressIn(`${origin}/b`, 120, 200)
     expect(await waitFor(async () => await activeId(chrome) === b)).toBe(true)
     await clickAddressBarRetrying(chrome, `${appOrigin}/d1`)
     await settled('the other pane, into an app', `${appOrigin}/c7`, `${appOrigin}/d1`)

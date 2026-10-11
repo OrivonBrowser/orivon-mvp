@@ -15,7 +15,7 @@ import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNative
 import { html, launchShell, startServer, visit } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
 import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
-import { ABSENCE_SETTLE_MS, delay, HERMETIC_RESOLVER, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, delay, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 const E2E_TIMEOUT_MS = 150_000
 const servers: FixtureServer[] = []
@@ -288,11 +288,14 @@ it('gives a frame no preload, and honours what Chromium refuses a page: a sandbo
   }
 }, E2E_TIMEOUT_MS)
 
+const FAR_RESOLVER = '--host-resolver-rules=MAP far.test 127.0.0.1, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1'
+
 it('ends the panel of a frame in its own process when the page removes the frame', async () => {
-  // 127.0.0.2 is another site than 127.0.0.1, so its frame lives in a process of its own and the page stays free to act.
+  // far.test is another site than 127.0.0.1, so its frame lives in a process of its own and the page stays free to act.
+  // It is served on 127.0.0.1 because only that address is on every system's loopback interface.
   const far = createServer((_request, response) => { html(response, FRAME) })
-  await new Promise<void>((resolve) => { far.listen(0, '127.0.0.2', resolve) })
-  const farOrigin = `http://127.0.0.2:${String((far.address() as AddressInfo).port)}`
+  await new Promise<void>((resolve, reject) => { far.once('error', reject); far.listen(0, '127.0.0.1', resolve) })
+  const farOrigin = `http://far.test:${String((far.address() as AddressInfo).port)}`
   const main = await startServer((_request, response) => {
     html(response, `<!doctype html><title>Removal fixture</title><body>
 <button id="ask-far" onclick="frames[0].postMessage('ask', '*')">ask</button>
@@ -300,7 +303,7 @@ it('ends the panel of a frame in its own process when the page removes the frame
 <iframe src="${farOrigin}/frame"></iframe></body>`)
   })
   servers.push(main, { origin: farOrigin, close: async () => { await new Promise<void>((resolve) => { far.close(() => { resolve() }); far.closeAllConnections() }) } })
-  const { app, chrome } = await launchShell({ args: [`${HERMETIC_RESOLVER}, EXCLUDE 127.0.0.2`] })
+  const { app, chrome } = await launchShell({ args: [FAR_RESOLVER] })
   try {
     await stubNativeDialogs(app)
     const view = await visit(app, chrome, `${main.origin}/`)

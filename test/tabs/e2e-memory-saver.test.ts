@@ -229,6 +229,7 @@ it('keeps a tab awake that plays sound, is pinned, holds typed input or is on a 
     expect(await isSleeping(chrome, pinned)).toBe(false)
 
     const form = await openTab(chrome, '/form')
+    expect(await waitFor(() => findViewShowing(app, chrome, `${origin}/form`) !== undefined)).toBe(true)
     const formView = findViewShowing(app, chrome, `${origin}/form`) as Page
     await formView.fill('#f', 'half a message')
     await formView.evaluate(() => { (document.activeElement as HTMLElement | null)?.blur() })

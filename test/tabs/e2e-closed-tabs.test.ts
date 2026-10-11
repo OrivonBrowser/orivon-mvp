@@ -290,6 +290,12 @@ it('keeps the tab whose closing closed the last window in the session file', asy
     await close(chrome, 'New Tab')
     await waitTitles(chrome, ['page a'])
     await close(chrome, 'page a')
+    // macOS keeps the app resident after its last window closes (src/main/index.ts, window-all-closed), so the file
+    // stays unfinished until an explicit quit.
+    if (process.platform === 'darwin') {
+      expect(await waitFor(async () => (await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows().length)) === 0)).toBe(true)
+      void app.evaluate(({ app: electronApp }) => { electronApp.quit() }).catch(() => {})
+    }
     const file = join(dir, 'session.json')
     const ended = async (): Promise<boolean> => { try { return (JSON.parse(await readFile(file, 'utf8')) as { clean: boolean }).clean } catch { return false } }
     expect(await waitFor(ended, 15_000)).toBe(true)

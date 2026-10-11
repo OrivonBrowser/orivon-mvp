@@ -173,14 +173,15 @@ it('gives an ordinary page fullscreen, real popups, a leave prompt and a Chrome 
 
       await pressEscapeIn(app, ORIGIN)
       let restored: WindowInfo | undefined
+      let inPage: boolean | undefined
       const left = await waitFor(async () => {
         restored = await windowInfo(app as ElectronApplication)
         const tab = restored.views.find((v) => v.url === ORIGIN)
-        const inPage = await evaluateRetrying(view, () => document.fullscreenElement === null)
+        inPage = await evaluateRetrying(view, () => document.fullscreenElement === null)
         return inPage && !restored.fullScreen && tab !== undefined && tab.bounds.y > 0 &&
           restored.views.every((v) => (v.visible || isOverlay(v.url)) && !v.url.startsWith('data:'))
       })
-      check('Escape leaves fullscreen and gives the window back to the chrome', left, JSON.stringify(restored))
+      check('Escape leaves fullscreen and gives the window back to the chrome', left, JSON.stringify({ inPage, ...restored }))
 
       // --- window.open with an opener -----------------------------------
       await view.click('#open')

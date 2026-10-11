@@ -7,6 +7,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
+import { textFor } from '../../src/main/sad-tab/sad-tab-text.js'
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
 import { clickAddressBarRetrying, pressKey, pressCommand } from '../support/e2e-helpers.js'
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from '../support/qa-helpers.js'
@@ -44,9 +45,14 @@ async function crash (app: App, url: string): Promise<void> {
   await app.evaluate(({ webContents }, target) => {
     const wc = webContents.getAllWebContents().find((candidate) => candidate.getURL() === target)
     if (wc === undefined) throw new Error(`no webContents at ${target}`)
+    wc.once('render-process-gone', (_event, details) => { (globalThis as { __goneReason?: string }).__goneReason = details.reason })
     setTimeout(() => { wc.forcefullyCrashRenderer() }, 0)
   }, url)
 }
+
+/** Why the last crashed page's process went: Chromium reports a forced crash as 'crashed' on Linux and Windows, 'killed' on macOS. */
+const goneReason = async (app: App): Promise<string | undefined> =>
+  await app.evaluate(() => (globalThis as { __goneReason?: string }).__goneReason)
 
 interface StripTab { id: string, title: string, active: boolean, crashed: boolean, tooltip: string, label: string, warning: boolean }
 
@@ -127,7 +133,11 @@ it('marks a crashed tab, shows the card with Reload focused, and stays until tol
     expect(tab.label).toBe('sad fixture, crashed')
 
     expect(await card.locator('.sheet-title').textContent()).toBe('This page stopped working')
-    expect(await card.locator('.sad-body').textContent()).toBe('Something went wrong while showing this page. Reloading usually fixes it.')
+    expect(await waitFor(async () => await goneReason(app) !== undefined)).toBe(true)
+    const reason = await goneReason(app)
+    expect(reason).toBe(process.platform === 'darwin' ? 'killed' : 'crashed')
+    expect(await card.locator('.sad-body').textContent()).toBe(textFor(reason ?? null).body)
+    if (process.platform !== 'darwin') expect(textFor(reason ?? null).body).toBe('Something went wrong while showing this page. Reloading usually fixes it.')
     expect(await card.locator('.sad-address').getAttribute('title')).toBe(here())
     expect(await card.locator('.sad .btn').allTextContents()).toEqual(['Report', 'Close tab', 'Reload'])
     expect(await waitFor(async () => await activeFocus(card) === 'Reload')).toBe(true)

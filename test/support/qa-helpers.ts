@@ -35,6 +35,16 @@ export async function launchShell (options: Parameters<typeof launchElectron>[0]
   return { app, chrome: findChrome(app) }
 }
 
+/** Types `url` into the address bar and waits until the main process holds a web contents committed at it and done loading.
+ * For a spec that never uses the tab's own page: it does not need Playwright to have attached that page, which it
+ * sometimes never does for a tab opened later on macOS (test/README.md, Known risk). */
+export async function visitWithoutPage (app: ElectronApplication, chrome: Page, url: string): Promise<void> {
+  await clickAddressBarRetrying(chrome, url)
+  expect((await waitForTab(chrome, { address: url })).ok).toBe(true)
+  expect(await waitFor(async () => await app.evaluate(({ webContents }, target) =>
+    webContents.getAllWebContents().some((wc) => wc.getURL() === target && !wc.isLoading()), url))).toBe(true)
+}
+
 /** Types `url` into the address bar, waits for the tab to report it, and returns that tab's own page. */
 export async function visit (app: ElectronApplication, chrome: Page, url: string): Promise<Page> {
   await clickAddressBarRetrying(chrome, url)

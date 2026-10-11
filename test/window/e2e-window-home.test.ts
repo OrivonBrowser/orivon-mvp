@@ -50,8 +50,11 @@ const resizeShown = async (app: ElectronApplication, bounds: { x: number, y: num
   expect(await waitFor(async () => await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.isVisible() === true))).toBe(true)
   await app.evaluate(({ BaseWindow }, next) => { BaseWindow.getAllWindows()[0]?.setBounds(next) }, bounds)
 }
-const primaryDisplay = async (app: ElectronApplication): Promise<{ width: number, height: number }> =>
-  await app.evaluate(({ screen }) => screen.getPrimaryDisplay().bounds)
+const primaryDisplay = async (app: ElectronApplication): Promise<{ width: number, height: number, workHeight: number }> =>
+  await app.evaluate(({ screen }) => {
+    const display = screen.getPrimaryDisplay()
+    return { width: display.bounds.width, height: display.bounds.height, workHeight: display.workArea.height }
+  })
 const runCommand = async (chrome: Page, id: string): Promise<void> => {
   await chrome.evaluate((command) => { (window as unknown as { orivonShell: { runCommand: (id: string) => void } }).orivonShell.runCommand(command) }, id)
 }
@@ -277,7 +280,8 @@ it('opens the window at the place it was left, and never at one no display shows
   const gone = await launchShell({ seedProfile: stateJson({ x: 50_000, y: 40, width: 900, height: 620 }) })
   try {
     const display = await primaryDisplay(gone.app)
-    const expected = { width: Math.min(1280, display.width), height: Math.min(800, display.height) }
+    // Cocoa keeps a new window inside the visible frame (below the menu bar, above the Dock), so on macOS the work area bounds the height.
+    const expected = { width: Math.min(1280, display.width), height: Math.min(800, display.height, process.platform === 'darwin' ? display.workHeight : display.height) }
     expect(await waitFor(async () => (await firstWindowBounds(gone.app)).width === expected.width)).toBe(true)
     expect((await firstWindowBounds(gone.app)).height).toBe(expected.height)
   } finally {
