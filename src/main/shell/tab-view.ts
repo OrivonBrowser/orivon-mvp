@@ -5,7 +5,7 @@
 import { shell, WebContentsView } from 'electron'
 import type { NativeImage, WebContents, WebPreferences } from 'electron'
 import { localFileKey, originFromUrl } from '../../broker/policy/origin.js'
-import { faviconOnCommit } from '../browsing/favicon.js'
+import { faviconOnCommit, faviconOnFailedLoad } from '../browsing/favicon.js'
 import { knownIcon } from '../history/favicon-host.js'
 import type { TabRecord } from './tab-types.js'
 import { ensureLocalSession } from '../local-files/local-partition.js'
@@ -273,6 +273,11 @@ export function wireView (id: string, record: TabRecord): void {
   wc.on('did-navigate-in-page', (_event, url: string, isMainFrame: boolean) => {
     if (isMainFrame && record.view === view) settleOuterHistory(record, wc, url, true)
     record.host.emitState()
+  })
+  wc.on('did-fail-load', (_event, code: number, _description: string, failedUrl: string, isMainFrame: boolean) => {
+    // Only an error page that committed (the tab is at the failed address): a cancelled load (-3) leaves the page before.
+    if (!isMainFrame || code === -3 || wc.getURL() !== failedUrl || !shown()) return
+    if (faviconOnFailedLoad(record, failedUrl)) record.host.emitState()
   })
   watchBacking(view, record, shown)
   wc.on('did-start-loading', () => { record.host.emitState() })

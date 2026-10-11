@@ -107,6 +107,21 @@ export function faviconOnCommit (target: FaviconTarget, nextUrl: string, saved: 
   target.faviconOrigin = origin
 }
 
+/**
+ * A main-frame load failed and its error page committed under `failedUrl`. Electron reports that commit as
+ * `did-fail-load`, never `did-navigate`, so `faviconOnCommit` does not see it, and the error page kept the icon of
+ * the page before it. The commit's rule applies: an icon of another origin goes, along with a fetch still running for
+ * it. Nothing remembered for the failed address comes back: an error page is not that site's page. True when the icon
+ * changed.
+ */
+export function faviconOnFailedLoad (target: FaviconTarget, failedUrl: string): boolean {
+  if (!shouldClearFavicon(target.faviconOrigin, failedUrl)) return false
+  target.favicon = null
+  target.faviconOrigin = null
+  target.pendingFaviconUrl = null
+  return true
+}
+
 /** The mutable favicon slice of a tab record. `TabRecord` (tab-types.ts)
  * satisfies this structurally, so nothing has to adapt it. */
 export interface FaviconTarget {
