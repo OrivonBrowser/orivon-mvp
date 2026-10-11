@@ -215,7 +215,7 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
       state.shown = { ext: extensionId, page, url: loading.url, path, info: infoFor(extensionId, window, path) }
       deps.fire(extensionId, 'onOpened', state.shown.info())
       if (!quiet) host.focusIn()
-    })
+    }).catch((error: unknown) => { console.error('[extensions] showing an extension side panel failed:', error) })
   }
 
   const chosen = (window: ShellWindow, entryId: string): void => {

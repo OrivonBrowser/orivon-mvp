@@ -240,7 +240,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // where chrome-context-menu.ts's gate allows it.
   chrome.webContents.on('context-menu', (_event, params) => {
     showContextMenu(chrome.webContents, params, chromeContextMenuHost(services.devtools, chrome.webContents, win, (url) => { tabs.createTab(url) }, () => {
-      void pasteAndGo(() => clipboard.readText(), (text) => { sendChromeEvent(entry, 'navigation', { type: 'pasteAndGo', text }) })
+      void pasteAndGo(() => clipboard.readText(), (text) => { sendChromeEvent(entry, 'navigation', { type: 'pasteAndGo', text }) }).catch((error: unknown) => { console.error('[shell] paste and go failed:', error) })
     }, {
       on: () => services.settings.get('addressBar.showFullUrl'),
       toggle: () => { services.settings.set('addressBar.showFullUrl', !services.settings.get('addressBar.showFullUrl')) }

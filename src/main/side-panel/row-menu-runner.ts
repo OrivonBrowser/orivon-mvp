@@ -9,5 +9,5 @@ export function popupRowMenu (window: ShellWindow, template: MenuItemConstructor
 }
 
 export function copyLink (url: string): void {
-  clipboard.writeText(url)
+  clipboard.writeText(url).catch((error: unknown) => { console.error('[side-panel] copying to the clipboard failed:', error) })
 }

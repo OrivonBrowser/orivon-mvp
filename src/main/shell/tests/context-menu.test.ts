@@ -3,7 +3,7 @@ import type { ContextMenuParams, MenuItemConstructorOptions } from 'electron'
 
 const { buildFromTemplate, popup, writeText } = vi.hoisted(() => {
   const popup = vi.fn()
-  return { popup, buildFromTemplate: vi.fn((_template: unknown) => ({ popup })), writeText: vi.fn() }
+  return { popup, buildFromTemplate: vi.fn((_template: unknown) => ({ popup })), writeText: vi.fn(async () => {}) }
 })
 vi.mock('electron', () => ({
   Menu: { buildFromTemplate },

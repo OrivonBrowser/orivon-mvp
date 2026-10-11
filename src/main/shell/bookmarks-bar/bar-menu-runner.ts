@@ -31,7 +31,7 @@ export function showBarMenu (ctx: WindowContext, id: string | null, at: { x: num
     rename: () => { if (node !== undefined) openBookmarkEdit(ctx, { id: node.id, anchor: here, mode: 'rename-folder' }) },
     addFolder: () => { openBookmarkEdit(ctx, { id: parent, anchor: here, mode: 'new-folder' }) },
     moveToBar: () => { if (node !== undefined) services.bookmarks.move([node.id], 'bar') },
-    copyLink: () => { if (node?.url !== undefined) clipboard.writeText(node.url) },
+    copyLink: () => { if (node?.url !== undefined) clipboard.writeText(node.url).catch((error: unknown) => { console.error('[shell] copying to the clipboard failed:', error) }) },
     remove: () => { if (node !== undefined) services.bookmarks.remove([node.id]) },
     toggleBar: () => { services.commands.run('bookmarks.toggleBar', window) },
     openManager: commandById('bookmarks.open')?.pending === true ? undefined : () => { services.commands.run('bookmarks.open', window) }

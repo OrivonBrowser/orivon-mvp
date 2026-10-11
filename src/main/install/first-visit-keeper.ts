@@ -317,7 +317,7 @@ export function createKeeper (deps: FirstVisitDeps, origin: string, hintedUrl: s
   const start = (): Promise<BackgroundOutcome> => { started ??= run(); return started }
   return {
     hooks: {
-      onBadData: (found) => { void block(found) },
+      onBadData: (found) => { void block(found).catch((error: unknown) => { console.error('[install] blocking an app after bad data failed:', error) }) },
       // The handler asks what is current when a name moved or a file is not the one the tree names; the download may already know.
       fresh: async (since) => {
         if (versionKey(current.live) !== versionKey(since)) return current.live

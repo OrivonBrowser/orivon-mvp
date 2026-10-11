@@ -103,7 +103,7 @@ export function showContextMenu (wc: WebContents, params: ContextMenuParams, hos
     undo: onTab(() => { wc.undo() }),
     redo: onTab(() => { wc.redo() }),
     pasteAndMatchStyle: onTab(() => { wc.pasteAndMatchStyle() }),
-    copyText: (text) => { clipboard.writeText(text) },
+    copyText: (text) => { clipboard.writeText(text).catch((error: unknown) => { console.error('[shell] copying to the clipboard failed:', error) }) },
     ...(kiosk ? {} : { openInNewTab: host.openInNewTab }),
     ...(kiosk || host.openLocalFile === undefined ? {} : { openLocalFile: host.openLocalFile }),
     ...(openInSplit === undefined ? {} : { openInSplit }),
@@ -135,7 +135,7 @@ export function showContextMenu (wc: WebContents, params: ContextMenuParams, hos
       actions.run = runCommand
       // The video clicked, else the page's main one.
       actions.pipAt = (x, y) => {
-        void togglePictureInPictureAt(params.frame, x, y).then((done) => { if (!done) runCommand('page.pip') })
+        void togglePictureInPictureAt(params.frame, x, y).then((done) => { if (!done) runCommand('page.pip') }).catch((error: unknown) => { console.error('[shell] toggling picture in picture failed:', error) })
       }
     }
     context.bare = host.page.bare()

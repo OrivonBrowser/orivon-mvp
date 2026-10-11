@@ -63,7 +63,7 @@ export function createChildHostRegistry (
     watching.add(origin)
     tracker.onceEmpty(origin, () => {
       watching.delete(origin)
-      void pool.close(origin)
+      void pool.close(origin).catch((error: unknown) => { console.error('[children] closing the child processes of an origin failed:', error) })
     })
   }
 
@@ -85,7 +85,7 @@ export function createChildHostRegistry (
       // F2/F5: the app may have just been removed (or never finished
       // registering) while a host it built earlier -- with children still
       // running -- lives on; nothing else notices that on its own.
-      void pool.close(origin)
+      void pool.close(origin).catch((error: unknown) => { console.error('[children] closing the child processes of an origin failed:', error) })
       refuse(event.senderFrame)
       return
     }

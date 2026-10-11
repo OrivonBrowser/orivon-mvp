@@ -201,7 +201,7 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
   // settles at once; it goes through onBookmarksChanged, not pushState, so a
   // window made before the load (a test's) still grows the chrome by a row
   // when the bookmarks land.
-  void bookmarks.load().then(onBookmarksChanged)
+  void bookmarks.load().then(onBookmarksChanged).catch((error: unknown) => { console.error('[shell] loading the bookmarks for a window failed:', error) })
 
   return {
     pushState,

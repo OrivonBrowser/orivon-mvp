@@ -206,7 +206,7 @@ export function registerShellIpc (
         return
       case 'navigate':
         // The address bar's Enter: the page it leads to takes the keyboard, as after a click into it.
-        void navigateFromBrowser(tabs, command.id, command.input)
+        void navigateFromBrowser(tabs, command.id, command.input).catch((error: unknown) => { console.error('[ipc] navigate from browser failed:', error) })
         if (tabs.getState().activeTabId === command.id) tabs.liveWebContents(command.id)?.focus()
         return
       case 'back':
@@ -232,7 +232,7 @@ export function registerShellIpc (
         // instead of silently doing nothing.
         const { activeTabId } = tabs.getState()
         if (activeTabId === null) openFromBrowser(tabs, command.url)
-        else void navigateFromBrowser(tabs, activeTabId, command.url)
+        else void navigateFromBrowser(tabs, activeTabId, command.url).catch((error: unknown) => { console.error('[ipc] navigate from browser failed:', error) })
         return
       }
       case 'siteSummaryFor':

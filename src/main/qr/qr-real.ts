@@ -7,7 +7,7 @@ import { downloadsFolder } from '../downloads/folder-runner.js'
 import { qrOverlayFor } from './qr-overlay.js'
 
 export const qrOverlay = qrOverlayFor({
-  writeClipboard: (text) => { clipboard.writeText(text) },
+  writeClipboard: (text) => { clipboard.writeText(text).catch((error: unknown) => { console.error('[qr] copying to the clipboard failed:', error) }) },
   downloadsDir: downloadsFolder,
   exists: existsSync,
   writeFile: async (path, data) => {

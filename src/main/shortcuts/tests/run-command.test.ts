@@ -45,7 +45,7 @@ function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: bo
   } as unknown as ShellWindow
   const bookmarks = { has: vi.fn(() => false), add: vi.fn(), remove: vi.fn(), children: vi.fn(() => []), findByUrl: vi.fn((): Array<{ id: string, added: number }> => []), addUrl: vi.fn(() => ({ id: 'made', added: 1 })) }
   const zoom = { step: vi.fn(), reset: vi.fn() }
-  const devtools = { toggle: vi.fn(), openConsole: vi.fn() }
+  const devtools = { toggle: vi.fn(async () => {}), openConsole: vi.fn(async () => {}) }
   const profiles = { openPrivate: vi.fn() }
   return { target, zoom, devtools, profiles, calls: { ...calls, close: window.close as never, setFullScreen: window.setFullScreen as never, setAlwaysOnTop: window.setAlwaysOnTop as never }, bookmarks, deps: { services: { bookmarks, zoom, devtools, profiles, closedTabs: new ClosedStack(), kiosk: options.kiosk === true, settings: { get: () => options.homeUrl ?? '', set: vi.fn() } } as unknown as ShellServices, openWindow: vi.fn<() => void>(), displays: () => [], quit: vi.fn<() => void>() }, send }
 }

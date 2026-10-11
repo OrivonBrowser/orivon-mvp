@@ -71,7 +71,7 @@ export class SiteTracker {
     if (!keepKey) this.emit('internal')
     void this.ask(cacheKey, url).then((answer) => {
       if (this.showing === url) this.emit(this.keyFor(url, answer))
-    })
+    }).catch((error: unknown) => { console.error('[telemetry] a site score lookup failed:', error) })
   }
 
   /** Asks again about the page in front when its answer has expired: what the checkpoint tick calls. Keeps counting under the key it has until the new answer comes. */

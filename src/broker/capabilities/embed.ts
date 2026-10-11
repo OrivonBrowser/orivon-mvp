@@ -62,7 +62,7 @@ export function createEmbedCapability ({ handleTable, ledger, canonical, listene
       authorisedBy: { by: 'grant', grantId: current.id },
       destroy: async () => { destroy() }
     })
-    return { release: () => { void handleTable.release(key, entry.id) } }
+    return { release: () => { void handleTable.release(key, entry.id).catch((error: unknown) => { console.error('[broker] releasing an embed handle failed:', error) }) } }
   }
 
   async function setScript (origin: string, opts: { source: string }): Promise<void> {

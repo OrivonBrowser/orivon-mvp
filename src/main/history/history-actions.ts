@@ -34,7 +34,7 @@ function openAll (urls: readonly string[], disposition: Disposition, caller: Int
   const { window: shell, tabId } = found
   switch (disposition) {
     case 'tab':
-      void navigateFromBrowser(shell.tabs, tabId, urls[0] as string)
+      void navigateFromBrowser(shell.tabs, tabId, urls[0] as string).catch((error: unknown) => { console.error('[history] navigate from browser failed:', error) })
       for (const url of urls.slice(1)) openFromBrowser(shell.tabs, url, false)
       return
     case 'newTab':

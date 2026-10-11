@@ -10,7 +10,7 @@ export type BrowserTabs = Pick<TabManager, 'createTab' | 'openLocalFile' | 'open
 
 /** Opens `url` in a new tab, in front unless `active` is false. */
 export function openFromBrowser (tabs: Pick<BrowserTabs, 'createTab' | 'openLocalFile'>, url: string, active = true): void {
-  if (localFileKey(url) !== null) void tabs.openLocalFile(url, active)
+  if (localFileKey(url) !== null) void tabs.openLocalFile(url, active).catch((error: unknown) => { console.error('[shell] open local file failed:', error) })
   else tabs.createTab(url, active)
 }
 
@@ -21,7 +21,7 @@ export function openFromBrowser (tabs: Pick<BrowserTabs, 'createTab' | 'openLoca
 export function openNowFromBrowser (tabs: Pick<BrowserTabs, 'createTab' | 'openLocalFile' | 'openLocalFileNow'>, url: string, active = true): string | undefined {
   if (localFileKey(url) === null) return tabs.createTab(url, active)
   const id = tabs.openLocalFileNow(url, active)
-  if (id === undefined) void tabs.openLocalFile(url, active)
+  if (id === undefined) void tabs.openLocalFile(url, active).catch((error: unknown) => { console.error('[shell] open local file failed:', error) })
   return id
 }
 
