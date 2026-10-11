@@ -1163,17 +1163,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A318: The older popovers close on blur the way the menu did when a resize crashed it **[RESEARCH]**
-
-- **Question:** Shrinking a window so that the open main menu lay wholly outside it killed the main process,
-  because Chromium blurred the view inside the native `setSize` call and the host removed the view re-entrantly.
-  The overlay host now delivers the blur afterwards. Do the permissions and site-info popovers
-  (`src/main/permissions/popover-view.ts`) close on blur in the same call, and can a resize reach them?
-- **Why it matters:** a crash with no log line, from an ordinary window resize.
-- **Options:** probe each popover with a resize to a width that leaves it outside the window (rec.); move both onto the overlay host.
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
-
 ### A319: A kiosk still lets a page open a tab and shows the welcome screen **[AI-REC]**
 
 - **Question:** In a `--orivon-kiosk` window a page's own `window.open` or `target=_blank` opens a tab in front, with
