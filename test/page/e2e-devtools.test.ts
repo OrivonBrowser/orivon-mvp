@@ -220,8 +220,10 @@ for (const [dock, side, shrinks] of [['right', 'right', 0], ['bottom', 'bottom',
       const before = (await dockedAt(app, address)).size.split('x').map(Number)
       await pressKey(app, address, 'F12')
       expect(await waitFor(async () => (await dockedAt(app, address)).side === side, 8_000)).toBe(true)
-      const after = (await dockedAt(app, address)).size.split('x').map(Number)
-      expect(after[shrinks], `the page gives the tools room: ${String(before)} -> ${String(after)}`).toBeLessThan(before[shrinks] as number)
+      // The front end names its side before the page is laid out at its new size: wait for the page to give room.
+      let after = before
+      const roomy = await waitFor(async () => { after = (await dockedAt(app, address)).size.split('x').map(Number); return (after[shrinks] as number) < (before[shrinks] as number) }, 8_000)
+      expect(roomy, `the page gives the tools room: ${String(before)} -> ${String(after)}`).toBe(true)
       expect(after[1 - shrinks]).toBe(before[1 - shrinks])
     } finally {
       await closeElectron(app)
