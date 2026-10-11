@@ -110,12 +110,12 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       windowOf: (contents) => services.windows.findTab(contents)?.window,
       open: (window, id, disposition) => openBookmark({ window, services }, id, disposition),
       openAll: (window, id) => openAll({ window, services }, id),
-      copyText: (text) => { clipboard.writeText(text).catch((error: unknown) => { console.error('[pages] copying to the clipboard failed:', error) }) },
+      copyText: (text) => { clipboard.writeText(text) },
       importAvailable: () => commandById('import.open')?.pending !== true,
       runImport: (window) => { services.commands.run('import.open', window) },
       exportFile: exportBookmarksToFile
     }),
-    history: historyDomain(services.history, { windows: services.windows, commands: services.commands, closedTabs: services.closedTabs, copyText: (text) => { clipboard.writeText(text).catch((error: unknown) => { console.error('[pages] copying to the clipboard failed:', error) }) } }),
+    history: historyDomain(services.history, { windows: services.windows, commands: services.commands, closedTabs: services.closedTabs, copyText: (text) => { clipboard.writeText(text) } }),
     import: importDomain(importHost(services, (phase) => { services.internalPages.publish('import.progress', phase, ['import']) })),
     downloads: downloadsDomain(services.downloads, downloadsHost(services)),
     info: infoDomain({

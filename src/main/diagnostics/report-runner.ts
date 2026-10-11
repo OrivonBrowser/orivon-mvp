@@ -118,7 +118,7 @@ export function reportDomainFor (services: ShellServices, ctx: SubsystemContext)
     post,
     base,
     now: Date.now,
-    copy: (text) => { clipboard.writeText(text).catch((error: unknown) => { console.error('[diagnostics] copying to the clipboard failed:', error) }) },
+    copy: (text) => { clipboard.writeText(text) },
     openNotice: (page) => { services.windows.findOwner(page)?.tabs.openInternal('settings', '/privacy') },
     runTest: (kind, page) => { runTest(services, kind, page) }
   })

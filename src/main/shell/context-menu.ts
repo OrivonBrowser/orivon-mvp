@@ -103,7 +103,7 @@ export function showContextMenu (wc: WebContents, params: ContextMenuParams, hos
     undo: onTab(() => { wc.undo() }),
     redo: onTab(() => { wc.redo() }),
     pasteAndMatchStyle: onTab(() => { wc.pasteAndMatchStyle() }),
-    copyText: (text) => { clipboard.writeText(text).catch((error: unknown) => { console.error('[shell] copying to the clipboard failed:', error) }) },
+    copyText: (text) => { clipboard.writeText(text) },
     ...(kiosk ? {} : { openInNewTab: host.openInNewTab }),
     ...(kiosk || host.openLocalFile === undefined ? {} : { openLocalFile: host.openLocalFile }),
     ...(openInSplit === undefined ? {} : { openInSplit }),

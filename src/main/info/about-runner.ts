@@ -45,5 +45,5 @@ export async function readGpu (): Promise<GpuReading> {
 }
 
 export function copyToClipboard (text: string): void {
-  clipboard.writeText(text).catch((error: unknown) => { console.error('[info] copying to the clipboard failed:', error) })
+  clipboard.writeText(text)
 }

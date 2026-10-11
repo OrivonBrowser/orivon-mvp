@@ -5,5 +5,5 @@ import { certificates } from './note-certificate.js'
 
 export const certificateOverlay = certificateOverlayFor({
   cache: certificates,
-  writeClipboard: (text) => { clipboard.writeText(text).catch((error: unknown) => { console.error('[auth] copying to the clipboard failed:', error) }) }
+  writeClipboard: (text) => { clipboard.writeText(text) }
 })

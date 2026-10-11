@@ -4,7 +4,7 @@ const popups: Array<{ template: Array<{ label?: string, click?: () => void }>, o
 const copied: string[] = []
 vi.mock('electron', () => ({
   Menu: { buildFromTemplate: (template: never) => ({ popup: (options: unknown) => { popups.push({ template, options }) } }) },
-  clipboard: { writeText: async (text: string) => { copied.push(text) } }
+  clipboard: { writeText: (text: string) => { copied.push(text) } }
 }))
 
 const { CHROME_ACTIONS, runChromeAction } = await import('../../chrome-actions.js')

@@ -5,7 +5,8 @@
  * `void p`, a bare `p`, and `p.then(cb)` with no rejection handler are each a latent crash for a
  * user. A promise is handled when it is awaited, returned, stored, or ends in `.catch(...)` or
  * `.then(a, b)`; `.finally(f)` hands the question to what it is chained on. Electron's
- * `loadURL`/`loadFile` attach their own no-op catch and are allowed.
+ * `loadURL`/`loadFile` attach their own no-op catch, and its main-process clipboard writes return
+ * nothing whatever their typings say: both are allowed.
  *
  * SCOPE: the files the main entries (src/main/start.ts, src/main/index.ts) import, followed
  * through relative imports, tests excluded. The renderer and the preload are never reached, and a
@@ -39,8 +40,12 @@ export const PROJECTS = [
 const NOT_SOURCE = /(^|\/)tests?\/|\.test\.[cm]?[jt]sx?$|\.d\.ts$/
 const IMPORT = /(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*|\bimport\s+)(['"])(\.{1,2}\/[^'"]*)\1/g
 const OPT_OUT = /orivon:floating-ok\s+--\s+\S/
-/** A method Electron's WebContents ships with its own rejection handler. */
-const SELF_HANDLED = new Set(['loadURL', 'loadFile'])
+/**
+ * Electron methods allowed to float. `loadURL`/`loadFile`: WebContents attaches its own no-op catch. `writeText`/`write`:
+ * Electron 44 types the clipboard's as promises, but in the main process they return nothing, so there is no rejection
+ * to handle, and a `.catch` on the result throws.
+ */
+const SELF_HANDLED = new Set(['loadURL', 'loadFile', 'writeText', 'write'])
 
 /** `file` as the program names it, or undefined: `./x.js` is `x.ts`, a folder is its index. */
 function resolveImport (fromFile, specifier, known) {

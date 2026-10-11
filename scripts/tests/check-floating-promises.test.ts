@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { checkFloatingPromises, reachableFiles } from '../check-floating-promises.mjs'
 
-const MAIN = `import type { WebContents } from 'electron'
+const MAIN = `import type { Clipboard, WebContents } from 'electron'
 import { later } from './sibling.js'
 
 declare function work (): Promise<number>
@@ -17,6 +17,7 @@ declare function handle (error: unknown): void
 declare const maybe: Promise<number> | undefined
 declare const anything: any
 declare const wc: WebContents
+declare const clipboard: Clipboard
 declare const flag: boolean
 
 export async function cases (): Promise<number> {
@@ -45,6 +46,7 @@ export async function cases (): Promise<number> {
   work().catch(handle).finally(() => {})
   void wc.loadURL('https://example.com')
   wc.loadFile('index.html')
+  clipboard.writeText('copied')
   plain()
   void plain()
   anything.run()
@@ -62,7 +64,7 @@ function project (files: Record<string, string>): string {
       include: ['src/**/*.ts']
     }),
     'node_modules/electron/package.json': JSON.stringify({ name: 'electron', types: 'index.d.ts' }),
-    'node_modules/electron/index.d.ts': 'export interface WebContents { loadURL (url: string): Promise<void>; loadFile (path: string): Promise<void> }\n',
+    'node_modules/electron/index.d.ts': 'export interface WebContents { loadURL (url: string): Promise<void>; loadFile (path: string): Promise<void> }\nexport interface Clipboard { writeText (text: string): Promise<void> }\n',
     ...files
   }
   for (const [name, body] of Object.entries(all)) {
@@ -90,7 +92,7 @@ describe('what it reports', () => {
     expect(result.findings.filter((f) => f.file === 'src/main/index.ts').map((f) => f.line)).toEqual(lines(MAIN, 'FLAG'))
     expect(result.findings.filter((f) => f.file === 'src/main/sibling.ts').map((f) => f.line)).toEqual([3])
     expect(result.findings.map((f) => f.file)).toEqual(expect.not.arrayContaining(['src/renderer/page.ts', 'src/main/tests/x.test.ts']))
-    expect(result.findings[0]).toMatchObject({ file: 'src/main/index.ts', line: 13, text: 'void work()' })
+    expect(result.findings[0]).toMatchObject({ file: 'src/main/index.ts', line: lines(MAIN, 'FLAG')[0], text: 'void work()' })
   }, 60_000)
 
   it('passes a project with nothing floated', async () => {
