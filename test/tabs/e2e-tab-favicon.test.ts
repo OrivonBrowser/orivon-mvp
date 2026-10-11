@@ -50,6 +50,11 @@ async function launched (): Promise<{ app: ElectronApplication, chrome: Page }> 
 }
 
 const hasIcon = async (chrome: Page): Promise<boolean> => await chrome.evaluate(() => document.querySelector('.tab.active .fav img')?.getAttribute('src')?.startsWith('data:') === true)
+/** The tab in front has stopped loading and is titled `title`. */
+const settledOn = async (chrome: Page, title: string): Promise<boolean> => await chrome.evaluate((wanted) => {
+  const tab = document.querySelector('.tab.active')
+  return tab !== null && tab.querySelector('.fav.loading') === null && tab.textContent?.includes(wanted) === true
+}, title)
 
 /** Loads `url` in the tab showing `from`, as a page's own navigation does. */
 async function navigate (app: ElectronApplication, from: string, url: string): Promise<void> {
@@ -111,8 +116,11 @@ it('shows the icon again on returning to the page after one that failed to load'
   try {
     await openIconTab(app, chrome)
 
+    // Read once the failure has settled: the spinner hides any icon while the load runs, and a name that resolves to
+    // nothing fails between two polls.
     await navigate(app, `${origin}/icon`, 'http://does-not-exist.invalid/')
-    expect(await waitFor(async () => !(await hasIcon(chrome)))).toBe(true)
+    expect(await waitFor(async () => await settledOn(chrome, 'does-not-exist.invalid')), 'the tab settles on the failed address').toBe(true)
+    expect(await hasIcon(chrome), 'a page that failed to load does not wear the icon of the page before it').toBe(false)
 
     await clickAddressBarRetrying(chrome, `${origin}/icon`)
     expect((await waitForTab(chrome, { address: `${origin}/icon` })).ok).toBe(true)
