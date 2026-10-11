@@ -1,4 +1,4 @@
-// Ctrl+F in a registered app's tab: the key reaches the app first. An app that handles it keeps it, and the
+// Mod+F in a registered app's tab: the key reaches the app first. An app that handles it keeps it, and the
 // browser's find bar stays shut; an app that does not leaves the press unhandled, and the bar opens.
 //
 // The fixture origin is registered through the developer-only grant hook before navigating, as
@@ -9,7 +9,7 @@
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import type { ElectronApplication } from 'playwright'
 import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
-import { pressKey, waitForKeyboardAt } from '../support/e2e-helpers.js'
+import { pressKey, waitForKeyboardAt, pressCommand } from '../support/e2e-helpers.js'
 import { launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
 import type { DevGrantRequest } from '../../src/main/dev/dev-grant.js'
@@ -19,15 +19,15 @@ import { delay, evaluateRetrying, popoverShown, waitFor } from '../support/smoke
 /** An external script, never inline: a registered app's own policy admits none. */
 const HANDLER = `window.__seen = 0
 document.addEventListener('keydown', (event) => {
-  if (event.key.toLowerCase() === 'f' && event.ctrlKey) { window.__seen += 1; event.preventDefault() }
+  if (event.key.toLowerCase() === 'f' && (event.ctrlKey || event.metaKey)) { window.__seen += 1; event.preventDefault() }
 })`
 const OBSERVER = `window.__seen = 0
-document.addEventListener('keydown', (event) => { if (event.key.toLowerCase() === 'f' && event.ctrlKey) window.__seen += 1 })`
+document.addEventListener('keydown', (event) => { if (event.key.toLowerCase() === 'f' && (event.ctrlKey || event.metaKey)) window.__seen += 1 })`
 
 /** Stops the press from bubbling to `window` without handling it: a page that did nothing with the key. */
 const STOPPER = `window.__seen = 0
 document.addEventListener('keydown', (event) => {
-  if (event.key.toLowerCase() === 'f' && event.ctrlKey) { window.__seen += 1; event.stopPropagation() }
+  if (event.key.toLowerCase() === 'f' && (event.ctrlKey || event.metaKey)) { window.__seen += 1; event.stopPropagation() }
 })`
 
 let server: FixtureServer
@@ -73,13 +73,13 @@ async function register (app: ElectronApplication, origin: string): Promise<bool
 
 const findShown = async (app: ElectronApplication): Promise<boolean> => await popoverShown(app, 'overlay=find')
 
-it('opens the browser find bar for a Ctrl+F the app did not use, and leaves one the app handled alone', async () => {
+it('opens the browser find bar for a Mod+F the app did not use, and leaves one the app handled alone', async () => {
   const { app, chrome } = await launchShell()
   try {
     expect(await register(app, server.origin)).toBe(true)
 
     const plain = await visit(app, chrome, `${server.origin}/`)
-    await pressKey(app, `${server.origin}/`, 'F', ['control'])
+    await pressCommand(app, `${server.origin}/`, 'find.open')
     // The page saw the key, so the browser did not take it.
     expect(await waitFor(async () => (await evaluateRetrying(plain, () => (window as unknown as { __seen: number }).__seen)) === 1)).toBe(true)
     expect(await waitFor(async () => await findShown(app))).toBe(true)
@@ -88,7 +88,7 @@ it('opens the browser find bar for a Ctrl+F the app did not use, and leaves one 
     expect(await waitFor(async () => !(await findShown(app)))).toBe(true)
 
     const handled = await visit(app, chrome, `${server.origin}/handled`)
-    await pressKey(app, `${server.origin}/handled`, 'F', ['control'])
+    await pressCommand(app, `${server.origin}/handled`, 'find.open')
     expect(await waitFor(async () => (await evaluateRetrying(handled, () => (window as unknown as { __seen: number }).__seen)) === 1)).toBe(true)
     // An absence cannot be polled for: settle past the preload's own hand-off, then read once.
     await delay(1000)
@@ -103,7 +103,7 @@ it('opens the browser find bar when the app stops the press from bubbling but do
   try {
     expect(await register(app, server.origin)).toBe(true)
     const stopped = await visit(app, chrome, `${server.origin}/stopped`)
-    await pressKey(app, `${server.origin}/stopped`, 'F', ['control'])
+    await pressCommand(app, `${server.origin}/stopped`, 'find.open')
     expect(await waitFor(async () => (await evaluateRetrying(stopped, () => (window as unknown as { __seen: number }).__seen)) === 1)).toBe(true)
     expect(await waitFor(async () => await findShown(app))).toBe(true)
   } finally {

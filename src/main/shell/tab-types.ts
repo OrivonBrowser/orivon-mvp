@@ -126,6 +126,10 @@ export interface ShellState extends TabsSnapshot {
   homeButton: boolean
   /** Whether the address bar shows the literal address when it is not being edited (`addressBar.showFullUrl`). */
   showFullUrl: boolean
+  /** Which list an address-bar search goes to (`search.mode`), and the name of each list's engine, so the control can say what a switch does; the Web2 name is empty for an address of the person's own that is none of the engines. */
+  searchMode: 'web3' | 'web2'
+  searchWeb3Name: string
+  searchWeb2Name: string
   /** The key caps bound to the commands the chrome names in a tooltip, or null when one is cleared. */
   shortcutKeys: { readonly 'nav.home': readonly string[] | null, readonly 'page.reader': readonly string[] | null, readonly 'sidePanel.toggle': readonly string[] | null, readonly 'tab.search': readonly string[] | null }
   /** What the active tab's sign-in form can use, for the address bar's password button (src/main/passwords/). */
@@ -140,6 +144,8 @@ export interface ShellState extends TabsSnapshot {
   uiScale?: number
   /** What pointing at a tab shows. Absent reads as the preview. */
   hoverCard?: 'off' | 'text' | 'preview'
+  /** Whether the window fills the screen (not a page's own HTML fullscreen). Absent reads as false. */
+  fullScreen?: boolean
 }
 
 export interface Bounds {

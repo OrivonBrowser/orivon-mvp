@@ -12,7 +12,8 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput, profileDirOf } from '../support/launch-electron.mjs'
-import { pressKey } from '../support/e2e-helpers.js'
+import type { CommandId } from '../../src/main/shortcuts/commands.js'
+import { pressCommand } from '../support/e2e-helpers.js'
 import { ALL_TABS, closing, EDIT, overlayOpen, overlayPage } from '../support/bookmark-bubble-helpers.js'
 import { delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
@@ -70,7 +71,7 @@ async function visit (chrome: Page, name: string): Promise<void> {
 }
 
 /** A key on the tab in front, through the browser process as a keyboard sends it. */
-const key = async (app: App, name: string, code: string, modifiers: string[]): Promise<void> => { await pressKey(app, pageUrl(name), code, modifiers) }
+const press = async (app: App, name: string, command: CommandId): Promise<void> => { await pressCommand(app, pageUrl(name), command) }
 
 const barTitles = async (chrome: Page): Promise<string[]> => await evaluateRetrying(chrome, () =>
   Array.from(document.querySelectorAll<HTMLElement>('#bookmarks-list .bmitem')).filter((el) => !el.hidden).map((el) => el.getAttribute('aria-label') ?? ''))
@@ -140,7 +141,7 @@ it('saves a page from the star and Mod+D, edits its name and folder as they chan
     expect(await fileWhere(app, (roots) => roots.bar.filter((node) => node.url !== undefined).length === 1)).toBe(true)
 
     // Mod+D on the saved page opens "Edit bookmark" and changes nothing; a new name and Enter renames it.
-    await key(app, 'a', 'D', ['control'])
+    await press(app, 'a', 'bookmark.toggle')
     bubble = await overlayPage(app)
     expect(await bubble.locator('.sheet-title').innerText()).toBe('Edit bookmark')
     expect((await fileOf(app)).bar.filter((node) => node.url !== undefined)).toHaveLength(1)
@@ -151,7 +152,7 @@ it('saves a page from the star and Mod+D, edits its name and folder as they chan
     expect(await fileWhere(app, (roots) => roots.bar.some((node) => node.title === 'Renamed'))).toBe(true)
 
     // The folder select: a keyboard choice is saved at once, and moves the item out of the bar's top level.
-    await key(app, 'a', 'D', ['control'])
+    await press(app, 'a', 'bookmark.toggle')
     bubble = await overlayPage(app)
     await shoot(app, 'edit', chrome, bubble)
     await bubble.selectOption('select[aria-label="Folder"]', WORK)
@@ -164,7 +165,7 @@ it('saves a page from the star and Mod+D, edits its name and folder as they chan
     expect(await fileWhere(app, (roots) => work(roots)?.children?.length === 0)).toBe(true)
 
     // Saved again, it goes to the folder used last (Work), and the bubble can make a folder.
-    await key(app, 'a', 'D', ['control'])
+    await press(app, 'a', 'bookmark.toggle')
     bubble = await overlayPage(app)
     expect(await bubble.locator('.sheet-title').innerText()).toBe('Bookmark added')
     expect(await bubble.locator('select[aria-label="Folder"]').inputValue()).toBe(WORK)
@@ -188,7 +189,7 @@ it('keeps what was typed when the bubble is dismissed, and leaves the bookmark w
   const { app, chrome } = await launched()
   try {
     await visit(chrome, 'a')
-    await key(app, 'a', 'D', ['control'])
+    await press(app, 'a', 'bookmark.toggle')
     const bubble = await overlayPage(app)
     await bubble.fill('input[aria-label="Name"]', 'Typed then dismissed')
     await closing(async () => await bubble.keyboard.press('Escape'))
@@ -197,7 +198,7 @@ it('keeps what was typed when the bubble is dismissed, and leaves the bookmark w
     expect((await waitForTab(chrome, { bookmarked: true })).ok).toBe(true)
 
     // Clicking away does the same.
-    await key(app, 'a', 'D', ['control'])
+    await press(app, 'a', 'bookmark.toggle')
     const again = await overlayPage(app)
     await again.fill('input[aria-label="Name"]', 'Typed then clicked away')
     // Focus moving to the page is what clicking away is to the overlay: it blurs, and the host closes it.
@@ -213,7 +214,7 @@ it('picks a folder with the mouse without the bubble closing under the select', 
   const { app, chrome } = await launched()
   try {
     await visit(chrome, 'a')
-    await key(app, 'a', 'D', ['control'])
+    await press(app, 'a', 'bookmark.toggle')
     const bubble = await overlayPage(app)
     await bubble.click('select[aria-label="Folder"]')
     await delay(800)
@@ -234,7 +235,7 @@ it('bookmarks all tabs into a dated folder in strip order, skipping the new-tab 
     expect(await waitFor(async () => (await tabIds(chrome)).length > 0)).toBe(true)
     const first = (await tabIds(chrome))[0] as string
     expect(first).toBeDefined()
-    await pressKey(app, '/newtab/', 'D', ['control', 'shift'])
+    await pressCommand(app, '/newtab/', 'bookmark.allTabs')
     await delay(600)
     expect(await overlayOpen(app, ALL_TABS)).toBe(false)
 
@@ -243,7 +244,7 @@ it('bookmarks all tabs into a dated folder in strip order, skipping the new-tab 
     expect((await tabIds(chrome)).length).toBe(3)
     const name = await app.evaluate(() => `Tabs from ${new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })}`)
 
-    await key(app, 'b', 'D', ['control', 'shift'])
+    await press(app, 'b', 'bookmark.allTabs')
     let sheet = await overlayPage(app, ALL_TABS)
     expect(await sheet.locator('.sheet-title').innerText()).toBe('Bookmark all tabs')
     expect(await sheet.locator('.bme-count').innerText()).toBe('2 tabs in this window')
@@ -257,7 +258,7 @@ it('bookmarks all tabs into a dated folder in strip order, skipping the new-tab 
     await delay(800)
     expect((await fileOf(app)).bar.map((node) => node.title)).toEqual(['Work'])
 
-    await key(app, 'b', 'D', ['control', 'shift'])
+    await press(app, 'b', 'bookmark.allTabs')
     sheet = await overlayPage(app, ALL_TABS)
     await closing(async () => await sheet.keyboard.press('Enter'))
     expect(await fileWhere(app, (roots) => roots.bar.some((node) => node.title === name))).toBe(true)

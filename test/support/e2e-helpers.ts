@@ -20,6 +20,11 @@ import { evaluateRetrying, findChrome, findViewShowing, waitFor, waitForChromeRe
 // Re-exported for a window a spec opens after launch: launchElectron has already waited for the first one.
 export { waitForChromeReady }
 import { BUILTIN_ADDRESSES } from '../../src/protocols/builtin.js'
+import type { CommandId } from '../../src/main/shortcuts/commands.js'
+import { bindingOf, keyCodeOf, modifiersOf } from './key-bindings.js'
+
+// What a spec needs to name a shortcut the way this platform binds and shows it.
+export { bindingOf, keyCapsOf, shownBinding } from './key-bindings.js'
 /** Ceiling for waitForAddressBarStable below. Named so the budget
  * arithmetic beneath it can reuse the real number instead of retyping
  * `8_000` in two places that could quietly drift apart. */
@@ -376,6 +381,18 @@ export async function pressKey (app: ElectronApplication, urlPart: string, keyCo
     const events = [{ type: 'keyDown' }, { type: 'keyUp' }] as const
     for (const { type } of events) target.sendInputEvent({ type, keyCode: code as string, modifiers: mods as Array<'control'> })
   }, [urlPart, keyCode, modifiers] as const)
+}
+
+/** Presses a binding written the way the product writes it (`Mod+Shift+O`) as this platform reads it: `Mod` is
+ * Command on macOS and Control elsewhere, and a literal `Ctrl+Tab` stays Control on both. */
+export async function pressBinding (app: ElectronApplication, urlPart: string, binding: string): Promise<void> {
+  await pressKey(app, urlPart, keyCodeOf(binding), modifiersOf(binding))
+}
+
+/** Presses the binding a command has on this platform (`macDefault ?? default`), so a spec asks for
+ * "the bookmark manager's key" without restating it. */
+export async function pressCommand (app: ElectronApplication, urlPart: string, id: CommandId): Promise<void> {
+  await pressBinding(app, urlPart, bindingOf(id))
 }
 
 /** Waits until the view at `urlPart` has finished loading its page and holds the keyboard: where a person's key goes.

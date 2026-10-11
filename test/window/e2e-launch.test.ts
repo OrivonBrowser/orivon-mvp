@@ -7,13 +7,13 @@ import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
-import { clickAddressBarRetrying, pressKey } from '../support/e2e-helpers.js'
+import { clickAddressBarRetrying, pressCommand } from '../support/e2e-helpers.js'
 import { privatePeer } from './private-peer.js'
 import type { PrivatePeer } from './private-peer.js'
 import { ABSENCE_SETTLE_MS, bookmarkUrls, delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
@@ -54,8 +54,9 @@ function seedProfile (home: string): void {
   writeFileSync(join(home, 'profiles', PROFILE, 'profile.json'), JSON.stringify({ version: 1, name: 'Work', color: 'green', created: 1 }))
 }
 
-/** Whether a browser holds the single-instance lock on this directory: Chromium keeps it as a link named SingletonLock, which dangles, so only a listing sees it. */
+/** Whether a browser holds the single-instance lock on this directory: Chromium keeps it as a link named SingletonLock, which dangles, so only a listing sees it. Windows holds the lock as a named mutex and leaves no file, so a listing proves nothing there. */
 const lockHeld = (dir: string): boolean => readdirSync(dir).includes('SingletonLock')
+const lockIsAFile = process.platform !== 'win32'
 const windowCount = async (app: ElectronApplication): Promise<number> => await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows().length)
 const userDataOf = async (app: ElectronApplication): Promise<string> => await app.evaluate(({ app: electron }) => electron.getPath('userData'))
 
@@ -78,11 +79,12 @@ it('keeps a profile\'s data in a directory of its own, apart from the default pr
   const { app, chrome } = await launched([`--orivon-profile=${PROFILE}`], (dir) => { home = dir; seedProfile(dir) })
   try {
     const dir = await userDataOf(app)
-    expect(dir).toBe(join(home, 'profiles', PROFILE))
+    // macOS reports its temp folder through a /private symlink.
+    expect(realpathSync(dir)).toBe(realpathSync(join(home, 'profiles', PROFILE)))
 
     await clickAddressBarRetrying(chrome, `${origin}/mine`)
     expect((await waitForTab(chrome, { address: `${origin}/mine` })).ok).toBe(true)
-    await pressKey(app, `${origin}/mine`, 'D', ['control'])
+    await pressCommand(app, `${origin}/mine`, 'bookmark.toggle')
     expect(await waitFor(async () => (await bookmarkUrls(chrome)).length === 1)).toBe(true)
 
     expect(await waitFor(() => existsSync(join(dir, 'bookmarks.json')))).toBe(true)
@@ -125,7 +127,8 @@ it('hands a second start of a running profile over to it, with the address it wa
     expect(await waitFor(async () => (await tabIds(chrome)).length === 1)).toBe(true)
     const before = 1
 
-    expect(lockHeld(dir)).toBe(true)
+    // The hand-off below is the proof of the lock on Windows: the second start exits 0 and the running browser opens the tab.
+    if (lockIsAFile) expect(lockHeld(dir)).toBe(true)
     const { code } = await runToExit([`${origin}/from-elsewhere`], dir)
 
     expect(code).toBe(0)
@@ -225,12 +228,17 @@ it('runs as a private session when --new-private-window starts a browser that is
     expect(dir.startsWith(join(tmpdir(), 'orivon-private-'))).toBe(true)
     expect(await waitFor(() => app.windows().some((w) => w.url().startsWith('orivon://private')))).toBe(true)
     // The profile was not claimed: its lock is free, so a start of it runs as a browser of its own instead of handing over to this process.
-    expect(lockHeld(home)).toBe(false)
+    if (lockIsAFile) expect(lockHeld(home)).toBe(false)
     expect(existsSync(join(home, '.orivon-running'))).toBe(false)
     expect(mainOutput(app)).not.toContain('uncaught exception')
     // Ending the session ends the process, so the call may never answer.
     await app.evaluate(({ app: electron }) => { electron.quit() }).catch(() => {})
-    expect(await waitFor(() => !existsSync(dir), 15_000)).toBe(true)
+    if (process.platform === 'win32') {
+      // Windows removes nothing at exit: the directory stays, marked, for the sweep at the next start (src/main/launch/README.md).
+      expect(existsSync(join(dir, '.orivon-private.json'))).toBe(true)
+    } else {
+      expect(await waitFor(() => !existsSync(dir), 15_000)).toBe(true)
+    }
   } finally {
     await closeElectron(app)
     if (dir !== '') rmSync(dir, { recursive: true, force: true })

@@ -3,6 +3,7 @@
 // fuse reads none of the cookies an encrypting one wrote, and every site the profile was signed in to is signed out. Two launches on one profile: the first stores a persistent cookie, the
 // second reads it back; between them the row is on disk and its value is not. Run `npm run install:electron` when
 // this fails on a checkout whose binary was never flipped.
+import { existsSync } from 'node:fs'
 import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { getCurrentFuseWire, FuseV1Options } from '@electron/fuses'
@@ -38,7 +39,10 @@ it('stores cookies encrypted, as a package does, and reads them back after a res
     live = undefined
     await closeElectron(first.app, { keepProfile: true })
 
-    const stored = await readFile(join(profile, 'Cookies'))
+    // Chromium keeps the store in the profile's Network folder on Windows, at the top of the profile elsewhere.
+    const store = [join(profile, 'Network', 'Cookies'), join(profile, 'Cookies')].find((path) => existsSync(path))
+    if (store === undefined) throw new Error(`no cookie store in ${profile}`)
+    const stored = await readFile(store)
     expect(stored.includes(COOKIE.name), 'the cookie row is on disk').toBe(true)
     expect(stored.includes(COOKIE.value), 'the cookie value is stored in the clear').toBe(false)
 

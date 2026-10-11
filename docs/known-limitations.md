@@ -11,10 +11,13 @@ boundary of Orivon today, written down so you meet it here rather than in use. N
 - **No automatic port forwarding.** There is no UPnP, so behind NAT an app listening for peers is
   reachable only through a port you forward yourself.
 - **No local peer discovery.** The manifest grammar has no multicast bind.
-- **Text typed in the address bar that is not an address goes to a search engine.** DuckDuckGo by
-  default; Settings > Search offers a short list or your own address. Suggestions from the engine
-  as you type are off by default; switched on, each pause in typing sends the text, and a private
-  window never sends it.
+- **Text typed in the address bar that is not an address is searched on the Web3 or on the Web2.**
+  The address bar's Web3 / Web2 button switches between them, and Settings > Search picks each
+  engine. The Web3 search opens Explore (`explore.orivonstack.eth`) with the text after a `#` in
+  its address, which a browser never sends to a server. The Web2 search goes to an engine on the
+  web: DuckDuckGo by default, a short list or your own address in Settings. Suggestions from the
+  Web2 engine as you type are off by default; switched on, each pause in typing sends the text,
+  and a private window never sends it. The Web3 search gives no suggestions.
 - **Spell-check dictionaries are downloaded from Chromium's dictionary host.** The download happens
   once per language, the first time that language is used while spell checking is on (Settings,
   on by default). The request names a language and nothing else.

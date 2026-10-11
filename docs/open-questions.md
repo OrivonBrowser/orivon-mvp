@@ -65,8 +65,8 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 ### A34: The tab strip's native-controls inset is an unmeasured guess **[RESEARCH]**
 
-- **Question:** Do the fixed insets (138px right on Windows/Linux, 78px left on macOS) match the
-  real native window controls on every platform?
+- **Question:** Does the fixed 138px right inset on Windows and Linux match the real native window
+  controls there? macOS is measured: its buttons span x 20-79, and the strip starts at 88px.
 - **Why it matters:** `env(titlebar-area-*)` and `windowControlsOverlay` report nothing for a
   `BaseWindow` + `WebContentsView` shell; verified only on Linux/X11. A miss is cosmetic.
 - **Options:** keep the generous fixed insets (rec.); check on real Windows and macOS hardware;
@@ -1087,7 +1087,8 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 
 ### A303: `chrome.tabs.query` still answers a `chrome-extension://<id>//sandbox.html` request **[AI-REC]**
 
-- **Question:** A doubled-slash spelling of a sandbox page gets the sandbox CSP, an opaque origin and no
+- **Question:** A doubled-slash spelling of a sandbox page (and, on Windows and macOS, a differently-cased one such
+  as `SANDBOX.html`) gets the sandbox CSP, an opaque origin and no
   injected `chrome.*` from the vendored library, yet `chrome.tabs.query({})` still returns real tab data there
   (measured through `WebFrameMain.executeJavaScript`, `test/extensions/e2e-extensions-sandbox-page.test.ts`). What answers?
 - **Why it matters:** code in a sandbox page reached by that spelling can still read the person's open tabs.
@@ -1538,19 +1539,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** a manual share on Windows, macOS and a KDE Wayland desktop before release (rec.); a headless portal backend that accepts by itself (none installed here).
 - **Who decides:** research first
 - **Blocks:** nothing
-
-### A394: Can the file-protocol fuse flip run on macOS and Windows? **[RESEARCH]**
-
-- **Question:** `scripts/install-electron.mjs` flips the fuse on Linux only and refuses elsewhere. On macOS the
-  fuse sits in a signed framework (a flip needs an ad hoc re-sign that keeps the bundle valid); Windows refuses a
-  rename over a running `.exe`. Neither is run, and the packaged Linux build was launched once under a headless
-  display, not on a person's machine.
-- **Why it matters:** a refused flip leaves local files closed, which is safe, but a person on macOS or Windows
-  who runs from source never gets them.
-- **Options:** run `npm install` and a package on each system and read the fuse byte (rec.); flip a copy and swap
-  it in on the next start.
-- **Who decides:** research first
-- **Blocks:** local files on macOS and Windows
 
 ### A396: `localStorage` throws on a local page **[RESEARCH]**
 

@@ -17,7 +17,7 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, profileDirOf } from '../support/launch-electron.mjs'
 import { delay, findChrome, HERMETIC_RESOLVER, tabIds, waitFor } from '../support/smoke-helpers.mjs'
-import { navigateToFixture, pressKey } from '../support/e2e-helpers.js'
+import { keyCapsOf, navigateToFixture, pressBinding, pressCommand, pressKey } from '../support/e2e-helpers.js'
 import { openExtensionPage, rpc, seedFixture, waitRecovered } from './extensions-e2e-helpers.js'
 
 const TEST_TIMEOUT_MS = 180_000
@@ -118,13 +118,18 @@ async function openShortcutsPage (app: ElectronApplication, chrome: Page): Promi
   return page
 }
 
+// An extension's `Ctrl` is the command key on macOS, as in Chrome (src/main/extensions/extension-commands.ts), and
+// chrome.commands reports it as `Command` there. The bindings below are written as Orivon writes them, with `Mod`.
+const CTRL = process.platform === 'darwin' ? 'Command' : 'Ctrl'
+const MARK_RECORDED = 'Mod+Shift+U'
+
 const rowFor = (page: Page, text: string): ReturnType<Page['locator']> => page.locator('.sc-row', { hasText: text })
 const capsOf = async (row: ReturnType<Page['locator']>): Promise<string[]> => await row.locator('.sc-control kbd').allTextContents()
 
-async function record (app: ElectronApplication, page: Page, text: string, key: string, modifiers: string[]): Promise<void> {
+async function record (app: ElectronApplication, page: Page, text: string, binding: string): Promise<void> {
   await rowFor(page, text).locator('.sc-change').click()
   await page.waitForSelector('.sc-field')
-  await pressKey(app, 'orivon://extensions', key, modifiers)
+  await pressBinding(app, 'orivon://extensions', binding)
 }
 
 it('binds suggested keys, runs them through the dispatcher, and lets the shortcuts page change, move and clear them', async () => {
@@ -141,7 +146,7 @@ it('binds suggested keys, runs them through the dispatcher, and lets the shortcu
 
     // getAll reports what is bound: the free suggestions, and nothing where Orivon holds the key.
     expect(await shortcutOf(app, rpcWc, 'mark')).toBe('Alt+Shift+K')
-    expect(await shortcutOf(app, rpcWc, '_execute_action')).toBe('Ctrl+Shift+Y')
+    expect(await shortcutOf(app, rpcWc, '_execute_action')).toBe(`${CTRL}+Shift+Y`)
     expect(await shortcutOf(app, rpcWc, 'clash')).toBe('')
 
     // A named command reaches the worker with the active tab; Orivon's key is still Orivon's.
@@ -152,7 +157,7 @@ it('binds suggested keys, runs them through the dispatcher, and lets the shortcu
     expect((await commandLog(app, rpcWc))[0]).toEqual({ name: 'mark', tabId: tabWc, hasUrl: false })
 
     // _execute_action opens the popup.
-    await pressKey(app, fixtureUrl, 'Y', ['control', 'shift'])
+    await pressBinding(app, fixtureUrl, 'Mod+Shift+Y')
     const popupOpen = (): Page | undefined => app.windows().find((w) => w.url().startsWith(`chrome-extension://${ids.first}/popup.html`))
     expect(await waitFor(() => popupOpen() !== undefined)).toBe(true)
     // Keys work while the popup holds the focus too.
@@ -162,7 +167,7 @@ it('binds suggested keys, runs them through the dispatcher, and lets the shortcu
 
     // Orivon's key is still Orivon's: the extension that suggested it never hears of it.
     const before = (await tabIds(chrome)).length
-    await pressKey(app, fixtureUrl, 'T', ['control'])
+    await pressCommand(app, fixtureUrl, 'tab.new')
     expect(await waitFor(async () => (await tabIds(chrome)).length === before + 1)).toBe(true)
     expect((await commandLog(app, rpcWc)).length).toBe(2)
 
@@ -170,25 +175,25 @@ it('binds suggested keys, runs them through the dispatcher, and lets the shortcu
     const page = await openShortcutsPage(app, chrome)
     expect(await page.locator('.sc-card').count()).toBe(2)
     expect(await page.locator('.sc-card').first().locator('.sc-row').count()).toBe(3)
-    expect(await capsOf(rowFor(page, 'Mark the current tab'))).toEqual(['Alt', 'Shift', 'K'])
-    expect(await rowFor(page, 'Take the new-tab key').locator('.muted').allTextContents()).toEqual(['Suggested: Ctrl+T (already in use)', 'Not set'])
-    expect(await rowFor(page, 'Toggle the sidebar').locator('.sc-hint').textContent()).toBe('Suggested: Alt+Shift+K (already in use)')
+    expect(await capsOf(rowFor(page, 'Mark the current tab'))).toEqual(keyCapsOf('Alt+Shift+K'))
+    expect(await rowFor(page, 'Take the new-tab key').locator('.muted').allTextContents()).toEqual([`Suggested: ${keyCapsOf('Mod+T').join('+')} (already in use)`, 'Not set'])
+    expect(await rowFor(page, 'Toggle the sidebar').locator('.sc-hint').textContent()).toBe(`Suggested: ${keyCapsOf('Alt+Shift+K').join('+')} (already in use)`)
     await shoot(page, 'list')
 
     // Recording: the field waits, the next chord is the answer, it is stored and survives a relaunch.
     await rowFor(page, 'Mark the current tab').locator('.sc-change').click()
     await page.waitForSelector('.sc-field')
     await shoot(page, 'recording')
-    await pressKey(app, 'orivon://extensions', 'U', ['control', 'shift'])
-    expect(await waitFor(async () => (await capsOf(rowFor(page, 'Mark the current tab'))).join('+') === 'Ctrl+Shift+U')).toBe(true)
-    expect(await shortcutOf(app, rpcWc, 'mark')).toBe('Ctrl+Shift+U')
+    await pressBinding(app, 'orivon://extensions', MARK_RECORDED)
+    expect(await waitFor(async () => (await capsOf(rowFor(page, 'Mark the current tab'))).join('+') === keyCapsOf(MARK_RECORDED).join('+'))).toBe(true)
+    expect(await shortcutOf(app, rpcWc, 'mark')).toBe(`${CTRL}+Shift+U`)
     // The extension hears of the change.
     const heard = async (): Promise<unknown[]> => {
       const reply = await rpc(app, rpcWc, 'chrome.storage.session.get', ['changes'])
       return reply.ok ? ((reply.result as { changes?: unknown[] }).changes ?? []) : []
     }
     expect(await waitFor(async () => (await heard()).length === 1)).toBe(true)
-    expect((await heard())[0]).toEqual({ name: 'mark', oldShortcut: 'Alt+Shift+K', newShortcut: 'Ctrl+Shift+U' })
+    expect((await heard())[0]).toEqual({ name: 'mark', oldShortcut: 'Alt+Shift+K', newShortcut: `${CTRL}+Shift+U` })
     dir = profileDirOf(app) ?? ''
     const prefsFile = join(dir, 'extensions', 'prefs.json')
     expect(await waitFor(() => { try { return readFileSync(prefsFile, 'utf8').includes('Mod+Shift+U') } catch { return false } })).toBe(true)
@@ -204,14 +209,14 @@ it('binds suggested keys, runs them through the dispatcher, and lets the shortcu
     await waitRecovered(app)
     const chrome = findChrome(app)
     const rpcWc = await openExtensionPage(app, ids.first, 'rpc.html')
-    expect(await shortcutOf(app, rpcWc, 'mark')).toBe('Ctrl+Shift+U')
+    expect(await shortcutOf(app, rpcWc, 'mark')).toBe(`${CTRL}+Shift+U`)
     await navigateToFixture(app, fixtureUrl, 'commands-fixture')
 
     // The old chord belongs to the other extension's suggestion now; it no longer reaches `mark`.
     await pressKey(app, fixtureUrl, 'K', ['alt', 'shift'])
     await delay(800)
     expect(await commandLog(app, rpcWc)).toEqual([])
-    await pressKey(app, fixtureUrl, 'U', ['control', 'shift'])
+    await pressBinding(app, fixtureUrl, MARK_RECORDED)
     expect(await waitFor(async () => (await commandLog(app, rpcWc)).length === 1)).toBe(true)
     expect((await commandLog(app, rpcWc))[0]?.name).toBe('mark')
 
@@ -219,37 +224,38 @@ it('binds suggested keys, runs them through the dispatcher, and lets the shortcu
     const tabsBefore = (await tabIds(chrome)).length
 
     // Each way a key is refused, named under its row.
-    await record(app, page, 'Take the new-tab key', 'T', ['control'])
+    await record(app, page, 'Take the new-tab key', 'Mod+T')
     await page.waitForSelector('.sc-notice')
-    expect(await page.locator('.sc-notice').textContent()).toContain(`"Ctrl+T" is Orivon's shortcut for "New tab". Change it in Settings first.`)
+    expect(await page.locator('.sc-notice').textContent()).toContain(`"${keyCapsOf('Mod+T').join('+')}" is Orivon's shortcut for "New tab". Change it in Settings first.`)
     expect((await tabIds(chrome)).length).toBe(tabsBefore)
     await shoot(page, 'notice-orivon')
 
-    await record(app, page, 'Take the new-tab key', 'K', ['shift'])
-    await page.waitForFunction(() => document.querySelector('.sc-notice')?.textContent?.includes('Include Ctrl or Alt.') === true)
+    await record(app, page, 'Take the new-tab key', 'Shift+K')
+    const needsModifier = process.platform === 'darwin' ? 'Include Cmd, Ctrl or Option.' : 'Include Ctrl or Alt.'
+    await page.waitForFunction((text) => document.querySelector('.sc-notice')?.textContent?.includes(text) === true, needsModifier)
     await shoot(page, 'notice-modifier')
 
-    await record(app, page, 'Take the new-tab key', 'C', ['control'])
+    await record(app, page, 'Take the new-tab key', 'Mod+C')
     await page.waitForFunction(() => document.querySelector('.sc-notice')?.textContent?.includes('Orivon keeps that key for editing.') === true)
 
-    await record(app, page, 'Take the new-tab key', 'U', ['control', 'shift'])
+    await record(app, page, 'Take the new-tab key', MARK_RECORDED)
     await page.waitForFunction(() => document.querySelector('.sc-notice')?.textContent?.includes('is used by "Orivon E2E Commands": Mark the current tab.') === true)
     await shoot(page, 'notice-extension')
 
     // Use it here instead: the key moves, and the old holder shows Not set.
     await page.locator('.sc-notice .btn', { hasText: 'Use it here instead' }).click()
-    expect(await waitFor(async () => (await capsOf(rowFor(page, 'Take the new-tab key'))).join('+') === 'Ctrl+Shift+U')).toBe(true)
+    expect(await waitFor(async () => (await capsOf(rowFor(page, 'Take the new-tab key'))).join('+') === keyCapsOf(MARK_RECORDED).join('+'))).toBe(true)
     expect(await rowFor(page, 'Mark the current tab').locator('.sc-control .muted').textContent()).toBe('Not set')
     // A stopped worker is started by the key.
     await stopWorkers(app, rpcWc)
-    await pressKey(app, fixtureUrl, 'U', ['control', 'shift'])
+    await pressBinding(app, fixtureUrl, MARK_RECORDED)
     expect(await waitFor(async () => (await commandLog(app, rpcWc)).length === 2, 20_000)).toBe(true)
     expect((await commandLog(app, rpcWc))[1]?.name).toBe('clash')
 
     // Remove: Not set, and the key does nothing.
     await rowFor(page, 'Take the new-tab key').locator('.sc-remove').click()
     expect(await waitFor(async () => await rowFor(page, 'Take the new-tab key').locator('.sc-remove').count() === 0)).toBe(true)
-    await pressKey(app, fixtureUrl, 'U', ['control', 'shift'])
+    await pressBinding(app, fixtureUrl, MARK_RECORDED)
     await delay(800)
     expect((await commandLog(app, rpcWc)).length).toBe(2)
     expect(await shortcutOf(app, rpcWc, 'clash')).toBe('')

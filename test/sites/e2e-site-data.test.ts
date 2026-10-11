@@ -2,7 +2,7 @@
 // each keep cookies, local storage, IndexedDB and Cache Storage. The site-info popover lists the first site's
 // cookies by name only (a value never reaches the page), deletes one or all behind two presses, and leaves the
 // other site alone. Settings > Privacy lists both sites, narrows by search, opens a site onto its cookies and
-// deletes one cookie, one site and everything. Control+Shift+Delete opens Settings at the clear-data row. A
+// deletes one cookie, one site and everything. Mod+Shift+Delete opens Settings at the clear-data row. A
 // private window lists its own session's data. Set ORIVON_UI_SHOTS_DIR to also write screenshots in both colour
 // schemes and the on-disk layout the site list is built from.
 import { mkdirSync, readdirSync, writeFileSync } from 'node:fs'
@@ -12,7 +12,7 @@ import { join } from 'node:path'
 import type { ElectronApplication, Locator, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { runCommand, SHOTS_DIR, shoot } from '../support/auth-support.js'
-import { pressKey } from '../support/e2e-helpers.js'
+import { pressCommand } from '../support/e2e-helpers.js'
 import { assertNoElectronSurvivors, closeElectron, launchElectron } from '../support/launch-electron.mjs'
 import { findChrome, waitFor } from '../support/smoke-helpers.mjs'
 import { visit } from '../support/qa-helpers.js'
@@ -168,8 +168,8 @@ it('lists a site\'s cookies by name, deletes one, then all, and leaves the other
   await closePopup()
 }, TEST_TIMEOUT_MS)
 
-it('opens Settings at the clear-data row on Control+Shift+Delete, with the first box focused', async () => {
-  await pressKey(app, a.origin, 'Delete', ['control', 'shift'])
+it('opens Settings at the clear-data row on Mod+Shift+Delete, with the first box focused', async () => {
+  await pressCommand(app, a.origin, 'privacy.clearData')
   expect(await waitFor(() => settings() !== undefined)).toBe(true)
   const window = settings() as Page
   await window.waitForSelector('#row-clear-data')
@@ -221,7 +221,7 @@ it('lists both sites in Settings, searches, and deletes a cookie, a site and eve
   await runCommand(chrome, 'tab.new')
   await visitCounted(`${a.origin}/check`, 'dbs=0;ls=0')
   await visitCounted(`${b.origin}/check`, 'dbs=1;ls=1')
-  await pressKey(app, b.origin, 'W', ['control'])
+  await pressCommand(app, b.origin, 'tab.close')
   expect(await waitFor(async () => (await window.evaluate(() => document.visibilityState)) === 'visible')).toBe(true)
 
   // A cookie goes at once, and a site with nothing left drops off the list.

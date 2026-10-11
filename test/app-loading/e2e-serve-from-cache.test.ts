@@ -391,10 +391,13 @@ it(
           return webContents.getAllWebContents().some((c) => c.getURL() === url)
         }, blobUrl))
         check('the blob: tab was found by its committed URL', blobFound)
-        const blobCheck = await app.evaluate(({ webContents, session }, args: { url: string, partition: string }) => {
+        const readBlobTab = async (): Promise<{ found: boolean, title: string | undefined, samePartition: boolean }> => await (app as NonNullable<typeof app>).evaluate(({ webContents, session }, args: { url: string, partition: string }) => {
           const wc = webContents.getAllWebContents().find((c) => c.getURL() === args.url)
           return { found: wc !== undefined, title: wc?.getTitle(), samePartition: wc?.session === session.fromPartition(args.partition) }
         }, { url: blobUrl, partition: partitionFor(ORIGIN) })
+        // The URL commits before the document is parsed, so the title arrives a moment after it.
+        await waitFor(async () => (await readBlobTab()).title === 'serve-from-cache blob')
+        const blobCheck = await readBlobTab()
         check('the blob: tab shows the blob\'s own content, not about:blank', blobCheck.title === 'serve-from-cache blob', JSON.stringify(blobCheck))
         check('the blob: tab runs in the app\'s own partition', blobCheck.samePartition, JSON.stringify(blobCheck))
       } finally {

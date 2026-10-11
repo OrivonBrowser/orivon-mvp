@@ -147,7 +147,7 @@ it('pictures the chrome and each second-wave library surface together', async ()
     await snap(app, '10-settings-appearance')
 
     await chrome.click('#address')
-    await chrome.keyboard.press('Control+A')
+    await chrome.keyboard.press('ControlOrMeta+A')
     await chrome.keyboard.type('w solar', { delay: 40 })
     expect(await waitFor(async () => await popoverShown(app, 'overlay=omnibox'))).toBe(true)
     await delay(700)

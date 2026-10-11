@@ -42,6 +42,7 @@ it('applies the theme, the bookmarks bar, the search engine and the last-tab rul
       await seed(dir, {
         'appearance.theme': 'dark',
         'appearance.bookmarksBar': 'always',
+        'search.mode': 'web2',
         'search.engine': 'custom',
         'search.customUrl': `${origin}/find?text=%s`,
         'tabs.lastTabClosed': 'newTab'

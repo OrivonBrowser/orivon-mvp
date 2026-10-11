@@ -1,4 +1,4 @@
-// Developer tools for the pages a tab shows: F12 and Ctrl+Shift+I open and
+// Developer tools for the pages a tab shows: their key (F12, Command+Option+I on macOS) and Mod+Shift+I open and
 // close them on a website, the setting turns them off, the shell's own pages
 // stay closed to them, and an app that holds permissions asks once before they
 // open.
@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
-import { clickAddressBarRetrying, pressKey } from '../support/e2e-helpers.js'
+import { clickAddressBarRetrying, pressBinding, pressCommand, pressKey } from '../support/e2e-helpers.js'
 import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
 import { delay, findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 import type { DevGrantRequest } from '../../src/main/dev/dev-grant.js'
@@ -55,19 +55,19 @@ async function open (app: ElectronApplication, chrome: Page, address: string): P
   expect((await waitForTab(chrome, { address })).ok).toBe(true)
 }
 
-it('opens and closes on F12 and Ctrl+Shift+I, and closes when they are turned off', async () => {
+it('opens and closes on its key and on Mod+Shift+I, and closes when they are turned off', async () => {
   const { app, chrome } = await launched()
   try {
     const address = `${siteOrigin}/page`
     await open(app, chrome, address)
     expect(await toolsOpenAt(app, address)).toBe(false)
 
-    await pressKey(app, address, 'F12')
+    await pressCommand(app, address, 'devtools.toggle')
     expect(await waitFor(async () => await toolsOpenAt(app, address) === true)).toBe(true)
-    await pressKey(app, address, 'F12')
+    await pressCommand(app, address, 'devtools.toggle')
     expect(await waitFor(async () => await toolsOpenAt(app, address) === false)).toBe(true)
 
-    await pressKey(app, address, 'I', ['control', 'shift'])
+    await pressBinding(app, address, 'Mod+Shift+I')
     expect(await waitFor(async () => await toolsOpenAt(app, address) === true)).toBe(true)
 
     // Turning the setting off in Settings closes the ones that are open.
@@ -92,7 +92,7 @@ it('does nothing when the setting is off', async () => {
   try {
     const address = `${siteOrigin}/off`
     await open(app, chrome, address)
-    await pressKey(app, address, 'F12')
+    await pressCommand(app, address, 'devtools.toggle')
     await delay(500)
     expect(await toolsOpenAt(app, address)).toBe(false)
     expect(mainOutput(app)).not.toContain('uncaught exception')
@@ -106,7 +106,7 @@ it('keeps Settings closed to developer tools', async () => {
   try {
     await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string) => void } }).orivonShell.openInternal('settings') })
     expect(await waitFor(async () => await toolsOpenAt(app, 'orivon://settings') === false)).toBe(true)
-    await pressKey(app, 'orivon://settings', 'F12')
+    await pressCommand(app, 'orivon://settings', 'devtools.toggle')
     await delay(500)
     expect(await toolsOpenAt(app, 'orivon://settings')).toBe(false)
     expect(mainOutput(app)).not.toContain('uncaught exception')
@@ -143,7 +143,7 @@ it('asks once before opening them on an app that holds permissions, and not agai
     await open(app, chrome, address)
 
     // The question is drawn in the tab. A key typed at the page does not answer it, and Cancel opens nothing.
-    await pressKey(app, address, 'F12')
+    await pressCommand(app, address, 'devtools.toggle')
     const question = await readQuestion(await waitQuestion(app))
     expect(question.message).toContain(appOrigin)
     expect(question.buttons).toEqual(['Cancel', 'Open developer tools'])
@@ -156,12 +156,12 @@ it('asks once before opening them on an app that holds permissions, and not agai
     expect(await toolsOpenAt(app, address)).toBe(false)
 
     // Open: they open, and closing and opening again does not ask again.
-    await pressKey(app, address, 'F12')
+    await pressCommand(app, address, 'devtools.toggle')
     await answerQuestion(app, 'Open developer tools')
     expect(await waitFor(async () => await toolsOpenAt(app, address) === true)).toBe(true)
-    await pressKey(app, address, 'F12')
+    await pressCommand(app, address, 'devtools.toggle')
     expect(await waitFor(async () => await toolsOpenAt(app, address) === false)).toBe(true)
-    await pressKey(app, address, 'F12')
+    await pressCommand(app, address, 'devtools.toggle')
     expect(await waitFor(async () => await toolsOpenAt(app, address) === true)).toBe(true)
     expect(await questionGone(app)).toBe(true)
     expect(await noNativeDialogs(app)).toEqual([])
@@ -218,10 +218,12 @@ for (const [dock, side, shrinks] of [['right', 'right', 0], ['bottom', 'bottom',
       const address = `${siteOrigin}/page`
       await open(app, chrome, address)
       const before = (await dockedAt(app, address)).size.split('x').map(Number)
-      await pressKey(app, address, 'F12')
+      await pressCommand(app, address, 'devtools.toggle')
       expect(await waitFor(async () => (await dockedAt(app, address)).side === side, 8_000)).toBe(true)
-      const after = (await dockedAt(app, address)).size.split('x').map(Number)
-      expect(after[shrinks], `the page gives the tools room: ${String(before)} -> ${String(after)}`).toBeLessThan(before[shrinks] as number)
+      // The front end names its side before the page is laid out at its new size: wait for the page to give room.
+      let after = before
+      const roomy = await waitFor(async () => { after = (await dockedAt(app, address)).size.split('x').map(Number); return (after[shrinks] as number) < (before[shrinks] as number) }, 8_000)
+      expect(roomy, `the page gives the tools room: ${String(before)} -> ${String(after)}`).toBe(true)
       expect(after[1 - shrinks]).toBe(before[1 - shrinks])
     } finally {
       await closeElectron(app)
@@ -235,9 +237,9 @@ it('opens and closes the tools after the key event has returned, never inside it
     const address = `${siteOrigin}/page`
     await open(app, chrome, address)
     await recordToolCalls(app, address)
-    await pressKey(app, address, 'F12')
+    await pressCommand(app, address, 'devtools.toggle')
     expect(await waitFor(async () => await toolsOpenAt(app, address) === true)).toBe(true)
-    await pressKey(app, address, 'F12')
+    await pressCommand(app, address, 'devtools.toggle')
     expect(await waitFor(async () => await toolsOpenAt(app, address) === false)).toBe(true)
     expect(await toolCalls(app)).toEqual([{ call: 'openDevTools', inside: false }, { call: 'closeDevTools', inside: false }])
     expect(mainOutput(app)).not.toContain('uncaught exception')
@@ -246,15 +248,15 @@ it('opens and closes the tools after the key event has returned, never inside it
   }
 }, TEST_TIMEOUT_MS)
 
-it('closes the tools of a tab closed with Ctrl+W after the key event has returned, never inside it', async () => {
+it('closes the tools of a tab closed with Mod+W after the key event has returned, never inside it', async () => {
   const { app, chrome } = await launched()
   try {
     const address = `${siteOrigin}/page`
     await open(app, chrome, address)
     await recordToolCalls(app, address)
-    await pressKey(app, address, 'F12')
+    await pressCommand(app, address, 'devtools.toggle')
     expect(await waitFor(async () => await toolsOpenAt(app, address) === true)).toBe(true)
-    await pressKey(app, address, 'W', ['control'])
+    await pressCommand(app, address, 'tab.close')
     expect(await waitFor(async () => (await toolsOpenAt(app, address)) !== true && (await toolCalls(app)).some((c) => c.call === 'closeDevTools'))).toBe(true)
     expect(await toolCalls(app)).toEqual([{ call: 'openDevTools', inside: false }, { call: 'closeDevTools', inside: false }])
     expect(mainOutput(app)).not.toContain('uncaught exception')
