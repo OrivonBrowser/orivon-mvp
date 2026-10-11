@@ -384,7 +384,7 @@ it('searches for what follows a question mark, and the search key puts one in th
     await chrome.keyboard.type('127.0.0.1', { delay: 25 })
     const rows = await waitForRows(app, 1)
     expect(rows[0]).toContain('127.0.0.1')
-    expect(rows[0]).toContain('Search DuckDuckGo')
+    expect(rows[0]).toContain('Search Explore')
     // A forced search is never finished with a page.
     expect((await field(chrome)).value).toBe('? 127.0.0.1')
     await shoot(app, chrome, 'omnibox-search')
