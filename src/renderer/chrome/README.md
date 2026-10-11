@@ -14,6 +14,7 @@ Electron, entirely: it runs in the chrome's `WebContentsView` on `src/preload/sh
 | `tab-groups.ts`, `tab-group-drag.ts` | a group's chip before its first tab, the group's colour on its tabs, hiding a collapsed group's tabs, and dragging a chip to move the group |
 | `tab-sleeping.ts` | a sleeping tab's dimmed, ringed icon and the word "sleeping" in its tooltip and accessible name; a `TabDecorator` |
 | `tab-search-button.ts` | the button at the strip's right end that opens tab search |
+| `mac-window-buttons.ts` | on macOS in full screen, where the system hides them, the window's close, minimise and full-screen buttons, drawn where the system puts them |
 | `navigation.ts` | back, forward, reload, the address bar |
 | `address-suggest.ts` | the address field's dropdown from the field's side: what is typed, the arrows, Enter and Escape (the rules are in `address-suggest-model.ts`) |
 | `address-display.ts` | the unfocused address over the input: the connection mark and the address in two tones (`address-format.ts` splits it), and when the field selects its text (`address-select.ts`: an entry selects, a window refocus keeps the caret) |
