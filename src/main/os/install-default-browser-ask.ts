@@ -129,7 +129,7 @@ export const installDefaultBrowserAsk: ShellInstaller = {
       wait: async (ms) => { await new Promise<void>((resolve) => { setTimeout(resolve, ms) }) }
     })
     exposeAskNow(check)
-    const look = (): void => { void check().then((next) => { setTimeout(look, next).unref() }) }
+    const look = (): void => { void check().then((next) => { setTimeout(look, next).unref() }).catch((error: unknown) => { console.error('[os] the default browser check failed:', error) }) }
     setTimeout(look, FIRST_CHECK_MS).unref()
   }
 }

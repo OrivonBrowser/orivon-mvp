@@ -21,7 +21,7 @@ export function scheduleUpdateChecks (deps: UpdateScheduleDeps): () => void {
   const check = (): void => {
     if (running || !deps.enabled()) return
     running = true
-    void deps.run().finally(() => { running = false })
+    void deps.run().finally(() => { running = false }).catch((error: unknown) => { console.error('[self-update] the update check failed:', error) })
   }
   let wasEnabled = deps.enabled()
   check()

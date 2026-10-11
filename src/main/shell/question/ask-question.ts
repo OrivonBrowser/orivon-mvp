@@ -159,7 +159,7 @@ export function createAskQuestion (deps: AskQuestionDeps): AskQuestion {
       void toolbarInView(place.window, place.tabId, () => settled || placeGone(place)).then((ready) => {
         if (ready) show()
         else settle(cancel)
-      })
+      }).catch((error: unknown) => { console.error('[shell] toolbar in view failed:', error) })
     })
   }
 }

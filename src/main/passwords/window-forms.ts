@@ -186,7 +186,7 @@ export function createWindowForms (window: ShellWindow, deps: FormsDeps): Window
   }
 
   function track (tabId: string, pending: Pending): void {
-    const run = (): void => { void evaluate(tabId, pending) }
+    const run = (): void => { void evaluate(tabId, pending).catch((error: unknown) => { console.error('[passwords] checking a login form failed:', error) }) }
     pending.timers.push(
       deps.schedule(run, QUIET_MS),
       deps.schedule(run, SUCCESS_WINDOW_MS + 1),
@@ -238,7 +238,7 @@ export function createWindowForms (window: ShellWindow, deps: FormsDeps): Window
       tab.signUp = message.signUp
       tab.fields = { hasPassword: message.hasPassword, at: deps.now() }
       const pending = tab.pending
-      if (pending !== null) void evaluate(sender.tabId, pending)
+      if (pending !== null) void evaluate(sender.tabId, pending).catch((error: unknown) => { console.error('[passwords] checking a login form failed:', error) })
       notify()
     },
 
@@ -270,7 +270,7 @@ export function createWindowForms (window: ShellWindow, deps: FormsDeps): Window
       }
       tab.pending = pending
       track(sender.tabId, pending)
-      void evaluate(sender.tabId, pending)
+      void evaluate(sender.tabId, pending).catch((error: unknown) => { console.error('[passwords] checking a login form failed:', error) })
     },
 
     navigated (tabId, navigation) {
@@ -289,7 +289,7 @@ export function createWindowForms (window: ShellWindow, deps: FormsDeps): Window
       if (pending !== null) {
         // A shown offer goes when the tab leaves the site it was made for.
         if (pending.kind !== null && navigation.origin !== pending.credential.origin) clearPending(tab)
-        else void evaluate(tabId, pending)
+        else void evaluate(tabId, pending).catch((error: unknown) => { console.error('[passwords] checking a login form failed:', error) })
       }
       notify()
     },

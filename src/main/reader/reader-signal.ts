@@ -35,7 +35,7 @@ export const readerSignal: TabSignal = {
       void checkReadable(wc).then((readable) => {
         verdict.readable = readable
         if (readable && shown() && wc.getURL() === url) record.host.emitState()
-      })
+      }).catch((error: unknown) => { console.error('[reader] check readable failed:', error) })
     }
     wc.on('did-stop-loading', ask)
     wc.on('did-navigate-in-page', ask)

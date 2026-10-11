@@ -110,7 +110,7 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
 |---|---|
 | `npm run typecheck` | After any `.ts` change; it covers `test/` as well as `src/` |
 | `npm run test:changed` | The unit tests your change can affect, against `origin/main` (`-- --base <ref>`; `-- --all` for everything). A bare `npm test` or `npx vitest run` is blocked: CI runs the whole suite on every PR |
-| `npm run check:<name>` | The seventeen guards in `docs/development/testing.md` section Guards; CI runs each |
+| `npm run check:<name>` | The eighteen guards in `docs/development/testing.md` section Guards; CI runs each |
 | `node scripts/ci/select-e2e.mjs --base origin/main` | Prints the e2e areas and specs CI would run for your change (`--explain` says why). Run the named specs of them locally, never the whole suite; a bare `npm run test:e2e` is blocked |
 | `npm run smoke` | The real shell launches and works. Read its JSON failure list, not the exit code |
 | `node scripts/ci/cross-os.mjs` | Orivon on Windows and macOS from this machine: GitHub's runners run the pushed branch from source (smoke, screenshots; `--packaged` for the packages) and it brings the evidence back. Run it in the background after touching the install, launch scripts, OS integration or a dependency (`scripts/ci/README.md` section Other systems). Never a local VM or Wine |

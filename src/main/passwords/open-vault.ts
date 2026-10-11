@@ -15,6 +15,6 @@ export function openVault (input: OpenVaultInput): PasswordVault {
   if (input.isPrivate) return { ...memoryVault('private'), ready: async () => { await Promise.resolve() } }
   const vault = new EncryptedVault({ path: input.path, storage: input.storage })
   // The system is asked at once, so `state()` is final by the time a page or a prompt looks at it.
-  void vault.ready()
+  void vault.ready().catch((error: unknown) => { console.error('[passwords] waiting for the vault failed:', error) })
   return vault
 }

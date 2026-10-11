@@ -38,6 +38,8 @@ const seed = (files: { settings?: Record<string, unknown>, session?: string }) =
   if (files.session !== undefined) await writeFile(join(dir, 'session.json'), files.session)
 }
 const sessionText = (windows: SavedWindow[], clean = true): string => JSON.stringify({ version: 1, clean, windows })
+/** The restore bar closes its own page when a button is pressed, which can end the click's round trip before it answers. */
+const ignoreClosedPage = (error: unknown): void => { if (!/Target page, context or browser has been closed/.test(String(error))) throw error }
 const sized = (x: number, y: number): NonNullable<SavedWindow['bounds']> => ({ x, y, width: 1000, height: 700 })
 
 interface StripTab { title: string, active: boolean, pinned: boolean }
@@ -379,7 +381,7 @@ it('offers the last session back after a crash, and Restore reopens its windows 
     expect(await bar.getAttribute('.btn.icon', 'aria-label')).toBe('Dismiss')
     await shoot(bar, 'restore-bar')
 
-    await bar.click('.btn.primary')
+    await bar.click('.btn.primary').catch(ignoreClosedPage)
     expect(await waitFor(() => chromePages(app).length === 3)).toBe(true)
     await waitTitles(await windowShowing(app, 'page a'), ['page a', 'page b'])
     await waitTitles(await windowShowing(app, 'page c'), ['page c'])
@@ -398,7 +400,7 @@ it('leaves the session on the closed stack when the bar is dismissed, and offers
     expect(await waitFor(async () => await popoverShown(dismissed.app, 'overlay=restore'))).toBe(true)
     expect(await waitFor(() => dismissed.app.windows().some((w) => w.url().includes('overlay=restore')))).toBe(true)
     const bar = dismissed.app.windows().find((w) => w.url().includes('overlay=restore')) as Page
-    await bar.click('.btn.icon')
+    await bar.click('.btn.icon').catch(ignoreClosedPage)
     expect(await waitFor(async () => !(await popoverShown(dismissed.app, 'overlay=restore')))).toBe(true)
     expect(await windowCount(dismissed.app)).toBe(1)
     await command(dismissed.chrome, 'tab.reopen')

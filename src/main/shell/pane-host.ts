@@ -127,7 +127,7 @@ export class PaneHost {
           mended = true
         })
         if (mended) this.mend(tries - 1)
-      })
+      }).catch((error: unknown) => { console.error('[shell] mending a hidden pane failed:', error) })
     }, MEND_MS)
   }
 
@@ -191,7 +191,7 @@ export class PaneHost {
           view.setBounds(this.placed.get(id) ?? bounds)
           this.settle(id, view, tries - 1)
         }, NUDGE_MS))
-      })
+      }).catch((error: unknown) => { console.error('[shell] settling a pane layout failed:', error) })
     }, SETTLE_MS))
   }
 

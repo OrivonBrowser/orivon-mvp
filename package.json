@@ -33,6 +33,7 @@
     "check:manifest-parity": "node scripts/check-manifest-parity.mjs",
     "check:page-globals": "node scripts/check-page-globals.mjs",
     "check:native-dialogs": "node scripts/check-native-dialogs.mjs",
+    "check:floating-promises": "node scripts/check-floating-promises.mjs",
     "check:dev-grant-absent": "node scripts/check-dev-grant-absent.mjs",
     "check:devlog": "node scripts/check-devlog.mjs",
     "check:app-behaviours": "node scripts/app-behaviours/check-app-behaviours.mjs",

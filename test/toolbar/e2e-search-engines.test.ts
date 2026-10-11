@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
+import { waitForStartPageLoaded } from '../support/e2e-helpers.js'
 import { html, launchShell, startServer } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
 import { ABSENCE_SETTLE_MS, activeTabInfo, delay, popoverShown, tabIds, waitFor } from '../support/smoke-helpers.mjs'
@@ -90,10 +91,11 @@ async function loadInTab (app: App, chrome: Page, address: string): Promise<void
   expect(await waitFor(async () => (await activeTabInfo(chrome)).address === address)).toBe(true)
 }
 
-async function openTab (chrome: Page): Promise<void> {
+async function openTab (app: App, chrome: Page): Promise<void> {
   const before = (await tabIds(chrome)).length
   await chrome.evaluate(() => { (window as unknown as { orivonShell: { runCommand: (id: string) => void } }).orivonShell.runCommand('tab.new') })
   expect(await waitFor(async () => (await tabIds(chrome)).length === before + 1)).toBe(true)
+  expect(await waitForStartPageLoaded(app)).toBe(true)
 }
 
 async function openSettings (app: App, chrome: Page): Promise<Page> {
@@ -230,13 +232,13 @@ it('searches the engine a keyword names, and only for a whole first word followe
     expect(await waitFor(async () => (await tabAddresses(app)).includes(`${server.origin}/kw?q=hello`))).toBe(true)
 
     // Whatever the case, and the terms are encoded as a search box does.
-    await openTab(chrome)
+    await openTab(app, chrome)
     await typeInBar(chrome, 'FX Big Cats')
     await chrome.keyboard.press('Enter')
     expect(await waitFor(async () => (await tabAddresses(app)).includes(`${server.origin}/kw?q=Big+Cats`))).toBe(true)
 
     // A keyword alone is an ordinary search of the default engine.
-    await openTab(chrome)
+    await openTab(app, chrome)
     await typeInBar(chrome, 'fx')
     const alone = await waitForRows(app, 1)
     expect(alone[0]).not.toContain('Search Fixture')
@@ -244,7 +246,7 @@ it('searches the engine a keyword names, and only for a whole first word followe
     expect(await waitFor(async () => (await tabAddresses(app)).includes(`${server.origin}/search?q=fx`))).toBe(true)
 
     // A keyword never takes the place of an address.
-    await openTab(chrome)
+    await openTab(app, chrome)
     await typeInBar(chrome, 'fx.com')
     expect((await waitForRows(app, 1))[0]).toContain('Go to address')
     expect(mainOutput(app)).not.toContain('uncaught exception')
@@ -270,7 +272,7 @@ it('asks the engine for suggestions only when the setting is on, and sends nothi
   try {
     // A cookie the engine's own site set, so a request that carried cookies would show it.
     await loadInTab(app, chrome, `${server.origin}/login`)
-    await openTab(chrome)
+    await openTab(app, chrome)
     await typeInBar(chrome, 'he')
     const rows = await waitForRows(app, 5)
     expect(rows.slice(1).map((row) => row.trim())).toEqual(['hello world', 'help desk', 'hero movie', 'heat map'])
@@ -349,7 +351,7 @@ it('searches the Web3 with Explore on a fresh profile, switches to the Web2 from
     expect(await waitFor(async () => (await addressOf(chrome)) === 'ipfs://explore.orivonstack.eth/#/search?q=free+speech')).toBe(true)
 
     // The chip does not take the keyboard from the field, and the open dropdown names the other engine afterwards.
-    await openTab(chrome)
+    await openTab(app, chrome)
     await typeInBar(chrome, 'cats')
     expect((await waitForRows(app, 1))[0]).toContain('Explore')
     await chipOf(chrome).click()

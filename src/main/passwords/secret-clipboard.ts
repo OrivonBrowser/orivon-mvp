@@ -18,7 +18,7 @@ export const CLEAR_AFTER_MS = 60_000
 
 export function secretClipboard (
   clipboard: ClipboardAccess,
-  later: (run: () => Promise<void>, ms: number) => void = (run, ms) => { setTimeout(() => { void run() }, ms).unref() }
+  later: (run: () => Promise<void>, ms: number) => void = (run, ms) => { setTimeout(() => { void run().catch((error: unknown) => { console.error('[passwords] the delayed clipboard clear failed:', error) }) }, ms).unref() }
 ): SecretClipboard {
   /** The newest secret that is still waiting for its minute to pass. */
   let waiting: string | null = null

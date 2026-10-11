@@ -171,7 +171,7 @@ export async function bindUdp (
   // exception on whatever called `signal`'s controller.abort() -- on
   // Electron's main process, that can crash the whole browser rather than
   // just fail one bind.
-  const onAbort = (): void => { void closeSocket(socket) }
+  const onAbort = (): void => { void closeSocket(socket).catch((error: unknown) => { console.error('[broker] closing an aborted datagram socket failed:', error) }) }
   signal.addEventListener('abort', onAbort, { once: true })
 
   let lastError: unknown

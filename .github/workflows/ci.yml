@@ -140,6 +140,10 @@ jobs:
       - name: No native message box outside the files that may open one
         run: npm run check:native-dialogs
 
+      # start.ts ends the browser on an unhandled rejection: a promise floated in main-process code is a crash.
+      - name: No promise floated without a rejection handler in the main process
+        run: npm run check:floating-promises
+
       - name: Build
         run: npm run build
 

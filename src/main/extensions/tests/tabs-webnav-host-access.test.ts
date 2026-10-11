@@ -204,7 +204,7 @@ describe('tabs.onUpdated: per-listener field stripping (UPSTREAM.md router.ts pa
 describe('chrome.tabs.insertCSS: host access only, never the tabs permission alone', () => {
   it('refuses an extension with no permissions at all', async () => {
     const tab = fakeTab(1, 'https://a.example/', 'A')
-    tab.insertCSS = vi.fn()
+    tab.insertCSS = vi.fn(async () => '')
     const session = fakeSession()
     const router = new ExtensionRouter(session)
     new TabsAPI({ router, session, store: fakeStore([tab]) } as any)
@@ -218,7 +218,7 @@ describe('chrome.tabs.insertCSS: host access only, never the tabs permission alo
 
   it('refuses an extension holding only the tabs permission -- tabs never authorizes an injection, only url/title visibility', async () => {
     const tab = fakeTab(1, 'https://a.example/', 'A')
-    tab.insertCSS = vi.fn()
+    tab.insertCSS = vi.fn(async () => '')
     const session = fakeSession()
     const router = new ExtensionRouter(session)
     new TabsAPI({ router, session, store: fakeStore([tab]) } as any)
@@ -232,7 +232,7 @@ describe('chrome.tabs.insertCSS: host access only, never the tabs permission alo
 
   it('allows an extension with a matching host permission', async () => {
     const tab = fakeTab(1, 'https://a.example/', 'A')
-    tab.insertCSS = vi.fn()
+    tab.insertCSS = vi.fn(async () => '')
     const session = fakeSession()
     const router = new ExtensionRouter(session)
     new TabsAPI({ router, session, store: fakeStore([tab]) } as any)

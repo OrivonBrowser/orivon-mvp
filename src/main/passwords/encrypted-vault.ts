@@ -77,7 +77,7 @@ export class EncryptedVault implements PasswordVault {
     if (stored === undefined) return undefined
     try {
       const { result, shouldReEncrypt } = await this.#storage.decryptStringAsync(Buffer.from(stored.secret, 'base64'))
-      if (shouldReEncrypt) void this.#reEncrypt(id, result)
+      if (shouldReEncrypt) void this.#reEncrypt(id, result).catch((error: unknown) => { console.error('[passwords] re-encrypting a stored secret failed:', error) })
       return result
     } catch {
       console.error('[passwords] the keyring could not decrypt a saved password')

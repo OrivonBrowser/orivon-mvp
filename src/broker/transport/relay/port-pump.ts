@@ -119,7 +119,7 @@ export function createPortPump (options: PortPumpOptions): PortPump {
     }
   }
 
-  void pumpLoop()
+  void pumpLoop().catch((error: unknown) => { console.error('[broker] a socket read pump failed:', error) })
 
   return {
     handleCredit (message) {
@@ -132,7 +132,7 @@ export function createPortPump (options: PortPumpOptions): PortPump {
       // Design notes).
       if (!Number.isFinite(bytesConsumed) || bytesConsumed < 0) return
       credit = Math.min(credit + bytesConsumed, initialCredit)
-      void pumpLoop()
+      void pumpLoop().catch((error: unknown) => { console.error('[broker] a socket read pump failed:', error) })
     },
     stop (code) {
       if (stopped) return

@@ -94,7 +94,7 @@ async function waitForRegisteredExtension (
     }, EXTENSION_REGISTRATION_WAIT_MS)
     extensions.on('extension-loaded', onLoaded)
   })
-  void promise.finally(() => { table.delete(extensionId) })
+  void promise.finally(() => { table.delete(extensionId) }).catch((error: unknown) => { console.error('[extensions] clearing a pending extension wait failed:', error) })
 
   pending.set(extensionId, promise)
   return await promise
@@ -464,7 +464,7 @@ class RoutingDelegate {
       } catch (error) {
         d(`crx-add-listener failed for ${extensionId}: %s`, error)
       }
-    })()
+    })().catch((error: unknown) => { console.error('[extensions] adding an extension event listener failed:', error) })
   }
 
   private onRemoveListener = (

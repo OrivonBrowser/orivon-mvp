@@ -53,7 +53,7 @@ export function createSourceFeed (getSources: GetSources, deliver: (type: 'windo
       try { deliver(type, sources) } catch (error) { console.error('[screen-share] the picker could not use its sources:', error) }
       cancelNext?.()
       cancelNext = timers.after(tick, SOURCE_REFRESH_MS)
-    })
+    }).catch((error: unknown) => { console.error('[display-capture] listing the capture sources failed:', error) })
   }
 
   return {

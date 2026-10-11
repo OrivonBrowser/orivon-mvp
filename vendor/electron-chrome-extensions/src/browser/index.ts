@@ -193,7 +193,7 @@ export class ElectronChromeExtensions extends EventEmitter {
     }
 
     this.listenForExtensions()
-    this.prependPreload(opts.modulePath, preloadPath)
+    this.prependPreload(opts.modulePath, preloadPath).catch((error: unknown) => { console.error('[extensions] adding the extension preload failed:', error) })
   }
 
   private listenForExtensions() {

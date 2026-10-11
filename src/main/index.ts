@@ -147,7 +147,7 @@ export function boot (runtime: Runtime): void {
   const requested: LaunchRequest[] = []
   const queueLaunch = (request: LaunchRequest): void => {
     requested.push(started ? request : atStartup(request))
-    void startedUp.then(() => { for (const waiting of requested.splice(0)) opener(waiting) })
+    void startedUp.then(() => { for (const waiting of requested.splice(0)) opener(waiting) }).catch((error: unknown) => { console.error('[main] opening a queued launch request failed:', error) })
   }
   // A private session nobody started from another browser removes its own directory once its process is gone: Chromium
   // writes more as it quits, so a removal from inside would be undone. The sweep at a later start removes what is left.
@@ -211,7 +211,7 @@ export function boot (runtime: Runtime): void {
     // A link of a scheme an app declares can open in that app, once the windows that show it exist.
     installSchemeRouting(ctx, shell)
     // A refusal the person should read, drawn in the window they are using.
-    publishShowNotice(ctx, ({ title, message }) => { void askQuestion({}, { kind: 'notice', title, message, buttons: ['OK'], cancelId: 0 }) })
+    publishShowNotice(ctx, ({ title, message }) => { void askQuestion({}, { kind: 'notice', title, message, buttons: ['OK'], cancelId: 0 }).catch((error: unknown) => { console.error('[main] showing a notice failed:', error) }) })
     // Before the first window, so it opens in the chosen theme with the chosen
     // bookmarks bar rather than changing after it is on screen, and so a page
     // starred in the first moments is added to the bookmarks on disk, not to an
@@ -301,5 +301,5 @@ export function boot (runtime: Runtime): void {
         if (BaseWindow.getAllWindows().length === 0) createShellWindow(ctx, shell)
       })
     }
-  })
+  }).catch((error: unknown) => { console.error('[main] starting up failed:', error) })
 }

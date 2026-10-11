@@ -187,6 +187,6 @@ export async function installChromeWebStore(opts: ElectronChromeWebStoreOptions)
   }
 
   if (autoUpdate) {
-    void initUpdater(webStoreState)
+    void initUpdater(webStoreState).catch((error: unknown) => { console.error('[web-store] starting the extension updater failed:', error) })
   }
 }
