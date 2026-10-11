@@ -92,10 +92,9 @@ async function boxOfTab (chrome: Page, id: string): Promise<Box> {
 
 /** The size a pane's page lays itself out at, read from the page. A view put on screen without its renderer being told the pane's size keeps laying the page out at the size it had before, so the pane shows a clipped or empty page. */
 async function layoutSizeOf (app: ElectronApplication, part: string): Promise<{ width: number, height: number } | undefined> {
-  const page = app.windows().find((candidate) => !candidate.isClosed() && candidate.url().includes(part))
-  if (page === undefined) return undefined
   // A navigation can close the page between finding and reading it: not laid out yet, so the caller polls again.
-  return await page.evaluate(() => ({ width: innerWidth, height: innerHeight })).catch(() => undefined)
+  return await inPage(app, part, 'JSON.stringify({ width: innerWidth, height: innerHeight })')
+    .then((text) => text === undefined ? undefined : JSON.parse(text) as { width: number, height: number }, () => undefined)
 }
 
 /** Whether each page in `parts` lays itself out at the size of its pane, the pane being where the window put its view. */
@@ -200,8 +199,7 @@ it('makes the pane that is pressed the one the person is in, and closing one lea
     expect(await waitFor(async () => backdropAt(await layout(app)) !== undefined)).toBe(true)
     expect(await activeId(chrome)).toBe(a)
 
-    const pane = app.windows().find((w) => w.url() === `${origin}/b`) as Page
-    await pane.mouse.click(100, 100)
+    await pressIn(app, `${origin}/b`, 100, 100)
 
     expect(await waitFor(async () => await activeId(chrome) === b)).toBe(true)
     expect((await layout(app)).filter((view) => view.url.includes('/split-frame/'))).toHaveLength(1)
@@ -371,8 +369,7 @@ it('splits from the right-click menu of a tab behind the one in front, and lays 
     // The pane that was behind is attached by the split and the other is only resized: each page is laid out at its own pane.
     expect(await waitFor(async () => await pagesFitTheirPanes(app, [`${origin}/a`, `${origin}/b`]))).toBe(true)
     for (const part of [`${origin}/a`, `${origin}/b`]) {
-      const page = app.windows().find((candidate) => candidate.url().includes(part))
-      expect(await page?.evaluate(() => document.visibilityState)).toBe('visible')
+      expect(await inPage(app, part, 'document.visibilityState')).toBe('visible')
     }
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
@@ -428,9 +425,33 @@ it('lays a page out at its pane when it was captured behind the one in front and
   }
 }, TEST_TIMEOUT_MS)
 
-/** Where a view's page is painted: the colour of the pixel at the middle of a screenshot of it. */
-async function paintedColour (pane: Page): Promise<number[]> {
-  const png = PNG.sync.read(await pane.screenshot({ timeout: 5000 }))
+/** Runs a script in the page whose address contains `part`, from the main process: it needs no Playwright page, which a macOS runner sometimes never attaches for a view (test/README.md, Known risk). Undefined when there is no such page. */
+async function inPage (app: ElectronApplication, part: string, code: string): Promise<string | undefined> {
+  return await app.evaluate(async ({ webContents }, [target, script]) => {
+    const wc = webContents.getAllWebContents().find((candidate) => !candidate.isDestroyed() && candidate.getURL().includes(target as string))
+    // A script that navigates its own page is cut short by the navigation: that is no answer, not a failure.
+    return wc === undefined ? undefined : await wc.executeJavaScript(script as string).then((value: unknown) => String(value), () => undefined)
+  }, [part, code] as const)
+}
+
+/** A press in the page whose address contains `part`, as input from the main process. */
+async function pressIn (app: ElectronApplication, part: string, x: number, y: number): Promise<void> {
+  await app.evaluate(({ webContents }, [target, px, py]) => {
+    const wc = webContents.getAllWebContents().find((candidate) => !candidate.isDestroyed() && candidate.getURL().includes(target as string))
+    if (wc === undefined) throw new Error(`no webContents at ${target as string}`)
+    wc.sendInputEvent({ type: 'mouseDown', x: px as number, y: py as number, button: 'left', clickCount: 1 })
+    wc.sendInputEvent({ type: 'mouseUp', x: px as number, y: py as number, button: 'left', clickCount: 1 })
+  }, [part, x, y] as const)
+}
+
+/** Where a view's page is painted: the colour of the pixel at the middle of a capture of it. */
+async function paintedColour (app: ElectronApplication, part: string): Promise<number[]> {
+  const base64 = await app.evaluate(async ({ webContents }, target) => {
+    const wc = webContents.getAllWebContents().find((candidate) => !candidate.isDestroyed() && candidate.getURL().includes(target))
+    return wc === undefined ? undefined : (await wc.capturePage()).toPNG().toString('base64')
+  }, part)
+  if (base64 === undefined) return [-1]
+  const png = PNG.sync.read(Buffer.from(base64, 'base64'))
   const at = (Math.floor(png.height / 2) * png.width + Math.floor(png.width / 2)) * 4
   return [png.data[at] ?? 0, png.data[at + 1] ?? 0, png.data[at + 2] ?? 0]
 }
@@ -465,16 +486,15 @@ it('keeps the pane that was split in laid out, in its place and painted through 
     expect(await waitFor(async () => backdropAt(await layout(app)) !== undefined)).toBe(true)
 
     const site = (name: string): string => origin.replace('127.0.0.1', `${name}.test`)
-    const leftPage = (part: string): Page | undefined => app.windows().find((candidate) => !candidate.isClosed() && candidate.url().includes(part))
     const failures: string[] = []
 
     /** Waits for the left pane to show `part`, then reads everything the person sees of both panes. */
     const settled = async (step: string, part: string, rightPart: string): Promise<void> => {
       const shown = await waitFor(async () => {
         const views = await layout(app)
-        // A view swapped in (out of an app) is laid out before Playwright has a page for it.
+        // A view swapped in (out of an app) is laid out before its page has run anything.
         return inWindow(views, part) !== undefined && inWindow(views, rightPart) !== undefined &&
-          leftPage(part) !== undefined && leftPage(rightPart) !== undefined && await pagesFitTheirPanes(app, [part, rightPart])
+          await pagesFitTheirPanes(app, [part, rightPart])
       }, 12_000)
       const views = await layout(app)
       const pageViews = views.filter((view) => view.url.startsWith('http'))
@@ -484,52 +504,51 @@ it('keeps the pane that was split in laid out, in its place and painted through 
       const byStack = pageViews.map((view) => view.bounds.x)
       if (byStack.length !== 2 || (byStack[0] ?? 0) > (byStack[1] ?? 0)) failures.push(`${step}: the panes are not stacked in the order they read: x ${byStack.join(', ')}`)
       for (const each of [part, rightPart]) {
-        // Leaving an app swaps in a view for the same address, so the page found above may have closed since.
-        let view = undefined as Page | undefined
-        await waitFor(async () => { view = leftPage(each); return view !== undefined && !view.isClosed() }, 5_000)
-        if (view === undefined || view.isClosed()) { failures.push(`${step}: no page for ${each}`); continue }
-        const visibility = await view.evaluate(() => document.visibilityState).catch(() => 'unreadable')
+        // Leaving an app swaps in a view for the same address, so the page is read again until one answers.
+        let visibility: string | undefined
+        await waitFor(async () => { visibility = await inPage(app, each, 'document.visibilityState').catch(() => undefined); return visibility !== undefined }, 5_000)
+        if (visibility === undefined) { failures.push(`${step}: no page for ${each}`); continue }
         if (visibility !== 'visible') failures.push(`${step}: ${each} is ${visibility}`)
-        const colour = await paintedColour(view).catch(() => [-1])
+        const colour = await paintedColour(app, each).catch(() => [-1])
         if (colour.join() !== PAGE_GREEN.join()) failures.push(`${step}: ${each} paints ${colour.join()}, not its page`)
       }
     }
 
     // The pane that was split in is the one the person works in.
-    await leftPage(`${origin}/a`)?.mouse.click(120, 200)
+    await pressIn(app, `${origin}/a`, 120, 200)
     expect(await waitFor(async () => await activeId(chrome) === a)).toBe(true)
     await settled('after the split', `${origin}/a`, `${origin}/b`)
 
     await clickAddressBarRetrying(chrome, `${origin}/c1`)
     await settled('address bar, same site', `${origin}/c1`, `${origin}/b`)
 
-    await leftPage(`${origin}/c1`)?.click('#go')
+    await inPage(app, `${origin}/c1`, "document.getElementById('go').click()")
     await settled('link, same site', `${origin}/c1-link`, `${origin}/b`)
 
-    await leftPage(`${origin}/c1-link`)?.evaluate((target) => { location.href = target }, `${origin}/c2`)
+    await inPage(app, `${origin}/c1-link`, `location.href = ${JSON.stringify(`${origin}/c2`)}`)
     await settled('script, same site', `${origin}/c2`, `${origin}/b`)
 
     await clickAddressBarRetrying(chrome, `${site('two')}/c3`)
     await settled('address bar, another site', `${site('two')}/c3`, `${origin}/b`)
 
-    await leftPage(`${site('two')}/c3`)?.evaluate((target) => { location.href = target }, `${site('three')}/c4`)
+    await inPage(app, `${site('two')}/c3`, `location.href = ${JSON.stringify(`${site('three')}/c4`)}`)
     await settled('script, another site', `${site('three')}/c4`, `${origin}/b`)
 
     await clickAddressBarRetrying(chrome, `${appOrigin}/c5`)
     await settled('address bar, into an app', `${appOrigin}/c5`, `${origin}/b`)
 
-    await leftPage(`${appOrigin}/c5`)?.evaluate((target) => { location.href = target }, `${origin}/c6`)
+    await inPage(app, `${appOrigin}/c5`, `location.href = ${JSON.stringify(`${origin}/c6`)}`)
     await settled('script, out of an app', `${origin}/c6`, `${origin}/b`)
 
-    await leftPage(`${origin}/c6`)?.evaluate((target) => { location.href = target }, `${appOrigin}/c7`)
+    await inPage(app, `${origin}/c6`, `location.href = ${JSON.stringify(`${appOrigin}/c7`)}`)
     await settled('script, into an app', `${appOrigin}/c7`, `${origin}/b`)
 
     // The other pane gets the same: one press makes it the pane the person is in.
-    await leftPage(`${origin}/b`)?.mouse.click(120, 200)
+    await pressIn(app, `${origin}/b`, 120, 200)
     expect(await waitFor(async () => await activeId(chrome) === b)).toBe(true)
     await clickAddressBarRetrying(chrome, `${appOrigin}/d1`)
     await settled('the other pane, into an app', `${appOrigin}/c7`, `${appOrigin}/d1`)
-    await leftPage(`${appOrigin}/d1`)?.evaluate((target) => { location.href = target }, `${origin}/d2`)
+    await inPage(app, `${appOrigin}/d1`, `location.href = ${JSON.stringify(`${origin}/d2`)}`)
     await settled('the other pane, out of an app', `${appOrigin}/c7`, `${origin}/d2`)
 
     // An address of the shell's own opens its page in a tab of its own, which takes the screen from the pair; the pair comes back whole.

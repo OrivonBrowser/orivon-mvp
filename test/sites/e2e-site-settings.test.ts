@@ -206,7 +206,9 @@ it('shows an answer in the popover, changes it there, lists it in Settings, forg
     await popup.click('.perm-select[data-kind="camera"]')
     await delay(600)
     shootScreen('popover-select-open')
-    await popup.keyboard.press('Escape')
+    // On macOS the open list is a native menu; Playwright's Escape reaches the page, not that menu, so the page would
+    // close its popover (src/renderer/pages/shared/escape-closes.ts). The next step changes the select either way.
+    if (process.platform !== 'darwin') await popup.keyboard.press('Escape')
 
     // Changing it applies at once and offers the reload.
     await popup.selectOption('.perm-select[data-kind="camera"]', 'block')

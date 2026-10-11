@@ -171,16 +171,24 @@ it('gives an ordinary page fullscreen, real popups, a leave prompt and a Chrome 
         check('the page keeps its keyboard focus in fullscreen, under the notice', await webContentsFocused(app, ORIGIN))
       }
 
+      const fullScreenBeforeEscape = (await windowInfo(app)).fullScreen
       await pressEscapeIn(app, ORIGIN)
       let restored: WindowInfo | undefined
+      let inPage: boolean | undefined
+      let mainSees: string | undefined
       const left = await waitFor(async () => {
         restored = await windowInfo(app as ElectronApplication)
         const tab = restored.views.find((v) => v.url === ORIGIN)
-        const inPage = await evaluateRetrying(view, () => document.fullscreenElement === null)
+        inPage = await evaluateRetrying(view, () => document.fullscreenElement === null)
+        // The same question asked from the main process, so a failure says whether the page or the driver's view of it is behind.
+        mainSees = await (app as ElectronApplication).evaluate(async ({ webContents }, target) => {
+          const wc = webContents.getAllWebContents().find((c) => c.getURL() === target)
+          return wc === undefined ? 'no page' : String(await wc.executeJavaScript('document.fullscreenElement === null').catch(() => 'unreadable'))
+        }, ORIGIN)
         return inPage && !restored.fullScreen && tab !== undefined && tab.bounds.y > 0 &&
           restored.views.every((v) => (v.visible || isOverlay(v.url)) && !v.url.startsWith('data:'))
       })
-      check('Escape leaves fullscreen and gives the window back to the chrome', left, JSON.stringify(restored))
+      check('Escape leaves fullscreen and gives the window back to the chrome', left, JSON.stringify({ inPage, mainSees, fullScreenBeforeEscape, ...restored }))
 
       // --- window.open with an opener -----------------------------------
       await view.click('#open')

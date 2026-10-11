@@ -117,9 +117,19 @@ describe('offscreen document lifecycle and navigation policy', () => {
       const pid = liveApp.process().pid
       if (pid === undefined) throw new Error('no pid for the launched app')
 
-      await liveApp.evaluate(({ BaseWindow }) => {
+      // The thing proven: the offscreen document does not stop Electron emitting window-all-closed. Off macOS the
+      // browser quits on it; on macOS it stays resident (src/main/index.ts), so it is quit explicitly below.
+      await liveApp.evaluate(({ app: electronApp, BaseWindow }) => {
+        const seen = globalThis as { __windowAllClosed?: boolean }
+        seen.__windowAllClosed = false
+        electronApp.once('window-all-closed', () => { seen.__windowAllClosed = true })
         for (const win of BaseWindow.getAllWindows()) win.close()
       })
+      if (process.platform === 'darwin') {
+        const emitted = await waitFor(async () => await liveApp.evaluate(() => (globalThis as { __windowAllClosed?: boolean }).__windowAllClosed === true), 15_000)
+        expect(emitted).toBe(true)
+        void liveApp.evaluate(({ app: electronApp }) => { electronApp.quit() }).catch(() => {})
+      }
 
       const exited = await waitFor(() => {
         try {

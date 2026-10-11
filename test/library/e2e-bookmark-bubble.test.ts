@@ -219,8 +219,10 @@ it('picks a folder with the mouse without the bubble closing under the select', 
     await bubble.click('select[aria-label="Folder"]')
     await delay(800)
     expect(await overlayOpen(app)).toBe(true)
-    // A key moves the choice and Enter takes it, whether the list is drawn open or the select is closed.
-    await bubble.keyboard.press('ArrowDown')
+    // A key moves the choice and Enter takes it, whether the list is drawn open or the select is closed. On macOS
+    // ArrowDown opens a native popup menu that Playwright cannot drive, so the choice is set on the select directly.
+    if (process.platform === 'darwin') await bubble.selectOption('select[aria-label="Folder"]', WORK)
+    else await bubble.keyboard.press('ArrowDown')
     await closing(async () => await bubble.keyboard.press('Enter'))
     expect(await fileWhere(app, (roots) => work(roots)?.children?.some((node) => node.url === pageUrl('a')) === true)).toBe(true)
   } finally {
