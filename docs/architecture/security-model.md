@@ -246,7 +246,8 @@ keeps its own tables, and holds no authority of its own.
 `safeStorage` is Keychain on macOS and DPAPI on Windows, but on Linux requires an available
 keyring; `isAsyncEncryptionAvailable()` resolves false without one, and Electron's own
 `'basic_text'`/`'unknown'` `getSelectedStorageBackend()` values mean the same thing by a
-different route. **Never a silent plaintext fallback.** `src/main/keyring/seed-store.ts`
+different route. Electron has `getSelectedStorageBackend()` on Linux only, so it is asked there alone
+(`hasRealKeyring`). **Never a silent plaintext fallback.** `src/main/keyring/seed-store.ts`
 ([`ADR-0033`](../decisions/ADR-0033-an-app-may-hold-an-origin-bound-secret-in-the-os-keyring.md))
 generates an ephemeral, session-only identity for that launch instead, and never writes it to
 disk; the choice is not shown to the person for now, only logged.
