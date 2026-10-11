@@ -6,7 +6,7 @@ import type { SlotAsk } from '../../overlays/tab-slots.js'
 import type { ShellWindow } from '../../shell/window-registry.js'
 import { certErrorOverlay } from '../cert-error-overlay.js'
 import { certErrorText, isCertError } from '../cert-error-text.js'
-import { hostOfFailure, watchCertErrors } from '../cert-error-watch.js'
+import { forgetCertErrors, hostOfFailure, watchCertErrors } from '../cert-error-watch.js'
 
 describe('certificate error codes', () => {
   it('knows the certificate block of network errors and nothing else', () => {
@@ -131,6 +131,20 @@ describe('watching a tab for a certificate failure', () => {
     fail(s.contents, -201, 'https://bad.example/')
     expect(s.cancel).toHaveBeenCalledTimes(2)
     expect(s.asks).toHaveLength(3)
+  })
+
+  it('takes the sheet away when other web contents take the tab\'s place, and only that web contents\' sheet', () => {
+    const s = setup()
+    const other = setup()
+    watchCertErrors(s.contents as unknown as WebContents, s.deps)
+    watchCertErrors(other.contents as unknown as WebContents, { ...other.deps, findTab: () => ({ window: WINDOW, tabId: 't2' }) })
+    fail(s.contents, -202, 'https://bad.example/')
+    fail(other.contents, -202, 'https://bad.example/')
+    forgetCertErrors(s.contents as unknown as WebContents)
+    expect(s.cancel).toHaveBeenCalledOnce()
+    expect(other.cancel).not.toHaveBeenCalled()
+    forgetCertErrors(new EventEmitter() as unknown as WebContents)
+    expect(other.cancel).not.toHaveBeenCalled()
   })
 
   it('watches a web contents once', () => {

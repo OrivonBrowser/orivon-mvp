@@ -3,7 +3,7 @@ import { requestSlot } from '../overlays/tab-slots.js'
 import { upgradeTracker } from '../privacy/https-fallback.js'
 import { partitionAfterFileBlock } from '../local-files/partition.js'
 import type { ShellInstaller } from '../shell/shell-installers.js'
-import { watchLoadErrors, type LoadErrorDeps } from './load-error-watch.js'
+import { forgetLoadErrors, watchLoadErrors, type LoadErrorDeps } from './load-error-watch.js'
 
 export const installLoadErrors: ShellInstaller = {
   name: 'load-errors',
@@ -16,7 +16,7 @@ export const installLoadErrors: ShellInstaller = {
     }
     services.tabLifecycle.subscribe({
       tabCreated: (contents) => { watchLoadErrors(contents, deps) },
-      viewReplaced: (_old, contents) => { watchLoadErrors(contents, deps) }
+      viewReplaced: (old, contents) => { forgetLoadErrors(old); watchLoadErrors(contents, deps) }
     })
   }
 }
