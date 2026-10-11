@@ -60,6 +60,8 @@ describe('TelemetryService', () => {
   })
 
   afterEach(async () => {
+    // An acceptance starts a send it does not wait for, and that send writes when it ends: let it land before the folder goes.
+    await service.sendNow()
     await rm(dir, { recursive: true, force: true })
   })
 
