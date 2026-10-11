@@ -144,6 +144,8 @@ export interface ShellState extends TabsSnapshot {
   uiScale?: number
   /** What pointing at a tab shows. Absent reads as the preview. */
   hoverCard?: 'off' | 'text' | 'preview'
+  /** Whether the window fills the screen (not a page's own HTML fullscreen). Absent reads as false. */
+  fullScreen?: boolean
 }
 
 export interface Bounds {
