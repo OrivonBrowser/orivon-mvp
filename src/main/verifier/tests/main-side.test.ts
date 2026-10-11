@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createServer } from 'node:net'
 import { BUILTIN_ADDRESSES } from '../../../protocols/builtin.js'
-import { ACCEPT, CHROMIUM_VERDICT, REJECT, verifierCertificateVerdict } from '../certificate-check.js'
+import { ACCEPT, CHROMIUM_VERDICT, REJECT, refusalNote, verifierCertificateVerdict } from '../certificate-check.js'
 import { loopbackPort } from '../loopback-port.js'
 import { composeResolverRules } from '../resolver-rules.js'
 
@@ -46,6 +46,18 @@ describe('verifierCertificateVerdict', () => {
   it("leaves every other host to Chromium's own verdict, even with the run's certificate", () => {
     expect(verdict('example.com', RUN, RUN)).toBe(CHROMIUM_VERDICT)
     expect(verdict('eth.example.com', RUN, RUN)).toBe(CHROMIUM_VERDICT)
+  })
+})
+
+describe('refusalNote', () => {
+  it('names the host, both fingerprints cut short, and the host process state', () => {
+    expect(refusalNote('app.eth', 'sha256/AAAABBBBCCCCDDDDEEEEFFFF=', 'sha256/ZZZZYYYYXXXXWWWWVVVV=', 'running'))
+      .toBe("[verifier] refused certificate AAAABBBBCCCCDDDD for app.eth: the verifier's is ZZZZYYYYXXXXWWWW (host running)")
+  })
+
+  it('says when no verifier certificate was known yet', () => {
+    expect(refusalNote('app.eth', 'sha256/AAAABBBBCCCCDDDDEEEE=', undefined, 'asleep'))
+      .toBe('[verifier] refused certificate AAAABBBBCCCCDDDD for app.eth: no verifier certificate was known (host asleep)')
   })
 })
 
