@@ -3,8 +3,11 @@ name: Cross-OS
 # Runs Orivon from source on Windows and macOS (Linux when asked), the way a person on that system runs it: `npm ci`
 # with the Rule 8 guard over that system's dependency tree, the build `npm start` makes, `smoke` (the real shell
 # driven by clicks and typing), then e2e specs, by default the QA states spec, which saves a screenshot of every state
-# it reaches. Each system uploads what it saw as `cross-os-<system>`. Start and read it from a terminal with
-# `node scripts/ci/cross-os.mjs` (scripts/ci/README.md); release.yml covers the packages.
+# it reaches. Each job uploads what it saw as `cross-os-<system>`, or `cross-os-<system>-<shard>` when the specs are
+# split across runners. Start and read it from a terminal with `node scripts/ci/cross-os.mjs` (scripts/ci/README.md);
+# release.yml covers the packages.
+# The tag tells apart runs dispatched at once on one commit; cross-os.mjs finds its own run by it.
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('Cross-OS on {0}, run {1}', inputs.systems, inputs.tag) || github.event.pull_request.title }}
 on:
   workflow_dispatch:
     inputs:
@@ -14,6 +17,12 @@ on:
       specs:
         description: 'e2e spec files to run after smoke, space-separated, or none'
         default: 'test/qa/e2e-qa-visual.test.ts'
+      shards:
+        description: 'runners each system splits the specs across, by their recorded seconds'
+        default: '1'
+      tag:
+        description: 'a word for the run name'
+        default: ''
   pull_request:
     paths:
       - .github/workflows/cross-os.yml
@@ -45,17 +54,23 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          sparse-checkout: scripts
+          sparse-checkout: |
+            /scripts/
+            /test/spec-weights.json
+          sparse-checkout-cone-mode: false
           persist-credentials: false
 
-      - name: Systems to run on
+      # A pull request changes the install or the launch, so it runs install and smoke only.
+      - name: Systems to run on, and the specs of each runner
         id: matrix
         env:
           SYSTEMS: ${{ inputs.systems || 'windows,macos' }}
-        run: echo "matrix=$(node scripts/ci/cross-os.mjs --matrix "$SYSTEMS")" >> "$GITHUB_OUTPUT"
+          SPECS: ${{ github.event_name == 'pull_request' && 'none' || inputs.specs || 'test/qa/e2e-qa-visual.test.ts' }}
+          SHARDS: ${{ inputs.shards || '1' }}
+        run: echo "matrix=$(node scripts/ci/cross-os.mjs --matrix "$SYSTEMS" --specs "$SPECS" --shards "$SHARDS")" >> "$GITHUB_OUTPUT"
 
   run:
-    name: from source (${{ matrix.system }})
+    name: ${{ matrix.name }}
     needs: plan
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
@@ -65,9 +80,8 @@ jobs:
     defaults:
       run:
         shell: bash
-    # A pull request changes the install or the launch, so it runs install and smoke only.
     env:
-      SPECS: ${{ github.event_name == 'pull_request' && 'none' || inputs.specs || 'test/qa/e2e-qa-visual.test.ts' }}
+      SPECS: ${{ matrix.specs }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -115,7 +129,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ !cancelled() }}
         with:
-          name: cross-os-${{ matrix.system }}
+          name: ${{ matrix.artifact }}
           path: |
             cross-os/
             qa-artifacts/latest/

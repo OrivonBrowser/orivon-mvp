@@ -4,14 +4,16 @@
  * result, captured screenshots and failure evidence under `qa-artifacts/cross-os/<run id>/` and prints a summary.
  * `--packaged` starts `release.yml` instead: the packages built, installed and launched on each system.
  *
- *   node scripts/ci/cross-os.mjs [--systems windows,macos,linux] [--specs "<e2e spec files>" | --specs none]
+ *   node scripts/ci/cross-os.mjs [--systems windows,macos,linux] [--specs "<e2e spec files or folders>" | --specs none] [--shards <n>]
  *   node scripts/ci/cross-os.mjs --packaged
  *   node scripts/ci/cross-os.mjs --run <run id> | --run latest     reads a run already started (latest: main's nightly)
  */
 import { execFileSync } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { isInvokedDirectly } from '../cli.mjs'
+import { listSpecs, packShards, WEIGHTS } from './select-e2e.mjs'
 
 /** The systems a run can take, and the hosted runner each one runs on. */
 export const SYSTEMS = { windows: 'windows-latest', macos: 'macos-latest', linux: 'ubuntu-latest' }
@@ -21,6 +23,8 @@ export const DEFAULT_SPECS = 'test/qa/e2e-qa-visual.test.ts'
 export const WORKFLOW = 'cross-os.yml'
 export const PACKAGED_WORKFLOW = 'release.yml'
 export const OUT_DIR = join('qa-artifacts', 'cross-os')
+/** Runners one system may split its specs across: GitHub runs 20 jobs of a free account at once, 5 of them macOS. */
+export const MAX_SHARDS = 20
 
 const POLL_MS = 30_000
 const FIND_RUN_MS = 120_000
@@ -36,9 +40,54 @@ export function parseSystems (text) {
   return names
 }
 
-/** The `run` job's matrix in cross-os.yml. */
-export function matrixFor (text) {
-  return { include: parseSystems(text).map((system) => ({ system, os: SYSTEMS[system] })) }
+/** @param {string} text how many runners each system splits its specs across */
+export function parseShards (text) {
+  const count = Number(text)
+  if (!Number.isInteger(count) || count < 1 || count > MAX_SHARDS) throw new Error(`--shards takes a whole number from 1 to ${MAX_SHARDS}, not ${text}`)
+  return count
+}
+
+/**
+ * The spec files `text` names, in order and once each, a folder standing for every spec under it.
+ * @param {string[]} specs every spec the e2e config runs (select-e2e.mjs listSpecs)
+ */
+export function expandSpecs (text, specs) {
+  const out = []
+  for (const name of text.split(/\s+/).filter(Boolean).map((part) => part.replace(/^\.\//, '').replace(/\/+$/, ''))) {
+    const under = specs.filter((spec) => spec.startsWith(`${name}/`))
+    for (const file of under.length > 0 ? under : [name]) if (!out.includes(file)) out.push(file)
+  }
+  return out
+}
+
+/**
+ * The `run` job's matrix: one entry per system (live-session.yml), or, given `specs`, `shards` entries per system
+ * that share the specs by their recorded seconds, each carrying its job's name, its artifact's name and its specs.
+ * @param {string} text a comma or space list of system names
+ * @param {{ specs?: string, shards?: number, weights?: Record<string, number> }} [options]
+ * @returns {{ include: Array<{ system: string, os: string, name?: string, artifact?: string, specs?: string }> }}
+ */
+export function matrixFor (text, { specs, shards = 1, weights = {} } = {}) {
+  const systems = parseSystems(text)
+  if (specs === undefined) return { include: systems.map((system) => ({ system, os: SYSTEMS[system] })) }
+  const files = specs === 'none' ? [] : specs.split(/\s+/).filter(Boolean)
+  const parts = shards > 1 && files.length > 1 ? packShards(files, weights, { targetSeconds: 1, maxShards: shards }).map((shard) => shard.files) : [files]
+  return {
+    include: systems.flatMap((system) => parts.map((part, at) => ({
+      system,
+      os: SYSTEMS[system],
+      name: parts.length === 1 ? `from source (${system})` : `from source (${system}) ${at + 1} of ${parts.length}`,
+      artifact: parts.length === 1 ? `cross-os-${system}` : `cross-os-${system}-${at + 1}`,
+      specs: part.length === 0 ? 'none' : part.join(' ')
+    })))
+  }
+}
+
+/** The part of a job's name its artifact and evidence folder are named after: `windows`, or `windows-3` for a shard. */
+export function jobLabel (name) {
+  const match = /\((\w+)\)(?: (\d+) of \d+)?/.exec(name)
+  if (match === null) return undefined
+  return match[2] === undefined ? match[1] : `${match[1]}-${match[2]}`
 }
 
 /**
@@ -167,12 +216,12 @@ function collect (run, dir, packaged) {
   /** @type {Record<string, any>} */
   const evidence = {}
   for (const job of run.jobs) {
-    const system = /\((\w+)\)/.exec(job.name)?.[1]
-    if (system === undefined) continue
+    const label = jobLabel(job.name)
+    if (label === undefined) continue
     const seen = { screenshots: 0 }
-    const into = join(dir, system)
+    const into = join(dir, label)
     if (!packaged) {
-      try { gh('run', 'download', String(run.databaseId), '-n', `cross-os-${system}`, '-D', into) } catch {}
+      try { gh('run', 'download', String(run.databaseId), '-n', `cross-os-${label}`, '-D', into) } catch {}
       const files = filesUnder(into)
       const smoke = files.find((file) => file.endsWith('smoke.out'))
       if (smoke !== undefined) seen.smoke = smokeResult(readFileSync(smoke, 'utf8'))
@@ -199,7 +248,9 @@ if (isInvokedDirectly(import.meta.url)) {
     const packaged = process.argv.includes('--packaged')
     const workflow = packaged ? PACKAGED_WORKFLOW : WORKFLOW
     if (arg('matrix') !== undefined) {
-      console.log(JSON.stringify(matrixFor(arg('matrix'))))
+      const specs = arg('specs')
+      const weights = existsSync(WEIGHTS) ? JSON.parse(readFileSync(WEIGHTS, 'utf8')) : {}
+      console.log(JSON.stringify(matrixFor(arg('matrix'), specs === undefined ? {} : { specs, shards: parseShards(arg('shards') ?? '1'), weights })))
       process.exit(0)
     }
     let id = arg('run')
@@ -209,11 +260,17 @@ if (isInvokedDirectly(import.meta.url)) {
     }
     if (id === undefined) {
       const systems = arg('systems') ?? DEFAULT_SYSTEMS
-      const specs = arg('specs') ?? DEFAULT_SPECS
+      const shards = arg('shards') ?? '1'
       parseSystems(systems)
-      const missing = specs === 'none' ? [] : specs.split(/\s+/).filter((file) => file !== '' && !existsSync(file))
+      parseShards(shards)
+      const files = arg('specs') === 'none' ? [] : expandSpecs(arg('specs') ?? DEFAULT_SPECS, listSpecs('.'))
+      const missing = files.filter((file) => !existsSync(file))
       if (missing.length > 0) throw new Error(`no such spec file: ${missing.join(', ')}`)
-      id = String(await dispatch(workflow, packaged ? {} : { systems, specs }))
+      // The tag goes into the run's name, so dispatches started at once on one commit each find their own run.
+      const tag = randomBytes(4).toString('hex')
+      id = String(packaged
+        ? await dispatch(workflow, {})
+        : await dispatch(workflow, { systems, specs: files.length === 0 ? 'none' : files.join(' '), shards, tag }, `run ${tag}`))
     }
     const run = { ...(await waitFor(id)), databaseId: Number(id) }
     const dir = join(OUT_DIR, id)
