@@ -90,8 +90,9 @@ it('wears the permission chip, the password key, the zoom chip and the Web3 mark
     expect(await waitFor(async () => await popoverShown(app, 'overlay=site-prompt'), 15_000)).toBe(true)
     expect(await waitFor(() => app.windows().some((w) => w.url().includes('overlay=site-prompt') && !w.isClosed()))).toBe(true)
     const prompt = app.windows().filter((w) => w.url().includes('overlay=site-prompt') && !w.isClosed()).at(-1) as Page
-    await prompt.waitForSelector('.site-prompt:not(.arming)')
-    await prompt.click('.btn-row .btn:text-is("Block")').catch(() => {})
+    // The empty card is not arming either, so wait for the drawn buttons that are past the guard: a press inside it is ignored.
+    await prompt.waitForSelector('.site-prompt:not(.arming) .btn-row')
+    try { await prompt.click('.btn-row .btn:text-is("Block")') } catch (error) { if (!/closed|destroyed/.test(String(error))) throw error }
     const chip = async (): Promise<boolean> => await chrome.evaluate(() => { const el = document.querySelector<HTMLElement>('#site-access-chip'); return el !== null && !el.hidden })
     expect(await waitFor(chip)).toBe(true)
 
