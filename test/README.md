@@ -49,6 +49,15 @@ takes; CI uses them to run only the specs a pull request can reach, in parallel 
 `vitest.e2e.config.ts` selects every `test/**/*.test.ts` except `apps/`; CI, `npm run test:e2e` and the
 scripts cite it by that path.
 
+## Keys a spec presses and reads
+
+The product binds `Mod` to Command on macOS and to Control elsewhere, and some commands have another key there
+(`macDefault` in `src/main/shortcuts/commands.ts`). A spec presses `pressCommand(app, urlPart, 'tab.new')` or
+`pressBinding(app, urlPart, 'Mod+Shift+O')` from `support/e2e-helpers.ts`, never `pressKey` with a hard-coded
+`'control'`; `pressKey` stays for a key with no modifier or a literal `Ctrl` binding such as `Ctrl+Tab`. The text a menu,
+tooltip or Settings row shows for a binding is `shownBinding(bindingOf('tab.new'))` or `keyCapsOf(binding)`. In
+Playwright, `ControlOrMeta` stands for `Mod` in a click or a key typed into a text field.
+
 ## `support/launch-electron.mjs` — the only correct way to start Electron in this repo
 
 **This machine has `ELECTRON_RUN_AS_NODE=1` set in the ambient shell.** It makes the Electron

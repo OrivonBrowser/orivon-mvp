@@ -7,7 +7,7 @@ import type { AddressInfo } from 'node:net'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
-import { clickAddressBarRetrying, pressKey } from '../support/e2e-helpers.js'
+import { clickAddressBarRetrying, pressCommand } from '../support/e2e-helpers.js'
 import { bookmarkUrls, delay, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 let server: Server
@@ -131,7 +131,7 @@ it('a new window is shown the moment it is made', async () => {
       }, 1)
     })
 
-    await pressKey(app, '/renderer/index.html', 'N', ['control'])
+    await pressCommand(app, '/renderer/index.html', 'window.new')
     expect(await waitFor(() => chromePages(app).length === 2)).toBe(true)
 
     const visibleWhenSeen = await app.evaluate(() => {

@@ -12,7 +12,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { pointScript } from '../../src/main/page-tools/pip.js'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
-import { clickAddressBarRetrying, pressKey } from '../support/e2e-helpers.js'
+import { bindingOf, clickAddressBarRetrying, pressCommand, shownBinding } from '../support/e2e-helpers.js'
 import { ABSENCE_SETTLE_MS, delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, popoverShown, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 90_000
@@ -185,14 +185,14 @@ async function shoot (app: App, page: Page, name: string): Promise<void> {
   await page.emulateMedia({ colorScheme: null })
 }
 
-it('Ctrl+S saves the page complete, or as one .mhtml file by its extension, and names it in a toast', async () => {
+it('Mod+S saves the page complete, or as one .mhtml file by its extension, and names it in a toast', async () => {
   const { app, chrome } = await launched(`${origin}/`)
   try {
     // The suggested name comes from the title, which arrives after the address.
     expect((await waitForTab(chrome, { title: 'Fixture: page tools' })).ok).toBe(true)
     const html = join(outDir, 'page.html')
     await stubSaveDialog(app, html)
-    await pressKey(app, origin, 'S', ['control'])
+    await pressCommand(app, origin, 'page.save')
     expect(await waitForToast(app, 'Saved page.html')).toBe(true)
     expect(readFileSync(html, 'utf8')).toContain(MARKER)
     const [shown] = await saveOptions(app)
@@ -203,7 +203,7 @@ it('Ctrl+S saves the page complete, or as one .mhtml file by its extension, and 
 
     const mhtml = join(outDir, 'page.mhtml')
     await stubSaveDialog(app, mhtml)
-    await pressKey(app, origin, 'S', ['control'])
+    await pressCommand(app, origin, 'page.save')
     // The file appears before its bytes are written: wait for the whole archive.
     expect(await waitFor(() => existsSync(mhtml) && readFileSync(mhtml, 'utf8').includes('MIME-Version'))).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
@@ -216,7 +216,7 @@ it('a cancelled dialog writes no file and shows no toast', async () => {
   const { app } = await launched(`${origin}/`)
   try {
     await stubSaveDialog(app, null)
-    await pressKey(app, origin, 'S', ['control'])
+    await pressCommand(app, origin, 'page.save')
     expect(await waitFor(async () => (await saveOptions(app)).length === 1)).toBe(true)
     await delay(ABSENCE_SETTLE_MS)
     expect(await toastText(app)).toBeNull()
@@ -231,7 +231,7 @@ it('a page that is an image is downloaded as the file it is', async () => {
   try {
     const target = join(outDir, 'pic-copy.png')
     await stubSaveDialog(app, target)
-    await pressKey(app, origin, 'S', ['control'])
+    await pressCommand(app, origin, 'page.save')
     expect(await waitForToast(app, 'Saved pic-copy.png')).toBe(true)
     expect(readFileSync(target).equals(PNG)).toBe(true)
     expect((await saveOptions(app))[0]?.title).toBe('Save as')
@@ -256,11 +256,11 @@ it('Save as PDF, from More tools, writes a PDF behind a "Saving PDF…" toast', 
   }
 }, TEST_TIMEOUT_MS)
 
-it('Ctrl+U opens the source beside the page, in a foreground tab that shows the view-source address', async () => {
+it('Mod+U opens the source beside the page, in a foreground tab that shows the view-source address', async () => {
   const { app, chrome } = await launched(`${origin}/`)
   try {
     const before = await tabIds(chrome)
-    await pressKey(app, origin, 'U', ['control'])
+    await pressCommand(app, origin, 'page.viewSource')
     expect(await waitFor(async () => (await tabIds(chrome)).length === 2)).toBe(true)
     const ids = await tabIds(chrome)
     expect(ids[0]).toBe(before[0])
@@ -283,7 +283,7 @@ it('View page source does nothing on a page that is not on the web', async () =>
   try {
     expect(await waitFor(() => { try { findChrome(app); return true } catch { return false } })).toBe(true)
     const chrome = findChrome(app)
-    await pressKey(app, '/renderer/index.html', 'U', ['control'])
+    await pressCommand(app, '/renderer/index.html', 'page.viewSource')
     await delay(ABSENCE_SETTLE_MS)
     expect(await tabIds(chrome)).toHaveLength(1)
   } finally {
@@ -291,7 +291,7 @@ it('View page source does nothing on a page that is not on the web', async () =>
   }
 }, TEST_TIMEOUT_MS)
 
-it('Ctrl+P prints with backgrounds on; with no printer it never prints and goes straight to Save as PDF, which saves', async () => {
+it('Mod+P prints with backgrounds on; with no printer it never prints and goes straight to Save as PDF, which saves', async () => {
   const { app } = await launched(`${origin}/`)
   try {
     // With no printer the real call never comes back: the tool must not make it.
@@ -305,7 +305,7 @@ it('Ctrl+P prints with backgrounds on; with no printer it never prints and goes 
     }, origin)
     const target = join(outDir, 'from-print.pdf')
     await stubSaveDialog(app, target)
-    await pressKey(app, origin, 'P', ['control'])
+    await pressCommand(app, origin, 'page.print')
     expect(await waitForToast(app, 'Saved from-print.pdf')).toBe(true)
     expect(await app.evaluate(() => (globalThis as unknown as { __printed: unknown[] }).__printed)).toEqual([])
     expect(readFileSync(target).subarray(0, 4).toString('latin1')).toBe('%PDF')
@@ -327,7 +327,7 @@ it('with a printer, print is called with backgrounds on and the system dialog', 
       wc.getPrintersAsync = (async () => [{ name: 'fake' }]) as never
       wc.print = ((options: unknown, done: (ok: boolean, reason: string) => void) => { g.__printed.push(options); done(false, 'cancelled') }) as never
     }, origin)
-    await pressKey(app, origin, 'P', ['control'])
+    await pressCommand(app, origin, 'page.print')
     expect(await waitFor(async () => (await app.evaluate(() => (globalThis as unknown as { __printed: unknown[] }).__printed)).length === 1)).toBe(true)
     expect(await app.evaluate(() => (globalThis as unknown as { __printed: unknown[] }).__printed)).toEqual([{ silent: false, printBackground: true }])
     await delay(ABSENCE_SETTLE_MS)
@@ -341,7 +341,7 @@ it('the toast never takes focus, and a saved one that offers to show the file st
   const { app } = await launched(`${origin}/`)
   try {
     await stubSaveDialog(app, join(outDir, 'toast.html'))
-    await pressKey(app, origin, 'S', ['control'])
+    await pressCommand(app, origin, 'page.save')
     expect(await waitForToast(app, 'Saved')).toBe(true)
     const role = await (toastPage(app) as Page).locator('.toast').getAttribute('role')
     expect(role).toBe('status')
@@ -357,12 +357,12 @@ it('the toast never takes focus, and a saved one that offers to show the file st
   }
 }, TEST_TIMEOUT_MS)
 
-it('Ctrl+Shift+S opens the sheet; the visible area is saved at the page\'s own width, and the full page at its own height', async () => {
+it('Mod+Shift+S opens the sheet; the visible area is saved at the page\'s own width, and the full page at its own height', async () => {
   const { app } = await launched(`${origin}/`)
   try {
     const site = app.windows().find((w) => w.url() === `${origin}/`) as Page
     const view = await evaluateRetrying(site, () => ({ width: innerWidth, height: innerHeight, page: document.documentElement.scrollHeight }))
-    await pressKey(app, origin, 'S', ['control', 'shift'])
+    await pressCommand(app, origin, 'page.screenshot')
     expect(await waitFor(async () => await popoverShown(app, 'overlay=screenshot'))).toBe(true)
     const sheet = await overlayPage(app, 'screenshot')
     await sheet.waitForSelector('.shot')
@@ -380,7 +380,7 @@ it('Ctrl+Shift+S opens the sheet; the visible area is saved at the page\'s own w
     expect(pngSize(visible)).toEqual({ width: view.width, height: view.height })
     expect((await saveOptions(app))[0]?.defaultPath).toMatch(/Screenshot \d{4}-\d\d-\d\d at \d\d\.\d\d\.\d\d\.png$/)
 
-    await pressKey(app, origin, 'S', ['control', 'shift'])
+    await pressCommand(app, origin, 'page.screenshot')
     expect(await waitFor(async () => await popoverShown(app, 'overlay=screenshot'))).toBe(true)
     const again = await overlayPage(app, 'screenshot')
     await again.waitForSelector('.shot')
@@ -412,7 +412,7 @@ it('Copy puts the picture on the clipboard, Escape and the shortcut close the sh
       if (wc === undefined) throw new Error('no tab')
       wc.isDevToolsOpened = () => true
     }, origin)
-    await pressKey(app, origin, 'S', ['control', 'shift'])
+    await pressCommand(app, origin, 'page.screenshot')
     expect(await waitFor(async () => await popoverShown(app, 'overlay=screenshot'))).toBe(true)
     const sheet = await overlayPage(app, 'screenshot')
     await sheet.waitForSelector('.shot')
@@ -425,13 +425,13 @@ it('Copy puts the picture on the clipboard, Escape and the shortcut close the sh
     expect(await waitFor(async () => !(await popoverShown(app, 'overlay=screenshot')))).toBe(true)
     await delay(350)
 
-    await pressKey(app, origin, 'S', ['control', 'shift'])
+    await pressCommand(app, origin, 'page.screenshot')
     expect(await waitFor(async () => await popoverShown(app, 'overlay=screenshot'))).toBe(true)
-    await pressKey(app, origin, 'S', ['control', 'shift'])
+    await pressCommand(app, origin, 'page.screenshot')
     expect(await waitFor(async () => !(await popoverShown(app, 'overlay=screenshot')))).toBe(true)
     await delay(350)
 
-    await pressKey(app, origin, 'S', ['control', 'shift'])
+    await pressCommand(app, origin, 'page.screenshot')
     expect(await waitFor(async () => await popoverShown(app, 'overlay=screenshot'))).toBe(true)
     const third = await overlayPage(app, 'screenshot')
     await third.waitForSelector('.shot')
@@ -451,7 +451,7 @@ it('the sheet is operated from the keyboard: the arrows choose the area and Ente
       g.__copied = 0
       ;(clipboard as unknown as { write: (items: unknown[]) => Promise<void> }).write = async (items) => { g.__copied += items.length }
     })
-    await pressKey(app, origin, 'S', ['control', 'shift'])
+    await pressCommand(app, origin, 'page.screenshot')
     expect(await waitFor(async () => await popoverShown(app, 'overlay=screenshot'))).toBe(true)
     const sheet = await overlayPage(app, 'screenshot')
     await sheet.waitForSelector('.shot')
@@ -549,8 +549,8 @@ it('the main menu lists the page tools under their keys', async () => {
     const menu = await menuPage(app, chrome)
     const rows = await menu.locator('.menu-row .menu-label').allTextContents()
     expect(rows).toEqual(expect.arrayContaining(['Print', 'Save page as']))
-    expect(await menu.locator('.menu-row', { hasText: 'Save page as' }).locator('.menu-keys').textContent()).toBe('Ctrl+S')
-    expect(await menu.locator('.menu-row', { hasText: 'Print' }).locator('.menu-keys').textContent()).toBe('Ctrl+P')
+    expect(await menu.locator('.menu-row', { hasText: 'Save page as' }).locator('.menu-keys').textContent()).toBe(shownBinding(bindingOf('page.save')))
+    expect(await menu.locator('.menu-row', { hasText: 'Print' }).locator('.menu-keys').textContent()).toBe(shownBinding(bindingOf('page.print')))
     await menu.locator('.menu-row', { hasText: 'More tools' }).click()
     const more = await menu.locator('.menu-row .menu-label').allTextContents()
     expect(more).toEqual(expect.arrayContaining(['Take a screenshot', 'Picture in picture', 'Save as PDF', 'View page source']))

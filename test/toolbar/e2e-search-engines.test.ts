@@ -75,7 +75,7 @@ async function waitForRows (app: App, count = 1): Promise<string[]> {
 
 async function typeInBar (chrome: Page, text: string): Promise<void> {
   await chrome.click('#address')
-  await chrome.keyboard.press('Control+A')
+  await chrome.keyboard.press('ControlOrMeta+A')
   await chrome.keyboard.type(text, { delay: 25 })
 }
 

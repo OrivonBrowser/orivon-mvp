@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
-import { clickAddressBarRetrying, pressKey } from '../support/e2e-helpers.js'
+import { clickAddressBarRetrying, pressKey, pressCommand } from '../support/e2e-helpers.js'
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
 import { delay, popoverShown, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
@@ -175,7 +175,7 @@ it('crashes again after a reload, and the reload keys and a typed address all br
     await crash(app, here())
     await waitCard(app, true)
     await waitCrashedMark(chrome, 'sad fixture', true)
-    await pressKey(app, 'overlay=sad-tab', 'R', ['control'])
+    await pressCommand(app, 'overlay=sad-tab', 'nav.reload')
     await waitCard(app, false)
     expect(await waitFor(() => loads.get('/') === 3)).toBe(true)
 
@@ -233,11 +233,11 @@ it('closes the tab from the card, and reopening brings back one entry, not two',
     expect(await waitFor(async () => (await strip(chrome)).every((tab) => tab.title !== 'one'))).toBe(true)
     const before = (await strip(chrome)).length
 
-    await pressKey(app, here('/two'), 'T', ['control', 'shift'])
+    await pressCommand(app, here('/two'), 'tab.reopen')
     expect(await waitFor(async () => (await strip(chrome)).some((tab) => tab.title === 'one'))).toBe(true)
     expect((await strip(chrome)).length).toBe(before + 1)
     expect(await waitFor(async () => await app.evaluate(({ webContents }, url) => webContents.getAllWebContents().some((wc) => wc.getURL() === url && !wc.isLoading()), here('/one')))).toBe(true)
-    await pressKey(app, here('/one'), 'T', ['control', 'shift'])
+    await pressCommand(app, here('/one'), 'tab.reopen')
     await delay(800)
     expect((await strip(chrome)).filter((tab) => tab.title === 'one')).toHaveLength(1)
     expect(mainOutput(app)).not.toContain('uncaught exception')
