@@ -6,6 +6,7 @@ bindings the chrome names in tooltips, live with the Shortcuts settings), `group
 `side-panel.ts` (whether the panel is open, on which side, and the narrowest window that has one),
 `site-access.ts` (what the page in front was asked for and answered, for the address bar's chip),
 `popups-blocked.ts` (how many windows the page in front tried to open and was refused, for the pop-up chip), `sharing.ts` (what the page in front is sharing, for the sharing chip),
+`full-screen.ts` (whether the window fills the screen, for the window buttons the chrome draws on macOS then),
 `content-blocked.ts` (whether the page in front is on a site with JavaScript, images or sound switched off, for the
 mark on the address bar's key) and `extensions.ts` (how many extensions are loaded and whether the Extensions button
 shows, live with its setting and with extensions loading). Each is listed in

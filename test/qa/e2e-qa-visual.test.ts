@@ -168,6 +168,15 @@ for (const scheme of SCHEMES) {
         await chrome.click('#menu')
         expect(await waitFor(async () => !(await popoverShown(app, 'overlay=menu')))).toBe(true)
 
+        await chrome.click('#web3-score-btn')
+        expect(await popupSized(app, 'overlay=web3-score')).toBe(true)
+        await state(check, app, `web3-score-card-${scheme}`, {
+          expected: 'A card under the shield at the left of the address bar, headed "Web3 Score" beside a grey shield: one sentence on what the shield shows, then four rows, Level 1 to Level 4, each with a shield in its colour (red, orange, yellow, green), a Web2, Web2.5, Web2.5 or Web3 mark and one line of meaning; a note on which levels this computer checks, and two links, "Choose a score provider" and "How scores work". Nothing is cut and the card sits inside the window.',
+          action: 'Clicked the shield button on the new tab.'
+        })
+        await chrome.click('#web3-score-btn')
+        expect(await waitFor(async () => !(await popoverShown(app, 'overlay=web3-score')))).toBe(true)
+
         await openInternal(app, chrome, 'settings')
         await state(check, app, `settings-page-${scheme}`, {
           expected: 'orivon://settings is open in a new tab: a titled page with a navigation of sections and the selected section shown in full.',

@@ -42,8 +42,11 @@ describe('buildAppMenuTemplate', () => {
     const run = vi.fn()
     const template = buildAppMenuTemplate(await service('darwin'), run) as MenuItemConstructorOptions[]
 
-    expect(template.map((item) => item.role ?? item.label)).toEqual(['appMenu', 'editMenu', 'Tab', 'Go', 'Tools', 'Window', 'windowMenu'])
-    const items = template.flatMap((item) => Array.isArray(item.submenu) ? item.submenu : [])
+    // One Window menu, the system's, with the window commands inside it: never a second menu of the same name.
+    expect(template.map((item) => item.role ?? item.label)).toEqual(['appMenu', 'editMenu', 'Tab', 'Go', 'Tools', 'windowMenu'])
+    const windowMenu = template.at(-1)?.submenu as MenuItemConstructorOptions[]
+    expect(windowMenu.map((item) => item.role ?? item.type ?? 'command')).toEqual(['minimize', 'zoom', 'separator', ...COMMANDS.filter((command) => command.category === 'window').map(() => 'command'), 'separator', 'front'])
+    const items = template.flatMap((item) => Array.isArray(item.submenu) ? item.submenu : []).filter((item) => item.role === undefined && item.type === undefined)
     expect(items).toHaveLength(COMMANDS.length)
     for (const item of items) expect(item.registerAccelerator).toBe(false)
     expect(items.find((item) => item.label === 'New tab')?.accelerator).toBe('Command+T')
