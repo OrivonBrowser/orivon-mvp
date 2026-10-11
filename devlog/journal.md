@@ -87,6 +87,8 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - A published app no longer waits for your answer: it loads as a website, caches beside the question, and Allow reloads it as the app.
 - Attila's judgements lapse when a .eth site republishes; a daily check now opens an issue, and vitalik.eth plus five moved sites were re-judged.
 - Web3 Score tightened: an app relying on any server stops at Level 3; FreeTube, The Lounge and Element drop, WebTorrent and AirGap stay Web3.
+- From a user's feedback: the address bar searches Web3 by default (Explore), and one click switches it to Web2 (DuckDuckGo).
+- macOS full screen keeps the window buttons in the tab strip, and the new-tab shield opens a card explaining the four Web3 Score levels.
 
 ### In my head
 

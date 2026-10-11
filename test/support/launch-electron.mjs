@@ -18,13 +18,16 @@
 // the load-bearing bit that must survive spike/ being deleted. See
 // .claude/skills/orivon-electron/SKILL.md for the full incident writeup.
 import { _electron as electron } from 'playwright'
-import { rmSync } from 'node:fs'
+import { realpathSync, rmSync } from 'node:fs'
 import { mkdtemp, readdir, readFile, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { attachCollectors, holdEvidence } from './qa-evidence.mjs'
 import { CHROME_READY_TIMEOUT_MS, waitForChromeDrawn, waitForChromeReady, waitForChromeView } from './smoke-helpers.mjs'
 import { seedDefaultBrowserAskNotDue, seedNoScoreProvider, seedTheme } from './profile-seeds.mjs'
+import { noFocusDefault, SILENT_AUDIO_ENV, SILENT_AUDIO_SWITCH, visibleDesktopRefusal } from './launch-env.mjs'
+
+export { noFocusDefault, visibleDesktopRefusal }
 
 /**
  * The minimal shape registerLaunchForTeardown/closeElectron actually call --
@@ -41,42 +44,6 @@ import { seedDefaultBrowserAskNotDue, seedNoScoreProvider, seedTheme } from './p
 /** Environment variables that silently change what the binary IS. */
 const POISON = ['ELECTRON_RUN_AS_NODE']
 
-/**
- * This machine's audio output is a real, audible desktop: xvfb hides a
- * window, but nothing hides sound -- Chromium's audio service reaches
- * PipeWire/PulseAudio regardless of the virtual display, so a test page
- * that plays a tone (an oscillator, a captured tab) is heard on the
- * owner's real speakers. `PULSE_SERVER=unix:/nonexistent` makes Chromium's
- * PulseAudio client unable to connect, and it falls back to ALSA;
- * `--alsa-output-device=null` points that ALSA fallback at alsa-lib's own
- * null PCM instead of the real card. Audio still runs at real-time rate
- * (capture and `isCurrentlyAudible()` keep working, measured against
- * a tabCapture feasibility probe), only nothing
- * reaches a speaker. `--mute-audio` was not used instead: it can replace
- * the renderer's own sink with a null one and was not verified to leave
- * tab capture intact.
- */
-const SILENT_AUDIO_ENV = { PULSE_SERVER: 'unix:/nonexistent' }
-const SILENT_AUDIO_SWITCH = '--alsa-output-device=null'
-
-/**
- * Why a launch must not start, or undefined when it may. On a Linux desktop a window only stays off the
- * owner's screen when the launch runs under scripts/run-headless.mjs (a virtual display, the desktop's
- * Wayland socket hidden), which marks its child with ORIVON_RUN_HEADLESS. A driver script that launches
- * Electron without it opens a real window on the desktop, so it is refused here instead.
- * ORIVON_ALLOW_VISIBLE_WINDOW=1 is for a run someone means to watch.
- * @param {Record<string, string | undefined>} env
- * @param {string} [platform]
- * @returns {string | undefined}
- */
-export function visibleDesktopRefusal (env, platform = process.platform) {
-  if (platform !== 'linux') return undefined
-  if (env['ORIVON_RUN_HEADLESS'] !== undefined || env['ORIVON_ALLOW_VISIBLE_WINDOW'] === '1') return undefined
-  if (env['WAYLAND_DISPLAY'] === undefined && env['DISPLAY'] === undefined) return undefined
-  return 'launchElectron: refusing to open a window on the desktop. Run the command through ' +
-    '`node scripts/run-headless.mjs <command>` (or an npm script that does), or set ORIVON_ALLOW_VISIBLE_WINDOW=1 ' +
-    'for a run you mean to watch.'
-}
 
 /**
  * Ceiling on any single Playwright ACTION (click, fill, press) started
@@ -168,8 +135,8 @@ const SEEN_PIDS = new Set()
 export function registerLaunchForTeardown (app, { userDataDir } = {}) {
   if (userDataDir !== undefined) {
     USER_DATA_DIRS.set(app, userDataDir)
-    KNOWN_PROFILES.add(resolve(userDataDir))
-    KEPT_PROFILES.delete(resolve(userDataDir))
+    KNOWN_PROFILES.add(profileKey(userDataDir))
+    KEPT_PROFILES.delete(profileKey(userDataDir))
   }
   const pid = app.process().pid
   if (pid !== undefined) {
@@ -263,7 +230,7 @@ export async function launchElectron ({
   if (refusal !== undefined) throw new Error(refusal)
 
   // Nothing a test plays may reach the owner's real speakers -- see
-  // SILENT_AUDIO_ENV/SILENT_AUDIO_SWITCH's own doc. A caller that already
+  // SILENT_AUDIO_ENV/SILENT_AUDIO_SWITCH's own doc in launch-env.mjs. A caller that already
   // set PULSE_SERVER is left alone.
   if (env['PULSE_SERVER'] === undefined) env['PULSE_SERVER'] = SILENT_AUDIO_ENV.PULSE_SERVER
   // In front of the caller's arguments: after a caller's `--` it would be an operand Chromium never reads.
@@ -274,7 +241,7 @@ export async function launchElectron ({
   // it -- this is what makes `npm run smoke`/`test:e2e` no-focus even for
   // someone who runs them without xvfb-run, on a platform with no virtual
   // display at all (docs/development/setup.md).
-  if (env['ORIVON_WINDOW_NO_FOCUS'] === undefined) env['ORIVON_WINDOW_NO_FOCUS'] = '1'
+  if (env['ORIVON_WINDOW_NO_FOCUS'] === undefined) env['ORIVON_WINDOW_NO_FOCUS'] = noFocusDefault(process.platform, env)
   // The same for the Ethereum light client: off unless a caller turns it on,
   // so no test run contacts a mainnet RPC or beacon API. Every real `.eth`
   // name then fails closed; fixture names still load in a test build.
@@ -666,16 +633,29 @@ async function rmUserDataDir (dir, context) {
   })
 }
 
+/**
+ * One spelling per profile directory. macOS reaches its temporary folder through a symlink (`/var` is
+ * `/private/var`), and Electron reports the resolved path, so a spec handing back `app.getPath('userData')`
+ * names the same directory this file made under the other spelling.
+ */
+function profileKey (dir) {
+  try {
+    return realpathSync(dir)
+  } catch {
+    return resolve(dir)
+  }
+}
+
 /** True only for a profile directory this process made and has not removed. */
 function isOwnTempProfile (dir) {
-  return KNOWN_PROFILES.has(resolve(dir))
+  return KNOWN_PROFILES.has(profileKey(dir))
 }
 
 function keepProfileOf (app) {
   const dir = USER_DATA_DIRS.get(app)
   if (dir === undefined) return
   USER_DATA_DIRS.delete(app)
-  KEPT_PROFILES.add(resolve(dir))
+  KEPT_PROFILES.add(profileKey(dir))
   if (!sweepKeptAtExit) {
     sweepKeptAtExit = true
     process.once('exit', () => { for (const kept of KEPT_PROFILES) rmSync(kept, { recursive: true, force: true }) })
@@ -697,7 +677,7 @@ async function removeUserDataDirFor (app) {
   const dir = USER_DATA_DIRS.get(app)
   if (dir === undefined) return
   USER_DATA_DIRS.delete(app)
-  KNOWN_PROFILES.delete(resolve(dir))
+  KNOWN_PROFILES.delete(profileKey(dir))
   await rmUserDataDir(dir, 'closeElectron')
 }
 

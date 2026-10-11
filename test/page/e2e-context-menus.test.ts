@@ -151,7 +151,10 @@ it('offers the image set, the link set above it for a linked image, and the vide
 }, TEST_TIMEOUT_MS)
 
 it('searches a selection with the chosen engine in a tab put in front', async () => {
-  const { app, chrome } = await launched()
+  const { app, chrome } = await launched(async (dir) => {
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, 'settings.json'), JSON.stringify({ version: 1, values: { 'search.mode': 'web2' } }))
+  })
   try {
     const page = await visit(app, chrome, '/')
     await page.click('#text', { clickCount: 3 })

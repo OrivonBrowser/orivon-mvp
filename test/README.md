@@ -38,7 +38,7 @@ runs a real upstream app.
 | `telemetry/` | What usage statistics send and when: a real send of both reports to a loopback ingest, and nothing sent without consent or after it is withdrawn |
 | `window/` | Launch and start-up, profiles, windows, menus, overlays, shortcuts and theme |
 | `qa/` | The QA machinery proving itself: the layout audit, visual states, the failure-evidence bundle, journeys |
-| [`support/`](support/) | The shared harness: `launch-electron.mjs` (and `profile-seeds.mjs`, what it writes into a fresh profile), `smoke-helpers.mjs`, `e2e-helpers.ts`, the `qa-*` files, `question-support.ts`, and the unit tests of the teardown and the chrome-ready waits; [`virtual-hid/`](support/virtual-hid/README.md), a virtual USB HID device made through Docker and `/dev/uhid` |
+| [`support/`](support/) | The shared harness: `launch-electron.mjs` (with `profile-seeds.mjs`, what it writes into a fresh profile, and `launch-env.mjs`, what a launch may do to the machine), `smoke-helpers.mjs`, `e2e-helpers.ts`, the `qa-*` files, `question-support.ts`, and the unit tests of the teardown and the chrome-ready waits; [`virtual-hid/`](support/virtual-hid/README.md), a virtual USB HID device made through Docker and `/dev/uhid` |
 | [`apps/`](apps/), `fixtures/` | The apps and static pages the specs serve |
 
 `impact-map.json` says which of these areas a changed file reaches, and `spec-weights.json` how long each spec

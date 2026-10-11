@@ -1,9 +1,10 @@
-import { access, chmod, link, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { access, chmod, link, mkdir, mkdtemp, readFile, readlink, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname as dirnameOf, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { SENTINEL } from '@electron/fuses/dist/constants'
 import {
+  appBundleOf,
   CHECKOUT_FUSES,
   electronBinaryPath,
   electronInstallPlan,
@@ -196,15 +197,85 @@ describe('setCheckoutFuses', () => {
     expect(fusesOf(await readFile(join(real, 'electron')))).toEqual(SHIPPED)
   })
 
-  // The flip is measured on Linux only (A394); a macOS framework needs a re-sign and Windows
-  // refuses a rename over a running .exe, so neither is touched until it is measured.
-  it.each(['darwin', 'win32'] as const)('refuses on %s and leaves the binary alone', async (platform) => {
+  // Windows takes the same rename over a binary nothing runs; a running one refuses it, and the flip then fails.
+  it('flips a Windows binary the way it flips a Linux one', async () => {
+    await writeFile(binary, fakeBinary(SHIPPED))
+    const before = await stat(binary)
+    const result = await setCheckoutFuses({ binary, checkoutRoot: checkout(), platform: 'win32' })
+    expect(result.status).toBe('flipped')
+    expect((await stat(binary)).ino).not.toBe(before.ino)
+    expect(fusesOf(await readFile(binary))).toEqual(PACKAGED)
+  })
+
+  it('refuses a macOS binary that is not inside an .app bundle, and leaves it alone', async () => {
     const original = fakeBinary(SHIPPED)
     await writeFile(binary, original)
-    const result = await setCheckoutFuses({ binary, checkoutRoot: checkout(), platform })
+    const result = await setCheckoutFuses({ binary, checkoutRoot: checkout(), platform: 'darwin', sign: () => {} })
     expect(result.status).toBe('refused')
-    expect(result.reason).toMatch(/A394/)
+    expect(result.reason).toMatch(/\.app bundle/)
     expect(await readFile(binary)).toEqual(original)
+  })
+
+  describe('on macOS', () => {
+    let bundle: string
+    let executable: string
+    let framework: string
+
+    // Electron.app as the electron package lays it out: the wire is in the framework, reached through relative symlinks.
+    beforeEach(async () => {
+      bundle = join(root, 'checkout', 'node_modules', 'electron', 'dist', 'Electron.app')
+      executable = join(bundle, 'Contents', 'MacOS', 'Electron')
+      const versions = join(bundle, 'Contents', 'Frameworks', 'Electron Framework.framework', 'Versions')
+      await mkdir(join(versions, 'A'), { recursive: true })
+      await mkdir(dirnameOf(executable), { recursive: true })
+      await writeFile(executable, 'launcher')
+      await writeFile(join(versions, 'A', 'Electron Framework'), fakeBinary(SHIPPED))
+      await symlink('A', join(versions, 'Current'))
+      framework = join(versions, '..', 'Electron Framework')
+      await symlink('Versions/Current/Electron Framework', framework)
+    })
+
+    it('finds the bundle an executable belongs to', () => {
+      expect(appBundleOf(executable)).toBe(bundle)
+      expect(appBundleOf(binary)).toBeUndefined()
+    })
+
+    // A worktree's node_modules is a hard-linked copy: the framework is replaced with the bundle, never written in place.
+    it('flips a copy of the bundle, signs it, and swaps it in, leaving a hard-linked twin and the symlinks as they were', async () => {
+      const twin = join(root, 'twin')
+      await link(join(dirnameOf(framework), 'Versions', 'A', 'Electron Framework'), twin)
+      const signed: string[] = []
+      const sign = (path: string): void => { signed.push(path) }
+
+      const result = await setCheckoutFuses({ binary: executable, checkoutRoot: checkout(), platform: 'darwin', sign })
+
+      expect(result.status).toBe('flipped')
+      expect(fusesOf(await readFile(framework))).toEqual(PACKAGED)
+      expect(fusesOf(await readFile(twin))).toEqual(SHIPPED)
+      expect(signed).toEqual([join(root, 'checkout', 'node_modules', 'electron', 'dist', 'fuse-tmp-Electron.app')])
+      expect(await readlink(framework)).toBe('Versions/Current/Electron Framework')
+      expect(await readFile(executable, 'utf8')).toBe('launcher')
+      await expect(access(signed[0] as string)).rejects.toThrow()
+      await expect(access(join(dirnameOf(bundle), 'fuse-old-Electron.app'))).rejects.toThrow()
+    })
+
+    it('keeps the bundle as it was when the copy cannot be signed', async () => {
+      const result = await setCheckoutFuses({
+        binary: executable, checkoutRoot: checkout(), platform: 'darwin', sign: () => { throw new Error('codesign could not sign') }
+      })
+      expect(result.status).toBe('failed')
+      expect(result.reason).toMatch(/codesign/)
+      expect(fusesOf(await readFile(framework))).toEqual(SHIPPED)
+      await expect(access(join(dirnameOf(bundle), 'fuse-tmp-Electron.app'))).rejects.toThrow()
+    })
+
+    it('writes and signs nothing when the bundle is already set', async () => {
+      await writeFile(framework, fakeBinary(PACKAGED))
+      let signed = false
+      const result = await setCheckoutFuses({ binary: executable, checkoutRoot: checkout(), platform: 'darwin', sign: () => { signed = true } })
+      expect(result.status).toBe('already-set')
+      expect(signed).toBe(false)
+    })
   })
 
   it('reports a binary with no fuse wire as failed, not as off', async () => {

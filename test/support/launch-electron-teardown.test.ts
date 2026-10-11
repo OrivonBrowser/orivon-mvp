@@ -32,7 +32,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -53,6 +53,7 @@ import {
   findLiveElectronPids,
   killProcessTree,
   launchElectron,
+  noFocusDefault,
   profileDirOf,
   registerLaunchForTeardown,
   resolveExePath,
@@ -198,6 +199,22 @@ describe('launchElectron', () => {
     await rm(dir.replace(/\/deeper$/, ''), { recursive: true, force: true })
   })
 
+  // macOS reaches its temporary folder through a symlink, and Electron reports the resolved path.
+  it('reuses a profile this process made when it is named through a symlink to it', async () => {
+    const dir = await madeProfile()
+    const alias = join(tmpdir(), `orivon-alias-${String(process.pid)}-${String(Date.now())}`)
+    await symlink(dir, alias)
+    try {
+      mockElectronLaunch.mockClear()
+      mockElectronLaunch.mockRejectedValueOnce(new Error('injected: launch failure'))
+      await expect(launchElectron({ reuseProfile: alias })).rejects.toThrow('injected: launch failure')
+      expect(mockElectronLaunch).toHaveBeenCalledTimes(1)
+    } finally {
+      await rm(alias, { force: true })
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
   it('launches on a reused profile this process made, and leaves it alone when the launch itself fails', async () => {
     const dir = await madeProfile()
     try {
@@ -210,6 +227,15 @@ describe('launchElectron', () => {
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('noFocusDefault', () => {
+  it('keeps focus away from the machine everywhere but a macOS CI runner', () => {
+    expect(noFocusDefault('linux', { CI: 'true' })).toBe('1')
+    expect(noFocusDefault('win32', { CI: 'true' })).toBe('1')
+    expect(noFocusDefault('darwin', {})).toBe('1')
+    expect(noFocusDefault('darwin', { CI: 'true' })).toBe('0')
   })
 })
 

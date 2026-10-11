@@ -84,8 +84,12 @@ node scripts/ci/live-session.mjs stop --system windows
 The code is the body of an async function that sees `app` (Playwright's `ElectronApplication`), `chrome` (the
 shell's page), `page(urlPart)`, `shot(target, name)`, `log(...)` and `helpers` (`test/support/smoke-helpers.mjs`); a
 lone expression is returned. One call runs at most 90 seconds, because Cloudflare ends a response at 100; split
-longer work into several calls, which run one at a time. Pictures land in `qa-artifacts/live/<run id>/`. The runner
-is reached through a Cloudflare quick tunnel. It is given only the SHA-256 of a token made on the caller's machine
+longer work into several calls, which run one at a time. Pictures land in `qa-artifacts/live/<run id>/`;
+`shot('desktop')` is the only one that shows the system's own window buttons and menu bar. The code may run a
+command on the runner through `process.getBuiltinModule('node:child_process')`: on macOS, `osascript -l JavaScript`
+posting a `CGEventCreateMouseEvent` moves the real pointer, as when revealing the bar macOS slides down in full
+screen. The runner is reached through a Cloudflare quick tunnel. It is given only the SHA-256 of a token made on
+the caller's machine
 and kept in `qa-artifacts/live/<system>.json`, and it refuses every request without that token. Whatever the session
 prints, Orivon's own log included, is uploaded with the run's evidence, which anyone can read. A session ends on
 `stop`, after `--minutes` (60 by default, at most 300), or after 20 minutes without a request. A pull request that

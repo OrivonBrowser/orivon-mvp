@@ -1540,19 +1540,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A394: Can the file-protocol fuse flip run on macOS and Windows? **[RESEARCH]**
-
-- **Question:** `scripts/install-electron.mjs` flips the fuse on Linux only and refuses elsewhere. On macOS the
-  fuse sits in a signed framework (a flip needs an ad hoc re-sign that keeps the bundle valid); Windows refuses a
-  rename over a running `.exe`. Neither is run, and the packaged Linux build was launched once under a headless
-  display, not on a person's machine.
-- **Why it matters:** a refused flip leaves local files closed, which is safe, but a person on macOS or Windows
-  who runs from source never gets them.
-- **Options:** run `npm install` and a package on each system and read the fuse byte (rec.); flip a copy and swap
-  it in on the next start.
-- **Who decides:** research first
-- **Blocks:** local files on macOS and Windows
-
 ### A396: `localStorage` throws on a local page **[RESEARCH]**
 
 - **Question:** On a `file:` page `localStorage` throws a `SecurityError` (measured, Electron 44), and

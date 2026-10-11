@@ -42,7 +42,7 @@ function setup (options: { history?: Array<{ url: string, title: string }>, book
     },
     bookmarks: { getAll: () => (options.bookmarks ?? []).map((bookmark) => ({ ...bookmark, favicon: null })) },
     searchEngines: { all: () => [] },
-    settings: { get: (key: string) => key === 'search.engine' ? 'duckduckgo' : key === 'addressBar.autocomplete' ? true : '' }
+    settings: { get: (key: string) => key === 'search.engine' ? 'duckduckgo' : key === 'search.mode' ? 'web2' : key === 'addressBar.autocomplete' ? true : '' }
   }
   const ctx = { window: here.entry, services } as unknown as WindowContext
   const anchor = { x: 10, y: 20, width: 500, height: 32 }

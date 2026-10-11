@@ -12,7 +12,7 @@ import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
 import type { PageFacts } from './first-visit-support.js'
 import type { Page } from 'playwright'
-import { anyDocumentAt, coverTitle, pageAt, pinPath, savedGrants, withDeclaredTree } from './first-visit-support.js'
+import { anyDocumentAt, coverTitle, documentParsed, pageAt, pinPath, savedGrants, withDeclaredTree } from './first-visit-support.js'
 
 const files = (name: string, id: string): Record<string, string> => ({
   'index.html': `<!doctype html><meta charset="utf-8"><title>${name}</title><link rel="orivon-manifest" href="/.well-known/orivon.json"><body>${name}<script src="app.js"></script></body>`,
@@ -62,6 +62,10 @@ it('[app:first-visit-loads-as-a-website-while-asking] [app:first-visit-enters-at
       let website = null as PageFacts | null
       await waitFor(async () => { website = await pageAt(running, `${allowedOrigin}/`); return website?.ran === 'ran' }, 30_000)
       check(`the page runs as an ordinary website while the question is open: its script ran and it has no Node globals (${JSON.stringify(website)})`, website?.ran === 'ran' && !website.hasProcess)
+      // The protocol's own loading screen may cover a slow load until the page's dom-ready
+      // (src/main/loading-screen/README.md): read the cover once the page is ready and the screen has had time to go.
+      await waitFor(async () => await documentParsed(running, `${allowedOrigin}/`), 30_000)
+      await delay(ABSENCE_SETTLE_MS)
       check('no setup cover hides the page', (await coverTitle(running)) === null)
       check('nothing is pinned or granted yet', !existsSync(pinPath(userData, allowedOrigin)) && savedGrants(userData, allowedOrigin).length === 0)
       check('a file the first page never loads is still undownloaded', filesAsked('allowed', 'later.bin') === 0)

@@ -61,17 +61,25 @@ split.onState(draw)
 /** Where the pointer is along the divider's axis, in this view's own coordinates. */
 const along = (event: PointerEvent): number => (current?.orientation === 'column' ? event.clientY : event.clientX)
 
+/** The pointer that pressed the divider, while it is held. */
+let dragging: number | null = null
+
 divider.addEventListener('pointerdown', (event) => {
+  dragging = event.pointerId
   divider.setPointerCapture(event.pointerId)
   divider.classList.add('dragging')
 })
-divider.addEventListener('pointermove', (event) => {
-  if (divider.hasPointerCapture(event.pointerId)) split.drag(along(event))
+// The drag follows its pointer anywhere in this view, not only through the divider's capture: main lays the panes out
+// again under the pointer at every step, and a capture that drops then must neither freeze the drag nor keep it on.
+window.addEventListener('pointermove', (event) => {
+  if (event.pointerId === dragging && (event.buttons & 1) === 1) split.drag(along(event))
 })
 const release = (event: PointerEvent): void => {
+  if (event.pointerId !== dragging) return
+  dragging = null
   if (divider.hasPointerCapture(event.pointerId)) divider.releasePointerCapture(event.pointerId)
   divider.classList.remove('dragging')
 }
-divider.addEventListener('pointerup', release)
-divider.addEventListener('pointercancel', release)
+window.addEventListener('pointerup', release)
+window.addEventListener('pointercancel', release)
 divider.addEventListener('dblclick', () => { split.reset() })
