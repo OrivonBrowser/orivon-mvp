@@ -73,8 +73,17 @@ export class AppsState {
     await this.load()
   }
 
+  /** Apps whose last switch of the route was refused (the proxy was cleared, or the app's files are gone), so the card can say so until the next press. */
+  readonly routeRefused = new Set<string>()
+
   async setRoute (origin: string, routed: boolean): Promise<void> {
-    await this.bridge.request('apps', { type: 'setRoute', origin, routed })
+    this.routeRefused.delete(origin)
+    try {
+      const reply = await this.bridge.request('apps', { type: 'setRoute', origin, routed }) as { ok?: unknown } | undefined
+      if (reply?.ok !== true) this.routeRefused.add(origin)
+    } catch {
+      this.routeRefused.add(origin)
+    }
     await this.load()
   }
 

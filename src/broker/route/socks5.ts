@@ -48,6 +48,15 @@ function reportCloseFailure (error: unknown): void {
   console.error('[route] closing the datagram relay failed:', error)
 }
 
+/**
+ * Whether the proxy itself answered a failed connect: it refused to carry the stream (host unreachable, connection
+ * refused, a rule), which says nothing against the route. A proxy that cannot be reached, closes at once or fails the
+ * sign-in is not one that answered.
+ */
+export function routeAnswered (error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith('Socks5 proxy rejected connection')
+}
+
 function abandoned (): Error {
   return fail('revoked', 'the connection was abandoned')
 }

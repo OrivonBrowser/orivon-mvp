@@ -49,6 +49,20 @@ export interface RouteController {
 }
 
 const CONFINED = 'disable_non_proxied_udp'
+/** The belt a web context already carries against WebRTC: a port nothing is expected to answer on. */
+const UNREACHABLE_PROXY = 'http://127.0.0.1:9'
+/** A session call that never returns would hold every later switch behind it. */
+const SESSION_CALL_MS = 10_000
+
+async function within<T> (work: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { reject(new Error('a session call did not finish')) }, SESSION_CALL_MS) })
+  try {
+    return await Promise.race([work, late])
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 export function createRouteController (deps: RouteControllerDeps): RouteController {
   const { hub } = deps
@@ -85,19 +99,35 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     if (hub.isRouted(origin)) {
       const front = await hub.front(origin)
       if (pointedAt.get(session) === front.port) return
-      await session.setProxy({ mode: 'fixed_servers', proxyRules: `http://127.0.0.1:${String(front.port)}` })
+      await within(session.setProxy({ mode: 'fixed_servers', proxyRules: `http://127.0.0.1:${String(front.port)}` }))
       pointedAt.set(session, front.port)
     } else if (pointedAt.has(session)) {
       pointedAt.delete(session)
-      await session.setProxy({ mode: 'system' })
+      await within(session.setProxy({ mode: 'system' }))
+    }
+  }
+
+  /** A rule that reaches nothing, for a session that could not be pointed at the app's front: a request there fails, it is never sent direct. */
+  async function confine (session: RouteSession): Promise<void> {
+    pointedAt.delete(session)
+    try {
+      await within(session.setProxy({ mode: 'fixed_servers', proxyRules: UNREACHABLE_PROXY }))
+    } catch (error) {
+      console.error('[route] could not stop a session that could not be routed:', error)
     }
   }
 
   async function apply (origin: string, routed: boolean, cause: RouteChangeCause): Promise<void> {
     // Asking for a session creates it on disk, so the embed partition is touched only for an app that is routed.
-    if (routed) await prepare(origin, deps.sessionFor(deps.embedPartition(origin)))
-    const sessions = [...sessionsOf(origin).keys()]
-    for (const session of sessions) await prepare(origin, session, { webrtc: sessionsOf(origin).get(session) ?? true })
+    if (routed) sessionsOf(origin).set(deps.sessionFor(deps.embedPartition(origin)), true)
+    const sessions = [...sessionsOf(origin)]
+    const pointed = await Promise.allSettled(sessions.map(async ([session, webrtc]) => { await prepare(origin, session, { webrtc }) }))
+    for (const [index, outcome] of pointed.entries()) {
+      if (outcome.status === 'fulfilled') continue
+      console.error('[route] could not point a session of the app at its route:', outcome.reason)
+      const failed = sessions[index]?.[0]
+      if (routed && failed !== undefined) await confine(failed)
+    }
     for (const contents of managedContents(origin)) {
       if (routed) {
         confined.add(contents)
@@ -113,7 +143,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     } catch (error) {
       console.error('[route] could not close the app\'s open handles:', error)
     }
-    await Promise.allSettled(sessions.map(async (session) => { await session.closeAllConnections() }))
+    await Promise.allSettled(sessions.map(async ([session]) => { await within(session.closeAllConnections()) }))
     if (cause === 'switch') deps.reloadTabs(origin)
   }
 

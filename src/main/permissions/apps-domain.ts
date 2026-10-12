@@ -28,7 +28,8 @@ export interface AppRoutes {
   readonly stateOf: (origin: string) => RouteState
   /** Why the switch cannot be turned on now (it can always be turned off), or undefined when it can. */
   readonly blockedFor: (origin: string) => 'no-proxy' | 'not-cached' | undefined
-  readonly set: (origin: string, routed: boolean) => void
+  /** Resolves once the app's sessions follow the switch, so the card is not told it is on while they are still direct. */
+  readonly set: (origin: string, routed: boolean) => Promise<void> | void
 }
 
 export interface AppsDeps {
@@ -86,7 +87,7 @@ export function appsDomain (deps: AppsDeps): InternalDomain {
           if (origin === null || typeof request.routed !== 'boolean') return { ok: false }
           // Turning a route on needs a proxy and an app held in the cache; turning it off never waits on either.
           if (request.routed && deps.routes.blockedFor(origin) !== undefined) return { ok: false }
-          deps.routes.set(origin, request.routed)
+          await deps.routes.set(origin, request.routed)
           return { ok: true }
         }
         default:

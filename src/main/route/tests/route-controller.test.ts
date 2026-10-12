@@ -202,6 +202,25 @@ describe('switching a route off', () => {
   })
 })
 
+describe('a session that cannot be pointed at the front', () => {
+  it('gets a rule that reaches nothing, the other sessions are still pointed, and the connections and handles still close', async () => {
+    const { store, controller, sessionFor, dropped, log } = setup()
+    const broken = sessionFor('app')
+    const original = broken.setProxy
+    let refused = false
+    broken.setProxy = async (config) => { if (!refused) { refused = true; throw new Error('no proxy for you') } await original(config) }
+    await controller.appSessionRegistered(APP, broken)
+
+    store.set(APP, true)
+    await controller.settled()
+
+    expect(broken.proxies.at(-1)).toBe('fixed_servers:http://127.0.0.1:9')
+    expect(sessionFor(`embed:${APP}`).proxies).toEqual([expect.stringMatching(/^fixed_servers:http:\/\/127\.0\.0\.1:\d+$/)])
+    expect(dropped).toEqual([APP])
+    expect(log).toContain('app.close')
+  })
+})
+
 describe('changing the proxy under a routed app', () => {
   it('closes connections and handles but does not reload the tabs', async () => {
     const { store, hub, controller, sessionFor, dropped, reloaded } = setup()

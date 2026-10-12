@@ -10,18 +10,12 @@ import type { AddressInfo, Socket } from 'node:net'
 import type { Duplex } from 'node:stream'
 import type { RouteProvider } from '../../broker/route/provider.js'
 
-export type FrontHealth = 'unused' | 'ok' | 'down'
-
 export interface RouteFront {
   readonly port: number
   /** The user name Chromium sends with the secret; fixed, since the secret is what identifies the caller. */
   readonly username: string
   /** Random per front and never stored: it exists in this process only. */
   readonly secret: string
-  /** Whether the route carried the last thing asked of it. */
-  health: () => FrontHealth
-  /** Returns the removal. */
-  onHealth: (listener: (health: FrontHealth) => void) => () => void
   /** Ends every tunnel and forwarded request in flight; the front keeps answering new ones. */
   closeTunnels: () => void
   close: () => Promise<void>
@@ -79,14 +73,6 @@ export async function startRouteFront (options: RouteFrontOptions): Promise<Rout
   const secret = options.secret ?? randomBytes(24).toString('hex')
   const expected = `Basic ${Buffer.from(`${USERNAME}:${secret}`).toString('base64')}`
   const live = new Set<Duplex>()
-  const listeners = new Set<(health: FrontHealth) => void>()
-  let health: FrontHealth = 'unused'
-
-  const setHealth = (next: FrontHealth): void => {
-    if (next === health) return
-    health = next
-    for (const listener of [...listeners]) listener(next)
-  }
   const authorised = (req: IncomingMessage): boolean => {
     const given = req.headers['proxy-authorization']
     return typeof given === 'string' && same(given, expected)
@@ -98,16 +84,13 @@ export async function startRouteFront (options: RouteFrontOptions): Promise<Rout
     }
   }
 
-  /** The stream to `host:port` through the app's route, or undefined with `reason` already counted against health. */
+  /** The stream to `host:port` through the app's route, or the status line that says why there is none. */
   async function open (host: string, port: number, signal: AbortSignal): Promise<{ socket: Socket } | { status: string }> {
     const provider = options.provider()
     if (provider === undefined) return { status: '503 Service Unavailable' }
     try {
-      const socket = await provider.connect(host, port, signal)
-      setHealth('ok')
-      return { socket }
+      return { socket: await provider.connect(host, port, signal) }
     } catch {
-      setHealth('down')
       return { status: '502 Bad Gateway' }
     }
   }
@@ -172,9 +155,13 @@ export async function startRouteFront (options: RouteFrontOptions): Promise<Rout
     }
     const carrier = opened.socket
     track(carrier)
+    // A client that gave up leaves nothing open on the route.
+    res.once('close', () => { if (!res.writableFinished) carrier.destroy() })
 
+    // Headers the client named in `Connection` describe its hop, not the target's.
+    const named = new Set(String(req.headers.connection ?? '').split(',').map((token) => token.trim().toLowerCase()).filter((token) => token !== ''))
     const headers: Record<string, string | string[]> = {}
-    for (const [name, value] of Object.entries(req.headers)) if (value !== undefined && !NOT_FORWARDED.has(name)) headers[name] = value
+    for (const [name, value] of Object.entries(req.headers)) if (value !== undefined && !NOT_FORWARDED.has(name) && !named.has(name)) headers[name] = value
     headers.connection = 'close'
     // The address in the request line is the destination, whatever Host says.
     headers.host = target.authority
@@ -208,8 +195,6 @@ export async function startRouteFront (options: RouteFrontOptions): Promise<Rout
     port,
     username: USERNAME,
     secret,
-    health: () => health,
-    onHealth: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     closeTunnels,
     close: async () => {
       closeTunnels()

@@ -105,6 +105,24 @@ describe('state', () => {
   })
 })
 
+describe('state after a refusal by the proxy', () => {
+  it('stays up when the proxy refused one destination, and goes down only when the route could not be used', async () => {
+    const store = new RouteStore(null)
+    let failure = new Error('Socks5 proxy rejected connection - HostUnreachable')
+    const hub = createRouteHub({ store, proxy: () => ({ host: '127.0.0.1', port: 9050 }), providerFor: () => ({ connect: async () => { throw failure } }) })
+    hubs.push(hub)
+    store.set(APP, true)
+    const route = hub.routeFor(APP)
+
+    await expect(route?.provider.connect('nowhere.test', 443, new AbortController().signal)).rejects.toThrow('HostUnreachable')
+    expect(hub.state(APP)).toBe('ok')
+
+    failure = new Error('connect ECONNREFUSED 127.0.0.1:9050')
+    await expect(route?.provider.connect('nowhere.test', 443, new AbortController().signal)).rejects.toThrow('ECONNREFUSED')
+    expect(hub.state(APP)).toBe('down')
+  })
+})
+
 describe('onChange', () => {
   it('tells listeners when a route is switched, and when the proxy changes under a routed app, but not for an app that is not routed', () => {
     const { hub, store, setProxy } = setup()

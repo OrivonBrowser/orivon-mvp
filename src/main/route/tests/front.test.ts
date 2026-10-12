@@ -200,6 +200,35 @@ describe('absolute-form requests', () => {
     expect(seen[0]?.headers.host).toBe('web.test')
   })
 
+  it('does not pass on a header the client named in Connection, which describes its own hop', async () => {
+    const seen: Seen[] = []
+    const target = await webServer(seen)
+    const f = await front(providerFor({ 'web.test:80': target }))
+
+    await getThrough(f, 'http://web.test/', { 'proxy-authorization': basic(f), connection: 'x-hop, close', 'x-hop': 'only for the proxy', 'x-end-to-end': 'for the target' })
+
+    expect(seen[0]?.headers['x-hop']).toBeUndefined()
+    expect(seen[0]?.headers['x-end-to-end']).toBe('for the target')
+  })
+
+  it('closes the route\'s stream when the client gives up on a request mid-answer', async () => {
+    let carrier: Socket | undefined
+    const slowTarget = createTcpServer((socket) => { socket.on('error', () => {}); socket.once('data', () => { socket.write('HTTP/1.1 200 OK\r\ncontent-length: 1000\r\n\r\npartial') }) })
+    const targetPort = await listening(slowTarget)
+    const provider: RouteProvider = { connect: async (host, port, signal) => { carrier = await providerFor({ 'slow.test:80': targetPort }).connect(host, port, signal); return carrier } }
+    const f = await front(provider)
+
+    await new Promise<void>((resolve) => {
+      const req = httpRequest({ host: '127.0.0.1', port: f.port, method: 'GET', path: 'http://slow.test/', headers: { host: 'slow.test', 'proxy-authorization': basic(f) } }, (res) => {
+        res.once('data', () => { req.destroy(); resolve() })
+      })
+      req.on('error', () => {})
+      req.end()
+    })
+
+    await vi.waitFor(() => { expect(carrier?.destroyed).toBe(true) })
+  })
+
   it('refuses a request that is not for an http:// address, even with the secret', async () => {
     const asked: string[] = []
     const f = await front(providerFor({}, asked))
@@ -215,22 +244,6 @@ describe('absolute-form requests', () => {
     expect((await getThrough(down, 'http://nowhere.test/', { 'proxy-authorization': basic(down) })).status).toBe(502)
     const none = await front(undefined)
     expect((await getThrough(none, 'http://nowhere.test/', { 'proxy-authorization': basic(none) })).status).toBe(503)
-  })
-})
-
-describe('health', () => {
-  it('is unused until the route is asked, ok after it carried something and down after it failed', async () => {
-    const target = await echoServer()
-    const f = await front(providerFor({ 'echo.test:443': target }))
-    const seen: string[] = []
-    f.onHealth((health) => { seen.push(health) })
-    expect(f.health()).toBe('unused')
-
-    await connectThrough(f, 'echo.test:443', basic(f))
-    expect(f.health()).toBe('ok')
-    await connectThrough(f, 'nobody.test:443', basic(f))
-    expect(f.health()).toBe('down')
-    expect(seen).toEqual(['ok', 'down'])
   })
 })
 

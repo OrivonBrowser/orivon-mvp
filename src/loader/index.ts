@@ -27,14 +27,13 @@ import { parsePinRecord } from '../broker/policy/pin.js'
 import type { ContentAddress, PinRecord } from '../broker/policy/pin.js'
 import { decideUpdate } from '../broker/policy/update.js'
 import type { PatternSet } from '../broker/policy/update.js'
-import { widensInvisibleLimits, withoutSwitchedOffCapabilities } from '../broker/policy/manifest-patterns.js'
+import { patternSetFromCapabilities, widensInvisibleLimits, withoutSwitchedOffCapabilities } from '../broker/policy/manifest-patterns.js'
 import { fetchBundle } from './fetch/bundle.js'
 import type { Fetch, StagedAsset } from './fetch/bundle.js'
 import { installAndNotify } from './cache/install.js'
 import { parseDdocDeclaration } from './ddoc-declaration.js'
 import type { DdocDeclaration } from './ddoc-declaration.js'
 import type { LoaderStorage } from './cache/storage.js'
-import { patternSetFromCapabilities } from '../broker/policy/manifest-patterns.js'
 import { originFromUrl } from '../broker/policy/origin.js'
 import { MANIFEST_PATH } from '../broker/policy/canonical-path.js'
 import { leafOf } from './leaf-hash.js'
@@ -487,6 +486,7 @@ export function createLoader (options: CreateLoaderOptions): Loader {
   }
 
   async function applyUpdate (origin: string, toCid: string, context: LoadContext): Promise<LoadResult> {
+    if (options.updatesPaused?.(origin) === true) return { outcome: 'rejected', reason: 'updates are paused while this app is routed' }
     return await names.apply(origin, origin, toCid, context)
   }
 

@@ -46,7 +46,8 @@ function routeRow (app: AppRow, state: SettingsState): HTMLElement {
   return h('div', { className: 'app-route' },
     h('div', { className: 'app-route-text' },
       h('label', { htmlFor: `route-${app.origin}`, textContent: 'Send this app\'s traffic through my proxy' }),
-      h('p', { className: app.route.state === 'down' || app.route.state === 'no-proxy' ? 'problem' : 'muted', textContent: routeWords(app.route) })),
+      h('p', { className: app.route.state === 'down' || app.route.state === 'no-proxy' ? 'problem' : 'muted', textContent: routeWords(app.route) }),
+      state.apps.routeRefused.has(app.origin) ? h('p', { className: 'problem', role: 'alert', textContent: 'That could not be changed. Check the proxy under Privacy and data.' }) : null),
     h('span', { className: 'switch' }, input, h('span', { className: 'track' })))
 }
 

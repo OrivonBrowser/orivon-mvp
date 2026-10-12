@@ -24,6 +24,24 @@ describe('routeWords', () => {
   })
 })
 
+describe('AppsState.setRoute when main refuses', () => {
+  it('remembers the refusal for the card until the next press, and a failed request counts as one', async () => {
+    const request = vi.fn(async (_domain: string, command: { type: string }) => command.type === 'list' ? { apps: [], identity: 'keychain' } : { ok: false })
+    const apps = new AppsState({ request } as unknown as OrivonInternal, () => {})
+
+    await apps.setRoute('https://app.example', true)
+    expect(apps.routeRefused.has('https://app.example')).toBe(true)
+
+    request.mockImplementation(async (_domain: string, command: { type: string }) => command.type === 'list' ? { apps: [], identity: 'keychain' } : { ok: true })
+    await apps.setRoute('https://app.example', true)
+    expect(apps.routeRefused.has('https://app.example')).toBe(false)
+
+    request.mockImplementation(async (_domain: string, command: { type: string }) => { if (command.type === 'list') return { apps: [], identity: 'keychain' }; throw new Error('closed') })
+    await apps.setRoute('https://app.example', false)
+    expect(apps.routeRefused.has('https://app.example')).toBe(true)
+  })
+})
+
 describe('AppsState.setRoute', () => {
   it('asks main to switch the route and reads the list again', async () => {
     const request = vi.fn(async (_domain: string, command: { type: string }) => command.type === 'list' ? { apps: [], identity: 'keychain' } : { ok: true })

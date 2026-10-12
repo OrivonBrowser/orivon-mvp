@@ -4,7 +4,7 @@
 // a direct one.
 
 import type { Route, RouteFor, RouteProvider } from '../../broker/route/provider.js'
-import { createSocks5Provider, isolationCredentials } from '../../broker/route/socks5.js'
+import { createSocks5Provider, isolationCredentials, routeAnswered } from '../../broker/route/socks5.js'
 import { createRouteFor } from '../../broker/route/table.js'
 import type { RouteTarget } from '../../broker/route/table.js'
 import { fail } from '../../broker/errors.js'
@@ -70,7 +70,8 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
         health.set(key, 'ok')
         return socket
       } catch (error) {
-        if (!signal.aborted) health.set(key, 'down')
+        // A proxy that refused one destination is up; only a route that could not be used says down.
+        if (!signal.aborted) health.set(key, routeAnswered(error) ? 'ok' : 'down')
         throw error
       }
     }
@@ -109,10 +110,12 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
       if (!store.has(origin)) throw new Error('this app is not routed')
       let running = fronts.get(origin)
       if (running === undefined) {
-        running = startRouteFront({ provider: () => options.proxy() === undefined ? undefined : routeFor(origin)?.provider })
-          .then((front) => { if (fronts.has(origin)) started.set(origin, front); return front })
-        fronts.set(origin, running)
-        running.catch(() => { if (fronts.get(origin) === running) fronts.delete(origin) })
+        // Recorded as listening only while it is still the app's front: one that was switched off meanwhile is closing.
+        const starting: Promise<RouteFront> = startRouteFront({ provider: () => options.proxy() === undefined ? undefined : routeFor(origin)?.provider })
+          .then((front) => { if (fronts.get(origin) === starting) started.set(origin, front); return front })
+        running = starting
+        fronts.set(origin, starting)
+        starting.catch(() => { if (fronts.get(origin) === starting) fronts.delete(origin) })
       }
       return await running
     },

@@ -181,7 +181,7 @@ beforeAll(async () => {
     entry: 'index.html',
     capabilities: {
       net: {
-        tcp: { connect: [`tcp.socks.test:${String(ports.tcp)}`, `ws.socks.test:${String(ports.ws)}`, `127.0.0.1:${String(ports.hold)}`, `127.0.0.1:${String(ports.listen)}`], listen: { local: [String(ports.listen)] } },
+        tcp: { connect: [`tcp.socks.test:${String(ports.tcp)}`, `ws.socks.test:${String(ports.ws)}`, `missing.socks.test:${String(ports.tcp)}`, `127.0.0.1:${String(ports.hold)}`, `127.0.0.1:${String(ports.listen)}`], listen: { local: [String(ports.listen)] } },
         https: { connect: [`tls.socks.test:${String(ports.tls)}`, `reach.socks.test:${String(ports.reach)}`] },
         udp: { bind: { local: ['47300-47399'] }, send: [`udp.socks.test:${String(ports.udp)}`] }
       },
@@ -315,7 +315,7 @@ it('[app:routed-app-refuses-what-the-route-cannot-carry] a routed app cannot lis
   expect(network, 'a listen the whole network could reach').toMatchObject({ ok: false, code: 'denied' })
   const lookup = await call('lookup', 'tcp.socks.test')
   expect(lookup, 'a name looked up here').toMatchObject({ ok: false, code: 'denied' })
-  const unknown = await call('tcp', 'unknown.socks.test', ports.tcp)
+  const unknown = await call('tcp', 'missing.socks.test', ports.tcp)
   expect(unknown, 'a name the proxy does not know').toMatchObject({ ok: false, code: 'unreachable' })
 
   // Changing the proxy closes what the app holds and sends the next connection to the new one.

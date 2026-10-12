@@ -62,6 +62,7 @@ import { isRegisteredAppOrigin } from '../site-settings/app-origin.js'
 import { isWebOrigin } from '../site-settings/site-settings-controller.js'
 import { sitesDomain } from '../site-settings/sites-domain.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
+import { isPersistableOrigin } from '../../broker/policy/origin.js'
 import { isOriginPinnedSync, isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { nodeLoaderStorage } from '../../loader/cache/node-storage.js'
 import { createPermissionsController } from '../permissions/permissions.js'
@@ -104,8 +105,12 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   // An app can be routed once there is a proxy and its files are held here: its updates are not checked while routed, which a first visit has no pin to skip.
   const appRoutes: AppRoutes = {
     stateOf: (origin) => routes.hub.state(origin),
-    blockedFor: (origin) => routes.proxy() === undefined ? 'no-proxy' : isOriginPinnedSync(origin) ? undefined : 'not-cached',
-    set: (origin, routed) => { routes.store.set(origin, routed) }
+    // An origin that is not written to disk (loopback, plain http) would be routed until the next start and then go direct.
+    blockedFor: (origin) => routes.proxy() === undefined ? 'no-proxy' : isOriginPinnedSync(origin) && isPersistableOrigin(origin) ? undefined : 'not-cached',
+    set: async (origin, routed) => {
+      routes.store.set(origin, routed)
+      await routes.controller.settled()
+    }
   }
   const tasksEnv: TasksEnv = {
     windows: services.windows,

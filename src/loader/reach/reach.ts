@@ -161,9 +161,11 @@ async function readCappedBody (request: Request): Promise<Buffer | null> {
  * refusing rather than letting an app drive unbounded allocation in this
  * privileged process.
  */
-function routedConnection (provider: RouteProvider, host: string, port: number, ca: ReachDialOptions['ca']): NonNullable<ClientRequestArgs['createConnection']> {
+function routedConnection (provider: RouteProvider, host: string, port: number, ca: ReachDialOptions['ca'], signal: AbortSignal): NonNullable<ClientRequestArgs['createConnection']> {
   return (_options, callback) => {
-    provider.connect(host, port, new AbortController().signal).then((carrier) => {
+    provider.connect(host, port, signal).then((carrier) => {
+      // The request is gone already (aborted, timed out): nothing may keep the route's stream.
+      if (signal.aborted) { carrier.destroy(); return }
       // The certificate is verified against the name the app was granted, as on a direct dial.
       callback?.(null, tlsConnect({ socket: carrier, host, ...(isIP(host) === 0 ? { servername: host } : {}), ca }))
     }, (error: unknown) => { callback?.(error instanceof Error ? error : new Error('the route could not carry the request'), undefined as never) })
@@ -179,11 +181,12 @@ export function nodeReachDial (options: ReachDialOptions = {}): ReachDial {
     const bodyLength = body?.length ?? 0
 
     const provider = options.routeProvider?.()
+    const abandoned = new AbortController()
     const res = await new Promise<IncomingMessage>((resolve, reject) => {
       const req = httpsRequest({
         host,
         port,
-        ...(provider === undefined ? {} : { createConnection: routedConnection(provider, host, port, options.ca) }),
+        ...(provider === undefined ? {} : { createConnection: routedConnection(provider, host, port, options.ca, abandoned.signal) }),
         method: request.method,
         path: `${url.pathname}${url.search}`,
         headers: forwardedRequestHeaders(request, bodyLength),
@@ -193,6 +196,7 @@ export function nodeReachDial (options: ReachDialOptions = {}): ReachDial {
         timeout: idleTimeoutMs
       }, resolve)
       req.once('error', reject)
+      req.once('close', () => { abandoned.abort() })
       req.once('timeout', () => {
         req.destroy(new Error(`reach to ${host}:${String(port)} carried no bytes for ${String(idleTimeoutMs)}ms`))
       })

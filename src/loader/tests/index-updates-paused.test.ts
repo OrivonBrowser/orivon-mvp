@@ -34,4 +34,16 @@ describe('createLoader: updatesPaused', () => {
 
     expect((await loader.load(ORIGIN, NO_GRANTS)).outcome).toBe('installed')
   })
+
+  it('refuses to apply an offered update to an app whose updates are paused, which would fetch from this machine', async () => {
+    const fetch = vi.fn(stubFetch(ROUTES))
+    const loader = createLoader({ fetch, storage: memoryStorage(), now: () => 0, resolve: PUBLIC_RESOLVER, updatesPaused: () => true })
+    await loader.load(ORIGIN, NO_GRANTS)
+    const fetched = fetch.mock.calls.length
+
+    const result = await loader.applyUpdate(ORIGIN, 'bafyoffered', NO_GRANTS)
+
+    expect(result).toMatchObject({ outcome: 'rejected' })
+    expect(fetch.mock.calls.length).toBe(fetched)
+  })
 })
