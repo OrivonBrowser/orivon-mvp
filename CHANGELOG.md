@@ -404,6 +404,8 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Changed
 
+- **A gateway that stalls costs `ipfs://` and `.eth` pages less**: a block that one gateway is slow to send is asked of the
+  next after about three times a typical answer (0.5 to 2 s), instead of after a flat 2 s.
 - **Telemetry is asked in a popup after "Enter Orivon"**: the welcome screen is back to its single button, and the popup
   "Support us for free through telemetry" sits over the browser, blurred behind it, with equal "Accept" and "Deny" buttons.
 - **The welcome screen's default-browser box is gone**: the default-browser question now first comes half a minute into first use, then weekly.

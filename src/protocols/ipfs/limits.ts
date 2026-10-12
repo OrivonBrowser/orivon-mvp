@@ -14,9 +14,10 @@ export interface IpfsLimits {
   /** Per gateway, not a total shared across all of them -- a hung gateway
    * must not be able to starve the others of their own slots. */
   readonly perGatewayConcurrency: number
-  /** How long to wait for the first attempt before starting a second,
+  /** The longest wait for the first attempt before starting a second,
    * different gateway for the same block -- a hedge, not a replacement:
-   * the first attempt keeps running, and whichever verifies first wins. */
+   * the first attempt keeps running, and whichever verifies first wins.
+   * A block fetch waits less once gateways have answered (`GatewayPool.hedgeDelay`). */
   readonly hedgeDelayMs: number
   /** IPNS and DNSLink hops from a name to its root. */
   readonly maxPointerHops: number

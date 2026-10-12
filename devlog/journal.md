@@ -98,6 +98,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Orivon no longer quits when a background step fails unnoticed: about a hundred such spots now log, and CI refuses new ones.
 - A page that fails to load drops the previous site's icon, and retried downloads follow the site's download rules again.
 - Narrowing the window while the permissions panel was open quit Orivon every time; the panel now closes first, as the menu does.
+- Slow IPFS loads traced to public gateways (one throttling, one dead), not code; Orivon now asks the next gateway sooner when one stalls.
 
 ### In my head
 

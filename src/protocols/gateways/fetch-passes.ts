@@ -78,7 +78,7 @@ export async function fetchAcrossGateways<T> (
 
     let result: PassResult<T>
     try {
-      result = await racePass(candidates, (gateway, attemptSignal) => attempt(gateway, attemptSignal, unwell), deps.hedgeDelayMs, signal)
+      result = await racePass(candidates, (gateway, attemptSignal) => attempt(gateway, attemptSignal, unwell), (leader) => deps.pool.hedgeDelay(leader, deps.hedgeDelayMs), signal)
     } catch (error) {
       // racePass only ever rejects for the caller's own signal aborting
       // (its own attempts never reject: a bug there surfaces as `fatal`,
