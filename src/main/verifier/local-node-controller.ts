@@ -1,28 +1,33 @@
-// When the Swarm node runs, and what it is doing: it starts when a Swarm mount
-// asks for it (`ensure`), sleeps when the verifier host sleeps or after ten
+// When a local node runs, and what it is doing: it starts when something that
+// reads from it asks for it (`ensure`), sleeps when the verifier host sleeps or after ten
 // minutes with no ask, and restarts with the supervisor's backoff when it
 // crashes. A start that cannot succeed (a proxy, files that are missing or are
 // not the pinned ones, an API port that is taken) is refused once and stays
 // down until it is asked for again. No `electron` import: the process, the
-// artifact, the proxy check and the clock come in (swarm-node-subsystem.ts).
+// artifact, the proxy check and the clock come in (local-node-launch.ts).
 
-import type { PinnedFile, SwarmNodeConfig, SwarmNodeState } from '../../protocols/swarm-node/protocol.js'
+import type { NodeIdentity } from '../../protocols/local-node/kind.js'
+import type { LocalNodeConfig, LocalNodeState, PinnedFile } from '../../protocols/local-node/protocol.js'
 import { HostLifecycle } from './host-lifecycle.js'
 import { RefusedToStart } from './process-supervisor.js'
 import type { HostProcess } from './process-supervisor.js'
-import type { ArtifactStatus } from './swarm-node-artifact.js'
-import { SwarmNodeSupervisor } from './swarm-node-supervisor.js'
+import type { ArtifactStatus } from './local-node-artifact.js'
+import { LocalNodeSupervisor } from './local-node-supervisor.js'
 
 /** Within the 30 s a mount may take, how long `ensure` waits for the node to find its peers. */
 export const READY_WAIT_MS = 20_000
 /** A refusal is answered from memory for this long before the files and the proxy are looked at again. */
 export const REFUSAL_MEMORY_MS = 10_000
 
-export const PROXY_REASON = "a proxy is configured, and the Swarm node's connections would go around it"
+export function proxyReason (identity: NodeIdentity): string {
+  return `a proxy is configured, and the ${identity.noun}'s connections would go around it`
+}
 
 export interface ControllerDeps {
+  /** Which kind of node this runs. */
+  readonly kind: NodeIdentity
   readonly fork: () => HostProcess
-  /** Checks the node's files against the pinned hashes (reads about 14 MB). */
+  /** Checks the node's files against the pinned hashes (reads every pinned file). */
   readonly artifact: () => Promise<ArtifactStatus>
   /** The files the node is made of, as pinned: handed to the process, which checks the bytes it runs. */
   readonly files: readonly PinnedFile[]
@@ -48,10 +53,10 @@ function sleepFor (ms: number): Promise<void> {
   return new Promise((resolve) => { setTimeout(resolve, ms).unref() })
 }
 
-export class SwarmNodeController {
-  private current: SwarmNodeState = { state: 'off' }
+export class LocalNodeController {
+  private current: LocalNodeState = { state: 'off' }
   private readonly listeners = new Set<() => void>()
-  private readonly supervisor: SwarmNodeSupervisor
+  private readonly supervisor: LocalNodeSupervisor
   private readonly lifecycle: HostLifecycle
   private readonly now: () => number
   /** Until when a refusal is answered without looking again. */
@@ -66,7 +71,7 @@ export class SwarmNodeController {
 
   constructor (private readonly deps: ControllerDeps) {
     this.now = deps.now ?? Date.now
-    this.supervisor = new SwarmNodeSupervisor({
+    this.supervisor = new LocalNodeSupervisor({
       fork: deps.fork,
       config: async () => await this.configure(),
       events: {
@@ -81,7 +86,7 @@ export class SwarmNodeController {
         ready: (peers) => { this.set({ state: 'ready', peers }) },
         down: (reason, restarting) => {
           if (this.refusal !== undefined) { this.refusal = undefined; return }
-          console.error(`[swarm-node] ${reason}`)
+          console.error(`[${deps.kind.name}] ${reason}`)
           // A node that will not be forked again, other than because its port was taken (its next start is then fresh), is not tried again until the memory of it fades.
           if (!restarting && !this.portWasTaken) this.refusedUntil = this.now() + REFUSAL_MEMORY_MS
           this.portWasTaken = false
@@ -90,7 +95,7 @@ export class SwarmNodeController {
       },
       ...(deps.setTimer === undefined ? {} : { setTimer: deps.setTimer }),
       ...(deps.now === undefined ? {} : { now: deps.now })
-    })
+    }, deps.kind)
     this.lifecycle = new HostLifecycle({
       start: () => { this.supervisor.start() },
       idle: () => { this.supervisor.idle() },
@@ -101,7 +106,7 @@ export class SwarmNodeController {
     })
   }
 
-  state (): SwarmNodeState {
+  state (): LocalNodeState {
     return this.current
   }
 
@@ -116,7 +121,7 @@ export class SwarmNodeController {
    * waits until it is ready, has failed or is off, or `readyWaitMs` pass (then it is still starting). A node
    * that is running costs nothing here; one that was refused a moment ago is answered from memory.
    */
-  async ensure (): Promise<SwarmNodeState> {
+  async ensure (): Promise<LocalNodeState> {
     if (this.current.state === 'starting' || this.current.state === 'ready') {
       this.lifecycle.request()
       return await this.settled()
@@ -156,13 +161,13 @@ export class SwarmNodeController {
   private async look (): Promise<Verdict> {
     const disabled = this.deps.disabled?.()
     if (disabled !== undefined) return { reason: disabled }
-    if (await this.deps.proxyConfigured().catch(() => true)) return { reason: PROXY_REASON }
+    if (await this.deps.proxyConfigured().catch(() => true)) return { reason: proxyReason(this.deps.kind) }
     const artifact = await this.deps.artifact()
     return artifact.ok ? { directory: artifact.directory } : { reason: artifact.reason }
   }
 
   /** The config of a start: the check an ask just made, or, at a restart on the backoff, a new one: the files may have changed and a proxy may have been set. */
-  private async configure (): Promise<SwarmNodeConfig> {
+  private async configure (): Promise<LocalNodeConfig> {
     const approved = this.approved
     this.approved = undefined
     const verdict: Verdict = approved === undefined ? await this.check() : { directory: approved }
@@ -171,10 +176,10 @@ export class SwarmNodeController {
       this.refuse(verdict.reason)
       throw new RefusedToStart(verdict.reason)
     }
-    return { apiPort: this.deps.apiPort(), dataDir: this.deps.dataDir(), componentDir: verdict.directory, componentName: this.deps.componentName, files: this.deps.files }
+    return { kind: this.deps.kind.name, apiPort: this.deps.apiPort(), dataDir: this.deps.dataDir(), componentDir: verdict.directory, componentName: this.deps.componentName, files: this.deps.files }
   }
 
-  private async settled (): Promise<SwarmNodeState> {
+  private async settled (): Promise<LocalNodeState> {
     if (this.current.state !== 'starting') return this.current
     let wake: () => void = () => {}
     const changed = new Promise<void>((resolve) => { wake = resolve })
@@ -184,7 +189,7 @@ export class SwarmNodeController {
     return this.current
   }
 
-  private set (state: SwarmNodeState): void {
+  private set (state: LocalNodeState): void {
     this.current = state
     for (const listener of [...this.listeners]) listener()
   }

@@ -1,4 +1,4 @@
-// The Swarm node's network, as the WASI host's SocketNet: the broker's Node
+// A local node's network, as the WASI host's SocketNet: the broker's Node
 // adapters behind the policy below. The node holds no grant, so this seam is
 // the whole defence against a hostile peer or a hostile DNS answer; the rules
 // and the reasons are in README.md.
@@ -34,7 +34,7 @@ class Budget {
 
   /** Counts one more; the function it returns gives it back, once. */
   take (): () => void {
-    if (this.#open >= this.limit) throw fail('limit', `the Swarm node already holds ${String(this.limit)} ${this.what}`)
+    if (this.#open >= this.limit) throw fail('limit', `the node already holds ${String(this.limit)} ${this.what}`)
     this.#open += 1
     let given = false
     return () => {
@@ -94,7 +94,7 @@ function socketHandle (dialed: DialedSocket, release: () => void): TcpSocket {
     }
   })
   return {
-    id: `swarm-node-tcp-${randomUUID()}`,
+    id: `local-node-tcp-${randomUUID()}`,
     closed,
     close: async () => {
       await dialed.destroy('closed')
@@ -115,16 +115,16 @@ function socketHandle (dialed: DialedSocket, release: () => void): TcpSocket {
 async function publicAddresses (host: string, lookup: NodeNetDeps['lookup']): Promise<string[]> {
   const literal = canonicalAddress(host)
   if (literal !== null) {
-    if (!isPublicUnicast(literal)) throw fail('denied', 'the Swarm node reaches public addresses only')
+    if (!isPublicUnicast(literal)) throw fail('denied', 'the node reaches public addresses only')
     return [literal]
   }
   // An address-like or otherwise odd string that did not parse as an address (a scoped IPv6 address, say) is no name either.
-  if (!/^[A-Za-z0-9._-]+$/.test(host)) throw fail('denied', 'the Swarm node reaches public addresses only')
+  if (!/^[A-Za-z0-9._-]+$/.test(host)) throw fail('denied', 'the node reaches public addresses only')
   const answers = (await lookup(host)).slice(0, MAX_ANSWERS).map((answer) => canonicalAddress(answer.address))
   if (answers.length === 0) throw fail('unreachable', `could not resolve ${host}`)
   const checked: string[] = []
   for (const answer of answers) {
-    if (answer === null || !isPublicUnicast(answer)) throw fail('denied', 'the Swarm node reaches public addresses only')
+    if (answer === null || !isPublicUnicast(answer)) throw fail('denied', 'the node reaches public addresses only')
     checked.push(answer)
   }
   return checked
@@ -184,7 +184,7 @@ export function createNodeNet (apiPort: number, deps: NodeNetDeps = REAL, hooks:
       }
     }, { highWaterMark: 0 })
     return {
-      id: `swarm-node-server-${randomUUID()}`,
+      id: `local-node-server-${randomUUID()}`,
       closed,
       close: async () => {
         await listened.destroy('closed')
@@ -211,7 +211,7 @@ export function createNodeNet (apiPort: number, deps: NodeNetDeps = REAL, hooks:
 
     listen: async (options) => {
       const scope: BindScope = options.scope ?? 'local'
-      if (scope !== 'local' || (options.port !== apiPort && options.port !== 0)) throw fail('denied', 'the Swarm node listens on loopback only: on its API port, or on a port the system picks')
+      if (scope !== 'local' || (options.port !== apiPort && options.port !== 0)) throw fail('denied', 'the node listens on loopback only: on its API port, or on a port the system picks')
       const release = listeners.take()
       try {
         return serverHandle(await deps.listen([{ lo: options.port, hi: options.port }], new AbortController().signal, 'local'), release)
@@ -223,7 +223,7 @@ export function createNodeNet (apiPort: number, deps: NodeNetDeps = REAL, hooks:
     },
 
     udpBind: async (options) => {
-      if (options.port !== 0) throw fail('denied', 'the Swarm node binds a datagram socket on an ephemeral port only')
+      if (options.port !== 0) throw fail('denied', 'the node binds a datagram socket on an ephemeral port only')
       const release = sockets.take()
       try {
         const bound = await deps.bind([{ lo: 0, hi: 0 }], new AbortController().signal, options.scope ?? 'local')
@@ -233,7 +233,7 @@ export function createNodeNet (apiPort: number, deps: NodeNetDeps = REAL, hooks:
         let settle: () => void = () => {}
         const closed = new Promise<void>((resolve) => { settle = resolve })
         const handle: UdpSocket = {
-          id: `swarm-node-udp-${randomUUID()}`,
+          id: `local-node-udp-${randomUUID()}`,
           closed,
           close: async () => {
             await bound.destroy('closed')

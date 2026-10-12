@@ -1,19 +1,19 @@
-// The Swarm node's work, apart from the process it runs in: the data
-// directory, the component, and the readiness reports. entry.ts gives it the
-// parent port; a test gives it a directory and a recorder.
+// A local node's work, apart from the process it runs in: the data directory,
+// the component, and the readiness reports. The kind says what is its own (its
+// arguments, its config files, how it is ready); entry.ts gives this the
+// parent port, and a test gives it a directory and a recorder.
 
 import { InputStream, OutputStream } from '../../shim/wasi-p2/io.js'
 import { componentImports } from '../../shim/wasi-p2/imports.js'
-import { GUEST_DATA_DIR, nodeArguments, prepareDataDir } from './config.js'
+import { GUEST_DATA_DIR } from './kind.js'
+import type { Fetcher, NodeKind, Readiness } from './kind.js'
 import { PinMismatch, loadComponent } from './component.js'
 import type { LoaderSeams } from './component.js'
 import { createConfinedFs } from './node-fs.js'
 import { createNodeNet } from './node-net.js'
 import type { NodeNetDeps } from './node-net.js'
 import { failure } from './protocol.js'
-import type { FromNode, SwarmNodeConfig } from './protocol.js'
-import { peerCountOfLog, watchReadiness } from './readiness.js'
-import type { Fetcher } from './readiness.js'
+import type { FromNode, LocalNodeConfig } from './protocol.js'
 
 export interface NodeServiceDeps {
   readonly post: (message: FromNode) => void
@@ -47,20 +47,20 @@ function lineSink (onLine: (line: string) => void): OutputStream {
   })
 }
 
-export async function startNode (config: SwarmNodeConfig, deps: NodeServiceDeps): Promise<RunningNode> {
+export async function startNode (kind: NodeKind, config: LocalNodeConfig, deps: NodeServiceDeps): Promise<RunningNode> {
   const post = (message: FromNode): void => { deps.post(message.type === 'failed' ? failure(message.stage, message.message) : message) }
   try {
-    await prepareDataDir(config.dataDir, config.apiPort)
+    await kind.prepare(config.dataDir, config.apiPort)
   } catch (error) {
     post({ type: 'failed', stage: 'start', message: `could not prepare the data directory: ${describe(error)}` })
     throw error
   }
   const tail: string[] = []
-  let logPeers: number | undefined
+  let readiness: Readiness | undefined
   const onLine = (line: string): void => {
     tail.push(line)
     if (tail.length > LOG_TAIL) tail.shift()
-    logPeers = peerCountOfLog(line) ?? logPeers
+    readiness?.onLog?.(line)
     deps.onLog?.(line)
   }
   let portTaken = false
@@ -68,7 +68,7 @@ export async function startNode (config: SwarmNodeConfig, deps: NodeServiceDeps)
     fs: await createConfinedFs(config.dataDir),
     net: createNodeNet(config.apiPort, deps.net, { apiPortTaken: () => { portTaken = true } }),
     preopens: { [GUEST_DATA_DIR]: '/orivon/app' },
-    args: nodeArguments(),
+    args: kind.arguments(config),
     env: {},
     stdin: new InputStream(async () => new Uint8Array(0)),
     stdout: lineSink(onLine),
@@ -84,6 +84,13 @@ export async function startNode (config: SwarmNodeConfig, deps: NodeServiceDeps)
 
   deps.onLog?.(`compiled the component in ${String(Math.round(loaded.compileMs))} ms`)
   let stopped = false
+  readiness = kind.watchReadiness({
+    base: `http://127.0.0.1:${String(config.apiPort)}`,
+    fetcher: deps.fetcher ?? defaultFetcher,
+    post,
+    everyMs: deps.pollEveryMs ?? 1_000
+  })
+
   const finished = loaded.run().then(
     (code) => {
       if (!stopped) post(runEnded(portTaken, config.apiPort, `the node stopped with exit code ${String(code)}${tail.length > 0 ? `: ${tail.slice(-3).join(' | ')}` : ''}`))
@@ -95,20 +102,12 @@ export async function startNode (config: SwarmNodeConfig, deps: NodeServiceDeps)
     }
   )
 
-  const stopWatching = watchReadiness({
-    base: `http://127.0.0.1:${String(config.apiPort)}`,
-    fetcher: deps.fetcher ?? defaultFetcher,
-    post,
-    logPeers: () => logPeers,
-    everyMs: deps.pollEveryMs ?? 1_000
-  })
-
   return {
     finished,
     compileMs: loaded.compileMs,
     stop: () => {
       stopped = true
-      stopWatching()
+      readiness?.stop()
     }
   }
 }

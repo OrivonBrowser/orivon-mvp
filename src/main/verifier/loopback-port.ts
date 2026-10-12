@@ -1,4 +1,5 @@
 import { createServer } from 'node:net'
+import { SWARM_NODE_IDENTITY } from '../../protocols/swarm-node/protocol.js'
 
 let chosen: number | undefined
 
@@ -54,18 +55,32 @@ export function loopbackPort (): number {
   return chosen
 }
 
-let chosenSwarmNode: number | undefined
+const chosenNodePorts = new Map<string, number>()
 
-/** A quiet free port for the Swarm node's API, never the verifier's, and the same until `renewSwarmNodePort`. */
-export function swarmNodePort (): number {
-  const verifier = loopbackPort()
-  chosenSwarmNode ??= choosePort(Math.random, (port) => port !== verifier && bindsNow(port), anyFreePort)
-  return chosenSwarmNode
+/** Every port the verifier or a node holds: the one a new choice must not be. */
+function held (): Set<number> {
+  return new Set([loopbackPort(), ...chosenNodePorts.values()])
 }
 
-/** The node's port was taken after it was chosen: the next `swarmNodePort` is another, never the old one. */
-export function renewSwarmNodePort (): void {
-  const taken = chosenSwarmNode
-  const verifier = loopbackPort()
-  chosenSwarmNode = choosePort(Math.random, (port) => port !== verifier && port !== taken && bindsNow(port), anyFreePort)
+/** A quiet free port for the API of the local node `name`, never the verifier's or another node's, and the same until `renewNodePort`. */
+export function nodePort (name: string): number {
+  const known = chosenNodePorts.get(name)
+  if (known !== undefined) return known
+  const avoided = held()
+  const port = choosePort(Math.random, (candidate) => !avoided.has(candidate) && bindsNow(candidate), anyFreePort)
+  chosenNodePorts.set(name, port)
+  return port
 }
+
+/** The node's port was taken after it was chosen: the next `nodePort` is another, never the old one. */
+export function renewNodePort (name: string): void {
+  const taken = chosenNodePorts.get(name)
+  const avoided = held()
+  if (taken !== undefined) avoided.add(taken)
+  chosenNodePorts.set(name, choosePort(Math.random, (candidate) => !avoided.has(candidate) && bindsNow(candidate), anyFreePort))
+}
+
+/** The Swarm node's port. */
+export const swarmNodePort = (): number => nodePort(SWARM_NODE_IDENTITY.name)
+
+export const renewSwarmNodePort = (): void => { renewNodePort(SWARM_NODE_IDENTITY.name) }

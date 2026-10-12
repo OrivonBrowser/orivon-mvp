@@ -11,7 +11,7 @@ let root: string
 let fs: WasiFs
 
 beforeEach(async () => {
-  base = await mkdtemp(join(tmpdir(), 'swarm-node-fs-'))
+  base = await mkdtemp(join(tmpdir(), 'local-node-fs-'))
   outside = join(base, 'outside')
   root = join(base, 'data')
   await mkdir(outside)

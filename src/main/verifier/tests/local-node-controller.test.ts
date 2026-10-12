@@ -1,10 +1,13 @@
 import { EventEmitter } from 'node:events'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { FromNode, SwarmNodeConfig } from '../../../protocols/swarm-node/protocol.js'
+import type { FromNode, LocalNodeConfig } from '../../../protocols/local-node/protocol.js'
+import { SWARM_NODE_IDENTITY } from '../../../protocols/swarm-node/protocol.js'
 import type { HostProcess } from '../process-supervisor.js'
-import type { ArtifactStatus } from '../swarm-node-artifact.js'
-import { PROXY_REASON, READY_WAIT_MS, REFUSAL_MEMORY_MS, SwarmNodeController } from '../swarm-node-controller.js'
-import type { ControllerDeps } from '../swarm-node-controller.js'
+import type { ArtifactStatus } from '../local-node-artifact.js'
+import { READY_WAIT_MS, REFUSAL_MEMORY_MS, LocalNodeController, proxyReason } from '../local-node-controller.js'
+import type { ControllerDeps } from '../local-node-controller.js'
+
+const PROXY_REASON = proxyReason(SWARM_NODE_IDENTITY)
 
 class FakeNode extends EventEmitter implements HostProcess {
   readonly sent: unknown[] = []
@@ -16,7 +19,7 @@ class FakeNode extends EventEmitter implements HostProcess {
 }
 
 interface Harness {
-  readonly controller: SwarmNodeController
+  readonly controller: LocalNodeController
   readonly nodes: FakeNode[]
   readonly sleeps: Array<{ ms: number, wake: () => void }>
   readonly timers: Array<{ ms: number, run: () => void }>
@@ -37,6 +40,7 @@ function harness (): Harness {
   const portsTaken: number[] = []
   const clock = { now: 1_000_000 }
   const deps: ControllerDeps = {
+    kind: SWARM_NODE_IDENTITY,
     fork: () => { const node = new FakeNode(); nodes.push(node); return node },
     artifact: async () => { calls.artifact += 1; return state.artifact },
     files: [],
@@ -50,7 +54,7 @@ function harness (): Harness {
     sleep: async (ms) => await new Promise<void>((wake) => { sleeps.push({ ms, wake }) }),
     setTimer: (run, ms) => { timers.push({ ms, run }) }
   }
-  const controller = new SwarmNodeController(deps)
+  const controller = new LocalNodeController(deps)
   return Object.defineProperties({ controller, nodes, sleeps, timers, calls, portsTaken, clock } as unknown as Harness, {
     artifact: { get: () => state.artifact, set: (value: ArtifactStatus) => { state.artifact = value } },
     proxy: { get: () => state.proxy, set: (value: boolean | 'throws') => { state.proxy = value } },
@@ -115,7 +119,7 @@ describe('on demand', () => {
     const second = h.controller.ensure()
     await settle()
     expect(h.nodes).toHaveLength(1)
-    expect(h.nodes[0]?.sent).toEqual([{ type: 'start', config: { apiPort: 24_242, dataDir: '/profile/swarm-node', componentDir: '/artifact', componentName: 'swarm-node', files: [] } satisfies SwarmNodeConfig }])
+    expect(h.nodes[0]?.sent).toEqual([{ type: 'start', config: { kind: 'swarm-node', apiPort: 24_242, dataDir: '/profile/swarm-node', componentDir: '/artifact', componentName: 'swarm-node', files: [] } satisfies LocalNodeConfig }])
     expect(h.controller.state()).toEqual({ state: 'starting' })
     h.nodes[0]?.say({ type: 'ready', peers: 8 })
     expect(await first).toEqual({ state: 'ready', peers: 8 })
