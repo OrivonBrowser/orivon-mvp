@@ -30,7 +30,7 @@ area. The catalogue links them, and each carries `[app:<id>]` in the title of th
 
 1. State the behaviour generically and observably ("data an app writes to IndexedDB survives a browser
    restart"), never as one app's feature. The title and the file name carry the behaviour; the app
-   that inspired the row is named, if at all, in a code comment ([`CLAUDE.md`](../../CLAUDE.md) Rule 20).
+   that inspired the row is named, if at all, in a code comment ([code guidelines](../../docs/development/code-guidelines.md) Rule 8).
 2. Find the e2e spec that proves it through the real shell (page, preload, IPC, broker, network or disk). A
    unit test may be listed beside it but never proves a row alone: it exercises a function in isolation,
    cannot see a wiring that broke, and is edited in the same pull request as the code it tests. Where no spec

@@ -35,16 +35,6 @@ The durable asset is the capability API (`orivon.*`), written as types in `src/c
 shortcut in `src/main/` costs a refactor of code tied to Electron; a shortcut in
 `src/contracts/` costs every app ever written for Orivon.
 
-## Session budget
-
-- A new task is a new session; never resume a session across days.
-- Compact when the task changes, with a one-line summary of what is done and what is next.
-- Explore with an `Explore` agent, not `cat`. Never print a file over 300 lines: use `sed -n`
-  ranges or `grep -n`.
-- Never read `docs/open-questions.md` whole; grep for the ID.
-- Filter test and guard output to its summary lines (`npm run test:changed 2>&1 | tail -5`).
-- Plans stay under 2,000 words, live in a file, and are cited by path, never pasted back.
-
 ## Rules
 
 Other pages cite these by number: a new rule goes at the end, and none is renumbered.
@@ -84,25 +74,9 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
 13. **Ask questions trough the tool** and never stop working until feedback/decision from owner is the only real bottleneck, owner may be sleeping, and his response should not be the reason for you to stop unless there is no other way around.
 14. **Merge session changes in a PR's by yourself**, unless owner decision is critical. Same for orivon-ports repo operations as well. This is preferred for faster development. Most of the times if you wait for my approval to merge a PR to main you will end un in a conflict loop, since development goes so fast. If you don't merge it state it very clearly at the end of the prompt. Don't do it when the user just asks for a quick reply.
 15. **Prevent heavy work from crashing VSCodium**, you should still stay highly productive, but pay attention on heavy tasks that may crash VSCodium at all, that shouldn't never happen
-16. **Use latest Opus for planning and latest Sonnet for execution** on work past the fast lane (Rule 18), unless the user asks otherwise.
+16. **Use always latest Opus for planning and latest Sonnet for execution to save tokens**, unless the user asks otherwise.
 17. **Fix long-term AI optimization issues**, if you find any issue you incur as AI and wastes too many tokens, ensure that the future AI's doesn't fall for the same issue as well, apply a long term automated or simpler solution to that problem or procedure
-18. **Take the fast lane for a small change**: about ten code files or fewer, nothing in
-    `src/contracts/`, `src/shared/`, the broker, preload, IPC or consent code, and no new
-    dependency. The session that plans it implements it: no plan file, no subagent. A decision-log
-    row only for an owner decision or a reversal, an ADR only when Rule 1 applies, and no other
-    page is edited just to cite it. Locally run `npm run test:changed` and the e2e specs `select-e2e` names; CI runs both
-    whole suites. Prove a new test fails without the change only for a bug fix or a security
-    check. `node scripts/ai/session-report.mjs` shows where a session's time went, and with
-    `--grep <regex> --digest` what past sessions were told and concluded, to improve a skill from.
-19. **Node-shaped APIs behave exactly like Node wherever possible**: the same results and error
-    codes (`writeFile` into a missing parent fails with ENOENT), so a ported app needs no change.
-    A deliberate difference is documented where the API lives.
-20. **A gap a port finds is fixed generically in Orivon, never patched in the port**; the port
-    stays upstream plus a bridge. Tests are generic and named after the behaviour; the app that
-    inspired one is named only in a code comment.
-21. **Node-shaped, never browser-shaped**: a port bundles for Node, and Orivon's Node layer presents
-    to an app as Node, so a library takes the path it takes under Node and Electron (d-0594). A
-    port's original behaviour is the target: where Node gives it, Orivon gives it too.
+22. **Always ask owner confirm before updating the CLAUDE.md**
 
 ## Commands
 

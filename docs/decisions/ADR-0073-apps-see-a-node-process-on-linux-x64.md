@@ -24,7 +24,7 @@ same values from the same function.
 ## Context
 d-0079 gave an app a browser-shaped `process` (`version: ''`, `versions: {}`, `browser: true`, `platform:
 'browser'`, `arch: 'javascript'`) so that a library took its browser path. Owner decision d-0594
-reverses it: Orivon's Node layer presents as Node, and a port bundles for Node (CLAUDE.md Rule 21).
+reverses it: Orivon's Node layer presents as Node, and a port bundles for Node ([code guidelines](../development/code-guidelines.md) Rule 7).
 The browser shape had a cost every port met: `iconv-lite` 0.4 enables its stream API only when
 `process.versions.node` is set (subtitles failed in a ported torrent client), `application-config-path`
 throws on an unknown platform, and a port had to compile Electron's values into its bundle to get the
