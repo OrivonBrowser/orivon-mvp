@@ -1,0 +1,52 @@
+# `src/protocols/swarm/`: the Swarm protocol
+
+**What lives here.** The Swarm protocol ([`protocol.ts`](protocol.ts)): its descriptor, the `bzz`
+scheme and its resolver, and the `DataGatherer` ([`../resolution/`](../resolution/)) that loads
+every record naming Swarm content, a `.eth` name's included. It reads a reference or a feed over
+the Bee API's `/chunks` route and hashes every chunk against its address before any of it is used.
+A site is a Mantaray manifest over a chunk tree; a feed is a topic and an owner whose signed
+updates name the content's newest root. [`ADR-0077`](../../../docs/decisions/ADR-0077-swarm-content-is-verified-chunk-by-chunk-from-a-local-node.md)
+is the design.
+
+**Not tied to Electron.** Durable. It runs over an injected `fetch`.
+
+**What it depends on.** [`../resolution/`](../resolution/), [`../gateways/`](../gateways/) (the
+scheduling every content-addressed protocol shares), `multiformats` and `viem` (keccak-256 and
+signature recovery).
+
+**What it must never import.** `electron`, `src/main/`, `src/loader/`, `src/broker/`, any `node:*`
+module, and another protocol's folder. The verifier host gives it a `fetch` that reaches only the
+configured endpoints; with none configured, a mount fails as `unavailable` and nothing is asked.
+
+**Owner stream.** `ens-ipfs`.
+
+## Design notes
+
+**[`chunk-fetch.ts`](chunk-fetch.ts) is the whole defence.** Nothing else reads an endpoint's
+bytes. A chunk is used only after [`chunk.ts`](chunk.ts) has recomputed its address (content
+chunks) or recovered its signer (single-owner chunks); an endpoint that sends bytes failing that is
+dropped for the session.
+
+| Hop | How it is verified |
+|---|---|
+| reference to chunk | `keccak256(span, bmtRoot(payload))` equals the address |
+| file tree | each intermediate chunk lists its children, and a child's span must equal the bytes its parent says it covers ([`joiner.ts`](joiner.ts)) |
+| manifest | Mantaray nodes are files read through the same joiner ([`mantaray.ts`](mantaray.ts)) |
+| feed to update | the single-owner chunk's signature recovers to the feed owner ([`feed.ts`](feed.ts)) |
+
+**A reference is spelled as a CID.** 64 hex characters cannot be one host label, so the canonical
+spelling is a CIDv1 of codec swarm-manifest over keccak-256 ([`reference.ts`](reference.ts)), 61
+characters; the resolver refuses any other spelling so that one site has one origin.
+
+**The newest feed update is found over `/chunks`.** A node need not serve `/feeds`. The search
+starts at the highest index seen before (or an endpoint's `/feeds` answer, which is only a guess to
+verify), doubles forward until an index has no chunk, then halves the gap; the probes are bounded.
+Freshness is not provable: an endpoint can hide the newest update, and the persisted floor only
+stops a rollback.
+
+**Erasure-coded files need no parity tables.** The top byte of a span above 128 carries the
+redundancy level; the data references are the leading ones whose spans sum to the parent's span, so
+parity references are recognised by arithmetic and never fetched.
+
+**Named limits**, each refused in words: encrypted references, Mantaray 0.1, epoch feeds, and a
+manifest's `website-error-document`.

@@ -85,6 +85,8 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
+- **`bzz://` addresses and `.eth` names on Swarm**: every chunk is checked against its address and a feed's update against its owner's signature.
+  Chunks are read only from a Bee node on this machine, and this build configures none yet, so Swarm content opens only in tests.
 - **A link of a scheme an app lists opens in the app you choose**: a `magnet:` click or `window.open` asks which app should open it
   (an app that lists the scheme and holds a grant, or your system's app), "Always use the app I pick" makes it the default, and the
   app's page receives the link. Settings, under Apps, lists the default with Stop. An app can ask to be the default from a click,
