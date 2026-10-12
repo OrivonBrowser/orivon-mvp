@@ -19,7 +19,9 @@ change here that breaks one fails a test that names it. A new or changed capabil
 
 **What it depends on.** [`../broker-contracts.ts`](../broker-contracts.ts),
 [`../errors.ts`](../errors.ts), [`../io-errors.ts`](../io-errors.ts), [`../grants/`](../grants/),
-[`../handles/`](../handles/) and [`../policy/`](../policy/).
+[`../handles/`](../handles/), [`../policy/`](../policy/) and [`../route/`](../route/): a routed app's
+`net` calls (`CreateBrokerOptions.routeFor`) go through its route instead of the injected dial,
+resolve and T20 check.
 
 **What it must never import.** [`../../shim/`](../../shim/), [`../../loader/`](../../loader/), or
 any renderer code -- see the parent README's "What it must never import".

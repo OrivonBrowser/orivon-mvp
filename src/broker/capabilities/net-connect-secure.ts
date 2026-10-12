@@ -19,6 +19,8 @@ import { checkConnect, connectStillAuthorised } from '../policy/connect.js'
 import { checkConnectSecure } from '../policy/connect-secure.js'
 import { normalizeHost } from '../policy/canonical-host.js'
 import { proxyProbeUrl } from '../policy/proxy-guard.js'
+import { classifyAddress } from '../policy/address.js'
+import { dialSecureThroughRoute } from '../route/routed-secure.js'
 
 export interface ConnectSecureOptions {
   readonly deps: CreateBrokerOptions
@@ -62,6 +64,9 @@ export function createConnectSecure ({ deps, handleTable, ledger, canonical, soc
     const current = ledger.currentGrant(key, 'https.connect')
     if (current === undefined) throw fail('denied', 'https.connect is not granted to this origin')
 
+    // Read once per call: a route that changes later applies to the next one.
+    const route = deps.routeFor?.(key)
+
     return await handleTable.run(key, { on: 'grant', grantId: current.id }, async (signal) => {
       let dialed: DialedSecureSocket
       let host: string
@@ -73,23 +78,35 @@ export function createConnectSecure ({ deps, handleTable, ledger, canonical, soc
         const decision = checkConnectSecure(current.patterns, hostArg, port)
         if (!decision.allowed) throw fail('denied', 'the secure connection was not authorised')
         host = decision.host
-        // Before ANY resolution or handshake attempt: an unbound handshake
-        // below still resolves `host` through real Node DNS
-        // (`addressCheckedTarget`'s own `checkConnect` call), and even a
-        // bound one hands `host` straight to `deps.dialSecure`'s own Node
-        // TLS connect, which resolves it internally -- neither call is one a
-        // configured proxy ever sees (T20).
-        if (await deps.proxyConfigured(proxyProbeUrl(host, port))) {
-          throw fail('denied', 'a system proxy is configured; connectSecure refuses to bypass it')
-        }
         bound = bindsGrantedName(host, options)
-        const target = bound ? { host, port } : await addressCheckedTarget(current.patterns, host, port)
-        // Without this, a grant revoked between the policy check and the
-        // handshake completing would still let `deps.dialSecure` run to
-        // completion for a capability the app no longer holds.
-        if (signal.aborted) throw fail('revoked', 'the grant authorising this connection was withdrawn')
-        assertSocketRoom(handleTable, key, socketAllowance(key))
-        dialed = await deps.dialSecure(target, options, signal)
+        if (route !== undefined) {
+          // A routed app: no T20 (the route is its proxy), and a name is never
+          // resolved here. A literal the handshake does not bind to the name
+          // still gets the address check, which needs no resolver for one; a
+          // name that is not bound is the proxy's to resolve (policy/
+          // connect-routed.ts).
+          if (!bound && classifyAddress(host) !== 'unparseable') await addressCheckedTarget(current.patterns, host, port)
+          if (signal.aborted) throw fail('revoked', 'the grant authorising this connection was withdrawn')
+          assertSocketRoom(handleTable, key, socketAllowance(key))
+          dialed = await dialSecureThroughRoute(route, { host, port }, options, signal)
+        } else {
+          // Before ANY resolution or handshake attempt: an unbound handshake
+          // below still resolves `host` through real Node DNS
+          // (`addressCheckedTarget`'s own `checkConnect` call), and even a
+          // bound one hands `host` straight to `deps.dialSecure`'s own Node
+          // TLS connect, which resolves it internally -- neither call is one a
+          // configured proxy ever sees (T20).
+          if (await deps.proxyConfigured(proxyProbeUrl(host, port))) {
+            throw fail('denied', 'a system proxy is configured; connectSecure refuses to bypass it')
+          }
+          const target = bound ? { host, port } : await addressCheckedTarget(current.patterns, host, port)
+          // Without this, a grant revoked between the policy check and the
+          // handshake completing would still let `deps.dialSecure` run to
+          // completion for a capability the app no longer holds.
+          if (signal.aborted) throw fail('revoked', 'the grant authorising this connection was withdrawn')
+          assertSocketRoom(handleTable, key, socketAllowance(key))
+          dialed = await deps.dialSecure(target, options, signal)
+        }
       } catch (error) {
         // mapTlsError, NOT mapIoError: a failed handshake or a certificate/
         // hostname mismatch is 'unreachable' with a real platformCode, and
@@ -106,6 +123,9 @@ export function createConnectSecure ({ deps, handleTable, ledger, canonical, soc
         throw fail('revoked', 'the grant authorising this connection was withdrawn')
       }
 
+      // No address was checked when the name binds the peer by itself, or when
+      // a route carries a name the proxy resolves.
+      const addressUnchecked = bound || (route !== undefined && classifyAddress(host) === 'unparseable')
       const { destroy, authorized, authorizationError, alpnProtocol, peerCertificate, ...socketFields } = dialed
       const entry = handleTable.acquire({
         origin: key,
@@ -114,7 +134,7 @@ export function createConnectSecure ({ deps, handleTable, ledger, canonical, soc
         destroy,
         socketLimit: socketAllowance(key),
         stillCovered: (patterns) => checkConnectSecure(patterns, host, port).allowed &&
-          (bound || connectStillAuthorised(patterns, host, socketFields.remoteAddress, port))
+          (addressUnchecked || connectStillAuthorised(patterns, host, socketFields.remoteAddress, port))
       })
 
       const handshake = authorizationError === undefined
