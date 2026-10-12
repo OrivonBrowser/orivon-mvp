@@ -3,7 +3,7 @@ import { lightClientView } from '../status-view.js'
 import type { VerifierFacts } from '../status-view.js'
 
 const NOW = 1_790_000_000_000
-const ENDPOINTS = { executionRpcs: ['https://a.rpc', 'https://b.rpc'], consensusRpc: 'https://beacon', gateways: ['https://gw'], ipnsNameServices: ['https://names'], dnsOverHttps: ['https://doh'] }
+const ENDPOINTS = { executionRpcs: ['https://a.rpc', 'https://b.rpc'], consensusRpc: 'https://beacon', gateways: ['https://gw'], swarmEndpoints: ['https://bzz'], ipnsNameServices: ['https://names'], dnsOverHttps: ['https://doh'] }
 const ROOT = '0x' + 'a'.repeat(64)
 
 function facts (overrides: Partial<VerifierFacts>): VerifierFacts {
@@ -69,6 +69,7 @@ describe('lightClientView', () => {
       { label: 'Ethereum RPCs', urls: ['https://a.rpc', 'https://b.rpc'] },
       { label: 'Beacon API', urls: ['https://beacon'] },
       { label: 'IPFS gateways', urls: ['https://gw'] },
+      { label: 'Swarm endpoints', urls: ['https://bzz'] },
       { label: 'IPNS name services', urls: ['https://names'] },
       { label: 'DNS-over-HTTPS, for DNSLink', urls: ['https://doh'] }
     ])

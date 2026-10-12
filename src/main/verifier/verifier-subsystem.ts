@@ -203,6 +203,8 @@ async function hostConfig (): Promise<HostConfig> {
     ipnsNameServices: seam === undefined ? DEFAULT_ENDPOINTS.ipnsNameServices : [],
     dnsOverHttps: seam?.dnsOverHttps ?? DEFAULT_ENDPOINTS.dnsOverHttps,
     ipnsSequences: stored.ipnsSequences(),
+    swarmEndpoints: seam?.swarmEndpoints ?? DEFAULT_ENDPOINTS.swarmEndpoints,
+    swarmFeedIndexes: stored.swarmFeedIndexes(),
     ...(seam === undefined ? {} : { fixtures: seam.fixtures })
   }
 }
@@ -354,7 +356,8 @@ export const verifierSubsystem: Subsystem = {
           chooseNow()
           changed()
         },
-        ipnsSequence: (key, sequence) => { verifierStore().saveIpnsSequence(key, sequence) }
+        ipnsSequence: (key, sequence) => { verifierStore().saveIpnsSequence(key, sequence) },
+        swarmFeedIndex: (feed, index) => { verifierStore().saveSwarmFeedIndex(feed, index) }
       }
     })
     supervisor = host

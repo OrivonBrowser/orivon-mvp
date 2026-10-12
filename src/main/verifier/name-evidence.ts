@@ -42,12 +42,13 @@ function provenLine (provenance: Provenance): string {
   }
 }
 
-/** What an `ipfs://` or `ipns://` address itself establishes: only a CID names the content outright. */
+/** What an `ipfs://`, `ipns://` or `bzz://` address itself establishes: only a CID names the content outright. */
 function addressLine (pointer: ContentPointer): string {
   switch (pointer.kind) {
     case 'ipfs': return "The address is the content's own hash"
     case 'ipns-key': return 'The address is a key; the content is whatever its signed record names'
     case 'dnslink': return 'The address is a DNS name, followed through DNSLink'
+    case 'swarm': return "The address is the content's own hash"
     case 'unsupported': return `The address names ${pointer.protocol} content, which this build cannot load`
   }
 }
@@ -57,6 +58,7 @@ function stepRow (step: PointerStep): EvidenceRow {
     case 'contenthash': return step.provenance.via === 'address' ? { term: 'Address', value: addressLine(step.pointer) } : { term: 'Name', value: provenLine(step.provenance) }
     case 'ipns-record': return { term: 'IPNS record', value: `Signed by its key ${shortId(step.key)}, sequence ${step.sequence.toString()}` }
     case 'dnslink': return { term: 'DNSLink', value: `Via DNS: ${step.domain}, which anyone on the network path could forge` }
+    case 'swarm-feed': return { term: 'Swarm feed', value: `Update ${step.index.toString()}, signed by its owner ${shortId(step.owner)}` }
   }
 }
 

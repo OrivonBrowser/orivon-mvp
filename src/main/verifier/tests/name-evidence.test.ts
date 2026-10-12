@@ -46,6 +46,24 @@ describe('liveNameEvidence', () => {
     ]))
   })
 
+  it('names a signed Swarm feed update and calls a bzz:// address verified by what it names', () => {
+    const feed = liveNameEvidence(provenance({
+      root: { kind: 'swarm', cid: CID },
+      pointers: [
+        { step: 'contenthash', name: 'swarm.eth', pointer: { kind: 'swarm', cid: CID }, provenance: { via: 'chain', block: 5, offchain: false } },
+        { step: 'swarm-feed', owner: 'f77a13dc2f786b4523f5e0bf6db6757f4cf60ebb', topic: 'ab'.repeat(32), index: 91n, target: CID }
+      ]
+    }), NOW)
+    expect(feed.nameProven).toBe(true)
+    expect(feed.rows.map((r) => r.value)).toContain('Update 91, signed by its owner f77a13dc2f78…4cf60ebb')
+    const byAddress = liveNameEvidence(provenance({
+      root: { kind: 'swarm', cid: CID },
+      pointers: [{ step: 'contenthash', name: CID, pointer: { kind: 'swarm', cid: CID }, provenance: { via: 'address' } }]
+    }), NOW)
+    expect(byAddress.line).toBe("Address verified: it is the content's own hash, 3 minutes ago")
+    expect(byAddress.rows[0]).toEqual({ term: 'Address', value: "The address is the content's own hash" })
+  })
+
   it('carries a DNSLink as unverified, and a failed file, into the content evidence', () => {
     const viaDns = liveNameEvidence(provenance({
       pointers: [
