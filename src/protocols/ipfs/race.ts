@@ -74,7 +74,8 @@ function abortAfter (ms: number): { readonly signal: AbortSignal, readonly cance
 }
 
 /** Runs every candidate in `candidates`, up to `MAX_ATTEMPTS_IN_FLIGHT` at
- * once, hedging a slow leader with the next candidate after `hedgeDelayMs` --
+ * once, hedging a slow leader with the next candidate after `hedgeDelayMs`
+ * (fixed, or asked of the candidate started last) --
  * first verified answer wins and every other attempt is abandoned. Returns
  * once nothing is left to try: verified, fatal, or every attempt in the
  * pass has failed or lied.
@@ -82,7 +83,7 @@ function abortAfter (ms: number): { readonly signal: AbortSignal, readonly cance
 export async function racePass<T> (
   candidates: readonly string[],
   run: (candidate: string, signal: AbortSignal) => Promise<AttemptOutcome<T>>,
-  hedgeDelayMs: number,
+  hedgeDelayMs: number | ((leader: string) => number),
   callerSignal: AbortSignal
 ): Promise<PassResult<T>> {
   // With nothing to start, nothing would ever answer the wait below.
@@ -136,7 +137,7 @@ export async function racePass<T> (
       if (callerSignal.aborted) throw callerSignal.reason
       const canHedge = inFlight < MAX_ATTEMPTS_IN_FLIGHT && nextIndex < candidates.length
       if (canHedge) {
-        const hedge = abortAfter(hedgeDelayMs)
+        const hedge = abortAfter(typeof hedgeDelayMs === 'number' ? hedgeDelayMs : hedgeDelayMs(candidates[nextIndex - 1]!))
         try {
           const result = handle(await queue.next(AbortSignal.any([callerSignal, hedge.signal])))
           if (result !== undefined) return result

@@ -142,4 +142,17 @@ describe('GatewayHealth', () => {
     health.note({ kind: 'unreachable' })
     expect(health.readyAt() - readyBefore).toBe(2_000)
   })
+
+  it('learns a typical answer time from timed successes, and nothing from untimed ones', () => {
+    const health = new GatewayHealth()
+    expect(health.typicalLatencyMs()).toBeUndefined()
+    health.note({ kind: 'ok' })
+    expect(health.typicalLatencyMs()).toBeUndefined()
+    health.note({ kind: 'ok', latencyMs: 100 })
+    expect(health.typicalLatencyMs()).toBe(100)
+    health.note({ kind: 'ok', latencyMs: 200 })
+    expect(health.typicalLatencyMs()).toBeCloseTo(130)
+    health.note({ kind: 'timeout' })
+    expect(health.typicalLatencyMs()).toBeCloseTo(130)
+  })
 })

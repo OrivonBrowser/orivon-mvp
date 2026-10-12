@@ -8,7 +8,8 @@
  * caller (askGateway, gateways.ts) -- this module never inspects a
  * response itself. */
 export type GatewayOutcome =
-  | { readonly kind: 'ok' }
+  /** `latencyMs`: from the request leaving to the whole answer read, when the caller timed it. */
+  | { readonly kind: 'ok', readonly latencyMs?: number }
   /** A 429, or a 503 that named a retry time. */
   | { readonly kind: 'rate-limited', readonly retryAfterMs: number | undefined }
   /** Refused, reset, timed out connecting, or a TLS failure -- the gateway
@@ -48,10 +49,14 @@ export function retryAfterMs (header: string | null, now: number): number | unde
   return Math.max(0, at - now)
 }
 
-/** One gateway's cooldown state. `note` is the only way to change it --
- * everything else here reads it. */
+/** How much one new answer moves a gateway's typical answer time. */
+const LATENCY_WEIGHT = 0.3
+
+/** One gateway's cooldown state, and how long it typically takes to answer. `note` is the only way to change
+ * either -- everything else here reads them. */
 export class GatewayHealth {
   private cooldownUntil = 0
+  private latencyMs: number | undefined
   private rateLimitStrikes = 0
   private unreachableStrikes = 0
   private serverErrorStrikes = 0
@@ -70,9 +75,15 @@ export class GatewayHealth {
     return this.cooldownUntil
   }
 
+  /** A moving average of this gateway's timed answers; undefined until it has answered one. */
+  typicalLatencyMs (): number | undefined {
+    return this.latencyMs
+  }
+
   note (outcome: GatewayOutcome): void {
     switch (outcome.kind) {
       case 'ok':
+        if (outcome.latencyMs !== undefined) this.latencyMs = this.latencyMs === undefined ? outcome.latencyMs : this.latencyMs + LATENCY_WEIGHT * (outcome.latencyMs - this.latencyMs)
         // Resets the strike counters, but never lifts a cooldown already
         // running: a request that started before the 429/outage and only
         // happened to land afterward must not undo it.

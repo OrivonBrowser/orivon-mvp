@@ -10,6 +10,11 @@ import type { GatewayOutcome } from './gateway-health.js'
 
 export type Fetch = (url: string, init: { readonly headers: Readonly<Record<string, string>>, readonly signal: AbortSignal }) => Promise<Response>
 
+/** A hedge waits this many times a gateway's typical answer before asking another. */
+const HEDGE_LATENCY_FACTOR = 3
+/** The shortest hedge delay: below it, ordinary jitter would double every request. */
+export const MIN_HEDGE_DELAY_MS = 500
+
 export class GatewayPool {
   private readonly dropped = new Set<string>()
   private readonly health = new Map<string, GatewayHealth>()
@@ -59,6 +64,18 @@ export class GatewayPool {
   /** When `gateway` is worth asking again; a time already past when it is not cooling. */
   readyAt (gateway: string): number {
     return this.health.get(gateway)?.readyAt() ?? 0
+  }
+
+  /**
+   * How long to wait for `gateway` before asking another as well: a few times what it typically takes, or, while it has
+   * never answered, what the fastest gateway typically takes -- a gateway that stalls on what it lacks costs a moment,
+   * not `maxMs` per block. Never under `MIN_HEDGE_DELAY_MS`, never over `maxMs`, and `maxMs` before any gateway answered.
+   */
+  hedgeDelay (gateway: string, maxMs: number): number {
+    const known = this.usable().map((g) => this.health.get(g)!.typicalLatencyMs()).filter((ms): ms is number => ms !== undefined)
+    const typical = this.health.get(gateway)?.typicalLatencyMs() ?? (known.length === 0 ? undefined : Math.min(...known))
+    if (typical === undefined) return maxMs
+    return Math.min(maxMs, Math.max(MIN_HEDGE_DELAY_MS, HEDGE_LATENCY_FACTOR * typical))
   }
 
   /** For the rest of this session: a gateway that sent one bad block is not asked again. */
@@ -170,6 +187,7 @@ export async function askGateway<T> (
   signal: AbortSignal
 ): Promise<T> {
   return await pool.withSlot(gateway, async () => {
+    const startedAt = pool.now()
     const timeout = AbortSignal.timeout(req.timeoutMs)
     let response: Response
     try {
@@ -198,7 +216,7 @@ export async function askGateway<T> (
     }
     try {
       const value = await read(response)
-      pool.note(gateway, { kind: 'ok' })
+      pool.note(gateway, { kind: 'ok', latencyMs: pool.now() - startedAt })
       return value
     } catch (error) {
       // A hedge loser abandoned mid-body lands here as an abort too, and
