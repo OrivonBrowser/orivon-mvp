@@ -3,15 +3,16 @@
 // `/feeds/<owner>/<topic>` answers with the newest index header when asked to,
 // and with a 501 otherwise, as a node without that route does. It logs every
 // request, can flip a byte of any chunk, can answer a chunk with a redirect
-// as a content filter does, can hold every chunk answer back so a load lasts
-// long enough to look at, and listens on loopback on a port the OS picks.
+// as a content filter does, can hold every chunk answer back until a test lets
+// them go so a load stays open as long as the test needs, and listens on
+// loopback on a port the OS picks.
 import { createServer } from 'node:http'
 import { buildFeedManifest, buildSite, feedKey, legacyUpdate, ownerOf, signFeedUpdate, buildFile } from './encode.mjs'
 
 const HOST = '127.0.0.1'
 
 /**
- * @param {{ feedsRoute?: boolean, tamperAll?: boolean, chunkDelayMs?: number }} [options] `feedsRoute`: answer `/feeds/...` with the newest index (default: a 501); `tamperAll`: flip a byte of every chunk served; `chunkDelayMs`: how long each chunk answer waits, as a slow node's do
+ * @param {{ feedsRoute?: boolean, tamperAll?: boolean, holdChunks?: boolean }} [options] `feedsRoute`: answer `/feeds/...` with the newest index (default: a 501); `tamperAll`: flip a byte of every chunk served; `holdChunks`: keep every chunk answer back until `releaseChunks()`, as a node that is slow to answer does
  */
 export async function startSwarmFixture (options = {}) {
   /** @type {Map<string, Uint8Array>} */
@@ -22,6 +23,10 @@ export async function startSwarmFixture (options = {}) {
   const tampered = new Set()
   const redirected = new Set()
   let tamperAll = options.tamperAll === true
+  let holding = options.holdChunks === true
+  /** @type {Array<() => void>} */
+  const held = []
+  let answered = 0
 
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', `http://${HOST}`)
@@ -33,9 +38,9 @@ export async function startSwarmFixture (options = {}) {
       if (redirected.has(chunk[1])) { res.writeHead(302, { location: `http://${HOST}/forbidden` }).end(); return }
       const body = Buffer.from(bytes)
       if (tamperAll || tampered.has(chunk[1])) body[body.length - 1] ^= 0x01
-      const answer = () => { res.writeHead(200, { 'content-type': 'application/octet-stream' }).end(body) }
-      if (options.chunkDelayMs === undefined) answer()
-      else setTimeout(answer, options.chunkDelayMs)
+      const answer = () => { answered++; res.writeHead(200, { 'content-type': 'application/octet-stream' }).end(body) }
+      if (holding) held.push(answer)
+      else answer()
       return
     }
     const feed = /^\/feeds\/([0-9a-f]{40})\/([0-9a-f]{64})$/.exec(url.pathname)
@@ -77,6 +82,10 @@ export async function startSwarmFixture (options = {}) {
         }
       }
     },
+    /** How many chunks it has answered with their bytes so far. */
+    answeredChunks: () => answered,
+    /** Answer the chunks held back so far, and every later one at once. */
+    releaseChunks: () => { holding = false; for (const answer of held.splice(0)) answer() },
     /** Stores one file and returns its reference. */
     addFile: (bytes) => buildFile(bytes, store).ref,
     /** Serve this chunk with one byte flipped from now on. */

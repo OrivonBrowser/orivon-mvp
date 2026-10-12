@@ -14,7 +14,6 @@ import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetryi
 import { startSwarmFixture } from '../apps/swarm-gateway/gateway.mjs'
 import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 
-const CHUNK_DELAY_MS = 1_200
 const BLOCK_DELAY_MS = 800
 const LOAD_TIMEOUT_MS = 60_000
 const TEST_TIMEOUT_MS = ADDRESS_BAR_STABLE_TIMEOUT_MS * 4 + DEFAULT_ACTION_TIMEOUT_MS * 6 + APP_CLOSE_RACE_MS + 60_000 + 2 * LOAD_TIMEOUT_MS
@@ -27,21 +26,24 @@ const page = (title: string, body = title): string => `<!doctype html><meta char
 
 interface LoadingWatch { readonly screens: string[], readonly bars: string[], readonly titles: string[], readonly loaded: boolean }
 
-/** Reads the loading screen and the address bar every poll until the page's title shows, so a wrong network named for even a moment is seen. */
-async function watchLoading (running: Awaited<ReturnType<typeof launchElectron>>, chrome: Parameters<typeof activeTabInfo>[0], loadedTitle: string): Promise<LoadingWatch> {
+/** Reads the loading screen and the address bar every poll until the page's title shows, so a wrong network named for even a moment is seen. `shownBefore` is the address of the page being left. */
+async function watchLoading (running: Awaited<ReturnType<typeof launchElectron>>, chrome: Parameters<typeof activeTabInfo>[0], loadedTitle: string, shownBefore: string, whenNamed?: { readonly address: string, readonly then: () => void }): Promise<LoadingWatch> {
   const screen = await waitOverlay(running, 'loading-screen')
   const screens: string[] = []
   const bars: string[] = []
   const titles: string[] = []
+  let named = false
   const loaded = await waitFor(async () => {
     if (await overlayShown(running, 'loading-screen')) {
       const address = await screen.locator('.loading-screen-address').getAttribute('title', { timeout: 500 }).catch(() => null)
       const title = await screen.locator('.loading-screen-title').textContent({ timeout: 500 }).catch(() => null)
       if (address !== null) screens.push(address)
+      if (address !== null && address === whenNamed?.address && !named) { named = true; whenNamed.then() }
       if (title !== null) titles.push(title)
     }
     const info = await activeTabInfo(chrome)
-    bars.push(String(info.address))
+    // The page being left keeps its address in the bar until the new one commits; only a different address is about the new page.
+    if (info.address !== shownBefore) bars.push(String(info.address))
     return info.title === loadedTitle
   }, LOAD_TIMEOUT_MS)
   return { screens, bars, titles, loaded }
@@ -64,8 +66,8 @@ it('[app:swarm-url-opens] [app:eth-name-shown-by-network] loads a typed bzz:// a
     await feed.publish(node.addSite({ 'index.html': page('swarm update one') }))
     await feed.publish(node.addSite({ 'index.html': page('swarm update two') }))
     const ipfsGateway = await startFixtureGateway({ onipfs: { 'index.html': page('ipfs name fixture') }, slowipfs: { 'index.html': page('slow ipfs name') } }, { blockDelayMs: BLOCK_DELAY_MS })
-    // A node and a gateway that hold their answers back keep the loading screen up long enough to read it.
-    const slowNode = await startSwarmFixture({ chunkDelayMs: CHUNK_DELAY_MS })
+    // A node that answers no chunk until released, and a gateway that answers each block late, keep the loading screen up long enough to read it.
+    const slowNode = await startSwarmFixture({ holdChunks: true })
     const slow = slowNode.addSite({ 'index.html': page('slow swarm name') })
     const broken = evilNode.addSite({ 'index.html': page('tampered swarm fixture') })
     let app: Awaited<ReturnType<typeof launchElectron>> | undefined
@@ -118,14 +120,18 @@ it('[app:swarm-url-opens] [app:eth-name-shown-by-network] loads a typed bzz:// a
 
       // A first visit: the screen and the address bar name Swarm as soon as the records resolve, and never IPFS.
       await clickAddressBarRetrying(chrome, 'slow.eth')
-      const slowSwarm = await watchLoading(running, chrome, 'slow swarm name')
+      let answeredWhenNamed = -1
+      const slowSwarm = await watchLoading(running, chrome, 'slow swarm name', 'ipfs://onipfs.eth/', {
+        address: 'bzz://slow.eth/',
+        then: () => { answeredWhenNamed = slowNode.answeredChunks(); slowNode.releaseChunks() }
+      })
       const swarmNeverIpfs = [...slowSwarm.screens, ...slowSwarm.bars].every((shown) => !shown.startsWith('ipfs://'))
       check(`a .eth name on Swarm never reads ipfs:// while it loads (${JSON.stringify(slowSwarm)})`, slowSwarm.loaded && swarmNeverIpfs)
-      check('its loading screen reads bzz://slow.eth/ and names Swarm while it is still up', slowSwarm.screens.includes('bzz://slow.eth/') && slowSwarm.titles.includes('Loading from Swarm'))
+      check(`its loading screen reads bzz://slow.eth/ and names Swarm before the node has answered a single chunk (${String(answeredWhenNamed)} answered)`, answeredWhenNamed === 0 && slowSwarm.titles.includes('Loading from Swarm'))
       check('its address bar reads bzz://slow.eth/ once the page is ready', slowSwarm.bars.at(-1) === 'bzz://slow.eth/')
 
       await clickAddressBarRetrying(chrome, 'slowipfs.eth')
-      const slowIpfs = await watchLoading(running, chrome, 'slow ipfs name')
+      const slowIpfs = await watchLoading(running, chrome, 'slow ipfs name', 'bzz://slow.eth/')
       const ipfsNeverSwarm = [...slowIpfs.screens, ...slowIpfs.bars].every((shown) => !shown.startsWith('bzz://'))
       check(`a .eth name on IPFS never reads bzz:// while it loads (${JSON.stringify(slowIpfs)})`, slowIpfs.loaded && ipfsNeverSwarm)
       check('its loading screen reads ipfs://slowipfs.eth/ and names IPFS while it is still up', slowIpfs.screens.includes('ipfs://slowipfs.eth/') && slowIpfs.titles.includes('Loading from IPFS'))
@@ -139,8 +145,8 @@ it('[app:swarm-url-opens] [app:eth-name-shown-by-network] loads a typed bzz:// a
       check(`a node that serves only tampered chunks gives the cannot-verify page (${JSON.stringify(refused.info)})`, refused.ok)
 
       expect(typed.ok && followed.ok && fed.ok && onIpfs.ok && again.ok && refused.ok).toBe(true)
-      expect(slowSwarm.loaded && swarmNeverIpfs && slowSwarm.screens.includes('bzz://slow.eth/')).toBe(true)
-      expect(slowIpfs.loaded && ipfsNeverSwarm && slowIpfs.screens.includes('ipfs://slowipfs.eth/')).toBe(true)
+      expect(slowSwarm.loaded && swarmNeverIpfs && answeredWhenNamed === 0, JSON.stringify({ answeredWhenNamed, ...slowSwarm })).toBe(true)
+      expect(slowIpfs.loaded && ipfsNeverSwarm && slowIpfs.screens.includes('ipfs://slowipfs.eth/'), JSON.stringify(slowIpfs)).toBe(true)
       expect(loaded).toEqual({ origin: `https://${cid}.bzz.orivon`, secure: true, ran: 'ran' })
     } finally {
       if (app !== undefined) await closeElectronApp(app)
