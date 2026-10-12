@@ -117,7 +117,7 @@ export async function fetchVerifiedBlock (cid: CID, deps: FetchDeps, signal: Abo
 
     let result: PassResult<Uint8Array>
     try {
-      result = await racePass(candidates, (gateway, attemptSignal) => attemptGateway(gateway, cid, key, deps, attemptSignal, onRefusal, unwell), deps.limits.hedgeDelayMs, signal)
+      result = await racePass(candidates, (gateway, attemptSignal) => attemptGateway(gateway, cid, key, deps, attemptSignal, onRefusal, unwell), (leader) => deps.pool.hedgeDelay(leader, deps.limits.hedgeDelayMs), signal)
     } catch (error) {
       // racePass only ever rejects for the caller's own signal aborting
       // (its own attempts never reject: a bug there surfaces as `fatal`,

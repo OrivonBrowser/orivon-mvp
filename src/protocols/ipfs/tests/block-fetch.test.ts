@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { CID } from 'multiformats/cid'
 import { MAX_PASSES, fetchVerifiedBlock } from '../block-fetch.js'
 import type { FetchDeps } from '../block-fetch.js'
-import { GatewayPool } from '../gateways.js'
+import { GatewayPool, MIN_HEDGE_DELAY_MS } from '../gateways.js'
 import { DEFAULT_LIMITS } from '../limits.js'
 import type { IpfsLimits } from '../limits.js'
 import { buildDag, fakeGateways } from './dag.test-helpers.js'
@@ -56,6 +56,18 @@ describe('fetchVerifiedBlock -- hedging', () => {
     } }
     for (const key of [...dag.blocks.keys()].slice(0, 2)) await fetchVerifiedBlock(CID.parse(key), d, signal, noRefusal)
     expect(d.pool.candidates()).toEqual([A, B])
+  })
+
+  it('hedges a stalled leader within moments once another gateway has shown how quickly it answers', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    gateways.hanging.add(A)
+    const d = deps(gateways, [A, B], { hedgeDelayMs: 5_000, blockTimeoutMs: 30_000 })
+    d.pool.note(B, { kind: 'ok', latencyMs: 20 })
+    const started = Date.now()
+    expect(await fetchVerifiedBlock(leaf, d, signal, noRefusal)).toEqual(leafBytes)
+    const took = Date.now() - started
+    expect(took).toBeGreaterThanOrEqual(MIN_HEDGE_DELAY_MS - 50)
+    expect(took).toBeLessThan(2_000)
   })
 
   it('does not hedge when the leader answers within the hedge delay', async () => {

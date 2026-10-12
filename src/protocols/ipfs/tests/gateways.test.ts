@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { GatewayFailure, GatewayPool, askGateway, readCapped } from '../gateways.js'
+import { GatewayFailure, GatewayPool, MIN_HEDGE_DELAY_MS, askGateway, readCapped } from '../gateways.js'
 import type { Fetch } from '../gateways.js'
 
 const A = 'https://a.gateway'
+const B = 'https://b.gateway'
 
 /** Headers at once, then a body that never ends until the request's signal
  * aborts, when the stream errors: the shape undici and `net.fetch` give. */
@@ -47,5 +48,35 @@ describe('askGateway -- an abort while the body is being read', () => {
     const failure = await failureOf(promise)
     expect(failure.outcome.kind).toBe('timeout')
     expect(pool.candidates()).toEqual([A]) // one timeout alone is not a strike
+  })
+})
+
+describe('GatewayPool.hedgeDelay', () => {
+  it('is the longest wait until some gateway has answered', () => {
+    const pool = new GatewayPool([A, B], 4)
+    expect(pool.hedgeDelay(A, 2_000)).toBe(2_000)
+  })
+
+  it('is a few times what the leader typically takes, within the shortest and the longest wait', () => {
+    const pool = new GatewayPool([A, B], 4)
+    pool.note(A, { kind: 'ok', latencyMs: 300 })
+    expect(pool.hedgeDelay(A, 2_000)).toBe(900)
+    pool.note(B, { kind: 'ok', latencyMs: 10 })
+    expect(pool.hedgeDelay(B, 2_000)).toBe(MIN_HEDGE_DELAY_MS)
+    pool.note(A, { kind: 'ok', latencyMs: 10_000 })
+    expect(pool.hedgeDelay(A, 2_000)).toBe(2_000)
+  })
+
+  it('for a leader that never answered, is what the fastest gateway typically takes', () => {
+    const pool = new GatewayPool([A, B], 4)
+    pool.note(B, { kind: 'ok', latencyMs: 250 })
+    expect(pool.hedgeDelay(A, 2_000)).toBe(750)
+  })
+
+  it('times a success from the request leaving, so the next hedge knows it', async () => {
+    const pool = new GatewayPool([A], 4)
+    const quick: Fetch = async () => new Response(new Uint8Array([1]), { status: 200 })
+    await askGateway(pool, quick, A, { url: `${A}/ipfs/x?format=raw`, accept: 'application/vnd.ipld.raw', timeoutMs: 5_000 }, read, new AbortController().signal)
+    expect(pool.hedgeDelay(A, 2_000)).toBe(MIN_HEDGE_DELAY_MS)
   })
 })
