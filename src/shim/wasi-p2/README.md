@@ -97,6 +97,6 @@ never gets an answer (A304).
 **`poll` leaves one reaction on a pending wait, however often it is called.** A program's event
 loop polls every socket it holds each time anything wakes it. Waiting on each pollable's own
 promise per call (`Promise.race`) left one reaction on the promise of every socket that stayed
-quiet, and a busy program (a Rust peer-to-peer node holding a hundred sockets) grew its heap by
+quiet, and a busy program holding a hundred sockets grew its heap by
 about 35 MB a second. `Pollable.subscribe` (`io.ts`) arms the underlying wait once and fans a wake
 out to the polls currently waiting; a poll withdraws from the pollables that did not wake it.
