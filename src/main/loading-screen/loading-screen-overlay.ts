@@ -2,6 +2,7 @@
 // page area. The tab's watcher asks for it with the address; this wording comes from the protocol's descriptor. A first
 // visit to an app (../app-setup/) asks with its own words instead, for an address no protocol has a screen for.
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
+import { onNameSchemeChange } from '../verifier/name-scheme-events.js'
 import type { OverlayDef, OverlayHandler, OverlayWindow } from '../overlays/overlay-types.js'
 import { slotClosed } from '../overlays/tab-slots.js'
 import { ADDRESS_LIMIT } from '../sad-tab/sad-tab-text.js'
@@ -45,6 +46,15 @@ function asAsk (payload: unknown): { url: string, text: SetupText | undefined } 
   return words === undefined ? undefined : { url, text: words }
 }
 
+type Ask = NonNullable<ReturnType<typeof asAsk>>
+
+/** What the screen says for `ask` now, or undefined when no protocol words a screen for its address. */
+function viewOf (ask: Ask): LoadingScreenView | undefined {
+  const screen = ask.text ?? BUILTIN_ADDRESSES.loadingScreenFor(ask.url)
+  if (screen === undefined) return undefined
+  return { title: screen.title, detail: screen.detail ?? '', address: BUILTIN_ADDRESSES.displayUrl(ask.url).slice(0, ADDRESS_LIMIT), busy: ask.text?.busy ?? true }
+}
+
 export const loadingScreenOverlay: OverlayDef = {
   name: LOADING_SCREEN_OVERLAY,
   placement: { kind: 'pane' },
@@ -54,14 +64,33 @@ export const loadingScreenOverlay: OverlayDef = {
   layer: 'cover',
   closeOn: { blur: false, tabSwitch: true, navigation: false, layout: false },
   keep: 'warm',
-  attach: ({ window, close }: OverlayWindow): OverlayHandler => ({
-    show: (payload): LoadingScreenView | undefined => {
-      const ask = asAsk(payload)
-      const screen = ask === undefined ? undefined : ask.text ?? BUILTIN_ADDRESSES.loadingScreenFor(ask.url)
-      if (ask === undefined || screen === undefined) { close(); return undefined }
-      return { title: screen.title, detail: screen.detail ?? '', address: BUILTIN_ADDRESSES.displayUrl(ask.url).slice(0, ADDRESS_LIMIT), busy: ask.text?.busy ?? true }
-    },
-    request: () => undefined,
-    closed: (reason) => { slotClosed(window, LOADING_SCREEN_OVERLAY, reason) }
-  })
+  attach: ({ window, close, send }: OverlayWindow): OverlayHandler => {
+    /** What is on screen, so a scheme learned while it shows can word it again. */
+    let shown: Ask | undefined
+    let stopListening: (() => void) | undefined
+    const stop = (): void => {
+      shown = undefined
+      stopListening?.()
+      stopListening = undefined
+    }
+    return {
+      show: (payload): LoadingScreenView | undefined => {
+        const ask = asAsk(payload)
+        const view = ask === undefined ? undefined : viewOf(ask)
+        if (ask === undefined || view === undefined) { stop(); close(); return undefined }
+        shown = ask
+        stopListening ??= onNameSchemeChange(() => {
+          const again = shown === undefined ? undefined : viewOf(shown)
+          if (again !== undefined) send({ type: 'view', view: again })
+        })
+        return view
+      },
+      request: () => undefined,
+      closed: (reason) => {
+        stop()
+        slotClosed(window, LOADING_SCREEN_OVERLAY, reason)
+      },
+      disposed: stop
+    }
+  }
 }

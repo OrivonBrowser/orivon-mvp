@@ -56,10 +56,10 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
   const swarmNode = createSwarmNodeLink(deps.post)
   const { protocols, lightClient } = startProtocols(config, deps, swarmNode)
   const registry = new ProtocolRegistry(protocols)
-  // A top-level-domain name is shown by where its content lives, which only a mount can say.
-  const sites = new Sites(registry, Date.now, MOUNT_TIMEOUT_MS, (host, site) => {
+  // A top-level-domain name is shown by where its content lives, which is known once a gatherer is chosen for its records.
+  const sites = new Sites(registry, Date.now, MOUNT_TIMEOUT_MS, (host, gatherer) => {
     const served = registry.addresses.servedName(host)
-    const scheme = registry.schemeOfGatherer(site.gatherer)
+    const scheme = registry.schemeOfGatherer(gatherer)
     if (served?.namespace.startsWith('.') === true && scheme !== undefined) deps.post({ type: 'name-scheme', host: served.name, scheme })
   })
   const certificate = createRunCertificate()

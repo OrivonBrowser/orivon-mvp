@@ -1,9 +1,9 @@
 // Between the address a person reads and the URL a page is served at:
 // `ipfs://<cid>/docs/` is served at `https://<cid>.ipfs.orivon/docs/`, and a
 // `.eth` name is its own host, shown under the scheme of where its content
-// was last found (`bzz://<name>`, `ipfs://<name>`), else under its protocol's
-// display scheme when it declares one. Pure string work over the
-// descriptors, so the shell needs no protocol's code to route or show one.
+// was found (`bzz://<name>`, `ipfs://<name>`) and as its plain origin until
+// this install has learned that. Pure string work over the descriptors, so
+// the shell needs no protocol's code to route or show one.
 // Rationale: README.md.
 
 import { ADDRESS_SUFFIX, namespacesOf } from './protocol.js'
@@ -51,21 +51,12 @@ function hostLabels (host: string): string[] {
 export class ProtocolAddresses {
   private readonly schemes: ReadonlySet<string>
   private readonly topLevelDomains: ReadonlySet<string>
-  private readonly displaySchemesByTld: ReadonlyMap<string, string>
   private readonly loadingScreens: ReadonlyMap<Namespace, LoadingScreen>
   private learnedScheme: (name: string) => string | undefined = () => undefined
 
   constructor (protocols: readonly ProtocolDescriptor[]) {
     this.schemes = new Set(protocols.flatMap((p) => p.schemes))
     this.topLevelDomains = new Set(protocols.flatMap((p) => p.topLevelDomains))
-    const displaySchemesByTld = new Map<string, string>()
-    for (const protocol of protocols) {
-      if (protocol.displayScheme === undefined) continue
-      // A typo here would show a name with no scheme at all, silently: refuse it at startup instead.
-      if (!this.schemes.has(protocol.displayScheme)) throw new Error(`protocol ${protocol.id}: displayScheme ${protocol.displayScheme} is not a scheme any given protocol serves`)
-      for (const tld of protocol.topLevelDomains) displaySchemesByTld.set(tld, protocol.displayScheme)
-    }
-    this.displaySchemesByTld = displaySchemesByTld
     const loadingScreens = new Map<Namespace, LoadingScreen>()
     for (const protocol of protocols) {
       if (protocol.loadingScreen === undefined) continue
@@ -76,8 +67,8 @@ export class ProtocolAddresses {
 
   /**
    * Sets where a top-level-domain name's scheme is learned from: the scheme
-   * of the gatherer that last mounted it. An answer no protocol serves is
-   * ignored, as is any for an address.
+   * of the protocol whose gatherer was last chosen for its records. An answer
+   * no protocol serves is ignored, as is any for an address.
    */
   learnSchemes (lookup: (name: string) => string | undefined): void {
     this.learnedScheme = lookup
@@ -90,10 +81,10 @@ export class ProtocolAddresses {
     return learned !== undefined && this.schemes.has(learned) ? learned : undefined
   }
 
-  /** The scheme a served name is shown with: its own for an address; for a top-level-domain name the one learned for it, else its protocol's display scheme, if it declares one. */
+  /** The scheme a served name is shown with: its own for an address; for a top-level-domain name the one learned for it, and none before that, so it is never shown under a network it may not live on. */
   private shownScheme (served: ServedName): string | undefined {
     if (served.namespace.endsWith(':')) return served.namespace.slice(0, -1)
-    return this.learnedSchemeOf(served) ?? this.displaySchemesByTld.get(served.namespace.slice(1))
+    return this.learnedSchemeOf(served)
   }
 
   /** Whether `scheme`, lowercase and without its colon, is a protocol's address scheme. */
@@ -197,8 +188,8 @@ export class ProtocolAddresses {
    * host, the scheme endpoint included since it redirects to the origin. A
    * top-level-domain name uses the screen of the protocol serving the scheme
    * learned for it first, so a name known to be on Swarm says so before it
-   * loads; else its own protocol's, else that of the scheme it is shown with.
-   * Undefined for any other URL.
+   * loads; else its own protocol's, which names no network. Undefined for any
+   * other URL.
    */
   loadingScreenFor (url: string): LoadingScreen | undefined {
     let parsed: URL
@@ -211,16 +202,13 @@ export class ProtocolAddresses {
     const served = this.servedName(parsed.hostname)
     if (served !== undefined) {
       const learned = this.learnedSchemeOf(served)
-      const shown = this.shownScheme(served)
-      return (learned === undefined ? undefined : this.loadingScreens.get(`${learned}:`)) ??
-        this.loadingScreens.get(served.namespace) ??
-        (shown === undefined ? undefined : this.loadingScreens.get(`${shown}:`))
+      return (learned === undefined ? undefined : this.loadingScreens.get(`${learned}:`)) ?? this.loadingScreens.get(served.namespace)
     }
     const scheme = this.schemeEndpoint(parsed.hostname)
     return scheme === undefined || !/^\/[^/]/.test(parsed.pathname) ? undefined : this.loadingScreens.get(`${scheme}:`)
   }
 
-  /** displayUrl, for an origin: `https://<label>.ipfs.orivon` is `ipfs://<name>`. */
+  /** displayUrl, for an origin: `https://<label>.ipfs.orivon` is `ipfs://<name>`; a `.eth` origin whose network is not learned stays as it is. */
   displayOrigin (origin: string): string {
     let parsed: URL
     try {

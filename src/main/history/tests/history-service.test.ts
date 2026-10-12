@@ -47,7 +47,7 @@ describe('the history service', () => {
     service.markTyped('https://vitalik.eth/')
     service.markTyped('https://example.com/')
     service.markTyped('about:blank')
-    expect(markTyped.mock.calls).toEqual([['ipfs://vitalik.eth/'], ['https://example.com/']])
+    expect(markTyped.mock.calls).toEqual([['https://vitalik.eth/'], ['https://example.com/']])
   })
 
   describe('site icons', () => {
