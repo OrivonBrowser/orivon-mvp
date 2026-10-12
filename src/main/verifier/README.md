@@ -88,3 +88,16 @@ from what `verifier-subsystem.ts` provides: true for a developer-mode name, a te
 start from a usable checkpoint; false with the light client off or unable to start, and before anything has provided it. A
 feature that sends a person to a `.eth` name, such as [`../shell/eth-gateway-rule.ts`](../shell/eth-gateway-rule.ts), asks it
 first, so it never replaces an address that works with one that cannot load.
+
+**The Swarm node runs on demand, beside the verifier host and under the same idle rule.**
+[`swarm-node-controller.ts`](swarm-node-controller.ts) starts it when a Swarm mount calls `ensureSwarmNode`
+([`swarm-node-subsystem.ts`](swarm-node-subsystem.ts), the one file there that imports `electron`), waits at
+most twenty seconds for eight peers, and answers `ready`, `starting` (still finding peers), `failed` or `off`
+with the reason in words. It sleeps when the verifier host does (`swarmNodeVerifierIdle`) and after ten
+minutes with no call, so a call must be made for every mount, not only one that finds no node ready. It does
+not start when a system proxy is configured (the node's sockets would go around it, T20), when its files are
+missing or are not the ones the build pins ([`swarm-node-artifact.ts`](swarm-node-artifact.ts), checked at
+every start, a restart included), or in a build that serves Swarm from its own endpoints. Both processes are
+kept by [`process-supervisor.ts`](process-supervisor.ts): forking, the config handed over, backoff, sleep.
+[`host-supervisor.ts`](host-supervisor.ts) adds the verifier host's requests and replies,
+[`swarm-node-supervisor.ts`](swarm-node-supervisor.ts) the node's reports.

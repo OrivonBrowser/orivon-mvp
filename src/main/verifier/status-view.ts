@@ -5,6 +5,7 @@
 import { MAX_CHECKPOINT_AGE_SECONDS } from './checkpoint.js'
 import type { CheckpointChoice } from './checkpoint.js'
 import type { LightClientState } from '../../protocols/verifier-host/protocol.js'
+import type { SwarmNodeState } from '../../protocols/swarm-node/protocol.js'
 
 export interface LightClientView {
   /** One word for the badge: off, waiting, starting, syncing, synced, failed, down. `waiting`: on, with no host running until a .eth address needs it. */
@@ -96,5 +97,30 @@ export function lightClientView (facts: VerifierFacts, now: number): LightClient
       { label: 'IPNS name services', urls: facts.endpoints.ipnsNameServices },
       { label: 'DNS-over-HTTPS, for DNSLink', urls: facts.endpoints.dnsOverHttps }
     ]
+  }
+}
+
+export interface SwarmNodeView {
+  /** One word for the badge. */
+  readonly state: SwarmNodeState['state']
+  /** The sentence under it. */
+  readonly summary: string
+}
+
+/** What Settings says about the Swarm node Orivon runs on this computer. */
+export function swarmNodeView (node: SwarmNodeState): SwarmNodeView {
+  switch (node.state) {
+    case 'off': return {
+      state: 'off',
+      summary: node.reason === undefined
+        ? 'Off. It starts when a Swarm address is opened, and stops again after ten minutes without one.'
+        : `Off: ${node.reason}.`
+    }
+    case 'starting': return {
+      state: 'starting',
+      summary: node.peers === undefined || node.peers === 0 ? 'Starting, and finding peers.' : `Starting: ${String(node.peers)} peer${node.peers === 1 ? '' : 's'} found so far.`
+    }
+    case 'ready': return { state: 'ready', summary: `Running, with ${String(node.peers)} peer${node.peers === 1 ? '' : 's'}.` }
+    case 'failed': return { state: 'failed', summary: `Not running: ${node.reason}. It tries again shortly.` }
   }
 }

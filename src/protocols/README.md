@@ -5,10 +5,11 @@ page: `defineProtocol` ([`protocol.ts`](protocol.ts)), the one function every pr
 through; [`address.ts`](address.ts), between the address a person reads (`ipfs://<cid>/x`) and the
 URL a page is served at (`https://<cid>.ipfs.orivon/x`); [`registry.ts`](registry.ts), the
 fallback rule across providers; the provider interfaces ([`resolution/`](resolution/)); each
-protocol ([`ens/`](ens/), [`ipfs/`](ipfs/)); and [`verifier-host/`](verifier-host/), the process
-that runs every provider and serves their pages.
+protocol ([`ens/`](ens/), [`ipfs/`](ipfs/)); [`verifier-host/`](verifier-host/), the process
+that runs every provider and serves their pages; and [`swarm-node/`](swarm-node/), the process
+that runs Orivon's own Swarm light node.
 
-**Durable**, except `verifier-host/`, which is tied to Electron.
+**Durable**, except `verifier-host/` and `swarm-node/`, which are tied to Electron.
 
 **What it depends on.** The top-level files depend only on [`resolution/`](resolution/) and on
 each built-in protocol's `descriptor.ts`. Each folder's own `README.md` says what it depends on.

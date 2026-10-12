@@ -129,7 +129,9 @@ describe('confinement', () => {
     await mkdir(join(root, 'real'))
     await writeFile(join(root, 'real', 'f'), 'in')
     await symlink('real', join(root, 'alias'))
-    expect(text(await (await fs.open('alias/f', 'r')).read({ position: 0, length: 10 }))).toBe('in')
+    const file = await fs.open('alias/f', 'r')
+    expect(text(await file.read({ position: 0, length: 10 }))).toBe('in')
+    await file.close()
   })
 
   it('never removes or renames the directory itself', async () => {

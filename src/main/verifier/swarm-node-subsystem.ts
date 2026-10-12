@@ -1,0 +1,68 @@
+// The Swarm node on this computer, as the rest of the shell reaches it: ask
+// for it (`ensureSwarmNode`), read what it is doing, and tell it the verifier
+// host went to sleep. The process is created the first time something asks, so
+// a run that never opens a Swarm address never loads any of it. Not critical:
+// without it Swarm stays off with a reason and nothing else changes.
+
+import { join } from 'node:path'
+import { app, utilityProcess } from 'electron'
+import type { SwarmNodeState } from '../../protocols/swarm-node/protocol.js'
+import manifest from '../../../resources/swarm-node/swarm-node.json'
+import { unproxiedGateways } from './proxy-check.js'
+import { swarmNodePort } from './loopback-port.js'
+import { SwarmNodeController } from './swarm-node-controller.js'
+import { locateArtifact } from './swarm-node-artifact.js'
+import type { SwarmNodeManifest } from './swarm-node-artifact.js'
+import { ethTestSeam } from './test-seam.js'
+import { swarmNodeView as viewOf } from './status-view.js'
+import type { SwarmNodeView } from './status-view.js'
+
+const MANIFEST: SwarmNodeManifest = manifest
+
+let controller: SwarmNodeController | undefined
+
+function created (): SwarmNodeController {
+  if (controller !== undefined) return controller
+  const made = new SwarmNodeController({
+    fork: () => utilityProcess.fork(join(__dirname, 'swarm-node-host.js'), [], { serviceName: 'Orivon Swarm node' }),
+    artifact: async () => await locateArtifact({ env: process.env, packaged: app.isPackaged, resourcesPath: process.resourcesPath, sourceRoot: app.getAppPath() }, MANIFEST),
+    // A node that dials around a proxy would show a person's address to Swarm's peers that the proxy was set to hide (T20).
+    proxyConfigured: async () => (await unproxiedGateways(['https://example.com/'], async (url) => await app.resolveProxy(url))).length === 0,
+    disabled: () => ethTestSeam() === undefined ? undefined : 'a test build serves Swarm from its own endpoints',
+    apiPort: swarmNodePort,
+    dataDir: () => join(app.getPath('userData'), 'swarm-node'),
+    componentName: MANIFEST.name
+  })
+  app.on('will-quit', () => { made.stop() })
+  controller = made
+  return made
+}
+
+/** A Swarm mount needs the node: starts it if need be, and answers once it is ready, has failed, is off, or has been given the time a mount can spare. */
+export async function ensureSwarmNode (): Promise<SwarmNodeState> {
+  return await created().ensure()
+}
+
+/** What the node is doing; off while nothing has asked for it. */
+export function swarmNodeState (): SwarmNodeState {
+  return controller?.state() ?? { state: 'off' }
+}
+
+/** The Bee API endpoint the Swarm protocol reads from. */
+export function swarmNodeEndpoint (): string {
+  return `http://127.0.0.1:${String(swarmNodePort())}`
+}
+
+/** The verifier host went to sleep: nothing reads from the node, so it sleeps too. */
+export function swarmNodeVerifierIdle (): void {
+  controller?.verifierIdle()
+}
+
+/** Called whenever what swarmNodeView() says may have changed; returns the unsubscribe. */
+export function onSwarmNodeChange (listener: () => void): () => void {
+  return created().onChange(listener)
+}
+
+export function swarmNodeView (): SwarmNodeView {
+  return viewOf(swarmNodeState())
+}

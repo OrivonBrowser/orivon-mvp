@@ -30,7 +30,7 @@ export type FromNode =
 /** What main tells the verifier host about the node (the wiring phase carries it over the host's own port). */
 export type SwarmNodeState =
   | { readonly state: 'off', readonly reason?: string }
-  | { readonly state: 'starting' }
+  | { readonly state: 'starting', readonly peers?: number }
   | { readonly state: 'ready', readonly peers: number }
   | { readonly state: 'failed', readonly reason: string }
 

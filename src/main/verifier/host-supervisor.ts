@@ -1,43 +1,24 @@
-// Keeps the verifier host running: forks it, hands it its config, answers
-// for it while it is down, and restarts it with backoff after it exits.
+// Keeps the verifier host running (process-supervisor.ts) and answers for it
+// while it is down: a request is a message with an id, a reply the host's
+// answer to it.
 
 import type { FromHost, HostConfig, HostReplies, HostRequest, LightClientState } from '../../protocols/verifier-host/protocol.js'
 import { isFromHost, isHostReplyValue } from './host-messages.js'
+import { ProcessSupervisor } from './process-supervisor.js'
+import type { HostProcess, ProcessDeps, ProcessEvents } from './process-supervisor.js'
 
-/** The slice of Electron's UtilityProcess this file uses. */
-export interface HostProcess {
-  postMessage: (message: unknown) => void
-  on: ((event: 'message', listener: (message: unknown) => void) => unknown) & ((event: 'exit', listener: (code: number) => void) => unknown)
-  kill: () => boolean
-}
+export type { HostProcess }
 
-export interface SupervisorEvents {
-  /** The host process is being forked, the first time and after every restart. */
-  starting?: () => void
-  /** The host was put to sleep by `idle()`: not a failure, and nothing restarts it. */
-  idle?: () => void
+export interface SupervisorEvents extends ProcessEvents {
   listening: (fingerprint: string) => void
-  down: (reason: string) => void
   status: (status: LightClientState) => void
   checkpoint: (root: string, timestamp: number) => void
   ipnsSequence: (key: string, sequence: string) => void
 }
 
-export interface SupervisorDeps {
-  readonly fork: () => HostProcess
-  /** A promise so a restart can re-check things that answer asynchronously
-   * (proxy-check.ts, at minimum) on every start, not only the first. */
-  readonly config: () => HostConfig | Promise<HostConfig>
-  readonly events: SupervisorEvents
-  readonly setTimer?: (callback: () => void, ms: number) => unknown
-  readonly now?: () => number
-}
+export type SupervisorDeps = ProcessDeps<HostConfig, SupervisorEvents>
 
 export const REQUEST_TIMEOUT_MS = 5_000
-const FIRST_BACKOFF_MS = 1_000
-const MAX_BACKOFF_MS = 60_000
-/** Up this long, and the next crash is treated as a first one. */
-const STABLE_AFTER_MS = 60_000
 
 interface Pending {
   kind: HostRequest['kind']
@@ -45,113 +26,24 @@ interface Pending {
   reject: (error: Error) => void
 }
 
-export class HostSupervisor {
-  private child: HostProcess | undefined
-  /** Resolves once the (possibly async) config for the CURRENT `child` has
-   * either posted or failed to -- `request()` awaits this first, so a
-   * request made right after `start()` cannot race ahead of the 'start'
-   * message it depends on and reach the host, or this class's own
-   * bookkeeping, before the host even knows it is starting. */
-  private starting: Promise<void> | undefined
+export class HostSupervisor extends ProcessSupervisor<HostConfig, FromHost, SupervisorEvents> {
   private nextId = 1
   private readonly pending = new Map<number, Pending>()
-  private backoff = FIRST_BACKOFF_MS
-  private startedAt = 0
-  private stopped = false
-  /** The child `idle()` has told to exit and that has not yet: a fresh one waits for it, so two never share the port. */
-  private leaving: HostProcess | undefined
-  private startAfterLeaving = false
-  /** Counts the restarts `idle()` cancels: a restart timer started under an older number does nothing. */
-  private generation = 0
-  private restartPending = false
-  /** Why the running host said it could not serve, kept as the reason for its exit. */
-  private failure: string | undefined
-  private readonly setTimer: (callback: () => void, ms: number) => unknown
-  private readonly now: () => number
 
-  constructor (private readonly deps: SupervisorDeps) {
-    this.setTimer = deps.setTimer ?? ((callback, ms) => setTimeout(callback, ms))
-    this.now = deps.now ?? Date.now
+  constructor (deps: SupervisorDeps) {
+    super(deps, { noun: 'verifier host', log: '[verifier]' })
   }
 
-  start (): void {
-    // A crashed host comes back on its backoff timer only: a page asking meanwhile must not fork one at once.
-    if (this.stopped || this.child !== undefined || this.restartPending) return
-    this.deps.events.starting?.()
-    if (this.leaving !== undefined) {
-      this.startAfterLeaving = true
-      return
-    }
-    const child = this.deps.fork()
-    this.child = child
-    this.startedAt = this.now()
-    child.on('message', (message) => {
-      // The host runs every untrusted parser this app has; a message it
-      // posts is checked structurally, never merely cast, before anything
-      // here acts on it.
-      if (this.child !== child) return
-      if (!isFromHost(message)) { console.error('[verifier] dropped a malformed message from the host:', message); return }
-      // A handler that throws here (a checkpoint the disk refused) would otherwise end the browser.
-      try {
-        this.receive(message)
-      } catch (error) {
-        console.error(`[verifier] acting on the host's ${message.type} message failed:`, error)
-      }
-    })
-    child.on('exit', (code) => { this.exited(child, `the verifier host exited with code ${String(code)}`) })
-
-    const result = this.deps.config()
-    // A config answered synchronously posts in the same tick, so `request()`
-    // right after `start()` needs no await (`this.starting` stays
-    // undefined). Only a genuine Promise takes the deferred path below.
-    if (!(result instanceof Promise)) {
-      this.starting = undefined // clears whatever a PREVIOUS start() left, on a restart
-      child.postMessage({ type: 'start', config: result })
-      return
-    }
-    // Only if `child` is still THE running child once config resolves: a
-    // config that takes a moment (an async proxy check) must not post a
-    // stale start message to a host that has since been stopped or
-    // replaced by a later start().
-    this.starting = result.then(
-      (config) => { if (this.child === child) child.postMessage({ type: 'start', config }) },
-      (error: unknown) => {
-        if (this.child !== child) return
-        // The same path as a host that reports it cannot serve: `child`
-        // stays current until it exits, so `exited()` rejects what is
-        // pending, clears `failure` and schedules the restart.
-        this.failure = `the verifier host's configuration could not be prepared: ${error instanceof Error ? error.message : String(error)}`
-        this.deps.events.down(this.failure)
-        child.kill()
-      }
-    )
+  protected accepts (message: unknown): message is FromHost {
+    // The host runs every untrusted parser this app has.
+    return isFromHost(message)
   }
 
-  stop (): void {
-    this.stopped = true
-    this.child?.kill()
-  }
-
-  /** Puts the host to sleep: the process exits, nothing counts as a crash, no restart follows, and a later `start()`
-   * forks a fresh one with the backoff reset. `stop()` stays the permanent end. */
-  idle (): void {
-    if (this.stopped) return
-    const child = this.child
-    if (child === undefined && !this.restartPending) return
-    this.generation += 1
-    this.restartPending = false
-    this.backoff = FIRST_BACKOFF_MS
-    this.failure = undefined
-    this.starting = undefined
-    this.child = undefined
+  protected override abandon (reason: string): void {
     for (const [id, pending] of this.pending) {
       this.pending.delete(id)
-      pending.reject(new Error('the verifier host is idle'))
+      pending.reject(new Error(reason))
     }
-    this.deps.events.idle?.()
-    if (child === undefined) return
-    this.leaving = child
-    child.kill()
   }
 
   /** Rejects when the host is down, exits first, or does not answer in time: a reply that never comes is the failure to expect. */
@@ -169,7 +61,7 @@ export class HostSupervisor {
     })
   }
 
-  private receive (message: FromHost): void {
+  protected receive (message: FromHost): void {
     const { events } = this.deps
     switch (message.type) {
       case 'listening': events.listening(message.fingerprint); break
@@ -198,36 +90,5 @@ export class HostSupervisor {
         pending.resolve(message.value)
       }
     }
-  }
-
-  private exited (child: HostProcess, exit: string): void {
-    if (this.leaving === child) {
-      this.leaving = undefined
-      if (this.startAfterLeaving) {
-        this.startAfterLeaving = false
-        this.start()
-      }
-      return
-    }
-    if (this.child !== child) return
-    this.child = undefined
-    const reason = this.failure ?? exit
-    this.failure = undefined
-    for (const [id, pending] of this.pending) {
-      this.pending.delete(id)
-      pending.reject(new Error(reason))
-    }
-    this.deps.events.down(reason)
-    if (this.stopped) return
-    if (this.now() - this.startedAt >= STABLE_AFTER_MS) this.backoff = FIRST_BACKOFF_MS
-    const delay = this.backoff
-    this.backoff = Math.min(this.backoff * 2, MAX_BACKOFF_MS)
-    const generation = this.generation
-    this.restartPending = true
-    this.setTimer(() => {
-      if (generation !== this.generation) return
-      this.restartPending = false
-      this.start()
-    }, delay)
   }
 }

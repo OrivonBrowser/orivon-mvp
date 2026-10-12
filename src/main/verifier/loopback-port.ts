@@ -53,3 +53,12 @@ export function loopbackPort (): number {
   chosen ??= choosePort(Math.random, bindsNow, anyFreePort)
   return chosen
 }
+
+let chosenSwarmNode: number | undefined
+
+/** A quiet free port for the Swarm node's API, chosen once and never the verifier's. */
+export function swarmNodePort (): number {
+  const verifier = loopbackPort()
+  chosenSwarmNode ??= choosePort(Math.random, (port) => port !== verifier && bindsNow(port), anyFreePort)
+  return chosenSwarmNode
+}
