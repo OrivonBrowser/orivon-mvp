@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_ENDPOINTS } from '../../src/main/verifier/endpoints.js'
-import { fetchSwarmNode, gatewaysFrom } from '../fetch-swarm-node.mjs'
+import { NOT_PUBLISHED, exitCodeFor, fetchSwarmNode, gatewaysFrom } from '../fetch-swarm-node.mjs'
 
 const GLUE = Buffer.from('a pretend glue')
 const CORE = Buffer.from('a pretend core module')
@@ -89,7 +89,7 @@ describe('fetch-swarm-node', () => {
     await writeFile(join(dir, 'swarm-node.json'), MANIFEST('PLACEHOLDER-NOT-PUBLISHED'))
     const fetchImpl = gateways(served)
     const failures = await fetchSwarmNode({ directory: dir, gateways: GATEWAYS, fetchImpl, local: '' })
-    expect(failures).toEqual([expect.stringContaining('not published yet')])
+    expect(failures).toEqual([NOT_PUBLISHED])
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 
@@ -133,5 +133,19 @@ describe('gatewaysFrom', () => {
 
   it('refuses a source with none', () => {
     expect(() => gatewaysFrom('export const x = 1')).toThrow(/no gateways/)
+  })
+})
+
+describe('exitCodeFor', () => {
+  it('lets a package be built, without the node, while the manifest has no CID', () => {
+    expect(exitCodeFor([NOT_PUBLISHED], true)).toBe(0)
+    expect(exitCodeFor([NOT_PUBLISHED], false)).toBe(0)
+  })
+
+  it('fails a required fetch for any other failure, and only a required one', () => {
+    expect(exitCodeFor(['could not get swarm-node.js: HTTP 503'], true)).toBe(1)
+    expect(exitCodeFor([NOT_PUBLISHED, 'could not get swarm-node.js: HTTP 503'], true)).toBe(1)
+    expect(exitCodeFor(['could not get swarm-node.js: HTTP 503'], false)).toBe(0)
+    expect(exitCodeFor([], true)).toBe(0)
   })
 })

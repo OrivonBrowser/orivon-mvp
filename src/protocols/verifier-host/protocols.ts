@@ -17,6 +17,7 @@ import { allowlisted, DEFAULT_CCIP_LIMITS, guardedCcipRequest } from './egress.j
 import { withDnsFallback } from './dns-fallback.js'
 import { createFixtureResolver } from './fixture-resolver.js'
 import type { HostConfig } from './protocol.js'
+import type { SwarmNodeLink } from './swarm-node-link.js'
 import type { HostDeps, LightClient } from './service.js'
 
 export interface RunningProtocols {
@@ -90,12 +91,13 @@ function startIpfs (config: HostConfig, deps: HostDeps): Protocol {
   })
 }
 
-function startSwarm (config: HostConfig, deps: HostDeps): Protocol {
+function startSwarm (config: HostConfig, deps: HostDeps, node: SwarmNodeLink | undefined): Protocol {
   const endpointFetch = allowlisted(config.swarmEndpoints, deps.fetch, 'the Swarm gatherer')
   return swarmProtocol({
     fetch: async (url, init) => await endpointFetch(url, init),
     endpoints: config.swarmEndpoints,
-    feedIndexes: feedIndexStore(config.swarmFeedIndexes, deps.post)
+    feedIndexes: feedIndexStore(config.swarmFeedIndexes, deps.post),
+    ...(config.swarmNode === true && node !== undefined && { beforeMount: node.ensure })
   })
 }
 
@@ -114,7 +116,7 @@ function startEns (config: HostConfig, deps: HostDeps): { protocol: Protocol, li
   return { protocol: defineProtocol(ENS, { resolvers }), lightClient }
 }
 
-export function startProtocols (config: HostConfig, deps: HostDeps): RunningProtocols {
+export function startProtocols (config: HostConfig, deps: HostDeps, node?: SwarmNodeLink): RunningProtocols {
   const ens = startEns(config, deps)
-  return { protocols: [ens.protocol, startIpfs(config, deps), startSwarm(config, deps)], lightClient: ens.lightClient }
+  return { protocols: [ens.protocol, startIpfs(config, deps), startSwarm(config, deps, node)], lightClient: ens.lightClient }
 }

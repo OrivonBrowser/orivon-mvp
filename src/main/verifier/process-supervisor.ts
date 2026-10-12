@@ -125,6 +125,13 @@ export abstract class ProcessSupervisor<Config, Message extends { readonly type:
     )
   }
 
+  /** Posts `message` to the running process; false when none runs. */
+  send (message: unknown): boolean {
+    if (this.child === undefined) return false
+    this.child.postMessage(message)
+    return true
+  }
+
   stop (): void {
     this.stopped = true
     this.child?.kill()

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { request } from 'node:https'
 import { buildDag, fakeGateways } from '../../ipfs/tests/dag.test-helpers.js'
 import type { FromHost, HostConfig } from '../protocol.js'
@@ -96,6 +96,47 @@ describe('startHost with Swarm', () => {
     )
     running.push(host)
     expect((await get(host.port, 'feed.eth')).status).toBe(502)
+  })
+
+  describe('when the endpoint is the node Orivon runs', () => {
+    it('asks main for the node before it mounts, and serves once main says it is ready', async () => {
+      const { site, swarm } = await swarmWorld()
+      const world = deps({ fetch: async (url, init) => await swarm.fetch(url, { headers: {}, signal: init?.signal ?? new AbortController().signal }) })
+      const { posted } = world
+      const host = await startHost(config({ swarmEndpoints: [ENDPOINT], swarmNode: true }), world)
+      running.push(host)
+      const cid = referenceCid(site)
+      const page = get(host.port, `${cid}.bzz.orivon`)
+      await vi.waitFor(() => { expect(posted).toContainEqual({ type: 'swarm-node-wanted' }) })
+      expect(swarm.requests).toEqual([])
+      host.swarmNode({ type: 'swarm-node', state: 'ready' })
+      expect(await page).toEqual({ status: 200, body: '<h1>on swarm</h1>' })
+    })
+
+    it('shows the reason in plain words, and asks no endpoint, when main says the node is off', async () => {
+      const { site, swarm } = await swarmWorld()
+      const world = deps({ fetch: async (url, init) => await swarm.fetch(url, { headers: {}, signal: init?.signal ?? new AbortController().signal }) })
+      const { posted } = world
+      const host = await startHost(config({ swarmEndpoints: [ENDPOINT], swarmNode: true }), world)
+      running.push(host)
+      const page = get(host.port, `${referenceCid(site)}.bzz.orivon`)
+      await vi.waitFor(() => { expect(posted).toContainEqual({ type: 'swarm-node-wanted' }) })
+      host.swarmNode({ type: 'swarm-node', state: 'off', reason: 'the Swarm node is not installed' })
+      const answered = await page
+      expect(answered.status).toBe(502)
+      expect(answered.body).toContain('the Swarm node is not installed')
+      expect(swarm.requests).toEqual([])
+    })
+
+    it('never asks main for a node when the endpoint is not one', async () => {
+      const { site, swarm } = await swarmWorld()
+      const world = deps({ fetch: async (url, init) => await swarm.fetch(url, { headers: {}, signal: init?.signal ?? new AbortController().signal }) })
+      const { posted } = world
+      const host = await startHost(config({ swarmEndpoints: [ENDPOINT] }), world)
+      running.push(host)
+      expect((await get(host.port, `${referenceCid(site)}.bzz.orivon`)).status).toBe(200)
+      expect(posted).not.toContainEqual({ type: 'swarm-node-wanted' })
+    })
   })
 })
 

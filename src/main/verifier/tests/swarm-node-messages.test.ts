@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isFromNode, isSwarmNodeWanted } from '../host-messages.js'
+import { isFromHost, isFromNode } from '../host-messages.js'
 import { swarmNodeView } from '../status-view.js'
 import { QUIET_PORTS, loopbackPort, swarmNodePort } from '../loopback-port.js'
 
@@ -20,12 +20,10 @@ describe('isFromNode', () => {
   })
 })
 
-describe('isSwarmNodeWanted', () => {
-  it('accepts only the verifier host\'s ask', () => {
-    expect(isSwarmNodeWanted({ type: 'swarm-node-wanted' })).toBe(true)
-    expect(isSwarmNodeWanted({ type: 'ready', peers: 8 })).toBe(false)
-    expect(isSwarmNodeWanted(null)).toBe(false)
-    expect(isSwarmNodeWanted('swarm-node-wanted')).toBe(false)
+describe('the verifier host asking for the Swarm node', () => {
+  it('is a message the host may post, and nothing the node may', () => {
+    expect(isFromHost({ type: 'swarm-node-wanted' })).toBe(true)
+    expect(isFromNode({ type: 'swarm-node-wanted' })).toBe(false)
   })
 })
 
@@ -49,5 +47,15 @@ describe('swarmNodePort', () => {
     expect(port).toBeGreaterThanOrEqual(QUIET_PORTS.first)
     expect(port).toBeLessThanOrEqual(QUIET_PORTS.last)
     expect(swarmNodePort()).toBe(port)
+  })
+})
+
+describe('the light client view with a Swarm node', () => {
+  const facts = { lightClient: { state: 'off' as const }, checkpoint: undefined, hostDown: undefined, hostAsleep: true, switchedOff: true, endpoints: { executionRpcs: [], consensusRpc: '', gateways: [], swarmEndpoints: ['http://127.0.0.1:24242'], ipnsNameServices: [], dnsOverHttps: [] } }
+
+  it('carries the node\'s state in words when a run uses the node, and nothing when it does not', async () => {
+    const { lightClientView } = await import('../status-view.js')
+    expect(lightClientView({ ...facts, swarmNode: { state: 'ready', peers: 12 } }, 0).swarmNode).toEqual({ state: 'ready', summary: 'Running, with 12 peers.' })
+    expect(lightClientView(facts, 0)).not.toHaveProperty('swarmNode')
   })
 })

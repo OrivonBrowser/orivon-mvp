@@ -57,9 +57,10 @@ Electron 44's utility processes have without a flag. No other route is needed. T
 compile in tens of milliseconds, because V8 compiles their functions lazily, and the process settles
 near 270 MB.
 
-**The glue is read as a file, not a package.** `component.ts` imports `<name>.js` by file URL; Node
-detects its module syntax and prints a one-line warning on stderr unless the directory also holds a
-`package.json` saying `{"type": "module"}`.
+**The glue is imported as the text that was read, not as a file.** `component.ts` imports `<name>.js`
+from a `data:` URL made of its bytes: the file in a directory with no `package.json` would make Node
+guess its module type and warn on stderr, and importing the bytes that were read, not the file by
+path, leaves no gap between what was checked and what runs.
 
 **Test seams.** `LoaderSeams` lets a test run a fixture component in a process with no JSPI by
 default, as `src/shim/wasi-p2/tests/support/` does; `ORIVON_SWARM_NODE_LIVE=1` runs the real node

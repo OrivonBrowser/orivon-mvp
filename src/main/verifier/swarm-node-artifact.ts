@@ -72,5 +72,6 @@ export async function locateArtifact (where: WhereDeps, manifest: SwarmNodeManif
   const directory = artifactDirectory(where)
   const found = await verifyArtifact(directory, manifest)
   if (found.ok || where.env['ORIVON_SWARM_NODE_DIR'] !== undefined) return found
-  return { ok: false, reason: `${found.reason}. The Swarm node is fetched when Orivon is installed (node scripts/fetch-swarm-node.mjs)` }
+  const how = where.packaged ? 'this build of Orivon was made without the Swarm node' : 'run node scripts/fetch-swarm-node.mjs to fetch it'
+  return { ok: false, reason: `${found.reason}; ${how}` }
 }

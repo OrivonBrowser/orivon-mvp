@@ -1,6 +1,6 @@
 # ADR-0078: Orivon's own Swarm light node runs as WebAssembly in a utility process of its own
 
-- **Status:** accepted (the process shape); the wiring into the Swarm protocol follows in the same pull request.
+- **Status:** accepted. *Provisional* on where the node's files are published: the manifest holds no CID until the owner approves publishing, and a build without the files has Swarm off.
 - **Date:** 2026-10-12
 - **Type:** architecture / security
 - **Decided by:** owner (no public gateways: `d-0603`; the node as WebAssembly in a utility process of its own: `d-0604`); AI recommendation accepted by default for the process shape

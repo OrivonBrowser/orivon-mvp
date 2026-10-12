@@ -15,6 +15,8 @@ export interface SupervisorEvents extends ProcessEvents {
   checkpoint: (root: string, timestamp: number) => void
   ipnsSequence: (key: string, sequence: string) => void
   swarmFeedIndex: (feed: string, index: string) => void
+  /** A Swarm mount needs the node. */
+  swarmNodeWanted?: () => void
 }
 
 export type SupervisorDeps = ProcessDeps<HostConfig, SupervisorEvents>
@@ -75,6 +77,7 @@ export class HostSupervisor extends ProcessSupervisor<HostConfig, FromHost, Supe
       case 'status': events.status(message.status); break
       case 'checkpoint': events.checkpoint(message.root, message.timestamp); break
       case 'ipns-sequence': events.ipnsSequence(message.key, message.sequence); break
+      case 'swarm-node-wanted': events.swarmNodeWanted?.(); break
       case 'swarm-feed-index': events.swarmFeedIndex(message.feed, message.index); break
       case 'reply': {
         const pending = this.pending.get(message.id)

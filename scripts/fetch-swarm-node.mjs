@@ -5,7 +5,8 @@
  *
  * `postinstall`, `npm run dev` and `npm start` call it without `--required`: a failed download prints one
  * line and the browser starts, Swarm then stays off with that reason. Every `package:*` script passes
- * `--required`, so a release cannot ship without it.
+ * `--required`, so a release cannot ship with a download that failed. A manifest with no CID yet is not a
+ * failed download: a package is built without the node, with a warning, and Swarm is off in it.
  *
  * `ORIVON_SWARM_NODE_DIR` names a local directory to copy from instead of the network (a build not yet
  * published); every file is still checked.
@@ -24,6 +25,8 @@ const SWARM_NODE_DIR = join(here, '..', 'resources', 'swarm-node')
 const ENDPOINTS_FILE = join(here, '..', 'src', 'main', 'verifier', 'endpoints.ts')
 const TIMEOUT_MS = 120_000
 const PLACEHOLDER = /^PLACEHOLDER/
+/** What `fetchSwarmNode` reports while the manifest has no CID. */
+export const NOT_PUBLISHED = 'the Swarm node is not published yet (its manifest has no CID); set ORIVON_SWARM_NODE_DIR to a directory holding the build'
 
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex')
 
@@ -63,7 +66,7 @@ export async function fetchSwarmNode({ directory = SWARM_NODE_DIR, local = proce
   for (const entry of manifest.files) if (!(await isInPlace(join(directory, entry.name), entry))) missing.push(entry)
   if (missing.length === 0) return failures
   const local_ = local !== undefined && local !== ''
-  if (!local_ && PLACEHOLDER.test(manifest.cid)) return ['the Swarm node is not published yet (its manifest has no CID); set ORIVON_SWARM_NODE_DIR to a directory holding the build']
+  if (!local_ && PLACEHOLDER.test(manifest.cid)) return [NOT_PUBLISHED]
   const asked = gateways ?? gatewaysFrom(readFileSync(ENDPOINTS_FILE, 'utf8'))
   await mkdir(directory, { recursive: true })
   for (const entry of missing) {
@@ -99,9 +102,16 @@ async function download(entry, cid, gateways, fetchImpl) {
   throw new Error(problems.join('; '))
 }
 
+/** Fails a required fetch for any failure but the node not being published yet, which builds a package without it. */
+export function exitCodeFor(failures, required) {
+  const real = failures.filter((failure) => failure !== NOT_PUBLISHED)
+  return real.length > 0 && required ? 1 : 0
+}
+
 if (isInvokedDirectly(import.meta.url)) {
   const failures = await fetchSwarmNode()
   for (const failure of failures) console.error(`[fetch-swarm-node] ${failure}`)
   if (failures.length > 0) console.error('[fetch-swarm-node] Swarm stays off until the node is in place; retry with: node scripts/fetch-swarm-node.mjs')
-  process.exit(failures.length > 0 && process.argv.includes('--required') ? 1 : 0)
+  if (failures.includes(NOT_PUBLISHED) && process.argv.includes('--required')) console.error('[fetch-swarm-node] WARNING: this package is built without the Swarm node, and Swarm is off in it')
+  process.exit(exitCodeFor(failures, process.argv.includes('--required')))
 }

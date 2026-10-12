@@ -10,7 +10,7 @@ import { BLOCK_ROOT_PATTERN } from '../../protocols/verifier-host/protocol.js'
 import type { FromHost, HostReplies, HostRequest, LightClientState, SiteProvenance } from '../../protocols/verifier-host/protocol.js'
 import type { ContentPointer, ContentRoot, PointerStep, Provenance } from '../../protocols/resolution/records.js'
 import type { DdocReport, Refusal } from '../../protocols/resolution/providers.js'
-import type { FromNode, SwarmNodeWanted } from '../../protocols/swarm-node/protocol.js'
+import type { FromNode } from '../../protocols/swarm-node/protocol.js'
 import { DECIMAL } from './verifier-store.js'
 
 function isRecord (value: unknown): value is Record<string, unknown> {
@@ -125,6 +125,7 @@ export function isFromHost (message: unknown): message is FromHost {
     case 'status': return isLightClientState(message['status'])
     case 'checkpoint': return typeof message['root'] === 'string' && BLOCK_ROOT_PATTERN.test(message['root']) && typeof message['timestamp'] === 'number'
     case 'ipns-sequence': return typeof message['key'] === 'string' && isDecimal(message['sequence'])
+    case 'swarm-node-wanted': return true
     case 'swarm-feed-index': return typeof message['feed'] === 'string' && isDecimal(message['index'])
     case 'reply':
       if (typeof message['id'] !== 'number') return false
@@ -147,9 +148,4 @@ export function isFromNode (message: unknown): message is FromNode {
     case 'failed': return FAILURE_STAGES.has(message['stage']) && typeof message['message'] === 'string'
     default: return false
   }
-}
-
-/** Whether `message` is the verifier host asking for the Swarm node. */
-export function isSwarmNodeWanted (message: unknown): message is SwarmNodeWanted {
-  return isRecord(message) && message.type === 'swarm-node-wanted'
 }

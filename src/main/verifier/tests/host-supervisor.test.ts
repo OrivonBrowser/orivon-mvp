@@ -79,6 +79,22 @@ describe('HostSupervisor', () => {
     expect(log).toEqual(['listening sha256/x', 'status syncing', `checkpoint ${root} 5`, 'ipns k51 7', 'swarm owner/topic 91', 'down the verifier host could not listen on its port: EADDRINUSE'])
   })
 
+  it('tells the events a Swarm mount needs the node, and posts main\'s answer to the host', () => {
+    const wanted: string[] = []
+    const hosts: FakeHost[] = []
+    const supervisor = new HostSupervisor({
+      fork: () => { const h = new FakeHost(); hosts.push(h); return h },
+      config: () => CONFIG,
+      events: { listening: () => {}, down: () => {}, status: () => {}, checkpoint: () => {}, ipnsSequence: () => {}, swarmFeedIndex: () => {}, swarmNodeWanted: () => wanted.push('wanted') }
+    })
+    expect(supervisor.send({ type: 'swarm-node', state: 'ready' })).toBe(false)
+    supervisor.start()
+    hosts[0]?.answer({ type: 'swarm-node-wanted' })
+    expect(wanted).toEqual(['wanted'])
+    expect(supervisor.send({ type: 'swarm-node', state: 'ready' })).toBe(true)
+    expect(hosts[0]?.sent.at(-1)).toEqual({ type: 'swarm-node', state: 'ready' })
+  })
+
   it('logs a handler that throws instead of letting it out of the message callback, where it would end the browser', () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
     const hosts: FakeHost[] = []

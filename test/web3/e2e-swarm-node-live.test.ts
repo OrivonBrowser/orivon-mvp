@@ -10,6 +10,9 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { keccak256 } from 'viem'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { clickAddressBarRetrying, waitForAddressBarStable } from '../support/e2e-helpers.js'
+import { referenceCid } from '../../src/protocols/swarm/reference.js'
 import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
 import { APP_CLOSE_RACE_MS, closeElectronApp } from '../support/e2e-helpers.js'
 import { verifyArtifact } from '../../src/main/verifier/swarm-node-artifact.js'
@@ -109,5 +112,45 @@ describe.skipIf(!LIVE)('the Swarm node, live', () => {
     expect(chunkAddress(bytes)).toBe(CHUNK)
     expect(hex(bytes.subarray(0, 8))).toMatch(/^[0-9a-f]{16}$/)
     expect(run.memoryMb).toBeLessThan(700)
+  }, 180_000)
+
+  it('opens the site the manifest chunk roots, through the shell: the node starts on demand and the page loads from verified chunks', async () => {
+    const componentDir = process.env['ORIVON_SWARM_NODE_DIR'] ?? resolve('resources/swarm-node')
+    const shell = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], env: { ORIVON_SWARM_NODE_DIR: componentDir } })
+    try {
+      await waitFor(() => shell.windows().length === 2)
+      const chrome = findChrome(shell)
+      await waitForAddressBarStable(chrome)
+      const started = Date.now()
+      await clickAddressBarRetrying(chrome, `bzz://${CHUNK}`)
+      const cid = referenceCid(CHUNK)
+      const shown = await waitForTab(chrome, { address: `bzz://${cid}/` })
+      let view = findViewShowing(shell, chrome, `https://${cid}.bzz.orivon/`)
+      // A first mount may end at "still finding peers, try again in a moment": the person types the address again, so the test does.
+      const refusals: string[] = []
+      let askedAt = Date.now()
+      await waitFor(async () => {
+        view = findViewShowing(shell, chrome, `https://${cid}.bzz.orivon/`)
+        if (view === undefined) return false
+        const seen = await evaluateRetrying(view, () => ({ title: document.title, words: document.body.innerText })).catch(() => ({ title: '', words: '' }))
+        if (seen.title === '') return false
+        if (!/^Cannot /.test(seen.title)) return true
+        if (Date.now() - askedAt > 8_000) {
+          refusals.push(seen.words.replace(/\s+/g, ' ').slice(0, 300))
+          askedAt = Date.now()
+          await clickAddressBarRetrying(chrome, `bzz://${CHUNK}`)
+        }
+        return false
+      }, 85_000)
+      if (refusals.length > 0) console.log(`[swarm-node live] the address was refused ${String(refusals.length)} time(s): ${JSON.stringify(refusals)}`)
+      const page = view === undefined ? undefined : await evaluateRetrying(view, () => ({ title: document.title, text: document.body.innerText.length, words: document.body.innerText.slice(0, 600), origin: location.origin }))
+      console.log(`[swarm-node live] page after ${String(Date.now() - started)} ms: ${JSON.stringify({ shown: shown.info, page })}`)
+      expect(view).toBeDefined()
+      expect(page?.origin).toBe(`https://${cid}.bzz.orivon`)
+      expect(page?.title).not.toMatch(/^Cannot /)
+      expect(page?.text).toBeGreaterThan(0)
+    } finally {
+      await closeElectronApp(shell, APP_CLOSE_RACE_MS)
+    }
   }, 180_000)
 })

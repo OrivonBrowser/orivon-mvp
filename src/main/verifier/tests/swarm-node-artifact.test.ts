@@ -64,6 +64,8 @@ describe('locateArtifact', () => {
     expect(await locateArtifact(where, MANIFEST)).toEqual({ ok: true, directory: dir })
     const missing = await locateArtifact({ ...where, env: {} }, MANIFEST)
     expect(missing).toEqual({ ok: false, reason: expect.stringContaining('fetch-swarm-node.mjs') as string })
+    const packaged = await locateArtifact({ ...where, env: {}, packaged: true, resourcesPath: dir.replace(/\/[^/]*$/, '/no-such-resources') }, MANIFEST)
+    expect(packaged).toEqual({ ok: false, reason: expect.stringContaining('made without the Swarm node') as string })
   })
 })
 

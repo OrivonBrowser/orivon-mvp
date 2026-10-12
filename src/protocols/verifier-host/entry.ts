@@ -51,6 +51,10 @@ function main (): void {
       )
       return
     }
+    if (message.type === 'swarm-node') {
+      host?.then((running) => { running.swarmNode(message) }, () => {})
+      return
+    }
     const { id, request } = message
     if (host === undefined) {
       post({ type: 'reply', id, ok: false, message: 'the verifier host has not been started' })

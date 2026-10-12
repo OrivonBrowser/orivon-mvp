@@ -10,6 +10,8 @@ import { createRunCertificate } from './serve/certificate.js'
 import type { WebFetch } from './egress.js'
 import type { DirectFetch } from './direct-fetch.js'
 import { startProtocols } from './protocols.js'
+import { createSwarmNodeLink } from './swarm-node-link.js'
+import type { SwarmNodeNotice } from '../swarm-node/protocol.js'
 import type { FromHost, HostConfig, HostReplies, HostRequest, LightClientConfig, LightClientState, SiteProvenance } from './protocol.js'
 import { createVerifierServer } from './serve/server.js'
 import { Sites } from './serve/sites.js'
@@ -46,10 +48,13 @@ export interface RunningHost {
   readonly port: number
   readonly fingerprint: string
   answer: (request: HostRequest) => Promise<HostReplies[HostRequest['kind']]>
+  /** What main says the Swarm node is doing. */
+  swarmNode: (notice: SwarmNodeNotice) => void
 }
 
 export async function startHost (config: HostConfig, deps: HostDeps): Promise<RunningHost> {
-  const { protocols, lightClient } = startProtocols(config, deps)
+  const swarmNode = createSwarmNodeLink(deps.post)
+  const { protocols, lightClient } = startProtocols(config, deps, swarmNode)
   const registry = new ProtocolRegistry(protocols)
   const sites = new Sites(registry)
   const certificate = createRunCertificate()
@@ -80,6 +85,7 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
     server,
     port: (server.address() as AddressInfo).port,
     fingerprint: certificate.fingerprint,
-    answer
+    answer,
+    swarmNode: swarmNode.notice
   }
 }

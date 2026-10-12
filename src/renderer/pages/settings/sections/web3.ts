@@ -52,6 +52,14 @@ export const web3: Section = {
       control: { type: 'info', text: (state) => state.web3.status === null ? '' : state.web3.status.view.summary }
     },
     {
+      id: 'web3-swarm-node',
+      label: 'The Swarm node',
+      help: 'Swarm content loads only from a node Orivon runs on this computer. It starts when a Swarm address is opened.',
+      keywords: ['swarm', 'bzz', 'node', 'peers', 'bee'],
+      visible: (state) => state.web3.status?.view.swarmNode !== undefined,
+      control: { type: 'info', text: (state) => state.web3.status?.view.swarmNode?.summary ?? '' }
+    },
+    {
       id: 'web3-checkpoint',
       label: 'Where it started from',
       keywords: ['checkpoint', 'trust', 'age'],

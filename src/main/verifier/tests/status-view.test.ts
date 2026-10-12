@@ -69,7 +69,7 @@ describe('lightClientView', () => {
       { label: 'Ethereum RPCs', urls: ['https://a.rpc', 'https://b.rpc'] },
       { label: 'Beacon API', urls: ['https://beacon'] },
       { label: 'IPFS gateways', urls: ['https://gw'] },
-      { label: 'Swarm endpoints', urls: ['https://bzz'] },
+      { label: 'Swarm node, on this computer', urls: ['https://bzz'] },
       { label: 'IPNS name services', urls: ['https://names'] },
       { label: 'DNS-over-HTTPS, for DNSLink', urls: ['https://doh'] }
     ])

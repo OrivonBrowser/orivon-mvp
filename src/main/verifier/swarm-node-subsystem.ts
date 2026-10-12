@@ -1,7 +1,7 @@
 // The Swarm node on this computer, as the rest of the shell reaches it: ask
 // for it (`ensureSwarmNode`), read what it is doing, and tell it the verifier
 // host went to sleep. The process is created the first time something asks, so
-// a run that never opens a Swarm address never loads any of it. Not critical:
+// a run that never opens a Swarm address never forks the process. Not critical:
 // without it Swarm stays off with a reason and nothing else changes.
 
 import { join } from 'node:path'

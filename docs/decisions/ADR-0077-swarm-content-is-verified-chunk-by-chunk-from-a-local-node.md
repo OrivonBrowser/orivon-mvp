@@ -1,6 +1,6 @@
 # ADR-0077: Swarm content is verified chunk by chunk and read only from a Bee node the person runs
 
-- **Status:** accepted. The node Orivon will configure is a later step; until then this build opens no Swarm content outside tests (*provisional* on how that node is installed and found).
+- **Status:** accepted. The node Orivon configures is [`ADR-0078`](ADR-0078-the-swarm-node-is-webassembly-in-a-utility-process-of-its-own.md)'s; a build made without that node's files opens no Swarm content outside tests (*provisional* on how the files are published and found).
 - **Date:** 2026-10-12
 - **Type:** architecture / security
 - **Decided by:** owner (items 1 to 4); AI recommendation accepted by default (the rest)
