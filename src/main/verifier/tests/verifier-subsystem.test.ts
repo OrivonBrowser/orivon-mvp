@@ -155,6 +155,7 @@ describe('the verifier subsystem', () => {
       source = 'gateways'
       ipfsSettingsChanged()
       expect(forks()[0]?.killed).toBe(true)
+      forks()[0]?.emit('exit', 0)
       void request()
       await vi.advanceTimersByTimeAsync(0)
       expect(forks()).toHaveLength(2)

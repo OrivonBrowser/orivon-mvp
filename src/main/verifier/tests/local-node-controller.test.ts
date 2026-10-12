@@ -81,6 +81,7 @@ describe('what the person chose', () => {
     await settle()
     expect(h.nodes[0]?.sent).toEqual([expect.objectContaining({ type: 'start', config: expect.objectContaining({ options: { routingMode: 'auto' } }) as unknown })])
     h.controller.verifierIdle()
+    h.nodes[0]?.exit(0)
     mode = 'light-dht'
     void h.controller.ensure()
     await settle()
