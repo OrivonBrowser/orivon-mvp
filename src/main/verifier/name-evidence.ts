@@ -43,19 +43,19 @@ function provenLine (provenance: Provenance): string {
 }
 
 /** What an `ipfs://`, `ipns://` or `bzz://` address itself establishes: only a CID names the content outright. */
-function addressLine (pointer: ContentPointer): string {
+function addressLine (pointer: ContentPointer, viaFeed: boolean): string {
   switch (pointer.kind) {
     case 'ipfs': return "The address is the content's own hash"
     case 'ipns-key': return 'The address is a key; the content is whatever its signed record names'
     case 'dnslink': return 'The address is a DNS name, followed through DNSLink'
-    case 'swarm': return "The address is the content's own hash"
+    case 'swarm': return viaFeed ? 'The address names a Swarm feed; the content is whatever its newest signed update names' : "The address is the content's own hash"
     case 'unsupported': return `The address names ${pointer.protocol} content, which this build cannot load`
   }
 }
 
-function stepRow (step: PointerStep): EvidenceRow {
+function stepRow (step: PointerStep, viaFeed: boolean): EvidenceRow {
   switch (step.step) {
-    case 'contenthash': return step.provenance.via === 'address' ? { term: 'Address', value: addressLine(step.pointer) } : { term: 'Name', value: provenLine(step.provenance) }
+    case 'contenthash': return step.provenance.via === 'address' ? { term: 'Address', value: addressLine(step.pointer, viaFeed) } : { term: 'Name', value: provenLine(step.provenance) }
     case 'ipns-record': return { term: 'IPNS record', value: `Signed by its key ${shortId(step.key)}, sequence ${step.sequence.toString()}` }
     case 'dnslink': return { term: 'DNSLink', value: `Via DNS: ${step.domain}, which anyone on the network path could forge` }
     case 'swarm-feed': return { term: 'Swarm feed', value: `Update ${step.index.toString()}, signed by its owner ${shortId(step.owner)}` }
@@ -73,7 +73,8 @@ function liveLine (provenance: SiteProvenance, now: number): string {
   const term = named?.step === 'contenthash' && named.provenance.via === 'address' ? 'Address' : 'Name'
   if (viaDns !== undefined) return `${term} not verified: it points through DNS (${viaDns.domain})`
   if (named?.step === 'contenthash' && named.provenance.via === 'address') {
-    const how = named.pointer.kind === 'ipns-key' ? 'names a key whose signed record was checked' : "is the content's own hash"
+    const viaFeed = provenance.pointers.some((step) => step.step === 'swarm-feed')
+    const how = named.pointer.kind === 'ipns-key' ? 'names a key whose signed record was checked' : viaFeed ? 'names a feed whose signed update was checked' : "is the content's own hash"
     return `Address verified: it ${how}, ${ago(now - provenance.mountedAt)}`
   }
   if (named?.step !== 'contenthash' || named.provenance.via !== 'chain') return 'Name from a test fixture, not verified'
@@ -82,7 +83,7 @@ function liveLine (provenance: SiteProvenance, now: number): string {
 
 export function liveNameEvidence (provenance: SiteProvenance, now: number): NameEvidence {
   const rows = [
-    ...provenance.pointers.map(stepRow),
+    ...provenance.pointers.map((step) => stepRow(step, provenance.pointers.some((p) => p.step === 'swarm-feed'))),
     { term: 'Content', value: shortId(provenance.root.cid) },
     { term: 'Checked', value: ago(now - provenance.mountedAt) }
   ]

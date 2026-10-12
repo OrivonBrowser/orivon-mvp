@@ -64,6 +64,18 @@ describe('liveNameEvidence', () => {
     expect(byAddress.rows[0]).toEqual({ term: 'Address', value: "The address is the content's own hash" })
   })
 
+  it('does not call a feed-backed bzz:// address the content\'s own hash', () => {
+    const evidence = liveNameEvidence(provenance({
+      root: { kind: 'swarm', cid: CID },
+      pointers: [
+        { step: 'contenthash', name: CID, pointer: { kind: 'swarm', cid: CID }, provenance: { via: 'address' } },
+        { step: 'swarm-feed', owner: 'f77a13dc2f786b4523f5e0bf6db6757f4cf60ebb', topic: 'ab'.repeat(32), index: 3n, target: CID }
+      ]
+    }), NOW)
+    expect(evidence.line).toBe('Address verified: it names a feed whose signed update was checked, 3 minutes ago')
+    expect(evidence.rows[0]).toEqual({ term: 'Address', value: 'The address names a Swarm feed; the content is whatever its newest signed update names' })
+  })
+
   it('carries a DNSLink as unverified, and a failed file, into the content evidence', () => {
     const viaDns = liveNameEvidence(provenance({
       pointers: [
