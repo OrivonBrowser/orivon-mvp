@@ -31,7 +31,7 @@ An Electron app with `nodeIntegration` shows its own files by path, because its 
 page. In two shapes: a root-absolute path used as a URL (`backgroundImage = "url('" + path + "')"`),
 and a `file://` URL built from a path (`audio.src = 'file://' + path`). Here the first resolves to the
 app's origin, whose host answers 404, and the second is refused by Chromium before a request leaves.
-A ported torrent client shows no posters and plays no sounds. Rule 20 says the gap is closed in
+A ported torrent client shows no posters and plays no sounds. [Code guidelines](../development/code-guidelines.md) Rule 8 says the gap is closed in
 Orivon, not in the port.
 
 ## How a request reaches the bytes

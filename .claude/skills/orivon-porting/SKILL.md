@@ -20,7 +20,7 @@ is missing, ask the owner where it is. Nothing in this repository depends on it.
 
 ## What this repository owes a port
 
-- **A gap a port finds is fixed here, generically** (Rule 20): the fix, a row in
+- **A gap a port finds is fixed here, generically** ([code guidelines](../../../docs/development/code-guidelines.md) Rule 8): the fix, a row in
   [`test/app-behaviours/catalogue.md`](../../../test/app-behaviours/catalogue.md) and an end-to-end
   spec that names no app, written as
   [`test/app-behaviours/README.md`](../../../test/app-behaviours/README.md) says. The port's README

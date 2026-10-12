@@ -27,7 +27,7 @@ A Node program that streams a file to its own player runs an HTTP server and set
 `video.src = 'http://localhost:<port>/...'`. Under Node and Electron that works with no policy at
 all. Here the shim's `http.createServer().listen(0)` binds, and the page's own policy then refuses
 the media load (`media-src 'self' data: blob: https:`). T12 already notes that an ordinary web page can reach loopback unprompted; this decision concerns an app's page, whose policy is the narrow one. A ported torrent client cannot play a
-file. Rule 20 says the gap is closed in Orivon, not in the port.
+file. [Code guidelines](../development/code-guidelines.md) Rule 8 says the gap is closed in Orivon, not in the port.
 
 ## Alternatives considered
 - **Widen the CSP alone.** CSP cannot name a port range or a port the app has not been given yet,
@@ -35,7 +35,7 @@ file. Rule 20 says the gap is closed in Orivon, not in the port.
   image, a debug server). That is the reach T12 exists to refuse, so it lost.
 - **Serve the media through the broker (`orivon.net` stream to a blob URL).** A port needs the
   player to seek and range-request; a blob URL costs the whole file in memory. The torrent client
-  would also need a change, which Rule 20 rules out.
+  would also need a change, which code-guidelines Rule 8 rules out.
 - **A scheme the shell serves for the app's listener.** It adds a durable name to the surface for
   a need a loopback URL already meets.
 - **A grant of its own.** The listen grant already says "this app runs a server on this machine";
