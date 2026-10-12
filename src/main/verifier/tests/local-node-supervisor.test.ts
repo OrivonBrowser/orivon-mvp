@@ -1,11 +1,12 @@
 import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
-import type { SwarmNodeConfig } from '../../../protocols/swarm-node/protocol.js'
+import type { LocalNodeConfig } from '../../../protocols/local-node/protocol.js'
+import { SWARM_NODE_IDENTITY } from '../../../protocols/swarm-node/protocol.js'
 import type { HostProcess } from '../process-supervisor.js'
 import { RefusedToStart } from '../process-supervisor.js'
-import { SwarmNodeSupervisor } from '../swarm-node-supervisor.js'
+import { LocalNodeSupervisor } from '../local-node-supervisor.js'
 
-const CONFIG: SwarmNodeConfig = { apiPort: 1, dataDir: '/d', componentDir: '/c', componentName: 'swarm-node', files: [] }
+const CONFIG: LocalNodeConfig = { kind: 'swarm-node', apiPort: 1, dataDir: '/d', componentDir: '/c', componentName: 'swarm-node', files: [] }
 
 class FakeNode extends EventEmitter implements HostProcess {
   readonly sent: unknown[] = []
@@ -14,11 +15,11 @@ class FakeNode extends EventEmitter implements HostProcess {
   kill (): boolean { this.killed = true; return true }
 }
 
-function harness (): { supervisor: SwarmNodeSupervisor, nodes: FakeNode[], log: string[], timers: Array<{ ms: number, run: () => void }> } {
+function harness (): { supervisor: LocalNodeSupervisor, nodes: FakeNode[], log: string[], timers: Array<{ ms: number, run: () => void }> } {
   const nodes: FakeNode[] = []
   const log: string[] = []
   const timers: Array<{ ms: number, run: () => void }> = []
-  const supervisor = new SwarmNodeSupervisor({
+  const supervisor = new LocalNodeSupervisor({
     fork: () => { const node = new FakeNode(); nodes.push(node); return node },
     config: () => CONFIG,
     events: {
@@ -30,11 +31,11 @@ function harness (): { supervisor: SwarmNodeSupervisor, nodes: FakeNode[], log: 
       down: (reason) => log.push(`down ${reason}`)
     },
     setTimer: (run, ms) => { timers.push({ run, ms }) }
-  })
+  }, SWARM_NODE_IDENTITY)
   return { supervisor, nodes, log, timers }
 }
 
-describe('SwarmNodeSupervisor', () => {
+describe('LocalNodeSupervisor', () => {
   it('forks the node once and hands it its config', () => {
     const { supervisor, nodes } = harness()
     supervisor.start()
@@ -107,12 +108,12 @@ describe('SwarmNodeSupervisor', () => {
   it('tells down whether the node will be started again', () => {
     const restarting: boolean[] = []
     const nodes: FakeNode[] = []
-    const supervisor = new SwarmNodeSupervisor({
+    const supervisor = new LocalNodeSupervisor({
       fork: () => { const node = new FakeNode(); nodes.push(node); return node },
       config: () => CONFIG,
       events: { listening: () => {}, peers: () => {}, ready: () => {}, down: (_reason, again) => restarting.push(again) },
       setTimer: () => {}
-    })
+    }, SWARM_NODE_IDENTITY)
     supervisor.start()
     nodes[0]?.emit('exit', 139)
     nodes[0]?.emit('exit', 0)
@@ -126,12 +127,12 @@ describe('SwarmNodeSupervisor', () => {
     const nodes: FakeNode[] = []
     const timers: number[] = []
     let refuse = true
-    const supervisor = new SwarmNodeSupervisor({
+    const supervisor = new LocalNodeSupervisor({
       fork: () => { const node = new FakeNode(); nodes.push(node); return node },
       config: async () => { if (refuse) throw new RefusedToStart('a proxy is configured'); return CONFIG },
       events: { listening: () => {}, peers: () => {}, ready: () => {}, down: (reason, again) => log.push(`${reason} restarting=${String(again)}`) },
       setTimer: (_run, ms) => { timers.push(ms) }
-    })
+    }, SWARM_NODE_IDENTITY)
     supervisor.start()
     await new Promise((resolve) => setImmediate(resolve))
     expect(nodes[0]?.killed).toBe(true)
@@ -146,12 +147,12 @@ describe('SwarmNodeSupervisor', () => {
   it('still restarts, on the backoff, after a config that failed for any other reason', async () => {
     const timers: number[] = []
     const nodes: FakeNode[] = []
-    const supervisor = new SwarmNodeSupervisor({
+    const supervisor = new LocalNodeSupervisor({
       fork: () => { const node = new FakeNode(); nodes.push(node); return node },
       config: async () => { throw new Error('the profile is read-only') },
       events: { listening: () => {}, peers: () => {}, ready: () => {}, down: () => {} },
       setTimer: (_run, ms) => { timers.push(ms) }
-    })
+    }, SWARM_NODE_IDENTITY)
     supervisor.start()
     await new Promise((resolve) => setImmediate(resolve))
     nodes[0]?.emit('exit', 0)

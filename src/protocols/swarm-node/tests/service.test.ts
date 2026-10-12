@@ -6,9 +6,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { instantiateFrom, listenerFixture, tourFixture } from '../../../shim/wasi-p2/tests/support/component-fixture.js'
 import { hasJspi, jspiWebAssembly } from '../../../shim/wasi/tests/support/jspi.js'
 import { CONFIG_FILE } from '../config.js'
-import { MAX_FAILURE_MESSAGE } from '../protocol.js'
-import type { FromNode, PinnedFile, SwarmNodeConfig } from '../protocol.js'
-import { startNode } from '../service.js'
+import { SWARM_NODE } from '../kind.js'
+import { MAX_FAILURE_MESSAGE } from '../../local-node/protocol.js'
+import type { FromNode, LocalNodeConfig, PinnedFile } from '../../local-node/protocol.js'
+import { startNode } from '../../local-node/service.js'
 
 let directory: string
 const posted: FromNode[] = []
@@ -19,21 +20,21 @@ beforeEach(async () => {
 })
 afterEach(async () => { await rm(directory, { recursive: true, force: true }) })
 
-function configOf (overrides: Partial<SwarmNodeConfig> = {}): SwarmNodeConfig {
-  return { apiPort: 24_242, dataDir: join(directory, 'data'), componentDir: join(directory, 'component'), componentName: 'swarm-node', files: [], ...overrides }
+function configOf (overrides: Partial<LocalNodeConfig> = {}): LocalNodeConfig {
+  return { kind: 'swarm-node', apiPort: 24_242, dataDir: join(directory, 'data'), componentDir: join(directory, 'component'), componentName: 'swarm-node', files: [], ...overrides }
 }
 
 const post = (message: FromNode): void => { posted.push(message) }
 
-describe('startNode', () => {
+describe('startNode, for the Swarm node', () => {
   it('posts a compile failure, and throws, when the component is not there', async () => {
-    await expect(startNode(configOf({ files: [{ name: 'swarm-node.js', bytes: 1, sha256: 'a'.repeat(64) }] }), { post })).rejects.toThrow()
+    await expect(startNode(SWARM_NODE, configOf({ files: [{ name: 'swarm-node.js', bytes: 1, sha256: 'a'.repeat(64) }] }), { post })).rejects.toThrow()
     expect(posted).toEqual([{ type: 'failed', stage: 'compile', message: expect.stringContaining('ENOENT') as string }])
   })
 
   it('posts a start failure when the data directory cannot be made', async () => {
     await writeFile(join(directory, 'file'), '')
-    await expect(startNode(configOf({ dataDir: join(directory, 'file', 'data') }), { post })).rejects.toThrow()
+    await expect(startNode(SWARM_NODE, configOf({ dataDir: join(directory, 'file', 'data') }), { post })).rejects.toThrow()
     expect(posted).toEqual([{ type: 'failed', stage: 'start', message: expect.stringContaining('data directory') as string }])
   })
 
@@ -56,7 +57,7 @@ describe('startNode', () => {
   it('posts an artifact failure, not a compile one, when a file is not the pinned one', async () => {
     const files = await install()
     await writeFile(join(directory, 'component', 'swarm-node.js'), `${tourFixture().glue}\n// changed after it was pinned`)
-    await expect(startNode(configOf({ files }), { post, loader: seams })).rejects.toThrow()
+    await expect(startNode(SWARM_NODE, configOf({ files }), { post, loader: seams })).rejects.toThrow()
     expect(posted).toEqual([{ type: 'failed', stage: 'artifact', message: expect.stringContaining('is not the file this build pins') as string }])
   })
 
@@ -64,7 +65,7 @@ describe('startNode', () => {
     const files = await install()
     await writeFile(join(directory, 'component', 'swarm-node.js'), 'x')
     const hugeName = `swarm-node-${'x'.repeat(5_000)}`
-    await expect(startNode(configOf({ files, componentName: hugeName }), { post, loader: seams })).rejects.toThrow()
+    await expect(startNode(SWARM_NODE, configOf({ files, componentName: hugeName }), { post, loader: seams })).rejects.toThrow()
     const failed = posted[0] as { message: string }
     expect(failed.message.length).toBeLessThanOrEqual(MAX_FAILURE_MESSAGE)
     expect(failed.message.length).toBeGreaterThan(100)
@@ -73,7 +74,7 @@ describe('startNode', () => {
   it.skipIf(!hasJspi)("writes the node's config, passes its log lines on, and says why the component ended", async () => {
     const files = await install()
     const lines: string[] = []
-    const node = await startNode(configOf({ files }), {
+    const node = await startNode(SWARM_NODE, configOf({ files }), {
       post,
       onLog: (line) => lines.push(line),
       pollEveryMs: 10_000,
@@ -90,7 +91,7 @@ describe('startNode', () => {
   it.skipIf(!hasJspi)('says the port was taken, whatever the node printed, when the listen on its API port failed', async () => {
     const files = await install(listenerFixture())
     const taken = Object.assign(new Error('no free port in the granted range'), { code: 'limit', platformCode: 'EADDRINUSE' })
-    const node = await startNode(configOf({ files, apiPort: 8912 }), {
+    const node = await startNode(SWARM_NODE, configOf({ files, apiPort: 8912 }), {
       post,
       pollEveryMs: 10_000,
       fetcher: async () => { throw new Error('refused') },

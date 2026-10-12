@@ -1,10 +1,12 @@
-// The Swarm node's utility-process entry. The node is WebAssembly: it reaches
-// only the imports node-net.ts and node-fs.ts hand it, and a crash or a trap
-// here ends this process, never the shell or the verifier host. Started and
-// restarted by src/main/verifier/swarm-node-subsystem.ts.
+// The utility-process entry of every local node. The node is WebAssembly: it
+// reaches only the imports node-net.ts and node-fs.ts hand it, and a crash or
+// a trap here ends this process, never the shell or the verifier host. The
+// kind to run comes in the start message's config (kinds.ts). Started and
+// restarted by src/main/verifier/ (local-node-controller.ts).
 
+import { kindNamed } from './kinds.js'
 import { startNode } from './service.js'
-import { failure } from './protocol.js'
+import { envName, failure } from './protocol.js'
 import type { FromNode, ToNode } from './protocol.js'
 
 function post (message: FromNode): void {
@@ -20,8 +22,13 @@ function main (): void {
     const message = event.data as ToNode
     if (message.type !== 'start' || started) return
     started = true
-    const log = process.env['ORIVON_SWARM_NODE_LOG'] === '1'
-    startNode(message.config, { post, ...(log ? { onLog: (line: string) => { console.log(`[swarm-node] ${line}`) } } : {}) }).catch(() => {
+    const kind = kindNamed(message.config.kind)
+    if (kind === undefined) {
+      post(failure('start', `this build has no local node named ${JSON.stringify(message.config.kind)}`))
+      return
+    }
+    const log = process.env[envName(kind.name, 'LOG')] === '1'
+    startNode(kind, message.config, { post, ...(log ? { onLog: (line: string) => { console.log(`[${kind.name}] ${line}`) } } : {}) }).catch(() => {
       // startNode already posted why.
     })
   })

@@ -199,14 +199,15 @@ export default defineConfig({
     build: {
       // Four entries: the process start (small, so a second start of an open profile exits early),
       // the browser it loads once it is the process that stays (index), and the verifier host and the
-      // Swarm node it forks as utility processes (src/protocols/verifier-host/, src/protocols/swarm-node/).
+      // local node host (any kind of node) it forks as utility processes (src/protocols/verifier-host/,
+      // src/protocols/local-node/).
       // Keys are the output names in out/main/, which src/main/verifier/ forks by name.
       rollupOptions: {
         input: {
           start: resolve(root, 'src/main/start.ts'),
           index: resolve(root, 'src/main/index.ts'),
           'verifier-host': resolve(root, 'src/protocols/verifier-host/entry.ts'),
-          'swarm-node-host': resolve(root, 'src/protocols/swarm-node/entry.ts')
+          'local-node-host': resolve(root, 'src/protocols/local-node/entry.ts')
         }
       },
       // Dependencies stay external, loaded from node_modules at run time,

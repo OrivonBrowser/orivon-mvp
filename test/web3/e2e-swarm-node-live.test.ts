@@ -15,8 +15,9 @@ import { clickAddressBarRetrying, waitForAddressBarStable } from '../support/e2e
 import { referenceCid } from '../../src/protocols/swarm/reference.js'
 import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
 import { APP_CLOSE_RACE_MS, closeElectronApp } from '../support/e2e-helpers.js'
-import { verifyArtifact } from '../../src/main/verifier/swarm-node-artifact.js'
-import type { SwarmNodeManifest } from '../../src/main/verifier/swarm-node-artifact.js'
+import { SWARM_NODE_IDENTITY } from '../../src/protocols/swarm-node/protocol.js'
+import { verifyArtifact } from '../../src/main/verifier/local-node-artifact.js'
+import type { LocalNodeManifest } from '../../src/main/verifier/local-node-artifact.js'
 import type { ElectronApplication } from 'playwright'
 
 const LIVE = process.env['ORIVON_SWARM_NODE_LIVE'] === '1'
@@ -65,11 +66,11 @@ describe.skipIf(!LIVE)('the Swarm node, live', () => {
   })
 
   it('finds peers and serves a chunk whose hash is its address', async () => {
-    const host = resolve('out/main/swarm-node-host.js')
+    const host = resolve('out/main/local-node-host.js')
     expect(existsSync(host), 'run `npm run build` first').toBe(true)
-    const manifest = JSON.parse(readFileSync('resources/swarm-node/swarm-node.json', 'utf8')) as SwarmNodeManifest
+    const manifest = JSON.parse(readFileSync('resources/swarm-node/swarm-node.json', 'utf8')) as LocalNodeManifest
     const componentDir = process.env['ORIVON_SWARM_NODE_DIR'] ?? resolve('resources/swarm-node')
-    const checked = await verifyArtifact(componentDir, manifest)
+    const checked = await verifyArtifact(componentDir, manifest, SWARM_NODE_IDENTITY)
     expect(checked.ok, checked.ok ? '' : checked.reason).toBe(true)
     const apiPort = await freePort()
 
@@ -85,7 +86,7 @@ describe.skipIf(!LIVE)('the Swarm node, live', () => {
         if (message.type === 'ready') ready = true
         if (message.type === 'failed') failure = message.message
       })
-      child.postMessage({ type: 'start', config: { apiPort: arg.apiPort, dataDir: arg.data, componentDir: arg.componentDir, componentName: arg.name, files: arg.files } })
+      child.postMessage({ type: 'start', config: { kind: 'swarm-node', apiPort: arg.apiPort, dataDir: arg.data, componentDir: arg.componentDir, componentName: arg.name, files: arg.files } })
       while (!ready && failure === undefined && Date.now() - started < arg.readyByMs) await new Promise((resolveWait) => setTimeout(resolveWait, 250))
       let chunk: string | undefined
       let chunkMs: number | undefined

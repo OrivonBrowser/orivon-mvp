@@ -1,7 +1,8 @@
-// Keeps the Swarm node's utility process running (process-supervisor.ts). The
+// Keeps a local node's utility process running (process-supervisor.ts). The
 // node only reports; nothing asks it anything.
 
-import type { FailureStage, FromNode, SwarmNodeConfig } from '../../protocols/swarm-node/protocol.js'
+import type { NodeIdentity } from '../../protocols/local-node/kind.js'
+import type { FailureStage, FromNode, LocalNodeConfig } from '../../protocols/local-node/protocol.js'
 import { isFromNode } from './host-messages.js'
 import { ProcessSupervisor } from './process-supervisor.js'
 import type { ProcessDeps, ProcessEvents } from './process-supervisor.js'
@@ -9,7 +10,7 @@ import type { ProcessDeps, ProcessEvents } from './process-supervisor.js'
 /** The stages after which a restart would fail the same way: the node stays down until it is asked for again. */
 const UNRECOVERABLE: ReadonlySet<FailureStage> = new Set(['artifact', 'compile', 'port'])
 
-export interface SwarmNodeEvents extends ProcessEvents {
+export interface LocalNodeEvents extends ProcessEvents {
   /** The node said why it cannot run, before `down` reports it. */
   failed?: (stage: FailureStage) => void
   listening: () => void
@@ -17,11 +18,14 @@ export interface SwarmNodeEvents extends ProcessEvents {
   ready: (peers: number) => void
 }
 
-export type SwarmNodeSupervisorDeps = ProcessDeps<SwarmNodeConfig, SwarmNodeEvents>
+export type LocalNodeSupervisorDeps = ProcessDeps<LocalNodeConfig, LocalNodeEvents>
 
-export class SwarmNodeSupervisor extends ProcessSupervisor<SwarmNodeConfig, FromNode, SwarmNodeEvents> {
-  constructor (deps: SwarmNodeSupervisorDeps) {
-    super(deps, { noun: 'Swarm node', log: '[swarm-node]' })
+export class LocalNodeSupervisor extends ProcessSupervisor<LocalNodeConfig, FromNode, LocalNodeEvents> {
+  private readonly noun: string
+
+  constructor (deps: LocalNodeSupervisorDeps, identity: NodeIdentity) {
+    super(deps, { noun: identity.noun, log: `[${identity.name}]` })
+    this.noun = identity.noun
   }
 
   protected accepts (message: unknown): message is FromNode {
@@ -37,7 +41,7 @@ export class SwarmNodeSupervisor extends ProcessSupervisor<SwarmNodeConfig, From
       case 'failed':
         // A node that cannot run would otherwise live on, doing nothing.
         events.failed?.(message.stage)
-        this.fail(`the Swarm node could not run (${message.stage}): ${message.message}`, !UNRECOVERABLE.has(message.stage))
+        this.fail(`the ${this.noun} could not run (${message.stage}): ${message.message}`, !UNRECOVERABLE.has(message.stage))
         break
     }
   }
