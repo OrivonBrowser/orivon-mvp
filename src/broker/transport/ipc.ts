@@ -397,6 +397,8 @@ export const brokerIpcSubsystem: Subsystem = {
       listen: listenTcp,
       resolve: resolveHost,
       resolveLookup,
+      // No route store is wired: every `orivon.net` call keeps the direct path and T20.
+      routeFor: () => undefined,
       // T20's fail-closed check (security-model.md, docs/open-questions.md
       // A263), asked of the SAME session every ordinary page loads through
       // -- not a per-app or per-context one, since every net capability

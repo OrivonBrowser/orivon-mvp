@@ -62,7 +62,7 @@ export interface DialTlsOptions {
  * `servername || host` -- and `host` here may be a checked address literal
  * rather than the name, or `servername` an empty string meaning "no SNI".
  */
-function connectOptionsFor (address: string, target: SecureDialTarget, options: SecureDialOptions, base: DialTlsOptions): ConnectionOptions {
+export function connectOptionsFor (address: string, target: SecureDialTarget, options: SecureDialOptions, base: DialTlsOptions): ConnectionOptions {
   const identity = options.servername === undefined || options.servername === '' ? target.host : options.servername
   const sni = options.servername ?? (isIP(target.host) === 0 ? target.host : '')
   const ca = options.ca === undefined ? base.ca : typeof options.ca === 'string' ? options.ca : [...options.ca]
@@ -110,7 +110,7 @@ function handshakeOf (socket: TLSSocket): SecureHandshake {
  * wiring, the same race above it -- because this is that function's sibling
  * for a secured connection, not a new pattern.
  */
-function dialOneSecure (connectOptions: ConnectionOptions, signal: AbortSignal): Promise<DialedSecureSocket> {
+export function dialOneSecure (connectOptions: ConnectionOptions, signal: AbortSignal): Promise<DialedSecureSocket> {
   return new Promise((resolve, reject) => {
     let socket: TLSSocket
     try {

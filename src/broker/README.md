@@ -29,7 +29,7 @@ checked against **resolved addresses**, never hostnames, or DNS rebinding defeat
 
 ## The layout
 
-Six directories, one per job
+Seven directories, one per job
 ([`ADR-0015`](../../docs/decisions/ADR-0015-the-broker-is-organised-by-job.md),
 [`ADR-0035`](../../docs/decisions/ADR-0035-src-source-directories-are-organised-by-job.md)).
 These boundaries are prose, enforced by nothing ([`A85`](../../docs/open-questions.md)).
@@ -41,6 +41,7 @@ These boundaries are prose, enforced by nothing ([`A85`](../../docs/open-questio
 | [`handles/`](handles/) | **Hold**: what is this origin holding, and can I take it back? | yes, per origin | **never**, `destroy` is injected |
 | [`adapters/`](adapters/) | **Do**: dial the address, open the file | no | **yes**: the only place, bar `grants/node-ledger-storage.ts` |
 | [`transport/`](transport/) | **Speak**: reach the page, move the bytes | connection registry | Electron IPC and ports |
+| [`route/`](route/) | **Carry**: the proxy an app's `orivon.net` goes through, when it has one | no | the proxy connection |
 | [`capabilities/`](capabilities/) | **Expose**: the `orivon.*` entry points | no | via the other five |
 
 Top-level files belong to no single directory: [`index.ts`](index.ts) (`createBroker`),
