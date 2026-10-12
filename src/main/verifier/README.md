@@ -101,17 +101,26 @@ start from a usable checkpoint; false with the light client off or unable to sta
 feature that sends a person to a `.eth` name, such as [`../shell/eth-gateway-rule.ts`](../shell/eth-gateway-rule.ts), asks it
 first, so it never replaces an address that works with one that cannot load.
 
-**A local node runs on demand, beside the verifier host and under the same idle rule.** The Swarm node is the
-one there is: [`local-node-controller.ts`](local-node-controller.ts) starts it when a Swarm mount calls
-`ensureSwarmNode` ([`swarm-node-subsystem.ts`](swarm-node-subsystem.ts) says which kind it is and which port it
-uses; [`local-node-launch.ts`](local-node-launch.ts) holds what every node needs of Electron, and is the file there that
-imports `electron`), waits at most twenty seconds for eight peers, and answers `ready`, `starting` (still finding peers),
-`failed` or `off` with the reason in words. It sleeps when the verifier host does (`swarmNodeVerifierIdle`) and after ten
+**A local node runs on demand, beside the verifier host and under the same idle rule.** There are two kinds, the
+Swarm node and the IPFS node: [`local-node-controller.ts`](local-node-controller.ts) starts one when a mount asks
+for it (`node-wanted`, by the node's name; [`local-node-subsystem.ts`](local-node-subsystem.ts) is the shared
+asking, state and endpoint, and [`swarm-node-subsystem.ts`](swarm-node-subsystem.ts) and
+[`ipfs-node-subsystem.ts`](ipfs-node-subsystem.ts) say which kind each is and when a test build serves its content
+otherwise; [`local-node-launch.ts`](local-node-launch.ts) holds what every node needs of Electron, and is the file there that
+imports `electron`), waits at most twenty seconds for the node to be ready (the Swarm node: eight peers; the IPFS node: its health answers), and answers `ready`, `starting`,
+`failed` or `off` with the reason in words. It sleeps when the verifier host does and after ten
 minutes with no call, so a call must be made for every mount, not only one that finds no node ready. It does
 not start when a system proxy is configured (the node's sockets would go around it, T20), when its files are
 missing or are not the ones the build pins ([`local-node-artifact.ts`](local-node-artifact.ts), checked once for
 each start, a restart included, with the proxy looked at first so nothing is read while one is set; the process
-then hashes the bytes it runs itself), or in a build that serves Swarm from its own endpoints. Both processes are
+then hashes the bytes it runs itself), or in a build that serves its content from its own endpoints. Both processes are
 kept by [`process-supervisor.ts`](process-supervisor.ts): forking, the config handed over, backoff, sleep.
 [`host-supervisor.ts`](host-supervisor.ts) adds the verifier host's requests and replies,
 [`local-node-supervisor.ts`](local-node-supervisor.ts) a node's reports.
+
+**Where IPFS is read from applies at once.** `ipfsSettingsChanged` (called when `web3.ipfsSource` or
+`web3.ipfsLookupService` changes) stops the IPFS node, whose next start reads the routing mode again (the
+controller's `options`), and puts the verifier host to sleep, whose next wake builds `HostConfig` from the new
+source: `ipfsNode` (the node's endpoint) is present only when the person chose the node, and never in a test
+build. The host chooses the node or the gateways for each mount and says which served it; Settings'
+`ipfsNode` view and the site-info popover's "Loaded from" row repeat it.

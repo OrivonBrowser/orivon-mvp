@@ -27,6 +27,10 @@ interface NodeKind extends NodeIdentity {
 }
 ```
 
+The kinds are `swarm-node` ([`../swarm-node/`](../swarm-node/)) and `ipfs-node` ([`../ipfs-node/`](../ipfs-node/)). What
+the person chose that a kind turns into arguments (the IPFS node's routing mode) travels in the start config's
+`options`, plain strings that main reads at each start, so a changed choice reaches the next start.
+
 The environment variables `ORIVON_<NAME>_DIR` (a directory of files to run, still hash-checked) and
 `ORIVON_<NAME>_LOG` (`1` prints the node's log) follow from the name (`envName` in [`protocol.ts`](protocol.ts)).
 

@@ -3,7 +3,8 @@
 **What lives here.** The IPFS protocol ([`protocol.ts`](protocol.ts)): its descriptor, the `ipfs`
 and `ipns` schemes, the resolvers for those addresses, and the `DataGatherer`
 ([`../resolution/`](../resolution/)) that loads every record naming IPFS content, a `.eth` name's
-included. It reads a CID, an IPNS key or a DNSLink domain over trustless HTTP gateways, trusted for
+included. It reads a CID, an IPNS key or a DNSLink domain over trustless HTTP, from Orivon's own node on this
+computer ([`../ipfs-node/`](../ipfs-node/)) or from public gateways as the person chose, each trusted for
 availability only, and hashes every block against its CID before any of it is used.
 [`ADR-0030`](../../../docs/decisions/ADR-0030-a-eth-name-is-an-origin-served-by-a-verifier.md) is
 the design, and its 2026-09-26 amendment the gateway scheduling.
@@ -33,3 +34,11 @@ host on one bad block from a hostile gateway. The exporter resolves paths only.
 
 Why raw blocks and not CARs, and the limits' real-site figures:
 [`spike-results/ens-ipfs.md`](../../../docs/planning/spike-results/ens-ipfs.md) section EI-1c.
+
+**The node is one endpoint, read as a gateway is.** [`node-first.ts`](node-first.ts) mounts from the node when
+the host says it is ready and from the gateways otherwise, labelling the mounted site (`servedFrom`) so the
+person can be told. The node's gatherer is the same one, built with `localNode`: its single endpoint takes 12
+concurrent block reads (what three gateways took together, since each block the node lacks is a lookup of its
+own), and a block that fails its hash sits it out for 30 seconds instead of dropping it for the session. The
+block timeout (30 s) and the hedge delay (2 s) are unchanged: a hedge has no second endpoint to ask here, and a
+cold lookup the node makes itself fits inside the timeout.

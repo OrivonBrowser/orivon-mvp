@@ -8,8 +8,8 @@ fallback rule across providers; the provider interfaces ([`resolution/`](resolut
 protocol ([`ens/`](ens/), [`ipfs/`](ipfs/), [`swarm/`](swarm/)), with the gateway scheduling the
 content-addressed ones share ([`gateways/`](gateways/)); [`verifier-host/`](verifier-host/), the process
 that runs every provider and serves their pages; [`local-node/`](local-node/), the process
-that runs a node of Orivon's own on this computer; and [`swarm-node/`](swarm-node/), the Swarm light
-node that runs in it.
+that runs a node of Orivon's own on this computer; and [`swarm-node/`](swarm-node/) and
+[`ipfs-node/`](ipfs-node/), the Swarm light node and the IPFS node that run in it.
 
 **Durable**, except `verifier-host/` and `local-node/`, which are tied to Electron.
 
