@@ -9,6 +9,7 @@ import type { DestroyResource, FailableTcpServer, FailableTcpSocket, FailableUdp
 import type { LedgerStorage } from './grants/ledger-storage.js'
 import type { PortRange } from './policy/bind.js'
 import type { Resolver } from './policy/connect.js'
+import type { RouteBrokerOptions } from './route/provider.js'
 import type { BrokerFs, BrokerFsMethods, PickPath } from './fs-contracts.js'
 import type { BrokerWebMethods, WebContextHost } from './web-context-contracts.js'
 import type { BrokerEmbedMethods } from './embed-contracts.js'
@@ -32,9 +33,8 @@ import type {
 } from '../contracts/index.js'
 
 // RawFileStat, OpenedFile, BrokerFs itself and the picker's PickPath live in
-// ./fs-contracts.js (split out once `open`'s types pushed this file past
-// Rule 2's 500 lines) -- re-exported so no existing
-// `from '../broker-contracts.js'` import site needs to change.
+// ./fs-contracts.js (split out under Rule 2's 500 lines) -- re-exported so no
+// existing `from '../broker-contracts.js'` import site needs to change.
 export type { BrokerFs, BrokerFsMethods, BrokerFsSync, BrokerFsSyncMethods, OpenedFile, PickPath, PickPathResult, RawFileStat } from './fs-contracts.js'
 export type { BrokerWebMethods, WebContextHost } from './web-context-contracts.js'
 export type { BrokerEmbedMethods } from './embed-contracts.js'
@@ -179,7 +179,7 @@ export type Listen = (ranges: readonly PortRange[], signal: AbortSignal, scope: 
  */
 export type ProxyProbe = (url: string) => Promise<boolean>
 
-export interface CreateBrokerOptions {
+export interface CreateBrokerOptions extends RouteBrokerOptions {
   readonly dial: Dial
   readonly dialSecure: DialSecure
   readonly bind: Bind

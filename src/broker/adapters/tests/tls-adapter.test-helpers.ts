@@ -67,9 +67,9 @@ function caAndLeaf (run: (args: string[]) => void, dir: string, prefix: string, 
 }
 
 /** Runs once per test file -- openssl is not free, and every case in a file trusts the same CA. */
-export function generateTlsFixture (): TlsFixture {
+export function generateTlsFixture (dnsName = 'localhost'): TlsFixture {
   return inOpensslDir((run, read, dir) => {
-    caAndLeaf(run, dir, '', '/CN=localhost', 'subjectAltName=DNS:localhost\n')
+    caAndLeaf(run, dir, '', `/CN=${dnsName}`, `subjectAltName=DNS:${dnsName}\n`)
     return { caCert: read('ca-cert.pem'), leafCert: read('leaf-cert.pem'), leafKey: read('leaf-key.pem') }
   })
 }
