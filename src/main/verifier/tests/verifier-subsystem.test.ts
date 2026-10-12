@@ -118,6 +118,60 @@ describe('the verifier subsystem', () => {
     expect(done).toBe(true)
   })
 
+  describe('where IPFS is read from', () => {
+    type StartMessage = { type: string, config?: { ipfsNode?: { endpoint: string }, gateways: string[] } }
+    const started = (index: number): StartMessage | undefined => (forks()[index]?.sent as StartMessage[]).find((message) => message.type === 'start')
+
+    async function launchWith (source: () => 'node' | 'gateways') {
+      const launched = await launch()
+      launched.configureVerifier({ lightClientEnabled: () => true, windows: () => tabs.open, servedFromCache: () => false, ipfsSource: source, ipfsLookupService: () => true })
+      return launched
+    }
+
+    it('gives the host the node\'s loopback endpoint, and keeps the gateways for the node that cannot run, when the person reads IPFS from the node', async () => {
+      const { request } = await launchWith(() => 'node')
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      const config = started(0)?.config
+      expect(config?.ipfsNode?.endpoint).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
+      expect(config?.gateways.length).toBeGreaterThan(0)
+    })
+
+    it('gives the host no node, and the gateways as before, when the person chose gateways', async () => {
+      const { request } = await launchWith(() => 'gateways')
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(started(0)?.config).not.toHaveProperty('ipfsNode')
+      expect(started(0)?.config?.gateways.length).toBeGreaterThan(0)
+    })
+
+    it('puts the host to sleep when the choice changes, and its next start follows the new choice', async () => {
+      let source: 'node' | 'gateways' = 'node'
+      const { request, ipfsSettingsChanged } = await launchWith(() => source)
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      forks()[0]?.listens()
+      expect(started(0)?.config).toHaveProperty('ipfsNode')
+      source = 'gateways'
+      ipfsSettingsChanged()
+      expect(forks()[0]?.killed).toBe(true)
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(forks()).toHaveLength(2)
+      expect(started(1)?.config).not.toHaveProperty('ipfsNode')
+    })
+
+    it('says in the view what the node is doing while IPFS is read from it, and nothing when it is not', async () => {
+      let source: 'node' | 'gateways' = 'node'
+      const { verifierView } = await launchWith(() => source)
+      expect(verifierView().ipfsNode?.state).toBe('off')
+      expect(verifierView().endpoints.map((group) => group.label)).toContain('IPFS node, on this computer')
+      source = 'gateways'
+      expect(verifierView().ipfsNode).toBeUndefined()
+      expect(verifierView().endpoints.map((group) => group.label)).toContain('IPFS gateways')
+    })
+  })
+
   it('serves a .eth name while the light client can start', async () => {
     const { access } = await launch()
     expect(access.verifierServesName('vitalik.eth')).toBe(true)

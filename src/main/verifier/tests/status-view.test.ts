@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { lightClientView } from '../status-view.js'
+import { ipfsNodeView, lightClientView } from '../status-view.js'
 import type { VerifierFacts } from '../status-view.js'
 
 const NOW = 1_790_000_000_000
@@ -73,5 +73,35 @@ describe('lightClientView', () => {
       { label: 'IPNS name services', urls: ['https://names'] },
       { label: 'DNS-over-HTTPS, for DNSLink', urls: ['https://doh'] }
     ])
+  })
+})
+
+describe('the IPFS node in the view', () => {
+  it('lists the gateways as they were, and no node, while IPFS is read from gateways', () => {
+    const view = lightClientView(facts({}), NOW)
+    expect(view.ipfsNode).toBeUndefined()
+    expect(view.endpoints).toContainEqual({ label: 'IPFS gateways', urls: ['https://gw'] })
+  })
+
+  it('lists the node, and the gateways only as what is used while the node cannot run, while IPFS is read from the node', () => {
+    const view = lightClientView(facts({ ipfsNode: { state: { state: 'off' }, lookupService: true }, endpoints: { ...ENDPOINTS, ipfsNodeEndpoints: ['http://127.0.0.1:20123'] } }), NOW)
+    expect(view.endpoints).toContainEqual({ label: 'IPFS node, on this computer', urls: ['http://127.0.0.1:20123'] })
+    expect(view.endpoints).toContainEqual({ label: 'IPFS gateways, only while the node cannot run', urls: ['https://gw'] })
+    expect(view.endpoints.map((group) => group.label)).not.toContain('IPFS gateways')
+    expect(view.ipfsNode?.state).toBe('off')
+  })
+})
+
+describe('ipfsNodeView', () => {
+  it('says each state in plain words', () => {
+    expect(ipfsNodeView({ state: 'off' }, true)).toEqual({ state: 'off', summary: 'Off. It starts when an IPFS address is opened, and stops again after ten minutes without one.' })
+    expect(ipfsNodeView({ state: 'starting' }, true).summary).toBe('Starting.')
+    expect(ipfsNodeView({ state: 'ready', peers: 0 }, true).summary).toBe('Running, and IPFS content loads from it. It asks a lookup service and the IPFS network.')
+    expect(ipfsNodeView({ state: 'ready', peers: 0 }, false).summary).toBe('Running, and IPFS content loads from it. It asks the IPFS network only.')
+  })
+
+  it('says why the node is not in use, and that IPFS loads from public gateways instead', () => {
+    expect(ipfsNodeView({ state: 'off', reason: 'a proxy is configured' }, true).summary).toBe('Not in use: a proxy is configured. IPFS content loads from public gateways instead.')
+    expect(ipfsNodeView({ state: 'failed', reason: 'it trapped' }, true).summary).toBe('Not running: it trapped. IPFS content loads from public gateways instead meanwhile, and the node tries again shortly.')
   })
 })

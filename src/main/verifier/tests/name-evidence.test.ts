@@ -18,6 +18,28 @@ function provenance (overrides: Partial<SiteProvenance>): SiteProvenance {
   }
 }
 
+describe('liveNameEvidence, where the bytes came from', () => {
+  const loadedFrom = (overrides: Partial<SiteProvenance>): string | undefined => liveNameEvidence(provenance(overrides), NOW).rows.find((row) => row.term === 'Loaded from')?.value
+
+  it('names the node when the node served the content', () => {
+    expect(loadedFrom({ servedFrom: { kind: 'node' } })).toBe("Orivon's IPFS node, on this computer")
+  })
+
+  it('names the gateways, and why the node was not used when it was chosen', () => {
+    expect(loadedFrom({ servedFrom: { kind: 'gateways' } })).toBe('Public IPFS gateways')
+    expect(loadedFrom({ servedFrom: { kind: 'gateways', reason: 'a proxy is configured' } })).toBe('Public IPFS gateways, because a proxy is configured')
+  })
+
+  it('says nothing for a protocol that has one kind of source', () => {
+    expect(loadedFrom({})).toBeUndefined()
+  })
+
+  it('names the node, not its loopback address, when it sent what failed its check', () => {
+    const refused = liveNameEvidence(provenance({ ddoc: { status: 'met', refusals: [{ source: 'http://127.0.0.1:20123', resource: 'bafy' }] } }), NOW)
+    expect(refused.rows.find((row) => row.term === 'Refused')?.value).toBe("1 response(s) from Orivon's IPFS node failed their check and were not used")
+  })
+})
+
 describe('liveNameEvidence', () => {
   it('says where the name was proven, what it points to, and when it was checked', () => {
     const evidence = liveNameEvidence(provenance({}), NOW)

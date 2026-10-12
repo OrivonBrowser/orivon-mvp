@@ -25,7 +25,17 @@ export interface IpfsGathererOptions {
   readonly resolveTxt: ResolveTxt
   readonly ipnsSequences: SequenceStore
   readonly limits?: Partial<IpfsLimits>
+  /**
+   * `gateways` is the one node Orivon runs on this computer, not public gateways: its mounts say so, a bad answer
+   * costs it a pause rather than the session, and its one endpoint takes the concurrency three gateways would.
+   */
+  readonly localNode?: boolean
 }
+
+/** What the one endpoint of a local node takes at once: what three gateways would, since each block it lacks is a lookup of its own. */
+export const LOCAL_NODE_CONCURRENCY = 12
+/** How long a local node that sent a bad block is not asked again. */
+export const LOCAL_NODE_QUARANTINE_MS = 30_000
 
 const LOADABLE = new Set(['ipfs', 'ipns-key', 'dnslink'])
 
@@ -34,8 +44,9 @@ function loadable (records: readonly NameRecord[]): NameRecord | undefined {
 }
 
 export function createIpfsGatherer (options: IpfsGathererOptions): DataGatherer {
-  const limits: IpfsLimits = { ...DEFAULT_LIMITS, ...options.limits }
-  const pool = new GatewayPool(options.gateways, limits.perGatewayConcurrency)
+  const local = options.localNode === true
+  const limits: IpfsLimits = { ...DEFAULT_LIMITS, ...(local && { perGatewayConcurrency: LOCAL_NODE_CONCURRENCY }), ...options.limits }
+  const pool = new GatewayPool(options.gateways, limits.perGatewayConcurrency, Date.now, local ? { lieQuarantineMs: LOCAL_NODE_QUARANTINE_MS } : {})
   const cache = new BlockCache()
   const resolvers = {
     ipns: async (key: string, signal: AbortSignal, onRefusal: (refusal: Refusal) => void) =>
@@ -70,6 +81,7 @@ export function createIpfsGatherer (options: IpfsGathererOptions): DataGatherer 
 
       return {
         gatherer: 'ipfs',
+        servedFrom: { kind: local ? 'node' : 'gateways' },
         root: { kind: 'ipfs', cid: root.toString() },
         pointers,
         async open (path, range, openSignal = signal) {

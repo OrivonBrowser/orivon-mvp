@@ -118,7 +118,7 @@ export async function resolveIpnsKey (
       if (typeof name === 'string' && FORGED.has(name)) {
         onRefusal({ source, resource: `/ipns/${key}` })
         // A name service is never one of the pool's gateways, so there is nothing to drop.
-        if (!nameServices.has(source)) sources.pool.drop(source)
+        if (!nameServices.has(source)) sources.pool.refuse(source)
         return { kind: 'lied', reason: `${source}: ${(error as Error).message}` }
       }
       return { kind: 'failed', retryable: false, reason: `${source}: ${(error as Error).message}` }

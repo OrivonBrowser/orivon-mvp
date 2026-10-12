@@ -15,6 +15,11 @@ const HEDGE_LATENCY_FACTOR = 3
 /** The shortest hedge delay: below it, ordinary jitter would double every request. */
 export const MIN_HEDGE_DELAY_MS = 500
 
+export interface PoolOptions {
+  /** A source that sends a bad answer sits out this long instead of for the rest of the session: for a node on this computer, which a restart can make send one truncated answer, and which the person cannot replace by choosing another. */
+  readonly lieQuarantineMs?: number
+}
+
 export class GatewayPool {
   private readonly dropped = new Set<string>()
   private readonly health = new Map<string, GatewayHealth>()
@@ -23,7 +28,8 @@ export class GatewayPool {
   constructor (
     private readonly gateways: readonly string[],
     perGatewayConcurrency: number,
-    private readonly clock: () => number = Date.now
+    private readonly clock: () => number = Date.now,
+    private readonly options: PoolOptions = {}
   ) {
     if (gateways.length === 0) throw new Error('no gateway configured')
     for (const gateway of gateways) {
@@ -81,6 +87,12 @@ export class GatewayPool {
   /** For the rest of this session: a gateway that sent one bad block is not asked again. */
   drop (gateway: string): void {
     this.dropped.add(gateway)
+  }
+
+  /** `gateway` sent bytes that failed their check: dropped for the session, or sat out for the pool's `lieQuarantineMs`. */
+  refuse (gateway: string): void {
+    if (this.options.lieQuarantineMs === undefined) this.drop(gateway)
+    else this.quarantine(gateway, this.options.lieQuarantineMs)
   }
 
   /** Not asked for `ms`: for a source that must come back after sending one bad answer, a restarted local node among them. */

@@ -92,3 +92,21 @@ describe('GatewayPool.hedgeDelay', () => {
     expect(pool.hedgeDelay(A, 2_000)).toBe(MIN_HEDGE_DELAY_MS)
   })
 })
+
+describe('GatewayPool.refuse', () => {
+  it('drops a source that sent a bad answer for the rest of the session', () => {
+    const pool = new GatewayPool([A, B], 4)
+    pool.refuse(A)
+    expect(pool.usable()).toEqual([B])
+  })
+
+  it('only sits a local node out for its quarantine, which ends', () => {
+    let now = 1_000
+    const pool = new GatewayPool([A], 4, () => now, { lieQuarantineMs: 30_000 })
+    pool.refuse(A)
+    expect(pool.usable()).toEqual([A])
+    expect(pool.candidates()).toEqual([])
+    now += 30_001
+    expect(pool.candidates()).toEqual([A])
+  })
+})

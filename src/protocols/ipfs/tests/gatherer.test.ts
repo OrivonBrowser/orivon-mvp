@@ -98,3 +98,25 @@ describe('the IPFS gatherer', () => {
     await expect(gatherer().mount('x.eth', [onChain({ kind: 'ipfs', cid: sha512Root })])).rejects.toMatchObject({ failure: 'unsupported', message: expect.stringMatching(/sha2-256/) })
   })
 })
+
+describe('the IPFS gatherer over a node on this computer', () => {
+  const NODE = 'http://127.0.0.1:20123'
+
+  it('says its mounts came from the node, and says gateways for the usual pool', async () => {
+    const gw = fakeGateways(dag.blocks)
+    const records = [onChain({ kind: 'ipfs', cid: dag.root.toString() })]
+    const viaNode = createIpfsGatherer({ fetch: gw.fetch, gateways: [NODE], resolveTxt: async () => [], ipnsSequences: memorySequenceStore(), localNode: true })
+    expect((await viaNode.mount('a.eth', records)).servedFrom).toEqual({ kind: 'node' })
+    expect((await gatherer(gw).mount('a.eth', records)).servedFrom).toEqual({ kind: 'gateways' })
+  })
+
+  it('fails a read as unverifiable, and DDOC with it, when the node sends a block that fails its hash', async () => {
+    const gw = fakeGateways(dag.blocks)
+    const [key] = [...dag.blocks].find(([k]) => CID.parse(k).code === 0x55)!
+    gw.tamper(key, [NODE])
+    const viaNode = createIpfsGatherer({ fetch: gw.fetch, gateways: [NODE], resolveTxt: async () => [], ipnsSequences: memorySequenceStore(), localNode: true })
+    const site = await viaNode.mount('a.eth', [onChain({ kind: 'ipfs', cid: dag.root.toString() })])
+    await expect(read(site, '/')).rejects.toMatchObject({ failure: 'unverifiable' })
+    expect(site.ddoc()).toMatchObject({ status: 'failed' })
+  })
+})
