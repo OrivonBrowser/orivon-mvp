@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { GatewayPool } from '../../gateways/gateways.js'
+import type { Fetch } from '../../gateways/gateways.js'
 import type { Refusal } from '../../resolution/providers.js'
 import type { ChunkDeps } from '../chunk-fetch.js'
 import { feedOf, resolveFeed } from '../feed.js'
@@ -7,7 +8,7 @@ import type { FeedId, FeedIndexStore } from '../feed.js'
 import { DEFAULT_LIMITS } from '../limits.js'
 import { referenceCid } from '../reference.js'
 import { cacAddress } from '../chunk.js'
-import { buildFile, legacyUpdate, makeChunk, ownerOf, signFeedUpdate, spanBytes } from '../../../../test/apps/swarm-gateway/encode.mjs'
+import { buildFile, feedSocAddress, legacyUpdate, makeChunk, ownerOf, signFeedUpdate, spanBytes } from '../../../../test/apps/swarm-gateway/encode.mjs'
 import { A, B, TEST_KEY, TOPIC, bytes, fakeSwarm } from './swarm.test-helpers.js'
 import { bytesToHex } from 'viem'
 
@@ -114,6 +115,76 @@ describe('resolveFeed, with a /feeds answer as a first guess', () => {
     expect((await resolveFeed(FEED, deps(), memoryStore(), signal, noteRefusal)).root).toBe(targets[10])
     swarm.feedHints.set(A, '0000000000000001')
     expect((await resolveFeed(FEED, deps(), memoryStore({ [`${OWNER}/${TOPIC}`]: 7n }), signal, noteRefusal)).root).toBe(targets[10])
+  })
+})
+
+/** A fetch that answers as `inner` does, except that `hangs` says which requests never answer until they are abandoned. */
+function hanging (inner: Fetch, hangs: (url: string) => boolean): Fetch {
+  return async (url, init) => {
+    if (!hangs(url)) return await inner(url, init)
+    return await new Promise<Response>((_resolve, reject) => { init.signal.addEventListener('abort', () => { reject(new Error('aborted')) }) })
+  }
+}
+
+describe('resolveFeed, when an endpoint does not answer', () => {
+  const fast = { ...DEFAULT_LIMITS, chunkTimeoutMs: 40, hedgeDelayMs: 10 }
+
+  it('is unavailable, never an older update, when the probe past the newest one times out', async () => {
+    const { chunks, targets } = await feedWith(4)
+    const swarm = fakeSwarm(chunks)
+    const atFour = feedSocAddress(OWNER, TOPIC, 4)
+    const deps: ChunkDeps = { fetch: hanging(swarm.fetch, (url) => url.endsWith(atFour)), pool: new GatewayPool([A, B], 6), limits: fast }
+    const store = memoryStore()
+    await expect(resolveFeed(FEED, deps, store, signal, noteRefusal)).rejects.toMatchObject({ failure: 'unavailable', message: expect.stringContaining('whether') })
+    expect(store.saved.get(`${OWNER}/${TOPIC}`)).not.toBe(3n)
+    expect(targets).toHaveLength(5)
+  })
+
+  it('is unavailable when one endpoint says 404 and the other times out', async () => {
+    const { chunks } = await feedWith(4)
+    const swarm = fakeSwarm(chunks)
+    const atFour = feedSocAddress(OWNER, TOPIC, 4)
+    const fetch = hanging(swarm.fetch, (url) => url.startsWith(B) && url.endsWith(atFour))
+    const withFour: ChunkDeps = { fetch: async (url, init) => url.startsWith(A) && url.endsWith(atFour) ? new Response('not found', { status: 404 }) : await fetch(url, init), pool: new GatewayPool([A, B], 6), limits: fast }
+    await expect(resolveFeed(FEED, withFour, memoryStore(), signal, noteRefusal)).rejects.toMatchObject({ failure: 'unavailable' })
+  })
+
+  it('is unavailable, never an older update, when the probe past the newest one is answered with a 5xx', async () => {
+    const { chunks } = await feedWith(4)
+    const swarm = fakeSwarm(chunks)
+    const atFour = feedSocAddress(OWNER, TOPIC, 4)
+    const deps: ChunkDeps = { fetch: async (url, init) => url.endsWith(atFour) ? new Response('unwell', { status: 500 }) : await swarm.fetch(url, init), pool: new GatewayPool([A], 6), limits: fast }
+    await expect(resolveFeed(FEED, deps, memoryStore(), signal, noteRefusal)).rejects.toMatchObject({ failure: 'unavailable' })
+  })
+})
+
+describe('the /feeds guess', () => {
+  it('waits three seconds at most by default', () => {
+    expect(DEFAULT_LIMITS.feedGuessTimeoutMs).toBe(3_000)
+  })
+
+  it('does not delay the /chunks probes beyond its own timeout when /feeds hangs, and holds nothing against the endpoint', async () => {
+    const { chunks, targets } = await feedWith(6)
+    const swarm = fakeSwarm(chunks)
+    const pool = new GatewayPool([A], 6)
+    const deps: ChunkDeps = { fetch: hanging(swarm.fetch, (url) => url.includes('/feeds/')), pool, limits: { ...DEFAULT_LIMITS, feedGuessTimeoutMs: 60 } }
+    const started = Date.now()
+    expect((await resolveFeed(FEED, deps, memoryStore(), signal, noteRefusal)).root).toBe(targets[6])
+    expect(Date.now() - started).toBeLessThan(2_000)
+    expect(pool.candidates()).toEqual([A])
+  })
+
+  it('is not retried and does not cool the endpoint, whatever it answers', async () => {
+    for (const status of [404, 501, 500, 503]) {
+      const { chunks, targets } = await feedWith(3)
+      const swarm = fakeSwarm(chunks)
+      const asked: string[] = []
+      const pool = new GatewayPool([A], 6)
+      const deps: ChunkDeps = { fetch: async (url, init) => { if (!url.includes('/feeds/')) return await swarm.fetch(url, init); asked.push(url); return new Response('no', { status }) }, pool, limits: DEFAULT_LIMITS }
+      expect((await resolveFeed(FEED, deps, memoryStore(), signal, noteRefusal)).root).toBe(targets[3])
+      expect(asked).toHaveLength(1)
+      expect(pool.candidates()).toEqual([A])
+    }
   })
 })
 

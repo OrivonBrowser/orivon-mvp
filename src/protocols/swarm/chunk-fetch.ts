@@ -1,14 +1,14 @@
 // One verified chunk from the endpoints, the only place a Swarm endpoint's
 // bytes are read. An endpoint is trusted for availability only: a chunk is
 // used after its address has been recomputed from the bytes, and an endpoint
-// that sent bytes failing that is dropped for the session.
+// that sent bytes failing that sits out for a while.
 
 import { ResolutionError } from '../resolution/records.js'
 import type { Refusal } from '../resolution/providers.js'
 import { BlockCache } from '../gateways/cache.js'
 import type { BlockMemory } from '../gateways/cache.js'
 import { failedAttempt, fetchAcrossGateways } from '../gateways/fetch-passes.js'
-import { askGateway, readCapped } from '../gateways/gateways.js'
+import { GatewayFailure, askGateway, readCapped } from '../gateways/gateways.js'
 import type { Fetch, GatewayPool } from '../gateways/gateways.js'
 import type { AttemptOutcome } from '../gateways/race.js'
 import { MAX_CHUNK_BYTES, MAX_SOC_BYTES, verifyCac, verifySoc } from './chunk.js'
@@ -27,7 +27,13 @@ interface Acceptance<T> {
   readonly verify: (address: string, bytes: Uint8Array) => Promise<T | undefined> | T | undefined
 }
 
-async function attemptEndpoint<T> (endpoint: string, address: string, accept: Acceptance<T>, deps: ChunkDeps, signal: AbortSignal, onRefusal: (refusal: Refusal) => void, unwell: Set<string>): Promise<AttemptOutcome<T>> {
+/** How long an endpoint that sent a bad answer is not asked again. Swarm's usual endpoint is the one node on this machine, which a restart can make send a truncated answer once, so a lie costs it a pause, not the session. */
+export const QUARANTINE_MS = 30_000
+
+/** What each endpoint's latest answer to a lookup was: `absent` for a 404, `other` for anything that says nothing about whether the chunk exists. */
+type Answers = Map<string, 'absent' | 'other'>
+
+async function attemptEndpoint<T> (endpoint: string, address: string, accept: Acceptance<T>, deps: ChunkDeps, signal: AbortSignal, onRefusal: (refusal: Refusal) => void, unwell: Set<string>, answers: Answers): Promise<AttemptOutcome<T>> {
   let bytes: Uint8Array
   try {
     bytes = await askGateway(
@@ -37,20 +43,22 @@ async function attemptEndpoint<T> (endpoint: string, address: string, accept: Ac
       signal
     )
   } catch (error) {
+    if (error instanceof GatewayFailure && error.outcome.kind !== 'cancelled') answers.set(endpoint, error.outcome.kind === 'miss' && error.status === 404 ? 'absent' : 'other')
     return failedAttempt(error, endpoint, unwell)
   }
+  answers.set(endpoint, 'other')
   unwell.delete(endpoint)
   const verified = await accept.verify(address, bytes)
   if (verified === undefined) {
     onRefusal({ source: endpoint, resource: address })
-    deps.pool.drop(endpoint)
+    deps.pool.quarantine(endpoint, QUARANTINE_MS)
     return { kind: 'lied', reason: `${endpoint} sent bytes that failed their address` }
   }
   return { kind: 'verified', value: verified }
 }
 
-async function fetchChunk<T> (address: string, accept: Acceptance<T>, deps: ChunkDeps, signal: AbortSignal, onRefusal: (refusal: Refusal) => void): Promise<T> {
-  return await fetchAcrossGateways(`chunk ${address}`, { pool: deps.pool, hedgeDelayMs: deps.limits.hedgeDelayMs }, (endpoint, attemptSignal, unwell) => attemptEndpoint(endpoint, address, accept, deps, attemptSignal, onRefusal, unwell), signal)
+async function fetchChunk<T> (address: string, accept: Acceptance<T>, deps: ChunkDeps, signal: AbortSignal, onRefusal: (refusal: Refusal) => void, answers: Answers = new Map()): Promise<T> {
+  return await fetchAcrossGateways(`chunk ${address}`, { pool: deps.pool, hedgeDelayMs: deps.limits.hedgeDelayMs }, (endpoint, attemptSignal, unwell) => attemptEndpoint(endpoint, address, accept, deps, attemptSignal, onRefusal, unwell, answers), signal)
 }
 
 const CAC: Acceptance<Uint8Array> = { maxBytes: MAX_CHUNK_BYTES, verify: (address, bytes) => verifyCac(address, bytes) ? bytes : undefined }
@@ -63,6 +71,25 @@ const SOC: Acceptance<VerifiedSoc> = { maxBytes: MAX_SOC_BYTES, verify: verifySo
  */
 export async function fetchVerifiedSoc (address: string, deps: ChunkDeps, signal: AbortSignal, onRefusal: (refusal: Refusal) => void): Promise<VerifiedSoc> {
   return await fetchChunk(address, SOC, deps, signal, onRefusal)
+}
+
+/**
+ * The single-owner chunk at `address`, or undefined when every endpoint
+ * said it does not have it (a 404 from each). Anything short of that, a
+ * timeout, an unreachable or unwell endpoint, one cooling or one that was
+ * never asked, is `unavailable`: it does not tell whether the chunk exists,
+ * and a caller must not read it as the end of a feed.
+ */
+export async function lookUpSoc (address: string, deps: ChunkDeps, signal: AbortSignal, onRefusal: (refusal: Refusal) => void): Promise<VerifiedSoc | undefined> {
+  const answers: Answers = new Map()
+  try {
+    return await fetchChunk(address, SOC, deps, signal, onRefusal, answers)
+  } catch (error) {
+    if (!(error instanceof ResolutionError) || error.failure !== 'unavailable') throw error
+    const endpoints = deps.pool.usable()
+    if (endpoints.length > 0 && endpoints.every((endpoint) => answers.get(endpoint) === 'absent')) return undefined
+    throw new ResolutionError('unavailable', `no answer from the Swarm node about whether ${address} exists: ${error.message}`)
+  }
 }
 
 /**

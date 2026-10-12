@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { BlockCache } from '../../gateways/cache.js'
 import { GatewayPool } from '../../gateways/gateways.js'
+import type { Fetch } from '../../gateways/gateways.js'
 import { allowlisted } from '../../verifier-host/egress.js'
 import type { Refusal } from '../../resolution/providers.js'
-import { ChunkSource, fetchVerifiedSoc } from '../chunk-fetch.js'
+import { ChunkSource, QUARANTINE_MS, fetchVerifiedSoc, lookUpSoc } from '../chunk-fetch.js'
 import type { ChunkDeps } from '../chunk-fetch.js'
 import { DEFAULT_LIMITS } from '../limits.js'
 import { buildFile, legacyUpdate, makeChunk, signFeedUpdate, spanBytes } from '../../../../test/apps/swarm-gateway/encode.mjs'
@@ -116,6 +117,42 @@ describe('an endpoint that refuses one chunk by redirect', () => {
     swarm.redirect(one)
     const source = new ChunkSource({ fetch: async (url, init) => await fetch(url, init), pool: new GatewayPool([A, B], 6), limits: DEFAULT_LIMITS })
     await expect(source.get(one, signal, () => {})).rejects.toMatchObject({ failure: 'unavailable' })
+  })
+})
+
+describe('an endpoint that sent one bad answer', () => {
+  it('is quarantined for a while and asked again after it, instead of being dropped for the session', async () => {
+    const store = new Map<string, Uint8Array>()
+    const one = buildFile(bytes('first'), store).ref
+    const swarm = fakeSwarm(store)
+    let t = 0
+    let truncating = true
+    const fetch: Fetch = async (url, init) => truncating ? new Response(new Uint8Array(3)) : await swarm.fetch(url, init)
+    const pool = new GatewayPool([A], 6, () => t)
+    const source = new ChunkSource({ fetch, pool, limits: DEFAULT_LIMITS })
+    const refusals: Refusal[] = []
+    await expect(source.get(one, signal, (r) => { refusals.push(r) })).rejects.toMatchObject({ failure: 'unverifiable' })
+    expect(refusals).toEqual([{ source: A, resource: one }])
+    expect(pool.usable()).toEqual([A])
+    expect(pool.candidates()).toEqual([])
+    truncating = false
+    t += QUARANTINE_MS + 1
+    expect(pool.candidates()).toEqual([A])
+    expect(await source.get(one, signal, () => {})).toEqual(store.get(one))
+  })
+})
+
+describe('lookUpSoc', () => {
+  it('is undefined only when every endpoint said 404', async () => {
+    const { deps } = setup()
+    expect(await lookUpSoc('ab'.repeat(32), deps, signal, () => {})).toBeUndefined()
+  })
+
+  it('is unavailable when an endpoint was unreachable, however the others answered', async () => {
+    const { swarm } = setup()
+    const fetch: Fetch = async (url, init) => { if (url.startsWith(B)) throw new Error('connection refused'); return await swarm.fetch(url, init) }
+    const deps: ChunkDeps = { fetch, pool: new GatewayPool([A, B], 6), limits: DEFAULT_LIMITS }
+    await expect(lookUpSoc('ab'.repeat(32), deps, signal, () => {})).rejects.toMatchObject({ failure: 'unavailable' })
   })
 })
 

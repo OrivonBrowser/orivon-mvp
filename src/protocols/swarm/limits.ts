@@ -14,6 +14,8 @@ export interface SwarmLimits {
   /** SOC probes spent finding the newest update of one feed. */
   readonly maxFeedProbes: number
   readonly chunkTimeoutMs: number
+  /** How long an optional `/feeds` answer is waited for: it is only a first guess, never worth a pause. */
+  readonly feedGuessTimeoutMs: number
   /** Per endpoint, so a hung one cannot starve the others of their own slots. */
   readonly perEndpointConcurrency: number
   /** How long the first attempt runs alone before a second endpoint is asked for the same chunk. */
@@ -28,6 +30,7 @@ export const DEFAULT_LIMITS: SwarmLimits = {
   maxPointerHops: 4,
   maxFeedProbes: 64,
   chunkTimeoutMs: 30_000,
+  feedGuessTimeoutMs: 3_000,
   perEndpointConcurrency: 6,
   hedgeDelayMs: 1_500
 }

@@ -31,7 +31,7 @@ The owner asked for Swarm, trustless and permissionless, built like IPFS. Public
 | feed to update | Single-owner chunk: address `keccak256(id, owner)`, `id = keccak256(topic, index as 8 bytes big-endian)`, and the signature over `keccak256(id, wrapped chunk address)` (EIP-191 prefix) recovers to the feed owner |
 | feed freshness | Not provable: an endpoint can withhold the newest update. The search starts from the highest index this install has seen, persisted as IPNS sequences are, and never goes below it |
 
-`chunk-fetch.ts` is the whole defence: nothing else reads an endpoint's bytes. An endpoint that sends a chunk failing its address is dropped for the session.
+`chunk-fetch.ts` is the whole defence: nothing else reads an endpoint's bytes. An endpoint that sends a chunk failing its address is refused that chunk and quarantined for 30 seconds, not for the session, since the one local node can send a truncated answer once after a restart. The end of a feed is only a 404 from every endpoint; an endpoint that does not answer makes the lookup `unavailable`, never an older update.
 
 ## Alternatives considered
 

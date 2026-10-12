@@ -83,6 +83,11 @@ export class GatewayPool {
     this.dropped.add(gateway)
   }
 
+  /** Not asked for `ms`: for a source that must come back after sending one bad answer, a restarted local node among them. */
+  quarantine (gateway: string, ms: number): void {
+    this.health.get(gateway)?.coolFor(ms)
+  }
+
   /** Records an outcome that was not a lie (a lie goes through `drop`
    * directly) -- rate limits, outages and timeouts cool the gateway down;
    * a miss or a plain success do not. */
@@ -150,7 +155,8 @@ export type GatewayFailureOutcome = RecordedFailure | { readonly kind: 'cancelle
  * the same way whoever asked. */
 export class GatewayFailure extends Error {
   override readonly name = 'GatewayFailure'
-  constructor (readonly outcome: GatewayFailureOutcome, message: string) {
+  /** @param status the HTTP status of an answer that was not a success, when there was one */
+  constructor (readonly outcome: GatewayFailureOutcome, message: string, readonly status?: number) {
     super(message)
   }
 }
@@ -219,7 +225,7 @@ export async function askGateway<T> (
       await response.body?.cancel()
       const outcome: RecordedFailure = SERVER_ERRORS.has(response.status) ? { kind: 'server-error' } : { kind: 'miss' }
       pool.note(gateway, outcome)
-      throw new GatewayFailure(outcome, `${gateway} answered ${String(response.status)}`)
+      throw new GatewayFailure(outcome, `${gateway} answered ${String(response.status)}`, response.status)
     }
     try {
       const value = await read(response)

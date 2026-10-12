@@ -25,7 +25,10 @@ configured endpoints; with none configured, a mount fails as `unavailable` and n
 **[`chunk-fetch.ts`](chunk-fetch.ts) is the whole defence.** Nothing else reads an endpoint's
 bytes. A chunk is used only after [`chunk.ts`](chunk.ts) has recomputed its address (content
 chunks) or recovered its signer (single-owner chunks); an endpoint that sends bytes failing that is
-dropped for the session.
+quarantined for 30 seconds, not dropped, because the usual endpoint is the one node on this machine
+and a restart can make it send one truncated answer. The refusal is still recorded.
+A feed's end is only a 404 from every endpoint; an endpoint that does not answer makes the lookup
+`unavailable`, never an older update.
 
 | Hop | How it is verified |
 |---|---|

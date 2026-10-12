@@ -8,10 +8,7 @@ import { bytesToHex } from 'viem'
 import { ResolutionError } from '../resolution/records.js'
 import type { PointerStep } from '../resolution/records.js'
 import type { Refusal } from '../resolution/providers.js'
-import { failedAttempt, fetchAcrossGateways } from '../gateways/fetch-passes.js'
-import { askGateway } from '../gateways/gateways.js'
-import type { AttemptOutcome } from '../gateways/race.js'
-import { fetchVerifiedSoc } from './chunk-fetch.js'
+import { lookUpSoc } from './chunk-fetch.js'
 import type { ChunkDeps } from './chunk-fetch.js'
 import { cacAddress, feedUpdateAddress, readSpan, SPAN_BYTES } from './chunk.js'
 import { referenceCid } from './reference.js'
@@ -48,32 +45,28 @@ export function feedOf (metadata: Readonly<Record<string, string>> | undefined):
   return { owner: ownerHex.toLowerCase(), topic: topicHex.toLowerCase() }
 }
 
-/** An endpoint's own idea of the newest index, when it has one: a guess to verify, never an answer. */
+/**
+ * An endpoint's own idea of the newest index, when it has one: a guess to
+ * verify, never an answer. It is asked directly, briefly and once, and what
+ * it answers, or fails to, is not held against the endpoint: the search
+ * simply starts from the floor without it.
+ */
 async function indexGuess (feed: FeedId, deps: ChunkDeps, signal: AbortSignal): Promise<bigint | undefined> {
-  const attempt = async (endpoint: string, attemptSignal: AbortSignal, unwell: Set<string>): Promise<AttemptOutcome<bigint>> => {
+  const ask = async (endpoint: string): Promise<bigint | undefined> => {
     try {
-      const header = await askGateway(
-        deps.pool, deps.fetch, endpoint,
-        { url: `${endpoint}/feeds/${feed.owner}/${feed.topic}`, accept: 'application/json', timeoutMs: deps.limits.chunkTimeoutMs },
-        async (response) => {
-          await response.body?.cancel()
-          return response.headers.get('swarm-feed-index')
-        },
-        attemptSignal
-      )
-      unwell.delete(endpoint)
-      if (header === null || !INDEX_HEADER.test(header)) return { kind: 'failed', retryable: false, reason: `${endpoint} gave no feed index` }
-      return { kind: 'verified', value: BigInt(`0x${header}`) }
-    } catch (error) {
-      return failedAttempt(error, endpoint, unwell)
+      const response = await deps.fetch(`${endpoint}/feeds/${feed.owner}/${feed.topic}`, {
+        headers: { accept: 'application/json' },
+        signal: AbortSignal.any([signal, AbortSignal.timeout(deps.limits.feedGuessTimeoutMs)])
+      })
+      await response.body?.cancel()
+      const header = response.ok ? response.headers.get('swarm-feed-index') : null
+      return header !== null && INDEX_HEADER.test(header) ? BigInt(`0x${header}`) : undefined
+    } catch {
+      return undefined
     }
   }
-  try {
-    return await fetchAcrossGateways('feed index', { pool: deps.pool, hedgeDelayMs: deps.limits.hedgeDelayMs }, attempt, signal)
-  } catch (error) {
-    if (signal.aborted || !(error instanceof ResolutionError)) throw error
-    return undefined
-  }
+  const answers = await Promise.all(deps.pool.candidates().map(ask))
+  return answers.find((answer) => answer !== undefined)
 }
 
 interface Update {
@@ -85,20 +78,17 @@ interface Update {
  * The newest update any endpoint can produce a signed chunk for, never below
  * the highest index seen before. Starting from a guess or that floor, it
  * probes forward by doubling steps until an index has no chunk, then halves
- * the gap. A chunk no endpoint has is the end of the feed; a chunk that
- * fails its signature is a refusal, as anywhere.
+ * the gap. Only a 404 from every endpoint is the end of the feed: an
+ * endpoint that does not answer ends the search as `unavailable`, never as
+ * an older update. A chunk that fails its signature is a refusal, as anywhere.
  */
 async function newestUpdate (feed: FeedId, floor: bigint | undefined, deps: ChunkDeps, signal: AbortSignal, onRefusal: (refusal: Refusal) => void): Promise<Update> {
   let probes = 0
   const probe = async (index: bigint): Promise<Update | undefined> => {
     probes++
     if (probes > deps.limits.maxFeedProbes) throw new ResolutionError('unverifiable', `more than ${String(deps.limits.maxFeedProbes)} probes to find the newest update of a feed`)
-    try {
-      return { index, wrapped: (await fetchVerifiedSoc(feedUpdateAddress(feed.owner, feed.topic, index), deps, signal, onRefusal)).wrapped }
-    } catch (error) {
-      if (signal.aborted || !(error instanceof ResolutionError) || error.failure !== 'unavailable') throw error
-      return undefined
-    }
+    const soc = await lookUpSoc(feedUpdateAddress(feed.owner, feed.topic, index), deps, signal, onRefusal)
+    return soc === undefined ? undefined : { index, wrapped: soc.wrapped }
   }
 
   const guess = await indexGuess(feed, deps, signal)
