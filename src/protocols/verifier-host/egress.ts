@@ -27,7 +27,15 @@ export function allowlisted (origins: readonly string[], fetch: WebFetch, label:
   return async (url, init) => {
     const origin = new URL(url).origin
     if (!allowed.has(origin)) throw new EgressRefused(`${label} may not reach ${origin}`)
-    const response = await fetch(url, { ...init, redirect: 'manual' })
+    let response: Response
+    try {
+      response = await fetch(url, { ...init, redirect: 'manual' })
+    } catch (error) {
+      // Electron's net.fetch yields no 3xx response for a manual redirect: nothing calls followRedirect, so the
+      // request dies with exactly this message.
+      if (error instanceof Error && error.message === 'Redirect was cancelled') throw new RedirectRefused(`${new URL(url).host} answered with a redirect, which is not followed`)
+      throw error
+    }
     // A manual redirect is a 3xx, or an opaque filtered response of status 0.
     if ((response.status >= 300 && response.status < 400) || response.type === 'opaqueredirect') {
       await response.body?.cancel()

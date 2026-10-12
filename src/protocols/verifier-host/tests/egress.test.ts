@@ -57,6 +57,14 @@ describe('allowlisted', () => {
     expect(inner.calls).toHaveLength(1)
   })
 
+  it('maps the error Electron raises for a refused redirect to RedirectRefused, and nothing else', async () => {
+    const refuses = allowlisted(['https://rpc.example'], async () => { throw new Error('Redirect was cancelled') }, 'the light client')
+    await expect(refuses('https://rpc.example/chunks/aa')).rejects.toBeInstanceOf(RedirectRefused)
+    const other = allowlisted(['https://rpc.example'], async () => { throw new Error('net::ERR_CONNECTION_REFUSED') }, 'the light client')
+    await expect(other('https://rpc.example/chunks/aa')).rejects.not.toBeInstanceOf(RedirectRefused)
+    await expect(other('https://rpc.example/chunks/aa')).rejects.toThrow('ERR_CONNECTION_REFUSED')
+  })
+
   it('throws for any other origin, before any request', async () => {
     const inner = recording(() => new Response('ok'))
     const fetch = allowlisted(['https://rpc.example'], inner, 'the light client')
