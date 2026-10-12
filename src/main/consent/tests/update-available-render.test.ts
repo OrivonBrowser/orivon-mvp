@@ -11,7 +11,7 @@ function offer (overrides: Partial<UpdateOffer> = {}): UpdateOffer {
 describe('describeVerifiedUpdate', () => {
   it('asks whether to switch, and gives both versions and the level', () => {
     const content = describeVerifiedUpdate(offer())
-    expect(content.message).toBe('ipfs://thelounge.orivonstack.eth has updated the app to a new version. Do you want to switch to the new version?')
+    expect(content.message).toBe('https://thelounge.orivonstack.eth has updated the app to a new version. Do you want to switch to the new version?')
     expect(content.detail).toContain('Version 0.25.3 to 0.25.3.1.')
     expect(content.detail).toContain('Level 2')
     expect(content.detail).toContain('Claims to be "The Lounge".')

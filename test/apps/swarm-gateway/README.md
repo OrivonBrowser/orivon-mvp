@@ -7,7 +7,7 @@ answers). `addSite` stores a site's files as a Mantaray manifest over a chunk tr
 reference; `addFeed` returns a feed's manifest and a `publish` that stores the next signed update.
 It logs every request, so a test can count what the verifier asked for; `tamper` and `setTamperAll`
 flip a byte of the chunks they name, so a test can watch the verifier refuse them; `redirect`
-answers a chunk with a redirect, as a content filter does. It listens on loopback on a port the OS
+answers a chunk with a redirect, as a content filter does; `holdChunks` keeps every chunk answer back until `releaseChunks()`, as a node that is slow to answer does, so a load stays open as long as a test needs and `answeredChunks()` proves nothing was read meanwhile. It listens on loopback on a port the OS
 picks, so it can never collide with the fixed ports other fixtures and `orivon-ports` hold.
 
 [`encode.mjs`](encode.mjs) is the second implementation of the formats it serves, written from the

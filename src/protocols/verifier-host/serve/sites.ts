@@ -76,8 +76,8 @@ export class Sites {
     private readonly registry: ProtocolRegistry,
     private readonly now: () => number = Date.now,
     private readonly timeoutMs = MOUNT_TIMEOUT_MS,
-    /** Told of each mount that finished in time, whatever partition it was for. */
-    private readonly onMounted: (host: string, site: MountedSite) => void = () => {}
+    /** Told which gatherer is about to load a host's records, before any of its content is fetched, whatever partition the mount is for. Not told of a mount the deadline has already failed. */
+    private readonly onGatherer: (host: string, gatherer: string) => void = () => {}
   ) {}
 
   /** Throws a ResolutionError. With no partition the mount is served once and never kept, nor are its blocks. */
@@ -184,15 +184,14 @@ export class Sites {
       return await Promise.race([deadline, this.mounting.run(async () => {
         controller.signal.throwIfAborted()
         const resolved = await this.registry.resolve(host, controller.signal)
-        const site = await this.registry.mount(resolved.name, resolved.records, controller.signal, partition)
-        // The deadline has already failed this mount for its caller, so nothing is reported about it.
-        if (!controller.signal.aborted) {
+        const site = await this.registry.mount(resolved.name, resolved.records, controller.signal, partition, (gatherer) => {
+          if (controller.signal.aborted) return
           try {
-            this.onMounted(host, site)
+            this.onGatherer(host, gatherer)
           } catch (error) {
-            console.error('[verifier] reporting a mount failed:', error)
+            console.error('[verifier] reporting a gatherer failed:', error)
           }
-        }
+        })
         return { site, resolver: resolved.resolver, mountedAt: this.now() }
       })])
     } finally {

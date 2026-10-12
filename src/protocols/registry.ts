@@ -88,12 +88,14 @@ export class ProtocolRegistry {
     throw exhausted(`${served.name} could not be resolved`, attempts)
   }
 
-  async mount (name: string, records: readonly NameRecord[], signal?: AbortSignal, partition?: string): Promise<MountedSite> {
+  /** `loading` is told each gatherer's id just before it is tried, so a caller learns where the content lives before any of it is fetched. */
+  async mount (name: string, records: readonly NameRecord[], signal?: AbortSignal, partition?: string, loading?: (gatherer: string) => void): Promise<MountedSite> {
     const candidates = this.gatherers.filter((g) => g.supports(records))
     if (candidates.length === 0) throw new ResolutionError('unsupported', `no gatherer can load ${name}'s records`)
     const attempts: Attempt[] = []
     for (const gatherer of candidates) {
       try {
+        loading?.(gatherer.id)
         return await gatherer.mount(name, records, signal, partition)
       } catch (error) {
         attempts.push(attemptOf(gatherer.id, error))

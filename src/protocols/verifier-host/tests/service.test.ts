@@ -128,6 +128,19 @@ describe('startHost with Swarm', () => {
       expect(await page).toEqual({ status: 200, body: '<h1>on swarm</h1>' })
     })
 
+    it('reports a .eth name as a bzz name as soon as Swarm is chosen for it, before the node is ready or any chunk is read', async () => {
+      const { site, swarm } = await swarmWorld()
+      const world = deps({ fetch: async (url, init) => await swarm.fetch(url, { headers: {}, signal: init?.signal ?? new AbortController().signal }) })
+      const { posted } = world
+      const host = await startHost(config({ swarmEndpoints: [ENDPOINT], swarmNode: true, fixtures: { 'swarm.eth': `bzz://${site}` } }), world)
+      running.push(host)
+      const page = get(host.port, 'swarm.eth')
+      await vi.waitFor(() => { expect(posted).toContainEqual({ type: 'name-scheme', host: 'swarm.eth', scheme: 'bzz' }) })
+      expect(swarm.requests).toEqual([])
+      host.swarmNode({ type: 'swarm-node', state: 'ready' })
+      expect(await page).toEqual({ status: 200, body: '<h1>on swarm</h1>' })
+    })
+
     it('shows the reason in plain words, and asks no endpoint, when main says the node is off', async () => {
       const { site, swarm } = await swarmWorld()
       const world = deps({ fetch: async (url, init) => await swarm.fetch(url, { headers: {}, signal: init?.signal ?? new AbortController().signal }) })

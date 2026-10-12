@@ -31,14 +31,14 @@ over its message protocol.
    need a new way to load content. An address scheme's resolver defines `canonicalName` and
    refuses in `resolve` any other spelling: two spellings would be two origins for one site.
 2. **Its descriptor**, `<id>/descriptor.ts`: `describeProtocol({ id, schemes, topLevelDomains })`,
-   data only. A protocol with top-level domains may also name `displayScheme`, the address scheme
-   a name under one of them is shown with (`ipfs` for `.eth`) until the name has been mounted on
-   this install; once it has, the scheme of the protocol whose gatherer mounted it is shown instead
-   (`bzz` for Swarm), learned through `ProtocolAddresses.learnSchemes`. The origin stays unchanged. It may
+   data only. A name under a top-level domain has no scheme of its own: it is shown under the scheme of the
+   protocol whose gatherer the verifier host chose for its records (`bzz` for Swarm), learned through
+   `ProtocolAddresses.learnSchemes`, and as its plain origin (`https://<name>.eth`) until then, so it is never
+   shown under a network it may not live on. The origin stays unchanged. A descriptor may
    also give `loadingScreen` (a `title` and an optional `detail`): the words of the screen the shell
    shows over a tab while one of its pages loads. The shell draws the screen and a protocol only
    words it. A top-level-domain name shows the screen of the protocol serving the scheme learned for
-   it, else its own protocol's, else that of its `displayScheme`.
+   it, else its own protocol's; the screen words itself again when a scheme is learned while it shows.
 3. **Its entry in [`builtin.ts`](builtin.ts).** From there the shell routes, shows and
    canonicalises it everywhere: address bar, omnibox, links, consent dialogs, the certificate
    check and the resolver rules.

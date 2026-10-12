@@ -1,13 +1,12 @@
 import { describeProtocol } from '../protocol.js'
 
-// A name is shown as an ipfs:// address until the verifier has mounted it on this install; from then on it is shown
-// under the scheme of the network its content was found on (README.md). Its own loading screen names no network,
-// because it shows before the name has been looked up.
+// A name is shown as its plain origin until this install has learned which network its content is on; from then on it is
+// shown under that network's scheme (README.md). Its own loading screen names no network, because it shows before the name
+// has been looked up.
 /** `.eth` names, each its own origin: `https://<name>.eth`. */
 export const ENS = describeProtocol({
   id: 'ens',
   schemes: [],
   topLevelDomains: ['eth'],
-  displayScheme: 'ipfs',
   loadingScreen: { title: 'Loading', detail: 'Every answer is checked against what it is named by before it is shown.' }
 })

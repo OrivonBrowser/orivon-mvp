@@ -83,9 +83,9 @@ describe('ProtocolAddresses', () => {
     }
   })
 
-  it('shows a .eth name under its ipfs display scheme, keeping path, query and hash', () => {
-    expect(addresses.displayUrl('https://vitalik.eth/blog/?a=1#b')).toBe('ipfs://vitalik.eth/blog/?a=1#b')
-    expect(addresses.displayOrigin('https://vitalik.eth')).toBe('ipfs://vitalik.eth')
+  it('shows a .eth name nothing has been learned about as its plain origin, never under a network it may not live on', () => {
+    expect(addresses.displayUrl('https://name.eth/blog/?a=1#b')).toBe('https://name.eth/blog/?a=1#b')
+    expect(addresses.displayOrigin('https://name.eth')).toBe('https://name.eth')
   })
 
   it('leaves a .eth name unchanged when it is not https on its default port, or has a trailing dot', () => {
@@ -111,13 +111,11 @@ describe('ProtocolAddresses', () => {
   })
 
   it('round-trips a .eth name: the address it is shown as loads its own origin back', () => {
-    const shown = addresses.displayUrl('https://vitalik.eth/blog/')
-    expect(addresses.servedUrl(shown)).toBe('https://vitalik.eth/blog/')
-  })
-
-  it('refuses a descriptor whose displayScheme no given protocol serves', () => {
-    const ens = describeProtocol({ id: 'ens', schemes: [], topLevelDomains: ['eth'], displayScheme: 'ipfs' })
-    expect(() => new ProtocolAddresses([ens])).toThrow(/displayScheme ipfs/)
+    const learned = new ProtocolAddresses(BUILTIN_PROTOCOLS)
+    learned.learnSchemes(() => 'ipfs')
+    const shown = learned.displayUrl('https://vitalik.eth/blog/')
+    expect(shown).toBe('ipfs://vitalik.eth/blog/')
+    expect(learned.servedUrl(shown)).toBe('https://vitalik.eth/blog/')
   })
 })
 
@@ -128,11 +126,11 @@ describe('a learned scheme', () => {
     return learned
   }
 
-  it('shows a .eth name under the scheme learned for it, keeping path, query and hash, and others under the default', () => {
+  it('shows a .eth name under the scheme learned for it, keeping path, query and hash, and others as their plain origin', () => {
     const learned = learning({ 'swarm.eth': 'bzz' })
     expect(learned.displayUrl('https://swarm.eth/a/?b=1#c')).toBe('bzz://swarm.eth/a/?b=1#c')
     expect(learned.displayOrigin('https://swarm.eth')).toBe('bzz://swarm.eth')
-    expect(learned.displayUrl('https://vitalik.eth/')).toBe('ipfs://vitalik.eth/')
+    expect(learned.displayUrl('https://other.eth/')).toBe('https://other.eth/')
   })
 
   it('shows an IPFS-learned name as ipfs and loads the shown address back to the same origin', () => {
@@ -143,7 +141,7 @@ describe('a learned scheme', () => {
 
   it('ignores a scheme no protocol serves, and one learned for an address', () => {
     const learned = learning({ 'x.eth': 'gopher', [CID]: 'bzz' })
-    expect(learned.displayUrl('https://x.eth/')).toBe('ipfs://x.eth/')
+    expect(learned.displayUrl('https://x.eth/')).toBe('https://x.eth/')
     expect(learned.displayUrl(`https://${CID}.ipfs.orivon/`)).toBe(`ipfs://${CID}/`)
   })
 
@@ -176,14 +174,6 @@ describe('loadingScreenFor', () => {
     expect(addresses.loadingScreenFor('https://ipns.orivon/example.com')).toBe(IPFS_SCREEN)
   })
 
-  it('gives a top-level-domain name with no screen its display scheme protocol screen', () => {
-    const mine = new ProtocolAddresses([
-      describeProtocol({ id: 'ipfs', schemes: ['ipfs'], topLevelDomains: [], loadingScreen: { title: 'Loading from IPFS' } }),
-      describeProtocol({ id: 'ens', schemes: [], topLevelDomains: ['eth'], displayScheme: 'ipfs' })
-    ])
-    expect(mine.loadingScreenFor('https://vitalik.eth/')?.title).toBe('Loading from IPFS')
-  })
-
   it('shows a .eth name a screen that names no network, since it shows before the name is looked up', () => {
     const screen = addresses.loadingScreenFor('https://vitalik.eth/')
     expect(screen?.title).toBeTruthy()
@@ -195,17 +185,19 @@ describe('loadingScreenFor', () => {
     expect(addresses.loadingScreenFor(`https://bzz.orivon/${CID}/`)?.title).toBe('Loading from Swarm')
   })
 
-  it('prefers a protocol own screen to its display scheme one', () => {
+  it('gives a top-level-domain name its protocol own screen, and the learned scheme protocol screen once there is one', () => {
     const own = { title: 'Reading the chain' }
     const mine = new ProtocolAddresses([
       describeProtocol({ id: 'ipfs', schemes: ['ipfs'], topLevelDomains: [], loadingScreen: { title: 'Loading from IPFS' } }),
-      describeProtocol({ id: 'ens', schemes: [], topLevelDomains: ['eth'], displayScheme: 'ipfs', loadingScreen: own })
+      describeProtocol({ id: 'ens', schemes: [], topLevelDomains: ['eth'], loadingScreen: own })
     ])
-    expect(mine.loadingScreenFor('https://vitalik.eth/')).toEqual(own)
+    expect(mine.loadingScreenFor('https://name.eth/')).toEqual(own)
+    mine.learnSchemes(() => 'ipfs')
+    expect(mine.loadingScreenFor('https://name.eth/')?.title).toBe('Loading from IPFS')
     expect(mine.loadingScreenFor(`https://${CID}.ipfs.orivon/`)?.title).toBe('Loading from IPFS')
   })
 
-  it('is undefined when the protocol declares none and shows no other scheme', () => {
+  it('is undefined when the protocol declares none', () => {
     const bare = new ProtocolAddresses([describeProtocol({ id: 'plain', schemes: ['plain'], topLevelDomains: [] })])
     expect(bare.loadingScreenFor(`https://${CID}.plain.orivon/`)).toBeUndefined()
   })

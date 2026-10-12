@@ -20,10 +20,10 @@ offchain lookup may go.
 
 ## Design notes
 
-**A `.eth` name is shown under the scheme of where its content lives, not ENS's.** The descriptor's
-`displayScheme` (`ipfs`) is only the default for a name not yet mounted on this install; the
-verifier host reports the scheme of the gatherer that mounted it, and the address module prefers
-that ([`../README.md`](../README.md) section Adding a protocol).
+**A `.eth` name is shown under the scheme of where its content lives, not ENS's.** The descriptor
+names no scheme: the verifier host reports the scheme of the protocol whose gatherer it chose for the
+name's records, and until this install has learned that the name is shown as its plain origin, with ENS's
+own neutral loading screen ([`../README.md`](../README.md) section Adding a protocol).
 
 **[`resolver.ts`](resolver.ts) proves at the newest verified block, not the finalized one**
 ([`ADR-0030`](../../../docs/decisions/ADR-0030-a-eth-name-is-an-origin-served-by-a-verifier.md)

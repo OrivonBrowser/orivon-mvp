@@ -5,15 +5,14 @@
 import { afterAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
 import { findChrome, waitForTab } from '../support/smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase } from '../support/e2e-helpers.js'
-import { BUILTIN_ADDRESSES } from '../../src/protocols/builtin.js'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, shownOnIpfs } from '../support/e2e-helpers.js'
 import { answerAccepting, answerQuestion, noNativeDialogs, readQuestion, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
 import { SITE_TTL_MS } from '../../src/protocols/verifier-host/serve/sites.js'
 import { updateApp } from '../apps/app-update/site.mjs'
 import { buildsAt, eventually, launchPhase, pinOf, runsAsApp, startRig } from './app-update-support.js'
 
 const ORIGIN = 'https://app.eth'
-const SHOWN = BUILTIN_ADDRESSES.displayUrl(`${ORIGIN}/`)
+const SHOWN = shownOnIpfs(`${ORIGIN}/`)
 const WATCH_MS = 5_000
 const TEST_TIMEOUT_MS = ADDRESS_BAR_STABLE_TIMEOUT_MS * 2 + DEFAULT_ACTION_TIMEOUT_MS * 8 + APP_CLOSE_RACE_MS + SITE_TTL_MS * 2 + 120_000
 

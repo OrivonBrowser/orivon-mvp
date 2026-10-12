@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
+import { ResolutionError } from '../../../resolution/records.js'
 import type { NameRecord } from '../../../resolution/records.js'
 import type { DataGatherer, MountedSite, NameResolver } from '../../../resolution/providers.js'
 import { ProtocolRegistry } from '../../../registry.js'
 import { defineProtocol } from '../../../protocol.js'
 import { ENS } from '../../../ens/descriptor.js'
-import { IPFS } from '../../../ipfs/descriptor.js'
 import { FAILURE_TTL_MS, MAX_CONCURRENT_MOUNTS, MAX_SITES, Sites, SITE_TTL_MS, STALE_SERVE_MS } from '../sites.js'
 
 const P = 'https://top.example'
@@ -15,8 +15,7 @@ function registry (resolve: () => Promise<NameRecord[]>): { registry: ProtocolRe
   const calls = { n: 0 }
   const resolver: NameResolver = { id: 'stub', namespaces: ['.eth'], resolve: async () => { calls.n++; return await resolve() } }
   const gatherer: DataGatherer = { id: 'stub', supports: () => true, mount: async () => site }
-  // ENS's displayScheme names 'ipfs', so IPFS must be a given protocol too, even with no providers of its own here.
-  return { registry: new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [gatherer] }), defineProtocol(IPFS, {})]), calls }
+  return { registry: new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [gatherer] })]), calls }
 }
 
 describe('Sites', () => {
@@ -32,14 +31,45 @@ describe('Sites', () => {
     expect(calls.n).toBe(2)
   })
 
-  it('tells the observer of each mount, and a throwing observer does not fail the mount', async () => {
+  it('tells the observer which gatherer is chosen, and a throwing observer does not fail the mount', async () => {
     const { registry: r } = registry(async () => [record])
     const seen: string[] = []
-    const sites = new Sites(r, Date.now, 50, (host, mounted) => { seen.push(`${host} ${mounted.gatherer}`); throw new Error('observer bug') })
+    const sites = new Sites(r, Date.now, 50, (host, gatherer) => { seen.push(`${host} ${gatherer}`); throw new Error('observer bug') })
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
     expect((await sites.get('a.eth', P)).site).toBe(site)
     expect(seen).toEqual(['a.eth stub'])
     errors.mockRestore()
+  })
+
+  it('tells the observer before the gatherer has mounted anything, so a mount that never settles still reports', async () => {
+    const resolver: NameResolver = { id: 'stub', namespaces: ['.eth'], resolve: async () => [record] }
+    const gatherer: DataGatherer = { id: 'slow', supports: () => true, mount: async () => await new Promise<MountedSite>(() => {}) }
+    const r = new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [gatherer] })])
+    const seen: string[] = []
+    const sites = new Sites(r, Date.now, 50, (host, chosen) => { seen.push(`${host} ${chosen}`) })
+    await expect(sites.get('a.eth', P)).rejects.toMatchObject({ failure: 'unavailable' })
+    expect(seen).toEqual(['a.eth slow'])
+  })
+
+  it('tells the observer of each gatherer tried, in order, when one fails and the next takes over', async () => {
+    const resolver: NameResolver = { id: 'stub', namespaces: ['.eth'], resolve: async () => [record] }
+    const failing: DataGatherer = { id: 'first', supports: () => true, mount: async () => { throw new ResolutionError('unavailable', 'down') } }
+    const working: DataGatherer = { id: 'second', supports: () => true, mount: async () => site }
+    const r = new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [failing, working] })])
+    const seen: string[] = []
+    await new Sites(r, Date.now, 50, (host, chosen) => { seen.push(`${host} ${chosen}`) }).get('a.eth', P)
+    expect(seen).toEqual(['a.eth first', 'a.eth second'])
+  })
+
+  it('tells the observer nothing for a name whose records no gatherer can load, or that does not resolve', async () => {
+    const resolver: NameResolver = { id: 'stub', namespaces: ['.eth'], resolve: async (name) => name === 'none.eth' ? [] : [record] }
+    const picky: DataGatherer = { id: 'picky', supports: () => false, mount: async () => site }
+    const r = new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [picky] })])
+    const seen: string[] = []
+    const sites = new Sites(r, Date.now, 50, (host, chosen) => { seen.push(`${host} ${chosen}`) })
+    await expect(sites.get('a.eth', P)).rejects.toMatchObject({ failure: 'unsupported' })
+    await expect(sites.get('none.eth', P)).rejects.toMatchObject({ failure: 'not-found' })
+    expect(seen).toEqual([])
   })
 
   it('gives up on a mount that takes too long, as unavailable', async () => {
@@ -122,7 +152,7 @@ function switchableRegistry (): { registry: ProtocolRegistry, resolve: { current
   const resolve = { current: async () => [record] }
   const resolver: NameResolver = { id: 'stub', namespaces: ['.eth'], resolve: async () => { calls.n++; return await resolve.current() } }
   const gatherer: DataGatherer = { id: 'stub', supports: () => true, mount: async () => site }
-  return { registry: new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [gatherer] }), defineProtocol(IPFS, {})]), resolve, calls }
+  return { registry: new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [gatherer] })]), resolve, calls }
 }
 
 describe('Sites -- stale-while-revalidate', () => {

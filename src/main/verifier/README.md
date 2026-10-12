@@ -31,12 +31,16 @@ runs in another process, and only [`host-supervisor.ts`](host-supervisor.ts) tal
 
 ## Design notes
 
-**A `.eth` name is shown by the scheme the host last mounted it under.** The host posts `name-scheme`
-after a mount; `VerifierStore` keeps it (`name-schemes.json`, 4096 names, a new answer replacing the
-old, least recently touched dropped first), `verifier-subsystem.ts` hands the lookup to
-`BUILTIN_ADDRESSES.learnSchemes` once at launch, and a changed answer tells each window to push its
-state again (`onNameSchemeChange`), so an open tab's address follows a name that moved networks. The
-Settings and permissions pages run their own copy of the address module and keep the default scheme. The list is a record of the names visited, so "Clear browsing data" empties it (`forgetNameSchemes`) with the cache and with all history.
+**A `.eth` name is shown by the scheme of the protocol the host chose to load it, and as its plain origin
+until then.** The host posts `name-scheme` as soon as a name's records are resolved and a gatherer is chosen
+for them, before any content is fetched, and again if a fallback gatherer of another protocol takes over;
+a name whose records no gatherer loads posts nothing. `VerifierStore` keeps the answer (`name-schemes.json`,
+4096 names, a new answer replacing the old, least recently touched dropped first), `verifier-subsystem.ts`
+hands the lookup to `BUILTIN_ADDRESSES.learnSchemes` once at launch, and a changed answer is announced
+(`onNameSchemeChange`, in [`name-scheme-events.ts`](name-scheme-events.ts), apart from the subsystem so a
+screen can listen without importing Electron). Every window pushes its state again, and the loading screen
+words itself again, so an address follows a name learned mid-load or moved to another network. The Settings and
+permissions pages run their own copy of the address module, which learns nothing, so they show a `.eth` name as its plain origin. The list is a record of the names visited, so "Clear browsing data" empties it (`forgetNameSchemes`) with the cache and with all history.
 
 Each file's own header covers its rule (one owner of `--host-resolver-rules`, the synchronous
 port probe, `.localhost` names to IPv4 loopback so a local-pattern page cannot reach a server on `[::1]`, fingerprint-only certificates, request deadlines and backoff, the checkpoint's age).

@@ -153,6 +153,13 @@ install has not mounted yet.
   learn nothing, so they show the default scheme; a history row keeps the address it was recorded
   under.
 
+*Amendment, 2026-10-12 (later the same day), under `d-0603`: the descriptor's `displayScheme` is removed, so no
+network is guessed.* A `.eth` name this install has not learned a network for is shown as its plain origin
+(`https://<name>.eth`) in the address bar, the loading screen, history and every page that shows an origin,
+with ENS's neutral loading screen. The verifier host reports the scheme as soon as it has resolved the name's
+records and chosen the gatherer that will load them, before any content is fetched, and every surface that
+shows an address draws it again when it is learned.
+
 ## Reversibility
 
 - **Cost to reverse:** moderate. An installed `ipfs://` app's grants are keyed to its served
