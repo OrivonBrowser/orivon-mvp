@@ -1,6 +1,8 @@
-// A set of "highest value seen" floors kept in the profile between runs: one
-// decimal per key, never lowered, the least recently touched dropped past a
-// cap, written to disk after a short debounce instead of once per save.
+// A keyed set of small values kept in the profile between runs, the least
+// recently touched dropped past a cap, written to disk after a short debounce
+// instead of once per save. By default the values are "highest value seen"
+// floors: one decimal per key, never lowered. A caller may give its own rule
+// for what a value is and which one wins.
 
 import { readFileSync, mkdirSync } from 'node:fs'
 import { mkdir, open, rename } from 'node:fs/promises'
@@ -22,6 +24,17 @@ function readJson (path: string): unknown {
   }
 }
 
+/** What a value is, and whether `next` may take the place of `current`. */
+export interface ValueRule {
+  readonly valid: (value: string) => boolean
+  readonly replaces: (current: string, next: string) => boolean
+}
+
+const HIGHEST_DECIMAL: ValueRule = {
+  valid: (value) => DECIMAL.test(value),
+  replaces: (current, next) => BigInt(next) > BigInt(current)
+}
+
 export class FloorFile {
   /** Hydrated from disk on first save, then kept in memory between the
    * debounced flushes: this class is the only writer of its own file, so
@@ -35,13 +48,15 @@ export class FloorFile {
    * @param isKey checked on every key read from disk and every key saved, independently of the process that reported it: this store does not assume its caller already did
    * @param cap kept at once; see each caller for why that many
    * @param what names the floors in the log line of a failed write
+   * @param rule which values are kept and which wins; the highest decimal when not given
    */
   constructor (
     private readonly dir: string,
     private readonly path: string,
     private readonly isKey: (key: string) => boolean,
     private readonly cap: number,
-    private readonly what: string
+    private readonly what: string,
+    private readonly rule: ValueRule = HIGHEST_DECIMAL
   ) {}
 
   /**
@@ -54,12 +69,27 @@ export class FloorFile {
     return Object.fromEntries(this.loaded())
   }
 
-  /** Keeps the highest per key, so a restart never forgets how far a name has advanced. */
-  save (key: string, value: string): void {
-    if (!DECIMAL.test(value) || !this.isKey(key)) return
+  /** The value kept for `key`, once loaded. */
+  get (key: string): string | undefined {
+    return this.loaded().get(key)
+  }
+
+  /**
+   * Keeps the winning value per key, so a restart never forgets how far a
+   * name has advanced. Saving the value already kept only moves the key to
+   * the newest end, without a write of its own. Returns whether the kept
+   * value changed.
+   */
+  save (key: string, value: string): boolean {
+    if (!this.rule.valid(value) || !this.isKey(key)) return false
     const floors = this.loaded()
     const current = floors.get(key)
-    if (current !== undefined && BigInt(current) >= BigInt(value)) return
+    if (current === value) {
+      floors.delete(key)
+      floors.set(key, value)
+      return false
+    }
+    if (current !== undefined && !this.rule.replaces(current, value)) return false
     floors.delete(key) // re-inserted below, now the most recently touched
     floors.set(key, value)
     for (const oldest of floors.keys()) {
@@ -67,6 +97,7 @@ export class FloorFile {
       floors.delete(oldest)
     }
     this.scheduleFlush()
+    return true
   }
 
   /** Writes whatever is pending right now, instead of waiting out the debounce. */
@@ -92,7 +123,7 @@ export class FloorFile {
   private fromDisk (): Record<string, string> {
     const stored = readJson(this.path)
     if (typeof stored !== 'object' || stored === null) return {}
-    return Object.fromEntries(Object.entries(stored).filter((entry): entry is [string, string] => this.isKey(entry[0]) && typeof entry[1] === 'string' && DECIMAL.test(entry[1])))
+    return Object.fromEntries(Object.entries(stored).filter((entry): entry is [string, string] => this.isKey(entry[0]) && typeof entry[1] === 'string' && this.rule.valid(entry[1])))
   }
 
   private scheduleFlush (): void {
