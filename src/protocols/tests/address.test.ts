@@ -121,6 +121,47 @@ describe('ProtocolAddresses', () => {
   })
 })
 
+describe('a learned scheme', () => {
+  function learning (known: Record<string, string>): ProtocolAddresses {
+    const learned = new ProtocolAddresses(BUILTIN_PROTOCOLS)
+    learned.learnSchemes((name) => known[name])
+    return learned
+  }
+
+  it('shows a .eth name under the scheme learned for it, keeping path, query and hash, and others under the default', () => {
+    const learned = learning({ 'swarm.eth': 'bzz' })
+    expect(learned.displayUrl('https://swarm.eth/a/?b=1#c')).toBe('bzz://swarm.eth/a/?b=1#c')
+    expect(learned.displayOrigin('https://swarm.eth')).toBe('bzz://swarm.eth')
+    expect(learned.displayUrl('https://vitalik.eth/')).toBe('ipfs://vitalik.eth/')
+  })
+
+  it('shows an IPFS-learned name as ipfs and loads the shown address back to the same origin', () => {
+    const learned = learning({ 'a.eth': 'ipfs', 'b.eth': 'bzz' })
+    expect(learned.displayUrl('https://a.eth/')).toBe('ipfs://a.eth/')
+    expect(learned.servedUrl(learned.displayUrl('https://b.eth/x'))).toBe('https://b.eth/x')
+  })
+
+  it('ignores a scheme no protocol serves, and one learned for an address', () => {
+    const learned = learning({ 'x.eth': 'gopher', [CID]: 'bzz' })
+    expect(learned.displayUrl('https://x.eth/')).toBe('ipfs://x.eth/')
+    expect(learned.displayUrl(`https://${CID}.ipfs.orivon/`)).toBe(`ipfs://${CID}/`)
+  })
+
+  it('leaves every address and origin that is not a .eth name unchanged', () => {
+    const learned = learning({ 'swarm.eth': 'bzz' })
+    for (const url of ['https://example.com/', `https://${CID}.bzz.orivon/p`, `https://ipfs.orivon/${CID}/`, 'https://swarm.eth:8443/']) {
+      expect(learned.displayUrl(url)).toBe(new ProtocolAddresses(BUILTIN_PROTOCOLS).displayUrl(url))
+    }
+  })
+
+  it('gives the loading screen of the learned scheme protocol, else the .eth neutral one', () => {
+    const learned = learning({ 'swarm.eth': 'bzz', 'ipfs-site.eth': 'ipfs' })
+    expect(learned.loadingScreenFor('https://swarm.eth/')?.title).toBe('Loading from Swarm')
+    expect(learned.loadingScreenFor('https://ipfs-site.eth/')?.title).toBe('Loading from IPFS')
+    expect(learned.loadingScreenFor('https://other.eth/')).toBe(addresses.loadingScreenFor('https://other.eth/'))
+  })
+})
+
 describe('loadingScreenFor', () => {
   const IPFS_SCREEN = BUILTIN_PROTOCOLS.find((p) => p.id === 'ipfs')?.loadingScreen
 

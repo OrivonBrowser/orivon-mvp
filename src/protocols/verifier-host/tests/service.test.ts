@@ -88,6 +88,21 @@ describe('startHost with Swarm', () => {
     expect(posted).toContainEqual({ type: 'swarm-feed-index', feed: `${OWNER}/${TOPIC}`, index: '1' })
   })
 
+  it('reports a .eth name mounted from Swarm as a bzz name, and an address it serves as nothing', async () => {
+    const { site, swarm } = await swarmWorld()
+    const posted: FromHost[] = []
+    const host = await startHost(
+      config({ swarmEndpoints: [ENDPOINT], fixtures: { 'swarm.eth': `bzz://${site}` } }),
+      { ...deps({ fetch: async (url, init) => await swarm.fetch(url, { headers: {}, signal: init?.signal ?? new AbortController().signal }) }), post: (message) => { posted.push(message) } }
+    )
+    running.push(host)
+    const cid = referenceCid(site)
+    expect((await get(host.port, `${cid}.bzz.orivon`)).status).toBe(200)
+    expect(posted.filter((message) => message.type === 'name-scheme')).toEqual([])
+    expect((await get(host.port, 'swarm.eth')).status).toBe(200)
+    expect(posted.filter((message) => message.type === 'name-scheme')).toEqual([{ type: 'name-scheme', host: 'swarm.eth', scheme: 'bzz' }])
+  })
+
   it('does not fall back to an older update than an earlier run saw', async () => {
     const { feed, swarm } = await swarmWorld()
     const host = await startHost(
@@ -124,6 +139,25 @@ describe('startHost', () => {
     expect(await get(host.port, 'fixture.eth')).toEqual({ status: 200, body: '<h1>fixture</h1>' })
     const provenance = await host.answer({ kind: 'provenance', host: 'fixture.eth', partition: 'https://fixture.eth' })
     expect(provenance).toMatchObject({ host: 'fixture.eth', resolver: 'fixture', root: { kind: 'ipfs', cid: dag.root.toString() }, ddoc: { status: 'met' } })
+  })
+
+  it('reports a .eth name mounted from IPFS as an ipfs name, and an ipfs:// address it serves as nothing', async () => {
+    const d = deps()
+    const host = await startHost(config(), d)
+    running.push(host)
+    const cid = dag.root.toV1().toString()
+    expect((await get(host.port, `${cid}.ipfs.orivon`)).status).toBe(200)
+    expect(d.posted.filter((message) => message.type === 'name-scheme')).toEqual([])
+    expect((await get(host.port, 'fixture.eth')).status).toBe(200)
+    expect(d.posted.filter((message) => message.type === 'name-scheme')).toEqual([{ type: 'name-scheme', host: 'fixture.eth', scheme: 'ipfs' }])
+  })
+
+  it('reports nothing for a name that does not resolve', async () => {
+    const d = deps()
+    const host = await startHost(config(), d)
+    running.push(host)
+    expect((await get(host.port, 'unknown.eth')).status).toBeGreaterThanOrEqual(400)
+    expect(d.posted.filter((message) => message.type === 'name-scheme')).toEqual([])
   })
 
   it("keeps a name one site's pages opened out of every other site's partition", async () => {
