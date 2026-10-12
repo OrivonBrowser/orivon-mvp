@@ -108,7 +108,7 @@ it('offers where IPFS is read from, shows the node\'s state, and hides the looku
     await page.waitForSelector('#row-web3-ipfs-source')
     const source = page.locator('#row-web3-ipfs-source select')
     expect(await source.inputValue()).toBe('node')
-    expect(await page.locator('#row-web3-ipfs-source option').allTextContents()).toEqual(['Your own IPFS node on this computer', 'Public IPFS gateways'])
+    expect(await page.locator('#row-web3-ipfs-source option').allTextContents()).toEqual(['Your own IPFS node', 'Public IPFS gateways'])
     expect(await page.locator('#row-web3-ipfs-lookup input[type=checkbox]').isChecked()).toBe(true)
     expect(await page.locator('#row-web3-ipfs-lookup label, #row-web3-ipfs-lookup .label').first().textContent()).toContain('Use a lookup service to find IPFS sites faster')
     expect(await waitFor(async () => (await page.locator('#row-web3-ipfs-node .value').textContent().catch(() => '')) !== '')).toBe(true)
