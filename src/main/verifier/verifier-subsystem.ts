@@ -64,6 +64,7 @@ let startHost: () => void = () => {}
 /** Whether any open tab shows an origin the verifier serves; set once the shell's windows exist. */
 let tabsOnVerifiedOrigin: () => boolean = () => false
 const listeners = new Set<() => void>()
+const nameSchemeListeners = new Set<() => void>()
 /** Whether the person has the light client on. Set once the settings are read; until then it is on. */
 let enabledByPerson: () => boolean = () => true
 
@@ -305,6 +306,18 @@ export function onVerifierChange (listener: () => void): () => void {
   return () => { listeners.delete(listener) }
 }
 
+/** Called when the scheme a `.eth` name is shown with changed, so a tab showing it can draw its address again; returns the unsubscribe. */
+export function onNameSchemeChange (listener: () => void): () => void {
+  nameSchemeListeners.add(listener)
+  return () => { nameSchemeListeners.delete(listener) }
+}
+
+/** Clearing browsing data: the names this install has visited are forgotten, and open tabs draw their addresses again. */
+export async function forgetNameSchemes (): Promise<void> {
+  await verifierStore().forgetNameSchemes()
+  for (const listener of nameSchemeListeners) listener()
+}
+
 export const verifierSubsystem: Subsystem = {
   name: 'verifier',
   beforeReady: () => {
@@ -315,6 +328,7 @@ export const verifierSubsystem: Subsystem = {
     app.on('session-created', installCertificateCheck)
   },
   afterReady: (ctx) => {
+    BUILTIN_ADDRESSES.learnSchemes((name) => verifierStore().nameScheme(name))
     installCertificateCheck(session.defaultSession)
     installPartitionStamp(session.defaultSession)
     installListeningGate(session.defaultSession)
@@ -371,6 +385,9 @@ export const verifierSubsystem: Subsystem = {
         },
         ipnsSequence: (key, sequence) => { verifierStore().saveIpnsSequence(key, sequence) },
         swarmFeedIndex: (feed, index) => { verifierStore().saveSwarmFeedIndex(feed, index) },
+        nameScheme: (name, scheme) => {
+          if (verifierStore().saveNameScheme(name, scheme)) for (const listener of nameSchemeListeners) listener()
+        },
         swarmNodeWanted: () => {
           // Asks that arrive while one is being answered share its answer, each told it: the host asks on every mount and every few seconds of reading.
           asking ??= ensureSwarmNode().finally(() => { asking = undefined })

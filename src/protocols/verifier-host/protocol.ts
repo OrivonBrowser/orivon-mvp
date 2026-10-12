@@ -103,3 +103,5 @@ export type FromHost =
   | { readonly type: 'swarm-feed-index', readonly feed: string, readonly index: string }
   /** A Swarm mount needs the node: main starts it if it is not running. */
   | SwarmNodeWanted
+  /** A top-level-domain name was mounted from content of the protocol serving `scheme`, so the shell can show `<scheme>://<host>`. */
+  | { readonly type: 'name-scheme', readonly host: string, readonly scheme: string }

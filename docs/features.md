@@ -27,7 +27,7 @@ rely on, row by row. A new feature adds its line here when it lands.
 
 ## Names, content and trust
 
-- **`.eth` names**: resolved by a light client that proves the name's record on this machine; `.eth.limo` and `.eth.link` addresses open as the `.eth` name.
+- **`.eth` names**: resolved by a light client that proves the name's record on this machine; `.eth.limo` and `.eth.link` addresses open as the `.eth` name. The address bar shows `bzz://<name>` when the name's content was found on Swarm and `ipfs://<name>` when it was found on IPFS (`ipfs://` until the name has loaded once on this install).
 - **`ipfs://` and `ipns://` addresses**: every block checked against its CID; a protocol registry makes the next protocol an isolated piece of work.
 - **`bzz://` addresses and `.eth` names on Swarm**: every chunk checked against its address, feeds followed to their newest signed update. Swarm loads from Orivon's own node, never from a public gateway: a Swarm light node that Orivon runs on this computer (WebAssembly, in a process of its own), started when a Swarm address is opened and stopped after ten minutes without use. Swarm is off in a build made before the node is published, and behind a system proxy; the page then says why. Settings shows the node's state.
 - **DDOC**: a site publishes its bundle hash tree, anchored in its ENS record, and the Web3 Score page shows whether the pinned bundle matches.

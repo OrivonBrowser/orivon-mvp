@@ -12,6 +12,7 @@ import type { ContentPointer, ContentRoot, PointerStep, Provenance } from '../..
 import type { DdocReport, Refusal } from '../../protocols/resolution/providers.js'
 import { MAX_FAILURE_MESSAGE } from '../../protocols/swarm-node/protocol.js'
 import type { FromNode } from '../../protocols/swarm-node/protocol.js'
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { DECIMAL } from './verifier-store.js'
 
 function isRecord (value: unknown): value is Record<string, unknown> {
@@ -97,6 +98,13 @@ function isLightClientState (value: unknown): value is LightClientState {
   }
 }
 
+/** A top-level-domain name in the spelling `servedName` reads it as, and a scheme some built-in protocol serves. */
+function isNameScheme (host: unknown, scheme: unknown): boolean {
+  if (typeof host !== 'string' || typeof scheme !== 'string') return false
+  const served = BUILTIN_ADDRESSES.servedName(host)
+  return served !== undefined && served.namespace.startsWith('.') && served.name === host && BUILTIN_ADDRESSES.servesScheme(scheme)
+}
+
 /**
  * Whether `value` is the reply shape `kind`'s own request promises --
  * checked against the SAME kind the pending request was actually made
@@ -128,6 +136,7 @@ export function isFromHost (message: unknown): message is FromHost {
     case 'ipns-sequence': return typeof message['key'] === 'string' && isDecimal(message['sequence'])
     case 'swarm-node-wanted': return true
     case 'swarm-feed-index': return typeof message['feed'] === 'string' && isDecimal(message['index'])
+    case 'name-scheme': return isNameScheme(message['host'], message['scheme'])
     case 'reply':
       if (typeof message['id'] !== 'number') return false
       if (message['ok'] === true) return 'value' in message

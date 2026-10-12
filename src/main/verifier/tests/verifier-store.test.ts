@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CID } from 'multiformats/cid'
 import { identity } from 'multiformats/hashes/identity'
 import { base36 } from 'multiformats/bases/base36'
-import { MAX_FEEDS, MAX_IPNS_KEYS, VerifierStore } from '../verifier-store.js'
+import { MAX_FEEDS, MAX_IPNS_KEYS, MAX_NAME_SCHEMES, VerifierStore } from '../verifier-store.js'
 
 const dirs: string[] = []
 function store (): { store: VerifierStore, dir: string } {
@@ -92,6 +92,69 @@ describe('VerifierStore', () => {
     await s.flush()
     writeFileSync(join(dir, 'swarm-feed-indexes.json'), '{nope')
     expect(new VerifierStore(dir).swarmFeedIndexes()).toEqual({})
+  })
+
+  it('keeps the scheme a .eth name was last found under across instances, the newest answer winning, and refuses the rest', async () => {
+    const { store: s, dir } = store()
+    expect(s.saveNameScheme('swarm.eth', 'bzz')).toBe(true)
+    expect(s.saveNameScheme('swarm.eth', 'bzz')).toBe(false)
+    expect(s.saveNameScheme('moved.eth', 'bzz')).toBe(true)
+    expect(s.saveNameScheme('moved.eth', 'ipfs')).toBe(true)
+    expect(s.saveNameScheme('Upper.eth', 'bzz')).toBe(false) // never how the host spells a name
+    expect(s.saveNameScheme('example.com', 'bzz')).toBe(false)
+    expect(s.saveNameScheme('x.eth', 'gopher')).toBe(false)
+    expect(s.nameScheme('moved.eth')).toBe('ipfs')
+    await s.flush()
+    const again = new VerifierStore(dir)
+    expect(again.nameScheme('swarm.eth')).toBe('bzz')
+    expect(again.nameScheme('moved.eth')).toBe('ipfs')
+    expect(again.nameScheme('x.eth')).toBeUndefined()
+  })
+
+  it('drops the least recently touched name past its cap, a name seen again counting as touched', () => {
+    const { store: s } = store()
+    for (let i = 0; i < MAX_NAME_SCHEMES; i++) s.saveNameScheme(`n${String(i)}.eth`, 'bzz')
+    s.saveNameScheme('n0.eth', 'bzz')
+    s.saveNameScheme('one-more.eth', 'bzz')
+    expect(s.nameScheme('n0.eth')).toBe('bzz')
+    expect(s.nameScheme('n1.eth')).toBeUndefined()
+    expect(s.nameScheme('one-more.eth')).toBe('bzz')
+  })
+
+  it('forgets every name scheme in memory and in the file, and keeps what it learns afterwards', async () => {
+    const { store: s, dir } = store()
+    s.saveNameScheme('swarm.eth', 'bzz')
+    s.saveNameScheme('a.eth', 'ipfs')
+    await s.flush()
+    s.saveIpnsSequence(KEY_1, '5')
+    await s.forgetNameSchemes()
+    expect(s.nameScheme('swarm.eth')).toBeUndefined()
+    expect(JSON.parse(readFileSync(join(dir, 'name-schemes.json'), 'utf8'))).toEqual({})
+    expect(new VerifierStore(dir).nameScheme('a.eth')).toBeUndefined()
+    expect(s.saveNameScheme('swarm.eth', 'bzz')).toBe(true)
+    await s.flush()
+    expect(new VerifierStore(dir).nameScheme('swarm.eth')).toBe('bzz')
+    await s.flush()
+    expect(new VerifierStore(dir).ipnsSequences()).toEqual({ [KEY_1]: '5' })
+  })
+
+  it('forgets names that were never flushed, so no pending write brings them back', async () => {
+    const { store: s, dir } = store()
+    s.saveNameScheme('swarm.eth', 'bzz')
+    await s.forgetNameSchemes()
+    await s.flush()
+    expect(new VerifierStore(dir).nameScheme('swarm.eth')).toBeUndefined()
+  })
+
+  it('reads a corrupt name-scheme file, or values no protocol serves, as empty', async () => {
+    const { store: s, dir } = store()
+    s.saveNameScheme('swarm.eth', 'bzz')
+    await s.flush()
+    writeFileSync(join(dir, 'name-schemes.json'), '{"a.eth":"gopher","b.eth":3,"c.com":"bzz"}')
+    const again = new VerifierStore(dir)
+    expect([again.nameScheme('a.eth'), again.nameScheme('b.eth'), again.nameScheme('c.com')]).toEqual([undefined, undefined, undefined])
+    writeFileSync(join(dir, 'name-schemes.json'), '{nope')
+    expect(new VerifierStore(dir).nameScheme('swarm.eth')).toBeUndefined()
   })
 
   it('writes nothing until the debounced flush fires, or flush is called directly', async () => {

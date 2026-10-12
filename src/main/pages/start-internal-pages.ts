@@ -16,7 +16,7 @@ import { pagesDomain } from './pages-domain.js'
 import { appsDomain } from '../permissions/apps-domain.js'
 import { forgetChoicesWhenGrantEnds } from '../scheme-routing/grant-watch.js'
 import { identityKeyStorage } from '../keyring/electron-keychain.js'
-import { onVerifierChange, verifierView } from '../verifier/verifier-subsystem.js'
+import { forgetNameSchemes, onVerifierChange, verifierView } from '../verifier/verifier-subsystem.js'
 import { web3Domain } from '../verifier/web3-domain.js'
 import { appDomain } from './app-domain.js'
 import { telemetryDomain } from './telemetry-domain.js'
@@ -162,6 +162,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       appSessions: async () => (await permissions.list())
         .filter((app) => isOriginServedFromCacheSync(app.origin))
         .map((app) => session.fromPartition(partitionFor(app.origin))),
+      forgetNameSchemes,
       now: Date.now
     }),
     sites: sitesDomain(siteSettings, { isPrivate: services.isPrivate, devices: deviceRows, declinedApps: { list: () => declinedApps()?.list() ?? [], remove: (origin) => declinedApps()?.remove(origin) === true } }),

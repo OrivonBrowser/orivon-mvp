@@ -2,13 +2,15 @@
 // address bar shows the address; the page runs at the https origin serving it
 // (`https://<cid>.bzz.orivon`), as a secure context, from chunks the verifier
 // checked. Driven through the test seam's endpoints, so nothing leaves the
-// machine.
+// machine. A `.eth` name is shown under the scheme of the network its content
+// is on: `bzz://` for Swarm, `ipfs://` for IPFS.
 import { afterAll, expect, it } from 'vitest'
 import { referenceCid } from '../../src/protocols/swarm/reference.js'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
 import { evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from '../support/e2e-helpers.js'
 import { startSwarmFixture } from '../apps/swarm-gateway/gateway.mjs'
+import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 
 const TEST_TIMEOUT_MS = ADDRESS_BAR_STABLE_TIMEOUT_MS * 4 + DEFAULT_ACTION_TIMEOUT_MS * 6 + APP_CLOSE_RACE_MS + 60_000
 
@@ -22,7 +24,7 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-it('[app:swarm-url-opens] loads a typed bzz:// address, follows a bzz:// link, opens a .eth name through a feed at its newest update, and refuses a tampered chunk', async () => {
+it('[app:swarm-url-opens] [app:eth-name-shown-by-network] loads a typed bzz:// address, follows a bzz:// link, opens a .eth name through a feed at its newest update shown as bzz://, keeps a .eth name on IPFS shown as ipfs://, and refuses a tampered chunk', async () => {
   await runPhase('swarm-address', async (check) => {
     const node = await startSwarmFixture()
     const evilNode = await startSwarmFixture({ tamperAll: true })
@@ -34,6 +36,7 @@ it('[app:swarm-url-opens] loads a typed bzz:// address, follows a bzz:// link, o
     const feed = node.addFeed({ privateKey: FEED_KEY, topic: FEED_TOPIC })
     await feed.publish(node.addSite({ 'index.html': page('swarm update one') }))
     await feed.publish(node.addSite({ 'index.html': page('swarm update two') }))
+    const ipfsGateway = await startFixtureGateway({ onipfs: { 'index.html': page('ipfs name fixture') } })
     const broken = evilNode.addSite({ 'index.html': page('tampered swarm fixture') })
     let app: Awaited<ReturnType<typeof launchElectron>> | undefined
     try {
@@ -41,7 +44,8 @@ it('[app:swarm-url-opens] loads a typed bzz:// address, follows a bzz:// link, o
         appPath: '.',
         args: [HERMETIC_RESOLVER],
         env: {
-          ORIVON_TEST_ETH_FIXTURES: JSON.stringify({ 'feed.eth': `bzz://${feed.manifest}`, 'broken.eth': `bzz://${broken}` }),
+          ORIVON_TEST_ETH_FIXTURES: JSON.stringify({ 'feed.eth': `bzz://${feed.manifest}`, 'broken.eth': `bzz://${broken}`, 'onipfs.eth': `ipfs://${ipfsGateway.roots['onipfs']!}` }),
+          ORIVON_TEST_IPFS_GATEWAYS: ipfsGateway.url,
           ORIVON_TEST_SWARM_ENDPOINTS: `${node.url},${evilNode.url}`
         }
       })
@@ -74,20 +78,29 @@ it('[app:swarm-url-opens] loads a typed bzz:// address, follows a bzz:// link, o
 
       // The node answers 501 to /feeds: the newest update is found by asking for chunks alone.
       await clickAddressBarRetrying(chrome, 'feed.eth')
-      const fed = await waitForTab(chrome, { address: 'ipfs://feed.eth/', title: 'swarm update two' })
-      check(`a .eth name on a Swarm feed shows its newest update (${JSON.stringify(fed.info)})`, fed.ok)
+      const fed = await waitForTab(chrome, { address: 'bzz://feed.eth/', title: 'swarm update two' })
+      check(`a .eth name on a Swarm feed shows its newest update, shown as bzz://feed.eth/ (${JSON.stringify(fed.info)})`, fed.ok)
       check('the page runs at the name\'s own origin', findViewShowing(app, chrome, 'https://feed.eth/') !== undefined)
+
+      await clickAddressBarRetrying(chrome, 'onipfs.eth')
+      const onIpfs = await waitForTab(chrome, { address: 'ipfs://onipfs.eth/', title: 'ipfs name fixture' })
+      check(`a .eth name on IPFS stays shown as ipfs://onipfs.eth/ (${JSON.stringify(onIpfs.info)})`, onIpfs.ok)
+
+      await clickAddressBarRetrying(chrome, 'bzz://feed.eth/')
+      const again = await waitForTab(chrome, { address: 'bzz://feed.eth/', title: 'swarm update two' })
+      check(`the address a .eth name is shown as loads that name again (${JSON.stringify(again.info)})`, again.ok)
 
       await clickAddressBarRetrying(chrome, 'broken.eth')
       const refused = await waitForTab(chrome, { title: 'Cannot verify this site' })
       check(`a node that serves only tampered chunks gives the cannot-verify page (${JSON.stringify(refused.info)})`, refused.ok)
 
-      expect(typed.ok && followed.ok && fed.ok && refused.ok).toBe(true)
+      expect(typed.ok && followed.ok && fed.ok && onIpfs.ok && again.ok && refused.ok).toBe(true)
       expect(loaded).toEqual({ origin: `https://${cid}.bzz.orivon`, secure: true, ran: 'ran' })
     } finally {
       if (app !== undefined) await closeElectronApp(app)
       await node.close()
       await evilNode.close()
+      await ipfsGateway.close()
     }
   })
 }, TEST_TIMEOUT_MS)

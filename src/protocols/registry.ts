@@ -35,12 +35,22 @@ export class ProtocolRegistry {
   readonly addresses: ProtocolAddresses
   private readonly resolvers: readonly NameResolver[]
   private readonly gatherers: readonly DataGatherer[]
+  private readonly schemeByGatherer: ReadonlyMap<string, string>
 
   /** Resolvers and gatherers are tried in the order their protocols are given. */
   constructor (protocols: readonly Protocol[]) {
     this.addresses = new ProtocolAddresses(protocols.map((p) => p.descriptor))
     this.resolvers = protocols.flatMap((p) => p.resolvers)
     this.gatherers = protocols.flatMap((p) => p.gatherers)
+    this.schemeByGatherer = new Map(protocols.flatMap((p) => {
+      const scheme = p.descriptor.schemes[0]
+      return scheme === undefined ? [] : p.gatherers.map((g): [string, string] => [g.id, scheme])
+    }))
+  }
+
+  /** The address scheme of the protocol that owns the gatherer: where a site it mounted lives (`bzz` for Swarm's). Undefined for a protocol with no scheme. */
+  schemeOfGatherer (gatherer: string): string | undefined {
+    return this.schemeByGatherer.get(gatherer)
   }
 
   private resolversFor (namespace: Namespace): NameResolver[] {

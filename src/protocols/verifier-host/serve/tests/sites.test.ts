@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { NameRecord } from '../../../resolution/records.js'
 import type { DataGatherer, MountedSite, NameResolver } from '../../../resolution/providers.js'
 import { ProtocolRegistry } from '../../../registry.js'
@@ -30,6 +30,16 @@ describe('Sites', () => {
     clock.now = SITE_TTL_MS + 1
     await sites.get('a.eth', P)
     expect(calls.n).toBe(2)
+  })
+
+  it('tells the observer of each mount, and a throwing observer does not fail the mount', async () => {
+    const { registry: r } = registry(async () => [record])
+    const seen: string[] = []
+    const sites = new Sites(r, Date.now, 50, (host, mounted) => { seen.push(`${host} ${mounted.gatherer}`); throw new Error('observer bug') })
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect((await sites.get('a.eth', P)).site).toBe(site)
+    expect(seen).toEqual(['a.eth stub'])
+    errors.mockRestore()
   })
 
   it('gives up on a mount that takes too long, as unavailable', async () => {

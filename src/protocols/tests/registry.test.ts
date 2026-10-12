@@ -188,4 +188,15 @@ describe('ProtocolRegistry, for an address scheme', () => {
     expect(registryOf([plain]).canonicalName('foo', 'Abc')).toBe('abc')
     expect(() => registryOf([plain]).canonicalName('bar', 'abc')).toThrow(ResolutionError)
   })
+
+  it("names the first scheme of the protocol that owns a gatherer, and nothing for one whose protocol has no scheme", () => {
+    const gatherer = (id: string): DataGatherer => ({ id, supports: () => true, mount: async () => site(id) })
+    const registry = new ProtocolRegistry([
+      defineProtocol({ id: 'names', schemes: [], topLevelDomains: ['eth'] }, { gatherers: [gatherer('bare')] }),
+      defineProtocol({ id: 'swarmish', schemes: ['bzz', 'other'], topLevelDomains: [] }, { gatherers: [gatherer('chunks')] })
+    ])
+    expect(registry.schemeOfGatherer('chunks')).toBe('bzz')
+    expect(registry.schemeOfGatherer('bare')).toBeUndefined()
+    expect(registry.schemeOfGatherer('unknown')).toBeUndefined()
+  })
 })

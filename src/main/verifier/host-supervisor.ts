@@ -17,6 +17,7 @@ export interface SupervisorEvents extends ProcessEvents {
   swarmFeedIndex: (feed: string, index: string) => void
   /** A Swarm mount needs the node. */
   swarmNodeWanted?: () => void
+  nameScheme: (host: string, scheme: string) => void
 }
 
 export type SupervisorDeps = ProcessDeps<HostConfig, SupervisorEvents>
@@ -77,6 +78,7 @@ export class HostSupervisor extends ProcessSupervisor<HostConfig, FromHost, Supe
       case 'ipns-sequence': events.ipnsSequence(message.key, message.sequence); break
       case 'swarm-node-wanted': events.swarmNodeWanted?.(); break
       case 'swarm-feed-index': events.swarmFeedIndex(message.feed, message.index); break
+      case 'name-scheme': events.nameScheme(message.host, message.scheme); break
       case 'reply': {
         const pending = this.pending.get(message.id)
         if (pending === undefined) return

@@ -14,7 +14,7 @@ import { createSwarmNodeLink } from './swarm-node-link.js'
 import type { SwarmNodeNotice } from '../swarm-node/protocol.js'
 import type { FromHost, HostConfig, HostReplies, HostRequest, LightClientConfig, LightClientState, SiteProvenance } from './protocol.js'
 import { createVerifierServer } from './serve/server.js'
-import { Sites } from './serve/sites.js'
+import { MOUNT_TIMEOUT_MS, Sites } from './serve/sites.js'
 import type { SiteRecord } from './serve/sites.js'
 
 export interface LightClient {
@@ -56,7 +56,12 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
   const swarmNode = createSwarmNodeLink(deps.post)
   const { protocols, lightClient } = startProtocols(config, deps, swarmNode)
   const registry = new ProtocolRegistry(protocols)
-  const sites = new Sites(registry)
+  // A top-level-domain name is shown by where its content lives, which only a mount can say.
+  const sites = new Sites(registry, Date.now, MOUNT_TIMEOUT_MS, (host, site) => {
+    const served = registry.addresses.servedName(host)
+    const scheme = registry.schemeOfGatherer(site.gatherer)
+    if (served?.namespace.startsWith('.') === true && scheme !== undefined) deps.post({ type: 'name-scheme', host: served.name, scheme })
+  })
   const certificate = createRunCertificate()
   const server = createVerifierServer(registry, sites, certificate)
   await new Promise<void>((resolve, reject) => {
