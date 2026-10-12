@@ -10,6 +10,7 @@ import { BLOCK_ROOT_PATTERN } from '../../protocols/verifier-host/protocol.js'
 import type { FromHost, HostReplies, HostRequest, LightClientState, SiteProvenance } from '../../protocols/verifier-host/protocol.js'
 import type { ContentPointer, ContentRoot, PointerStep, Provenance } from '../../protocols/resolution/records.js'
 import type { DdocReport, Refusal } from '../../protocols/resolution/providers.js'
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { DECIMAL } from './verifier-store.js'
 
 function isRecord (value: unknown): value is Record<string, unknown> {
@@ -95,6 +96,13 @@ function isLightClientState (value: unknown): value is LightClientState {
   }
 }
 
+/** A top-level-domain name in the spelling `servedName` reads it as, and a scheme some built-in protocol serves. */
+function isNameScheme (host: unknown, scheme: unknown): boolean {
+  if (typeof host !== 'string' || typeof scheme !== 'string') return false
+  const served = BUILTIN_ADDRESSES.servedName(host)
+  return served !== undefined && served.namespace.startsWith('.') && served.name === host && BUILTIN_ADDRESSES.servesScheme(scheme)
+}
+
 /**
  * Whether `value` is the reply shape `kind`'s own request promises --
  * checked against the SAME kind the pending request was actually made
@@ -125,6 +133,7 @@ export function isFromHost (message: unknown): message is FromHost {
     case 'checkpoint': return typeof message['root'] === 'string' && BLOCK_ROOT_PATTERN.test(message['root']) && typeof message['timestamp'] === 'number'
     case 'ipns-sequence': return typeof message['key'] === 'string' && isDecimal(message['sequence'])
     case 'swarm-feed-index': return typeof message['feed'] === 'string' && isDecimal(message['index'])
+    case 'name-scheme': return isNameScheme(message['host'], message['scheme'])
     case 'reply':
       if (typeof message['id'] !== 'number') return false
       if (message['ok'] === true) return 'value' in message

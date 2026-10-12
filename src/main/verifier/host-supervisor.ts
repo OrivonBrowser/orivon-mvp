@@ -22,6 +22,7 @@ export interface SupervisorEvents {
   checkpoint: (root: string, timestamp: number) => void
   ipnsSequence: (key: string, sequence: string) => void
   swarmFeedIndex: (feed: string, index: string) => void
+  nameScheme: (host: string, scheme: string) => void
 }
 
 export interface SupervisorDeps {
@@ -184,6 +185,7 @@ export class HostSupervisor {
       case 'checkpoint': events.checkpoint(message.root, message.timestamp); break
       case 'ipns-sequence': events.ipnsSequence(message.key, message.sequence); break
       case 'swarm-feed-index': events.swarmFeedIndex(message.feed, message.index); break
+      case 'name-scheme': events.nameScheme(message.host, message.scheme); break
       case 'reply': {
         const pending = this.pending.get(message.id)
         if (pending === undefined) return

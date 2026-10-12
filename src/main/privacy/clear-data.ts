@@ -41,6 +41,8 @@ export interface ClearDeps {
   readonly localFiles?: () => ReadonlyArray<Pick<Session, 'clearData' | 'clearStorageData'>>
   /** The session of each app that holds permissions. */
   readonly appSessions: () => Promise<ReadonlyArray<Pick<Session, 'clearData'>>>
+  /** The network each `.eth` name was last found on: a record of the names visited, forgotten with the cache and with all history. */
+  readonly forgetNameSchemes: () => Promise<void>
   readonly now: () => number
 }
 
@@ -86,6 +88,7 @@ export async function clearBrowsingData (request: ClearRequest, deps: ClearDeps)
       for (const local of deps.localFiles?.() ?? []) await local.clearData({ dataTypes: ['cache'] })
     })
   }
+  if (request.cache || request.history === 'all') await attempt('nameSchemes', async () => { await deps.forgetNameSchemes() })
   if (request.zoomLevels) await attempt('zoomLevels', () => { deps.zoom.clear() })
   if (request.siteSettings) await attempt('siteSettings', () => { deps.siteSettings.resetAll() })
   if (request.appData) {

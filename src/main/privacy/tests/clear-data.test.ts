@@ -5,13 +5,14 @@ import type { ClearRequest } from '../clear-data.js'
 const NOTHING: ClearRequest = { history: 'none', siteData: false, cache: false, zoomLevels: false, appData: false, siteSettings: false }
 const NOW = 10_000_000
 
-function setup (): { deps: Parameters<typeof clearBrowsingData>[1], history: Record<'clear' | 'removeRange', ReturnType<typeof vi.fn>>, zoom: { clear: ReturnType<typeof vi.fn> }, siteSettings: { resetAll: ReturnType<typeof vi.fn> }, websites: { clearData: ReturnType<typeof vi.fn>, clearStorageData: ReturnType<typeof vi.fn> }, app: { clearData: ReturnType<typeof vi.fn> } } {
+function setup (): { deps: Parameters<typeof clearBrowsingData>[1], history: Record<'clear' | 'removeRange', ReturnType<typeof vi.fn>>, zoom: { clear: ReturnType<typeof vi.fn> }, siteSettings: { resetAll: ReturnType<typeof vi.fn> }, websites: { clearData: ReturnType<typeof vi.fn>, clearStorageData: ReturnType<typeof vi.fn> }, app: { clearData: ReturnType<typeof vi.fn> }, forgetNameSchemes: ReturnType<typeof vi.fn> } {
   const history = { clear: vi.fn(), removeRange: vi.fn() }
   const zoom = { clear: vi.fn() }
   const siteSettings = { resetAll: vi.fn() }
   const websites = { clearData: vi.fn(async () => {}), clearStorageData: vi.fn(async () => {}) }
   const app = { clearData: vi.fn(async () => {}) }
-  return { deps: { history, zoom, siteSettings, websites, appSessions: async () => [app, app], now: () => NOW } as never, history, zoom, siteSettings, websites, app }
+  const forgetNameSchemes = vi.fn(async () => {})
+  return { deps: { history, zoom, siteSettings, websites, appSessions: async () => [app, app], forgetNameSchemes, now: () => NOW } as never, history, zoom, siteSettings, websites, app, forgetNameSchemes }
 }
 
 describe('clearing browsing data', () => {
@@ -33,6 +34,25 @@ describe('clearing browsing data', () => {
     await clearBrowsingData({ ...NOTHING, history: 'week' }, deps)
     expect(history.removeRange.mock.calls).toEqual([[NOW - 3_600_000, NOW], [NOW - 86_400_000, NOW], [NOW - 604_800_000, NOW]])
     await clearBrowsingData({ ...NOTHING, history: 'all' }, deps)
+    expect(history.clear).toHaveBeenCalledTimes(1)
+  })
+
+  it('forgets the network each .eth name was found on with the cache and with all history, and not with a part of history', async () => {
+    const { deps, forgetNameSchemes } = setup()
+    await clearBrowsingData({ ...NOTHING, history: 'hour' }, deps)
+    await clearBrowsingData({ ...NOTHING, history: 'week', zoomLevels: true, siteData: true }, deps)
+    expect(forgetNameSchemes).not.toHaveBeenCalled()
+    await clearBrowsingData({ ...NOTHING, cache: true }, deps)
+    expect(forgetNameSchemes).toHaveBeenCalledTimes(1)
+    await clearBrowsingData({ ...NOTHING, history: 'all' }, deps)
+    expect(forgetNameSchemes).toHaveBeenCalledTimes(2)
+  })
+
+  it('reports the name schemes when forgetting them fails, and still clears the rest', async () => {
+    const { deps, history, forgetNameSchemes } = setup()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    forgetNameSchemes.mockRejectedValueOnce(new Error('read-only profile'))
+    expect(await clearBrowsingData({ ...NOTHING, history: 'all' }, deps)).toEqual({ ok: false, failed: ['nameSchemes'] })
     expect(history.clear).toHaveBeenCalledTimes(1)
   })
 

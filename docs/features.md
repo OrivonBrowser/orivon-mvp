@@ -27,7 +27,7 @@ rely on, row by row. A new feature adds its line here when it lands.
 
 ## Names, content and trust
 
-- **`.eth` names**: resolved by a light client that proves the name's record on this machine; `.eth.limo` and `.eth.link` addresses open as the `.eth` name.
+- **`.eth` names**: resolved by a light client that proves the name's record on this machine; `.eth.limo` and `.eth.link` addresses open as the `.eth` name. The address bar shows `bzz://<name>` when the name's content was found on Swarm and `ipfs://<name>` when it was found on IPFS (`ipfs://` until the name has loaded once on this install).
 - **`ipfs://` and `ipns://` addresses**: every block checked against its CID; a protocol registry makes the next protocol an isolated piece of work.
 - **`bzz://` addresses and `.eth` names on Swarm**: every chunk checked against its address, feeds followed to their newest signed update. Swarm content is read only from a Bee node on this machine, and this build configures none yet, so it opens only in tests.
 - **DDOC**: a site publishes its bundle hash tree, anchored in its ENS record, and the Web3 Score page shows whether the pinned bundle matches.

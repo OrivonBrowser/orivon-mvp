@@ -12,6 +12,7 @@ import { barItemsOf } from './bookmarks-bar/bar-items.js'
 import type { HtmlFullscreen } from './fullscreen.js'
 import { sendChromeEvent } from './shell-events.js'
 import { readStateParts, watchStateParts } from './shell-state-parts.js'
+import { onNameSchemeChange } from '../verifier/verifier-subsystem.js'
 import type { ShellServices } from './shell-services.js'
 import type { TabManager } from './tabs.js'
 import type { TabsSnapshot } from './tab-types.js'
@@ -197,6 +198,8 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
     if (key === 'appearance.bookmarksBar') onBookmarksChanged()
   })
   const stopWatchingParts = watchStateParts(context, pushState)
+  // A `.eth` name learned to live on another network is shown under that network's scheme from the next push.
+  const stopListeningToNameSchemes = onNameSchemeChange(pushState)
   // The process loads the store before its first window (index.ts), so this
   // settles at once; it goes through onBookmarksChanged, not pushState, so a
   // window made before the load (a test's) still grows the chrome by a row
@@ -211,6 +214,7 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
       stopListeningToZoom()
       stopListeningToProfiles()
       stopWatchingParts()
+      stopListeningToNameSchemes()
     }
   }
 }

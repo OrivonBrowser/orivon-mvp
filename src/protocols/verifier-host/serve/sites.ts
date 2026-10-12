@@ -75,7 +75,9 @@ export class Sites {
   constructor (
     private readonly registry: ProtocolRegistry,
     private readonly now: () => number = Date.now,
-    private readonly timeoutMs = MOUNT_TIMEOUT_MS
+    private readonly timeoutMs = MOUNT_TIMEOUT_MS,
+    /** Told of each mount that finished in time, whatever partition it was for. */
+    private readonly onMounted: (host: string, site: MountedSite) => void = () => {}
   ) {}
 
   /** Throws a ResolutionError. With no partition the mount is served once and never kept, nor are its blocks. */
@@ -183,6 +185,14 @@ export class Sites {
         controller.signal.throwIfAborted()
         const resolved = await this.registry.resolve(host, controller.signal)
         const site = await this.registry.mount(resolved.name, resolved.records, controller.signal, partition)
+        // The deadline has already failed this mount for its caller, so nothing is reported about it.
+        if (!controller.signal.aborted) {
+          try {
+            this.onMounted(host, site)
+          } catch (error) {
+            console.error('[verifier] reporting a mount failed:', error)
+          }
+        }
         return { site, resolver: resolved.resolver, mountedAt: this.now() }
       })])
     } finally {

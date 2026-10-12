@@ -5,7 +5,7 @@
 certificate check each session applies, starting and restarting the verifier host (and what a request waits for until it listens)
 ([`../../protocols/verifier-host/`](../../protocols/verifier-host/)), the light client's
 checkpoint ([`ADR-0031`](../../../docs/decisions/ADR-0031-helios-is-the-light-client.md)), what the
-host verified between runs, the per-site partition stamp, the gateway proxy check, and the
+host verified between runs (IPNS sequences, Swarm feed indexes, and the address scheme each `.eth` name's content was last found under), the per-site partition stamp, the gateway proxy check, and the
 wording of the status and a name's evidence for Settings and the site-info popover.
 The person can switch the light client off in Settings (`web3.lightClient`, read once when Orivon
 starts, through `configureVerifier`, so a host that sleeps and wakes keeps that run's choice); the environment switch still forces it off, and
@@ -30,6 +30,13 @@ runs in another process, and only [`host-supervisor.ts`](host-supervisor.ts) tal
 **Owner stream.** `ens-ipfs`.
 
 ## Design notes
+
+**A `.eth` name is shown by the scheme the host last mounted it under.** The host posts `name-scheme`
+after a mount; `VerifierStore` keeps it (`name-schemes.json`, 4096 names, a new answer replacing the
+old, least recently touched dropped first), `verifier-subsystem.ts` hands the lookup to
+`BUILTIN_ADDRESSES.learnSchemes` once at launch, and a changed answer tells each window to push its
+state again (`onNameSchemeChange`), so an open tab's address follows a name that moved networks. The
+Settings and permissions pages run their own copy of the address module and keep the default scheme. The list is a record of the names visited, so "Clear browsing data" empties it (`forgetNameSchemes`) with the cache and with all history.
 
 Each file's own header covers its rule (one owner of `--host-resolver-rules`, the synchronous
 port probe, `.localhost` names to IPv4 loopback so a local-pattern page cannot reach a server on `[::1]`, fingerprint-only certificates, request deadlines and backoff, the checkpoint's age).
