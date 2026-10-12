@@ -18,7 +18,7 @@ describe('peerCountOf', () => {
 
 describe('peerCountOfLog', () => {
   it('reads the count the node logs', () => {
-    expect(peerCountOfLog('2026-10-12T12:00:00Z INFO ant_p2p: peers changed peer_set_size=17 added=1')).toBe(17)
+    expect(peerCountOfLog('2026-10-12T12:00:00Z INFO node_p2p: peers changed peer_set_size=17 added=1')).toBe(17)
     expect(peerCountOfLog('nothing here')).toBeUndefined()
   })
 })

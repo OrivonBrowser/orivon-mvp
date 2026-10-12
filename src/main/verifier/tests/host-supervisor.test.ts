@@ -95,6 +95,27 @@ describe('HostSupervisor', () => {
     expect(hosts[0]?.sent.at(-1)).toEqual({ type: 'swarm-node', state: 'ready' })
   })
 
+  it('forks no host for a start that was queued behind one still leaving when the host is put to sleep again', () => {
+    const { supervisor, hosts } = harness()
+    supervisor.start()
+    supervisor.idle()
+    supervisor.start()
+    supervisor.idle()
+    hosts[0]?.crash(0)
+    expect(hosts).toHaveLength(1)
+    supervisor.start()
+    expect(hosts).toHaveLength(2)
+  })
+
+  it('says a host that reported it cannot serve is down once, not again when it exits', () => {
+    const { supervisor, hosts, log, timers } = harness()
+    supervisor.start()
+    hosts[0]?.answer({ type: 'failed', stage: 'start', message: 'out of memory' })
+    hosts[0]?.crash(1)
+    expect(log.filter((line) => line.startsWith('down'))).toEqual(['down the verifier host could not start: out of memory'])
+    expect(timers).toHaveLength(1)
+  })
+
   it('logs a handler that throws instead of letting it out of the message callback, where it would end the browser', () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
     const hosts: FakeHost[] = []

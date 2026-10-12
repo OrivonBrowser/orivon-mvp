@@ -16,7 +16,8 @@ export interface ProcessEvents {
   starting?: () => void
   /** The process was put to sleep by `idle()`: not a failure, and nothing restarts it. */
   idle?: () => void
-  down: (reason: string) => void
+  /** `restarting`: the supervisor will fork it again on its backoff. */
+  down: (reason: string, restarting: boolean) => void
 }
 
 export interface ProcessDeps<Config, Events extends ProcessEvents> {
@@ -36,6 +37,9 @@ export interface ProcessNames {
   /** `[verifier]`. */
   readonly log: string
 }
+
+/** What a config function throws when the process must not run until it is asked for again (a proxy is set, a file is bad): the supervisor reports it once and does not restart on its backoff. */
+export class RefusedToStart extends Error {}
 
 const FIRST_BACKOFF_MS = 1_000
 const MAX_BACKOFF_MS = 60_000
@@ -60,7 +64,11 @@ export abstract class ProcessSupervisor<Config, Message extends { readonly type:
   private generation = 0
   private restartPending = false
   /** Why the running process said it could not serve, kept as the reason for its exit. */
-  protected failure: string | undefined
+  private failure: string | undefined
+  /** Whether `failure` was already reported: the exit that follows it then says nothing more. */
+  private failureReported = false
+  /** Whether the exit that follows `failure` restarts the process on its backoff. */
+  private restartAfterFailure = true
   protected readonly setTimer: (callback: () => void, ms: number) => unknown
   protected readonly now: () => number
 
@@ -117,12 +125,29 @@ export abstract class ProcessSupervisor<Config, Message extends { readonly type:
         if (this.child !== child) return
         // The same path as a process that reports it cannot serve: `child`
         // stays current until it exits, so `exited()` rejects what is
-        // pending, clears `failure` and schedules the restart.
-        this.failure = `the ${this.names.noun}'s configuration could not be prepared: ${error instanceof Error ? error.message : String(error)}`
-        this.deps.events.down(this.failure)
-        child.kill()
+        // pending, clears `failure` and, unless the config refused outright,
+        // schedules the restart.
+        if (error instanceof RefusedToStart) this.fail(error.message, false)
+        else this.fail(`the ${this.names.noun}'s configuration could not be prepared: ${error instanceof Error ? error.message : String(error)}`, true)
       }
     )
+  }
+
+  /**
+   * The running process cannot serve: reports `reason` once, and ends it. Its exit restarts it on the backoff
+   * when `restart` is true; otherwise it stays down until `start()` is called again.
+   */
+  protected fail (reason: string, restart: boolean): void {
+    this.failure = reason
+    this.failureReported = true
+    this.restartAfterFailure = restart
+    this.deps.events.down(reason, restart)
+    this.child?.kill()
+  }
+
+  /** Whether a crashed process waits on its backoff to be forked again. */
+  get restarting (): boolean {
+    return this.restartPending
   }
 
   /** Posts `message` to the running process; false when none runs. */
@@ -141,12 +166,17 @@ export abstract class ProcessSupervisor<Config, Message extends { readonly type:
    * forks a fresh one with the backoff reset. `stop()` stays the permanent end. */
   idle (): void {
     if (this.stopped) return
+    // A start queued behind a child that is still leaving is nobody's now.
+    const queued = this.startAfterLeaving
+    this.startAfterLeaving = false
     const child = this.child
-    if (child === undefined && !this.restartPending) return
+    if (child === undefined && !this.restartPending && !queued) return
     this.generation += 1
     this.restartPending = false
     this.backoff = FIRST_BACKOFF_MS
     this.failure = undefined
+    this.failureReported = false
+    this.restartAfterFailure = true
     this.starting = undefined
     this.child = undefined
     this.abandon(`the ${this.names.noun} is idle`)
@@ -168,10 +198,14 @@ export abstract class ProcessSupervisor<Config, Message extends { readonly type:
     if (this.child !== child) return
     this.child = undefined
     const reason = this.failure ?? exit
+    const reported = this.failureReported
+    const restart = this.restartAfterFailure
     this.failure = undefined
+    this.failureReported = false
+    this.restartAfterFailure = true
     this.abandon(reason)
-    this.deps.events.down(reason)
-    if (this.stopped) return
+    if (!reported) this.deps.events.down(reason, !this.stopped)
+    if (this.stopped || !restart) return
     if (this.now() - this.startedAt >= STABLE_AFTER_MS) this.backoff = FIRST_BACKOFF_MS
     const delay = this.backoff
     this.backoff = Math.min(this.backoff * 2, MAX_BACKOFF_MS)

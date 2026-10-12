@@ -14,7 +14,7 @@ Electron utility process of its own (`src/protocols/swarm-node/`), against the W
 decision: `node-net.ts` and `node-fs.ts`. Main starts it when a Swarm mount needs it, stops it when the
 verifier host sleeps or after ten minutes with no mount, and does not start it when a system proxy is
 configured. The files that make it up are pinned by size and sha256 in `resources/swarm-node/swarm-node.json`,
-compiled into the app, and checked before every start.
+compiled into the app. Main checks them before it forks the process, as an early refusal, and the process reads each file once and runs only the bytes it hashed.
 
 ## Context
 

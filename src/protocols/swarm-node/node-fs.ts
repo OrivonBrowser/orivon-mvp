@@ -20,6 +20,9 @@ const CODE_OF_ERRNO: Readonly<Record<string, OrivonErrorCode>> = {
   ENOENT: 'notFound', EEXIST: 'exists', EACCES: 'denied', EPERM: 'denied', EMFILE: 'limit', ENFILE: 'limit', EINVAL: 'invalid'
 }
 
+/** Names Windows reserves for devices, with any extension and in any case. Refused on every system, so the policy is the same everywhere. */
+const DEVICE_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i
+
 function refusal (path: string): NodeJS.ErrnoException {
   return Object.assign(new Error(`${path} is outside the Swarm node's directory`), { code: 'EACCES' })
 }
@@ -41,7 +44,7 @@ async function translated<T> (work: () => Promise<T>): Promise<T> {
 
 function within (root: string, target: string): boolean {
   const way = relative(root, target)
-  return way === '' || (!way.startsWith('..') && !isAbsolute(way))
+  return way === '' || (way !== '..' && !way.startsWith(`..${sep}`) && !isAbsolute(way))
 }
 
 function statOf (real: { size: number, mtimeMs: number, isFile: () => boolean, isDirectory: () => boolean }): FileStat {
@@ -88,6 +91,7 @@ export async function createConfinedFs (directory: string): Promise<WasiFs> {
     if (typeof path !== 'string' || path.includes('\0') || isAbsolute(path)) throw refusal(String(path))
     const clean = normalize(path)
     if (clean === '..' || clean.startsWith(`..${sep}`)) throw refusal(path)
+    if (clean.split(/[\\/]/).some((segment) => DEVICE_NAME.test(segment))) throw refusal(path)
     const wanted = join(root, clean)
     let existing = wanted
     const missing: string[] = []

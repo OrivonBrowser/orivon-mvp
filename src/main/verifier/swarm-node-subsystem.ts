@@ -9,7 +9,7 @@ import { app, utilityProcess } from 'electron'
 import type { SwarmNodeState } from '../../protocols/swarm-node/protocol.js'
 import manifest from '../../../resources/swarm-node/swarm-node.json'
 import { unproxiedGateways } from './proxy-check.js'
-import { swarmNodePort } from './loopback-port.js'
+import { renewSwarmNodePort, swarmNodePort } from './loopback-port.js'
 import { SwarmNodeController } from './swarm-node-controller.js'
 import { locateArtifact } from './swarm-node-artifact.js'
 import type { SwarmNodeManifest } from './swarm-node-artifact.js'
@@ -20,6 +20,7 @@ import type { SwarmNodeView } from './status-view.js'
 const MANIFEST: SwarmNodeManifest = manifest
 
 let controller: SwarmNodeController | undefined
+const endpointListeners = new Set<() => void>()
 
 function created (): SwarmNodeController {
   if (controller !== undefined) return controller
@@ -31,6 +32,11 @@ function created (): SwarmNodeController {
     disabled: () => ethTestSeam() === undefined ? undefined : 'a test build serves Swarm from its own endpoints',
     apiPort: swarmNodePort,
     dataDir: () => join(app.getPath('userData'), 'swarm-node'),
+    files: MANIFEST.files,
+    apiPortTaken: () => {
+      renewSwarmNodePort()
+      for (const listener of [...endpointListeners]) listener()
+    },
     componentName: MANIFEST.name
   })
   app.on('will-quit', () => { made.stop() })
@@ -46,6 +52,15 @@ export async function ensureSwarmNode (): Promise<SwarmNodeState> {
 /** What the node is doing; off while nothing has asked for it. */
 export function swarmNodeState (): SwarmNodeState {
   return controller?.state() ?? { state: 'off' }
+}
+
+/**
+ * Called when the node's endpoint changed, because its port was taken: whoever fixed the old one in place (the
+ * verifier host holds it for as long as it runs) starts afresh. Returns the unsubscribe.
+ */
+export function onSwarmNodeEndpointChange (listener: () => void): () => void {
+  endpointListeners.add(listener)
+  return () => { endpointListeners.delete(listener) }
 }
 
 /** The Bee API endpoint the Swarm protocol reads from. */

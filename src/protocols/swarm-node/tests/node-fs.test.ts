@@ -53,6 +53,18 @@ describe('inside the directory', () => {
     await file.close()
   })
 
+  it.each(['..cache', '...', '.hidden', '..a'])('serves the name %s, which only looks like climbing out', async (name) => {
+    await fs.mkdir(`dir${name}`)
+    const file = await fs.open(`dir${name}/${name}`, 'wx')
+    await file.write({ position: 0, data: new TextEncoder().encode('ok') })
+    await file.close()
+    expect(await readFile(join(root, `dir${name}`, name), 'utf8')).toBe('ok')
+    const top = await fs.open(name, 'wx')
+    await top.close()
+    expect(await fs.readdir('.')).toContain(name)
+    expect((await fs.stat(name)).isFile).toBe(true)
+  })
+
   it('accepts a path that goes up and comes back down inside', async () => {
     await mkdir(join(root, 'x'))
     await writeFile(join(root, 'f'), 'ok')
@@ -138,6 +150,18 @@ describe('confinement', () => {
     await expect(fs.rm('.', { recursive: true })).rejects.toMatchObject({ code: 'denied' })
     await expect(fs.rename('.', 'moved')).rejects.toMatchObject({ code: 'denied' })
     await expect(fs.rename('x', '.')).rejects.toBeDefined()
+  })
+
+  it.each(['CON', 'con', 'PRN', 'aux', 'NUL', 'COM1', 'com9', 'LPT1', 'lpt9', 'con.txt', 'NUL.tar.gz', 'dir/aux', 'dir/COM3.log', 'a/b/prn.x/c'])('refuses the device name %s on every system', async (path) => {
+    await expect(fs.open(path, 'wx')).rejects.toMatchObject({ code: 'denied' })
+    await expect(fs.mkdir(path, { recursive: true })).rejects.toMatchObject({ code: 'denied' })
+    await expect(fs.stat(path)).rejects.toMatchObject({ code: 'denied' })
+    await expect(fs.rename(path, 'ok')).rejects.toMatchObject({ code: 'denied' })
+  })
+
+  it.each(['console', 'COM0', 'COM10', 'LPT', 'auxiliary.txt', 'nul-x', 'xcon', 'con-x.txt'])('serves %s, which is not a device name', async (name) => {
+    const file = await fs.open(name, 'wx')
+    await file.close()
   })
 
   it('refuses a path with a NUL', async () => {

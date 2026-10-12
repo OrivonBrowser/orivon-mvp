@@ -1,12 +1,17 @@
 // Keeps the Swarm node's utility process running (process-supervisor.ts). The
 // node only reports; nothing asks it anything.
 
-import type { FromNode, SwarmNodeConfig } from '../../protocols/swarm-node/protocol.js'
+import type { FailureStage, FromNode, SwarmNodeConfig } from '../../protocols/swarm-node/protocol.js'
 import { isFromNode } from './host-messages.js'
 import { ProcessSupervisor } from './process-supervisor.js'
 import type { ProcessDeps, ProcessEvents } from './process-supervisor.js'
 
+/** The stages after which a restart would fail the same way: the node stays down until it is asked for again. */
+const UNRECOVERABLE: ReadonlySet<FailureStage> = new Set(['artifact', 'compile', 'port'])
+
 export interface SwarmNodeEvents extends ProcessEvents {
+  /** The node said why it cannot run, before `down` reports it. */
+  failed?: (stage: FailureStage) => void
   listening: () => void
   peers: (count: number) => void
   ready: (peers: number) => void
@@ -31,9 +36,8 @@ export class SwarmNodeSupervisor extends ProcessSupervisor<SwarmNodeConfig, From
       case 'ready': events.ready(message.peers); break
       case 'failed':
         // A node that cannot run would otherwise live on, doing nothing.
-        this.failure = `the Swarm node could not run (${message.stage}): ${message.message}`
-        events.down(this.failure)
-        this.child?.kill()
+        events.failed?.(message.stage)
+        this.fail(`the Swarm node could not run (${message.stage}): ${message.message}`, !UNRECOVERABLE.has(message.stage))
         break
     }
   }

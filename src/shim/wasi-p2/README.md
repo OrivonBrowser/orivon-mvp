@@ -100,3 +100,9 @@ promise per call (`Promise.race`) left one reaction on the promise of every sock
 quiet, and a busy program holding a hundred sockets grew its heap by
 about 35 MB a second. `Pollable.subscribe` (`io.ts`) arms the underlying wait once and fans a wake
 out to the polls currently waiting; a poll withdraws from the pollables that did not wake it.
+
+**A dropped TCP socket releases its read side, but only after what the program wrote has landed.** A program
+that writes and lets the socket go never reads it to its end, so its slot in the broker stayed taken. Dropping
+closes the writer, then cancels the reader once the peer has ended its side or `dropGraceMs` (five seconds) has
+passed. Cancelling at once would end the whole connection, since cancelling a socket's readable destroys it, and
+drop what the writer had not yet landed (`tests/tcp-dispose-race.test.ts`).

@@ -13,8 +13,7 @@ node". The built component is named `swarm-node` (jco `--name swarm-node`). Its 
 
 ## What exists
 
-- **The component.** It is built from a private copy (`OrivonBrowser/swarm-node`, branch `orivon`,
-  `orivon/build.sh`). Measured under wasmtime: `/health` in 1 s, 100 peers in 13 s, a chunk in
+- **The component.** It is built in a private build repository (its build script transpiles it with jco). Measured under wasmtime: `/health` in 1 s, 100 peers in 13 s, a chunk in
   about 0.2 s, single-owner chunks served, a missing chunk answers 404 in 3.3 s, 57 MB resident.
   Its HTTP API is Bee's shape: `GET /chunks/<hex>` returns `span ‖ payload`. Config is Bee's
   YAML: `api-addr`, `mainnet: true`, `full-node: false`, `swap-enable: false`,
@@ -106,7 +105,7 @@ module. A crash or a trap ends this process, never the verifier or main.
 
 ### The artifact
 
-- In the private copy: `orivon/build.sh` builds and transpiles with jco `--name swarm-node`, the
+- In the private build repository: its build script builds and transpiles with jco `--name swarm-node`, the
   output exactly as `src/shim/wasi-p2/run.ts`'s `transpileCommand` gives it. Its `ASYNC_IMPORTS`
   must match this branch's `imports.ts`.
 - Publish the output directory plus `LICENSE` on the owner's VPS IPFS node, pinned, with

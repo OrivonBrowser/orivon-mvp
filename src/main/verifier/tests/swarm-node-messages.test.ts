@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'vitest'
+import { MAX_FAILURE_MESSAGE, failure } from '../../../protocols/swarm-node/protocol.js'
 import { isFromHost, isFromNode } from '../host-messages.js'
 import { swarmNodeView } from '../status-view.js'
 import { QUIET_PORTS, loopbackPort, swarmNodePort } from '../loopback-port.js'
+
+describe('isFromNode, for a failure message', () => {
+  it('accepts one of the longest length the node sends, and refuses a longer one', () => {
+    expect(isFromNode({ type: 'failed', stage: 'run', message: 'x'.repeat(MAX_FAILURE_MESSAGE) })).toBe(true)
+    expect(isFromNode({ type: 'failed', stage: 'run', message: 'x'.repeat(MAX_FAILURE_MESSAGE + 1) })).toBe(false)
+  })
+
+  it('accepts the port stage', () => {
+    expect(isFromNode({ type: 'failed', stage: 'port', message: 'its API port 1 is taken by another program' })).toBe(true)
+  })
+})
 
 describe('isFromNode', () => {
   it.each([
@@ -17,6 +29,13 @@ describe('isFromNode', () => {
     { type: 'reply', id: 1, ok: true, value: 1 }, { type: 'swarm-node-wanted' }
   ])('refuses %j', (message) => {
     expect(isFromNode(message)).toBe(false)
+  })
+})
+
+describe('failure', () => {
+  it('cuts a text to what main accepts, keeping a short one as it is', () => {
+    expect(isFromNode(failure('run', 'y'.repeat(100_000)))).toBe(true)
+    expect(failure('run', 'short')).toEqual({ type: 'failed', stage: 'run', message: 'short' })
   })
 })
 

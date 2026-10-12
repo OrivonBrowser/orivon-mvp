@@ -1,18 +1,19 @@
 // The Swarm node's files: where they are, and whether they are the ones this
-// build pins. The glue is JavaScript that runs unsandboxed in a utility
-// process, so what is read from disk is checked against the hashes compiled
-// into the app (resources/swarm-node/swarm-node.json) before every start.
+// build pins (the hashes compiled into the app from
+// resources/swarm-node/swarm-node.json). This is the early, cheap refusal: a
+// start that finds a wrong file ends before a process is forked. It is not
+// what makes the run safe. The glue is JavaScript that runs unsandboxed in a
+// utility process, which reads each file once and runs only the bytes it
+// hashed (src/protocols/swarm-node/component.ts), so a file changed after
+// this check is refused there.
 
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
+import type { PinnedFile } from '../../protocols/swarm-node/protocol.js'
 
-export interface PinnedFile {
-  readonly name: string
-  readonly bytes: number
-  readonly sha256: string
-}
+export type { PinnedFile }
 
 export interface SwarmNodeManifest {
   /** The IPFS directory the files are fetched from. */

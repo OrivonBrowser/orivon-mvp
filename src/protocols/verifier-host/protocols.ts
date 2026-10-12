@@ -18,6 +18,7 @@ import { withDnsFallback } from './dns-fallback.js'
 import { createFixtureResolver } from './fixture-resolver.js'
 import type { HostConfig } from './protocol.js'
 import type { SwarmNodeLink } from './swarm-node-link.js'
+import type { Fetch } from '../gateways/gateways.js'
 import type { HostDeps, LightClient } from './service.js'
 
 export interface RunningProtocols {
@@ -93,8 +94,9 @@ function startIpfs (config: HostConfig, deps: HostDeps): Protocol {
 
 function startSwarm (config: HostConfig, deps: HostDeps, node: SwarmNodeLink | undefined): Protocol {
   const endpointFetch = allowlisted(config.swarmEndpoints, deps.fetch, 'the Swarm gatherer')
+  const read: Fetch = async (url, init) => await endpointFetch(url, init)
   return swarmProtocol({
-    fetch: async (url, init) => await endpointFetch(url, init),
+    fetch: config.swarmNode === true && node !== undefined ? node.reading(read) : read,
     endpoints: config.swarmEndpoints,
     feedIndexes: feedIndexStore(config.swarmFeedIndexes, deps.post),
     ...(config.swarmNode === true && node !== undefined && { beforeMount: node.ensure })

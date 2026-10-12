@@ -70,9 +70,7 @@ export class HostSupervisor extends ProcessSupervisor<HostConfig, FromHost, Supe
       case 'listening': events.listening(message.fingerprint); break
       case 'failed':
         // A host that cannot serve would otherwise live on, syncing a light client nothing can use.
-        this.failure = `the verifier host could not ${message.stage === 'listen' ? 'listen on its port' : 'start'}: ${message.message}`
-        events.down(this.failure)
-        this.child?.kill()
+        this.fail(`the verifier host could not ${message.stage === 'listen' ? 'listen on its port' : 'start'}: ${message.message}`, true)
         break
       case 'status': events.status(message.status); break
       case 'checkpoint': events.checkpoint(message.root, message.timestamp); break

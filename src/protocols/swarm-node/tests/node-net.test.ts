@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Datagram, LookupAddress } from '../../../contracts/index.js'
 import type { Bind, Dial, DialedSocket, Listen } from '../../../broker/broker-contracts.js'
+import { canonicalAddress } from '../../../broker/policy/address.js'
 import { DNS_PORT, MAX_ANSWERS, MAX_LISTENERS, MAX_SOCKETS, createNodeNet } from '../node-net.js'
 import type { NodeNetDeps } from '../node-net.js'
 
@@ -137,6 +138,21 @@ describe('connect', () => {
     await expect(net.connect({ host: '8.8.8.8', port: 80 })).resolves.toBeDefined()
   })
 
+  it('frees a place once a program that wrote and dropped its socket has closed the writer and cancelled the reader', async () => {
+    const { net } = harness()
+    const open = []
+    for (let index = 0; index < MAX_SOCKETS; index++) open.push(await net.connect({ host: '8.8.8.8', port: 80 }))
+    await expect(net.connect({ host: '8.8.8.8', port: 80 })).rejects.toMatchObject({ code: 'limit' })
+    const dropped = open[0]
+    if (dropped === undefined) throw new Error('no socket')
+    await dropped.writable.getWriter().close()
+    // The write side alone does not free it: the peer may still be sending.
+    await expect(net.connect({ host: '8.8.8.8', port: 80 })).rejects.toMatchObject({ code: 'limit' })
+    await dropped.readable.cancel()
+    await dropped.closed
+    await expect(net.connect({ host: '8.8.8.8', port: 80 })).resolves.toBeDefined()
+  })
+
   it('frees a place once both directions have ended, without a close call', async () => {
     const socket = fakeSocket()
     const reads = new ReadableStream<Uint8Array>({ start (controller) { controller.close() } })
@@ -174,6 +190,16 @@ describe('listen', () => {
     const { net, listens } = harness()
     await expect(net.listen({ port, scope: 'local' })).rejects.toMatchObject({ code: 'denied' })
     expect(listens).toEqual([])
+  })
+
+  it('tells the node\'s owner when the listen on its own API port fails, and not for another port', async () => {
+    const taken: string[] = []
+    const failing: Listen = async () => { throw Object.assign(new Error('taken'), { code: 'limit' }) }
+    const net = createNodeNet(API_PORT, { ...harness().net as unknown as NodeNetDeps, dial: async () => fakeSocket(), listen: failing, bind: async () => { throw new Error('unused') }, lookup: async () => [] }, { apiPortTaken: () => taken.push('api') })
+    await expect(net.listen({ port: 0, scope: 'local' })).rejects.toBeDefined()
+    expect(taken).toEqual([])
+    await expect(net.listen({ port: API_PORT, scope: 'local' })).rejects.toBeDefined()
+    expect(taken).toEqual(['api'])
   })
 
   it('holds at most four listeners, and a closed one frees its place', async () => {
@@ -267,6 +293,42 @@ describe('udpBind', () => {
     const socket = await net.udpBind({ port: 0 })
     await socket.writable.getWriter().write({ data: new Uint8Array(1), address: '1.1.1.1', port: 53, family: 'IPv4' })
     expect(socket.droppedOutbound).toBe(1)
+  })
+
+  describe('what arrives', () => {
+    function arriving (datagrams: Datagram[]): { net: ReturnType<typeof createNodeNet> } {
+      const queue = [...datagrams]
+      const bind: Bind = async () => ({
+        readable: new ReadableStream<Datagram>({ pull (controller) { const next = queue.shift(); if (next === undefined) controller.close(); else controller.enqueue(next) } }),
+        send: async () => ({ sent: true }), localAddress: '0.0.0.0', localPort: 1, droppedInbound: 2, destroy: async () => {}
+      })
+      return { net: harness({}, { bind }).net }
+    }
+    const from = (address: string, port: number): Datagram => ({ data: new Uint8Array([port & 255]), address, port, family: address.includes(':') ? 'IPv6' : 'IPv4' })
+
+    it('passes on a reply from a public address on port 53, and drops and counts every other', async () => {
+      const { net } = arriving([from('192.168.1.1', 53), from('1.1.1.1', 53), from('1.1.1.1', 5353), from('127.0.0.1', 53), from('2606:4700:4700::1111', 53), from('resolver.example', 53), from('169.254.169.254', 53)])
+      const socket = await net.udpBind({ port: 0, scope: 'network' })
+      const reader = socket.readable.getReader()
+      const passed: string[] = []
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        passed.push(value.address)
+      }
+      expect(passed).toEqual(['1.1.1.1', '2606:4700:4700::1111'])
+      expect(socket.droppedInbound).toBe(2 + 5)
+    })
+  })
+
+  it('sends the canonical address it checked, not the spelling it was given', async () => {
+    const { net, sent } = harness()
+    const socket = await net.udpBind({ port: 0, scope: 'network' })
+    const writer = socket.writable.getWriter()
+    await writer.write({ data: new Uint8Array(1), address: ' 8.8.8.8 ', port: 53, family: 'IPv4' })
+    await writer.write({ data: new Uint8Array(1), address: '[2606:4700:4700:0:0:0:0:1111]', port: 53, family: 'IPv6' })
+    expect(sent.map((datagram) => datagram.address)).toEqual(['8.8.8.8', '2606:4700:4700::1111'])
+    expect(sent.every((datagram) => canonicalAddress(datagram.address) === datagram.address)).toBe(true)
   })
 
   it('shares the socket limit with TCP', async () => {

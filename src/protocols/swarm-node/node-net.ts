@@ -130,12 +130,34 @@ async function publicAddresses (host: string, lookup: NodeNetDeps['lookup']): Pr
   return checked
 }
 
-function datagramRefusal (datagram: Datagram): boolean {
-  const address = canonicalAddress(datagram.address)
-  return datagram.port !== DNS_PORT || address === null || !isPublicUnicast(address)
+/** The canonical address a datagram to or from the resolver port may use, or null: a public unicast address, on port 53. */
+function dnsPeer (address: string, port: number): string | null {
+  const canonical = canonicalAddress(address)
+  return port !== DNS_PORT || canonical === null || !isPublicUnicast(canonical) ? null : canonical
 }
 
-export function createNodeNet (apiPort: number, deps: NodeNetDeps = REAL): SocketNet {
+/** `source`'s datagrams, less those not from a public resolver address on port 53; each is counted in `dropped`. */
+function fromResolversOnly (source: ReadableStream<Datagram>, dropped: { count: number }): ReadableStream<Datagram> {
+  const reader = source.getReader()
+  return new ReadableStream<Datagram>({
+    async pull (controller) {
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) { controller.close(); return }
+        if (dnsPeer(value.address, value.port) !== null) { controller.enqueue(value); return }
+        dropped.count += 1
+      }
+    },
+    async cancel (reason) { await reader.cancel(reason) }
+  }, { highWaterMark: 0 })
+}
+
+export interface NodeNetHooks {
+  /** The listen on the API port itself failed: the node cannot serve, and the next start needs another port. */
+  readonly apiPortTaken?: () => void
+}
+
+export function createNodeNet (apiPort: number, deps: NodeNetDeps = REAL, hooks: NodeNetHooks = {}): SocketNet {
   const sockets = new Budget(MAX_SOCKETS, 'sockets')
   const listeners = new Budget(MAX_LISTENERS, 'listeners')
 
@@ -195,6 +217,7 @@ export function createNodeNet (apiPort: number, deps: NodeNetDeps = REAL): Socke
         return serverHandle(await deps.listen([{ lo: options.port, hi: options.port }], new AbortController().signal, 'local'), release)
       } catch (error) {
         release()
+        if (options.port === apiPort) hooks.apiPortTaken?.()
         throw error
       }
     },
@@ -206,6 +229,7 @@ export function createNodeNet (apiPort: number, deps: NodeNetDeps = REAL): Socke
         const bound = await deps.bind([{ lo: 0, hi: 0 }], new AbortController().signal, options.scope ?? 'local')
         let refusalQueue: ReadableStreamDefaultController<SendRefusal> | undefined
         let droppedOutbound = 0
+        const refusedInbound = { count: 0 }
         let settle: () => void = () => {}
         const closed = new Promise<void>((resolve) => { settle = resolve })
         const handle: UdpSocket = {
@@ -216,20 +240,21 @@ export function createNodeNet (apiPort: number, deps: NodeNetDeps = REAL): Socke
             release()
             settle()
           },
-          readable: bound.readable,
+          readable: fromResolversOnly(bound.readable, refusedInbound),
           writable: new WritableStream<Datagram>({
             async write (datagram) {
-              if (datagramRefusal(datagram)) {
+              const peer = dnsPeer(datagram.address, datagram.port)
+              if (peer === null) {
                 droppedOutbound += 1
                 if ((refusalQueue?.desiredSize ?? 0) > 0) refusalQueue?.enqueue({ address: datagram.address, port: datagram.port, code: 'denied' })
                 return
               }
-              if (!(await bound.send(datagram)).sent) droppedOutbound += 1
+              if (!(await bound.send({ ...datagram, address: peer })).sent) droppedOutbound += 1
             }
           }),
           localAddress: bound.localAddress,
           localPort: bound.localPort,
-          get droppedInbound () { return bound.droppedInbound },
+          get droppedInbound () { return bound.droppedInbound + refusedInbound.count },
           get droppedOutbound () { return droppedOutbound },
           refusals: new ReadableStream<SendRefusal>({ start (controller) { refusalQueue = controller } }, { highWaterMark: REFUSAL_QUEUE })
         }

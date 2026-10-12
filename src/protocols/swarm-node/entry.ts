@@ -4,6 +4,7 @@
 // restarted by src/main/verifier/swarm-node-subsystem.ts.
 
 import { startNode } from './service.js'
+import { failure } from './protocol.js'
 import type { FromNode, ToNode } from './protocol.js'
 
 function post (message: FromNode): void {
@@ -12,7 +13,7 @@ function post (message: FromNode): void {
 
 function main (): void {
   process.on('unhandledRejection', (reason) => {
-    post({ type: 'failed', stage: 'run', message: reason instanceof Error ? reason.message : String(reason) })
+    post(failure('run', reason instanceof Error ? reason.message : String(reason)))
   })
   let started = false
   process.parentPort.on('message', (event) => {

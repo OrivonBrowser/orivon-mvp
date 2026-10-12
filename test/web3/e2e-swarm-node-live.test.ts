@@ -85,7 +85,7 @@ describe.skipIf(!LIVE)('the Swarm node, live', () => {
         if (message.type === 'ready') ready = true
         if (message.type === 'failed') failure = message.message
       })
-      child.postMessage({ type: 'start', config: { apiPort: arg.apiPort, dataDir: arg.data, componentDir: arg.componentDir, componentName: arg.name } })
+      child.postMessage({ type: 'start', config: { apiPort: arg.apiPort, dataDir: arg.data, componentDir: arg.componentDir, componentName: arg.name, files: arg.files } })
       while (!ready && failure === undefined && Date.now() - started < arg.readyByMs) await new Promise((resolveWait) => setTimeout(resolveWait, 250))
       let chunk: string | undefined
       let chunkMs: number | undefined
@@ -100,7 +100,7 @@ describe.skipIf(!LIVE)('the Swarm node, live', () => {
       }
       child.kill()
       return { timeline, failure, chunk, chunkMs, memoryMb }
-    }, { host, apiPort, data: data as string, componentDir, name: process.env['ORIVON_SWARM_NODE_NAME'] ?? manifest.name, chunk: CHUNK, readyByMs: READY_BY_MS })
+    }, { host, apiPort, data: data as string, componentDir, name: process.env['ORIVON_SWARM_NODE_NAME'] ?? manifest.name, files: manifest.files, chunk: CHUNK, readyByMs: READY_BY_MS })
 
     console.log(`[swarm-node live] ${JSON.stringify({ chunkMs: run.chunkMs, memoryMb: run.memoryMb, timeline: run.timeline.filter((entry) => entry.type !== 'peers' || (entry.peers ?? 0) % 10 === 0) })}`)
     expect(run.failure).toBeUndefined()

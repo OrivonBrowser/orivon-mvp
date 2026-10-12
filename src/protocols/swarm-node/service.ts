@@ -5,11 +5,12 @@
 import { InputStream, OutputStream } from '../../shim/wasi-p2/io.js'
 import { componentImports } from '../../shim/wasi-p2/imports.js'
 import { GUEST_DATA_DIR, nodeArguments, prepareDataDir } from './config.js'
-import { loadComponent } from './component.js'
+import { PinMismatch, loadComponent } from './component.js'
 import type { LoaderSeams } from './component.js'
 import { createConfinedFs } from './node-fs.js'
 import { createNodeNet } from './node-net.js'
 import type { NodeNetDeps } from './node-net.js'
+import { failure } from './protocol.js'
 import type { FromNode, SwarmNodeConfig } from './protocol.js'
 import { peerCountOfLog, watchReadiness } from './readiness.js'
 import type { Fetcher } from './readiness.js'
@@ -47,7 +48,7 @@ function lineSink (onLine: (line: string) => void): OutputStream {
 }
 
 export async function startNode (config: SwarmNodeConfig, deps: NodeServiceDeps): Promise<RunningNode> {
-  const { post } = deps
+  const post = (message: FromNode): void => { deps.post(message.type === 'failed' ? failure(message.stage, message.message) : message) }
   try {
     await prepareDataDir(config.dataDir, config.apiPort)
   } catch (error) {
@@ -62,9 +63,10 @@ export async function startNode (config: SwarmNodeConfig, deps: NodeServiceDeps)
     logPeers = peerCountOfLog(line) ?? logPeers
     deps.onLog?.(line)
   }
+  let portTaken = false
   const imports = componentImports({
     fs: await createConfinedFs(config.dataDir),
-    net: createNodeNet(config.apiPort, deps.net),
+    net: createNodeNet(config.apiPort, deps.net, { apiPortTaken: () => { portTaken = true } }),
     preopens: { [GUEST_DATA_DIR]: '/orivon/app' },
     args: nodeArguments(),
     env: {},
@@ -74,9 +76,9 @@ export async function startNode (config: SwarmNodeConfig, deps: NodeServiceDeps)
   })
   let loaded
   try {
-    loaded = await loadComponent(config.componentDir, config.componentName, imports, deps.loader)
+    loaded = await loadComponent(config.componentDir, config.componentName, config.files, imports, deps.loader)
   } catch (error) {
-    post({ type: 'failed', stage: 'compile', message: describe(error) })
+    post({ type: 'failed', stage: error instanceof PinMismatch ? 'artifact' : 'compile', message: describe(error) })
     throw error
   }
 
@@ -84,11 +86,11 @@ export async function startNode (config: SwarmNodeConfig, deps: NodeServiceDeps)
   let stopped = false
   const finished = loaded.run().then(
     (code) => {
-      if (!stopped) post({ type: 'failed', stage: 'run', message: `the node stopped with exit code ${String(code)}${tail.length > 0 ? `: ${tail.slice(-3).join(' | ')}` : ''}` })
+      if (!stopped) post(runEnded(portTaken, config.apiPort, `the node stopped with exit code ${String(code)}${tail.length > 0 ? `: ${tail.slice(-3).join(' | ')}` : ''}`))
       return code
     },
     (error: unknown) => {
-      if (!stopped) post({ type: 'failed', stage: 'run', message: `the node trapped: ${describe(error)}` })
+      if (!stopped) post(runEnded(portTaken, config.apiPort, `the node trapped: ${describe(error)}`))
       return 1
     }
   )
@@ -109,6 +111,11 @@ export async function startNode (config: SwarmNodeConfig, deps: NodeServiceDeps)
       stopWatching()
     }
   }
+}
+
+/** A node that ended after its own API port was refused to it died of that, whatever it printed. */
+function runEnded (portTaken: boolean, port: number, message: string): FromNode {
+  return portTaken ? { type: 'failed', stage: 'port', message: `its API port ${String(port)} is taken by another program` } : { type: 'failed', stage: 'run', message }
 }
 
 function describe (error: unknown): string {

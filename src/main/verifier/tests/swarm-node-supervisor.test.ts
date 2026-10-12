@@ -2,9 +2,10 @@ import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
 import type { SwarmNodeConfig } from '../../../protocols/swarm-node/protocol.js'
 import type { HostProcess } from '../process-supervisor.js'
+import { RefusedToStart } from '../process-supervisor.js'
 import { SwarmNodeSupervisor } from '../swarm-node-supervisor.js'
 
-const CONFIG: SwarmNodeConfig = { apiPort: 1, dataDir: '/d', componentDir: '/c', componentName: 'swarm-node' }
+const CONFIG: SwarmNodeConfig = { apiPort: 1, dataDir: '/d', componentDir: '/c', componentName: 'swarm-node', files: [] }
 
 class FakeNode extends EventEmitter implements HostProcess {
   readonly sent: unknown[] = []
@@ -57,7 +58,7 @@ describe('SwarmNodeSupervisor', () => {
     nodes[0]?.emit('message', { type: 'failed', stage: 'run', message: 'trapped' })
     expect(nodes[0]?.killed).toBe(true)
     nodes[0]?.emit('exit', 1)
-    expect(log).toEqual(['starting', 'down the Swarm node could not run (run): trapped', 'down the Swarm node could not run (run): trapped'])
+    expect(log).toEqual(['starting', 'down the Swarm node could not run (run): trapped'])
     expect(timers.map((timer) => timer.ms)).toEqual([1000])
     timers[0]?.run()
     expect(nodes).toHaveLength(2)
@@ -81,5 +82,93 @@ describe('SwarmNodeSupervisor', () => {
     nodes[0]?.emit('exit', 0)
     expect(nodes).toHaveLength(2)
     expect(timers).toEqual([])
+  })
+
+  it.each(['artifact', 'compile', 'port'] as const)('does not restart a node that failed at its %s stage, until it is started again', (stage) => {
+    const { supervisor, nodes, log, timers } = harness()
+    supervisor.start()
+    nodes[0]?.emit('message', { type: 'failed', stage, message: 'cannot' })
+    nodes[0]?.emit('exit', 1)
+    expect(timers).toEqual([])
+    expect(log.filter((line) => line.startsWith('down'))).toEqual([`down the Swarm node could not run (${stage}): cannot`])
+    supervisor.start()
+    expect(nodes).toHaveLength(2)
+  })
+
+  it.each(['start', 'run'] as const)('restarts a node that failed at its %s stage, on the backoff, and says so once', (stage) => {
+    const { supervisor, nodes, log, timers } = harness()
+    supervisor.start()
+    nodes[0]?.emit('message', { type: 'failed', stage, message: 'crashed' })
+    nodes[0]?.emit('exit', 1)
+    expect(timers.map((timer) => timer.ms)).toEqual([1000])
+    expect(log.filter((line) => line.startsWith('down'))).toHaveLength(1)
+  })
+
+  it('tells down whether the node will be started again', () => {
+    const restarting: boolean[] = []
+    const nodes: FakeNode[] = []
+    const supervisor = new SwarmNodeSupervisor({
+      fork: () => { const node = new FakeNode(); nodes.push(node); return node },
+      config: () => CONFIG,
+      events: { listening: () => {}, peers: () => {}, ready: () => {}, down: (_reason, again) => restarting.push(again) },
+      setTimer: () => {}
+    })
+    supervisor.start()
+    nodes[0]?.emit('exit', 139)
+    nodes[0]?.emit('exit', 0)
+    expect(restarting).toEqual([true])
+    supervisor.start()
+    expect(nodes).toHaveLength(1)
+  })
+
+  it('reports a config that refuses once, forks no restart for it, and starts again when asked', async () => {
+    const log: string[] = []
+    const nodes: FakeNode[] = []
+    const timers: number[] = []
+    let refuse = true
+    const supervisor = new SwarmNodeSupervisor({
+      fork: () => { const node = new FakeNode(); nodes.push(node); return node },
+      config: async () => { if (refuse) throw new RefusedToStart('a proxy is configured'); return CONFIG },
+      events: { listening: () => {}, peers: () => {}, ready: () => {}, down: (reason, again) => log.push(`${reason} restarting=${String(again)}`) },
+      setTimer: (_run, ms) => { timers.push(ms) }
+    })
+    supervisor.start()
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(nodes[0]?.killed).toBe(true)
+    nodes[0]?.emit('exit', 0)
+    expect(log).toEqual(['a proxy is configured restarting=false'])
+    expect(timers).toEqual([])
+    refuse = false
+    supervisor.start()
+    expect(nodes).toHaveLength(2)
+  })
+
+  it('still restarts, on the backoff, after a config that failed for any other reason', async () => {
+    const timers: number[] = []
+    const nodes: FakeNode[] = []
+    const supervisor = new SwarmNodeSupervisor({
+      fork: () => { const node = new FakeNode(); nodes.push(node); return node },
+      config: async () => { throw new Error('the profile is read-only') },
+      events: { listening: () => {}, peers: () => {}, ready: () => {}, down: () => {} },
+      setTimer: (_run, ms) => { timers.push(ms) }
+    })
+    supervisor.start()
+    await new Promise((resolve) => setImmediate(resolve))
+    nodes[0]?.emit('exit', 0)
+    expect(timers).toEqual([1000])
+  })
+
+  it('forks no node for a start that was queued behind one still leaving when the node is put to sleep again', () => {
+    const { supervisor, nodes, log } = harness()
+    supervisor.start()
+    supervisor.idle()
+    supervisor.start()
+    expect(nodes).toHaveLength(1)
+    supervisor.idle()
+    nodes[0]?.emit('exit', 0)
+    expect(nodes).toHaveLength(1)
+    expect(log).toEqual(['starting', 'idle', 'starting', 'idle'])
+    supervisor.start()
+    expect(nodes).toHaveLength(2)
   })
 })

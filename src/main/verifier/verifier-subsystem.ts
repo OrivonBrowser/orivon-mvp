@@ -40,7 +40,7 @@ import { HostLifecycle } from './host-lifecycle.js'
 import { anyTabOnVerifiedOrigin } from './tab-on-verified-origin.js'
 import type { TabsOfWindow } from './tab-on-verified-origin.js'
 import { provideVerifierAccess } from './verifier-access.js'
-import { ensureSwarmNode, onSwarmNodeChange, swarmNodeEndpoint, swarmNodeState, swarmNodeVerifierIdle } from './swarm-node-subsystem.js'
+import { ensureSwarmNode, onSwarmNodeChange, onSwarmNodeEndpointChange, swarmNodeEndpoint, swarmNodeState, swarmNodeVerifierIdle } from './swarm-node-subsystem.js'
 import type { SwarmNodeNotice } from '../../protocols/swarm-node/protocol.js'
 
 /** Mounting may wait for the light client to sync, then resolve a name and follow its pointers. */
@@ -54,6 +54,8 @@ let store: VerifierStore | undefined
 let lightClient: LightClientState = { state: 'off' }
 let checkpoint: CheckpointChoice | undefined
 let hostDown: string | undefined
+/** The Swarm node ask being answered, which later asks share. */
+let asking: Promise<unknown> | undefined
 /** No host process runs and nothing failed: it has not been needed yet, or it slept after going unused. */
 let hostAsleep = true
 const listeningGate = new ListeningGate(LISTEN_WAIT_MS)
@@ -370,8 +372,9 @@ export const verifierSubsystem: Subsystem = {
         ipnsSequence: (key, sequence) => { verifierStore().saveIpnsSequence(key, sequence) },
         swarmFeedIndex: (feed, index) => { verifierStore().saveSwarmFeedIndex(feed, index) },
         swarmNodeWanted: () => {
-          // Answered with the state the ask led to (waited for up to twenty seconds), so the mount holding for it hears of it either way.
-          void ensureSwarmNode().then(tellHost, (error: unknown) => { console.error('[verifier] could not ask for the Swarm node:', error) })
+          // Asks that arrive while one is being answered share its answer, each told it: the host asks on every mount and every few seconds of reading.
+          asking ??= ensureSwarmNode().finally(() => { asking = undefined })
+          asking.then(tellHost, (error: unknown) => { console.error('[verifier] could not ask for the Swarm node:', error) })
         }
       }
     })
@@ -386,6 +389,8 @@ export const verifierSubsystem: Subsystem = {
       tellHost()
       changed()
     })
+    // The host holds the node's endpoint from its start: with the port renewed, it starts afresh (its next request forks it with the new one).
+    onSwarmNodeEndpointChange(() => { host.idle() })
     const lifecycle = new HostLifecycle({
       start: () => { host.start() },
       idle: () => { host.idle() },

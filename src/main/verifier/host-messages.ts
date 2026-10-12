@@ -10,6 +10,7 @@ import { BLOCK_ROOT_PATTERN } from '../../protocols/verifier-host/protocol.js'
 import type { FromHost, HostReplies, HostRequest, LightClientState, SiteProvenance } from '../../protocols/verifier-host/protocol.js'
 import type { ContentPointer, ContentRoot, PointerStep, Provenance } from '../../protocols/resolution/records.js'
 import type { DdocReport, Refusal } from '../../protocols/resolution/providers.js'
+import { MAX_FAILURE_MESSAGE } from '../../protocols/swarm-node/protocol.js'
 import type { FromNode } from '../../protocols/swarm-node/protocol.js'
 import { DECIMAL } from './verifier-store.js'
 
@@ -136,7 +137,7 @@ export function isFromHost (message: unknown): message is FromHost {
   }
 }
 
-const FAILURE_STAGES: ReadonlySet<unknown> = new Set(['artifact', 'compile', 'start', 'run'])
+const FAILURE_STAGES: ReadonlySet<unknown> = new Set(['artifact', 'compile', 'start', 'run', 'port'])
 
 /** Whether `message` is one the Swarm node's process may ever post. */
 export function isFromNode (message: unknown): message is FromNode {
@@ -145,7 +146,7 @@ export function isFromNode (message: unknown): message is FromNode {
     case 'listening': return true
     case 'peers': return Number.isInteger(message['count']) && (message['count'] as number) >= 0
     case 'ready': return Number.isInteger(message['peers']) && (message['peers'] as number) >= 0
-    case 'failed': return FAILURE_STAGES.has(message['stage']) && typeof message['message'] === 'string'
+    case 'failed': return FAILURE_STAGES.has(message['stage']) && typeof message['message'] === 'string' && message['message'].length <= MAX_FAILURE_MESSAGE
     default: return false
   }
 }
