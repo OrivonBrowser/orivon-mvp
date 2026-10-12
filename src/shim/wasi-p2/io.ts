@@ -69,6 +69,8 @@ export class Signal {
 export class Pollable {
   readonly #isReady: () => boolean
   readonly #wait: () => Promise<void>
+  readonly #waiters = new Set<() => void>()
+  #armed = false
 
   /** `wait` settles once `isReady` would answer true. */
   constructor (isReady: () => boolean, wait: () => Promise<void>) {
@@ -88,6 +90,35 @@ export class Pollable {
   wait (): Promise<void> {
     return this.#wait()
   }
+
+  /**
+   * @internal Calls `waiter` once when the pollable may have become ready, and
+   * returns the call that withdraws it. However many polls wait on this at
+   * once, or one after another, the underlying promise holds one reaction: a
+   * reaction added per poll stays on a promise that settles rarely (an idle
+   * socket's read) for as long as it is pending, which a busy event loop
+   * turns into gigabytes (see README.md's Design notes).
+   */
+  subscribe (waiter: () => void): () => void {
+    this.#waiters.add(waiter)
+    if (!this.#armed) {
+      this.#armed = true
+      const woken = (): void => {
+        this.#armed = false
+        const waiting = [...this.#waiters]
+        this.#waiters.clear()
+        for (const wake of waiting) wake()
+      }
+      let waited: Promise<void>
+      try {
+        waited = this.#wait()
+      } catch {
+        waited = Promise.resolve()
+      }
+      waited.then(woken, woken)
+    }
+    return () => { this.#waiters.delete(waiter) }
+  }
 }
 
 export const ALWAYS_READY = new Pollable(() => true, async () => {})
@@ -98,7 +129,12 @@ export async function poll (list: readonly Pollable[]): Promise<Uint32Array> {
   for (;;) {
     const ready = list.flatMap((pollable, index) => pollable.ready() ? [index] : [])
     if (ready.length > 0) return new Uint32Array(ready)
-    await Promise.race(list.map(async (pollable) => { await pollable.wait() }))
+    await new Promise<void>((resolve) => {
+      const withdraw = list.map((pollable) => pollable.subscribe(() => {
+        for (const off of withdraw) off()
+        resolve()
+      }))
+    })
   }
 }
 
