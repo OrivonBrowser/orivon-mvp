@@ -13,6 +13,7 @@ function stepVerified (step: PointerStep): boolean {
   switch (step.step) {
     case 'contenthash': return provenVia(step.provenance)
     case 'ipns-record': return true
+    case 'swarm-feed': return true
     // A TXT record anyone on the DNS path can forge; the bytes are still
     // checked against the CID it names, which is why this is not a failure.
     case 'dnslink': return false

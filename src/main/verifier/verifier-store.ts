@@ -1,18 +1,18 @@
 // What the verifier keeps in the profile between runs: the newest
-// checkpoint the light client verified, and the highest IPNS sequence seen
-// per key. A missing or corrupt file reads as empty, never as an error.
+// checkpoint the light client verified, the highest IPNS sequence seen per
+// key and the highest Swarm feed index seen per feed. A missing or corrupt
+// file reads as empty, never as an error.
 
 import { mkdirSync, readFileSync } from 'node:fs'
-import { mkdir, open, rename } from 'node:fs/promises'
 import { join } from 'node:path'
 import { CID } from 'multiformats/cid'
 import { base36 } from 'multiformats/bases/base36'
 import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
+import { FloorFile } from './floor-file.js'
 import { FUTURE_TOLERANCE_SECONDS, parseCheckpoint } from './checkpoint.js'
 import type { Checkpoint } from './checkpoint.js'
 
-/** A decimal, up to 20 digits (past uint64's own ceiling): an IPNS sequence's own shape, shared with the boundary check on messages the host posts (`host-messages.ts`). */
-export const DECIMAL = /^\d{1,20}$/
+export { DECIMAL } from './floor-file.js'
 
 /** Kept at once; the least recently touched dropped first. Any page can
  * make the host resolve any number of `.eth`/IPNS names, so this rollback
@@ -20,10 +20,8 @@ export const DECIMAL = /^\d{1,20}$/
  * costs such a page to push one name's floor out: that many other valid
  * IPNS names, each resolved. About 120 bytes each on disk. */
 export const MAX_IPNS_KEYS = 4096
-/** How long a run of saves waits before its one write to disk: an update a
- * page can trigger by the thousand must cost one write for the whole burst,
- * not one fsync each. */
-const IPNS_FLUSH_DEBOUNCE_MS = 2_000
+/** Same bound for feeds, and for the same reason: any page can make the host follow any number of Swarm feeds. */
+export const MAX_FEEDS = 4096
 
 /** An IPNS key, spelled the way `resolveIpnsKey` (ipfs/ipns.ts) parses one:
  * a base36 CID whose multihash is an inlined public key (identity) or a
@@ -39,6 +37,11 @@ function isIpnsKey (key: string): boolean {
   }
 }
 
+/** A feed key: its owner (20 bytes) and topic (32 bytes) in lowercase hex, which is what `swarm/feed.ts` keys a floor by. */
+function isFeedKey (key: string): boolean {
+  return /^[0-9a-f]{40}\/[0-9a-f]{64}$/.test(key)
+}
+
 function readJson (path: string): unknown {
   try {
     return JSON.parse(readFileSync(path, 'utf8'))
@@ -49,16 +52,15 @@ function readJson (path: string): unknown {
 
 export class VerifierStore {
   private readonly checkpointPath: string
-  private readonly sequencesPath: string
-  /** Hydrated from disk on first save, then kept in memory between the
-   * debounced flushes below: this store is the only writer of its own
-   * file, so nothing else changes it out from under a pending batch. */
-  private sequences: Map<string, string> | undefined
-  private flushTimer: NodeJS.Timeout | undefined
+  private readonly dir: string
+  private readonly sequences: FloorFile
+  private readonly feeds: FloorFile
 
-  constructor (private readonly dir: string) {
+  constructor (dir: string) {
     this.checkpointPath = join(dir, 'checkpoint.json')
-    this.sequencesPath = join(dir, 'ipns-sequences.json')
+    this.dir = dir
+    this.sequences = new FloorFile(dir, join(dir, 'ipns-sequences.json'), isIpnsKey, MAX_IPNS_KEYS, 'IPNS sequences')
+    this.feeds = new FloorFile(dir, join(dir, 'swarm-feed-indexes.json'), isFeedKey, MAX_FEEDS, 'Swarm feed indexes')
   }
 
   checkpoint (): Checkpoint | undefined {
@@ -74,93 +76,37 @@ export class VerifierStore {
     if (parseCheckpoint(checkpoint) === undefined || checkpoint.timestamp > nowSeconds + FUTURE_TOLERANCE_SECONDS) return
     const current = this.checkpoint()
     if (current !== undefined && current.timestamp >= checkpoint.timestamp) return
-    this.write(this.checkpointPath, checkpoint)
-  }
-
-  /**
-   * Answers from the in-memory floors once loaded, never the file: a host
-   * that restarts asks this same store again before its own debounced write
-   * has landed, and a rollback protection kept only on disk would then hand
-   * the restarted host an older floor than the one it already reported.
-   */
-  ipnsSequences (): Record<string, string> {
-    return Object.fromEntries(this.loadedSequences())
-  }
-
-  /**
-   * Keeps the highest per key, so a restart never forgets how far a name
-   * has advanced, up to `MAX_IPNS_KEYS`; the write to disk is debounced
-   * (`scheduleFlush`), never one fsync per call.
-   */
-  saveIpnsSequence (key: string, sequence: string): void {
-    if (!DECIMAL.test(sequence) || !isIpnsKey(key)) return
-    const sequences = this.loadedSequences()
-    const current = sequences.get(key)
-    if (current !== undefined && BigInt(current) >= BigInt(sequence)) return
-    sequences.delete(key) // re-inserted below, now the most recently touched
-    sequences.set(key, sequence)
-    for (const oldest of sequences.keys()) {
-      if (sequences.size <= MAX_IPNS_KEYS) break
-      sequences.delete(oldest)
-    }
-    this.scheduleFlush()
-  }
-
-  /** Writes whatever is pending right now, instead of waiting out the
-   * debounce. Used by tests; `flushSync` below is what quit actually calls,
-   * since nothing after `will-quit` can be awaited. */
-  async flush (): Promise<void> {
-    if (this.flushTimer !== undefined) { clearTimeout(this.flushTimer); this.flushTimer = undefined }
-    if (this.sequences === undefined) return
-    await this.writeSequences(this.sequences)
-  }
-
-  /** The quit-time equivalent of `flush`: blocking, so the process cannot
-   * exit out from under an async write the way `will-quit` otherwise would. */
-  flushSync (): void {
-    if (this.flushTimer !== undefined) { clearTimeout(this.flushTimer); this.flushTimer = undefined }
-    if (this.sequences === undefined) return
-    this.write(this.sequencesPath, Object.fromEntries(this.sequences))
-  }
-
-  private loadedSequences (): Map<string, string> {
-    this.sequences ??= new Map(Object.entries(this.readSequencesFromDisk()))
-    return this.sequences
-  }
-
-  private readSequencesFromDisk (): Record<string, string> {
-    const stored = readJson(this.sequencesPath)
-    if (typeof stored !== 'object' || stored === null) return {}
-    return Object.fromEntries(Object.entries(stored).filter((entry): entry is [string, string] => isIpnsKey(entry[0]) && typeof entry[1] === 'string' && DECIMAL.test(entry[1])))
-  }
-
-  private scheduleFlush (): void {
-    if (this.flushTimer !== undefined) return
-    this.flushTimer = setTimeout(() => {
-      this.flushTimer = undefined
-      const sequences = this.sequences
-      if (sequences === undefined) return
-      this.writeSequences(sequences).catch((error: unknown) => { console.error('[verifier] failed to save IPNS sequences:', error) })
-    }, IPNS_FLUSH_DEBOUNCE_MS)
-    this.flushTimer.unref()
-  }
-
-  private async writeSequences (sequences: ReadonlyMap<string, string>): Promise<void> {
-    await mkdir(this.dir, { recursive: true })
-    const text = JSON.stringify(Object.fromEntries(sequences))
-    const tmp = `${this.sequencesPath}.tmp`
-    const handle = await open(tmp, 'w')
-    try {
-      await handle.writeFile(text)
-      await handle.sync()
-    } finally {
-      await handle.close()
-    }
-    await rename(tmp, this.sequencesPath)
-  }
-
-  private write (path: string, value: unknown): void {
     mkdirSync(this.dir, { recursive: true })
-    writeFileAtomic(path, JSON.stringify(value))
+    writeFileAtomic(this.checkpointPath, JSON.stringify(checkpoint))
+  }
+
+  /** The IPNS floors, from memory once loaded (see `FloorFile.all`). */
+  ipnsSequences (): Record<string, string> {
+    return this.sequences.all()
+  }
+
+  /** Keeps the highest per key, up to `MAX_IPNS_KEYS`; the write to disk is debounced, never one fsync per call. */
+  saveIpnsSequence (key: string, sequence: string): void {
+    this.sequences.save(key, sequence)
+  }
+
+  /** Highest Swarm feed update index seen, keyed `<owner>/<topic>`. */
+  swarmFeedIndexes (): Record<string, string> {
+    return this.feeds.all()
+  }
+
+  saveSwarmFeedIndex (feed: string, index: string): void {
+    this.feeds.save(feed, index)
+  }
+
+  /** Writes whatever is pending right now, instead of waiting out the debounce. Used by tests; `flushSync` is what quit calls, since nothing after `will-quit` can be awaited. */
+  async flush (): Promise<void> {
+    await this.sequences.flush()
+    await this.feeds.flush()
+  }
+
+  flushSync (): void {
+    this.sequences.flushSync()
+    this.feeds.flushSync()
   }
 }

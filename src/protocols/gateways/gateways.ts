@@ -25,7 +25,7 @@ export class GatewayPool {
     perGatewayConcurrency: number,
     private readonly clock: () => number = Date.now
   ) {
-    if (gateways.length === 0) throw new Error('no IPFS gateway configured')
+    if (gateways.length === 0) throw new Error('no gateway configured')
     for (const gateway of gateways) {
       this.health.set(gateway, new GatewayHealth(clock))
       this.slots.set(gateway, new Slots(perGatewayConcurrency))
@@ -83,6 +83,11 @@ export class GatewayPool {
     this.dropped.add(gateway)
   }
 
+  /** Not asked for `ms`: for a source that must come back after sending one bad answer, a restarted local node among them. */
+  quarantine (gateway: string, ms: number): void {
+    this.health.get(gateway)?.coolFor(ms)
+  }
+
   /** Records an outcome that was not a lie (a lie goes through `drop`
    * directly) -- rate limits, outages and timeouts cool the gateway down;
    * a miss or a plain success do not. */
@@ -103,6 +108,11 @@ export class GatewayPool {
 
 export class TooLarge extends Error {
   override readonly name = 'TooLarge'
+}
+
+/** What a fetch throws when the gateway answered with a redirect it is never allowed to follow. */
+export class RedirectRefused extends Error {
+  override readonly name = 'RedirectRefused'
 }
 
 /** The whole body, or TooLarge as soon as it passes `max` bytes, without reading further. */
@@ -145,7 +155,8 @@ export type GatewayFailureOutcome = RecordedFailure | { readonly kind: 'cancelle
  * the same way whoever asked. */
 export class GatewayFailure extends Error {
   override readonly name = 'GatewayFailure'
-  constructor (readonly outcome: GatewayFailureOutcome, message: string) {
+  /** @param status the HTTP status of an answer that was not a success, when there was one */
+  constructor (readonly outcome: GatewayFailureOutcome, message: string, readonly status?: number) {
     super(message)
   }
 }
@@ -197,7 +208,9 @@ export async function askGateway<T> (
         if (signal.reason instanceof Outrun) pool.note(gateway, { kind: 'timeout' })
         throw new GatewayFailure({ kind: 'cancelled' }, CANCELLED)
       }
-      const outcome: RecordedFailure = { kind: timeout.aborted ? 'timeout' : 'unreachable' }
+      // A redirect is how some gateways refuse a single item (a content filter): it says nothing about
+      // the gateway being up, so it must not cool it for the next item.
+      const outcome: RecordedFailure = error instanceof RedirectRefused ? { kind: 'miss' } : { kind: timeout.aborted ? 'timeout' : 'unreachable' }
       pool.note(gateway, outcome)
       throw new GatewayFailure(outcome, `${gateway}: ${message(error)}`)
     }
@@ -212,7 +225,7 @@ export async function askGateway<T> (
       await response.body?.cancel()
       const outcome: RecordedFailure = SERVER_ERRORS.has(response.status) ? { kind: 'server-error' } : { kind: 'miss' }
       pool.note(gateway, outcome)
-      throw new GatewayFailure(outcome, `${gateway} answered ${String(response.status)}`)
+      throw new GatewayFailure(outcome, `${gateway} answered ${String(response.status)}`, response.status)
     }
     try {
       const value = await read(response)

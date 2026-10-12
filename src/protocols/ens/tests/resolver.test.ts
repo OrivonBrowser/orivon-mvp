@@ -7,6 +7,8 @@ import { sha256 } from 'multiformats/hashes/sha2'
 import { ResolutionError } from '../../resolution/records.js'
 import { MAX_CCIP_QUERIES, UNIVERSAL_RESOLVER, createEnsResolver } from '../resolver.js'
 import type { CcipRequestParameters, Eip1193Provider } from '../resolver.js'
+import { referenceCid } from '../../swarm/reference.js'
+import { SWARM_ETH } from '../../swarm/tests/live-vectors.js'
 
 const universalResolverAbi = parseAbi([
   'function resolveWithGateways(bytes name, bytes data, string[] gateways) view returns (bytes result, address resolver)',
@@ -157,8 +159,11 @@ describe('the ENS resolver', () => {
   })
 
   it('keeps whatever kind the contenthash names', async () => {
-    const swarm = toHex(new Uint8Array([0xe4, 0x01, 0x01, 0xfa]))
-    const records = await createEnsResolver({ provider: provider(answering(swarm)), ccipRequest: noCcip }).resolve('swarm.eth')
-    expect(records[0]?.pointer).toEqual({ kind: 'unsupported', protocol: 'swarm' })
+    const arweave = toHex(new Uint8Array([0x90, 0xb2, 0xca, 0x05, 0x01]))
+    const records = await createEnsResolver({ provider: provider(answering(arweave)), ccipRequest: noCcip }).resolve('permaweb.eth')
+    expect(records[0]?.pointer).toEqual({ kind: 'unsupported', protocol: 'arweave' })
+
+    const swarm = await createEnsResolver({ provider: provider(answering(SWARM_ETH.contenthash as `0x${string}`)), ccipRequest: noCcip }).resolve('swarm.eth')
+    expect(swarm[0]?.pointer).toEqual({ kind: 'swarm', cid: referenceCid(SWARM_ETH.feedManifestRoot) })
   })
 })

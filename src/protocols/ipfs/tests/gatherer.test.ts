@@ -34,7 +34,7 @@ describe('the IPFS gatherer', () => {
     const g = gatherer()
     expect(g.supports([onChain({ kind: 'ipfs', cid: dag.root.toString() })])).toBe(true)
     expect(g.supports([onChain({ kind: 'dnslink', domain: 'a.example' })])).toBe(true)
-    expect(g.supports([onChain({ kind: 'unsupported', protocol: 'swarm' })])).toBe(false)
+    expect(g.supports([onChain({ kind: 'unsupported', protocol: 'arweave' })])).toBe(false)
   })
 
   it('mounts a proven CID, serves its files, and meets DDOC', async () => {

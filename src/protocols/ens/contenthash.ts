@@ -1,5 +1,5 @@
 // ENSIP-7: a contenthash is a varint protocol code followed by that
-// protocol's value, which for IPFS and IPNS is a binary CID.
+// protocol's value, which for IPFS, IPNS and Swarm is a binary CID.
 
 import { varint } from 'multiformats'
 import { CID } from 'multiformats/cid'
@@ -8,12 +8,14 @@ import { dnsName } from '../resolution/dns-name.js'
 import type { ContentPointer } from '../resolution/records.js'
 
 const IPFS_NS = 0xe3
+const SWARM_NS = 0xe4
+const SWARM_MANIFEST = 0xfa
+const KECCAK_256 = 0x1b
 const IPNS_NS = 0xe5
 const LIBP2P_KEY = 0x72
 const IDENTITY = 0x00
 
 const OTHER_PROTOCOLS: ReadonlyMap<number, string> = new Map([
-  [0xe4, 'swarm'],
   [0x01bc, 'onion'],
   [0x01bd, 'onion3'],
   [0xb19910, 'skynet'],
@@ -30,6 +32,17 @@ function parseCid (bytes: Uint8Array): CID | undefined {
   } catch {
     return undefined
   }
+}
+
+/**
+ * A Swarm value is a CID whose multihash is the root chunk's keccak-256
+ * address. Whatever codec it carries, the content is self-describing and fully
+ * verified, so it is canonicalised to swarm-manifest.
+ */
+function swarmPointer (value: Uint8Array): ContentPointer {
+  const cid = parseCid(value)
+  if (cid === undefined || cid.multihash.code !== KECCAK_256 || cid.multihash.digest.length !== 32) return unsupported('swarm (malformed)')
+  return { kind: 'swarm', cid: CID.createV1(SWARM_MANIFEST, cid.multihash).toString() }
 }
 
 function domainIn (digest: Uint8Array): string | undefined {
@@ -71,5 +84,6 @@ export function decodeContenthash (bytes: Uint8Array): ContentPointer | undefine
     return cid === undefined ? unsupported('ipfs (malformed)') : { kind: 'ipfs', cid: cid.toV1().toString() }
   }
   if (code === IPNS_NS) return ipnsPointer(value)
+  if (code === SWARM_NS) return swarmPointer(value)
   return unsupported(OTHER_PROTOCOLS.get(code) ?? `0x${code.toString(16)}`)
 }

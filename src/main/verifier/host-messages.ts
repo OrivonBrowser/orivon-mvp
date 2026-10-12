@@ -28,6 +28,7 @@ function isContentPointer (value: unknown): value is ContentPointer {
   if (!isRecord(value)) return false
   switch (value.kind) {
     case 'ipfs': return typeof value['cid'] === 'string'
+    case 'swarm': return typeof value['cid'] === 'string'
     case 'ipns-key': return typeof value['key'] === 'string'
     case 'dnslink': return typeof value['domain'] === 'string'
     case 'unsupported': return typeof value['protocol'] === 'string'
@@ -47,7 +48,7 @@ function isProvenance (value: unknown): value is Provenance {
 }
 
 function isContentRoot (value: unknown): value is ContentRoot {
-  return isRecord(value) && value.kind === 'ipfs' && typeof value['cid'] === 'string'
+  return isRecord(value) && (value.kind === 'ipfs' || value.kind === 'swarm') && typeof value['cid'] === 'string'
 }
 
 function isPointerStep (value: unknown): value is PointerStep {
@@ -56,6 +57,7 @@ function isPointerStep (value: unknown): value is PointerStep {
     case 'contenthash': return typeof value['name'] === 'string' && isContentPointer(value['pointer']) && isProvenance(value['provenance'])
     case 'ipns-record': return typeof value['key'] === 'string' && typeof value['sequence'] === 'bigint' && typeof value['target'] === 'string'
     case 'dnslink': return typeof value['domain'] === 'string' && typeof value['target'] === 'string'
+    case 'swarm-feed': return typeof value['owner'] === 'string' && typeof value['topic'] === 'string' && typeof value['index'] === 'bigint' && typeof value['target'] === 'string'
     default: return false
   }
 }
@@ -122,6 +124,7 @@ export function isFromHost (message: unknown): message is FromHost {
     case 'status': return isLightClientState(message['status'])
     case 'checkpoint': return typeof message['root'] === 'string' && BLOCK_ROOT_PATTERN.test(message['root']) && typeof message['timestamp'] === 'number'
     case 'ipns-sequence': return typeof message['key'] === 'string' && isDecimal(message['sequence'])
+    case 'swarm-feed-index': return typeof message['feed'] === 'string' && isDecimal(message['index'])
     case 'reply':
       if (typeof message['id'] !== 'number') return false
       if (message['ok'] === true) return 'value' in message

@@ -6,6 +6,7 @@
 import { fail } from '../../broker/errors.js'
 import { createTokenBucketLimiter } from '../../broker/transport/token-bucket.js'
 import { canonicalCid } from '../../protocols/ipfs/names.js'
+import { parseReference, referenceCid } from '../../protocols/swarm/reference.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { scoreIdOf } from '../../trust/score-provider.js'
 import { judgedLevelCounts } from '../../trust/domain-binding.js'
@@ -23,6 +24,7 @@ const MAX_ADDRESS_CHARS = 2048
 /** Longer than the shield waits: a page asks about many sites at once, and a read that is still under way is shared by the next ask. */
 const HOME_WAIT_MS = 5_000
 const IPFS_ADDRESS = /^ipfs:\/\/([^/?#\s]+)/i
+const SWARM_ADDRESS = /^bzz:\/\/([^/?#\s]+)/i
 const BARE_ETH_ADDRESS = /^[^:/?#\s]+\.eth(?:[/?#]|$)/i
 
 export interface PageScoreDeps extends ScoreProviderDeps {
@@ -37,7 +39,7 @@ export interface PageScoreLookup {
   readonly websiteScore: (callerOrigin: string, address: string) => Promise<WebsiteScore>
 }
 
-type Named = { readonly kind: 'cid', readonly cid: string } | { readonly kind: 'eth', readonly host: string }
+type Named = { readonly kind: 'cid', readonly scheme: 'ipfs' | 'bzz', readonly cid: string } | { readonly kind: 'eth', readonly host: string }
 
 function ethHostOf (address: string): string | undefined {
   const candidate = /^https:\/\//i.test(address) ? address : BARE_ETH_ADDRESS.test(address) ? `https://${address}` : undefined
@@ -58,7 +60,12 @@ function contentNamedBy (address: string): Named | undefined {
   const ipfs = IPFS_ADDRESS.exec(text)
   if (ipfs !== null) {
     const cid = canonicalCid(ipfs[1]!)
-    return cid === undefined ? undefined : { kind: 'cid', cid }
+    return cid === undefined ? undefined : { kind: 'cid', scheme: 'ipfs', cid }
+  }
+  const swarm = SWARM_ADDRESS.exec(text)
+  if (swarm !== null) {
+    const reference = parseReference(swarm[1]!)
+    return reference === undefined ? undefined : { kind: 'cid', scheme: 'bzz', cid: referenceCid(reference) }
   }
   const host = ethHostOf(text)
   return host === undefined ? undefined : { kind: 'eth', host }
@@ -85,7 +92,7 @@ export function createPageScoreLookup (deps: PageScoreDeps): PageScoreLookup {
   /** The content's root CID, and the origin the shield would show that content at. */
   async function contentOf (named: Named, caller: string): Promise<{ cid: string, origin: string } | undefined> {
     const cid = named.kind === 'cid' ? named.cid : canonicalCid(await deps.resolveEthContent(named.host, caller) ?? '')
-    const origin = named.kind === 'cid' ? BUILTIN_ADDRESSES.originFor('ipfs', named.cid) : `https://${named.host}`
+    const origin = named.kind === 'cid' ? BUILTIN_ADDRESSES.originFor(named.scheme, named.cid) : `https://${named.host}`
     return cid === undefined || origin === undefined ? undefined : { cid, origin }
   }
 

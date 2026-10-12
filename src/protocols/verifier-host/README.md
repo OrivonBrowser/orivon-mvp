@@ -2,7 +2,7 @@
 
 **What lives here.** The verifier host: an Electron utility process that runs every protocol's
 providers ([`protocols.ts`](protocols.ts)), proves `.eth` names with a light client
-([`light-client/`](light-client/)), gathers IPFS content block by verified block, and serves it to
+([`light-client/`](light-client/)), gathers IPFS content block by verified block and Swarm content chunk by verified chunk, and serves it to
 tabs from a loopback TLS server ([`serve/`](serve/)). Every untrusted parser (the light client's
 WebAssembly, CCIP-Read answers, IPNS protobuf, dag-pb, DNS-over-HTTPS JSON) runs here, never in
 the main process.
@@ -15,7 +15,7 @@ file that imports `electron`; [`service.ts`](service.ts) takes Electron's `net` 
 as arguments, so everything else runs under plain vitest.
 
 **What it depends on.** [`../resolution/`](../resolution/), [`../ens/`](../ens/),
-[`../ipfs/`](../ipfs/); from [`../../loader/`](../../loader/) the range parser, the content-type
+[`../ipfs/`](../ipfs/), [`../swarm/`](../swarm/); from [`../../loader/`](../../loader/) the range parser, the content-type
 map and the redirect rule, and from [`../../broker/policy/`](../../broker/policy/) the address
 classifier, all reused rather than copied; `@a16z/helios`.
 
