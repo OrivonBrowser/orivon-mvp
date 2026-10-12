@@ -42,14 +42,11 @@ No API key, no account, no node of our own: any public Bee gateway with `/chunks
 
 ## Measured facts (2026-10-12, live, from this machine)
 
-- **Gateways with `/chunks/<hex>` and `/feeds/<owner>/<topic>`**: `https://bzz.limo` (eth.limo),
-  `https://api.gateway.ethswarm.org` (Swarm Foundation), `https://bee-1.fairdatasociety.org`
-  (Fair Data Society). A missing chunk is a 404 in about 0.5 s.
-- **The last two redirect some chunks** (302 to `https://bzz.link/forbidden?hash=<ref>`, their
-  content filter; the first chunk of an HTML page is one). `bzz.limo` serves them, so it goes first.
-  `allowlisted` (`verifier-host/egress.ts`) turns that redirect into a thrown fetch error. Find how
-  the race classifies that error, and make sure one refusal does not cool the gateway for every other
-  chunk (a unit test with a fake gateway that redirects). Do not loosen `allowlisted`.
+- **Public Bee gateways from three operators** serve `/chunks/<hex>` and
+  `/feeds/<owner>/<topic>`; a missing chunk is a 404 in about 0.5 s. Two of them redirect chunks
+  their content filter refuses (the first chunk of an HTML page is one). None is used: Swarm loads
+  only from a local node (Owner decisions). A redirect stays a per-chunk miss, never a strike
+  against the endpoint, and `allowlisted` still follows none.
 - **Erasure coding is in use.** `swarm.eth`'s `index.html` root chunk has span bytes
   `06 1d 01 00 00 00 00 81`. If the top byte is over 128, it carries the redundancy level
   (`byte & 0x7f`). The real span is the low 7 bytes (72966). The payload then lists 18 data refs
@@ -76,10 +73,9 @@ No API key, no account, no node of our own: any public Bee gateway with `/chunks
   `swarm-feed-topic`, `swarm-feed-type: Sequence`) sit on the fork with prefix `/`. File
   forks carry `Content-Type` and `Filename`.
 
-The prototype that walked `swarm.eth` end to end (ENS, feed, SOC, manifest, erasure-coded file),
-24 chunks, all verified: `/tmp/claude-1000/-home-jhon-git-orivon-mvp/b8d68bc9-4326-49d6-a06c-5524997ecb9d/scratchpad/walk.mjs`
-(and `soc.mjs`). Real metadata chunks from that walk (no page content):
-`.swarm-vectors.json` at the worktree root, to become a test vector file and then be deleted.
+A throwaway prototype walked `swarm.eth` end to end (ENS, feed, SOC, manifest, erasure-coded
+file): 24 chunks, all verified. The real metadata chunks it captured (no page content) are
+`src/protocols/swarm/tests/live-vectors.ts`.
 
 ## Design
 
@@ -142,8 +138,7 @@ if that is direct).
 - `verifier-host/protocol.ts`: add `HostConfig.swarmEndpoints` and
   `swarmFeedIndexes: Record<'<owner>/<topic>', decimal>`, plus the new `FromHost` message.
 - `verifier-host/fixture-resolver.ts`: accept `bzz://<reference>`.
-- `main/verifier/endpoints.ts`: `swarmEndpoints: ['https://bzz.limo', 'https://api.gateway.ethswarm.org', 'https://bee-1.fairdatasociety.org']`,
-  with one comment line on why that order (Rule 2: no dates).
+- `main/verifier/endpoints.ts`: `swarmEndpoints: []` (Owner decision 1).
 - `main/verifier/verifier-store.ts`: persist feed indexes beside IPNS sequences, with their own key
   check (`/^[0-9a-f]{40}\/[0-9a-f]{64}$/`) and cap. `verifier-subsystem.ts` passes the config and
   stores the message. `test-seam.ts` reads `ORIVON_TEST_SWARM_ENDPOINTS`. `status-view.ts` lists "Swarm endpoints".
