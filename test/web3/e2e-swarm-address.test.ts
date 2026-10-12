@@ -5,11 +5,15 @@
 // machine. A `.eth` name is shown under the scheme of the network its content
 // is on: `bzz://` for Swarm, `ipfs://` for IPFS. On a first visit the loading
 // screen and the address bar never name a network the name is not on.
+import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
+import type { Page } from 'playwright'
 import { afterAll, expect, it } from 'vitest'
 import { referenceCid } from '../../src/protocols/swarm/reference.js'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
 import { activeTabInfo, evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 import { overlayShown, waitOverlay } from '../support/auth-support.js'
+import { QA_ROOT } from '../support/qa-evidence.mjs'
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from '../support/e2e-helpers.js'
 import { startSwarmFixture } from '../apps/swarm-gateway/gateway.mjs'
 import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
@@ -27,7 +31,7 @@ const page = (title: string, body = title): string => `<!doctype html><meta char
 interface LoadingWatch { readonly screens: string[], readonly bars: string[], readonly titles: string[], readonly loaded: boolean }
 
 /** Reads the loading screen and the address bar every poll until the page's title shows, so a wrong network named for even a moment is seen. `shownBefore` is the address of the page being left. */
-async function watchLoading (running: Awaited<ReturnType<typeof launchElectron>>, chrome: Parameters<typeof activeTabInfo>[0], loadedTitle: string, shownBefore: string, whenNamed?: { readonly address: string, readonly then: () => void }): Promise<LoadingWatch> {
+async function watchLoading (running: Awaited<ReturnType<typeof launchElectron>>, chrome: Parameters<typeof activeTabInfo>[0], loadedTitle: string, shownBefore: string, whenNamed?: { readonly address: string, readonly then: (screen: Page) => Promise<void> }): Promise<LoadingWatch> {
   const screen = await waitOverlay(running, 'loading-screen')
   const screens: string[] = []
   const bars: string[] = []
@@ -38,7 +42,7 @@ async function watchLoading (running: Awaited<ReturnType<typeof launchElectron>>
       const address = await screen.locator('.loading-screen-address').getAttribute('title', { timeout: 500 }).catch(() => null)
       const title = await screen.locator('.loading-screen-title').textContent({ timeout: 500 }).catch(() => null)
       if (address !== null) screens.push(address)
-      if (address !== null && address === whenNamed?.address && !named) { named = true; whenNamed.then() }
+      if (address !== null && address === whenNamed?.address && !named) { named = true; await whenNamed.then(screen) }
       if (title !== null) titles.push(title)
     }
     const info = await activeTabInfo(chrome)
@@ -123,7 +127,12 @@ it('[app:swarm-url-opens] [app:eth-name-shown-by-network] loads a typed bzz:// a
       let answeredWhenNamed = -1
       const slowSwarm = await watchLoading(running, chrome, 'slow swarm name', 'ipfs://onipfs.eth/', {
         address: 'bzz://slow.eth/',
-        then: () => { answeredWhenNamed = slowNode.answeredChunks(); slowNode.releaseChunks() }
+        then: async (screen) => {
+          answeredWhenNamed = slowNode.answeredChunks()
+          mkdirSync(join(QA_ROOT, 'latest'), { recursive: true })
+          await screen.screenshot({ path: join(QA_ROOT, 'latest', 'swarm-name-loading-screen-light.png') })
+          slowNode.releaseChunks()
+        }
       })
       const swarmNeverIpfs = [...slowSwarm.screens, ...slowSwarm.bars].every((shown) => !shown.startsWith('ipfs://'))
       check(`a .eth name on Swarm never reads ipfs:// while it loads (${JSON.stringify(slowSwarm)})`, slowSwarm.loaded && swarmNeverIpfs)

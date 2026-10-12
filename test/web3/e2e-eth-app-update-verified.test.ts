@@ -5,15 +5,14 @@
 import { afterAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
 import { waitForTab } from '../support/smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase } from '../support/e2e-helpers.js'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, shownOnIpfs } from '../support/e2e-helpers.js'
 import { findChrome } from '../support/smoke-helpers.mjs'
-import { BUILTIN_ADDRESSES } from '../../src/protocols/builtin.js'
 import { answerAccepting, answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
 import { updateApp } from '../apps/app-update/site.mjs'
 import { buildsAt, eventually, launchPhase, openTab, pinOf, profileOf, runsAsApp, startRig } from './app-update-support.js'
 
 const ORIGIN = 'https://app.eth'
-const SHOWN = BUILTIN_ADDRESSES.displayUrl(`${ORIGIN}/`)
+const SHOWN = shownOnIpfs(`${ORIGIN}/`)
 const TEST_TIMEOUT_MS = ADDRESS_BAR_STABLE_TIMEOUT_MS * 4 + DEFAULT_ACTION_TIMEOUT_MS * 12 + APP_CLOSE_RACE_MS * 3 + 120_000
 
 afterAll(async () => {

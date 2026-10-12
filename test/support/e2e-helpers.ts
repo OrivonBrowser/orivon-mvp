@@ -19,7 +19,8 @@ import { evaluateRetrying, findChrome, findViewShowing, waitFor, waitForChromeRe
 
 // Re-exported for a window a spec opens after launch: launchElectron has already waited for the first one.
 export { waitForChromeReady }
-import { BUILTIN_ADDRESSES } from '../../src/protocols/builtin.js'
+import { ProtocolAddresses } from '../../src/protocols/address.js'
+import { BUILTIN_PROTOCOLS } from '../../src/protocols/builtin.js'
 import type { CommandId } from '../../src/main/shortcuts/commands.js'
 import { bindingOf, keyCodeOf, modifiersOf } from './key-bindings.js'
 
@@ -289,6 +290,15 @@ export async function asPage<T> (
   return outcome.result
 }
 
+/** Every fixture `.eth` name a spec serves from IPFS: once the page has loaded it is shown under `ipfs://`. */
+const ADDRESSES_ON_IPFS = new ProtocolAddresses(BUILTIN_PROTOCOLS)
+ADDRESSES_ON_IPFS.learnSchemes(() => 'ipfs')
+
+/** The address the bar shows for `url` once a page served from IPFS has loaded: a `.eth` name under `ipfs://`. */
+export function shownOnIpfs (url: string): string {
+  return ADDRESSES_ON_IPFS.displayUrl(url)
+}
+
 export async function navigateToFixture (
   app: ElectronApplication,
   url: string,
@@ -298,7 +308,7 @@ export async function navigateToFixture (
   const chrome = findChrome(app)
   await waitForAddressBarStable(chrome)
   await clickAddressBarRetrying(chrome, url)
-  const shown = BUILTIN_ADDRESSES.displayUrl(url)
+  const shown = shownOnIpfs(url)
   const navigated = await waitForTab(chrome, { address: shown, title: expectedTitle })
   if (!navigated.ok) throw new Error(`fixture tab did not navigate to ${shown}: ${JSON.stringify(navigated.info)}`)
   const view = findViewShowing(app, chrome, url)

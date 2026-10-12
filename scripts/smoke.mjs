@@ -71,8 +71,9 @@ import {
 } from '../test/support/smoke-helpers.mjs'
 
 /** Where the omnibox sends non-address input on a fresh profile: the Web3 search engine
- * (src/main/browsing/search-engines.ts). Only used to build the expected URL. */
-const SEARCH_TEMPLATE = 'ipfs://explore.orivonstack.eth/#/search?q='
+ * (src/main/browsing/search-engines.ts). Only used to build the expected URL. The page
+ * cannot load offline, so no network is learned for the name and the bar shows it as its plain origin. */
+const SEARCH_TEMPLATE = 'https://explore.orivonstack.eth/#/search?q='
 
 // A 1x1 transparent PNG -- real bytes, real content-type, so the favicon
 // scenario below exercises the actual fetch/cap/encode path

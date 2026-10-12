@@ -347,8 +347,8 @@ it('searches the Web3 with Explore on a fresh profile, switches to the Web2 from
     await typeInBar(chrome, 'free speech')
     expect((await waitForRows(app, 1))[0]).toContain('Explore')
     await chrome.keyboard.press('Enter')
-    // The page itself cannot load without an IPFS route; the tab is sent to Explore's address, which is what is checked.
-    expect(await waitFor(async () => (await addressOf(chrome)) === 'ipfs://explore.orivonstack.eth/#/search?q=free+speech')).toBe(true)
+    // The page itself cannot load without an IPFS route, so no network is learned for the name and it stays its plain origin; the tab is sent to Explore's address, which is what is checked.
+    expect(await waitFor(async () => (await addressOf(chrome)) === 'https://explore.orivonstack.eth/#/search?q=free+speech')).toBe(true)
 
     // The chip does not take the keyboard from the field, and the open dropdown names the other engine afterwards.
     await openTab(app, chrome)
