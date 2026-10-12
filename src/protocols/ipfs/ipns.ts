@@ -9,11 +9,11 @@ import { base36 } from 'multiformats/bases/base36'
 import { ResolutionError } from '../resolution/records.js'
 import type { Refusal } from '../resolution/providers.js'
 import { sleepOrAbort } from '../resolution/timing.js'
-import { GatewayFailure, TooLarge, askGateway, readCapped } from './gateways.js'
-import type { Fetch, GatewayPool } from './gateways.js'
+import { GatewayFailure, TooLarge, askGateway, readCapped } from '../gateways/gateways.js'
+import type { Fetch, GatewayPool } from '../gateways/gateways.js'
 import type { IpfsLimits } from './limits.js'
-import { racePass } from './race.js'
-import type { AttemptOutcome, PassResult } from './race.js'
+import { racePass } from '../gateways/race.js'
+import type { AttemptOutcome, PassResult } from '../gateways/race.js'
 
 /** The IPNS spec's own ceiling. */
 const MAX_RECORD_BYTES = 10 * 1024

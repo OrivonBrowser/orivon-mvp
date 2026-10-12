@@ -52,6 +52,9 @@ Settings.
   no request of its own (`src/main/shell/sign-in-identity-headers.ts`).
 - **Web Store install.** Installing an extension downloads it from the Chrome Web Store, after
   the person pressed Install (`src/main/extensions/store-download-seam.ts:35`).
+- **Swarm.** This build configures no Swarm endpoint, so a `bzz://` address or a `.eth` name on
+  Swarm sends no request (`src/main/verifier/endpoints.ts`). A Swarm endpoint is only ever a node
+  on this machine, never a public gateway.
 - **App install and load.** An app's files are fetched when the person opens or installs it.
   That is a page load, not a background request.
 - **Chromium's own services.** Orivon's code starts no Safe Browsing, component updater, sync or

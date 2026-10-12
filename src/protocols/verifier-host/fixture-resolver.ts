@@ -5,13 +5,18 @@
 import { ResolutionError } from '../resolution/records.js'
 import type { ContentPointer, NameRecord } from '../resolution/records.js'
 import type { NameResolver } from '../resolution/providers.js'
+import { parseReference, referenceCid } from '../swarm/reference.js'
 
-/** `ipfs://<cid>`, `ipns://<key>` or `dnslink://<domain>`. */
+/** `ipfs://<cid>`, `ipns://<key>`, `dnslink://<domain>` or `bzz://<reference>`. */
 export function fixturePointer (value: string): ContentPointer | undefined {
-  const match = /^(ipfs|ipns|dnslink):\/\/([^/?#]+)$/.exec(value)
+  const match = /^(ipfs|ipns|dnslink|bzz):\/\/([^/?#]+)$/.exec(value)
   if (match === null) return undefined
-  const [, kind, name] = match as unknown as [string, 'ipfs' | 'ipns' | 'dnslink', string]
+  const [, kind, name] = match as unknown as [string, 'ipfs' | 'ipns' | 'dnslink' | 'bzz', string]
   if (kind === 'ipfs') return { kind: 'ipfs', cid: name }
+  if (kind === 'bzz') {
+    const reference = parseReference(name)
+    return reference === undefined ? undefined : { kind: 'swarm', cid: referenceCid(reference) }
+  }
   if (kind === 'ipns') return { kind: 'ipns-key', key: name }
   return { kind: 'dnslink', domain: name }
 }
@@ -21,7 +26,7 @@ export function createFixtureResolver (names: Readonly<Record<string, string>>):
   const records = new Map<string, NameRecord>()
   for (const [name, value] of Object.entries(names)) {
     const pointer = fixturePointer(value)
-    if (!name.endsWith('.eth') || pointer === undefined) throw new Error(`fixture name ${name} -> ${value} is not a .eth name mapped to ipfs://, ipns:// or dnslink://`)
+    if (!name.endsWith('.eth') || pointer === undefined) throw new Error(`fixture name ${name} -> ${value} is not a .eth name mapped to ipfs://, ipns://, dnslink:// or bzz://`)
     records.set(name.toLowerCase(), { type: 'contenthash', pointer, provenance: { via: 'fixture' } })
   }
   return {

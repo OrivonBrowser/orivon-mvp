@@ -4,11 +4,17 @@ import { CID } from 'multiformats/cid'
 import { base36 } from 'multiformats/bases/base36'
 import { identity } from 'multiformats/hashes/identity'
 import { sha256 } from 'multiformats/hashes/sha2'
+import * as Digest from 'multiformats/hashes/digest'
+import { hexToBytes } from 'viem'
 import { decodeContenthash } from '../contenthash.js'
+import { referenceCid } from '../../swarm/reference.js'
+import { SWARM_ETH } from '../../swarm/tests/live-vectors.js'
 
 const DAG_PB = 0x70
 const RAW = 0x55
 const LIBP2P_KEY = 0x72
+const SWARM_MANIFEST = 0xfa
+const KECCAK_256 = 0x1b
 
 function contenthash (protocol: number, value: Uint8Array): Uint8Array {
   const prefix = varint.encodeTo(protocol, new Uint8Array(varint.encodingLength(protocol)))
@@ -64,9 +70,29 @@ describe('decodeContenthash', () => {
   })
 
   it('names the other protocols as unsupported', () => {
-    expect(decodeContenthash(contenthash(0xe4, new Uint8Array([1, 2])))).toEqual({ kind: 'unsupported', protocol: 'swarm' })
     expect(decodeContenthash(contenthash(0xb29910, new Uint8Array([1, 2])))).toEqual({ kind: 'unsupported', protocol: 'arweave' })
     expect(decodeContenthash(contenthash(0x1234, new Uint8Array([1])))).toEqual({ kind: 'unsupported', protocol: '0x1234' })
+  })
+
+  describe('Swarm', () => {
+    const reference = new Uint8Array(32).fill(7)
+    const cidWith = (codec: number, hashCode = KECCAK_256) => CID.createV1(codec, Digest.create(hashCode, reference))
+
+    it('reads the live swarm.eth value as a swarm CID of that keccak-256 reference', () => {
+      expect(decodeContenthash(hexToBytes(SWARM_ETH.contenthash as `0x${string}`))).toEqual({ kind: 'swarm', cid: referenceCid(SWARM_ETH.feedManifestRoot) })
+    })
+
+    it('canonicalises whatever codec a value carries, since the content is verified by its hash alone', () => {
+      const expected = { kind: 'swarm', cid: cidWith(SWARM_MANIFEST).toString() }
+      expect(decodeContenthash(contenthash(0xe4, cidWith(0x03fa).bytes))).toEqual(expected)
+      expect(decodeContenthash(contenthash(0xe4, cidWith(RAW).bytes))).toEqual(expected)
+    })
+
+    it('refuses a value that is not a keccak-256 CID of 32 bytes', () => {
+      expect(decodeContenthash(contenthash(0xe4, new Uint8Array([1, 2])))).toEqual({ kind: 'unsupported', protocol: 'swarm (malformed)' })
+      expect(decodeContenthash(contenthash(0xe4, cidWith(SWARM_MANIFEST, 0x12).bytes))).toEqual({ kind: 'unsupported', protocol: 'swarm (malformed)' })
+      expect(decodeContenthash(contenthash(0xe4, new Uint8Array([...cidWith(SWARM_MANIFEST).bytes, 0])))).toEqual({ kind: 'unsupported', protocol: 'swarm (malformed)' })
+    })
   })
 
   it('refuses a malformed CID or trailing bytes, never guessing', () => {

@@ -24,6 +24,12 @@ describe('pointerChainVerdict', () => {
     expect(pointerChainVerdict([{ ...onChainIpfs, provenance: { via: 'fixture' } }])).toEqual({ verified: true })
   })
 
+  it('verified through a signed Swarm feed update', () => {
+    const swarm: PointerStep = { step: 'contenthash', name: 'swarm.eth', pointer: { kind: 'swarm', cid: CID }, provenance: { via: 'chain', block: 20_000_000, offchain: false } }
+    const feed: PointerStep = { step: 'swarm-feed', owner: 'ab'.repeat(20), topic: 'cd'.repeat(32), index: 91n, target: CID }
+    expect(pointerChainVerdict([swarm, feed])).toEqual({ verified: true })
+  })
+
   it('not verified through a DNSLink, naming that hop, even behind a proven contenthash', () => {
     expect(pointerChainVerdict([onChainDnslink, dnslink])).toEqual({ verified: false, unverified: dnslink })
   })

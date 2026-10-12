@@ -6,7 +6,7 @@ import { base36 } from 'multiformats/bases/base36'
 import { base58btc } from 'multiformats/bases/base58'
 import type { Refusal } from '../../resolution/providers.js'
 import { resolveDnslink } from '../dnslink.js'
-import { GatewayPool } from '../gateways.js'
+import { GatewayPool } from '../../gateways/gateways.js'
 import { memorySequenceStore, resolveIpnsKey } from '../ipns.js'
 import { canonicalKey, parseContentPath } from '../names.js'
 import { followPointer } from '../pointers.js'
@@ -250,6 +250,6 @@ describe('followPointer', () => {
   })
 
   it('refuses an unsupported contenthash', async () => {
-    await expect(followPointer({ kind: 'unsupported', protocol: 'swarm' }, resolvers(fakeGateways(new Map())), signal, () => {})).rejects.toMatchObject({ failure: 'unsupported' })
+    await expect(followPointer({ kind: 'unsupported', protocol: 'arweave' }, resolvers(fakeGateways(new Map())), signal, () => {})).rejects.toMatchObject({ failure: 'unsupported' })
   })
 })

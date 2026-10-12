@@ -33,6 +33,7 @@ export interface VerifierFacts {
     readonly executionRpcs: readonly string[]
     readonly consensusRpc: string
     readonly gateways: readonly string[]
+    readonly swarmEndpoints: readonly string[]
     readonly ipnsNameServices: readonly string[]
     readonly dnsOverHttps: readonly string[]
   }
@@ -93,6 +94,7 @@ export function lightClientView (facts: VerifierFacts, now: number): LightClient
       { label: 'Ethereum RPCs', urls: facts.endpoints.executionRpcs },
       { label: 'Beacon API', urls: [facts.endpoints.consensusRpc] },
       { label: 'IPFS gateways', urls: facts.endpoints.gateways },
+      { label: 'Swarm endpoints', urls: facts.endpoints.swarmEndpoints },
       { label: 'IPNS name services', urls: facts.endpoints.ipnsNameServices },
       { label: 'DNS-over-HTTPS, for DNSLink', urls: facts.endpoints.dnsOverHttps }
     ]

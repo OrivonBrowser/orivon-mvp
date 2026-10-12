@@ -6,7 +6,7 @@
 // ever a SIGNAL that something is wrong, never proof of what is right.
 
 import type { ResolveTxt } from '../ipfs/dnslink.js'
-import { readCapped } from '../ipfs/gateways.js'
+import { readCapped } from '../gateways/gateways.js'
 import { canonicalAddress, isPublicUnicast } from '../../broker/policy/address.js'
 import type { WebFetch } from './egress.js'
 

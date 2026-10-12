@@ -33,7 +33,7 @@ applications a web page cannot be, and both are in use now.
 - Windows and macOS code signing with bought certificates.
 - Web3 search.
 - Tor and proxy chains.
-- Arweave, and content-addressed stores other than IPFS.
+- Arweave, and content-addressed stores other than IPFS and Swarm.
 - DDOC anchored in DNS.
 - A reading list, address autofill, and a device chooser for WebUSB.
 - Identity export and backup.
