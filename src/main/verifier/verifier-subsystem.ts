@@ -28,6 +28,7 @@ import { loopbackPort } from './loopback-port.js'
 import shippedCheckpoint from './mainnet-checkpoint.json'
 import { composeResolverRules } from './resolver-rules.js'
 import { ListeningGate } from './listening-gate.js'
+import type { EthTestSeam } from './test-seam.js'
 import { ethTestSeam, exposeVerifierStart, noteVerifierListening, verifierStartDelayMs } from './test-seam.js'
 import { VerifierStore } from './verifier-store.js'
 import { chooseNameEvidence } from './name-evidence.js'
@@ -39,6 +40,8 @@ import { HostLifecycle } from './host-lifecycle.js'
 import { anyTabOnVerifiedOrigin } from './tab-on-verified-origin.js'
 import type { TabsOfWindow } from './tab-on-verified-origin.js'
 import { provideVerifierAccess } from './verifier-access.js'
+import { ensureSwarmNode, onSwarmNodeChange, onSwarmNodeEndpointChange, swarmNodeEndpoint, swarmNodeState, swarmNodeVerifierIdle } from './swarm-node-subsystem.js'
+import type { SwarmNodeNotice } from '../../protocols/swarm-node/protocol.js'
 
 /** Mounting may wait for the light client to sync, then resolve a name and follow its pointers. */
 const MOUNT_TIMEOUT_MS = 30_000
@@ -51,6 +54,8 @@ let store: VerifierStore | undefined
 let lightClient: LightClientState = { state: 'off' }
 let checkpoint: CheckpointChoice | undefined
 let hostDown: string | undefined
+/** The Swarm node ask being answered, which later asks share. */
+let asking: Promise<unknown> | undefined
 /** No host process runs and nothing failed: it has not been needed yet, or it slept after going unused. */
 let hostAsleep = true
 const listeningGate = new ListeningGate(LISTEN_WAIT_MS)
@@ -182,6 +187,11 @@ async function ccipDirectFor (seamActive: boolean): Promise<boolean> {
   return unproxied.length > 0
 }
 
+/** The Bee-API origins Swarm reads from: the node Orivon runs, unless a test build names its own. */
+function swarmEndpoints (seam: EthTestSeam | undefined): readonly string[] {
+  return seam === undefined ? [swarmNodeEndpoint()] : seam.swarmEndpoints ?? []
+}
+
 async function hostConfig (): Promise<HostConfig> {
   const seam = ethTestSeam()
   const stored = verifierStore()
@@ -204,7 +214,8 @@ async function hostConfig (): Promise<HostConfig> {
     ipnsNameServices: seam === undefined ? DEFAULT_ENDPOINTS.ipnsNameServices : [],
     dnsOverHttps: seam?.dnsOverHttps ?? DEFAULT_ENDPOINTS.dnsOverHttps,
     ipnsSequences: stored.ipnsSequences(),
-    swarmEndpoints: seam?.swarmEndpoints ?? DEFAULT_ENDPOINTS.swarmEndpoints,
+    swarmEndpoints: swarmEndpoints(seam),
+    ...(seam === undefined && { swarmNode: true }),
     swarmFeedIndexes: stored.swarmFeedIndexes(),
     ...(seam === undefined ? {} : { fixtures: seam.fixtures })
   }
@@ -284,7 +295,8 @@ export function verifierView (): LightClientView {
     hostDown,
     hostAsleep: hostAsleep && hostDown === undefined,
     switchedOff: lightClientSwitchedOff(),
-    endpoints: DEFAULT_ENDPOINTS
+    ...(ethTestSeam() === undefined && { swarmNode: swarmNodeState() }),
+    endpoints: { ...DEFAULT_ENDPOINTS, swarmEndpoints: swarmEndpoints(ethTestSeam()) }
   }, Date.now())
 }
 
@@ -334,6 +346,7 @@ export const verifierSubsystem: Subsystem = {
           hostDown = undefined
           hostAsleep = true
           lightClient = { state: 'off' }
+          swarmNodeVerifierIdle()
           noteVerifierListening(false)
           // Whoever asks next starts it, and waits for it to listen.
           listeningGate.starting()
@@ -374,10 +387,27 @@ export const verifierSubsystem: Subsystem = {
         swarmFeedIndex: (feed, index) => { verifierStore().saveSwarmFeedIndex(feed, index) },
         nameScheme: (name, scheme) => {
           if (verifierStore().saveNameScheme(name, scheme)) for (const listener of nameSchemeListeners) listener()
+        },
+        swarmNodeWanted: () => {
+          // Asks that arrive while one is being answered share its answer, each told it: the host asks on every mount and every few seconds of reading.
+          asking ??= ensureSwarmNode().finally(() => { asking = undefined })
+          asking.then(tellHost, (error: unknown) => { console.error('[verifier] could not ask for the Swarm node:', error) })
         }
       }
     })
     supervisor = host
+    /** Tells the host what the Swarm node is doing; it holds a Swarm mount on the answer. */
+    function tellHost (): void {
+      const state = swarmNodeState()
+      const notice: SwarmNodeNotice = { type: 'swarm-node', state: state.state, ...(state.state === 'off' && state.reason !== undefined && { reason: state.reason }), ...(state.state === 'failed' && { reason: state.reason }) }
+      host.send(notice)
+    }
+    onSwarmNodeChange(() => {
+      tellHost()
+      changed()
+    })
+    // The host holds the node's endpoint from its start: with the port renewed, it starts afresh (its next request forks it with the new one).
+    onSwarmNodeEndpointChange(() => { host.idle() })
     const lifecycle = new HostLifecycle({
       start: () => { host.start() },
       idle: () => { host.idle() },

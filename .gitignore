@@ -32,6 +32,9 @@ coverage/
 release/
 # Fetched by scripts/fetch-bundled-extensions.mjs from pinned release assets, never committed.
 resources/default-profile/extensions/
+# Fetched by scripts/fetch-swarm-node.mjs from the files its manifest pins, never committed.
+resources/swarm-node/*
+!resources/swarm-node/swarm-node.json
 *.AppImage
 *.deb
 

@@ -23,6 +23,13 @@ classifier, all reused rather than copied; `@a16z/helios`.
 and talks to it over [`protocol.ts`](protocol.ts), and nothing else.
 [`../../main/verifier/`](../../main/verifier/) is its other side.
 
+**The Swarm node is asked for before each Swarm mount.** When `HostConfig.swarmNode` is set, the endpoint is
+the node Orivon runs ([`../swarm-node/`](../swarm-node/)): [`swarm-node-link.ts`](swarm-node-link.ts) posts
+`swarm-node-wanted` to main on every mount (which keeps the node's ten-minute idle wait from running out under
+use) and holds the mount up to twenty seconds for main's `swarm-node` notice, then fails it `unavailable`
+in plain words: off or failed with the reason, or still finding peers. A state other than ready is main's
+answer to this ask, never an earlier one.
+
 **Owner stream.** `ens-ipfs`.
 
 ## Design notes

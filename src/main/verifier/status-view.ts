@@ -5,6 +5,7 @@
 import { MAX_CHECKPOINT_AGE_SECONDS } from './checkpoint.js'
 import type { CheckpointChoice } from './checkpoint.js'
 import type { LightClientState } from '../../protocols/verifier-host/protocol.js'
+import type { SwarmNodeState } from '../../protocols/swarm-node/protocol.js'
 
 export interface LightClientView {
   /** One word for the badge: off, waiting, starting, syncing, synced, failed, down. `waiting`: on, with no host running until a .eth address needs it. */
@@ -15,6 +16,8 @@ export interface LightClientView {
   /** What the servers below learn, and which of their answers are used unchecked. */
   readonly about: string
   readonly endpoints: ReadonlyArray<{ readonly label: string, readonly urls: readonly string[] }>
+  /** The Swarm node Orivon runs, when this run uses it. */
+  readonly swarmNode?: SwarmNodeView
 }
 
 /** A head this old means the light client has stopped following the chain, whatever it last reported. */
@@ -29,6 +32,7 @@ export interface VerifierFacts {
   /** No host process is running and nothing has failed: it has not been needed yet, or it slept after going unused. */
   readonly hostAsleep: boolean
   readonly switchedOff: boolean
+  readonly swarmNode?: SwarmNodeState
   readonly endpoints: {
     readonly executionRpcs: readonly string[]
     readonly consensusRpc: string
@@ -90,13 +94,39 @@ export function lightClientView (facts: VerifierFacts, now: number): LightClient
     ...summaryOf(facts, now),
     checkpoint: checkpointLine(facts.checkpoint),
     about: ABOUT,
+    ...(facts.swarmNode !== undefined && { swarmNode: swarmNodeView(facts.swarmNode) }),
     endpoints: [
       { label: 'Ethereum RPCs', urls: facts.endpoints.executionRpcs },
       { label: 'Beacon API', urls: [facts.endpoints.consensusRpc] },
       { label: 'IPFS gateways', urls: facts.endpoints.gateways },
-      { label: 'Swarm endpoints', urls: facts.endpoints.swarmEndpoints },
+      { label: 'Swarm node, on this computer', urls: facts.endpoints.swarmEndpoints },
       { label: 'IPNS name services', urls: facts.endpoints.ipnsNameServices },
       { label: 'DNS-over-HTTPS, for DNSLink', urls: facts.endpoints.dnsOverHttps }
     ]
+  }
+}
+
+export interface SwarmNodeView {
+  /** One word for the badge. */
+  readonly state: SwarmNodeState['state']
+  /** The sentence under it. */
+  readonly summary: string
+}
+
+/** What Settings says about the Swarm node Orivon runs on this computer. */
+export function swarmNodeView (node: SwarmNodeState): SwarmNodeView {
+  switch (node.state) {
+    case 'off': return {
+      state: 'off',
+      summary: node.reason === undefined
+        ? 'Off. It starts when a Swarm address is opened, and stops again after ten minutes without one.'
+        : `Off: ${node.reason}.`
+    }
+    case 'starting': return {
+      state: 'starting',
+      summary: node.peers === undefined || node.peers === 0 ? 'Starting, and finding peers.' : `Starting: ${String(node.peers)} peer${node.peers === 1 ? '' : 's'} found so far.`
+    }
+    case 'ready': return { state: 'ready', summary: `Running, with ${String(node.peers)} peer${node.peers === 1 ? '' : 's'}.` }
+    case 'failed': return { state: 'failed', summary: `Not running: ${node.reason}. It tries again shortly.` }
   }
 }

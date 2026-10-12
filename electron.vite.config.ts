@@ -197,15 +197,16 @@ export default defineConfig({
       __ORIVON_COMMIT__: JSON.stringify(buildCommit(root))
     },
     build: {
-      // Three entries: the process start (small, so a second start of an open profile exits early),
-      // the browser it loads once it is the process that stays (index), and the verifier host it forks as a
-      // utility process (src/protocols/verifier-host/). Keys are the output names in
-      // out/main/, which src/main/verifier/ forks by name.
+      // Four entries: the process start (small, so a second start of an open profile exits early),
+      // the browser it loads once it is the process that stays (index), and the verifier host and the
+      // Swarm node it forks as utility processes (src/protocols/verifier-host/, src/protocols/swarm-node/).
+      // Keys are the output names in out/main/, which src/main/verifier/ forks by name.
       rollupOptions: {
         input: {
           start: resolve(root, 'src/main/start.ts'),
           index: resolve(root, 'src/main/index.ts'),
-          'verifier-host': resolve(root, 'src/protocols/verifier-host/entry.ts')
+          'verifier-host': resolve(root, 'src/protocols/verifier-host/entry.ts'),
+          'swarm-node-host': resolve(root, 'src/protocols/swarm-node/entry.ts')
         }
       },
       // Dependencies stay external, loaded from node_modules at run time,

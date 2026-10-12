@@ -5,6 +5,7 @@
 
 import type { ContentRoot, PointerStep } from '../resolution/records.js'
 import type { DdocReport } from '../resolution/providers.js'
+import type { SwarmNodeNotice, SwarmNodeWanted } from '../swarm-node/protocol.js'
 
 /** A beacon block root, as a checkpoint must be: Helios, handed anything else, silently uses one compiled into it, about a year old. */
 export const BLOCK_ROOT_PATTERN = /^0x[0-9a-f]{64}$/
@@ -48,6 +49,8 @@ export interface HostConfig {
   readonly swarmEndpoints: readonly string[]
   /** Highest feed update index seen per feed, as decimal strings keyed `<owner>/<topic>`, from earlier runs. */
   readonly swarmFeedIndexes: Readonly<Record<string, string>>
+  /** `swarmEndpoints` is the Swarm node Orivon runs: before each Swarm mount the host asks main for it (`swarm-node-wanted`) and waits for its state. */
+  readonly swarmNode?: boolean
   /** Test builds only: `.eth` names mapped to content with no light client. */
   readonly fixtures?: Readonly<Record<string, string>>
 }
@@ -85,6 +88,8 @@ export interface HostReplies {
 export type ToHost =
   | { readonly type: 'start', readonly config: HostConfig }
   | { readonly type: 'request', readonly id: number, readonly request: HostRequest }
+  /** What the Swarm node is doing, as main's answer to `swarm-node-wanted` and whenever it changes. */
+  | SwarmNodeNotice
 
 export type FromHost =
   | { readonly type: 'listening', readonly fingerprint: string }
@@ -96,5 +101,7 @@ export type FromHost =
   | { readonly type: 'checkpoint', readonly root: string, readonly timestamp: number }
   | { readonly type: 'ipns-sequence', readonly key: string, readonly sequence: string }
   | { readonly type: 'swarm-feed-index', readonly feed: string, readonly index: string }
+  /** A Swarm mount needs the node: main starts it if it is not running. */
+  | SwarmNodeWanted
   /** A top-level-domain name was mounted from content of the protocol serving `scheme`, so the shell can show `<scheme>://<host>`. */
   | { readonly type: 'name-scheme', readonly host: string, readonly scheme: string }

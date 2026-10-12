@@ -25,6 +25,8 @@ export interface SwarmGathererOptions {
   /** Bee-API origins asked for `/chunks`, in order of preference; none means Swarm content cannot be opened. A local node is the intended one. */
   readonly endpoints: readonly string[]
   readonly feedIndexes: FeedIndexStore
+  /** Held before each mount reads anything: the node the endpoints name may need starting. A rejection fails the mount as it is. */
+  readonly beforeMount?: (signal: AbortSignal) => Promise<void>
   readonly limits?: Partial<SwarmLimits>
 }
 
@@ -66,6 +68,7 @@ export function createSwarmGatherer (options: SwarmGathererOptions): DataGathere
       const record = swarmRecord(records)
       if (record === undefined) throw new ResolutionError('unsupported', `no record of ${name} names Swarm content`)
       if (deps === undefined) throw new ResolutionError('unavailable', 'this build has no Swarm node to load from yet, so Swarm content cannot be opened')
+      await options.beforeMount?.(signal)
       const source = partition === undefined ? new ChunkSource(deps, NO_BLOCK_MEMORY) : new ChunkSource(deps, memory, partition)
       const refusals: Refusal[] = []
       const onRefusal = (refusal: Refusal): void => { refusals.push(refusal) }

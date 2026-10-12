@@ -10,6 +10,8 @@ import { BLOCK_ROOT_PATTERN } from '../../protocols/verifier-host/protocol.js'
 import type { FromHost, HostReplies, HostRequest, LightClientState, SiteProvenance } from '../../protocols/verifier-host/protocol.js'
 import type { ContentPointer, ContentRoot, PointerStep, Provenance } from '../../protocols/resolution/records.js'
 import type { DdocReport, Refusal } from '../../protocols/resolution/providers.js'
+import { MAX_FAILURE_MESSAGE } from '../../protocols/swarm-node/protocol.js'
+import type { FromNode } from '../../protocols/swarm-node/protocol.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { DECIMAL } from './verifier-store.js'
 
@@ -132,6 +134,7 @@ export function isFromHost (message: unknown): message is FromHost {
     case 'status': return isLightClientState(message['status'])
     case 'checkpoint': return typeof message['root'] === 'string' && BLOCK_ROOT_PATTERN.test(message['root']) && typeof message['timestamp'] === 'number'
     case 'ipns-sequence': return typeof message['key'] === 'string' && isDecimal(message['sequence'])
+    case 'swarm-node-wanted': return true
     case 'swarm-feed-index': return typeof message['feed'] === 'string' && isDecimal(message['index'])
     case 'name-scheme': return isNameScheme(message['host'], message['scheme'])
     case 'reply':
@@ -139,6 +142,20 @@ export function isFromHost (message: unknown): message is FromHost {
       if (message['ok'] === true) return 'value' in message
       if (message['ok'] === false) return typeof message['message'] === 'string'
       return false
+    default: return false
+  }
+}
+
+const FAILURE_STAGES: ReadonlySet<unknown> = new Set(['artifact', 'compile', 'start', 'run', 'port'])
+
+/** Whether `message` is one the Swarm node's process may ever post. */
+export function isFromNode (message: unknown): message is FromNode {
+  if (!isRecord(message)) return false
+  switch (message.type) {
+    case 'listening': return true
+    case 'peers': return Number.isInteger(message['count']) && (message['count'] as number) >= 0
+    case 'ready': return Number.isInteger(message['peers']) && (message['peers'] as number) >= 0
+    case 'failed': return FAILURE_STAGES.has(message['stage']) && typeof message['message'] === 'string' && message['message'].length <= MAX_FAILURE_MESSAGE
     default: return false
   }
 }

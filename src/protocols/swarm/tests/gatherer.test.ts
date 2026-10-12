@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { concat } from 'viem'
 import type { MountedSite } from '../../resolution/providers.js'
+import { ResolutionError } from '../../resolution/records.js'
 import type { NameRecord } from '../../resolution/records.js'
 import { createSwarmGatherer } from '../gatherer.js'
 import type { SwarmGathererOptions } from '../gatherer.js'
@@ -61,6 +62,21 @@ describe('the Swarm gatherer', () => {
       failure: 'unavailable',
       message: expect.stringContaining('no Swarm node to load from') as unknown
     })
+    expect(swarm.requests).toEqual([])
+  })
+
+  it('holds each mount for beforeMount, and fails it as beforeMount rejects, before asking any endpoint', async () => {
+    const store = new Map<string, Uint8Array>()
+    const root = buildSite(SITE, store)
+    const calls: AbortSignal[] = []
+    let verdict: Error | undefined
+    const { gatherer, swarm } = harness(store, { beforeMount: async (signal) => { calls.push(signal); if (verdict !== undefined) throw verdict } })
+    await gatherer.mount('site.eth', [recordFor(root)])
+    await gatherer.mount('site.eth', [recordFor(root)])
+    expect(calls).toHaveLength(2)
+    verdict = new ResolutionError('unavailable', 'the node is off')
+    swarm.requests.length = 0
+    await expect(gatherer.mount('site.eth', [recordFor(root)])).rejects.toMatchObject({ failure: 'unavailable', message: 'the node is off' })
     expect(swarm.requests).toEqual([])
   })
 
