@@ -13,7 +13,7 @@ import type { PinnedFile } from '../protocol.js'
 
 let directory: string
 
-beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'swarm-node-component-')) })
+beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'local-node-component-')) })
 afterEach(async () => { await rm(directory, { recursive: true, force: true }) })
 
 const sha = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex')
@@ -92,36 +92,36 @@ describe('coreModuleReader', () => {
 describe('loadComponent', () => {
   it('refuses a file that is not jco output, such as a fallback page', async () => {
     const page = Buffer.from('<!doctype html><title>404</title>')
-    await writeFile(join(directory, 'swarm-node.js'), page)
-    const pins = [{ name: 'swarm-node.js', bytes: page.length, sha256: sha(page) }]
-    await expect(loadComponent(directory, 'swarm-node', pins, NO_IMPORTS)).rejects.toThrow(/not jco's output/)
+    await writeFile(join(directory, 'local-node.js'), page)
+    const pins = [{ name: 'local-node.js', bytes: page.length, sha256: sha(page) }]
+    await expect(loadComponent(directory, 'local-node', pins, NO_IMPORTS)).rejects.toThrow(/not jco's output/)
   })
 
   it('refuses output transpiled without the host\'s asynchronous imports, naming the command', async () => {
-    const pins = await install('swarm-node', tourFixture().glue.replace(/([\w$]+)\.manuallyAsync\s*=\s*!0/g, 'void 0'))
-    await expect(loadComponent(directory, 'swarm-node', pins, NO_IMPORTS)).rejects.toThrow(/jco transpile swarm-node\.wasm --name swarm-node/)
+    const pins = await install('local-node', tourFixture().glue.replace(/([\w$]+)\.manuallyAsync\s*=\s*!0/g, 'void 0'))
+    await expect(loadComponent(directory, 'local-node', pins, NO_IMPORTS)).rejects.toThrow(/jco transpile local-node\.wasm --name local-node/)
   })
 
   it('fails when the directory has no component', async () => {
-    const pins: PinnedFile[] = [{ name: 'swarm-node.js', bytes: 1, sha256: 'a'.repeat(64) }]
-    await expect(loadComponent(directory, 'swarm-node', pins, NO_IMPORTS)).rejects.toThrow(/ENOENT/)
+    const pins: PinnedFile[] = [{ name: 'local-node.js', bytes: 1, sha256: 'a'.repeat(64) }]
+    await expect(loadComponent(directory, 'local-node', pins, NO_IMPORTS)).rejects.toThrow(/ENOENT/)
   })
 
   it('does not import glue whose bytes are not the pinned ones', async () => {
-    const pins = await install('swarm-node')
-    await writeFile(join(directory, 'swarm-node.js'), `${tourFixture().glue}\n// changed after it was pinned`)
+    const pins = await install('local-node')
+    await writeFile(join(directory, 'local-node.js'), `${tourFixture().glue}\n// changed after it was pinned`)
     const instantiate = vi.fn()
-    await expect(loadComponent(directory, 'swarm-node', pins, NO_IMPORTS, { instantiate })).rejects.toBeInstanceOf(PinMismatch)
+    await expect(loadComponent(directory, 'local-node', pins, NO_IMPORTS, { instantiate })).rejects.toBeInstanceOf(PinMismatch)
     expect(instantiate).not.toHaveBeenCalled()
   })
 
   it('does not import glue that is not pinned', async () => {
-    const pins = (await install('swarm-node')).filter((pin) => pin.name !== 'swarm-node.js')
-    await expect(loadComponent(directory, 'swarm-node', pins, NO_IMPORTS, { instantiate: vi.fn() })).rejects.toBeInstanceOf(PinMismatch)
+    const pins = (await install('local-node')).filter((pin) => pin.name !== 'local-node.js')
+    await expect(loadComponent(directory, 'local-node', pins, NO_IMPORTS, { instantiate: vi.fn() })).rejects.toBeInstanceOf(PinMismatch)
   })
 
   it.skipIf(!hasJspi)('runs a component from the directory against the confined fs, and reports its exit code', async () => {
-    const pins = await install('swarm-node')
+    const pins = await install('local-node')
     const data = join(directory, 'data')
     const stdinChunks = [new TextEncoder().encode('ping\n')]
     let stdout = ''
@@ -135,7 +135,7 @@ describe('loadComponent', () => {
       stdout: new OutputStream(async (bytes) => { stdout += new TextDecoder().decode(bytes) }),
       stderr: new OutputStream(async () => {})
     })
-    const loaded = await loadComponent(directory, 'swarm-node', pins, imports, { instantiate: async (glue) => instantiateFrom(glue, jspiWebAssembly), wasm: jspiWebAssembly })
+    const loaded = await loadComponent(directory, 'local-node', pins, imports, { instantiate: async (glue) => instantiateFrom(glue, jspiWebAssembly), wasm: jspiWebAssembly })
     expect(await loaded.run()).toBe(1)
     expect(stdout).toBe('ping\n')
     expect(loaded.compileMs).toBeGreaterThan(0)

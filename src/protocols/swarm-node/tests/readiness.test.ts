@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { FromNode } from '../protocol.js'
+import type { FromNode } from '../../local-node/protocol.js'
 import { peerCountOf, peerCountOfLog, pollPeers, watchReadiness } from '../readiness.js'
 import type { Fetcher } from '../readiness.js'
 

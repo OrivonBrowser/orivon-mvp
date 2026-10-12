@@ -1,10 +1,13 @@
 // How many peers the node has, from its HTTP API (Bee's shape) or, when the
 // API answers in a shape that has no count, from its log.
 
-import { READY_PEERS } from './protocol.js'
-import type { FromNode } from './protocol.js'
+import type { Fetcher } from '../local-node/kind.js'
+import type { FromNode } from '../local-node/protocol.js'
 
-export { READY_PEERS }
+export type { Fetcher }
+
+/** The node counts as ready at this many connected peers. */
+export const READY_PEERS = 8
 
 function isRecord (value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -23,8 +26,6 @@ export function peerCountOfLog (line: string): number | undefined {
   const found = /peer_set_size=(\d+)/.exec(line)
   return found?.[1] === undefined ? undefined : Number(found[1])
 }
-
-export type Fetcher = (url: string, signal: AbortSignal) => Promise<{ ok: boolean, json: () => Promise<unknown> }>
 
 const API_PATHS = ['/peers', '/topology'] as const
 const ANSWER_MS = 3_000

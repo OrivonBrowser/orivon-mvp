@@ -12,11 +12,9 @@ servers supply availability only: none of them is trusted for correctness. It fo
 each ending in an exit criterion that must be demonstrably true. Where this sits in the roadmap is
 decided elsewhere; nothing here assumes an order relative to other work.
 
-**Read first.** The canonical pages this plan implements:
-[Web3 scores](https://docs.orivonstack.com/docs/implementations/web3-score),
-[DNS resolution](https://docs.orivonstack.com/docs/implementations/dns-resolution),
-[Data gathering](https://docs.orivonstack.com/docs/implementations/data-gathering), and
-[Native DDOC](https://docs.orivonstack.com/docs/implementations/native-ddoc-specs). In this
+**Read first.** The canonical pages this plan implements, in the earlier vision docs at
+`<vision-corpus>/implementations/`: `web3-score.md` (Web3 scores), `dns-resolution.md`
+(DNS resolution), `data-gathering.md` (Data gathering) and `native-ddoc-specs.md` (Native DDOC). In this
 repository: the retired `scope.md` (both features sit in its OUT table until EI-0
 lands), [ADR-0006](../decisions/ADR-0006-trust-indicator-from-observed-behaviour.md) (the trust
 indicator, which EI-0 amends), and
@@ -62,7 +60,7 @@ asked of it. It cannot make Orivon use a byte it changed.
 Owner, 2026-09-24. EI-0 records each in the decision log.
 
 1. **Trustlessity levels follow the canonical
-   [Web3 scores](https://docs.orivonstack.com/docs/implementations/web3-score) page.** On every
+   Web3 scores page.** On every
    site, `.eth` or not, the person sees its **Website level**. Only Level 1 (no DDOC) and Level 2
    (DDOC) are detected automatically. Level 3 and above come only from a Web3 Score provider
    assessing the site's content identifier: the bundle hash of a hash-pinned app, or the CID of
@@ -77,8 +75,7 @@ Owner, 2026-09-24. EI-0 records each in the decision log.
    of the site-info popover on `.eth` pages.
 5. **Built in, in the canonical shape.** ENS resolution and IPFS data gathering are built into
    Orivon as its default providers. They sit behind internal interfaces that match the canonical
-   [DNS resolution](https://docs.orivonstack.com/docs/implementations/dns-resolution) and
-   [Data gathering](https://docs.orivonstack.com/docs/implementations/data-gathering) pages: a
+   DNS resolution and Data gathering pages: a
    resolver returns records for its top-level domain; a gatherer loads from those records and
    reports DDOC; each top-level domain has an ordered provider list with fallback. Opening those
    interfaces to third-party Apps is a later `src/contracts/` change, not part of this plan.

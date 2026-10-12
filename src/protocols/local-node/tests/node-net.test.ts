@@ -223,7 +223,7 @@ describe('listen', () => {
     const server = await net.listen({ port: API_PORT, scope: 'local' })
     const reader = server.connections.getReader()
     const first = await reader.read()
-    expect(first.value?.id).toMatch(/^swarm-node-tcp-/)
+    expect(first.value?.id).toMatch(/^local-node-tcp-/)
   })
 
   it('resets an accepted connection beyond the socket limit', async () => {

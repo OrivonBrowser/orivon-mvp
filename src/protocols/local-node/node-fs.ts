@@ -1,4 +1,4 @@
-// The Swarm node's files, as the WASI host's WasiFs: node:fs confined to one
+// A local node's files, as the WASI host's WasiFs: node:fs confined to one
 // directory. A path arrives relative to it ('.' is the directory itself); one
 // that climbs out by `..`, or reaches out through a symlink, is refused.
 
@@ -24,7 +24,7 @@ const CODE_OF_ERRNO: Readonly<Record<string, OrivonErrorCode>> = {
 const DEVICE_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i
 
 function refusal (path: string): NodeJS.ErrnoException {
-  return Object.assign(new Error(`${path} is outside the Swarm node's directory`), { code: 'EACCES' })
+  return Object.assign(new Error(`${path} is outside the node's directory`), { code: 'EACCES' })
 }
 
 /** What the WASI host reads a failure by: the OrivonError code, with the errno kept as the platform code. */
@@ -56,7 +56,7 @@ function fileHandle (real: NodeFileHandle, release: () => void): FileHandle {
   const closed = new Promise<void>((resolve) => { done = resolve })
   let shut = false
   return {
-    id: `swarm-node-file-${randomUUID()}`,
+    id: `local-node-file-${randomUUID()}`,
     closed,
     close: async () => {
       if (shut) return

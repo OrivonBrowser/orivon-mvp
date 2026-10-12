@@ -1,8 +1,8 @@
 // Keeps a utility process running: forks it, hands it its config, restarts it
 // with backoff after it exits, and puts it to sleep on request. What the
 // process says, and what a caller may ask of it, is the subclass's
-// (host-supervisor.ts for the verifier host, swarm-node-supervisor.ts for the
-// Swarm node).
+// (host-supervisor.ts for the verifier host, local-node-supervisor.ts for a
+// local node).
 
 /** The slice of Electron's UtilityProcess this file uses. */
 export interface HostProcess {

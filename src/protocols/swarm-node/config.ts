@@ -5,9 +5,8 @@
 import { randomBytes } from 'node:crypto'
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { GUEST_DATA_DIR } from '../local-node/kind.js'
 
-/** Where the component sees the data directory. */
-export const GUEST_DATA_DIR = '/data'
 export const CONFIG_FILE = 'swarm-node.yaml'
 export const PASSWORD_FILE = 'swarm-node.password'
 

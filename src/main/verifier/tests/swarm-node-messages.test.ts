@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_FAILURE_MESSAGE, failure } from '../../../protocols/swarm-node/protocol.js'
+import { MAX_FAILURE_MESSAGE, failure } from '../../../protocols/local-node/protocol.js'
 import { isFromHost, isFromNode } from '../host-messages.js'
 import { swarmNodeView } from '../status-view.js'
 import { QUIET_PORTS, loopbackPort, swarmNodePort } from '../loopback-port.js'
