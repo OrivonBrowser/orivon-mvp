@@ -3,7 +3,8 @@
 // The change is every file that differs from the merge base with --base (default origin/main),
 // committed or not, plus untracked files. A code file brings the tests that import it (vitest
 // related); any other file brings the tests that name it, since a test reads a fixture or a
-// document through the filesystem, not an import. A change to what every test runs under (the
+// document through the filesystem, not an import, and a code file inside a bundled tree brings the
+// test comparing that bundle (BUNDLED_FROM). A change to what every test runs under (the
 // dependencies, the lockfile, a tsconfig, the vitest config) runs everything, as does --all.
 //
 //   npm run test:changed [-- --base <ref>] [-- --all] [-- --dry]
@@ -15,6 +16,11 @@ import { fileURLToPath } from 'node:url'
 const FULL_RUN = [/^package(-lock)?\.json$/, /^tsconfig[^/]*\.json$/, /^vitest\.config\.[cm]?[jt]s$/]
 const CODE = /\.(?:[cm]?[jt]s|tsx|json)$/
 const UNIT_TESTS = ['src/**/*.test.ts', 'scripts/**/*.test.ts']
+/** Tests that bundle a source tree from disk and compare it with a committed artifact: no import
+ * edge reaches them, so vitest related never selects them for a change inside that tree. */
+const BUNDLED_FROM = [
+  { under: ['src/shim/', 'src/contracts/'], test: 'src/shim/worker/tests/runtime-bundle.test.ts' }
+]
 
 /**
  * What to run for a set of changed paths, repo-relative. `named` returns the unit test files that
@@ -30,6 +36,10 @@ export function planTestRun (changed, named) {
   for (const path of changed) {
     if (CODE.test(path)) files.add(path)
     else for (const test of named(basename(path))) files.add(test)
+    if (!CODE.test(path)) continue
+    for (const bundle of BUNDLED_FROM) {
+      if (bundle.under.some((prefix) => path.startsWith(prefix))) files.add(bundle.test)
+    }
   }
   return files.size === 0 ? { mode: 'none' } : { mode: 'related', files: [...files].sort() }
 }

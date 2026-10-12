@@ -99,10 +99,12 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - A page that fails to load drops the previous site's icon, and retried downloads follow the site's download rules again.
 - Narrowing the window while the permissions panel was open quit Orivon every time; the panel now closes first, as the menu does.
 - Slow IPFS loads traced to public gateways (one throttling, one dead), not code; Orivon now asks the next gateway sooner when one stalls.
+- Swarm sites (bzz:// and .eth on Swarm) now load with every chunk checked against its hash; it stays off until Orivon's own Swarm node ships.
 
 ### In my head
 
 - AI runs were slow from process, not code: a fast lane for small changes, related-only local tests, and a session time report.
 - Asking for telemetry with a forced choice, not a pre-ticked box: legal in Europe, and people say yes almost as often.
+- Swarm should come from a node on the user's own machine, never public gateways: trustless and permissionless, or not at all.
 
 ### Non-repo
