@@ -84,7 +84,7 @@ Skip routine sessions.
 
 - `docs/inventory.md` indexes all prior material; do not re-crawl the filesystem for it.
 - `<prior-mvp>` is an earlier prototype that failed: a visual reference for its GUI, never a baseline.
-- The vision corpus at `<vision-corpus>` (orivon-docs) is outdated. Verify anything derived from
+- The vision corpus at `<vision-corpus>` (the earlier vision docs, not public) is outdated. Verify anything derived from
   it with the owner before treating it as true, and never copy it here.
 - ADRs are numbered in sequence and never renumbered once on `main`. Two branches can take the
   same number without a git conflict; the one that merges later renumbers its own.
