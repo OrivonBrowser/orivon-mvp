@@ -76,8 +76,12 @@ the setting lets a person refuse; the content that comes back is checked either 
   node's answer that it found nothing, so it is neither retried nor cooled for and the page shows its ordinary
   "not available" error at once; and a block that fails its hash sits the node out for 30 s instead of dropping
   it for the session as a gateway is.
-- Content whose only providers are HTTP gateways cannot be found by the node today (it answers 502 or 504); the
-  node is being patched, and Orivon does not work around it.
+- The node resolves the lookup services' names through this computer's resolver, which Orivon does not change.
+  On a network that hijacks DNS, a service whose name is hijacked fails with a certificate error and the other
+  keeps answering (0.14 to 0.2 s, blocks in 0.4 to 0.9 s cold); a site whose providers only the hijacked service
+  knows is not found there, and its page shows the ordinary "not available" error after about 35 s. A follow-up
+  could give the node a resolver of its own. Measured live: the node is ready about 1.2 s after its start (the
+  component compiles lazily in tens of milliseconds) and holds about 180 to 230 MB.
 
 ## Reversibility
 
