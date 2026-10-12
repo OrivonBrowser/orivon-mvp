@@ -1,7 +1,7 @@
 import { importer } from 'ipfs-unixfs-importer'
 import type { ImportCandidate, ImporterOptions } from 'ipfs-unixfs-importer'
 import { CID } from 'multiformats/cid'
-import type { Fetch } from '../gateways.js'
+import type { Fetch } from '../../gateways/gateways.js'
 
 export interface Dag {
   readonly root: CID

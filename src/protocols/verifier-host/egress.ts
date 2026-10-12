@@ -5,7 +5,7 @@
 import type { Hex } from 'viem'
 import { classifyAddress, isPublicUnicast } from '../../broker/policy/address.js'
 import { redirectRefusal } from '../../loader/electron/fetch.js'
-import { readCapped } from '../ipfs/gateways.js'
+import { readCapped } from '../gateways/gateways.js'
 import type { CcipRequestParameters } from '../ens/resolver.js'
 import { BUILTIN_ADDRESSES } from '../builtin.js'
 import type { DirectFetch } from './direct-fetch.js'

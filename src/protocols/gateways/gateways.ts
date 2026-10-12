@@ -20,7 +20,7 @@ export class GatewayPool {
     perGatewayConcurrency: number,
     private readonly clock: () => number = Date.now
   ) {
-    if (gateways.length === 0) throw new Error('no IPFS gateway configured')
+    if (gateways.length === 0) throw new Error('no gateway configured')
     for (const gateway of gateways) {
       this.health.set(gateway, new GatewayHealth(clock))
       this.slots.set(gateway, new Slots(perGatewayConcurrency))
