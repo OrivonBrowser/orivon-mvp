@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CID } from 'multiformats/cid'
@@ -119,6 +119,31 @@ describe('VerifierStore', () => {
     expect(s.nameScheme('n0.eth')).toBe('bzz')
     expect(s.nameScheme('n1.eth')).toBeUndefined()
     expect(s.nameScheme('one-more.eth')).toBe('bzz')
+  })
+
+  it('forgets every name scheme in memory and in the file, and keeps what it learns afterwards', async () => {
+    const { store: s, dir } = store()
+    s.saveNameScheme('swarm.eth', 'bzz')
+    s.saveNameScheme('a.eth', 'ipfs')
+    await s.flush()
+    s.saveIpnsSequence(KEY_1, '5')
+    await s.forgetNameSchemes()
+    expect(s.nameScheme('swarm.eth')).toBeUndefined()
+    expect(JSON.parse(readFileSync(join(dir, 'name-schemes.json'), 'utf8'))).toEqual({})
+    expect(new VerifierStore(dir).nameScheme('a.eth')).toBeUndefined()
+    expect(s.saveNameScheme('swarm.eth', 'bzz')).toBe(true)
+    await s.flush()
+    expect(new VerifierStore(dir).nameScheme('swarm.eth')).toBe('bzz')
+    await s.flush()
+    expect(new VerifierStore(dir).ipnsSequences()).toEqual({ [KEY_1]: '5' })
+  })
+
+  it('forgets names that were never flushed, so no pending write brings them back', async () => {
+    const { store: s, dir } = store()
+    s.saveNameScheme('swarm.eth', 'bzz')
+    await s.forgetNameSchemes()
+    await s.flush()
+    expect(new VerifierStore(dir).nameScheme('swarm.eth')).toBeUndefined()
   })
 
   it('reads a corrupt name-scheme file, or values no protocol serves, as empty', async () => {

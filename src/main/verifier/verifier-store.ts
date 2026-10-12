@@ -129,6 +129,11 @@ export class VerifierStore {
     return this.nameSchemes.save(name, scheme)
   }
 
+  /** Forgets every name's scheme, so each shows its default until it is next mounted. The file is emptied before this resolves. */
+  async forgetNameSchemes (): Promise<void> {
+    await this.nameSchemes.clear()
+  }
+
   /** Writes whatever is pending right now, instead of waiting out the debounce. Used by tests; `flushSync` is what quit calls, since nothing after `will-quit` can be awaited. */
   async flush (): Promise<void> {
     await this.sequences.flush()

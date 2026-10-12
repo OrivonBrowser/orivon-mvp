@@ -100,6 +100,13 @@ export class FloorFile {
     return true
   }
 
+  /** Forgets every value, in memory and on disk. The write waits for any one already under way, so an older snapshot cannot land after it. */
+  async clear (): Promise<void> {
+    if (this.flushTimer !== undefined) { clearTimeout(this.flushTimer); this.flushTimer = undefined }
+    this.floors = new Map()
+    await this.write(this.floors)
+  }
+
   /** Writes whatever is pending right now, instead of waiting out the debounce. */
   async flush (): Promise<void> {
     if (this.flushTimer !== undefined) { clearTimeout(this.flushTimer); this.flushTimer = undefined }

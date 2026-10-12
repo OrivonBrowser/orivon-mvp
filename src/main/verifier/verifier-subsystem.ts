@@ -300,6 +300,12 @@ export function onNameSchemeChange (listener: () => void): () => void {
   return () => { nameSchemeListeners.delete(listener) }
 }
 
+/** Clearing browsing data: the names this install has visited are forgotten, and open tabs draw their addresses again. */
+export async function forgetNameSchemes (): Promise<void> {
+  await verifierStore().forgetNameSchemes()
+  for (const listener of nameSchemeListeners) listener()
+}
+
 export const verifierSubsystem: Subsystem = {
   name: 'verifier',
   beforeReady: () => {
