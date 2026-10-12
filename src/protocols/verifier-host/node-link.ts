@@ -1,36 +1,51 @@
-// The verifier host's side of the Swarm node: before each Swarm mount it tells
-// main the node is wanted, and holds the mount until main reports the node
-// ready, or says in plain words why it will not be. Chunk reads from the node
-// keep it awake and, when the node is gone, ask for it again.
+// The verifier host's side of a local node, for any kind of node by its name:
+// before a mount that reads from the node it tells main the node is wanted,
+// and holds the mount until main reports the node ready, or says in plain
+// words why it will not be. Reads from the node keep it awake and, when the
+// node is gone, ask for it again.
 
 import { ResolutionError } from '../resolution/records.js'
 import type { Fetch } from '../gateways/gateways.js'
-import type { SwarmNodeNotice } from '../swarm-node/protocol.js'
-import type { FromHost } from './protocol.js'
+import type { NodeIdentity } from '../local-node/kind.js'
+import type { FromHost, NodeNotice } from './protocol.js'
 
 /** Within the 30 s a mount may take, how long it waits for the node to find its peers. */
 export const NODE_WAIT_MS = 20_000
 /** Chunk reads tell main the node is in use at most this often. */
 export const TOUCH_EVERY_MS = 5_000
 
-export interface SwarmNodeLink {
+/** What a kind says to the person when its node cannot serve a mount. */
+export interface NodeWords {
+  /** The content that loads only from the node: `Swarm content`. */
+  readonly content: string
+  /** Said when the node is still starting once a mount's wait ends. */
+  readonly starting: string
+}
+
+export interface NodeLink {
   /** Asks for the node and resolves once it is ready; rejects `unavailable` with the reason otherwise. */
   ensure: (signal: AbortSignal) => Promise<void>
   /** What main says the node is doing. */
-  notice: (notice: SwarmNodeNotice) => void
+  notice: (notice: NodeNotice) => void
   /** A chunk is being read from the node: refreshes its idle wait, with a message every few seconds at most. */
   touch: () => void
   /** `fetch` for the node's endpoint: each read keeps the node awake, and a read that finds it gone asks for it again once, as a mount does. */
   reading: (fetch: Fetch) => Fetch
 }
 
-const STILL_STARTING = "Orivon's Swarm node is still finding peers. Try again in a moment."
+/** A node that will not serve this mount. `why` is the reason alone, for a reader that has another source to use instead. */
+export class NodeUnavailable extends ResolutionError {
+  constructor (message: string, readonly why: string) {
+    super('unavailable', message)
+  }
+}
 
-function unavailable (answer: SwarmNodeNotice | undefined): ResolutionError {
-  const why = answer?.reason === undefined || answer.reason === '' ? '' : `: ${answer.reason}`
-  if (answer?.state === 'off') return new ResolutionError('unavailable', `Swarm content loads only from the Swarm node Orivon runs on this computer, and it is off${why}`)
-  if (answer?.state === 'failed') return new ResolutionError('unavailable', `Swarm content loads only from the Swarm node Orivon runs on this computer, and it is not running${why}`)
-  return new ResolutionError('unavailable', STILL_STARTING)
+function unavailable (identity: NodeIdentity, words: NodeWords, answer: NodeNotice | undefined): NodeUnavailable {
+  const reason = answer?.reason === undefined || answer.reason === '' ? undefined : answer.reason
+  const why = reason === undefined ? '' : `: ${reason}`
+  if (answer?.state === 'off') return new NodeUnavailable(`${words.content} loads only from the ${identity.noun} Orivon runs on this computer, and it is off${why}`, reason ?? `the ${identity.noun} is off`)
+  if (answer?.state === 'failed') return new NodeUnavailable(`${words.content} loads only from the ${identity.noun} Orivon runs on this computer, and it is not running${why}`, reason ?? `the ${identity.noun} is not running`)
+  return new NodeUnavailable(words.starting, `the ${identity.noun} is still starting`)
 }
 
 export interface LinkOptions {
@@ -39,12 +54,12 @@ export interface LinkOptions {
   readonly now?: () => number
 }
 
-export function createSwarmNodeLink (post: (message: FromHost) => void, options: LinkOptions = {}): SwarmNodeLink {
+export function createNodeLink (post: (message: FromHost) => void, identity: NodeIdentity, words: NodeWords, options: LinkOptions = {}): NodeLink {
   const waitMs = options.waitMs ?? NODE_WAIT_MS
   const touchEveryMs = options.touchEveryMs ?? TOUCH_EVERY_MS
   const now = options.now ?? Date.now
   /** What main last said, and how many notices there have been: an answer to an ask is a notice after it. */
-  let current: SwarmNodeNotice | undefined
+  let current: NodeNotice | undefined
   let notices = 0
   let askedAt = Number.NEGATIVE_INFINITY
   let refreshing: Promise<void> | undefined
@@ -52,7 +67,7 @@ export function createSwarmNodeLink (post: (message: FromHost) => void, options:
 
   const ask = (): void => {
     askedAt = now()
-    post({ type: 'swarm-node-wanted' })
+    post({ type: 'node-wanted', node: identity.name })
   }
 
   /** Asks, then waits for main's answer to this ask (or, unless `fresh`, takes a node already known ready). */
@@ -77,10 +92,10 @@ export function createSwarmNodeLink (post: (message: FromHost) => void, options:
     signal.throwIfAborted()
     // The notice each waiter reads is the one in `current`, which a later ask does not clear for it.
     if (notices > seen && current?.state === 'ready') return
-    throw unavailable(notices > seen ? current : undefined)
+    throw unavailable(identity, words, notices > seen ? current : undefined)
   }
 
-  const link: SwarmNodeLink = {
+  const link: NodeLink = {
     notice: (notice) => {
       current = notice
       notices += 1
@@ -104,4 +119,25 @@ export function createSwarmNodeLink (post: (message: FromHost) => void, options:
     }
   }
   return link
+}
+
+/** The links to every node the host reads from, each made on first use, and the one place a notice from main is routed by the node's name. */
+export class NodeLinks {
+  private readonly links = new Map<string, NodeLink>()
+
+  constructor (private readonly post: (message: FromHost) => void, private readonly options: LinkOptions = {}) {}
+
+  to (identity: NodeIdentity, words: NodeWords): NodeLink {
+    let link = this.links.get(identity.name)
+    if (link === undefined) {
+      link = createNodeLink(this.post, identity, words, this.options)
+      this.links.set(identity.name, link)
+    }
+    return link
+  }
+
+  /** Main's word about a node; one nothing here asked about is dropped. */
+  notice (notice: NodeNotice): void {
+    this.links.get(notice.node)?.notice(notice)
+  }
 }

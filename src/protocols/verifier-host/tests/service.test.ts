@@ -122,9 +122,9 @@ describe('startHost with Swarm', () => {
       running.push(host)
       const cid = referenceCid(site)
       const page = get(host.port, `${cid}.bzz.orivon`)
-      await vi.waitFor(() => { expect(posted).toContainEqual({ type: 'swarm-node-wanted' }) })
+      await vi.waitFor(() => { expect(posted).toContainEqual({ type: 'node-wanted', node: 'swarm-node' }) })
       expect(swarm.requests).toEqual([])
-      host.swarmNode({ type: 'swarm-node', state: 'ready' })
+      host.node({ type: 'node', node: 'swarm-node', state: 'ready' })
       expect(await page).toEqual({ status: 200, body: '<h1>on swarm</h1>' })
     })
 
@@ -137,7 +137,7 @@ describe('startHost with Swarm', () => {
       const page = get(host.port, 'swarm.eth')
       await vi.waitFor(() => { expect(posted).toContainEqual({ type: 'name-scheme', host: 'swarm.eth', scheme: 'bzz' }) })
       expect(swarm.requests).toEqual([])
-      host.swarmNode({ type: 'swarm-node', state: 'ready' })
+      host.node({ type: 'node', node: 'swarm-node', state: 'ready' })
       expect(await page).toEqual({ status: 200, body: '<h1>on swarm</h1>' })
     })
 
@@ -148,8 +148,8 @@ describe('startHost with Swarm', () => {
       const host = await startHost(config({ swarmEndpoints: [ENDPOINT], swarmNode: true }), world)
       running.push(host)
       const page = get(host.port, `${referenceCid(site)}.bzz.orivon`)
-      await vi.waitFor(() => { expect(posted).toContainEqual({ type: 'swarm-node-wanted' }) })
-      host.swarmNode({ type: 'swarm-node', state: 'off', reason: 'the Swarm node is not installed' })
+      await vi.waitFor(() => { expect(posted).toContainEqual({ type: 'node-wanted', node: 'swarm-node' }) })
+      host.node({ type: 'node', node: 'swarm-node', state: 'off', reason: 'the Swarm node is not installed' })
       const answered = await page
       expect(answered.status).toBe(502)
       expect(answered.body).toContain('the Swarm node is not installed')
@@ -163,8 +163,57 @@ describe('startHost with Swarm', () => {
       const host = await startHost(config({ swarmEndpoints: [ENDPOINT] }), world)
       running.push(host)
       expect((await get(host.port, `${referenceCid(site)}.bzz.orivon`)).status).toBe(200)
-      expect(posted).not.toContainEqual({ type: 'swarm-node-wanted' })
+      expect(posted).not.toContainEqual({ type: 'node-wanted', node: 'swarm-node' })
     })
+  })
+})
+
+describe('startHost with the IPFS node', () => {
+  const NODE = 'http://127.0.0.1:20123'
+
+  function world () {
+    const gw = fakeGateways(dag.blocks)
+    const made = deps({ fetch: async (url, init) => await gw.fetch(url, { headers: (init?.headers ?? {}) as Record<string, string>, signal: init?.signal ?? new AbortController().signal }) })
+    return { gw, made, posted: made.posted }
+  }
+
+  const provenanceOf = async (host: RunningHost): Promise<unknown> => await host.answer({ kind: 'provenance', host: 'fixture.eth', partition: 'https://fixture.eth' })
+
+  it('asks main for the node first, reads only the node once it is ready, and says so', async () => {
+    const { gw, made, posted } = world()
+    const host = await startHost(config({ ipfsNode: { endpoint: NODE } }), made)
+    running.push(host)
+    const page = get(host.port, 'fixture.eth')
+    await vi.waitFor(() => { expect(posted).toContainEqual({ type: 'node-wanted', node: 'ipfs-node' }) })
+    expect(gw.requests).toEqual([])
+    host.node({ type: 'node', node: 'ipfs-node', state: 'ready' })
+    expect(await page).toEqual({ status: 200, body: '<h1>fixture</h1>' })
+    expect(gw.requests.length).toBeGreaterThan(0)
+    expect(gw.requests.every((url) => url.startsWith(`${NODE}/`))).toBe(true)
+    expect(await provenanceOf(host)).toMatchObject({ servedFrom: { kind: 'node' } })
+  })
+
+  it('reads from the gateways, and says why, when the node cannot run, never waiting on it', async () => {
+    const { gw, made, posted } = world()
+    const host = await startHost(config({ ipfsNode: { endpoint: NODE } }), made)
+    running.push(host)
+    const page = get(host.port, 'fixture.eth')
+    await vi.waitFor(() => { expect(posted).toContainEqual({ type: 'node-wanted', node: 'ipfs-node' }) })
+    host.node({ type: 'node', node: 'ipfs-node', state: 'off', reason: 'a proxy is configured' })
+    expect(await page).toEqual({ status: 200, body: '<h1>fixture</h1>' })
+    expect(gw.requests.every((url) => url.startsWith(`${GATEWAY}/`))).toBe(true)
+    expect(await provenanceOf(host)).toMatchObject({ servedFrom: { kind: 'gateways', reason: 'a proxy is configured' } })
+  })
+
+  it('reads from the gateways, as before, when no node is chosen, and never asks for one', async () => {
+    const { gw, made, posted } = world()
+    const host = await startHost(config(), made)
+    running.push(host)
+    expect((await get(host.port, 'fixture.eth')).status).toBe(200)
+    expect(posted).not.toContainEqual({ type: 'node-wanted', node: 'ipfs-node' })
+    expect(gw.requests.every((url) => url.startsWith(`${GATEWAY}/`))).toBe(true)
+    expect(await provenanceOf(host)).toMatchObject({ servedFrom: { kind: 'gateways' } })
+    expect(await provenanceOf(host)).not.toHaveProperty('servedFrom.reason')
   })
 })
 

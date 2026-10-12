@@ -31,7 +31,7 @@ interface Harness {
   readonly clock: { now: number }
 }
 
-function harness (): Harness {
+function harness (options?: () => Readonly<Record<string, string>>): Harness {
   const nodes: FakeNode[] = []
   const sleeps: Harness['sleeps'] = []
   const timers: Harness['timers'] = []
@@ -52,7 +52,8 @@ function harness (): Harness {
     dataDir: () => '/profile/swarm-node',
     componentName: 'swarm-node',
     sleep: async (ms) => await new Promise<void>((wake) => { sleeps.push({ ms, wake }) }),
-    setTimer: (run, ms) => { timers.push({ ms, run }) }
+    setTimer: (run, ms) => { timers.push({ ms, run }) },
+    ...(options === undefined ? {} : { options })
   }
   const controller = new LocalNodeController(deps)
   return Object.defineProperties({ controller, nodes, sleeps, timers, calls, portsTaken, clock } as unknown as Harness, {
@@ -71,6 +72,21 @@ async function tick (h: Harness, ms: number): Promise<void> {
 }
 
 afterEach(() => { vi.useRealTimers() })
+
+describe('what the person chose', () => {
+  it('reaches the node as options at each start, so a change reaches the next one', async () => {
+    let mode = 'auto'
+    const h = harness(() => ({ routingMode: mode }))
+    void h.controller.ensure()
+    await settle()
+    expect(h.nodes[0]?.sent).toEqual([expect.objectContaining({ type: 'start', config: expect.objectContaining({ options: { routingMode: 'auto' } }) as unknown })])
+    h.controller.verifierIdle()
+    mode = 'light-dht'
+    void h.controller.ensure()
+    await settle()
+    expect(h.nodes[1]?.sent).toEqual([expect.objectContaining({ config: expect.objectContaining({ options: { routingMode: 'light-dht' } }) as unknown })])
+  })
+})
 
 describe('a node that must not start', () => {
   it('is off with the reason when its files are missing, and nothing is forked', async () => {

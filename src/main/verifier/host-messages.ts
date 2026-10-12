@@ -76,6 +76,10 @@ function isDdocReport (value: unknown): value is DdocReport {
   return false
 }
 
+function isServedFrom (value: unknown): boolean {
+  return isRecord(value) && (value.kind === 'node' || value.kind === 'gateways') && (value['reason'] === undefined || typeof value['reason'] === 'string')
+}
+
 function isSiteProvenance (value: unknown): value is SiteProvenance {
   return isRecord(value) &&
     typeof value['host'] === 'string' &&
@@ -83,7 +87,8 @@ function isSiteProvenance (value: unknown): value is SiteProvenance {
     isContentRoot(value['root']) &&
     isReadonlyArray(value['pointers'], isPointerStep) &&
     isDdocReport(value['ddoc']) &&
-    typeof value['mountedAt'] === 'number'
+    typeof value['mountedAt'] === 'number' &&
+    (value['servedFrom'] === undefined || isServedFrom(value['servedFrom']))
 }
 
 function isLightClientState (value: unknown): value is LightClientState {
@@ -134,7 +139,7 @@ export function isFromHost (message: unknown): message is FromHost {
     case 'status': return isLightClientState(message['status'])
     case 'checkpoint': return typeof message['root'] === 'string' && BLOCK_ROOT_PATTERN.test(message['root']) && typeof message['timestamp'] === 'number'
     case 'ipns-sequence': return typeof message['key'] === 'string' && isDecimal(message['sequence'])
-    case 'swarm-node-wanted': return true
+    case 'node-wanted': return typeof message['node'] === 'string'
     case 'swarm-feed-index': return typeof message['feed'] === 'string' && isDecimal(message['index'])
     case 'name-scheme': return isNameScheme(message['host'], message['scheme'])
     case 'reply':

@@ -9,7 +9,9 @@ import type { NameResolver } from '../resolution/providers.js'
 import { ENS } from '../ens/descriptor.js'
 import { createEnsResolver } from '../ens/resolver.js'
 import type { SequenceStore } from '../ipfs/ipns.js'
-import { ipfsProtocol } from '../ipfs/protocol.js'
+import { createIpfsGatherer } from '../ipfs/gatherer.js'
+import { createNodeFirstGatherer } from '../ipfs/node-first.js'
+import { ipfsProtocol, ipfsProtocolOf } from '../ipfs/protocol.js'
 import type { FeedIndexStore } from '../swarm/feed.js'
 import { swarmProtocol } from '../swarm/protocol.js'
 import { dohAddressResolver, dohTxtResolver } from './doh.js'
@@ -17,7 +19,10 @@ import { allowlisted, DEFAULT_CCIP_LIMITS, guardedCcipRequest } from './egress.j
 import { withDnsFallback } from './dns-fallback.js'
 import { createFixtureResolver } from './fixture-resolver.js'
 import type { HostConfig } from './protocol.js'
-import type { SwarmNodeLink } from './swarm-node-link.js'
+import { NodeUnavailable } from './node-link.js'
+import type { NodeLink, NodeLinks } from './node-link.js'
+import { IPFS_NODE_IDENTITY, IPFS_NODE_WORDS } from '../ipfs-node/protocol.js'
+import { SWARM_NODE_IDENTITY, SWARM_NODE_WORDS } from '../swarm-node/protocol.js'
 import type { Fetch } from '../gateways/gateways.js'
 import type { HostDeps, LightClient } from './service.js'
 
@@ -68,7 +73,7 @@ function offResolver (reason: string): NameResolver {
   }
 }
 
-function startIpfs (config: HostConfig, deps: HostDeps): Protocol {
+function startIpfs (config: HostConfig, deps: HostDeps, node: NodeLink | undefined): Protocol {
   const dohFetch = allowlisted(config.dnsOverHttps, deps.fetch, 'DNS-over-HTTPS')
   // A251 (docs/open-questions.md): only for a gateway main found to have no
   // proxy in front of it, and only once net.fetch has already failed it
@@ -83,16 +88,40 @@ function startIpfs (config: HostConfig, deps: HostDeps): Protocol {
     log: (line) => { console.error(`[verifier] ${line}`) }
   })
   const gatewayFetch = allowlisted([...config.gateways, ...config.ipnsNameServices], reach, 'the IPFS gatherer')
-  return ipfsProtocol({
-    fetch: async (url, init) => await gatewayFetch(url, init),
+  const common = { resolveTxt: dohTxtResolver(config.dnsOverHttps, dohFetch), ipnsSequences: sequenceStore(config.ipnsSequences, deps.post) }
+  const viaGateways = {
+    fetch: async (url: string, init: Parameters<Fetch>[1]) => await gatewayFetch(url, init),
     gateways: config.gateways,
     ipnsNameServices: config.ipnsNameServices,
-    resolveTxt: dohTxtResolver(config.dnsOverHttps, dohFetch),
-    ipnsSequences: sequenceStore(config.ipnsSequences, deps.post)
-  })
+    ...common
+  }
+  if (config.ipfsNode === undefined || node === undefined) return ipfsProtocol(viaGateways)
+
+  // The node's own endpoint answers blocks and records; a name service is still asked for a record after it.
+  const nodeOrigin = new URL(config.ipfsNode.endpoint).origin
+  const nodeRead = node.reading(allowlisted([config.ipfsNode.endpoint], deps.fetch, 'the IPFS node'))
+  const nameServiceFetch = allowlisted(config.ipnsNameServices, reach, 'the IPFS gatherer')
+  const viaNode = {
+    fetch: async (url: string, init: Parameters<Fetch>[1]) => await (new URL(url).origin === nodeOrigin ? nodeRead(url, init) : nameServiceFetch(url, init)),
+    gateways: [config.ipfsNode.endpoint],
+    ipnsNameServices: config.ipnsNameServices,
+    localNode: true,
+    ...common
+  }
+  return ipfsProtocolOf(createNodeFirstGatherer({
+    node: createIpfsGatherer(viaNode),
+    gateways: createIpfsGatherer(viaGateways),
+    ready: async (signal) => {
+      try {
+        await node.ensure(signal)
+      } catch (error) {
+        throw error instanceof NodeUnavailable ? new Error(error.why) : error
+      }
+    }
+  }))
 }
 
-function startSwarm (config: HostConfig, deps: HostDeps, node: SwarmNodeLink | undefined): Protocol {
+function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefined): Protocol {
   const endpointFetch = allowlisted(config.swarmEndpoints, deps.fetch, 'the Swarm gatherer')
   const read: Fetch = async (url, init) => await endpointFetch(url, init)
   return swarmProtocol({
@@ -118,7 +147,9 @@ function startEns (config: HostConfig, deps: HostDeps): { protocol: Protocol, li
   return { protocol: defineProtocol(ENS, { resolvers }), lightClient }
 }
 
-export function startProtocols (config: HostConfig, deps: HostDeps, node?: SwarmNodeLink): RunningProtocols {
+export function startProtocols (config: HostConfig, deps: HostDeps, nodes?: NodeLinks): RunningProtocols {
   const ens = startEns(config, deps)
-  return { protocols: [ens.protocol, startIpfs(config, deps), startSwarm(config, deps, node)], lightClient: ens.lightClient }
+  const ipfsNode = nodes?.to(IPFS_NODE_IDENTITY, IPFS_NODE_WORDS)
+  const swarmNode = nodes?.to(SWARM_NODE_IDENTITY, SWARM_NODE_WORDS)
+  return { protocols: [ens.protocol, startIpfs(config, deps, ipfsNode), startSwarm(config, deps, swarmNode)], lightClient: ens.lightClient }
 }

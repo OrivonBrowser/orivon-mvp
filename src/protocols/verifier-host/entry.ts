@@ -51,8 +51,8 @@ function main (): void {
       )
       return
     }
-    if (message.type === 'swarm-node') {
-      host?.then((running) => { running.swarmNode(message) }, () => {})
+    if (message.type === 'node') {
+      host?.then((running) => { running.node(message) }, () => {})
       return
     }
     const { id, request } = message

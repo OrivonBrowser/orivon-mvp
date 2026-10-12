@@ -39,6 +39,8 @@ export interface ControllerDeps {
   /** The node could not bind its API port: choose another for the next start, and let whoever fixed the old one in place know. */
   readonly apiPortTaken?: () => void
   readonly dataDir: () => string
+  /** What the person chose that the kind turns into arguments, read at each start so a change reaches the next one. */
+  readonly options?: () => Readonly<Record<string, string>>
   readonly componentName: string
   readonly readyWaitMs?: number
   /** Resolves after `ms`; the default is a timer that never keeps the process alive. */
@@ -176,7 +178,8 @@ export class LocalNodeController {
       this.refuse(verdict.reason)
       throw new RefusedToStart(verdict.reason)
     }
-    return { kind: this.deps.kind.name, apiPort: this.deps.apiPort(), dataDir: this.deps.dataDir(), componentDir: verdict.directory, componentName: this.deps.componentName, files: this.deps.files }
+    const options = this.deps.options?.()
+    return { kind: this.deps.kind.name, apiPort: this.deps.apiPort(), dataDir: this.deps.dataDir(), componentDir: verdict.directory, componentName: this.deps.componentName, files: this.deps.files, ...(options === undefined ? {} : { options }) }
   }
 
   private async settled (): Promise<LocalNodeState> {

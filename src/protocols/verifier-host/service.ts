@@ -10,9 +10,8 @@ import { createRunCertificate } from './serve/certificate.js'
 import type { WebFetch } from './egress.js'
 import type { DirectFetch } from './direct-fetch.js'
 import { startProtocols } from './protocols.js'
-import { createSwarmNodeLink } from './swarm-node-link.js'
-import type { SwarmNodeNotice } from '../swarm-node/protocol.js'
-import type { FromHost, HostConfig, HostReplies, HostRequest, LightClientConfig, LightClientState, SiteProvenance } from './protocol.js'
+import { NodeLinks } from './node-link.js'
+import type { FromHost, NodeNotice, HostConfig, HostReplies, HostRequest, LightClientConfig, LightClientState, SiteProvenance } from './protocol.js'
 import { createVerifierServer } from './serve/server.js'
 import { MOUNT_TIMEOUT_MS, Sites } from './serve/sites.js'
 import type { SiteRecord } from './serve/sites.js'
@@ -48,13 +47,13 @@ export interface RunningHost {
   readonly port: number
   readonly fingerprint: string
   answer: (request: HostRequest) => Promise<HostReplies[HostRequest['kind']]>
-  /** What main says the Swarm node is doing. */
-  swarmNode: (notice: SwarmNodeNotice) => void
+  /** What main says a local node is doing. */
+  node: (notice: NodeNotice) => void
 }
 
 export async function startHost (config: HostConfig, deps: HostDeps): Promise<RunningHost> {
-  const swarmNode = createSwarmNodeLink(deps.post)
-  const { protocols, lightClient } = startProtocols(config, deps, swarmNode)
+  const nodes = new NodeLinks(deps.post)
+  const { protocols, lightClient } = startProtocols(config, deps, nodes)
   const registry = new ProtocolRegistry(protocols)
   // A top-level-domain name is shown by where its content lives, which is known once a gatherer is chosen for its records.
   const sites = new Sites(registry, Date.now, MOUNT_TIMEOUT_MS, (host, gatherer) => {
@@ -73,7 +72,7 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
   })
 
   const provenanceOf = (host: string, { site, resolver, mountedAt }: SiteRecord): SiteProvenance =>
-    ({ host, resolver, root: site.root, pointers: site.pointers, ddoc: site.ddoc(), mountedAt })
+    ({ host, resolver, root: site.root, pointers: site.pointers, ddoc: site.ddoc(), mountedAt, ...(site.servedFrom !== undefined && { servedFrom: site.servedFrom }) })
 
   const answer = async (request: HostRequest): Promise<HostReplies[HostRequest['kind']]> => {
     switch (request.kind) {
@@ -91,6 +90,6 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
     port: (server.address() as AddressInfo).port,
     fingerprint: certificate.fingerprint,
     answer,
-    swarmNode: swarmNode.notice
+    node: (notice) => { nodes.notice(notice) }
   }
 }

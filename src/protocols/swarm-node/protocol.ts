@@ -9,5 +9,5 @@ export const SWARM_NODE_IDENTITY: NodeIdentity = { name: 'swarm-node', noun: 'Sw
 /** What main tells the verifier host about the node (the wiring phase carries it over the host's own port). */
 export type SwarmNodeState = LocalNodeState
 
-export interface SwarmNodeWanted { readonly type: 'swarm-node-wanted' }
-export interface SwarmNodeNotice { readonly type: 'swarm-node', readonly state: SwarmNodeState['state'], readonly reason?: string }
+/** What the verifier host tells the person when a Swarm mount cannot have its node. */
+export const SWARM_NODE_WORDS = { content: 'Swarm content', starting: "Orivon's Swarm node is still finding peers. Try again in a moment." } as const
