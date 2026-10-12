@@ -146,12 +146,12 @@ extraResources:
 # What a new profile starts with (src/main/default-profile/): the bundled extensions list, its
 # fetched .crx files and the bookmark icons. `package:*` fetches the .crx files first, so a
 # package never lacks them.
-  - from: resources/swarm-node
-    to: swarm-node
+  - from: resources
+    to: .
     filter:
-      - "**/*"
-# The Swarm light node's files (src/main/verifier/swarm-node-artifact.ts checks them against the hashes
-# compiled into the app before every start). `package:*` fetches them first.
+      - "*-node/**/*"
+# Every local node's files, in a folder named after it (src/main/verifier/local-node-artifact.ts checks
+# them against the hashes compiled into the app before every start). `package:*` fetches them first.
 
 linux:
   target:
