@@ -7,6 +7,7 @@ import { destroySocket } from '../adapters/node-adapters.js'
 import { socketReadable, socketWritable } from '../adapters/socket-streams.js'
 import type { DialedSocket } from '../broker-contracts.js'
 import { fail } from '../errors.js'
+import { withDeadline } from './deadline.js'
 import type { Route } from './provider.js'
 import { mapRouteError } from './provider.js'
 
@@ -15,13 +16,13 @@ import { mapRouteError } from './provider.js'
  *
  * The addresses it reports are the destination the app named, never the
  * proxy's: what the app sees is the route's far end, and a local address would
- * only show where the proxy listens. Every failure is `unreachable` or, for an
- * aborted call, `revoked`.
+ * only show where the proxy listens. A failure is `unreachable`, a call that
+ * runs past the dial deadline is `timeout`, and an aborted call is `revoked`.
  */
-export async function dialThroughRoute (route: Route, host: string, port: number, signal: AbortSignal): Promise<DialedSocket> {
+export async function dialThroughRoute (route: Route, host: string, port: number, signal: AbortSignal, deadlineMs?: number): Promise<DialedSocket> {
   let socket: Socket
   try {
-    socket = await route.provider.connect(host, port, signal)
+    socket = await withDeadline(signal, async (attempt) => await route.provider.connect(host, port, attempt), deadlineMs)
   } catch (error) {
     throw signal.aborted ? fail('revoked', 'the connection was abandoned') : mapRouteError(error)
   }

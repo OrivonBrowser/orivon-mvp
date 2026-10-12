@@ -33,6 +33,8 @@ export interface Socks5FixtureOptions {
   readonly preferAuth?: boolean
   /** Answer UDP ASSOCIATE with "command not supported". */
   readonly noUdp?: boolean
+  /** Answer UDP ASSOCIATE with the unspecified address, meaning "where you reached me". */
+  readonly unspecifiedRelay?: boolean
   /** Send the target's first bytes in the same write as the CONNECT reply, as a proxy relaying a server that speaks first can. */
   readonly coalesceFirstBytes?: boolean
 }
@@ -213,7 +215,7 @@ export async function startSocks5Fixture (options: Socks5FixtureOptions = {}): P
     const relay = createSocket('udp4')
     relays.add(relay)
     await new Promise<void>((resolve) => { relay.bind(0, '127.0.0.1', resolve) })
-    socket.write(reply(0x00, { host: '127.0.0.1', port: relay.address().port }))
+    socket.write(reply(0x00, { host: options.unspecifiedRelay === true ? '0.0.0.0' : '127.0.0.1', port: relay.address().port }))
     socket.on('close', () => { closeRelay(relay); relays.delete(relay) })
 
     let client: { address: string, port: number } | undefined

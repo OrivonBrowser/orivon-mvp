@@ -142,11 +142,14 @@ describe('udp.send for a routed app', () => {
 
   it('keeps T20 and the direct path for an app with no route', async () => {
     const rawSend = vi.fn(async () => ({ sent: true } as const))
-    const broker = createBroker(baseDeps({ routeFor: () => undefined, proxyConfigured: async () => true, bind: async () => okUdpSocket({ send: rawSend }) }))
+    let proxied = false
+    const broker = createBroker(baseDeps({ routeFor: () => undefined, proxyConfigured: async () => proxied, bind: async () => okUdpSocket({ send: rawSend }), resolve: async () => ['93.184.216.34'] }))
     const socket = await boundSocket(broker)
 
+    await expect(socket.send(datagramTo('93.184.216.34', 4000))).resolves.toEqual({ sent: true })
+    proxied = true
     await expect(socket.send(datagramTo('93.184.216.34', 4000))).resolves.toEqual({ sent: false, code: 'denied' })
-    expect(rawSend).not.toHaveBeenCalled()
+    expect(rawSend).toHaveBeenCalledOnce()
   })
 })
 

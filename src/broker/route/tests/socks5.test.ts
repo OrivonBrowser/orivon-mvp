@@ -126,6 +126,17 @@ describe('CONNECT', () => {
   })
 })
 
+describe('a signal that has already fired', () => {
+  it('opens nothing and rejects revoked', async () => {
+    const proxy = await fixture()
+    const fired = AbortSignal.abort()
+
+    await expect(createSocks5Provider({ host: proxy.host, port: proxy.port }).connect('a.test', 1, fired)).rejects.toMatchObject({ code: 'revoked' })
+    await expect(createSocks5Provider({ host: proxy.host, port: proxy.port }).udp?.(fired)).rejects.toMatchObject({ code: 'revoked' })
+    expect(proxy.requests).toEqual([])
+  })
+})
+
 describe('authentication', () => {
   it('offers no authentication alone when it has no credentials', async () => {
     const target = await echoServer()
@@ -194,6 +205,18 @@ describe('UDP ASSOCIATE', () => {
     expect([...answer.data]).toEqual([1, 2, 3])
     expect(proxy.requests).toMatchObject([{ command: 'associate' }])
     expect(proxy.datagrams).toEqual(['udp-name.test:5353'])
+  })
+
+  it('sends to the proxy itself when it names the unspecified address as its relay', async () => {
+    const target = await udpEchoServer()
+    const proxy = await fixture({ unspecifiedRelay: true, names: { 'udp-name.test:5353': { host: '127.0.0.1', port: target } } })
+    const udp = await createSocks5Provider({ host: proxy.host, port: proxy.port }).udp?.(NEVER)
+    cleanups.push(async () => { await udp?.close() })
+    const received = new Promise<RoutedDatagram>((resolve) => { udp?.onDatagram(resolve) })
+
+    await udp?.send({ host: 'udp-name.test', port: 5353, data: new Uint8Array([4]) })
+
+    expect([...(await received).data]).toEqual([4])
   })
 
   it('rejects when the proxy refuses UDP ASSOCIATE', async () => {

@@ -11,7 +11,7 @@ import type { GrantLedger } from '../grants/grant-ledger.js'
 import { fail } from '../errors.js'
 import { mapIoError } from '../io-errors.js'
 import { checkConnect, connectStillAuthorised } from '../policy/connect.js'
-import { checkRoutedConnect, routedStillAuthorised } from '../policy/connect-routed.js'
+import { NO_RESOLVER, checkRoutedConnect, isLoopbackTarget, routedStillAuthorised } from '../policy/connect-routed.js'
 import { dialThroughRoute } from '../route/routed-socket.js'
 import { checkLookup } from '../policy/lookup.js'
 import { createConnectSecure } from './net-connect-secure.js'
@@ -100,7 +100,10 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical, lis
     if (current === undefined) throw fail('denied', 'tcp.connect is not granted to this origin')
 
     // Read once per call: a route that changes later applies to the next one.
+    // This machine itself is never sent through a route: the proxy's loopback
+    // is not the app's, and nothing leaves the computer.
     const route = deps.routeFor?.(key)
+    const viaRoute = route !== undefined && !isLoopbackTarget(opts.host)
 
     return await handleTable.run(key, { on: 'grant', grantId: current.id }, async (signal) => {
       // `checkConnect` calls `deps.resolve` internally and does not catch
@@ -112,7 +115,7 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical, lis
       let dialed: DialedSocket
       let stillCovered: (patterns: readonly Pattern[]) => boolean
       try {
-        if (route !== undefined) {
+        if (viaRoute) {
           // A routed app: the route is its proxy, so T20 is not asked, and the
           // name goes to the route unresolved (policy/connect-routed.ts).
           const decision = await checkRoutedConnect(current.patterns, opts.host, opts.port)
@@ -126,10 +129,12 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical, lis
           // real Node DNS -- a query no proxy sees. Waiting until after
           // `checkConnect` would let that lookup go around a configured
           // proxy even on the path that then denies the connect itself (T20).
-          if (await deps.proxyConfigured(proxyProbeUrl(opts.host, opts.port))) {
+          // A routed app has its route as its proxy, and reaches only this
+          // machine here, which needs no resolver.
+          if (route === undefined && await deps.proxyConfigured(proxyProbeUrl(opts.host, opts.port))) {
             throw fail('denied', 'a system proxy is configured; tcp.connect refuses to bypass it')
           }
-          const decision = await checkConnect(current.patterns, opts.host, opts.port, deps.resolve)
+          const decision = await checkConnect(current.patterns, opts.host, opts.port, route === undefined ? deps.resolve : NO_RESOLVER)
           if (!decision.allowed) throw fail('denied', 'the connection was not authorised')
           // Checked here too, not only after `dial` resolves below: without
           // this, a grant revoked while resolve was still pending would still

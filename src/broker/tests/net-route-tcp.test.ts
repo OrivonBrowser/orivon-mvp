@@ -8,7 +8,7 @@ import type { Server as TlsServer } from 'node:tls'
 import type { AddressInfo } from 'node:net'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { rejection } from '../handles/tests/handles.test-helpers.js'
-import { APP, okSocket } from './index.test-helpers.js'
+import { APP, okSecureSocket, okSocket } from './index.test-helpers.js'
 import { echoServer, recordedRoute, registerAndGrant, routedBroker } from './net-route.test-helpers.js'
 import type { EchoServer } from './net-route.test-helpers.js'
 import { createBroker } from '../index.js'
@@ -95,6 +95,22 @@ describe('orivon.net.connect for a routed app', () => {
     expect(connects).toEqual([])
   })
 
+  it('reaches this machine directly, as the address it checked, and never through the route', async () => {
+    const { route, connects } = recordedRoute({ target: 1 })
+    const deps = { ...noLocalNetwork(), dial: vi.fn(async () => okSocket()) }
+    const broker = routedBroker(route, deps)
+    await registerAndGrant(broker, { net: { tcp: { connect: ['127.0.0.1:8080', 'localhost:9090'] } } }, [['tcp.connect', ['127.0.0.1:8080', 'localhost:9090']]])
+
+    await broker.net.connect(APP, { host: '127.0.0.1', port: 8080 })
+    await broker.net.connect(APP, { host: 'localhost', port: 9090 })
+
+    expect(connects).toEqual([])
+    expect(deps.dial).toHaveBeenNthCalledWith(1, ['127.0.0.1'], 8080, expect.anything())
+    expect(deps.dial).toHaveBeenNthCalledWith(2, ['127.0.0.1', '::1'], 9090, expect.anything())
+    expect(deps.resolve).not.toHaveBeenCalled()
+    expect(deps.proxyConfigured).not.toHaveBeenCalled()
+  })
+
   it('maps any error from the route to unreachable, without the proxy\'s own words', async () => {
     for (const thrown of [new Error('SOCKS5 proxy rejected connection - HostUnreachable at 10.9.9.9'), Object.assign(new Error('refused'), { code: 'ECONNREFUSED' })]) {
       const { route } = recordedRoute({ connect: async () => { throw thrown } })
@@ -164,7 +180,7 @@ describe('orivon.net.connectSecure for a routed app', () => {
   let caCert: string
 
   beforeAll(async () => {
-    const fixture = generateTlsFixture()
+    const fixture = generateTlsFixture('secure.example')
     caCert = fixture.caCert
     server = createTlsServer({ key: fixture.leafKey, cert: fixture.leafCert }, (socket) => { socket.on('error', () => {}); socket.end('hello over the route') })
     await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
@@ -177,16 +193,16 @@ describe('orivon.net.connectSecure for a routed app', () => {
     const { route, connects } = recordedRoute({ target: port })
     const deps = noLocalNetwork()
     const broker = routedBroker(route, deps)
-    await registerAndGrant(broker, { net: { https: { connect: [`localhost:${String(port)}`] } } }, [['https.connect', [`localhost:${String(port)}`]]])
+    await registerAndGrant(broker, { net: { https: { connect: [`secure.example:${String(port)}`] } } }, [['https.connect', [`secure.example:${String(port)}`]]])
 
-    const socket = await broker.net.connectSecure(APP, { host: 'localhost', port, ca: caCert })
+    const socket = await broker.net.connectSecure(APP, { host: 'secure.example', port, ca: caCert })
 
-    expect(connects).toEqual([{ host: 'localhost', port }])
+    expect(connects).toEqual([{ host: 'secure.example', port }])
     expect(socket.authorized).toBe(true)
     expect(deps.resolve).not.toHaveBeenCalled()
     expect(deps.dialSecure).not.toHaveBeenCalled()
     expect(deps.proxyConfigured).not.toHaveBeenCalled()
-    expect(socket.remoteAddress).toBe('localhost')
+    expect(socket.remoteAddress).toBe('secure.example')
     const chunks: Buffer[] = []
     const reader = socket.readable.getReader()
     for (;;) {
@@ -201,11 +217,24 @@ describe('orivon.net.connectSecure for a routed app', () => {
   it('refuses a certificate that does not name the host, as unreachable', async () => {
     const { route } = recordedRoute({ target: port })
     const broker = routedBroker(route, noLocalNetwork())
-    await registerAndGrant(broker, { net: { https: { connect: [`127.0.0.1:${String(port)}`] } } }, [['https.connect', [`127.0.0.1:${String(port)}`]]])
+    await registerAndGrant(broker, { net: { https: { connect: [`wrong.example:${String(port)}`] } } }, [['https.connect', [`wrong.example:${String(port)}`]]])
 
-    const error = await rejection(broker.net.connectSecure(APP, { host: '127.0.0.1', port, ca: caCert }))
+    const error = await rejection(broker.net.connectSecure(APP, { host: 'wrong.example', port, ca: caCert }))
 
     expect(error.code).toBe('unreachable')
+  })
+
+  it('reaches this machine as literals it checked, never through the route', async () => {
+    const { route, connects } = recordedRoute({ target: 1 })
+    const deps = { ...noLocalNetwork(), dialSecure: vi.fn(async () => okSecureSocket()) }
+    const broker = routedBroker(route, deps)
+    await registerAndGrant(broker, { net: { https: { connect: ['localhost:8443'] } } }, [['https.connect', ['localhost:8443']]])
+
+    await broker.net.connectSecure(APP, { host: 'localhost', port: 8443 })
+
+    expect(connects).toEqual([])
+    expect(deps.dialSecure).toHaveBeenCalledWith({ host: 'localhost', port: 8443, addresses: ['127.0.0.1', '::1'] }, expect.anything(), expect.anything())
+    expect(deps.resolve).not.toHaveBeenCalled()
   })
 
   it('keeps the grant and the address check: a private literal under a wildcard is denied before the route is asked', async () => {

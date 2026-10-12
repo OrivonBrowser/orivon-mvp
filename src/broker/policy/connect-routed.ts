@@ -7,8 +7,8 @@
 //
 // An address literal still goes through checkConnect, which needs no resolver
 // for one, so the address-class rules (T12) hold for every literal. What a name
-// that points into the local network reaches is the proxy's decision: the
-// residual security-model.md records for the route.
+// that points into the local network reaches is the proxy's decision
+// (../route/README.md).
 
 import type { OrivonErrorCode, Pattern } from '../../contracts/index.js'
 import { classifyAddress } from './address.js'

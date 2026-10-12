@@ -83,11 +83,17 @@ interface ReceiveBufferLike {
 async function keepEarlyBytes (client: SocksClient, socket: Socket): Promise<void> {
   const held: Buffer[] = []
   const hold = (chunk: Buffer): void => { held.push(chunk) }
+  // The package's own handlers are gone by now and the caller's are not yet
+  // there, so an error in this window would be uncaught; the close that
+  // follows it reaches the caller's wrapper.
+  const ignore = (): void => {}
+  socket.on('error', ignore)
   const buffered = (client as unknown as { receiveBuffer?: ReceiveBufferLike }).receiveBuffer
   if (buffered !== undefined && buffered.length > 0) held.push(buffered.get(buffered.length))
   socket.on('data', hold)
   await new Promise<void>((resolve) => { setImmediate(resolve) })
   socket.off('data', hold)
+  socket.off('error', ignore)
   socket.pause()
   if (held.length > 0 && !socket.destroyed) socket.unshift(Buffer.concat(held))
 }
@@ -100,6 +106,10 @@ async function handshake (
   destination: { host: string, port: number },
   signal: AbortSignal
 ): Promise<Established> {
+  if (signal.aborted) {
+    socket.destroy()
+    throw abandoned()
+  }
   const clientOptions: SocksClientOptions = {
     proxy: {
       host: options.host,
@@ -140,7 +150,9 @@ async function openUdp (options: Socks5ProviderOptions, signal: AbortSignal): Pr
   const control = await connectToProxy(options, signal)
   const established = await handshake(control, options, 'associate', { host: '0.0.0.0', port: 0 }, signal)
   const relayPort = established.remoteHost?.port ?? 0
-  const relayHost = isIP(established.remoteHost?.host ?? '') === 0 ? control.remoteAddress ?? options.host : established.remoteHost?.host ?? options.host
+  // An address that is no address, or the unspecified one, means "where you reached me".
+  const reported = established.remoteHost?.host ?? ''
+  const relayHost = isIP(reported) === 0 || reported === '0.0.0.0' || reported === '::' ? control.remoteAddress ?? options.host : reported
   if (relayPort === 0) { control.destroy(); throw fail('unreachable', 'the proxy gave no address for datagrams') }
 
   const socket: DgramSocket = createSocket(isIP(relayHost) === 6 ? 'udp6' : 'udp4')
