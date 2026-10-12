@@ -73,7 +73,12 @@ Skip routine sessions.
   background; never hand-write the loop. It reruns failed e2e shards and unacquired runners at most twice, except a
   spec matching `--stop`, and prints the failed specs, which the PR then names as flakes (Rule 12). Green but
   BEHIND, it merges `main` into the worktree's branch and pushes (six rounds at most); it merges when every check
-  passed and the branch is CLEAN, and stops on any other failure, on a conflict and on a moved head.
+  passed and the branch is CLEAN, and stops on any other failure, on a conflict and on a moved head. It merges with a
+  merge commit, so every commit of the branch lands on `main`: when one must not (it carried something later removed),
+  pass `--squash`. A subagent always gets `--no-merge`, so that the session that briefed it merges. Read its exit
+  from the PR's state, never from a pipe's: `cmd | tail` exits 0 whatever `cmd` did.
+- `npm run test:changed` follows imports. A test that bundles a source tree from disk and compares it with a
+  committed artifact is listed in `BUNDLED_FROM` (`scripts/test-changed.mjs`), or nothing local selects it.
 
 ## Context that rarely changes what you do
 
