@@ -8,7 +8,7 @@ rediscover it. Nothing here is a decision; decisions live in `docs/decisions/`.
 | Source | Where | How to treat it |
 |---|---|---|
 | **OrivonBook** | The owner's thesis draft, kept outside this repository (`<book-drafts>`) | Holds strongly. It is the owner's and it is unfinished. Ask the owner before quoting it into a public page |
-| **orivon-docs** | A Docusaurus site, `github.com/OrivonBrowser/orivon-docs`, deployed at docs.orivonstack.com | Outdated. Anything derived from it must be verified with the owner before it is treated as true. Do not cite it as the authority for a design |
+| **Earlier vision docs** | A Docusaurus site kept privately (`<vision-corpus-repo>`) | Outdated. Anything derived from it must be verified with the owner before it is treated as true. Do not cite it as the authority for a design |
 | **Private planning notes** | `<early-notes>`, not version-controlled, mixed Italian and English | Earlier framings. Read only when a question needs them, and verify with the owner |
 
 Where these sources disagree with each other or with the code, the disagreement is an entry in
