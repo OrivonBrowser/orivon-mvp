@@ -16,7 +16,11 @@ export interface AppRow {
   /** The kinds of link the person chose this app to open (`magnet`), each shown with a button that takes it back. */
   readonly linkSchemes: readonly string[]
   readonly storage: { readonly filesBytes: number, readonly codeBytes: number }
+  /** The switch that sends the app's traffic through the person's proxy: what its route is doing, and why it cannot be turned on. */
+  readonly route: { readonly state: RouteView, readonly blocked: 'no-proxy' | 'not-cached' | undefined }
 }
+
+export type RouteView = 'off' | 'no-proxy' | 'idle' | 'ok' | 'down'
 
 export type IdentityStorage = 'keychain' | 'session-only' | 'not-started'
 
@@ -66,6 +70,11 @@ export class AppsState {
 
   async forgetLink (origin: string, scheme: string): Promise<void> {
     await this.bridge.request('apps', { type: 'forgetLink', origin, scheme })
+    await this.load()
+  }
+
+  async setRoute (origin: string, routed: boolean): Promise<void> {
+    await this.bridge.request('apps', { type: 'setRoute', origin, routed })
     await this.load()
   }
 

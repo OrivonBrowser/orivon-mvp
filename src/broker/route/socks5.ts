@@ -43,6 +43,11 @@ export function isolationCredentials (runSecret: Uint8Array = randomBytes(32)): 
   })
 }
 
+/** Closing the relay cannot reject on its own; a listener that throws is the only way, and it must not end the browser. */
+function reportCloseFailure (error: unknown): void {
+  console.error('[route] closing the datagram relay failed:', error)
+}
+
 function abandoned (): Error {
   return fail('revoked', 'the connection was abandoned')
 }
@@ -166,9 +171,9 @@ async function openUdp (options: Socks5ProviderOptions, signal: AbortSignal): Pr
     await new Promise<void>((resolve) => { try { socket.close(() => { resolve() }) } catch { resolve() } })
     closeListeners.each((listener) => { listener() })
   }
-  control.once('close', () => { void close() })
+  control.once('close', () => { close().catch(reportCloseFailure) })
   control.on('error', () => {})
-  socket.on('error', () => { void close() })
+  socket.on('error', () => { close().catch(reportCloseFailure) })
   // The relay is the only sender accepted: anything else that reaches this
   // port is not the route's.
   socket.on('message', (message, from) => {

@@ -23,6 +23,33 @@ export function sizeWords (bytes: number): string {
   return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unit] ?? 'GB'}`
 }
 
+/** What the switch that routes an app says under its label, about the person's situation rather than the program's. */
+export function routeWords (route: AppRow['route']): string {
+  if (route.state === 'off') {
+    if (route.blocked === 'no-proxy') return 'Set a proxy under Privacy and data first.'
+    if (route.blocked === 'not-cached') return 'Only an app Orivon holds on this computer can be routed.'
+    return 'Off: this app connects as you do.'
+  }
+  if (route.state === 'no-proxy') return 'No proxy is set, so this app\'s traffic is stopped, not sent directly. Set one under Privacy and data.'
+  if (route.state === 'down') return 'Your proxy is not answering. This app\'s traffic is stopped, not sent directly.'
+  return 'Everything this app sends leaves through your proxy, and what the proxy cannot carry is refused. Its updates are not checked while this is on.'
+}
+
+function routeRow (app: AppRow, state: SettingsState): HTMLElement {
+  const on = app.route.state !== 'off'
+  const input = h('input', { type: 'checkbox', id: `route-${app.origin}`, checked: on, disabled: !on && app.route.blocked !== undefined })
+  input.addEventListener('change', () => {
+    // A click leaves the switch focused, and a focused input that is not settled holds every redraw (main.ts).
+    input.dataset['settled'] = 'true'
+    void state.apps.setRoute(app.origin, input.checked)
+  })
+  return h('div', { className: 'app-route' },
+    h('div', { className: 'app-route-text' },
+      h('label', { htmlFor: `route-${app.origin}`, textContent: 'Send this app\'s traffic through my proxy' }),
+      h('p', { className: app.route.state === 'down' || app.route.state === 'no-proxy' ? 'problem' : 'muted', textContent: routeWords(app.route) })),
+    h('span', { className: 'switch' }, input, h('span', { className: 'track' })))
+}
+
 function card (app: AppRow, state: SettingsState): HTMLElement {
   const revoke = (label: string, run: () => Promise<void>): HTMLElement =>
     h('button', { className: 'btn small', type: 'button', textContent: label, onclick: () => { void run() } })
@@ -46,6 +73,7 @@ function card (app: AppRow, state: SettingsState): HTMLElement {
       h('strong', { className: 'app-origin', textContent: BUILTIN_ADDRESSES.displayOrigin(app.origin) }),
       h('span', { className: 'muted', textContent: `Claims to be "${app.appName}".` })),
     rows.length === 0 ? h('p', { className: 'muted', textContent: 'Nothing is granted to it now.' }) : h('ul', { className: 'perms' }, ...rows),
+    routeRow(app, state),
     h('p', { className: 'muted app-stored', textContent: stored }))
 }
 

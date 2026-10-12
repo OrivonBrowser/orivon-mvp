@@ -8,6 +8,7 @@ import { grantIcon } from '../grant-icons.js'
 import { renderSitePermissions } from './permissions-view.js'
 import type { PermissionsCallbacks, PermissionsModel } from './permissions-view.js'
 import { homeLine, originHost } from '../../trust/domain-binding.js'
+import { renderRouteLine } from './route-line.js'
 import { renderUpdateCard } from './update-card.js'
 
 // The site-info popup's main page -- Chrome's own layout (a connection
@@ -137,6 +138,7 @@ export function renderMainPage (
     }
   }
   container.append(header)
+  if (info.route !== undefined) container.append(renderRouteLine(info.route))
   if (info.update !== undefined) container.append(renderUpdateCard(info.update, updateFailure, { onApply: callbacks.onApplyUpdate }))
 
   if (isFile) {

@@ -18,15 +18,17 @@ const APP = { origin: 'https://app.example', appName: 'App', rows: [], pickedPat
 const NO_DEVICES = { rows: () => [], forget: () => false }
 const DEVICE = { key: 'k1', label: 'Nano X (USB 2c97:4011)' }
 
-function setup (devices: Parameters<typeof appsDomain>[0]['devices'] = NO_DEVICES, links = new SchemeChoices(null)): { call: (command: unknown) => Promise<unknown>, permissions: Record<'list' | 'revokeCapability' | 'revokePickedPath', ReturnType<typeof vi.fn>> } {
+const NO_ROUTES = { stateOf: () => 'off' as const, blockedFor: () => undefined, set: () => {} }
+
+function setup (devices: Parameters<typeof appsDomain>[0]['devices'] = NO_DEVICES, links = new SchemeChoices(null), routes: Parameters<typeof appsDomain>[0]['routes'] = NO_ROUTES): { call: (command: unknown) => Promise<unknown>, permissions: Record<'list' | 'revokeCapability' | 'revokePickedPath', ReturnType<typeof vi.fn>> } {
   const permissions = { list: vi.fn(async () => [APP]), revokeCapability: vi.fn(async () => {}), revokePickedPath: vi.fn(async () => {}) }
-  const domain = appsDomain({ permissions, devices, links, userDataPath: dir, identity: async () => 'session-only' })
+  const domain = appsDomain({ permissions, devices, links, userDataPath: dir, identity: async () => 'session-only', routes })
   return { call: async (command) => await domain.handle(command, CALLER), permissions }
 }
 
 describe('the apps domain', () => {
   it('is for Settings only', () => {
-    expect(appsDomain({ permissions: {} as never, devices: NO_DEVICES, links: new SchemeChoices(null), userDataPath: dir, identity: async () => 'keychain' }).pages).toEqual(['settings'])
+    expect(appsDomain({ permissions: {} as never, devices: NO_DEVICES, links: new SchemeChoices(null), userDataPath: dir, identity: async () => 'keychain', routes: NO_ROUTES }).pages).toEqual(['settings'])
   })
 
   it('lists the apps with what each has stored, and where the identity key is kept', async () => {
@@ -36,7 +38,7 @@ describe('the apps domain', () => {
     await writeFile(join(root, 'files', 'a.txt'), 'x'.repeat(100))
     await writeFile(join(root, 'code', 'index.js'), 'y'.repeat(30))
     const { call } = setup()
-    expect(await call({ type: 'list' })).toEqual({ apps: [{ ...APP, deviceRows: [], linkSchemes: [], storage: { filesBytes: 100, filesQuotaBytes: undefined, codeBytes: 30, codeVersion: undefined } }], identity: 'session-only' })
+    expect(await call({ type: 'list' })).toEqual({ apps: [{ ...APP, deviceRows: [], linkSchemes: [], route: { state: 'off', blocked: undefined }, storage: { filesBytes: 100, filesQuotaBytes: undefined, codeBytes: 30, codeVersion: undefined } }], identity: 'session-only' })
   })
 
   it('takes back a permission or a picked path for an origin and a name that are what they should be', async () => {
@@ -109,5 +111,37 @@ describe('the apps domain', () => {
     const { call } = setup()
     expect(await call({ type: 'forget-everything' })).toBeUndefined()
     expect(await call(null)).toBeUndefined()
+  })
+})
+
+describe('the per-app route', () => {
+  it('lists what each app\'s route is doing and why it cannot be turned on', async () => {
+    const { call } = setup(NO_DEVICES, new SchemeChoices(null), { stateOf: () => 'down', blockedFor: () => 'no-proxy', set: () => {} })
+    expect(await call({ type: 'list' })).toMatchObject({ apps: [{ origin: 'https://app.example', route: { state: 'down', blocked: 'no-proxy' } }] })
+  })
+
+  it('turns a route on or off for an origin and a switch that are what they should be', async () => {
+    const set = vi.fn()
+    const { call } = setup(NO_DEVICES, new SchemeChoices(null), { ...NO_ROUTES, set })
+    expect(await call({ type: 'setRoute', origin: 'https://app.example', routed: true })).toEqual({ ok: true })
+    expect(await call({ type: 'setRoute', origin: 'https://app.example', routed: false })).toEqual({ ok: true })
+    expect(set.mock.calls).toEqual([['https://app.example', true], ['https://app.example', false]])
+  })
+
+  it('refuses a request that is not for a canonical origin or does not say on or off', async () => {
+    const set = vi.fn()
+    const { call } = setup(NO_DEVICES, new SchemeChoices(null), { ...NO_ROUTES, set })
+    for (const request of [{ origin: 'https://app.example/path', routed: true }, { origin: 5, routed: true }, { origin: 'https://app.example', routed: 'yes' }, { origin: 'https://app.example' }]) {
+      expect(await call({ type: 'setRoute', ...request })).toEqual({ ok: false })
+    }
+    expect(set).not.toHaveBeenCalled()
+  })
+
+  it('will not turn a route on that is blocked, but always turns one off', async () => {
+    const set = vi.fn()
+    const { call } = setup(NO_DEVICES, new SchemeChoices(null), { stateOf: () => 'off', blockedFor: () => 'not-cached', set })
+    expect(await call({ type: 'setRoute', origin: 'https://app.example', routed: true })).toEqual({ ok: false })
+    expect(await call({ type: 'setRoute', origin: 'https://app.example', routed: false })).toEqual({ ok: true })
+    expect(set.mock.calls).toEqual([['https://app.example', false]])
   })
 })

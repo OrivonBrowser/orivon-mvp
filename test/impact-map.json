@@ -79,6 +79,7 @@
     { "prefix": "src/main/privacy", "run": ["sites"] },
     { "prefix": "src/main/qr", "run": ["page"] },
     { "prefix": "src/main/reader", "run": ["page"] },
+    { "prefix": "src/main/route", "run": ["@core", "shell-pages", "sites"] },
     { "prefix": "src/main/sad-tab", "run": ["tabs"] },
     { "prefix": "src/main/self-update", "run": ["shell-pages"] },
     { "prefix": "src/main/session-restore", "run": ["window", "tabs"] },

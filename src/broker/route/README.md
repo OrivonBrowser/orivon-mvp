@@ -3,7 +3,8 @@
 **What lives here.** What the broker needs from a network route and nothing about how one is
 carried. [`provider.ts`](provider.ts) is `RouteProvider`: open a TCP stream to `host:port` (the
 name unresolved), and optionally carry UDP and resolve names. [`socks5.ts`](socks5.ts) is the
-provider for a SOCKS5 proxy, over the `socks` package. [`table.ts`](table.ts) turns the proxy a
+provider for a SOCKS5 proxy, over the `socks` package. [`socks5-probe.ts`](socks5-probe.ts) asks a proxy for its greeting and opens nothing through it (the
+Settings page's Test). [`table.ts`](table.ts) turns the proxy a
 person set for an app into `routeFor(key)`. [`routed-socket.ts`](routed-socket.ts) and
 [`routed-secure.ts`](routed-secure.ts) open a plain and a TLS stream through a route in the shape
 the broker hands an app.

@@ -14,6 +14,9 @@ import { startupDomain } from '../startup/startup-domain.js'
 import { shortcutsDomain } from '../shortcuts/shortcuts-domain.js'
 import { pagesDomain } from './pages-domain.js'
 import { appsDomain } from '../permissions/apps-domain.js'
+import type { AppRoutes } from '../permissions/apps-domain.js'
+import { probeSocks5 } from '../../broker/route/socks5-probe.js'
+import { routeDomain } from '../route/route-domain.js'
 import { forgetChoicesWhenGrantEnds } from '../scheme-routing/grant-watch.js'
 import { identityKeyStorage } from '../keyring/electron-keychain.js'
 import { forgetNameSchemes, onVerifierChange, verifierView } from '../verifier/verifier-subsystem.js'
@@ -59,7 +62,7 @@ import { isRegisteredAppOrigin } from '../site-settings/app-origin.js'
 import { isWebOrigin } from '../site-settings/site-settings-controller.js'
 import { sitesDomain } from '../site-settings/sites-domain.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
-import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
+import { isOriginPinnedSync, isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { nodeLoaderStorage } from '../../loader/cache/node-storage.js'
 import { createPermissionsController } from '../permissions/permissions.js'
 import type { SubsystemContext } from '../registry.js'
@@ -96,6 +99,14 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     throw new Error('startInternalPages requires ctx.extensions -- check extensionsSubsystem\'s position in subsystems.ts')
   }
   const extensions = ctx.extensions
+  const routes = ctx.routes
+  if (routes === undefined) throw new Error('startInternalPages requires ctx.routes -- check routeSubsystem\'s position in subsystems.ts')
+  // An app can be routed once there is a proxy and its files are held here: its updates are not checked while routed, which a first visit has no pin to skip.
+  const appRoutes: AppRoutes = {
+    stateOf: (origin) => routes.hub.state(origin),
+    blockedFor: (origin) => routes.proxy() === undefined ? 'no-proxy' : isOriginPinnedSync(origin) ? undefined : 'not-cached',
+    set: (origin, routed) => { routes.store.set(origin, routed) }
+  }
   const tasksEnv: TasksEnv = {
     windows: services.windows,
     extensionName: (id) => extensions.list().find((entry) => entry.id === id)?.name
@@ -172,7 +183,8 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       deleteFile: async (key) => await deleteLocalFileData({ broker: ctx.broker, userDataPath: app.getPath('userData'), clearPartition: async (partition) => { await session.fromPartition(partition).clearData() } }, key),
       clearShared: async () => { await session.fromPartition(LOCAL_FILES_PARTITION).clearData() }
     }),
-    apps: appsDomain({ permissions, devices: deviceRows, links: services.schemeChoices, userDataPath: app.getPath('userData'), identity: identityKeyStorage }),
+    apps: appsDomain({ permissions, devices: deviceRows, links: services.schemeChoices, userDataPath: app.getPath('userData'), identity: identityKeyStorage, routes: appRoutes }),
+    route: routeDomain({ proxy: () => services.settings.get('network.route.proxy'), probe: probeSocks5 }),
     web3: web3Domain({
       view: verifierView,
       enabled: () => services.settings.get('web3.lightClient'),
@@ -202,6 +214,9 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   // Reaches 'extensions' too: it reads and writes 'extensions.developerMode' through this same domain. And 'import',
   // whose history box follows 'history.remember'.
   services.settings.onChange((change) => { services.internalPages.publish('settings.changed', change, ['settings', 'extensions', 'import']) })
+  // An app's route switch is on its card in Apps: it follows the switch itself, and whether there is a proxy to turn it on for.
+  routes.hub.onChange(() => { services.internalPages.publish('apps.changed', undefined, ['settings']) })
+  services.settings.onChange((change) => { if (change.key === 'network.route.proxy') services.internalPages.publish('apps.changed', undefined, ['settings']) })
   services.searchEngines.onChange(() => { services.internalPages.publish('searchEngines.changed', undefined, ['settings']) })
   services.shortcuts.onChange(() => { services.internalPages.publish('shortcuts.changed', services.shortcuts.rows(), ['settings']) })
   // Every grant/revoke, from every surface (install, the site-info popover, a

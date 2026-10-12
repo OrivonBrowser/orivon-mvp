@@ -128,6 +128,22 @@ beforeEach(() => {
 })
 
 describe('createChildHostPool', () => {
+  it('prepares the host session for the app\'s route before the host loads anything', async () => {
+    const order: string[] = []
+    const web = lastWebContents.current as { loadURL: ReturnType<typeof vi.fn> }
+    web.loadURL.mockImplementation(async () => { order.push('load') })
+    const pool = createChildHostPool(() => stubBroker(), async (origin, hostSession) => {
+      order.push(`prepare ${origin} ${(hostSession as unknown as FakeSession).partition}`)
+      await Promise.resolve()
+    })
+
+    await pool.getOrCreate('https://routed.example')
+
+    expect(order).toHaveLength(2)
+    expect(order[0]).toMatch(/^prepare https:\/\/routed\.example child-host-/)
+    expect(order[1]).toBe('load')
+  })
+
   it('builds the host with page dialogs disabled: nobody watches it, so a native box could never be answered', async () => {
     const pool = createChildHostPool(() => stubBroker())
     await pool.getOrCreate('http://localhost:5173')

@@ -95,12 +95,10 @@ export interface CreateLoaderOptions {
   /** Takes what `serveLive` set up away again (`endLive` below): electron/serve.ts's `endLiveFor`. */
   readonly endLive?: (origin: string) => Promise<void>
   /**
-   * When set, `load()` answers `'up-to-date'` without fetching anything for
-   * an origin whose last completed check (any outcome but `'rejected'`) was
-   * less than this many milliseconds ago, a record kept in `storage` so it
-   * survives a restart; and a later check asks for the manifest
-   * conditionally, answering `'up-to-date'` on a 304 without downloading
-   * the bundle. Unset means every call checks in full.
+   * When set, `load()` answers `'up-to-date'` without fetching anything for an origin whose last completed check
+   * (any outcome but `'rejected'`) was less than this many milliseconds ago, a record kept in `storage` so it
+   * survives a restart; and a later check asks for the manifest conditionally, answering `'up-to-date'` on a 304
+   * without downloading the bundle. Unset means every call checks in full.
    */
   readonly updateCheckIntervalMs?: number
   /**
@@ -110,6 +108,8 @@ export interface CreateLoaderOptions {
    * root, and the pin records it. Throws when it cannot be verified.
    */
   readonly contentAddress?: (origin: string) => Promise<ContentAddress | undefined>
+  /** Whether `origin`'s update checks are paused (an installed app whose traffic is routed): `load()` then answers `'up-to-date'` without asking anyone. A first visit is unaffected. */
+  readonly updatesPaused?: (origin: string) => boolean
 }
 
 /**
@@ -404,6 +404,7 @@ export function createLoader (options: CreateLoaderOptions): Loader {
   async function load (hintedUrl: string, context: LoadContext, loadOptions?: LoadOptions): Promise<LoadResult> {
     const interval = options.updateCheckIntervalMs
     const origin = originFromUrl(hintedUrl)
+    if (origin !== null && options.updatesPaused?.(origin) === true && await pinFor(origin) !== null) return { outcome: 'up-to-date', canonicalOrigin: origin }
     if (origin !== null && options.contentAddress !== undefined) {
       const pin = await pinFor(origin)
       if (pin?.content !== undefined) {

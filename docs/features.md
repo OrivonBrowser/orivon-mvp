@@ -22,6 +22,7 @@ rely on, row by row. A new feature adds its line here when it lands.
 - **Links to an app**: a link of a scheme an app lists in its manifest (`magnet:`) opens in the app the person chooses, with the choice remembered per scheme and listed in Settings, and the app's page receives the link.
 - **Developer mode**: load an unpacked app from a folder.
 - **A published app loads at once, asks beside it, and is checked as it runs**: an `ipfs://`, `ipns://`, `.eth` or https app shows its page straight away as an ordinary website, with no permissions, while it asks what it may do and caches its files beside the question. Allow reloads the tab as the app; Deny leaves the website as it is. Each file the app loads is checked against the hash tree its site declares before the page receives it; one that differs is never delivered, every permission is removed and a security warning is shown. The rest of the app is pinned once allowed.
+- **A proxy for an installed app**: set one SOCKS5 proxy (Tor on `127.0.0.1:9050`, say) under Privacy and data, then turn it on for an app on its card in Apps. Everything the app causes to leave this computer goes through it, a name unresolved; what the proxy cannot carry is refused, and the app stops when the proxy does. Its updates are not checked and WebRTC is off while the route is on. Websites are not routed.
 - **App updates at a name**: an installed app keeps its version until the person accepts a newer one.
 - **Files as apps**: a local HTML, SVG or PDF file opens in a tab, and a file that links a manifest asks once per run.
 

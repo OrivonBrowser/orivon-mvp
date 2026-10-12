@@ -46,6 +46,11 @@ shows grants or switches reaches the broker only through `permissions.ts` or
 
 ## Design notes
 
+**An app's route switch lives on its card and its state in the popover.** `apps-domain.ts` lists each app's route state and
+what blocks turning it on (no proxy, or the app's files are not held here), and `setRoute` turns it on only when
+nothing blocks it; the popover's `SiteInfo.route` carries the state of a routed app so it can say where the traffic goes
+and when the proxy is not answering. The route itself is [`../route/`](../route/README.md)'s.
+
 **[`site-info-controller.ts`](site-info-controller.ts)'s `extensionsOnSite` (the extensions disclosure,
 `docs/planning/extensions-exploration.md`) is computed once, ahead of the registered/
 unregistered branch in `siteInfoFor`.** Which extensions can act on a site does not depend on

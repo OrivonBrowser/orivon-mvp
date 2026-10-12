@@ -58,7 +58,7 @@ export interface SiteTrustSources {
   /** The bundle hash of the DDOC hash tree a local origin serves in developer mode (`../dev/local-ddoc.ts`). */
   readonly localDdocHashFor: (origin: string) => Promise<string | undefined>
   /** The chosen Web3 Score provider's verdict (`../browsing/score-provider-client.ts`). */
-  readonly providerVerdictFor: (id: string | undefined, waitMs: number) => Promise<ProviderVerdict>
+  readonly providerVerdictFor: (id: string | undefined, waitMs: number, origin?: string) => Promise<ProviderVerdict>
 }
 
 /** How long the popover and shield wait on a provider before showing the lookup as under way. */
@@ -107,7 +107,8 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
   async function siteInfoFor (url: string): Promise<SiteInfo> {
     const info = await builtSiteInfoFor(url)
     const update = updateFor(info.origin)
-    return update === undefined ? info : { ...info, update }
+    const route = ctx.routes?.hub.state(info.origin)
+    return { ...info, ...(update === undefined ? {} : { update }), ...(route === undefined || route === 'off' ? {} : { route }) }
   }
 
   async function builtSiteInfoFor (url: string): Promise<SiteInfo> {
@@ -156,7 +157,7 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
         origin, pin, servedFromCache, trustSources.pinCoverageFor(origin), published, Date.now(), name,
         trustSources.levelOverrideFor(origin), trustSources.deliveryOverrideFor(origin), localDevHash
       )
-      const verdict = await trustSources.providerVerdictFor(providerIdFor(trust), PROVIDER_WAIT_MS)
+      const verdict = await trustSources.providerVerdictFor(providerIdFor(trust), PROVIDER_WAIT_MS, origin)
       const home = await readHome(loader, origin, pin, trust.level.assessable?.kind === 'cid' ? name?.content?.cid : undefined, verdict, PROVIDER_WAIT_MS)
       return withProviderVerdict(trust, verdict, home)
     },

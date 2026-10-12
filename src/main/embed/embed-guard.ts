@@ -101,7 +101,8 @@ function localListenerHeld (listenerHeld: (port: number) => boolean, port: numbe
  * public; only a `"*"` match whose host is a genuine NAME is resolved, and
  * refused unless `resolve` returns at least one address and every one of
  * them is public unicast. `resolve` throwing refuses, same as everything
- * else here: fail closed. A local pattern's document (ADR-0047) proceeds
+ * else here: fail closed. For a routed app (`routed`) a NAME is not resolved here at all: its proxy resolves it,
+ * and what a name that points into the local network reaches is the proxy's decision. A local pattern's document (ADR-0047) proceeds
  * only while `listenerHeld` says the embedding app holds that port, with no
  * name resolved: a `localhost` name never leaves this computer. The residual this cannot close -- a TTL-0 name
  * that answers differently between this check and the connection -- is
@@ -112,7 +113,8 @@ export async function guestRequestAllowed (
   resourceType: string,
   patterns: readonly Pattern[] | undefined,
   resolve: (host: string) => Promise<readonly string[]>,
-  listenerHeld: (port: number) => boolean = () => false
+  listenerHeld: (port: number) => boolean = () => false,
+  routed = false
 ): Promise<boolean> {
   if (patterns === undefined) return false
   if (!DOCUMENT_TYPES.has(resourceType)) return true
@@ -121,6 +123,8 @@ export async function guestRequestAllowed (
   if (admission.kind === 'exact') return true
   if (admission.kind === 'local') return localListenerHeld(listenerHeld, admission.port)
   if (classifyAddress(admission.hostname) !== 'unparseable') return true
+  // A routed app's names are resolved by its proxy: looking one up here would be a lookup from this machine.
+  if (routed) return true
   let addresses: readonly string[]
   try {
     addresses = await resolve(admission.hostname)

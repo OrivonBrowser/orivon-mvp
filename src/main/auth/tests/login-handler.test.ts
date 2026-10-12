@@ -57,6 +57,15 @@ describe('handleLogin', () => {
     expect(s.challenges.get('c1')).toMatchObject({ first: true, insecure: true, mismatch: false, server: { scheme: 'http', host: '127.0.0.1', port: 8080, realm: 'Staging' } })
   })
 
+  it('leaves a challenge that something else already answered, such as the front of a routed app, with no sheet', () => {
+    const s = setup()
+    const callback = vi.fn()
+    handleLogin(s.deps, { preventDefault: () => undefined, defaultPrevented: true }, s.contents, details(), info({ isProxy: true, host: '127.0.0.1', port: 41234 }), callback)
+    expect(s.asks).toEqual([])
+    expect(callback).not.toHaveBeenCalled()
+    expect(s.challenges.get('c1')).toBeUndefined()
+  })
+
   it('shows the page a main-frame request is for in the tab while the sheet waits, and stops when it is answered', () => {
     const s = setup({ pageUrl: 'orivon://newtab/' })
     run(s)

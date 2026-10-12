@@ -221,6 +221,8 @@ interface HostRecord {
  * is built and wired in before the real broker exists. */
 export function createChildHostPool (
   getBroker: () => Broker,
+  /** Points a routed app's host session at its front before the host loads anything. */
+  prepareSession: (origin: string, session: Session) => Promise<void> = async () => {},
   // import.meta.dirname is out/main/ for every file bundled into the single
   // main entry, whatever its own nesting under src/main/ -- tabs.ts's own
   // join(import.meta.dirname, '../preload/app.js') is the same shape.
@@ -231,6 +233,8 @@ export function createChildHostPool (
   async function build (origin: string): Promise<HostRecord> {
     const broker = getBroker()
     const hostSession = electronSession.fromPartition(childHostPartitionName(origin), { cache: false })
+    // A child's WebSocket leaves through this session whatever the document does, so a routed app's must go through its front.
+    await prepareSession(origin, hostSession)
 
     const view = new WebContentsView({
       webPreferences: {
