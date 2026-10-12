@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { GatewayFailure, GatewayPool, askGateway, readCapped } from '../gateways.js'
+import { GatewayFailure, GatewayPool, RedirectRefused, askGateway, readCapped } from '../gateways.js'
 import type { Fetch } from '../gateways.js'
 
 const A = 'https://a.gateway'
@@ -47,5 +47,17 @@ describe('askGateway -- an abort while the body is being read', () => {
     const failure = await failureOf(promise)
     expect(failure.outcome.kind).toBe('timeout')
     expect(pool.candidates()).toEqual([A]) // one timeout alone is not a strike
+  })
+})
+
+describe('askGateway -- a redirect', () => {
+  it('is a miss for that item, never a strike against the gateway', async () => {
+    const pool = new GatewayPool([A], 4)
+    const redirecting: Fetch = async () => { throw new RedirectRefused('answered with a redirect, which is not followed') }
+    for (let i = 0; i < 4; i++) {
+      const failure = await failureOf(askGateway(pool, redirecting, A, { url: `${A}/chunks/${String(i)}`, accept: 'application/octet-stream', timeoutMs: 5_000 }, read, new AbortController().signal))
+      expect(failure.outcome.kind).toBe('miss')
+    }
+    expect(pool.candidates()).toEqual([A])
   })
 })

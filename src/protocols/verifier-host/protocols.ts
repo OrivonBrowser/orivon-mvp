@@ -10,6 +10,8 @@ import { ENS } from '../ens/descriptor.js'
 import { createEnsResolver } from '../ens/resolver.js'
 import type { SequenceStore } from '../ipfs/ipns.js'
 import { ipfsProtocol } from '../ipfs/protocol.js'
+import type { FeedIndexStore } from '../swarm/feed.js'
+import { swarmProtocol } from '../swarm/protocol.js'
 import { dohAddressResolver, dohTxtResolver } from './doh.js'
 import { allowlisted, DEFAULT_CCIP_LIMITS, guardedCcipRequest } from './egress.js'
 import { withDnsFallback } from './dns-fallback.js'
@@ -35,6 +37,23 @@ function sequenceStore (initial: Readonly<Record<string, string>>, post: HostDep
       if (current !== undefined && sequence <= current) return
       highest.set(key, sequence)
       post({ type: 'ipns-sequence', key, sequence: sequence.toString() })
+    }
+  }
+}
+
+function feedIndexStore (initial: Readonly<Record<string, string>>, post: HostDeps['post']): FeedIndexStore {
+  const highest = new Map<string, bigint>()
+  for (const [feed, value] of Object.entries(initial)) {
+    if (/^\d+$/.test(value)) highest.set(feed, BigInt(value))
+  }
+  return {
+    highest: (owner, topic) => highest.get(`${owner}/${topic}`),
+    record: (owner, topic, index) => {
+      const feed = `${owner}/${topic}`
+      const current = highest.get(feed)
+      if (current !== undefined && index <= current) return
+      highest.set(feed, index)
+      post({ type: 'swarm-feed-index', feed, index: index.toString() })
     }
   }
 }
@@ -71,6 +90,15 @@ function startIpfs (config: HostConfig, deps: HostDeps): Protocol {
   })
 }
 
+function startSwarm (config: HostConfig, deps: HostDeps): Protocol {
+  const endpointFetch = allowlisted(config.swarmEndpoints, deps.fetch, 'the Swarm gatherer')
+  return swarmProtocol({
+    fetch: async (url, init) => await endpointFetch(url, init),
+    endpoints: config.swarmEndpoints,
+    feedIndexes: feedIndexStore(config.swarmFeedIndexes, deps.post)
+  })
+}
+
 function startEns (config: HostConfig, deps: HostDeps): { protocol: Protocol, lightClient: LightClient | undefined } {
   const resolvers: NameResolver[] = []
   if (config.fixtures !== undefined && deps.fixturesAllowed) resolvers.push(createFixtureResolver(config.fixtures))
@@ -88,5 +116,5 @@ function startEns (config: HostConfig, deps: HostDeps): { protocol: Protocol, li
 
 export function startProtocols (config: HostConfig, deps: HostDeps): RunningProtocols {
   const ens = startEns(config, deps)
-  return { protocols: [ens.protocol, startIpfs(config, deps)], lightClient: ens.lightClient }
+  return { protocols: [ens.protocol, startIpfs(config, deps), startSwarm(config, deps)], lightClient: ens.lightClient }
 }

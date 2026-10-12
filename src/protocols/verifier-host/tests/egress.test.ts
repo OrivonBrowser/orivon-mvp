@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { EgressRefused, allowlisted, guardedCcipRequest } from '../egress.js'
+import { RedirectRefused } from '../../gateways/gateways.js'
 import type { CcipDeps, WebFetch } from '../egress.js'
 import type { DirectFetch } from '../direct-fetch.js'
 
@@ -43,10 +44,17 @@ function proxiedDeps (fetch: WebFetch, dns: Record<string, string[]> = { 'gatewa
 const json = (body: unknown): Response => new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } })
 
 describe('allowlisted', () => {
-  it('reaches a listed origin, refusing redirects', async () => {
+  it('reaches a listed origin, asking for a redirect as a response and never following it', async () => {
     const inner = recording(() => new Response('ok'))
     await allowlisted(['https://rpc.example/'], inner, 'the light client')('https://rpc.example/v1', { method: 'POST' })
-    expect(inner.calls[0]?.init).toMatchObject({ method: 'POST', redirect: 'error' })
+    expect(inner.calls[0]?.init).toMatchObject({ method: 'POST', redirect: 'manual' })
+  })
+
+  it('throws RedirectRefused for an answer that is a redirect', async () => {
+    const inner = recording(() => new Response(null, { status: 302, headers: { location: 'https://elsewhere.example/forbidden' } }))
+    const fetch = allowlisted(['https://rpc.example'], inner, 'the light client')
+    await expect(fetch('https://rpc.example/chunks/aa')).rejects.toBeInstanceOf(RedirectRefused)
+    expect(inner.calls).toHaveLength(1)
   })
 
   it('throws for any other origin, before any request', async () => {

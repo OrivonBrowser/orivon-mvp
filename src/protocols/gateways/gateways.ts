@@ -88,6 +88,11 @@ export class TooLarge extends Error {
   override readonly name = 'TooLarge'
 }
 
+/** What a fetch throws when the gateway answered with a redirect it is never allowed to follow. */
+export class RedirectRefused extends Error {
+  override readonly name = 'RedirectRefused'
+}
+
 /** The whole body, or TooLarge as soon as it passes `max` bytes, without reading further. */
 export async function readCapped (response: Response, max: number): Promise<Uint8Array> {
   const declared = Number(response.headers.get('content-length'))
@@ -179,7 +184,9 @@ export async function askGateway<T> (
         if (signal.reason instanceof Outrun) pool.note(gateway, { kind: 'timeout' })
         throw new GatewayFailure({ kind: 'cancelled' }, CANCELLED)
       }
-      const outcome: RecordedFailure = { kind: timeout.aborted ? 'timeout' : 'unreachable' }
+      // A redirect is how some gateways refuse a single item (a content filter): it says nothing about
+      // the gateway being up, so it must not cool it for the next item.
+      const outcome: RecordedFailure = error instanceof RedirectRefused ? { kind: 'miss' } : { kind: timeout.aborted ? 'timeout' : 'unreachable' }
       pool.note(gateway, outcome)
       throw new GatewayFailure(outcome, `${gateway}: ${message(error)}`)
     }

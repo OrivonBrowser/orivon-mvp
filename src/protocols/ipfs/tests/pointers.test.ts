@@ -250,6 +250,6 @@ describe('followPointer', () => {
   })
 
   it('refuses an unsupported contenthash', async () => {
-    await expect(followPointer({ kind: 'unsupported', protocol: 'swarm' }, resolvers(fakeGateways(new Map())), signal, () => {})).rejects.toMatchObject({ failure: 'unsupported' })
+    await expect(followPointer({ kind: 'unsupported', protocol: 'arweave' }, resolvers(fakeGateways(new Map())), signal, () => {})).rejects.toMatchObject({ failure: 'unsupported' })
   })
 })
