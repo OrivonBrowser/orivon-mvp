@@ -3,7 +3,7 @@
 - **Status:** accepted (the process shape); the wiring into the Swarm protocol follows in the same pull request.
 - **Date:** 2026-10-12
 - **Type:** architecture / security
-- **Decided by:** owner (local node only, no public gateways: `d-0603`); AI recommendation accepted by default for the process shape
+- **Decided by:** owner (no public gateways: `d-0603`; the node as WebAssembly in a utility process of its own: `d-0604`); AI recommendation accepted by default for the process shape
 
 ## Decision
 

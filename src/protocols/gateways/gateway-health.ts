@@ -80,6 +80,11 @@ export class GatewayHealth {
     return this.latencyMs
   }
 
+  /** Sits out for `ms` whatever its record, without counting a strike. */
+  coolFor (ms: number): void {
+    this.cooldownUntil = Math.max(this.cooldownUntil, this.now() + ms)
+  }
+
   note (outcome: GatewayOutcome): void {
     switch (outcome.kind) {
       case 'ok':

@@ -3,7 +3,7 @@
 **What lives here.** ENS's descriptor ([`descriptor.ts`](descriptor.ts): the `.eth` top-level
 domain), and the `NameResolver` ([`../resolution/`](../resolution/)) for it: a host checked
 against ENSIP-15 normalisation, the name's contenthash read through ENS's Universal Resolver with
-CCIP-Read on, and the contenthash decoded (ENSIP-7) into an IPFS CID, an IPNS key, a DNSLink
+CCIP-Read on, and the contenthash decoded (ENSIP-7) into an IPFS CID, a Swarm reference, an IPNS key, a DNSLink
 domain, or a kind this build does not load.
 
 **Not tied to Electron.** Durable. It runs in the verifier host, but nothing here knows that.

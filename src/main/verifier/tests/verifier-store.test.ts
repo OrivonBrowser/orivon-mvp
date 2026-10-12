@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { CID } from 'multiformats/cid'
 import { identity } from 'multiformats/hashes/identity'
 import { base36 } from 'multiformats/bases/base36'
-import { MAX_IPNS_KEYS, VerifierStore } from '../verifier-store.js'
+import { MAX_FEEDS, MAX_IPNS_KEYS, VerifierStore } from '../verifier-store.js'
 
 const dirs: string[] = []
 function store (): { store: VerifierStore, dir: string } {
@@ -61,6 +61,37 @@ describe('VerifierStore', () => {
     s.saveIpnsSequence('not-a-cid', '1') // not an IPNS key at all
     await s.flush()
     expect(new VerifierStore(dir).ipnsSequences()).toEqual({ [KEY_1]: '5', [KEY_2]: '18446744073709551615' })
+  })
+
+  it('keeps the highest Swarm feed index per feed, beside the IPNS sequences, and refuses a key that is not a feed', async () => {
+    const { store: s, dir } = store()
+    const feed = `${'ab'.repeat(20)}/${'cd'.repeat(32)}`
+    s.saveSwarmFeedIndex(feed, '91')
+    s.saveSwarmFeedIndex(feed, '12')
+    s.saveSwarmFeedIndex('not/a-feed', '1')
+    s.saveSwarmFeedIndex(`${'AB'.repeat(20)}/${'cd'.repeat(32)}`, '1') // uppercase is never how the host spells one
+    s.saveSwarmFeedIndex(`${'ee'.repeat(20)}/${'cd'.repeat(32)}`, 'x')
+    s.saveIpnsSequence(KEY_1, '5')
+    await s.flush()
+    const again = new VerifierStore(dir)
+    expect(again.swarmFeedIndexes()).toEqual({ [feed]: '91' })
+    expect(again.ipnsSequences()).toEqual({ [KEY_1]: '5' })
+  })
+
+  it('drops the least recently touched feed past its cap', () => {
+    const { store: s } = store()
+    for (let i = 0; i <= MAX_FEEDS; i++) s.saveSwarmFeedIndex(`${i.toString(16).padStart(40, '0')}/${'cd'.repeat(32)}`, '1')
+    const kept = Object.keys(s.swarmFeedIndexes())
+    expect(kept).toHaveLength(MAX_FEEDS)
+    expect(kept).not.toContain(`${'0'.repeat(40)}/${'cd'.repeat(32)}`)
+  })
+
+  it('reads a corrupt feed-index file as empty', async () => {
+    const { store: s, dir } = store()
+    s.saveSwarmFeedIndex(`${'ab'.repeat(20)}/${'cd'.repeat(32)}`, '1')
+    await s.flush()
+    writeFileSync(join(dir, 'swarm-feed-indexes.json'), '{nope')
+    expect(new VerifierStore(dir).swarmFeedIndexes()).toEqual({})
   })
 
   it('writes nothing until the debounced flush fires, or flush is called directly', async () => {

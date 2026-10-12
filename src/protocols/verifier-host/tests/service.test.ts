@@ -6,6 +6,9 @@ import { startHost } from '../service.js'
 import { startProtocols } from '../protocols.js'
 import { BUILTIN_PROTOCOLS } from '../../builtin.js'
 import type { HostDeps, RunningHost } from '../service.js'
+import { referenceCid } from '../../swarm/reference.js'
+import { TEST_KEY, TOPIC, fakeSwarm } from '../../swarm/tests/swarm.test-helpers.js'
+import { buildFeedManifest, buildSite, legacyUpdate, ownerOf, signFeedUpdate } from '../../../../test/apps/swarm-gateway/encode.mjs'
 
 const GATEWAY = 'https://a.gateway'
 const dag = await buildDag({ 'index.html': '<h1>fixture</h1>' })
@@ -13,7 +16,7 @@ const running: RunningHost[] = []
 afterEach(() => { for (const host of running.splice(0)) host.server.close() })
 
 function config (overrides: Partial<HostConfig> = {}): HostConfig {
-  return { port: 0, lightClient: undefined, gateways: [GATEWAY], unproxiedGateways: [], ccipDirect: false, ipnsNameServices: [], dnsOverHttps: ['https://dns.example/q'], ipnsSequences: {}, fixtures: { 'fixture.eth': `ipfs://${dag.root.toString()}` }, ...overrides }
+  return { port: 0, lightClient: undefined, gateways: [GATEWAY], unproxiedGateways: [], ccipDirect: false, ipnsNameServices: [], dnsOverHttps: ['https://dns.example/q'], ipnsSequences: {}, swarmEndpoints: [GATEWAY], swarmFeedIndexes: {}, fixtures: { 'fixture.eth': `ipfs://${dag.root.toString()}` }, ...overrides }
 }
 
 function deps (overrides: Partial<HostDeps> = {}): HostDeps & { posted: FromHost[] } {
@@ -41,6 +44,60 @@ async function get (port: number, host: string, path = '/', partition = `https:/
     }).on('error', reject).end()
   })
 }
+
+describe('startHost with Swarm', () => {
+  const ENDPOINT = 'https://swarm.endpoint'
+  const OWNER = ownerOf(TEST_KEY)
+
+  async function swarmWorld () {
+    const chunks = new Map<string, Uint8Array>()
+    const site = buildSite({ 'index.html': '<h1>on swarm</h1>', 'app.js': 'console.log(1)' }, chunks)
+    const next = buildSite({ 'index.html': '<h1>newer</h1>' }, chunks)
+    const feed = buildFeedManifest({ owner: OWNER, topic: TOPIC }, chunks)
+    for (const [index, root] of [site, next].entries()) {
+      const update = await signFeedUpdate({ privateKey: TEST_KEY, topic: TOPIC, index, wrapped: legacyUpdate(root) })
+      chunks.set(update.address, update.chunk)
+    }
+    const swarm = fakeSwarm(chunks)
+    return { site, next, feed, swarm }
+  }
+
+  it('serves a bzz:// address from its canonical origin, proven by the address, and checks every chunk', async () => {
+    const { site, swarm } = await swarmWorld()
+    const host = await startHost(config({ swarmEndpoints: [ENDPOINT] }), deps({ fetch: async (url, init) => await swarm.fetch(url, { headers: {}, signal: init?.signal ?? new AbortController().signal }) }))
+    running.push(host)
+    const cid = referenceCid(site)
+    expect(await get(host.port, 'bzz.orivon', `/${site}/`)).toMatchObject({ status: 301, location: `https://${cid}.bzz.orivon/` })
+    expect(await get(host.port, `${cid}.bzz.orivon`)).toEqual({ status: 200, body: '<h1>on swarm</h1>' })
+    expect(await get(host.port, `${cid}.bzz.orivon`, '/app.js')).toEqual({ status: 200, body: 'console.log(1)' })
+    const provenance = await host.answer({ kind: 'provenance', host: `${cid}.bzz.orivon`, partition: `https://${cid}.bzz.orivon` })
+    expect(provenance).toMatchObject({ resolver: 'bzz-address', root: { kind: 'swarm', cid }, pointers: [{ step: 'contenthash', provenance: { via: 'address' } }], ddoc: { status: 'met' } })
+  })
+
+  it('serves a fixture name whose contenthash is a feed, shows its newest update and reports the index it found', async () => {
+    const { feed, next, swarm } = await swarmWorld()
+    const posted: FromHost[] = []
+    const host = await startHost(
+      config({ swarmEndpoints: [ENDPOINT], fixtures: { 'feed.eth': `bzz://${feed}` } }),
+      { ...deps({ fetch: async (url, init) => await swarm.fetch(url, { headers: {}, signal: init?.signal ?? new AbortController().signal }) }), post: (message) => { posted.push(message) } }
+    )
+    running.push(host)
+    expect(await get(host.port, 'feed.eth')).toEqual({ status: 200, body: '<h1>newer</h1>' })
+    const provenance = await host.answer({ kind: 'provenance', host: 'feed.eth', partition: 'https://feed.eth' })
+    expect(provenance).toMatchObject({ root: { kind: 'swarm', cid: referenceCid(next) }, pointers: [{ step: 'contenthash' }, { step: 'swarm-feed', index: 1n }] })
+    expect(posted).toContainEqual({ type: 'swarm-feed-index', feed: `${OWNER}/${TOPIC}`, index: '1' })
+  })
+
+  it('does not fall back to an older update than an earlier run saw', async () => {
+    const { feed, swarm } = await swarmWorld()
+    const host = await startHost(
+      config({ swarmEndpoints: [ENDPOINT], swarmFeedIndexes: { [`${OWNER}/${TOPIC}`]: '9' }, fixtures: { 'feed.eth': `bzz://${feed}` } }),
+      deps({ fetch: async (url, init) => await swarm.fetch(url, { headers: {}, signal: init?.signal ?? new AbortController().signal }) })
+    )
+    running.push(host)
+    expect((await get(host.port, 'feed.eth')).status).toBe(502)
+  })
+})
 
 describe('startProtocols', () => {
   it('runs exactly the protocols the shell routes and shows, in the same order', () => {

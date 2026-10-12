@@ -154,7 +154,7 @@ says which QA follows a UI, flow or boundary change.
   them, `test/app-behaviours/catalogue.md` rows that cite them.
 - **Test:** `npm run check:test-paths`, `check:impact-map` and `check:app-behaviours` pass; CI selects the
   renamed specs for a change in their area.
-- **Decision:** `d-0577`, CLAUDE.md Rule 20.
+- **Decision:** `d-0577`, code-guidelines Rule 8.
 
 ## F16: The levels link in the site-info popover
 

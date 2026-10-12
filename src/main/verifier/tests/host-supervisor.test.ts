@@ -4,7 +4,7 @@ import type { HostConfig } from '../../../protocols/verifier-host/protocol.js'
 import { HostSupervisor } from '../host-supervisor.js'
 import type { HostProcess, SupervisorEvents } from '../host-supervisor.js'
 
-const CONFIG: HostConfig = { port: 1, lightClient: undefined, gateways: ['https://g.example'], unproxiedGateways: [], ccipDirect: false, ipnsNameServices: [], dnsOverHttps: [], ipnsSequences: {} }
+const CONFIG: HostConfig = { port: 1, lightClient: undefined, gateways: ['https://g.example'], unproxiedGateways: [], ccipDirect: false, ipnsNameServices: [], dnsOverHttps: [], ipnsSequences: {}, swarmEndpoints: [], swarmFeedIndexes: {} }
 
 class FakeHost extends EventEmitter implements HostProcess {
   readonly sent: unknown[] = []
@@ -27,6 +27,7 @@ function harness (): { supervisor: HostSupervisor, hosts: FakeHost[], timers: Ar
     status: (s) => log.push(`status ${s.state}`),
     checkpoint: (r, t) => log.push(`checkpoint ${r} ${String(t)}`),
     ipnsSequence: (k, s) => log.push(`ipns ${k} ${s}`),
+    swarmFeedIndex: (f, i) => log.push(`swarm ${f} ${i}`),
     idle: () => log.push('idle'),
     starting: () => { startings.count += 1 }
   }
@@ -56,7 +57,7 @@ describe('HostSupervisor', () => {
     const supervisor = new HostSupervisor({
       fork: () => { log.push('fork'); const h = new FakeHost(); hosts.push(h); return h },
       config: () => CONFIG,
-      events: { starting: () => log.push('starting'), listening: () => {}, down: () => log.push('down'), status: () => {}, checkpoint: () => {}, ipnsSequence: () => {} },
+      events: { starting: () => log.push('starting'), listening: () => {}, down: () => log.push('down'), status: () => {}, checkpoint: () => {}, ipnsSequence: () => {}, swarmFeedIndex: () => {} },
       setTimer: (run) => { timers.push(run) }
     })
     supervisor.start()
@@ -73,8 +74,9 @@ describe('HostSupervisor', () => {
     const root = `0x${'ab'.repeat(32)}`
     hosts[0]?.answer({ type: 'checkpoint', root, timestamp: 5 })
     hosts[0]?.answer({ type: 'ipns-sequence', key: 'k51', sequence: '7' })
+    hosts[0]?.answer({ type: 'swarm-feed-index', feed: 'owner/topic', index: '91' })
     hosts[0]?.answer({ type: 'failed', stage: 'listen', message: 'EADDRINUSE' })
-    expect(log).toEqual(['listening sha256/x', 'status syncing', `checkpoint ${root} 5`, 'ipns k51 7', 'down the verifier host could not listen on its port: EADDRINUSE'])
+    expect(log).toEqual(['listening sha256/x', 'status syncing', `checkpoint ${root} 5`, 'ipns k51 7', 'swarm owner/topic 91', 'down the verifier host could not listen on its port: EADDRINUSE'])
   })
 
   it('logs a handler that throws instead of letting it out of the message callback, where it would end the browser', () => {
@@ -83,7 +85,7 @@ describe('HostSupervisor', () => {
     const supervisor = new HostSupervisor({
       fork: () => { const h = new FakeHost(); hosts.push(h); return h },
       config: () => CONFIG,
-      events: { starting: () => {}, listening: () => {}, down: () => {}, status: () => {}, idle: () => {}, ipnsSequence: () => {}, checkpoint: () => { throw new Error('ENOSPC') } },
+      events: { starting: () => {}, listening: () => {}, down: () => {}, status: () => {}, idle: () => {}, ipnsSequence: () => {}, swarmFeedIndex: () => {}, checkpoint: () => { throw new Error('ENOSPC') } },
       setTimer: () => {},
       now: () => 0
     })
@@ -194,7 +196,7 @@ describe('HostSupervisor', () => {
     const supervisor = new HostSupervisor({
       fork: () => { const h = new FakeHost(); hosts.push(h); return h },
       config: async () => await new Promise<HostConfig>((resolve) => { resolveConfig = resolve }),
-      events: { listening: () => {}, down: () => {}, status: () => {}, checkpoint: () => {}, ipnsSequence: () => {} }
+      events: { listening: () => {}, down: () => {}, status: () => {}, checkpoint: () => {}, ipnsSequence: () => {}, swarmFeedIndex: () => {} }
     })
     supervisor.start()
     expect(hosts[0]?.sent).toEqual([]) // nothing posted yet -- the config hasn't resolved
@@ -223,7 +225,7 @@ describe('HostSupervisor', () => {
         rejectOnce = false
         throw new Error('the verifier store is corrupt')
       },
-      events: { listening: () => {}, down: (r) => log.push(r), status: () => {}, checkpoint: () => {}, ipnsSequence: () => {} },
+      events: { listening: () => {}, down: (r) => log.push(r), status: () => {}, checkpoint: () => {}, ipnsSequence: () => {}, swarmFeedIndex: () => {} },
       setTimer: (run, ms) => { timers.push({ run, ms }) }
     })
     supervisor.start()
@@ -336,7 +338,7 @@ describe('HostSupervisor', () => {
       const supervisor = new HostSupervisor({
         fork: () => { const h = new FakeHost(); hosts.push(h); return h },
         config: async () => await new Promise<HostConfig>((resolve) => { resolveConfig = resolve }),
-        events: { listening: () => {}, down: () => {}, status: () => {}, checkpoint: () => {}, ipnsSequence: () => {} }
+        events: { listening: () => {}, down: () => {}, status: () => {}, checkpoint: () => {}, ipnsSequence: () => {}, swarmFeedIndex: () => {} }
       })
       supervisor.start()
       supervisor.idle()

@@ -12,6 +12,8 @@ export const DEFAULT_ENDPOINTS = {
   // Asked in this order while all are healthy. trustless-gateway.link is last because it hangs rather than
   // answers (provisional: it moves back up once it answers again).
   gateways: ['https://ipfs.orbitor.dev', 'https://ipfs.filebase.io', 'https://trustless-gateway.link'],
+  // Bee-API origins serving `/chunks`. Empty: Swarm loads only from a node on this machine, which this build does not configure yet.
+  swarmEndpoints: [] as readonly string[],
   ipnsNameServices: ['https://name.web3.storage'],
   dnsOverHttps: ['https://cloudflare-dns.com/dns-query', 'https://dns.google/resolve']
 } as const

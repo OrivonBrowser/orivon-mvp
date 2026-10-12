@@ -15,6 +15,7 @@ declare global {
 export interface EthTestSeam {
   readonly fixtures: Readonly<Record<string, string>>
   readonly gateways: readonly string[] | undefined
+  readonly swarmEndpoints: readonly string[] | undefined
   readonly dnsOverHttps: readonly string[] | undefined
 }
 
@@ -29,9 +30,9 @@ export function parseEthTestSeam (env: Readonly<Record<string, string | undefine
   if (raw === undefined) return undefined
   const parsed: unknown = JSON.parse(raw)
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed) || !Object.values(parsed).every((v) => typeof v === 'string')) {
-    throw new Error('ORIVON_TEST_ETH_FIXTURES must be a JSON object of "name.eth": "ipfs://..."')
+    throw new Error('ORIVON_TEST_ETH_FIXTURES must be a JSON object of "name.eth": "ipfs://..." or "bzz://..."')
   }
-  return { fixtures: parsed as Record<string, string>, gateways: list(env['ORIVON_TEST_IPFS_GATEWAYS']), dnsOverHttps: list(env['ORIVON_TEST_DOH']) }
+  return { fixtures: parsed as Record<string, string>, gateways: list(env['ORIVON_TEST_IPFS_GATEWAYS']), swarmEndpoints: list(env['ORIVON_TEST_SWARM_ENDPOINTS']), dnsOverHttps: list(env['ORIVON_TEST_DOH']) }
 }
 
 export function ethTestSeam (): EthTestSeam | undefined {

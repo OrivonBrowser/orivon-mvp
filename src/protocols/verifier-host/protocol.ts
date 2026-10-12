@@ -44,6 +44,10 @@ export interface HostConfig {
   readonly dnsOverHttps: readonly string[]
   /** Highest IPNS sequence seen per key, as decimal strings, from earlier runs. */
   readonly ipnsSequences: Readonly<Record<string, string>>
+  /** Swarm endpoints asked for `/chunks`, in order of preference. Empty means no Swarm content can be opened. */
+  readonly swarmEndpoints: readonly string[]
+  /** Highest feed update index seen per feed, as decimal strings keyed `<owner>/<topic>`, from earlier runs. */
+  readonly swarmFeedIndexes: Readonly<Record<string, string>>
   /** Test builds only: `.eth` names mapped to content with no light client. */
   readonly fixtures?: Readonly<Record<string, string>>
 }
@@ -91,3 +95,4 @@ export type FromHost =
   /** A newer finalized checkpoint the light client verified, for the shell to store. */
   | { readonly type: 'checkpoint', readonly root: string, readonly timestamp: number }
   | { readonly type: 'ipns-sequence', readonly key: string, readonly sequence: string }
+  | { readonly type: 'swarm-feed-index', readonly feed: string, readonly index: string }

@@ -136,7 +136,22 @@ describe('loadingScreenFor', () => {
   })
 
   it('gives a top-level-domain name with no screen its display scheme protocol screen', () => {
-    expect(addresses.loadingScreenFor('https://vitalik.eth/')).toBe(IPFS_SCREEN)
+    const mine = new ProtocolAddresses([
+      describeProtocol({ id: 'ipfs', schemes: ['ipfs'], topLevelDomains: [], loadingScreen: { title: 'Loading from IPFS' } }),
+      describeProtocol({ id: 'ens', schemes: [], topLevelDomains: ['eth'], displayScheme: 'ipfs' })
+    ])
+    expect(mine.loadingScreenFor('https://vitalik.eth/')?.title).toBe('Loading from IPFS')
+  })
+
+  it('shows a .eth name a screen that names no network, since it shows before the name is looked up', () => {
+    const screen = addresses.loadingScreenFor('https://vitalik.eth/')
+    expect(screen?.title).toBeTruthy()
+    expect(`${screen?.title} ${screen?.detail ?? ''}`).not.toMatch(/ipfs|swarm/i)
+  })
+
+  it('gives a bzz address the Swarm screen', () => {
+    expect(addresses.loadingScreenFor(`https://${CID}.bzz.orivon/`)?.title).toBe('Loading from Swarm')
+    expect(addresses.loadingScreenFor(`https://bzz.orivon/${CID}/`)?.title).toBe('Loading from Swarm')
   })
 
   it('prefers a protocol own screen to its display scheme one', () => {
