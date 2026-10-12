@@ -8,7 +8,7 @@
 // branch. BLOCKED is waited out: GitHub says it while required checks run, and for a moment after. Run it in the
 // background; it prints only what changed.
 //
-//   node scripts/ai/pr-watch.mjs <pr> [--update <worktree>] [--stop <spec regex>] [--reruns 2] [--no-merge]
+//   node scripts/ai/pr-watch.mjs <pr> [--update <worktree>] [--stop <spec regex>] [--reruns 2] [--no-merge | --squash]
 //   exit 0 merged (or green, with --no-merge) · 1 a check failed · 2 BEHIND or DIRTY · 3 the head moved · 4 timeout
 import { execFileSync } from 'node:child_process'
 import { isInvokedDirectly } from '../cli.mjs'
@@ -18,6 +18,8 @@ const AFTER_RERUN_MS = 90_000
 const TIMEOUT_MS = 3 * 60 * 60_000
 const MAX_ROUNDS = 6
 const PUSH_SEEN_MS = 120_000
+const PUSH_ATTEMPTS = 3
+const PUSH_RETRY_MS = 5000
 const FAILED = new Set(['FAILURE', 'CANCELLED', 'TIMED_OUT', 'STARTUP_FAILURE', 'ERROR'])
 /** Checks whose failure is rerun before it counts: e2e flakes, and hosted runners that were never acquired. */
 const RERUNNABLE = /^(e2e|e2e-ordinary|e2e-shard-\d+|live \(\w+\)|from source \(\w+\))$/
@@ -78,7 +80,16 @@ export function updateBranch (worktree, headRef) {
     return undefined
   }
   // A plain `push origin HEAD` goes to the local branch's name: renamed locally, it made a second remote branch and left the PR behind.
-  git('push', '-q', 'origin', `HEAD:refs/heads/${headRef}`)
+  // GitHub now and then rejects a good push ("fatal error in commit_refs"), so it is tried three times.
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      git('push', '-q', 'origin', `HEAD:refs/heads/${headRef}`)
+      break
+    } catch (error) {
+      if (attempt === PUSH_ATTEMPTS) throw new Error(`pushing to ${headRef} failed ${String(PUSH_ATTEMPTS)} times: ${String(error.stderr ?? error.message).trim()}`)
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, PUSH_RETRY_MS)
+    }
+  }
   return git('rev-parse', 'HEAD')
 }
 
@@ -111,7 +122,7 @@ function reportSpecs (checks) {
   return all
 }
 
-async function watch (pr, { maxReruns, merge, stop, worktree }) {
+async function watch (pr, { maxReruns, merge, squash, stop, worktree }) {
   let { head } = read(pr)
   if (worktree !== undefined) {
     const local = execFileSync('git', ['-C', worktree, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
@@ -139,7 +150,7 @@ async function watch (pr, { maxReruns, merge, stop, worktree }) {
       await sleep(AFTER_RERUN_MS)
     } else if (next.step === 'merge') {
       if (!merge) { console.log('green and CLEAN'); return 0 }
-      gh('pr', 'merge', pr, '--merge')
+      gh('pr', 'merge', pr, squash ? '--squash' : '--merge')
       console.log(`merged #${pr}${reruns > 0 ? ` after ${String(reruns)} rerun(s): name the flakes above in the PR` : ''}`)
       return 0
     } else if (next.step === 'stuck') {
@@ -147,7 +158,13 @@ async function watch (pr, { maxReruns, merge, stop, worktree }) {
         console.log(`green but ${now.state}: merge main into the branch and push, then watch again`)
         return 2
       }
-      const updated = updateBranch(worktree, now.headRef)
+      let updated
+      try {
+        updated = updateBranch(worktree, now.headRef)
+      } catch (error) {
+        console.log(`${error.message}: push the merged branch by hand, then watch again`)
+        return 2
+      }
       if (updated === undefined) { console.log('main does not merge into the branch cleanly: settle the conflict by hand'); return 2 }
       rounds += 1
       console.log(`round ${String(rounds)}: merged main in and pushed ${updated.slice(0, 8)}`)
@@ -166,12 +183,13 @@ async function watch (pr, { maxReruns, merge, stop, worktree }) {
 if (isInvokedDirectly(import.meta.url)) {
   const pr = process.argv[2]
   if (pr === undefined || !/^\d+$/.test(pr)) {
-    console.error('usage: node scripts/ai/pr-watch.mjs <pr> [--update <worktree>] [--stop <spec regex>] [--reruns 2] [--no-merge]')
+    console.error('usage: node scripts/ai/pr-watch.mjs <pr> [--update <worktree>] [--stop <spec regex>] [--reruns 2] [--no-merge | --squash]')
     process.exit(2)
   }
   process.exit(await watch(pr, {
     maxReruns: Number(arg('reruns') ?? 2),
     merge: !process.argv.includes('--no-merge'),
+    squash: process.argv.includes('--squash'),
     stop: arg('stop') === undefined ? undefined : new RegExp(arg('stop')),
     worktree: arg('update')
   }))
