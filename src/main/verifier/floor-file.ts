@@ -28,6 +28,8 @@ export class FloorFile {
    * nothing else changes it out from under a pending batch. */
   private floors: Map<string, string> | undefined
   private flushTimer: NodeJS.Timeout | undefined
+  /** Every async write waits for the one before it: they share one temporary file. */
+  private writing: Promise<void> = Promise.resolve()
 
   /**
    * @param isKey checked on every key read from disk and every key saved, independently of the process that reported it: this store does not assume its caller already did
@@ -105,6 +107,12 @@ export class FloorFile {
   }
 
   private async write (floors: ReadonlyMap<string, string>): Promise<void> {
+    const turn = this.writing.catch(() => {}).then(async () => { await this.writeNow(floors) })
+    this.writing = turn
+    await turn
+  }
+
+  private async writeNow (floors: ReadonlyMap<string, string>): Promise<void> {
     await mkdir(this.dir, { recursive: true })
     const text = JSON.stringify(Object.fromEntries(floors))
     const tmp = `${this.path}.tmp`
