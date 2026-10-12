@@ -91,7 +91,7 @@ describe('the IPFS rows', () => {
   })
 
   it('says in a sentence what the lookup service learns', () => {
-    expect(row('web3-ipfs-lookup').help).toMatch(/learns which sites you look up/)
+    expect(row('web3-ipfs-lookup').help).toMatch(/learn which sites you look up/)
   })
 
   it('shows the node\'s state only when main reports one, in the sentence main gives', () => {

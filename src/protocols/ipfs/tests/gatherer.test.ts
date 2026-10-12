@@ -110,6 +110,15 @@ describe('the IPFS gatherer over a node on this computer', () => {
     expect((await gatherer(gw).mount('a.eth', records)).servedFrom).toEqual({ kind: 'gateways' })
   })
 
+  it('asks the node once, and reports it unavailable at once, when the node answers 504 for content it could not find', async () => {
+    const gw = fakeGateways(dag.blocks)
+    gw.failNext(NODE, 504, 10)
+    const viaNode = createIpfsGatherer({ fetch: gw.fetch, gateways: [NODE], resolveTxt: async () => [], ipnsSequences: memorySequenceStore(), localNode: true })
+    const site = await viaNode.mount('a.eth', [onChain({ kind: 'ipfs', cid: dag.root.toString() })])
+    await expect(read(site, '/')).rejects.toMatchObject({ failure: 'unavailable', message: expect.stringContaining('answered 504') as string })
+    expect(gw.requests).toHaveLength(1)
+  })
+
   it('fails a read as unverifiable, and DDOC with it, when the node sends a block that fails its hash', async () => {
     const gw = fakeGateways(dag.blocks)
     const [key] = [...dag.blocks].find(([k]) => CID.parse(k).code === 0x55)!

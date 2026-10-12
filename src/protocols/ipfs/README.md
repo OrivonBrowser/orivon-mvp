@@ -37,8 +37,9 @@ Why raw blocks and not CARs, and the limits' real-site figures:
 
 **The node is one endpoint, read as a gateway is.** [`node-first.ts`](node-first.ts) mounts from the node when
 the host says it is ready and from the gateways otherwise, labelling the mounted site (`servedFrom`) so the
-person can be told. The node's gatherer is the same one, built with `localNode`: its single endpoint takes 12
-concurrent block reads (what three gateways took together, since each block the node lacks is a lookup of its
-own), and a block that fails its hash sits it out for 30 seconds instead of dropping it for the session. The
-block timeout (30 s) and the hedge delay (2 s) are unchanged: a hedge has no second endpoint to ask here, and a
-cold lookup the node makes itself fits inside the timeout.
+person can be told. The node's gatherer is the same one, built with `localNode`, with limits from what the real
+node measured (`gatherer.ts` has the figures: blocks with a provider in 0.3 to 2.3 s, a lookup that finds
+nothing in 25 to 93 s): 12 concurrent block reads, a 45 s block timeout, a 15 s IPNS record timeout so a name
+service is asked inside a mount, a 5xx taken as the node's answer that it found nothing (so no retry passes and no
+cooldown), and a block that fails its hash sits the node out for 30 seconds instead of dropping it for the
+session. The hedge delay (2 s) is unchanged: a hedge has no second endpoint to ask here.

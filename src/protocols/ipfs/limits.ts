@@ -11,6 +11,8 @@ export interface IpfsLimits {
   readonly maxDagDepth: number
   readonly maxBytesPerOpen: number
   readonly blockTimeoutMs: number
+  /** The wait for one IPNS record from one source; `blockTimeoutMs` when unset. */
+  readonly recordTimeoutMs?: number
   /** Per gateway, not a total shared across all of them -- a hung gateway
    * must not be able to starve the others of their own slots. */
   readonly perGatewayConcurrency: number

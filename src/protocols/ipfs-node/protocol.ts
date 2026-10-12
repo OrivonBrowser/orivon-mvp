@@ -14,7 +14,7 @@ export type IpfsNodeState = LocalNodeState
 export const IPFS_NODE_WORDS = { content: 'IPFS content', starting: "Orivon's IPFS node is still starting. Try again in a moment." } as const
 
 /**
- * How the node finds who holds a block. `auto` asks a lookup service and the IPFS network at the same time and
+ * How the node finds who holds a block. `auto` asks its lookup services and the IPFS network at the same time and
  * uses the first answer; `light-dht` asks the network only, so no lookup service learns what is looked up.
  */
 export type RoutingMode = 'auto' | 'light-dht'

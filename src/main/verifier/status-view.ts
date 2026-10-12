@@ -160,7 +160,7 @@ export function ipfsNodeView (node: IpfsNodeState, lookupService: boolean): Ipfs
         : `Not in use: ${node.reason}. ${GATEWAYS_INSTEAD}.`
     }
     case 'starting': return { state: 'starting', summary: 'Starting.' }
-    case 'ready': return { state: 'ready', summary: `Running, and IPFS content loads from it. It asks ${lookupService ? 'a lookup service and the IPFS network' : 'the IPFS network only'}.` }
+    case 'ready': return { state: 'ready', summary: `Running, and IPFS content loads from it. It asks ${lookupService ? 'its lookup services and the IPFS network' : 'the IPFS network only'}.` }
     case 'failed': return { state: 'failed', summary: `Not running: ${node.reason}. ${GATEWAYS_INSTEAD} meanwhile, and the node tries again shortly.` }
   }
 }

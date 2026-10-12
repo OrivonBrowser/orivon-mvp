@@ -61,7 +61,7 @@ export const web3: Section = {
     {
       id: 'web3-ipfs-lookup',
       label: 'Use a lookup service to find IPFS sites faster',
-      help: 'Your node asks a lookup service and the IPFS network at the same time, and uses whichever answers first. The service learns which sites you look up; what it finds is still checked. Off, only the IPFS network is asked, which can be slower. A change applies at once.',
+      help: 'Your node asks two lookup services, delegated-ipfs.dev and cid.contact, and the IPFS network at the same time, and uses whichever answers first. The services learn which sites you look up; what they find is still checked. Off, only the IPFS network is asked, which can be slower. A change applies at once.',
       keywords: ['ipfs', 'lookup', 'routing', 'delegated', 'privacy', 'dht', 'faster'],
       control: { type: 'toggle', key: 'web3.ipfsLookupService' },
       visible: (state) => state.value('web3.ipfsSource') !== 'gateways'

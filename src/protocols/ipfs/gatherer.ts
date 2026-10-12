@@ -27,7 +27,8 @@ export interface IpfsGathererOptions {
   readonly limits?: Partial<IpfsLimits>
   /**
    * `gateways` is the one node Orivon runs on this computer, not public gateways: its mounts say so, a bad answer
-   * costs it a pause rather than the session, and its one endpoint takes the concurrency three gateways would.
+   * costs it a pause rather than the session, a 5xx is its answer that it found nothing, its one endpoint takes the
+   * concurrency three gateways would, and its waits are sized for the lookups it makes itself.
    */
   readonly localNode?: boolean
 }
@@ -36,6 +37,15 @@ export interface IpfsGathererOptions {
 export const LOCAL_NODE_CONCURRENCY = 12
 /** How long a local node that sent a bad block is not asked again. */
 export const LOCAL_NODE_QUARANTINE_MS = 30_000
+/**
+ * How long a block may take from a local node. Measured against the real node: a block with a provider arrives in
+ * 0.3 to 2.3 s, and a lookup that finds nothing ends in 25 to 93 s with a 404 or 504. Forty-five seconds is about
+ * twenty times the slowest success and ends a hopeless lookup well before its worst case; the node remembers an
+ * empty lookup for 30 s, so asking again within that answers at once.
+ */
+export const LOCAL_NODE_BLOCK_TIMEOUT_MS = 45_000
+/** How long an IPNS record may take from a local node (about 10 s measured): short enough that a name service is asked within a mount's 25 s when the node has nothing. */
+export const LOCAL_NODE_RECORD_TIMEOUT_MS = 15_000
 
 const LOADABLE = new Set(['ipfs', 'ipns-key', 'dnslink'])
 
@@ -45,8 +55,8 @@ function loadable (records: readonly NameRecord[]): NameRecord | undefined {
 
 export function createIpfsGatherer (options: IpfsGathererOptions): DataGatherer {
   const local = options.localNode === true
-  const limits: IpfsLimits = { ...DEFAULT_LIMITS, ...(local && { perGatewayConcurrency: LOCAL_NODE_CONCURRENCY }), ...options.limits }
-  const pool = new GatewayPool(options.gateways, limits.perGatewayConcurrency, Date.now, local ? { lieQuarantineMs: LOCAL_NODE_QUARANTINE_MS } : {})
+  const limits: IpfsLimits = { ...DEFAULT_LIMITS, ...(local && { perGatewayConcurrency: LOCAL_NODE_CONCURRENCY, blockTimeoutMs: LOCAL_NODE_BLOCK_TIMEOUT_MS, recordTimeoutMs: LOCAL_NODE_RECORD_TIMEOUT_MS }), ...options.limits }
+  const pool = new GatewayPool(options.gateways, limits.perGatewayConcurrency, Date.now, local ? { lieQuarantineMs: LOCAL_NODE_QUARANTINE_MS, serverErrorsAreAnswers: true } : {})
   const cache = new BlockCache()
   const resolvers = {
     ipns: async (key: string, signal: AbortSignal, onRefusal: (refusal: Refusal) => void) =>

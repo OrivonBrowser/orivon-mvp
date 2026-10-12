@@ -29,11 +29,15 @@ describe('routingModeOf', () => {
 })
 
 describe('nodeArguments', () => {
-  it('serves on loopback at the given port, online, with the chosen routing, one database in its data directory, and quiet logs', () => {
+  it('serves on loopback at the given port, online, with the chosen routing (the two lookup services only when allowed), one database in its data directory, and quiet logs', () => {
     expect(nodeArguments({ apiPort: 24_242, options: routingOptions(true) })).toEqual([
-      'ipfs-node', '--addr', '127.0.0.1:24242', '--online', '--routing-mode', 'auto', '--db', '/data/blocks.db', '--trace-filter', 'warn'
+      'ipfs-node', '--addr', '127.0.0.1:24242', '--online', '--routing-mode', 'auto',
+      '--delegated-router', 'https://delegated-ipfs.dev/routing/v1,https://cid.contact/routing/v1',
+      '--db', '/data/blocks.db', '--trace-filter', 'warn'
     ])
-    expect(nodeArguments({ apiPort: 24_242, options: routingOptions(false) })).toContain('light-dht')
+    expect(nodeArguments({ apiPort: 24_242, options: routingOptions(false) })).toEqual([
+      'ipfs-node', '--addr', '127.0.0.1:24242', '--online', '--routing-mode', 'light-dht', '--db', '/data/blocks.db', '--trace-filter', 'warn'
+    ])
   })
 
   it.each([0, -1, 65_536, 1.5, Number.NaN])('refuses the port %s', (apiPort) => {

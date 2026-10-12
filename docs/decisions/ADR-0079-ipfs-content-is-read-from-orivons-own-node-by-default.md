@@ -17,9 +17,12 @@ it reads a gateway, and still hashes every block and checks every IPNS record it
 for availability only. DNSLink stays on Orivon's own DNS-over-HTTPS resolver, and a name service is still asked
 for an IPNS record after the node.
 
-The node finds who holds a block by asking a delegated lookup service and the IPFS network at the same time,
-and uses the first answer. A second setting (`web3.ipfsLookupService`, on by default) turns the service off,
-and the node then asks the network only. Both settings apply at once: the node and the verifier host stop, and
+The node finds who holds a block by asking two delegated lookup services (`delegated-ipfs.dev` and
+`cid.contact`, given as one comma list the node races and fails over across) and the IPFS network at the same
+time, and uses the first answer. There are two services because the node resolves their names through this
+computer's resolver, and a resolver that hijacks DNS breaks the first with a certificate error while the second
+keeps working. A second setting (`web3.ipfsLookupService`, on by default) turns the service off,
+and the node then asks the network only, with no service named. Both settings apply at once: the node and the verifier host stop, and
 their next start reads the new choice.
 
 When the person chose the node and it cannot run (this build has no node files, a system proxy is
@@ -51,7 +54,7 @@ so the protocol and its verification do not change.
 The shared host was built for this: a kind is one folder and one line, and the confinement is the same for
 every kind. The node holds no grant, so `node-net.ts` is the defence, and it already allows exactly what this
 node does: connections to public addresses, datagrams to a public resolver on port 53, loopback listens. Asking
-the lookup service and the network together costs the service the knowledge of which sites are looked up, which
+the lookup services and the network together costs the services the knowledge of which sites are looked up, which
 the setting lets a person refuse; the content that comes back is checked either way.
 
 ## Consequences
@@ -64,9 +67,17 @@ the setting lets a person refuse; the content that comes back is checked either 
   reload works.
 - Where gateways are named to the person (Settings' list of servers, the site-info popover's "Loaded from" row),
   they say the node when the node served the content, and name the gateways, with the reason, when it did not.
-- The node's one endpoint takes 12 concurrent block reads, what three gateways took together, because each block
-  it lacks is a lookup of its own; a block that fails its hash sits the node out for 30 seconds and is not
-  dropped for the session as a gateway is.
+- The node's one endpoint is read differently from a gateway, from what was measured of the real node: a block
+  with a provider arrives in 0.3 to 2.3 s, a lookup that finds nothing ends in 25 to 93 s with a 404 or 504, and
+  an empty lookup is remembered by the node for 30 s. So the endpoint takes 12 concurrent block reads (what three
+  gateways took together, since each block it lacks is a lookup of its own); a block waits 45 s (about twenty
+  times the slowest success, ending a hopeless lookup before its worst case); an IPNS record waits 15 s (about
+  10 s measured), so that a name service is asked inside a mount's 25 s when the node has nothing; a 5xx is the
+  node's answer that it found nothing, so it is neither retried nor cooled for and the page shows its ordinary
+  "not available" error at once; and a block that fails its hash sits the node out for 30 s instead of dropping
+  it for the session as a gateway is.
+- Content whose only providers are HTTP gateways cannot be found by the node today (it answers 502 or 504); the
+  node is being patched, and Orivon does not work around it.
 
 ## Reversibility
 

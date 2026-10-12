@@ -110,3 +110,21 @@ describe('GatewayPool.refuse', () => {
     expect(pool.candidates()).toEqual([A])
   })
 })
+
+describe('askGateway -- a 5xx', () => {
+  const unwell: Fetch = async () => new Response('down', { status: 504 })
+  const request = { url: `${A}/ipfs/x?format=raw`, accept: 'application/vnd.ipld.raw', timeoutMs: 5_000 }
+
+  it('marks a gateway unwell, which cools it', async () => {
+    const pool = new GatewayPool([A], 4)
+    expect((await failureOf(askGateway(pool, unwell, A, request, read, new AbortController().signal))).outcome.kind).toBe('server-error')
+    expect(pool.candidates()).toEqual([])
+  })
+
+  it('is a source\'s plain answer that it lacks the content, with no cooling, when the pool takes a 5xx as an answer', async () => {
+    const pool = new GatewayPool([A], 4, Date.now, { serverErrorsAreAnswers: true })
+    const failure = await failureOf(askGateway(pool, unwell, A, request, read, new AbortController().signal))
+    expect(failure).toMatchObject({ outcome: { kind: 'miss' }, status: 504 })
+    expect(pool.candidates()).toEqual([A])
+  })
+})

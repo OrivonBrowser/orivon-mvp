@@ -18,6 +18,8 @@ export const MIN_HEDGE_DELAY_MS = 500
 export interface PoolOptions {
   /** A source that sends a bad answer sits out this long instead of for the rest of the session: for a node on this computer, which a restart can make send one truncated answer, and which the person cannot replace by choosing another. */
   readonly lieQuarantineMs?: number
+  /** A 5xx is the source's final answer, not a sign it is unwell: for a local node, which answers 502 or 504 once its own lookup has found nothing, and which asking again would only make search again. */
+  readonly serverErrorsAreAnswers?: boolean
 }
 
 export class GatewayPool {
@@ -87,6 +89,11 @@ export class GatewayPool {
   /** For the rest of this session: a gateway that sent one bad block is not asked again. */
   drop (gateway: string): void {
     this.dropped.add(gateway)
+  }
+
+  /** Whether a 5xx from a source is its answer that it does not have the content, to be neither retried nor cooled for. */
+  get serverErrorsAreAnswers (): boolean {
+    return this.options.serverErrorsAreAnswers === true
   }
 
   /** `gateway` sent bytes that failed their check: dropped for the session, or sat out for the pool's `lieQuarantineMs`. */
@@ -235,7 +242,7 @@ export async function askGateway<T> (
     }
     if (!response.ok) {
       await response.body?.cancel()
-      const outcome: RecordedFailure = SERVER_ERRORS.has(response.status) ? { kind: 'server-error' } : { kind: 'miss' }
+      const outcome: RecordedFailure = SERVER_ERRORS.has(response.status) && !pool.serverErrorsAreAnswers ? { kind: 'server-error' } : { kind: 'miss' }
       pool.note(gateway, outcome)
       throw new GatewayFailure(outcome, `${gateway} answered ${String(response.status)}`, response.status)
     }

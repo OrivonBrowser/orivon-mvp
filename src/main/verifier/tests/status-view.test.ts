@@ -96,7 +96,7 @@ describe('ipfsNodeView', () => {
   it('says each state in plain words', () => {
     expect(ipfsNodeView({ state: 'off' }, true)).toEqual({ state: 'off', summary: 'Off. It starts when an IPFS address is opened, and stops again after ten minutes without one.' })
     expect(ipfsNodeView({ state: 'starting' }, true).summary).toBe('Starting.')
-    expect(ipfsNodeView({ state: 'ready', peers: 0 }, true).summary).toBe('Running, and IPFS content loads from it. It asks a lookup service and the IPFS network.')
+    expect(ipfsNodeView({ state: 'ready', peers: 0 }, true).summary).toBe('Running, and IPFS content loads from it. It asks its lookup services and the IPFS network.')
     expect(ipfsNodeView({ state: 'ready', peers: 0 }, false).summary).toBe('Running, and IPFS content loads from it. It asks the IPFS network only.')
   })
 
