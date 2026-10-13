@@ -244,6 +244,8 @@ jobs:
       # release the new one has no packages yet, so this would test the previous release; PRs and manual runs only.
       - name: Install the newest published release with the one-line installer
         if: matrix.platform == 'mac' && github.event_name != 'release'
+        env:
+          ORIVON_GITHUB_TOKEN: ${{ github.token }}
         run: |
           ORIVON_INSTALL_DIR="$RUNNER_TEMP/apps-release" ORIVON_NO_OPEN=1 bash scripts/install-macos.sh
           test -d "$RUNNER_TEMP/apps-release/Orivon.app"

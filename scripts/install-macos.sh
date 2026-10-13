@@ -15,6 +15,8 @@
 #   ORIVON_INSTALL_DIR  where Orivon.app goes (default /Applications if you can write there, else
 #                       ~/Applications); never uses sudo
 #   ORIVON_NO_OPEN=1    do not open Orivon at the end
+#   ORIVON_GITHUB_TOKEN a GitHub token for the release lookup, which lifts the per-address rate limit an
+#                       unauthenticated lookup shares (a CI runner's address is shared by many jobs)
 set -euo pipefail
 
 REPO=${ORIVON_REPO:-OrivonBrowser/orivon-mvp}
@@ -82,7 +84,7 @@ main () {
   else
     say "Looking for the newest Orivon for $arch ..."
     local json picked url digest
-    json=$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=20") \
+    json=$(curl -fsSL ${ORIVON_GITHUB_TOKEN:+-H "Authorization: Bearer $ORIVON_GITHUB_TOKEN"} "https://api.github.com/repos/$REPO/releases?per_page=20") \
       || fail "Could not read the releases of $REPO from GitHub (offline, or its rate limit is reached). Try again later."
     picked=$(pick_release "$arch" "$json") || fail "Could not read the release list."
     tag=$(printf '%s\n' "$picked" | sed -n 1p)
