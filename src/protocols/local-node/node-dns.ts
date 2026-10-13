@@ -8,7 +8,7 @@
 import type { LookupAddress } from '../../contracts/index.js'
 import { allowlisted } from '../gateways/allowlisted-fetch.js'
 import type { WebFetch } from '../gateways/allowlisted-fetch.js'
-import { dohHostAddresses } from '../gateways/doh-query.js'
+import { DnsStatusFailure, dohHostAddresses } from '../gateways/doh-query.js'
 
 /** Shortest and longest time an answer is kept: the DNS TTL, clamped. */
 export const MIN_TTL_SECONDS = 10
@@ -66,8 +66,9 @@ export function createNodeLookup (options: NodeLookupOptions): (hostname: string
   async function resolve (hostname: string): Promise<readonly LookupAddress[]> {
     try {
       return await ask(hostname)
-    } catch {
-      pausedUntil = now() + DOH_PAUSE_MS
+    } catch (error) {
+      // A name the providers cannot answer says nothing about the providers: only they failing pauses DoH for every name.
+      if (!(error instanceof DnsStatusFailure)) pausedUntil = now() + DOH_PAUSE_MS
       return await options.system(hostname)
     }
   }

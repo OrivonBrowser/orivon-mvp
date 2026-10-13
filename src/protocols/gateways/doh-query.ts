@@ -13,6 +13,11 @@ const AAAA_RECORD = 28
 const NXDOMAIN = 3
 const MAX_ANSWER_BYTES = 64 * 1024
 
+/** A provider answered, and its answer says the query failed for this name (SERVFAIL, REFUSED, any rcode but NXDOMAIN). The provider is working; the name is not. */
+export class DnsStatusFailure extends Error {
+  override readonly name = 'DnsStatusFailure'
+}
+
 export interface DnsAnswer {
   readonly type?: unknown
   readonly data?: unknown
@@ -22,11 +27,14 @@ export interface DnsAnswer {
 /** One DNS-over-HTTPS query, tried against each endpoint in turn: the
  * answers for `name`/`type`, or `[]` for NXDOMAIN (a real, negative
  * answer, not a failure). Throws only once every endpoint has failed to
- * answer at all. Shared by the TXT and address resolvers (Rule 3) -- they
+ * answer at all, and then as a `DnsStatusFailure` when some endpoint did answer
+ * with a failing DNS status, so a caller can tell a name that fails from
+ * endpoints that do. Shared by the TXT and address resolvers (Rule 3) -- they
  * differ only in which record type they ask for and how they read the
  * answers back. */
 export async function dohQuery (endpoints: readonly string[], fetch: WebFetch, name: string, type: 'TXT' | 'A' | 'AAAA', signal: AbortSignal, timeoutMs: number): Promise<DnsAnswer[]> {
   const errors: string[] = []
+  let answeredWithStatus = false
   for (const endpoint of endpoints) {
     try {
       const url = new URL(endpoint)
@@ -42,13 +50,15 @@ export async function dohQuery (endpoints: readonly string[], fetch: WebFetch, n
       const text = new TextDecoder().decode(await readCapped(response, MAX_ANSWER_BYTES))
       const body = JSON.parse(text) as { Status?: unknown, Answer?: unknown }
       if (body.Status === NXDOMAIN) return []
-      if (body.Status !== 0) throw new Error(`${url.host} answered DNS status ${String(body.Status)}`)
+      if (body.Status !== 0) throw new DnsStatusFailure(`${url.host} answered DNS status ${String(body.Status)}`)
       return Array.isArray(body.Answer) ? body.Answer as DnsAnswer[] : []
     } catch (error) {
+      if (error instanceof DnsStatusFailure) answeredWithStatus = true
       errors.push(error instanceof Error ? error.message : String(error))
     }
   }
-  throw new Error(`no DNS-over-HTTPS resolver answered for ${name}: ${errors.join('; ')}`)
+  const message = `no DNS-over-HTTPS resolver answered for ${name}: ${errors.join('; ')}`
+  throw answeredWithStatus ? new DnsStatusFailure(message) : new Error(message)
 }
 
 export interface HostAddress {
@@ -89,8 +99,11 @@ export async function dohHostAddresses (endpoints: readonly string[], fetch: Web
   }
   const complete = a.status === 'fulfilled' && aaaa.status === 'fulfilled'
   if (!complete && addresses.length === 0) {
-    const failed = a.status === 'rejected' ? a : aaaa
-    throw new Error(`no DNS-over-HTTPS resolver answered for ${host}: ${failed.status === 'rejected' && failed.reason instanceof Error ? failed.reason.message : 'no answer'}`)
+    const reasons = [a, aaaa].flatMap((result) => result.status === 'rejected' ? [result.reason as unknown] : [])
+    // An endpoint that failed to answer outranks a name that failed: the caller has to know the endpoints are in trouble.
+    const endpointFailure = reasons.find((reason) => !(reason instanceof DnsStatusFailure)) ?? reasons[0]
+    const message = `no DNS-over-HTTPS resolver answered for ${host}: ${endpointFailure instanceof Error ? endpointFailure.message : 'no answer'}`
+    throw endpointFailure instanceof DnsStatusFailure ? new DnsStatusFailure(message) : new Error(message)
   }
   return { addresses, complete }
 }

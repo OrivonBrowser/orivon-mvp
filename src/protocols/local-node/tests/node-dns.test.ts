@@ -154,6 +154,49 @@ describe('createNodeLookup', () => {
     expect(system).toEqual(['bad.example'])
   })
 
+  it('answers a name the providers SERVFAIL on from the system resolver, and keeps asking DoH for the next name', async () => {
+    const { lookup, requests, system } = harness({ 'peer.example': { status: 2 }, 'svc.example': { A: [['104.18.1.1', 60]] } }, { 'peer.example': ['9.9.9.9'] })
+    expect(await lookup('peer.example')).toEqual([{ address: '9.9.9.9', family: 'IPv4' }])
+    const before = requests.length
+    expect(await lookup('svc.example')).toEqual([{ address: '104.18.1.1', family: 'IPv4' }])
+    expect(requests.length).toBeGreaterThan(before)
+    expect(system).toEqual(['peer.example'])
+    await lookup('peer.example')
+    expect(system).toEqual(['peer.example', 'peer.example'])
+  })
+
+  it.each([
+    ['REFUSED', 5],
+    ['FORMERR', 1],
+    ['NOTIMP', 4]
+  ])('treats %s for one name as that name failing, not the providers', async (_label, status) => {
+    const { lookup, requests, system } = harness({ 'peer.example': { status }, 'svc.example': { A: [['104.18.1.1', 60]] } }, { 'peer.example': ['9.9.9.9'] })
+    await lookup('peer.example')
+    const before = requests.length
+    await lookup('svc.example')
+    expect(requests.length).toBeGreaterThan(before)
+    expect(system).toEqual(['peer.example'])
+  })
+
+  it.each([
+    ['a non-2xx status', async () => new Response('busy', { status: 503 })],
+    ['a malformed body', async () => new Response('<html>', { status: 200 })],
+    ['a timeout', async () => { throw new DOMException('timed out', 'TimeoutError') }]
+  ])('pauses DoH for every name when the endpoints fail with %s', async (_label, answer) => {
+    const requests: string[] = []
+    const system: string[] = []
+    const lookup = createNodeLookup({
+      endpoints: ENDPOINTS,
+      fetch: async (url) => { requests.push(url); return await answer() },
+      system: async (hostname) => { system.push(hostname); return [{ address: '9.9.9.9', family: 'IPv4' }] }
+    })
+    await lookup('a.example')
+    const spent = requests.length
+    await lookup('b.example')
+    expect(requests).toHaveLength(spent)
+    expect(system).toEqual(['a.example', 'b.example'])
+  })
+
   it('keeps an answer for its TTL, clamped, and asks again after', async () => {
     const { lookup, requests, clock } = harness({ 'short.example': { A: [['104.18.1.1', 1]] }, 'long.example': { A: [['104.18.1.2', 86_400]] } })
     await lookup('short.example')
