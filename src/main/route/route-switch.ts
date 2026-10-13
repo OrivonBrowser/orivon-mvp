@@ -54,7 +54,8 @@ export function createRouteSwitch (routes: Pick<RouteService, 'proxy' | 'store' 
     // An app whose files are not held here has a first visit to pause; an origin not written to disk would be routed until the next start and then go direct.
     blockedFor: (origin) => routes.proxy() === undefined ? 'no-proxy' : world.isPinned(origin) && world.isPersistable(origin) ? undefined : 'not-cached',
     set: async (origin, routed) => {
-      store.set(origin, routed)
+      // With the whole browser on the tunnel, switching an app off is an entry of its own; switching it on again follows the default.
+      store.setEntry(origin, entryFor(routed ? 'on' : 'off', routes.hub.isEverywhere()))
       await routes.controller.settled()
     },
     siteBlockedFor: (origin) => routes.proxy() === undefined ? 'no-proxy' : canTunnel(origin) ? undefined : 'local',

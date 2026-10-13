@@ -8,7 +8,8 @@ type WatchedBroker = Pick<Broker, 'onGrantsChanged'> & { readonly app: Pick<Brok
 /** Returns the unsubscribe. */
 export function forgetRoutesOfGoneApps (broker: WatchedBroker, routes: Pick<RouteService, 'forget' | 'hub' | 'store'>): () => void {
   return broker.onGrantsChanged((origin) => {
-    if (!routes.hub.isRouted(origin)) return
+    // Only an origin with an entry of its own has a route to clear: while the whole browser is on the tunnel every origin is routed, and a website the person set to off must keep that.
+    if (routes.store.stateOf(origin) === undefined) return
     // A website with storage in a profile was never an app: its grants changing says nothing about its tunnel.
     if (routes.store.isApartAnywhere(origin)) return
     // While the list cannot be read every origin counts as routed, so being routed says nothing about being an app.

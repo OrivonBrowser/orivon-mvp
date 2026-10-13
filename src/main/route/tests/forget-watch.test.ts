@@ -10,7 +10,7 @@ function setup (state: { routed: boolean, registered: boolean, persisted: boolea
   const stop = forgetRoutesOfGoneApps({
     onGrantsChanged: (next) => { listener = next; return off },
     app: { isRegisteredSync: () => state.registered, persistedAppsSync: () => state.persisted ? [{ origin: APP }] as never : [] }
-  }, { forget, hub: { isRouted: () => state.routed, unreadable: () => state.unreadable === true } as never, store: { isApartAnywhere: () => state.apart === true } as never })
+  }, { forget, hub: { unreadable: () => state.unreadable === true } as never, store: { stateOf: () => state.routed ? 'on' : undefined, isApartAnywhere: () => state.apart === true } as never })
   return { change: (origin: string) => { listener?.(origin) }, forget, stop, off }
 }
 
@@ -38,6 +38,12 @@ describe('forgetting the route of an app that is gone', () => {
 
   it('forgets nothing while the list of tunnel settings cannot be read, when every origin counts as routed', () => {
     const { change, forget } = setup({ routed: true, registered: false, persisted: false, unreadable: true })
+    change('https://an-ordinary-website.example')
+    expect(forget).not.toHaveBeenCalled()
+  })
+
+  it('leaves an origin with no entry of its own alone, even while the whole browser is on the tunnel and every origin is routed', () => {
+    const { change, forget } = setup({ routed: false, registered: false, persisted: false })
     change('https://an-ordinary-website.example')
     expect(forget).not.toHaveBeenCalled()
   })

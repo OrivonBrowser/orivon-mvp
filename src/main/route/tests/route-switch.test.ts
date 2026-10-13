@@ -91,6 +91,16 @@ describe('the app card\'s switch', () => {
   })
 })
 
+describe('the app card\'s switch, with the whole browser on the tunnel', () => {
+  it('writes an off entry when the app is switched off, and takes it away when it is switched on again', async () => {
+    const { routeSwitch, store } = setup({ everywhere: true })
+    await routeSwitch.set(APP, false)
+    expect(store.stateOf(APP)).toBe('off')
+    await routeSwitch.set(APP, true)
+    expect(store.stateOf(APP)).toBeUndefined()
+  })
+})
+
 describe('the list of origins with a setting or storage of their own', () => {
   it('has apps and websites, each with its entry and state, and a website whose entry is gone but whose storage is kept', async () => {
     const { routeSwitch } = setup()
