@@ -12,7 +12,7 @@
 //      callbacks (createTab, createWindow, ...) reject cleanly if an
 //      extension somehow calls one before this runs.
 import { app, session, webContents } from 'electron'
-import type { Session, WebContents } from 'electron'
+import type { BaseWindow, Session, WebContents } from 'electron'
 // Virtual specifiers (electron-chrome-extensions-lib.d.ts's own header says
 // why): electron.vite.config.ts's alias resolves each to the real vendor
 // file for bundling; tsc uses that .d.ts's ambient declaration instead.
@@ -33,7 +33,7 @@ import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import { EXTENSION_SANDBOX_CSP_FILTER, extensionSandboxCsp } from './extension-sandbox-csp.js'
 import { appOrigin } from '../shell/devtools-app-origin.js'
 import { eventListenerFilter } from './extension-event-filter.js'
-import { closeCurrentPopup, installPopupPolicy } from './extension-popup-policy.js'
+import { closeCurrentPopup, installBackgroundPagePolicy, installPopupPolicy } from './extension-popup-policy.js'
 import { extensionPopupHost, wirePopupHost } from './extension-popup-host.js'
 import { hasPendingNavigation, watchNavigations } from './extension-pending-navigation.js'
 import { anchorFor } from './extension-action-anchor.js'
@@ -49,6 +49,8 @@ import { apiOrHostAccessFor, hostAccessFor } from './extension-host-access.js'
 import { clearInvocationsForExtension, hasRecentInvocation } from './extension-tab-invocation.js'
 import { recordExtensionInvocation } from './side-panel-gesture.js'
 import { sidePanelWindowOf } from './side-panel-pages.js'
+import { profileEntryOf, profileEntries } from './profile-registry.js'
+import { syncToolbarPartition } from './toolbar-partition.js'
 
 /** The session's extensions emitter takes one `extension-unloaded` listener from each extension subsystem: the
  * vendored library's eight, the invocation ledger, the dNR engine, the bookmarks and manifest APIs, the command
@@ -80,6 +82,11 @@ export const extensionPagesAroundReload = {
 /** The library's host; undefined until `createExtensionHost` has run. */
 export function extensionHost (): ElectronChromeExtensions | undefined {
   return hostExtensions
+}
+
+/** The library instance that serves `target`: the default session's, or the one of a profile session that has the person's extensions. */
+export function hostForSession (target: Session): ElectronChromeExtensions | undefined {
+  return ElectronChromeExtensions.fromSession(target)
 }
 
 /** The shell's services once the first window exists, undefined before. */
@@ -150,7 +157,7 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
     license: 'GPL-3.0',
     session: session.defaultSession,
     preloadPath,
-    ...buildHostImpl(() => bridge, callingExtensionId)
+    ...buildHostImpl(() => bridge, callingExtensionId, session.defaultSession)
   })
 
   // extension-sw-preload-recovery.ts must not import extensions-dnr.ts
@@ -187,7 +194,9 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
   }, (id) => { recovery.sweep(id, webContents.getAllWebContents()) })
   pageRecovery = recovery
 
-  installPopupPolicy(hostExtensions, { services: () => bridge?.services, isLoaded: isLoadedExtension })
+  const popupPolicy = { services: () => bridge?.services, isLoaded: isLoadedExtension }
+  installPopupPolicy(hostExtensions, popupPolicy)
+  installBackgroundPagePolicy(popupPolicy, (target) => target === session.defaultSession || profileEntryOf(target) !== undefined)
   // The popup is a view in its window: Orivon attaches and places it, and gives the keyboard back to the
   // tab in front. An opened-by-the-extension popup anchors at its own toolbar icon, as a click does.
   setPopupHost(extensionPopupHost)
@@ -213,6 +222,36 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
   })
 
   return hostExtensions
+}
+
+/**
+ * A library instance for a profile session, built before the first extension loads into it: the extension's `chrome.tabs`,
+ * `chrome.windows`, toolbar button and popup act on the tabs of that session, as the default session's instance does on its own.
+ * What the default session's instance sets once for every instance (the checks on the router, the preload paths of the
+ * popup, the toolbar's anchor) is not set again; what is of the session (the popup policy, the sandbox pages' CSP, the
+ * service-worker health check, the invocation ledger) is.
+ */
+export function createProfileExtensionHost (target: Session, preloadPath: string): ElectronChromeExtensions {
+  const sessionExtensions = target.extensions
+  sessionExtensions.setMaxListeners(Math.max(sessionExtensions.getMaxListeners(), EXTENSIONS_LISTENER_ROOM))
+  sessionExtensions.addListener('extension-unloaded', (_event, extension) => {
+    clearInvocationsForExtension(extension.id)
+  })
+  webRequestOwnerFor(target).onHeadersReceived(
+    RUN_LAST,
+    EXTENSION_SANDBOX_CSP_FILTER,
+    (url) => url.startsWith('chrome-extension://'),
+    extensionSandboxCsp()
+  )
+  const host = new ElectronChromeExtensions({
+    license: 'GPL-3.0',
+    session: target,
+    preloadPath,
+    ...buildHostImpl(() => bridge, callingExtensionId, target)
+  })
+  watchForMissedServiceWorkerPreload(target)
+  installPopupPolicy(host, { services: () => bridge?.services, isLoaded: isLoadedExtension })
+  return host
 }
 
 /** Only a chrome view's own top frame may address another session's tabs
@@ -243,6 +282,34 @@ const trackedTabs = new Set<WebContents>()
 export function isExtensionTab (webContentsId: number): boolean {
   const contents = webContents.fromId(webContentsId)
   return contents !== undefined && trackedTabs.has(contents)
+}
+
+/** The library instances there are: the default session's, and one for each profile session. */
+function allHosts (): ElectronChromeExtensions[] {
+  const hosts: ElectronChromeExtensions[] = hostExtensions === undefined ? [] : [hostExtensions]
+  for (const entry of profileEntries()) {
+    const host = hostForSession(entry.session)
+    if (host !== undefined) hosts.push(host)
+  }
+  return hosts
+}
+
+/** The profile page each tab holds open, remembered so that its close needs no read of a web contents that may be gone. */
+const openInProfile = new WeakMap<WebContents, { readonly key: number, readonly close: (key: number) => void }>()
+
+/** A page of a website is open in `wc`'s session, if it is a profile's: what decides whether that profile's extensions run. */
+function openedInProfile (wc: WebContents): void {
+  const entry = profileEntryOf(wc.session)
+  if (entry === undefined) return
+  openInProfile.set(wc, { key: wc.id, close: (key) => { entry.demand.closed(key) } })
+  entry.demand.opened(wc.id)
+}
+
+function closedInProfile (wc: WebContents): void {
+  const held = openInProfile.get(wc)
+  if (held === undefined) return
+  openInProfile.delete(wc)
+  held.close(held.key)
 }
 
 /** Tabs handed to another window alive: between their window's `tabClosed` and the other's `tabCreated`,
@@ -282,8 +349,23 @@ export function attachExtensionShell (ctx: SubsystemContext, services: ShellServ
   // is not enough on its own.
   setTabCaptureMediaAppRefusalCheck(tabCaptureAppRefusal)
   // What extensions add to a page's right-click menu: an ordinary tab's, never a granted app's.
-  setPageMenuItemsSource((wc, params) =>
-    hostExtensions === undefined || !trackedTabs.has(wc) || tabCaptureAppRefusal(wc) ? [] : hostExtensions.getContextMenuItems(wc, params))
+  setPageMenuItemsSource((wc, params) => {
+    const host = hostForSession(wc.session)
+    return host === undefined || !trackedTabs.has(wc) || tabCaptureAppRefusal(wc) ? [] : host.getContextMenuItems(wc, params)
+  })
+
+  /** The toolbar of the window holding `wc` speaks to the instance of the session `wc` runs in. */
+  const pointToolbarAt = (wc: WebContents): void => {
+    const found = bridge?.services.windows.findTab(wc)
+    if (found == null) return
+    syncToolbarPartition(found.window.chrome.webContents, profileEntryOf(wc.session)?.partition ?? EXTENSIONS_DEFAULT_PARTITION)
+  }
+
+  /** Tells every instance but `wc`'s own that no tab of theirs is in front of `window`. */
+  const clearOthers = (wc: WebContents, window: BaseWindow): void => {
+    const own = hostForSession(wc.session)
+    for (const host of allHosts()) if (host !== own) host.clearActiveTab(window)
+  }
 
   services.tabLifecycle.subscribe({
     tabClosing: (info) => {
@@ -292,13 +374,15 @@ export function attachExtensionShell (ctx: SubsystemContext, services: ShellServ
     },
     tabCreated: (wc, win) => {
       if (movingTabs.delete(wc)) {
-        if (win !== undefined && !wc.isDestroyed()) notifyShell(wc, (t) => hostExtensions?.moveTab(t, win))
+        if (win !== undefined && !wc.isDestroyed()) notifyShell(wc, (t) => hostForSession(t.session)?.moveTab(t, win))
         return
       }
       // wc is freshly created here, in every case -- safe to read .session.
-      if (win === undefined || wc.session !== session.defaultSession) return
+      const host = hostForSession(wc.session)
+      if (win === undefined || host === undefined) return
       trackedTabs.add(wc)
-      hostExtensions?.addTab(wc, win)
+      host.addTab(wc, win)
+      openedInProfile(wc)
     },
     tabActivated: (wc) => {
       // Chrome closes an open browserAction popup the moment the PERSON
@@ -309,38 +393,52 @@ export function attachExtensionShell (ctx: SubsystemContext, services: ShellServ
       // test/extensions/e2e-extensions-toolbar.test.ts deliberately keeps the popup
       // open and interactive across its own chrome.tabs.create() call.
       if (!isExtensionActivatingTab()) closeCurrentPopup()
+      const found = bridge?.services.windows.findTab(wc)
+      pointToolbarAt(wc)
       if (trackedTabs.has(wc)) {
-        notifyShell(wc, (t) => hostExtensions?.selectTab(t))
+        if (found != null) clearOthers(wc, found.window.window)
+        notifyShell(wc, (t) => hostForSession(t.session)?.selectTab(t))
         return
       }
       // The shell activated a tab this library never learned about (an
-      // `orivon:` page, or a granted app in its own partition) -- tell it
-      // there is no active tab in that tab's window, rather than leaving it
-      // pointed at whatever tracked tab was active before (extension-host.ts's
+      // `orivon:` page, or a granted app in its own partition) -- tell every
+      // instance there is no active tab in that tab's window, rather than leaving
+      // it pointed at whatever tracked tab was active before (extension-host.ts's
       // own `trackedTabs` doc; ExtensionStore.clearActiveTab's own doc).
-      const found = bridge?.services.windows.findTab(wc)
-      if (found != null) hostExtensions?.clearActiveTab(found.window.window)
+      if (found != null) for (const host of allHosts()) host.clearActiveTab(found.window.window)
     },
     tabClosed: (wc) => {
       if (!trackedTabs.has(wc) || movingTabs.has(wc)) return
       trackedTabs.delete(wc)
+      closedInProfile(wc)
       // ElectronChromeExtensions.removeTab() itself reads wc.session to
       // validate its argument, which throws once wc is destroyed -- the
       // case trackedTabs exists to route around, not this call.
-      if (!wc.isDestroyed()) notifyShell(wc, (t) => hostExtensions?.removeTab(t))
+      if (!wc.isDestroyed()) notifyShell(wc, (t) => hostForSession(t.session)?.removeTab(t))
     },
     viewReplaced: (oldWc, newWc, win) => {
       if (trackedTabs.has(oldWc)) {
         trackedTabs.delete(oldWc)
-        if (!oldWc.isDestroyed()) notifyShell(oldWc, (t) => hostExtensions?.removeTab(t))
+        closedInProfile(oldWc)
+        if (!oldWc.isDestroyed()) notifyShell(oldWc, (t) => hostForSession(t.session)?.removeTab(t))
       }
-      if (win === undefined || newWc.session !== session.defaultSession) return
+      const host = hostForSession(newWc.session)
+      if (win === undefined || host === undefined) return
       trackedTabs.add(newWc)
+      openedInProfile(newWc)
       // The library takes a tab it is handed to be the one in front. A view replaced behind the person's back (a tab
       // put to sleep) must not pull the window to it, and the library's own idea of the front tab goes back.
-      notifyShell(newWc, (t) => hostExtensions?.addTab(t, win))
+      notifyShell(newWc, (t) => host.addTab(t, win))
       const front = bridge?.services.windows.findTab(newWc)?.window.tabs.activeWebContents()
-      if (front !== undefined && front !== newWc && trackedTabs.has(front)) notifyShell(front, (t) => hostExtensions?.selectTab(t))
+      if (front === undefined || front === newWc) {
+        clearOthers(newWc, win)
+        pointToolbarAt(newWc)
+      } else if (trackedTabs.has(front)) {
+        notifyShell(front, (t) => hostForSession(t.session)?.selectTab(t))
+        clearOthers(front, win)
+      } else {
+        for (const each of allHosts()) each.clearActiveTab(win)
+      }
     }
   })
 

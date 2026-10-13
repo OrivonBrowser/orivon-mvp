@@ -32,6 +32,8 @@ export interface ExtensionApiContext {
   /** Sends an event to one extension's listeners (every extension's when undefined). */
   readonly sendEvent: (extensionId: string | undefined, name: string, ...args: unknown[]) => void
   readonly host: ElectronChromeExtensions
+  /** The library instance that serves a session: the default session's, or a profile session's; undefined for any other. */
+  readonly hostFor: (session: Session) => ElectronChromeExtensions | undefined
   readonly session: Session
   readonly userDataPath: string
   /** Undefined until the first window exists. */

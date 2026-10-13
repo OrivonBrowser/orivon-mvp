@@ -248,7 +248,7 @@ export class TabManager {
   openBlobTab (url: string, partition: string | undefined, active = true, loadOptions?: LoadURLOptions): string { return this.opener.openBlobTab(url, partition, active, loadOptions) }
 
   /** createTab() for a trusted caller (the extension host), which has checked `target` itself. */
-  openTrusted (target?: string): [string, Electron.WebContents] | undefined { return this.opener.openTrusted(target) }
+  openTrusted (target?: string, partition?: string): [string, Electron.WebContents] | undefined { return this.opener.openTrusted(target, partition) }
 
   /** Shows one of the shell's own pages, in the tab that has it or a new one. */
   openInternal (page: InternalPageId, path = '/'): void { this.opener.openInternal(page, path) }

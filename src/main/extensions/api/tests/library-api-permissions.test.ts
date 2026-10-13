@@ -50,6 +50,7 @@ function setup () {
   }
   installExtensionApis({
     host: { getRouter: () => router } as never,
+    hostFor: () => undefined,
     session,
     userDataPath: '/data',
     shell: () => shell as never,

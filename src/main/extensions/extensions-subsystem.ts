@@ -19,7 +19,7 @@ import { installFromFile, installFromFolder, type InstallContext, type InstallOu
 import { setEnabled, uninstall } from './install-lifecycle.js'
 import { createExtensionInstallPrompt } from './extension-install-prompt.js'
 import { clearChromeStorage } from './extension-storage-clear.js'
-import { createExtensionHost, extensionPagesAroundReload, shellServices } from './extension-host.js'
+import { createExtensionHost, createProfileExtensionHost, extensionPagesAroundReload, shellServices } from './extension-host.js'
 import { installExtensionPermissionWarningFilter } from './extension-known-permissions.js'
 import { startWebStore, type StoreApi } from './store-runner.js'
 import { PRIVATE_INSTALL_REASON } from './install-private.js'
@@ -32,7 +32,9 @@ import { createManifestApplier, type ApplyMode, type ApplyResult } from './effec
 import { extensionPageOpen } from './extension-page-open.js'
 import { attachExtensionsDnr, getDnrEngine } from './extensions-dnr.js'
 import { registerDnrApiHandlers } from './dnr-api.js'
-import { installApis } from './api/install-apis.js'
+import { installApis, installProfileApis } from './api/install-apis.js'
+import { createProfileAttacher, type ProfileAttacher } from './profile-hosts.js'
+import { profileEntries } from './profile-registry.js'
 import { provideCommandKeys } from './api/commands-api.js'
 import { installExtensionCommands } from './install-extension-commands.js'
 import type { ExtensionCommandKeys } from './extension-commands-runner.js'
@@ -96,14 +98,34 @@ const refusingStore: StoreApi = {
 }
 
 let profileRequestHandlers: ((target: Session) => void) | undefined
+let profileAttacher: ProfileAttacher | undefined
 
 /**
- * Puts the request rules the loaded extensions hold (`declarativeNetRequest`, and the webRequest-backed blockers that
- * Orivon serves through them) on a profile session, so a blocker filters a website in a profile as it does in the default
- * session. Nothing before the extensions subsystem has started.
+ * Puts the request rules the loaded extensions hold (`declarativeNetRequest`) on a session a website runs in that has no
+ * extension of its own (a plain-http profile, kept in memory). Nothing before the extensions subsystem has started.
  */
 export function installExtensionRequestHandlers (target: Session): void {
   profileRequestHandlers?.(target)
+}
+
+/**
+ * Makes the persistent profile session named `partition` ready for the person's extensions, before the first view is made in
+ * it: a library instance of its own and its request rules. A session kept in memory gets the rules only, since Electron loads no
+ * extension there. Synchronous; the extensions come with `wakeProfileSession`.
+ */
+export function prepareProfileSession (target: Session, partition: string, persistable: boolean): void {
+  if (persistable) profileAttacher?.prepare(target, partition)
+  else installExtensionRequestHandlers(target)
+}
+
+/** A view is about to be made in a profile session, or its extensions are wanted: they are on, and the promise settles when they are loaded. Undefined when there is nothing to wait for. */
+export function wakeProfileSession (target: Session): Promise<void> | undefined {
+  return profileAttacher?.wake(target)
+}
+
+/** The profile sessions that hold the person's extensions, for the clean-up an uninstall does in each. */
+export function profileExtensionSessions (): readonly Session[] {
+  return profileEntries().map((entry) => entry.session)
 }
 
 export const extensionsSubsystem: Subsystem = {
@@ -137,7 +159,18 @@ export const extensionsSubsystem: Subsystem = {
     const prefs = createExtensionPrefsStore(ctx.privateSession ? null : prefsFilePath(userDataPath))
     const manifests = createManifestApplier({ userDataPath, session: session.defaultSession, prefs, isOpen: extensionPageOpen, pages: extensionPagesAroundReload })
     if (!ctx.privateSession) manifests.applyAtBoot()
-    installApis({ host: hostExtensions, session: session.defaultSession, userDataPath, ctx, prefs })
+    const held = installApis({ host: hostExtensions, session: session.defaultSession, userDataPath, ctx, prefs })
+    if (!ctx.privateSession) profileAttacher = createProfileAttacher({
+      defaultSession: session.defaultSession,
+      createHost: (target) => createProfileExtensionHost(target, join(import.meta.dirname, '../preload/extension-api.js')),
+      installApis: (host, target) => { installProfileApis({ host, session: target, userDataPath, ctx, prefs }, held) },
+      userDataPath,
+      engine: getDnrEngine,
+      tabs: {
+        exists: (tabId) => { const tab = webContents.fromId(tabId); return tab != null && !tab.isDestroyed() },
+        whenClosed: (tabId, run) => { webContents.fromId(tabId)?.once('destroyed', run) }
+      }
+    })
     const commandKeys = installExtensionCommands({ ctx, prefs, userDataPath })
     provideCommandKeys(commandKeys)
 
@@ -148,7 +181,7 @@ export const extensionsSubsystem: Subsystem = {
     // install route refuses; the store page's hook still starts (below).
     if (!ctx.privateSession) await loadEnabledExtensions(userDataPath)
 
-    const install: InstallContext = { userDataPath, session: session.defaultSession, prompt: createExtensionInstallPrompt(), prefs, privateSession: ctx.privateSession, pinInstalled: () => shellServices()?.settings.get('extensions.pinInstalled') === true, clearExtensionStorage: async (id) => { await clearChromeStorage(session.defaultSession, id) }, closeSidePanels }
+    const install: InstallContext = { userDataPath, session: session.defaultSession, prompt: createExtensionInstallPrompt(), prefs, privateSession: ctx.privateSession, pinInstalled: () => shellServices()?.settings.get('extensions.pinInstalled') === true, clearExtensionStorage: async (id, target) => { await clearChromeStorage(target ?? session.defaultSession, id) }, profileSessions: profileExtensionSessions, closeSidePanels }
     if (seeds) await seedBundledExtensions(install, currentDefaultProfileDir())
     const preloadPath = join(import.meta.dirname, '../preload/web-store.js')
     // Started in every runtime: a store tab in a private window must never reach the native

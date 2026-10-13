@@ -20,6 +20,7 @@ function fakeDeps (over: Partial<ExtensionApiDeps> = {}) {
   }
   const deps: ExtensionApiDeps = {
     host: host as never,
+    hostFor: () => undefined,
     session: { extensions: { getExtension: (id: string) => (id === ID ? { manifest: { manifest_version: 3, name: 'x', version: '1.0.0', host_permissions: ['https://a.example/*'] } } : null) } } as never,
     userDataPath: '/data',
     shell: () => undefined,

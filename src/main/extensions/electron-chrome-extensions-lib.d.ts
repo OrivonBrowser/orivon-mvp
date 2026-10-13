@@ -181,7 +181,7 @@ declare module 'orivon:crx-extensions-browser-action' {
   /** UPSTREAM.md patch 50: builds the right-click menu of a toolbar action;
    * `extensionItems` are the extension's own `contextMenus` entries for it. */
   export function setActionMenuBuilder (
-    builder: ((extensionId: string, extensionItems: Electron.MenuItem[]) => Array<Electron.MenuItemConstructorOptions | Electron.MenuItem>) | undefined
+    builder: ((extensionId: string, extensionItems: Electron.MenuItem[], session: Electron.Session) => Array<Electron.MenuItemConstructorOptions | Electron.MenuItem>) | undefined
   ): void
 
   /** Where a popup goes: the toolbar rectangle it opens from, which side of it, and its size. */

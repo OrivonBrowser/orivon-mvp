@@ -38,7 +38,8 @@ describe('the hint under the tunnel switch', () => {
 
 describe('the extensions a website in a profile keeps', () => {
   it('names them and says what stays with normal browsing', () => {
-    expect(extensionsHint(['uBlock Origin', 'Dark Reader'], 'tunnel')).toBe('Your extensions run in the tunnel profile too: uBlock Origin, Dark Reader. Their toolbar buttons and popups, and any blocker that works through the browser\'s request API, stay with your normal browsing.')
+    expect(extensionsHint(['uBlock Origin', 'Dark Reader'], 'tunnel')).toBe('Your extensions run in the tunnel profile too: uBlock Origin, Dark Reader. Each profile keeps its own settings for them, and their side panels and keyboard shortcuts work only in your normal browsing.')
+    expect(extensionsHint(['uBlock Origin'], 'direct')).toBe('Your extensions run in the direct profile too: uBlock Origin. They run only while a site of this profile is open. Each profile keeps its own settings for them, and their side panels and keyboard shortcuts work only in your normal browsing.')
     expect(extensionsHint(['Dark Reader'], 'direct')).toContain('direct profile')
   })
 

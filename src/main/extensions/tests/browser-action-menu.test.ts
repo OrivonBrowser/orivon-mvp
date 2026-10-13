@@ -41,7 +41,7 @@ describe('setActionMenuBuilder (UPSTREAM.md patch 50)', () => {
     const builder = vi.fn(() => [{ label: 'Mine' }])
     setActionMenuBuilder(builder)
     api.activateContextMenu({ extensionId: A, anchorRect: { x: 10.7, y: 20, width: 30, height: 5 } })
-    expect(builder).toHaveBeenCalledWith(A, [{ own: true }])
+    expect(builder, 'told the session of the toolbar it was asked from').toHaveBeenCalledWith(A, [{ own: true }], expect.objectContaining({ extensions: expect.anything() }))
     expect(popups).toEqual([{ items: [{ label: 'Mine' }], at: { x: 10, y: 25 } }])
   })
 

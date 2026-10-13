@@ -37,7 +37,7 @@ window's side panel (`../side-panel/`), opened by its toolbar button, its key or
 
 **What it depends on.** `electron` (every file except `side-panel-api.ts`, `side-panel-behavior-file.ts`,
 `side-panel-driver.ts`, `side-panel-gesture.ts`, `side-panel-options.ts`, `side-panel-pages.ts` (types only), `action-pins-runner.ts`, `action-pins.ts`, `base-manifest-source.ts`, `crx.ts`, `crx3-format.ts`,
-`extension-popup-geometry.ts`,
+`extension-popup-geometry.ts`, `profile-demand.ts`,
 `details-optional.ts`, `dnr-action-options.ts`, `extension-data.ts`, `dnr-api.ts`, `dnr-match-log.ts`,
 `effective-manifest.ts`, `electron-chrome-extensions-lib.d.ts`, `extension-commands.ts`,
 `extension-host-access.ts`, `extension-known-permissions.ts`, `extension-permission-check.ts`,
@@ -121,12 +121,37 @@ same exception, reached only through the virtual specifiers above).
 | `api/` | Main-side handlers for the namespaces Orivon adds to `chrome.*`, and the one permission check (`api/README.md`) |
 | `dnr/`, `dnr-api.ts`, `dnr-action-options.ts`, `dnr-match-log.ts`, `dnr-webrequest.ts`, `extensions-dnr.ts` | `declarativeNetRequest`, applied by Orivon rather than Electron ([`ADR-0051`](../../../docs/decisions/ADR-0051-orivon-applies-extensions-declarativenetrequest-rules-itself.md)): the Electron-free engine and its disk reads (`dnr/README.md`), the `chrome.declarativeNetRequest` handlers and badge counts, and the handlers registered on the session's one `webRequest` owner |
 | `web-request/`, `web-request-api.ts`, `web-request-dispatch.ts` | `chrome.webRequest`, served by Orivon rather than Electron: the Electron-free filter, visibility, details and merge rules (`web-request/README.md`), the three router handlers an extension registers listeners through, and the dispatcher that sends each request to the page holding a listener, through the session's one webRequest owner |
-| `extensions-subsystem.ts` | Registers everything into the running app via `../registry.ts`, including the Chrome Web Store (`store-runner.ts`); also puts the loaded extensions' request rules on a profile session (`installExtensionRequestHandlers`) |
-| `profile-extensions.ts` | Mirrors the default session's extensions into a persistent profile session (`../route/site-partition.ts`) and follows their loading and unloading; Electron's own per-session support only, so the toolbar, popups, `chrome.tabs` and run-time rules stay the default session's |
+| `extensions-subsystem.ts` | Registers everything into the running app via `../registry.ts`, including the Chrome Web Store (`store-runner.ts`); also gives each profile session its library instance and the extensions it holds (`prepareProfileSession`, `wakeProfileSession`), and the request rules to a plain-http profile kept in memory |
+| `profile-extensions.ts`, `profile-demand.ts`, `profile-hosts.ts`, `profile-registry.ts` | The person's extensions in a persistent profile session (`../route/site-partition.ts`): one copy of each loaded in the session and kept in step with the default session's, on or off as a whole (`profile-extensions.ts`); whether a website is open in the session, which is what the direct profile's copies follow (`profile-demand.ts`, no `electron`); the library instance, rules and lifecycle each profile session gets (`profile-hosts.ts`); and the table the host reads to give a tab the instance of its own session (`profile-registry.ts`) |
+| `toolbar-partition.ts` | Points the toolbar's list in a window at the session of the tab in front |
 | `store-test-hook.ts` | Test builds only -- exposes the store methods on `globalThis` for `test/extensions/e2e-extensions-store.test.ts` |
 | `extensions-domain.ts` | The `orivon://extensions` page's `InternalDomain` -- validates every request, wires the pieces above to what the page asks |
 
 ## Design notes
+
+**The person's extensions run in the two profile sessions through a library instance of each.** A website with an entry of
+its own lives in `persist:tunnel-profile` or `persist:direct-profile` (`../route/README.md`), one session for every such
+website. The vendored library keeps one instance per session, so each profile session gets its own
+(`extension-host.ts`'s `createProfileExtensionHost`), built synchronously when the session is made ready and before any view
+is made in it (`profile-hosts.ts`'s `prepare`), and given what the default session's has but the side panel: the same API
+modules on its own router (`api/api-registry.ts`'s `PROFILE_EXTENSION_APIS`), the `declarativeNetRequest` handlers over the
+one rule engine, and the `webRequest` bridge on that session's own request owner, so a blocking listener (uBlock Origin) filters
+a page of the profile as it does a page of the default session. The extension host tracks each tab with the instance of
+its own session, and tells the others no tab of theirs is in front; the toolbar's list is moved to the session of the tab in
+front (`toolbar-partition.ts`), so a click acts on that session's copy; a page of the extension that an instance opens
+(`chrome.tabs.create`, the options page) is a tab of the same session (`openTrusted`'s `partition`), so that it talks to
+the copy the call came from. One copy of each extension is loaded per profile, never per website. **Each copy has storage of its
+own**, so the settings of an extension (uBlock Origin's lists and whitelist) are kept per profile and are not carried across;
+the popover and Settings say so. An uninstall empties the extension's data in every profile session
+(`extension-data.ts`). What a profile does not have: the side panel, the keyboard shortcuts of extension commands, and any
+extension in a plain-http website's profile, which is kept in memory, where Electron loads none.
+
+**The direct profile's copies run only while a website of the direct profile is open.** `profile-demand.ts` counts the pages of
+the session from the shell's tab events; `profile-hosts.ts` loads the copies when the first one opens (a view about to be
+made counts at once, so the requests of the session wait for the copies, as they wait for the route) and removes them,
+with their pages and workers, when the last one closes. With the whole browser on the tunnel an extension therefore makes no
+direct request while no excluded website is open. The tunnel profile's copies, once loaded, stay.
+
 
 **An extension's side panel is a guest of the window's own panel, and `open()` needs the person's input.**
 `side-panel-runner.ts` fills the guest slot of `../side-panel/` with one `WebContentsView` per window and extension,

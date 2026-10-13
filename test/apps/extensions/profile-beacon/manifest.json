@@ -1,0 +1,11 @@
+{
+  "manifest_version": 2,
+  "name": "Orivon E2E Profile Beacon",
+  "version": "1.0.0",
+  "description": "Fixture extension for test/extensions/e2e-extensions-profiles-run.test.ts: while it runs it asks its server for /beacon every 250 ms, naming the copy of itself that asks (each session has its own), so a test can tell which sessions hold it.",
+  "permissions": ["<all_urls>", "storage", "declarativeNetRequest"],
+  "background": {
+    "scripts": ["config.js", "background.js"],
+    "persistent": true
+  }
+}

@@ -400,6 +400,11 @@ export const injectBrowserAction = () => {
         if (oldValue === newValue) return
 
         if (this.isConnected) {
+          // Orivon patch (UPSTREAM.md patch 73): a list moved to another partition hears that partition's updates.
+          if (name === 'partition' && this.observing) {
+            browserAction.removeObserver(oldValue || DEFAULT_PARTITION)
+            browserAction.addObserver(newValue || DEFAULT_PARTITION)
+          }
           this.fetchState()
         }
       }

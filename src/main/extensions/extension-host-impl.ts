@@ -5,7 +5,7 @@
 // library is constructed before the first window exists, and a callback made
 // before then must reject cleanly.
 import { session } from 'electron'
-import type { BaseWindow, WebContents } from 'electron'
+import type { BaseWindow, Session, WebContents } from 'electron'
 import type { ElectronChromeExtensions } from 'orivon:crx-extensions'
 import { createShellWindow } from '../shell/window.js'
 import type { ShellServices } from '../shell/shell-services.js'
@@ -16,6 +16,7 @@ import { markExtensionOpened, openExtensionTab } from './extension-opened-pages.
 import { activateTabShowing } from './extension-options-tab.js'
 import { sidePanelGestures } from './side-panel-gesture.js'
 import { sidePanelPages, sidePanelWindowOf } from './side-panel-pages.js'
+import { extensionPagePartition } from './profile-registry.js'
 
 export interface ShellBridge { ctx: SubsystemContext, services: ShellServices }
 
@@ -85,8 +86,13 @@ function windowFor (bridge: ShellBridge, windowId: number | undefined): BaseWind
   return bridge.services.windows.focused()?.window
 }
 
-/** `callerOf` names the extension whose `chrome.tabs` call is running, when one is. */
-export function buildHostImpl (getBridge: () => ShellBridge | undefined, callerOf: () => string | undefined = () => undefined): HostImpl {
+/**
+ * `callerOf` names the extension whose `chrome.tabs` call is running, when one is. `own` is the session the library instance
+ * serves: a page of the extension that the instance opens is a tab of that session, so that it talks to the copy of the
+ * extension the call came from and not to the default session's.
+ */
+export function buildHostImpl (getBridge: () => ShellBridge | undefined, callerOf: () => string | undefined = () => undefined, own: Session = session.defaultSession): HostImpl {
+  const partitionOf = (target: string | undefined): string | undefined => extensionPagePartition(own, target)
   return {
   createTab: async (details) => {
     const bridge = getBridge()
@@ -100,7 +106,7 @@ export function buildHostImpl (getBridge: () => ShellBridge | undefined, callerO
       throw new Error(`extensions: refused to open ${details.url}`)
     }
     return activatingTab<[WebContents, BaseWindow]>({ extensionId: callerOf(), window: win }, () => {
-      const opened = openExtensionTab(shellWindow.tabs, target)
+      const opened = openExtensionTab(shellWindow.tabs, target, partitionOf(target))
       if (opened === undefined) throw new Error('extensions: tab capacity reached')
       return [opened[1], win]
     })
@@ -139,13 +145,13 @@ export function buildHostImpl (getBridge: () => ShellBridge | undefined, callerO
       .map((u) => extensionOpenedUrl(u, isLoadedExtension))
       .filter((u): u is string => u !== undefined)
     return createShellWindow(bridge.ctx, bridge.services, {
-      first: (tabs) => { if (urls.length === 0) tabs.createTab(); else for (const u of urls) openExtensionTab(tabs, u) }
+      first: (tabs) => { if (urls.length === 0) tabs.createTab(); else for (const u of urls) openExtensionTab(tabs, u, partitionOf(u)) }
     })
   },
 
   removeWindow: (win) => { if (!win.isDestroyed()) win.close() },
 
-  activateTabShowing: (url) => activateTabShowing(getBridge()?.services.windows.all() ?? [], url),
+  activateTabShowing: (url) => activateTabShowing(getBridge()?.services.windows.all() ?? [], url, own),
 
   // A toolbar's own page, or a side panel's page: the window each acts for.
   windowOf: (wc) => getBridge()?.services.windows.all().find((w) => w.chrome.webContents === wc)?.window ?? sidePanelWindowOf(wc),
