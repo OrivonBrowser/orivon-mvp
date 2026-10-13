@@ -20,17 +20,27 @@ export type LeaveChoice =
   | { readonly kind: 'app' }
   | { readonly kind: 'website', readonly partition: string }
 
+/** The routed apps with a question open now. */
+const asking = new Set<string>()
+
 /**
  * Asks about `leave` for the page of `contents` (the tab asks in its own panel and its page is held where it is
  * meanwhile), and makes ready what the answer needs: the temporary session for a website, the other app's route for an
  * app. A failure to make it ready cancels the open: it is never turned into a direct one.
  */
 export async function chooseLeave (contents: WebContents, leave: Leave): Promise<LeaveChoice> {
-  const release = holdNavigation(contents)
+  // One question at a time for an app, in any of its tabs: what it asks meanwhile is cancelled as a blocked pop-up is,
+  // and what it asks after the answer is asked again. Nothing is counted or remembered.
+  if (asking.has(leave.app)) return { kind: 'cancel' }
+  let release = (): void => {}
   try {
+    asking.add(leave.app)
+    release = holdNavigation(contents)
     const answer = await askToLeaveRoute({ contents }, leave)
     if (answer === 'cancel') return { kind: 'cancel' }
     if (answer === 'direct') return { kind: 'direct' }
+    // A page Orivon loads itself has no proxy button, so nothing else can come back for it.
+    if (leave.kind === 'served') return { kind: 'cancel' }
     if (leave.kind === 'app') return await routeAppToo(leave.origin) ? { kind: 'app' } : { kind: 'cancel' }
     return { kind: 'website', partition: await openTemporaryRoute() }
   } catch (error) {
@@ -38,6 +48,7 @@ export async function chooseLeave (contents: WebContents, leave: Leave): Promise
     return { kind: 'cancel' }
   } finally {
     release()
+    asking.delete(leave.app)
   }
 }
 
@@ -48,16 +59,15 @@ function loadedAt (record: TabRecord, url: string): string {
 
 /**
  * What the page of `from` opening `url` asks the person, or undefined (route/leave-decision.ts). An address Orivon
- * loads from its own nodes (`ipfs://`, a `.eth` gateway address) is judged by the address it is served at: it is
- * asked about only when that is an installed app, because Orivon's nodes fetch it, not a server the page chose, and a
- * proxy has no say in that.
+ * loads from its own nodes (`ipfs://`, a `.eth` gateway address) is judged by the address it is served at: an
+ * installed app is asked about as one, and any other is asked about with no proxy to offer, because Orivon's nodes
+ * fetch it and a proxy has no say in that.
  */
 export function leaveForOpen (record: TabRecord, from: string, url: string, partition: string | undefined): Leave | undefined {
   // Most pages are no routed app's: that is settled before any address is mapped.
   if (!isRoutedPage(from, partition)) return undefined
   const target = loadedAt(record, url)
-  const leave = leaveFor(from, target, partition)
-  return leave?.kind === 'website' && target !== url ? undefined : leave
+  return leaveFor(from, target, partition)
 }
 
 interface NavigationEvent {
