@@ -103,6 +103,8 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - IPFS sites load from Orivon's own IPFS node on your computer, every block still checked; it switches on once the node is published.
 - A page can no longer tell which IPFS sites you opened: the node keeps a separate store per site, and tabs cannot reach it.
 - Orivon's own IPFS and Swarm nodes are published on IPFS: new builds fetch them, so IPFS reads from your computer and Swarm switches on.
+- Installed apps can send all their traffic through a SOCKS5 proxy like Tor, per app; what it cannot carry is refused, never sent direct.
+- A routed app opening a website now asks first: through the proxy in a throwaway tab, directly, or not at all.
 
 ### In my head
 
@@ -110,5 +112,6 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Asking for telemetry with a forced choice, not a pre-ticked box: legal in Europe, and people say yes almost as often.
 - Swarm should come from a node on the user's own machine, never public gateways: trustless and permissionless, or not at all.
 - Letting users pin sites and serve them to others is the next step for the IPFS node; today it only reads.
+- A per-app tunnel belongs at Orivon's socket layer, not the OS: any protocol an app builds rides it, no drivers.
 
 ### Non-repo
