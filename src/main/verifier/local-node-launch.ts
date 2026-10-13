@@ -10,6 +10,7 @@ import { LocalNodeController } from './local-node-controller.js'
 import { locateArtifact } from './local-node-artifact.js'
 import type { LocalNodeManifest } from './local-node-artifact.js'
 import { unproxiedGateways } from './proxy-check.js'
+import { DEFAULT_ENDPOINTS } from './endpoints.js'
 
 export interface LocalNodeSpec {
   readonly kind: NodeIdentity
@@ -36,6 +37,8 @@ export function createLocalNodeController (spec: LocalNodeSpec): LocalNodeContro
     ...(spec.options === undefined ? {} : { options: spec.options }),
     apiPort: spec.apiPort,
     dataDir: () => join(app.getPath('userData'), spec.kind.name),
+    // Test builds never run a node (their `disabled` says so), so the verifier's test seam has nothing to override here.
+    dohEndpoints: DEFAULT_ENDPOINTS.dnsOverHttps,
     files: spec.manifest.files,
     apiPortTaken: spec.apiPortTaken,
     componentName: spec.manifest.name

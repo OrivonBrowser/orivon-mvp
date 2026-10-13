@@ -16,6 +16,7 @@ import { referenceCid } from '../../src/protocols/swarm/reference.js'
 import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
 import { APP_CLOSE_RACE_MS, closeElectronApp } from '../support/e2e-helpers.js'
 import { SWARM_NODE_IDENTITY } from '../../src/protocols/swarm-node/protocol.js'
+import { DEFAULT_ENDPOINTS } from '../../src/main/verifier/endpoints.js'
 import { verifyArtifact } from '../../src/main/verifier/local-node-artifact.js'
 import type { LocalNodeManifest } from '../../src/main/verifier/local-node-artifact.js'
 import type { ElectronApplication } from 'playwright'
@@ -86,7 +87,7 @@ describe.skipIf(!LIVE)('the Swarm node, live', () => {
         if (message.type === 'ready') ready = true
         if (message.type === 'failed') failure = message.message
       })
-      child.postMessage({ type: 'start', config: { kind: 'swarm-node', apiPort: arg.apiPort, dataDir: arg.data, componentDir: arg.componentDir, componentName: arg.name, files: arg.files } })
+      child.postMessage({ type: 'start', config: { kind: 'swarm-node', apiPort: arg.apiPort, dataDir: arg.data, componentDir: arg.componentDir, componentName: arg.name, files: arg.files, dohEndpoints: arg.dohEndpoints } })
       while (!ready && failure === undefined && Date.now() - started < arg.readyByMs) await new Promise((resolveWait) => setTimeout(resolveWait, 250))
       let chunk: string | undefined
       let chunkMs: number | undefined
@@ -101,7 +102,7 @@ describe.skipIf(!LIVE)('the Swarm node, live', () => {
       }
       child.kill()
       return { timeline, failure, chunk, chunkMs, memoryMb }
-    }, { host, apiPort, data: data as string, componentDir, name: process.env['ORIVON_SWARM_NODE_NAME'] ?? manifest.name, files: manifest.files, chunk: CHUNK, readyByMs: READY_BY_MS })
+    }, { host, apiPort, data: data as string, componentDir, name: process.env['ORIVON_SWARM_NODE_NAME'] ?? manifest.name, files: manifest.files, dohEndpoints: DEFAULT_ENDPOINTS.dnsOverHttps, chunk: CHUNK, readyByMs: READY_BY_MS })
 
     console.log(`[swarm-node live] ${JSON.stringify({ chunkMs: run.chunkMs, memoryMb: run.memoryMb, timeline: run.timeline.filter((entry) => entry.type !== 'peers' || (entry.peers ?? 0) % 10 === 0) })}`)
     expect(run.failure).toBeUndefined()

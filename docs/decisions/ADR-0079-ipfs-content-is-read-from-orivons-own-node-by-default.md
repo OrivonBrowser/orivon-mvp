@@ -1,6 +1,6 @@
 # ADR-0079: IPFS content is read from Orivon's own node by default
 
-- **Status:** accepted. *Provisional* on two calls: the fallback to public gateways when the node cannot run (what would settle it: the owner's answer on whether a person who chose the node should ever be served by gateways without being asked), and where the node's files are published (the manifest holds no CID until the owner approves publishing, and a build without the files runs IPFS from gateways).
+- **Status:** accepted; **amended 2026-10-13 (`d-0610`)**: the node resolves names over DNS-over-HTTPS first (see Amendment). *Provisional* on two calls: the fallback to public gateways when the node cannot run (what would settle it: the owner's answer on whether a person who chose the node should ever be served by gateways without being asked), and where the node's files are published (the manifest holds no CID until the owner approves publishing, and a build without the files runs IPFS from gateways).
 - **Date:** 2026-10-12
 - **Type:** architecture / privacy
 - **Decided by:** owner (own node by default, public gateways as a setting: `d-0605`; ask the lookup service and the network at once, a setting turns the service off: `d-0606`); AI recommendation accepted by default for the fallback (`d-0607`)
@@ -100,6 +100,15 @@ the setting lets a person refuse; the content that comes back is checked either 
   knows is not found there, and its page shows the ordinary "not available" error after about 35 s. A follow-up
   could give the node a resolver of its own. Measured live: the node is ready about 1.2 s after its start (the
   component compiles lazily in tens of milliseconds) and holds about 180 to 230 MB.
+
+## Amendment recorded 2026-10-13
+
+The last Consequences line, which left the node's name resolution to the system resolver, is resolved: the node
+resolves names over DNS-over-HTTPS first (the verifier host's endpoints, handed over in the node's config) and uses
+the system resolver only when no endpoint answered, so a hijacked name no longer fails the node's certificate check.
+`node-net.ts` checks every answer as before. Provisional (`d-0610`): the DoH providers learn the node's host names,
+and the owner may prefer other providers or none. Measured on a network that hijacks `delegated-ipfs.dev`: a
+DNSLink site only that service knew went from "not available" after about 35 s to shown after about 22 s.
 
 ## Reversibility
 

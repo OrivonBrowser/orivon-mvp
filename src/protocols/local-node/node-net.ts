@@ -26,7 +26,8 @@ export interface NodeNetDeps {
   readonly lookup: (hostname: string) => Promise<readonly LookupAddress[]>
 }
 
-const REAL: NodeNetDeps = { dial: dialTcp, listen: listenTcp, bind: bindUdp, lookup: resolveLookup }
+/** The adapters a node runs on, with the system resolver for names. */
+export const REAL: NodeNetDeps = { dial: dialTcp, listen: listenTcp, bind: bindUdp, lookup: resolveLookup }
 
 class Budget {
   #open = 0

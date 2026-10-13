@@ -31,7 +31,7 @@ interface Harness {
   readonly clock: { now: number }
 }
 
-function harness (options?: () => Readonly<Record<string, string>>, removed?: string[]): Harness {
+function harness (options?: () => Readonly<Record<string, string>>, removed?: string[], extra: Partial<ControllerDeps> = {}): Harness {
   const nodes: FakeNode[] = []
   const sleeps: Harness['sleeps'] = []
   const timers: Harness['timers'] = []
@@ -54,7 +54,8 @@ function harness (options?: () => Readonly<Record<string, string>>, removed?: st
     sleep: async (ms) => await new Promise<void>((wake) => { sleeps.push({ ms, wake }) }),
     setTimer: (run, ms) => { timers.push({ ms, run }) },
     ...(options === undefined ? {} : { options }),
-    ...(removed === undefined ? {} : { remove: async (path: string) => { removed.push(path) } })
+    ...(removed === undefined ? {} : { remove: async (path: string) => { removed.push(path) } }),
+    ...extra
   }
   const controller = new LocalNodeController(deps)
   return Object.defineProperties({ controller, nodes, sleeps, timers, calls, portsTaken, clock } as unknown as Harness, {
@@ -101,6 +102,15 @@ describe('forgetting what a node kept', () => {
     void h.controller.ensure()
     await settle()
     expect(h.nodes).toHaveLength(1)
+  })
+})
+
+describe('what the node resolves names with', () => {
+  it('hands the node the DNS-over-HTTPS endpoints it resolves names with first', async () => {
+    const h = harness(undefined, undefined, { dohEndpoints: ['https://cloudflare-dns.com/dns-query', 'https://dns.google/resolve'] })
+    void h.controller.ensure()
+    await settle()
+    expect(h.nodes[0]?.sent).toEqual([expect.objectContaining({ type: 'start', config: expect.objectContaining({ dohEndpoints: ['https://cloudflare-dns.com/dns-query', 'https://dns.google/resolve'] }) as unknown })])
   })
 })
 

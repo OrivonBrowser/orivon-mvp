@@ -6,7 +6,7 @@ loopback port; the protocol that uses it reads from that endpoint and verifies w
 here is trusted for content. [`entry.ts`](entry.ts) is the one process entry and [`kinds.ts`](kinds.ts)
 finds the kind a start message names; [`service.ts`](service.ts) is the work, [`component.ts`](component.ts)
 loads jco's output from a directory, [`node-net.ts`](node-net.ts) and [`node-fs.ts`](node-fs.ts) are the only
-network and files the component reaches, and [`protocol.ts`](protocol.ts) is what main and this process say to
+network and files the component reaches ([`node-dns.ts`](node-dns.ts) is how `node-net.ts` finds a name's addresses), and [`protocol.ts`](protocol.ts) is what main and this process say to
 each other. The main process's side (starting on demand, the pinned-file check, the idle stop, the backoff and
 the refusal memory) is [`../../main/verifier/local-node-controller.ts`](../../main/verifier/local-node-controller.ts)
 and its neighbours.
@@ -46,7 +46,7 @@ imports `electron`).
 **What it depends on.** [`../../shim/wasi-p2/`](../../shim/wasi-p2/) (the WASI 0.2 host, which is
 durable), [`../../broker/adapters/`](../../broker/adapters/) (the Node socket adapters, which make no
 decision) and [`../../broker/policy/address.ts`](../../broker/policy/address.ts) (the address
-classifier). `node-net.ts` is where the decisions are made. `kinds.ts` imports each kind's `kind.ts`, and is
+classifier) and [`../gateways/`](../gateways/) (the DNS-over-HTTPS query and the allowlisted fetch, which the verifier host uses too). `node-net.ts` is where the decisions are made. `kinds.ts` imports each kind's `kind.ts`, and is
 the only file here that names a kind.
 
 **What it must never import.** `electron`, and [`src/main/`](../../main/) beyond types. A component is not
@@ -63,12 +63,24 @@ node to connect anywhere it can name. The rules, each proved by a test in `tests
 
 | Call | Allowed | Everything else |
 |---|---|---|
-| `connect` | A public unicast address, or a name whose answers are all public: the name is resolved once and the checked literals are dialled. A name with one non-public answer is refused whole. A host that is neither a literal nor a plain DNS name (a scoped IPv6 address) is refused. Ports 1 to 65535 | `denied`, with nothing dialled: loopback, LAN, link-local, carrier-grade NAT, multicast, reserved, unspecified, IPv4-mapped forms of these |
+| `connect` | A public unicast address, or a name whose answers are all public: the name is resolved once (over DNS-over-HTTPS first, `node-dns.ts`) and the checked literals are dialled. A name with one non-public answer is refused whole. A host that is neither a literal nor a plain DNS name (a scoped IPv6 address) is refused. Ports 1 to 65535 | `denied`, with nothing dialled: loopback, LAN, link-local, carrier-grade NAT, multicast, reserved, unspecified, IPv4-mapped forms of these |
 | `listen` | Loopback only, on the API port or on a port the system picks | `denied`. A `network` listen is refused so the WASI host asks again as `local`: the node's peer-to-peer listen ends up on loopback, which a light node does not need more than |
 | `udpBind` | An ephemeral port, loopback or every interface (a reply from a public resolver cannot reach a socket bound to loopback) | A fixed port is `denied` |
 | datagram send | A public unicast address, port 53 (the node asks a public resolver for its bootnodes' `/dnsaddr` records), sent as the canonical address that was checked | Dropped and counted, as a refused send is for an app |
 | datagram received | One whose source is a public unicast address on port 53 | Dropped and counted in `droppedInbound` |
 | limits | 300 sockets open (TCP, UDP and accepted together), 4 listeners, 64 answers per lookup, 64 files | `limit` |
+
+**A name is resolved over DNS-over-HTTPS first.** A resolver that hijacks DNS answers a name with its own server, a
+public address `node-net.ts` allows, and the node's TLS to it then fails its certificate check, so a service only
+that name reaches never loads. `node-dns.ts` asks the DNS-over-HTTPS endpoints main puts in the config
+(`dohEndpoints`, the list the verifier host uses) for the A and AAAA records, and uses the system resolver only
+when every endpoint failed to answer at all (unreachable, malformed, timed out), so a network that blocks DoH still
+works. Then DoH is not asked again for a minute, but only when the endpoints failed (unreachable, timed out, a non-2xx status, a malformed body); a name they answer with SERVFAIL, REFUSED or another failing status goes to the system resolver for that name alone, uncached, and DoH stays in use for the next one. A name DoH says has no address (NXDOMAIN, or both families answered empty) stays unresolved and is remembered for 30 s; a failure is never remembered, and when one family could not be asked and the other named nothing, that counts as a failure and the system resolver answers. `node-net.ts` checks
+the answers exactly as it checks the system resolver's, so a non-public answer from either refuses the whole name, and
+no rule was widened. The process's fetch reaches only the configured endpoints and follows no redirect
+([`../gateways/allowlisted-fetch.ts`](../gateways/allowlisted-fetch.ts)). Answers are kept for their TTL, between 10 s
+and 5 min, for at most 256 names; an answer from one family alone is used once and not kept. The DoH provider learns the names the node resolves (lookup services, peers'
+hostnames, HTTP providers), never the sites a person visits.
 
 A system proxy configured in the shell: a node does not start, because its sockets would go around
 the proxy (`docs/architecture/security-model.md`, T20). That check is main's, in
