@@ -271,20 +271,18 @@ nsis:
 
 # The Microsoft Store package. It is signed by the Store after upload, so nothing here signs it, and the
 # `publisher` below is only what the manifest claims until the Store replaces the signature.
-# *Provisional*: `identityName`, `publisher` and `publisherDisplayName` are placeholders. Partner Center
-# issues the real values on the product's "Product identity" page once the name is reserved (Package/Name,
-# Package/Publisher, Package/PublisherDisplayName); put them here verbatim. The Store refuses an upload
-# whose identity differs from the reserved one, so a package built with these placeholders cannot be
-# published by mistake.
+# `identityName`, `publisher` and `publisherDisplayName` are issued by Partner Center: the product's "Product
+# identity" page (Package/Name, Package/Publisher, Package/PublisherDisplayName), copied verbatim. The Store
+# refuses an upload whose identity differs from the reserved one.
 # `Application Id` and the display name below are chosen here, not issued: `Orivon` is the `!Orivon` of the
 # package's AUMID (src/main/os/windows-store.ts reads it back; the release workflow launches by it).
 # Electron 44 runs on Windows 10 and later; 1809 (10.0.17763) is the floor chosen here, which nothing older is
 # tested against (*provisional*), and the tested version only has to be at least that. The installed program is
 # the same app.asar as the installer's, with the same fuses.
 appx:
-  identityName: PROVISIONAL.OrivonBrowser
-  publisher: CN=PROVISIONAL-PUBLISHER-ID
-  publisherDisplayName: Orivon
+  identityName: OrivonBrowser.OrivonBrowser
+  publisher: CN=DAB05E0B-8AD6-4305-9329-66DABF055F14
+  publisherDisplayName: Orivon Browser
   applicationId: Orivon
   displayName: Orivon Browser
   languages:
