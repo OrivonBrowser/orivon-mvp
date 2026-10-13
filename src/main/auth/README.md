@@ -25,6 +25,10 @@ Electron; every other file imports no `electron` value and runs under plain Vite
 
 ## Design notes
 
+**A challenge already answered gets no sheet.** `handleLogin` returns at once when the event's default was prevented. The
+loopback front of a routed app answers its own proxy's `407` from a listener added ahead of this one
+([`../route/`](../route/README.md)), and a sheet asking the person for that proxy's password would be wrong.
+
 **A challenge that is not from a tab keeps Electron's answer, which is no.** An extension's page, a guest, a shell
 view and a main-process fetch reach `login` with a web contents that is not a tab (or none): the handler does not
 prevent the default, so nothing can put a sheet in front of the person on their behalf.

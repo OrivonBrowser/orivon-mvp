@@ -52,6 +52,39 @@ const provided = (id: string, level: number): Record<string, FetchedJson> => ({
   [`${BASE}/website/${bucketOf(id, 2)}.json`]: bucketFile(id, level)
 })
 
+describe('createPageScoreLookup -- for a routed app', () => {
+  it('asks the provider on behalf of the app, so the fetch leaves through its route', async () => {
+    const origins: Array<string | undefined> = []
+    const files = provided(`cid:${CID}`, 2)
+    const h = harness(files, { routedCaller: (caller) => caller === CALLER_A, fetchJson: async (url, origin) => { origins.push(origin); return files[url] ?? { kind: 'missing' } } })
+
+    await h.lookup.websiteScore(CALLER_A, `ipfs://${CID}`)
+
+    expect(origins).toEqual([CALLER_A, CALLER_A])
+  })
+
+  it('reads the provider\'s own description through the route too, when the page has no content to judge', async () => {
+    const origins: Array<string | undefined> = []
+    const files = provided(`cid:${CID}`, 2)
+    const h = harness(files, { routedCaller: () => true, fetchJson: async (url, origin) => { origins.push(origin); return files[url] ?? { kind: 'missing' } } })
+
+    await h.lookup.websiteScore(CALLER_A, 'https://example.org')
+
+    expect(origins.length).toBeGreaterThan(0)
+    expect(origins.every((origin) => origin === CALLER_A)).toBe(true)
+  })
+
+  it('does not resolve a .eth name in the verifier, or read a manifest from a gateway', async () => {
+    const h = harness(provided(`cid:${ETH_CID}`, 3), { routedCaller: () => true })
+
+    expect(await h.lookup.websiteScore(CALLER_A, 'https://scored.eth')).toEqual({ provider: 'Test provider', level: null })
+    expect(await h.lookup.websiteScore(CALLER_A, `ipfs://${ETH_CID}`)).toEqual({ provider: 'Test provider', level: null })
+
+    expect(h.resolved).toEqual([])
+    expect(h.manifestReads).toEqual([])
+  })
+})
+
 describe('createPageScoreLookup', () => {
   it('asks nothing when no provider is chosen', async () => {
     const h = harness({}, {}, '   ')

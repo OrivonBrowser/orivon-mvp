@@ -62,3 +62,19 @@ describe('an origin served from the verifier before its pin', () => {
     expect(await (await session.handlers.get('https')!(new Request('https://again.example/'))).text()).toBe('second')
   })
 })
+
+describe('what an app\'s session needs before it is served', () => {
+  it('runs every preparer in order with the session and the origin, and passes a failure on', async () => {
+    const { beforeAppSessionServes, prepareAppSession } = await import('../serve.js')
+    const session = fakeSession()
+    const seen: string[] = []
+    beforeAppSessionServes(async (given, origin) => { seen.push(`first ${origin} ${String(given === session)}`); await Promise.resolve() })
+    beforeAppSessionServes(async () => { seen.push('second') })
+
+    await prepareAppSession(session, 'https://prepared.example')
+    expect(seen).toEqual(['first https://prepared.example true', 'second'])
+
+    beforeAppSessionServes(async () => { throw new Error('could not point the session at its route') })
+    await expect(prepareAppSession(session, 'https://prepared.example')).rejects.toThrow('could not point')
+  })
+})

@@ -3,6 +3,7 @@
 
 import type { Session } from 'electron'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
+import { lookupSessionFor } from '../route/lookup-session.js'
 import { fetchFaviconDataUrlCached } from './favicon-fetch.js'
 import { decodeDataUrl, MAX_FAVICON_BYTES, toDataUrl } from './favicon-format.js'
 
@@ -181,6 +182,14 @@ export async function captureFaviconInto (
     return
   }
   const stillTheSamePage = (): boolean => isStillCurrent() && !shouldClearFavicon(declaringOrigin, pageUrl())
+  // A routed app's icons from other hosts are fetched through its route; when that route cannot be had, they are not fetched.
+  let routeSession: Session | undefined
+  let routeUnavailable = false
+  try {
+    routeSession = await lookupSessionFor(declaringOrigin)
+  } catch {
+    routeUnavailable = true
+  }
 
   for (const candidate of candidates) {
     if (!stillTheSamePage()) return
@@ -194,7 +203,7 @@ export async function captureFaviconInto (
     // `data:` URL has no hostname, so isSafeFaviconUrl never accepts one).
     const dataUrl = /^data:/i.test(candidate)
       ? decodedDataUrlCandidate(candidate)
-      : await fetchFaviconDataUrlCached(candidate, declaringPage, stillWanted, pageSession)
+      : routeUnavailable ? null : await fetchFaviconDataUrlCached(candidate, declaringPage, stillWanted, pageSession, routeSession)
 
     if (!stillWanted()) return
     if (dataUrl === null) continue

@@ -4,6 +4,7 @@
 // edited by hand cannot make one up.
 import { isAddressList, isEmptyOrAddress, MAX_LISTED_ADDRESSES } from './address-checks.js'
 import { isHostList, MAX_LISTED_HOSTS } from './list-checks.js'
+import { isEmptyOrProxyAddress } from './proxy-checks.js'
 import { isEmptyOrAbsolutePath } from './path-checks.js'
 import { CUSTOM_SEARCH_ENGINE, DEFAULT_SEARCH_ENGINE, DEFAULT_SEARCH_MODE, DEFAULT_WEB3_SEARCH_ENGINE, SEARCH_ENGINES, SEARCH_MODES, WEB3_SEARCH_ENGINES, isValidSearchTemplate } from '../browsing/search-engines.js'
 
@@ -67,6 +68,8 @@ const SPECS = {
   'privacy.doNotTrack': { kind: 'bool', default: false },
   'privacy.httpsOnly': { kind: 'bool', default: false },
   'privacy.secureDns': { kind: 'enum', options: ['off', 'automatic', 'cloudflare', 'quad9'], default: 'off' },
+  // The one SOCKS5 proxy (host:port, such as Tor on 127.0.0.1:9050) an installed app can be routed through; empty is none. Which apps use it is route-store's.
+  'network.route.proxy': { kind: 'text', default: '', maxLength: 300, check: isEmptyOrProxyAddress },
   // What a site may do without being asked about it, one default per kind (site-settings/kinds.ts lists them). A site's own answer overrides.
   'sites.camera': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },
   'sites.microphone': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },

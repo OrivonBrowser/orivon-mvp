@@ -58,6 +58,9 @@ export interface SiteUpdate {
   readonly reasons: readonly string[]
 }
 
+/** What a routed app's route is doing, as the popover says it. An app that is not routed has none. */
+export type SiteRoute = 'idle' | 'ok' | 'down' | 'no-proxy'
+
 export interface SiteInfo {
   readonly origin: string
   readonly displayOrigin: string
@@ -66,6 +69,8 @@ export interface SiteInfo {
   readonly homeDomain: string | undefined
   /** The update offered to this installed app, when its name has moved. */
   readonly update: SiteUpdate | undefined
+  /** The state of the app's route when the person routed it through their proxy (`../route/`). */
+  readonly route?: SiteRoute
   /** True when the site has asked for at least one Orivon capability or
    * picked a file/folder -- what the toolbar key's visibility switches on. */
   readonly asked: boolean

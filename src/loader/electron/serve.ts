@@ -33,14 +33,15 @@ import { createAppRequestHandler, fetchThirdParty, resolveVerifiedBundle } from 
 import { createLiveRequestHandler } from '../serve/live-serve.js'
 import type { LiveBundle } from '../serve/live-serve.js'
 import { fetchFromVerifier } from './fetch.js'
-import { isOriginPinnedSync, isOriginServedFromCacheSync, registerAppOrigin, retireAppOrigin } from './app-partitions.js'
+import { isOriginPinnedSync, isOriginServedFromCacheSync, prepareAppSession, registerAppOrigin, retireAppOrigin } from './app-partitions.js'
 
-export { forEachAppSession, isOriginPinnedSync, isOriginServedFromCacheSync, registerAppOrigin, retireAppOrigin } from './app-partitions.js'
+export { beforeAppSessionServes, forEachAppSession, prepareAppSession, isOriginPinnedSync, isOriginServedFromCacheSync, registerAppOrigin, retireAppOrigin } from './app-partitions.js'
 import { saveCheckRecord } from '../fetch/update-check.js'
 import type { AppRequestHandler, AuthoriseReach } from '../serve/serve.js'
 import { cspHeaderValue } from '../serve/csp.js'
 import type { CspOptions } from '../serve/csp.js'
 import { nodeReachDial } from '../reach/reach.js'
+import { reachRouteOf } from './reach-route.js'
 import { createRedirectChains } from '../reach/redirects.js'
 import { createReachSlotPool } from '../reach/slots.js'
 import type { ReachSlotPool } from '../reach/slots.js'
@@ -250,7 +251,7 @@ function authoriseReachFor (broker: Broker, origin: string): AuthoriseReach {
  */
 export function reachOnlyHandlerFor (broker: Broker, opener: string): (request: Request) => Promise<Response> {
   const authoriseReach = authoriseReachFor(broker, opener)
-  const reachDial = nodeReachDial()
+  const reachDial = nodeReachDial({ routeProvider: reachRouteOf(opener) })
   const { reserve, release } = reachSlotsFor(broker, opener)
   const options = { redirects: createRedirectChains() }
   return async (request: Request): Promise<Response> =>
@@ -273,12 +274,14 @@ export async function serveLiveFor (bundle: LiveBundle, broker?: Broker): Promis
     grantedSecurePatterns: broker === undefined ? undefined : async () => await secureHeaderPatternsFor(broker, origin),
     grantedMediaSources: broker === undefined ? undefined : async () => await liveMediaSources(broker, origin),
     authoriseReach: broker === undefined ? undefined : authoriseReachFor(broker, origin),
-    reachDial: nodeReachDial(),
+    reachDial: nodeReachDial({ routeProvider: reachRouteOf(origin) }),
     reserveReachSlot: reachSlots?.reserve,
     releaseReachSlot: reachSlots?.release
   })
   const { session } = await import('electron')
-  registerAppOrigin(session.fromPartition(partitionFor(origin)), origin, handler, 'verifier')
+  const appSession = session.fromPartition(partitionFor(origin))
+  await prepareAppSession(appSession, origin)
+  registerAppOrigin(appSession, origin, handler, 'verifier')
 }
 
 /**
@@ -356,7 +359,7 @@ export async function registerServingFor (storage: LoaderStorage, origin: string
     broker === undefined ? undefined : async () => await grantedConnectPatternsFor(broker, origin),
     broker === undefined ? undefined : async () => await secureHeaderPatternsFor(broker, origin),
     broker === undefined ? undefined : authoriseReachFor(broker, origin),
-    nodeReachDial(),
+    nodeReachDial({ routeProvider: reachRouteOf(origin) }),
     tracker.record,
     reachSlots?.reserve,
     reachSlots?.release,
@@ -365,7 +368,9 @@ export async function registerServingFor (storage: LoaderStorage, origin: string
     broker === undefined ? undefined : async () => await liveMediaSources(broker, origin)
   )
   const { session } = await import('electron')
-  registerAppOrigin(session.fromPartition(partitionFor(origin)), origin, handler)
+  const appSession = session.fromPartition(partitionFor(origin))
+  await prepareAppSession(appSession, origin)
+  registerAppOrigin(appSession, origin, handler)
   if (pin !== null) rememberServed(origin, pin)
 }
 

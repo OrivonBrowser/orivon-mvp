@@ -22,7 +22,10 @@ export const childrenSubsystem: Subsystem = {
     const tracker = createPageTracker()
     watchPages(app, tracker)
 
-    const pool = createChildHostPool(getBroker)
+    const pool = createChildHostPool(getBroker, async (origin, hostSession) => {
+      // The host confines WebRTC itself (child-host.ts), so only its proxy is the route's to set.
+      await ctx.routes?.controller.prepare(origin, hostSession, { webrtc: false })
+    })
     const registry = createChildHostRegistry(getBroker, pool, tracker, () => ctx.senderAttributed)
 
     // F5: an uncaught rejection here reaches index.ts's own

@@ -40,12 +40,14 @@ export function isPageOfServer (pageUrl: string, server: AuthServer): boolean {
 
 export function handleLogin (
   deps: LoginDeps,
-  event: { preventDefault: () => void },
+  event: { preventDefault: () => void, defaultPrevented?: boolean },
   contents: WebContents | null | undefined,
   details: LoginDetails,
   info: AuthInfo,
   callback: (username?: string, password?: string) => void
 ): void {
+  // Answered already by a listener ahead of this one (the front of a routed app answers its own proxy's challenge).
+  if (event.defaultPrevented === true) return
   const found = contents === null || contents === undefined ? null : deps.findTab(contents)
   // Not a tab (an extension's page, a guest, a shell view, a request of the app's own): Electron cancels it.
   if (found === null || contents === null || contents === undefined) return

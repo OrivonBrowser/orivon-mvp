@@ -91,6 +91,8 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
   an app using it (`security-model.md` T22); a blanket block breaks webtorrent-style apps.
 - **Options:** apply `web-context-host.ts`'s two belts (`disable_non_proxied_udp`, a discard
   proxy) to app partitions holding no network grant (rec.); a WebRTC grant; document the gap.
+  An app the person routed through a proxy already has the policy on every web contents
+  (`ADR-0080`); every other app does not.
 - **Who decides:** research first
 - **Blocks:** any trust-indicator or `security-model.md` claim that an app has no network access
 

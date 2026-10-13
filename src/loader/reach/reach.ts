@@ -12,8 +12,11 @@
 // module") for the reasoning behind each of those, not repeated here.
 
 import { request as httpsRequest } from 'node:https'
-import type { IncomingMessage } from 'node:http'
+import type { ClientRequestArgs, IncomingMessage } from 'node:http'
+import { isIP } from 'node:net'
 import { Readable } from 'node:stream'
+import { connect as tlsConnect } from 'node:tls'
+import type { RouteProvider } from '../../broker/route/provider.js'
 import type { ReachDial } from '../serve/serve.js'
 
 /**
@@ -27,6 +30,11 @@ export interface ReachDialOptions {
   readonly ca?: string | Buffer | Array<string | Buffer>
   /** Testing only, like `ca`: production uses `REACH_IDLE_TIMEOUT_MS`. */
   readonly idleTimeoutMs?: number
+  /**
+   * Read for every request: the route of the app this dial serves, or undefined when it has none. A routed
+   * request is carried by the route, with the name unresolved here, and fails when the route cannot carry it.
+   */
+  readonly routeProvider?: () => RouteProvider | undefined
 }
 
 /**
@@ -133,6 +141,18 @@ async function readCappedBody (request: Request): Promise<Buffer | null> {
   return Buffer.concat(chunks)
 }
 
+function routedConnection (provider: RouteProvider, host: string, port: number, ca: ReachDialOptions['ca'], signal: AbortSignal): NonNullable<ClientRequestArgs['createConnection']> {
+  return (_options, callback) => {
+    provider.connect(host, port, signal).then((carrier) => {
+      // The request is gone already (aborted, timed out): nothing may keep the route's stream.
+      if (signal.aborted) { carrier.destroy(); return }
+      // The certificate is verified against the name the app was granted, as on a direct dial.
+      callback?.(null, tlsConnect({ socket: carrier, host, ...(isIP(host) === 0 ? { servername: host } : {}), ca }))
+    }, (error: unknown) => { callback?.(error instanceof Error ? error : new Error('the route could not carry the request'), undefined as never) })
+    return undefined
+  }
+}
+
 /**
  * Builds a `ReachDial` (serve.ts's own type) that performs a real HTTPS
  * request to `host`:`port` over Node's own network stack, forwarding
@@ -160,10 +180,13 @@ export function nodeReachDial (options: ReachDialOptions = {}): ReachDial {
     const body = await readCappedBody(request)
     const bodyLength = body?.length ?? 0
 
+    const provider = options.routeProvider?.()
+    const abandoned = new AbortController()
     const res = await new Promise<IncomingMessage>((resolve, reject) => {
       const req = httpsRequest({
         host,
         port,
+        ...(provider === undefined ? {} : { createConnection: routedConnection(provider, host, port, options.ca, abandoned.signal) }),
         method: request.method,
         path: `${url.pathname}${url.search}`,
         headers: forwardedRequestHeaders(request, bodyLength),
@@ -173,6 +196,7 @@ export function nodeReachDial (options: ReachDialOptions = {}): ReachDial {
         timeout: idleTimeoutMs
       }, resolve)
       req.once('error', reject)
+      req.once('close', () => { abandoned.abort() })
       req.once('timeout', () => {
         req.destroy(new Error(`reach to ${host}:${String(port)} carried no bytes for ${String(idleTimeoutMs)}ms`))
       })

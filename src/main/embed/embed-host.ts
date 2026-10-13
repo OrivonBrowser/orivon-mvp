@@ -81,7 +81,7 @@ interface AppNotifier {
  * listener, except for devices: its device handler answers from the origin
  * alone, so a shown page at the app's origin would be given a device a tab was.
  */
-function configureEmbedSession (embedSession: Session, appOrigin: string, broker: Broker, notify: AppNotifier): void {
+function configureEmbedSession (embedSession: Session, appOrigin: string, broker: Broker, notify: AppNotifier, isRouted: (appOrigin: string) => boolean): void {
   embedSession.setDevicePermissionHandler(() => false)
   embedSession.on('will-download', (event, item, guest) => {
     // The item is gone from the next tick once cancelled: read it first.
@@ -97,7 +97,8 @@ function configureEmbedSession (embedSession: Session, appOrigin: string, broker
       details.resourceType,
       broker.embed.originsSync(appOrigin),
       resolve,
-      (port) => broker.embed.holdsListenerSync(appOrigin, port)
+      (port) => broker.embed.holdsListenerSync(appOrigin, port),
+      isRouted(appOrigin)
     )
       // A callback Electron waits on is called exactly once: a rejection
       // refuses, the way every refusal here fails closed.
@@ -130,7 +131,7 @@ function configureEmbedSession (embedSession: Session, appOrigin: string, broker
 }
 
 /** Installs the host: `will-attach-webview` and `did-attach-webview` on every WebContents from now on. */
-export function installEmbedHost (broker: Broker, preloadPath = join(import.meta.dirname, '../preload/embed.js')): EmbedHost {
+export function installEmbedHost (broker: Broker, preloadPath = join(import.meta.dirname, '../preload/embed.js'), isRouted: (appOrigin: string) => boolean = () => false): EmbedHost {
   const owners = new Map<number, string>()
   const guests = new Map<number, WebContents>()
   /** Guest id -> the page that holds its `<webview>`, where a notice for the guest is sent, and how many more this second. */
@@ -159,7 +160,7 @@ export function installEmbedHost (broker: Broker, preloadPath = join(import.meta
       configured.add(partition)
       const embedSession = electronSession.fromPartition(partition)
       embedSessionOrigins.set(embedSession, appOrigin)
-      configureEmbedSession(embedSession, appOrigin, broker, notify)
+      configureEmbedSession(embedSession, appOrigin, broker, notify, isRouted)
     }
     return partition
   }

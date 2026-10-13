@@ -1,4 +1,5 @@
 import type { Row } from '../model.js'
+import { renderProxyTest } from './route-test-row.js'
 
 const GROUP = 'Connections and tracking'
 
@@ -72,5 +73,21 @@ export const privacyNetworkRows: readonly Row[] = [
         { value: 'quad9', label: 'Quad9 (9.9.9.9)' }
       ]
     }
+  },
+  {
+    id: 'route-proxy',
+    label: 'Proxy for apps',
+    help: 'A SOCKS5 proxy, such as Tor on 127.0.0.1:9050, that an installed app can send all of its network traffic through. You turn it on for each app under Apps; until then nothing goes to it. Websites do not use it.',
+    keywords: ['proxy', 'socks', 'socks5', 'tor', 'onion', 'route', 'vpn', 'anonymous', 'network', 'apps', 'host', 'port'],
+    group: GROUP,
+    control: { type: 'text', key: 'network.route.proxy', placeholder: '127.0.0.1:9050', problem: 'Enter an address as host:port, like 127.0.0.1:9050' }
+  },
+  {
+    id: 'route-proxy-test',
+    label: 'Test the proxy',
+    help: 'Checks that a SOCKS5 proxy answers at that address. It opens no connection through it.',
+    keywords: ['proxy', 'socks', 'tor', 'test', 'check', 'route'],
+    group: GROUP,
+    control: { type: 'custom', render: renderProxyTest }
   }
 ]

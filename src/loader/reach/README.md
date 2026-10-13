@@ -5,13 +5,19 @@
 releasing the slot), `redirects.ts` (the redirect cap) and `slots.ts` (the per-origin reach
 allowance queue).
 
-**What it depends on.** [`../../contracts/`](../../contracts/). `reach.ts` stays free of broker
-policy and Electron entirely on purpose (see Design notes); `guard.ts` type-imports
+**What it depends on.** [`../../contracts/`](../../contracts/), and for a routed origin
+[`../../broker/route/provider.ts`](../../broker/route/provider.ts) (a type: `reach.ts` opens TLS over the stream a route
+gives it). `reach.ts` stays free of broker policy and Electron entirely on purpose (see Design notes); `guard.ts` type-imports
 [`../serve/serve.ts`](../serve/serve.ts)'s `ReachDial`.
 
 **What it must never import.** [`../../shim/`](../../shim/), as the parent README says.
 
 ## Design notes
+
+**A routed origin's reach is carried by its route, never dialled.** `nodeReachDial`'s `routeProvider` is read for every
+request; when it gives a provider, the connection is `tls.connect` over the stream the provider opens to the granted
+name, unresolved here, with the certificate checked against that name as on a direct dial. A provider that cannot
+connect fails the request, and nothing is dialled directly in its place.
 
 Why a cross-origin request inside an app's own partition reaches this path at all (A143), and
 why plain `http:` stays denied (A163), is `../serve/serve.ts`'s `fetchThirdParty` doc.

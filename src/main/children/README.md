@@ -48,6 +48,10 @@ its host -- lives in [`../../shim/worker/`](../../shim/worker/) and
 
 ## Design notes
 
+**A routed app's host session is pointed at its front before the host loads.** A child's own `WebSocket` leaves through the
+host's session whatever the document does, so `build` awaits `prepareSession` (`../route/`), which sets the app's proxy on
+it and leaves the host's own WebRTC policy to this file.
+
 **Why the page tracker and the host pool are two files, not one.** `page-tracker.ts` answers
 one question -- "does this origin have a page left?" -- from plain events, with no idea a host
 exists at all; `child-host.ts` answers a different one -- "what does this origin's host look

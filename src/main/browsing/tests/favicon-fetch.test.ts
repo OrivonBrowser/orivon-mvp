@@ -363,6 +363,45 @@ describe('fetchFaviconDataUrlCached -- over net.request', () => {
   })
 })
 
+// A routed app's icons from other hosts: the name goes to its route unresolved, and the request leaves from the
+// route's own session, never the default one.
+describe('isSafeFaviconUrl -- for a routed app', () => {
+  it('accepts a public hostname without resolving it here', async () => {
+    await expect(isSafeFaviconUrl('https://cdn.example/icon.png', PUBLIC_PAGE, unreachableResolver, { routed: true })).resolves.toBe(true)
+  })
+
+  it('still judges a literal address, and keeps loopback away from a public page', async () => {
+    await expect(isSafeFaviconUrl('https://10.0.0.1/icon.png', PUBLIC_PAGE, unreachableResolver, { routed: true })).resolves.toBe(false)
+    await expect(isSafeFaviconUrl('http://127.0.0.1:8080/icon.png', PUBLIC_PAGE, unreachableResolver, { routed: true })).resolves.toBe(false)
+    await expect(isSafeFaviconUrl('https://localhost/icon.png', PUBLIC_PAGE, unreachableResolver, { routed: true })).resolves.toBe(false)
+    await expect(isSafeFaviconUrl('http://cdn.example/icon.png', PUBLIC_PAGE, unreachableResolver, { routed: true })).resolves.toBe(false)
+  })
+})
+
+describe('fetchFaviconDataUrlCached -- for a routed app', () => {
+  it('asks the route\'s session for another host, and the page\'s own session for its own origin', async () => {
+    const route = { name: 'route' } as unknown as Parameters<typeof fetchFaviconDataUrlCached>[3]
+    const page = { name: 'page' } as unknown as Parameters<typeof fetchFaviconDataUrlCached>[3]
+    mockRequestOnce((request) => { request.emit('response', respondOk(200, [PNG_BYTES])) })
+    mockRequestOnce((request) => { request.emit('response', respondOk(200, [PNG_BYTES])) })
+
+    await fetchFaviconDataUrlCached('https://cdn.example/icon.png', PUBLIC_PAGE, () => false, page, route)
+    await fetchFaviconDataUrlCached('https://example.com/icon.png', PUBLIC_PAGE, () => false, page, route)
+
+    expect(vi.mocked(net.request).mock.calls.map(([options]) => (options as unknown as { session?: unknown }).session)).toEqual([route, page])
+  })
+
+  it('follows a redirect to another host through the route too, without resolving it here', async () => {
+    const route = { name: 'route' } as unknown as Parameters<typeof fetchFaviconDataUrlCached>[3]
+    mockRequestOnce((request) => { request.emit('redirect', 301, 'GET', 'https://other-cdn.example/icon.png', {}) })
+    mockRequestOnce((request) => { request.emit('response', respondOk(200, [PNG_BYTES])) })
+
+    await expect(fetchFaviconDataUrlCached('https://cdn.example/icon.png', PUBLIC_PAGE, () => false, undefined, route)).resolves.toMatch(/^data:image\/png/)
+
+    expect(vi.mocked(net.request).mock.calls.map(([options]) => (options as unknown as { session?: unknown }).session)).toEqual([route, route])
+  })
+})
+
 // Electron's loader stays alive until it completes or is cancelled, and
 // nobody reads a failed hop's body, so a failure that is not aborted holds
 // a socket from the default session's pool until the server gives up.

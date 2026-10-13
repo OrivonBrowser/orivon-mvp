@@ -39,6 +39,12 @@ dependency on tab-collection state, which keeps it importable under plain vitest
 
 ## Design notes
 
+**A routed app's lookups leave through its route.** A tab's icon from another host and the Web3 Score provider's answer are
+fetched from main, which would otherwise use the default session. For an app the person routed, `favicon-fetch.ts` and
+`score-provider-client.ts` ask `../route/lookup-session.ts` for the session of the app's route and use it for those
+requests only; a hostname is then not resolved here (`isSafeFaviconUrl`'s `routed`), and when the route cannot be had the
+lookup is not made.
+
 **A page's score lookups share nothing with the shell's, or with another page's.** `page-score-lookup.ts` keeps one
 `createScoreProviderClient` per calling origin (the sixteen most recent) and never uses `services.scoreProvider`:
 one cache for everyone would let a page time an answer to learn which sites the person had opened. A `.eth` name is

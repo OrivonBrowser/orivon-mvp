@@ -7,7 +7,7 @@ import { createSocket } from 'node:dgram'
 import { createServer as createTcpServer } from 'node:net'
 import type { AddressInfo, Server, Socket } from 'node:net'
 import { afterEach, describe, expect, it } from 'vitest'
-import { createSocks5Provider, isolationCredentials } from '../socks5.js'
+import { createSocks5Provider, isolationCredentials, routeAnswered } from '../socks5.js'
 import type { RoutedDatagram } from '../provider.js'
 import { startSocks5Fixture } from './socks5-fixture.test-helpers.js'
 import type { Socks5Fixture, Socks5FixtureOptions } from './socks5-fixture.test-helpers.js'
@@ -87,6 +87,21 @@ describe('CONNECT', () => {
     const provider = createSocks5Provider({ host: proxy.host, port: proxy.port })
 
     await expect(provider.connect('nowhere.test', 443, NEVER)).rejects.toThrow()
+  })
+
+  it('tells a proxy that refused the destination from one that could not be reached', async () => {
+    const proxy = await fixture()
+    const provider = createSocks5Provider({ host: proxy.host, port: proxy.port })
+    const refusal = await provider.connect('nowhere.test', 443, NEVER).catch((error: unknown) => error)
+    expect(routeAnswered(refusal)).toBe(true)
+
+    const server = createTcpServer()
+    await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+    const { port } = server.address() as AddressInfo
+    await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+    const unreachable = await createSocks5Provider({ host: '127.0.0.1', port }).connect('nowhere.test', 443, NEVER).catch((error: unknown) => error)
+    expect(routeAnswered(unreachable)).toBe(false)
+    expect(routeAnswered('Socks5 proxy rejected connection')).toBe(false)
   })
 
   it('keeps the first bytes of a server that speaks first', async () => {
