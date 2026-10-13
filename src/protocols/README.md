@@ -8,10 +8,11 @@ fallback rule across providers; the provider interfaces ([`resolution/`](resolut
 protocol ([`ens/`](ens/), [`ipfs/`](ipfs/), [`swarm/`](swarm/)), with the gateway scheduling the
 content-addressed ones share ([`gateways/`](gateways/)); [`verifier-host/`](verifier-host/), the process
 that runs every provider and serves their pages; [`local-node/`](local-node/), the process
-that runs a node of Orivon's own on this computer; and [`swarm-node/`](swarm-node/) and
-[`ipfs-node/`](ipfs-node/), the Swarm light node and the IPFS node that run in it.
+that runs a node of Orivon's own on this computer; [`swarm-node/`](swarm-node/) and
+[`ipfs-node/`](ipfs-node/), the Swarm light node and the IPFS node that run in it; and [`nym-tunnel/`](nym-tunnel/), the
+process that runs Nym's mixnet client and offers it to the tunnel for apps as a SOCKS5 server.
 
-**Durable**, except `verifier-host/` and `local-node/`, which are tied to Electron.
+**Durable**, except `verifier-host/`, `local-node/` and `nym-tunnel/`, which are tied to Electron.
 
 **What it depends on.** The top-level files depend only on [`resolution/`](resolution/) and on
 each built-in protocol's `descriptor.ts`. Each folder's own `README.md` says what it depends on.

@@ -23,6 +23,7 @@ import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { announceWebsiteSession } from '../sessions/website-sessions.js'
 import { webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import { createTemporaryRoutes, temporarySessionShowing } from './temporary-routes.js'
+import { createNym } from './nym-launch.js'
 import { createRouteService } from './route-service.js'
 import { RouteStore } from './route-store.js'
 
@@ -34,6 +35,8 @@ export const routeSubsystem: Subsystem = {
     const routes = createRouteService({
       store: new RouteStore(ctx.privateSession ? null : join(userData, 'routes.json')),
       savedProxy: readSettingBeforeReady(join(userData, 'settings.json'), 'network.route.proxy'),
+      savedKind: readSettingBeforeReady(join(userData, 'settings.json'), 'network.route.kind'),
+      nym: createNym(),
       // Asked only when the list of tunnel settings cannot be read; the broker exists by then.
       installed: () => [...new Set([...(ctx.broker?.app.registeredOriginsSync() ?? []), ...(ctx.broker?.app.persistedAppsSync().map((installed) => installed.origin) ?? [])])],
       switchWorld: {
@@ -84,6 +87,7 @@ export const routeSubsystem: Subsystem = {
     const temporary = createTemporaryRoutes({
       controller: routes.controller,
       proxy: routes.proxy,
+      providerFor: routes.providerFor,
       sessionFor: (partition) => session.fromPartition(partition),
       liveContentsIn: (inside) => webContents.getAllWebContents().filter((contents) => !contents.isDestroyed() && contents.session === inside).length,
       onContentsGone: (listener) => {

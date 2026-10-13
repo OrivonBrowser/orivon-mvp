@@ -20,6 +20,11 @@ custom search template's check), [`../storage/`](../storage/) (the debounced wri
 
 ## Design notes
 
+**A file's version carries a choice it could not hold.** `network.route.kind` (Nym, or the SOCKS5 address) did not exist when
+version 1 settings files were written, and a choice left at its default is never written. So a version 1 file with an address
+and no choice is a person who set up their own server: it reads as `socks5`, and the store writes version 2, where an
+address with no choice is a person who chose Nym. A build that reads only version 1 ignores a version 2 file whole.
+
 **Only a choice that differs from the default is written.** A default that improves later then
 reaches everyone who never touched it, and "changed from default" is a fact of the file rather than a
 comparison against a copy of the defaults the page would have to carry.

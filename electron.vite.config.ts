@@ -197,17 +197,18 @@ export default defineConfig({
       __ORIVON_COMMIT__: JSON.stringify(buildCommit(root))
     },
     build: {
-      // Four entries: the process start (small, so a second start of an open profile exits early),
-      // the browser it loads once it is the process that stays (index), and the verifier host and the
-      // local node host (any kind of node) it forks as utility processes (src/protocols/verifier-host/,
-      // src/protocols/local-node/).
+      // Five entries: the process start (small, so a second start of an open profile exits early),
+      // the browser it loads once it is the process that stays (index), and the verifier host, the
+      // local node host (any kind of node) and the Nym tunnel host it forks as utility processes
+      // (src/protocols/verifier-host/, src/protocols/local-node/, src/protocols/nym-tunnel/).
       // Keys are the output names in out/main/, which src/main/verifier/ forks by name.
       rollupOptions: {
         input: {
           start: resolve(root, 'src/main/start.ts'),
           index: resolve(root, 'src/main/index.ts'),
           'verifier-host': resolve(root, 'src/protocols/verifier-host/entry.ts'),
-          'local-node-host': resolve(root, 'src/protocols/local-node/entry.ts')
+          'local-node-host': resolve(root, 'src/protocols/local-node/entry.ts'),
+          'nym-tunnel-host': resolve(root, 'src/protocols/nym-tunnel/entry.ts')
         }
       },
       // Dependencies stay external, loaded from node_modules at run time,

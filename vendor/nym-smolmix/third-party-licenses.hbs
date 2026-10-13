@@ -1,0 +1,25 @@
+THIRD-PARTY LICENSES
+
+The Nym tunnel module (smolmix_wasm_bg.wasm) is compiled from Nym's smolmix crate and the Rust crates it depends on
+for the wasm32-unknown-unknown target. Nym's own code is under the Apache-2.0 licence, in LICENSE. Each crate below
+is used under the licence named for it, and its copyright notice is kept as its authors wrote it.
+
+This file is made by scripts/build-nym-tunnel.mjs with cargo-about, from the lockfile the module was built from.
+
+Overview of licences:
+{{#each overview}}
+  {{{name}}} ({{count}})
+{{/each}}
+
+{{#each licenses}}
+--------------------------------------------------------------------------------
+{{{name}}}
+
+Used by:
+{{#each used_by}}
+  {{{crate.name}}} {{{crate.version}}}{{#if crate.repository}} ({{{crate.repository}}}){{/if}}
+{{/each}}
+
+{{{text}}}
+
+{{/each}}

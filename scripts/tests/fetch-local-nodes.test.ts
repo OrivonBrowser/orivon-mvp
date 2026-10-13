@@ -273,7 +273,7 @@ describe('the Nym tunnel\'s manifest', () => {
   it('names itself like its folder, pins a CIDv1 directory, and pins each file by size and sha256', () => {
     expect(manifest.name).toBe('nym-tunnel')
     expect(manifest.cid).toMatch(/^bafy[a-z2-7]{50,}$/)
-    expect(manifest.files.map((file) => file.name)).toEqual(['smolmix_wasm.js', 'smolmix_wasm_bg.wasm', 'smolmix_wasm.d.ts', 'LICENSE', 'README.md'])
+    expect(manifest.files.map((file) => file.name)).toEqual(['smolmix_wasm.js', 'smolmix_wasm_bg.wasm', 'smolmix_wasm.d.ts', 'LICENSE', 'THIRD_PARTY_LICENSES', 'README.md'])
     for (const file of manifest.files) {
       expect(Number.isInteger(file.bytes) && file.bytes > 0).toBe(true)
       expect(file.sha256).toMatch(/^[0-9a-f]{64}$/)

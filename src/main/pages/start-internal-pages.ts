@@ -188,7 +188,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       clearShared: async () => { await session.fromPartition(LOCAL_FILES_PARTITION).clearData() }
     }),
     apps: appsDomain({ permissions, devices: deviceRows, links: services.schemeChoices, userDataPath: app.getPath('userData'), identity: identityKeyStorage, routes: appRoutes }),
-    route: routeDomain({ proxy: () => services.settings.get('network.route.proxy'), probe: probeSocks5, routeSwitch: routes.routeSwitch }),
+    route: routeDomain({ proxy: () => services.settings.get('network.route.proxy'), kind: () => services.settings.get('network.route.kind'), probe: probeSocks5, nym: routes.nym, routeSwitch: routes.routeSwitch }),
     web3: web3Domain({
       view: verifierView,
       enabled: () => services.settings.get('web3.lightClient'),
@@ -221,7 +221,11 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   services.settings.onChange((change) => { services.internalPages.publish('settings.changed', change, ['settings', 'extensions', 'import']) })
   // An app's route switch is on its card in Apps: it follows the switch itself, and whether there is a proxy to turn it on for.
   routes.hub.onChange(() => { services.internalPages.publish('apps.changed', undefined, ['settings']); services.internalPages.publish('route.changed', undefined, ['settings']) })
-  services.settings.onChange((change) => { if (change.key === 'network.route.proxy') services.internalPages.publish('apps.changed', undefined, ['settings']) })
+  services.settings.onChange((change) => { if (change.key === 'network.route.proxy' || change.key === 'network.route.kind') services.internalPages.publish('apps.changed', undefined, ['settings']) })
+  routes.nym.onChange(() => {
+    services.internalPages.publish('nym.changed', { nym: routes.nym.state() }, ['settings'])
+    services.internalPages.publish('apps.changed', undefined, ['settings'])
+  })
   services.searchEngines.onChange(() => { services.internalPages.publish('searchEngines.changed', undefined, ['settings']) })
   services.shortcuts.onChange(() => { services.internalPages.publish('shortcuts.changed', services.shortcuts.rows(), ['settings']) })
   // Every grant/revoke, from every surface (install, the site-info popover, a
