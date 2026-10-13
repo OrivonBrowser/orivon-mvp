@@ -10,6 +10,7 @@
 
 import { Agent, request as httpsRequest } from 'node:https'
 import type { RequestOptions } from 'node:https'
+import type { ClientRequest, IncomingMessage } from 'node:http'
 import type { LookupAddress } from 'node:dns'
 import { Readable } from 'node:stream'
 import { canonicalAddress, classifyAddress } from '../../broker/policy/address.js'
@@ -49,7 +50,7 @@ const RESERVED_HEADERS = new Set(['host', 'connection', 'content-length', 'trans
 /** No content, or none for this method -- a body would violate the
  * `Response` constructor's own null-body-status rule (the WHATWG spec's
  * "null body status" set, minus 101/103, which a client never receives). */
-const NULL_BODY_STATUSES = new Set([204, 205, 304])
+export const NULL_BODY_STATUSES = new Set([204, 205, 304])
 
 /** One keep-alive agent per origin, reused across calls -- never the
  * global agent, which every OTHER Electron/Node consumer in this process
@@ -65,7 +66,7 @@ function agentFor (origin: string, maxSockets: number): Agent {
   return agent
 }
 
-function collectHeaders (init: RequestInit | undefined): Record<string, string> {
+export function collectHeaders (init: RequestInit | undefined): Record<string, string> {
   const headers: Record<string, string> = {}
   if (init?.headers !== undefined) {
     for (const [key, value] of new Headers(init.headers)) if (!RESERVED_HEADERS.has(key)) headers[key] = value
@@ -85,21 +86,82 @@ function dialable (address: string, fixture: boolean): boolean {
 }
 
 /** Why an answer from the gateway is refused, or undefined to accept it. */
-function refusalOf (status: number, encoding: string | undefined, allowRedirect: boolean): string | undefined {
+export function refusalOf (status: number, encoding: string | undefined, allowRedirect: boolean, label = 'direct fetch'): string | undefined {
   // `new Response` throws a RangeError for any other status.
-  if (status < 200 || status > 599) return `direct fetch got status ${String(status)}, outside 200-599`
-  if (!allowRedirect && status >= 300 && status < 400) return `direct fetch got a ${String(status)} redirect, which it never follows`
+  if (status < 200 || status > 599) return `${label} got status ${String(status)}, outside 200-599`
+  if (!allowRedirect && status >= 300 && status < 400) return `${label} got a ${String(status)} redirect, which it never follows`
   if (encoding !== undefined && encoding.toLowerCase() !== 'identity') return `asked for accept-encoding: identity but got content-encoding: ${encoding}`
   return undefined
 }
 
-function toWebHeaders (raw: Record<string, string | string[] | undefined>): Headers {
+export function toWebHeaders (raw: Record<string, string | string[] | undefined>): Headers {
   const headers = new Headers()
   for (const [key, value] of Object.entries(raw)) {
     if (value === undefined) continue
     if (Array.isArray(value)) { for (const one of value) headers.append(key, one) } else headers.set(key, value)
   }
   return headers
+}
+
+export interface NodeRequest {
+  /** `https.request`, or `http.request` for a test fixture's plain-HTTP gateway. */
+  readonly request: (options: RequestOptions, callback: (res: IncomingMessage) => void) => ClientRequest
+  readonly options: RequestOptions
+  readonly method: string
+  readonly body: string | Uint8Array | undefined
+  readonly hostname: string
+  readonly idleTimeoutMs: number
+  readonly allowRedirect: boolean
+  /** Names the caller in the errors: `direct fetch`, `routed fetch`. */
+  readonly label: string
+}
+
+/**
+ * Sends one request with Node's own client and answers with a `Response` whose body is the live stream: a refused answer
+ * (a compressed body, a status outside 200-599, a protocol switch, a redirect unless `allowRedirect`) is a
+ * `DirectAnswerRefused`, and a request that ends without an answer is an error, never a hang.
+ */
+export async function sendNodeRequest (send: NodeRequest): Promise<Response> {
+  const { method, hostname, idleTimeoutMs, allowRedirect, label } = send
+  return await new Promise<Response>((resolve, reject) => {
+    let settled = false
+    const fail = (error: Error): void => {
+      if (settled) return
+      settled = true
+      reject(error)
+    }
+    const req = send.request(send.options, (res) => {
+      // Anything thrown in here would be uncaught, and end the verifier host.
+      try {
+        const refusal = refusalOf(res.statusCode ?? 0, res.headers['content-encoding'], allowRedirect, label)
+        if (refusal !== undefined) {
+          res.resume() // drain so the socket returns to the agent's pool
+          fail(new DirectAnswerRefused(refusal))
+          return
+        }
+        const status = res.statusCode ?? 0
+        const body = method === 'HEAD' || NULL_BODY_STATUSES.has(status) ? null : (Readable.toWeb(res) as ReadableStream<Uint8Array>)
+        if (body === null) res.resume()
+        const response = new Response(body, { status, headers: toWebHeaders(res.headers) })
+        settled = true
+        resolve(response)
+      } catch (error) {
+        res.destroy()
+        fail(error instanceof Error ? error : new Error(String(error)))
+      }
+    })
+    // Without a listener Node destroys the socket after a 101 and never
+    // calls the response callback, leaving this promise pending for good.
+    req.once('upgrade', (_res, socket) => {
+      socket.destroy()
+      fail(new DirectAnswerRefused(`${label} got 101 Switching Protocols`))
+    })
+    req.once('timeout', () => { req.destroy(new Error(`${label} to ${hostname} carried no bytes for ${String(idleTimeoutMs)} ms`)) })
+    req.on('error', fail)
+    // The last word: whatever ended the request without an answer or an error.
+    req.once('close', () => { fail(new Error(`${label} to ${hostname} closed without an answer`)) })
+    req.end(send.body)
+  })
 }
 
 /**
@@ -149,8 +211,8 @@ export function createDirectFetch (options: DirectFetchOptions = {}): DirectFetc
     if (addresses.length === 0) throw new Error('direct fetch given no pinned address')
     const refused = addresses.find((address) => !dialable(address, fixture))
     if (refused !== undefined) throw new Error(`direct fetch refuses to dial ${refused}: not a canonical public unicast address`)
-    const requestBody = method === 'POST' ? init?.body : undefined
-    if (method === 'POST' && typeof requestBody !== 'string') throw new Error('direct fetch only sends a POST body given as a string')
+    const requestBody = method === 'POST' && typeof init?.body === 'string' ? init.body : undefined
+    if (method === 'POST' && requestBody === undefined) throw new Error('direct fetch only sends a POST body given as a string')
 
     const requestOptions: RequestOptions = {
       method,
@@ -166,44 +228,6 @@ export function createDirectFetch (options: DirectFetchOptions = {}): DirectFetc
       timeout: idleTimeoutMs
     }
 
-    return await new Promise<Response>((resolve, reject) => {
-      let settled = false
-      const fail = (error: Error): void => {
-        if (settled) return
-        settled = true
-        reject(error)
-      }
-      const req = httpsRequest(requestOptions, (res) => {
-        // Anything thrown in here would be uncaught, and end the verifier host.
-        try {
-          const refusal = refusalOf(res.statusCode ?? 0, res.headers['content-encoding'], allowRedirect)
-          if (refusal !== undefined) {
-            res.resume() // drain so the socket returns to the agent's pool
-            fail(new DirectAnswerRefused(refusal))
-            return
-          }
-          const status = res.statusCode ?? 0
-          const body = method === 'HEAD' || NULL_BODY_STATUSES.has(status) ? null : (Readable.toWeb(res) as ReadableStream<Uint8Array>)
-          if (body === null) res.resume()
-          const response = new Response(body, { status, headers: toWebHeaders(res.headers) })
-          settled = true
-          resolve(response)
-        } catch (error) {
-          res.destroy()
-          fail(error instanceof Error ? error : new Error(String(error)))
-        }
-      })
-      // Without a listener Node destroys the socket after a 101 and never
-      // calls the response callback, leaving this promise pending for good.
-      req.once('upgrade', (_res, socket) => {
-        socket.destroy()
-        fail(new DirectAnswerRefused('direct fetch got 101 Switching Protocols'))
-      })
-      req.once('timeout', () => { req.destroy(new Error(`direct fetch to ${parsed.hostname} carried no bytes for ${String(idleTimeoutMs)} ms`)) })
-      req.on('error', fail)
-      // The last word: whatever ended the request without an answer or an error.
-      req.once('close', () => { fail(new Error(`direct fetch to ${parsed.hostname} closed without an answer`)) })
-      req.end(requestBody)
-    })
+    return await sendNodeRequest({ request: httpsRequest, options: requestOptions, method, body: requestBody, hostname: parsed.hostname, idleTimeoutMs, allowRedirect, label: 'direct fetch' })
   }
 }

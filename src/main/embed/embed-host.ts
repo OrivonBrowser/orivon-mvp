@@ -15,7 +15,7 @@ import { join } from 'node:path'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
-import { requestPartition, withPartition } from '../verifier/partition.js'
+import { requestPartition, withPartition, withRoute } from '../verifier/partition.js'
 import { holdForVerifier } from '../verifier/verifier-access.js'
 import { EMBED_EVENT_CHANNEL } from '../channels.js'
 import type { EmbedDownload, EmbedPopup } from '../../contracts/index.js'
@@ -28,6 +28,7 @@ import { watchPageDialogs } from '../shell/page-dialogs.js'
  * which this directory's README forbids depending on -- a shown page is
  * another site's document, never a pinned bundle. */
 const PARTITION_HEADER = 'x-orivon-partition'
+const ROUTE_HEADER = 'x-orivon-route'
 
 export interface EmbedHost {
   /** The app origin that shows guest `webContentsId`, or undefined for anything that is not a live guest. */
@@ -126,7 +127,8 @@ function configureEmbedSession (embedSession: Session, appOrigin: string, broker
       frame = undefined
     }
     const partition = requestPartition({ url: details.url, resourceType: details.resourceType, topUrl: frame?.top?.url })
-    callback({ requestHeaders: withPartition(details.requestHeaders, PARTITION_HEADER, partition) })
+    // An embed is never the tunnel profile: a route mark a page set is stripped.
+    callback({ requestHeaders: withRoute(withPartition(details.requestHeaders, PARTITION_HEADER, partition), ROUTE_HEADER, false) })
   })
 }
 

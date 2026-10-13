@@ -5,12 +5,14 @@
 // dns-fallback.ts's direct connection to a gateway `config.unproxiedGateways`
 // already found to have no proxy in front of it, taken only once `net`
 // itself has failed that gateway and a DNS-over-HTTPS answer disagreed with
-// the system resolver's (A251, docs/open-questions.md). It is started and
-// restarted by src/main/verifier/.
+// the system resolver's (A251, docs/open-questions.md). A tunnel-profile
+// website's fetches leave through routed-fetch.ts instead, never through net.
+// It is started and restarted by src/main/verifier/.
 
 import { net } from 'electron'
 import { createRequestFetch } from '../../loader/electron/request-fetch.js'
 import { createDirectFetch } from './direct-fetch.js'
+import { createRoutedFetch } from './routed-fetch.js'
 import { answerForFront } from './front-login.js'
 import { startHeliosLightClient } from './light-client/light-client.js'
 import type { FromHost, ToHost } from './protocol.js'
@@ -53,7 +55,9 @@ function main (): void {
         startLightClient: startHeliosLightClient,
         fixturesAllowed: FIXTURES_ALLOWED,
         directFetch: createDirectFetch(),
-        ccipFetch: createDirectFetch({ allowPost: true, allowRedirect: true })
+        ccipFetch: createDirectFetch({ allowPost: true, allowRedirect: true }),
+        // A tunnel-profile website's only way to the network: Node sockets to the profile's front, never `net`. A test build's fixture gateways are plain HTTP.
+        routedFetch: createRoutedFetch({ front: () => message.config.profileFront, allowHttp: FIXTURES_ALLOWED })
       })
       host.then(
         (running) => { post({ type: 'listening', fingerprint: running.fingerprint }) },

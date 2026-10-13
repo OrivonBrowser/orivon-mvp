@@ -37,6 +37,8 @@ node; off, failed or still starting, it reads the gateways and the mounted site 
 service is still asked for an IPNS record after the node, unless the lookup service is off. Each read from the node
 carries the key of the mount's partition (`partition-key.ts`; header `x-orivon-partition`) and no other source sees it.
 
+**A tunnel-profile website is served from a second set of protocols** ([`tunnel-protocols.ts`](tunnel-protocols.ts), routed by `x-orivon-route: tunnel`, which main sets on every request of the tunnel profile's session and strips from every other). Every fetch that set makes is [`routed-fetch.ts`](routed-fetch.ts)'s: HTTP over TLS over a `CONNECT` to the tunnel profile's front (`HostConfig.profileFront`), which opens the stream through the tunnel with the name unresolved. IPFS is read through gateways only, never the local node, and DNSLink, IPNS name services and CCIP-Read go the same way; the name is proved by a second light client (`light-client/README.md`) started at the first such `.eth` name. A Swarm address, or a name whose content is on Swarm, is refused with `SWARM_NOT_TUNNELLED`'s sentence, because the Swarm node dials its peers itself. `Sites` keeps one set of mounts per route (`RoutedSites`), so a name proved through the tunnel is never served to a direct website; the IPNS sequence and Swarm feed index stores are shared, since they only move forward.
+
 **Owner stream.** `ens-ipfs`.
 
 ## Design notes
@@ -63,3 +65,5 @@ restarts, the same shape as `security-model.md` T40's own snapshot. The one OTHE
 `net` is [`dns-fallback.ts`](dns-fallback.ts), only for a gateway that had no proxy configured when
 the host started (ADR-0030's 2026-09-26 amendment); taking it for a proxied gateway would silently
 bypass that proxy, and the check being a snapshot is T40's residual there too.
+
+**The routed fetch speaks to the profile's front, not to the tunnel's SOCKS5 address.** [`routed-fetch.ts`](routed-fetch.ts) sends a `CONNECT` with the front's sign-in and then runs TLS over the stream, with Node's own sockets, because `net.fetch` in a utility process cannot sign in to a front (it ends at the `407`). The front is the one place that already waits for Nym to start, follows a changed tunnel and fails closed with nothing direct, and Nym's port changes at every start, so the host would otherwise have to ask main for an address at each connection. Connections are kept alive and pooled per destination, since a Nym stream is slow to open. It follows no redirect (a 3xx comes back as a response and `allowlisted` refuses it), carries no cookie and no cache, and takes plain HTTP only in a test build's fixture.

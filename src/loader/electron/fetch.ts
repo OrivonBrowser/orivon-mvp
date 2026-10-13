@@ -9,7 +9,7 @@ import { originFromUrl } from '../../broker/policy/origin.js'
 import { classifyAddress, isPublicUnicast } from '../../broker/policy/address.js'
 import { servedByVerifier } from '../fetch/verifier-origin.js'
 import { answerRouteChallenge } from '../../main/route/lookup-session.js'
-import { ownDirectSession, ownRequestsSettled, ownRouteFor } from '../../main/route/own-requests.js'
+import { ownDirectSession, ownRequestsSettled, ownRouteFor, ownSiteSession } from '../../main/route/own-requests.js'
 
 export const electronFetch: Fetch = async (url, pinnedAddresses, signal, headers) => {
   // Dynamically imported: outside a real Electron process (i.e. under
@@ -142,10 +142,13 @@ export async function netFetch (url: string, signal: AbortSignal, headers?: Requ
   const { net } = await import('electron')
   // While the setting is being applied the default session may still be direct or still on the front: the request waits, or is refused.
   await ownRequestsSettled()
+  // A website with its tunnel on is fetched in the tunnel profile's session while the whole browser is off the tunnel; a rejection means its route cannot be had, and nothing is fetched.
+  const profile = await ownSiteSession(new URL(url).origin)
   return await new Promise<FetchResponse>((resolve, reject) => {
     // An origin set to off while the whole browser is on the tunnel is fetched on the system's proxy; otherwise the default session, which then is the tunnel's, whose front this request signs in to.
     const direct = ownRouteFor(new URL(url).origin) === 'direct' ? ownDirectSession() : undefined
-    const request = net.request({ url, method: 'GET', credentials: 'omit', useSessionCookies: false, redirect: 'manual', ...(direct === undefined ? {} : { session: direct as Session }) })
+    const used = direct ?? profile
+    const request = net.request({ url, method: 'GET', credentials: 'omit', useSessionCookies: false, redirect: 'manual', ...(used === undefined ? {} : { session: used as Session }) })
     request.on('login', (info, callback) => { answerRouteChallenge(info, callback) })
     for (const [name, value] of Object.entries(headers ?? {})) request.setHeader(name, value)
     let hops = 0

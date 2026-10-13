@@ -61,25 +61,65 @@ function installTimerScope (): void {
   Object.defineProperty(globalThis, 'WorkerGlobalScope', { value: scope, configurable: true, writable: true })
 }
 
-export function startHeliosLightClient (config: LightClientConfig, fetch: WebFetch, report: (message: FromHost) => void): LightClient {
-  if (!BLOCK_ROOT_PATTERN.test(config.checkpoint)) throw new Error(`not a checkpoint: ${config.checkpoint}`)
-  const primary = config.executionRpcs[0]
-  if (primary === undefined) throw new Error('no execution RPC configured')
-  installTimerScope()
+/** What Helios is told to call the two servers, and the server each name stands for. */
+interface Lane {
+  readonly execution: string
+  readonly consensus: string
+  /** Where a request under `consensus` really goes. */
+  readonly realConsensus: string
+  /** The execution RPC, tried endpoint by endpoint. */
+  readonly viaExecution: WebFetch
+  readonly fetch: WebFetch
+}
+
+/** `globalThis.fetch` once Helios's requests are told apart by the server they name: one lane per light client. */
+interface Dispatcher {
+  (input: string | URL | Request, init?: RequestInit): Promise<Response>
+  lanes: Lane[]
+}
+
+/**
+ * The names a client that runs for tunnel-profile websites gives Helios for its two servers. They resolve nowhere: the
+ * dispatcher below maps them back to the real servers and sends the request on that client's own fetch, so one process
+ * can run two clients, each with a route of its own, though Helios reaches the network only through a global.
+ */
+const TUNNEL_NAMES = { execution: 'https://tunnel-execution.orivon.invalid', consensus: 'https://tunnel-consensus.orivon.invalid' } as const
+
+function dispatcher (): Dispatcher {
+  const existing = globalThis.fetch as Partial<Dispatcher>
+  if (existing.lanes !== undefined) return existing as Dispatcher
   const nodeFetch = globalThis.fetch
-  const execution = failoverRpc(config.executionRpcs, fetch)
-  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+  const lanes: Lane[] = []
+  const dispatch = (async (input: string | URL | Request, init?: RequestInit) => {
     // Helios loads its own WASM from a data: URL through fetch; that never touches the network.
     const request = new Request(input, init)
     if (request.url.startsWith('data:application/wasm')) return await nodeFetch(request)
     // Its RPC calls arrive as Request objects: method, headers and body live on the Request, not in init.
     const body = request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.arrayBuffer()
     const forwarded: RequestInit = { method: request.method, headers: Object.fromEntries(request.headers), ...(body === undefined ? {} : { body }), signal: request.signal }
-    const response = request.url === primary || request.url === `${primary}/` ? await execution(request.url, forwarded) : await fetch(request.url, forwarded)
+    const execution = lanes.find((lane) => request.url === lane.execution || request.url === `${lane.execution}/`)
+    const consensus = lanes.find((lane) => request.url === lane.consensus || request.url.startsWith(`${lane.consensus}/`))
+    let response: Response
+    if (execution !== undefined) response = await execution.viaExecution(request.url, forwarded)
+    else if (consensus !== undefined) response = await consensus.fetch(`${consensus.realConsensus.replace(/\/$/, '')}${request.url.slice(consensus.consensus.length)}`, forwarded)
+    // Any other address is the first lane's to allow or refuse, and it allows only the servers it was configured with.
+    else response = await (lanes[0]?.fetch ?? (async () => { throw new Error('the light client has no network to use') }))(request.url, forwarded)
     // Electron's net.fetch leaves url empty; Helios parses it, and throws from inside its WASM, ending the process.
     if (response.url === '') Object.defineProperty(response, 'url', { value: request.url })
     return response
-  }) as typeof globalThis.fetch
+  }) as Dispatcher
+  dispatch.lanes = lanes
+  globalThis.fetch = dispatch as typeof globalThis.fetch
+  return dispatch
+}
+
+export function startHeliosLightClient (config: LightClientConfig, fetch: WebFetch, report: (message: FromHost) => void, route: 'direct' | 'tunnel' = 'direct'): LightClient {
+  if (!BLOCK_ROOT_PATTERN.test(config.checkpoint)) throw new Error(`not a checkpoint: ${config.checkpoint}`)
+  const primary = config.executionRpcs[0]
+  if (primary === undefined) throw new Error('no execution RPC configured')
+  installTimerScope()
+  const names = route === 'tunnel' ? TUNNEL_NAMES : { execution: primary, consensus: config.consensusRpc }
+  dispatcher().lanes.push({ ...names, realConsensus: config.consensusRpc, viaExecution: failoverRpc(config.executionRpcs, fetch), fetch })
   Object.defineProperty(globalThis, 'WebSocket', { value: undefined, configurable: true, writable: true })
 
   let state: LightClientState = { state: 'starting' }
@@ -176,7 +216,7 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
     setState({ state: 'syncing', since: Date.now() })
     try {
       const { createHeliosProvider } = await import('@a16z/helios')
-      const client = await createHeliosProvider({ executionRpc: primary, consensusRpc: config.consensusRpc, checkpoint: config.checkpoint, network: 'mainnet', dbType: 'config' }, 'ethereum') as unknown as Helios
+      const client = await createHeliosProvider({ executionRpc: names.execution, consensusRpc: names.consensus, checkpoint: config.checkpoint, network: 'mainnet', dbType: 'config' }, 'ethereum') as unknown as Helios
       helios = client
       await withTimeout(client.waitSynced(), SYNC_TIMEOUT_MS, 'syncing')
       await refreshHead(client)
