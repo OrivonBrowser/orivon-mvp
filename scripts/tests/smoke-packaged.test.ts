@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { devToolsPort, shellTarget } from '../smoke-packaged.mjs'
+import { attachPort, devToolsPort, shellTarget } from '../smoke-packaged.mjs'
 
 describe('devToolsPort', () => {
   it('reads the port from the line Chromium prints', () => {
@@ -31,5 +31,19 @@ describe('shellTarget', () => {
       page('file:///opt/Orivon/resources/app.asar/out/renderer/index.html'),
       { type: 'service_worker', url: 'orivon-shell://renderer/index.html' }
     ])).toBeUndefined()
+  })
+})
+
+describe('attachPort', () => {
+  it('reads the port that follows --attach', () => {
+    expect(attachPort(['--attach', '9333'])).toBe(9333)
+  })
+
+  it('is undefined for a launch, and for a port that is not one', () => {
+    expect(attachPort(['release/linux-unpacked/orivon'])).toBeUndefined()
+    expect(attachPort(['--attach'])).toBeUndefined()
+    expect(attachPort(['--attach', '0'])).toBeUndefined()
+    expect(attachPort(['--attach', '70000'])).toBeUndefined()
+    expect(attachPort(['--attach', '93x3'])).toBeUndefined()
   })
 })

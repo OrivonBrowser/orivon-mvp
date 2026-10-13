@@ -1621,3 +1621,14 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner, who does not know the plan's data terms yet. Until they are settled, an agent
   redacts personal data from a bug report before reading it.
 - **Blocks:** nothing in the code; the notice's AI paragraph is *provisional* until it is settled
+
+### A410: What of the Windows shell integration works inside the Store package **[RESEARCH]**
+
+- **Question:** Inside an MSIX install, does Orivon list under Default apps for http, https and the five
+  document types its manifest declares; does `isSameStoreApp` read the person's choice right; does the
+  taskbar menu (`setUserTasks`, a program path inside `WindowsApps`) and the process AUMID `com.orivonstack.orivon`
+  (`install-launcher-menu.ts`) still group, pin and launch; and does a peer from `spawnPeer` outlive its parent?
+- **Why it matters:** the installer's build was measured and the package's was not; each is a silent failure.
+- **Options:** install the package from the first CI artifact on a Windows machine and check each (rec.); wait for the Store's pre-launch report.
+- **Who decides:** research first
+- **Blocks:** nothing

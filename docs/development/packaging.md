@@ -7,12 +7,13 @@ Orivon is packaged for three systems by [`electron-builder`](https://www.electro
 |---|---|---|
 | Linux (x64) | `orivon_<version>_amd64.deb` and `Orivon-<version>-x86_64.AppImage` | no (Linux packages are not) |
 | Windows (x64) | `Orivon-Setup-<version>-x64.exe`, an NSIS installer | no: SmartScreen warns on first run |
+| Windows (x64), Microsoft Store | `Orivon-Store-<version>-x64.appx` | no: the Store signs it after upload (section The Microsoft Store package) |
 | macOS | `Orivon-<version>-arm64.dmg` (Apple silicon) and `Orivon-<version>-x64.dmg` (Intel) | ad hoc: Gatekeeper asks once |
 
 The three systems are equal, and Linux is supported on X11 and Wayland both. Each GitHub release
-builds all of them and attaches them to itself (section Releases). No certificate is bought, so
-Windows and macOS packages are not trusted by their systems out of the box (section Windows and
-macOS). Running from source stays supported on every system ([`setup.md`](setup.md)); its users
+builds all of them and attaches them to itself (section Releases), except the Store package, which
+the owner uploads to Partner Center. No certificate is bought, so the Windows installer and the macOS
+packages are not trusted by their systems out of the box (section Windows and macOS). Running from source stays supported on every system ([`setup.md`](setup.md)); its users
 and the package users count the same, and their telemetry works identically.
 
 > **Status.** CI builds every package on its own system, installs or mounts it, and launches it
@@ -76,7 +77,8 @@ when it does not.
 2. The workflow sets each package's version from the tag (`package.json` stays `0.0.0` in git),
    builds on `ubuntu-latest`, `windows-latest` and `macos-latest`, then installs the deb and runs
    the AppImage, installs the Windows installer silently, and mounts each dmg, checking its
-   signature, and launches each one with `scripts/smoke-packaged.mjs`.
+   signature, and launches each one with `scripts/smoke-packaged.mjs`. The Windows leg also installs
+   the Store package and launches it (section The Microsoft Store package).
 3. When every system passes, a separate job attaches the packages to the release. If one system
    fails, nothing is attached: re-run the failed job from the Actions tab, and the attach job
    follows. Re-running replaces assets of the same name.
@@ -87,9 +89,9 @@ when it does not.
 
 A pull request that changes `electron-builder.yml`, `build/`, `scripts/smoke-packaged.mjs` or the
 workflow runs the same build and launch, and keeps the packages for seven days as workflow
-artifacts instead of attaching them. Actions > Release > Run workflow does the same on demand.
+artifacts instead of attaching them (the Store package, 30 days, in every run). Actions > Release > Run workflow does the same on demand.
 
-The job that writes to the release only downloads the packages and uploads them. The jobs that
+The job that writes to the release only downloads the packages (the artifacts named `orivon-*`) and uploads them. The jobs that
 run `npm ci` or Kubo hold a read-only token, so no dependency's install script can alter a release.
 
 ### On IPFS
@@ -135,12 +137,48 @@ WantedBy=timers.target
 `journalctl -u orivon-release-pinner` shows each run: a line per release pinned, refused or
 unpinned. A refused release is not downloaded again until its `ipfs.json` names another CID.
 
+## The Microsoft Store package
+
+The Windows build also writes `Orivon-Store-<version>-x64.appx` (the `appx` target and block of
+[`electron-builder.yml`](../../electron-builder.yml)), the same app as the installer wrapped in a package the Microsoft
+Store accepts, which signs it itself: nothing signs it here, and a Store install is never met with SmartScreen
+([`ADR-0081`](../decisions/ADR-0081-windows-builds-also-ship-to-the-microsoft-store.md)). The installer stays the
+only Windows file attached to a release. The package is the workflow artifact `store-msix`, which the
+`manifest` and `publish` jobs do not take, so it reaches neither the release nor its IPFS folder; the owner downloads
+it from the run page and uploads it in Partner Center ([`release-checklist.md`](release-checklist.md)).
+
+- **Identity is provisional.** `appx.identityName`, `appx.publisher` and `appx.publisherDisplayName` are placeholders
+  until the owner reserves the name: Partner Center's Product identity page gives the three values (Package/Name,
+  Package/Publisher, Package/PublisherDisplayName), which go into `electron-builder.yml` verbatim. The Store refuses a
+  package with any other identity. `applicationId` (`Orivon`) and `displayName` are Orivon's own.
+- **The tiles are Orivon's.** `build/appx/` holds the four logos the manifest names and two more tile sizes, cut from
+  `build/icon.png` with ImageMagick (`convert build/icon.png -resize 150x150 Square150x150Logo.png`, and likewise for
+  the others); without them electron-builder fills the package with its own stock logo.
+- **Protocols and file types.** `protocols` becomes `windows.protocol` entries for http and https. The five document
+  types the installer registers under Open with (`.html`, `.htm`, `.xhtml`, `.svg`, `.pdf`) are in
+  `build/appx-extensions.xml`, read through `appx.customExtensionsPath`, so the installer is unaffected. The
+  manifest's other facts: Windows 10 1809 as the minimum, `en-US` as the language, the `runFullTrust` capability
+  (electron-builder adds it; a Win32 app needs it), no auto-launch extension.
+- **What CI proves.** The Windows job prints the package's `AppxManifest.xml`, signs a copy with a throwaway
+  certificate whose subject is the manifest's publisher, trusts it for the run, installs it (`Add-AppxPackage`),
+  launches it through its AUMID (`shell:AppsFolder\<PackageFamilyName>!Orivon`, the only way an app gets its package
+  identity), asserts an `Orivon.exe` from the package's own folder keeps running for 20 seconds, then starts the
+  app inside the package with `Invoke-CommandInDesktopPackage` and a DevTools port and runs
+  `scripts/smoke-packaged.mjs --attach <port>` against it, and removes the package. No secret is involved.
+- **What differs inside the package.** `process.windowsStore` is true. No update check runs and Settings says the
+  Store delivers updates. The default-browser read compares the person's handler's `AppUserModelID` with the
+  package's own, since a packaged handler has no path (`src/main/os/windows-store.ts`, `default-browser-runner.ts`);
+  Make default opens the default-apps page without selecting an entry. The taskbar menu, the process's app user
+  model id and a second Orivon started by the first are written for the installer and unchecked inside the package
+  (`docs/open-questions.md` A410).
+
 ## Windows and macOS
 
 **Windows.** The installer is unsigned. On first run SmartScreen shows "Windows protected your
 PC": **More info**, then **Run anyway**. It installs for the current user into
 `%LOCALAPPDATA%\Programs\Orivon`, needs no administrator, and lets the person choose another
-folder. Silent install: `Orivon-Setup-<version>-x64.exe /S`.
+folder. Silent install: `Orivon-Setup-<version>-x64.exe /S`. A person who would rather not see the warning installs
+from the Microsoft Store instead (section The Microsoft Store package).
 
 **macOS.** The app is signed ad hoc, not with a Developer ID, and not notarized. Apple silicon
 refuses a binary with no signature at all, and packaging rewrites the Electron binary (its fuses,
@@ -171,7 +209,7 @@ it also installs the newest published release through it, which exercises the lo
 digest check.
 
 **Signing later.** A Developer ID certificate (with notarization) and a Windows code-signing
-certificate would remove both warnings. electron-builder reads them from the environment
+certificate would remove both warnings (the Store package has none to remove). electron-builder reads them from the environment
 (`CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`), so
 adding them is repository secrets, the matching `env:` lines in the workflow, and removing
 `identity: "-"` and `hardenedRuntime: false` from `mac:`.

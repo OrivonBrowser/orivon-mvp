@@ -68,7 +68,8 @@ servers for data. None of them is trusted to be right; each of them sees what it
   damaged with no way to open it, is unverified (*provisional*; a run on a real macOS 26 Mac
   settles it). The one-line Terminal install in the [README](../README.md#download) avoids the
   prompt entirely. [`development/packaging.md`](development/packaging.md) has the detail. Linux
-  packages are not signed on any distribution.
+  packages are not signed on any distribution. The Microsoft Store package is signed by the Store and
+  never warned; an install from it is updated by the Store and looks for no update itself.
 
 ## Usage statistics
 

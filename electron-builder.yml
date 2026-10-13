@@ -1,15 +1,18 @@
-# electron-builder configuration: Linux (deb + AppImage), Windows (an NSIS installer) and
-# macOS (a dmg each for Apple silicon and Intel). `npm run package:linux|win|mac` builds one
-# system on that system; .github/workflows/release.yml builds all three on each GitHub
-# release, launches each package, and attaches them to the release
-# (docs/development/packaging.md).
+# electron-builder configuration: Linux (deb + AppImage), Windows (an NSIS installer and a Microsoft
+# Store package) and macOS (a dmg each for Apple silicon and Intel). `npm run package:linux|win|mac`
+# builds one system on that system; .github/workflows/release.yml builds all three on each GitHub
+# release, launches each package, and attaches them to the release (docs/development/packaging.md).
 #
-# No certificate is bought: Windows packages are unsigned, so SmartScreen warns on first
-# run, and macOS packages are ad-hoc signed (`mac.identity` below), so Gatekeeper asks the
-# person to allow the app once. The schema here is electron-builder 26.x's, checked against
+# No certificate is bought. The Windows installer is unsigned, so SmartScreen warns on first run,
+# and it is the only Windows file attached to a release. The Windows build also writes an AppX
+# package (the `appx` block below) for the Microsoft Store, which signs it itself: it is left
+# unsigned here, never attached to a release, and kept as a workflow artifact for the owner to
+# upload in Partner Center. macOS packages are ad-hoc signed (`mac.identity` below), so Gatekeeper
+# asks the person to allow the app once. The schema here is electron-builder 26.x's, checked against
 # the installed node_modules/app-builder-lib/scheme.json.
 # The `win` and `mac` blocks also register Orivon with the system as a browser: `protocols`
-# below, and build/installer.nsh for the Windows registry entries. Whether a built package
+# below, and build/installer.nsh for the Windows installer's registry entries
+# (build/appx-extensions.xml is the Store package's equivalent). Whether a built package
 # lists Orivon as a browser on Windows and macOS is unverified (*provisional*).
 
 appId: com.orivonstack.orivon
@@ -252,6 +255,9 @@ win:
     - target: nsis
       arch:
         - x64
+    - target: appx
+      arch:
+        - x64
 
 nsis:
   # A per-user install needs no administrator and lets the person choose the folder. It writes
@@ -262,6 +268,36 @@ nsis:
   allowToChangeInstallationDirectory: true
   include: build/installer.nsh
   artifactName: ${productName}-Setup-${version}-${arch}.${ext}
+
+# The Microsoft Store package. It is signed by the Store after upload, so nothing here signs it, and the
+# `publisher` below is only what the manifest claims until the Store replaces the signature.
+# *Provisional*: `identityName`, `publisher` and `publisherDisplayName` are placeholders. Partner Center
+# issues the real values on the product's "Product identity" page once the name is reserved (Package/Name,
+# Package/Publisher, Package/PublisherDisplayName); put them here verbatim. The Store refuses an upload
+# whose identity differs from the reserved one, so a package built with these placeholders cannot be
+# published by mistake.
+# `Application Id` and the display name below are chosen here, not issued: `Orivon` is the `!Orivon` of the
+# package's AUMID (src/main/os/windows-store.ts reads it back; the release workflow launches by it).
+# Electron 44 runs on Windows 10 and later; 1809 (10.0.17763) is the floor chosen here, which nothing older is
+# tested against (*provisional*), and the tested version only has to be at least that. The installed program is
+# the same app.asar as the installer's, with the same fuses.
+appx:
+  identityName: PROVISIONAL.OrivonBrowser
+  publisher: CN=PROVISIONAL-PUBLISHER-ID
+  publisherDisplayName: Orivon
+  applicationId: Orivon
+  displayName: Orivon Browser
+  languages:
+    - en-US
+  minVersion: 10.0.17763.0
+  maxVersionTested: 10.0.22621.0
+  # The tiles are the app icon on no background (build/appx/, cut from build/icon.png): without them
+  # electron-builder fills the Store's own tiles with its stock logo.
+  backgroundColor: transparent
+  addAutoLaunchExtension: false
+  # The file types Orivon offers under "Open with", as build/installer.nsh registers them for the installer.
+  customExtensionsPath: build/appx-extensions.xml
+  artifactName: ${productName}-Store-${version}-${arch}.${ext}
 
 mac:
   target:
