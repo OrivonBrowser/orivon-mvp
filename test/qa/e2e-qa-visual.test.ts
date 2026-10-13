@@ -264,6 +264,32 @@ for (const scheme of SCHEMES) {
     }
   }, QA_TEST_TIMEOUT_MS)
 
+  it(`Settings > Privacy and data > Tunnel looks right on Nym and on an address (${scheme})`, async () => {
+    const { app, chrome } = await launchShell({ scheme, seedProfile: async (dir) => { writeFileSync(join(dir, 'settings.json'), JSON.stringify({ version: 2, values: {} })) } })
+    try {
+      await runPhase('visual states of Settings > Privacy and data > Tunnel', async (check) => {
+        const settings = await openInternal(app, chrome, 'settings', '/privacy')
+        await settings.waitForSelector('#row-route-kind')
+        await settings.locator('#row-route-kind').scrollIntoViewIfNeeded()
+        check('the tunnel choice is Nym (built in), the Nym status line is shown and the address row is not', (await settings.locator('#row-route-kind select').inputValue()) === 'nym' && await settings.locator('#row-route-nym-status').isVisible() && !(await settings.locator('#row-route-proxy').isVisible()))
+        await state(check, app, `settings-tunnel-nym-${scheme}`, {
+          expected: 'orivon://settings/privacy is open with the "Tunnel" row showing the choice "Nym (built in)", under it a "Nym" row saying "Starts when an app that uses it connects." and a "Test the tunnel" row with a Test button. No address field is shown.',
+          action: 'Opened orivon://settings/privacy on a fresh profile and scrolled to the tunnel rows.'
+        })
+        await settings.locator('#row-route-kind select').selectOption('socks5')
+        await settings.waitForSelector('#row-route-proxy input')
+        await settings.locator('#row-route-kind').scrollIntoViewIfNeeded()
+        check('choosing the address shows its field and hides the Nym status', await settings.locator('#row-route-proxy input').isVisible() && !(await settings.locator('#row-route-nym-status').isVisible()))
+        await state(check, app, `settings-tunnel-address-${scheme}`, {
+          expected: 'The "Tunnel" row shows "Your own SOCKS5 address"; under it a "SOCKS5 address" row with an empty text field whose placeholder is 127.0.0.1:9050, and the "Test the tunnel" row with a Test button that is greyed out. The Nym row is gone.',
+          action: 'Chose "Your own SOCKS5 address" in the tunnel row.'
+        })
+      })
+    } finally {
+      await closeElectron(app)
+    }
+  }, QA_TEST_TIMEOUT_MS)
+
   it(`the telemetry popup "Enter Orivon" opens looks right, closed and with what is sent open (${scheme})`, async () => {
     const { app } = await launchShell({ scheme, env: { ORIVON_INTRO: 'once', ORIVON_TELEMETRY: 'on' }, chrome: false })
     try {

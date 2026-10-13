@@ -4,6 +4,7 @@
 
 import { randomBytes } from 'node:crypto'
 import { createSocks5Provider, isolationCredentials } from '../../broker/route/socks5.js'
+import type { RouteProvider } from '../../broker/route/provider.js'
 import { createRouteFor } from '../../broker/route/table.js'
 import type { RouteTarget } from '../../broker/route/table.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
@@ -44,6 +45,8 @@ export interface TemporaryRoutesDeps {
   readonly controller: Pick<RouteController, 'prepareTemporary' | 'releaseTemporary'>
   /** The proxy now, read on every connection. */
   readonly proxy: () => RouteTarget | undefined
+  /** The provider for a proxy that is not a SOCKS5 address (Nym), or undefined for the SOCKS5 one. */
+  readonly providerFor?: (key: string, target: RouteTarget) => RouteProvider | undefined
   readonly sessionFor: (partition: string) => TemporarySession
   /** How many web contents are alive in the session. */
   readonly liveContentsIn: (session: TemporarySession) => number
@@ -102,7 +105,7 @@ export function createTemporaryRoutes (deps: TemporaryRoutesDeps): TemporaryRout
       const key = `temporary-tab:${partition}`
       const routeFor = createRouteFor({
         targetFor: () => deps.proxy(),
-        providerFor: (_key, target) => createSocks5Provider({ host: target.host, port: target.port, credentials: credentials(key) })
+        providerFor: (_key, target) => deps.providerFor?.(key, target) ?? createSocks5Provider({ host: target.host, port: target.port, credentials: credentials(key) })
       })
       const session = deps.sessionFor(partition)
       const front = await startRouteFront({ provider: () => routeFor(key)?.provider })

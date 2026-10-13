@@ -5,7 +5,7 @@ transpiled by jco) and everything it is handed, for every kind of node. A node s
 loopback port; the protocol that uses it reads from that endpoint and verifies what it reads, so nothing
 here is trusted for content. [`entry.ts`](entry.ts) is the one process entry and [`kinds.ts`](kinds.ts)
 finds the kind a start message names; [`service.ts`](service.ts) is the work, [`component.ts`](component.ts)
-loads jco's output from a directory, [`node-net.ts`](node-net.ts) and [`node-fs.ts`](node-fs.ts) are the only
+loads jco's output from a directory (it reads each file through [`pinned-file.ts`](pinned-file.ts), which the Nym tunnel host uses too), [`node-net.ts`](node-net.ts) and [`node-fs.ts`](node-fs.ts) are the only
 network and files the component reaches ([`node-dns.ts`](node-dns.ts) is how `node-net.ts` finds a name's addresses), and [`protocol.ts`](protocol.ts) is what main and this process say to
 each other. The main process's side (starting on demand, the pinned-file check, the idle stop, the backoff and
 the refusal memory) is [`../../main/verifier/local-node-controller.ts`](../../main/verifier/local-node-controller.ts)

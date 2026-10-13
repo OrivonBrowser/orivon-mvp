@@ -9,7 +9,8 @@ It is the Nym mixnet client that Orivon runs as the built-in tunnel for installe
 | `smolmix_wasm_bg.wasm` | The client, compiled to WebAssembly |
 | `smolmix_wasm.js` | Its wasm-bindgen glue (an ES module) |
 | `smolmix_wasm.d.ts` | The glue's types |
-| `LICENSE` | Apache-2.0, Nym's licence for all of it |
+| `LICENSE` | Apache-2.0, Nym's licence for its own code |
+| `THIRD_PARTY_LICENSES` | The licence text and copyright notice of every Rust crate compiled into the module, made with `cargo-about` |
 
 **Exports beyond Nym's.** `connectTcp(host, port)` resolves the name through the mixnet and
 returns `read()` (a chunk, or `null` at the end), `write(bytes)` and `close()`. `bindUdp()` returns

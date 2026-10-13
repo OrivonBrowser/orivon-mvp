@@ -14,6 +14,11 @@ that is tied to the running browser: which origins (apps and websites) the perso
 | `route-controller.ts` | Points each of an identity's sessions at its front, puts the WebRTC policy on every web contents in them, stops every session the runtime creates while the whole browser is on the tunnel and points it at the shared front unless its maker claims it (`own-proxy.ts`), points `app.setProxy` at the shared front, closes what the app held open when the route changes (sessions first, then the broker's handles), reloads every page in them on a switch, and answers the front's proxy challenge. One app's switches run in order and never behind another app's |
 | `route-service.ts` | The hub, the controller and the store together, with the proxy setting and the browser-wide setting followed once the settings are read |
 | `route-subsystem.ts` | Starts them, wires Electron's sessions (every `session-created`), web contents, `login` event and `app.setProxy` in, makes the session that only follows the system, and publishes `ctx.routes` |
+| `nym-subsystem.ts` | The Nym tunnel as the shell reaches it: starts the host on the first ask (a quiet loopback port and a secret made for each start), follows what it reports, stops it ten minutes after its last tunnel, refuses to start it with a system proxy configured or without its files, and runs the Settings Test. Electron-free over a `ProcessSupervisor` |
+| `nym-launch.ts` | The one file of Nym that imports `electron`: the utility process, where the module's files are, the proxy check |
+| `nym-supervisor.ts`, `nym-messages.ts` | Keeps the host's process running, and checks every message it posts |
+| `nym-provider.ts` | The route provider of an app on Nym: the SOCKS5 provider at the host's current port, with the app's isolation user name and the host's secret, asking `nym-subsystem.ts` for the address at each use. A Nym that cannot run is an `unreachable` refusal, never a direct dial. `NYM_TARGET` is the route target that stands for it |
+| `nym-status.ts`, `nym-test-seam.ts` | What Nym is doing, as plain data; and, in a test build only, a stand-in module run in place of the pinned one |
 | `forget-watch.ts` | Clears the route of an app the broker no longer knows, and lets go of its front and sessions |
 | `route-domain.ts` | What the Settings page may ask: whether the proxy answers |
 | `lookup-session.ts` | The session the browser's own lookups about a routed app, a tunnelled website, or a site a temporary routed tab shows, go through (a tab icon from another host, the Web3 Score provider), the session a lookup about a website set to off uses while the whole browser is on the tunnel, and the answer to the front's proxy challenge for a request made from main |
@@ -32,7 +37,7 @@ that is tied to the running browser: which origins (apps and websites) the perso
 | `tunnel-mark.ts` | Pure: what the address bar's key says about the page in front and the tunnel (`on`, `partial`, `down`) |
 | `leaving-routes.ts` | What the shell asks of all this when a routed app's page opens an address: the decision, the temporary session, the app switch |
 
-**What it depends on.** [`../../broker/route/`](../../broker/route/) (the route, its SOCKS5 provider and the probe),
+**What it depends on.** [`../../broker/route/`](../../broker/route/) (the route, its SOCKS5 provider and the probe), [`../verifier/process-supervisor.ts`](../verifier/process-supervisor.ts), [`../verifier/local-node-artifact.ts`](../verifier/local-node-artifact.ts) and [`../verifier/loopback-port.ts`](../verifier/loopback-port.ts) (the Nym host is supervised, checked and given a port as a local node is), [`../../protocols/nym-tunnel/protocol.ts`](../../protocols/nym-tunnel/protocol.ts) (what the host says),
 [`../settings/proxy-checks.ts`](../settings/proxy-checks.ts), [`../../broker/grants/origin-hash.ts`](../../broker/grants/origin-hash.ts), [`../../broker/policy/origin.ts`](../../broker/policy/origin.ts), [`../../protocols/builtin.ts`](../../protocols/builtin.ts) (which addresses Orivon serves),
 [`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts),
 [`../../loader/electron/request-fetch.ts`](../../loader/electron/request-fetch.ts) (the `fetch` that signs in to a front itself), and `electron` for types, except
@@ -41,7 +46,7 @@ that is tied to the running browser: which origins (apps and websites) the perso
 **What it must never import.** [`../shell/tabs.ts`](../shell/tabs.ts) or [`../shell/tab-view.ts`](../shell/tab-view.ts).
 Nothing here dials a destination itself: a stream to a destination comes from the route's provider and from nowhere else.
 
-**Tied to Electron?** Only `route-subsystem.ts` imports an `electron` value; the rest runs under plain vitest against fakes
+**Tied to Electron?** Only `route-subsystem.ts` and `nym-launch.ts` import an `electron` value; the rest runs under plain vitest against fakes
 and a SOCKS5 server on loopback ([`../../broker/route/tests/`](../../broker/route/tests/)).
 
 **Owner stream.** `broker`.
@@ -49,6 +54,13 @@ and a SOCKS5 server on loopback ([`../../broker/route/tests/`](../../broker/rout
 **Every path to the network, and whether it takes this route:** [`docs/architecture/egress.md`](../../../docs/architecture/egress.md). A file added here or elsewhere that can reach the network is a row there (`npm run check:egress`).
 
 ## Design notes
+
+**Nym is a route target that names no address.** The host's port is new at each start, so the route to Nym is built
+against `NYM_TARGET` (`nym.invalid`, port 0) and its provider asks `nym-subsystem.ts` for the real address at each connection.
+A switch between Nym and an address changes the target, so the route table builds the provider again and the hub
+closes what the app held, as it does for any change of tunnel. An address typed while Nym is the choice changes nothing.
+While Nym's host is coming up a connection waits for it (up to the SOCKS5 provider's 70 seconds); if it cannot run the
+connection fails and the Settings row and the site-info popover say why.
 
 **The front is HTTP because Chromium cannot sign in to a SOCKS proxy.** It can send a user name and password to an HTTP
 proxy, so each app's front demands one secret, random per run and held only in this process, and the controller answers

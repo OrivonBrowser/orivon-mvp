@@ -47,8 +47,8 @@ export interface RouteHubOptions {
   readonly isApp?: (origin: string) => boolean
   /** The apps installed on this computer, asked when the proxy changes while the store cannot say what was set or the browser-wide setting is on, and when that setting changes, so their sessions are pointed again. */
   readonly installed?: () => readonly string[]
-  /** Builds the provider for one app and proxy; the default is SOCKS5 with a distinct username and password per app. */
-  readonly providerFor?: (key: string, target: RouteTarget) => RouteProvider
+  /** Builds the provider for one app and proxy where the proxy is not a SOCKS5 address (Nym); undefined falls back to SOCKS5 with a distinct username and password per app. */
+  readonly providerFor?: (key: string, target: RouteTarget) => RouteProvider | undefined
 }
 
 export interface RouteHub {
@@ -112,7 +112,7 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
     }
   })
   const isApp = options.isApp ?? (() => true)
-  const build = options.providerFor ?? ((key: string, target: RouteTarget) => createSocks5Provider({ host: target.host, port: target.port, credentials: credentials(key) }))
+  const build = (key: string, target: RouteTarget): RouteProvider => options.providerFor?.(key, target) ?? createSocks5Provider({ host: target.host, port: target.port, credentials: credentials(key) })
   /** An unreadable list is not "nothing routed": with a proxy set, every origin is. */
   const unreadableWithProxy = (): boolean => store.unreadable() && options.proxy() !== undefined
   const routed = (origin: string): boolean => {

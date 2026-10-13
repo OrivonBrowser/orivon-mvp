@@ -1,4 +1,5 @@
 import type { SiteRoute, SiteTunnel } from '../../main/permissions/site-info.js'
+import type { NymState } from '../../main/route/nym-status.js'
 import { createSwitch } from './switch.js'
 import { renderRouteLine } from './route-line.js'
 
@@ -52,7 +53,7 @@ function paragraph (className: string, text: string): HTMLElement {
 }
 
 /** The switch row, its explanation, the status line of a site that is on, and the notice while it is open. */
-export function renderTunnelSection (container: HTMLElement, tunnel: SiteTunnel, route: SiteRoute | undefined, extensions: readonly string[], view: TunnelViewState, callbacks: TunnelCallbacks): void {
+export function renderTunnelSection (container: HTMLElement, tunnel: SiteTunnel, route: SiteRoute | undefined, extensions: readonly string[], view: TunnelViewState, callbacks: TunnelCallbacks, nym?: NymState): void {
   const section = document.createElement('div')
   section.className = 'tunnel-section'
 
@@ -70,7 +71,7 @@ export function renderTunnelSection (container: HTMLElement, tunnel: SiteTunnel,
 
   const hint = tunnelHint(tunnel)
   if (hint !== undefined) section.append(paragraph(tunnel.unreadable || tunnel.blocked !== undefined ? 'route-line route-line-down' : 'route-line', hint))
-  if (tunnel.on && route !== undefined) section.append(renderRouteLine(route, tunnel.web3 ? 'web3' : 'site'))
+  if (tunnel.on && route !== undefined) section.append(renderRouteLine(route, tunnel.web3 ? 'web3' : 'site', nym))
   const reach = extensionsHint(extensions, tunnel.profile)
   if (reach !== undefined) section.append(paragraph('route-line', reach))
   if (view.failed) section.append(paragraph('route-line route-line-down', TUNNEL_FAILED))

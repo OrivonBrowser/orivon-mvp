@@ -5,6 +5,7 @@
 // single god-object covering both the all-sites list and the per-site
 // popover (code-guidelines.md Rule 2).
 
+import { isNymTarget } from '../route/nym-provider.js'
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import { isLocalFileKey, isolationKeyFromUrl, originFromUrl } from '../../broker/policy/origin.js'
 import type { SubsystemContext } from '../registry.js'
@@ -113,7 +114,10 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     const update = updateFor(info.origin)
     const route = ctx.routes?.hub.state(info.origin)
     const tunnel = tunnelFor(info.origin)
-    return { ...info, ...(update === undefined ? {} : { update }), ...(route === undefined || route === 'off' ? {} : { route }), ...(tunnel === undefined ? {} : { tunnel }) }
+    // What Nym is doing is asked only for an origin whose route is on and leaves through it.
+    const proxy = route === undefined || route === 'off' ? undefined : ctx.routes?.proxy()
+    const nym = proxy === undefined || !isNymTarget(proxy) ? undefined : ctx.routes?.nym.state()
+    return { ...info, ...(update === undefined ? {} : { update }), ...(route === undefined || route === 'off' ? {} : { route }), ...(tunnel === undefined ? {} : { tunnel }), ...(nym === undefined ? {} : { nym }) }
   }
 
   /** The profile the website lives in now. */

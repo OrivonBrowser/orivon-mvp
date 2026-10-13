@@ -21,8 +21,11 @@ session. A row may not name a file that is gone or that the scan no longer match
 - **Loopback.** Never leaves this computer.
 - **Routed.** Takes the route of the app or website it works for, with the name unresolved here, and is refused or stopped
   when the route is down.
-- **The tunnel's own way in.** Connects to the person's SOCKS5 address, the one place a connection is direct by
-  definition.
+- **The tunnel's own way in.** Connects to the tunnel's SOCKS5 address, the person's own or the Nym host's loopback
+  port, the one place a connection from the browser is direct by definition.
+- **The tunnel's own way out.** Nym's own connections to its directory and gateways, made by the Nym host. They are
+  direct by definition, since they are the tunnel; they show this computer's address to Nym's gateways, and a system
+  proxy stops the host from starting, so they never go around one. That check asks the system's proxy, never the tunnel's front on the default session, so they stay direct (and Nym can start) while the whole browser is on the tunnel.
 - **Tunnelled while the whole browser is on it.** With `network.tunnel.everywhere` on, the request goes through the
   tunnel (a request made with `net.request` that signs in to the shared front itself, or a session pointed at the
   front) or does not happen; an origin the person set to off is asked for on the system's proxy instead. With the
@@ -47,8 +50,8 @@ every other app and website is *not routed*.
 | `src/broker/route/deadline.ts` | Nothing: uses only a timeout constant | One deadline over opening a routed connection | Loopback |
 | `src/broker/route/routed-socket.ts` | The destination the app named, through its route | A routed app's `orivon.net.connect` | Routed |
 | `src/broker/route/routed-secure.ts` | The destination the app named, through its route, over TLS | A routed app's `orivon.net.connectSecure` | Routed |
-| `src/broker/route/socks5.ts` | The person's SOCKS5 address (TCP, and the UDP relay it names) | The route provider every routed path uses | The tunnel's own way in |
-| `src/broker/route/socks5-probe.ts` | The person's SOCKS5 address | The Settings page's Test: the greeting only, no stream | The tunnel's own way in |
+| `src/broker/route/socks5.ts` | The tunnel's SOCKS5 address: the person's, or the Nym host's loopback port (TCP, and the UDP relay it names) | The route provider every routed path uses | The tunnel's own way in |
+| `src/broker/route/socks5-probe.ts` | The person's SOCKS5 address | The Settings page's Test of an address: the greeting only, no stream. The Test of Nym opens one stream to a name through Nym's host instead (`src/main/route/nym-subsystem.ts`, through `socks5.ts`) | The tunnel's own way in |
 | `src/broker/transport/ipc.ts` | Through the adapters above | Gives the broker its dial, TLS, UDP, listen and resolve functions, and the question "does a proxy apply?" (T20), asked of a session that only follows the system, never of the default session | Not routed for an unrouted app, which is refused unless the system has no proxy for the destination; a routed app is not asked. An app set to off while the whole browser is on the tunnel is such an app: its answer is the system's |
 
 ## The loader: apps, their files and the third parties they load
@@ -88,6 +91,9 @@ every other app and website is *not routed*.
 | `src/protocols/local-node/node-net.ts` | Public peers by TCP, DNS resolvers by UDP port 53, through the broker's adapters; listens on loopback | The local IPFS and Swarm nodes' sockets | Not routed, so the node does not run while a proxy applies, the tunnel for the whole browser included: it dials its peers by address and looks names up with datagrams of its own, which a SOCKS5 tunnel does not carry reliably. The controller refuses it with that reason and IPFS is read through gateways over the tunnel instead |
 | `src/protocols/local-node/service.ts` | The node's DNS-over-HTTPS endpoints with the process's own `fetch`; the node's own API on loopback; the adapters above | Running a local node, naming its peers, and waiting for its readiness | Never runs while the whole browser is on the tunnel, as `node-net.ts`; loopback for the readiness check |
 | `src/protocols/verifier-host/entry.ts` | Through Electron's `net` in the verifier host: gateways, execution and consensus RPCs, DNS-over-HTTPS, name-service and CCIP-Read hosts, the Swarm and IPFS endpoints | Resolving `.eth` names and reading `ipfs://`, `ipns://` and `bzz://` | Tunnelled while the whole browser is on it: `app.setProxy` points the host at the shared front and the host fetches with `net.request`, signing in itself, resolving no name here; the host restarts when the setting flips, so its direct routes stand down. Not routed otherwise: the default proxy only, and a Web3 name whose website has the tunnel on is tunnelled in part, which the popover and the address bar's key say |
+| `src/protocols/nym-tunnel/module-net.ts` | Nym's directory (`https`) and gateways (`wss`) at public unicast addresses only: every address a name has is checked, at the dial, and any scheme but `https:` is refused (a redirect is followed only to another address that passes the same checks) | The Nym module's `fetch` and `WebSocket`, the only network its process has | The tunnel's own way out |
+| `src/protocols/nym-tunnel/service.ts` | Nothing of its own: puts `module-net.ts`'s `fetch` and `WebSocket` in the process's globals for the module | Loading the Nym module | The tunnel's own way out, as `module-net.ts` |
+| `src/protocols/nym-tunnel/socks-server.ts` | Listens on `127.0.0.1` behind a secret; opens streams and datagrams only through the Nym module, one tunnel per SOCKS5 user name | The SOCKS5 server the tunnel for apps points at when the choice is Nym | Loopback for the listener; every stream and datagram it opens is carried by Nym |
 | `src/protocols/verifier-host/direct-fetch.ts` | One gateway or CCIP-Read host at an address pinned in advance, over `https`, with TLS checked against the real name | The DNS-tamper fallback and the pinned CCIP-Read request | Not routed. It runs only when no proxy applies to the host (T31, T40), so never while the whole browser is on the tunnel |
 | `src/protocols/verifier-host/light-client/light-client.ts` | Nothing of its own: replaces the host's `globalThis.fetch` with the allowlisted one that calls `entry.ts`'s fetch, and removes `WebSocket` | Helios, the Ethereum light client | As `entry.ts` |
 | `src/protocols/verifier-host/serve/server.ts` | Listens on loopback with TLS | The server every protocol host name resolves to | Loopback |

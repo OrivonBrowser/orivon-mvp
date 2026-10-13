@@ -9,6 +9,7 @@
 // is ROW-PER-DECLARED-CAPABILITY instead -- the manifest is the source of
 // what to show a switch for; whether it is on comes from the live grants.
 
+import type { NymState } from '../route/nym-status.js'
 import type { CapabilityKind, ConsentGranularity, Grant, Manifest, Pattern } from '../../contracts/index.js'
 import type { PickedPath } from '../../broker/broker-contracts.js'
 import { decideGrantRequest } from '../../broker/policy/request-grant.js'
@@ -87,6 +88,8 @@ export interface SiteInfo {
   readonly update: SiteUpdate | undefined
   /** The state of the app's route when the person routed it through their proxy (`../route/`). */
   readonly route?: SiteRoute
+  /** What Nym is doing, when the app's route leaves through it. */
+  readonly nym?: NymState
   /** The tunnel switch of a website; absent for an installed app, a local file and this computer. */
   readonly tunnel?: SiteTunnel
   /** True when the site has asked for at least one Orivon capability or
