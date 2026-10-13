@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_ENDPOINTS } from '../../src/main/verifier/endpoints.js'
-import { dirVariable, dohEndpointsFrom, exitCodeFor, fetchLocalNode, fetchLocalNodes, gatewaysFrom, localNodeNames, notPublished } from '../fetch-local-nodes.mjs'
+import { NODE_FOLDER, dirVariable, dohEndpointsFrom, exitCodeFor, fetchLocalNode, fetchLocalNodes, gatewaysFrom, localNodeNames, notPublished } from '../fetch-local-nodes.mjs'
 
 const GLUE = Buffer.from('a pretend glue')
 const CORE = Buffer.from('a pretend core module')
@@ -222,16 +224,18 @@ describe('fetchLocalNodes', () => {
   const GLUE_B = Buffer.from('the second node glue')
   beforeEach(async () => {
     resources = await mkdtemp(join(tmpdir(), 'fetch-local-nodes-'))
-    for (const folder of ['swarm-node', 'other-node', 'lookup-relay-node', 'not-a-node-folder', 'default-profile']) await mkdir(join(resources, folder))
+    for (const folder of ['swarm-node', 'other-node', 'lookup-relay-node', 'nym-tunnel', 'not-a-node-folder', 'tunnel-not', 'default-profile']) await mkdir(join(resources, folder))
     await writeFile(join(resources, 'swarm-node', 'swarm-node.json'), MANIFEST('bafyexample'))
     await writeFile(join(resources, 'other-node', 'other-node.json'), JSON.stringify({ cid: 'bafyother', name: 'other-node', files: [{ name: 'other-node.js', bytes: GLUE_B.length, sha256: digest(GLUE_B) }] }))
     await writeFile(join(resources, 'lookup-relay-node', 'lookup-relay-node.json'), JSON.stringify({ cid: 'bafylookup', name: 'lookup-relay-node', files: [] }))
+    await writeFile(join(resources, 'nym-tunnel', 'nym-tunnel.json'), JSON.stringify({ cid: 'bafynym', name: 'nym-tunnel', files: [] }))
     await writeFile(join(resources, 'not-a-node-folder', 'not-a-node-folder.json'), '{}')
+    await writeFile(join(resources, 'tunnel-not', 'tunnel-not.json'), '{}')
   })
   afterEach(async () => { await rm(resources, { recursive: true, force: true }) })
 
-  it('finds every folder named <name>-node that holds its manifest, a name of several words included', () => {
-    expect(localNodeNames(resources)).toEqual(['lookup-relay-node', 'other-node', 'swarm-node'])
+  it('finds every folder named <name>-node or <name>-tunnel that holds its manifest, a name of several words included', () => {
+    expect(localNodeNames(resources)).toEqual(['lookup-relay-node', 'nym-tunnel', 'other-node', 'swarm-node'])
   })
 
   it('fetches the files of each node into its own folder', async () => {
@@ -252,5 +256,27 @@ describe('fetchLocalNodes', () => {
   it('reads each node\'s local directory from the variable named after it', () => {
     expect(dirVariable('swarm-node')).toBe('ORIVON_SWARM_NODE_DIR')
     expect(dirVariable('other-node')).toBe('ORIVON_OTHER_NODE_DIR')
+    expect(dirVariable('nym-tunnel')).toBe('ORIVON_NYM_TUNNEL_DIR')
+  })
+})
+
+describe('the Nym tunnel\'s manifest', () => {
+  const resources = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'resources')
+  const manifest = JSON.parse(readFileSync(join(resources, 'nym-tunnel', 'nym-tunnel.json'), 'utf8')) as { cid: string, name: string, files: Array<{ name: string, bytes: number, sha256: string }> }
+
+  it('is found by the fetch script, in a folder the rule accepts', () => {
+    expect(NODE_FOLDER.test('nym-tunnel')).toBe(true)
+    expect(NODE_FOLDER.test('nym-tunnels')).toBe(false)
+    expect(localNodeNames(resources)).toContain('nym-tunnel')
+  })
+
+  it('names itself like its folder, pins a CIDv1 directory, and pins each file by size and sha256', () => {
+    expect(manifest.name).toBe('nym-tunnel')
+    expect(manifest.cid).toMatch(/^bafy[a-z2-7]{50,}$/)
+    expect(manifest.files.map((file) => file.name)).toEqual(['smolmix_wasm.js', 'smolmix_wasm_bg.wasm', 'smolmix_wasm.d.ts', 'LICENSE', 'README.md'])
+    for (const file of manifest.files) {
+      expect(Number.isInteger(file.bytes) && file.bytes > 0).toBe(true)
+      expect(file.sha256).toMatch(/^[0-9a-f]{64}$/)
+    }
   })
 })

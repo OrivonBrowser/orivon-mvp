@@ -32,9 +32,11 @@ coverage/
 release/
 # Fetched by scripts/fetch-bundled-extensions.mjs from pinned release assets, never committed.
 resources/default-profile/extensions/
-# Fetched by scripts/fetch-local-nodes.mjs from the files each node's manifest pins, never committed.
+# Fetched by scripts/fetch-local-nodes.mjs from the files each node's and tunnel's manifest pins, never committed.
 resources/*-node/*
 !resources/*-node/*-node.json
+resources/*-tunnel/*
+!resources/*-tunnel/*-tunnel.json
 *.AppImage
 *.deb
 
