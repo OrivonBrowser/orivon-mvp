@@ -100,11 +100,14 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Narrowing the window while the permissions panel was open quit Orivon every time; the panel now closes first, as the menu does.
 - Slow IPFS loads traced to public gateways (one throttling, one dead), not code; Orivon now asks the next gateway sooner when one stalls.
 - Swarm sites (bzz:// and .eth on Swarm) now load with every chunk checked against its hash; it stays off until Orivon's own Swarm node ships.
+- IPFS sites load from Orivon's own IPFS node on your computer, every block still checked; it switches on once the node is published.
+- A page can no longer tell which IPFS sites you opened: the node keeps a separate store per site, and tabs cannot reach it.
 
 ### In my head
 
 - AI runs were slow from process, not code: a fast lane for small changes, related-only local tests, and a session time report.
 - Asking for telemetry with a forced choice, not a pre-ticked box: legal in Europe, and people say yes almost as often.
 - Swarm should come from a node on the user's own machine, never public gateways: trustless and permissionless, or not at all.
+- Letting users pin sites and serve them to others is the next step for the IPFS node; today it only reads.
 
 ### Non-repo
