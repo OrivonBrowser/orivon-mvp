@@ -134,6 +134,20 @@ describe('checkFileSizes', () => {
     })
   })
 
+  describe('resources/ is excluded (data the app reads, and downloads git ignores)', () => {
+    it('does not flag an oversized file a node download put under resources/', () => {
+      const root = fixture()
+      writeLines(root, 'resources/ipfs-node/ipfs-node.js', SOURCE_LIMIT + 200)
+      expect(checkFileSizes(root)).toEqual(CLEAN)
+    })
+
+    it('still flags an oversized file in a resources folder below the root', () => {
+      const root = fixture()
+      writeLines(root, 'src/main/resources/big.ts', SOURCE_LIMIT + 1)
+      expect(checkFileSizes(root).ok).toBe(false)
+    })
+  })
+
   describe('directories that must never be walked', () => {
     it('skips node_modules', () => {
       const root = fixture()
