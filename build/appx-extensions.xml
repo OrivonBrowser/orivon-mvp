@@ -1,0 +1,12 @@
+<uap:Extension Category="windows.fileTypeAssociation">
+  <uap:FileTypeAssociation Name="orivondocument">
+    <uap:DisplayName>Orivon document</uap:DisplayName>
+    <uap:SupportedFileTypes>
+      <uap:FileType>.html</uap:FileType>
+      <uap:FileType>.htm</uap:FileType>
+      <uap:FileType>.xhtml</uap:FileType>
+      <uap:FileType>.svg</uap:FileType>
+      <uap:FileType>.pdf</uap:FileType>
+    </uap:SupportedFileTypes>
+  </uap:FileTypeAssociation>
+</uap:Extension>
