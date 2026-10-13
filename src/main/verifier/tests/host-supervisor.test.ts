@@ -83,20 +83,21 @@ describe('HostSupervisor', () => {
     expect(log).toEqual(['listening sha256/x', 'status syncing', `checkpoint ${root} 5`, 'ipns k51 7', 'swarm owner/topic 91', 'scheme swarm.eth bzz', 'down the verifier host could not listen on its port: EADDRINUSE'])
   })
 
-  it('tells the events a Swarm mount needs the node, and posts main\'s answer to the host', () => {
+  it('tells the events which node a mount needs, and posts main\'s answer to the host', () => {
     const wanted: string[] = []
     const hosts: FakeHost[] = []
     const supervisor = new HostSupervisor({
       fork: () => { const h = new FakeHost(); hosts.push(h); return h },
       config: () => CONFIG,
-      events: { listening: () => {}, down: () => {}, status: () => {}, checkpoint: () => {}, ipnsSequence: () => {}, swarmFeedIndex: () => {}, nameScheme: () => {}, swarmNodeWanted: () => wanted.push('wanted') }
+      events: { listening: () => {}, down: () => {}, status: () => {}, checkpoint: () => {}, ipnsSequence: () => {}, swarmFeedIndex: () => {}, nameScheme: () => {}, nodeWanted: (node) => wanted.push(node) }
     })
-    expect(supervisor.send({ type: 'swarm-node', state: 'ready' })).toBe(false)
+    expect(supervisor.send({ type: 'node', node: 'ipfs-node', state: 'ready' })).toBe(false)
     supervisor.start()
-    hosts[0]?.answer({ type: 'swarm-node-wanted' })
-    expect(wanted).toEqual(['wanted'])
-    expect(supervisor.send({ type: 'swarm-node', state: 'ready' })).toBe(true)
-    expect(hosts[0]?.sent.at(-1)).toEqual({ type: 'swarm-node', state: 'ready' })
+    hosts[0]?.answer({ type: 'node-wanted', node: 'ipfs-node' })
+    hosts[0]?.answer({ type: 'node-wanted', node: 'swarm-node' })
+    expect(wanted).toEqual(['ipfs-node', 'swarm-node'])
+    expect(supervisor.send({ type: 'node', node: 'ipfs-node', state: 'ready' })).toBe(true)
+    expect(hosts[0]?.sent.at(-1)).toEqual({ type: 'node', node: 'ipfs-node', state: 'ready' })
   })
 
   it('forks no host for a start that was queued behind one still leaving when the host is put to sleep again', () => {

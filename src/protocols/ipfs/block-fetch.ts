@@ -45,7 +45,7 @@ async function attemptGateway (gateway: string, cid: CID, key: string, deps: Fet
   } catch (error) {
     if (error instanceof BlockRefused && error.reason === 'mismatch') {
       onRefusal({ source: gateway, resource: key })
-      deps.pool.drop(gateway)
+      deps.pool.refuse(gateway)
       return { kind: 'lied', reason: `${gateway} sent bytes that failed their hash` }
     }
     return { kind: 'fatal', error: limitFailure(error) }

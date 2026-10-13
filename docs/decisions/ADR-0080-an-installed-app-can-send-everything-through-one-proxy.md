@@ -1,9 +1,9 @@
-# ADR-0079: An installed app can send everything it does through one proxy, and what the proxy cannot carry is refused
+# ADR-0080: An installed app can send everything it does through one proxy, and what the proxy cannot carry is refused
 
 - **Status:** accepted. *Provisional* on the verifier host: update checks and name resolution run there with no session of its own, so they are paused for a routed app until it takes a route per request.
 - **Date:** 2026-10-13
 - **Type:** architecture / security
-- **Decided by:** owner (the feature: `d-0605`); AI recommendation accepted by default for the shape
+- **Decided by:** owner (the feature: `d-0609`); AI recommendation accepted by default for the shape
 
 ## Decision
 

@@ -51,8 +51,12 @@ function main (): void {
       )
       return
     }
-    if (message.type === 'swarm-node') {
-      host?.then((running) => { running.swarmNode(message) }, () => {})
+    if (message.type === 'node') {
+      host?.then((running) => { running.node(message) }, () => {})
+      return
+    }
+    if (message.type === 'ipfs-lookup') {
+      host?.then((running) => { running.ipfsLookup(message.allowed) }, () => {})
       return
     }
     const { id, request } = message

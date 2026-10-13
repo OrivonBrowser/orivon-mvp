@@ -95,19 +95,20 @@ async function gatewaysToAsk (pool: GatewayPool, timeoutMs: number, signal: Abor
  * record offered is older than one seen before, otherwise `unavailable`. */
 export async function resolveIpnsKey (
   key: string, fetch: Fetch, sources: IpnsSources, sequences: SequenceStore,
-  limits: Pick<IpfsLimits, 'blockTimeoutMs' | 'hedgeDelayMs'>, signal: AbortSignal, onRefusal: (refusal: Refusal) => void
+  limits: Pick<IpfsLimits, 'blockTimeoutMs' | 'hedgeDelayMs' | 'recordTimeoutMs'>, signal: AbortSignal, onRefusal: (refusal: Refusal) => void
 ): Promise<VerifiedIpnsRecord> {
   const multihash = CID.parse(key, base36).multihash
   // A key is an inlined public key (identity) or a hash of one (sha2-256); nothing else names an IPNS key.
   if (multihash.code !== 0x00 && multihash.code !== 0x12) throw new ResolutionError('unsupported', `IPNS name ${key} is not a key this build can check`)
   const routingKey = multihashToIPNSRoutingKey(multihash as typeof multihash & { code: 0x00 | 0x12 })
+  const recordTimeoutMs = limits.recordTimeoutMs ?? limits.blockTimeoutMs
   const floor = sequences.highest(key)
   const nameServices = new Set(sources.nameServices)
 
   const attempt = async (source: string, attemptSignal: AbortSignal): Promise<AttemptOutcome<VerifiedIpnsRecord>> => {
     let bytes: Uint8Array
     try {
-      bytes = await readSource(source, nameServices.has(source) ? 'name-service' : 'gateway', sources, key, fetch, limits.blockTimeoutMs, attemptSignal)
+      bytes = await readSource(source, nameServices.has(source) ? 'name-service' : 'gateway', sources, key, fetch, recordTimeoutMs, attemptSignal)
     } catch (error) {
       return { kind: 'failed', retryable: false, reason: (error as Error).message }
     }
@@ -118,7 +119,7 @@ export async function resolveIpnsKey (
       if (typeof name === 'string' && FORGED.has(name)) {
         onRefusal({ source, resource: `/ipns/${key}` })
         // A name service is never one of the pool's gateways, so there is nothing to drop.
-        if (!nameServices.has(source)) sources.pool.drop(source)
+        if (!nameServices.has(source)) sources.pool.refuse(source)
         return { kind: 'lied', reason: `${source}: ${(error as Error).message}` }
       }
       return { kind: 'failed', retryable: false, reason: `${source}: ${(error as Error).message}` }
@@ -131,7 +132,7 @@ export async function resolveIpnsKey (
   }
 
   // Raced like a block, so a gateway that hangs costs the hedge delay, not its whole timeout.
-  const gateways = await gatewaysToAsk(sources.pool, limits.blockTimeoutMs, signal)
+  const gateways = await gatewaysToAsk(sources.pool, recordTimeoutMs, signal)
   let result: PassResult<VerifiedIpnsRecord>
   try {
     result = await racePass([...gateways, ...sources.nameServices], attempt, limits.hedgeDelayMs, signal)

@@ -35,6 +35,7 @@ import { requestGrantSubsystem } from './consent/request-grant-subsystem.js'
 import { embedSubsystem } from './embed/embed-subsystem.js'
 import { childrenSubsystem } from './children/children-subsystem.js'
 import { loaderSubsystem } from '../loader/subsystem.js'
+import { localNodePortGateSubsystem } from './sessions/local-node-port-gate.js'
 import { ownListenerMediaGateSubsystem } from './sessions/own-listener-media-gate.js'
 import { appFilesByUrlSubsystem } from './sessions/app-files-by-url.js'
 import { appInstallSubsystem } from './install/app-install-subsystem.js'
@@ -51,6 +52,8 @@ export const subsystems: Subsystem[] = [
   // neither ctx.broker nor ctx.loader, so it has no ordering constraint
   // from either of those -- only this one, self-imposed.
   permissionGateSubsystem, // security -> src/main/permission-gate.ts
+  // Cancels every request to a port a local node holds, in every session -> src/main/sessions/local-node-port-gate.ts. Its beforeReady also listens for sessions as they are created, so it sits beside the permission gate. Reads neither ctx.broker nor ctx.loader.
+  localNodePortGateSubsystem,
   // Publishes ctx.senderAttributed -> src/main/sessions/session-attribution.ts.
   // Reads neither ctx.broker nor ctx.loader (its closure reads ctx.broker
   // lazily, once a real request needs it), but must stay ABOVE

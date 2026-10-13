@@ -6,6 +6,7 @@ import { MAX_CHECKPOINT_AGE_SECONDS } from './checkpoint.js'
 import type { CheckpointChoice } from './checkpoint.js'
 import type { LightClientState } from '../../protocols/verifier-host/protocol.js'
 import type { SwarmNodeState } from '../../protocols/swarm-node/protocol.js'
+import type { IpfsNodeState } from '../../protocols/ipfs-node/protocol.js'
 
 export interface LightClientView {
   /** One word for the badge: off, waiting, starting, syncing, synced, failed, down. `waiting`: on, with no host running until a .eth address needs it. */
@@ -18,6 +19,8 @@ export interface LightClientView {
   readonly endpoints: ReadonlyArray<{ readonly label: string, readonly urls: readonly string[] }>
   /** The Swarm node Orivon runs, when this run uses it. */
   readonly swarmNode?: SwarmNodeView
+  /** Orivon's IPFS node, when the person reads IPFS from it. */
+  readonly ipfsNode?: IpfsNodeView
 }
 
 /** A head this old means the light client has stopped following the chain, whatever it last reported. */
@@ -33,11 +36,15 @@ export interface VerifierFacts {
   readonly hostAsleep: boolean
   readonly switchedOff: boolean
   readonly swarmNode?: SwarmNodeState
+  /** Present when the person reads IPFS from the node: what it is doing, and whether it may ask a lookup service. */
+  readonly ipfsNode?: { readonly state: IpfsNodeState, readonly lookupService: boolean }
   readonly endpoints: {
     readonly executionRpcs: readonly string[]
     readonly consensusRpc: string
     readonly gateways: readonly string[]
     readonly swarmEndpoints: readonly string[]
+    /** The IPFS node's endpoint, while the person reads IPFS from it. */
+    readonly ipfsNodeEndpoints?: readonly string[]
     readonly ipnsNameServices: readonly string[]
     readonly dnsOverHttps: readonly string[]
   }
@@ -95,10 +102,13 @@ export function lightClientView (facts: VerifierFacts, now: number): LightClient
     checkpoint: checkpointLine(facts.checkpoint),
     about: ABOUT,
     ...(facts.swarmNode !== undefined && { swarmNode: swarmNodeView(facts.swarmNode) }),
+    ...(facts.ipfsNode !== undefined && { ipfsNode: ipfsNodeView(facts.ipfsNode.state, facts.ipfsNode.lookupService) }),
     endpoints: [
       { label: 'Ethereum RPCs', urls: facts.endpoints.executionRpcs },
       { label: 'Beacon API', urls: [facts.endpoints.consensusRpc] },
-      { label: 'IPFS gateways', urls: facts.endpoints.gateways },
+      ...(facts.ipfsNode === undefined
+        ? [{ label: 'IPFS gateways', urls: facts.endpoints.gateways }]
+        : [{ label: 'IPFS node, on this computer', urls: facts.endpoints.ipfsNodeEndpoints ?? [] }, { label: 'IPFS gateways, only while the node cannot run', urls: facts.endpoints.gateways }]),
       { label: 'Swarm node, on this computer', urls: facts.endpoints.swarmEndpoints },
       { label: 'IPNS name services', urls: facts.endpoints.ipnsNameServices },
       { label: 'DNS-over-HTTPS, for DNSLink', urls: facts.endpoints.dnsOverHttps }
@@ -128,5 +138,29 @@ export function swarmNodeView (node: SwarmNodeState): SwarmNodeView {
     }
     case 'ready': return { state: 'ready', summary: `Running, with ${String(node.peers)} peer${node.peers === 1 ? '' : 's'}.` }
     case 'failed': return { state: 'failed', summary: `Not running: ${node.reason}. It tries again shortly.` }
+  }
+}
+
+export interface IpfsNodeView {
+  /** One word for the badge. */
+  readonly state: IpfsNodeState['state']
+  /** The sentence under it. */
+  readonly summary: string
+}
+
+const GATEWAYS_INSTEAD = 'IPFS content loads from public gateways instead'
+
+/** What Settings says about the IPFS node Orivon runs on this computer, while the person reads IPFS from it. */
+export function ipfsNodeView (node: IpfsNodeState, lookupService: boolean): IpfsNodeView {
+  switch (node.state) {
+    case 'off': return {
+      state: 'off',
+      summary: node.reason === undefined
+        ? 'Off. It starts when an IPFS address is opened, and stops again after ten minutes without one.'
+        : `Not in use: ${node.reason}. ${GATEWAYS_INSTEAD}.`
+    }
+    case 'starting': return { state: 'starting', summary: 'Starting.' }
+    case 'ready': return { state: 'ready', summary: `Running, and IPFS content loads from it. It asks ${lookupService ? 'its lookup services and the IPFS network' : 'the IPFS network only'}.` }
+    case 'failed': return { state: 'failed', summary: `Not running: ${node.reason}. ${GATEWAYS_INSTEAD} meanwhile, and the node tries again shortly.` }
   }
 }

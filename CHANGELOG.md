@@ -89,7 +89,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 - **An installed app can send everything through one proxy**: set a SOCKS5 proxy (Tor on `127.0.0.1:9050`, say) under Privacy and data, then
   turn it on for an app on its card in Apps. Its connections, datagrams, shown pages and image loads leave through the proxy, what the proxy
-  cannot carry is refused, and the app stops when the proxy does. Its updates are not checked, and WebRTC is off, while it is on (ADR-0079).
+  cannot carry is refused, and the app stops when the proxy does. Its updates are not checked, and WebRTC is off, while it is on (ADR-0080).
 - **`bzz://` addresses and `.eth` names on Swarm**: every chunk is checked against its address and a feed's update against its owner's signature.
   Chunks are read only from a Bee node on this machine, and this build configures none yet, so Swarm content opens only in tests.
 - **A link of a scheme an app lists opens in the app you choose**: a `magnet:` click or `window.open` asks which app should open it

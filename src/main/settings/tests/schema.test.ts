@@ -73,6 +73,11 @@ describe('the settings schema', () => {
     expect(SETTINGS['toolbar.extensions'].default).toBe('always')
   })
 
+  it('reads IPFS from the node on this computer, with a lookup service, unless told otherwise', () => {
+    expect(SETTINGS['web3.ipfsSource']).toMatchObject({ kind: 'enum', options: ['node', 'gateways'], default: 'node' })
+    expect(SETTINGS['web3.ipfsLookupService']).toEqual({ kind: 'bool', default: true })
+  })
+
   it('opens gateway addresses as .eth names unless told not to', () => {
     expect(SETTINGS['web3.ethGatewayRedirect']).toEqual({ kind: 'bool', default: true })
   })

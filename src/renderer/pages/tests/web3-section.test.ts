@@ -66,3 +66,39 @@ describe('the gateway redirect row', () => {
     expect(ids.indexOf('web3-eth-gateway')).toBe(ids.indexOf('web3-forced-off') + 1)
   })
 })
+
+describe('the IPFS rows', () => {
+  function withSource (source: string, view: unknown = undefined): SettingsState {
+    const state = stateWith({ forcedOff: false, enabledAtStart: true })
+    vi.spyOn(state, 'value').mockImplementation((key: string) => (key === 'web3.ipfsSource' ? source : undefined))
+    if (view !== undefined) (state.web3.status as unknown as { view: unknown }).view = view
+    return state
+  }
+
+  it('offers the choice of source on its own setting, always shown', () => {
+    const candidate = row('web3-ipfs-source')
+    expect(candidate.label).toBe('Load IPFS sites from')
+    expect(candidate.control.type === 'choice' && candidate.control.key).toBe('web3.ipfsSource')
+    expect(candidate.visible?.(withSource('node')) ?? true).toBe(true)
+  })
+
+  it('shows the lookup service switch only while the source is the node', () => {
+    const candidate = row('web3-ipfs-lookup')
+    expect(candidate.label).toBe('Use a lookup service to find IPFS sites faster')
+    expect(candidate.control.type === 'toggle' && candidate.control.key).toBe('web3.ipfsLookupService')
+    expect(candidate.visible?.(withSource('node'))).toBe(true)
+    expect(candidate.visible?.(withSource('gateways'))).toBe(false)
+  })
+
+  it('says in a sentence what the lookup service learns', () => {
+    expect(row('web3-ipfs-lookup').help).toMatch(/learn which sites you look up/)
+  })
+
+  it('shows the node\'s state only when main reports one, in the sentence main gives', () => {
+    const candidate = row('web3-ipfs-node')
+    expect(candidate.visible?.(withSource('node'))).toBe(false)
+    const state = withSource('node', { state: 'off', summary: '', checkpoint: '', about: '', endpoints: [], ipfsNode: { state: 'off', summary: 'Not in use: a proxy is configured.' } })
+    expect(candidate.visible?.(state)).toBe(true)
+    expect(candidate.control.type === 'info' && candidate.control.text(state)).toBe('Not in use: a proxy is configured.')
+  })
+})

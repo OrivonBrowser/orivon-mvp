@@ -18,6 +18,41 @@ function provenance (overrides: Partial<SiteProvenance>): SiteProvenance {
   }
 }
 
+describe('liveNameEvidence, where the bytes came from', () => {
+  const loadedFrom = (overrides: Partial<SiteProvenance>): string | undefined => liveNameEvidence(provenance(overrides), NOW).rows.find((row) => row.term === 'Loaded from')?.value
+
+  it('names the node when the node served the content', () => {
+    expect(loadedFrom({ servedFrom: { kind: 'node' } })).toBe("Orivon's IPFS node, on this computer")
+  })
+
+  it('names the gateways, and why the node was not used when it was chosen', () => {
+    expect(loadedFrom({ servedFrom: { kind: 'gateways' } })).toBe('Public IPFS gateways')
+    expect(loadedFrom({ servedFrom: { kind: 'gateways', reason: 'a proxy is configured' } })).toBe('Public IPFS gateways, because a proxy is configured')
+  })
+
+  it('says nothing for a protocol that has one kind of source', () => {
+    expect(loadedFrom({})).toBeUndefined()
+  })
+
+  const refusedFrom = (source: string, names: Record<string, string>): string | undefined =>
+    liveNameEvidence(provenance({ ddoc: { status: 'met', refusals: [{ source, resource: 'bafy' }] } }), NOW, names).rows.find((row) => row.term === 'Refused')?.value
+
+  const NAMES = { 'http://127.0.0.1:20123': "Orivon's IPFS node", 'http://127.0.0.1:20456': "Orivon's Swarm node" }
+
+  it('names the IPFS node, not its loopback address, when it sent what failed its check', () => {
+    expect(refusedFrom('http://127.0.0.1:20123', NAMES)).toBe("1 response(s) from Orivon's IPFS node failed their check and were not used")
+  })
+
+  it('names the Swarm node by its own endpoint, never as the IPFS node', () => {
+    expect(refusedFrom('http://127.0.0.1:20456', NAMES)).toBe("1 response(s) from Orivon's Swarm node failed their check and were not used")
+  })
+
+  it('keeps the address of any other loopback source, a test build\'s fixture gateway among them', () => {
+    expect(refusedFrom('http://127.0.0.1:31999', NAMES)).toBe('1 response(s) from http://127.0.0.1:31999 failed their check and were not used')
+    expect(refusedFrom('http://127.0.0.1:20123', {})).toBe('1 response(s) from http://127.0.0.1:20123 failed their check and were not used')
+  })
+})
+
 describe('liveNameEvidence', () => {
   it('says where the name was proven, what it points to, and when it was checked', () => {
     const evidence = liveNameEvidence(provenance({}), NOW)

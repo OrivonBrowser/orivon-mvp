@@ -4,6 +4,7 @@ import { buildDag, fakeGateways } from '../../ipfs/tests/dag.test-helpers.js'
 import type { FromHost, HostConfig } from '../protocol.js'
 import { startHost } from '../service.js'
 import { startProtocols } from '../protocols.js'
+import { partitionStoreKey } from '../partition-key.js'
 import { BUILTIN_PROTOCOLS } from '../../builtin.js'
 import type { HostDeps, RunningHost } from '../service.js'
 import { referenceCid } from '../../swarm/reference.js'
@@ -122,9 +123,9 @@ describe('startHost with Swarm', () => {
       running.push(host)
       const cid = referenceCid(site)
       const page = get(host.port, `${cid}.bzz.orivon`)
-      await vi.waitFor(() => { expect(posted).toContainEqual({ type: 'swarm-node-wanted' }) })
+      await vi.waitFor(() => { expect(posted).toContainEqual({ type: 'node-wanted', node: 'swarm-node' }) })
       expect(swarm.requests).toEqual([])
-      host.swarmNode({ type: 'swarm-node', state: 'ready' })
+      host.node({ type: 'node', node: 'swarm-node', state: 'ready' })
       expect(await page).toEqual({ status: 200, body: '<h1>on swarm</h1>' })
     })
 
@@ -137,7 +138,7 @@ describe('startHost with Swarm', () => {
       const page = get(host.port, 'swarm.eth')
       await vi.waitFor(() => { expect(posted).toContainEqual({ type: 'name-scheme', host: 'swarm.eth', scheme: 'bzz' }) })
       expect(swarm.requests).toEqual([])
-      host.swarmNode({ type: 'swarm-node', state: 'ready' })
+      host.node({ type: 'node', node: 'swarm-node', state: 'ready' })
       expect(await page).toEqual({ status: 200, body: '<h1>on swarm</h1>' })
     })
 
@@ -148,8 +149,8 @@ describe('startHost with Swarm', () => {
       const host = await startHost(config({ swarmEndpoints: [ENDPOINT], swarmNode: true }), world)
       running.push(host)
       const page = get(host.port, `${referenceCid(site)}.bzz.orivon`)
-      await vi.waitFor(() => { expect(posted).toContainEqual({ type: 'swarm-node-wanted' }) })
-      host.swarmNode({ type: 'swarm-node', state: 'off', reason: 'the Swarm node is not installed' })
+      await vi.waitFor(() => { expect(posted).toContainEqual({ type: 'node-wanted', node: 'swarm-node' }) })
+      host.node({ type: 'node', node: 'swarm-node', state: 'off', reason: 'the Swarm node is not installed' })
       const answered = await page
       expect(answered.status).toBe(502)
       expect(answered.body).toContain('the Swarm node is not installed')
@@ -163,8 +164,110 @@ describe('startHost with Swarm', () => {
       const host = await startHost(config({ swarmEndpoints: [ENDPOINT] }), world)
       running.push(host)
       expect((await get(host.port, `${referenceCid(site)}.bzz.orivon`)).status).toBe(200)
-      expect(posted).not.toContainEqual({ type: 'swarm-node-wanted' })
+      expect(posted).not.toContainEqual({ type: 'node-wanted', node: 'swarm-node' })
     })
+  })
+})
+
+describe('startHost with the IPFS node', () => {
+  const NODE = 'http://127.0.0.1:20123'
+  const SALT = 'ab'.repeat(32)
+  const NODE_CONFIG = { endpoint: NODE, partitionSalt: SALT, lookupService: true }
+
+  function world () {
+    const gw = fakeGateways(dag.blocks)
+    const made = deps({ fetch: async (url, init) => await gw.fetch(url, { headers: (init?.headers ?? {}) as Record<string, string>, signal: init?.signal ?? new AbortController().signal }) })
+    return { gw, made, posted: made.posted }
+  }
+
+  const provenanceOf = async (host: RunningHost): Promise<unknown> => await host.answer({ kind: 'provenance', host: 'fixture.eth', partition: 'https://fixture.eth' })
+
+  it('asks main for the node first, reads only the node once it is ready, and says so', async () => {
+    const { gw, made, posted } = world()
+    const host = await startHost(config({ ipfsNode: NODE_CONFIG }), made)
+    running.push(host)
+    const page = get(host.port, 'fixture.eth')
+    await vi.waitFor(() => { expect(posted).toContainEqual({ type: 'node-wanted', node: 'ipfs-node' }) })
+    expect(gw.requests).toEqual([])
+    host.node({ type: 'node', node: 'ipfs-node', state: 'ready' })
+    expect(await page).toEqual({ status: 200, body: '<h1>fixture</h1>' })
+    expect(gw.requests.length).toBeGreaterThan(0)
+    expect(gw.requests.every((url) => url.startsWith(`${NODE}/`))).toBe(true)
+    expect(await provenanceOf(host)).toMatchObject({ servedFrom: { kind: 'node' } })
+  })
+
+  it('reads from the gateways, and says why, when the node cannot run, never waiting on it', async () => {
+    const { gw, made, posted } = world()
+    const host = await startHost(config({ ipfsNode: NODE_CONFIG }), made)
+    running.push(host)
+    const page = get(host.port, 'fixture.eth')
+    await vi.waitFor(() => { expect(posted).toContainEqual({ type: 'node-wanted', node: 'ipfs-node' }) })
+    host.node({ type: 'node', node: 'ipfs-node', state: 'off', reason: 'a proxy is configured' })
+    expect(await page).toEqual({ status: 200, body: '<h1>fixture</h1>' })
+    expect(gw.requests.every((url) => url.startsWith(`${GATEWAY}/`))).toBe(true)
+    expect(await provenanceOf(host)).toMatchObject({ servedFrom: { kind: 'gateways', reason: 'a proxy is configured' } })
+  })
+
+  it('reads from the gateways, as before, when no node is chosen, and never asks for one', async () => {
+    const { gw, made, posted } = world()
+    const host = await startHost(config(), made)
+    running.push(host)
+    expect((await get(host.port, 'fixture.eth')).status).toBe(200)
+    expect(posted).not.toContainEqual({ type: 'node-wanted', node: 'ipfs-node' })
+    expect(gw.requests.every((url) => url.startsWith(`${GATEWAY}/`))).toBe(true)
+    expect(await provenanceOf(host)).toMatchObject({ servedFrom: { kind: 'gateways' } })
+    expect(await provenanceOf(host)).not.toHaveProperty('servedFrom.reason')
+  })
+})
+
+describe('startHost with the IPFS node, one store for every site', () => {
+  const NODE = 'http://127.0.0.1:20123'
+  const SALT = 'ab'.repeat(32)
+  const ASKED_FOR = (partition: string): string => partitionStoreKey(SALT, partition)
+
+  /** Every request the node got, with the partition header it carried. */
+  function recording () {
+    const gw = fakeGateways(dag.blocks)
+    const asked: Array<{ url: string, header: string | undefined }> = []
+    const made = deps({
+      fetch: async (url, init) => {
+        const headers = (init?.headers ?? {}) as Record<string, string>
+        asked.push({ url, header: headers['x-orivon-partition'] })
+        return await gw.fetch(url, { headers, signal: init?.signal ?? new AbortController().signal })
+      }
+    })
+    return { asked, made }
+  }
+
+  async function started () {
+    const { asked, made } = recording()
+    const host = await startHost(config({ ipfsNode: { endpoint: NODE, partitionSalt: SALT, lookupService: true } }), made)
+    running.push(host)
+    host.node({ type: 'node', node: 'ipfs-node', state: 'ready' })
+    return { asked, host }
+  }
+
+  it('keys each partition\'s reads by a hash of the salt and the partition, never the origin itself', async () => {
+    const { asked, host } = await started()
+    expect((await get(host.port, 'fixture.eth', '/', 'https://target.eth')).status).toBe(200)
+    const keys = new Set(asked.map((request) => request.header))
+    expect(keys).toEqual(new Set([ASKED_FOR('https://target.eth')]))
+    expect([...keys][0]).toHaveLength(43)
+    expect(JSON.stringify(asked)).not.toContain('target.eth')
+  })
+
+  it('sends another partition\'s reads under another key, so the node keeps what each fetched apart', async () => {
+    const { asked, host } = await started()
+    await get(host.port, 'fixture.eth', '/', 'https://one.eth')
+    await get(host.port, 'fixture.eth', '/', 'https://two.eth')
+    const byKey = (key: string): number => asked.filter((request) => request.header === key).length
+    expect(byKey(ASKED_FOR('https://one.eth'))).toBeGreaterThan(0)
+    expect(byKey(ASKED_FOR('https://two.eth'))).toBeGreaterThan(0)
+    expect(ASKED_FOR('https://one.eth')).not.toBe(ASKED_FOR('https://two.eth'))
+  })
+
+  it('keys a key by the salt: another profile\'s salt gives the same partition another key', () => {
+    expect(partitionStoreKey('cd'.repeat(32), 'https://one.eth')).not.toBe(ASKED_FOR('https://one.eth'))
   })
 })
 

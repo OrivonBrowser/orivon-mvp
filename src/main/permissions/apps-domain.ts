@@ -40,7 +40,7 @@ export interface AppsDeps {
   /** The kinds of link each app was chosen to open (d-0596). */
   readonly links: Pick<SchemeChoices, 'schemesOf' | 'get' | 'forget'>
   readonly identity: () => Promise<'keychain' | 'session-only' | 'not-started'>
-  /** The per-app network route (ADR-0079). */
+  /** The per-app network route (ADR-0080). */
   readonly routes: AppRoutes
 }
 

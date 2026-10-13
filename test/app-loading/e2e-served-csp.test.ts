@@ -383,8 +383,12 @@ it('[app:wasm-streaming-under-served-csp] [app:blob-worker-runs] a pinned bundle
       const detail = JSON.stringify(measured)
       const finalHop = m.follow.seen.find((entry) => entry.url === 'https://hop-b.orivon.test/final' && entry.method === 'GET')
 
+      // Every session of the product carries a web-request listener (the local-node port gate is on all of them), and Electron
+      // then reports the followed response's status as the redirect's own 302 where a bare session reports 200. What
+      // proves the 3xx was followed and not handed back is the final URL, the final body and `redirected`, so the check
+      // reads those, and accepts either status.
       check('a 3xx a protocol.handle handler returns is followed by the page\'s own loader, not handed back as a raw 3xx',
-        follow.status === 200 && follow.text === 'final' && follow.redirected && follow.url === 'https://hop-b.orivon.test/final', detail)
+        (follow.status === 200 || follow.status === 302) && follow.text === 'final' && follow.redirected && follow.url === 'https://hop-b.orivon.test/final', detail)
       check('the followed hop re-enters the SAME handler -- so a reach redirect is re-authorised per hop', finalHop !== undefined, detail)
       check('Chromium drops Authorization on the cross-origin hop', finalHop !== undefined && finalHop.authorization === null, detail)
       check('redirect: \'manual\' yields an opaque redirect and the handler never sees the target',

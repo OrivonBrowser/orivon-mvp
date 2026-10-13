@@ -155,15 +155,16 @@ describe('fetchLocalNodes', () => {
   const GLUE_B = Buffer.from('the second node glue')
   beforeEach(async () => {
     resources = await mkdtemp(join(tmpdir(), 'fetch-local-nodes-'))
-    for (const folder of ['swarm-node', 'other-node', 'not-a-node-folder', 'default-profile']) await mkdir(join(resources, folder))
+    for (const folder of ['swarm-node', 'other-node', 'lookup-relay-node', 'not-a-node-folder', 'default-profile']) await mkdir(join(resources, folder))
     await writeFile(join(resources, 'swarm-node', 'swarm-node.json'), MANIFEST('bafyexample'))
     await writeFile(join(resources, 'other-node', 'other-node.json'), JSON.stringify({ cid: 'bafyother', name: 'other-node', files: [{ name: 'other-node.js', bytes: GLUE_B.length, sha256: digest(GLUE_B) }] }))
+    await writeFile(join(resources, 'lookup-relay-node', 'lookup-relay-node.json'), JSON.stringify({ cid: 'bafylookup', name: 'lookup-relay-node', files: [] }))
     await writeFile(join(resources, 'not-a-node-folder', 'not-a-node-folder.json'), '{}')
   })
   afterEach(async () => { await rm(resources, { recursive: true, force: true }) })
 
-  it('finds every folder named <name>-node that holds its manifest', () => {
-    expect(localNodeNames(resources)).toEqual(['other-node', 'swarm-node'])
+  it('finds every folder named <name>-node that holds its manifest, a name of several words included', () => {
+    expect(localNodeNames(resources)).toEqual(['lookup-relay-node', 'other-node', 'swarm-node'])
   })
 
   it('fetches the files of each node into its own folder', async () => {

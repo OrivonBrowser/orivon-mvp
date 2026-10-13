@@ -43,6 +43,8 @@ export interface ClearDeps {
   readonly appSessions: () => Promise<ReadonlyArray<Pick<Session, 'clearData'>>>
   /** The network each `.eth` name was last found on: a record of the names visited, forgotten with the cache and with all history. */
   readonly forgetNameSchemes: () => Promise<void>
+  /** What the IPFS node kept about the sites it served: stopped, and its block store deleted, with the cache and with all history. */
+  readonly forgetNodeData?: () => Promise<void>
   readonly now: () => number
 }
 
@@ -89,6 +91,7 @@ export async function clearBrowsingData (request: ClearRequest, deps: ClearDeps)
     })
   }
   if (request.cache || request.history === 'all') await attempt('nameSchemes', async () => { await deps.forgetNameSchemes() })
+  if (request.cache || request.history === 'all') await attempt('nodeData', async () => { await deps.forgetNodeData?.() })
   if (request.zoomLevels) await attempt('zoomLevels', () => { deps.zoom.clear() })
   if (request.siteSettings) await attempt('siteSettings', () => { deps.siteSettings.resetAll() })
   if (request.appData) {

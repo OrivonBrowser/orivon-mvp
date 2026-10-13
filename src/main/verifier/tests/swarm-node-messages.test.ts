@@ -26,7 +26,7 @@ describe('isFromNode', () => {
   it.each([
     null, undefined, 'ready', 7, [], {}, { type: 'unknown' }, { type: 'peers' }, { type: 'peers', count: -1 }, { type: 'peers', count: 1.5 }, { type: 'peers', count: '3' },
     { type: 'ready' }, { type: 'ready', peers: Number.NaN }, { type: 'failed' }, { type: 'failed', stage: 'elsewhere', message: 'x' }, { type: 'failed', stage: 'run' }, { type: 'failed', stage: 'run', message: 5 },
-    { type: 'reply', id: 1, ok: true, value: 1 }, { type: 'swarm-node-wanted' }
+    { type: 'reply', id: 1, ok: true, value: 1 }, { type: 'node-wanted', node: 'swarm-node' }
   ])('refuses %j', (message) => {
     expect(isFromNode(message)).toBe(false)
   })
@@ -39,10 +39,13 @@ describe('failure', () => {
   })
 })
 
-describe('the verifier host asking for the Swarm node', () => {
-  it('is a message the host may post, and nothing the node may', () => {
-    expect(isFromHost({ type: 'swarm-node-wanted' })).toBe(true)
-    expect(isFromNode({ type: 'swarm-node-wanted' })).toBe(false)
+describe('the verifier host asking for a node', () => {
+  it('is a message the host may post, for a node it names, and nothing the node may', () => {
+    expect(isFromHost({ type: 'node-wanted', node: 'swarm-node' })).toBe(true)
+    expect(isFromHost({ type: 'node-wanted', node: 'ipfs-node' })).toBe(true)
+    expect(isFromHost({ type: 'node-wanted' })).toBe(false)
+    expect(isFromHost({ type: 'node-wanted', node: 7 })).toBe(false)
+    expect(isFromNode({ type: 'node-wanted', node: 'swarm-node' })).toBe(false)
   })
 })
 
