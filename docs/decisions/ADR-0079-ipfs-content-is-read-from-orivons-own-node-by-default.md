@@ -63,8 +63,9 @@ the setting lets a person refuse; the content that comes back is checked either 
   with its own decision, and the last two need an inbound listen rule `node-net.ts` does not have.
 - The node's HTTP API is on a loopback port a page in any tab can request. It serves reads only; a page that can
   name a CID can already ask any public gateway for it, and the node adds that this computer fetches it.
-- A change of either setting puts the verifier host to sleep, so a page loading at that moment fails once and a
-  reload works.
+- A change of the source puts the verifier host to sleep (the light client syncs again and mounted sites are
+  dropped), so a page loading at that moment fails once and a reload works. A change of the lookup service stops
+  only the IPFS node, whose next start has the new arguments; the host and the Swarm node are left alone.
 - Where gateways are named to the person (Settings' list of servers, the site-info popover's "Loaded from" row),
   they say the node when the node served the content, and name the gateways, with the reason, when it did not.
 - The node's one endpoint is read differently from a gateway, from what was measured of the real node: a block

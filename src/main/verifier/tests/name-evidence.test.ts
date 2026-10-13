@@ -34,9 +34,22 @@ describe('liveNameEvidence, where the bytes came from', () => {
     expect(loadedFrom({})).toBeUndefined()
   })
 
-  it('names the node, not its loopback address, when it sent what failed its check', () => {
-    const refused = liveNameEvidence(provenance({ ddoc: { status: 'met', refusals: [{ source: 'http://127.0.0.1:20123', resource: 'bafy' }] } }), NOW)
-    expect(refused.rows.find((row) => row.term === 'Refused')?.value).toBe("1 response(s) from Orivon's IPFS node failed their check and were not used")
+  const refusedFrom = (source: string, names: Record<string, string>): string | undefined =>
+    liveNameEvidence(provenance({ ddoc: { status: 'met', refusals: [{ source, resource: 'bafy' }] } }), NOW, names).rows.find((row) => row.term === 'Refused')?.value
+
+  const NAMES = { 'http://127.0.0.1:20123': "Orivon's IPFS node", 'http://127.0.0.1:20456': "Orivon's Swarm node" }
+
+  it('names the IPFS node, not its loopback address, when it sent what failed its check', () => {
+    expect(refusedFrom('http://127.0.0.1:20123', NAMES)).toBe("1 response(s) from Orivon's IPFS node failed their check and were not used")
+  })
+
+  it('names the Swarm node by its own endpoint, never as the IPFS node', () => {
+    expect(refusedFrom('http://127.0.0.1:20456', NAMES)).toBe("1 response(s) from Orivon's Swarm node failed their check and were not used")
+  })
+
+  it('keeps the address of any other loopback source, a test build\'s fixture gateway among them', () => {
+    expect(refusedFrom('http://127.0.0.1:31999', NAMES)).toBe('1 response(s) from http://127.0.0.1:31999 failed their check and were not used')
+    expect(refusedFrom('http://127.0.0.1:20123', {})).toBe('1 response(s) from http://127.0.0.1:20123 failed their check and were not used')
   })
 })
 

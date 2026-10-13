@@ -118,9 +118,10 @@ kept by [`process-supervisor.ts`](process-supervisor.ts): forking, the config ha
 [`host-supervisor.ts`](host-supervisor.ts) adds the verifier host's requests and replies,
 [`local-node-supervisor.ts`](local-node-supervisor.ts) a node's reports.
 
-**Where IPFS is read from applies at once.** `ipfsSettingsChanged` (called when `web3.ipfsSource` or
-`web3.ipfsLookupService` changes) stops the IPFS node, whose next start reads the routing mode again (the
-controller's `options`), and puts the verifier host to sleep, whose next wake builds `HostConfig` from the new
-source: `ipfsNode` (the node's endpoint) is present only when the person chose the node, and never in a test
+**Where IPFS is read from applies at once.** `ipfsSettingsChanged` stops the IPFS node when `web3.ipfsSource` or
+`web3.ipfsLookupService` changes, and its next start reads the routing mode again (the controller's `options`).
+Only a change of the source also puts the verifier host to sleep, whose next wake builds `HostConfig` from it (the
+lookup service touches only the node's arguments, so the light client, the mounted sites and the Swarm node are
+left alone): `ipfsNode` (the node's endpoint) is present only when the person chose the node, and never in a test
 build. The host chooses the node or the gateways for each mount and says which served it; Settings'
 `ipfsNode` view and the site-info popover's "Loaded from" row repeat it.

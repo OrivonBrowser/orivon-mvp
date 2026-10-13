@@ -232,7 +232,10 @@ export function boot (runtime: Runtime): void {
       ipfsLookupService: () => shell.settings.get('web3.ipfsLookupService')
     })
     // Where IPFS is read from applies at once: the node and the verifier host start again from the new choice.
-    shell.settings.onChange(({ key }) => { if (key === 'web3.ipfsSource' || key === 'web3.ipfsLookupService') ipfsSettingsChanged() })
+    shell.settings.onChange(({ key }) => {
+      if (key === 'web3.ipfsSource') ipfsSettingsChanged('source')
+      else if (key === 'web3.ipfsLookupService') ipfsSettingsChanged('lookupService')
+    })
     shell.history.prune()
     startInternalPages(shell, ctx)
     setPageClassifier((contents) => ({ internalPage: shell.internalPages.pageOf(contents), isTab: shell.windows.findTab(contents) !== null }))

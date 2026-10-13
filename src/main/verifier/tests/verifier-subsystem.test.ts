@@ -153,13 +153,23 @@ describe('the verifier subsystem', () => {
       forks()[0]?.listens()
       expect(started(0)?.config).toHaveProperty('ipfsNode')
       source = 'gateways'
-      ipfsSettingsChanged()
+      ipfsSettingsChanged('source')
       expect(forks()[0]?.killed).toBe(true)
       forks()[0]?.emit('exit', 0)
       void request()
       await vi.advanceTimersByTimeAsync(0)
       expect(forks()).toHaveLength(2)
       expect(started(1)?.config).not.toHaveProperty('ipfsNode')
+    })
+
+    it('stops only the IPFS node when the lookup service changes, leaving the host and the light client running', async () => {
+      const { request, ipfsSettingsChanged } = await launchWith(() => 'node')
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      forks()[0]?.listens()
+      ipfsSettingsChanged('lookupService')
+      expect(forks()[0]?.killed).toBe(false)
+      expect(forks()).toHaveLength(1)
     })
 
     it('says in the view what the node is doing while IPFS is read from it, and nothing when it is not', async () => {

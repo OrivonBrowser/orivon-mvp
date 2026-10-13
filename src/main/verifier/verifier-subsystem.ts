@@ -90,10 +90,14 @@ export function configureVerifier (options: { lightClientEnabled: () => boolean,
   tabsOnVerifiedOrigin = () => anyTabOnVerifiedOrigin(options.windows(), options.servedFromCache)
 }
 
-/** The person changed where IPFS is read from, or whether the node may ask a lookup service: applied at once. The node stops (its next start has the new arguments) and the host sleeps (its next request rebuilds its config from the new source). */
-export function ipfsSettingsChanged (): void {
+/**
+ * The person changed an IPFS setting: applied at once. The source decides the host's config, so the host sleeps and its
+ * next request rebuilds it. The lookup service only decides the node's arguments, so only the node stops, and the
+ * light client, the mounted sites and the Swarm node are left alone; the node's next start has the new arguments.
+ */
+export function ipfsSettingsChanged (setting: 'source' | 'lookupService'): void {
   ipfsNode.verifierIdle()
-  idleHost()
+  if (setting === 'source') idleHost()
   changed()
 }
 
@@ -213,6 +217,12 @@ function swarmEndpoints (seam: EthTestSeam | undefined): readonly string[] {
   return seam === undefined ? [swarmNodeEndpoint()] : seam.swarmEndpoints ?? []
 }
 
+/** The nodes' own endpoints, by the name the popover gives them: only an ordinary build runs them (a test build's endpoints are fixtures and keep their own address). */
+function nodeEndpointNames (): Readonly<Record<string, string>> {
+  if (ethTestSeam() !== undefined) return {}
+  return { [ipfsNodeEndpoint()]: "Orivon's IPFS node", [swarmNodeEndpoint()]: "Orivon's Swarm node" }
+}
+
 /** Whether IPFS is read from the node Orivon runs: the person's choice, never in a test build, which serves IPFS from its own endpoints. */
 function ipfsFromNode (seam: EthTestSeam | undefined): boolean {
   return seam === undefined && ipfsSourceChoice() === 'node'
@@ -284,7 +294,7 @@ export async function verifierNameEvidence (origin: string, pin: PinRecord | nul
   const address = BUILTIN_ADDRESSES.servedName(new URL(origin).hostname)?.namespace.endsWith(':') === true
   // An address needs no light client, so its state would explain nothing.
   const unanswered = address ? 'The verifier has not loaded it in this tab yet.' : verifierView().summary
-  return chooseNameEvidence(pin?.content, servedFromCache, live, unanswered, Date.now(), address)
+  return chooseNameEvidence(pin?.content, servedFromCache, live, unanswered, Date.now(), address, nodeEndpointNames())
 }
 
 /**
