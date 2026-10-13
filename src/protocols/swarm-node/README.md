@@ -21,8 +21,10 @@ in ([`../local-node/`](../local-node/)) is the part tied to Electron. The main p
 
 ## Design notes
 
-**Residual.** The API is a loopback HTTP server, which a page in any tab can request. It serves reads
-only (no upload endpoint works without a postage batch, and the node has none). A reply from a
+**Residual.** The API is a loopback HTTP server, but main cancels every request from any page, in any
+session, to its port ([`../../main/sessions/local-node-port-gate.ts`](../../main/sessions/local-node-port-gate.ts)),
+so no page can time it. A DNS name an attacker points at 127.0.0.1 is not caught by that URL filter. It
+serves reads only (no upload endpoint works without a postage batch, and the node has none). A reply from a
 resolver's address is not matched to a query by the host; the node checks its own transaction ids.
 
 **Ready means eight peers.** The node reports `listening` once its API answers and `ready` once `/peers`
