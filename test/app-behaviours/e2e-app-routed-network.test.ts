@@ -67,6 +67,17 @@ async function counting (onConnection?: (socket: Socket) => void): Promise<Count
   }
 }
 
+/** A port the app will listen on later: below the range the system hands to outgoing connections, which could take it in between. */
+async function portBelowTheEphemeralRange (): Promise<number> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const port = 21_000 + Math.floor(Math.random() * 9_000)
+    const probe = createTcpServer()
+    const free = await new Promise<boolean>((resolve) => { probe.once('error', () => { resolve(false) }); probe.listen(port, '127.0.0.1', () => { resolve(true) }) })
+    if (free) { await new Promise<void>((resolve) => { probe.close(() => { resolve() }) }); return port }
+  }
+  throw new Error('no free port below the ephemeral range')
+}
+
 async function udpCounting (reply = false): Promise<{ port: number, hits: () => number, close: () => void }> {
   const socket: UdpSocket = createSocket('udp4')
   let hits = 0
@@ -112,9 +123,7 @@ beforeAll(async () => {
   }
   holdDecoy = await counting((socket) => { socket.on('data', (chunk) => socket.write(chunk)) })
   ports.hold = holdDecoy.port
-  const listenProbe = await counting()
-  ports.listen = listenProbe.port
-  await listenProbe.close()
+  ports.listen = await portBelowTheEphemeralRange()
   udpDecoy = await udpCounting()
   ports.udp = udpDecoy.port
   stunDecoy = await udpCounting()
