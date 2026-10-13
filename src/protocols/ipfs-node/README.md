@@ -30,8 +30,8 @@ connections out and listens only on loopback ([`../local-node/node-net.ts`](../l
 the kind in the config's `options` (`routingOptions`). `auto` asks two delegated lookup services
 (`DELEGATED_ROUTERS` in [`config.ts`](config.ts), one comma list the node races and fails over across) and the
 IPFS network at the same time and uses the first answer, so the services learn which content is looked up; the
-content is still checked. Two, because the node resolves their names through this computer's resolver, and a
-resolver that hijacks DNS breaks the first with a certificate error. `light-dht` asks the network only and names
+content is still checked. Two, so that one failing does not stop the other; the node resolves their names over
+DNS-over-HTTPS first, so a resolver that hijacks DNS does not steer it at a server that is not theirs. `light-dht` asks the network only and names
 no service. An option that is missing or unknown means `light-dht`, the mode that tells no service anything. A change of the setting stops the node, and its next
 start has the new argument.
 
