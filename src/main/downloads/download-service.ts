@@ -33,10 +33,17 @@ export interface DownloadDeps {
   rename: (from: string, to: string) => void
   /** Deletes a file; nothing to delete is not an error. Throws when it cannot. */
   removeFile: (path: string) => void
-  /** Asks for `url` again, as a new download. */
-  fetchAgain: (url: string) => void
+  /** Asks for `url` again, as a new download, in `session`, or in the default session when none is given. */
+  fetchAgain: (url: string, session?: DownloadSession) => void
+  /** Whether a page's session is one other than the default: a routed app's, an embed's, a confined one. */
+  isOwnSession: (session: DownloadSession) => boolean
   now: () => number
   newId: () => string
+}
+
+/** The part of a session a download can be asked for again in. */
+export interface DownloadSession {
+  downloadURL: (url: string) => void
 }
 
 export interface StartInfo {
@@ -82,6 +89,8 @@ export class DownloadService {
   private readonly automatic = new Map<number, number[]>()
   /** A retry's address to the entry it replaces once the new download starts. */
   private readonly retrying = new Map<string, string>()
+  /** The non-default session each download of this run started in, held weakly: one that is gone cannot be asked again. */
+  private readonly sessions = new Map<string, WeakRef<DownloadSession>>()
   private readonly missingChecks = new Map<string, { at: number, missing: boolean }>()
   /** Downloads running whose save dialog has not been answered: not listed until it is. */
   private readonly unlisted = new Map<string, DownloadEntry>()
@@ -140,10 +149,15 @@ export class DownloadService {
       item.setSavePath(savePath)
     }
     const fileName = savePath === '' || held ? suggested : basename(savePath)
+    // A retry names no page: it keeps the session of the download it replaces.
+    const replaced = this.retrying.get(url)
+    const own = contents === undefined ? this.sessions.get(replaced ?? '')?.deref() : this.ownSessionOf(contents)
+    if (own !== undefined) this.sessions.set(id, new WeakRef(own))
     const entry: DownloadEntry = {
       id, url, referrer, fileName, savePath, mime,
       total: item.getTotalBytes(), received: item.getReceivedBytes(), state: 'progressing',
-      startedAt: this.deps.now(), danger: isDangerousFile(fileName, mime), ...(held ? { held: true } : {})
+      startedAt: this.deps.now(), danger: isDangerousFile(fileName, mime), ...(held ? { held: true } : {}),
+      ...(own !== undefined || this.find(replaced ?? '')?.ownSession === true ? { ownSession: true as const } : {})
     }
     const live: Live = { item, contentsId, registered: false }
     this.live.set(entry.id, live)
@@ -187,9 +201,12 @@ export class DownloadService {
     if (live !== undefined && entry.state === 'interrupted' && live.item.canResume()) return this.resume(id)
     // An address that was cut to be stored is not the one that was asked for.
     if (!/^https?:\/\//iu.test(entry.url) || entry.url.length >= MAX_ADDRESS_LENGTH) return false
+    // Never the default session in place of one that is gone: it has no route and holds other cookies.
+    const session = this.sessions.get(id)?.deref()
+    if (session === undefined && entry.ownSession === true) return false
     this.retrying.set(entry.url, id)
     setTimeout(() => { this.retrying.delete(entry.url) }, RETRY_WAIT_MS).unref()
-    this.deps.fetchAgain(entry.url)
+    this.deps.fetchAgain(entry.url, session)
     return true
   }
 
@@ -283,6 +300,10 @@ export class DownloadService {
     return entry !== undefined && isActive(entry)
   }
 
+  private ownSessionOf (contents: WebContents): DownloadSession | undefined {
+    try { return this.deps.isOwnSession(contents.session) ? contents.session : undefined } catch { return undefined }
+  }
+
   private runningIn (contentsId: number): number {
     let running = 0
     for (const [id, live] of this.live) {
@@ -363,7 +384,7 @@ export class DownloadService {
   private drop (ids: readonly string[]): void {
     const gone = new Set(ids)
     this.entries = this.entries.filter((entry) => !gone.has(entry.id))
-    for (const id of ids) this.missingChecks.delete(id)
+    for (const id of ids) { this.missingChecks.delete(id); this.sessions.delete(id) }
     this.store.write(this.entries)
   }
 

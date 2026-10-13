@@ -279,6 +279,8 @@ describe('pause, resume and cancel', () => {
   })
 })
 
+const entryOf = (id: string): DownloadEntry => ({ id, url: `https://a.example/${id}.bin`, referrer: '', fileName: `${id}.bin`, savePath: `/d/${id}.bin`, mime: '', total: 10, received: 4, state: 'interrupted', startedAt: 1, danger: false })
+
 describe('retry', () => {
   it('asks for the address again and replaces the old entry when the new download starts', () => {
     const { service, start, deps } = harness()
@@ -286,11 +288,55 @@ describe('retry', () => {
     const oldId = start(first)
     first.finish('cancelled')
     expect(service.retry(oldId)).toBe(true)
-    expect(deps.fetchAgain).toHaveBeenCalledWith('https://a.example/f.bin')
+    expect(deps.fetchAgain).toHaveBeenCalledWith('https://a.example/f.bin', undefined)
     expect(service.list().map((entry) => entry.id)).toEqual([oldId])
     const again = item('f.bin')
     const newId = start(again)
     expect(service.list().map((entry) => entry.id)).toEqual([newId])
+  })
+
+  it('asks in the session that started the download, never the default one', () => {
+    const routed = { downloadURL: () => {} }
+    const { service, start, deps } = harness()
+    const first = item('f.bin')
+    const oldId = start(first, 1, routed)
+    first.finish('cancelled')
+    expect(service.list()[0]?.ownSession).toBe(true)
+    expect(service.retry(oldId)).toBe(true)
+    expect(deps.fetchAgain).toHaveBeenCalledWith('https://a.example/f.bin', routed)
+  })
+
+  it('keeps a retry of a retry in the same session, though the retried download names no page', () => {
+    const routed = { downloadURL: () => {} }
+    const { service, deps, event } = harness()
+    const first = item('f.bin')
+    const oldId = ((): string => {
+      const seen: string[] = []
+      service.onStart((info) => { seen.push(info.id) })
+      service.track(first.asItem(), fakeContents(1, undefined, routed), event)
+      return seen[0] ?? ''
+    })()
+    first.finish('cancelled')
+    service.retry(oldId)
+    const again = item('f.bin')
+    service.track(again.asItem(), undefined, event)
+    again.finish('interrupted')
+    const newId = service.list()[0]?.id ?? ''
+    expect(service.retry(newId)).toBe(true)
+    expect(deps.fetchAgain).toHaveBeenLastCalledWith('https://a.example/f.bin', routed)
+  })
+
+  it('refuses a retry when the session that started the download cannot be found, and does not fall back to the default one', () => {
+    const own = { ...entryOf('gone'), state: 'interrupted' as const, ownSession: true as const }
+    const { service, deps } = harness([own])
+    expect(service.retry('gone')).toBe(false)
+    expect(deps.fetchAgain).not.toHaveBeenCalled()
+  })
+
+  it('still retries a default-session download from before a restart', () => {
+    const { service, deps } = harness([{ ...entryOf('old'), state: 'interrupted' as const }])
+    expect(service.retry('old')).toBe(true)
+    expect(deps.fetchAgain).toHaveBeenCalledWith('https://a.example/old.bin', undefined)
   })
 
   it('refuses an address that is not http or https, and a download still running', () => {
