@@ -51,7 +51,8 @@ the reply. `socks` buffers them and re-emits them in a later turn, which loses t
 listens yet, so the provider holds them and pushes them back in front of the stream.
 
 **[`socks5.ts`](socks5.ts) accepts a UDP datagram only from the relay the proxy named.** The local
-socket is bound for the relay's sake alone, and anything else that reaches its port is dropped.
+socket is bound for the relay's sake alone and connected to the relay's address and port, so the
+kernel itself drops a datagram from anything else.
 The broker side does the same for an app's socket: inbound datagrams are accepted from the route
 and from this machine, and from nothing else
 ([`../capabilities/net-udp-route.ts`](../capabilities/net-udp-route.ts)).
