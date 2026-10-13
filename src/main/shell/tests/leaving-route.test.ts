@@ -15,9 +15,10 @@ const isNavigationHeld = vi.fn(() => false)
 const holdNavigation = vi.fn(() => () => {})
 vi.mock('../navigation-hold.js', () => ({ isNavigationHeld, holdNavigation: () => holdNavigation() }))
 const leaveFor = vi.fn()
+const isRoutedPage = vi.fn((_url: string) => true)
 const openTemporaryRoute = vi.fn(async () => 'orivon-route-tab-1')
 const routeAppToo = vi.fn(async (_origin?: string) => true)
-vi.mock('../../route/leaving-routes.js', () => ({ leaveFor: (...args: unknown[]) => leaveFor(...args), openTemporaryRoute: () => openTemporaryRoute(), routeAppToo: (origin: string) => routeAppToo(origin) }))
+vi.mock('../../route/leaving-routes.js', () => ({ isRoutedPage: (url: string) => isRoutedPage(url), leaveFor: (...args: unknown[]) => leaveFor(...args), openTemporaryRoute: () => openTemporaryRoute(), routeAppToo: (origin: string) => routeAppToo(origin) }))
 
 const { askBeforeLeavingRoute, chooseLeave, leaveForOpen } = await import('../leaving-route.js')
 
@@ -41,6 +42,7 @@ function rig (record: Record<string, unknown> = {}) {
 const turn = async (): Promise<void> => { await new Promise((resolve) => setImmediate(resolve)) }
 
 beforeEach(() => {
+  isRoutedPage.mockReset().mockReturnValue(true)
   repartitionView.mockReset(); loadInTab.mockReset(); askToLeaveRoute.mockReset(); leaveFor.mockReset().mockReturnValue(WEBSITE)
   isNavigationHeld.mockReset().mockReturnValue(false); holdNavigation.mockReset().mockReturnValue(() => {})
   openTemporaryRoute.mockReset().mockResolvedValue('orivon-route-tab-1'); routeAppToo.mockReset().mockResolvedValue(true)
@@ -164,6 +166,12 @@ describe('chooseLeave', () => {
 
 describe('leaveForOpen', () => {
   const record = { host: { services: undefined } } as never
+
+  it('maps no address and asks nothing for a page that is not a routed app\'s', () => {
+    isRoutedPage.mockReturnValue(false)
+    expect(leaveForOpen(record, 'https://news.example/', 'ipfs://some-name.eth/')).toBeUndefined()
+    expect(leaveFor).not.toHaveBeenCalled()
+  })
 
   it('asks about an address as written', () => {
     expect(leaveForOpen(record, APP_URL, 'https://news.example/a')).toEqual(WEBSITE)

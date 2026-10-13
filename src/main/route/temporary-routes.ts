@@ -64,12 +64,13 @@ export function createTemporaryRoutes (deps: TemporaryRoutesDeps): TemporaryRout
     held.delete(partition)
     bySession.delete(entry.session)
     deps.controller.releaseTemporary(entry.session, entry.front)
+    // Together: a call into the session that never returns must not keep the front listening.
     await Promise.allSettled([
       entry.session.clearStorageData(),
       entry.session.clearCache(),
-      entry.session.closeAllConnections()
+      entry.session.closeAllConnections(),
+      entry.front.close()
     ])
-    await entry.front.close().catch(() => {})
   }
 
   deps.onContentsGone((session) => {
@@ -87,8 +88,8 @@ export function createTemporaryRoutes (deps: TemporaryRoutesDeps): TemporaryRout
         targetFor: () => deps.proxy(),
         providerFor: (_key, target) => createSocks5Provider({ host: target.host, port: target.port, credentials: credentials(key) })
       })
-      const front = await startRouteFront({ provider: () => routeFor(key)?.provider })
       const session = deps.sessionFor(partition)
+      const front = await startRouteFront({ provider: () => routeFor(key)?.provider })
       held.set(partition, { session, front })
       bySession.set(session, partition)
       try {

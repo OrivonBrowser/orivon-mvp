@@ -5,7 +5,7 @@
 import type { WebContents } from 'electron'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
-import { leaveFor, openTemporaryRoute, routeAppToo } from '../route/leaving-routes.js'
+import { isRoutedPage, leaveFor, openTemporaryRoute, routeAppToo } from '../route/leaving-routes.js'
 import type { Leave } from '../route/leave-decision.js'
 import { gatewayRedirectFor } from './eth-gateway-rule.js'
 import { loadInTab } from './load-in-tab.js'
@@ -51,10 +51,13 @@ function loadedAt (record: TabRecord, url: string): string {
 
 /**
  * What the page of `from` opening `url` asks the person, or undefined (route/leave-decision.ts). An address Orivon
- * loads from its own nodes (`ipfs://`, a `.eth` gateway address) is judged by the address it is served at, which names
- * an installed app or nothing the proxy could reach: it is asked about only when it is an installed app.
+ * loads from its own nodes (`ipfs://`, a `.eth` gateway address) is judged by the address it is served at: it is
+ * asked about only when that is an installed app, because Orivon's nodes fetch it, not a server the page chose, and a
+ * proxy has no say in that.
  */
 export function leaveForOpen (record: TabRecord, from: string, url: string): Leave | undefined {
+  // Most pages are no routed app's: that is settled before any address is mapped.
+  if (!isRoutedPage(from)) return undefined
   const target = loadedAt(record, url)
   const leave = leaveFor(from, target)
   return leave?.kind === 'website' && target !== url ? undefined : leave
@@ -78,10 +81,10 @@ export function askBeforeLeavingRoute (wc: WebContents, id: string, record: TabR
     if (!event.isMainFrame || event.defaultPrevented || !shown() || record.isDashboardTab || record.internalPage !== null) return
     // A question about this page is already open: the hold drops this navigation.
     if (isNavigationHeld(wc)) return
-    const url = loadedAt(record, event.url)
     const from = wc.getURL()
     const leave = leaveForOpen(record, from, event.url)
     if (leave === undefined) return
+    const url = loadedAt(record, event.url)
     event.preventDefault()
     void chooseLeave(wc, from, leave).then((choice) => {
       // The tab moved, closed or went to another page while the question was open: the answer was about a page that is gone.

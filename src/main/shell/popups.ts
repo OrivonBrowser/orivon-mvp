@@ -7,6 +7,7 @@ import { WebContentsView } from 'electron'
 import type { HandlerDetails, LoadURLOptions, WebContents, WebPreferences, WindowOpenHandlerResponse } from 'electron'
 import { localFileKey, originFromUrl } from '../../broker/policy/origin.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
+import { sanitizeDirectUrl } from '../browsing/omnibox.js'
 import { askableScheme } from '../sessions/external-links.js'
 import type { Leave } from '../route/leave-decision.js'
 import { isTemporaryRoutePartition } from '../route/temporary-routes.js'
@@ -82,8 +83,7 @@ export interface PopupHost {
   /** `url` is what the popup was opened at, for anything the tab decides from it.
    * `active` -- see `openTab`'s own doc. */
   adoptPopup: (view: WebContentsView, partition: string | undefined, url: string, active: boolean) => void
-  /** `url` (a blob:, `blobMintedByOpener`'s own doc) opened directly in `partition`, the opener's
-   * own -- the one case a blob: URL is safe to open at all. `active`/`loadOptions` -- `openTab`'s own doc. */
+  /** `url` opened directly in `partition`, which the caller has chosen: a blob: URL in the opener's own (`blobMintedByOpener`'s own doc -- the one case a blob: URL is safe to open at all), or a checked web address in a temporary routed session. `active`/`loadOptions` -- `openTab`'s own doc. */
   openBlobTab: (url: string, partition: string | undefined, active: boolean, loadOptions?: LoadURLOptions) => WebContents | undefined
   /** `url`, a local file, in a new tab of the local-files session. Absent: a local file is never opened from a page. */
   openLocalFile?: (url: string, active: boolean) => Promise<WebContents | undefined>
@@ -204,6 +204,12 @@ function opensInTemporarySession (url: string, from: PopupOpener, host: PopupHos
   return isTemporaryRoutePartition(from.partition) && host.gatewayTarget?.(url) === undefined && host.partitionFor(url) === undefined && originFromUrl(url) !== null
 }
 
+/** A web address opened in a temporary routed session: normalised as a typed one is, and nothing but an http(s) address, which is all a proxy can carry. */
+function openInTemporary (host: PopupHost, url: string, partition: string | undefined, active: boolean, loadOptions: LoadURLOptions | undefined): WebContents | undefined {
+  const target = sanitizeDirectUrl(url)
+  return target === null || originFromUrl(target) === null ? undefined : host.openBlobTab(target, partition, active, loadOptions)
+}
+
 export function windowOpenHandler (
   host: PopupHost,
   opener: () => PopupOpener
@@ -239,7 +245,7 @@ export function windowOpenHandler (
     if (leave !== undefined && !staysInOpenerSession(details, from, host)) {
       // Electron wants the answer to this call now and the person has not given theirs: the open is refused here (so `window.open` returns null) and made, if allowed, after the question.
       void host.chooseLeave?.(leave, from).then((choice) => {
-        if (choice.kind === 'website') host.openBlobTab(details.url, choice.partition, active, loadOptions)
+        if (choice.kind === 'website') openInTemporary(host, details.url, choice.partition, active, loadOptions)
         else if (choice.kind !== 'cancel') openOutside()
       }).catch((error: unknown) => { console.error('[route] opening a window from a routed app failed:', error) })
       return { action: 'deny' }
@@ -251,7 +257,7 @@ export function windowOpenHandler (
       // Electron 44: a plain click or window.open() with no sizing features never produces it,
       // only a real sized popup or a genuine shift-click do), so it still deserves a window, not a
       // tab, through the same rate-limited path.
-      if (opensInTemporarySession(details.url, from, host)) host.openBlobTab(details.url, from.partition, active, loadOptions)
+      if (opensInTemporarySession(details.url, from, host)) openInTemporary(host, details.url, from.partition, active, loadOptions)
       else openOutside()
       return { action: 'deny' }
     }
@@ -282,7 +288,7 @@ export function windowOpenHandler (
             const opened = host.openBlobTab(details.url, from.partition, active, loadOptions)
             if (opened !== undefined) return opened
           } else if (opensInTemporarySession(details.url, from, host)) {
-            const opened = host.openBlobTab(details.url, from.partition, active, loadOptions)
+            const opened = openInTemporary(host, details.url, from.partition, active, loadOptions)
             if (opened !== undefined) return opened
           } else if (details.disposition === 'new-window' && processWindowBudget.allow() && limiter.allow()) {
             const opened = host.openWindow(details.url, loadOptions)
