@@ -87,7 +87,7 @@ async function prepareSource(source) {
     run('git', ['clone', '--depth', '1', '--branch', NYM.tag, NYM.url, source])
   } else {
     run('git', ['reset', '--hard', 'HEAD'], { cwd: source })
-    run('git', ['clean', '-fd'], { cwd: source })
+    run('git', ['clean', '-fdx'], { cwd: source })
   }
   const commit = output('git', ['rev-parse', 'HEAD'], { cwd: source })
   if (commit !== NYM.commit) throw new Error(`${NYM.tag} is at ${commit}, not the pinned ${NYM.commit}; remove ${source} and run again`)
@@ -147,9 +147,10 @@ export async function build({ cache, out }) {
     `--remap-path-prefix=${cargoHome}=/cargo`,
     `--remap-path-prefix=${sysroot}=/rust`
   ].join('\x1f')
+  const pathKey = Object.keys(process.env).find((key) => key.toUpperCase() === 'PATH') ?? 'PATH'
   const env = {
     ...process.env,
-    PATH: [...folders, join(cargoHome, 'bin'), process.env.PATH].join(delimiter),
+    [pathKey]: [...folders, join(cargoHome, 'bin'), process.env[pathKey]].join(delimiter),
     CARGO_TARGET_DIR: join(cache, 'target'),
     // Nym stamps its build time into the module; the commit's own time makes the stamp the same on every build.
     SOURCE_DATE_EPOCH: output('git', ['show', '-s', '--format=%ct', 'HEAD'], { cwd: source }),
