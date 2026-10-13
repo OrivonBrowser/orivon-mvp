@@ -147,10 +147,10 @@ only Windows file attached to a release. The package is the workflow artifact `s
 `manifest` and `publish` jobs do not take, so it reaches neither the release nor its IPFS folder; the owner downloads
 it from the run page and uploads it in Partner Center ([`release-checklist.md`](release-checklist.md)).
 
-- **Identity is provisional.** `appx.identityName`, `appx.publisher` and `appx.publisherDisplayName` are placeholders
-  until the owner reserves the name: Partner Center's Product identity page gives the three values (Package/Name,
-  Package/Publisher, Package/PublisherDisplayName), which go into `electron-builder.yml` verbatim. The Store refuses a
-  package with any other identity. `applicationId` (`Orivon`) and `displayName` are Orivon's own.
+- **Identity comes from Partner Center.** `appx.identityName`, `appx.publisher` and `appx.publisherDisplayName` are
+  the three values of the "Orivon Browser" product's Product identity page (Package/Name, Package/Publisher,
+  Package/PublisherDisplayName), copied verbatim into `electron-builder.yml`. The Store refuses a package with any
+  other identity. `applicationId` (`Orivon`) and `displayName` are Orivon's own.
 - **The tiles are Orivon's.** `build/appx/` holds the four logos the manifest names and two more tile sizes, cut from
   `build/icon.png` with ImageMagick (`convert build/icon.png -resize 150x150 Square150x150Logo.png`, and likewise for
   the others); without them electron-builder fills the package with its own stock logo.
