@@ -1,8 +1,8 @@
 // A routed app's page that opens an address outside the app's own sessions asks the person first, each time, whether the
-// page goes through their proxy or directly. The fixture app is served from the loader's cache and switched on in
+// page goes through their tunnel or directly. The fixture app is served from the loader's cache and switched on in
 // Settings. Its page opens a website whose name the SOCKS5 fixture knows and a decoy on the same port on loopback also
 // answers (the browser resolves that name to loopback, as this machine would answer an unknown one): a page that went
-// through the proxy shows the real server's title and the decoy sees nothing, a page that went direct shows the decoy's.
+// through the tunnel shows the real server's title and the decoy sees nothing, a page that went direct shows the decoy's.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/app-behaviours/e2e-app-routed-leaving.test.ts
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -183,7 +183,7 @@ async function expectTab (address: string, title: string): Promise<Page> {
 
 const findPopup = (): Page | undefined => app.windows().find((w) => w.url().includes('/site-info/') && !w.isClosed())
 
-it('[app:routed-app-asks-before-opening-a-website] asks, in the window, whether the page goes through the proxy or directly, and a same-origin address asks nothing', async () => {
+it('[app:routed-app-asks-before-opening-a-website] asks, in the window, whether the page goes through the tunnel or directly, and a same-origin address asks nothing', async () => {
   const before = (await tabIds(chrome)).length
   await appPage.evaluate(() => { document.getElementById('same')?.click() })
   await expectTab(`${ORIGIN}/other.html`, 'same origin page')
@@ -208,7 +208,7 @@ it('[app:routed-app-asks-before-opening-a-website] asks, in the window, whether 
   expect(await appPage.evaluate(() => (window as unknown as { __opened?: string }).__opened)).toBe('null')
 }, 3 * QA_TEST_TIMEOUT_MS)
 
-it('[app:routed-app-asks-before-opening-a-website] "Through my tunnel" opens the page in a temporary session that goes through the proxy and keeps nothing', async () => {
+it('[app:routed-app-asks-before-opening-a-website] "Through my tunnel" opens the page in a temporary session that goes through the tunnel and keeps nothing', async () => {
   await clickOpen('open', siteUrl('/one'))
   await answerQuestion(app, 'Through my tunnel')
   const page = await expectTab(siteUrl('/one'), 'proxied')
@@ -249,7 +249,7 @@ it('[app:routed-app-asks-before-opening-a-website] "Through my tunnel" opens the
   expect(decoyHits).toBe(0)
 }, 4 * QA_TEST_TIMEOUT_MS)
 
-it('[app:routed-app-asks-before-opening-a-website] "Directly" opens the page as it would with no route, and the proxy sees nothing', async () => {
+it('[app:routed-app-asks-before-opening-a-website] "Directly" opens the page as it would with no route, and the tunnel sees nothing', async () => {
   appPage = await openApp()
   const asked = proxied()
   await clickOpen('open', siteUrl('/direct'))
@@ -286,7 +286,7 @@ it('[app:routed-app-asks-before-opening-a-website] a navigation of the app\'s ow
   expect(decoyHits, 'Forward onto the page opened through the proxy goes through it again').toBe(hitsNow)
 }, 4 * QA_TEST_TIMEOUT_MS)
 
-it('[app:routed-app-asks-before-opening-a-website] another installed app whose route is off is offered the proxy too, and the switch turns on', async () => {
+it('[app:routed-app-asks-before-opening-a-website] another installed app whose route is off is offered the tunnel too, and the switch turns on', async () => {
   appPage = await openApp()
   await clickOpen('open', `${OTHER}/`)
   const panel = await waitQuestion(app)
@@ -320,7 +320,7 @@ it('[app:routed-app-asks-before-opening-a-website] a document the app made for i
   expect(decoyHits, 'and nothing went direct').toBe(hits)
 }, 3 * QA_TEST_TIMEOUT_MS)
 
-it('[app:routed-app-asks-before-opening-a-website] a page Orivon loads itself (ipfs://) is asked about with no proxy button, and Cancel loads nothing', async () => {
+it('[app:routed-app-asks-before-opening-a-website] a page Orivon loads itself (ipfs://) is asked about with no tunnel button, and Cancel loads nothing', async () => {
   appPage = await openApp()
   const tabs = (await tabIds(chrome)).length
   const asked = proxied()
