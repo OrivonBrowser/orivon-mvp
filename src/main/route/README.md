@@ -15,9 +15,13 @@ that is tied to the running browser: which apps the person routed, and what rout
 | `route-domain.ts` | What the Settings page may ask: whether the proxy answers |
 | `lookup-session.ts` | The session the browser's own lookups about a routed app go through (a tab icon from another host, the Web3 Score provider), and the answer to the front's proxy challenge for a request made from main |
 | `routed-fetch.ts` | A GET made by main through that session, as a `Response`, by `net.request` so that it can answer the challenge itself |
+| `leave-decision.ts` | Pure: whether a page of a routed app opening an address needs the person asked first (not its own origin, not an installed app whose route is on; a page with no web address counts as the app whose session it runs in) |
+| `temporary-routes.ts` | The in-memory session a website opened "through my proxy" runs in: a front and proxy sign-in of its own, released with its last tab |
+| `route-switch.ts` | Turning an app's route on or off, shared by the app card and the question below |
+| `leaving-routes.ts` | What the shell asks of all this when a routed app's page opens an address: the decision, the temporary session, the app switch |
 
 **What it depends on.** [`../../broker/route/`](../../broker/route/) (the route, its SOCKS5 provider and the probe),
-[`../settings/proxy-checks.ts`](../settings/proxy-checks.ts), [`../../broker/grants/origin-hash.ts`](../../broker/grants/origin-hash.ts),
+[`../settings/proxy-checks.ts`](../settings/proxy-checks.ts), [`../../broker/grants/origin-hash.ts`](../../broker/grants/origin-hash.ts), [`../../broker/policy/origin.ts`](../../broker/policy/origin.ts),
 [`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts), and `electron` for types, except
 `route-subsystem.ts`.
 
@@ -77,3 +81,14 @@ that answers `503`. Clearing the proxy therefore stops the app instead of exposi
 app, and the Web3 Score lookup for a routed caller skips the two reads that cannot go through a session (the
 verifier resolving a name, a gateway read of a manifest). Both are *provisional* until the verifier host takes a route
 per request.
+
+**A routed app's page opening an address outside its sessions asks first.** The shell stops the navigation or the window
+(`../shell/leaving-route.ts`, `../shell/popups.ts`), asks in the tab's question panel, and acts on the answer; the
+decision (`leave-decision.ts`) and the sessions it needs live here. *Through my proxy* opens the website in a session from
+`temporary-routes.ts`, pointed at its own front through the controller's `prepareTemporary` (the one place a session
+is pointed at a front, so the app sessions' rules apply to it too); it is never registered with an app, so a change of
+an app's route cannot repoint it. It is in memory because its name has no `persist:` prefix, and it is cleared when the
+last web contents in it is destroyed. A popup that asked for a window of its own is adopted into the app's routed session
+and is not asked about; an answer comes after `window.open` has returned, so such an open returns `null` whatever is
+chosen. A tab moved into a temporary session records it (`routedAway`) so that Forward onto that page does not load it
+in the shared session while the temporary one is alive.

@@ -376,6 +376,28 @@ describe('captureFaviconInto -- which session asks', () => {
   })
 })
 
+describe('captureFaviconInto -- a page in a temporary routed session', () => {
+  it('asks for an icon on another host through that session as well, never the default one', async () => {
+    const { setLeavingRoutes } = await import('../../route/leaving-routes.js')
+    const temporary = { id: 'the temporary session' } as unknown as import('electron').Session
+    setLeavingRoutes({
+      world: { isRouted: () => false, isInstalledApp: () => false, routedOriginOf: () => undefined },
+      temporary: { open: async () => 'orivon-route-tab-1', owns: (one) => one === temporary, isLive: () => true },
+      routeSwitch: { blockedFor: () => undefined, set: async () => {} }
+    })
+    try {
+      mockRequestOnce((request) => { request.emit('response', respondOk(200, [PNG_BYTES])) })
+      const target: FaviconTarget = { favicon: null, faviconOrigin: null, pendingFaviconUrl: null }
+
+      await captureFaviconInto(target, ['https://cdn.example/cdn-icon.png'], () => PUBLIC_PAGE, () => true, () => {}, temporary)
+
+      expect(vi.mocked(net.request).mock.calls[0]?.[0]).toMatchObject({ url: 'https://cdn.example/cdn-icon.png', session: temporary })
+    } finally {
+      setLeavingRoutes(undefined)
+    }
+  })
+})
+
 describe('captureFaviconInto -- a host the verifier serves', () => {
   it('keeps the site\'s icon the tab shows when the page\'s own icon does not arrive', async () => {
     mockRequestOnce((request) => { request.emit('error', new Error('the gateways did not answer')) })

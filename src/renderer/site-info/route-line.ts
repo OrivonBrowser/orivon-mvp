@@ -7,6 +7,7 @@ export function routeLineWords (route: SiteRoute): string {
   switch (route) {
     case 'down': return 'Your proxy is not answering, so this app\'s network traffic is stopped.'
     case 'no-proxy': return 'No proxy is set, so this app\'s network traffic is stopped.'
+    case 'temporary': return 'This page goes through your proxy, and nothing it stores is kept once its last tab is closed.'
     case 'idle':
     case 'ok': return 'This app\'s network traffic goes through your proxy.'
   }

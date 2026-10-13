@@ -7,6 +7,7 @@ import { isolationKeyFromUrl, originFromUrl } from '../../broker/policy/origin.j
 import { localPartitionFor, partitionAfterFileBlock as fileBlockTarget } from '../local-files/partition.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import type { Broker } from '../../broker/broker-contracts.js'
+import { isTemporaryRoutePartition } from '../route/temporary-routes.js'
 
 /** The `additionalArguments` flag marking a registered app's tab. Spelled
  * again in preload/routed/fetch.ts rather than imported, for the reason
@@ -71,6 +72,15 @@ export function partitionChanged (
   if (isolationKeyFromUrl(target) === null) return undefined
   const next = partitionForTarget(target)
   return next === currentPartition ? undefined : { to: next }
+}
+
+/** `partitionChanged` for a navigation the page started: a page in a temporary routed session stays in it on the open web, where any other tab's view would go back to the shared session. */
+export function partitionChangedByPage (
+  target: string,
+  currentPartition: string | undefined
+): PartitionSwap | undefined {
+  const swap = partitionChanged(target, currentPartition)
+  return swap !== undefined && swap.to === undefined && isTemporaryRoutePartition(currentPartition) ? undefined : swap
 }
 
 /** Where a tab moves when the fence cancelled its main-frame `file:` load (`../local-files/partition.ts`'s `partitionAfterFileBlock`), as a swap. */

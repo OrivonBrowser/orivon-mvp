@@ -58,8 +58,8 @@ export interface SiteUpdate {
   readonly reasons: readonly string[]
 }
 
-/** What a routed app's route is doing, as the popover says it. An app that is not routed has none. */
-export type SiteRoute = 'idle' | 'ok' | 'down' | 'no-proxy'
+/** What a routed app's route is doing, as the popover says it. An app that is not routed has none. `temporary` is a website opened through the proxy from a routed app: its session holds nothing past its last tab. */
+export type SiteRoute = 'idle' | 'ok' | 'down' | 'no-proxy' | 'temporary'
 
 export interface SiteInfo {
   readonly origin: string
