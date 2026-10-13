@@ -3,7 +3,7 @@
 - **Status:** accepted
 - **Date:** 2026-10-13
 - **Type:** architecture / security
-- **Decided by:** owner (Nym ships inside Orivon and is the default far end of the tunnel, a person can choose their own SOCKS5 address instead, and Nym is named plainly: `d-0620`); AI recommendation accepted by default for the process shape (`d-0621`)
+- **Decided by:** owner (Nym ships inside Orivon and is the default far end of the tunnel, a person can choose their own SOCKS5 address instead, and Nym is named plainly: `d-0621`); AI recommendation accepted by default for the process shape (`d-0622`)
 
 ## Decision
 
