@@ -16,8 +16,9 @@ import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isPersistableOrigin } from '../../broker/policy/origin.js'
 import { setLeavingRoutes } from './leaving-routes.js'
 import { setLookupSessionSource, setRouteChallengeSource } from './lookup-session.js'
+import { servedOrigin } from './served-origin.js'
 import { createRouteSwitch } from './route-switch.js'
-import { createTemporaryRoutes } from './temporary-routes.js'
+import { createTemporaryRoutes, temporarySessionShowing } from './temporary-routes.js'
 import { createRouteService } from './route-service.js'
 import { RouteStore } from './route-store.js'
 
@@ -42,8 +43,6 @@ export const routeSubsystem: Subsystem = {
       }
     })
     setReachRoute(routes.hub.routeFor)
-    // The sessions handed out are Electron's own (`sessionFor` above), so the cast only restores what the controller's narrow type hides.
-    setLookupSessionSource(async (origin) => await routes.controller.fetchSessionFor(origin) as Session | undefined)
     setRouteChallengeSource(routes.controller.challengeCredentials)
     beforeAppSessionServes(async (appSession, origin) => { await routes.controller.appSessionRegistered(origin, appSession) })
     const temporary = createTemporaryRoutes({
@@ -59,11 +58,16 @@ export const routeSubsystem: Subsystem = {
         })
       }
     })
+    // The sessions handed out are Electron's own (`sessionFor` above), so the casts only restore what the controller's narrow type hides.
+    // A site open in a temporary session is looked up about through that session; an app's own session wins for an app.
+    setLookupSessionSource(async (origin) => await routes.controller.fetchSessionFor(origin) as Session | undefined
+      ?? temporarySessionShowing(webContents.getAllWebContents(), temporary.owns, origin) as Session | undefined)
     setLeavingRoutes({
       world: {
         isRouted: routes.hub.isRouted,
         isInstalledApp: isOriginServedFromCacheSync,
-        routedOriginOf: (partition) => partition === undefined ? undefined : routes.store.origins().find((origin) => partitionFor(origin) === partition)
+        routedOriginOf: (partition) => partition === undefined ? undefined : routes.store.origins().find((origin) => partitionFor(origin) === partition),
+        servedOrigin
       },
       temporary,
       routeSwitch: createRouteSwitch(routes, { isPinned: isOriginPinnedSync, isPersistable: isPersistableOrigin })

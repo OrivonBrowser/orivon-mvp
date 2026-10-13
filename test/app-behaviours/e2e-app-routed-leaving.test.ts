@@ -318,3 +318,46 @@ it('[app:routed-app-asks-before-opening-a-website] a document the app made for i
   expect(proxied(), 'nothing was sent to the proxy').toBe(asked)
   expect(decoyHits, 'and nothing went direct').toBe(hits)
 }, 3 * QA_TEST_TIMEOUT_MS)
+
+it('[app:routed-app-asks-before-opening-a-website] a page Orivon loads itself (ipfs://) is asked about with no proxy button, and Cancel loads nothing', async () => {
+  appPage = await openApp()
+  const tabs = (await tabIds(chrome)).length
+  const asked = proxied()
+  const hits = decoyHits
+  await clickOpen('navigate', 'ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/')
+  const panel = await waitQuestion(app)
+  const said = await readQuestion(panel)
+  expect(said.message).toBe(`${ORIGIN} wants to open ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi.`)
+  expect(said.detail).toBe('Orivon loads this page itself, so it cannot go through your proxy yet.')
+  expect([...said.buttons].sort()).toEqual(['Cancel', 'Directly'])
+  await answerQuestion(app, 'Cancel')
+  expect(await waitFor(async () => await questionGone(app))).toBe(true)
+  await delay(1000)
+  expect((await activeTabInfo(chrome)).address, 'the tab stays on the app').toBe(`${ORIGIN}/`)
+  expect((await tabIds(chrome)).length).toBe(tabs)
+  expect(proxied(), 'nothing was sent to the proxy').toBe(asked)
+  expect(decoyHits, 'and nothing went direct').toBe(hits)
+}, 3 * QA_TEST_TIMEOUT_MS)
+
+it('[app:routed-app-asks-before-opening-a-website] while a question from the app is open its next request is cancelled unasked, and it is asked again once answered', async () => {
+  appPage = await openApp()
+  const tabs = (await tabIds(chrome)).length
+  const asked = proxied()
+  const hits = decoyHits
+  await clickOpen('open', siteUrl('/first'))
+  await waitQuestion(app)
+  await clickOpen('open', siteUrl('/second'))
+  expect(await appPage.evaluate(() => (window as unknown as { __opened?: string }).__opened), 'the second window.open said null').toBe('null')
+  await answerQuestion(app, 'Cancel')
+  expect(await waitFor(async () => await questionGone(app))).toBe(true)
+  await delay(1000)
+  expect(await questionGone(app), 'the cancelled request raised no question of its own').toBe(true)
+  expect((await tabIds(chrome)).length).toBe(tabs)
+  expect(proxied() + decoyHits, 'nothing was sent').toBe(asked + hits)
+
+  // Nothing is remembered: the same request is asked about again.
+  await clickOpen('open', siteUrl('/second'))
+  await waitQuestion(app)
+  await answerQuestion(app, 'Cancel')
+  expect(await waitFor(async () => await questionGone(app))).toBe(true)
+}, 3 * QA_TEST_TIMEOUT_MS)

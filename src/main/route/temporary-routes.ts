@@ -6,6 +6,7 @@ import { randomBytes } from 'node:crypto'
 import { createSocks5Provider, isolationCredentials } from '../../broker/route/socks5.js'
 import { createRouteFor } from '../../broker/route/table.js'
 import type { RouteTarget } from '../../broker/route/table.js'
+import { originFromUrl } from '../../broker/policy/origin.js'
 import { startRouteFront } from './front.js'
 import type { RouteFront } from './front.js'
 import type { RouteController, RouteSession } from './route-controller.js'
@@ -16,6 +17,21 @@ const PREFIX = 'orivon-route-tab-'
 /** Whether `partition` is the name of a temporary routed session. */
 export function isTemporaryRoutePartition (partition: string | undefined): boolean {
   return partition !== undefined && partition.startsWith(PREFIX)
+}
+
+/**
+ * The temporary session a live page of `origin` runs in, if any: what the browser's own lookups about that site go
+ * through, so they leave by the same route as the page. Undefined when no temporary tab shows the site.
+ */
+export function temporarySessionShowing (
+  contents: Iterable<{ readonly session: object, readonly getURL: () => string, readonly isDestroyed: () => boolean }>,
+  owns: (session: object | undefined) => boolean,
+  origin: string
+): object | undefined {
+  for (const page of contents) {
+    if (!page.isDestroyed() && owns(page.session) && originFromUrl(page.getURL()) === origin) return page.session
+  }
+  return undefined
 }
 
 /** What a temporary session is cleaned with when its last tab is gone. */

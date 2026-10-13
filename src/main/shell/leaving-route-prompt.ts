@@ -7,14 +7,12 @@ import { askQuestion, type QuestionTarget } from './question/ask-question.js'
 
 export type LeaveAnswer = 'proxy' | 'direct' | 'cancel'
 
-const PROXY = 0
-const DIRECT = 1
-const CANCEL = 2
-
 /** The question as the panel is given it; split out so the words are tested without a window. */
-export function leavingQuestion (leave: Leave): { message: string, detail: string, buttons: [string, string, string] } {
+export function leavingQuestion (leave: Leave): { message: string, detail: string, buttons: string[] } {
+  const message = `${formatOriginForDisplay(leave.app)} wants to open ${formatOriginForDisplay(leave.origin)}.`
+  if (leave.kind === 'served') return { message, detail: 'Orivon loads this page itself, so it cannot go through your proxy yet.', buttons: ['Directly', 'Cancel'] }
   return {
-    message: `${formatOriginForDisplay(leave.app)} wants to open ${formatOriginForDisplay(leave.origin)}.`,
+    message,
     detail: leave.kind === 'website'
       ? 'Your proxy is on for this app. Open the page through your proxy, or directly?'
       : 'Your proxy is on for this app, and not for the app it wants to open. Open it through your proxy, or directly?',
@@ -25,14 +23,18 @@ export function leavingQuestion (leave: Leave): { message: string, detail: strin
 /** Escape, a closed tab and a new page in the tab all answer `cancel`. */
 export async function askToLeaveRoute (where: QuestionTarget, leave: Leave): Promise<LeaveAnswer> {
   const { message, detail, buttons } = leavingQuestion(leave)
+  // The choices are listed in the order shown: [proxy,] direct, cancel.
+  const hasProxy = buttons.length === 3
+  const direct = hasProxy ? 1 : 0
+  const cancel = buttons.length - 1
   const { response } = await askQuestion(where, {
     kind: 'consent',
     buttons,
-    cancelId: CANCEL,
-    guarded: [PROXY, DIRECT],
+    cancelId: cancel,
+    guarded: hasProxy ? [0, direct] : [direct],
     focus: 'dialog',
     message,
     detail
   }, { endOnNavigation: true })
-  return response === PROXY ? 'proxy' : response === DIRECT ? 'direct' : 'cancel'
+  return hasProxy && response === 0 ? 'proxy' : response === direct ? 'direct' : 'cancel'
 }
