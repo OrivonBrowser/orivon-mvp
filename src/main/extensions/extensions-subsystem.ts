@@ -34,7 +34,7 @@ import { attachExtensionsDnr, getDnrEngine } from './extensions-dnr.js'
 import { registerDnrApiHandlers } from './dnr-api.js'
 import { installApis, installProfileApis } from './api/install-apis.js'
 import { createProfileAttacher, type ProfileAttacher } from './profile-hosts.js'
-import { profileEntries } from './profile-registry.js'
+import { PROFILES, profilePartition } from '../route/site-partition.js'
 import { provideCommandKeys } from './api/commands-api.js'
 import { installExtensionCommands } from './install-extension-commands.js'
 import type { ExtensionCommandKeys } from './extension-commands-runner.js'
@@ -123,9 +123,12 @@ export function wakeProfileSession (target: Session): Promise<void> | undefined 
   return profileAttacher?.wake(target)
 }
 
-/** The profile sessions that hold the person's extensions, for the clean-up an uninstall does in each. */
+/**
+ * Both persistent profile sessions, whether or not a website has used them yet this run: an uninstall empties the extension's data
+ * in each. A session is made by name, which the route subsystem fits with its controls like any other.
+ */
 export function profileExtensionSessions (): readonly Session[] {
-  return profileEntries().map((entry) => entry.session)
+  return PROFILES.map((profile) => session.fromPartition(profilePartition(profile, true)))
 }
 
 export const extensionsSubsystem: Subsystem = {

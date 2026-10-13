@@ -48,7 +48,11 @@ export interface SiteSessions {
 }
 
 interface Entry {
+  /** What the session's requests wait for: the attempt to make it ready, then each wake of the extensions. */
   current: Promise<void>
+  /** The attempt to make the session ready, and whether it has ended in success. */
+  attempt: Promise<void>
+  ready: boolean
   failed: boolean
   watch: () => void
 }
@@ -60,11 +64,15 @@ export function createSiteSessions (deps: SiteSessionsDeps): SiteSessions {
     ensure: (partition) => {
       const entry = entries.get(partition)
       if (entry !== undefined && !entry.failed) {
-        // Ready already. Requests wait again only when the extensions have to come back first.
-        const waking = deps.wake?.(deps.sessionFor(partition))
+        const session = deps.sessionFor(partition)
+        // Only a session that is ready is woken: one still being made loads its extensions itself, once its route is held.
+        if (!entry.ready) return
+        // Asked again, harmlessly: a session made ready before the extensions subsystem started was not prepared for them then.
+        deps.prepare?.(session, partition.startsWith('persist:'), partition)
+        // Ready: its extensions are put back when they were taken away, and its requests wait for that and no longer.
+        const waking = deps.wake?.(session)
         if (waking !== undefined) {
-          const before = entry.current
-          entry.current = before.then(async () => { await waking })
+          entry.current = entry.attempt.then(async () => { await waking })
           entry.current.then(() => {}, () => {})
           entry.watch()
         }
@@ -85,10 +93,12 @@ export function createSiteSessions (deps: SiteSessionsDeps): SiteSessions {
         await deps.controller.confineSite(session)
         throw error
       })
-      const fresh: Entry = entry ?? { current: attempt, failed: false, watch: () => {} }
+      const fresh: Entry = entry ?? { current: attempt, attempt, ready: false, failed: false, watch: () => {} }
       fresh.current = attempt
+      fresh.attempt = attempt
+      fresh.ready = false
       fresh.failed = false
-      attempt.then(() => {}, () => { if (fresh.current === attempt) fresh.failed = true })
+      attempt.then(() => { if (fresh.attempt === attempt) fresh.ready = true }, () => { if (fresh.attempt === attempt) fresh.failed = true })
       if (entry === undefined) {
         entries.set(partition, fresh)
         fresh.watch = deps.hold(session, () => fresh.current)

@@ -48,6 +48,8 @@ function installPerInstance (ctx: ExtensionApiContext): { pinned: (id: string) =
     }
     ctx.host.notifyActionsChanged()
   }
+  // What an extension shows when it loads is what it is known to have been told, so a later change is a real one.
+  ctx.session.extensions.on('extension-loaded', (_event, extension) => { known.set(extension.id, pinned(extension.id)) })
   ctx.prefs.onChange((id) => { refresh([id]) })
   refreshers.add(() => { refresh([...known.keys()]) })
   return { pinned, known }

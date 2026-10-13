@@ -151,3 +151,27 @@ describe('removing a website\'s storage', () => {
     expect(log).toEqual([`clear ${TUNNEL} ${SITE}`])
   })
 })
+
+describe('a view made in a session whose first attempt has not ended', () => {
+  it('leaves the attempt to wake the extensions, and a failing attempt is retried at the next view', async () => {
+    let fail = true
+    let release: () => void = () => {}
+    const { sites, held, deps, log } = setup(async () => {
+      await new Promise<void>((resolve) => { release = resolve })
+      if (fail) throw new Error('no front')
+    })
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    sites.ensure(TUNNEL)
+    sites.ensure(TUNNEL)
+    expect(log.filter((line) => line === 'wake'), 'no wake before the route is held').toEqual([])
+    release()
+    await expect(held[0]?.ready()).rejects.toThrow(/no front/)
+
+    fail = false
+    sites.ensure(TUNNEL)
+    expect(deps.controller.prepareSite, 'a failed attempt is tried again').toHaveBeenCalledTimes(2)
+    release()
+    await held[0]?.ready()
+  })
+})

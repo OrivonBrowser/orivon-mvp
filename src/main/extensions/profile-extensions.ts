@@ -12,6 +12,7 @@ export interface SessionExtensions {
   readonly getAllExtensions: () => Extension[]
   readonly loadExtension: (path: string, options?: LoadExtensionOptions) => Promise<Extension>
   readonly removeExtension: (id: string) => void
+  readonly getExtension: (id: string) => Extension | null
   on (event: 'extension-loaded', listener: (event: unknown, extension: Extension) => void): unknown
   on (event: 'extension-unloaded', listener: (event: unknown, extension: Extension) => void): unknown
 }
@@ -42,9 +43,9 @@ export function createProfileExtensions (target: SessionExtensions, source: Sess
   }
 
   const remove = (id: string): void => {
-    if (!loaded.delete(id)) return
+    loaded.delete(id)
     try {
-      target.removeExtension(id)
+      if (target.getExtension(id) !== null) target.removeExtension(id)
     } catch (error) {
       console.error(`[extensions] could not remove ${id} from a profile session: ${String(error)}`)
     }
@@ -61,6 +62,12 @@ export function createProfileExtensions (target: SessionExtensions, source: Sess
     }
   }
 
+  // An extension that loads into the profile session by another way (the service-worker recovery reloads one in place) is held to
+  // the same switch: it stays only while the copies are on, and then counts among them, so that switching off removes it.
+  target.on('extension-loaded', (_event, extension) => {
+    if (wanted) loaded.add(extension.id)
+    else remove(extension.id)
+  })
   // orivon:floating-ok -- `enqueue` catches everything its task can throw
   source.on('extension-loaded', (_event, extension) => { void enqueue(async () => { await load(extension) }) })
   // orivon:floating-ok -- `enqueue` catches everything its task can throw

@@ -229,14 +229,11 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
  * `chrome.windows`, toolbar button and popup act on the tabs of that session, as the default session's instance does on its own.
  * What the default session's instance sets once for every instance (the checks on the router, the preload paths of the
  * popup, the toolbar's anchor) is not set again; what is of the session (the popup policy, the sandbox pages' CSP, the
- * service-worker health check, the invocation ledger) is.
+ * service-worker health check) is. The invocation ledger is the process's, keyed by tab, so a copy leaving does not clear it.
  */
 export function createProfileExtensionHost (target: Session, preloadPath: string): ElectronChromeExtensions {
   const sessionExtensions = target.extensions
   sessionExtensions.setMaxListeners(Math.max(sessionExtensions.getMaxListeners(), EXTENSIONS_LISTENER_ROOM))
-  sessionExtensions.addListener('extension-unloaded', (_event, extension) => {
-    clearInvocationsForExtension(extension.id)
-  })
   webRequestOwnerFor(target).onHeadersReceived(
     RUN_LAST,
     EXTENSION_SANDBOX_CSP_FILTER,
@@ -297,12 +294,15 @@ function allHosts (): ElectronChromeExtensions[] {
 /** The profile page each tab holds open, remembered so that its close needs no read of a web contents that may be gone. */
 const openInProfile = new WeakMap<WebContents, { readonly key: number, readonly close: (key: number) => void }>()
 
-/** A page of a website is open in `wc`'s session, if it is a profile's: what decides whether that profile's extensions run. */
+/** A page of a website is open in `wc`'s session, if it is a profile's: what decides whether that profile's extensions run. A page of an extension is not a website. */
 function openedInProfile (wc: WebContents): void {
   const entry = profileEntryOf(wc.session)
   if (entry === undefined) return
+  const isWebsite = (): boolean => !wc.isDestroyed() && !wc.getURL().startsWith('chrome-extension://')
   openInProfile.set(wc, { key: wc.id, close: (key) => { entry.demand.closed(key) } })
-  entry.demand.opened(wc.id)
+  entry.demand.opened(wc.id, isWebsite)
+  // A tab sent to an extension page (or back to a website) changes the answer without any tab event.
+  wc.on('did-navigate', () => { entry.demand.recheck() })
 }
 
 function closedInProfile (wc: WebContents): void {
@@ -383,6 +383,10 @@ export function attachExtensionShell (ctx: SubsystemContext, services: ShellServ
       trackedTabs.add(wc)
       host.addTab(wc, win)
       openedInProfile(wc)
+      // The library takes a tab it is handed to be the one in front when its instance has none in the window. A tab opened behind
+      // one of another session (or behind a page the library does not track) must not be that: the instance has no tab in front.
+      const front = bridge?.services.windows.findTab(wc)?.window.tabs.activeWebContents()
+      if (front !== undefined && front !== wc && hostForSession(front.session) !== host) host.clearActiveTab(win)
     },
     tabActivated: (wc) => {
       // Chrome closes an open browserAction popup the moment the PERSON

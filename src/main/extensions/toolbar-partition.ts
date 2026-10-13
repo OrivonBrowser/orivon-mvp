@@ -17,14 +17,23 @@ export function partitionScript (partition: string): string | null {
 
 const last = new WeakMap<object, string>()
 
-/** Points the list in `chrome` at `partition`; a page reloading is told again the next time a tab comes to the front. */
-export function syncToolbarPartition (chrome: Pick<WebContents, 'executeJavaScript' | 'isDestroyed'>, partition: string): void {
-  if (chrome.isDestroyed() || last.get(chrome) === partition) return
+/** What the page is sent: `partition`'s script, remembered, and again once a page that reloaded has loaded. */
+export function syncToolbarPartition (chrome: Pick<WebContents, 'executeJavaScript' | 'isDestroyed'> & Partial<Pick<WebContents, 'on'>>, partition: string): void {
+  if (chrome.isDestroyed()) return
+  const first = !last.has(chrome)
+  if (last.get(chrome) === partition) return
   const script = partitionScript(partition)
   if (script === null) return
   last.set(chrome, partition)
+  // A chrome page that reloads draws its list at the default session again; it is told once more what it showed.
+  if (first) {
+    chrome.on?.('did-finish-load', () => {
+      const wanted = last.get(chrome)
+      const again = wanted === undefined ? null : partitionScript(wanted)
+      if (again !== null && !chrome.isDestroyed()) chrome.executeJavaScript(again).catch(() => undefined)
+    })
+  }
   chrome.executeJavaScript(script).catch(() => {
-    // The chrome page is reloading: forget what was sent so that the next tab to the front sends it again.
-    last.delete(chrome)
+    // The chrome page is reloading: the load that ends it sends it again.
   })
 }

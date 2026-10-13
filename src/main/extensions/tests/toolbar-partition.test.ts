@@ -8,7 +8,7 @@ describe('which session the toolbar speaks to', () => {
     expect(partitionScript('')).toBeNull()
   })
 
-  it('tells a page once for a partition, and again after the page could not be told', async () => {
+  it('tells a page once for a partition, and again for another', () => {
     const run = vi.fn(async () => undefined)
     const page = { isDestroyed: () => false, executeJavaScript: run }
     syncToolbarPartition(page, 'persist:direct-profile')
@@ -16,13 +16,18 @@ describe('which session the toolbar speaks to', () => {
     expect(run).toHaveBeenCalledTimes(1)
     syncToolbarPartition(page, 'orivon-extensions-default')
     expect(run).toHaveBeenCalledTimes(2)
+  })
 
-    const failing = { isDestroyed: () => false, executeJavaScript: vi.fn(async () => { throw new Error('reloading') }) }
-    syncToolbarPartition(failing, 'persist:direct-profile')
-    await Promise.resolve()
-    await Promise.resolve()
-    syncToolbarPartition(failing, 'persist:direct-profile')
-    expect(failing.executeJavaScript).toHaveBeenCalledTimes(2)
+  it('tells a page that reloaded what it showed, since the reloaded page draws the default session\'s list', () => {
+    const run = vi.fn(async (_script: string) => undefined)
+    let loaded: () => void = () => {}
+    const page = { isDestroyed: () => false, executeJavaScript: run, on: ((event: string, listener: () => void) => { if (event === 'did-finish-load') loaded = listener }) as never }
+    syncToolbarPartition(page, 'persist:tunnel-profile')
+    syncToolbarPartition(page, 'persist:direct-profile')
+    run.mockClear()
+    loaded()
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(String(run.mock.calls[0]?.[0])).toContain('persist:direct-profile')
   })
 
   it('leaves a destroyed page alone', () => {

@@ -53,7 +53,7 @@ window's side panel (`../side-panel/`), opened by its toolbar button, its key or
 `shortcuts-page.ts`, `site-reach-runner.ts`, `site-reach.ts`, `store-download-seam.ts`,
 `store-runner.ts`, `store-test-hook.ts` and `unpack-runner.ts`), `node:crypto`, `node:fs`, `node:path`,
 `adm-zip`, `pbf`,
-[`../sessions/web-request-owner.ts`](../sessions/web-request-owner.ts)'s `webRequestOwnerFor`/
+[`../route/site-partition.ts`](../route/site-partition.ts) (durable: which profile a session name stands for, and the names of the two profile sessions), [`../sessions/web-request-owner.ts`](../sessions/web-request-owner.ts)'s `webRequestOwnerFor`/
 `RUN_LAST` and [`../install/granted-origin-csp.ts`](../install/granted-origin-csp.ts)'s
 `withAppendedCsp` (`extension-sandbox-csp.ts`'s own dependencies -- the same header-composition
 seam `granted-origin-csp.ts` itself uses, reused rather than duplicated),
@@ -142,8 +142,10 @@ front (`toolbar-partition.ts`), so a click acts on that session's copy; a page o
 (`chrome.tabs.create`, the options page) is a tab of the same session (`openTrusted`'s `partition`), so that it talks to
 the copy the call came from. One copy of each extension is loaded per profile, never per website. **Each copy has storage of its
 own**, so the settings of an extension (uBlock Origin's lists and whitelist) are kept per profile and are not carried across;
-the popover and Settings say so. An uninstall empties the extension's data in every profile session
-(`extension-data.ts`). What a profile does not have: the side panel, the keyboard shortcuts of extension commands, and any
+the popover and Settings say so. An uninstall empties the extension's data in both profile sessions (`extension-data.ts`: through its own origin where the copy
+is loaded, and by removing its settings folders from disk where it is not). What the copies share, being the process's: the
+rules an extension adds at run time (one `declarativeNetRequest` engine keyed by extension id, so the last copy to write wins),
+history, bookmarks and top sites, and the answer of `runtime.onInstalled`, which the first copy to ask takes. What a profile does not have: the side panel, the keyboard shortcuts of extension commands, and any
 extension in a plain-http website's profile, which is kept in memory, where Electron loads none.
 
 **The direct profile's copies run only while a website of the direct profile is open.** `profile-demand.ts` counts the pages of

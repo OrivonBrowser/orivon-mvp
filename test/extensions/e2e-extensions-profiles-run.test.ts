@@ -31,6 +31,8 @@ const NAMES = { tunnelled: 'tunnelled.socks.test', direct: 'direct.socks.test', 
 type Name = keyof typeof NAMES
 const TUNNEL = 'persist:tunnel-profile'
 const DIRECT = 'persist:direct-profile'
+/** The extensions the profile holds: two with a background page, one with a service worker. */
+const COPIES = 3
 
 /** The page of a site: it waits until the extension's blocking listener is in force, then asks for a script the listener cancels. */
 const PAGE = (title: string): string => `<!doctype html><title>${title}</title><body>${title}
@@ -108,7 +110,7 @@ beforeAll(async () => {
     args: [`--host-resolver-rules=${mapping}, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1`, `--ignore-certificate-errors-spki-list=${tls.spki}`],
     seedProfile: async (userDataDir: string) => {
       mkdirSync(join(userDataDir, 'extensions'), { recursive: true })
-      beaconId = seedExtensions(userDataDir, ['webrequest-mv2', 'profile-beacon']).find((entry) => entry.name.includes('Beacon'))?.id ?? ''
+      beaconId = seedExtensions(userDataDir, ['webrequest-mv2', 'profile-beacon', 'action-popup']).find((entry) => entry.name.includes('Beacon'))?.id ?? ''
       writeFileSync(join(userDataDir, 'extensions', 'profile-beacon', '1.0.0', 'config.js'), `self.BEACON_URL = ${JSON.stringify(beaconUrl)}\n`)
       // The whole browser is on the tunnel; one website is set to on and one to off, already apart, as a profile that has used both holds them.
       writeFileSync(join(userDataDir, 'settings.json'), JSON.stringify({ version: 1, values: { 'network.route.proxy': `127.0.0.1:${String(socks.port)}`, 'network.tunnel.everywhere': true } }))
@@ -140,10 +142,11 @@ async function visit (name: Name): Promise<Page> {
 const flag = async (view: Page, name: string): Promise<boolean> => await view.evaluate((n) => Boolean((window as unknown as Record<string, unknown>)[n]), name)
 
 /** The extensions a session holds, and the extension pages (background pages) that exist in it. */
-const inSession = async (partition: string | undefined): Promise<{ extensions: number, backgrounds: number }> => await app.evaluate(({ session, webContents }, name) => {
+const inSession = async (partition: string | undefined): Promise<{ extensions: number, backgrounds: number, workers: number }> => await app.evaluate(({ session, webContents }, name) => {
   const target = name === undefined ? session.defaultSession : session.fromPartition(name)
   return {
     extensions: target.extensions.getAllExtensions().length,
+    workers: Object.values(target.serviceWorkers.getAllRunning()).filter((worker) => worker.scope.startsWith('chrome-extension://')).length,
     backgrounds: webContents.getAllWebContents().filter((wc) => !wc.isDestroyed() && wc.session === target && wc.getType() === 'backgroundPage').length
   }
 }, partition)
@@ -173,7 +176,7 @@ it('[app:extensions-run-in-the-profiles] a blocking webRequest listener cancels 
 
 it('[app:extensions-run-in-the-profiles] with the whole browser on the tunnel, the direct profile holds no extension, and none of its copies makes a request, while no website of it is open', async () => {
   // Three copies of the beacon run now: the default session's, the tunnel profile's and the direct profile's.
-  expect(await inSession(DIRECT)).toMatchObject({ extensions: 2 })
+  expect(await inSession(DIRECT)).toMatchObject({ extensions: COPIES })
   const copyIn = async (partition: string | undefined): Promise<string> => {
     let found = ''
     await waitFor(async () => {
@@ -193,19 +196,26 @@ it('[app:extensions-run-in-the-profiles] with the whole browser on the tunnel, t
   const heard = await waitFor(() => Date.now() - lastHeard() < 1_000)
   expect(heard, 'the direct profile\'s copy is asking while its website is open').toBe(true)
 
-  // The only tab leaves the direct website for a plain one: no website of the direct profile is open, and its extensions go.
+  // The only tab is sent to a page of an extension (by the extension itself): that is no website, so the direct profile's copies go.
   expect(await sessionNameOf(url('direct'))).toBe(DIRECT)
+  expect(await waitFor(async () => (await inSession(DIRECT)).workers > 0, 20_000), 'the service worker of the third extension runs while the site is open').toBe(true)
+  await inBeacon(DIRECT, `chrome.tabs.query({ active: true }).then(([tab]) => chrome.tabs.update(tab.id, { url: chrome.runtime.getURL('config.js') }))`)
+  expect(await waitFor(async () => (await inSession(DIRECT)).extensions === 0, 20_000), 'a tab showing an extension keeps nothing running').toBe(true)
+  expect(await waitFor(async () => (await inSession(DIRECT)).workers === 0, 20_000), 'and no service worker either').toBe(true)
+  await visit('direct')
+  expect(await waitFor(async () => (await inSession(DIRECT)).extensions === COPIES, 20_000), 'a website brings them back').toBe(true)
+
+  // The only tab leaves the direct website for a plain one: no website of the direct profile is open, and its extensions go.
   await visit('plain')
-  expect(await waitFor(async () => (await inSession(DIRECT)).extensions === 0 && (await inSession(DIRECT)).backgrounds === 0, 20_000), 'the direct profile holds no extension').toBe(true)
   const silentSince = Date.now()
   await delay(3_000)
   expect(lastHeard() < silentSince, 'the direct profile\'s copy made no request after it was taken away').toBe(true)
-  expect((await inSession(TUNNEL)).extensions, 'the tunnel profile keeps its own').toBe(2)
-  expect((await inSession(undefined)).extensions).toBe(2)
+  expect((await inSession(TUNNEL)).extensions, 'the tunnel profile keeps its own').toBe(COPIES)
+  expect((await inSession(undefined)).extensions).toBe(COPIES)
 
   // Another website of the direct profile opens: the extensions come back, with the same storage.
   const view = await visit('direct')
-  expect(await waitFor(async () => (await inSession(DIRECT)).extensions === 2, 20_000)).toBe(true)
+  expect(await waitFor(async () => (await inSession(DIRECT)).extensions === COPIES, 20_000)).toBe(true)
   expect(await waitFor(() => Date.now() - lastHeard() < 1_000, 20_000), 'the copy asks again').toBe(true)
   expect(await waitFor(async () => await flag(view, '__adBlocked'), 60_000), 'and blocks again').toBe(true)
 }, 4 * QA_TEST_TIMEOUT_MS)

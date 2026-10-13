@@ -15,12 +15,14 @@ function fakeExtensions (initial: Extension[] = [], damaged: readonly string[] =
     loadExtension: async (path) => {
       if (damaged.includes(path)) throw new Error('damaged')
       await gate
-      const extension = [...held.values()].find((candidate) => candidate.path === path) ?? ({ id: path, path, name: path } as Extension)
+      const extension = { id: path.split('/').pop() as string, path, name: path } as Extension
       log.push(`load ${path}`)
       held.set(extension.id, extension)
+      for (const listener of listeners['extension-loaded'] ?? []) listener({}, extension)
       return extension
     },
     removeExtension: (id) => { log.push(`remove ${id}`); held.delete(id) },
+    getExtension: (id) => held.get(id) ?? null,
     on: ((event: 'extension-loaded' | 'extension-unloaded', listener: Listener) => { listeners[event]?.push(listener) }) as SessionExtensions['on']
   }
   return {
@@ -74,6 +76,7 @@ describe('the person\'s extensions in a profile session', () => {
     target.hold(new Promise<void>((resolve) => { release = resolve }))
     const mirror = createProfileExtensions(target.session, source.session)
     const activating = mirror.activate()
+    await settle()
     const deactivating = mirror.deactivate()
     release()
     await activating
@@ -98,5 +101,24 @@ describe('the person\'s extensions in a profile session', () => {
     const load = vi.spyOn(target.session, 'loadExtension')
     await createProfileExtensions(target.session, source.session).activate()
     expect(load).toHaveBeenCalledWith('/p/a', { allowFileAccess: false })
+  })
+})
+
+describe('an extension that loads into the profile session by another way', () => {
+  it('is removed at once while the copies are off, and counts among them while they are on', async () => {
+    const source = fakeExtensions([ext('a')])
+    const target = fakeExtensions()
+    const mirror = createProfileExtensions(target.session, source.session)
+    // The service-worker recovery reloads in place, outside the mirror: here, after the copies were switched off.
+    target.held.set('late', ext('late'))
+    target.emit('extension-loaded', ext('late'))
+    expect(target.held.has('late'), 'removed, because the copies are off').toBe(false)
+
+    await mirror.activate()
+    target.held.set('reloaded', ext('reloaded'))
+    target.emit('extension-loaded', ext('reloaded'))
+    expect(mirror.loaded()).toContain('reloaded')
+    await mirror.deactivate()
+    expect(target.held.has('reloaded'), 'and it goes with the rest when they are switched off').toBe(false)
   })
 })

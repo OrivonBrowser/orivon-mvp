@@ -67,4 +67,21 @@ describe('whether a profile has a reason to run the extensions', () => {
     demand.opened(4)
     expect(seen).toEqual([true])
   })
+
+  it('does not count a page that shows an extension, and asks again after a navigation', () => {
+    const demand = createProfileDemand(clock())
+    const seen: boolean[] = []
+    demand.onChange((open) => seen.push(open))
+    let site = true
+    demand.opened(1, () => site)
+    demand.opened(2, () => false)
+    expect(demand.isOpen()).toBe(true)
+    site = false
+    expect(demand.isOpen(), 'the tab was sent to an extension page').toBe(false)
+    demand.recheck()
+    expect(seen).toEqual([true, false])
+    site = true
+    demand.recheck()
+    expect(seen).toEqual([true, false, true])
+  })
 })

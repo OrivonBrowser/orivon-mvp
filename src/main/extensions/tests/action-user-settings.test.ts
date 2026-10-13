@@ -65,7 +65,7 @@ function rig (): Rig {
       listAllActions: () => [{ id: A, title: 'Alpha', hasPopup: true, badge: '4' }],
       activateAction: activate
     },
-    session: { extensions: { getExtension: (id: string) => extensions.get(id) ?? null } } as unknown as Session,
+    session: { extensions: { on: vi.fn(), getExtension: (id: string) => extensions.get(id) ?? null } } as unknown as Session,
     hostFor: (target: Session) => target === ctx.session ? ctx.host : undefined,
     tab: () => undefined,
     shell: () => services,
