@@ -70,7 +70,8 @@ Skip routine sessions.
   push, and a `DIRTY` PR (a conflict with `main`) starts none until `main` is merged in. A wait loop
   ends only when the list is non-empty and nothing in it is pending.
 - Wait and merge: `node scripts/ai/pr-watch.mjs <n> --update <worktree> --stop '<your area's spec path>'`, in the
-  background; never hand-write the loop. It reruns failed e2e shards and unacquired runners at most twice, except a
+  background with a two-hour limit (`timeout: 7200000`: the default 30 minutes ends it while `main` keeps moving), never
+  behind a shell `&`; never hand-write the loop. A check that a later run of itself cancelled is not a failure. It reruns failed e2e shards and unacquired runners at most twice, except a
   spec matching `--stop`, and prints the failed specs, which the PR then names as flakes (Rule 12). Green but
   BEHIND, it merges `main` into the worktree's branch and pushes (six rounds at most); it merges when every check
   passed and the branch is CLEAN, and stops on any other failure, on a conflict and on a moved head. It merges with a
