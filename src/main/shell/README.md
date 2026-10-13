@@ -220,7 +220,7 @@ A popup that keeps `window.opener` is Chromium's own webContents, created in its
 partition, and moving it would sever `opener`, which a sign-in popup needs to report back. The
 cost is an `ADR-0018` residual (A230): until its opener closes, an open-web page an app opens this
 way runs in the app's partition. It does not keep its opener when the opener's session would send
-the address differently from the shared one (through the tunnel in one and not the other, as a
+the address less tunnelled than the shared session would (not through the tunnel for an address that is, as a
 direct profile or an app set to off does while the whole browser is on the tunnel): a sized
 `window.open` to such an address then opens as a window of its own, and a popup that navigates
 there moves, cutting `window.opener` (`site-routes.ts`'s `sessionRoutesLike`). The other direction is never allowed: a popup into an isolated

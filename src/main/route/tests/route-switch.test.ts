@@ -154,13 +154,13 @@ describe('a website that moves into a profile', () => {
     expect(dropServiceWorkers).toHaveBeenCalledWith(undefined, SITE)
   })
 
-  it('has them unregistered in the shared session it left for the direct profile, and in none when it goes back to the default', async () => {
+  it('has them unregistered in the shared session it left for the direct profile, and in the profile it leaves when it goes back to the default', async () => {
     const dropServiceWorkers = vi.fn(async () => {})
     const { routeSwitch } = setup({ everywhere: true, world: { dropServiceWorkers } })
     await routeSwitch.setSite(SITE, false)
     expect(dropServiceWorkers).toHaveBeenLastCalledWith(undefined, SITE)
     await routeSwitch.setSite(SITE, true)
-    expect(dropServiceWorkers).toHaveBeenCalledTimes(1)
+    expect(dropServiceWorkers).toHaveBeenLastCalledWith(profilePartitionFor('direct', SITE), SITE)
   })
 
   it('is not undone by workers that cannot be unregistered', async () => {

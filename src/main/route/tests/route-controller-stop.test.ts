@@ -82,4 +82,23 @@ describe('switching the whole browser on', () => {
     const { controller } = world({ ownProxy: (session) => session === own })
     expect(controller.isTunnelled(own)).toBe(true)
   })
+
+  it('is not undone by an off that is still waiting when the setting is flipped back on', async () => {
+    const { controller, flip, appProxies } = world()
+    const session = fake()
+    controller.adopt(session)
+    flip(true)
+    flip(false)
+    flip(true)
+    await controller.settled()
+    expect(session.proxies.at(-1)).toMatch(/^fixed_servers:http:\/\/127\.0\.0\.1:\d+$/)
+    expect(session.proxies.at(-1)).not.toContain(':9')
+    expect(appProxies.at(-1)).toMatch(/^fixed_servers:http:\/\/127\.0\.0\.1:\d+$/)
+    expect(appProxies.at(-1)).not.toBe('fixed_servers:http://127.0.0.1:9')
+  })
+
+  it('has a shared wait that ignores another origin\'s change', async () => {
+    const { controller } = world()
+    await expect(controller.sharedSettled()).resolves.toBeUndefined()
+  })
 })

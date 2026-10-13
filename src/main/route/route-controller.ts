@@ -87,6 +87,8 @@ export interface RouteController {
   startShared: () => void
   /** Resolves when the switches heard so far have been applied. */
   settled: () => Promise<void>
+  /** Resolves when the shared identity's changes have been applied: what Orivon's own requests wait for, not one app's switch. */
+  sharedSettled: () => Promise<void>
 }
 
 /** What the controller needs of a front that is not an app's: where it listens and what it expects. */
@@ -276,6 +278,8 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
   }
 
   async function apply (origin: string, routed: boolean, cause: RouteChangeCause): Promise<void> {
+    // A later change of the same origin is queued behind this one and applies what the setting says now.
+    if (hub.isRouted(origin) !== routed) return
     // Asking for a session creates it on disk, so the embed partition is touched only for an app that is routed.
     if (routed && isApp(origin)) sessionsOf(origin).set(deps.sessionFor(deps.embedPartition(origin)), true)
     if (origin === SHARED_ORIGIN) {
@@ -432,6 +436,14 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
       temporarySessions.delete(session)
       temporaryFronts.delete(front.port)
       pointedAt.delete(session)
+    },
+    sharedSettled: async () => {
+      await hub.settled()
+      let seen: Promise<void> | undefined
+      do {
+        seen = queues.get(SHARED_ORIGIN)
+        await seen
+      } while (queues.get(SHARED_ORIGIN) !== seen)
     },
     settled: async () => {
       await hub.settled()

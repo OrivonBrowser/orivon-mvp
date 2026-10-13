@@ -9,8 +9,8 @@ export interface SiteRoutes {
   /** The profile the website at `origin` runs in (`RouteHub.profileFor`), or undefined for a website that follows the default session. */
   readonly profileFor: (origin: string) => Profile | undefined
   /**
-   * Whether the website at `origin`, loaded in the session named `partition`, is sent as it would be in its own session: both
-   * through the tunnel or both not. A routed app's session or a temporary one is allowed to be the more tunnelled of the two.
+   * Whether the website at `origin`, loaded in the session named `partition`, is sent no less tunnelled than in its own session:
+   * a session that is not tunnelled for an address that is gives no.
    */
   readonly sentLikeItsOwn?: (partition: string | undefined, origin: string) => boolean
 }

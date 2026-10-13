@@ -68,7 +68,7 @@ export function routePopup (
   // Adopted anywhere else, its origin would run whatever the network sends,
   // with its grants.
   if (targetPartition !== undefined) return 'new-tab'
-  // An opener whose session would send the address differently from the shared one (a direct profile with the address on the
+  // An opener whose session would send the address less tunnelled than the shared one (a direct profile with the address on the
   // tunnel, say) never has the popup's first request: it opens as a tab or a window of its own, where it loads in the right session.
   // A blank popup holds no address yet, and moves when it navigates.
   if (opener.partition !== undefined && details.url !== 'about:blank' && !sessionRoutesLike(opener.partition, details.url)) return 'new-tab'

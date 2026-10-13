@@ -17,8 +17,8 @@ export function popupTargetIsApp (target: string, broker: Broker | undefined): b
 
 /** A popup whose opener still exists stays in its opener's session on the open web: moving it to the default session would
  * sever `window.opener`, which is what the page opened it for. A move INTO an isolated app still happens, since that is the
- * only session serving the app's pinned bundle. It does not stay when its opener's session would send the address differently
- * from the shared one (through the tunnel in one and not the other): `window.opener` is cut, and the popup moves. */
+ * only session serving the app's pinned bundle. It does not stay when its opener's session would send the address less tunnelled
+ * than the shared one (not through the tunnel for an address that is): `window.opener` is cut, and the popup moves. */
 export function keepsOpenerSession (wc: WebContents, swap: PartitionSwap, partition: string | undefined, url: string): boolean {
   return swap.to === undefined && wc.opener !== null && wc.opener !== undefined && sessionRoutesLike(partition, url)
 }

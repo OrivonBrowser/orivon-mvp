@@ -80,8 +80,8 @@ export function createRouteSwitch (routes: Pick<RouteService, 'proxy' | 'store' 
         }
       }
       await routes.controller.settled()
-      // A website that moved into a profile must not wake in the session it left: its workers there would run with the other session's route.
-      if (profile !== undefined && profile !== before) {
+      // A website that moved to another session must not wake in the one it left: its workers there would run with the other session's route.
+      if (profile !== before) {
         try {
           await world.dropServiceWorkers?.(before === undefined ? undefined : profilePartitionFor(before, origin), origin)
         } catch (error) {

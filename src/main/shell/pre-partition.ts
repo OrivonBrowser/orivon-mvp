@@ -25,7 +25,7 @@ interface NavigationEvent {
  *
  * A move INTO a session of its own is made here. A move to the shared session still swaps at
  * `did-navigate`, where nothing of the app's is exposed to the page it reaches, unless the tab's session
- * would send the address differently from the shared one (the tunnel's): then the first request must not
+ * would send the address less tunnelled than the shared one: then the first request must not
  * commit there either.
  */
 export function repartitionBeforeCommit (wc: WebContents, id: string, record: TabRecord, shown: () => boolean): void {

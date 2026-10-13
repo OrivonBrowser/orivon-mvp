@@ -119,7 +119,7 @@ export const routeSubsystem: Subsystem = {
     setDirectLookupSource(() => routes.everywhere() ? systemProxySession() : undefined)
     const tunnelFetch = createRequestFetch({ net, session: session.defaultSession, answer: answerRouteChallenge })
     const directFetch = createRequestFetch({ net, session: systemProxySession(), answer: (_info, callback) => { callback() } })
-    setOwnRequests({ everywhere: routes.everywhere, isRouted: routes.hub.isRouted, tunnel: tunnelFetch, direct: directFetch, directSession: systemProxySession, settled: routes.controller.settled })
+    setOwnRequests({ everywhere: routes.everywhere, isRouted: routes.hub.isRouted, tunnel: tunnelFetch, direct: directFetch, directSession: systemProxySession, settled: routes.controller.sharedSettled })
 
     const siteSessions = createSiteSessions({
       controller: routes.controller,
@@ -156,8 +156,8 @@ export const routeSubsystem: Subsystem = {
         const holder = partition === undefined ? session.defaultSession : session.fromPartition(partition)
         const here = routes.controller.isTunnelled(holder)
         const there = routes.hub.isRouted(origin)
-        // A routed app's session or a temporary one may be the more tunnelled of the two; a profile may not.
-        return here === there || (here && siteProfileOf(partition) === undefined)
+        // A session that is tunnelled keeps an address that needs no tunnel (a sign-in popup of a tunnelled site, a routed app's window); one that is not never keeps an address that does.
+        return here || !there
       }
     })
     // Sessions websites had of their own before the two profiles are cleared once; the person signs in again once.
