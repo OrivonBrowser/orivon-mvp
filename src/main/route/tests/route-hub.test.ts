@@ -238,11 +238,12 @@ describe('a list of routed apps that cannot be read', () => {
     return { store, hub, setProxy: (next: RouteTarget | undefined) => { proxy = next; hub.proxyChanged() } }
   }
 
-  it('routes every app while a proxy is set, through the proxy', () => {
+  it('routes every installed app while a proxy is set, through the proxy, and no website', () => {
     const { hub } = unreadable()
 
     expect(hub.isRouted(APP)).toBe(true)
-    expect(hub.isRouted('https://never-seen.example')).toBe(true)
+    expect(hub.isRouted('https://a-website.example')).toBe(false)
+    expect(hub.routeFor('https://a-website.example')).toBeUndefined()
     expect(hub.routeFor(OTHER)).toBeDefined()
     expect(hub.unreadable()).toBe(true)
   })

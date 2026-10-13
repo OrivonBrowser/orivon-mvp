@@ -446,6 +446,16 @@ describe('fetchFaviconDataUrlCached -- a route switched while the icon is being 
     expect(sessionsAsked()).toEqual([route])
   })
 
+  it('judges the first hop again, as the unrouted app it now is, when the route went away after the first check', async () => {
+    const route = sessionOf('route')
+    let asked = 0
+
+    // The name was cleared unresolved for a route; resolved here it cannot be (no resolver in this test), so nothing is sent.
+    await expect(fetchFaviconDataUrlCached('https://cdn.example/icon.png', PUBLIC_PAGE, () => false, undefined, async () => { asked += 1; return asked === 1 ? route : undefined })).resolves.toBeNull()
+
+    expect(vi.mocked(net.request)).not.toHaveBeenCalled()
+  })
+
   it('fetches nothing when the route cannot be had from the start', async () => {
     await expect(fetchFaviconDataUrlCached('https://93.184.216.34/icon.png', PUBLIC_PAGE, () => false, undefined, async () => { throw new Error('no route') })).resolves.toBeNull()
 

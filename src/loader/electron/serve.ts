@@ -280,7 +280,7 @@ export async function serveLiveFor (bundle: LiveBundle, broker?: Broker): Promis
   })
   const { session } = await import('electron')
   const appSession = session.fromPartition(partitionFor(origin))
-  await prepareAppSessionOrStop(appSession, origin)
+  await prepareAppSessionOrStop(appSession, origin, 'verifier')
   registerAppOrigin(appSession, origin, handler, 'verifier')
 }
 
@@ -369,7 +369,7 @@ export async function registerServingFor (storage: LoaderStorage, origin: string
   )
   const { session } = await import('electron')
   const appSession = session.fromPartition(partitionFor(origin))
-  await prepareAppSessionOrStop(appSession, origin)
+  await prepareAppSessionOrStop(appSession, origin, 'pin')
   registerAppOrigin(appSession, origin, handler)
   if (pin !== null) rememberServed(origin, pin)
 }

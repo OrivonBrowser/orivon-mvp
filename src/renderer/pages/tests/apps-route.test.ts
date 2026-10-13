@@ -20,6 +20,7 @@ describe('routeWords', () => {
       const words = routeWords({ state, blocked: undefined, unreadable: true })
       expect(words).toContain('could not read which apps you routed')
       expect(words).toContain('every app goes through it')
+      expect(words).toContain('restart')
     }
   })
 

@@ -24,7 +24,6 @@ export function parseRoutes (raw: string): Set<string> | undefined {
 }
 
 /** What a switch reports when it could not be kept. */
-/** What a switch reports when it could not be kept. */
 export class RouteStoreError extends Error {}
 
 export class RouteStore {

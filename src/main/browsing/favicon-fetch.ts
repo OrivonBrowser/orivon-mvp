@@ -273,7 +273,7 @@ function sessionForHop (url: string, pageUrl: string, pageSession: Session | und
  * same hostname twice. One timeout budget covers the whole
  * redirect chain, not each hop separately -- a chain of fast redirects to a
  * slow final host should not get MAX_FAVICON_REDIRECTS times the budget. */
-async function fetchUnchecked (url: string, pageUrl: string, pageSession: Session | undefined, routeLookup: RouteLookup | undefined): Promise<string | null> {
+async function fetchUnchecked (url: string, pageUrl: string, pageSession: Session | undefined, routeLookup: RouteLookup | undefined, clearedAsRouted: boolean): Promise<string | null> {
   const controller = new AbortController()
   const timer = setTimeout(() => { controller.abort() }, faviconTimeoutMs(url))
   try {
@@ -282,8 +282,8 @@ async function fetchUnchecked (url: string, pageUrl: string, pageSession: Sessio
       // Read for every hop: a route switched on or off while the chain is followed applies to the next hop.
       const route = await routeNow(routeLookup)
       if (route === null) return null
-      // The first hop was cleared by the caller.
-      if (hop > 0 && !(await isSafeFaviconUrl(current, pageUrl, electronResolveHost, { routed: route !== undefined }))) return null
+      // The first hop was cleared by the caller, as routed or not: it is judged again only when the route changed since.
+      if ((hop > 0 || (route !== undefined) !== clearedAsRouted) && !(await isSafeFaviconUrl(current, pageUrl, electronResolveHost, { routed: route !== undefined }))) return null
       const result = await requestOnce(current, controller.signal, sessionForHop(current, pageUrl, pageSession, route))
       if (result.kind === 'failed') return null
       if (result.kind === 'ok') return toDataUrl(result.bytes)
@@ -327,7 +327,7 @@ export async function fetchFaviconDataUrlCached (url: string, pageUrl: string, s
   const cached = faviconCache.get(url)
   if (cached !== undefined) return cached
 
-  const result = await fetchUnchecked(url, pageUrl, pageSession, routeLookup)
+  const result = await fetchUnchecked(url, pageUrl, pageSession, routeLookup, route !== undefined)
   if (result !== null && stillWanted()) faviconCache.set(url, result)
   return result
 }

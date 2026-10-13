@@ -49,11 +49,11 @@ nothing.
 **A switch points the sessions and closes their connections before it asks the broker to close its handles.** A call
 that never returns is cut off after ten seconds, and each app has a queue of its own, so one app whose handles do not
 close holds neither its sessions open on the old route nor another app's switch. A session that could not be put back
-on the system's proxy stays marked as pointed at the front, so the next pass tries again.
+on the system's proxy stays marked as pointed at the front, so the next pass tries again, forgetting its app included.
 
 **A list of routed apps that cannot be read is not "nothing routed".** A missing file means none; a file that is there
 and cannot be read or understood is copied to `routes.json.corrupt`, left where it is and never written over, and
-counts every app as routed while a proxy is set (through the proxy, or stopped when it is down). An app cannot be
+counts every installed app (never a website) as routed while a proxy is set (through the proxy, or stopped when it is down). An app cannot be
 switched off meanwhile, because which ones were routed is not known; the Settings card says so in one sentence. A
 switch that cannot be saved is refused and changes nothing, so a switch never shows on when it is not kept.
 

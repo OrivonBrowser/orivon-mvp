@@ -785,7 +785,7 @@ describe('registerServingFor -- a session that cannot be prepared', () => {
     await expect(registerServingFor(storage, 'https://routed.example')).rejects.toThrow('the front would not bind')
 
     expect(isOriginServedFromCacheSync('https://routed.example'), 'a tab for it runs in the app\'s partition, not on the shared session').toBe(true)
-    expect(isOriginPinnedSync('https://routed.example')).toBe(false)
+    expect(isOriginPinnedSync('https://routed.example'), 'it is still an app Orivon holds').toBe(true)
     const handler = session.handlers.get('https')
     if (handler === undefined) throw new Error('no handler was registered')
     for (const path of ['/', '/index.html', '/anything-else']) {

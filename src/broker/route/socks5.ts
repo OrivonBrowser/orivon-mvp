@@ -182,7 +182,8 @@ async function openUdp (options: Socks5ProviderOptions, signal: AbortSignal): Pr
   }
   control.once('close', () => { close().catch(reportCloseFailure) })
   control.on('error', () => {})
-  socket.on('error', () => { close().catch(reportCloseFailure) })
+  // Connected, the socket is told by ICMP when the relay refused a datagram: that datagram is lost, the channel is not.
+  socket.on('error', (error: NodeJS.ErrnoException) => { if (error.code !== 'ECONNREFUSED') close().catch(reportCloseFailure) })
   // The relay is the only sender accepted: the socket is connected to it below,
   // and the check stays for the moment before that.
   socket.on('message', (message, from) => {

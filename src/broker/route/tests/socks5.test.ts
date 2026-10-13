@@ -261,6 +261,24 @@ describe('UDP ASSOCIATE', () => {
     expect(heard.map((datagram) => datagram.host)).toEqual(['udp-name.test'])
   })
 
+  it('stays open when the connected socket reports the relay refusing a datagram, which loses that datagram and no more', async () => {
+    const connect = vi.spyOn(DatagramSocket.prototype, 'connect')
+    cleanups.push(() => { connect.mockRestore() })
+    const target = await udpEchoServer()
+    const proxy = await fixture({ names: { 'udp-name.test:5353': { host: '127.0.0.1', port: target } } })
+    const udp = await createSocks5Provider({ host: proxy.host, port: proxy.port }).udp?.(NEVER)
+    cleanups.push(async () => { await udp?.close() })
+    let closed = false
+    udp?.onClose(() => { closed = true })
+    const received = new Promise<RoutedDatagram>((resolve) => { udp?.onDatagram(resolve) })
+
+    ;(connect.mock.contexts[0] as DatagramSocket).emit('error', Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }))
+    await udp?.send({ host: 'udp-name.test', port: 5353, data: new Uint8Array([7]) })
+
+    expect([...(await received).data]).toEqual([7])
+    expect(closed).toBe(false)
+  })
+
   it('rejects when the proxy refuses UDP ASSOCIATE', async () => {
     const proxy = await fixture({ noUdp: true })
 

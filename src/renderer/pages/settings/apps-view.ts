@@ -25,7 +25,7 @@ export function sizeWords (bytes: number): string {
 
 /** What the switch that routes an app says under its label, about the person's situation rather than the program's. */
 export function routeWords (route: AppRow['route']): string {
-  if (route.unreadable === true) return 'Orivon could not read which apps you routed, so while a proxy is set every app goes through it. Mend or remove routes.json in your profile folder to choose again.'
+  if (route.unreadable === true) return 'Orivon could not read which apps you routed, so while a proxy is set every app goes through it. Mend or remove routes.json in your profile folder and restart Orivon to choose again.'
   if (route.state === 'off') {
     if (route.blocked === 'no-proxy') return 'Set a proxy under Privacy and data first.'
     if (route.blocked === 'not-cached') return 'Only an app Orivon holds on this computer can be routed.'

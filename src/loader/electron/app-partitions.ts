@@ -83,12 +83,12 @@ export async function prepareAppSession (appSession: Session, origin: string): P
  * so a tab for it opens as an ordinary website on the shared session: for an app whose proxy route could not start,
  * that is a direct connection. The only preparer is the route's, which is what the page says.
  */
-export async function prepareAppSessionOrStop (appSession: Session, origin: string): Promise<void> {
+export async function prepareAppSessionOrStop (appSession: Session, origin: string, from: 'pin' | 'verifier'): Promise<void> {
   try {
     await prepareAppSession(appSession, origin)
   } catch (error) {
     console.error('[loader] an app\'s session could not be prepared; the app is stopped, not opened as a website:', origin, error)
-    registerAppOrigin(appSession, origin, async () => new Response(STOPPED_PAGE, { status: 503, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } }), 'verifier')
+    registerAppOrigin(appSession, origin, async () => new Response(STOPPED_PAGE, { status: 503, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } }), from)
     throw error
   }
 }

@@ -417,6 +417,44 @@ describe('a switch-off that could not put a session back', () => {
   })
 })
 
+describe('an app that was forgotten while a session could not be put back', () => {
+  it('tries that session once more, and keeps it marked if it still cannot, so a later pass repairs it', async () => {
+    const { store, controller, sessionFor } = setup()
+    const session = sessionFor('app')
+    const original = session.setProxy
+    let broken = true
+    session.setProxy = async (config) => { if (config.mode === 'system' && broken) throw new Error('not now'); await original(config) }
+    store.set(APP, true)
+    await controller.appSessionRegistered(APP, session)
+    store.set(APP, false)
+    await controller.settled()
+    controller.forget(APP)
+    await controller.settled()
+    expect(session.proxies.at(-1)).toMatch(/^fixed_servers:/)
+
+    broken = false
+    await controller.prepare(APP, session)
+
+    expect(session.proxies.at(-1)).toBe('system:')
+  })
+
+  it('puts it back during the forgetting when it can', async () => {
+    const { store, controller, sessionFor } = setup()
+    const session = sessionFor('app')
+    const original = session.setProxy
+    let failures = 2
+    session.setProxy = async (config) => { if (config.mode === 'system' && failures > 0) { failures -= 1; throw new Error('not now') } await original(config) }
+    store.set(APP, true)
+    await controller.appSessionRegistered(APP, session)
+    store.set(APP, false)
+    await controller.settled()
+    controller.forget(APP)
+    await controller.settled()
+
+    expect(session.proxies.at(-1)).toBe('system:')
+  })
+})
+
 describe('an app that was forgotten', () => {
   it('drops the sessions it knew, so switching it on again points only the ones registered anew', async () => {
     const { store, hub, controller, sessionFor } = setup()

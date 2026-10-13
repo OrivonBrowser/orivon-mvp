@@ -63,6 +63,22 @@ describe('a request made by main through an app\'s route', () => {
     await expect(fetchThroughRoute(net, SESSION, 'https://score.example/x.json', signal)).rejects.toMatchObject({ name: 'TimeoutError' })
   })
 
+  it('keeps the signal over the body: a body that stalls after the headers is cut off when it fires', async () => {
+    const { net } = fakeNet((request) => {
+      const stalled = new Readable({ read () {} }) as Readable & { statusCode: number, headers: Record<string, string> }
+      stalled.statusCode = 200
+      stalled.headers = {}
+      request.emit('response', stalled)
+    })
+    const controller = new AbortController()
+
+    const response = await fetchThroughRoute(net, SESSION, 'https://score.example/x.json', controller.signal)
+    const reading = response.text()
+    controller.abort(new Error('too slow'))
+
+    await expect(reading).rejects.toThrow()
+  })
+
   it('rejects at once for a signal that has already fired, without ending the request', async () => {
     const { net } = fakeNet(() => { throw new Error('the request was sent') })
     const fired = new AbortController()
