@@ -11,8 +11,11 @@ interface Answer {
   readonly url: string | null
 }
 
+/** What Settings says where the Store delivers updates. */
+export const STORE_UPDATES = 'Updates come from the Microsoft Store, which installs them by itself.'
+
 export class UpdatesState {
-  private answer: Answer | 'checking' | 'refused' | null = null
+  private answer: Answer | 'checking' | 'refused' | 'store' | null = null
 
   constructor (private readonly bridge: OrivonInternal, private readonly changed: () => void) {}
 
@@ -27,15 +30,15 @@ export class UpdatesState {
   async check (): Promise<void> {
     this.answer = 'checking'
     this.changed()
-    const reply = await this.bridge.request('updates', { type: 'check' }) as { ok: boolean, answer?: Answer } | undefined
-    this.answer = reply?.ok === true && reply.answer !== undefined ? reply.answer : 'refused'
+    const reply = await this.bridge.request('updates', { type: 'check' }) as { ok: boolean, answer?: Answer, reason?: string } | undefined
+    this.answer = reply?.ok === true && reply.answer !== undefined ? reply.answer : reply?.reason === 'store' ? 'store' : 'refused'
     this.changed()
   }
 
   /** The version of a newer release the last check found, without a leading `v`; null when there is none. */
   available (): string | null {
     const answer = this.answer
-    if (answer === null || answer === 'checking' || answer === 'refused' || !answer.newer || answer.latest === null) return null
+    if (answer === null || answer === 'checking' || answer === 'refused' || answer === 'store' || !answer.newer || answer.latest === null) return null
     return answer.latest.replace(/^v/i, '')
   }
 
@@ -49,6 +52,7 @@ export class UpdatesState {
     const answer = this.answer
     if (answer === null) return ''
     if (answer === 'checking') return 'Looking…'
+    if (answer === 'store') return STORE_UPDATES
     if (answer === 'refused') return 'A private window looks at nothing.'
     if (!answer.reached) return 'Could not reach the release list. You may be offline, or none is published yet.'
     if (answer.newer) return `${answer.latest ?? ''} is available. You have ${answer.current}.`

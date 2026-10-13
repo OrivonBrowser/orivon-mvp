@@ -4,6 +4,10 @@
  * it against the installed deb, the AppImage, the NSIS install and the mounted dmg.
  *
  * Usage: node scripts/run-headless.mjs node scripts/smoke-packaged.mjs <executable>
+ *        node scripts/smoke-packaged.mjs --attach <port>
+ * `--attach` checks an app somebody else started with `--remote-debugging-port=<port>`: the release workflow starts the
+ * Windows Store package inside its package (Invoke-CommandInDesktopPackage), so the app has its package identity and
+ * this script cannot be its parent.
  */
 import { spawn, spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -33,6 +37,17 @@ export function devToolsPort (output) {
  */
 export function shellTarget (targets) {
   return targets.find((target) => target.type === 'page' && SHELL_PAGE.test(target.url) && target.webSocketDebuggerUrl !== undefined)
+}
+
+/**
+ * The port after `--attach`, or undefined when the arguments are not an attach request.
+ * @param {string[]} argv the arguments after the script's name
+ * @returns {number | undefined}
+ */
+export function attachPort (argv) {
+  if (argv[0] !== '--attach' || !/^\d+$/.test(argv[1] ?? '')) return undefined
+  const port = Number(argv[1])
+  return port >= 1 && port <= 65535 ? port : undefined
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -83,7 +98,29 @@ async function waitForShell (child, output, deadline) {
   throw new Error(`no rendered shell page within ${STARTUP_TIMEOUT_MS / 1000} s`)
 }
 
+/** Resolves once the shell page of an app already running on `port` has rendered. */
+async function attach (port) {
+  // Nothing of ours to watch: the shape `waitForShell` reads, with the line Chromium prints for its DevTools port.
+  const running = { pid: 1, exitCode: null, signalCode: null }
+  const url = await waitForShell(running, () => `DevTools listening on ws://127.0.0.1:${port}/devtools/browser/attached`, Date.now() + STARTUP_TIMEOUT_MS)
+  console.log(`[smoke-packaged] port ${port}: shell page rendered (${url})`)
+}
+
 if (isInvokedDirectly(import.meta.url)) {
+  const port = attachPort(process.argv.slice(2))
+  if (process.argv[2] === '--attach') {
+    if (port === undefined) {
+      console.error('usage: node scripts/smoke-packaged.mjs --attach <port>')
+      process.exit(1)
+    }
+    try {
+      await attach(port)
+      process.exit(0)
+    } catch (error) {
+      console.error(`[smoke-packaged] port ${port}: ${error.message}`)
+      process.exit(1)
+    }
+  }
   const executable = process.argv[2]
   if (executable === undefined) {
     console.error('usage: node scripts/smoke-packaged.mjs <executable>')

@@ -19,4 +19,6 @@ different rules.
 Settings (it is off by default): `update-schedule.ts` then runs `runUpdateCheck` at start, every hour while the
 browser is open and as soon as the setting is switched on, and the stored time of the last check that reached GitHub
 keeps it to once a day. "Check now"
-(`updates-domain.ts`, through `checkUpdateNow`) asks at once and only reports. A private session looks at nothing.
+(`updates-domain.ts`, through `checkUpdateNow`) asks at once and only reports. A private session looks at nothing,
+and neither does a Microsoft Store install (`isStoreInstall`, `../os/windows-store.ts`): the Store delivers its updates, so
+Settings says that instead of offering the switch, and no check sends a person to GitHub.

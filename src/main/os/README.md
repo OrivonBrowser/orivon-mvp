@@ -1,6 +1,6 @@
 # `src/main/os/`: what the operating system is told about Orivon: links opened from other programs, the default-browser registration and its ask, launcher menus, shortcuts and sharing
 
-**What lives here.** The decisions and the runners of seven things. A link another program hands to a running macOS
+**What lives here.** The decisions and the runners of seven things, and `windows-store.ts` (what a Microsoft Store install is: its AUMID read from the folder it runs from, and the registry text that says whether a packaged handler is this one). A link another program hands to a running macOS
 app (`open-url.ts`), and a file the system hands it (`open-file.ts`: the open-file event joins the same queue as a second start's operands). Whether Orivon is the default browser and the call that makes it so (`default-browser.ts`, which on Linux also registers the three document types in `LINUX_DOCUMENT_TYPES`, its
 runner, `os-domain.ts` for the Settings page). When Orivon asks to be the default browser (`default-browser-ask.ts`
 is the rule over three facts and the clock; `install-default-browser-ask.ts` looks at it every hour). The entries a
@@ -42,6 +42,13 @@ the Settings button and the question are the two clicks that do. On Windows no
 program may take the choice, so Make default opens Windows Settings and the answer is read again when the person
 returns; macOS registers through `setAsDefaultProtocolClient`. Both paths are written from the platforms'
 documentation and unverified on a real system (*provisional*, A328).
+
+**In a Microsoft Store install nothing compares a path.** A packaged web-link handler is an AppX program id, so
+`windowsStoreDefault` reads the person's `UserChoice` program id and that key's `Application\AppUserModelID` with
+`reg query`, and compares it with the package's own AUMID (`windows-store.ts`). Make default opens the top of the
+default-apps page, since a package has no `RegisteredApplications` name to select. Written from Microsoft's
+documentation, unmeasured on a Store install (*provisional*, A410), which also lists what else here has not been
+checked inside a package: the taskbar menu, the process's AUMID and a peer started with `peerCommand`.
 
 **The first ask comes half a minute into first use, and each later one a week after the last.** The clock starts
 the first time the check finds a window in use, so time on the welcome screen and its telemetry popup does not

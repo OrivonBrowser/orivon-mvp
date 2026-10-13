@@ -55,6 +55,12 @@ describe('what "Check now" says', () => {
     expect(nothing.updates.words()).toContain('private window')
   })
 
+  it('says the Store delivers updates when a Store install is asked', async () => {
+    const store = state({ ok: false, reason: 'store' })
+    await store.updates.check()
+    expect(store.updates.words()).toContain('Microsoft Store')
+  })
+
   it('names the newer release without its v, and only when there is one', async () => {
     const newer = state({ ok: true, answer: { reached: true, current: '1.0.0', latest: 'v1.1.0', newer: true, url: 'x' } })
     expect(newer.updates.available()).toBeNull()

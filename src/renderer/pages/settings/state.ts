@@ -23,6 +23,8 @@ export interface AboutInfo {
   readonly platform: string
   readonly userAgent: string
   readonly developerMode: boolean
+  /** A Microsoft Store install: the Store delivers its updates. */
+  readonly updatesFromStore: boolean
 }
 
 interface GetReply {
