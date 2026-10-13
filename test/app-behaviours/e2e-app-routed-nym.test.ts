@@ -219,7 +219,10 @@ async function scenario (failStart: boolean): Promise<Scenario> {
 async function switchRouteOn (scene: Scenario): Promise<void> {
   const apps = await scene.settings('apps')
   await apps.waitForSelector(ROUTE_SWITCH)
+  // The switch reloads the app's page; a marker on the page that is there now shows when that happened, which a slow system may do after a wait for the page's global would have returned.
+  await scene.view.evaluate(() => { (window as unknown as { routeSwitchMarker: boolean }).routeSwitchMarker = true })
   await apps.locator(ROUTE_SWITCH).click()
+  expect(await waitFor(async () => await scene.view.evaluate(() => (window as unknown as { routeSwitchMarker?: boolean }).routeSwitchMarker === undefined).catch(() => false)), 'the app\'s page was reloaded by the switch').toBe(true)
   await scene.view.waitForLoadState('load')
   await waitForPageGlobal(scene.view, 'routedNetworkE2e')
 }
