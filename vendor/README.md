@@ -14,6 +14,11 @@ reason), so an upgrade can re-copy upstream and re-apply the list:
 
 Why each is here, not reimplemented: [`ADR-0043`](../docs/decisions/ADR-0043-chrome-extensions-run-on-electron-browser-shell-s-libraries.md).
 
+[`nym-smolmix/`](nym-smolmix/) is the exception: it holds no copy of Nym's source, only the patch that adds raw
+TCP and UDP to Nym's `smolmix` WebAssembly client, the notes on its upstream (`UPSTREAM.md`), and the README of the
+published files. `scripts/build-nym-tunnel.mjs` clones the pinned tag outside this repository and builds it; the
+result is published to IPFS and pinned by hash in `resources/nym-tunnel/nym-tunnel.json`.
+
 **What it depends on.** `electron`, `node:crypto`, `node:events`, `node:fs`, `node:module`,
 `node:os`, `node:path`, `node:stream`, `debug`, `adm-zip` and `pbf` (verified by grep over both
 packages' `.ts` files) -- nothing from this repository.
