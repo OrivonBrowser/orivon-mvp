@@ -10,7 +10,7 @@ import type { TemporaryRoutes } from './temporary-routes.js'
 export interface LeavingRoutes {
   readonly world: LeaveWorld
   readonly temporary: Pick<TemporaryRoutes, 'open' | 'owns' | 'isLive'>
-  readonly routeSwitch: RouteSwitch
+  readonly routeSwitch: Pick<RouteSwitch, 'blockedFor' | 'set'>
 }
 
 let source: LeavingRoutes | undefined

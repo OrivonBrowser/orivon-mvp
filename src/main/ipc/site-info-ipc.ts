@@ -37,6 +37,12 @@ export interface SiteDataSnapshot {
   readonly orivonCodeVersion: string | undefined
 }
 
+/** The answer to the tunnel switch: whether it was done, and the info the popup then draws. */
+export interface TunnelResult {
+  readonly ok: boolean
+  readonly info: SiteInfo
+}
+
 export interface ApplyResult {
   readonly info: SiteInfo
   /** Capabilities the person tried to turn on whose manifest had changed
@@ -71,6 +77,8 @@ export type SiteInfoCommand =
   | { type: 'removeCookie'; key: string }
   | { type: 'clearCookies' }
   | { type: 'reload' }
+  /** The website's tunnel switch: on, or back to following the default. Answers whether it was done, with the popup's info as it is after. */
+  | { type: 'setTunnel'; on: boolean }
   /** "Delete data" of the local file this popup was opened for: no argument, main reads the key. Answers whether every step succeeded. */
   | { type: 'deleteLocalFile' }
   | { type: 'openSiteSettings' }
@@ -141,7 +149,7 @@ export function registerSiteInfoIpc (
   siteInfoWebContents.ipc.handle(SITE_INFO_COMMAND_CHANNEL, async (
     event: IpcMainInvokeEvent,
     command: SiteInfoCommand
-  ): Promise<void | boolean | SiteInfo | SiteTrust | null | SiteDataSnapshot | ApplyResult | SitePermissionsView | ApplyOutcome> => {
+  ): Promise<void | boolean | SiteInfo | SiteTrust | null | SiteDataSnapshot | ApplyResult | TunnelResult | SitePermissionsView | ApplyOutcome> => {
     if (!isFromSiteInfoWindow(event, siteInfoWebContents, popupUrl)) return
 
     switch (command.type) {
@@ -203,6 +211,11 @@ export function registerSiteInfoIpc (
         if (tab === undefined || originFromUrl(tab.getURL()) !== origin) return
         await removeSiteCookies(tab.session.cookies, new URL(origin).hostname)
         return
+      }
+      case 'setTunnel': {
+        if (typeof command.on !== 'boolean') return { ok: false, info: withRoute(await controller.siteInfoFor(origin)) } satisfies TunnelResult
+        const ok = await controller.setTunnel(origin, command.on)
+        return { ok, info: withRoute(await controller.siteInfoFor(origin)) } satisfies TunnelResult
       }
       case 'reload':
         reloadActiveTab()

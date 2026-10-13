@@ -17,6 +17,7 @@ import type { ShellServices } from './shell-services.js'
 import type { CommandId } from '../shortcuts/commands.js'
 import type { DisplaySurfaceKind } from '../display-capture/types.js'
 import type { SiteKind } from '../site-settings/kinds.js'
+import type { TunnelMark } from '../route/tunnel-mark.js'
 import type { SleepingTab, TabGroupState } from './tab-extra-types.js'
 
 export interface TabState {
@@ -116,6 +117,8 @@ export interface ShellState extends TabsSnapshot {
   contentBlocked: boolean
   /** Whether the active page is an installed app whose name points at a version the person has not taken: the dot on the key. */
   updateOffered: boolean
+  /** Whether the active page goes through the tunnel (`../route/tunnel-mark.ts`), for the mark on the address bar's key. */
+  tunnel: TunnelMark | null
   /** Which profile this window is, for the chip beside the menu. */
   profile: { name: string, color: string, isPrivate: boolean, shown: boolean }
   /** The extensions loaded now, and whether the toolbar shows the Extensions button (`toolbar.extensions`). */

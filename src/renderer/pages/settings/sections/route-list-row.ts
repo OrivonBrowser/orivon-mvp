@@ -1,0 +1,28 @@
+// The list of sites and apps that have a tunnel setting or storage of their own, under the tunnel's address: each with
+// what its setting does and, for a website that keeps storage of its own, the button that clears it.
+import { h } from '../../shared/dom.js'
+import { tunnelRowWords } from '../route-part.js'
+import type { RoutePart, TunnelRowView } from '../route-part.js'
+import type { SettingsState } from '../state.js'
+
+export const EMPTY_TUNNEL_LIST = 'No site or app has its own tunnel setting yet. Turn one on from a site\'s key in the address bar, or for an app under Apps.'
+export const REMOVE_STORAGE = 'Remove its separate storage'
+
+function rowOf (row: TunnelRowView, part: RoutePart): HTMLElement {
+  const clearing = part.clearing.has(row.origin)
+  return h('div', { className: 'tunnel-list-row' },
+    h('div', { className: 'tunnel-list-text' },
+      h('span', { className: 'tunnel-list-origin', textContent: row.origin }),
+      h('p', { className: 'muted', textContent: tunnelRowWords(row) }),
+      part.refused.has(row.origin) ? h('p', { className: 'problem', role: 'alert', textContent: 'Its storage could not be removed.' }) : h('span')),
+    row.kind === 'site' && row.apart
+      ? h('button', { className: 'btn', type: 'button', textContent: clearing ? 'Removing…' : REMOVE_STORAGE, disabled: clearing, onclick: () => { void part.removeStorage(row.origin) } })
+      : h('span'))
+}
+
+export function renderTunnelList (state: SettingsState): HTMLElement {
+  const part = state.part<RoutePart>('route')
+  if (part.rows === null) return h('div', { className: 'tunnel-list' }, h('p', { className: 'muted', textContent: 'Loading…' }))
+  if (part.rows.length === 0) return h('div', { className: 'tunnel-list' }, h('p', { className: 'muted', textContent: EMPTY_TUNNEL_LIST }))
+  return h('div', { className: 'tunnel-list' }, ...[...part.rows].sort((a, b) => a.origin.localeCompare(b.origin)).map((row) => rowOf(row, part)))
+}

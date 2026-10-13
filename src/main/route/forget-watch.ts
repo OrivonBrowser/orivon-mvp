@@ -6,9 +6,11 @@ import type { RouteService } from './route-service.js'
 type WatchedBroker = Pick<Broker, 'onGrantsChanged'> & { readonly app: Pick<Broker['app'], 'isRegisteredSync' | 'persistedAppsSync'> }
 
 /** Returns the unsubscribe. */
-export function forgetRoutesOfGoneApps (broker: WatchedBroker, routes: Pick<RouteService, 'forget' | 'hub'>): () => void {
+export function forgetRoutesOfGoneApps (broker: WatchedBroker, routes: Pick<RouteService, 'forget' | 'hub' | 'store'>): () => void {
   return broker.onGrantsChanged((origin) => {
     if (!routes.hub.isRouted(origin)) return
+    // A website with storage of its own was never an app: its grants changing says nothing about its tunnel.
+    if (routes.store.isApart(origin)) return
     if (broker.app.isRegisteredSync(origin) || broker.app.persistedAppsSync().some((app) => app.origin === origin)) return
     routes.forget(origin)
   })

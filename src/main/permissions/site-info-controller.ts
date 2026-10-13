@@ -9,7 +9,7 @@ import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import { isLocalFileKey, isolationKeyFromUrl, originFromUrl } from '../../broker/policy/origin.js'
 import type { SubsystemContext } from '../registry.js'
 import { buildSiteInfo } from './site-info.js'
-import type { SiteInfo, SiteUpdate } from './site-info.js'
+import type { SiteInfo, SiteTunnel, SiteUpdate } from './site-info.js'
 import { turnOffCapability, turnOnCapability } from './site-switches.js'
 import type { TurnOnResult } from './site-switches.js'
 import { buildSiteTrust, providerIdFor, withProviderVerdict } from '../browsing/site-trust.js'
@@ -23,6 +23,8 @@ import type { ScoreLevel } from '../../trust/website-level.js'
 import type { ProviderVerdict } from '../../trust/score-provider.js'
 import type { PinRecord } from '../../broker/policy/pin.js'
 import type { NameEvidence } from '../verifier/name-evidence.js'
+import { canTunnel } from '../route/site-partition.js'
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { extensionNamesForOrigin } from '../extensions/site-reach-runner.js'
 import type { ExtensionLister } from '../extensions/site-reach-runner.js'
 
@@ -80,6 +82,8 @@ export interface SiteInfoController {
   storageDeclarationFor: (url: string) => Promise<StorageDeclaration | null>
   /** Takes the update offered for `origin` (`../install/app-updates.ts`): refused for any CID but the pending offer. */
   applyUpdate: (origin: string, cid: string, caller?: DialogCaller) => Promise<ApplyOutcome>
+  /** Turns a website's tunnel on, or back to following the default: false when it could not be done (no tunnel set, an installed app, this computer, or the choice could not be kept). */
+  setTunnel: (origin: string, on: boolean) => Promise<boolean>
   turnOn: (origin: string, capability: CapabilityKind, shownPatterns: readonly Pattern[]) => Promise<TurnOnResult>
   turnOff: (origin: string, capability: CapabilityKind) => Promise<void>
   revokePickedPath: (origin: string, pickId: string) => Promise<void>
@@ -108,7 +112,22 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     const info = await builtSiteInfoFor(url)
     const update = updateFor(info.origin)
     const route = ctx.routes?.hub.state(info.origin)
-    return { ...info, ...(update === undefined ? {} : { update }), ...(route === undefined || route === 'off' ? {} : { route }) }
+    const tunnel = tunnelFor(info.origin)
+    return { ...info, ...(update === undefined ? {} : { update }), ...(route === undefined || route === 'off' ? {} : { route }), ...(tunnel === undefined ? {} : { tunnel }) }
+  }
+
+  /** The switch a website has: not for an installed app (its card has one), a local file or this computer. */
+  function tunnelFor (origin: string): SiteTunnel | undefined {
+    const routes = ctx.routes
+    if (routes === undefined || trustSources.isOriginServedFromCacheSync(origin) || !canTunnel(origin)) return undefined
+    const blocked = routes.routeSwitch.siteBlockedFor(origin)
+    return {
+      on: routes.hub.isRouted(origin),
+      ...(blocked === 'no-proxy' ? { blocked } : {}),
+      needsNotice: routes.routeSwitch.siteNeedsNotice(origin),
+      web3: BUILTIN_ADDRESSES.routesToVerifier(new URL(origin).hostname),
+      unreadable: routes.hub.unreadable()
+    }
   }
 
   async function builtSiteInfoFor (url: string): Promise<SiteInfo> {
@@ -179,6 +198,19 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     async applyUpdate (origin, cid, caller) {
       const updates = ctx.appUpdates
       return updates === undefined ? { ok: false, reason: 'no such offer' } : await updates.apply(origin, cid, caller)
+    },
+
+    async setTunnel (origin, on) {
+      const routes = ctx.routes
+      if (routes === undefined || trustSources.isOriginServedFromCacheSync(origin)) return false
+      if (on && routes.routeSwitch.siteBlockedFor(origin) !== undefined) return false
+      try {
+        await routes.routeSwitch.setSite(origin, on)
+      } catch (error) {
+        console.error('[site-info] the tunnel of a website could not be switched:', error)
+        return false
+      }
+      return true
     },
 
     async turnOn (origin, capability, shownPatterns) {

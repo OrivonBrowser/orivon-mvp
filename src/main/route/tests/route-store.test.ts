@@ -24,7 +24,7 @@ describe('RouteStore', () => {
     const path = fileIn()
     new RouteStore(path).set(APP, true)
     expect(new RouteStore(path).has(APP)).toBe(true)
-    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ version: 1, origins: [APP] })
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ version: 1, origins: [APP], off: [], apart: [] })
   })
 
   it('turns a route off, says whether anything changed, and tells listeners only when something did', () => {
@@ -36,7 +36,7 @@ describe('RouteStore', () => {
     expect(store.set(APP, true)).toBe(false)
     expect(store.set(APP, false)).toBe(true)
     expect(store.set(APP, false)).toBe(false)
-    expect(heard.mock.calls).toEqual([[APP, true], [APP, false]])
+    expect(heard.mock.calls).toEqual([[APP, 'on', undefined], [APP, undefined, 'on']])
   })
 
   it('stops telling a listener that unsubscribed', () => {
@@ -156,10 +156,99 @@ describe('saving the routed apps', () => {
   })
 })
 
+describe('website origins in the store', () => {
+  const SITE = 'https://news.example'
+
+  it('keeps an on and an off entry for any web origin, beside the apps', () => {
+    const path = fileIn()
+    const store = new RouteStore(path)
+    store.setEntry(SITE, 'on')
+    store.setEntry('https://other.example', 'off')
+    store.set(APP, true)
+    expect(store.stateOf(SITE)).toBe('on')
+    expect(store.stateOf('https://other.example')).toBe('off')
+    expect(store.stateOf('https://none.example')).toBeUndefined()
+    expect(store.origins().sort()).toEqual([APP, SITE].sort())
+    expect(store.entries()).toHaveLength(3)
+
+    const again = new RouteStore(path)
+    expect(again.stateOf(SITE)).toBe('on')
+    expect(again.stateOf('https://other.example')).toBe('off')
+  })
+
+  it('tells listeners the entry and the one it replaced, and nothing for a repeat', () => {
+    const store = new RouteStore(null)
+    const heard = vi.fn()
+    store.onChange(heard)
+    expect(store.setEntry(SITE, 'on')).toBe(true)
+    expect(store.setEntry(SITE, 'on')).toBe(false)
+    expect(store.setEntry(SITE, 'off')).toBe(true)
+    expect(store.setEntry(SITE, undefined)).toBe(true)
+    expect(store.setEntry(SITE, undefined)).toBe(false)
+    expect(heard.mock.calls).toEqual([[SITE, 'on', undefined], [SITE, 'off', 'on'], [SITE, undefined, 'off']])
+  })
+
+  it('keeps a record of the websites that have storage of their own, apart from their entry', () => {
+    const path = fileIn()
+    const store = new RouteStore(path)
+    store.setEntry(SITE, 'on')
+    store.keepApart(SITE)
+    store.setEntry(SITE, undefined)
+    expect(store.isApart(SITE)).toBe(true)
+    expect(new RouteStore(path).apart()).toEqual([SITE])
+    store.dropApart(SITE)
+    expect(new RouteStore(path).apart()).toEqual([])
+  })
+
+  it('refuses an entry for an origin that is not canonical', () => {
+    const store = new RouteStore(null)
+    expect(store.setEntry('https://news.example/path', 'off')).toBe(false)
+    expect(store.entries()).toEqual([])
+  })
+
+  it('keeps an on entry when an origin is listed both ways, and ignores an entry that is not an origin', () => {
+    const raw = JSON.stringify({ version: 1, origins: [SITE], off: [SITE, 'nonsense', 4], apart: ['https://x.example'] })
+    const parsed = parseRoutes(raw)
+    expect([...(parsed?.on ?? [])]).toEqual([SITE])
+    expect([...(parsed?.off ?? [])]).toEqual([])
+    expect([...(parsed?.apart ?? [])]).toEqual(['https://x.example'])
+  })
+
+  it('reads a file written before off and apart existed', () => {
+    const parsed = parseRoutes(JSON.stringify({ version: 1, origins: [APP] }))
+    expect([...(parsed?.on ?? [])]).toEqual([APP])
+    expect(parsed?.off.size).toBe(0)
+    expect(parsed?.apart.size).toBe(0)
+  })
+
+  it('treats a file whose off or apart is not a list as not a routes file', () => {
+    expect(parseRoutes(JSON.stringify({ version: 1, origins: [], off: SITE }))).toBeUndefined()
+    expect(parseRoutes(JSON.stringify({ version: 1, origins: [], apart: {} }))).toBeUndefined()
+  })
+
+  it('keeps a plain-http website out of the file, and in memory for the run', () => {
+    const path = fileIn()
+    const store = new RouteStore(path)
+    store.setEntry('http://news.example', 'on')
+    store.keepApart('http://news.example')
+    expect(store.stateOf('http://news.example')).toBe('on')
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({ origins: [], apart: [] })
+  })
+
+  it('does not write over an unreadable file when the record of storage changes', () => {
+    const path = fileIn()
+    writeFileSync(path, '{ not json')
+    const store = new RouteStore(path)
+    store.keepApart(SITE)
+    expect(readFileSync(path, 'utf8')).toBe('{ not json')
+    expect(() => store.setEntry(SITE, 'off')).toThrow(/could not be read/)
+  })
+})
+
 describe('parseRoutes', () => {
   it('keeps only the entries that are canonical origins, because the file is user-writable', () => {
     const raw = JSON.stringify({ version: 1, origins: [APP, 'https://x.example/path', 7, null, 'https://y.example', 'javascript:alert(1)'] })
-    expect([...(parseRoutes(raw) ?? [])]).toEqual([APP, 'https://y.example'])
+    expect([...(parseRoutes(raw)?.on ?? [])]).toEqual([APP, 'https://y.example'])
   })
 
   it('reads nothing from a file of another version or shape', () => {

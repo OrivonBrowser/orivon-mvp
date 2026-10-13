@@ -28,6 +28,8 @@ export interface RouteControllerDeps {
   readonly onContentsCreated: (listener: (contents: RouteContents) => void) => void
   /** The listener must run before the sheet that asks the person about a proxy's challenge. */
   readonly onLogin: (listener: RouteLoginListener) => void
+  /** Whether `origin` is an installed app, which has an embed session and reloads on a switch; any other origin is a website. Every origin is an app when this is left out. */
+  readonly isApp?: (origin: string) => boolean
   /** How long one call into a session or the broker may take before the switch goes on without it. */
   readonly callTimeoutMs?: number
 }
@@ -35,6 +37,8 @@ export interface RouteControllerDeps {
 export interface PrepareOptions {
   /** False for a session whose pages confine WebRTC themselves, so it is neither set nor restored here. */
   readonly webrtc?: boolean
+  /** Host rules the session reaches without the proxy, besides this machine: the names Orivon's own verifier answers for, in a website's session. */
+  readonly bypass?: string
 }
 
 export interface RouteController {
@@ -44,6 +48,10 @@ export interface RouteController {
   prepare: (origin: string, session: RouteSession, options?: PrepareOptions) => Promise<void>
   /** An app's served session has appeared: prepares it and the app's embed session. */
   appSessionRegistered: (origin: string, session: RouteSession) => Promise<void>
+  /** A website's session of its own: pointed at its front while the website is routed (waiting for it), at the system's proxy while it is not. `bypass` is the host rules it reaches directly besides this machine. */
+  prepareSite: (origin: string, session: RouteSession, bypass: string) => Promise<void>
+  /** A rule that reaches nothing, for a website's session that could not be pointed: a request there fails, it is never sent direct. */
+  confineSite: (session: RouteSession) => Promise<void>
   /** A session in memory pointed at the app's front, for the lookups made about a routed app; undefined when the app is not routed. */
   fetchSessionFor: (origin: string) => Promise<RouteSession | undefined>
   /** The app is gone (forgotten): its sessions are no longer followed, and its lookup session is made anew if it is routed again. Call after its route was switched off. */
@@ -99,6 +107,9 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
   /** Web contents given the policy here, which are the only ones restored. */
   const confined = new WeakSet<RouteContents>()
   const fetchSessions = new Map<string, RouteSession>()
+  /** The host rules a session reaches directly besides this machine. */
+  const bypasses = new Map<RouteSession, string>()
+  const isApp = deps.isApp ?? (() => true)
   /** The sessions of temporary routed tabs, and the credentials their fronts expect, by port. */
   const temporarySessions = new Set<object>()
   const temporaryFronts = new Map<number, TemporaryFront>()
@@ -126,6 +137,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
 
   async function prepare (origin: string, session: RouteSession, options: PrepareOptions = {}): Promise<void> {
     sessionsOf(origin).set(session, options.webrtc !== false)
+    if (options.bypass !== undefined) bypasses.set(session, options.bypass)
     const turn = (turns.get(session) ?? Promise.resolve()).then(async () => { await point(origin, session) })
     turns.set(session, turn.catch(() => {}))
     await turn
@@ -133,7 +145,8 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
 
   async function pointAt (session: RouteSession, port: number): Promise<void> {
     if (pointedAt.get(session) === port) return
-    await within(session.setProxy({ mode: 'fixed_servers', proxyRules: `http://127.0.0.1:${String(port)}`, proxyBypassRules: ROUTED_BYPASS }), callMs)
+    const extra = bypasses.get(session)
+    await within(session.setProxy({ mode: 'fixed_servers', proxyRules: `http://127.0.0.1:${String(port)}`, proxyBypassRules: extra === undefined ? ROUTED_BYPASS : `${ROUTED_BYPASS};${extra}` }), callMs)
     pointedAt.set(session, port)
   }
 
@@ -171,7 +184,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
 
   async function apply (origin: string, routed: boolean, cause: RouteChangeCause): Promise<void> {
     // Asking for a session creates it on disk, so the embed partition is touched only for an app that is routed.
-    if (routed) sessionsOf(origin).set(deps.sessionFor(deps.embedPartition(origin)), true)
+    if (routed && isApp(origin)) sessionsOf(origin).set(deps.sessionFor(deps.embedPartition(origin)), true)
     const sessions = [...sessionsOf(origin)]
     const pointed = await Promise.allSettled(sessions.map(async ([session, webrtc]) => { await pointWithRetry(origin, session, webrtc, routed) }))
     for (const [index, outcome] of pointed.entries()) {
@@ -197,8 +210,8 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     } catch (error) {
       console.error('[route] could not close the app\'s open handles:', error)
     }
-    // A page that held a peer connection, a worker or an embed from before the switch starts again on the new route.
-    if (cause === 'switch') for (const contents of contentsIn(origin, false)) if (contents.getType() !== 'remote') contents.reload()
+    // A page that held a peer connection, a worker or an embed from before the switch starts again on the new route. A website's tab moves to the session it now belongs in, which loads it anew.
+    if (cause === 'switch' && isApp(origin)) for (const contents of contentsIn(origin, false)) if (contents.getType() !== 'remote') contents.reload()
   }
 
   hub.onChange((origin, routed, cause) => {
@@ -244,6 +257,8 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
         throw error
       }
     },
+    prepareSite: async (origin, session, bypass) => { await prepare(origin, session, { bypass }) },
+    confineSite: confine,
     fetchSessionFor: async (origin) => {
       if (!hub.isRouted(origin)) return undefined
       let session = fetchSessions.get(origin)

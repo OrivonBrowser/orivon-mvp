@@ -7,6 +7,8 @@ import { createRouteController } from './route-controller.js'
 import type { RouteController, RouteControllerDeps } from './route-controller.js'
 import { createRouteHub } from './route-hub.js'
 import type { RouteHub } from './route-hub.js'
+import { createRouteSwitch } from './route-switch.js'
+import type { RouteSwitch, RouteSwitchWorld } from './route-switch.js'
 import type { RouteStore } from './route-store.js'
 
 /** The part of the settings store the proxy is read from. */
@@ -19,6 +21,8 @@ export interface RouteService {
   readonly hub: RouteHub
   readonly controller: RouteController
   readonly store: RouteStore
+  /** The one path that turns an app's or a website's tunnel on or off. */
+  readonly routeSwitch: RouteSwitch
   /** The proxy now, undefined when none is set or the setting is not an address. */
   proxy: () => RouteTarget | undefined
   /** An app was taken away: its route is cleared, and its front and sessions are let go. A route that cannot be cleared stays. */
@@ -33,20 +37,26 @@ export interface RouteServiceOptions {
   readonly store: RouteStore
   /** The saved proxy setting, read before the settings store is: what applies until `followSettings`. */
   readonly savedProxy: string
-  /** The apps installed here, asked only while the store cannot say which are routed. */
+  /** The apps installed here, asked only while the store cannot say what was set. */
   readonly installed?: () => readonly string[]
+  /** Whether the whole browser goes through the tunnel unless an origin says otherwise; off until the browser-wide setting exists. */
+  readonly everywhere?: () => boolean
+  /** What the switch reads about the world: the app's files held here, its origin written to disk, and a website's own storage. */
+  readonly switchWorld?: RouteSwitchWorld
   readonly electron: Omit<RouteControllerDeps, 'hub'>
 }
 
 export function createRouteService (options: RouteServiceOptions): RouteService {
   let current = options.savedProxy
   const proxy = (): RouteTarget | undefined => parseProxyAddress(current)
-  const hub = createRouteHub({ store: options.store, proxy, ...(options.installed === undefined ? {} : { installed: options.installed }) })
+  const hub = createRouteHub({ store: options.store, proxy, ...(options.installed === undefined ? {} : { installed: options.installed }), ...(options.everywhere === undefined ? {} : { everywhere: options.everywhere }) })
   const controller = createRouteController({ ...options.electron, hub })
+  const routeSwitch = createRouteSwitch({ proxy, store: options.store, controller, hub }, options.switchWorld ?? { isPinned: () => false, isPersistable: () => false })
   return {
     hub,
     controller,
     store: options.store,
+    routeSwitch,
     proxy,
     forget: (origin) => {
       try {

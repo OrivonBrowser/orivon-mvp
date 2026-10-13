@@ -9,15 +9,15 @@
 // session) streams the file. The redirect target carries a MAC only this process can make, so a page
 // that asks for the scheme directly, or for another app's file, is refused.
 //
-// Installed on the default session, where a granted origin's page runs, and on each session an app is
+// Installed on every session a website runs in, where a granted origin's page runs, and on each session an app is
 // served from. Both register through the web-request owner, never a raw `session.webRequest`.
 
-import { session } from 'electron'
 import type { Session, WebRequestFilter } from 'electron'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { APP_FILE_SCHEME, appFileVerdict } from '../../broker/policy/app-files-by-url.js'
 import { requestingDocumentOf } from '../../broker/policy/own-listener-media.js'
 import { forEachAppSession, holdsFsGrant } from '../../loader/electron/serve.js'
+import { forEachWebsiteSession } from './website-sessions.js'
 import type { Subsystem } from '../registry.js'
 import { createAppFileServer } from './app-file-response.js'
 import { frameOf } from './own-listener-media-gate.js'
@@ -63,7 +63,7 @@ export const appFilesByUrlSubsystem: Subsystem = {
       installAppFileHandler(target, broker)
       installAppFilesGate(target, broker)
     }
-    install(session.defaultSession)
+    forEachWebsiteSession(install)
     forEachAppSession(install)
   }
 }

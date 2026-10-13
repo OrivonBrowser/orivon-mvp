@@ -9,6 +9,7 @@ import { faviconOnCommit, faviconOnFailedLoad } from '../browsing/favicon.js'
 import { knownIcon } from '../history/favicon-host.js'
 import type { TabRecord } from './tab-types.js'
 import { ensureLocalSession } from '../local-files/local-partition.js'
+import { ensureSiteSession } from '../route/site-routes.js'
 import { isLocalPartition } from '../local-files/partition.js'
 import { showContextMenu } from './context-menu.js'
 import { pageMenuItems } from './page-menu-items.js'
@@ -119,6 +120,7 @@ export function tabWebPreferences (preload: string, partition: string | undefine
  * tell apart at a call site by position alone. */
 export function makeTabView (preload: string, partition: string | undefined, additionalArguments?: string[], opts: { backgroundColor?: string, target?: string } = {}): WebContentsView {
   if (partition !== undefined && isLocalPartition(partition)) ensureLocalSession(partition)
+  if (partition !== undefined) ensureSiteSession(partition)
   const view = new WebContentsView({ webPreferences: tabWebPreferences(preload, partition, additionalArguments) })
   if (opts.backgroundColor !== undefined) {
     view.setBackgroundColor(opts.backgroundColor)

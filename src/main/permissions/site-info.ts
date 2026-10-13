@@ -61,6 +61,20 @@ export interface SiteUpdate {
 /** What a routed app's route is doing, as the popover says it. An app that is not routed has none. `temporary` is a website opened through the proxy from a routed app: its session holds nothing past its last tab. */
 export type SiteRoute = 'idle' | 'ok' | 'down' | 'no-proxy' | 'temporary'
 
+/**
+ * What the popover shows for a website's tunnel switch. `web3` marks a name or address whose own files Orivon fetches
+ * itself, outside the tunnel; `unreadable` that the list of tunnel settings could not be read, so every site is on and the switch is fixed.
+ */
+export interface SiteTunnel {
+  readonly on: boolean
+  /** Why the switch cannot be turned on now (it can always be turned off). */
+  readonly blocked?: 'no-proxy'
+  /** Turning it on moves the website into storage of its own for the first time, so the person is told first. */
+  readonly needsNotice: boolean
+  readonly web3: boolean
+  readonly unreadable: boolean
+}
+
 export interface SiteInfo {
   readonly origin: string
   readonly displayOrigin: string
@@ -71,6 +85,8 @@ export interface SiteInfo {
   readonly update: SiteUpdate | undefined
   /** The state of the app's route when the person routed it through their proxy (`../route/`). */
   readonly route?: SiteRoute
+  /** The tunnel switch of a website; absent for an installed app, a local file and this computer. */
+  readonly tunnel?: SiteTunnel
   /** True when the site has asked for at least one Orivon capability or
    * picked a file/folder -- what the toolbar key's visibility switches on. */
   readonly asked: boolean

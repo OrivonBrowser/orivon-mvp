@@ -19,6 +19,7 @@ import { noteCertificate } from '../auth/note-certificate.js'
 import { ACCEPT, CHROMIUM_VERDICT, REJECT, refusalNote, verifierCertificateVerdict } from './certificate-check.js'
 import { requestPartition, withPartition } from './partition.js'
 import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
+import { forEachWebsiteSession } from '../sessions/website-sessions.js'
 import { contentAddressOf } from './content-address.js'
 import { chooseCheckpoint, MAX_CHECKPOINT_AGE_SECONDS, slotTimestamp } from './checkpoint.js'
 import type { CheckpointChoice } from './checkpoint.js'
@@ -158,7 +159,7 @@ export function verifiedHostFilter (): WebRequestFilter {
  * Stamps every page's request to the verifier with the partition its top-level page
  * owns, and strips whatever a request set itself: a worker's request has no
  * frame, and could otherwise name any partition. Installed on the default
- * session only (see README.md's Design notes for why no other), LAST among
+ * session and on each website's session of its own (see README.md's Design notes for why no other), LAST among
  * `onBeforeSendHeaders` handlers there, so nothing that runs before it --
  * including a future extension rule -- can set or remove this header.
  */
@@ -376,8 +377,8 @@ export const verifierSubsystem: Subsystem = {
   afterReady: (ctx) => {
     BUILTIN_ADDRESSES.learnSchemes((name) => verifierStore().nameScheme(name))
     installCertificateCheck(session.defaultSession)
-    installPartitionStamp(session.defaultSession)
-    installListeningGate(session.defaultSession)
+    // The shared session and each session of its own a website gets: any of them can load a `.eth` page.
+    forEachWebsiteSession((target) => { installPartitionStamp(target); installListeningGate(target) })
     const host = new HostSupervisor({
       fork: () => utilityProcess.fork(join(__dirname, 'verifier-host.js'), [], { serviceName: 'Orivon verifier' }),
       config: hostConfig,
