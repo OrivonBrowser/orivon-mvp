@@ -84,4 +84,28 @@ describe('createAppRequestHandler: the same rules end to end', () => {
     expect(response.status).toBe(302)
     expect(response.headers.get('location')).toBe('/app/index.html')
   })
+
+  it('the redirect to a subdirectory entry carries the policy headers the entry itself carries, because Electron hands the page the redirect\'s headers with the entry\'s body', async () => {
+    for (const isolated of [false, true]) {
+      const entries = [
+        { path: '/.well-known/orivon.json', content: utf8(manifestJson({ entry: 'app/index.html', ...(isolated ? { crossOriginIsolated: true } : {}) })) },
+        { path: '/app/index.html', content: utf8('<h1>app</h1>') }
+      ]
+      const tree = await bundleTree(entries)
+      const storage = memoryStorage()
+      for (const item of entries) await storage.writeAsset(ORIGIN, item.path, item.content)
+      await storage.writePin(ORIGIN, fromBundleTree(ORIGIN, tree.root, tree.assets, '1.0.0', 0))
+      const handler = await createAppRequestHandler(storage, ORIGIN, async () => ['api.example.com:443'])
+
+      const redirect = await handler(new Request(`${ORIGIN}/`, { headers: NAVIGATION_HEADERS }))
+      const entry = await handler(new Request(`${ORIGIN}/app/index.html`, { headers: NAVIGATION_HEADERS }))
+
+      expect(redirect.status).toBe(302)
+      expect(entry.headers.get('content-security-policy')).toContain('api.example.com:443')
+      for (const name of ['content-security-policy', 'x-content-type-options', 'content-type', 'cross-origin-opener-policy', 'cross-origin-embedder-policy', 'cross-origin-resource-policy']) {
+        expect(redirect.headers.get(name), `${name} (isolated=${String(isolated)})`).toBe(entry.headers.get(name))
+      }
+      expect(redirect.headers.has('cross-origin-opener-policy')).toBe(isolated)
+    }
+  })
 })

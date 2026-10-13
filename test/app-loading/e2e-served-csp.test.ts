@@ -386,7 +386,8 @@ it('[app:wasm-streaming-under-served-csp] [app:blob-worker-runs] a pinned bundle
       // Every session of the product carries a web-request listener (the local-node port gate is on all of them). With any
       // listener, Electron (44.0 to 45 beta, any listener, even one whose filter matches nothing) hands the page the
       // REDIRECT response's status line and headers together with the final hop's body: 302 where a bare session reports
-      // 200, and none of the final response's headers (see A410). What proves the 3xx was followed and not handed back is
+      // 200, and none of the final response's headers (so the loader's own redirect carries the entry's, see
+      // e2e-served-entry-redirect). What proves the 3xx was followed and not handed back is
       // the final URL, the final body and `redirected`, so the check reads those, and accepts either status.
       check('a 3xx a protocol.handle handler returns is followed by the page\'s own loader, not handed back as a raw 3xx',
         (follow.status === 200 || follow.status === 302) && follow.text === 'final' && follow.redirected && follow.url === 'https://hop-b.orivon.test/final', detail)

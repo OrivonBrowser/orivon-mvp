@@ -1621,16 +1621,3 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** owner, who does not know the plan's data terms yet. Until they are settled, an agent
   redacts personal data from a bug report before reading it.
 - **Blocks:** nothing in the code; the notice's AI paragraph is *provisional* until it is settled
-
-### A410: A followed redirect from a `protocol.handle` handler carries the redirect's headers, not the final response's **[AI-REC]**
-
-- **Question:** On any session with a `webRequest` listener (every product session), Electron gives the page the 302's
-  status and headers with the final hop's body: `fetch('/')` on an app whose entry is in a subdirectory reads `302`,
-  `ok` false, no content-type, no CSP; the entry document then runs with no served CSP, nosniff or isolation headers
-  (measured, 44.0.0, 44.7.0 and 45 beta; Electron's own, not an Orivon handler). Put the policy headers on the 302?
-- **Why it matters:** a subdirectory entry opened at `/` loses its CSP; third-party reach hops lose their final headers.
-  No shipped port has one (all use `index.html`).
-- **Options:** the loader's 302 carries the same policy headers as the entry would (rec.); serve the entry at `/` with
-  no redirect; map `/` to the entry before the tab loads; wait for Electron.
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
