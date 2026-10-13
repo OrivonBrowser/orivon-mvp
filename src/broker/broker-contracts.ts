@@ -285,15 +285,12 @@ export interface Broker {
      * arrives with the fresh manifest.
      */
     hydrateFromPinnedManifest(origin: string, manifest: Manifest): Promise<void>
-    /**
-     * Every `orivon.fs.userSelected` pick this origin holds, for a LOADED
-     * app -- the live counterpart to `grants` above, and D-0007's other
-     * half of the settings surface. `revokeUserSelectedPath` below is how
-     * one of these is withdrawn.
-     */
+    /** Every `orivon.fs.userSelected` pick this origin holds, for a LOADED app: the live counterpart to `grants` above (D-0007). `revokeUserSelectedPath` below withdraws one. */
     pickedPaths(origin: string): Promise<readonly PickedPath[]>
     /** A200: `GrantLedger.socketAllowance`, exposed read-only -- same category as `hasGrantsSync` above, never throws. Full reasoning: `src/loader/README.md` Design notes. */
     socketAllowanceSync(origin: string): number
+    /** Whether a system proxy applies to a direct dial of `host`:`port` by `origin`'s app (T20); false for a routed app. The loader dials with Node, which never sees the proxy, so it asks. Never throws. */
+    reachBypassesProxy(origin: string, host: string, port: number): Promise<boolean>
   }
   readonly net: {
     /** Returns a `FailableTcpSocket` -- a `TcpSocket` plus one broker-internal

@@ -31,6 +31,7 @@ import { GrantLedger } from './grants/grant-ledger.js'
 import { createGrantsChangeEmitter } from './grants/grant-events.js'
 import { socketAllowance } from './grants/resource-limits.js'
 import { isolationKeyFromUrl } from './policy/origin.js'
+import { createReachProxyCheck } from './capabilities/reach-proxy.js'
 import { widensAuthority } from './policy/update.js'
 import { createListenerRegistry } from './capabilities/listener-registry.js'
 import { createNetCapability } from './capabilities/net.js'
@@ -213,9 +214,8 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   /**
    * A200: `Broker.app.socketAllowanceSync`'s implementation -- a thin,
    * never-throwing delegate to `GrantLedger.socketAllowance`, same shape as
-   * `hasGrantsSync` above. `ledger.socketAllowance` already answers the
-   * platform default for a row it holds nothing for, so a malformed
-   * `origin` (falling back to the raw, un-canonicalised string) still gets
+   * `hasGrantsSync` above. It already answers the platform default for a row
+   * it holds nothing for, so a malformed `origin` (the raw string) still gets
    * a safe number rather than a broker fault. A restored app not yet
    * re-registered answers from its pinned manifest's declaration.
    */
@@ -474,7 +474,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
 
   const forgetOrigin = createForgetOrigin({ canonical, grants, revokePersisted, pickedPaths: pickedPathsFor, revokeUserSelectedPath, handleTable, ledger, grantsChanged })
   return {
-    app: { manifest, grants, isRegisteredSync, hasGrantsSync, heldSync, grantedPatternsSync, registeredOriginsSync, persistedAppsSync, hydrateFromPinnedManifest, pickedPaths: pickedPathsFor, socketAllowanceSync },
+    app: { manifest, grants, isRegisteredSync, hasGrantsSync, heldSync, grantedPatternsSync, registeredOriginsSync, persistedAppsSync, hydrateFromPinnedManifest, pickedPaths: pickedPathsFor, socketAllowanceSync, reachBypassesProxy: createReachProxyCheck(deps) },
     net,
     id,
     web,
