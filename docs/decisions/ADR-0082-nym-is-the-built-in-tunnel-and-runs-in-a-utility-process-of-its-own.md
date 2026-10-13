@@ -64,7 +64,8 @@ person who prefers Tor keeps it.
 - Nym's gateways see this computer's address; the destinations see the exit. A first connection takes about ten
   seconds on a cold start (a tunnel up in 3 to 8 s, a first HTTPS GET in 5 to 6 s) and a UDP round trip about a second.
 - The process holds about 130 MB with the module loaded and 6 to 15 MB more per tunnel (222 MB at six).
-- Each tunnel's module instance stays in the process until it exits.
+- Each tunnel's module instance stays in the process until it exits, so the process is replaced after it has started 24 tunnels.
+- The module cannot half-close a stream, so a client's end of sending is not passed on: the stream is closed ten quiet seconds after it.
 - `settings.json` is written as version 2; a build before this one reads none of it.
 - Nym's paid bandwidth credentials are not used: the mixnet answers without them today. If that changes, the Nym
   choice says so and refuses, and never goes direct.

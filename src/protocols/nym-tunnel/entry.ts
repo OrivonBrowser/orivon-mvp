@@ -3,7 +3,7 @@
 // Started and stopped by src/main/route/ (nym-subsystem.ts).
 
 import { startHost } from './service.js'
-import { failure, NYM_TUNNEL_IDENTITY } from './protocol.js'
+import { NYM_TUNNEL_IDENTITY } from './protocol.js'
 import type { FromHost, ToHost } from './protocol.js'
 import { envName } from '../local-node/protocol.js'
 
@@ -12,8 +12,10 @@ function post (message: FromHost): void {
 }
 
 function main (): void {
+  // A promise one tunnel's module left rejected must not end the other apps' tunnels: it is logged, and the tunnel that
+  // cannot go on fails its own requests.
   process.on('unhandledRejection', (reason) => {
-    post(failure('run', reason instanceof Error ? reason.message : String(reason)))
+    console.error('[nym-tunnel] an unhandled rejection:', reason instanceof Error ? reason.message : String(reason))
   })
   let started = false
   process.parentPort.on('message', (event) => {

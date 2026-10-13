@@ -40,7 +40,7 @@ export type FromHost =
   /** The SOCKS5 server accepts connections. */
   | { readonly type: 'listening' }
   /** Posted whenever the tunnels change. `problem` is why the latest one could not come up or was refused, until a later one is ready. */
-  | { readonly type: 'instances', readonly connecting: number, readonly ready: number, readonly problem?: string }
+  | { readonly type: 'instances', readonly connecting: number, readonly ready: number, readonly started: number, readonly problem?: string }
   | { readonly type: 'failed', readonly stage: FailureStage, readonly message: string }
 
 export function failure (stage: FailureStage, message: string): FromHost {

@@ -85,6 +85,16 @@ describe('instances', () => {
     expect(pending).toHaveLength(2)
   })
 
+  it('keeps the reason short enough for main to accept, and counts every tunnel it started', async () => {
+    const { instances, pending, snapshots } = harness()
+    const asked = instances.acquire('app-a').catch((error: unknown) => error)
+    pending[0]?.reject(new Error('x'.repeat(2_000)))
+    await asked
+    expect(snapshots.at(-1)?.problem?.length).toBeLessThanOrEqual(400)
+    void instances.acquire('app-a').catch(() => {})
+    expect(instances.snapshot().started).toBe(2)
+  })
+
   it('closes a tunnel ten minutes after the last thing using it ends, not before', async () => {
     const { instances, log, pending } = harness()
     const asked = instances.acquire('app-a')

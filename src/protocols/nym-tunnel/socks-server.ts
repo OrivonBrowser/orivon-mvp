@@ -38,6 +38,8 @@ export interface SocksServerDeps {
   readonly acquire: (userName: string) => Promise<Lease>
   /** How long a stream may take to open through a tunnel; the module's own limit is not always the end of a connect that hangs. */
   readonly connectTimeoutMs?: number
+  /** How long a stream is kept after its client has sent all it will send, without a byte from the far end; the module cannot pass that on (README.md). */
+  readonly halfCloseGraceMs?: number
   /** Why a client was refused a tunnel the server could not give, for the status line. */
   readonly onRefused?: (userName: string, error: AcquireError) => void
 }
@@ -170,6 +172,8 @@ async function handshake (socket: Socket, reader: Reader, secret: string): Promi
 }
 
 export const CONNECT_TIMEOUT_MS = 45_000
+/** Quiet time after a client's end before its stream is closed: a client that closed for good and one waiting for its answer look the same. */
+export const HALF_CLOSE_GRACE_MS = 10_000
 
 /** The stream, or a refusal after `ms`; a stream that arrives after that is closed, not left open. */
 async function openStream (lease: Lease, destination: Destination, ms: number): Promise<TcpStream> {
@@ -186,10 +190,10 @@ async function openStream (lease: Lease, destination: Destination, ms: number): 
   }
 }
 
-async function connect (socket: Socket, request: Request, lease: Lease, connectTimeoutMs: number): Promise<void> {
+async function connect (socket: Socket, request: Request, lease: Lease, limits: { connectTimeoutMs: number, halfCloseGraceMs: number }): Promise<void> {
   let stream: TcpStream
   try {
-    stream = await openStream(lease, request.destination, connectTimeoutMs)
+    stream = await openStream(lease, request.destination, limits.connectTimeoutMs)
   } catch {
     lease.release()
     socket.end(reply(REPLY_HOST_UNREACHABLE))
@@ -204,9 +208,11 @@ async function connect (socket: Socket, request: Request, lease: Lease, connectT
   const early = request.reader.release()
 
   let closed = false
+  let grace: ReturnType<typeof setTimeout> | undefined
   const finish = (): void => {
     if (closed) return
     closed = true
+    clearTimeout(grace)
     lease.release()
     socket.destroy()
     stream.close().catch(() => {})
@@ -225,14 +231,22 @@ async function connect (socket: Socket, request: Request, lease: Lease, connectT
     socket.pause()
     queue = queue.then(() => { if (!closed) socket.resume() })
   })
-  socket.on('end', () => {
-    queue = queue.then(async () => { if (!closed) await stream.close() }).catch(finish)
-  })
+  // Closing the write side of a Nym stream ends its reading too (measured), so the client's end is not passed on: the
+  // answer it is waiting for is still read, and the stream is closed once the far end ends or the grace is over.
+  let clientEnded = false
+  const arm = (): void => {
+    clearTimeout(grace)
+    grace = setTimeout(finish, limits.halfCloseGraceMs)
+    grace.unref()
+  }
+  socket.on('end', () => { clientEnded = true; arm() })
+  socket.resume()
 
   try {
     for (;;) {
       const chunk = await stream.read()
       if (chunk === null || closed) break
+      if (clientEnded) arm()
       if (!socket.write(chunk)) await new Promise<void>((resolve) => { socket.once('drain', resolve); socket.once('close', resolve) })
     }
   } catch {
@@ -275,6 +289,7 @@ async function associate (control: Socket, lease: Lease): Promise<void> {
   control.on('end', finish)
   control.on('error', finish)
   control.on('data', () => {})
+  control.resume()
   control.write(reply(REPLY_OK, { address: '127.0.0.1', port: relay.address().port }))
 
   // The first datagram fixes who the client is; a datagram from any other port is not the client's.
@@ -323,8 +338,15 @@ async function serve (socket: Socket, deps: SocksServerDeps): Promise<void> {
   } finally {
     clearTimeout(timer)
   }
-  if (request === undefined) return
-  if (request.command !== COMMAND_CONNECT && request.command !== COMMAND_ASSOCIATE) { socket.end(reply(REPLY_COMMAND_NOT_SUPPORTED)); return }
+  if (request === undefined) {
+    // A handshake that ended without a reply must not leave the connection open: it would hold one of the server's slots for ever.
+    socket.end()
+    setTimeout(() => { socket.destroy() }, 2_000).unref()
+    return
+  }
+  // What the client sends before the tunnel is up waits in the kernel, not in this process.
+  socket.pause()
+  if (request.command !== COMMAND_CONNECT && request.command !== COMMAND_ASSOCIATE) { socket.resume(); socket.end(reply(REPLY_COMMAND_NOT_SUPPORTED)); return }
 
   let lease: Lease
   try {
@@ -337,7 +359,7 @@ async function serve (socket: Socket, deps: SocksServerDeps): Promise<void> {
     return
   }
   if (socket.destroyed) { lease.release(); return }
-  if (request.command === COMMAND_CONNECT) await connect(socket, request, lease, deps.connectTimeoutMs ?? CONNECT_TIMEOUT_MS)
+  if (request.command === COMMAND_CONNECT) await connect(socket, request, lease, { connectTimeoutMs: deps.connectTimeoutMs ?? CONNECT_TIMEOUT_MS, halfCloseGraceMs: deps.halfCloseGraceMs ?? HALF_CLOSE_GRACE_MS })
   else await associate(socket, lease)
 }
 

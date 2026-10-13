@@ -76,8 +76,8 @@ async function echoServer (): Promise<number> {
   return (server.address() as AddressInfo).port
 }
 
-async function start (acquire: (name: string) => Promise<Lease>, record: Recorder, connectTimeoutMs?: number): Promise<number> {
-  socks = await startSocksServer(0, { secret: SECRET, ...(connectTimeoutMs === undefined ? {} : { connectTimeoutMs }), acquire: async (name) => { record.acquired.push(name); return await acquire(name) } })
+async function start (acquire: (name: string) => Promise<Lease>, record: Recorder, limits: { connectTimeoutMs?: number, halfCloseGraceMs?: number } = {}): Promise<number> {
+  socks = await startSocksServer(0, { secret: SECRET, ...limits, acquire: async (name) => { record.acquired.push(name); return await acquire(name) } })
   return socks.port
 }
 
@@ -102,7 +102,7 @@ describe('the SOCKS5 server of the Nym tunnel', () => {
   it('carries a CONNECT by name through the tunnel of the user name, and echoes what the destination sends', async () => {
     const record = recorder()
     const echo = await echoServer()
-    const port = await start(async () => leaseOf(fakeTunnel(echo, record), record), record)
+    const port = await start(async () => leaseOf(fakeTunnel(echo, record), record), record, { halfCloseGraceMs: 30 })
     const { socket } = await SocksClient.createConnection({ proxy: proxyOf(port), command: 'connect', destination: { host: 'service.example', port: 4242 } })
     const received = new Promise<string>((resolve) => { socket.once('data', (data) => { resolve(data.toString()) }) })
     socket.write('hello through nym')
@@ -167,12 +167,43 @@ describe('the SOCKS5 server of the Nym tunnel', () => {
     let open: (stream: TcpStream) => void = () => {}
     const closed: string[] = []
     const hanging: Tunnel = { connectTcp: async () => await new Promise<TcpStream>((resolve) => { open = resolve }), bindUdp: async () => { throw new Error('no') }, disconnect: async () => {} }
-    const port = await start(async () => leaseOf(hanging, record), record, 150)
+    const port = await start(async () => leaseOf(hanging, record), record, { connectTimeoutMs: 150 })
     await expect(SocksClient.createConnection({ proxy: proxyOf(port), command: 'connect', destination: { host: 'service.example', port: 80 } })).rejects.toThrow(/HostUnreachable/i)
     expect(record.released).toBe(1)
     open({ read: async () => null, write: async () => {}, close: async () => { closed.push('closed') } })
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(closed).toEqual(['closed'])
+  })
+
+  it('keeps reading after the client has sent all it will, because the module cannot half-close, and closes the stream once the grace is over', async () => {
+    const record = recorder()
+    const echo = await echoServer()
+    const closes: string[] = []
+    const inner = fakeTunnel(echo, record)
+    const tunnel: Tunnel = { ...inner, connectTcp: async (host, port) => { const stream = await inner.connectTcp(host, port); return { ...stream, close: async () => { closes.push('close'); await stream.close() } } } }
+    const port = await start(async () => leaseOf(tunnel, record), record, { halfCloseGraceMs: 200 })
+    const { socket } = await SocksClient.createConnection({ proxy: proxyOf(port), command: 'connect', destination: { host: 'service.example', port: 80 } })
+    const received: Buffer[] = []
+    socket.on('data', (data) => received.push(data))
+    socket.end('request')
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(Buffer.concat(received).toString(), 'the answer still comes after the client\'s end').toBe('request')
+    expect(closes, 'the end of the client was not passed on at once').toEqual([])
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(closes).toEqual(['close'])
+    expect(record.released).toBe(1)
+  })
+
+  it('drops a connection whose handshake ends without an answer, so it holds no slot', async () => {
+    const record = recorder()
+    const port = await start(async () => { throw new Error('must not be asked') }, record)
+    const closed = await new Promise<boolean>((resolve) => {
+      const socket = netConnect(port, '127.0.0.1', () => { socket.write(Buffer.from([4, 1, 0])) })
+      socket.on('close', () => { resolve(true) })
+      socket.on('error', () => {})
+      setTimeout(() => { resolve(false) }, 4_000)
+    })
+    expect(closed).toBe(true)
   })
 
   it('refuses an app past the cap as not allowed, and closes the connection of a tunnel that did not come up', async () => {

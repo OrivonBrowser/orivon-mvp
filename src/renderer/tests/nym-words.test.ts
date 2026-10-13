@@ -15,6 +15,7 @@ describe('the words about Nym', () => {
   it('gives the reason only for a state that has one', () => {
     expect(nymReason({ state: 'failed', reason: 'no gateway' })).toBe('no gateway')
     expect(nymReason({ state: 'ready' })).toBeUndefined()
+    expect(nymReason({ state: 'ready', reason: '6 apps already have a tunnel' })).toBe('6 apps already have a tunnel')
   })
 
   it('says how long a test took, and why one could not run', () => {
@@ -26,6 +27,7 @@ describe('the words about Nym', () => {
 
   it('tells the popover where an app on Nym stands', () => {
     expect(nymRouteLine('ok', { state: 'ready' })).toBe('This app\'s traffic goes through Nym. Nym tunnel ready')
+    expect(nymRouteLine('ok', { state: 'ready', reason: '6 apps already have a tunnel' })).toBe('This app\'s traffic goes through Nym. Nym tunnel ready. 6 apps already have a tunnel')
     expect(nymRouteLine('idle', { state: 'idle' })).toBe('This app\'s traffic goes through Nym.')
     expect(nymRouteLine('down', { state: 'failed', reason: 'x' })).toBe('Nym is not answering, so this app\'s traffic is stopped.')
     expect(nymRouteLine('ok', { state: 'unavailable', cause: 'not-in-build', reason: 'x' })).toBe('Nym is not in this build, so this app\'s traffic is stopped.')

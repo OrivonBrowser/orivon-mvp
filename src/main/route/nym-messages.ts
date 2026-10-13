@@ -16,7 +16,7 @@ export function isFromHost (message: unknown): message is FromHost {
   const record = message as Record<string, unknown>
   switch (record['type']) {
     case 'listening': return true
-    case 'instances': return isCount(record['connecting']) && isCount(record['ready']) && (record['problem'] === undefined || (typeof record['problem'] === 'string' && record['problem'].length <= MAX_FAILURE_MESSAGE))
+    case 'instances': return isCount(record['connecting']) && isCount(record['ready']) && isCount(record['started']) && (record['problem'] === undefined || (typeof record['problem'] === 'string' && record['problem'].length <= MAX_FAILURE_MESSAGE))
     case 'failed': return STAGES.includes(record['stage'] as FailureStage) && typeof record['message'] === 'string' && record['message'].length <= MAX_FAILURE_MESSAGE
     default: return false
   }

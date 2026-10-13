@@ -20,7 +20,7 @@ export function nymStatusWords (state: NymState): string {
 
 /** Why, for a state that has a reason worth reading; undefined for one that has none. */
 export function nymReason (state: NymState): string | undefined {
-  return state.state === 'failed' || state.state === 'unavailable' ? state.reason : undefined
+  return state.state === 'failed' || state.state === 'unavailable' || state.state === 'ready' ? state.reason : undefined
 }
 
 /** What the Test of Nym found, in words. */
@@ -39,5 +39,6 @@ export function nymRouteLine (route: 'idle' | 'ok' | 'down' | 'no-proxy' | 'temp
   if (state.state === 'failed' || state.state === 'unavailable') return `${nymStatusWords(state)}, so this app's traffic is stopped.`
   if (route === 'down') return 'Nym is not answering, so this app\'s traffic is stopped.'
   const base = 'This app\'s traffic goes through Nym.'
-  return state.state === 'connecting' || state.state === 'ready' ? `${base} ${nymStatusWords(state)}` : base
+  if (state.state === 'ready') return `${base} ${nymStatusWords(state)}${state.reason === undefined ? '' : `. ${state.reason}`}`
+  return state.state === 'connecting' ? `${base} ${nymStatusWords(state)}` : base
 }

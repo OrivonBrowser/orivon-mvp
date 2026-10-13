@@ -8,7 +8,8 @@ export type NymState =
   /** The host runs and no app has a tunnel open. */
   | { readonly state: 'idle' }
   | { readonly state: 'connecting' }
-  | { readonly state: 'ready' }
+  /** `reason` is a notice the person should read while tunnels work: the most the host keeps was reached, say. */
+  | { readonly state: 'ready', readonly reason?: string }
   | { readonly state: 'failed', readonly reason: string }
   | { readonly state: 'unavailable', readonly cause: NymUnavailableCause, readonly reason: string }
 

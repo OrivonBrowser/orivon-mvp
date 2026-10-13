@@ -5,7 +5,7 @@ import { startSocks5Fixture } from '../../../broker/route/tests/socks5-fixture.t
 import type { Socks5Fixture } from '../../../broker/route/tests/socks5-fixture.test-helpers.js'
 import type { FromHost, NymTunnelConfig } from '../../../protocols/nym-tunnel/protocol.js'
 import type { HostProcess } from '../../verifier/process-supervisor.js'
-import { createNymSubsystem, LISTEN_WAIT_MS, NymUnavailable, STOP_AFTER_LAST_TUNNEL_MS } from '../nym-subsystem.js'
+import { createNymSubsystem, LISTEN_WAIT_MS, NymUnavailable, RECYCLE_AFTER_STARTS, STOP_AFTER_LAST_TUNNEL_MS } from '../nym-subsystem.js'
 import type { NymDeps, NymSubsystem } from '../nym-subsystem.js'
 import { isFromHost } from '../nym-messages.js'
 
@@ -70,9 +70,9 @@ describe('the Nym tunnel as the shell reaches it', () => {
     expect(await nym.ensure()).toEqual(endpoint)
     expect(processes).toHaveLength(1)
 
-    processes[0]?.say({ type: 'instances', connecting: 1, ready: 0 })
+    processes[0]?.say({ type: 'instances', connecting: 1, ready: 0, started: 1 })
     expect(nym.state()).toEqual({ state: 'connecting' })
-    processes[0]?.say({ type: 'instances', connecting: 0, ready: 1 })
+    processes[0]?.say({ type: 'instances', connecting: 0, ready: 1, started: 1 })
     expect(nym.state()).toEqual({ state: 'ready' })
   })
 
@@ -92,9 +92,9 @@ describe('the Nym tunnel as the shell reaches it', () => {
     await settle()
     processes[0]?.say({ type: 'listening' })
     const before = await first
-    processes[0]?.say({ type: 'instances', connecting: 0, ready: 1 })
+    processes[0]?.say({ type: 'instances', connecting: 0, ready: 1, started: 1 })
     expect(live().some((timer) => timer.ms === STOP_AFTER_LAST_TUNNEL_MS)).toBe(false)
-    processes[0]?.say({ type: 'instances', connecting: 0, ready: 0 })
+    processes[0]?.say({ type: 'instances', connecting: 0, ready: 0, started: 1 })
     const stop = live().find((timer) => timer.ms === STOP_AFTER_LAST_TUNNEL_MS)
     expect(stop).toBeDefined()
     stop?.callback()
@@ -117,9 +117,41 @@ describe('the Nym tunnel as the shell reaches it', () => {
     await settle()
     processes[0]?.say({ type: 'listening' })
     await first
-    processes[0]?.say({ type: 'instances', connecting: 0, ready: 0 })
-    processes[0]?.say({ type: 'instances', connecting: 1, ready: 0 })
+    processes[0]?.say({ type: 'instances', connecting: 0, ready: 0, started: 1 })
+    processes[0]?.say({ type: 'instances', connecting: 1, ready: 0, started: 1 })
     expect(live().some((timer) => timer.ms === STOP_AFTER_LAST_TUNNEL_MS)).toBe(false)
+  })
+
+  it('shows a notice while tunnels work, and replaces the host once it has started as many as it should hold in memory', async () => {
+    const { nym, processes, live, settle } = harness()
+    const first = nym.ensure()
+    await settle()
+    processes[0]?.say({ type: 'listening' })
+    await first
+    processes[0]?.say({ type: 'instances', connecting: 0, ready: 1, started: 7, problem: '6 apps already have a Nym tunnel open' })
+    expect(nym.state()).toEqual({ state: 'ready', reason: '6 apps already have a Nym tunnel open' })
+    processes[0]?.say({ type: 'instances', connecting: 0, ready: 0, started: RECYCLE_AFTER_STARTS })
+    await settle()
+    expect(processes[0]?.killed, 'stopped at once, not after ten minutes').toBe(true)
+    expect(live().some((timer) => timer.ms === STOP_AFTER_LAST_TUNNEL_MS)).toBe(false)
+    expect(nym.state()).toEqual({ state: 'off' })
+  })
+
+  it('stops the host and refuses when a proxy is set while it runs', async () => {
+    let proxy = false
+    let now = 1_000
+    const { nym, processes, settle } = harness({ proxyConfigured: async () => proxy, now: () => now })
+    const first = nym.ensure()
+    await settle()
+    processes[0]?.say({ type: 'listening' })
+    await first
+    proxy = true
+    expect(await nym.ensure(), 'the answer of a moment ago is reused').toBeDefined()
+    now += 5_001
+    await expect(nym.ensure()).rejects.toThrow(/proxy is configured/)
+    await settle()
+    expect(processes[0]?.killed).toBe(true)
+    expect(nym.state()).toMatchObject({ state: 'unavailable', cause: 'proxy' })
   })
 
   it('is unavailable, and forks nothing, when the module is not in this build', async () => {
@@ -171,7 +203,7 @@ describe('the Nym tunnel as the shell reaches it', () => {
     await settle()
     processes[0]?.say({ type: 'listening' })
     await first
-    processes[0]?.say({ type: 'instances', connecting: 0, ready: 0, problem: 'no gateway answered' })
+    processes[0]?.say({ type: 'instances', connecting: 0, ready: 0, started: 1, problem: 'no gateway answered' })
     expect(nym.state()).toEqual({ state: 'failed', reason: 'no gateway answered' })
     live().find((timer) => timer.ms === STOP_AFTER_LAST_TUNNEL_MS)?.callback()
     await settle()
@@ -232,8 +264,8 @@ describe('the Test of Nym', () => {
 describe('what the host may say', () => {
   it.each([
     [{ type: 'listening' }, true],
-    [{ type: 'instances', connecting: 1, ready: 0 }, true],
-    [{ type: 'instances', connecting: 0, ready: 2, problem: 'why' }, true],
+    [{ type: 'instances', connecting: 1, ready: 0, started: 1 }, true],
+    [{ type: 'instances', connecting: 0, ready: 2, started: 1, problem: 'why' }, true],
     [{ type: 'failed', stage: 'load', message: 'x' }, true],
     [{ type: 'instances', connecting: -1, ready: 0 }, false],
     [{ type: 'instances', connecting: 'a', ready: 0 }, false],

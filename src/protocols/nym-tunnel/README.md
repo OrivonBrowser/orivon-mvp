@@ -40,20 +40,27 @@ client) for the UDP frame format, so both ends read one implementation of it. Ev
 client in [`tests/socks-server.test.ts`](tests/socks-server.test.ts).
 
 **The relay accepts datagrams from one client.** The first datagram fixes the client's port on loopback; a datagram from any
-other port, or from any address but loopback, is dropped. The association ends with its control connection.
+other port, or from any address but loopback, is dropped. The association ends with its control connection. The request's
+destination address does not say who the client is (the route's provider sends `0.0.0.0:0`), so a program on this
+computer that sent the relay's ephemeral port a datagram before the client did would be taken for it: the relay's
+port is told to the client alone, and this is a residual (`docs/architecture/security-model.md`, T85).
 
 **A stream that never opens is refused after 45 seconds.** The module has a 30-second limit of its own for a TCP connect;
 a connect measured once did not return within 90 seconds, so the server does not rely on it. A stream that opens after
 the refusal is closed.
 
-**Half-open connections stay open.** A client that has sent all it will send still receives the answer
-(`allowHalfOpen`), as it would from a server it reached directly.
+**A client's end is not passed on at once.** The module cannot half-close: closing the write side of a Nym stream ends its
+reading too (measured against a plain HTTP server: the request was sent, the stream closed, and nothing came back). So the
+server accepts half-open connections (`allowHalfOpen`) and, when a client has sent all it will send, keeps reading the
+answer; the stream is closed once the far end ends, or after ten quiet seconds. A client that closed for good and one
+waiting for its answer look the same, which is why a connection is released ten seconds after its client went.
 
 **Each tunnel is a fresh instance of the module.** The glue keeps its state in the module instance and allows one tunnel
 per instance; after `disconnectMixTunnel` the same instance refuses a new one (measured). So each tunnel imports the glue
 again from a `data:` URL made of the bytes that were hashed, with a comment of its own at the end so it is another module,
-and instantiates the one compiled `.wasm`. The instances stay in this process until it exits, which is why main stops the
-process ten minutes after the last tunnel closes.
+and instantiates the one compiled `.wasm`. The instances stay in this process until it exits, so the process reports how many tunnels it has started and main
+replaces it, as soon as no tunnel is open, after 24 (`RECYCLE_AFTER_STARTS`), and in any case ten minutes after the last
+tunnel closes.
 
 **The module's network is a dispatcher, not a wrapper.** A check made on a name before the module dials it would let a
 name that answers differently the second time lead to a private address. `module-net.ts` puts the check where the dial

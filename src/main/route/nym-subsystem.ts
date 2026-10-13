@@ -24,6 +24,10 @@ export class NymUnavailable extends Error {}
 
 export const STOP_AFTER_LAST_TUNNEL_MS = 10 * 60_000
 export const LISTEN_WAIT_MS = 15_000
+/** Each tunnel the host starts leaves a module instance in its memory until the process exits (the host's README.md): after this many it is replaced, as soon as no tunnel is open. */
+export const RECYCLE_AFTER_STARTS = 24
+/** How long an answer to "is a proxy set?" is reused. */
+const PROXY_CHECK_REUSE_MS = 5_000
 /** A refusal is answered from memory for this long before the files and the proxy are looked at again. */
 export const REFUSAL_MEMORY_MS = 10_000
 const TEST_USER = 'orivon-settings-test'
@@ -63,6 +67,8 @@ export interface NymSubsystem {
 
 type Verdict = { readonly directory: string } | { readonly reason: string, readonly cause: 'not-in-build' | 'proxy' | 'other' }
 
+const PROXY_VERDICT = { reason: 'a proxy is configured, and the Nym tunnel\'s connections to Nym\'s gateways would go around it', cause: 'proxy' } as const
+
 export function createNymSubsystem (deps: NymDeps): NymSubsystem {
   const now = deps.now ?? Date.now
   const setTimer = deps.setTimer ?? ((callback, ms) => setTimeout(callback, ms))
@@ -97,10 +103,18 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
     stopTimer = setTimer(() => { stopTimer = undefined; supervisor.idle() }, deps.stopAfterMs ?? STOP_AFTER_LAST_TUNNEL_MS)
   }
 
+  let proxyAnswer: { readonly at: number, readonly set: boolean } | undefined
+  const proxyIsSet = async (): Promise<boolean> => {
+    if (proxyAnswer !== undefined && now() - proxyAnswer.at < PROXY_CHECK_REUSE_MS) return proxyAnswer.set
+    const set = await deps.proxyConfigured().catch(() => true)
+    proxyAnswer = { at: now(), set }
+    return set
+  }
+
   const look = async (): Promise<Verdict> => {
     const disabled = deps.disabled?.()
     if (disabled !== undefined) return { reason: disabled, cause: 'other' }
-    if (await deps.proxyConfigured().catch(() => true)) return { reason: 'a proxy is configured, and the Nym tunnel\'s connections to Nym\'s gateways would go around it', cause: 'proxy' }
+    if (await proxyIsSet()) return PROXY_VERDICT
     const artifact = await deps.artifact()
     return artifact.ok ? { directory: artifact.directory } : { reason: artifact.reason, cause: 'not-in-build' }
   }
@@ -135,11 +149,12 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
         if (current.state === 'connecting') set({ state: 'idle' })
         settle()
       },
-      instances: (connecting, ready, problem) => {
+      instances: (connecting, ready, started, problem) => {
         if (connecting > 0) { cancelStop(); set({ state: 'connecting' }); return }
-        if (ready > 0) { cancelStop(); set({ state: 'ready' }); return }
+        if (ready > 0) { cancelStop(); set({ state: 'ready', ...(problem === undefined ? {} : { reason: problem }) }); return }
         if (problem !== undefined) set({ state: 'failed', reason: problem })
         else set({ state: 'idle' })
+        if (started >= RECYCLE_AFTER_STARTS) { cancelStop(); supervisor.idle(); return }
         armStop()
       },
       failed: () => {},
@@ -158,7 +173,11 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
 
   const ensure = async (): Promise<NymEndpoint> => {
     cancelStop()
-    if (listening && endpoint !== undefined) return endpoint
+    if (listening && endpoint !== undefined) {
+      // A proxy set while the host runs: its connections to the gateways would now go around it.
+      if (await proxyIsSet()) { supervisor.idle(); refuse(PROXY_VERDICT); throw new NymUnavailable(PROXY_VERDICT.reason) }
+      return endpoint
+    }
     if (!running) {
       if (now() < refusedUntil && current.state === 'unavailable') throw new NymUnavailable(current.reason)
       if (now() < refusedUntil && current.state === 'failed') throw new NymUnavailable(current.reason)

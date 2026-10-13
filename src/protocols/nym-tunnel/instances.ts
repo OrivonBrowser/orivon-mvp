@@ -49,6 +49,8 @@ export interface Lease {
 export interface InstancesSnapshot {
   readonly connecting: number
   readonly ready: number
+  /** How many tunnels this process has started, closed ones included: each left a module instance in memory. */
+  readonly started: number
   /** Why the latest tunnel could not come up or was refused; cleared when a later one is ready. */
   readonly problem?: string
 }
@@ -64,6 +66,8 @@ export interface InstancesDeps {
   readonly onChange: (snapshot: InstancesSnapshot) => void
 }
 
+/** The longest `problem` text, so that main accepts the message it is in (protocol.ts's limit is 500). */
+const MAX_PROBLEM = 400
 export const DEFAULT_START_WAIT_MS = 30_000
 export const DEFAULT_IDLE_MS = 10 * 60_000
 
@@ -89,9 +93,15 @@ function describe (error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+/** A reason short enough for main to accept in a message. */
+function bounded (text: string): string {
+  return text.length > MAX_PROBLEM ? `${text.slice(0, MAX_PROBLEM - 1)}…` : text
+}
+
 export function createInstances (deps: InstancesDeps): Instances {
   const entries = new Map<string, Entry>()
   let problem: string | undefined
+  let started = 0
 
   const snapshot = (): InstancesSnapshot => {
     let ready = 0
@@ -100,7 +110,7 @@ export function createInstances (deps: InstancesDeps): Instances {
       if (entry.tunnel === undefined) connecting += 1
       else ready += 1
     }
-    return { connecting, ready, ...(problem === undefined ? {} : { problem }) }
+    return { connecting, ready, started, ...(problem === undefined ? {} : { problem }) }
   }
   const changed = (): void => { deps.onChange(snapshot()) }
 
@@ -135,6 +145,7 @@ export function createInstances (deps: InstancesDeps): Instances {
   }
 
   const begin = (id: string): Entry => {
+    started += 1
     const starting = deps.start(id)
     const entry: Entry = { id, starting, leases: 0, idleSince: Date.now(), gone: false }
     entries.set(id, entry)
@@ -148,7 +159,7 @@ export function createInstances (deps: InstancesDeps): Instances {
       },
       (error: unknown) => {
         if (entry.gone) return
-        problem = `a Nym tunnel could not come up: ${describe(error)}`
+        problem = bounded(`a Nym tunnel could not come up: ${describe(error)}`)
         retire(entry)
       }
     )

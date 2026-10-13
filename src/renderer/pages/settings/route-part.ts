@@ -37,6 +37,7 @@ export function nymStateOf (value: unknown): NymState {
   if (typeof value === 'object' && value !== null) {
     const { state, reason, cause } = value as { state?: unknown, reason?: unknown, cause?: unknown }
     const known = NYM_STATES.find((candidate) => candidate === state)
+    if (known === 'ready') return typeof reason === 'string' && reason !== '' ? { state: 'ready', reason } : { state: 'ready' }
     if (known === 'failed') return { state: 'failed', reason: typeof reason === 'string' ? reason : '' }
     if (known === 'unavailable') return { state: 'unavailable', cause: CAUSES.find((candidate) => candidate === cause) ?? 'other', reason: typeof reason === 'string' ? reason : '' }
     if (known !== undefined) return { state: known }
