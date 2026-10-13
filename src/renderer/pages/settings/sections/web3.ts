@@ -52,6 +52,28 @@ export const web3: Section = {
       control: { type: 'info', text: (state) => state.web3.status === null ? '' : state.web3.status.view.summary }
     },
     {
+      id: 'web3-ipfs-source',
+      label: 'Load IPFS sites from',
+      help: 'Your own IPFS node runs on this computer: it starts when an IPFS address is opened and finds the content on the IPFS network. Public gateways are servers that fetch it for you, so they learn which sites you open. Either way, every block is checked before it is shown. A change applies at once.',
+      keywords: ['ipfs', 'node', 'gateway', 'gateways', 'source', 'privacy', 'ipns'],
+      control: { type: 'choice', key: 'web3.ipfsSource' }
+    },
+    {
+      id: 'web3-ipfs-lookup',
+      label: 'Use a lookup service to find IPFS sites faster',
+      help: 'Your node asks two lookup services, delegated-ipfs.dev and cid.contact, and the IPFS network at the same time, and uses whichever answers first. The services learn which sites you look up; what they find is still checked. Off, only the IPFS network is asked, which can be slower. A change applies at once.',
+      keywords: ['ipfs', 'lookup', 'routing', 'delegated', 'privacy', 'dht', 'faster'],
+      control: { type: 'toggle', key: 'web3.ipfsLookupService' },
+      visible: (state) => state.value('web3.ipfsSource') !== 'gateways'
+    },
+    {
+      id: 'web3-ipfs-node',
+      label: 'Your IPFS node',
+      keywords: ['ipfs', 'node', 'status'],
+      visible: (state) => state.web3.status?.view.ipfsNode !== undefined,
+      control: { type: 'info', text: (state) => state.web3.status?.view.ipfsNode?.summary ?? '' }
+    },
+    {
       id: 'web3-swarm-node',
       label: 'The Swarm node',
       help: 'Swarm content loads only from a node Orivon runs on this computer. It starts when a Swarm address is opened.',

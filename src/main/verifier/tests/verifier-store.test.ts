@@ -213,3 +213,34 @@ describe('VerifierStore', () => {
     expect(new VerifierStore(dir).ipnsSequences()).toEqual({ [KEY_1]: '7' })
   })
 })
+
+describe('the partition salt', () => {
+  it('is 32 random bytes in hex, made once and the same for every later read, also from a new store on the same folder', () => {
+    const { store: first, dir } = store()
+    const salt = first.partitionSalt()
+    expect(salt).toMatch(/^[0-9a-f]{64}$/)
+    expect(first.partitionSalt()).toBe(salt)
+    expect(new VerifierStore(dir).partitionSalt()).toBe(salt)
+  })
+
+  it('differs from one profile to another', () => {
+    expect(store().store.partitionSalt()).not.toBe(store().store.partitionSalt())
+  })
+
+  it('is replaced by a rotation, which the next read and a new store both see', () => {
+    const { store: kept, dir } = store()
+    const before = kept.partitionSalt()
+    const after = kept.rotatePartitionSalt()
+    expect(after).toMatch(/^[0-9a-f]{64}$/)
+    expect(after).not.toBe(before)
+    expect(kept.partitionSalt()).toBe(after)
+    expect(new VerifierStore(dir).partitionSalt()).toBe(after)
+  })
+
+  it('is made again, not trusted, when its file is damaged', () => {
+    const { store: kept, dir } = store()
+    kept.partitionSalt()
+    writeFileSync(join(dir, 'ipfs-node-partition-salt.json'), '{"salt":"short"}')
+    expect(kept.partitionSalt()).toMatch(/^[0-9a-f]{64}$/)
+  })
+})

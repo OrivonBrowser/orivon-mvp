@@ -61,9 +61,17 @@ export interface Refusal {
   readonly resource: string
 }
 
+/** Where a mount's bytes came from, for the surfaces that tell the person: `reason` says why a source other than the one chosen served them. */
+export interface ServedFrom {
+  readonly kind: 'node' | 'gateways'
+  readonly reason?: string
+}
+
 /** A name's content, with every pointer to its root already followed and checked. */
 export interface MountedSite {
   readonly gatherer: string
+  /** Set by a gatherer that reads from sources the person can choose between. */
+  readonly servedFrom?: ServedFrom
   readonly root: ContentRoot
   readonly pointers: readonly PointerStep[]
   /** `/` and a directory serve its `index.html`. Throws a ResolutionError; `not-found` for a missing path. */

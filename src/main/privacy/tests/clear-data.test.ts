@@ -48,6 +48,25 @@ describe('clearing browsing data', () => {
     expect(forgetNameSchemes).toHaveBeenCalledTimes(2)
   })
 
+  it('stops the IPFS node and deletes what it kept with the cache and with all history, and not with a part of history', async () => {
+    const forgetNodeData = vi.fn(async () => {})
+    const { deps } = setup()
+    const withNode = { ...deps, forgetNodeData }
+    await clearBrowsingData({ ...NOTHING, history: 'week', siteData: true }, withNode)
+    expect(forgetNodeData).not.toHaveBeenCalled()
+    await clearBrowsingData({ ...NOTHING, cache: true }, withNode)
+    await clearBrowsingData({ ...NOTHING, history: 'all' }, withNode)
+    expect(forgetNodeData).toHaveBeenCalledTimes(2)
+  })
+
+  it('reports the node\'s data when forgetting it fails, and still clears the rest', async () => {
+    const { deps, history } = setup()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const forgetNodeData = vi.fn(async () => { throw new Error('locked') })
+    expect(await clearBrowsingData({ ...NOTHING, history: 'all' }, { ...deps, forgetNodeData })).toEqual({ ok: false, failed: ['nodeData'] })
+    expect(history.clear).toHaveBeenCalledTimes(1)
+  })
+
   it('reports the name schemes when forgetting them fails, and still clears the rest', async () => {
     const { deps, history, forgetNameSchemes } = setup()
     vi.spyOn(console, 'error').mockImplementation(() => {})

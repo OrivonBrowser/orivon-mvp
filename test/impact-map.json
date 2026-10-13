@@ -112,6 +112,7 @@
     { "prefix": ".github/workflows/live-session.yml", "run": [] },
     { "prefix": "resources", "run": ["window", "extensions", "toolbar", "shell-pages"] },
     { "prefix": "resources/swarm-node", "run": ["web3"] },
+    { "prefix": "resources/ipfs-node", "run": ["web3"] },
     { "prefix": "scripts/fetch-bundled-extensions.mjs", "run": ["extensions"] },
     { "prefix": "scripts/fetch-local-nodes.mjs", "run": ["web3"] },
     { "prefix": "scripts/pin-releases.sh", "run": [] },

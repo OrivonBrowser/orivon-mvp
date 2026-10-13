@@ -1,6 +1,6 @@
 // What a local node needs from Electron, in one place: the utility process it
 // is forked as, where its files are, the proxy check, and its data directory.
-// A node's own subsystem (swarm-node-subsystem.ts) says only which kind it is,
+// A node's own subsystem (local-node-subsystem.ts) says only which kind it is,
 // which port it listens on and when a test build serves it otherwise.
 
 import { join } from 'node:path'
@@ -20,6 +20,8 @@ export interface LocalNodeSpec {
   readonly apiPortTaken: () => void
   /** Why the node must not start in this build, in words, or undefined. */
   readonly disabled?: () => string | undefined
+  /** What the person chose that the node's arguments follow, read at each start. */
+  readonly options?: () => Readonly<Record<string, string>>
 }
 
 /** The controller of a node, stopped when the app quits. The process is forked the first time something asks for the node. */
@@ -31,6 +33,7 @@ export function createLocalNodeController (spec: LocalNodeSpec): LocalNodeContro
     // A node that dials around a proxy would show a person's address to its peers that the proxy was set to hide (T20).
     proxyConfigured: async () => (await unproxiedGateways(['https://example.com/'], async (url) => await app.resolveProxy(url))).length === 0,
     ...(spec.disabled === undefined ? {} : { disabled: spec.disabled }),
+    ...(spec.options === undefined ? {} : { options: spec.options }),
     apiPort: spec.apiPort,
     dataDir: () => join(app.getPath('userData'), spec.kind.name),
     files: spec.manifest.files,

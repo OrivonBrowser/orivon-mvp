@@ -101,6 +101,29 @@ it('says how the light client is, and shows its switch off and out of reach whil
   }
 }, TEST_TIMEOUT_MS)
 
+it('offers where IPFS is read from, shows the node\'s state, and hides the lookup service switch once gateways are chosen', async () => {
+  const { app, chrome } = await launched()
+  try {
+    const page = await openSettings(app, chrome, '/web3')
+    await page.waitForSelector('#row-web3-ipfs-source')
+    const source = page.locator('#row-web3-ipfs-source select')
+    expect(await source.inputValue()).toBe('node')
+    expect(await page.locator('#row-web3-ipfs-source option').allTextContents()).toEqual(['Your own IPFS node', 'Public IPFS gateways'])
+    expect(await page.locator('#row-web3-ipfs-lookup input[type=checkbox]').isChecked()).toBe(true)
+    expect(await page.locator('#row-web3-ipfs-lookup label, #row-web3-ipfs-lookup .label').first().textContent()).toContain('Use a lookup service to find IPFS sites faster')
+    expect(await waitFor(async () => (await page.locator('#row-web3-ipfs-node .value').textContent().catch(() => '')) !== '')).toBe(true)
+    expect(await page.locator('#row-web3-ipfs-node .value').textContent()).toMatch(/^Off/)
+
+    await source.selectOption('gateways')
+    expect(await waitFor(async () => await page.locator('#row-web3-ipfs-lookup').count() === 0)).toBe(true)
+    expect(await waitFor(async () => await page.locator('#row-web3-ipfs-node').count() === 0)).toBe(true)
+    expect(await page.locator('#row-web3-servers .value').textContent()).toContain('IPFS gateways:')
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
 async function telemetryOn (home: string, ingestUrl: string): Promise<{ app: ElectronApplication, chrome: Page }> {
   const app = await launchElectron({
     appPath: '.',

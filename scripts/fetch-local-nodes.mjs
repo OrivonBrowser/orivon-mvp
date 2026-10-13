@@ -23,7 +23,7 @@ import { isInvokedDirectly } from './cli.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const RESOURCES_DIR = join(here, '..', 'resources')
-const NODE_FOLDER = /^[a-z][a-z0-9]*-node$/
+const NODE_FOLDER = /^[a-z0-9][a-z0-9-]*-node$/
 const ENDPOINTS_FILE = join(here, '..', 'src', 'main', 'verifier', 'endpoints.ts')
 const TIMEOUT_MS = 120_000
 const PLACEHOLDER = /^PLACEHOLDER/

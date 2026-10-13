@@ -27,8 +27,16 @@ interface NodeKind extends NodeIdentity {
 }
 ```
 
+The kinds are `swarm-node` ([`../swarm-node/`](../swarm-node/)) and `ipfs-node` ([`../ipfs-node/`](../ipfs-node/)). What
+the person chose that a kind turns into arguments (the IPFS node's routing mode) travels in the start config's
+`options`, plain strings that main reads at each start, so a changed choice reaches the next start.
+
 The environment variables `ORIVON_<NAME>_DIR` (a directory of files to run, still hash-checked) and
 `ORIVON_<NAME>_LOG` (`1` prints the node's log) follow from the name (`envName` in [`protocol.ts`](protocol.ts)).
+
+**A page never reaches a node's port.** Main cancels every request from any tab, app or frame, in any session, to a
+loopback port a local node holds, whichever spelling of loopback it uses ([`../../main/sessions/local-node-port-gate.ts`](../../main/sessions/local-node-port-gate.ts)).
+The verifier host reads a node from a utility process, which is no session.
 
 **Tied to Electron.** Disposable. [`entry.ts`](entry.ts) uses `process.parentPort`, which only a utility
 process has; every other file takes what it needs as arguments and runs under plain vitest. The main

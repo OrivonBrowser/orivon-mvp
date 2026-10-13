@@ -41,8 +41,12 @@ import { HostLifecycle } from './host-lifecycle.js'
 import { anyTabOnVerifiedOrigin } from './tab-on-verified-origin.js'
 import type { TabsOfWindow } from './tab-on-verified-origin.js'
 import { provideVerifierAccess } from './verifier-access.js'
-import { ensureSwarmNode, onSwarmNodeChange, onSwarmNodeEndpointChange, swarmNodeEndpoint, swarmNodeState, swarmNodeVerifierIdle } from './swarm-node-subsystem.js'
-import type { SwarmNodeNotice } from '../../protocols/swarm-node/protocol.js'
+import { swarmNode, swarmNodeEndpoint, swarmNodeState } from './swarm-node-subsystem.js'
+import { configureIpfsNode, ipfsNode, ipfsNodeEndpoint, ipfsNodeState } from './ipfs-node-subsystem.js'
+import type { LocalNodeSubsystem } from './local-node-subsystem.js'
+import { IPFS_NODE_IDENTITY } from '../../protocols/ipfs-node/protocol.js'
+import { SWARM_NODE_IDENTITY } from '../../protocols/swarm-node/protocol.js'
+import type { NodeNotice } from '../../protocols/verifier-host/protocol.js'
 
 /** Mounting may wait for the light client to sync, then resolve a name and follow its pointers. */
 const MOUNT_TIMEOUT_MS = 30_000
@@ -55,8 +59,10 @@ let store: VerifierStore | undefined
 let lightClient: LightClientState = { state: 'off' }
 let checkpoint: CheckpointChoice | undefined
 let hostDown: string | undefined
-/** The Swarm node ask being answered, which later asks share. */
-let asking: Promise<unknown> | undefined
+/** The nodes the host may ask for, by name. */
+const NODES: ReadonlyMap<string, LocalNodeSubsystem> = new Map([[SWARM_NODE_IDENTITY.name, swarmNode], [IPFS_NODE_IDENTITY.name, ipfsNode]])
+/** The node asks being answered, which later asks for the same node share. */
+const asking = new Map<string, Promise<unknown>>()
 /** No host process runs and nothing failed: it has not been needed yet, or it slept after going unused. */
 let hostAsleep = true
 const listeningGate = new ListeningGate(LISTEN_WAIT_MS)
@@ -67,13 +73,46 @@ let tabsOnVerifiedOrigin: () => boolean = () => false
 const listeners = new Set<() => void>()
 /** Whether the person has the light client on. Set once the settings are read; until then it is on. */
 let enabledByPerson: () => boolean = () => true
+/** Where the person reads IPFS from, and whether the node may ask a lookup service. Read at each host start, so a change reaches the next. Until the settings are read, the defaults. */
+let ipfsSourceChoice: () => 'node' | 'gateways' = () => 'node'
+let ipfsLookupServiceChoice: () => boolean = () => true
+/** Puts the host to sleep so that its next request rebuilds its config. Set once the host exists. */
+let idleHost: () => void = () => {}
 
 /** Lets the person's setting, and not only the environment, switch the light client off. Read once, here, at launch:
  * the choice applies from Orivon's next start, as Settings says, however often the host sleeps and wakes before it. */
-export function configureVerifier (options: { lightClientEnabled: () => boolean, windows: () => readonly TabsOfWindow[], servedFromCache: (origin: string) => boolean }): void {
+export function configureVerifier (options: { lightClientEnabled: () => boolean, windows: () => readonly TabsOfWindow[], servedFromCache: (origin: string) => boolean, ipfsSource?: () => 'node' | 'gateways', ipfsLookupService?: () => boolean }): void {
+  if (options.ipfsSource !== undefined) ipfsSourceChoice = options.ipfsSource
+  if (options.ipfsLookupService !== undefined) ipfsLookupServiceChoice = options.ipfsLookupService
+  configureIpfsNode({ lookupService: () => ipfsLookupServiceChoice() })
   const enabledAtLaunch = options.lightClientEnabled()
   enabledByPerson = () => enabledAtLaunch
   tabsOnVerifiedOrigin = () => anyTabOnVerifiedOrigin(options.windows(), options.servedFromCache)
+}
+
+/**
+ * The person changed an IPFS setting: applied at once. The source decides the host's config, so the host sleeps and its
+ * next request rebuilds it. The lookup service only decides the node's arguments, so only the node stops, and the
+ * light client, the mounted sites and the Swarm node are left alone; the node's next start has the new arguments, and
+ * a running host is told whether a name service may be asked for an IPNS record.
+ */
+export function ipfsSettingsChanged (setting: 'source' | 'lookupService'): void {
+  ipfsNode.verifierIdle()
+  if (setting === 'source') idleHost()
+  // A running host asks a name service for an IPNS record only while the lookup service is allowed.
+  else supervisor?.send({ type: 'ipfs-lookup', allowed: ipfsLookupServiceChoice() })
+  changed()
+}
+
+/**
+ * Clearing cached data or all history: the IPFS node stops and its block store is deleted, and the salt its partition
+ * keys are made with is replaced, so nothing it kept about the sites visited can be read back or asked for.
+ */
+export async function forgetIpfsNodeData (): Promise<void> {
+  await ipfsNode.forget()
+  verifierStore().rotatePartitionSalt()
+  // The host holds the old salt from its start; its next request rebuilds its config with the new one.
+  idleHost()
 }
 
 const lightClientSwitchedOff = (): boolean => process.env['ORIVON_ETH_LIGHT_CLIENT'] === 'off' || !enabledByPerson()
@@ -192,6 +231,17 @@ function swarmEndpoints (seam: EthTestSeam | undefined): readonly string[] {
   return seam === undefined ? [swarmNodeEndpoint()] : seam.swarmEndpoints ?? []
 }
 
+/** The nodes' own endpoints, by the name the popover gives them: only an ordinary build runs them (a test build's endpoints are fixtures and keep their own address). */
+function nodeEndpointNames (): Readonly<Record<string, string>> {
+  if (ethTestSeam() !== undefined) return {}
+  return { [ipfsNodeEndpoint()]: "Orivon's IPFS node", [swarmNodeEndpoint()]: "Orivon's Swarm node" }
+}
+
+/** Whether IPFS is read from the node Orivon runs: the person's choice, never in a test build, which serves IPFS from its own endpoints. */
+function ipfsFromNode (seam: EthTestSeam | undefined): boolean {
+  return seam === undefined && ipfsSourceChoice() === 'node'
+}
+
 async function hostConfig (): Promise<HostConfig> {
   const seam = ethTestSeam()
   const stored = verifierStore()
@@ -216,6 +266,7 @@ async function hostConfig (): Promise<HostConfig> {
     ipnsSequences: stored.ipnsSequences(),
     swarmEndpoints: swarmEndpoints(seam),
     ...(seam === undefined && { swarmNode: true }),
+    ...(ipfsFromNode(seam) && { ipfsNode: { endpoint: ipfsNodeEndpoint(), partitionSalt: stored.partitionSalt(), lookupService: ipfsLookupServiceChoice() } }),
     swarmFeedIndexes: stored.swarmFeedIndexes(),
     ...(seam === undefined ? {} : { fixtures: seam.fixtures })
   }
@@ -257,7 +308,7 @@ export async function verifierNameEvidence (origin: string, pin: PinRecord | nul
   const address = BUILTIN_ADDRESSES.servedName(new URL(origin).hostname)?.namespace.endsWith(':') === true
   // An address needs no light client, so its state would explain nothing.
   const unanswered = address ? 'The verifier has not loaded it in this tab yet.' : verifierView().summary
-  return chooseNameEvidence(pin?.content, servedFromCache, live, unanswered, Date.now(), address)
+  return chooseNameEvidence(pin?.content, servedFromCache, live, unanswered, Date.now(), address, nodeEndpointNames())
 }
 
 /**
@@ -296,7 +347,8 @@ export function verifierView (): LightClientView {
     hostAsleep: hostAsleep && hostDown === undefined,
     switchedOff: lightClientSwitchedOff(),
     ...(ethTestSeam() === undefined && { swarmNode: swarmNodeState() }),
-    endpoints: { ...DEFAULT_ENDPOINTS, swarmEndpoints: swarmEndpoints(ethTestSeam()) }
+    ...(ipfsFromNode(ethTestSeam()) && { ipfsNode: { state: ipfsNodeState(), lookupService: ipfsLookupServiceChoice() } }),
+    endpoints: { ...DEFAULT_ENDPOINTS, swarmEndpoints: swarmEndpoints(ethTestSeam()), ...(ipfsFromNode(ethTestSeam()) && { ipfsNodeEndpoints: [ipfsNodeEndpoint()] }) }
   }, Date.now())
 }
 
@@ -340,7 +392,7 @@ export const verifierSubsystem: Subsystem = {
           hostDown = undefined
           hostAsleep = true
           lightClient = { state: 'off' }
-          swarmNodeVerifierIdle()
+          for (const node of NODES.values()) node.verifierIdle()
           noteVerifierListening(false)
           // Whoever asks next starts it, and waits for it to listen.
           listeningGate.starting()
@@ -382,26 +434,35 @@ export const verifierSubsystem: Subsystem = {
         nameScheme: (name, scheme) => {
           if (verifierStore().saveNameScheme(name, scheme)) announceNameSchemeChange()
         },
-        swarmNodeWanted: () => {
+        nodeWanted: (name) => {
+          const node = NODES.get(name)
+          if (node === undefined) return
           // Asks that arrive while one is being answered share its answer, each told it: the host asks on every mount and every few seconds of reading.
-          asking ??= ensureSwarmNode().finally(() => { asking = undefined })
-          asking.then(tellHost, (error: unknown) => { console.error('[verifier] could not ask for the Swarm node:', error) })
+          let pending = asking.get(name)
+          if (pending === undefined) {
+            pending = node.ensure().finally(() => { asking.delete(name) })
+            asking.set(name, pending)
+          }
+          pending.then(() => { tellHost(name, node) }, (error: unknown) => { console.error(`[verifier] could not ask for the ${name}:`, error) })
         }
       }
     })
     supervisor = host
-    /** Tells the host what the Swarm node is doing; it holds a Swarm mount on the answer. */
-    function tellHost (): void {
-      const state = swarmNodeState()
-      const notice: SwarmNodeNotice = { type: 'swarm-node', state: state.state, ...(state.state === 'off' && state.reason !== undefined && { reason: state.reason }), ...(state.state === 'failed' && { reason: state.reason }) }
+    idleHost = () => { host.idle() }
+    /** Tells the host what a node is doing; it holds a mount that reads from the node on the answer. */
+    function tellHost (name: string, node: LocalNodeSubsystem): void {
+      const state = node.state()
+      const notice: NodeNotice = { type: 'node', node: name, state: state.state, ...(state.state === 'off' && state.reason !== undefined && { reason: state.reason }), ...(state.state === 'failed' && { reason: state.reason }) }
       host.send(notice)
     }
-    onSwarmNodeChange(() => {
-      tellHost()
-      changed()
-    })
-    // The host holds the node's endpoint from its start: with the port renewed, it starts afresh (its next request forks it with the new one).
-    onSwarmNodeEndpointChange(() => { host.idle() })
+    for (const [name, node] of NODES) {
+      node.onChange(() => {
+        tellHost(name, node)
+        changed()
+      })
+      // The host holds the node's endpoint from its start: with the port renewed, it starts afresh (its next request forks it with the new one).
+      node.onEndpointChange(() => { host.idle() })
+    }
     const lifecycle = new HostLifecycle({
       start: () => { host.start() },
       idle: () => { host.idle() },

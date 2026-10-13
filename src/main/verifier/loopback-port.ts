@@ -72,6 +72,11 @@ export function nodePort (name: string): number {
   return port
 }
 
+/** The ports local nodes hold now, for the gate that keeps every page away from them. A node whose port was never chosen holds none. */
+export function heldNodePorts (): ReadonlySet<number> {
+  return new Set(chosenNodePorts.values())
+}
+
 /** The node's port was taken after it was chosen: the next `nodePort` is another, never the old one. */
 export function renewNodePort (name: string): void {
   const taken = chosenNodePorts.get(name)

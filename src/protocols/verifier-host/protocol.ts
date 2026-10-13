@@ -4,8 +4,8 @@
 // deadline on the shell's side.
 
 import type { ContentRoot, PointerStep } from '../resolution/records.js'
-import type { DdocReport } from '../resolution/providers.js'
-import type { SwarmNodeNotice, SwarmNodeWanted } from '../swarm-node/protocol.js'
+import type { DdocReport, ServedFrom } from '../resolution/providers.js'
+import type { LocalNodeState } from '../local-node/protocol.js'
 
 /** A beacon block root, as a checkpoint must be: Helios, handed anything else, silently uses one compiled into it, about a year old. */
 export const BLOCK_ROOT_PATTERN = /^0x[0-9a-f]{64}$/
@@ -17,6 +17,11 @@ export interface LightClientConfig {
   /** A finalized beacon block root, chosen by the shell. */
   readonly checkpoint: string
 }
+
+/** A mount needs the local node `node` (a kind's name): main starts it if it is not running. */
+export interface NodeWanted { readonly type: 'node-wanted', readonly node: string }
+/** What main says the local node `node` is doing, as its answer to `node-wanted` and whenever it changes. */
+export interface NodeNotice { readonly type: 'node', readonly node: string, readonly state: LocalNodeState['state'], readonly reason?: string }
 
 export interface HostConfig {
   readonly port: number
@@ -49,8 +54,16 @@ export interface HostConfig {
   readonly swarmEndpoints: readonly string[]
   /** Highest feed update index seen per feed, as decimal strings keyed `<owner>/<topic>`, from earlier runs. */
   readonly swarmFeedIndexes: Readonly<Record<string, string>>
-  /** `swarmEndpoints` is the Swarm node Orivon runs: before each Swarm mount the host asks main for it (`swarm-node-wanted`) and waits for its state. */
+  /** `swarmEndpoints` is the Swarm node Orivon runs: before each Swarm mount the host asks main for it (`node-wanted`) and waits for its state. */
   readonly swarmNode?: boolean
+  /** Present when the person chose to read IPFS from the node Orivon runs: `endpoint` is its origin. Each mount asks main for the node first (`node-wanted`), and a mount the node cannot serve reads from `gateways` and says why. */
+  readonly ipfsNode?: {
+    readonly endpoint: string
+    /** Per-profile random bytes in hex that the partition keys the node's store by are made with (`partition-key.ts`). Never sent anywhere else. */
+    readonly partitionSalt: string
+    /** Whether a name service may be asked for an IPNS record after the node. It follows the lookup-service setting; `ipfs-lookup` changes it while the host runs. */
+    readonly lookupService: boolean
+  }
   /** Test builds only: `.eth` names mapped to content with no light client. */
   readonly fixtures?: Readonly<Record<string, string>>
 }
@@ -70,6 +83,8 @@ export interface SiteProvenance {
   readonly pointers: readonly PointerStep[]
   readonly ddoc: DdocReport
   readonly mountedAt: number
+  /** Where the bytes came from, for a protocol that reads from sources the person can choose between. */
+  readonly servedFrom?: ServedFrom
 }
 
 export type HostRequest =
@@ -88,8 +103,9 @@ export interface HostReplies {
 export type ToHost =
   | { readonly type: 'start', readonly config: HostConfig }
   | { readonly type: 'request', readonly id: number, readonly request: HostRequest }
-  /** What the Swarm node is doing, as main's answer to `swarm-node-wanted` and whenever it changes. */
-  | SwarmNodeNotice
+  | NodeNotice
+  /** The person changed whether IPFS may ask a lookup service: from the next IPNS lookup, a name service is asked or not. */
+  | { readonly type: 'ipfs-lookup', readonly allowed: boolean }
 
 export type FromHost =
   | { readonly type: 'listening', readonly fingerprint: string }
@@ -101,7 +117,6 @@ export type FromHost =
   | { readonly type: 'checkpoint', readonly root: string, readonly timestamp: number }
   | { readonly type: 'ipns-sequence', readonly key: string, readonly sequence: string }
   | { readonly type: 'swarm-feed-index', readonly feed: string, readonly index: string }
-  /** A Swarm mount needs the node: main starts it if it is not running. */
-  | SwarmNodeWanted
+  | NodeWanted
   /** A top-level-domain name was mounted from content of the protocol serving `scheme`, so the shell can show `<scheme>://<host>`. */
   | { readonly type: 'name-scheme', readonly host: string, readonly scheme: string }

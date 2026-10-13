@@ -91,6 +91,10 @@ const SPECS = {
   'updates.check': { kind: 'bool', default: false },
   // Whether `.eth` names are proven by a light client that runs on this computer. Read when Orivon starts.
   'web3.lightClient': { kind: 'bool', default: true },
+  // Where IPFS content is read from: the node Orivon runs on this computer, or public gateways. Applied at once.
+  'web3.ipfsSource': { kind: 'enum', options: ['node', 'gateways'], default: 'node', labels: { node: 'Your own IPFS node', gateways: 'Public IPFS gateways' } },
+  // Whether the node may ask a lookup service, as well as the IPFS network, who holds a site. Applied at once; read only while the source is the node.
+  'web3.ipfsLookupService': { kind: 'bool', default: true },
   // Where judged Web3 Score levels are read (docs/architecture/web3-score-provider.md). Empty asks nobody.
   'web3.scoreProvider': { kind: 'text', default: DEFAULT_SCORE_PROVIDER, maxLength: 2048, check: isEmptyOrAddress },
   // Whether a tab asked to open `<name>.eth.limo` (or `.eth.link`) opens `<name>.eth` instead. Applied at once.

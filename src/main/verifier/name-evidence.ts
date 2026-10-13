@@ -8,7 +8,11 @@ import { pointerChainVerdict } from '../../protocols/resolution/pointer-chain.js
 import type { ContentPointer, PointerStep, Provenance } from '../../protocols/resolution/records.js'
 import type { ContentEvidence } from '../../trust/website-level.js'
 import type { SiteProvenance } from '../../protocols/verifier-host/protocol.js'
+import type { ServedFrom } from '../../protocols/resolution/providers.js'
 import { ago } from './status-view.js'
+
+/** Source addresses that have a name of their own, by address: the nodes Orivon runs, whose endpoints are known to main alone. */
+export type EndpointNames = Readonly<Record<string, string>>
 
 export interface EvidenceRow {
   readonly term: string
@@ -62,6 +66,18 @@ function stepRow (step: PointerStep, viaFeed: boolean): EvidenceRow {
   }
 }
 
+/** Where the bytes came from, in words; undefined for a protocol that reads from one kind of source only. */
+export function servedFromLine (served: ServedFrom | undefined): string | undefined {
+  if (served === undefined) return undefined
+  if (served.kind === 'node') return "Orivon's IPFS node, on this computer"
+  return served.reason === undefined ? 'Public IPFS gateways' : `Public IPFS gateways, because ${served.reason}`
+}
+
+/** The name a source goes by in the popover: an address a person would not recognise (a node's own, on loopback) is named by what it is, and any other source by itself. */
+function sourceName (source: string, endpointNames: EndpointNames): string {
+  return endpointNames[source] ?? source
+}
+
 function contentOf (provenance: SiteProvenance, pointersVerified: boolean): ContentEvidence {
   const evidence = { source: 'live' as const, cid: provenance.root.cid, pointersVerified }
   return provenance.ddoc.status === 'failed' ? { ...evidence, failedResource: provenance.ddoc.resource } : evidence
@@ -81,15 +97,17 @@ function liveLine (provenance: SiteProvenance, now: number): string {
   return `Name verified by the light client at block ${blockNumber(named.provenance.block)}, ${ago(now - provenance.mountedAt)}`
 }
 
-export function liveNameEvidence (provenance: SiteProvenance, now: number): NameEvidence {
+export function liveNameEvidence (provenance: SiteProvenance, now: number, endpointNames: EndpointNames = {}): NameEvidence {
+  const loadedFrom = servedFromLine(provenance.servedFrom)
   const rows = [
     ...provenance.pointers.map((step) => stepRow(step, provenance.pointers.some((p) => p.step === 'swarm-feed'))),
     { term: 'Content', value: shortId(provenance.root.cid) },
+    ...(loadedFrom === undefined ? [] : [{ term: 'Loaded from', value: loadedFrom }]),
     { term: 'Checked', value: ago(now - provenance.mountedAt) }
   ]
   const refused = provenance.ddoc.refusals
   if (refused.length > 0) {
-    const sources = [...new Set(refused.map((r) => r.source))].join(', ')
+    const sources = [...new Set(refused.map((r) => sourceName(r.source, endpointNames)))].join(', ')
     rows.push({ term: 'Refused', value: `${String(refused.length)} response(s) from ${sources} failed their check and were not used` })
   }
   const nameProven = pointerChainVerdict(provenance.pointers).verified
@@ -128,10 +146,11 @@ export function chooseNameEvidence (
   live: SiteProvenance | null,
   unanswered: string,
   now: number,
-  address: boolean
+  address: boolean,
+  endpointNames: EndpointNames = {}
 ): NameEvidence {
   if (pinned !== undefined && (servedFromCache || live === null)) return pinnedNameEvidence(pinned, address)
-  if (live !== null) return liveNameEvidence(live, now)
+  if (live !== null) return liveNameEvidence(live, now, endpointNames)
   const term = address ? 'Address' : 'Name'
   return { content: undefined, nameProven: false, line: `${term} not verified. ${unanswered}`, rows: [{ term, value: `Not verified. ${unanswered}` }] }
 }

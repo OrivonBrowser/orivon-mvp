@@ -1,9 +1,11 @@
-// What the verifier keeps in the profile between runs: the newest
+// What the verifier keeps in the profile between runs: the salt the IPFS
+// node's partition keys are made with, the newest
 // checkpoint the light client verified, the highest IPNS sequence seen per
 // key, the highest Swarm feed index seen per feed, and the address scheme each
 // `.eth` name's content was last found under. A missing or corrupt
 // file reads as empty, never as an error.
 
+import { randomBytes } from 'node:crypto'
 import { mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { CID } from 'multiformats/cid'
@@ -70,6 +72,7 @@ function readJson (path: string): unknown {
 
 export class VerifierStore {
   private readonly checkpointPath: string
+  private readonly saltPath: string
   private readonly dir: string
   private readonly sequences: FloorFile
   private readonly feeds: FloorFile
@@ -77,6 +80,7 @@ export class VerifierStore {
 
   constructor (dir: string) {
     this.checkpointPath = join(dir, 'checkpoint.json')
+    this.saltPath = join(dir, 'ipfs-node-partition-salt.json')
     this.dir = dir
     this.sequences = new FloorFile(dir, join(dir, 'ipns-sequences.json'), isIpnsKey, MAX_IPNS_KEYS, 'IPNS sequences')
     this.feeds = new FloorFile(dir, join(dir, 'swarm-feed-indexes.json'), isFeedKey, MAX_FEEDS, 'Swarm feed indexes')
@@ -127,6 +131,24 @@ export class VerifierStore {
   /** Whether the name's kept scheme changed, so the shell knows to show it again. The write to disk is debounced. */
   saveNameScheme (name: string, scheme: string): boolean {
     return this.nameSchemes.save(name, scheme)
+  }
+
+  /**
+   * The random bytes, in hex, that the IPFS node's store keys are made with (`verifier-host/partition-key.ts`): made
+   * once per profile and kept here, and handed to the verifier host alone. Replaced by `rotatePartitionSalt`.
+   */
+  partitionSalt (): string {
+    const kept = readJson(this.saltPath)
+    if (typeof kept === 'object' && kept !== null && typeof (kept as { salt?: unknown }).salt === 'string' && /^[0-9a-f]{64}$/.test((kept as { salt: string }).salt)) return (kept as { salt: string }).salt
+    return this.rotatePartitionSalt()
+  }
+
+  /** A new salt, so what the node kept under the old one can no longer be asked for: used when browsing data is cleared. */
+  rotatePartitionSalt (): string {
+    const salt = randomBytes(32).toString('hex')
+    mkdirSync(this.dir, { recursive: true })
+    writeFileAtomic(this.saltPath, JSON.stringify({ salt }))
+    return salt
   }
 
   /** Forgets every name's scheme, so each shows its default until it is next mounted. The file is emptied before this resolves. */
