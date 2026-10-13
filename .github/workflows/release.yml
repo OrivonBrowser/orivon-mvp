@@ -156,6 +156,7 @@ jobs:
           Add-AppxPackage -Path $signed
           $package = Get-AppxPackage -Name $identity.Name
           if (-not $package) { throw "Windows did not register a package named $($identity.Name)" }
+          "STORE_NAME=$($identity.Name)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "STORE_PFN=$($package.PackageFamilyName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "STORE_APP_ID=$applicationId" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "installed $($package.PackageFullName) at $($package.InstallLocation)"
@@ -167,7 +168,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $package = Get-AppxPackage -PackageFamilyName $env:STORE_PFN
+          $package = Get-AppxPackage -Name $env:STORE_NAME
           $install = $package.InstallLocation
           function Get-PackageProcesses {
             Get-Process -Name Orivon -ErrorAction SilentlyContinue |
@@ -194,7 +195,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $package = Get-AppxPackage -PackageFamilyName $env:STORE_PFN
+          $package = Get-AppxPackage -Name $env:STORE_NAME
           $profileDir = Join-Path $env:RUNNER_TEMP 'orivon-store-profile'
           $program = Join-Path $package.InstallLocation 'app\Orivon.exe'
           Invoke-CommandInDesktopPackage -PackageFamilyName $env:STORE_PFN -AppId $env:STORE_APP_ID -Command $program `
@@ -208,7 +209,7 @@ jobs:
         if: always() && matrix.platform == 'win'
         shell: pwsh
         run: |
-          if ($env:STORE_PFN) { Get-AppxPackage -PackageFamilyName $env:STORE_PFN | Remove-AppxPackage }
+          if ($env:STORE_NAME) { Get-AppxPackage -Name $env:STORE_NAME | Remove-AppxPackage }
           if ($env:STORE_CERT_THUMBPRINT) {
             Remove-Item "Cert:\LocalMachine\TrustedPeople\$env:STORE_CERT_THUMBPRINT" -ErrorAction SilentlyContinue
             Remove-Item "Cert:\CurrentUser\My\$env:STORE_CERT_THUMBPRINT" -ErrorAction SilentlyContinue
