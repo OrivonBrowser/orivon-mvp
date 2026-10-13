@@ -440,7 +440,7 @@ describe('createSiteInfoController -- the tunnel switch of a website', () => {
 
   it('offers the switch for an ordinary website, with what the popover needs to ask first', async () => {
     const info = await controllerWith(routesFor({ notice: 'tunnel' })).siteInfoFor(SITE)
-    expect(info.tunnel).toEqual({ on: false, notice: 'tunnel', web3: false, unreadable: false })
+    expect(info.tunnel).toEqual({ on: false, notice: 'tunnel', swarm: false, unreadable: false })
   })
 
   it('says it is on, and that no notice is needed once the site has storage in the profile the next change moves it to', async () => {
@@ -460,10 +460,10 @@ describe('createSiteInfoController -- the tunnel switch of a website', () => {
     expect((await controllerWith(routesFor({ unreadable: true, on: true })).siteInfoFor(SITE)).tunnel?.unreadable).toBe(true)
   })
 
-  it('marks a Web3 name, whose own files Orivon fetches itself, unless the whole browser is on the tunnel and the fetches go through it', async () => {
-    expect((await controllerWith(routesFor()).siteInfoFor('https://vitalik.eth')).tunnel?.web3).toBe(true)
-    expect((await controllerWith(routesFor()).siteInfoFor('https://abc.ipfs.orivon')).tunnel?.web3).toBe(true)
-    expect((await controllerWith(routesFor({ everywhere: true })).siteInfoFor('https://vitalik.eth')).tunnel?.web3).toBe(false)
+  it('marks a Swarm address, which cannot go through the tunnel, and no other Web3 name or address', async () => {
+    expect((await controllerWith(routesFor()).siteInfoFor('https://abc.bzz.orivon')).tunnel?.swarm).toBe(true)
+    expect((await controllerWith(routesFor()).siteInfoFor('https://vitalik.eth')).tunnel?.swarm).toBe(false)
+    expect((await controllerWith(routesFor()).siteInfoFor('https://abc.ipfs.orivon')).tunnel?.swarm).toBe(false)
   })
 
   it('has no switch for this computer, an installed app, a local file or when routes are not running', async () => {

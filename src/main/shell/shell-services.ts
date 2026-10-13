@@ -182,8 +182,7 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
         const origin = originFromUrl(url)
         const routes = ctx.routes
         if (origin === null || routes === undefined) return null
-        return tunnelMarkFor({ state: routes.hub.state(origin), temporary: isTemporaryRoutePartition(partition), // Orivon's own fetches for a Web3 name leave outside the tunnel unless the whole browser is on it.
-          web3: BUILTIN_ADDRESSES.routesToVerifier(new URL(origin).hostname) && !routes.hub.isEverywhere() })
+        return tunnelMarkFor({ state: routes.hub.state(origin), temporary: isTemporaryRoutePartition(partition) })
       },
       onChange: (listener) => ctx.routes?.hub.onChange(() => { listener() }) ?? (() => {})
     },

@@ -1,6 +1,6 @@
 # ADR-0082: A website's tunnel state is kept per origin, and a website whose state differs from the default has storage of its own
 
-- **Status:** accepted; its storage decision (one session of its own per website) is superseded by [ADR-0084](ADR-0084-the-tunnel-can-carry-the-whole-browser-and-a-website-with-an-entry-lives-in-one-of-two-shared-profiles.md), which puts every website with an entry in one of two shared profiles. *Provisional* on a Web3 name: its own files are fetched by Orivon's verifier host, which the tunnel does not carry yet, so the popover says the site goes through the tunnel only in part. Settled when the verifier host takes a route per request.
+- **Status:** accepted; its storage decision (one session of its own per website) is superseded by [ADR-0084](ADR-0084-the-tunnel-can-carry-the-whole-browser-and-a-website-with-an-entry-lives-in-one-of-two-shared-profiles.md), which puts every website with an entry in one of two shared profiles. A Web3 name's own files, name lookups and CCIP-Read calls go through the tunnel too: [ADR-0084](ADR-0084-the-tunnel-can-carry-the-whole-browser-and-a-website-with-an-entry-lives-in-one-of-two-shared-profiles.md) settles it.
 - **Date:** 2026-10-13
 - **Type:** architecture / security
 - **Decided by:** owner (the feature: `d-0619`); AI recommendation accepted by default for the shape
@@ -39,7 +39,7 @@ Measured on Electron 44 before building (headless): cookies in `persist:site-<ha
 
 - Moving a website reloads it in a new view, so what the page held in memory is lost, and a form being typed is not kept.
 - A website in a session of its own is not reached by a Chrome extension: extensions load into the shared session ([`ADR-0044`](ADR-0044-a-grant-no-longer-gives-an-origin-its-own-session.md)), so an ad blocker does not run on a tunnelled website; the popover names the extensions that stop.
-- A Web3 name's own files, its Helios RPC and CCIP calls are fetched by the verifier host outside the tunnel; the popover and the address bar's key say so, and the key is never shown as fully tunnelled for such a name.
+- A Web3 name of a website in the tunnel profile is read by the verifier host through the tunnel (ADR-0084), so the key shows it as tunnelled like any other site; a Swarm address is the one thing that does not open.
 - When the list of tunnel settings cannot be read, every website counts as on while a tunnel is set, each in its own session, until the person mends the file.
 - `localhost`, loopback addresses and anything that is not an `http` or `https` origin cannot be switched.
 - A website that is later installed as an app keeps its entry: its app partition is pointed at the same front.
@@ -47,4 +47,4 @@ Measured on Electron 44 before building (headless): cookies in `persist:site-<ha
 ## Reversibility
 
 - **Cost to reverse:** moderate. The state rule and the store are small; the sessions of existing sites would have to be merged back into the shared one, which signs the person out of each.
-- **What would make us revisit:** the verifier host taking a route per request, which ends the provisional part; a Chrome extension host that reaches more than one session; or the owner's first use showing that one switch per origin is too fine for a site spread over several subdomains.
+- **What would make us revisit:** a Chrome extension host that reaches more than one session; or the owner's first use showing that one switch per origin is too fine for a site spread over several subdomains.

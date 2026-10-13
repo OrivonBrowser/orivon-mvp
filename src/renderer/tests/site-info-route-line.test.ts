@@ -26,9 +26,4 @@ describe('the route line for a website', () => {
     expect(routeLineWords('no-proxy', 'site')).toBe('No tunnel is set, so this site\'s traffic is stopped.')
   })
 
-  it('says plainly that a Web3 name\'s own files stay outside the tunnel, and never that the whole site goes through it', () => {
-    const words = routeLineWords('ok', 'web3')
-    expect(words).toContain('outside the tunnel')
-    expect(words).not.toBe(routeLineWords('ok', 'site'))
-  })
 })

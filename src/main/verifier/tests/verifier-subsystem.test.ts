@@ -22,7 +22,7 @@ class FakeProcess extends EventEmitter {
 const electron = vi.hoisted(() => ({ forks: [] as unknown[], userData: '' }))
 const remove = vi.hoisted(() => vi.fn())
 const devNames = vi.hoisted(() => ({ names: [] as string[] }))
-const registered = vi.hoisted(() => ({ beforeRequest: [] as Array<(details: unknown, current: unknown) => Promise<unknown>>, beforeSendHeaders: 0 }))
+const registered = vi.hoisted(() => ({ beforeRequest: [] as Array<(details: unknown, current: unknown) => Promise<unknown>>, beforeSendHeaders: 0, stamps: [] as Array<(details: unknown, current: { requestHeaders: Record<string, string> }) => { requestHeaders: Record<string, string> }> }))
 
 vi.mock('electron', () => ({
   app: {
@@ -38,7 +38,7 @@ vi.mock('electron', () => ({
 vi.mock('../../sessions/web-request-owner.js', () => ({
   RUN_LAST: Number.MAX_SAFE_INTEGER,
   webRequestOwnerFor: () => ({
-    onBeforeSendHeaders: () => { registered.beforeSendHeaders += 1; return { remove } },
+    onBeforeSendHeaders: (_order: number, _filter: unknown, _matches: unknown, run: (typeof registered.stamps)[number]) => { registered.beforeSendHeaders += 1; registered.stamps.push(run); return { remove } },
     onBeforeRequest: (_order: number, _filter: unknown, _matches: unknown, run: (details: unknown, current: unknown) => Promise<unknown>) => { registered.beforeRequest.push(run); return { remove } }
   })
 }))
@@ -74,6 +74,7 @@ describe('the verifier subsystem', () => {
     electron.userData = mkdtempSync(join(tmpdir(), 'orivon-verifier-test-'))
     registered.beforeRequest.length = 0
     registered.beforeSendHeaders = 0
+    registered.stamps.length = 0
     remove.mockClear()
     tabs.open = []
     delete process.env['ORIVON_ETH_LIGHT_CLIENT']
@@ -333,6 +334,59 @@ describe('the verifier subsystem', () => {
     expect(registered.beforeSendHeaders).toBe(1)
     expect(registered.beforeRequest).toHaveLength(1)
     expect(remove).not.toHaveBeenCalled()
+  })
+
+  it('marks the requests of the tunnel profile\'s session as a tunnel-profile website\'s and strips the mark from every other session\'s', async () => {
+    await launch()
+    const { announceWebsiteSession } = await import('../../sessions/website-sessions.js')
+    announceWebsiteSession({} as never, true)
+    announceWebsiteSession({} as never, false)
+    expect(registered.stamps).toHaveLength(3)
+    const stamped = registered.stamps.map((stamp) => stamp({ url: 'https://a.eth/', resourceType: 'mainFrame', frame: undefined }, { requestHeaders: { 'X-Orivon-Route': 'tunnel', accept: '*/*' } }).requestHeaders)
+    expect(stamped.map((headers) => headers['x-orivon-route'])).toEqual([undefined, 'tunnel', undefined])
+    expect(stamped.map((headers) => Object.keys(headers).filter((name) => name.toLowerCase() === 'x-orivon-route').length)).toEqual([0, 1, 0])
+  })
+
+  describe('with the tunnel profile', () => {
+    const FRONT = { port: 4242, username: 'orivon', secret: 'profile-secret' }
+    const routes = (profile: 'tunnel' | 'direct' | undefined) => ({
+      controller: { settled: async () => {} },
+      hub: { isRouted: () => false, front: async () => FRONT, profileFor: () => profile }
+    })
+    type Sent = { type: string, config?: { profileFront?: unknown }, request?: { kind: string, route?: string, partition: string } }
+    const sent = (): Sent[] => forks()[0]?.sent as Sent[]
+
+    async function launchWithRoutes (profile: 'tunnel' | 'direct' | undefined) {
+      vi.resetModules()
+      vi.setSystemTime(SHIPPED_AT_MS + DAY_MS)
+      const subsystem = await import('../verifier-subsystem.js')
+      await subsystem.verifierSubsystem.afterReady?.({ routes: routes(profile) } as never)
+      subsystem.configureVerifier({ lightClientEnabled: () => true, windows: () => tabs.open, servedFromCache: () => false })
+      const gate = registered.beforeRequest[0]
+      void gate?.({ url: 'https://vitalik.eth/' }, {})
+      await vi.advanceTimersByTimeAsync(0)
+      forks()[0]?.listens()
+      await vi.advanceTimersByTimeAsync(0)
+      return subsystem
+    }
+
+    it('gives the host the profile\'s front to fetch through for its websites, whatever the whole-browser setting is', async () => {
+      await launchWithRoutes('tunnel')
+      expect(sent().find((message) => message.type === 'start')?.config?.profileFront).toEqual({ port: 4242, username: 'orivon', password: 'profile-secret' })
+    })
+
+    it('asks the host about a tunnel-profile website through the tunnel, and about any other website the ordinary way', async () => {
+      const tunnelled = await launchWithRoutes('tunnel')
+      void tunnelled.siteProvenance('https://a.eth')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(sent().filter((message) => message.type === 'request').map((message) => message.request)).toEqual([{ kind: 'provenance', host: 'a.eth', partition: 'https://a.eth', route: 'tunnel' }])
+      forks().length = 0
+      registered.beforeRequest.length = 0
+      const direct = await launchWithRoutes('direct')
+      void direct.siteProvenance('https://a.eth')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(sent().filter((message) => message.type === 'request').map((message) => message.request)).toEqual([{ kind: 'provenance', host: 'a.eth', partition: 'https://a.eth' }])
+    })
   })
 
   it('shows a name by the scheme the host reports, tells the windows when it changes, and forgets it on request', async () => {

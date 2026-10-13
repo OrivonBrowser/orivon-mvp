@@ -142,8 +142,7 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
       ...(blocked === 'no-proxy' ? { blocked } : {}),
       ...noticeFor(origin, routes.hub.isRouted(origin)),
       ...profileOf(origin),
-      // Orivon's own fetches for a Web3 name leave outside the tunnel unless the whole browser is on it.
-      web3: BUILTIN_ADDRESSES.routesToVerifier(new URL(origin).hostname) && !routes.hub.isEverywhere(),
+      swarm: BUILTIN_ADDRESSES.servedName(new URL(origin).hostname)?.namespace === 'bzz:',
       unreadable: routes.hub.unreadable()
     }
   }

@@ -6,7 +6,6 @@ export const UPDATE_OFFERED_NOTE = 'A new version of this app is available'
 /** What the key says when the page in front is on the tunnel (`main/route/tunnel-mark.ts`). */
 export const TUNNEL_NOTES = {
   on: 'This page goes through your tunnel',
-  partial: 'Part of this page goes through your tunnel',
   down: 'Your tunnel is not answering, so this page\'s traffic is stopped'
 } as const
 

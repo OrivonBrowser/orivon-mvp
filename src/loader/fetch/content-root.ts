@@ -29,6 +29,12 @@ export const EXPECT_LEAF_HEADER = 'x-orivon-expect-leaf'
  */
 export const PARTITION_HEADER = 'x-orivon-partition'
 
+/**
+ * Set to `tunnel` on every request a website session of the tunnel profile makes to the verifier, and stripped from
+ * every other: the verifier then reads and proves the name through the tunnel and nowhere else.
+ */
+export const ROUTE_HEADER = 'x-orivon-route'
+
 export function pinnedToRoot (fetch: Fetch, cid: string | undefined): Fetch {
   if (cid === undefined) return fetch
   return async (url, pinnedAddresses, signal, headers) => await fetch(url, pinnedAddresses, signal, { ...headers, [CONTENT_ROOT_HEADER]: cid })

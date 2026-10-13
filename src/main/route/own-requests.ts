@@ -18,6 +18,14 @@ export interface OwnRequests {
   readonly direct: OwnFetch
   /** That session, for a caller that makes its own requests with `net.request`. */
   readonly directSession: () => object
+  /**
+   * With the browser-wide setting off, the session a request about the website at `origin` is made in when the website has its
+   * tunnel on: the tunnel profile's, which signs in to its front. Undefined for any other origin, whose request is the caller's own.
+   * Rejects when the website is routed and its route cannot be had, and the request is then not made.
+   */
+  readonly siteSession?: (origin: string) => Promise<object | undefined>
+  /** `siteSession` as a `fetch`, for a caller that makes its request with one. */
+  readonly through?: (origin: string) => Promise<OwnFetch | undefined>
   /** Resolves when every session follows the browser-wide setting as it stands now. */
   readonly settled?: () => Promise<void>
   /** How long a request waits for that before it is refused; for a test. */
@@ -74,15 +82,28 @@ export function ownDirectSession (): object | undefined {
   return source?.everywhere() === true ? source.directSession() : undefined
 }
 
+/** The session a request of Orivon's own about the website at `origin` is made in while the browser-wide setting is off, if the website has its tunnel on. */
+export async function ownSiteSession (origin: string): Promise<object | undefined> {
+  const current = source
+  if (current === undefined || current.everywhere()) return undefined
+  return await current.siteSession?.(origin)
+}
+
 /**
  * `ordinary`, unless the whole browser is on the tunnel, when the request goes through it. `origin` is the website or app
- * the request is about, if any: one the person set to off is asked for directly.
+ * the request is about, if any: one the person set to off is asked for directly, and one that is routed on its own (a tunnel
+ * profile's website) is asked for through its route even while the browser-wide setting is off, since the
+ * request would otherwise show the person's address to a site they only open through the tunnel.
  */
 export function ownFetch (ordinary: OwnFetch, origin?: string): OwnFetch {
   return async (url, init) => {
     if (source !== undefined) await sessionsFollowSetting(source)
     const current = source
-    if (current === undefined || !current.everywhere()) return await ordinary(url, init)
+    if (current === undefined) return await ordinary(url, init)
+    if (!current.everywhere()) {
+      const routed = origin === undefined ? undefined : await current.through?.(origin)
+      return await (routed ?? ordinary)(url, init)
+    }
     if (origin !== undefined && !current.isRouted(origin)) return await current.direct(url, init)
     return await current.tunnel(url, init)
   }

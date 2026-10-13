@@ -31,9 +31,16 @@ export interface RunningProtocols {
   /** In the order their providers are tried. */
   readonly protocols: readonly Protocol[]
   readonly lightClient: LightClient | undefined
+  readonly stores: SharedStores
 }
 
-function sequenceStore (initial: Readonly<Record<string, string>>, post: HostDeps['post']): SequenceStore {
+/** What both routes keep across the host's life: the newest IPNS record and feed update seen, which must only ever move forward whichever route saw it. */
+export interface SharedStores {
+  readonly ipnsSequences: SequenceStore
+  readonly swarmFeedIndexes: FeedIndexStore
+}
+
+export function sequenceStore (initial: Readonly<Record<string, string>>, post: HostDeps['post']): SequenceStore {
   const highest = new Map<string, bigint>()
   for (const [key, value] of Object.entries(initial)) {
     if (/^\d+$/.test(value)) highest.set(key, BigInt(value))
@@ -49,7 +56,7 @@ function sequenceStore (initial: Readonly<Record<string, string>>, post: HostDep
   }
 }
 
-function feedIndexStore (initial: Readonly<Record<string, string>>, post: HostDeps['post']): FeedIndexStore {
+export function feedIndexStore (initial: Readonly<Record<string, string>>, post: HostDeps['post']): FeedIndexStore {
   const highest = new Map<string, bigint>()
   for (const [feed, value] of Object.entries(initial)) {
     if (/^\d+$/.test(value)) highest.set(feed, BigInt(value))
@@ -66,7 +73,7 @@ function feedIndexStore (initial: Readonly<Record<string, string>>, post: HostDe
   }
 }
 
-function offResolver (reason: string): NameResolver {
+export function offResolver (reason: string): NameResolver {
   return {
     id: 'ens',
     namespaces: ['.eth'],
@@ -80,7 +87,7 @@ export interface HostControls {
   lookupService: boolean
 }
 
-function startIpfs (config: HostConfig, deps: HostDeps, node: NodeLink | undefined, controls: HostControls): Protocol {
+function startIpfs (config: HostConfig, deps: HostDeps, node: NodeLink | undefined, controls: HostControls, stores: SharedStores): Protocol {
   const dohFetch = allowlisted(config.dnsOverHttps, deps.fetch, 'DNS-over-HTTPS')
   // A251 (docs/open-questions.md): only for a gateway main found to have no
   // proxy in front of it, and only once net.fetch has already failed it
@@ -95,7 +102,7 @@ function startIpfs (config: HostConfig, deps: HostDeps, node: NodeLink | undefin
     log: (line) => { console.error(`[verifier] ${line}`) }
   })
   const gatewayFetch = allowlisted([...config.gateways, ...config.ipnsNameServices], reach, 'the IPFS gatherer')
-  const common = { resolveTxt: dohTxtResolver(config.dnsOverHttps, dohFetch), ipnsSequences: sequenceStore(config.ipnsSequences, deps.post) }
+  const common = { resolveTxt: dohTxtResolver(config.dnsOverHttps, dohFetch), ipnsSequences: stores.ipnsSequences }
   const viaGateways = {
     fetch: async (url: string, init: Parameters<Fetch>[1]) => await gatewayFetch(url, init),
     gateways: config.gateways,
@@ -130,13 +137,13 @@ function startIpfs (config: HostConfig, deps: HostDeps, node: NodeLink | undefin
   }))
 }
 
-function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefined): Protocol {
+function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefined, stores: SharedStores): Protocol {
   const endpointFetch = allowlisted(config.swarmEndpoints, deps.fetch, 'the Swarm gatherer')
   const read: Fetch = async (url, init) => await endpointFetch(url, init)
   return swarmProtocol({
     fetch: config.swarmNode === true && node !== undefined ? node.reading(read) : read,
     endpoints: config.swarmEndpoints,
-    feedIndexes: feedIndexStore(config.swarmFeedIndexes, deps.post),
+    feedIndexes: stores.swarmFeedIndexes,
     ...(config.swarmNode === true && node !== undefined && { beforeMount: node.ensure })
   })
 }
@@ -160,5 +167,10 @@ export function startProtocols (config: HostConfig, deps: HostDeps, nodes?: Node
   const ens = startEns(config, deps)
   const ipfsNode = nodes?.to(IPFS_NODE_IDENTITY, IPFS_NODE_WORDS)
   const swarmNode = nodes?.to(SWARM_NODE_IDENTITY, SWARM_NODE_WORDS)
-  return { protocols: [ens.protocol, startIpfs(config, deps, ipfsNode, controls), startSwarm(config, deps, swarmNode)], lightClient: ens.lightClient }
+  const stores: SharedStores = { ipnsSequences: sequenceStore(config.ipnsSequences, deps.post), swarmFeedIndexes: feedIndexStore(config.swarmFeedIndexes, deps.post) }
+  return {
+    protocols: [ens.protocol, startIpfs(config, deps, ipfsNode, controls, stores), startSwarm(config, deps, swarmNode, stores)],
+    lightClient: ens.lightClient,
+    stores
+  }
 }

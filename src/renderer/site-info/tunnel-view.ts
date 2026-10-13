@@ -9,6 +9,8 @@ import { renderRouteLine } from './route-line.js'
 
 export const TUNNEL_SWITCH_LABEL = 'Use the tunnel for this site'
 
+export const SWARM_HINT = 'Swarm content loads only from the Swarm node Orivon runs on this computer, which cannot go through your tunnel, so this address does not open while the tunnel is on for it.'
+
 /** Shown before a website first moves into a profile: Confirm makes the change, Cancel leaves everything as it was. */
 export function storageNotice (profile: 'tunnel' | 'direct'): string {
   return `This site moves to your ${profile} profile. You'll sign in to it again once, and what it stores stays apart from your normal browsing.`
@@ -18,7 +20,7 @@ export function storageNotice (profile: 'tunnel' | 'direct'): string {
 export function tunnelHint (tunnel: SiteTunnel): string | undefined {
   if (tunnel.unreadable) return 'Orivon could not read your tunnel settings, so while a tunnel is set every site goes through it. Mend or remove routes.json in your profile folder and restart Orivon to choose again.'
   if (tunnel.blocked === 'no-proxy' && !tunnel.on) return 'Set a tunnel under Privacy and data first.'
-  if (tunnel.web3 && !tunnel.on) return 'A Web3 name\'s own files come from Orivon itself and stay outside the tunnel for now.'
+  if (tunnel.swarm) return SWARM_HINT
   return undefined
 }
 
@@ -76,7 +78,7 @@ export function renderTunnelSection (container: HTMLElement, tunnel: SiteTunnel,
 
   const hint = tunnelHint(tunnel)
   if (hint !== undefined) section.append(paragraph(tunnel.unreadable || tunnel.blocked !== undefined ? 'route-line route-line-down' : 'route-line', hint))
-  if (tunnel.on && route !== undefined) section.append(renderRouteLine(route, tunnel.web3 ? 'web3' : 'site', nym))
+  if (tunnel.on && route !== undefined) section.append(renderRouteLine(route, 'site', nym))
   const reach = extensionsHint(extensions, tunnel.profile)
   if (reach !== undefined) section.append(paragraph('route-line', reach))
   if (view.failed) section.append(paragraph('route-line route-line-down', TUNNEL_FAILED))

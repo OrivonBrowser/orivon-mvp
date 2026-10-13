@@ -9,28 +9,33 @@ import type { Session } from 'electron'
 const announced = new Set<Session>()
 /** A session an installer failed on stays refused: running the installers again would put some of them on it twice. */
 const failed = new Map<Session, AggregateError>()
-const listeners = new Set<(target: Session) => void>()
+/** The sessions that belong to the tunnel profile: what the verifier is told of the requests made in them. */
+const tunnelProfiles = new WeakSet<Session>()
+/** `tunnelProfile` is true for the one session every website with an `on` entry shares. */
+type Installer = (target: Session, tunnelProfile: boolean) => void
+const listeners = new Set<Installer>()
 
 /** Calls `install` with the default session now, with every website session already announced, and with each new one as it is announced. */
-export function forEachWebsiteSession (install: (target: Session) => void): void {
+export function forEachWebsiteSession (install: Installer): void {
   listeners.add(install)
-  install(session.defaultSession)
-  for (const target of announced) install(target)
+  install(session.defaultSession, false)
+  for (const target of announced) install(target, tunnelProfiles.has(target))
 }
 
 /**
  * A website session exists; every installer runs on it. Every installer runs even when one throws, and the failure is
  * rethrown at the end: a session that is missing a guard must not be used, so the caller refuses it.
  */
-export function announceWebsiteSession (target: Session): void {
+export function announceWebsiteSession (target: Session, tunnelProfile = false): void {
   const earlier = failed.get(target)
   if (earlier !== undefined) throw earlier
   if (announced.has(target)) return
   announced.add(target)
+  if (tunnelProfile) tunnelProfiles.add(target)
   const failures: unknown[] = []
   for (const install of [...listeners]) {
     try {
-      install(target)
+      install(target, tunnelProfile)
     } catch (error) {
       failures.push(error)
     }

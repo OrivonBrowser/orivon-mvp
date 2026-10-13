@@ -189,4 +189,12 @@ describe('guardedCcipRequest, through the tunnel (farEnd)', () => {
     }
     expect(fetch.calls).toEqual([])
   })
+
+  it('refuses a name that only means something on a local network, which the far end would resolve on its own side', async () => {
+    const fetch = recording(() => json({ data: '0xfeed' }))
+    for (const url of ['https://router/{data}', 'https://nas.local/{data}', 'https://wiki.corp/{data}', 'https://printer.home.arpa/{data}', 'https://a.b.lan/{data}']) {
+      await expect(guardedCcipRequest({ data: DATA, sender: SENDER, urls: [url] }, tunnelled(fetch)), url).rejects.toThrow(/no offchain gateway answered/)
+    }
+    expect(fetch.calls).toEqual([])
+  })
 })

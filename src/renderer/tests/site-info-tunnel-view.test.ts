@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { SiteTunnel } from '../../main/permissions/site-info.js'
-import { extensionsHint, storageNotice, tunnelHint } from '../site-info/tunnel-view.js'
+import { extensionsHint, storageNotice, SWARM_HINT, tunnelHint } from '../site-info/tunnel-view.js'
 
-const base: SiteTunnel = { on: false, notice: 'tunnel', web3: false, unreadable: false }
+const base: SiteTunnel = { on: false, notice: 'tunnel', swarm: false, unreadable: false }
 
 // The DOM is covered by the end-to-end spec that switches a website on; these are the words.
 
@@ -27,8 +27,9 @@ describe('the hint under the tunnel switch', () => {
     expect(tunnelHint({ ...base, blocked: 'no-proxy', on: true })).toBeUndefined()
   })
 
-  it('says a Web3 name\'s own files stay outside the tunnel before the switch is turned on', () => {
-    expect(tunnelHint({ ...base, web3: true })).toBe('A Web3 name\'s own files come from Orivon itself and stay outside the tunnel for now.')
+  it('says a Swarm address does not open while the tunnel is on for it, before and after the switch is turned on', () => {
+    expect(tunnelHint({ ...base, swarm: true })).toBe(SWARM_HINT)
+    expect(tunnelHint({ ...base, swarm: true, on: true })).toBe(SWARM_HINT)
   })
 
   it('says why the switch is fixed when the list of tunnel settings cannot be read', () => {

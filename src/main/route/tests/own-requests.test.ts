@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ownDirectSession, ownFetch, ownRequestsSettled, ownRequestsTunnelled, ownRouteFor, setOwnRequests } from '../own-requests.js'
+import { ownDirectSession, ownFetch, ownRequestsSettled, ownRequestsTunnelled, ownRouteFor, ownSiteSession, setOwnRequests } from '../own-requests.js'
 
 const ordinary = vi.fn(async () => new Response('ordinary'))
 const tunnel = vi.fn(async () => new Response('tunnel'))
@@ -48,6 +48,42 @@ describe('how Orivon\'s own requests leave', () => {
     expect(await (await fetch('https://a.example')).text()).toBe('ordinary')
     on = true
     expect(await (await fetch('https://a.example')).text()).toBe('tunnel')
+  })
+})
+
+describe('a request about an origin that is routed on its own, with the whole browser off the tunnel', () => {
+  const profile = vi.fn(async () => new Response('through its route'))
+
+  it('goes through that origin\'s route, and an origin with none keeps the ordinary way', async () => {
+    setOwnRequests({ everywhere: () => false, isRouted: () => true, tunnel, direct, directSession: () => SESSION, through: async (origin) => origin === 'https://routed.eth' ? profile : undefined })
+    expect(await (await ownFetch(ordinary, 'https://routed.eth')('https://routed.eth/.well-known/orivon.json')).text()).toBe('through its route')
+    expect(profile).toHaveBeenCalledWith('https://routed.eth/.well-known/orivon.json', undefined)
+    expect(await (await ownFetch(ordinary, 'https://plain.example')('https://plain.example/x')).text()).toBe('ordinary')
+    expect(await (await ownFetch(ordinary)('https://api.example/x')).text()).toBe('ordinary')
+  })
+
+  it('is not made at all when the route cannot be had, and never falls back to the ordinary way', async () => {
+    setOwnRequests({ everywhere: () => false, isRouted: () => true, tunnel, direct, directSession: () => SESSION, through: async () => { throw new Error('the tunnel profile could not be made ready') } })
+    await expect(ownFetch(ordinary, 'https://routed.eth')('https://routed.eth/x')).rejects.toThrow(/could not be made ready/)
+    expect(ordinary).not.toHaveBeenCalled()
+  })
+
+  it('gives a caller that makes its own requests the session of the website, and none for any other origin or while the whole browser is on the tunnel', async () => {
+    const PROFILE = { name: 'tunnel-profile' }
+    const siteSession = async (origin: string): Promise<object | undefined> => origin === 'https://routed.eth' ? PROFILE : undefined
+    setOwnRequests({ everywhere: () => false, isRouted: () => true, tunnel, direct, directSession: () => SESSION, siteSession })
+    expect(await ownSiteSession('https://routed.eth')).toBe(PROFILE)
+    expect(await ownSiteSession('https://plain.example')).toBeUndefined()
+    setOwnRequests({ everywhere: () => true, isRouted: () => true, tunnel, direct, directSession: () => SESSION, siteSession })
+    expect(await ownSiteSession('https://routed.eth')).toBeUndefined()
+    setOwnRequests(undefined)
+    expect(await ownSiteSession('https://routed.eth')).toBeUndefined()
+  })
+
+  it('is left to the browser-wide tunnel while that is on', async () => {
+    setOwnRequests({ everywhere: () => true, isRouted: () => true, tunnel, direct, directSession: () => SESSION, through: async () => profile })
+    expect(await (await ownFetch(ordinary, 'https://routed.eth')('https://routed.eth/x')).text()).toBe('tunnel')
+    expect(profile).not.toHaveBeenCalled()
   })
 })
 
