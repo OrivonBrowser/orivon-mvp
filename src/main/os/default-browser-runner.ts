@@ -57,11 +57,13 @@ async function registryQuery (key: string, value: string): Promise<string | unde
 }
 
 /** A packaged handler is no path: the person's choice names an AppX program id, whose `Application` key holds the
- * package's AUMID, the one this package would have. Provisional: written from Microsoft's documentation of the
- * registry, unmeasured on a Store install. */
+ * package's AUMID, the one this package would have. Newer Windows 11 builds keep the choice under
+ * `UserChoiceLatest\ProgId` and may leave `UserChoice` stale, so that is read first, as PowerToys does. Provisional:
+ * written from Microsoft's documentation of the registry, unmeasured on a Store install. */
 async function windowsStoreDefault (protocol: string): Promise<boolean> {
-  const choice = await registryQuery(`HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\${protocol}\\UserChoice`, 'ProgId')
-  const progId = progIdOf(choice ?? '')
+  const associations = `HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\${protocol}`
+  const progId = progIdOf(await registryQuery(`${associations}\\UserChoiceLatest\\ProgId`, 'ProgId') ?? '') ??
+    progIdOf(await registryQuery(`${associations}\\UserChoice`, 'ProgId') ?? '')
   if (progId === undefined) return false
   const handler = await registryQuery(`HKCR\\${progId}\\Application`, 'AppUserModelID')
   return isSameStoreApp(aumidOfHandler(handler ?? ''), storeAumid(process.execPath))
