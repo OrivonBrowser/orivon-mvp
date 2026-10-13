@@ -1632,3 +1632,19 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** install the package from the first CI artifact on a Windows machine and check each (rec.); wait for the Store's pre-launch report.
 - **Who decides:** research first
 - **Blocks:** nothing
+
+### A411: An app that declares no storage quota may fill the disk **[OWNER]**
+
+- **Question:** An `fs` grant with no `quotaBytes` has no limit, and no screen shows how much space an app uses. Should an undeclared quota default to a share of the free disk, or the person be asked for a number?
+- **Why it matters:** `security-model.md` T11: one app can fill the disk the profile lives on, and the manifest example's 50 GiB is only an example, not a default.
+- **Options:** a default of a fraction of free disk measured when the grant is made, with the prompt naming it (rec.); a fixed default; leave it unlimited and show usage in Settings.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A412: A declared `0.0.0.0` reaches this device and the consent does not say so **[AI-REC]**
+
+- **Question:** A `tcp.connect` pattern that names the literal `0.0.0.0` is accepted, though connecting to it reaches this computer on Linux and macOS, and the prompt words it "an unspecified address". Refuse it, or word it as this device?
+- **Why it matters:** `security-model.md` T12: the person reads a harmless-sounding address and grants reach to local services.
+- **Options:** word it as reaching this device in `grant-prompt-connect.ts` (rec.); refuse the unspecified class when a pattern is declared.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing
