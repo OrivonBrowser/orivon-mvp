@@ -907,6 +907,15 @@ and `api/common.ts`/`impl.ts` sit on the same import path and needed no patch of
     options pages), `src/browser/api/tabs.ts` (`insertCSS`) and `src/browser/api/windows.ts`
     (`removeWindow`): each call whose promise nothing awaited ends in a `.catch` that logs. Reason: the
     main process exits on an unhandled rejection (`npm run check:floating-promises`).
+72. **`matchesPattern` and `matchesTitlePattern` match without a regex.** `src/browser/api/common.ts`:
+    both ran `new RegExp` over a pattern the extension chose, split on `*` and joined with `.*`, on the
+    main thread: for every right-click (`contextMenus` `documentUrlPatterns` and `targetUrlPatterns`) and
+    every `tabs.query` with `url` or `title`. A pattern such as `*a*a*a*a*a*a*a*a*a*a*b` against a long
+    address that does not end in `b` froze the browser. They now call `matchesGlob` (patch 39), moved
+    unchanged from `src/browser/router.ts` into the new `src/browser/glob.ts`, which imports nothing, so
+    both files and a unit test share the one matcher. `*` is any run of characters and everything else is
+    literal, as before; `<all_urls>` still matches every address. The old `.*` did not cross a line break
+    and `matchesGlob` does, which only matters for a title that has one.
 
 Nothing else changed; upstream code is not reformatted.
 

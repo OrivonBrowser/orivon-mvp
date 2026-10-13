@@ -31,7 +31,8 @@ function fakeBroker (grants: readonly Grant[]): Broker {
   return {
     app: {
       grants: vi.fn(async () => grants),
-      socketAllowanceSync: () => 4
+      socketAllowanceSync: () => 4,
+      reachBypassesProxy: async () => false
     }
   } as unknown as Broker
 }
@@ -84,7 +85,8 @@ describe('reachOnlyHandlerFor', () => {
     const broker = {
       app: {
         grants: vi.fn(async () => { throw new Error('no manifest registered for this origin') }),
-        socketAllowanceSync: () => 4
+        socketAllowanceSync: () => 4,
+      reachBypassesProxy: async () => false
       }
     } as unknown as Broker
     const handler = reachOnlyHandlerFor(broker, OPENER)

@@ -24,6 +24,8 @@ export interface DownloadEntry {
   readonly reason?: DownloadReason
   readonly startedAt: number
   readonly endedAt?: number
+  /** The page that started it was not in the default session (a routed or otherwise confined app): Retry asks in that session only, so after a restart there is none to ask in. */
+  readonly ownSession?: true
   /** A type that runs code: the file is never opened from Orivon. */
   readonly danger: boolean
   /** The file is being written, or waits, under a temporary name (danger-hold.ts); `fileName` is what Keep will call it. */

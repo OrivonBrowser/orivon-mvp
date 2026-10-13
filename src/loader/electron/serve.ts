@@ -219,13 +219,18 @@ export async function liveCspHeaderFor (broker: Broker, origin: string, options:
  * no grant, has an empty live ledger either way; `checkConnectSecure` denies
  * an empty pattern list the same way it denies "never granted", because
  * from here those two cases MUST be indistinguishable (A137).
+ *
+ * A granted host is still refused while a system proxy applies and the app is not routed: this path dials with
+ * Node, which never sees the proxy (T20). The question is the broker's own, the one `orivon.net` asks.
  */
 function authoriseReachFor (broker: Broker, origin: string): AuthoriseReach {
   return async (host, port) => {
     try {
       const grants = await broker.app.grants(origin)
       const patterns = grants.find((grant) => grant.capability === 'https.connect')?.patterns ?? []
-      return checkConnectSecure(patterns, host, port)
+      const decision = checkConnectSecure(patterns, host, port)
+      if (decision.allowed && await broker.app.reachBypassesProxy(origin, host, port)) return { allowed: false, code: 'denied', reason: 'system-proxy' }
+      return decision
     } catch {
       return { allowed: false, code: 'denied', reason: 'not-declared' }
     }

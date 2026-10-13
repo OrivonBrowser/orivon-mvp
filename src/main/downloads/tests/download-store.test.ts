@@ -74,6 +74,17 @@ describe('a held download', () => {
   })
 })
 
+describe('a download from a session other than the default', () => {
+  it('is read back marked, and the mark is not invented for an ordinary entry', async () => {
+    const store = new JsonDownloadStore(file)
+    store.write([entry('o', { ownSession: true }), entry('p')])
+    await store.flush()
+    const [own, plain] = new JsonDownloadStore(file).read()
+    expect(own).toMatchObject({ id: 'o', ownSession: true })
+    expect(plain).not.toHaveProperty('ownSession')
+  })
+})
+
 describe('the memory store', () => {
   it('writes nothing to disk and reads nothing back', async () => {
     const store = new MemoryDownloadStore()

@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import { BaseWindow, BrowserWindow, nativeImage } from 'electron'
+import { matchesGlob } from '../glob'
 
 export interface TabContents extends Electron.WebContents {
   favicon?: string
@@ -125,20 +126,12 @@ export const getIconImage = (extension: Electron.Extension) => {
   return iconAbsolutePath ? nativeImage.createFromPath(iconAbsolutePath) : undefined
 }
 
-const escapePattern = (pattern: string) => pattern.replace(/[\\^$+?.()|[\]{}]/g, '\\$&')
-
 /**
  * @see https://developer.chrome.com/extensions/match_patterns
+ * Orivon patch (UPSTREAM.md patch 72): a linear-time glob, not a regex built from the extension's own pattern.
  */
-export const matchesPattern = (pattern: string, url: string) => {
-  if (pattern === '<all_urls>') return true
-  const regexp = new RegExp(`^${pattern.split('*').map(escapePattern).join('.*')}$`)
-  return url.match(regexp)
-}
+export const matchesPattern = (pattern: string, url: string) => pattern === '<all_urls>' || matchesGlob(pattern, url)
 
-export const matchesTitlePattern = (pattern: string, title: string) => {
-  const regexp = new RegExp(`^${pattern.split('*').map(escapePattern).join('.*')}$`)
-  return title.match(regexp)
-}
+export const matchesTitlePattern = (pattern: string, title: string) => matchesGlob(pattern, title)
 
 export const getAllWindows = () => [...BaseWindow.getAllWindows(), ...BrowserWindow.getAllWindows()]

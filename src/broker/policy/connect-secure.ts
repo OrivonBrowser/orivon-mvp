@@ -66,6 +66,8 @@ export type ConnectSecureDenialReason =
    * rule they hit.
    */
   | 'non-public-address'
+  /** The grant covers the host, but a system proxy applies and the app is not routed (T20): a direct dial would go around it. */
+  | 'system-proxy'
 
 export interface ConnectSecureDenied {
   readonly allowed: false
