@@ -64,8 +64,11 @@ servers for data. None of them is trusted to be right; each of them sees what it
 - **Windows and macOS packages are not signed with a bought certificate.** On Windows,
   SmartScreen warns on first run (**More info**, then **Run anyway**). On macOS the app is signed
   ad hoc and not notarized, so the first open is refused: choose **Open Anyway** in **System
-  Settings > Privacy & Security**. [`development/packaging.md`](development/packaging.md) has the
-  detail. Linux packages are not signed on any distribution.
+  Settings > Privacy & Security**. Whether macOS 26 still offers Open Anyway for it, or calls it
+  damaged with no way to open it, is unverified (*provisional*; a run on a real macOS 26 Mac
+  settles it). The one-line Terminal install in the [README](../README.md#download) avoids the
+  prompt entirely. [`development/packaging.md`](development/packaging.md) has the detail. Linux
+  packages are not signed on any distribution.
 
 ## Usage statistics
 
