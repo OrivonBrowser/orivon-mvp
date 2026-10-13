@@ -21,6 +21,8 @@ export interface LocalNodeConfig {
   readonly componentName: string
   /** The files the component is made of, as pinned. The process reads each once and runs only bytes that match. */
   readonly files: readonly PinnedFile[]
+  /** The DNS-over-HTTPS endpoints the node resolves names with before the system resolver, the same list the verifier uses. Absent or empty: the system resolver only. */
+  readonly dohEndpoints?: readonly string[]
   /** What the person chose that the kind turns into arguments (the IPFS node's routing mode): plain strings, set by main, read by the kind. Absent for a kind with none. */
   readonly options?: Readonly<Record<string, string>>
 }

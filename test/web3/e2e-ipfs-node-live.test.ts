@@ -16,6 +16,7 @@ import { clickAddressBarRetrying, waitForAddressBarStable } from '../support/e2e
 import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
 import { APP_CLOSE_RACE_MS, closeElectronApp } from '../support/e2e-helpers.js'
 import { IPFS_NODE_IDENTITY, routingOptions } from '../../src/protocols/ipfs-node/protocol.js'
+import { DEFAULT_ENDPOINTS } from '../../src/main/verifier/endpoints.js'
 import { verifyArtifact } from '../../src/main/verifier/local-node-artifact.js'
 import type { LocalNodeManifest } from '../../src/main/verifier/local-node-artifact.js'
 import type { ElectronApplication } from 'playwright'
@@ -71,7 +72,7 @@ describe.skipIf(!LIVE)('the IPFS node, live', () => {
           if (message.type === 'ready') ready = true
           if (message.type === 'failed') failure = message.message
         })
-        child.postMessage({ type: 'start', config: { kind: 'ipfs-node', apiPort: arg.apiPort, dataDir: arg.data, componentDir: arg.componentDir, componentName: arg.name, files: arg.files, options: arg.options } })
+        child.postMessage({ type: 'start', config: { kind: 'ipfs-node', apiPort: arg.apiPort, dataDir: arg.data, componentDir: arg.componentDir, componentName: arg.name, files: arg.files, dohEndpoints: arg.dohEndpoints, options: arg.options } })
         while (!ready && failure === undefined && Date.now() - started < arg.readyByMs) await new Promise((resolveWait) => setTimeout(resolveWait, 250))
         let block: string | undefined
         let blockMs: number | undefined
@@ -90,7 +91,7 @@ describe.skipIf(!LIVE)('the IPFS node, live', () => {
         }
         child.kill()
         return { timeline, failure, block, blockMs, memoryMb }
-      }, { host, apiPort, data: join(data as string, lookupService ? 'auto' : 'light-dht'), componentDir, name: process.env['ORIVON_IPFS_NODE_NAME'] ?? manifest.name, files: manifest.files, content: CONTENT, readyByMs: READY_BY_MS, options: routingOptions(lookupService) })
+      }, { host, apiPort, data: join(data as string, lookupService ? 'auto' : 'light-dht'), componentDir, name: process.env['ORIVON_IPFS_NODE_NAME'] ?? manifest.name, files: manifest.files, dohEndpoints: DEFAULT_ENDPOINTS.dnsOverHttps, content: CONTENT, readyByMs: READY_BY_MS, options: routingOptions(lookupService) })
 
       console.log(`[ipfs-node live] ${JSON.stringify({ lookupService, blockMs: run.blockMs, memoryMb: run.memoryMb, timeline: run.timeline })}`)
       expect(run.failure).toBeUndefined()
@@ -126,7 +127,7 @@ describe.skipIf(!LIVE)('the IPFS node, live', () => {
         if (message.type === 'ready') ready = true
         if (message.type === 'failed') failure = message.message
       })
-      child.postMessage({ type: 'start', config: { kind: 'ipfs-node', apiPort: arg.apiPort, dataDir: arg.data, componentDir: arg.componentDir, componentName: arg.name, files: arg.files, options: arg.options } })
+      child.postMessage({ type: 'start', config: { kind: 'ipfs-node', apiPort: arg.apiPort, dataDir: arg.data, componentDir: arg.componentDir, componentName: arg.name, files: arg.files, dohEndpoints: arg.dohEndpoints, options: arg.options } })
       while (!ready && failure === undefined && Date.now() - started < arg.readyByMs) await new Promise((resolveWait) => setTimeout(resolveWait, 250))
       const ask = async (partition: string | undefined): Promise<{ ms: number, ok: boolean }> => {
         const asked = Date.now()
@@ -146,7 +147,7 @@ describe.skipIf(!LIVE)('the IPFS node, live', () => {
         : undefined
       child.kill()
       return { failure, timings }
-      }, { host, apiPort, data: join(data as string, 'partitions'), componentDir, name: process.env['ORIVON_IPFS_NODE_NAME'] ?? manifest.name, files: manifest.files, content: CONTENT, readyByMs: READY_BY_MS, options: routingOptions(true) })
+      }, { host, apiPort, data: join(data as string, 'partitions'), componentDir, name: process.env['ORIVON_IPFS_NODE_NAME'] ?? manifest.name, files: manifest.files, dohEndpoints: DEFAULT_ENDPOINTS.dnsOverHttps, content: CONTENT, readyByMs: READY_BY_MS, options: routingOptions(true) })
     } finally {
       await closeElectronApp(shell, APP_CLOSE_RACE_MS)
     }

@@ -11,7 +11,11 @@ import { PinMismatch, loadComponent } from './component.js'
 import type { LoaderSeams } from './component.js'
 import { createConfinedFs } from './node-fs.js'
 import { createNodeNet } from './node-net.js'
+import { REAL } from './node-net.js'
 import type { NodeNetDeps } from './node-net.js'
+import { createNodeLookup } from './node-dns.js'
+import type { WebFetch } from '../gateways/allowlisted-fetch.js'
+import { resolveLookup } from '../../broker/adapters/node-adapters.js'
 import { failure } from './protocol.js'
 import type { FromNode, LocalNodeConfig } from './protocol.js'
 
@@ -19,6 +23,8 @@ export interface NodeServiceDeps {
   readonly post: (message: FromNode) => void
   readonly fetcher?: Fetcher
   readonly net?: NodeNetDeps
+  /** The fetch behind the node's DNS-over-HTTPS lookups, which only ever reaches `config.dohEndpoints`; the process's own `fetch` by default. */
+  readonly dohFetch?: WebFetch
   /** Every log line the node writes, as it writes it. */
   readonly onLog?: (line: string) => void
   readonly pollEveryMs?: number
@@ -66,7 +72,7 @@ export async function startNode (kind: NodeKind, config: LocalNodeConfig, deps: 
   let portTaken = false
   const imports = componentImports({
     fs: await createConfinedFs(config.dataDir),
-    net: createNodeNet(config.apiPort, deps.net, { apiPortTaken: () => { portTaken = true } }),
+    net: createNodeNet(config.apiPort, deps.net ?? { ...REAL, lookup: createNodeLookup({ endpoints: config.dohEndpoints ?? [], fetch: deps.dohFetch ?? fetch, system: resolveLookup }) }, { apiPortTaken: () => { portTaken = true } }),
     preopens: { [GUEST_DATA_DIR]: '/orivon/app' },
     args: kind.arguments(config),
     env: {},
