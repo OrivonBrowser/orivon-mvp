@@ -36,7 +36,7 @@ export interface RunningHost {
 export async function installModuleGlobals (target: typeof globalThis, network: ModuleNetwork): Promise<void> {
   // IndexedDB in memory: nothing the module keeps (its keys, its gateway registration) outlives this process.
   await import('fake-indexeddb/auto')
-  const scope = target as typeof globalThis & { self: unknown, WorkerGlobalScope?: unknown }
+  const scope = target as unknown as { self: unknown, WorkerGlobalScope?: unknown }
   scope.self = target
   if (scope.WorkerGlobalScope === undefined) {
     class WorkerGlobalScope {}

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SCORE_PROVIDER } from '../schema.js'
+import { readSettingBeforeReady } from '../settings-file.js'
 import { SettingsStore } from '../settings-store.js'
 
 let dir: string
@@ -50,7 +51,7 @@ describe('SettingsStore', () => {
     expect(store.set('appearance.bookmarksBar', 'auto')).toEqual({ ok: true })
     await store.flush()
 
-    expect(await onDisk()).toEqual({ version: 1, values: { 'appearance.theme': 'dark' } })
+    expect(await onDisk()).toEqual({ version: 2, values: { 'appearance.theme': 'dark' } })
     const next = new SettingsStore(file)
     await next.load()
     expect(next.get('appearance.theme')).toBe('dark')
@@ -112,7 +113,7 @@ describe('SettingsStore', () => {
     expect(listener.mock.calls.map((call) => (call[0] as { key: string }).key)).toEqual(['appearance.theme', 'tabs.lastTabClosed'])
     expect(store.reset('nope')).toEqual({ ok: false, reason: 'unknown-key' })
     await store.flush()
-    expect(await onDisk()).toEqual({ version: 1, values: {} })
+    expect(await onDisk()).toEqual({ version: 2, values: {} })
   })
 
   it('ignores an entry the schema would refuse, keeps the rest, and says so', async () => {
@@ -135,7 +136,7 @@ describe('SettingsStore', () => {
     ['not json at all'],
     ['[]'],
     ['null'],
-    [JSON.stringify({ version: 2, values: { 'appearance.theme': 'dark' } })],
+    [JSON.stringify({ version: 3, values: { 'appearance.theme': 'dark' } })],
     [JSON.stringify({ version: 1, values: 'dark' })]
   ])('starts from the defaults for a file that is %s', async (content) => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -199,5 +200,68 @@ describe('SettingsStore', () => {
 
     expect(store.get('privacy.globalPrivacyControl')).toBe(true)
     expect(store.valuesAtStart()['privacy.globalPrivacyControl']).toBe(false)
+  })
+})
+
+describe('where a routed app leaves', () => {
+  let dir = ''
+  let file = ''
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'orivon-settings-kind-'))
+    file = join(dir, 'settings.json')
+  })
+  afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
+
+  it('is Nym until the person chooses their own address', async () => {
+    const store = new SettingsStore(file)
+    await store.load()
+    expect(store.get('network.route.kind')).toBe('nym')
+    expect(store.get('network.route.proxy')).toBe('')
+  })
+
+  it('keeps an address saved before the choice existed as the choice of that address', async () => {
+    await writeFile(file, JSON.stringify({ version: 1, values: { 'network.route.proxy': '127.0.0.1:9050' } }))
+    const store = new SettingsStore(file)
+    await store.load()
+    expect(store.get('network.route.kind')).toBe('socks5')
+    expect(store.get('network.route.proxy')).toBe('127.0.0.1:9050')
+  })
+
+  it('leaves a version 1 file with no address on Nym', async () => {
+    await writeFile(file, JSON.stringify({ version: 1, values: { 'appearance.theme': 'dark' } }))
+    const store = new SettingsStore(file)
+    await store.load()
+    expect(store.get('network.route.kind')).toBe('nym')
+  })
+
+  it('leaves a version 2 file with an address and no choice on Nym: that person chose it', async () => {
+    await writeFile(file, JSON.stringify({ version: 2, values: { 'network.route.proxy': '127.0.0.1:9050' } }))
+    const store = new SettingsStore(file)
+    await store.load()
+    expect(store.get('network.route.kind')).toBe('nym')
+  })
+
+  it('does not turn a person who chose Nym back to the address on the next start', async () => {
+    await writeFile(file, JSON.stringify({ version: 1, values: { 'network.route.proxy': '127.0.0.1:9050' } }))
+    const first = new SettingsStore(file)
+    await first.load()
+    first.set('network.route.kind', 'nym')
+    await first.flush()
+    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({ version: 2, values: { 'network.route.proxy': '127.0.0.1:9050' } })
+    const second = new SettingsStore(file)
+    await second.load()
+    expect(second.get('network.route.kind')).toBe('nym')
+    expect(readSettingBeforeReady(file, 'network.route.kind')).toBe('nym')
+  })
+
+  it('reads the choice before the settings store does, for a version 1 file too', async () => {
+    await writeFile(file, JSON.stringify({ version: 1, values: { 'network.route.proxy': '127.0.0.1:9050' } }))
+    expect(readSettingBeforeReady(file, 'network.route.kind')).toBe('socks5')
+  })
+
+  it('refuses a kind that is neither', async () => {
+    const store = new SettingsStore(file)
+    await store.load()
+    expect(store.set('network.route.kind', 'tor')).toEqual({ ok: false, reason: 'invalid-value' })
   })
 })

@@ -68,7 +68,9 @@ const SPECS = {
   'privacy.doNotTrack': { kind: 'bool', default: false },
   'privacy.httpsOnly': { kind: 'bool', default: false },
   'privacy.secureDns': { kind: 'enum', options: ['off', 'automatic', 'cloudflare', 'quad9'], default: 'off' },
-  // The one SOCKS5 proxy (host:port, such as Tor on 127.0.0.1:9050) an installed app can be routed through; empty is none. Which apps use it is route-store's.
+  // Where a routed app's traffic leaves: Nym, built in, or the SOCKS5 address below. Settings files from before this choice existed keep their address as the choice (settings-file.ts).
+  'network.route.kind': { kind: 'enum', options: ['nym', 'socks5'], default: 'nym', labels: { nym: 'Nym (built in)', socks5: 'Your own SOCKS5 address' } },
+  // The one SOCKS5 proxy (host:port, such as Tor on 127.0.0.1:9050) an installed app can be routed through when the choice above is a SOCKS5 address; empty is none. Which apps use it is route-store's.
   'network.route.proxy': { kind: 'text', default: '', maxLength: 300, check: isEmptyOrProxyAddress },
   // What a site may do without being asked about it, one default per kind (site-settings/kinds.ts lists them). A site's own answer overrides.
   'sites.camera': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },
