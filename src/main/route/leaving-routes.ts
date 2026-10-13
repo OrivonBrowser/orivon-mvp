@@ -1,5 +1,5 @@
 // What the shell asks of the routes when a routed app's page opens an address outside the app's own sessions: whether to
-// ask, a session to open the page in "through my proxy", and the app switch for "use my proxy for this app too". Main
+// ask, a session to open the page in "through my tunnel", and the app switch for "use my tunnel for this app too". Main
 // supplies it once, as `lookup-session.ts` does; a caller asks per open, so a switch flipped meanwhile is followed.
 
 import { leavesRoute, routedPageOrigin } from './leave-decision.js'

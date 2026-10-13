@@ -1,5 +1,5 @@
 // Turning an installed app's route on or off: the one path the app card's switch and the question a routed app's page
-// raises ("use my proxy for this app too") both take. Electron-free.
+// raises ("use my tunnel for this app too") both take. Electron-free.
 
 import type { RouteService } from './route-service.js'
 

@@ -47,7 +47,7 @@ describe('RoutePart', () => {
 
 describe('proxyTestWords', () => {
   it('says what was found, in words about the proxy', () => {
-    expect(proxyTestWords({ ok: true, authentication: 'none' })).toBe('A SOCKS5 proxy answered.')
+    expect(proxyTestWords({ ok: true, authentication: 'none' })).toBe('The tunnel answered.')
     expect(proxyTestWords({ ok: true, authentication: 'password' })).toContain('its own')
     for (const reason of ['no-proxy', 'unreachable', 'silent', 'not-socks5', 'refused'] as const) {
       expect(proxyTestWords({ ok: false, reason }).length, reason).toBeGreaterThan(10)

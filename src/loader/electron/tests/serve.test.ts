@@ -772,7 +772,7 @@ describe('registerServingFor -- A200 real wiring (reach socket allowance)', () =
 // The session of a routed app that could not be pointed at its proxy route (its front failed to bind, say) must not
 // leave the app to open as an ordinary website on the shared session, which would send its traffic direct.
 describe('registerServingFor -- a session that cannot be prepared', () => {
-  it('still gives the app its own partition, answered by a handler that refuses everything and says the proxy route could not start', async () => {
+  it('still gives the app its own partition, answered by a handler that refuses everything and says the tunnel could not start', async () => {
     const userData = await mkdtemp(join(tmpdir(), 'orivon-serving-unprepared-'))
     const storage = nodeLoaderStorage(userData)
     await pinRealOrigin(storage, 'https://routed.example')
@@ -791,7 +791,7 @@ describe('registerServingFor -- a session that cannot be prepared', () => {
     for (const path of ['/', '/index.html', '/anything-else']) {
       const answer = await handler(new Request(`https://routed.example${path}`))
       expect(answer.status).toBe(503)
-      expect(await answer.text()).toContain('proxy route could not start')
+      expect(await answer.text()).toContain('tunnel could not start')
     }
   })
 })

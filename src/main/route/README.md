@@ -17,7 +17,7 @@ that is tied to the running browser: which apps the person routed, and what rout
 | `routed-fetch.ts` | A GET made by main through that session, as a `Response`, by `net.request` so that it can answer the challenge itself |
 | `leave-decision.ts` | Pure: whether a page of a routed app opening an address needs the person asked first (not its own origin, not an installed app whose route is on; a page with no web address counts as the app whose session it runs in), and as what: a website, an installed app, or a page Orivon serves itself |
 | `served-origin.ts` | Pure over the protocol registry: whether an address is one Orivon's own nodes fetch (a protocol's scheme, a host the verifier answers for), and how a person reads it |
-| `temporary-routes.ts` | The in-memory session a website opened "through my proxy" runs in: a front and proxy sign-in of its own, released with its last tab |
+| `temporary-routes.ts` | The in-memory session a website opened "through my tunnel" runs in: a front and proxy sign-in of its own, released with its last tab |
 | `route-switch.ts` | Turning an app's route on or off, shared by the app card and the question below |
 | `leaving-routes.ts` | What the shell asks of all this when a routed app's page opens an address: the decision, the temporary session, the app switch |
 
@@ -60,12 +60,12 @@ on the system's proxy stays marked as pointed at the front, so the next pass tri
 
 **A list of routed apps that cannot be read is not "nothing routed".** A missing file means none; a file that is there
 and cannot be read or understood is copied to `routes.json.corrupt`, left where it is and never written over, and
-counts every installed app (never a website) as routed while a proxy is set (through the proxy, or stopped when it is down). An app cannot be
+counts every installed app (never a website) as routed while a tunnel is set (through it, or stopped when it is down). An app cannot be
 switched off meanwhile, because which ones were routed is not known; the Settings card says so in one sentence. A
 switch that cannot be saved is refused and changes nothing, so a switch never shows on when it is not kept.
 
 **An app whose session could not be pointed at its front is stopped, not opened as a website.** The loader gives it a
-partition answered by a handler that refuses everything and says the proxy route could not start
+partition answered by a handler that refuses everything and says the tunnel could not start
 ([`../../loader/electron/app-partitions.ts`](../../loader/electron/app-partitions.ts)'s `prepareAppSessionOrStop`), and
 the session is held on the rule that reaches nothing.
 
@@ -87,7 +87,7 @@ per request.
 
 **A routed app's page opening an address outside its sessions asks first.** The shell stops the navigation or the window
 (`../shell/leaving-route.ts`, `../shell/popups.ts`), asks in the tab's question panel, and acts on the answer; the
-decision (`leave-decision.ts`) and the sessions it needs live here. *Through my proxy* opens the website in a session from
+decision (`leave-decision.ts`) and the sessions it needs live here. *Through my tunnel* opens the website in a session from
 `temporary-routes.ts`, pointed at its own front through the controller's `prepareTemporary` (the one place a session
 is pointed at a front, so the app sessions' rules apply to it too); it is never registered with an app, so a change of
 an app's route cannot repoint it. It is in memory because its name has no `persist:` prefix, and it is cleared when the
