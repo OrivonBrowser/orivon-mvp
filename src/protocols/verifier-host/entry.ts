@@ -55,6 +55,10 @@ function main (): void {
       host?.then((running) => { running.node(message) }, () => {})
       return
     }
+    if (message.type === 'ipfs-lookup') {
+      host?.then((running) => { running.ipfsLookup(message.allowed) }, () => {})
+      return
+    }
     const { id, request } = message
     if (host === undefined) {
       post({ type: 'reply', id, ok: false, message: 'the verifier host has not been started' })

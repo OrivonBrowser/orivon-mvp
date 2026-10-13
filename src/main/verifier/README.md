@@ -124,4 +124,7 @@ Only a change of the source also puts the verifier host to sleep, whose next wak
 lookup service touches only the node's arguments, so the light client, the mounted sites and the Swarm node are
 left alone): `ipfsNode` (the node's endpoint) is present only when the person chose the node, and never in a test
 build. The host chooses the node or the gateways for each mount and says which served it; Settings'
-`ipfsNode` view and the site-info popover's "Loaded from" row repeat it.
+`ipfsNode` view and the site-info popover's "Loaded from" row repeat it. The lookup service does not restart the
+host: the running host is sent `ipfs-lookup` and asks a name service for an IPNS record only while it is allowed.
+`forgetIpfsNodeData` (clearing cached data or all history) stops the node, deletes its database once the process has
+exited, and replaces the partition salt (`verifier-store.ts`).

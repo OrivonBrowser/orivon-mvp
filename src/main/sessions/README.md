@@ -23,6 +23,8 @@ logic; see this file's Design notes below. `own-listener-media-gate.ts` is `ADR-
 it cancels a loopback image or media request from a page that holds a `tcp.listen` grant when the
 port is not one its own listeners hold, on the default session and on each session an app is served
 from, with the pure decision in [`../../broker/policy/own-listener-media.ts`](../../broker/policy/own-listener-media.ts).
+`local-node-port-gate.ts` cancels, in every session, a request from any page to a loopback port a local node holds
+(`local-node-ports.ts` is the pure decision), so no page can time a node that keeps what it fetched.
 `app-files-by-url.ts` is `ADR-0070`'s Electron half: on the same sessions it redirects an app page's image or
 media request for `/orivon/app/<path>` to the `orivon-file:` scheme and answers that scheme with the app's own
 file (`app-file-response.ts`, no Electron in it), with the pure decision in
@@ -44,7 +46,7 @@ a document is fixed for its life, so only the session can be wrong.
 question `external-link-prompt.ts`; `showing-window.ts`;
 `exclusive-access-notice.ts`; `lock-navigation.ts`; `tab-view.ts`'s `partitionForTarget`), [`../local-files/`](../local-files/)'s `partition.ts`, the
 top-level `registry.ts`. Only `permission-gate.ts`, `web-context-host.ts`, `web-request-owner.ts`,
-`own-listener-media-gate.ts`, `app-files-by-url.ts` and `session-attribution.ts` import `electron`: the decision files, `web-request-compose.ts`
+`own-listener-media-gate.ts`, `local-node-port-gate.ts`, `app-files-by-url.ts` and `session-attribution.ts` import `electron`: the decision files, `web-request-compose.ts`
 included, are unit-tested under plain vitest.
 
 **What it must never import.** Nothing security-relevant about an isolated context may live in

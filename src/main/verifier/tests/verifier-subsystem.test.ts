@@ -119,7 +119,7 @@ describe('the verifier subsystem', () => {
   })
 
   describe('where IPFS is read from', () => {
-    type StartMessage = { type: string, config?: { ipfsNode?: { endpoint: string }, gateways: string[] } }
+    type StartMessage = { type: string, config?: { ipfsNode?: { endpoint: string, partitionSalt: string, lookupService: boolean }, gateways: string[] } }
     const started = (index: number): StartMessage | undefined => (forks()[index]?.sent as StartMessage[]).find((message) => message.type === 'start')
 
     async function launchWith (source: () => 'node' | 'gateways') {
@@ -162,14 +162,49 @@ describe('the verifier subsystem', () => {
       expect(started(1)?.config).not.toHaveProperty('ipfsNode')
     })
 
-    it('stops only the IPFS node when the lookup service changes, leaving the host and the light client running', async () => {
+    it('stops only the IPFS node when the lookup service changes, tells the running host, and leaves it and the light client running', async () => {
+      let allowed = true
+      const launched = await launchWith(() => 'node')
+      launched.configureVerifier({ lightClientEnabled: () => true, windows: () => tabs.open, servedFromCache: () => false, ipfsSource: () => 'node', ipfsLookupService: () => allowed })
+      void launched.request()
+      await vi.advanceTimersByTimeAsync(0)
+      forks()[0]?.listens()
+      expect(started(0)?.config?.ipfsNode?.lookupService).toBe(true)
+      allowed = false
+      launched.ipfsSettingsChanged('lookupService')
+      expect(forks()[0]?.killed).toBe(false)
+      expect(forks()).toHaveLength(1)
+      expect(forks()[0]?.sent.at(-1)).toEqual({ type: 'ipfs-lookup', allowed: false })
+    })
+
+    it('hands the host a per-profile salt for the node\'s partition keys, the same at every start', async () => {
       const { request, ipfsSettingsChanged } = await launchWith(() => 'node')
       void request()
       await vi.advanceTimersByTimeAsync(0)
       forks()[0]?.listens()
-      ipfsSettingsChanged('lookupService')
-      expect(forks()[0]?.killed).toBe(false)
-      expect(forks()).toHaveLength(1)
+      const salt = started(0)?.config?.ipfsNode?.partitionSalt
+      expect(salt).toMatch(/^[0-9a-f]{64}$/)
+      ipfsSettingsChanged('source')
+      forks()[0]?.emit('exit', 0)
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(started(1)?.config?.ipfsNode?.partitionSalt).toBe(salt)
+    })
+
+    it('replaces the salt and puts the host to sleep when the node\'s data is forgotten, so the next start keys its reads anew', async () => {
+      const { request, forgetIpfsNodeData } = await launchWith(() => 'node')
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      forks()[0]?.listens()
+      const salt = started(0)?.config?.ipfsNode?.partitionSalt
+      await forgetIpfsNodeData()
+      expect(forks()[0]?.killed).toBe(true)
+      forks()[0]?.emit('exit', 0)
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      const next = started(1)?.config?.ipfsNode?.partitionSalt
+      expect(next).toMatch(/^[0-9a-f]{64}$/)
+      expect(next).not.toBe(salt)
     })
 
     it('says in the view what the node is doing while IPFS is read from it, and nothing when it is not', async () => {

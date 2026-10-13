@@ -31,7 +31,7 @@ interface Harness {
   readonly clock: { now: number }
 }
 
-function harness (options?: () => Readonly<Record<string, string>>): Harness {
+function harness (options?: () => Readonly<Record<string, string>>, removed?: string[]): Harness {
   const nodes: FakeNode[] = []
   const sleeps: Harness['sleeps'] = []
   const timers: Harness['timers'] = []
@@ -53,7 +53,8 @@ function harness (options?: () => Readonly<Record<string, string>>): Harness {
     componentName: 'swarm-node',
     sleep: async (ms) => await new Promise<void>((wake) => { sleeps.push({ ms, wake }) }),
     setTimer: (run, ms) => { timers.push({ ms, run }) },
-    ...(options === undefined ? {} : { options })
+    ...(options === undefined ? {} : { options }),
+    ...(removed === undefined ? {} : { remove: async (path: string) => { removed.push(path) } })
   }
   const controller = new LocalNodeController(deps)
   return Object.defineProperties({ controller, nodes, sleeps, timers, calls, portsTaken, clock } as unknown as Harness, {
@@ -72,6 +73,36 @@ async function tick (h: Harness, ms: number): Promise<void> {
 }
 
 afterEach(() => { vi.useRealTimers() })
+
+describe('forgetting what a node kept', () => {
+  it('stops the node, waits for its process to exit, and only then deletes the files from its data directory', async () => {
+    const removed: string[] = []
+    const h = harness(undefined, removed)
+    const asked = h.controller.ensure()
+    await settle()
+    h.nodes[0]?.say({ type: 'ready', peers: 0 })
+    await asked
+    const forgetting = h.controller.forget(['blocks.db', 'blocks.db-wal'])
+    await settle()
+    expect(h.nodes[0]?.killed).toBe(true)
+    expect(removed).toEqual([])
+    h.nodes[0]?.exit(0)
+    await forgetting
+    expect(removed).toEqual(['/profile/swarm-node/blocks.db', '/profile/swarm-node/blocks.db-wal'])
+    expect(h.controller.state()).toEqual({ state: 'off' })
+  })
+
+  it('deletes at once when no node is running, and the next ask starts a new process', async () => {
+    const removed: string[] = []
+    const h = harness(undefined, removed)
+    await h.controller.forget(['blocks.db'])
+    expect(removed).toEqual(['/profile/swarm-node/blocks.db'])
+    expect(h.nodes).toEqual([])
+    void h.controller.ensure()
+    await settle()
+    expect(h.nodes).toHaveLength(1)
+  })
+})
 
 describe('what the person chose', () => {
   it('reaches the node as options at each start, so a change reaches the next one', async () => {

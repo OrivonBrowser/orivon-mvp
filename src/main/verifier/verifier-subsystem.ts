@@ -93,12 +93,26 @@ export function configureVerifier (options: { lightClientEnabled: () => boolean,
 /**
  * The person changed an IPFS setting: applied at once. The source decides the host's config, so the host sleeps and its
  * next request rebuilds it. The lookup service only decides the node's arguments, so only the node stops, and the
- * light client, the mounted sites and the Swarm node are left alone; the node's next start has the new arguments.
+ * light client, the mounted sites and the Swarm node are left alone; the node's next start has the new arguments, and
+ * a running host is told whether a name service may be asked for an IPNS record.
  */
 export function ipfsSettingsChanged (setting: 'source' | 'lookupService'): void {
   ipfsNode.verifierIdle()
   if (setting === 'source') idleHost()
+  // A running host asks a name service for an IPNS record only while the lookup service is allowed.
+  else supervisor?.send({ type: 'ipfs-lookup', allowed: ipfsLookupServiceChoice() })
   changed()
+}
+
+/**
+ * Clearing cached data or all history: the IPFS node stops and its block store is deleted, and the salt its partition
+ * keys are made with is replaced, so nothing it kept about the sites visited can be read back or asked for.
+ */
+export async function forgetIpfsNodeData (): Promise<void> {
+  await ipfsNode.forget()
+  verifierStore().rotatePartitionSalt()
+  // The host holds the old salt from its start; its next request rebuilds its config with the new one.
+  idleHost()
 }
 
 const lightClientSwitchedOff = (): boolean => process.env['ORIVON_ETH_LIGHT_CLIENT'] === 'off' || !enabledByPerson()
@@ -252,7 +266,7 @@ async function hostConfig (): Promise<HostConfig> {
     ipnsSequences: stored.ipnsSequences(),
     swarmEndpoints: swarmEndpoints(seam),
     ...(seam === undefined && { swarmNode: true }),
-    ...(ipfsFromNode(seam) && { ipfsNode: { endpoint: ipfsNodeEndpoint() } }),
+    ...(ipfsFromNode(seam) && { ipfsNode: { endpoint: ipfsNodeEndpoint(), partitionSalt: stored.partitionSalt(), lookupService: ipfsLookupServiceChoice() } }),
     swarmFeedIndexes: stored.swarmFeedIndexes(),
     ...(seam === undefined ? {} : { fixtures: seam.fixtures })
   }

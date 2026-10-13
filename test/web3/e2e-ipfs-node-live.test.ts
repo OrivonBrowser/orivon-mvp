@@ -109,6 +109,57 @@ describe.skipIf(!LIVE)('the IPFS node, live', () => {
     }
   }, 300_000)
 
+  it('keeps each partition\'s blocks apart: the same block asked by a second partition goes to the network, a repeat by the first does not', async () => {
+    const host = resolve('out/main/local-node-host.js')
+    const manifest = JSON.parse(readFileSync('resources/ipfs-node/ipfs-node.json', 'utf8')) as LocalNodeManifest
+    const componentDir = process.env['ORIVON_IPFS_NODE_DIR'] ?? resolve('resources/ipfs-node')
+    const apiPort = await freePort()
+    const shell = await launchElectron({ chrome: false })
+    let run
+    try {
+      run = await shell.evaluate(async ({ utilityProcess }, arg) => {
+      const started = Date.now()
+      const child = utilityProcess.fork(arg.host, [], { serviceName: 'IPFS node live partitions', stdio: 'ignore' })
+      let ready = false
+      let failure: string | undefined
+      child.on('message', (message: { type: string, message?: string }) => {
+        if (message.type === 'ready') ready = true
+        if (message.type === 'failed') failure = message.message
+      })
+      child.postMessage({ type: 'start', config: { kind: 'ipfs-node', apiPort: arg.apiPort, dataDir: arg.data, componentDir: arg.componentDir, componentName: arg.name, files: arg.files, options: arg.options } })
+      while (!ready && failure === undefined && Date.now() - started < arg.readyByMs) await new Promise((resolveWait) => setTimeout(resolveWait, 250))
+      const ask = async (partition: string | undefined): Promise<{ ms: number, ok: boolean }> => {
+        const asked = Date.now()
+        try {
+          const response = await fetch(`http://127.0.0.1:${String(arg.apiPort)}/ipfs/${arg.content}?format=raw`, {
+            headers: { accept: 'application/vnd.ipld.raw', ...(partition === undefined ? {} : { 'x-orivon-partition': partition }) },
+            signal: AbortSignal.timeout(60_000)
+          })
+          await response.arrayBuffer()
+          return { ms: Date.now() - asked, ok: response.ok }
+        } catch {
+          return { ms: Date.now() - asked, ok: false }
+        }
+      }
+      const timings = ready
+        ? { aFirst: await ask('A'.repeat(43)), aAgain: await ask('A'.repeat(43)), bFirst: await ask('B'.repeat(43)), none: await ask(undefined) }
+        : undefined
+      child.kill()
+      return { failure, timings }
+      }, { host, apiPort, data: join(data as string, 'partitions'), componentDir, name: process.env['ORIVON_IPFS_NODE_NAME'] ?? manifest.name, files: manifest.files, content: CONTENT, readyByMs: READY_BY_MS, options: routingOptions(true) })
+    } finally {
+      await closeElectronApp(shell, APP_CLOSE_RACE_MS)
+    }
+    console.log(`[ipfs-node live] partitions: ${JSON.stringify(run.timings)}`)
+    expect(run.failure).toBeUndefined()
+    const timings = run.timings
+    expect(timings?.aFirst.ok && timings.aAgain.ok && timings.bFirst.ok && timings.none.ok).toBe(true)
+    // A repeat in the same partition is a store hit; another partition, or none, asks the network again.
+    expect(timings?.aAgain.ms ?? Infinity).toBeLessThan(50)
+    expect(timings?.bFirst.ms ?? 0).toBeGreaterThan(100)
+    expect(timings?.none.ms ?? 0).toBeGreaterThan(100)
+  }, 180_000)
+
   it('opens an ipns:// DNSLink site through the shell: the node starts on demand and serves it', async () => {
     const componentDir = process.env['ORIVON_IPFS_NODE_DIR'] ?? resolve('resources/ipfs-node')
     const shell = await launchElectron({ appPath: '.', env: { ORIVON_IPFS_NODE_DIR: componentDir } })

@@ -44,9 +44,17 @@ loopback address, no UDP in practice (WASI has no QUIC), and in its data directo
 `-wal` and `-shm` files (SQLite, its cache capped at 256 MB inside the node). The rules in
 [`../local-node/node-net.ts`](../local-node/node-net.ts) suffice as they are.
 
-**Residual.** The API is a loopback HTTP server, which a page in any tab can request. It serves reads only,
-and a page that can name a CID can already ask any public gateway for it; what the node adds is that such a
-request makes this computer fetch that content from the network.
+**The store is keyed by partition.** The verifier sends `x-orivon-partition` (`PARTITION_HEADER`) on every read:
+`base64url(sha256(salt || partition))`, 43 characters, with a per-profile random salt that only the verifier host
+holds. The node keeps its blocks, hot cache and in-flight fetches by (partition, CID), so its database holds no
+origin in plain text, and one site's reads are never another's hits. A read with no header is served from the
+network and kept nowhere. Clearing cached data or all history stops the node, deletes `blocks.db`, its journal,
+`-wal` and `-shm`, and replaces the salt.
+
+**Residual.** The API is a loopback HTTP server, but main cancels every request from any page to its port
+([`../../main/sessions/local-node-port-gate.ts`](../../main/sessions/local-node-port-gate.ts)), so no page can time
+it. What stays shared is the node's short-lived provider and peer caches and its in-flight lookups, across sites,
+for minutes, as a gateway's edge cache is.
 
 **Test seams.** `ORIVON_IPFS_NODE_LIVE=1` runs the real node
 ([`test/web3/e2e-ipfs-node-live.test.ts`](../../../test/web3/e2e-ipfs-node-live.test.ts), never in CI).

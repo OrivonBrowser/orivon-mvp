@@ -21,7 +21,8 @@ import { createFixtureResolver } from './fixture-resolver.js'
 import type { HostConfig } from './protocol.js'
 import { NodeUnavailable } from './node-link.js'
 import type { NodeLink, NodeLinks } from './node-link.js'
-import { IPFS_NODE_IDENTITY, IPFS_NODE_WORDS } from '../ipfs-node/protocol.js'
+import { IPFS_NODE_IDENTITY, IPFS_NODE_WORDS, PARTITION_HEADER } from '../ipfs-node/protocol.js'
+import { partitionStoreKey } from './partition-key.js'
 import { SWARM_NODE_IDENTITY, SWARM_NODE_WORDS } from '../swarm-node/protocol.js'
 import type { Fetch } from '../gateways/gateways.js'
 import type { HostDeps, LightClient } from './service.js'
@@ -73,7 +74,13 @@ function offResolver (reason: string): NameResolver {
   }
 }
 
-function startIpfs (config: HostConfig, deps: HostDeps, node: NodeLink | undefined): Protocol {
+/** What the shell can change while the host runs. */
+export interface HostControls {
+  /** Whether a name service may be asked for an IPNS record after the IPFS node. */
+  lookupService: boolean
+}
+
+function startIpfs (config: HostConfig, deps: HostDeps, node: NodeLink | undefined, controls: HostControls): Protocol {
   const dohFetch = allowlisted(config.dnsOverHttps, deps.fetch, 'DNS-over-HTTPS')
   // A251 (docs/open-questions.md): only for a gateway main found to have no
   // proxy in front of it, and only once net.fetch has already failed it
@@ -104,8 +111,10 @@ function startIpfs (config: HostConfig, deps: HostDeps, node: NodeLink | undefin
   const viaNode = {
     fetch: async (url: string, init: Parameters<Fetch>[1]) => await (new URL(url).origin === nodeOrigin ? nodeRead(url, init) : nameServiceFetch(url, init)),
     gateways: [config.ipfsNode.endpoint],
-    ipnsNameServices: config.ipnsNameServices,
+    // With the lookup service off, nothing third-party is asked for a record either, so "only the IPFS network is asked" is true.
+    ipnsNameServices: () => controls.lookupService ? config.ipnsNameServices : [],
     localNode: true,
+    storeKey: { header: PARTITION_HEADER, key: (partition: string) => partitionStoreKey(config.ipfsNode?.partitionSalt ?? '', partition) },
     ...common
   }
   return ipfsProtocolOf(createNodeFirstGatherer({
@@ -147,9 +156,9 @@ function startEns (config: HostConfig, deps: HostDeps): { protocol: Protocol, li
   return { protocol: defineProtocol(ENS, { resolvers }), lightClient }
 }
 
-export function startProtocols (config: HostConfig, deps: HostDeps, nodes?: NodeLinks): RunningProtocols {
+export function startProtocols (config: HostConfig, deps: HostDeps, nodes?: NodeLinks, controls: HostControls = { lookupService: config.ipfsNode?.lookupService !== false }): RunningProtocols {
   const ens = startEns(config, deps)
   const ipfsNode = nodes?.to(IPFS_NODE_IDENTITY, IPFS_NODE_WORDS)
   const swarmNode = nodes?.to(SWARM_NODE_IDENTITY, SWARM_NODE_WORDS)
-  return { protocols: [ens.protocol, startIpfs(config, deps, ipfsNode), startSwarm(config, deps, swarmNode)], lightClient: ens.lightClient }
+  return { protocols: [ens.protocol, startIpfs(config, deps, ipfsNode, controls), startSwarm(config, deps, swarmNode)], lightClient: ens.lightClient }
 }

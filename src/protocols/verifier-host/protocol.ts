@@ -57,7 +57,13 @@ export interface HostConfig {
   /** `swarmEndpoints` is the Swarm node Orivon runs: before each Swarm mount the host asks main for it (`node-wanted`) and waits for its state. */
   readonly swarmNode?: boolean
   /** Present when the person chose to read IPFS from the node Orivon runs: `endpoint` is its origin. Each mount asks main for the node first (`node-wanted`), and a mount the node cannot serve reads from `gateways` and says why. */
-  readonly ipfsNode?: { readonly endpoint: string }
+  readonly ipfsNode?: {
+    readonly endpoint: string
+    /** Per-profile random bytes in hex that the partition keys the node's store by are made with (`partition-key.ts`). Never sent anywhere else. */
+    readonly partitionSalt: string
+    /** Whether a name service may be asked for an IPNS record after the node. It follows the lookup-service setting; `ipfs-lookup` changes it while the host runs. */
+    readonly lookupService: boolean
+  }
   /** Test builds only: `.eth` names mapped to content with no light client. */
   readonly fixtures?: Readonly<Record<string, string>>
 }
@@ -98,6 +104,8 @@ export type ToHost =
   | { readonly type: 'start', readonly config: HostConfig }
   | { readonly type: 'request', readonly id: number, readonly request: HostRequest }
   | NodeNotice
+  /** The person changed whether IPFS may ask a lookup service: from the next IPNS lookup, a name service is asked or not. */
+  | { readonly type: 'ipfs-lookup', readonly allowed: boolean }
 
 export type FromHost =
   | { readonly type: 'listening', readonly fingerprint: string }

@@ -49,11 +49,14 @@ export interface RunningHost {
   answer: (request: HostRequest) => Promise<HostReplies[HostRequest['kind']]>
   /** What main says a local node is doing. */
   node: (notice: NodeNotice) => void
+  /** Whether a name service may be asked for an IPNS record after the IPFS node, from the next lookup. */
+  ipfsLookup: (allowed: boolean) => void
 }
 
 export async function startHost (config: HostConfig, deps: HostDeps): Promise<RunningHost> {
   const nodes = new NodeLinks(deps.post)
-  const { protocols, lightClient } = startProtocols(config, deps, nodes)
+  const controls = { lookupService: config.ipfsNode?.lookupService !== false }
+  const { protocols, lightClient } = startProtocols(config, deps, nodes, controls)
   const registry = new ProtocolRegistry(protocols)
   // A top-level-domain name is shown by where its content lives, which is known once a gatherer is chosen for its records.
   const sites = new Sites(registry, Date.now, MOUNT_TIMEOUT_MS, (host, gatherer) => {
@@ -90,6 +93,7 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
     port: (server.address() as AddressInfo).port,
     fingerprint: certificate.fingerprint,
     answer,
-    node: (notice) => { nodes.notice(notice) }
+    node: (notice) => { nodes.notice(notice) },
+    ipfsLookup: (allowed) => { controls.lookupService = allowed }
   }
 }

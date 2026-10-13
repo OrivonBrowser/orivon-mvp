@@ -20,6 +20,8 @@ export interface LocalNodeSubsystemSpec {
   readonly disabled?: () => string | undefined
   /** What the person chose that the node's arguments follow, read at each start. */
   readonly options?: () => Readonly<Record<string, string>>
+  /** The files in its data directory that hold what it kept about the sites it served, removed by `forget`. */
+  readonly kept?: readonly string[]
 }
 
 export interface LocalNodeSubsystem {
@@ -29,6 +31,8 @@ export interface LocalNodeSubsystem {
   state: () => LocalNodeState
   /** The node's API origin, `http://127.0.0.1:<port>`. */
   endpoint: () => string
+  /** Stops the node and deletes what it kept (`kept`), once its process has exited. A node that never ran has nothing running to stop. */
+  forget: () => Promise<void>
   /** The verifier host went to sleep: nothing reads from the node, so it sleeps too. */
   verifierIdle: () => void
   /** Called whenever what `state` says may have changed; returns the unsubscribe. */
@@ -62,6 +66,7 @@ export function createLocalNodeSubsystem (spec: LocalNodeSubsystemSpec): LocalNo
     state: () => controller?.state() ?? { state: 'off' },
     endpoint: () => `http://127.0.0.1:${String(nodePort(spec.kind.name))}`,
     verifierIdle: () => { controller?.verifierIdle() },
+    forget: async () => { await created().forget(spec.kept ?? []) },
     onChange: (listener) => created().onChange(listener),
     onEndpointChange: (listener) => {
       endpointListeners.add(listener)

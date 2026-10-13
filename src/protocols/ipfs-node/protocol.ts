@@ -21,6 +21,9 @@ export type RoutingMode = 'auto' | 'light-dht'
 
 export const ROUTING_OPTION = 'routingMode'
 
+/** The request header carrying the key of the partition a read is made for: the node keeps its blocks under it. */
+export const PARTITION_HEADER = 'x-orivon-partition'
+
 /** The node's options for the person's choice of whether a lookup service may be asked. */
 export function routingOptions (lookupService: boolean): Readonly<Record<string, string>> {
   return { [ROUTING_OPTION]: lookupService ? 'auto' : 'light-dht' }

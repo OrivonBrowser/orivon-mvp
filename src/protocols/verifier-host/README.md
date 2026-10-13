@@ -34,7 +34,8 @@ finding peers. A state other than ready is main's answer to this ask, never an e
 gatherers over the same protocol, one over the node's endpoint and one over `gateways`
 ([`../ipfs/node-first.ts`](../ipfs/node-first.ts)). A mount asks the link for the node: ready, it reads only the
 node; off, failed or still starting, it reads the gateways and the mounted site says why (`servedFrom`). A name
-service is still asked for an IPNS record after the node.
+service is still asked for an IPNS record after the node, unless the lookup service is off. Each read from the node
+carries the key of the mount's partition (`partition-key.ts`; header `x-orivon-partition`) and no other source sees it.
 
 **Owner stream.** `ens-ipfs`.
 

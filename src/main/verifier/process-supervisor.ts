@@ -59,6 +59,7 @@ export abstract class ProcessSupervisor<Config, Message extends { readonly type:
   private stopped = false
   /** The child `idle()` has told to exit and that has not yet: a fresh one waits for it, so two never share the port. */
   private leaving: HostProcess | undefined
+  private readonly goneWaiters: Array<() => void> = []
   private startAfterLeaving = false
   /** Counts the restarts `idle()` cancels: a restart timer started under an older number does nothing. */
   private generation = 0
@@ -145,6 +146,12 @@ export abstract class ProcessSupervisor<Config, Message extends { readonly type:
     this.child?.kill()
   }
 
+  /** Resolves once a process that was put to sleep has exited: what it held open (a database file) is free then. At once when none is leaving. */
+  async whenGone (): Promise<void> {
+    if (this.leaving === undefined) return
+    await new Promise<void>((resolve) => { this.goneWaiters.push(resolve) })
+  }
+
   /** Whether a crashed process waits on its backoff to be forked again. */
   get restarting (): boolean {
     return this.restartPending
@@ -189,6 +196,7 @@ export abstract class ProcessSupervisor<Config, Message extends { readonly type:
   private exited (child: HostProcess, exit: string): void {
     if (this.leaving === child) {
       this.leaving = undefined
+      for (const resolve of this.goneWaiters.splice(0)) resolve()
       if (this.startAfterLeaving) {
         this.startAfterLeaving = false
         this.start()

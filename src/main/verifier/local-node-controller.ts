@@ -6,6 +6,8 @@
 // down until it is asked for again. No `electron` import: the process, the
 // artifact, the proxy check and the clock come in (local-node-launch.ts).
 
+import { rm } from 'node:fs/promises'
+import { join } from 'node:path'
 import type { NodeIdentity } from '../../protocols/local-node/kind.js'
 import type { LocalNodeConfig, LocalNodeState, PinnedFile } from '../../protocols/local-node/protocol.js'
 import { HostLifecycle } from './host-lifecycle.js'
@@ -42,6 +44,8 @@ export interface ControllerDeps {
   /** What the person chose that the kind turns into arguments, read at each start so a change reaches the next one. */
   readonly options?: () => Readonly<Record<string, string>>
   readonly componentName: string
+  /** Removes a file, none being no error: for `forget`, which a test replaces. */
+  readonly remove?: (path: string) => Promise<void>
   readonly readyWaitMs?: number
   /** Resolves after `ms`; the default is a timer that never keeps the process alive. */
   readonly sleep?: (ms: number) => Promise<void>
@@ -142,6 +146,17 @@ export class LocalNodeController {
   /** The verifier host went to sleep, and with it the only thing that reads from the node. */
   verifierIdle (): void {
     this.supervisor.idle()
+  }
+
+  /**
+   * Stops the node and deletes `files` from its data directory once its process has exited, so what it kept is gone
+   * (a process holds its database open). The next ask starts it afresh on an empty store.
+   */
+  async forget (files: readonly string[]): Promise<void> {
+    this.supervisor.idle()
+    await this.supervisor.whenGone()
+    const remove = this.deps.remove ?? (async (path: string) => { await rm(path, { force: true }) })
+    for (const file of files) await remove(join(this.deps.dataDir(), file))
   }
 
   stop (): void {

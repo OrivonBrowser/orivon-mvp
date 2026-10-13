@@ -68,6 +68,23 @@ the setting lets a person refuse; the content that comes back is checked either 
   only the IPFS node, whose next start has the new arguments; the host and the Swarm node are left alone.
 - Where gateways are named to the person (Settings' list of servers, the site-info popover's "Loaded from" row),
   they say the node when the node served the content, and name the gateways, with the reason, when it did not.
+- One node and one database serve every site, so the node must not become a way to learn what the person has
+  visited ([`A256`](resolved-questions.md) closed that for the verifier's own caches: mounts in different partitions
+  share nothing a page could time). Three measures keep it closed. First, every read from the verifier carries the
+  header `x-orivon-partition` with `base64url(sha256(salt || partition))` (43 characters), where the salt is
+  random per profile, kept with the verifier's other per-profile data and sent to the verifier host alone; the node
+  keys its store, hot cache and in-flight fetches by (partition, CID), so its `blocks.db` holds no origin in plain
+  text, and a read with no header is served from the network and kept nowhere. Second, main cancels every request
+  from any page, in any session, to a loopback port a local node holds (`local-node-port-gate.ts`), so no page
+  can time the node's API directly; this also closes the Swarm node's loopback residual. Third, clearing cached
+  data or all history stops the node, deletes `blocks.db` with its journal, `-wal` and `-shm`, and replaces the
+  salt.
+- With the lookup service off, nothing third-party is asked for an IPNS record either: the name services are
+  skipped after the node, so Settings' sentence "only the IPFS network is asked" is true.
+- Residuals that stay: the node's short-lived provider and peer caches and its in-flight lookups are shared across
+  sites for minutes, as a public gateway's edge cache is; and a DNS name an attacker points at 127.0.0.1 reaches
+  the node's port unless the request is cancelled by address, which a URL filter cannot see (a node that required
+  a per-run secret header would close it, and is a follow-up).
 - The node's one endpoint is read differently from a gateway, from what was measured of the real node: a block
   with a provider arrives in 0.3 to 2.3 s, a lookup that finds nothing ends in 25 to 93 s with a 404 or 504, and
   an empty lookup is remembered by the node for 30 s. So the endpoint takes 12 concurrent block reads (what three

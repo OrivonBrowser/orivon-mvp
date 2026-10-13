@@ -3,6 +3,7 @@
 // the person chose public gateways; when it cannot run, the verifier host
 // loads IPFS from the gateways and Settings shows the node's reason.
 
+import { DATABASE_FILE } from '../../protocols/ipfs-node/config.js'
 import { IPFS_NODE_IDENTITY, routingOptions } from '../../protocols/ipfs-node/protocol.js'
 import type { IpfsNodeState } from '../../protocols/ipfs-node/protocol.js'
 import manifest from '../../../resources/ipfs-node/ipfs-node.json'
@@ -23,7 +24,9 @@ export const ipfsNode = createLocalNodeSubsystem({
   kind: IPFS_NODE_IDENTITY,
   manifest: MANIFEST,
   disabled: () => ethTestSeam() === undefined ? undefined : 'a test build serves IPFS from its own endpoints',
-  options: () => routingOptions(lookupServiceAllowed())
+  options: () => routingOptions(lookupServiceAllowed()),
+  // SQLite's journal and write-ahead log sit beside the database.
+  kept: [DATABASE_FILE, `${DATABASE_FILE}-journal`, `${DATABASE_FILE}-wal`, `${DATABASE_FILE}-shm`]
 })
 
 export function ipfsNodeState (): IpfsNodeState {
