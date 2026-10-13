@@ -47,7 +47,7 @@ describe('repartitionForTarget', () => {
 describe('repartitionForTarget onto a page the person opened through their proxy', () => {
   const live = (partition: string): void => {
     setLeavingRoutes({
-      world: { isRouted: () => true, isInstalledApp: () => false, routedOriginOf: () => undefined },
+      world: { isRouted: () => true, isInstalledApp: () => false, routedOriginOf: () => undefined, servedOrigin: () => undefined },
       temporary: { open: async () => partition, owns: () => true, isLive: (name) => name === partition },
       routeSwitch: { blockedFor: () => undefined, set: async () => {} }
     })

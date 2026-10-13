@@ -381,7 +381,7 @@ describe('captureFaviconInto -- a page in a temporary routed session', () => {
     const { setLeavingRoutes } = await import('../../route/leaving-routes.js')
     const temporary = { id: 'the temporary session' } as unknown as import('electron').Session
     setLeavingRoutes({
-      world: { isRouted: () => false, isInstalledApp: () => false, routedOriginOf: () => undefined },
+      world: { isRouted: () => false, isInstalledApp: () => false, routedOriginOf: () => undefined, servedOrigin: () => undefined },
       temporary: { open: async () => 'orivon-route-tab-1', owns: (one) => one === temporary, isLive: () => true },
       routeSwitch: { blockedFor: () => undefined, set: async () => {} }
     })

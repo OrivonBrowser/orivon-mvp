@@ -15,6 +15,13 @@ describe('the question a routed app raises by opening an address', () => {
     expect(question.detail).toContain('not for the app it wants to open')
   })
 
+  it('offers a page Orivon loads itself only directly or not at all, and says why', () => {
+    const question = leavingQuestion({ kind: 'served', origin: 'ipfs://bafyexample', app: 'https://routed.example' })
+    expect(question.message).toBe('https://routed.example wants to open ipfs://bafyexample.')
+    expect(question.detail).toBe('Orivon loads this page itself, so it cannot go through your proxy yet.')
+    expect(question.buttons).toEqual(['Directly', 'Cancel'])
+  })
+
   it('shows the deciding end of a long host, as the grant prompt does', () => {
     const question = leavingQuestion({ kind: 'website', origin: 'https://accounts.google.com.attacker.example', app: 'https://routed.example' })
     expect(question.message).toBe('https://routed.example wants to open https://...com.attacker.example.')

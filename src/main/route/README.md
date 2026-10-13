@@ -13,15 +13,16 @@ that is tied to the running browser: which apps the person routed, and what rout
 | `route-subsystem.ts` | Starts them, wires Electron's sessions, web contents and `login` event in, and publishes `ctx.routes` |
 | `forget-watch.ts` | Clears the route of an app the broker no longer knows, and lets go of its front and sessions |
 | `route-domain.ts` | What the Settings page may ask: whether the proxy answers |
-| `lookup-session.ts` | The session the browser's own lookups about a routed app go through (a tab icon from another host, the Web3 Score provider), and the answer to the front's proxy challenge for a request made from main |
+| `lookup-session.ts` | The session the browser's own lookups about a routed app, or about a site a temporary routed tab shows, go through (a tab icon from another host, the Web3 Score provider), and the answer to the front's proxy challenge for a request made from main |
 | `routed-fetch.ts` | A GET made by main through that session, as a `Response`, by `net.request` so that it can answer the challenge itself |
-| `leave-decision.ts` | Pure: whether a page of a routed app opening an address needs the person asked first (not its own origin, not an installed app whose route is on; a page with no web address counts as the app whose session it runs in) |
+| `leave-decision.ts` | Pure: whether a page of a routed app opening an address needs the person asked first (not its own origin, not an installed app whose route is on; a page with no web address counts as the app whose session it runs in), and as what: a website, an installed app, or a page Orivon serves itself |
+| `served-origin.ts` | Pure over the protocol registry: whether an address is one Orivon's own nodes fetch (a protocol's scheme, a host the verifier answers for), and how a person reads it |
 | `temporary-routes.ts` | The in-memory session a website opened "through my proxy" runs in: a front and proxy sign-in of its own, released with its last tab |
 | `route-switch.ts` | Turning an app's route on or off, shared by the app card and the question below |
 | `leaving-routes.ts` | What the shell asks of all this when a routed app's page opens an address: the decision, the temporary session, the app switch |
 
 **What it depends on.** [`../../broker/route/`](../../broker/route/) (the route, its SOCKS5 provider and the probe),
-[`../settings/proxy-checks.ts`](../settings/proxy-checks.ts), [`../../broker/grants/origin-hash.ts`](../../broker/grants/origin-hash.ts), [`../../broker/policy/origin.ts`](../../broker/policy/origin.ts),
+[`../settings/proxy-checks.ts`](../settings/proxy-checks.ts), [`../../broker/grants/origin-hash.ts`](../../broker/grants/origin-hash.ts), [`../../broker/policy/origin.ts`](../../broker/policy/origin.ts), [`../../protocols/builtin.ts`](../../protocols/builtin.ts) (which addresses Orivon serves),
 [`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts), and `electron` for types, except
 `route-subsystem.ts`.
 
@@ -88,7 +89,7 @@ decision (`leave-decision.ts`) and the sessions it needs live here. *Through my 
 `temporary-routes.ts`, pointed at its own front through the controller's `prepareTemporary` (the one place a session
 is pointed at a front, so the app sessions' rules apply to it too); it is never registered with an app, so a change of
 an app's route cannot repoint it. It is in memory because its name has no `persist:` prefix, and it is cleared when the
-last web contents in it is destroyed. A popup that asked for a window of its own is adopted into the app's routed session
+last web contents in it is destroyed. A page Orivon serves itself (an address the protocol registry serves, or a `.eth` name) is asked about with *Directly* and *Cancel* only: the verifier host and the Swarm node fetch it and are not routed per app. One question is open per app at a time, in any of its tabs; its other requests meanwhile are cancelled unasked and nothing is remembered. A popup that asked for a window of its own is adopted into the app's routed session
 and is not asked about; an answer comes after `window.open` has returned, so such an open returns `null` whatever is
 chosen. A tab moved into a temporary session records it (`routedAway`) so that Forward onto that page does not load it
 in the shared session while the temporary one is alive.

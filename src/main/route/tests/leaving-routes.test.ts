@@ -7,7 +7,7 @@ function running (blocked: 'no-proxy' | 'not-cached' | undefined = undefined) {
   const set = vi.fn(async () => {})
   const session = {}
   setLeavingRoutes({
-    world: { isRouted: (origin) => origin === 'https://routed.example', isInstalledApp: (origin) => origin.endsWith('.example'), routedOriginOf: (partition) => partition === 'persist:app-routed' ? 'https://routed.example' : undefined },
+    world: { isRouted: (origin) => origin === 'https://routed.example', isInstalledApp: (origin) => origin.endsWith('.example'), routedOriginOf: (partition) => partition === 'persist:app-routed' ? 'https://routed.example' : undefined, servedOrigin: () => undefined },
     temporary: { open: async () => 'orivon-route-tab-1', owns: (one) => one === session, isLive: (partition) => partition === 'orivon-route-tab-1' },
     routeSwitch: { blockedFor: () => blocked, set }
   })

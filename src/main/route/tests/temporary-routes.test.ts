@@ -1,6 +1,6 @@
 // A website opened through the proxy runs in a session of its own that is released with its last tab.
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createTemporaryRoutes, isTemporaryRoutePartition } from '../temporary-routes.js'
+import { createTemporaryRoutes, isTemporaryRoutePartition, temporarySessionShowing } from '../temporary-routes.js'
 import type { TemporaryRoutes, TemporaryRoutesDeps, TemporarySession } from '../temporary-routes.js'
 
 const made: TemporaryRoutes[] = []
@@ -93,5 +93,19 @@ describe('a temporary routed session', () => {
     const { routes } = setup({ prepare: async () => { throw new Error('no session') } })
     await expect(routes.open()).rejects.toThrow('no session')
     expect(routes.count()).toBe(0)
+  })
+})
+
+describe('the temporary session a site is open in', () => {
+  const inside = { name: 'temporary' }
+  const owns = (session: object | undefined): boolean => session === inside
+  const page = (url: string, session: object, destroyed = false) => ({ session, getURL: () => url, isDestroyed: () => destroyed })
+
+  it('is the session of a live page of that origin which a temporary route owns, and no other', () => {
+    const contents = [page('https://site.example/a', {}), page('https://elsewhere.example/', inside), page('https://site.example/b', inside, true), page('https://site.example/b?x=1', inside)]
+    expect(temporarySessionShowing(contents, owns, 'https://site.example')).toBe(inside)
+    expect(temporarySessionShowing(contents, owns, 'https://none.example')).toBeUndefined()
+    expect(temporarySessionShowing([page('https://site.example/a', {})], owns, 'https://site.example')).toBeUndefined()
+    expect(temporarySessionShowing([page('not a url', inside), page('about:blank', inside)], owns, 'https://site.example')).toBeUndefined()
   })
 })
