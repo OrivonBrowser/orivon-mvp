@@ -75,7 +75,7 @@ function fakeLoader (overrides: Partial<Loader> = {}): Loader {
 }
 
 describe('createSiteInfoController -- the route of a routed app', () => {
-  const routesWith = (state: string): SubsystemContext['routes'] => ({ hub: { state: () => state, isRouted: () => state !== 'off', unreadable: () => false }, routeSwitch: { siteBlockedFor: () => undefined, siteNeedsNotice: () => true } }) as unknown as SubsystemContext['routes']
+  const routesWith = (state: string): SubsystemContext['routes'] => ({ hub: { state: () => state, isRouted: () => state !== 'off', unreadable: () => false, isEverywhere: () => false }, routeSwitch: { siteBlockedFor: () => undefined, siteNotice: () => 'tunnel' } }) as unknown as SubsystemContext['routes']
 
   it('carries the state of the app\'s route, so the popover can say where its traffic goes and when the tunnel is not answering', async () => {
     for (const state of ['idle', 'ok', 'down', 'no-proxy']) {
@@ -416,12 +416,12 @@ describe('createSiteInfoController -- storageDeclarationFor', () => {
 
 describe('createSiteInfoController -- the tunnel switch of a website', () => {
   const SITE = 'https://news.example'
-  function routesFor (options: { on?: boolean, blocked?: 'no-proxy' | 'local', needsNotice?: boolean, unreadable?: boolean, setSite?: (origin: string, on: boolean) => Promise<void> } = {}): SubsystemContext['routes'] {
+  function routesFor (options: { on?: boolean, blocked?: 'no-proxy' | 'local', notice?: 'tunnel' | 'direct' | null, unreadable?: boolean, everywhere?: boolean, setSite?: (origin: string, on: boolean) => Promise<void> } = {}): SubsystemContext['routes'] {
     return {
-      hub: { state: () => options.on === true ? 'ok' : 'off', isRouted: () => options.on === true, unreadable: () => options.unreadable === true },
+      hub: { state: () => options.on === true ? 'ok' : 'off', isRouted: () => options.on === true, unreadable: () => options.unreadable === true, isEverywhere: () => options.everywhere === true },
       routeSwitch: {
         siteBlockedFor: () => options.blocked,
-        siteNeedsNotice: () => options.needsNotice !== false,
+        siteNotice: () => options.notice === null ? undefined : options.notice ?? 'tunnel',
         setSite: options.setSite ?? (async () => {})
       }
     } as unknown as SubsystemContext['routes']
@@ -430,14 +430,20 @@ describe('createSiteInfoController -- the tunnel switch of a website', () => {
     createSiteInfoController({ ...ctxWith(createBroker(baseDeps())), routes } as unknown as SubsystemContext, trust)
 
   it('offers the switch for an ordinary website, with what the popover needs to ask first', async () => {
-    const info = await controllerWith(routesFor({ needsNotice: true })).siteInfoFor(SITE)
-    expect(info.tunnel).toEqual({ on: false, needsNotice: true, web3: false, unreadable: false })
+    const info = await controllerWith(routesFor({ notice: 'tunnel' })).siteInfoFor(SITE)
+    expect(info.tunnel).toEqual({ on: false, notice: 'tunnel', web3: false, unreadable: false })
   })
 
-  it('says it is on, and that no notice is needed once the site has storage of its own', async () => {
-    const info = await controllerWith(routesFor({ on: true, needsNotice: false })).siteInfoFor(SITE)
-    expect(info.tunnel).toMatchObject({ on: true, needsNotice: false })
+  it('says it is on, and that no notice is needed once the site has storage in the profile the next change moves it to', async () => {
+    const info = await controllerWith(routesFor({ on: true, notice: null })).siteInfoFor(SITE)
+    expect(info.tunnel).toMatchObject({ on: true })
+    expect(info.tunnel?.notice).toBeUndefined()
     expect(info.route).toBe('ok')
+  })
+
+  it('names the direct profile when turning a site off would move it there', async () => {
+    const info = await controllerWith(routesFor({ on: true, notice: 'direct', everywhere: true })).siteInfoFor(SITE)
+    expect(info.tunnel?.notice).toBe('direct')
   })
 
   it('says why it cannot be turned on, and when the list of tunnel settings could not be read', async () => {
@@ -445,9 +451,10 @@ describe('createSiteInfoController -- the tunnel switch of a website', () => {
     expect((await controllerWith(routesFor({ unreadable: true, on: true })).siteInfoFor(SITE)).tunnel?.unreadable).toBe(true)
   })
 
-  it('marks a Web3 name, whose own files Orivon fetches itself', async () => {
+  it('marks a Web3 name, whose own files Orivon fetches itself, unless the whole browser is on the tunnel and the fetches go through it', async () => {
     expect((await controllerWith(routesFor()).siteInfoFor('https://vitalik.eth')).tunnel?.web3).toBe(true)
     expect((await controllerWith(routesFor()).siteInfoFor('https://abc.ipfs.orivon')).tunnel?.web3).toBe(true)
+    expect((await controllerWith(routesFor({ everywhere: true })).siteInfoFor('https://vitalik.eth')).tunnel?.web3).toBe(false)
   })
 
   it('has no switch for this computer, an installed app, a local file or when routes are not running', async () => {

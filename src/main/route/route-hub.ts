@@ -11,9 +11,28 @@ import { fail } from '../../broker/errors.js'
 import { startRouteFront } from './front.js'
 import type { RouteFront } from './front.js'
 import type { RouteStore } from './route-store.js'
-import { differsFromDefault, tunnelStateOf } from './route-state.js'
+import { tunnelStateOf } from './route-state.js'
+import { profileOf } from './site-partition.js'
+import type { Profile } from './site-partition.js'
 
+/** `switch`: the origin's routing changed (its own entry, or the default it follows), `proxy`: the tunnel changed. */
 export type RouteChangeCause = 'switch' | 'proxy'
+
+/**
+ * The key of the shared tunnel identity: the one front and route every session that belongs to no origin of its own
+ * shares (the default session, the shell's own, a local file's), on while the browser-wide setting is. Never an origin
+ * a page can have, so no website or app can be mistaken for it.
+ */
+export const SHARED_ORIGIN = 'orivon-shared-tunnel'
+/** The identity of the tunnel profile: one front and one set of tunnel credentials for every website with an `on` entry. Always on. */
+export const TUNNEL_PROFILE_ORIGIN = 'orivon-tunnel-profile'
+/** The identity of the direct profile: never routed, so its session is never pointed at a front. */
+export const DIRECT_PROFILE_ORIGIN = 'orivon-direct-profile'
+
+/** The identity a profile's session is prepared under. */
+export function profileOrigin (profile: Profile): string {
+  return profile === 'tunnel' ? TUNNEL_PROFILE_ORIGIN : DIRECT_PROFILE_ORIGIN
+}
 
 /** What the Settings page and the popover say about an app's route: `idle` is a route nothing has used yet. */
 export type RouteState = 'off' | 'no-proxy' | 'idle' | 'ok' | 'down'
@@ -22,9 +41,11 @@ export interface RouteHubOptions {
   readonly store: RouteStore
   /** The proxy the person set, read on every use. */
   readonly proxy: () => RouteTarget | undefined
-  /** Whether the whole browser goes through the tunnel unless an origin says otherwise: the default an origin with no entry follows. Off until the browser-wide setting exists. */
+  /** Whether the whole browser goes through the tunnel unless an origin says otherwise: the default an origin with no entry follows. */
   readonly everywhere?: () => boolean
-  /** The apps installed on this computer, asked when the proxy changes while the store cannot say what was set, so their sessions are pointed again. */
+  /** Whether `origin` is an installed app, which has an identity of its own; any other origin is a website, which shares one (the tunnel profile's, or the shared one). Every origin is an app when this is left out. */
+  readonly isApp?: (origin: string) => boolean
+  /** The apps installed on this computer, asked when the proxy changes while the store cannot say what was set or the browser-wide setting is on, and when that setting changes, so their sessions are pointed again. */
   readonly installed?: () => readonly string[]
   /** Builds the provider for one app and proxy; the default is SOCKS5 with a distinct username and password per app. */
   readonly providerFor?: (key: string, target: RouteTarget) => RouteProvider
@@ -34,8 +55,8 @@ export interface RouteHub {
   /** For `CreateBrokerOptions.routeFor` and the loader's reach path. */
   readonly routeFor: RouteFor
   isRouted: (origin: string) => boolean
-  /** Whether a website at `origin` runs in a session of its own: its state differs from the default, or the store cannot be read. */
-  usesOwnSession: (origin: string) => boolean
+  /** The profile a website at `origin` runs in: the one its entry names, or the tunnel profile while the store cannot be read. Undefined for a website that follows the default session, and for an app. */
+  profileFor: (origin: string) => Profile | undefined
   /** Whether the list of tunnel settings could not be read, so that every origin counts as routed while a tunnel is set. */
   unreadable: () => boolean
   state: (origin: string) => RouteState
@@ -45,6 +66,10 @@ export interface RouteHub {
   credentialsForPort: (port: number) => { readonly username: string, readonly password: string } | undefined
   /** Call when the proxy setting changed. */
   proxyChanged: () => void
+  /** Call when the browser-wide setting changed from `previous`: every origin that follows the default changes with it, and a website with an entry of its own may no longer differ from the default. */
+  everywhereChanged: (previous: boolean) => void
+  /** Whether the browser-wide setting is on now. */
+  isEverywhere: () => boolean
   /** Ends every tunnel the app has through its front. */
   closeTunnels: (origin: string) => void
   /** Called when an app's route was switched on or off, and for every routed app when the proxy changed. */
@@ -86,15 +111,26 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
       }
     }
   })
+  const isApp = options.isApp ?? (() => true)
   const build = options.providerFor ?? ((key: string, target: RouteTarget) => createSocks5Provider({ host: target.host, port: target.port, credentials: credentials(key) }))
   /** An unreadable list is not "nothing routed": with a proxy set, every origin is. */
   const unreadableWithProxy = (): boolean => store.unreadable() && options.proxy() !== undefined
-  const routed = (origin: string): boolean => unreadableWithProxy() || tunnelStateOf(store.stateOf(origin), everywhere()) === 'on'
+  const routed = (origin: string): boolean => {
+    if (origin === TUNNEL_PROFILE_ORIGIN) return true
+    if (origin === DIRECT_PROFILE_ORIGIN) return false
+    return unreadableWithProxy() || tunnelStateOf(store.stateOf(origin), everywhere()) === 'on'
+  }
+  /** Whose front and credentials carry `origin`'s traffic: an app its own; a website with an `on` entry the tunnel profile's, which every such website shares; any other website the shared one. */
+  const identityOf = (origin: string): string => {
+    if (origin === SHARED_ORIGIN || origin === TUNNEL_PROFILE_ORIGIN || origin === DIRECT_PROFILE_ORIGIN || isApp(origin)) return origin
+    if (unreadableWithProxy() || store.stateOf(origin) === 'on') return TUNNEL_PROFILE_ORIGIN
+    return store.stateOf(origin) === undefined && everywhere() ? SHARED_ORIGIN : origin
+  }
   const table = createRouteFor({
     targetFor: (key) => routed(key) ? options.proxy() : undefined,
     providerFor: (key, target) => tracked(key, build(key, target))
   })
-  const routeFor: RouteFor = (key) => routed(key) ? table(key) ?? REFUSING_ROUTE : undefined
+  const routeFor: RouteFor = (key) => routed(key) ? table(identityOf(key)) ?? REFUSING_ROUTE : undefined
 
   const stopFront = (origin: string): void => {
     const running = fronts.get(origin)
@@ -117,15 +153,16 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
   return {
     routeFor,
     isRouted: routed,
-    usesOwnSession: (origin) => unreadableWithProxy() || differsFromDefault(store.stateOf(origin), everywhere()),
+    profileFor: (origin) => isApp(origin) ? undefined : unreadableWithProxy() ? 'tunnel' : profileOf(store.stateOf(origin)),
     unreadable: () => store.unreadable(),
     state: (origin) => {
       if (!routed(origin)) return 'off'
       if (options.proxy() === undefined) return 'no-proxy'
-      return health.get(origin) ?? 'idle'
+      return health.get(identityOf(origin)) ?? 'idle'
     },
-    front: async (origin) => {
-      if (!routed(origin)) throw new Error('this origin is not routed')
+    front: async (named) => {
+      if (!routed(named)) throw new Error('this origin is not routed')
+      const origin = identityOf(named)
       let running = fronts.get(origin)
       if (running === undefined) {
         // Recorded as listening only while it is still the app's front: one that was switched off meanwhile is closing.
@@ -147,12 +184,27 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
     proxyChanged: () => {
       health.clear()
       // With the list unreadable, setting or clearing the proxy changes which origins are routed at all.
-      const affected = new Set([...store.origins(), ...fronts.keys(), ...(store.unreadable() ? options.installed?.() ?? [] : [])])
+      const affected = new Set([...(routed(SHARED_ORIGIN) || fronts.has(SHARED_ORIGIN) ? [SHARED_ORIGIN] : []), ...store.origins(), ...fronts.keys(), ...(store.unreadable() || everywhere() ? options.installed?.() ?? [] : [])])
       for (const origin of affected) {
         void fronts.get(origin)?.then((front) => { front.closeTunnels() }, () => {})
         const now = routed(origin)
         if (!now) stopFront(origin)
         emit(origin, now, 'proxy')
+      }
+    },
+    isEverywhere: everywhere,
+    everywhereChanged: (previous) => {
+      health.clear()
+      const now = everywhere()
+      if (now === previous) return
+      // The shared identity, and every installed app that follows the default (whether or not it has been used since the start). An origin with an entry of its own, a website or an app, is where it was.
+      const affected = new Set([SHARED_ORIGIN, ...(options.installed?.() ?? [])])
+      for (const origin of affected) {
+        if (origin !== SHARED_ORIGIN && store.stateOf(origin) !== undefined) continue
+        const was = unreadableWithProxy() || tunnelStateOf(undefined, previous) === 'on'
+        const is = routed(origin)
+        if (!is) stopFront(origin)
+        if (is !== was) emit(origin, is, 'switch')
       }
     },
     closeTunnels: (origin) => { void fronts.get(origin)?.then((front) => { front.closeTunnels() }, () => {}) },

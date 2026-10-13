@@ -61,7 +61,10 @@ export type InstallOriginResult = InstallOriginOk | InstallOriginRejected
  * as a bundle. Every private, loopback, link-local, CGNAT and cloud-metadata
  * range is refused outright here, with no exception.
  */
-export async function ensurePublicUnicastOrigin (canonicalOrigin: string, resolveFn: Resolver): Promise<InstallOriginResult> {
+/** A resolver that can say a name is resolved at the far end of the tunnel, where nothing is looked up here. */
+export type FarEndResolver = Resolver & { readonly atFarEnd?: (origin: string) => boolean }
+
+export async function ensurePublicUnicastOrigin (canonicalOrigin: string, resolveFn: FarEndResolver): Promise<InstallOriginResult> {
   const url = new URL(canonicalOrigin)
   const host = url.hostname
 
@@ -102,6 +105,9 @@ export async function ensurePublicUnicastOrigin (canonicalOrigin: string, resolv
     if (canonical === null) return { ok: false, reason: `install origin's host is not a canonical address literal: ${host}` }
     return { ok: true, addresses: [canonical] }
   }
+
+  // The whole browser is on the tunnel: the far end resolves the name, so there is nothing to resolve here and no address to hand on.
+  if (resolveFn.atFarEnd?.(canonicalOrigin) === true) return { ok: true, addresses: [] }
 
   let answers: readonly string[]
   try {

@@ -8,8 +8,10 @@ import { renderRouteLine } from './route-line.js'
 
 export const TUNNEL_SWITCH_LABEL = 'Use the tunnel for this site'
 
-/** Shown before a website first moves into storage of its own: Confirm turns the tunnel on, Cancel leaves everything as it was. */
-export const STORAGE_NOTICE = 'This site gets its own storage. You\'ll sign in to it again once, and what it stores stays apart from the rest of your browsing.'
+/** Shown before a website first moves into a profile: Confirm makes the change, Cancel leaves everything as it was. */
+export function storageNotice (profile: 'tunnel' | 'direct'): string {
+  return `This site moves to your ${profile} profile. You'll sign in to it again once, and what it stores stays apart from your normal browsing.`
+}
 
 /** Why the switch is fixed, or what it leaves outside the tunnel; one sentence, or undefined when there is nothing to add. */
 export function tunnelHint (tunnel: SiteTunnel): string | undefined {
@@ -17,11 +19,6 @@ export function tunnelHint (tunnel: SiteTunnel): string | undefined {
   if (tunnel.blocked === 'no-proxy' && !tunnel.on) return 'Set a tunnel under Privacy and data first.'
   if (tunnel.web3 && !tunnel.on) return 'A Web3 name\'s own files come from Orivon itself and stay outside the tunnel for now.'
   return undefined
-}
-
-/** Extensions load into the shared session, so one that reaches this site stops working on it while it has storage of its own. */
-export function extensionsHint (names: readonly string[]): string | undefined {
-  return names.length === 0 ? undefined : `Extensions do not run on a site that goes through the tunnel: ${names.join(', ')}.`
 }
 
 export const TUNNEL_FAILED = 'The tunnel could not be changed for this site.'
@@ -33,8 +30,10 @@ export interface TunnelCallbacks {
 }
 
 export interface TunnelViewState {
-  /** The notice is open: the person moved the switch on and has not yet confirmed. */
-  readonly notice: boolean
+  /** The notice is open, about this profile: the person moved the switch and has not yet confirmed. */
+  readonly notice: 'tunnel' | 'direct' | null
+  /** The state the switch was moved to while the notice is open. */
+  readonly next: boolean | null
   /** The last change did not take. */
   readonly failed: boolean
 }
@@ -47,7 +46,7 @@ function paragraph (className: string, text: string): HTMLElement {
 }
 
 /** The switch row, its explanation, the status line of a site that is on, and the notice while it is open. */
-export function renderTunnelSection (container: HTMLElement, tunnel: SiteTunnel, route: SiteRoute | undefined, extensions: readonly string[], view: TunnelViewState, callbacks: TunnelCallbacks): void {
+export function renderTunnelSection (container: HTMLElement, tunnel: SiteTunnel, route: SiteRoute | undefined, view: TunnelViewState, callbacks: TunnelCallbacks): void {
   const section = document.createElement('div')
   section.className = 'tunnel-section'
 
@@ -56,7 +55,7 @@ export function renderTunnelSection (container: HTMLElement, tunnel: SiteTunnel,
   const label = document.createElement('span')
   label.className = 'tunnel-label'
   label.textContent = TUNNEL_SWITCH_LABEL
-  const shownOn = tunnel.on || view.notice
+  const shownOn = view.next ?? tunnel.on
   const control = createSwitch(shownOn, tunnel.unreadable || (!tunnel.on && tunnel.blocked !== undefined), callbacks.onToggle)
   control.id = 'tunnel-switch'
   control.setAttribute('aria-label', TUNNEL_SWITCH_LABEL)
@@ -66,15 +65,13 @@ export function renderTunnelSection (container: HTMLElement, tunnel: SiteTunnel,
   const hint = tunnelHint(tunnel)
   if (hint !== undefined) section.append(paragraph(tunnel.unreadable || tunnel.blocked !== undefined ? 'route-line route-line-down' : 'route-line', hint))
   if (tunnel.on && route !== undefined) section.append(renderRouteLine(route, tunnel.web3 ? 'web3' : 'site'))
-  const loses = extensionsHint(extensions)
-  if (loses !== undefined) section.append(paragraph('route-line', loses))
   if (view.failed) section.append(paragraph('route-line route-line-down', TUNNEL_FAILED))
 
-  if (view.notice) {
+  if (view.notice !== null) {
     const notice = document.createElement('div')
     notice.className = 'tunnel-notice'
     notice.setAttribute('role', 'alertdialog')
-    notice.append(paragraph('tunnel-notice-text', STORAGE_NOTICE))
+    notice.append(paragraph('tunnel-notice-text', storageNotice(view.notice)))
     const buttons = document.createElement('div')
     buttons.className = 'staged-buttons'
     const cancel = document.createElement('button')

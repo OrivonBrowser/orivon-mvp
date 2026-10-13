@@ -2,12 +2,14 @@
 // session-aware, unlike Node's global fetch.
 
 import { Readable } from 'node:stream'
-import type { IncomingMessage } from 'electron'
+import type { IncomingMessage, Session } from 'electron'
 import type { Fetch, FetchResponse } from '../fetch/bundle.js'
 import type { RequestHeaders } from '../fetch/budget.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { classifyAddress, isPublicUnicast } from '../../broker/policy/address.js'
 import { servedByVerifier } from '../fetch/verifier-origin.js'
+import { answerRouteChallenge } from '../../main/route/lookup-session.js'
+import { ownDirectSession, ownRouteFor } from '../../main/route/own-requests.js'
 
 export const electronFetch: Fetch = async (url, pinnedAddresses, signal, headers) => {
   // Dynamically imported: outside a real Electron process (i.e. under
@@ -57,6 +59,8 @@ export const electronFetch: Fetch = async (url, pinnedAddresses, signal, headers
   // matters is "still public", not "still this exact address".
   const hostname = new URL(url).hostname
   if (servedByVerifier(url)) return await netFetch(url, signal, headers)
+  // Through the tunnel the far end resolves the name: a lookup here would show it to this computer's resolver, and its answer is not what gets dialled.
+  if (ownRouteFor(new URL(url).origin) === 'tunnel' && classifyAddress(hostname) === 'unparseable') return await netFetch(url, signal, headers)
   if (classifyAddress(hostname) === 'unparseable') {
     const resolved = await net.resolveHost(hostname)
     if (resolved.endpoints.length === 0) {
@@ -137,7 +141,10 @@ function toFetchResponse (url: string, response: IncomingMessage): FetchResponse
 export async function netFetch (url: string, signal: AbortSignal, headers?: RequestHeaders): Promise<FetchResponse> {
   const { net } = await import('electron')
   return await new Promise<FetchResponse>((resolve, reject) => {
-    const request = net.request({ url, method: 'GET', credentials: 'omit', useSessionCookies: false, redirect: 'manual' })
+    // An origin set to off while the whole browser is on the tunnel is fetched on the system's proxy; otherwise the default session, which then is the tunnel's, whose front this request signs in to.
+    const direct = ownRouteFor(new URL(url).origin) === 'direct' ? ownDirectSession() : undefined
+    const request = net.request({ url, method: 'GET', credentials: 'omit', useSessionCookies: false, redirect: 'manual', ...(direct === undefined ? {} : { session: direct as Session }) })
+    request.on('login', (info, callback) => { answerRouteChallenge(info, callback) })
     for (const [name, value] of Object.entries(headers ?? {})) request.setHeader(name, value)
     let hops = 0
     let settled = false

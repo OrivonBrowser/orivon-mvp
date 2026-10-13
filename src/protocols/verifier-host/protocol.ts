@@ -45,6 +45,13 @@ export interface HostConfig {
    * already checked directly; a configured proxy must keep doing the
    * resolving, never be silently gone around for one kind of request (T20). */
   readonly ccipDirect: boolean
+  /**
+   * Present while the whole browser is on the tunnel: the front the host's requests go through (main points the process's own
+   * network context at it with `app.setProxy`), and the sign-in it expects. `net.fetch` in a utility process cannot answer the
+   * front's challenge, so the host fetches with `net.request` and answers it itself, for this port alone. Absent, the host
+   * fetches with `net.fetch` as it always has.
+   */
+  readonly front?: { readonly port: number, readonly username: string, readonly password: string }
   /** w3name-style services asked for an IPNS record after the gateways. */
   readonly ipnsNameServices: readonly string[]
   readonly dnsOverHttps: readonly string[]

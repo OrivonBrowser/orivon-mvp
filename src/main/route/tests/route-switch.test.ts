@@ -3,14 +3,14 @@ import { createRouteSwitch } from '../route-switch.js'
 import type { RouteSwitchWorld } from '../route-switch.js'
 import { RouteStore } from '../route-store.js'
 import { createRouteHub } from '../route-hub.js'
-import { sitePartitionFor } from '../site-partition.js'
+import { profilePartitionFor } from '../site-partition.js'
 
 const APP = 'https://app.example'
 const SITE = 'https://news.example'
 
-function setup (options: { proxy?: boolean, world?: Partial<RouteSwitchWorld> } = {}) {
+function setup (options: { proxy?: boolean, everywhere?: boolean, world?: Partial<RouteSwitchWorld> } = {}) {
   const store = new RouteStore(null)
-  const hub = createRouteHub({ store, proxy: () => options.proxy === false ? undefined : { host: '127.0.0.1', port: 9050 }, providerFor: () => ({ connect: async () => { throw new Error('unused') } }) })
+  const hub = createRouteHub({ store, everywhere: () => options.everywhere === true, isApp: (origin) => origin === APP, proxy: () => options.proxy === false ? undefined : { host: '127.0.0.1', port: 9050 }, providerFor: () => ({ connect: async () => { throw new Error('unused') } }) })
   const settled = vi.fn(async () => {})
   const routes = { proxy: () => options.proxy === false ? undefined : { host: '127.0.0.1', port: 9050 }, store, hub, controller: { settled } as never }
   const world: RouteSwitchWorld = { isPinned: (origin) => origin === APP, isPersistable: () => true, ...options.world }
@@ -18,21 +18,23 @@ function setup (options: { proxy?: boolean, world?: Partial<RouteSwitchWorld> } 
 }
 
 describe('turning a website\'s tunnel on', () => {
-  it('writes an on entry and records that the website has storage of its own, once the sessions follow', async () => {
+  it('writes an on entry and records that the website has storage in the tunnel profile, once the sessions follow', async () => {
     const { routeSwitch, store, settled } = setup()
     await routeSwitch.setSite(SITE, true)
     expect(store.stateOf(SITE)).toBe('on')
-    expect(store.isApart(SITE)).toBe(true)
+    expect(store.isApart(SITE, 'tunnel')).toBe(true)
+    expect(store.isApart(SITE, 'direct')).toBe(false)
     expect(settled).toHaveBeenCalled()
   })
 
-  it('tells the person first only until the website has storage of its own', async () => {
+  it('tells the person first, naming the profile, only until the website has storage in it', async () => {
     const { routeSwitch } = setup()
-    expect(routeSwitch.siteNeedsNotice(SITE)).toBe(true)
+    expect(routeSwitch.siteNotice(SITE, true)).toBe('tunnel')
+    expect(routeSwitch.siteNotice(SITE, false)).toBeUndefined()
     await routeSwitch.setSite(SITE, true)
-    expect(routeSwitch.siteNeedsNotice(SITE)).toBe(false)
+    expect(routeSwitch.siteNotice(SITE, true)).toBeUndefined()
     await routeSwitch.setSite(SITE, false)
-    expect(routeSwitch.siteNeedsNotice(SITE)).toBe(false)
+    expect(routeSwitch.siteNotice(SITE, true)).toBeUndefined()
   })
 
   it('sends the website back to following the default when turned off, and keeps its storage', async () => {
@@ -40,7 +42,29 @@ describe('turning a website\'s tunnel on', () => {
     await routeSwitch.setSite(SITE, true)
     await routeSwitch.setSite(SITE, false)
     expect(store.stateOf(SITE)).toBeUndefined()
-    expect(store.isApart(SITE)).toBe(true)
+    expect(store.isApart(SITE, 'tunnel')).toBe(true)
+  })
+
+  it('with the whole browser on the tunnel, turning a website off writes an off entry and moves it to the direct profile, and turning it on again follows the default', async () => {
+    const { routeSwitch, store } = setup({ everywhere: true })
+    expect(routeSwitch.siteNotice(SITE, false)).toBe('direct')
+    expect(routeSwitch.siteNotice(SITE, true)).toBeUndefined()
+    await routeSwitch.setSite(SITE, false)
+    expect(store.stateOf(SITE)).toBe('off')
+    expect(store.isApart(SITE, 'direct')).toBe(true)
+    await routeSwitch.setSite(SITE, true)
+    expect(store.stateOf(SITE)).toBeUndefined()
+    expect(store.isApart(SITE, 'direct')).toBe(true)
+  })
+
+  it('with the whole browser on the tunnel, a website that was on keeps its entry, and turning it off makes it off', async () => {
+    const off = setup({ everywhere: false })
+    await off.routeSwitch.setSite(SITE, true)
+    const { routeSwitch, store } = setup({ everywhere: true })
+    store.setEntry(SITE, 'on')
+    await routeSwitch.setSite(SITE, false)
+    expect(store.stateOf(SITE)).toBe('off')
+    expect(off.store.stateOf(SITE)).toBe('on')
   })
 
   it('is blocked with no tunnel set, and for this computer, but can always be turned off', async () => {
@@ -60,7 +84,7 @@ describe('the app card\'s switch', () => {
     expect(routeSwitch.blockedFor(SITE)).toBe('not-cached')
     await routeSwitch.set(APP, true)
     expect(store.stateOf(APP)).toBe('on')
-    expect(store.isApart(APP)).toBe(false)
+    expect(store.isApartAnywhere(APP)).toBe(false)
     await routeSwitch.set(APP, false)
     expect(store.stateOf(APP)).toBeUndefined()
     expect(setup({ proxy: false }).routeSwitch.blockedFor(APP)).toBe('no-proxy')
@@ -78,28 +102,28 @@ describe('the list of origins with a setting or storage of their own', () => {
     const rows = routeSwitch.rows().sort((a, b) => a.origin.localeCompare(b.origin))
 
     expect(rows).toEqual([
-      { origin: APP, kind: 'app', entry: 'on', state: 'idle', apart: false },
-      { origin: SITE, kind: 'site', entry: 'on', state: 'idle', apart: true },
-      { origin: 'https://old.example', kind: 'site', entry: undefined, state: 'off', apart: true }
+      { origin: APP, kind: 'app', entry: 'on', state: 'idle', profile: 'tunnel', apart: false },
+      { origin: SITE, kind: 'site', entry: 'on', state: 'idle', profile: 'tunnel', apart: true },
+      { origin: 'https://old.example', kind: 'site', entry: undefined, state: 'off', profile: undefined, apart: true }
     ])
   })
 })
 
 describe('removing a website\'s separate storage', () => {
-  it('clears the session named for the origin, forgets the storage when no entry is left, and keeps the entry when there is one', async () => {
+  it('clears that website\'s data from the profile, forgets the storage when no entry is left, and keeps the entry when there is one', async () => {
     const removeSiteStorage = vi.fn(async () => {})
     const { routeSwitch, store } = setup({ world: { removeSiteStorage } })
     await routeSwitch.setSite(SITE, true)
 
     expect(await routeSwitch.removeSiteStorage(SITE)).toBe(true)
-    expect(removeSiteStorage).toHaveBeenCalledWith(sitePartitionFor(SITE))
+    expect(removeSiteStorage).toHaveBeenCalledWith(profilePartitionFor('tunnel', SITE), SITE)
     expect(store.stateOf(SITE)).toBe('on')
-    expect(store.isApart(SITE)).toBe(true)
+    expect(store.isApart(SITE, 'tunnel')).toBe(true)
 
     await routeSwitch.setSite(SITE, false)
     expect(await routeSwitch.removeSiteStorage(SITE)).toBe(true)
-    expect(store.isApart(SITE)).toBe(false)
-    expect(routeSwitch.siteNeedsNotice(SITE)).toBe(true)
+    expect(store.isApart(SITE, 'tunnel')).toBe(false)
+    expect(routeSwitch.siteNotice(SITE, true)).toBe('tunnel')
   })
 
   it('refuses an origin that has no storage of its own, an installed app among them', async () => {

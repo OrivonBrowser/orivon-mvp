@@ -9,6 +9,7 @@
 // restarted by src/main/verifier/.
 
 import { net } from 'electron'
+import { createRequestFetch } from '../../loader/electron/request-fetch.js'
 import { createDirectFetch } from './direct-fetch.js'
 import { startHeliosLightClient } from './light-client/light-client.js'
 import type { FromHost, ToHost } from './protocol.js'
@@ -34,11 +35,18 @@ function main (): void {
     const message = event.data as ToHost
     if (message.type === 'start') {
       if (host !== undefined) return
+      const { front } = message.config
       host = startHost(message.config, {
         // No HTTP cache: one would answer a block another site's pages fetched faster, and so tell a page where the person has been (A256).
         // No credentials: this process's fetches are gateways, RPCs and DNS-over-HTTPS endpoints, never a page's own request, so nothing here should carry a cookie or a client certificate a session might hold.
-        fetch: async (url, init) => await net.fetch(url, { ...init, cache: 'no-store', credentials: 'omit' }),
-        resolveHost: async (name) => (await net.resolveHost(name)).endpoints.map((endpoint) => endpoint.address),
+        // Through the tunnel's front (`config.front`), `net.fetch` would end at the front's 407, so `net.request` answers it: for the front's own port, and no other proxy.
+        fetch: front === undefined
+          ? async (url, init) => await net.fetch(url, { ...init, cache: 'no-store', credentials: 'omit' })
+          : createRequestFetch({ net, answer: (info, callback) => { if (info.isProxy && info.host === '127.0.0.1' && info.port === front.port) callback(front.username, front.password); else callback() } }),
+        // A name is never resolved on this computer while the tunnel carries the host's requests: the far end resolves it.
+        resolveHost: front === undefined
+          ? async (name) => (await net.resolveHost(name)).endpoints.map((endpoint) => endpoint.address)
+          : async () => { throw new Error('a name is resolved at the far end of the tunnel, not on this computer') },
         post,
         startLightClient: startHeliosLightClient,
         fixturesAllowed: FIXTURES_ALLOWED,

@@ -1,7 +1,8 @@
-// The rule that says whether an origin goes through the tunnel and whether it keeps storage of its own. Pure.
+// The rule that says whether an origin goes through the tunnel. Pure.
 //
 // Every origin is `on` or `off`. The browser's default says which when the origin has no entry of its own; an entry
-// (`on` or `off`) overrides it. A website whose state differs from the default runs in a session of its own.
+// (`on` or `off`) overrides it. Where a website lives follows its entry alone (`site-partition.ts`'s `profileOf`), never the default,
+// so that turning the default over moves no website's storage.
 
 /** What a person set for one origin. */
 export type TunnelEntry = 'on' | 'off'
@@ -11,7 +12,10 @@ export function tunnelStateOf (entry: TunnelEntry | undefined, everywhere: boole
   return entry ?? (everywhere ? 'on' : 'off')
 }
 
-/** Whether an origin's state differs from the default, which is when a website needs storage of its own. */
-export function differsFromDefault (entry: TunnelEntry | undefined, everywhere: boolean): boolean {
-  return entry !== undefined && tunnelStateOf(entry, everywhere) !== tunnelStateOf(undefined, everywhere)
+/**
+ * The entry that makes a website `wanted`: none when the default already says so, else `wanted` itself. An entry the
+ * default already says is not kept, so the website goes back to the default session, where its storage was.
+ */
+export function entryFor (wanted: TunnelEntry, everywhere: boolean): TunnelEntry | undefined {
+  return wanted === tunnelStateOf(undefined, everywhere) ? undefined : wanted
 }

@@ -11,9 +11,9 @@ import { createRouteSwitch } from './route-switch.js'
 import type { RouteSwitch, RouteSwitchWorld } from './route-switch.js'
 import type { RouteStore } from './route-store.js'
 
-/** The part of the settings store the proxy is read from. */
+/** The part of the settings store the proxy and the browser-wide setting are read from. */
 export interface ProxySettings {
-  get: (key: 'network.route.proxy') => string
+  get: ((key: 'network.route.proxy') => string) & ((key: 'network.tunnel.everywhere') => boolean)
   onChange: (listener: (change: { readonly key: string }) => void) => () => void
 }
 
@@ -25,6 +25,8 @@ export interface RouteService {
   readonly routeSwitch: RouteSwitch
   /** The proxy now, undefined when none is set or the setting is not an address. */
   proxy: () => RouteTarget | undefined
+  /** Whether the whole browser goes through the tunnel unless an origin is set to off: the setting as it stands now. */
+  everywhere: () => boolean
   /** An app was taken away: its route is cleared, and its front and sessions are let go. A route that cannot be cleared stays. */
   forget: (origin: string) => void
   /** Reads the proxy from the settings store from now on, and tells the hub when it changes. Call once the settings are read. */
@@ -32,6 +34,7 @@ export interface RouteService {
 }
 
 const KEY = 'network.route.proxy'
+const EVERYWHERE_KEY = 'network.tunnel.everywhere'
 
 export interface RouteServiceOptions {
   readonly store: RouteStore
@@ -39,7 +42,9 @@ export interface RouteServiceOptions {
   readonly savedProxy: string
   /** The apps installed here, asked only while the store cannot say what was set. */
   readonly installed?: () => readonly string[]
-  /** Whether the whole browser goes through the tunnel unless an origin says otherwise; off until the browser-wide setting exists. */
+  /** The saved browser-wide setting, read before the settings store is: what applies until `followSettings`. */
+  readonly savedEverywhere?: boolean
+  /** Overrides the browser-wide setting; for a test. */
   readonly everywhere?: () => boolean
   /** What the switch reads about the world: the app's files held here, its origin written to disk, and a website's own storage. */
   readonly switchWorld?: RouteSwitchWorld
@@ -48,8 +53,10 @@ export interface RouteServiceOptions {
 
 export function createRouteService (options: RouteServiceOptions): RouteService {
   let current = options.savedProxy
+  let everywhereNow = options.savedEverywhere ?? false
   const proxy = (): RouteTarget | undefined => parseProxyAddress(current)
-  const hub = createRouteHub({ store: options.store, proxy, ...(options.installed === undefined ? {} : { installed: options.installed }), ...(options.everywhere === undefined ? {} : { everywhere: options.everywhere }) })
+  const everywhere = options.everywhere ?? (() => everywhereNow)
+  const hub = createRouteHub({ store: options.store, proxy, everywhere, ...(options.electron.isApp === undefined ? {} : { isApp: options.electron.isApp }), ...(options.installed === undefined ? {} : { installed: options.installed }) })
   const controller = createRouteController({ ...options.electron, hub })
   const routeSwitch = createRouteSwitch({ proxy, store: options.store, controller, hub }, options.switchWorld ?? { isPinned: () => false, isPersistable: () => false })
   return {
@@ -58,6 +65,7 @@ export function createRouteService (options: RouteServiceOptions): RouteService 
     store: options.store,
     routeSwitch,
     proxy,
+    everywhere,
     forget: (origin) => {
       try {
         // An unreadable list holds no entry to clear, and cannot be written to.
@@ -74,8 +82,19 @@ export function createRouteService (options: RouteServiceOptions): RouteService 
         current = settings.get(KEY)
         hub.proxyChanged()
       }
+      const readEverywhere = (): void => {
+        const next = settings.get(EVERYWHERE_KEY)
+        if (next === everywhereNow) return
+        const previous = everywhereNow
+        everywhereNow = next
+        hub.everywhereChanged(previous)
+      }
       read()
-      settings.onChange((change) => { if (change.key === KEY) read() })
+      readEverywhere()
+      settings.onChange((change) => {
+        if (change.key === KEY) read()
+        else if (change.key === EVERYWHERE_KEY) readEverywhere()
+      })
     }
   }
 }

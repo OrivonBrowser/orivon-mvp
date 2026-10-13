@@ -16,7 +16,7 @@ export { EgressRefused, allowlisted } from '../gateways/allowlisted-fetch.js'
 export type { WebFetch } from '../gateways/allowlisted-fetch.js'
 
 export interface CcipDeps {
-  /** Every address the host resolves to, from the same resolver the request will use. */
+  /** Every address the host resolves to, from the same resolver the request will use. Never asked when the name is resolved at the far end of the tunnel (`farEnd`). */
   readonly resolveHost: (host: string) => Promise<readonly string[]>
   /**
    * Dials the address this module already checked, TLS still verified
@@ -40,6 +40,8 @@ export interface CcipDeps {
    * started (`main/verifier/verifier-subsystem.ts`'s `ccipDirectFor`): a
    * snapshot, not re-checked per request or per URL. */
   readonly direct: boolean
+  /** The request goes through the tunnel (the host's `config.front`), whose far end resolves the name: no name is resolved on this computer. */
+  readonly farEnd?: boolean
 }
 
 export interface CcipLimits {
@@ -71,6 +73,8 @@ async function checkUrl (raw: string, deps: CcipDeps): Promise<UrlCheck> {
   }
   // A protocol host resolves to the verifier itself, never to a public server.
   if (host === 'localhost' || host.endsWith('.localhost') || BUILTIN_ADDRESSES.routesToVerifier(host)) return { ok: false, refusal: `${host} is not a public name` }
+  // Through the tunnel the far end resolves the name: resolving it here as well would be a lookup from this computer that the tunnel was set to hide, and its answer is not the address that gets dialled. Any other proxy keeps the check on what this computer resolves.
+  if (deps.farEnd === true) return { ok: true, addresses: [] }
   const addresses = await deps.resolveHost(host)
   if (addresses.length === 0) return { ok: false, refusal: `${host} resolved to no address` }
   const private_ = addresses.find((a) => !isPublicUnicast(a))

@@ -14,6 +14,7 @@
 
 import { session as electronSession, WebContentsView } from 'electron'
 import type { Session, WebContents } from 'electron'
+import { markOwnProxy } from '../route/own-proxy.js'
 import { LIMITS } from '../../contracts/index.js'
 import { originHash } from '../../broker/grants/origin-hash.js'
 import { reachOnlyHandlerFor } from '../../loader/electron/serve.js'
@@ -246,6 +247,8 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
   async function open (opener: string, origin: string, size: { width: number, height: number }): Promise<string> {
     const slot = allocateSlot(opener)
     const contextSession = electronSession.fromPartition(partitionName(opener, slot), { cache: false })
+    // Its proxy is the discard port set below, which confines it harder than the tunnel's front would: the shared identity leaves it alone.
+    markOwnProxy(contextSession)
     let webContents: WebContents | undefined
     try {
       await configureSession(contextSession, opener, origin)

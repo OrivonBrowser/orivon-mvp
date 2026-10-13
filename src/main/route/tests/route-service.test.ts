@@ -24,13 +24,15 @@ function service (savedProxy: string) {
   })
 }
 
-function settingsWith (initial: string): ProxySettings & { set: (value: string) => void } {
+function settingsWith (initial: string, initialEverywhere = false): ProxySettings & { set: (value: string) => void, setEverywhere: (value: boolean) => void } {
   let value = initial
+  let everywhere = initialEverywhere
   const listeners = new Set<(change: { readonly key: string }) => void>()
   return {
-    get: () => value,
+    get: ((key: string) => key === 'network.route.proxy' ? value : everywhere) as ProxySettings['get'],
     onChange: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
-    set: (next) => { value = next; for (const listener of [...listeners]) listener({ key: 'network.route.proxy' }) }
+    set: (next) => { value = next; for (const listener of [...listeners]) listener({ key: 'network.route.proxy' }) },
+    setEverywhere: (next) => { everywhere = next; for (const listener of [...listeners]) listener({ key: 'network.tunnel.everywhere' }) }
   }
 }
 
@@ -54,6 +56,23 @@ describe('the route service', () => {
 
     expect(routes.proxy()).toEqual({ host: '127.0.0.1', port: 9150 })
     expect(heard).toHaveBeenCalledWith(APP, true, 'proxy')
+  })
+
+  it('starts from the saved browser-wide setting and follows its changes, telling the shared identity and each app that follows the default', () => {
+    const store = new RouteStore(null)
+    const routes = createRouteService({ store, savedProxy: '127.0.0.1:9050', savedEverywhere: false, installed: () => [APP], electron: { broker: () => undefined, isApp: (origin) => origin === APP, sessionFor: () => ({ setProxy: async () => {}, closeAllConnections: async () => {} }), embedPartition: (origin) => `embed:${origin}`, allContents: () => [], onContentsCreated: () => {}, onLogin: () => {} } })
+    const settings = settingsWith('127.0.0.1:9050')
+    const heard = vi.fn()
+    routes.hub.onChange(heard)
+    routes.followSettings(settings)
+    expect(routes.everywhere()).toBe(false)
+    expect(routes.hub.isRouted(APP)).toBe(false)
+
+    settings.setEverywhere(true)
+
+    expect(routes.everywhere()).toBe(true)
+    expect(routes.hub.isRouted(APP)).toBe(true)
+    expect(heard.mock.calls).toEqual([['orivon-shared-tunnel', true, 'switch'], [APP, true, 'switch']])
   })
 
   it('applies a setting that differs from the saved one the moment it is followed', () => {

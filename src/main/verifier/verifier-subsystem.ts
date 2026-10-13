@@ -48,6 +48,8 @@ import type { LocalNodeSubsystem } from './local-node-subsystem.js'
 import { IPFS_NODE_IDENTITY } from '../../protocols/ipfs-node/protocol.js'
 import { SWARM_NODE_IDENTITY } from '../../protocols/swarm-node/protocol.js'
 import type { NodeNotice } from '../../protocols/verifier-host/protocol.js'
+import type { RouteService } from '../route/route-service.js'
+import { SHARED_ORIGIN } from '../route/route-hub.js'
 
 /** Mounting may wait for the light client to sync, then resolve a name and follow its pointers. */
 const MOUNT_TIMEOUT_MS = 30_000
@@ -79,6 +81,18 @@ let ipfsSourceChoice: () => 'node' | 'gateways' = () => 'node'
 let ipfsLookupServiceChoice: () => boolean = () => true
 /** Puts the host to sleep so that its next request rebuilds its config. Set once the host exists. */
 let idleHost: () => void = () => {}
+/** The routes, published after this subsystem starts: read when the host's config is built. */
+let routesOf: () => RouteService | undefined = () => undefined
+
+/**
+ * The browser-wide tunnel setting changed: the host's direct routes and its fetch are decided when it starts (whether a proxy
+ * applies is read once, and the front it signs in to is part of its config), so it sleeps and its next request rebuilds them.
+ * The local nodes stop with it.
+ */
+export function tunnelDefaultChanged (): void {
+  idleHost()
+  changed()
+}
 
 /** Lets the person's setting, and not only the environment, switch the light client off. Read once, here, at launch:
  * the choice applies from Orivon's next start, as Settings says, however often the host sleeps and wakes before it. */
@@ -243,8 +257,21 @@ function ipfsFromNode (seam: EthTestSeam | undefined): boolean {
   return seam === undefined && ipfsSourceChoice() === 'node'
 }
 
+/**
+ * The tunnel's front the host fetches through while the whole browser is on the tunnel, once the requests made with no session
+ * have been pointed at it (`app.setProxy`, which the host's checks of whether a proxy applies read); undefined otherwise.
+ */
+async function tunnelFront (): Promise<NonNullable<HostConfig['front']> | undefined> {
+  const routes = routesOf()
+  if (routes === undefined || !routes.hub.isRouted(SHARED_ORIGIN)) return undefined
+  await routes.controller.settled()
+  const front = await routes.hub.front(SHARED_ORIGIN)
+  return { port: front.port, username: front.username, password: front.secret }
+}
+
 async function hostConfig (): Promise<HostConfig> {
   const seam = ethTestSeam()
+  const front = await tunnelFront()
   const stored = verifierStore()
   let lightClient: Pick<HostConfig, 'lightClient' | 'lightClientOff'>
   if (lightClientSwitchedOff()) {
@@ -260,8 +287,10 @@ async function hostConfig (): Promise<HostConfig> {
     port: loopbackPort(),
     ...lightClient,
     gateways,
-    unproxiedGateways: await unproxiedGatewaysFor(gateways, seam !== undefined),
-    ccipDirect: await ccipDirectFor(seam !== undefined),
+    // Through the tunnel nothing is reached around it, whatever the proxy check answers.
+    unproxiedGateways: front === undefined ? await unproxiedGatewaysFor(gateways, seam !== undefined) : [],
+    ccipDirect: front === undefined && await ccipDirectFor(seam !== undefined),
+    ...(front === undefined ? {} : { front }),
     ipnsNameServices: seam === undefined ? DEFAULT_ENDPOINTS.ipnsNameServices : [],
     dnsOverHttps: seam?.dnsOverHttps ?? DEFAULT_ENDPOINTS.dnsOverHttps,
     ipnsSequences: stored.ipnsSequences(),
@@ -375,6 +404,7 @@ export const verifierSubsystem: Subsystem = {
     app.on('session-created', installCertificateCheck)
   },
   afterReady: (ctx) => {
+    routesOf = () => ctx.routes
     BUILTIN_ADDRESSES.learnSchemes((name) => verifierStore().nameScheme(name))
     installCertificateCheck(session.defaultSession)
     // The shared session and each session of its own a website gets: any of them can load a `.eth` page.

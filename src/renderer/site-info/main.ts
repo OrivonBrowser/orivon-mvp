@@ -80,7 +80,8 @@ const staged = new Map<CapabilityKind, boolean>()
 let pendingStaleCapabilities = new Set<CapabilityKind>()
 let showReloadBanner = false
 /** The storage notice is open: the tunnel switch was moved on and Confirm has not been pressed. */
-let tunnelNotice = false
+/** The notice before a website first moves into a profile is open: which profile, and the state the switch was moved to. */
+let tunnelNotice: { readonly profile: 'tunnel' | 'direct', readonly next: boolean } | null = null
 let tunnelFailed = false
 /** Why the last try at the offered update did not install, shown on its card. */
 let updateFailure: string | null = null
@@ -144,15 +145,17 @@ function renderCurrent (): void {
       tunnel: {
         onToggle: (next) => {
           tunnelFailed = false
-          if (!next && tunnelNotice) { tunnelNotice = false; renderCurrent(); return }
-          // Turning it on for the first time moves the site into storage of its own: the person is told, and nothing changes until Confirm.
-          if (next && info?.tunnel?.needsNotice === true) { tunnelNotice = true; renderCurrent(); return }
+          // Moving the switch back while the notice is open leaves everything as it was.
+          if (tunnelNotice !== null && next !== tunnelNotice.next) { tunnelNotice = null; renderCurrent(); return }
+          // The first time a website moves into a profile it is told, and nothing changes until Confirm.
+          const profile = info?.tunnel?.notice
+          if (profile !== undefined) { tunnelNotice = { profile, next }; renderCurrent(); return }
           void setTunnel(next)
         },
-        onConfirm: () => { void setTunnel(true) },
-        onCancel: () => { tunnelNotice = false; renderCurrent() }
+        onConfirm: () => { void setTunnel(tunnelNotice?.next ?? true) },
+        onCancel: () => { tunnelNotice = null; renderCurrent() }
       }
-    }, updateFailure, { notice: tunnelNotice, failed: tunnelFailed })
+    }, updateFailure, { notice: tunnelNotice?.profile ?? null, next: tunnelNotice?.next ?? null, failed: tunnelFailed })
   } else if (page === 'web3') {
     renderWeb3Page(web3Section, trust, () => { page = 'main'; renderCurrent() })
   } else if (page === 'data' && info !== null) {
@@ -172,7 +175,7 @@ function renderCurrent (): void {
 
 /** Turns the website's tunnel on or off; main moves the tab, and the popup draws what it says is now true. */
 async function setTunnel (on: boolean): Promise<void> {
-  tunnelNotice = false
+  tunnelNotice = null
   const result = await bridge.setTunnel(on)
   tunnelFailed = result === null || !result.ok
   if (result !== null) info = result.info

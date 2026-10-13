@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { RouteProvider } from '../../../broker/route/provider.js'
 import type { RouteTarget } from '../../../broker/route/table.js'
-import { createRouteHub } from '../route-hub.js'
+import { createRouteHub, DIRECT_PROFILE_ORIGIN, SHARED_ORIGIN, TUNNEL_PROFILE_ORIGIN } from '../route-hub.js'
 import type { RouteHub } from '../route-hub.js'
 import { RouteStore } from '../route-store.js'
 
@@ -233,7 +233,7 @@ describe('a list of routed apps that cannot be read', () => {
     writeFileSync(path, '{ not json')
     const store = new RouteStore(path)
     let proxy: RouteTarget | undefined = initial ?? undefined
-    const hub = createRouteHub({ store, proxy: () => proxy, installed: () => installed, providerFor: () => ({ connect: async () => { throw new Error('unused') } }) })
+    const hub = createRouteHub({ store, proxy: () => proxy, installed: () => installed, isApp: (origin) => installed.includes(origin), providerFor: () => ({ connect: async () => { throw new Error('unused') } }) })
     hubs.push(hub)
     return { store, hub, setProxy: (next: RouteTarget | undefined) => { proxy = next; hub.proxyChanged() } }
   }
@@ -244,7 +244,7 @@ describe('a list of routed apps that cannot be read', () => {
     expect(hub.isRouted(APP)).toBe(true)
     expect(hub.isRouted('https://a-website.example')).toBe(true)
     expect(hub.routeFor('https://a-website.example')).toBeDefined()
-    expect(hub.usesOwnSession('https://a-website.example')).toBe(true)
+    expect(hub.profileFor('https://a-website.example')).toBe('tunnel')
     expect(hub.routeFor(OTHER)).toBeDefined()
     expect(hub.unreadable()).toBe(true)
   })
@@ -267,7 +267,7 @@ describe('a list of routed apps that cannot be read', () => {
     hub.onChange(heard)
 
     setProxy({ host: '127.0.0.1', port: 9050 })
-    expect(heard.mock.calls).toEqual([[APP, true, 'proxy'], [OTHER, true, 'proxy']])
+    expect(heard.mock.calls).toEqual([[SHARED_ORIGIN, true, 'proxy'], [APP, true, 'proxy'], [OTHER, true, 'proxy']])
 
     heard.mockClear()
     setProxy(undefined)
@@ -281,80 +281,181 @@ describe('a list of routed apps that cannot be read', () => {
 
 describe('a website in the hub', () => {
   const SITE = 'https://news.example'
+  const SITE_TWO = 'https://other.example'
 
-  it('is routed by an entry of its own and by nothing else, with the default off', () => {
-    const { hub, store } = setup()
+  function website (options: { everywhere?: () => boolean, proxy?: RouteTarget | undefined } = {}) {
+    const store = new RouteStore(null)
+    let proxy: RouteTarget | undefined = 'proxy' in options ? options.proxy : { host: '127.0.0.1', port: 9050 }
+    const built: Array<{ key: string }> = []
+    const hub = createRouteHub({
+      store,
+      proxy: () => proxy,
+      isApp: (origin) => origin === APP || origin === OTHER,
+      ...(options.everywhere === undefined ? {} : { everywhere: options.everywhere }),
+      providerFor: (key) => { built.push({ key }); return { connect: async () => { throw new Error(`fake provider for ${key}`) } } }
+    })
+    hubs.push(hub)
+    return { store, hub, built, setProxy: (next: RouteTarget | undefined) => { proxy = next; hub.proxyChanged() } }
+  }
+
+  it('is routed by an on entry of its own and by nothing else, with the default off, and then lives in the tunnel profile', () => {
+    const { hub, store } = website()
     expect(hub.isRouted(SITE)).toBe(false)
-    expect(hub.usesOwnSession(SITE)).toBe(false)
+    expect(hub.profileFor(SITE)).toBeUndefined()
 
     store.setEntry(SITE, 'on')
     expect(hub.isRouted(SITE)).toBe(true)
-    expect(hub.usesOwnSession(SITE)).toBe(true)
+    expect(hub.profileFor(SITE)).toBe('tunnel')
     expect(hub.routeFor(SITE)).toBeDefined()
   })
 
-  it('stores an off entry and changes nothing for the site while the default is off', () => {
-    const { hub, store } = setup()
+  it('lives in the direct profile with an off entry, whatever the default says', () => {
+    for (const everywhere of [false, true]) {
+      const { hub, store } = website({ everywhere: () => everywhere })
+      store.setEntry(SITE, 'off')
+      expect(hub.isRouted(SITE), String(everywhere)).toBe(false)
+      expect(hub.profileFor(SITE), String(everywhere)).toBe('direct')
+    }
+  })
+
+  it('changes nothing for the site when an off entry is stored while the default is off, except where it lives', () => {
+    const { hub, store } = website()
     const heard = vi.fn()
     hub.onChange(heard)
 
     store.setEntry(SITE, 'off')
 
-    expect(store.stateOf(SITE)).toBe('off')
     expect(hub.isRouted(SITE)).toBe(false)
-    expect(hub.usesOwnSession(SITE)).toBe(false)
     expect(heard).not.toHaveBeenCalled()
   })
 
-  it('signs in to the tunnel with credentials of its own, apart from every other origin', () => {
-    const { hub, store, built } = setup()
+  it('shares one front and one set of tunnel credentials among every website with an on entry, and gives an app its own', async () => {
+    const { hub, store, built } = website()
     store.setEntry(SITE, 'on')
+    store.setEntry(SITE_TWO, 'on')
     store.set(APP, true)
     hub.routeFor(SITE)
+    hub.routeFor(SITE_TWO)
     hub.routeFor(APP)
-    expect(built.map((one) => one.key).sort()).toEqual([SITE, APP].sort())
+    expect(built.map((one) => one.key).sort()).toEqual([TUNNEL_PROFILE_ORIGIN, APP].sort())
+    const one = await hub.front(SITE)
+    const two = await hub.front(SITE_TWO)
+    expect(two.port).toBe(one.port)
+    expect((await hub.front(APP)).port).not.toBe(one.port)
   })
 
-  it('tells listeners when its tunnel is turned on and off, and runs a front only while on', async () => {
-    const { hub, store } = setup()
+  it('answers for the tunnel profile as a route that is always on, and for the direct profile as one that never is', () => {
+    const { hub } = website()
+    expect(hub.isRouted(TUNNEL_PROFILE_ORIGIN)).toBe(true)
+    expect(hub.isRouted(DIRECT_PROFILE_ORIGIN)).toBe(false)
+  })
+
+  it('tells listeners when its tunnel is turned on and off', async () => {
+    const { hub, store } = website()
     const heard = vi.fn()
     hub.onChange(heard)
     store.setEntry(SITE, 'on')
-    const front = await hub.front(SITE)
-    expect(front.port).toBeGreaterThan(0)
+    expect((await hub.front(SITE)).port).toBeGreaterThan(0)
     store.setEntry(SITE, undefined)
     await hub.settled()
     expect(heard.mock.calls).toEqual([[SITE, true, 'switch'], [SITE, false, 'switch']])
     await expect(hub.front(SITE)).rejects.toThrow(/not routed/)
   })
 
-  it('follows the browser-wide default when there is one: an entry that says what the default says changes nothing', () => {
-    let everywhere = true
-    const store = new RouteStore(null)
-    const hub = createRouteHub({ store, proxy: () => ({ host: '127.0.0.1', port: 9050 }), everywhere: () => everywhere, providerFor: () => ({ connect: async () => { throw new Error('unused') } }) })
-    hubs.push(hub)
-    const heard = vi.fn()
-    hub.onChange(heard)
-
-    expect(hub.isRouted(SITE)).toBe(true)
-    expect(hub.usesOwnSession(SITE)).toBe(false)
-    store.setEntry(SITE, 'on')
-    expect(heard).not.toHaveBeenCalled()
-    store.setEntry(SITE, 'off')
-    expect(hub.isRouted(SITE)).toBe(false)
-    expect(hub.usesOwnSession(SITE)).toBe(true)
-    expect(heard.mock.calls).toEqual([[SITE, false, 'switch']])
-    everywhere = false
-    expect(hub.usesOwnSession(SITE)).toBe(false)
-  })
-
-  it('has the proxy changing affect its front too', async () => {
-    const { hub, store, setProxy } = setup()
+  it('has the proxy changing affect the tunnel profile and the shared identity too', async () => {
+    const { hub, store, setProxy } = website()
     store.setEntry(SITE, 'on')
     await hub.front(SITE)
     const heard = vi.fn()
     hub.onChange(heard)
     setProxy(undefined)
+    expect(heard.mock.calls).toContainEqual([TUNNEL_PROFILE_ORIGIN, true, 'proxy'])
     expect(heard.mock.calls).toContainEqual([SITE, true, 'proxy'])
+    expect(heard.mock.calls.map(([origin]) => origin), 'the shared identity is not told while the browser-wide setting is off').not.toContain(SHARED_ORIGIN)
+  })
+})
+
+describe('the browser-wide default', () => {
+  const SITE = 'https://news.example'
+  let everywhere = false
+
+  function browser (installed: string[] = [APP, OTHER]) {
+    everywhere = false
+    const store = new RouteStore(null)
+    const built: string[] = []
+    const hub = createRouteHub({
+      store,
+      proxy: () => ({ host: '127.0.0.1', port: 9050 }),
+      everywhere: () => everywhere,
+      isApp: (origin) => installed.includes(origin),
+      installed: () => installed,
+      providerFor: (key) => { built.push(key); return { connect: async () => { throw new Error(`fake provider for ${key}`) } } }
+    })
+    hubs.push(hub)
+    const flip = (next: boolean): void => { const previous = everywhere; everywhere = next; hub.everywhereChanged(previous) }
+    return { store, hub, built, flip }
+  }
+
+  it('routes the shared identity, every website with no entry and every app with no entry while on, and an origin set to off is not', () => {
+    const { hub, store, flip } = browser()
+    expect(hub.isRouted(SHARED_ORIGIN)).toBe(false)
+    expect(hub.isRouted(SITE)).toBe(false)
+    flip(true)
+    expect(hub.isEverywhere()).toBe(true)
+    expect(hub.isRouted(SHARED_ORIGIN)).toBe(true)
+    expect(hub.isRouted(SITE)).toBe(true)
+    expect(hub.isRouted(APP)).toBe(true)
+    expect(hub.routeFor(SITE)).toBeDefined()
+    store.setEntry(SITE, 'off')
+    store.setEntry(APP, 'off')
+    expect(hub.isRouted(SITE)).toBe(false)
+    expect(hub.routeFor(APP)).toBeUndefined()
+  })
+
+  it('gives every app its own credentials and every website with no entry the shared identity\'s', () => {
+    const { hub, built, flip } = browser()
+    flip(true)
+    hub.routeFor(APP)
+    hub.routeFor(OTHER)
+    hub.routeFor(SITE)
+    hub.routeFor('https://third.example')
+    expect(built.sort()).toEqual([APP, OTHER, SHARED_ORIGIN].sort())
+  })
+
+  it('tells listeners about the shared identity and every app that follows the default when it flips, and about nothing that has an entry of its own', () => {
+    const { hub, store, flip } = browser()
+    store.setEntry(OTHER, 'off')
+    store.setEntry(SITE, 'on')
+    const heard = vi.fn()
+    hub.onChange(heard)
+
+    flip(true)
+
+    expect(heard.mock.calls).toEqual([[SHARED_ORIGIN, true, 'switch'], [APP, true, 'switch']])
+    heard.mockClear()
+    flip(false)
+    expect(heard.mock.calls).toEqual([[SHARED_ORIGIN, false, 'switch'], [APP, false, 'switch']])
+  })
+
+  it('moves no website between sessions: a website\'s profile follows its own entry alone', () => {
+    const { hub, store, flip } = browser()
+    store.setEntry(SITE, 'on')
+    store.setEntry('https://off.example', 'off')
+    flip(true)
+    expect(hub.profileFor(SITE)).toBe('tunnel')
+    expect(hub.profileFor('https://off.example')).toBe('direct')
+    expect(hub.profileFor('https://none.example')).toBeUndefined()
+    flip(false)
+    expect(hub.profileFor(SITE)).toBe('tunnel')
+    expect(hub.profileFor('https://off.example')).toBe('direct')
+  })
+
+  it('stops the shared front when it is turned off', async () => {
+    const { hub, flip } = browser()
+    flip(true)
+    await hub.front(SHARED_ORIGIN)
+    flip(false)
+    await hub.settled()
+    await expect(hub.front(SHARED_ORIGIN)).rejects.toThrow(/not routed/)
   })
 })

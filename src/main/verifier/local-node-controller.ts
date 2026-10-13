@@ -21,8 +21,10 @@ export const READY_WAIT_MS = 20_000
 /** A refusal is answered from memory for this long before the files and the proxy are looked at again. */
 export const REFUSAL_MEMORY_MS = 10_000
 
-export function proxyReason (identity: NodeIdentity): string {
-  return `a proxy is configured, and the ${identity.noun}'s connections would go around it`
+export function proxyReason (identity: NodeIdentity, tunnelOn = false): string {
+  return tunnelOn
+    ? `all of Orivon's traffic goes through the tunnel, and the ${identity.noun} dials its peers by address and looks names up itself, which the tunnel does not carry`
+    : `a proxy is configured, and the ${identity.noun}'s connections would go around it`
 }
 
 export interface ControllerDeps {
@@ -35,6 +37,8 @@ export interface ControllerDeps {
   readonly files: readonly PinnedFile[]
   /** Whether the default session has a proxy in front of it. */
   readonly proxyConfigured: () => Promise<boolean>
+  /** Whether the proxy is the tunnel for the whole browser, which the refusal says in its own words. */
+  readonly tunnelOn?: () => boolean
   /** Why the node must not start, in words (a hermetic test run), or undefined. */
   readonly disabled?: () => string | undefined
   readonly apiPort: () => number
@@ -180,7 +184,7 @@ export class LocalNodeController {
   private async look (): Promise<Verdict> {
     const disabled = this.deps.disabled?.()
     if (disabled !== undefined) return { reason: disabled }
-    if (await this.deps.proxyConfigured().catch(() => true)) return { reason: proxyReason(this.deps.kind) }
+    if (await this.deps.proxyConfigured().catch(() => true)) return { reason: proxyReason(this.deps.kind, this.deps.tunnelOn?.() === true) }
     const artifact = await this.deps.artifact()
     return artifact.ok ? { directory: artifact.directory } : { reason: artifact.reason }
   }

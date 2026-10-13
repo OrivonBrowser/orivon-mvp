@@ -1,56 +1,63 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { sitePartitionFor } from '../../route/site-partition.js'
+import { profilePartitionFor } from '../../route/site-partition.js'
+import type { Profile } from '../../route/site-partition.js'
 import { setSiteRoutes } from '../../route/site-routes.js'
 import { partitionChanged, partitionChangedByPage, partitionForTarget } from '../tab-partition.js'
 
 const SITE = 'https://news.example'
 const OTHER = 'https://other.example'
+const TUNNEL = profilePartitionFor('tunnel', SITE)
+const DIRECT = profilePartitionFor('direct', SITE)
 afterEach(() => { setSiteRoutes(undefined) })
 
 describe('the session a tab shows a website in', () => {
   it('is the shared one with no tunnel setting', () => {
-    setSiteRoutes({ usesOwnSession: () => false })
+    setSiteRoutes({ profileFor: () => undefined })
     expect(partitionForTarget(`${SITE}/a`)).toBeUndefined()
   })
 
-  it('is the website\'s own for a website whose state differs from the default, for every address of that origin', () => {
-    setSiteRoutes({ usesOwnSession: (origin) => origin === SITE })
-    expect(partitionForTarget(`${SITE}/a?b=1#c`)).toBe(sitePartitionFor(SITE))
-    expect(partitionForTarget(`${SITE}/other`)).toBe(sitePartitionFor(SITE))
+  it('is the profile of a website\'s entry, for every address of that origin, and the same profile for every website with that entry', () => {
+    setSiteRoutes({ profileFor: (origin) => origin === SITE ? 'tunnel' : undefined })
+    expect(partitionForTarget(`${SITE}/a?b=1#c`)).toBe(TUNNEL)
+    expect(partitionForTarget(`${SITE}/other`)).toBe(TUNNEL)
     expect(partitionForTarget(`${OTHER}/`)).toBeUndefined()
+    setSiteRoutes({ profileFor: () => 'tunnel' })
+    expect(partitionForTarget(`${OTHER}/`)).toBe(TUNNEL)
   })
 
   it('is the shared one for an address with no origin', () => {
-    setSiteRoutes({ usesOwnSession: () => true })
+    setSiteRoutes({ profileFor: () => 'tunnel' })
     expect(partitionForTarget('about:blank')).toBeUndefined()
     expect(partitionForTarget('orivon://settings/')).toBeUndefined()
   })
 })
 
-describe('a tab moving between the shared session and a website\'s own', () => {
-  it('moves into the website\'s session from the shared one, and back to the shared one from it', () => {
-    setSiteRoutes({ usesOwnSession: (origin) => origin === SITE })
-    expect(partitionChanged(`${SITE}/`, undefined)).toEqual({ to: sitePartitionFor(SITE) })
-    expect(partitionChanged(`${OTHER}/`, sitePartitionFor(SITE))).toEqual({ to: undefined })
-    expect(partitionChangedByPage(`${OTHER}/`, sitePartitionFor(SITE))).toEqual({ to: undefined })
+describe('a tab moving between the shared session and a profile', () => {
+  it('moves into the profile from the shared session, and back to the shared one from it', () => {
+    setSiteRoutes({ profileFor: (origin) => origin === SITE ? 'tunnel' : undefined })
+    expect(partitionChanged(`${SITE}/`, undefined)).toEqual({ to: TUNNEL })
+    expect(partitionChanged(`${OTHER}/`, TUNNEL)).toEqual({ to: undefined })
+    expect(partitionChangedByPage(`${OTHER}/`, TUNNEL)).toEqual({ to: undefined })
   })
 
-  it('stays put inside the website', () => {
-    setSiteRoutes({ usesOwnSession: (origin) => origin === SITE })
-    expect(partitionChanged(`${SITE}/b`, sitePartitionFor(SITE))).toBeUndefined()
+  it('stays put between two websites of the same profile, so no tab reloads for a link between them', () => {
+    setSiteRoutes({ profileFor: () => 'tunnel' })
+    expect(partitionChanged(`${SITE}/b`, TUNNEL)).toBeUndefined()
+    expect(partitionChanged(`${OTHER}/`, TUNNEL)).toBeUndefined()
   })
 
-  it('moves from one website\'s session straight to another\'s', () => {
-    setSiteRoutes({ usesOwnSession: () => true })
-    expect(partitionChanged(`${OTHER}/`, sitePartitionFor(SITE))).toEqual({ to: sitePartitionFor(OTHER) })
+  it('moves from one profile straight to the other', () => {
+    const profiles: Record<string, Profile> = { [SITE]: 'tunnel', [OTHER]: 'direct' }
+    setSiteRoutes({ profileFor: (origin) => profiles[origin] })
+    expect(partitionChanged(`${OTHER}/`, TUNNEL)).toEqual({ to: DIRECT })
+    expect(partitionChanged(`${SITE}/`, DIRECT)).toEqual({ to: TUNNEL })
   })
 
-  it('moves back to the shared session once the website\'s tunnel is off', () => {
-    let own = true
-    setSiteRoutes({ usesOwnSession: () => own })
-    const inSite = sitePartitionFor(SITE)
-    expect(partitionChanged(`${SITE}/`, inSite)).toBeUndefined()
-    own = false
-    expect(partitionChanged(`${SITE}/`, inSite)).toEqual({ to: undefined })
+  it('moves back to the shared session once the website has no entry', () => {
+    let profile: Profile | undefined = 'tunnel'
+    setSiteRoutes({ profileFor: () => profile })
+    expect(partitionChanged(`${SITE}/`, TUNNEL)).toBeUndefined()
+    profile = undefined
+    expect(partitionChanged(`${SITE}/`, TUNNEL)).toEqual({ to: undefined })
   })
 })

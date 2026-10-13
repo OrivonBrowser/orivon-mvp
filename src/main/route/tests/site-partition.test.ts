@@ -1,27 +1,34 @@
-import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { canTunnel, isSitePartition, sitePartitionFor } from '../site-partition.js'
+import { canTunnel, isProfilePartition, profileOf, profileOfPartition, profilePartition, profilePartitionFor } from '../site-partition.js'
 
-const hash = (origin: string): string => createHash('sha256').update(origin, 'utf8').digest('hex')
-
-describe('the session of a website with a tunnel state of its own', () => {
-  it('is persist:site- and the sha256 of the origin, kept across restarts', () => {
-    expect(sitePartitionFor('https://news.example')).toBe(`persist:site-${hash('https://news.example')}`)
+describe('the profile an entry puts a website in', () => {
+  it('is the tunnel profile for an on entry, the direct profile for an off one, and none for a website with no entry', () => {
+    expect(profileOf('on')).toBe('tunnel')
+    expect(profileOf('off')).toBe('direct')
+    expect(profileOf(undefined)).toBeUndefined()
   })
+})
 
-  it('is one session per origin: the same site spelled with another port or scheme is another session', () => {
-    const names = new Set(['https://news.example', 'https://news.example:8443', 'https://www.news.example', 'https://other.example'].map(sitePartitionFor))
-    expect(names.size).toBe(4)
+describe('the session of a profile', () => {
+  it('is one persistent session per profile, shared by every website that has that entry', () => {
+    expect(profilePartitionFor('tunnel', 'https://news.example')).toBe('persist:tunnel-profile')
+    expect(profilePartitionFor('tunnel', 'https://other.example')).toBe('persist:tunnel-profile')
+    expect(profilePartitionFor('direct', 'https://news.example')).toBe('persist:direct-profile')
   })
 
   it('is kept in memory for an origin that may not be written to disk, which a name with no persist: prefix is', () => {
-    expect(sitePartitionFor('http://news.example')).toBe(`site-${hash('http://news.example')}`)
+    expect(profilePartitionFor('tunnel', 'http://news.example')).toBe('tunnel-profile-memory')
+    expect(profilePartitionFor('direct', 'http://news.example')).toBe('direct-profile-memory')
+    expect(profilePartition('tunnel', false)).toBe('tunnel-profile-memory')
   })
 
-  it('is told apart from the other partitions by its name', () => {
-    expect(isSitePartition(sitePartitionFor('https://news.example'))).toBe(true)
-    expect(isSitePartition(sitePartitionFor('http://news.example'))).toBe(true)
-    for (const other of [undefined, 'persist:app-abc', 'persist:embed-abc', 'orivon-route-tab-abc', 'persist:orivon-local-files']) expect(isSitePartition(other), String(other)).toBe(false)
+  it('is told apart from the other partitions by its name, and says which profile it is', () => {
+    for (const name of ['persist:tunnel-profile', 'tunnel-profile-memory']) {
+      expect(isProfilePartition(name), name).toBe(true)
+      expect(profileOfPartition(name), name).toBe('tunnel')
+    }
+    for (const name of ['persist:direct-profile', 'direct-profile-memory']) expect(profileOfPartition(name), name).toBe('direct')
+    for (const other of [undefined, 'persist:app-abc', 'persist:embed-abc', 'orivon-route-tab-abc', 'persist:orivon-local-files', 'persist:site-abc', 'site-abc']) expect(isProfilePartition(other), String(other)).toBe(false)
   })
 })
 
