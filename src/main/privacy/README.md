@@ -6,7 +6,7 @@ by name) the browser storage of every cache-served app that holds permissions; `
 Settings page may ask: how much is kept, and to clear. `local-files-domain.ts` is what Settings may ask about local files: the recorded files, deleting one's data, and clearing what the others share. Letting out: the network privacy controls, all on the
 default session's one web-request owner. `net-handlers.ts` holds the three handlers (the `DNT` header,
 third-party cookie stripping, the HTTPS upgrade); Global Privacy Control is not one of them, `gpc-switch.ts` decides it
-for the whole process at start; `privacy-headers.ts`, `cookie-policy.ts` and
+for the whole process at start, and `dns-prefetch-switch.ts` turns DNS prefetching off for it, so a page's hint resolves no name on this computer; `privacy-headers.ts`, `cookie-policy.ts` and
 `https-only.ts` are their pure decisions, `site-of.ts` the registrable-domain rule they share. A failed upgrade
 is followed by `https-fallback.ts` (the per-tab record), `https-fallback-runner.ts` (the tab's events) and
 `https-state.ts` (this run's exemptions), and ends in the sheet `https-warning-overlay.ts`
