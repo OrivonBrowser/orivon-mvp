@@ -24,7 +24,7 @@ describe('RouteStore', () => {
     const path = fileIn()
     new RouteStore(path).set(APP, true)
     expect(new RouteStore(path).has(APP)).toBe(true)
-    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ version: 1, origins: [APP], off: [], apart: [] })
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ version: 1, profiles: 1, origins: [APP], off: [], apart: [], apartDirect: [] })
   })
 
   it('turns a route off, says whether anything changed, and tells listeners only when something did', () => {
@@ -188,16 +188,48 @@ describe('website origins in the store', () => {
     expect(heard.mock.calls).toEqual([[SITE, 'on', undefined], [SITE, 'off', 'on'], [SITE, undefined, 'off']])
   })
 
-  it('keeps a record of the websites that have storage of their own, apart from their entry', () => {
+  it('keeps a record of the websites that have storage in each profile, apart from their entry', () => {
     const path = fileIn()
     const store = new RouteStore(path)
     store.setEntry(SITE, 'on')
-    store.keepApart(SITE)
+    store.keepApart(SITE, 'tunnel')
     store.setEntry(SITE, undefined)
-    expect(store.isApart(SITE)).toBe(true)
-    expect(new RouteStore(path).apart()).toEqual([SITE])
-    store.dropApart(SITE)
-    expect(new RouteStore(path).apart()).toEqual([])
+    expect(store.isApart(SITE, 'tunnel')).toBe(true)
+    expect(store.isApart(SITE, 'direct')).toBe(false)
+    expect(new RouteStore(path).apart('tunnel')).toEqual([SITE])
+    store.keepApart(SITE, 'direct')
+    expect(new RouteStore(path).apart('direct')).toEqual([SITE])
+    expect(store.isApartAnywhere(SITE)).toBe(true)
+    store.dropApart(SITE, 'tunnel')
+    store.dropApart(SITE, 'direct')
+    expect(new RouteStore(path).apart('tunnel')).toEqual([])
+    expect(store.isApartAnywhere(SITE)).toBe(false)
+  })
+
+  it('migrates a file written before the profiles: the old sessions are named, then the record moves to the profile each entry names', () => {
+    const path = fileIn()
+    const kept = 'https://kept.example'
+    const gone = 'https://gone.example'
+    writeFileSync(path, JSON.stringify({ version: 1, origins: [SITE, APP], off: [kept], apart: [SITE, kept, gone] }))
+    const store = new RouteStore(path)
+    expect(store.needsMigration()).toBe(true)
+    expect(store.legacySites().sort()).toEqual([SITE, kept, gone].sort())
+    store.migrateToProfiles()
+    expect(store.needsMigration()).toBe(false)
+    expect(store.legacySites()).toEqual([])
+    expect(store.apart('tunnel')).toEqual([SITE])
+    expect(store.apart('direct')).toEqual([kept])
+    expect(store.stateOf(SITE)).toBe('on')
+    expect(new RouteStore(path).needsMigration()).toBe(false)
+  })
+
+  it('has nothing to migrate for a new profile, a private session or a file already written with profiles', () => {
+    expect(new RouteStore(null).needsMigration()).toBe(false)
+    expect(new RouteStore(fileIn()).needsMigration()).toBe(false)
+    const path = fileIn()
+    const store = new RouteStore(path)
+    store.setEntry(SITE, 'on')
+    expect(new RouteStore(path).needsMigration()).toBe(false)
   })
 
   it('refuses an entry for an origin that is not canonical', () => {
@@ -212,6 +244,7 @@ describe('website origins in the store', () => {
     expect([...(parsed?.on ?? [])]).toEqual([SITE])
     expect([...(parsed?.off ?? [])]).toEqual([])
     expect([...(parsed?.apart ?? [])]).toEqual(['https://x.example'])
+    expect(parsed?.profiles).toBe(false)
   })
 
   it('reads a file written before off and apart existed', () => {
@@ -230,16 +263,16 @@ describe('website origins in the store', () => {
     const path = fileIn()
     const store = new RouteStore(path)
     store.setEntry('http://news.example', 'on')
-    store.keepApart('http://news.example')
+    store.keepApart('http://news.example', 'tunnel')
     expect(store.stateOf('http://news.example')).toBe('on')
-    expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({ origins: [], apart: [] })
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({ origins: [], apart: [], apartDirect: [] })
   })
 
   it('does not write over an unreadable file when the record of storage changes', () => {
     const path = fileIn()
     writeFileSync(path, '{ not json')
     const store = new RouteStore(path)
-    store.keepApart(SITE)
+    store.keepApart(SITE, 'tunnel')
     expect(readFileSync(path, 'utf8')).toBe('{ not json')
     expect(() => store.setEntry(SITE, 'off')).toThrow(/could not be read/)
   })

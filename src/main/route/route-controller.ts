@@ -5,11 +5,16 @@
 import type { Session, WebContents } from 'electron'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { originHash } from '../../broker/grants/origin-hash.js'
+import { SHARED_ORIGIN } from './route-hub.js'
+import { profilePartitionFor } from './site-partition.js'
+import { ensureSiteSession } from './site-routes.js'
 import type { RouteChangeCause, RouteHub } from './route-hub.js'
 
 export type RouteSession = Pick<Session, 'setProxy' | 'closeAllConnections'>
+/** What a proxy is set to: Electron's own shape. */
+export type RouteProxyConfig = Parameters<RouteSession['setProxy']>[0]
 /** `session` is compared by identity with the sessions prepared here, so it is only an object. */
-export type RouteContents = Pick<WebContents, 'isDestroyed' | 'setWebRTCIPHandlingPolicy' | 'reload' | 'getType'> & { readonly session: object }
+export type RouteContents = Pick<WebContents, 'isDestroyed' | 'setWebRTCIPHandlingPolicy' | 'reload' | 'getType' | 'getURL'> & { readonly session: object }
 
 /** The `login` event's parts that matter here, so a fake can drive it. */
 export type RouteLoginListener = (
@@ -32,6 +37,14 @@ export interface RouteControllerDeps {
   readonly isApp?: (origin: string) => boolean
   /** How long one call into a session or the broker may take before the switch goes on without it. */
   readonly callTimeoutMs?: number
+  /** The default session, which the shared tunnel identity always covers and the lookups about a website that follows the default go through. */
+  readonly defaultSession?: () => RouteSession
+  /** The host rules the sessions of the shared identity reach without the proxy besides this machine: the names the verifier answers for. */
+  readonly sharedBypass?: () => string
+  /** Points the requests made with no session (a utility process's `net`, the runtime's own) at a proxy. */
+  readonly setAppProxy?: (config: RouteProxyConfig) => Promise<void>
+  /** Whether the session set its own proxy and answers for what it lets through, so the shared identity leaves it alone. */
+  readonly ownProxy?: (session: RouteSession) => boolean
 }
 
 export interface PrepareOptions {
@@ -60,6 +73,14 @@ export interface RouteController {
   prepareTemporary: (session: RouteSession, front: TemporaryFront) => Promise<void>
   /** The session is gone: its front's challenge is no longer answered. */
   releaseTemporary: (session: RouteSession, front: TemporaryFront) => void
+  /**
+   * A session was created: while the browser-wide setting is on it is stopped at once (a rule that reaches nothing) and then
+   * pointed at the shared front, unless whoever made it claims it, by preparing it for an origin or by setting a proxy of its own.
+   * While the setting is off it is only remembered, so that turning the setting on reaches it.
+   */
+  adopt: (session: RouteSession) => void
+  /** Points the shared identity once at start: its sessions, and the requests made with no session. Nothing while the browser-wide setting is off. */
+  startShared: () => void
   /** Resolves when the switches heard so far have been applied. */
   settled: () => Promise<void>
 }
@@ -134,8 +155,18 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
 
   /** One change to a session at a time: two callers must not both see it unpointed and both point it. */
   const turns = new Map<RouteSession, Promise<void>>()
+  /** Sessions an origin prepared: the shared identity never takes them. */
+  const claimed = new WeakSet<RouteSession>()
 
   async function prepare (origin: string, session: RouteSession, options: PrepareOptions = {}): Promise<void> {
+    // A session belongs to one origin's identity: an origin that prepares it takes it from the shared one.
+    if (origin !== SHARED_ORIGIN) {
+      // What the shared identity set for it (the names the verifier answers for) goes with the claim: the claimant sets its own.
+      if (known.get(SHARED_ORIGIN)?.delete(session) === true) bypasses.delete(session)
+      claimed.add(session)
+    } else if (deps.sharedBypass !== undefined) {
+      bypasses.set(session, deps.sharedBypass())
+    }
     sessionsOf(origin).set(session, options.webrtc !== false)
     if (options.bypass !== undefined) bypasses.set(session, options.bypass)
     const turn = (turns.get(session) ?? Promise.resolve()).then(async () => { await point(origin, session) })
@@ -182,9 +213,32 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     }
   }
 
+  /** The requests made with no session follow the shared identity: its front, or the system's proxy; a front that cannot be had stops them. */
+  async function pointAppRequests (routed: boolean): Promise<void> {
+    if (deps.setAppProxy === undefined) return
+    try {
+      const config: RouteProxyConfig = routed
+        ? { mode: 'fixed_servers', proxyRules: `http://127.0.0.1:${String((await hub.front(SHARED_ORIGIN)).port)}`, proxyBypassRules: ROUTED_BYPASS }
+        : { mode: 'system' }
+      await within(deps.setAppProxy(config), callMs)
+    } catch (error) {
+      console.error('[route] could not point the runtime\'s own requests at the tunnel:', error)
+      if (!routed) return
+      try {
+        await within(deps.setAppProxy({ mode: 'fixed_servers', proxyRules: UNREACHABLE_PROXY, proxyBypassRules: CONFINED_BYPASS }), callMs)
+      } catch (stopping) {
+        console.error('[route] could not stop the runtime\'s own requests:', stopping)
+      }
+    }
+  }
+
   async function apply (origin: string, routed: boolean, cause: RouteChangeCause): Promise<void> {
     // Asking for a session creates it on disk, so the embed partition is touched only for an app that is routed.
     if (routed && isApp(origin)) sessionsOf(origin).set(deps.sessionFor(deps.embedPartition(origin)), true)
+    if (origin === SHARED_ORIGIN) {
+      // A session that set its own proxy is not the shared identity's to point or to put back.
+      for (const session of [...sessionsOf(origin).keys()]) if (claimed.has(session) || deps.ownProxy?.(session) === true) sessionsOf(origin).delete(session)
+    }
     const sessions = [...sessionsOf(origin)]
     const pointed = await Promise.allSettled(sessions.map(async ([session, webrtc]) => { await pointWithRetry(origin, session, webrtc, routed) }))
     for (const [index, outcome] of pointed.entries()) {
@@ -193,6 +247,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
       const failed = sessions[index]?.[0]
       if (routed && failed !== undefined) await confine(failed)
     }
+    if (origin === SHARED_ORIGIN) await pointAppRequests(routed)
     for (const contents of contentsIn(origin, true)) {
       if (routed) {
         confined.add(contents)
@@ -205,13 +260,17 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     // What was opened before the switch is on the old route (or none), whatever the proxy now says. The sessions are
     // already on the new one, so nothing new opens on the old while the broker's handles are closed.
     await Promise.allSettled(sessions.map(async ([session]) => { await within(session.closeAllConnections(), callMs) }))
-    try {
-      await within(Promise.resolve(deps.broker()?.dropOrigin(origin)), callMs)
-    } catch (error) {
-      console.error('[route] could not close the app\'s open handles:', error)
+    if (isApp(origin)) {
+      try {
+        await within(Promise.resolve(deps.broker()?.dropOrigin(origin)), callMs)
+      } catch (error) {
+        console.error('[route] could not close the app\'s open handles:', error)
+      }
     }
     // A page that held a peer connection, a worker or an embed from before the switch starts again on the new route. A website's tab moves to the session it now belongs in, which loads it anew.
     if (cause === 'switch' && isApp(origin)) for (const contents of contentsIn(origin, false)) if (contents.getType() !== 'remote') contents.reload()
+    // The shared identity's pages are the browser's tabs: they are reloaded so that no peer connection or worker made on the old route survives; the shell's own pages are not.
+    if (cause === 'switch' && origin === SHARED_ORIGIN) for (const contents of contentsIn(origin, false)) if (/^https?:/.test(contents.getURL())) contents.reload()
   }
 
   hub.onChange((origin, routed, cause) => {
@@ -250,7 +309,8 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     appSessionRegistered: async (origin, session) => {
       try {
         await prepare(origin, session)
-        if (hub.isRouted(origin)) await prepare(origin, deps.sessionFor(deps.embedPartition(origin)))
+        // With the whole browser on, an app set to off keeps its embeds off the shared identity too.
+        if (hub.isRouted(origin) || hub.isRouted(SHARED_ORIGIN)) await prepare(origin, deps.sessionFor(deps.embedPartition(origin)))
       } catch (error) {
         // The loader stops the app on this rejection; what the session holds meanwhile reaches nothing.
         if (hub.isRouted(origin)) await confine(session)
@@ -259,8 +319,35 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     },
     prepareSite: async (origin, session, bypass) => { await prepare(origin, session, { bypass }) },
     confineSite: confine,
+    startShared: () => {
+      if (hub.isRouted(SHARED_ORIGIN)) enqueue(SHARED_ORIGIN, async () => { await apply(SHARED_ORIGIN, true, 'proxy') })
+    },
+    adopt: (session) => {
+      const shared = sessionsOf(SHARED_ORIGIN)
+      if (claimed.has(session) || shared.has(session)) return
+      shared.set(session, true)
+      if (!hub.isRouted(SHARED_ORIGIN)) return
+      // Stopped before anything can load in it, then pointed once the shared front runs (or claimed away meanwhile).
+      confine(session).catch((error: unknown) => { console.error('[route] could not stop a new session:', error) })
+      enqueue(SHARED_ORIGIN, async () => {
+        if (claimed.has(session) || deps.ownProxy?.(session) === true) { shared.delete(session); return }
+        await prepare(SHARED_ORIGIN, session)
+      })
+    },
     fetchSessionFor: async (origin) => {
       if (!hub.isRouted(origin)) return undefined
+      if (!isApp(origin)) {
+        // A website is looked up about through the session it runs in, which is already prepared with the identity it shares: the tunnel profile's, or the default session when the whole browser is on the tunnel.
+        const profile = hub.profileFor(origin)
+        if (profile === 'tunnel') {
+          // Made ready as a tab's view would: held shut until it is pointed at its front, never left on the system's proxy.
+          const partition = profilePartitionFor('tunnel', origin)
+          ensureSiteSession(partition)
+          return deps.sessionFor(partition)
+        }
+        const shared = deps.defaultSession?.()
+        if (profile === undefined && shared !== undefined && hub.isRouted(SHARED_ORIGIN)) return shared
+      }
       let session = fetchSessions.get(origin)
       if (session === undefined) {
         session = deps.sessionFor(`orivon-route-fetch-${originHash(origin)}`)
@@ -283,6 +370,8 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     },
     prepareTemporary: async (session, front) => {
       // Registered before the session is pointed, so a web contents made in it meanwhile already has the policy.
+      known.get(SHARED_ORIGIN)?.delete(session)
+      claimed.add(session)
       temporarySessions.add(session)
       temporaryFronts.set(front.port, front)
       await pointAt(session, front.port)

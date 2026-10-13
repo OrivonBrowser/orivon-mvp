@@ -1,14 +1,15 @@
-// The sessions of websites that have a tunnel state of their own. A view is made in one the moment a tab needs it, so
-// the session is held shut until its front is running: a request made in the first moments waits for the proxy rather
-// than going out on the system's. Electron-free over the parts it drives.
+// The two profile sessions websites with an entry of their own run in (`site-partition.ts`). A view is made in one the
+// moment a tab needs it, so the session is held shut until its front is running (the tunnel profile) or the session is
+// confirmed on the system's proxy (the direct profile): a request made in the first moments waits rather than going out
+// on the wrong route. Electron-free over the parts it drives.
 
-import { siteOriginOf } from './site-routes.js'
+import { profileOrigin } from './route-hub.js'
+import { profileOfPartition } from './site-partition.js'
 import type { RouteController, RouteSession } from './route-controller.js'
 
-/** What a site's session is cleaned with when the person removes its storage. */
+/** What a profile's session is cleaned with when the person removes a website's storage. */
 export type SiteSession = RouteSession & {
-  clearStorageData: () => Promise<void>
-  clearCache: () => Promise<void>
+  clearData: (options: { readonly origins: string[] }) => Promise<void>
 }
 
 export interface SiteSessionsDeps {
@@ -23,6 +24,8 @@ export interface SiteSessionsDeps {
   readonly hold: (session: SiteSession, current: () => Promise<void>) => () => void
   /** Fits the session with what every session a website runs in carries: the privacy settings, the content blocks, the verifier's stamps. Throws when any of it could not be installed. */
   readonly fit: (session: SiteSession) => void
+  /** Puts the person's extensions in the session, once (`persistable`: Electron can load them there), and their request rules. Never throws: what cannot be loaded is logged. */
+  readonly extend?: (session: SiteSession, persistable: boolean) => Promise<void>
 }
 
 export interface SiteSessions {
@@ -31,8 +34,8 @@ export interface SiteSessions {
    * be made ready refuses everything, and is tried again the next time a view is made in it.
    */
   ensure: (partition: string) => void
-  /** Clears what the website's own session stored (cookies, storage, cache). */
-  removeStorage: (partition: string) => Promise<void>
+  /** Clears what a website stored in the profile session named `partition` (cookies, storage, cache), and nothing of any other website. */
+  removeStorage: (partition: string, origin: string) => Promise<void>
 }
 
 interface Entry {
@@ -48,15 +51,17 @@ export function createSiteSessions (deps: SiteSessionsDeps): SiteSessions {
     ensure: (partition) => {
       const entry = entries.get(partition)
       if (entry !== undefined && !entry.failed) return
-      const origin = siteOriginOf(partition)
+      const profile = profileOfPartition(partition)
       const session = deps.sessionFor(partition)
       const attempt = (async () => {
-        // A session name this process did not hand out: nothing says whose front it belongs to.
-        if (origin === undefined) throw new Error('a view was made in a website session this process did not name')
+        // A session name that is not a profile's: nothing says whose front it belongs to.
+        if (profile === undefined) throw new Error('a view was made in a website session this process did not name')
         deps.fit(session)
-        await deps.controller.prepareSite(origin, session, deps.bypass())
+        await deps.controller.prepareSite(profileOrigin(profile), session, deps.bypass())
+        // The extensions load after the session is held on its route, never before: they make requests of their own. Electron loads none in a session kept in memory only, which is where a plain-http website lives, so `extend` is told.
+        await deps.extend?.(session, partition.startsWith('persist:'))
       })().catch(async (error: unknown) => {
-        console.error('[route] could not point a website\'s session at its tunnel:', error)
+        console.error('[route] could not point a website\'s session at its route:', error)
         await deps.controller.confineSite(session)
         throw error
       })
@@ -71,9 +76,8 @@ export function createSiteSessions (deps: SiteSessionsDeps): SiteSessions {
         fresh.watch()
       }
     },
-    removeStorage: async (partition) => {
-      const session = deps.sessionFor(partition)
-      await Promise.all([session.clearStorageData(), session.clearCache()])
+    removeStorage: async (partition, origin) => {
+      await deps.sessionFor(partition).clearData({ origins: [origin] })
     }
   }
 }

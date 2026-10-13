@@ -147,6 +147,15 @@ describe('a node that must not start', () => {
     expect(h.nodes).toEqual([])
   })
 
+  it('says the tunnel is the reason when the whole browser is on it, because the node dials its peers itself', async () => {
+    const h = harness(undefined, undefined, { tunnelOn: () => true })
+    h.proxy = true
+    const state = await h.controller.ensure()
+    expect(state).toEqual({ state: 'off', reason: proxyReason(SWARM_NODE_IDENTITY, true) })
+    expect(proxyReason(SWARM_NODE_IDENTITY, true)).toMatch(/goes through the tunnel/)
+    expect(h.nodes).toEqual([])
+  })
+
   it('is off in a build that serves Swarm from its own endpoints', async () => {
     const h = harness()
     h.disabled = 'a test build serves Swarm from its own endpoints'

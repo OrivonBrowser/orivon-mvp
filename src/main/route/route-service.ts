@@ -17,9 +17,9 @@ import type { RouteStore } from './route-store.js'
 
 export type RouteKind = 'nym' | 'socks5'
 
-/** The part of the settings store the proxy is read from. */
+/** The part of the settings store the proxy, the choice of tunnel and the browser-wide setting are read from. */
 export interface ProxySettings {
-  get: ((key: 'network.route.proxy') => string) & ((key: 'network.route.kind') => RouteKind)
+  get: ((key: 'network.route.proxy') => string) & ((key: 'network.route.kind') => RouteKind) & ((key: 'network.tunnel.everywhere') => boolean)
   onChange: (listener: (change: { readonly key: string }) => void) => () => void
 }
 
@@ -31,6 +31,8 @@ export interface RouteService {
   readonly routeSwitch: RouteSwitch
   /** Where routed traffic leaves now: Nym's target, the SOCKS5 address, or undefined when the choice is an address and none is set or it is not one. */
   proxy: () => RouteTarget | undefined
+  /** Whether the whole browser goes through the tunnel unless an origin is set to off: the setting as it stands now. */
+  everywhere: () => boolean
   /** The provider for a target that is not a SOCKS5 address (Nym), or undefined for one that is. */
   providerFor: (key: string, target: RouteTarget) => RouteProvider | undefined
   /** The Nym tunnel: asked for by every route that leaves through it. */
@@ -43,6 +45,7 @@ export interface RouteService {
 
 const KEY = 'network.route.proxy'
 const KIND_KEY = 'network.route.kind'
+const EVERYWHERE_KEY = 'network.tunnel.everywhere'
 
 export interface RouteServiceOptions {
   readonly store: RouteStore
@@ -53,7 +56,9 @@ export interface RouteServiceOptions {
   readonly nym: NymSubsystem
   /** The apps installed here, asked only while the store cannot say what was set. */
   readonly installed?: () => readonly string[]
-  /** Whether the whole browser goes through the tunnel unless an origin says otherwise; off until the browser-wide setting exists. */
+  /** The saved browser-wide setting, read before the settings store is: what applies until `followSettings`. */
+  readonly savedEverywhere?: boolean
+  /** Overrides the browser-wide setting; for a test. */
   readonly everywhere?: () => boolean
   /** What the switch reads about the world: the app's files held here, its origin written to disk, and a website's own storage. */
   readonly switchWorld?: RouteSwitchWorld
@@ -63,11 +68,13 @@ export interface RouteServiceOptions {
 export function createRouteService (options: RouteServiceOptions): RouteService {
   let current = options.savedProxy
   let kind = options.savedKind
+  let everywhereNow = options.savedEverywhere ?? false
+  const everywhere = options.everywhere ?? (() => everywhereNow)
   const proxy = (): RouteTarget | undefined => kind === 'nym' ? NYM_TARGET : parseProxyAddress(current)
   // The user name is the same hash of the key the SOCKS5 provider sends, so Nym isolates by app as a SOCKS5 proxy would.
   const isolation = isolationCredentials()
   const providerFor = (key: string, target: RouteTarget): RouteProvider | undefined => isNymTarget(target) ? createNymProvider(options.nym, isolation(key).userId) : undefined
-  const hub = createRouteHub({ store: options.store, proxy, providerFor, ...(options.installed === undefined ? {} : { installed: options.installed }), ...(options.everywhere === undefined ? {} : { everywhere: options.everywhere }) })
+  const hub = createRouteHub({ store: options.store, proxy, providerFor, everywhere, ...(options.electron.isApp === undefined ? {} : { isApp: options.electron.isApp }), ...(options.installed === undefined ? {} : { installed: options.installed }) })
   const controller = createRouteController({ ...options.electron, hub })
   const routeSwitch = createRouteSwitch({ proxy, store: options.store, controller, hub }, options.switchWorld ?? { isPinned: () => false, isPersistable: () => false })
   return {
@@ -76,6 +83,7 @@ export function createRouteService (options: RouteServiceOptions): RouteService 
     store: options.store,
     routeSwitch,
     proxy,
+    everywhere,
     providerFor,
     nym: options.nym,
     forget: (origin) => {
@@ -99,8 +107,19 @@ export function createRouteService (options: RouteServiceOptions): RouteService 
         kind = chosen
         if (moved) hub.proxyChanged()
       }
+      const readEverywhere = (): void => {
+        const next = settings.get(EVERYWHERE_KEY)
+        if (next === everywhereNow) return
+        const previous = everywhereNow
+        everywhereNow = next
+        hub.everywhereChanged(previous)
+      }
       read()
-      settings.onChange((change) => { if (change.key === KEY || change.key === KIND_KEY) read() })
+      readEverywhere()
+      settings.onChange((change) => {
+        if (change.key === KEY || change.key === KIND_KEY) read()
+        else if (change.key === EVERYWHERE_KEY) readEverywhere()
+      })
     }
   }
 }

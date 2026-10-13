@@ -23,7 +23,7 @@ import { electronResolveHost } from '../../loader/electron/resolve.js'
 import { FaviconCache } from './favicon-cache.js'
 import { MAX_FAVICON_BYTES, toDataUrl } from './favicon-format.js'
 import { faviconTimeoutMs } from './favicon-timeout.js'
-import { answerRouteChallenge } from '../route/lookup-session.js'
+import { answerRouteChallenge, directLookupSession } from '../route/lookup-session.js'
 
 /** Real sites redirect a bare-domain icon URL to a `www` host, or move
  * `/favicon.ico` behind a CDN -- both cross-origin, both legitimate. Each
@@ -211,7 +211,9 @@ async function requestOnce (url: string, signal: AbortSignal, session: Session |
       signal.removeEventListener('abort', onAbort)
       resolve(value)
     }
-    const request = net.request({ url, method: 'GET', credentials: 'omit', useSessionCookies: false, redirect: 'manual', ...(session === undefined ? {} : { session }) })
+    // With no route and the whole browser on the tunnel, the default session is the tunnel's: a site set to off is looked up about on the system's proxy.
+    const used = session ?? directLookupSession()
+    const request = net.request({ url, method: 'GET', credentials: 'omit', useSessionCookies: false, redirect: 'manual', ...(used === undefined ? {} : { session: used }) })
     // settle() BEFORE abort(), not after: aborting a request that is still
     // in flight can itself emit 'error' synchronously (the same way a real
     // cancelled request does), and the settled guard means whichever call

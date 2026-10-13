@@ -120,6 +120,18 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     return { ...info, ...(update === undefined ? {} : { update }), ...(route === undefined || route === 'off' ? {} : { route }), ...(tunnel === undefined ? {} : { tunnel }), ...(nym === undefined ? {} : { nym }) }
   }
 
+  /** The profile the website lives in now. */
+  function profileOf (origin: string): { readonly profile?: 'tunnel' | 'direct' } {
+    const profile = ctx.routes?.hub.profileFor(origin)
+    return profile === undefined ? {} : { profile }
+  }
+
+  /** The profile the next change of the switch moves the website into for the first time, when the person is to be told. */
+  function noticeFor (origin: string, on: boolean): { readonly notice?: 'tunnel' | 'direct' } {
+    const profile = ctx.routes?.routeSwitch.siteNotice(origin, !on)
+    return profile === undefined ? {} : { notice: profile }
+  }
+
   /** The switch a website has: not for an installed app (its card has one), a local file or this computer. */
   function tunnelFor (origin: string): SiteTunnel | undefined {
     const routes = ctx.routes
@@ -128,8 +140,10 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     return {
       on: routes.hub.isRouted(origin),
       ...(blocked === 'no-proxy' ? { blocked } : {}),
-      needsNotice: routes.routeSwitch.siteNeedsNotice(origin),
-      web3: BUILTIN_ADDRESSES.routesToVerifier(new URL(origin).hostname),
+      ...noticeFor(origin, routes.hub.isRouted(origin)),
+      ...profileOf(origin),
+      // Orivon's own fetches for a Web3 name leave outside the tunnel unless the whole browser is on it.
+      web3: BUILTIN_ADDRESSES.routesToVerifier(new URL(origin).hostname) && !routes.hub.isEverywhere(),
       unreadable: routes.hub.unreadable()
     }
   }

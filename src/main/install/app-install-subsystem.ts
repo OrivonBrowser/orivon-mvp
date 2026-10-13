@@ -43,6 +43,7 @@ import { scoreLevelOverrideFor } from '../dev/score-levels.js'
 import { extensionNamesForOrigin } from '../extensions/site-reach-runner.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { outsideOriginQueue, withOriginQueue } from './origin-queue.js'
+import { ownFetch } from '../route/own-requests.js'
 import { blockOpenTabs } from '../app-setup/block-tabs.js'
 import { pagesInPartitionOf } from '../app-setup/pages-in-partition.js'
 import { MAX_MANIFEST_BYTES } from '../../loader/manifest/manifest.js'
@@ -86,7 +87,8 @@ export async function readCapped (response: Response, capBytes: number): Promise
 }
 
 async function fetchGrantManifest (url: string): Promise<{ ok: boolean, status: number, text: string }> {
-  const response = await net.fetch(url, { redirect: 'error', signal: AbortSignal.timeout(GRANT_MANIFEST_TIMEOUT_MS) })
+  // Through the tunnel while the whole browser is on it, unless the app's origin is set to off (`ownFetch`).
+  const response = await ownFetch(async (target, init) => await net.fetch(target, init), new URL(url).origin)(url, { redirect: 'error', signal: AbortSignal.timeout(GRANT_MANIFEST_TIMEOUT_MS) })
   return { ok: response.ok, status: response.status, text: await readCapped(response, MAX_MANIFEST_BYTES) }
 }
 

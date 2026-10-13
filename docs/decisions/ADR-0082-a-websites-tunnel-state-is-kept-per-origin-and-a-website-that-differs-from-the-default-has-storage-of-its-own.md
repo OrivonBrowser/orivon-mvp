@@ -1,6 +1,6 @@
 # ADR-0082: A website's tunnel state is kept per origin, and a website whose state differs from the default has storage of its own
 
-- **Status:** accepted. *Provisional* on a Web3 name: its own files are fetched by Orivon's verifier host, which the tunnel does not carry yet, so the popover says the site goes through the tunnel only in part. Settled when the verifier host takes a route per request.
+- **Status:** accepted; its storage decision (one session of its own per website) is superseded by [ADR-0084](ADR-0084-the-tunnel-can-carry-the-whole-browser-and-a-website-with-an-entry-lives-in-one-of-two-shared-profiles.md), which puts every website with an entry in one of two shared profiles. *Provisional* on a Web3 name: its own files are fetched by Orivon's verifier host, which the tunnel does not carry yet, so the popover says the site goes through the tunnel only in part. Settled when the verifier host takes a route per request.
 - **Date:** 2026-10-13
 - **Type:** architecture / security
 - **Decided by:** owner (the feature: `d-0619`); AI recommendation accepted by default for the shape

@@ -9,7 +9,9 @@
 // restarted by src/main/verifier/.
 
 import { net } from 'electron'
+import { createRequestFetch } from '../../loader/electron/request-fetch.js'
 import { createDirectFetch } from './direct-fetch.js'
+import { answerForFront } from './front-login.js'
 import { startHeliosLightClient } from './light-client/light-client.js'
 import type { FromHost, ToHost } from './protocol.js'
 import { startHost } from './service.js'
@@ -34,11 +36,19 @@ function main (): void {
     const message = event.data as ToHost
     if (message.type === 'start') {
       if (host !== undefined) return
+      const { front } = message.config
+      const tunnelFetch = front === undefined ? undefined : createRequestFetch({ net, answer: answerForFront(front) })
       host = startHost(message.config, {
         // No HTTP cache: one would answer a block another site's pages fetched faster, and so tell a page where the person has been (A256).
         // No credentials: this process's fetches are gateways, RPCs and DNS-over-HTTPS endpoints, never a page's own request, so nothing here should carry a cookie or a client certificate a session might hold.
-        fetch: async (url, init) => await net.fetch(url, { ...init, cache: 'no-store', credentials: 'omit' }),
-        resolveHost: async (name) => (await net.resolveHost(name)).endpoints.map((endpoint) => endpoint.address),
+        // Through the tunnel's front (`config.front`), `net.fetch` would end at the front's 407, so `net.request` answers it: for the front's own port, and no other proxy. It asks for revalidation where `net.fetch` bypassed the cache, and this process's network context is no session's, so no page's fetch fills it.
+        fetch: tunnelFetch === undefined
+          ? async (url, init) => await net.fetch(url, { ...init, cache: 'no-store', credentials: 'omit' })
+          : async (url, init) => await tunnelFetch(url, { ...init, cache: 'no-store' }),
+        // A name is never resolved on this computer while the tunnel carries the host's requests: the far end resolves it.
+        resolveHost: front === undefined
+          ? async (name) => (await net.resolveHost(name)).endpoints.map((endpoint) => endpoint.address)
+          : async () => { throw new Error('a name is resolved at the far end of the tunnel, not on this computer') },
         post,
         startLightClient: startHeliosLightClient,
         fixturesAllowed: FIXTURES_ALLOWED,

@@ -1,0 +1,59 @@
+# ADR-0084: The tunnel can carry the whole browser, and a website with an entry lives in one of two shared profiles
+
+- **Status:** accepted. Supersedes the storage decision of [`ADR-0082`](ADR-0082-a-websites-tunnel-state-is-kept-per-origin-and-a-website-that-differs-from-the-default-has-storage-of-its-own.md) (one session per website); the rest of ADR-0082 (a tunnel state per origin, the notice, the controls through one seam, the session held shut until it is pointed) stands. *Provisional* on a Web3 name's own files while the whole browser is off the tunnel, as ADR-0082 says, and on the extension pieces listed under Consequences, settled by the owner's first use.
+- **Date:** 2026-10-13
+- **Type:** architecture / security
+- **Decided by:** owner (the whole-browser setting, `d-0619`; the two profiles, in the owner's words: extensions must run for tunnelled sites without "an entire new browser instance for extensions for each tunneled app"); AI recommendation accepted by default for the shape
+
+## Decision
+
+**A browser-wide default.** The setting `network.tunnel.everywhere` (*Send all of Orivon's traffic through the tunnel*, off by default) is the state an origin with no entry of its own follows. An entry (`on` or `off`) still overrides it, for an installed app on its card and for a website from its popover or Settings. With the setting on, nothing Orivon sends leaves this computer except through the tunnel, bar loopback, the tunnel's own way in (the connection to the person's SOCKS5 address), and the origins set to off.
+
+**Where a website lives depends on its own entry alone, never on the default.**
+
+- A website with an `on` entry lives in the tunnel profile, `persist:tunnel-profile`: one persistent session for every such website, always tunnelled, with one front and one tunnel identity, the WebRTC policy on every web contents, and the person's extensions loaded once.
+- A website with an `off` entry lives in the direct profile, `persist:direct-profile`: one persistent session for every such website, never pointed at a front, with the extensions loaded once. It is what the person gets for a site they leave out while the whole browser is on the tunnel; with the setting off an `off` entry changes nothing about the route, and the site stays in this profile so that turning the setting on later moves no login.
+- A website with no entry stays in the default session, which follows the setting: pointed at the shared front while the setting is on, on the system's proxy while it is off. Turning the setting over repoints that session and reloads its web pages, and moves no website between sessions.
+- An origin that may not be written to disk (plain http) gets the same profile in a session kept in memory (`tunnel-profile-memory`, `direct-profile-memory`); Electron loads no extension in such a session.
+- An installed app keeps its own `persist:app-<hash>` session, with no extension, and its own tunnel identity. With the setting on, an app with no entry is on, one with an `off` entry is on the system's proxy.
+
+**The shared identity.** The default session, and every other session the runtime creates that no origin claims (the shell's own, a local file's), take the shared front: a session is stopped when it is made (a rule that reaches nothing) and then pointed at it. A session that sets a proxy of its own, as a web context does with its discard port, marks itself and is left alone. The requests made with no session (the verifier host's, the runtime's own) are pointed at the same front with `app.setProxy`.
+
+**The questions T20 asks.** Whether a system proxy applies to a destination is asked of a session that only ever follows the system, never of the default session, which is the tunnel's while the setting is on: an unrouted app (one set to off) is therefore refused only when the person's system really has a proxy.
+
+**Orivon's own requests** (self-update, telemetry, the bug report, search suggestions, an app's manifest read before install, the loader's bundle fetch) go through the tunnel or do not happen, made with `net.request` in the default session because `net.fetch` raises no `login` event for a request without web contents and so cannot sign in to the front. Lookups about a website set to off (its tab icon, its Web3 Score) go on the system's proxy. The verifier host fetches with `net.request` too, resolves no name here, and restarts when the setting flips so that its direct routes (T31, T40) stand down.
+
+**Nym as the tunnel ([`ADR-0083`](ADR-0083-nym-is-the-built-in-tunnel-and-runs-in-a-utility-process-of-its-own.md)).** The Nym host's own connections to Nym's gateways stay direct: they are the tunnel's way out, made with Node sockets in its own process, which Chromium's proxy never reaches. The check that stops that host while a proxy applies asks the system's proxy, not the tunnel's front on the default session, or Nym could never start with the setting on. The first request through Nym waits for the host to start (up to 30 s); nothing at start-up waits on it, because the update check and telemetry run unawaited and the first window loads pages Orivon serves itself.
+
+**The local IPFS and Swarm nodes do not run while the setting is on.** They dial their peers by address and look names up with datagrams of their own, which a SOCKS5 tunnel does not carry reliably; the controller refuses them with that reason, and IPFS is read through gateways over the tunnel.
+
+**Migration.** The first start after this build clears the sessions websites had of their own (`persist:site-<sha256(origin)>`) and records it; a website that has an entry lives in its profile from then on, and the person signs in to it again once.
+
+## Context
+
+ADR-0082 gave each website its own session, which meant a hundred tunnelled websites cost a hundred sessions and, for the person's extensions, a hundred copies of each extension. The owner asked for the shape of a profile instead: one session for the websites that share a tunnel setting, so that extensions load once. The cost is the isolation ADR-0082 kept: every website in the tunnel profile shares one tunnel identity (Chromium picks a proxy per session), so a tunnel that isolates by identity (Tor's circuits) correlates them. Installed apps keep their own identities. The owner accepted the trade.
+
+## Alternatives considered
+
+- **One session per website, as ADR-0082.** Rejected for the memory and extension cost above.
+- **One profile for everything the default does not cover, with the proxy chosen per request.** Rejected: Chromium sets a proxy per session, and a request-time choice would put an `off` site's storage next to a tunnelled site's.
+- **Move the websites with an `off` entry into the default session while the setting is off.** Rejected: a site's login would then move when the person flips the setting, which the owner ruled out.
+- **Route the local nodes through the SOCKS5 provider.** Not done: the nodes resolve names with UDP and dial peers by address, which neither SOCKS5 UDP ASSOCIATE nor a name-based `CONNECT` carries for a peer-to-peer protocol; refusing them with a reason is the honest answer until a node can work over a tunnel.
+- **Extensions in the profiles through the library the default session uses.** Not done: the library that provides the browser-level extension APIs is bound to one session.
+
+## Reasoning
+
+The two profiles are the smallest number of sessions that keep a tunnelled and a direct website apart and give each their storage. Following the website's own entry alone keeps a person signed in however they flip the default. Asking the system's proxy of a session that only follows the system keeps T20 meaning what it says. Making Orivon's own requests with `net.request` is the only way a main or utility process can sign in to the front, which Step 0 measured on Electron 44 (`net.fetch` in a utility process ends at the front's `407`; `net.request` with a `login` listener passes).
+
+## Consequences
+
+- Every website in the tunnel profile shares one tunnel identity; the threat row says so.
+- The extensions a profile gets are Electron's own per-session support: content scripts, the background page or service worker, `chrome.runtime` and `chrome.storage`, and the static `declarativeNetRequest` rules, which Orivon applies to the profile sessions as well. The toolbar button and popup, `chrome.tabs` and `chrome.windows`, a rule an extension adds at run time with `updateDynamicRules`, and a blocker that works through the webRequest API (uBlock Origin among them) stay the default session's. A website in a profile that is plain http runs no extension.
+- Moving a website into or out of a profile reloads it and signs the person in again once.
+- The IPFS and Swarm nodes are off while the setting is on.
+- The decision-log row records the migration; the sessions the earlier build made are cleared once.
+
+## Reversibility
+
+- **Cost to reverse:** moderate. The profile names are a stored layout: moving back to a session per website signs the person out of each once more.
+- **What would make us revisit:** a browser-level extension host that reaches more than one session (the extension limits end); a local node that can work over a tunnel; or the owner's first use showing that one identity per profile is too coarse for Tor.

@@ -109,7 +109,7 @@ export function renderMainPage (
   permissions: PermissionsModel | null,
   callbacks: MainPageCallbacks,
   updateFailure: string | null = null,
-  tunnelView: TunnelViewState = { notice: false, failed: false }
+  tunnelView: TunnelViewState = { notice: null, next: null, failed: false }
 ): void {
   container.replaceChildren()
 

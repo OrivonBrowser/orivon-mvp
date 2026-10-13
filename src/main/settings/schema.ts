@@ -72,6 +72,8 @@ const SPECS = {
   'network.route.kind': { kind: 'enum', options: ['nym', 'socks5'], default: 'nym', labels: { nym: 'Nym (built in)', socks5: 'Your own SOCKS5 address' } },
   // The one SOCKS5 proxy (host:port, such as Tor on 127.0.0.1:9050) an installed app can be routed through when the choice above is a SOCKS5 address; empty is none. Which apps use it is route-store's.
   'network.route.proxy': { kind: 'text', default: '', maxLength: 300, check: isEmptyOrProxyAddress },
+  // Whether everything Orivon sends goes through that proxy unless a site or app is set to off: the state an origin with no entry of its own follows (route-store's `on` and `off` entries override it).
+  'network.tunnel.everywhere': { kind: 'bool', default: false },
   // What a site may do without being asked about it, one default per kind (site-settings/kinds.ts lists them). A site's own answer overrides.
   'sites.camera': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },
   'sites.microphone': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { differsFromDefault, tunnelStateOf } from '../route-state.js'
+import { entryFor, tunnelStateOf } from '../route-state.js'
 
 describe('the tunnel state of an origin', () => {
   it('follows the default when the origin has no entry', () => {
@@ -15,16 +15,14 @@ describe('the tunnel state of an origin', () => {
   })
 })
 
-describe('whether a website needs storage of its own', () => {
-  it('does when its state differs from the default', () => {
-    expect(differsFromDefault('on', false)).toBe(true)
-    expect(differsFromDefault('off', true)).toBe(true)
+describe('the entry that makes a website on or off', () => {
+  it('is none when the default already says so, so the website goes back to the default session', () => {
+    expect(entryFor('off', false)).toBeUndefined()
+    expect(entryFor('on', true)).toBeUndefined()
   })
 
-  it('does not when it has no entry, or an entry the default already says', () => {
-    expect(differsFromDefault(undefined, false)).toBe(false)
-    expect(differsFromDefault(undefined, true)).toBe(false)
-    expect(differsFromDefault('off', false)).toBe(false)
-    expect(differsFromDefault('on', true)).toBe(false)
+  it('is the state itself when it differs from the default', () => {
+    expect(entryFor('on', false)).toBe('on')
+    expect(entryFor('off', true)).toBe('off')
   })
 })

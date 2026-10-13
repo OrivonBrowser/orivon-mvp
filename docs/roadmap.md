@@ -32,7 +32,7 @@ applications a web page cannot be, and both are in use now.
 - Orivon as the system's handler for a link scheme or a file type, so a link clicked in another program, or a `.torrent` file, opens in an app.
 - Windows and macOS code signing with bought certificates.
 - Web3 search.
-- Tor and proxy chains: a proxy for websites, and chains of proxies. One tunnel for an installed app is built, Nym or your own SOCKS5 address.
+- Proxy chains: one tunnel behind another. One tunnel for an installed app, for any website and for the whole browser is built, Nym or your own SOCKS5 address.
 - Arweave, and content-addressed stores other than IPFS and Swarm.
 - DDOC anchored in DNS.
 - A reading list, address autofill, and a device chooser for WebUSB.

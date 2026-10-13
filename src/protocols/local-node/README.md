@@ -82,8 +82,8 @@ no rule was widened. The process's fetch reaches only the configured endpoints a
 and 5 min, for at most 256 names; an answer from one family alone is used once and not kept. The DoH provider learns the names the node resolves (lookup services, peers'
 hostnames, HTTP providers), never the sites a person visits.
 
-A system proxy configured in the shell: a node does not start, because its sockets would go around
-the proxy (`docs/architecture/security-model.md`, T20). That check is main's, in
+A system proxy configured in the shell, or the whole browser on the tunnel: a node does not start, because its sockets would go around
+the proxy (`docs/architecture/security-model.md`, T20, T84); a SOCKS5 tunnel does not carry what a peer-to-peer node needs, which is dialling peers by address and datagram name lookups, and the refusal names the tunnel as the reason. That check is main's, in
 [`../../main/verifier/local-node-controller.ts`](../../main/verifier/local-node-controller.ts).
 
 **The files are confined by the real path.** `node-fs.ts` rejects `..` as a path segment (a name such as `..cache` is an ordinary name), absolute paths, NUL, and the names Windows reserves for devices (`CON`, `NUL`, `COM1`, `LPT1` and the rest, any extension, any case) on every system, so the policy is the same everywhere; then

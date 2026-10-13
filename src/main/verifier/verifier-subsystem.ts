@@ -37,7 +37,7 @@ import { chooseNameEvidence } from './name-evidence.js'
 import type { NameEvidence } from './name-evidence.js'
 import { checkpointProblem, lightClientView } from './status-view.js'
 import type { LightClientView } from './status-view.js'
-import { unproxiedGateways } from './proxy-check.js'
+import { ccipDirectFor, tunnelFront, unproxiedGatewaysFor } from './host-proxy.js'
 import { HostLifecycle } from './host-lifecycle.js'
 import { anyTabOnVerifiedOrigin } from './tab-on-verified-origin.js'
 import type { TabsOfWindow } from './tab-on-verified-origin.js'
@@ -48,6 +48,7 @@ import type { LocalNodeSubsystem } from './local-node-subsystem.js'
 import { IPFS_NODE_IDENTITY } from '../../protocols/ipfs-node/protocol.js'
 import { SWARM_NODE_IDENTITY } from '../../protocols/swarm-node/protocol.js'
 import type { NodeNotice } from '../../protocols/verifier-host/protocol.js'
+import type { RouteService } from '../route/route-service.js'
 
 /** Mounting may wait for the light client to sync, then resolve a name and follow its pointers. */
 const MOUNT_TIMEOUT_MS = 30_000
@@ -79,6 +80,18 @@ let ipfsSourceChoice: () => 'node' | 'gateways' = () => 'node'
 let ipfsLookupServiceChoice: () => boolean = () => true
 /** Puts the host to sleep so that its next request rebuilds its config. Set once the host exists. */
 let idleHost: () => void = () => {}
+/** The routes, published after this subsystem starts: read when the host's config is built. */
+let routesOf: () => RouteService | undefined = () => undefined
+
+/**
+ * The browser-wide tunnel setting changed: the host's direct routes and its fetch are decided when it starts (whether a proxy
+ * applies is read once, and the front it signs in to is part of its config), so it sleeps and its next request rebuilds them.
+ * The local nodes stop with it.
+ */
+export function tunnelDefaultChanged (): void {
+  idleHost()
+  changed()
+}
 
 /** Lets the person's setting, and not only the environment, switch the light client off. Read once, here, at launch:
  * the choice applies from Orivon's next start, as Settings says, however often the host sleeps and wakes before it. */
@@ -203,30 +216,6 @@ function chooseNow (): CheckpointChoice {
   return checkpoint
 }
 
-/** Empty under the test seam: a hermetic run has no real gateways to check
- * a proxy against, and the fallback would only ever add noise there. */
-async function unproxiedGatewaysFor (gateways: readonly string[], seamActive: boolean): Promise<string[]> {
-  if (seamActive) return []
-  return await unproxiedGateways(gateways, async (url) => await app.resolveProxy(url))
-}
-
-/**
- * Whether the default session has no proxy in front of it at all, checked
- * against a generic https URL rather than a real gateway: a CCIP-Read
- * destination is a name's own resolver contract's choice, not known until
- * long after the host has already started, so nothing narrower exists to
- * check yet. Reuses `unproxiedGateways`'s own timeout and fail-closed
- * (proxied) direction -- a check that cannot answer must never make
- * `guardedCcipRequest` go around a proxy that is actually there. `false`
- * (treated as proxied) under the test seam, same reasoning as
- * `unproxiedGatewaysFor`.
- */
-async function ccipDirectFor (seamActive: boolean): Promise<boolean> {
-  if (seamActive) return false
-  const unproxied = await unproxiedGateways(['https://example.com/'], async (url) => await app.resolveProxy(url))
-  return unproxied.length > 0
-}
-
 /** The Bee-API origins Swarm reads from: the node Orivon runs, unless a test build names its own. */
 function swarmEndpoints (seam: EthTestSeam | undefined): readonly string[] {
   return seam === undefined ? [swarmNodeEndpoint()] : seam.swarmEndpoints ?? []
@@ -245,6 +234,7 @@ function ipfsFromNode (seam: EthTestSeam | undefined): boolean {
 
 async function hostConfig (): Promise<HostConfig> {
   const seam = ethTestSeam()
+  const front = await tunnelFront(routesOf())
   const stored = verifierStore()
   let lightClient: Pick<HostConfig, 'lightClient' | 'lightClientOff'>
   if (lightClientSwitchedOff()) {
@@ -260,8 +250,10 @@ async function hostConfig (): Promise<HostConfig> {
     port: loopbackPort(),
     ...lightClient,
     gateways,
-    unproxiedGateways: await unproxiedGatewaysFor(gateways, seam !== undefined),
-    ccipDirect: await ccipDirectFor(seam !== undefined),
+    // Through the tunnel nothing is reached around it, whatever the proxy check answers.
+    unproxiedGateways: front === undefined ? await unproxiedGatewaysFor(gateways, seam !== undefined) : [],
+    ccipDirect: front === undefined && await ccipDirectFor(seam !== undefined),
+    ...(front === undefined ? {} : { front }),
     ipnsNameServices: seam === undefined ? DEFAULT_ENDPOINTS.ipnsNameServices : [],
     dnsOverHttps: seam?.dnsOverHttps ?? DEFAULT_ENDPOINTS.dnsOverHttps,
     ipnsSequences: stored.ipnsSequences(),
@@ -375,6 +367,7 @@ export const verifierSubsystem: Subsystem = {
     app.on('session-created', installCertificateCheck)
   },
   afterReady: (ctx) => {
+    routesOf = () => ctx.routes
     BUILTIN_ADDRESSES.learnSchemes((name) => verifierStore().nameScheme(name))
     installCertificateCheck(session.defaultSession)
     // The shared session and each session of its own a website gets: any of them can load a `.eth` page.

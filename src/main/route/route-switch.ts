@@ -1,17 +1,19 @@
 // Turning an origin's tunnel on or off: the one path the app card's switch, the site-info popover's switch, the Settings
 // list and the question a routed app's page raises ("use my tunnel for this app too") all take. Electron-free.
 
-import { sitePartitionFor, canTunnel } from './site-partition.js'
+import { canTunnel, profileOf, profilePartitionFor, PROFILES } from './site-partition.js'
+import type { Profile } from './site-partition.js'
 import type { RouteState } from './route-hub.js'
 import type { RouteService } from './route-service.js'
+import { entryFor } from './route-state.js'
 import type { TunnelEntry } from './route-state.js'
 
 /** What decides whether an app can be routed: its files are held here, and its origin is written to disk. */
 export interface RouteSwitchWorld {
   readonly isPinned: (origin: string) => boolean
   readonly isPersistable: (origin: string) => boolean
-  /** Clears what a website's session of its own stored. */
-  readonly removeSiteStorage?: (partition: string) => Promise<void>
+  /** Clears what the website at `origin` stored in the profile session named `partition`. */
+  readonly removeSiteStorage?: (partition: string, origin: string) => Promise<void>
 }
 
 /** One origin that has a setting of its own, or storage of its own, for the Settings list. */
@@ -21,8 +23,12 @@ export interface TunnelRow {
   readonly kind: 'app' | 'site'
   readonly entry: TunnelEntry | undefined
   readonly state: RouteState
-  /** A website with storage of its own that "Remove its separate storage" clears. */
+  /** The profile the origin's entry puts it in, for a website. */
+  readonly profile: Profile | undefined
+  /** A website with storage in a profile that "Remove its separate storage" clears. */
   readonly apart: boolean
+  /** The profiles it has storage in. */
+  readonly apartIn: readonly Profile[]
 }
 
 export interface RouteSwitch {
@@ -32,13 +38,13 @@ export interface RouteSwitch {
   set: (origin: string, routed: boolean) => Promise<void>
   /** Why a website's switch cannot be turned on now (it can always be turned off), or undefined when it can. */
   siteBlockedFor: (origin: string) => 'no-proxy' | 'local' | undefined
-  /** Whether turning the switch on moves the website into storage of its own for the first time, so the person is told first. */
-  siteNeedsNotice: (origin: string) => boolean
-  /** Turns a website's tunnel on, or back to following the default. Resolves once its sessions follow it. */
+  /** The profile setting the website's tunnel to `on` moves it into when it has no storage there yet, so the person is told first; undefined when nothing moves for the first time. */
+  siteNotice: (origin: string, on: boolean) => Profile | undefined
+  /** Sets a website's tunnel to `on` or off: an entry when that differs from the browser's default, else the website follows the default. Resolves once its sessions follow it. */
   setSite: (origin: string, on: boolean) => Promise<void>
-  /** Every origin with a setting of its own or storage of its own. */
+  /** Every origin with a setting of its own or storage in a profile. */
   rows: () => TunnelRow[]
-  /** Clears a website's own storage, keeping its setting. False for an origin that is not a website with storage of its own. */
+  /** Clears what a website stored in the profiles, keeping its setting. False for an origin that is not a website with storage there. */
   removeSiteStorage: (origin: string) => Promise<boolean>
 }
 
@@ -48,39 +54,50 @@ export function createRouteSwitch (routes: Pick<RouteService, 'proxy' | 'store' 
     // An app whose files are not held here has a first visit to pause; an origin not written to disk would be routed until the next start and then go direct.
     blockedFor: (origin) => routes.proxy() === undefined ? 'no-proxy' : world.isPinned(origin) && world.isPersistable(origin) ? undefined : 'not-cached',
     set: async (origin, routed) => {
-      store.set(origin, routed)
+      // With the whole browser on the tunnel, switching an app off is an entry of its own; switching it on again follows the default.
+      store.setEntry(origin, entryFor(routed ? 'on' : 'off', routes.hub.isEverywhere()))
       await routes.controller.settled()
     },
     siteBlockedFor: (origin) => routes.proxy() === undefined ? 'no-proxy' : canTunnel(origin) ? undefined : 'local',
-    siteNeedsNotice: (origin) => !store.isApart(origin),
+    siteNotice: (origin, on) => {
+      const profile = profileOf(entryFor(on ? 'on' : 'off', routes.hub.isEverywhere()))
+      return profile !== undefined && !store.isApart(origin, profile) ? profile : undefined
+    },
     setSite: async (origin, on) => {
-      if (on && !canTunnel(origin)) return
-      store.setEntry(origin, on ? 'on' : undefined)
+      if (!canTunnel(origin)) return
+      const entry = entryFor(on ? 'on' : 'off', routes.hub.isEverywhere())
+      store.setEntry(origin, entry)
       // The record that its storage is kept follows the entry: a failure to save it must not undo a switch already made.
-      if (on) {
+      const profile = profileOf(entry)
+      if (profile !== undefined) {
         try {
-          store.keepApart(origin)
+          store.keepApart(origin, profile)
         } catch (error) {
-          console.error('[route] could not record that a website has storage of its own:', error)
+          console.error('[route] could not record that a website has storage in a profile:', error)
         }
       }
       await routes.controller.settled()
     },
     rows: () => {
       const entries = new Map(store.entries())
-      const origins = new Set([...entries.keys(), ...store.apart()])
+      const origins = new Set([...entries.keys(), ...store.apart('tunnel'), ...store.apart('direct')])
       return [...origins].map((origin) => ({
         origin,
-        kind: store.isApart(origin) || !world.isPinned(origin) ? 'site' : 'app',
+        kind: store.isApartAnywhere(origin) || !world.isPinned(origin) ? 'site' : 'app',
         entry: entries.get(origin),
         state: routes.hub.state(origin),
-        apart: store.isApart(origin)
+        profile: profileOf(entries.get(origin)),
+        apart: store.isApartAnywhere(origin),
+        apartIn: PROFILES.filter((profile) => store.isApart(origin, profile))
       }))
     },
     removeSiteStorage: async (origin) => {
-      if (!store.isApart(origin) || world.removeSiteStorage === undefined) return false
-      await world.removeSiteStorage(sitePartitionFor(origin))
-      if (store.stateOf(origin) === undefined) store.dropApart(origin)
+      if (!store.isApartAnywhere(origin) || world.removeSiteStorage === undefined) return false
+      for (const profile of PROFILES) {
+        if (!store.isApart(origin, profile)) continue
+        await world.removeSiteStorage(profilePartitionFor(profile, origin), origin)
+        if (profileOf(store.stateOf(origin)) !== profile) store.dropApart(origin, profile)
+      }
       return true
     }
   }

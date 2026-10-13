@@ -36,3 +36,22 @@ export function answerRouteChallenge (info: Parameters<RouteChallengeSource>[0],
   if (credentials === undefined) callback()
   else callback(credentials.username, credentials.password)
 }
+
+/**
+ * Where Orivon's lookups about a website that is not routed go while the whole browser is on the tunnel: a session on the
+ * system's proxy, because the default session is then the tunnel's. Undefined while the browser-wide setting is off, when
+ * the default session is the ordinary one.
+ */
+type DirectLookupSource = () => Session | undefined
+
+let direct: DirectLookupSource | undefined
+
+/** Called once at start by whoever owns the routes. */
+export function setDirectLookupSource (next: DirectLookupSource): void {
+  direct = next
+}
+
+/** The session an unrouted website's lookup is made in, or undefined for the default session. */
+export function directLookupSession (): Session | undefined {
+  return direct?.()
+}

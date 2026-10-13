@@ -29,17 +29,20 @@ function fakeSession (name: string, log: string[]): FakeSession {
   }
 }
 
-function fakeContents (session: RouteSession, reloads: string[] = []): RouteContents & { policy: string[] } {
+function fakeContents (session: RouteSession, reloads: string[] = [], url = 'https://news.example/'): RouteContents & { policy: string[] } {
   const policy: string[] = []
   const name = (session as Partial<FakeSession>).name ?? 'session'
-  return { session, policy, isDestroyed: () => false, getType: () => 'window', reload: () => { reloads.push(name) }, setWebRTCIPHandlingPolicy: (value) => { policy.push(value) } }
+  return { session, policy, isDestroyed: () => false, getType: () => 'window', getURL: () => url, reload: () => { reloads.push(name) }, setWebRTCIPHandlingPolicy: (value) => { policy.push(value) } }
 }
 
-function setup (options: { routed?: readonly string[], callTimeoutMs?: number, isApp?: (origin: string) => boolean } | readonly string[] = {}) {
-  const { routed = [], callTimeoutMs, isApp } = Array.isArray(options) ? { routed: options as readonly string[], callTimeoutMs: undefined, isApp: undefined } : options as { routed?: readonly string[], callTimeoutMs?: number, isApp?: (origin: string) => boolean }
+interface SetupOptions { routed?: readonly string[], callTimeoutMs?: number, isApp?: (origin: string) => boolean, everywhere?: boolean, extra?: Partial<RouteControllerDeps> }
+
+function setup (options: SetupOptions | readonly string[] = {}) {
+  const { routed = [], callTimeoutMs, isApp, everywhere: startEverywhere = false, extra = {} } = Array.isArray(options) ? { routed: options as readonly string[] } as SetupOptions : options as SetupOptions
   const store = new RouteStore(null)
   for (const origin of routed) store.set(origin, true)
-  const hub = createRouteHub({ store, proxy: () => ({ host: '127.0.0.1', port: 9050 }), providerFor: () => ({ connect: async () => { throw new Error('unused') } }) })
+  let everywhere = startEverywhere
+  const hub = createRouteHub({ store, proxy: () => ({ host: '127.0.0.1', port: 9050 }), everywhere: () => everywhere, ...(isApp === undefined ? {} : { isApp }), providerFor: () => ({ connect: async () => { throw new Error('unused') } }) })
   hubs.push(hub)
   const log: string[] = []
   const sessions = new Map<string, FakeSession>()
@@ -72,7 +75,8 @@ function setup (options: { routed?: readonly string[], callTimeoutMs?: number, i
     onContentsCreated: (listener) => { created = listener },
     onLogin: (listener) => { login = listener },
     ...(callTimeoutMs === undefined ? {} : { callTimeoutMs }),
-    ...(isApp === undefined ? {} : { isApp })
+    ...(isApp === undefined ? {} : { isApp }),
+    ...extra
   }
   const controller = createRouteController(deps)
   /** A web contents in `session`, which the controller sees among all of them. */
@@ -81,7 +85,8 @@ function setup (options: { routed?: readonly string[], callTimeoutMs?: number, i
     contents.push(one)
     return one
   }
-  return { store, hub, controller, sessionFor, requested: () => [...new Set(asked)], contents, page, hangOn, log, dropped, reloaded, created: (one: RouteContents) => { created?.(one) }, login: (...args: Parameters<NonNullable<typeof login>>) => { login?.(...args) } }
+  const flip = (next: boolean): void => { const previous = everywhere; everywhere = next; hub.everywhereChanged(previous) }
+  return { store, hub, controller, sessionFor, flip, requested: () => [...new Set(asked)], contents, page, hangOn, log, dropped, reloaded, created: (one: RouteContents) => { created?.(one) }, login: (...args: Parameters<NonNullable<typeof login>>) => { login?.(...args) } }
 }
 
 describe('preparing a session', () => {
@@ -616,7 +621,7 @@ describe('a website\'s session of its own', () => {
 
     expect(requested()).not.toContain(`embed:${SITE}`)
     expect(reloaded).toEqual([])
-    expect(dropped).toEqual([SITE])
+    expect(dropped, 'a website has no broker handles to close').toEqual([])
     expect(session.proxies.at(-1)).toMatch(/^fixed_servers:/)
   })
 
@@ -651,5 +656,127 @@ describe('a website\'s session of its own', () => {
     await controller.confineSite(session)
     expect(session.proxies).toEqual(['fixed_servers:http://127.0.0.1:9'])
     expect(session.bypass).toEqual(['<-loopback>'])
+  })
+})
+
+
+describe('the shared identity, while the whole browser is on the tunnel', () => {
+  const ownProxy = new WeakSet<object>()
+  const appProxies: string[] = []
+  function shared (everywhere = false) {
+    appProxies.length = 0
+    let defaultRef: FakeSession | undefined
+    const world = setup({
+      everywhere,
+      isApp: (origin) => origin === APP,
+      extra: {
+        setAppProxy: async (config) => { appProxies.push(`${config.mode ?? ''}:${config.proxyRules ?? ''}:${config.proxyBypassRules ?? ''}`) },
+        ownProxy: (session) => ownProxy.has(session),
+        sharedBypass: () => '*.eth',
+        defaultSession: () => defaultRef as FakeSession
+      }
+    })
+    const defaultSession = world.sessionFor('default')
+    defaultRef = defaultSession
+    return { ...world, defaultSession }
+  }
+
+  it('stops a session at once when it is made, and points it at the shared front, with the names the verifier answers for left out of the proxy', async () => {
+    const { controller, hub, sessionFor, defaultSession } = shared(true)
+    const made = sessionFor('somewhere')
+    controller.adopt(made)
+    expect(made.proxies[0]).toBe('fixed_servers:http://127.0.0.1:9')
+    await controller.settled()
+    const front = await hub.front('orivon-shared-tunnel')
+    expect(made.proxies).toEqual(['fixed_servers:http://127.0.0.1:9', `fixed_servers:http://127.0.0.1:${String(front.port)}`])
+    expect(made.bypass[1]).toContain('*.eth')
+    expect(defaultSession.proxies).toEqual([])
+  })
+
+  it('points the default session and the runtime\'s own requests at the shared front when it flips on, and back at the system when it flips off', async () => {
+    const { controller, hub, defaultSession, flip, page } = shared(false)
+    controller.adopt(defaultSession)
+    const tab = page(defaultSession)
+
+    flip(true)
+    await controller.settled()
+    const front = await hub.front('orivon-shared-tunnel')
+    expect(defaultSession.proxies).toEqual([`fixed_servers:http://127.0.0.1:${String(front.port)}`])
+    expect(appProxies).toEqual([`fixed_servers:http://127.0.0.1:${String(front.port)}:<-loopback>;localhost;*.localhost;127.0.0.1/8;[::1]`])
+    expect(tab.policy).toEqual(['disable_non_proxied_udp'])
+
+    flip(false)
+    await controller.settled()
+    expect(defaultSession.proxies.at(-1)).toBe('system:')
+    expect(appProxies.at(-1)).toBe('system::')
+    expect(tab.policy).toEqual(['disable_non_proxied_udp', 'default'])
+  })
+
+  it('reloads the web pages of the shared session when it flips, and not the shell\'s own pages', async () => {
+    const { controller, defaultSession, flip, reloaded, contents } = shared(false)
+    controller.adopt(defaultSession)
+    contents.push({ ...fakeContents(defaultSession, reloaded, 'https://news.example/'), reload: () => { reloaded.push('web') } })
+    contents.push({ ...fakeContents(defaultSession, reloaded, 'orivon://settings/'), reload: () => { reloaded.push('shell') } })
+
+    flip(true)
+    await controller.settled()
+
+    expect(reloaded).toEqual(['web'])
+  })
+
+  it('takes a session away from the shared identity once an origin prepares it, and puts an app set to off back on the system\'s proxy', async () => {
+    const { controller, store, sessionFor, flip } = shared(true)
+    store.setEntry(APP, 'off')
+    const appSession = sessionFor('app')
+    controller.adopt(appSession)
+    await controller.appSessionRegistered(APP, appSession)
+    await controller.settled()
+    expect(appSession.proxies.at(-1)).toBe('system:')
+    flip(false)
+    flip(true)
+    await controller.settled()
+    expect(appSession.proxies.at(-1), 'the shared identity does not repoint it').toBe('system:')
+  })
+
+  it('leaves a session that sets its own proxy alone', async () => {
+    const { controller, sessionFor } = shared(true)
+    const confined = sessionFor('web-context')
+    ownProxy.add(confined)
+    controller.adopt(confined)
+    await controller.settled()
+    expect(confined.proxies).toEqual(['fixed_servers:http://127.0.0.1:9'])
+  })
+
+  it('remembers a session made while the setting was off, and points it when the setting flips on', async () => {
+    const { controller, hub, sessionFor, flip } = shared(false)
+    const made = sessionFor('later')
+    controller.adopt(made)
+    expect(made.proxies).toEqual([])
+    flip(true)
+    await controller.settled()
+    const front = await hub.front('orivon-shared-tunnel')
+    expect(made.proxies).toEqual([`fixed_servers:http://127.0.0.1:${String(front.port)}`])
+  })
+
+  it('stops the runtime\'s own requests when the shared front cannot be had', async () => {
+    const { controller, hub, flip } = shared(false)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(hub, 'front').mockRejectedValue(new Error('no port'))
+    flip(true)
+    await controller.settled()
+    expect(appProxies.at(-1)).toBe('fixed_servers:http://127.0.0.1:9:<-loopback>')
+  })
+
+  it('looks up a website that follows the default through the default session, a tunnel-profile website through its profile, and an app through its own', async () => {
+    const { controller, defaultSession, store, sessionFor } = shared(true)
+    store.setEntry('https://profile.example', 'on')
+    store.setEntry('https://direct.example', 'off')
+
+    expect(await controller.fetchSessionFor('https://plain.example')).toBe(defaultSession)
+    expect(await controller.fetchSessionFor('https://profile.example')).toBe(sessionFor('persist:tunnel-profile'))
+    expect(await controller.fetchSessionFor('https://direct.example'), 'an origin set to off is not looked up through the tunnel').toBeUndefined()
+    const app = await controller.fetchSessionFor(APP)
+    expect(app).not.toBe(defaultSession)
+    expect(app).toBeDefined()
   })
 })

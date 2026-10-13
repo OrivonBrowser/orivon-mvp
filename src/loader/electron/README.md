@@ -1,6 +1,6 @@
 # `src/loader/electron/`: the Electron-specific machinery
 
-**What lives here.** `fetch.ts` (`Fetch` over Electron `net`, with the redirect rule),
+**What lives here.** `fetch.ts` (`Fetch` over Electron `net`, with the redirect rule; while the whole browser is on the tunnel it resolves no name here and signs in to the tunnel's front), `request-fetch.ts` (a `fetch` over `net.request` that answers a proxy's challenge itself, which `net.fetch` cannot do for a request without web contents),
 `resolve.ts` (DNS through `net.resolveHost`), `serve.ts` (registers `protocol.handle` and
 `restorePinnedServing`), `app-partitions.ts` (which origins have a session of their own, and the preparers that finish
 a session before an app is served from it) and `reach-route.ts` (the route of an app's third-party reach, supplied by

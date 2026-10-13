@@ -13,6 +13,7 @@ import { unproxiedGateways } from '../verifier/proxy-check.js'
 import { createNymSubsystem } from './nym-subsystem.js'
 import type { NymSubsystem } from './nym-subsystem.js'
 import { nymTestModule } from './nym-test-seam.js'
+import { systemProxyFor } from './system-proxy.js'
 
 const MANIFEST: LocalNodeManifest = manifest
 
@@ -28,8 +29,8 @@ export function createNym (): NymSubsystem {
       ? { ok: true, directory: seam.directory }
       : await locateArtifact({ env: process.env, packaged: app.isPackaged, resourcesPath: process.resourcesPath, sourceRoot: app.getAppPath() }, MANIFEST, NYM_TUNNEL_IDENTITY),
     files: () => seam?.files ?? MANIFEST.files,
-    // A tunnel that dials around a proxy would show a person's address to Nym's gateways that the proxy was set to hide (T20).
-    proxyConfigured: async () => (await unproxiedGateways(['https://example.com/'], async (url) => await app.resolveProxy(url))).length === 0,
+    // A tunnel that dials around a proxy would show a person's address to Nym's gateways that the proxy was set to hide (T20). The question goes to the system's proxy, never to the default session or `app.setProxy`: with the whole browser on the tunnel those are the tunnel's own front, which Nym itself serves, and asking them would stop Nym from ever starting.
+    proxyConfigured: async () => (await unproxiedGateways(['https://example.com/'], systemProxyFor)).length === 0,
     freshPort: () => { renewNodePort(NYM_TUNNEL_IDENTITY.name); return nodePort(NYM_TUNNEL_IDENTITY.name) },
     maxInstances: MAX_NYM_TUNNELS,
     log: process.env[envName(NYM_TUNNEL_IDENTITY.name, 'LOG')] === '1'

@@ -30,16 +30,18 @@ function service (savedProxy: string, savedKind: RouteKind = 'socks5', nym: NymS
   })
 }
 
-function settingsWith (initial: string, initialKind: RouteKind = 'socks5'): ProxySettings & { set: (value: string) => void, setKind: (kind: RouteKind) => void } {
+function settingsWith (initial: string, initialKind: RouteKind = 'socks5', initialEverywhere = false): ProxySettings & { set: (value: string) => void, setKind: (kind: RouteKind) => void, setEverywhere: (value: boolean) => void } {
   let value = initial
   let kind = initialKind
+  let everywhere = initialEverywhere
   const listeners = new Set<(change: { readonly key: string }) => void>()
   const tell = (key: string): void => { for (const listener of [...listeners]) listener({ key }) }
   return {
-    get: ((key: string) => key === 'network.route.kind' ? kind : value) as ProxySettings['get'],
+    get: ((key: string) => key === 'network.route.kind' ? kind : key === 'network.route.proxy' ? value : everywhere) as ProxySettings['get'],
     onChange: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     set: (next) => { value = next; tell('network.route.proxy') },
-    setKind: (next) => { kind = next; tell('network.route.kind') }
+    setKind: (next) => { kind = next; tell('network.route.kind') },
+    setEverywhere: (next) => { everywhere = next; tell('network.tunnel.everywhere') }
   }
 }
 
@@ -63,6 +65,23 @@ describe('the route service', () => {
 
     expect(routes.proxy()).toEqual({ host: '127.0.0.1', port: 9150 })
     expect(heard).toHaveBeenCalledWith(APP, true, 'proxy')
+  })
+
+  it('starts from the saved browser-wide setting and follows its changes, telling the shared identity and each app that follows the default', () => {
+    const store = new RouteStore(null)
+    const routes = createRouteService({ store, savedProxy: '127.0.0.1:9050', savedKind: 'socks5', nym: FAKE_NYM, savedEverywhere: false, installed: () => [APP], electron: { broker: () => undefined, isApp: (origin) => origin === APP, sessionFor: () => ({ setProxy: async () => {}, closeAllConnections: async () => {} }), embedPartition: (origin) => `embed:${origin}`, allContents: () => [], onContentsCreated: () => {}, onLogin: () => {} } })
+    const settings = settingsWith('127.0.0.1:9050')
+    const heard = vi.fn()
+    routes.hub.onChange(heard)
+    routes.followSettings(settings)
+    expect(routes.everywhere()).toBe(false)
+    expect(routes.hub.isRouted(APP)).toBe(false)
+
+    settings.setEverywhere(true)
+
+    expect(routes.everywhere()).toBe(true)
+    expect(routes.hub.isRouted(APP)).toBe(true)
+    expect(heard.mock.calls).toEqual([['orivon-shared-tunnel', true, 'switch'], [APP, true, 'switch']])
   })
 
   it('applies a setting that differs from the saved one the moment it is followed', () => {

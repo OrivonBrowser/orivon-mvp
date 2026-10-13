@@ -17,6 +17,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Subsystem } from '../main/registry.js'
 import { devModeEnabled } from '../main/dev/dev-mode.js'
+import { ownFetch } from '../main/route/own-requests.js'
 import type { SiteKey } from './accounting.js'
 import type { ConsentSource } from './consent.js'
 import type { ErasePayload, SentPayload } from './disclosure.js'
@@ -40,7 +41,8 @@ async function post (endpoint: Endpoint, body: SentPayload | ErasePayload): Prom
   const { net } = await import('electron')
   const base = ingestBaseUrl(IS_TEST_BUILD, testOverrides().url, modeInputsFromEnv(process.env, devModeEnabled(), false).development)
   try {
-    const response = await net.fetch(endpointUrl(base, endpoint), {
+    // Through the tunnel while the whole browser is on it, or not at all.
+    const response = await ownFetch(async (url, init) => await net.fetch(url, init))(endpointUrl(base, endpoint), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),

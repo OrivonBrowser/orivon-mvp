@@ -70,10 +70,12 @@ export interface SiteTunnel {
   readonly on: boolean
   /** Why the switch cannot be turned on now (it can always be turned off). */
   readonly blocked?: 'no-proxy'
-  /** Turning it on moves the website into storage of its own for the first time, so the person is told first. */
-  readonly needsNotice: boolean
+  /** The change the switch makes next moves the website into this profile for the first time, so the person is told first. */
+  readonly notice?: 'tunnel' | 'direct'
   readonly web3: boolean
   readonly unreadable: boolean
+  /** The profile the website lives in now, when its entry puts it in one. */
+  readonly profile?: 'tunnel' | 'direct'
 }
 
 export interface SiteInfo {

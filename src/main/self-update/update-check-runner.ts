@@ -18,6 +18,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Subsystem } from '../registry.js'
 import { checkForUpdate, type ReleaseInfo } from './update-check.js'
+import { ownFetch } from '../route/own-requests.js'
 import { GITHUB_OWNER, GITHUB_REPO, releaseUrl } from './release-url.js'
 
 // The repository is spelled out as constants (./release-url.ts) rather than
@@ -78,7 +79,8 @@ async function fetchLatestGithubRelease (): Promise<ReleaseInfo | null> {
   const { net } = await import('electron')
 
   // Offline, a DNS failure or a timeout rejects: the source was not reached, and the check is not recorded.
-  const response = await net.fetch(RELEASES_API, {
+  // Through the tunnel while the whole browser is on it, or not at all.
+  const response = await ownFetch(async (url, init) => await net.fetch(url, init))(RELEASES_API, {
     headers: {
       accept: 'application/vnd.github+json',
       'user-agent': `${GITHUB_REPO}-update-check`

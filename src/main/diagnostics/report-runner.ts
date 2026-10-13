@@ -5,6 +5,7 @@ import { cpus, freemem, homedir, release, totalmem } from 'node:os'
 import { app, clipboard, net, screen } from 'electron'
 import type { WebContents } from 'electron'
 import { devModeEnabled } from '../dev/dev-mode.js'
+import { ownFetch } from '../route/own-requests.js'
 import type { SubsystemContext } from '../registry.js'
 import type { ShellServices } from '../shell/shell-services.js'
 import { IS_TEST_BUILD, ingestBaseUrl, modeInputsFromEnv, testOverrides } from '../../telemetry/mode.js'
@@ -25,7 +26,8 @@ function id32 (): string {
 }
 
 const post: Post = async (url, body, timeoutMs) => {
-  const response = await net.fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body, signal: AbortSignal.timeout(timeoutMs) })
+  // Through the tunnel while the whole browser is on it, or not at all.
+  const response = await ownFetch(async (target, init) => await net.fetch(target, init))(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body, signal: AbortSignal.timeout(timeoutMs) })
   // Only the status is read: the server's answer to a report is its status and nothing else.
   return { status: response.status }
 }

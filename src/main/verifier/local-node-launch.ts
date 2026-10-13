@@ -11,6 +11,7 @@ import { locateArtifact } from './local-node-artifact.js'
 import type { LocalNodeManifest } from './local-node-artifact.js'
 import { unproxiedGateways } from './proxy-check.js'
 import { DEFAULT_ENDPOINTS } from './endpoints.js'
+import { ownRequestsTunnelled } from '../route/own-requests.js'
 
 export interface LocalNodeSpec {
   readonly kind: NodeIdentity
@@ -32,7 +33,9 @@ export function createLocalNodeController (spec: LocalNodeSpec): LocalNodeContro
     fork: () => utilityProcess.fork(join(__dirname, 'local-node-host.js'), [], { serviceName: `Orivon ${spec.kind.noun}` }),
     artifact: async () => await locateArtifact({ env: process.env, packaged: app.isPackaged, resourcesPath: process.resourcesPath, sourceRoot: app.getAppPath() }, spec.manifest, spec.kind),
     // A node that dials around a proxy would show a person's address to its peers that the proxy was set to hide (T20).
+    // `app.resolveProxy` follows `app.setProxy`, which the whole-browser tunnel sets: the node is then refused, with the tunnel named as the reason.
     proxyConfigured: async () => (await unproxiedGateways(['https://example.com/'], async (url) => await app.resolveProxy(url))).length === 0,
+    tunnelOn: ownRequestsTunnelled,
     ...(spec.disabled === undefined ? {} : { disabled: spec.disabled }),
     ...(spec.options === undefined ? {} : { options: spec.options }),
     apiPort: spec.apiPort,

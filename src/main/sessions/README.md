@@ -29,7 +29,7 @@ from, with the pure decision in [`../../broker/policy/own-listener-media.ts`](..
 media request for `/orivon/app/<path>` to the `orivon-file:` scheme and answers that scheme with the app's own
 file (`app-file-response.ts`, no Electron in it), with the pure decision in
 [`../../broker/policy/app-files-by-url.ts`](../../broker/policy/app-files-by-url.ts).
-`website-sessions.ts` is the list of sessions a website runs in (the default one, and the session of its own a website gets when its tunnel state differs from the default, `../route/`): a control that guards or adjusts a website's requests installs through `forEachWebsiteSession`, so a website that moves into its own session keeps it, and a session missing one is refused.
+`website-sessions.ts` is the list of sessions a website runs in (the default one, and the tunnel profile and the direct profile a website with an entry of its own lives in, `../route/`): a control that guards or adjusts a website's requests installs through `forEachWebsiteSession`, so a website that moves into a profile keeps it, and a session missing one is refused.
 `session-attribution.ts` publishes
 `ctx.senderAttributed` (`../registry.ts`): whether a WebContents is attributed to the origin it
 claims, decided at that document's own commit and reused afterward rather than re-decided live (except a cache-served origin and a local file, checked live),

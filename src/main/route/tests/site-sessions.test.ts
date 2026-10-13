@@ -1,12 +1,11 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { setSiteRoutes } from '../site-routes.js'
-import { sitePartitionFor } from '../site-partition.js'
-import { sitePartitionForOrigin } from '../site-routes.js'
+import { describe, expect, it, vi } from 'vitest'
+import { DIRECT_PROFILE_ORIGIN, TUNNEL_PROFILE_ORIGIN } from '../route-hub.js'
 import { createSiteSessions } from '../site-sessions.js'
 import type { SiteSession, SiteSessionsDeps } from '../site-sessions.js'
 
+const TUNNEL = 'persist:tunnel-profile'
+const DIRECT = 'persist:direct-profile'
 const SITE = 'https://news.example'
-afterEach(() => { setSiteRoutes(undefined) })
 
 function setup (prepare: () => Promise<void> = async () => {}) {
   const log: string[] = []
@@ -17,8 +16,7 @@ function setup (prepare: () => Promise<void> = async () => {}) {
       one = {
         setProxy: async () => {},
         closeAllConnections: async () => {},
-        clearStorageData: async () => { log.push(`clear ${partition}`) },
-        clearCache: async () => { log.push(`clearCache ${partition}`) }
+        clearData: async (options) => { log.push(`clear ${partition} ${options.origins.join(',')}`) }
       }
       sessions.set(partition, one)
     }
@@ -27,60 +25,69 @@ function setup (prepare: () => Promise<void> = async () => {}) {
   const held: Array<{ session: SiteSession, ready: () => Promise<void>, watched: number }> = []
   const deps: SiteSessionsDeps = {
     controller: {
-      prepareSite: vi.fn(async (origin: string, _session: RouteSessionLike, bypass: string) => { log.push(`prepare ${origin} ${bypass}`); await prepare() }),
+      prepareSite: vi.fn(async (identity: string, _session: object, bypass: string) => { log.push(`prepare ${identity} ${bypass}`); await prepare() }),
       confineSite: vi.fn(async () => { log.push('confine') })
     },
     sessionFor,
     bypass: () => '*.eth',
     hold: (session, ready) => { const one = { session, ready, watched: 0 }; held.push(one); return () => { one.watched += 1 } },
-    fit: () => { log.push('fit') }
+    fit: () => { log.push('fit') },
+    extend: async (_session, persistable) => { log.push(`extend ${String(persistable)}`) }
   }
-  return { sites: createSiteSessions(deps), deps, held, log, sessionFor }
+  return { sites: createSiteSessions(deps), deps, held, log }
 }
-type RouteSessionLike = object
 
-describe('making a website\'s session ready', () => {
-  it('prepares it for the origin its name stands for, with the verifier\'s names, and holds its requests until then', async () => {
-    setSiteRoutes({ usesOwnSession: () => true })
-    const partition = sitePartitionForOrigin(SITE) as string
+describe('making a profile session ready', () => {
+  it('prepares the tunnel profile under its own identity, with the verifier\'s names, then loads the extensions, and holds its requests until then', async () => {
     const { sites, held, log } = setup()
 
-    sites.ensure(partition)
+    sites.ensure(TUNNEL)
 
     expect(held).toHaveLength(1)
     await held[0]?.ready()
-    expect(log).toEqual(['fit', `prepare ${SITE} *.eth`])
+    expect(log).toEqual(['fit', `prepare ${TUNNEL_PROFILE_ORIGIN} *.eth`, 'extend true'])
+  })
+
+  it('tells the extension step when the profile is kept in memory, where Electron cannot load an extension but the request rules still apply', async () => {
+    const { sites, held, log } = setup()
+    sites.ensure('tunnel-profile-memory')
+    await held[0]?.ready()
+    expect(log).toEqual(['fit', `prepare ${TUNNEL_PROFILE_ORIGIN} *.eth`, 'extend false'])
+  })
+
+  it('prepares the direct profile under the identity that is never routed', async () => {
+    const { sites, held, log } = setup()
+    sites.ensure(DIRECT)
+    await held[0]?.ready()
+    expect(log).toContain(`prepare ${DIRECT_PROFILE_ORIGIN} *.eth`)
   })
 
   it('does it once for a session, however many views are made in it', () => {
-    setSiteRoutes({ usesOwnSession: () => true })
-    const partition = sitePartitionForOrigin(SITE) as string
     const { sites, held, deps } = setup()
 
-    sites.ensure(partition)
-    sites.ensure(partition)
+    sites.ensure(TUNNEL)
+    sites.ensure(TUNNEL)
 
     expect(held).toHaveLength(1)
     expect(deps.controller.prepareSite).toHaveBeenCalledTimes(1)
   })
 
   it('confines a session that could not be pointed, and keeps refusing its requests', async () => {
-    setSiteRoutes({ usesOwnSession: () => true })
-    const partition = sitePartitionForOrigin(SITE) as string
     const { sites, held, log } = setup(async () => { throw new Error('no front') })
     vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    sites.ensure(partition)
+    sites.ensure(TUNNEL)
 
     await expect(held[0]?.ready()).rejects.toThrow(/no front/)
     expect(log).toContain('confine')
+    expect(log.filter((line) => line.startsWith('extend')), 'no extension runs in a session that is refused').toEqual([])
   })
 
-  it('refuses everything in a session whose origin this process never named', async () => {
+  it('refuses everything in a session that is not a profile\'s', async () => {
     const { sites, held, deps } = setup()
     vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    sites.ensure(sitePartitionFor('https://never-asked.example'))
+    sites.ensure('persist:site-abc')
 
     expect(deps.controller.prepareSite).not.toHaveBeenCalled()
     await expect(held[0]?.ready()).rejects.toThrow()
@@ -89,32 +96,29 @@ describe('making a website\'s session ready', () => {
 
 describe('a session that could not be made ready', () => {
   it('is tried again the next time a view is made in it, and its hold is told to look again', async () => {
-    setSiteRoutes({ usesOwnSession: () => true })
-    const partition = sitePartitionForOrigin(SITE) as string
     let failing = true
     const { sites, held, deps } = setup(async () => { if (failing) throw new Error('no front') })
     vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    sites.ensure(partition)
+    sites.ensure(TUNNEL)
     await expect(held[0]?.ready()).rejects.toThrow(/no front/)
 
     failing = false
-    sites.ensure(partition)
+    sites.ensure(TUNNEL)
     await held[0]?.ready()
     expect(held).toHaveLength(1)
     expect(held[0]?.watched).toBe(1)
     expect(deps.controller.prepareSite).toHaveBeenCalledTimes(2)
 
-    sites.ensure(partition)
+    sites.ensure(TUNNEL)
     expect(deps.controller.prepareSite, 'a session that is ready is left alone').toHaveBeenCalledTimes(2)
   })
 })
 
 describe('removing a website\'s storage', () => {
-  it('clears the cookies and storage and the cache of its session', async () => {
+  it('clears that website\'s data from the profile and no other website\'s', async () => {
     const { sites, log } = setup()
-    const partition = sitePartitionFor(SITE)
-    await sites.removeStorage(partition)
-    expect(log.sort()).toEqual([`clear ${partition}`, `clearCache ${partition}`])
+    await sites.removeStorage(TUNNEL, SITE)
+    expect(log).toEqual([`clear ${TUNNEL} ${SITE}`])
   })
 })

@@ -1,18 +1,19 @@
-# `src/main/route/`: the network route an installed app or a website can have
+# `src/main/route/`: the network route an installed app, a website or the whole browser can have
 
 **What lives here.** The part of [ADR-0080](../../../docs/decisions/ADR-0080-an-installed-app-can-send-everything-through-one-proxy.md)
 and [ADR-0082](../../../docs/decisions/ADR-0082-a-websites-tunnel-state-is-kept-per-origin-and-a-website-that-differs-from-the-default-has-storage-of-its-own.md)
-that is tied to the running browser: which origins (apps and websites) the person routed, and what routing one does to Chromium.
+and [ADR-0084](../../../docs/decisions/ADR-0084-the-tunnel-can-carry-the-whole-browser-and-a-website-with-an-entry-lives-in-one-of-two-shared-profiles.md)
+that is tied to the running browser: which origins (apps and websites) the person routed, whether the whole browser goes through the tunnel, and what routing does to Chromium.
 
 | File | Job |
 |---|---|
-| `route-state.ts` | Pure: the rule that an origin's entry (`on` or `off`) overrides the browser's default, and that a website whose state differs from the default needs storage of its own |
-| `route-store.ts` | What the person set per origin, in `routes.json` under the profile (memory only in a private session): the `on` and `off` entries, and the websites that have storage of their own. Versioned, every entry checked at read, written atomically. A switch that cannot be saved throws and changes nothing. A file that is there but cannot be read is kept aside and reported as `unreadable` |
-| `route-hub.ts` | One route and one front per routed origin (app or website), over the store and the proxy setting: the `routeFor` the broker and the loader read, the app's health, and a refusing route for a routed app with no proxy |
+| `route-state.ts` | Pure: the rule that an origin's entry (`on` or `off`) overrides the browser's default, and the entry that makes an origin on or off (none when the default already says so) |
+| `route-store.ts` | What the person set per origin, in `routes.json` under the profile (memory only in a private session): the `on` and `off` entries, and the websites that have storage in the tunnel profile and in the direct profile; a file written before the profiles is migrated once. Versioned, every entry checked at read, written atomically. A switch that cannot be saved throws and changes nothing. A file that is there but cannot be read is kept aside and reported as `unreadable` |
+| `route-hub.ts` | One route and one front per identity, over the store, the proxy setting and the browser-wide setting: an app has its own, every website with an `on` entry shares the tunnel profile's, and every other origin that follows the default shares the shared one (`SHARED_ORIGIN`); the `routeFor` the broker and the loader read, the health, the profile a website lives in, and a refusing route for a routed origin with no proxy |
 | `front.ts` | The loopback HTTP proxy Chromium is pointed at: a `CONNECT` or an absolute-form request becomes a route connection, and only a caller that sends the secret made for it is answered |
-| `route-controller.ts` | Points each of an app's sessions at its front, puts the WebRTC policy on every web contents in them, closes what the app held open when the route changes (sessions first, then the broker's handles), reloads every page in them on a switch, and answers the front's proxy challenge. One app's switches run in order and never behind another app's |
-| `route-service.ts` | The hub, the controller and the store together, with the proxy setting followed once the settings are read |
-| `route-subsystem.ts` | Starts them, wires Electron's sessions, web contents and `login` event in, and publishes `ctx.routes` |
+| `route-controller.ts` | Points each of an identity's sessions at its front, puts the WebRTC policy on every web contents in them, stops every session the runtime creates while the whole browser is on the tunnel and points it at the shared front unless its maker claims it (`own-proxy.ts`), points `app.setProxy` at the shared front, closes what the app held open when the route changes (sessions first, then the broker's handles), reloads every page in them on a switch, and answers the front's proxy challenge. One app's switches run in order and never behind another app's |
+| `route-service.ts` | The hub, the controller and the store together, with the proxy setting and the browser-wide setting followed once the settings are read |
+| `route-subsystem.ts` | Starts them, wires Electron's sessions (every `session-created`), web contents, `login` event and `app.setProxy` in, makes the session that only follows the system, and publishes `ctx.routes` |
 | `nym-subsystem.ts` | The Nym tunnel as the shell reaches it: starts the host on the first ask (a quiet loopback port and a secret made for each start), follows what it reports, stops it ten minutes after its last tunnel, refuses to start it with a system proxy configured or without its files, and runs the Settings Test. Electron-free over a `ProcessSupervisor` |
 | `nym-launch.ts` | The one file of Nym that imports `electron`: the utility process, where the module's files are, the proxy check |
 | `nym-supervisor.ts`, `nym-messages.ts` | Keeps the host's process running, and checks every message it posts |
@@ -20,22 +21,27 @@ that is tied to the running browser: which origins (apps and websites) the perso
 | `nym-status.ts`, `nym-test-seam.ts` | What Nym is doing, as plain data; and, in a test build only, a stand-in module run in place of the pinned one |
 | `forget-watch.ts` | Clears the route of an app the broker no longer knows, and lets go of its front and sessions |
 | `route-domain.ts` | What the Settings page may ask: whether the proxy answers |
-| `lookup-session.ts` | The session the browser's own lookups about a routed app, or about a site a temporary routed tab shows, go through (a tab icon from another host, the Web3 Score provider), and the answer to the front's proxy challenge for a request made from main |
-| `routed-fetch.ts` | A GET made by main through that session, as a `Response`, by `net.request` so that it can answer the challenge itself |
+| `lookup-session.ts` | The session the browser's own lookups about a routed app, a tunnelled website, or a site a temporary routed tab shows, go through (a tab icon from another host, the Web3 Score provider), the session a lookup about a website set to off uses while the whole browser is on the tunnel, and the answer to the front's proxy challenge for a request made from main |
+| `routed-fetch.ts` | A GET made by main through that session, as a `Response`, by `net.request` so that it can answer the challenge itself (`../../loader/electron/request-fetch.ts`) |
+| `own-requests.ts` | How Orivon's own requests (self-update, telemetry, the bug report, suggestions, a manifest read, the loader) leave: unchanged with the browser-wide setting off, through the tunnel with it on, on the system's proxy for an origin set to off |
+| `own-proxy.ts` | The sessions that set a proxy of their own, which the shared identity leaves alone |
+| `system-proxy.ts` | The question T20 asks: does the system's proxy apply?, answered by a session that only follows the system |
+| `legacy-sites.ts` | Clears, once, the sessions websites had of their own before the profiles |
 | `leave-decision.ts` | Pure: whether a page of a routed app opening an address needs the person asked first (not its own origin, not an installed app whose route is on; a page with no web address counts as the app whose session it runs in), and as what: a website, an installed app, or a page Orivon serves itself |
 | `served-origin.ts` | Pure over the protocol registry: whether an address is one Orivon's own nodes fetch (a protocol's scheme, a host the verifier answers for), and how a person reads it |
 | `temporary-routes.ts` | The in-memory session a website opened "through my tunnel" runs in: a front and proxy sign-in of its own, released with its last tab |
 | `route-switch.ts` | Turning an origin's tunnel on or off, shared by the app card, the site-info popover, the Settings list and the question below; also the list of origins with a setting or storage of their own, and clearing a website's storage |
-| `site-partition.ts` | Pure: the name of a website's session of its own (`persist:site-<sha256(origin)>`, or without the prefix, in memory, for an origin that may not be written to disk) and which origins can be switched |
-| `site-routes.ts` | What the shell reads to put a tab in that session, supplied once by `route-subsystem.ts`, and the call that makes the session ready before a view is made in it |
-| `site-sessions.ts` | Makes a website's session ready: fits it with the controls every website session carries, points it at its front, and holds its requests until then |
+| `site-partition.ts` | Pure: the profile an entry puts a website in (`on` is the tunnel profile, `off` the direct one), the name of a profile's session (`persist:tunnel-profile`, or `tunnel-profile-memory` for an origin that may not be written to disk) and which origins can be switched |
+| `site-routes.ts` | What the shell reads to put a tab in its profile's session, supplied once by `route-subsystem.ts`, and the call that makes the session ready before a view is made in it |
+| `site-sessions.ts` | Makes a profile's session ready: fits it with the controls every website session carries, points it at its front (or leaves the direct profile on the system's proxy), loads the person's extensions into it, and holds its requests until then |
 | `tunnel-mark.ts` | Pure: what the address bar's key says about the page in front and the tunnel (`on`, `partial`, `down`) |
 | `leaving-routes.ts` | What the shell asks of all this when a routed app's page opens an address: the decision, the temporary session, the app switch |
 
 **What it depends on.** [`../../broker/route/`](../../broker/route/) (the route, its SOCKS5 provider and the probe), [`../verifier/process-supervisor.ts`](../verifier/process-supervisor.ts), [`../verifier/local-node-artifact.ts`](../verifier/local-node-artifact.ts) and [`../verifier/loopback-port.ts`](../verifier/loopback-port.ts) (the Nym host is supervised, checked and given a port as a local node is), [`../../protocols/nym-tunnel/protocol.ts`](../../protocols/nym-tunnel/protocol.ts) (what the host says),
 [`../settings/proxy-checks.ts`](../settings/proxy-checks.ts), [`../../broker/grants/origin-hash.ts`](../../broker/grants/origin-hash.ts), [`../../broker/policy/origin.ts`](../../broker/policy/origin.ts), [`../../protocols/builtin.ts`](../../protocols/builtin.ts) (which addresses Orivon serves),
-[`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts), and `electron` for types, except
-`route-subsystem.ts`.
+[`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts),
+[`../../loader/electron/request-fetch.ts`](../../loader/electron/request-fetch.ts) (the `fetch` that signs in to a front itself), and `electron` for types, except
+`route-subsystem.ts`, which also reaches [`../extensions/`](../extensions/) (the person's extensions in a profile) and [`../verifier/`](../verifier/) (the host restarts when the setting flips).
 
 **What it must never import.** [`../shell/tabs.ts`](../shell/tabs.ts) or [`../shell/tab-view.ts`](../shell/tab-view.ts).
 Nothing here dials a destination itself: a stream to a destination comes from the route's provider and from nowhere else.
@@ -114,21 +120,18 @@ and is not asked about; an answer comes after `window.open` has returned, so suc
 chosen. A tab moved into a temporary session records it (`routedAway`) so that Forward onto that page does not load it
 in the shared session while the temporary one is alive.
 
-**A website that differs from the default runs in a session of its own, held shut until it is pointed.** `partitionForTarget` asks
-`site-routes.ts` whether the origin's state differs from the default; a view made in that session calls `ensureSiteSession` first, which
-announces the session to `../sessions/website-sessions.ts` (so every control a website's requests meet in the shared session is installed on it
-too) and waits for the controller to point it. A `webRequest` handler holds every request until then, so a request made in the first moments
-waits for the front instead of going out on the system's proxy, and a session that could not be made ready refuses everything. The moving of open
-tabs is the shell's (`../shell/install-site-sessions.ts`): this directory never imports a tab.
+**A website with an entry runs in a profile's session, held shut until it is pointed.** `partitionForTarget` asks `site-routes.ts` which profile the origin's entry names; a view made in that session calls `ensureSiteSession` first, which announces the session to `../sessions/website-sessions.ts` (so every control a website's requests meet in the shared session is installed on it too), waits for the controller to point it and loads the person's extensions into it. A `webRequest` handler holds every request until then, so a request made in the first moments waits for the front instead of going out on the system's proxy, and a session that could not be made ready refuses everything. The moving of open tabs is the shell's (`../shell/install-site-sessions.ts`): this directory never imports a tab. Where a website lives follows its own entry alone, so turning the browser-wide setting over moves none.
 
-**The bypass rules of a website's session add the names the verifier answers for.** `host-resolver-rules` sends `.eth` and the shared address
+**The whole browser on the tunnel is one more identity.** `SHARED_ORIGIN` has the one front every session no origin claims shares: the default session, the shell's own, a local file's. A session is stopped when it is made (`session-created`) and pointed at that front, unless an origin prepares it first or its maker marks it as setting a proxy of its own (`own-proxy.ts`). `app.setProxy` points the requests made with no session at it too; the verifier host fetches through it with `net.request` and restarts when the setting flips. Orivon's own requests go through it or not at all (`own-requests.ts`), and a lookup about a website set to off uses a session that only follows the system, the same one T20 asks.
+
+**The bypass rules of a tunnelled session add the names the verifier answers for.** `host-resolver-rules` sends `.eth` and the shared address
 suffix to the verifier on this machine, but a proxy would otherwise be asked for the name first. The verifier's own fetches (gateway blocks, the
-name's Helios RPC and CCIP-Read calls) are not routed, so such a site is tunnelled in part and says so (`tunnel-mark.ts`'s `partial`).
+name's Helios RPC and CCIP-Read calls) are routed only while the whole browser is on the tunnel; otherwise such a site is tunnelled in part and says so (`tunnel-mark.ts`'s `partial`).
 
-**Turning the tunnel off keeps the website's storage.** The row stays in Settings, with the button that clears it, until the person removes it
-or the site goes back to the default with nothing stored. Turning it on again asks nothing, because the site is already apart.
+**Giving up a website's entry keeps its data in the profile.** The row stays in Settings, with the button that clears that site's data from the profile and nobody else's, until the person removes it
+or the site goes back to the default with nothing stored. Setting the entry again asks nothing, because the site already has data in that profile.
 
-**The shared session refuses a load of a tunnelled website that the shell did not move.** The shell moves a tab into the website's session before it
+**The shared session refuses a load of a website with a profile that the shell did not move.** The shell moves a tab into the website's session before it
 loads an address it was asked to open (a link, a redirect, the address bar). A load that skips that (a script's `loadURL`, a step in a view's own history
 onto an older page) would reach the site from the shared session, untunnelled and with its cookies, so `route-subsystem.ts` registers a main-frame handler on
 the shared session that cancels it (`site-routes.ts`'s `mustLeaveSharedSession`); the person reopens the address. A sleeping tab wakes through the move
