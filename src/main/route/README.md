@@ -40,6 +40,8 @@ and a SOCKS5 server on loopback ([`../../broker/route/tests/`](../../broker/rout
 
 **Owner stream.** `broker`.
 
+**Every path to the network, and whether it takes this route:** [`docs/architecture/egress.md`](../../../docs/architecture/egress.md). A file added here or elsewhere that can reach the network is a row there (`npm run check:egress`).
+
 ## Design notes
 
 **The front is HTTP because Chromium cannot sign in to a SOCKS proxy.** It can send a user name and password to an HTTP

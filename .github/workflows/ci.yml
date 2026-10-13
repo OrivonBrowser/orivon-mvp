@@ -140,6 +140,10 @@ jobs:
       - name: No native message box outside the files that may open one
         run: npm run check:native-dialogs
 
+      # The tunnel holds only if no path to the network is added around it unnoticed: docs/architecture/egress.md lists each one.
+      - name: Every path to the network is listed in the egress table
+        run: npm run check:egress
+
       # start.ts ends the browser on an unhandled rejection: a promise floated in main-process code is a crash.
       - name: No promise floated without a rejection handler in the main process
         run: npm run check:floating-promises
