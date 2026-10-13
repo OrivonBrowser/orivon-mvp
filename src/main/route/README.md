@@ -58,7 +58,7 @@ on the system's proxy stays marked as pointed at the front, so the next pass tri
 
 **A list of routed apps that cannot be read is not "nothing routed".** A missing file means none; a file that is there
 and cannot be read or understood is copied to `routes.json.corrupt`, left where it is and never written over, and
-counts every installed app (never a website) as routed while a tunnel is set (through the proxy, or stopped when it is down). An app cannot be
+counts every installed app (never a website) as routed while a tunnel is set (through it, or stopped when it is down). An app cannot be
 switched off meanwhile, because which ones were routed is not known; the Settings card says so in one sentence. A
 switch that cannot be saved is refused and changes nothing, so a switch never shows on when it is not kept.
 
