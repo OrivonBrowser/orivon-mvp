@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { LookupAddress } from '../../../contracts/index.js'
 import type { Dial } from '../../../broker/broker-contracts.js'
-import { DOH_PAUSE_MS, MAX_CACHED_NAMES, MAX_TTL_SECONDS, MIN_TTL_SECONDS, createNodeLookup } from '../node-dns.js'
+import { DOH_PAUSE_MS, MAX_CACHED_NAMES, MAX_TTL_SECONDS, MIN_TTL_SECONDS, NEGATIVE_TTL_SECONDS, createNodeLookup } from '../node-dns.js'
 import { createNodeNet } from '../node-net.js'
 
 const CLOUDFLARE = 'https://cloudflare-dns.com/dns-query'
@@ -24,6 +24,8 @@ interface Harness {
   readonly system: string[]
   clock: { now: number }
   readonly down: Set<string>
+  /** Record types whose query fails at every endpoint. */
+  readonly failing: Set<'A' | 'AAAA'>
 }
 
 function harness (records: Records, systemAnswers: Record<string, readonly string[]> = {}, endpoints: readonly string[] = ENDPOINTS): Harness {
@@ -31,11 +33,14 @@ function harness (records: Records, systemAnswers: Record<string, readonly strin
   const system: string[] = []
   const clock = { now: 1_000_000 }
   const down = new Set<string>()
+  const failing = new Set<'A' | 'AAAA'>()
   const fetch = async (url: string): Promise<Response> => {
     requests.push(url)
     const parsed = new URL(url)
     if (down.has(parsed.origin)) throw new Error('connect ECONNREFUSED')
-    return dnsJson(parsed.searchParams.get('name') ?? '', parsed.searchParams.get('type') as 'A' | 'AAAA', records)
+    const type = parsed.searchParams.get('type') as 'A' | 'AAAA'
+    if (failing.has(type)) throw new Error('timed out')
+    return dnsJson(parsed.searchParams.get('name') ?? '', type, records)
   }
   const lookup = createNodeLookup({
     endpoints,
@@ -46,7 +51,7 @@ function harness (records: Records, systemAnswers: Record<string, readonly strin
     },
     now: () => clock.now
   })
-  return { lookup, requests, system, clock, down }
+  return { lookup, requests, system, clock, down, failing }
 }
 
 describe('createNodeLookup', () => {
@@ -73,6 +78,59 @@ describe('createNodeLookup', () => {
   it('treats NXDOMAIN as the answer, not as a failure', async () => {
     const { lookup, system } = harness({}, { 'gone.example': ['85.38.30.19'] })
     expect(await lookup('gone.example')).toEqual([])
+    expect(system).toEqual([])
+  })
+
+  it('falls back to the system resolver when A fails everywhere and AAAA says the name has none', async () => {
+    const { lookup, system, failing } = harness({ 'v4.example': { A: [['104.18.1.1', 60]] } }, { 'v4.example': ['9.9.9.9'] })
+    failing.add('A')
+    expect(await lookup('v4.example')).toEqual([{ address: '9.9.9.9', family: 'IPv4' }])
+    expect(system).toEqual(['v4.example'])
+  })
+
+  it('never keeps a failure: once DoH is asked again the real answer is used', async () => {
+    const { lookup, system, failing, clock } = harness({ 'v4.example': { A: [['104.18.1.1', 60]] } }, { 'v4.example': ['9.9.9.9'] })
+    failing.add('A')
+    await lookup('v4.example')
+    failing.clear()
+    clock.now += DOH_PAUSE_MS + 1
+    expect(await lookup('v4.example')).toEqual([{ address: '104.18.1.1', family: 'IPv4' }])
+    expect(system).toEqual(['v4.example'])
+  })
+
+  it('uses what one family answered while the other failed, and keeps none of it', async () => {
+    const { lookup, requests, failing } = harness({ 'dual.example': { A: [['104.18.1.1', 60]], AAAA: [['2606:4700::1', 60]] } })
+    failing.add('A')
+    expect(await lookup('dual.example')).toEqual([{ address: '2606:4700::1', family: 'IPv6' }])
+    failing.clear()
+    const before = requests.length
+    expect(await lookup('dual.example')).toEqual([{ address: '104.18.1.1', family: 'IPv4' }, { address: '2606:4700::1', family: 'IPv6' }])
+    expect(requests.length).toBeGreaterThan(before)
+  })
+
+  it('remembers a name both families answered with no records for a short while only', async () => {
+    const { lookup, requests, system, clock } = harness({ 'none.example': { status: 0 } }, { 'none.example': ['9.9.9.9'] })
+    expect(await lookup('none.example')).toEqual([])
+    const first = requests.length
+    clock.now += 1000 * (NEGATIVE_TTL_SECONDS - 1)
+    expect(await lookup('none.example')).toEqual([])
+    expect(requests).toHaveLength(first)
+    clock.now += 2000
+    expect(await lookup('none.example')).toEqual([])
+    expect(requests.length).toBeGreaterThan(first)
+    expect(system).toEqual([])
+  })
+
+  it('remembers NXDOMAIN for a short while only, and does not ask the system resolver', async () => {
+    const { lookup, requests, system, clock } = harness({}, { 'gone.example': ['9.9.9.9'] })
+    expect(await lookup('gone.example')).toEqual([])
+    const first = requests.length
+    clock.now += 1000 * (NEGATIVE_TTL_SECONDS - 1)
+    await lookup('gone.example')
+    expect(requests).toHaveLength(first)
+    clock.now += 2000
+    await lookup('gone.example')
+    expect(requests.length).toBeGreaterThan(first)
     expect(system).toEqual([])
   })
 

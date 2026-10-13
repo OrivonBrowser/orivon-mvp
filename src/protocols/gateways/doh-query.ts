@@ -59,21 +59,25 @@ export interface HostAddress {
   readonly ttlSeconds: number | undefined
 }
 
+export interface HostAddresses {
+  readonly addresses: HostAddress[]
+  /** Whether both record types were answered. A caller keeps an incomplete answer only briefly, if at all: the family that failed may hold the address it needs. */
+  readonly complete: boolean
+}
+
 /**
  * Every A and AAAA address a host's answers name. Both record types are
  * asked in parallel and either one answering is enough, so a resolver that
- * carries one family does not make this fail; it throws only when neither
- * could be answered at all. An empty result is a real answer: the name has no
- * address.
+ * carries one family does not make this fail. It throws when neither could be
+ * answered, and when one failed and the other named nothing: that is a failure,
+ * not a name with no address. An empty result with `complete` set is a real
+ * answer: the name has no address.
  */
-export async function dohHostAddresses (endpoints: readonly string[], fetch: WebFetch, host: string, signal: AbortSignal, timeoutMs: number): Promise<HostAddress[]> {
+export async function dohHostAddresses (endpoints: readonly string[], fetch: WebFetch, host: string, signal: AbortSignal, timeoutMs: number): Promise<HostAddresses> {
   const [a, aaaa] = await Promise.allSettled([
     dohQuery(endpoints, fetch, host, 'A', signal, timeoutMs),
     dohQuery(endpoints, fetch, host, 'AAAA', signal, timeoutMs)
   ])
-  if (a.status === 'rejected' && aaaa.status === 'rejected') {
-    throw new Error(`no DNS-over-HTTPS resolver answered for ${host}: ${a.reason instanceof Error ? a.reason.message : String(a.reason)}`)
-  }
   const addresses: HostAddress[] = []
   for (const [result, type, family] of [[a, A_RECORD, 'IPv4'], [aaaa, AAAA_RECORD, 'IPv6']] as const) {
     if (result.status !== 'fulfilled') continue
@@ -83,5 +87,10 @@ export async function dohHostAddresses (endpoints: readonly string[], fetch: Web
       addresses.push({ address: answer.data, family, ttlSeconds: ttl })
     }
   }
-  return addresses
+  const complete = a.status === 'fulfilled' && aaaa.status === 'fulfilled'
+  if (!complete && addresses.length === 0) {
+    const failed = a.status === 'rejected' ? a : aaaa
+    throw new Error(`no DNS-over-HTTPS resolver answered for ${host}: ${failed.status === 'rejected' && failed.reason instanceof Error ? failed.reason.message : 'no answer'}`)
+  }
+  return { addresses, complete }
 }

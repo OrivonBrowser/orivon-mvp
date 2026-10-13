@@ -17,6 +17,8 @@ export const MAX_TTL_SECONDS = 300
 export const MAX_CACHED_NAMES = 256
 /** After every endpoint failed, the system resolver answers alone for this long. */
 export const DOH_PAUSE_MS = 60_000
+/** A name both record types say has no address is remembered this long, so a retry storm does not become a query storm. */
+export const NEGATIVE_TTL_SECONDS = 30
 const QUERY_TIMEOUT_MS = 4_000
 
 export interface NodeLookupOptions {
@@ -43,18 +45,21 @@ export function createNodeLookup (options: NodeLookupOptions): (hostname: string
   let pausedUntil = 0
 
   async function ask (hostname: string): Promise<readonly LookupAddress[]> {
-    const found = await dohHostAddresses(options.endpoints, doh, hostname, new AbortController().signal, options.queryTimeoutMs ?? QUERY_TIMEOUT_MS)
+    const { addresses: found, complete } = await dohHostAddresses(options.endpoints, doh, hostname, new AbortController().signal, options.queryTimeoutMs ?? QUERY_TIMEOUT_MS)
     const seen = new Set<string>()
     const answers: LookupAddress[] = []
-    let ttl = MAX_TTL_SECONDS
+    let ttl = found.length === 0 ? NEGATIVE_TTL_SECONDS : MAX_TTL_SECONDS
     for (const { address, family, ttlSeconds } of found) {
       if (seen.has(address)) continue
       seen.add(address)
       answers.push({ address, family })
       if (ttlSeconds !== undefined) ttl = Math.min(ttl, ttlSeconds)
     }
-    if (cache.size >= MAX_CACHED_NAMES) cache.delete(cache.keys().next().value as string)
-    cache.set(hostname, { answers, until: now() + 1000 * Math.max(MIN_TTL_SECONDS, ttl) })
+    // A family that could not be asked may hold the address the node needs, so what the other said is used once and not kept.
+    if (complete) {
+      if (cache.size >= MAX_CACHED_NAMES) cache.delete(cache.keys().next().value as string)
+      cache.set(hostname, { answers, until: now() + 1000 * Math.max(MIN_TTL_SECONDS, ttl) })
+    }
     return answers
   }
 

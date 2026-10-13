@@ -75,11 +75,11 @@ public address `node-net.ts` allows, and the node's TLS to it then fails its cer
 that name reaches never loads. `node-dns.ts` asks the DNS-over-HTTPS endpoints main puts in the config
 (`dohEndpoints`, the list the verifier host uses) for the A and AAAA records, and uses the system resolver only
 when every endpoint failed to answer at all (unreachable, malformed, timed out), so a network that blocks DoH still
-works. Then DoH is not asked again for a minute. A name DoH says does not exist stays unresolved. `node-net.ts` checks
+works. Then DoH is not asked again for a minute. A name DoH says has no address (NXDOMAIN, or both families answered empty) stays unresolved and is remembered for 30 s; a failure is never remembered, and when one family could not be asked and the other named nothing, that counts as a failure and the system resolver answers. `node-net.ts` checks
 the answers exactly as it checks the system resolver's, so a non-public answer from either refuses the whole name, and
 no rule was widened. The process's fetch reaches only the configured endpoints and follows no redirect
 ([`../gateways/allowlisted-fetch.ts`](../gateways/allowlisted-fetch.ts)). Answers are kept for their TTL, between 10 s
-and 5 min, for at most 256 names. The DoH provider learns the names the node resolves (lookup services, peers'
+and 5 min, for at most 256 names; an answer from one family alone is used once and not kept. The DoH provider learns the names the node resolves (lookup services, peers'
 hostnames, HTTP providers), never the sites a person visits.
 
 A system proxy configured in the shell: a node does not start, because its sockets would go around

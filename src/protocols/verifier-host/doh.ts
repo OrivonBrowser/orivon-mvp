@@ -44,7 +44,7 @@ export function dohTxtResolver (endpoints: readonly string[], fetch: WebFetch, t
 export function dohAddressResolver (endpoints: readonly string[], fetch: WebFetch, timeoutMs = 5_000): (host: string, signal: AbortSignal) => Promise<string[]> {
   return async (host, signal) => {
     const addresses: string[] = []
-    for (const { address } of await dohHostAddresses(endpoints, fetch, host, signal, timeoutMs)) {
+    for (const { address } of (await dohHostAddresses(endpoints, fetch, host, signal, timeoutMs)).addresses) {
       if (!isPublicUnicast(address)) continue
       // The canonical spelling, or nothing: it is compared with the system
       // resolver's answer and may be dialled, and a zone id has no canonical form.
