@@ -173,6 +173,8 @@ async function openUdp (options: Socks5ProviderOptions, signal: AbortSignal): Pr
   const proxyFamily6 = isIP(peer) === 6
   const local = proxyIsLocal(peer) ? (proxyFamily6 ? '::1' : '127.0.0.1') : (proxyFamily6 ? '::' : '0.0.0.0')
   const socket: DgramSocket = createSocket(proxyFamily6 ? 'udp6' : 'udp4')
+  // Until the channel's own handler is in place an error is not the process's to die of; the bind and the connect report theirs.
+  socket.on('error', () => {})
   try {
     await new Promise<void>((resolve, reject) => {
       socket.once('error', reject)
@@ -185,7 +187,8 @@ async function openUdp (options: Socks5ProviderOptions, signal: AbortSignal): Pr
   }
   let established: Established
   try {
-    established = await handshake(control, options, 'associate', { host: local, port: socket.address().port }, signal)
+    // Only a proxy on this computer is told the port: behind a NAT the address and port a far relay would see are not these, and a strict relay would drop the datagrams.
+    established = await handshake(control, options, 'associate', proxyIsLocal(peer) ? { host: local, port: socket.address().port } : { host: local, port: 0 }, signal)
   } catch (error) {
     try { socket.close() } catch { /* already closed */ }
     throw error

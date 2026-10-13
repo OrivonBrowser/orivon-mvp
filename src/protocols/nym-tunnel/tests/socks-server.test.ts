@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { SocksClient } from 'socks'
 import { AcquireError } from '../instances.js'
 import type { Lease, TcpStream, Tunnel, UdpChannel } from '../instances.js'
-import { startSocksServer } from '../socks-server.js'
+import { Reader, startSocksServer } from '../socks-server.js'
 import type { SocksServer } from '../socks-server.js'
 
 const SECRET = 'a-secret-made-for-this-start'
@@ -283,32 +283,38 @@ describe('the SOCKS5 server of the Nym tunnel', () => {
     expect(record.acquired).toEqual([])
   })
 
-  it('does not buffer what a client that has not signed in keeps sending', async () => {
-    const record = recorder()
-    const port = await start(async () => { throw new Error('must not be asked') }, record)
-    const flood = netConnect(port, '127.0.0.1')
-    flood.on('error', () => {})
-    // Version 5, one method (password), then bytes that are not the rest of a handshake.
-    flood.write(Buffer.from([0x05, 0x01, 0x02]))
-    const noise = Buffer.alloc(64 * 1024, 0x41)
-    for (let i = 0; i < 64; i += 1) flood.write(noise)
-    await new Promise((resolve) => setTimeout(resolve, 200))
-    // The server is still answering other clients.
-    await expect(SocksClient.createConnection({ proxy: proxyOf(port, 'not-the-secret'), command: 'connect', destination: { host: 'service.example', port: 80 } })).rejects.toThrow()
-    flood.destroy()
+  it('reads no more than a few kilobytes ahead of what it is asked for, leaving the rest of what a client sends in the kernel', async () => {
+    const accepted = new Promise<Socket>((resolve) => {
+      const server = createServer((socket) => { resolve(socket) })
+      servers.push(server)
+      server.listen(0, '127.0.0.1', () => {
+        const sender = netConnect((server.address() as AddressInfo).port, '127.0.0.1')
+        sender.on('error', () => {})
+        const chunk = Buffer.alloc(64 * 1024, 0x41)
+        for (let i = 0; i < 64; i += 1) sender.write(chunk)
+        servers.push({ close: (done?: () => void) => { sender.destroy(); done?.() } } as unknown as Server)
+      })
+    })
+    const server = await accepted
+    const reader = new Reader(server)
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(server.bytesRead, 'of four megabytes sent, only what fits before it pauses was read').toBeLessThan(200_000)
+    expect(server.isPaused()).toBe(true)
+    // Asking for bytes lets it go on.
+    expect((await reader.read(4)).length).toBe(4)
+    server.destroy()
   })
 
-  it('leaves the places of clients that have signed in alone when many that have not hold theirs', async () => {
+  it('serves a client with the secret while many connections that never sign in are held open, the oldest of them making room', async () => {
     const record = recorder()
     const echo = await echoServer()
     const port = await start(async () => leaseOf(fakeTunnel(echo, record), record), record, { halfCloseGraceMs: 30 })
     const idle = Array.from({ length: 64 }, () => { const one = netConnect(port, '127.0.0.1'); one.on('error', () => {}); return one })
     await new Promise((resolve) => setTimeout(resolve, 100))
-    // Past the small cap of unsigned connections nothing more is accepted from them, but a client with the secret has to be served once there is room.
-    for (const one of idle) one.destroy()
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    // Every one of them is still open and silent; the client that signs in is served all the same.
     const { socket } = await SocksClient.createConnection({ proxy: proxyOf(port), command: 'connect', destination: { host: 'service.example', port: 4242 } })
     socket.destroy()
     expect(record.tcp).toEqual(['service.example:4242'])
+    for (const one of idle) one.destroy()
   })
 })

@@ -135,6 +135,8 @@ export class SettingsStore {
 
   private apply (key: SettingKey, value: SettingValue): void {
     if (this.get(key) === value) return
+    // The person has now said what they want about the tunnel: the file's state no longer explains it.
+    if (key === 'network.tunnel.everywhere') this.unreadable = false
     if (value === SETTINGS[key].default) this.overrides.delete(key)
     else this.overrides.set(key, value)
     this.writer.schedule()

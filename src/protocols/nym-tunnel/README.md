@@ -44,7 +44,7 @@ declares that port in its UDP ASSOCIATE request; the relay passes on datagrams f
 answers that port alone, and refuses a request that declares port 0, so a program on this computer that reaches the relay's
 ephemeral port cannot take the association by sending first. The association ends with its control connection.
 
-**A client that has not signed in is held small.** Such connections have a place of their own (32), apart from the 512 of
+**A client that has not signed in is held small.** Such connections have a place of their own (32; past it the oldest of them makes room), apart from the 512 of
 clients that have signed in and asked for something, and what one sends is read a few kilobytes at a time: the rest waits in the
 kernel, not in this process. A client that closes before it asks for anything gives its place back at once.
 

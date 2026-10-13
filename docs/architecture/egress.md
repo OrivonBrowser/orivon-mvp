@@ -111,7 +111,7 @@ every other app and website is *not routed*.
   not appear above: they take the proxy of the session they run in. A routed app's sessions, the tunnel profile and a
   temporary routed tab point at a front; the default session and every other session the runtime creates do too while the
   whole browser is on the tunnel (a session is stopped when it is made, on the dead end, and then pointed at the shared front,
-  unless its maker claims it: a web context confines itself harder; every session also refuses the main-frame load of a
+  unless its maker claims it: a web context confines itself harder; every session that registers through the shared request owner also refuses the main-frame load of a
   website that belongs in another session). The direct profile and the session that asks what the system's
   proxy is stay on the system's. The engine also makes requests of its own with no web contents (the spellcheck
   dictionary download is one); those take the default proxy, and whether `app.setProxy` reaches them is not measured:

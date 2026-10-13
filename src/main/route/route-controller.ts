@@ -218,6 +218,8 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
       } catch (error) {
         console.error('[route] could not stop a session that could not be routed:', error)
       }
+      // A pointing that ran ahead of this one in the turn recorded its front; the session is on the dead end now.
+      pointedAt.set(session, CONFINED_FRONT)
     }
     await inTurn(session, stop)
   }
@@ -290,7 +292,8 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     }
     if (origin === SHARED_ORIGIN) {
       await appRequestsStopped
-      await pointAppRequests(routed)
+      // What the setting says now, not when this change was queued: a flip back on meanwhile must not be undone.
+      await pointAppRequests(hub.isRouted(SHARED_ORIGIN))
     }
     for (const contents of contentsIn(origin, true)) {
       if (routed) {

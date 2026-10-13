@@ -62,7 +62,7 @@ export function sameSecret (given: string, secret: string): boolean {
 }
 
 /** Bytes a connection has received and not yet been asked for. */
-class Reader {
+export class Reader {
   private buffered = Buffer.alloc(0)
   private ended = false
   private wake: (() => void) | undefined
@@ -382,25 +382,25 @@ async function serve (socket: Socket, deps: SocksServerDeps, signedIn: () => boo
 
 export async function startSocksServer (port: number, deps: SocksServerDeps): Promise<SocksServer> {
   const open = new Set<Socket>()
-  /** Connections still signing in and connections that have signed in, counted apart: a flood of the first takes no place from the second. */
-  const counts = { unauthenticated: 0, authenticated: 0 }
+  /** Connections still signing in, oldest first, and the number that have signed in: counted apart, so a flood of the first cannot take a place from the second. */
+  const signing = new Set<Socket>()
+  let signedInCount = 0
   // Half-open, so a client that has sent all it will send still receives the answer.
   const server: Server = createServer({ allowHalfOpen: true }, (socket) => {
-    if (counts.unauthenticated >= MAX_UNAUTHENTICATED) { socket.destroy(); return }
-    counts.unauthenticated += 1
-    let gaveBack = false
+    // Past the cap the oldest connection still signing in makes room: a program that fills the places cannot keep a real client out for longer than one handshake.
+    if (signing.size >= MAX_UNAUTHENTICATED) { const oldest = signing.values().next().value; if (oldest !== undefined) { signing.delete(oldest); oldest.destroy() } }
+    signing.add(socket)
     open.add(socket)
     socket.on('close', () => {
       open.delete(socket)
-      if (!gaveBack) counts.unauthenticated -= 1
+      signing.delete(socket)
     })
     socket.on('error', () => {})
     const signedIn = (): boolean => {
-      gaveBack = true
-      counts.unauthenticated -= 1
-      if (counts.authenticated >= MAX_CONNECTIONS) return false
-      counts.authenticated += 1
-      socket.once('close', () => { counts.authenticated -= 1 })
+      signing.delete(socket)
+      if (signedInCount >= MAX_CONNECTIONS) return false
+      signedInCount += 1
+      socket.once('close', () => { signedInCount -= 1 })
       return true
     }
     serve(socket, deps, signedIn).catch((error: unknown) => {
