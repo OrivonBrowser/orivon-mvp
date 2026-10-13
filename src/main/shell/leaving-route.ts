@@ -13,7 +13,7 @@ import { holdNavigation, isNavigationHeld } from './navigation-hold.js'
 import { repartitionView } from './tab-parking.js'
 import type { TabRecord } from './tab-types.js'
 
-/** What the person chose, with the partition a "through my proxy" website opens in. */
+/** What the person chose, with the partition a "through my tunnel" website opens in. */
 export type LeaveChoice =
   | { readonly kind: 'cancel' }
   | { readonly kind: 'direct' }

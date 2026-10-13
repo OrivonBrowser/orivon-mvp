@@ -20,15 +20,15 @@ export function resultOf (reply: unknown): ProxyTestResult {
   return { ok: false, reason: 'unreachable' }
 }
 
-/** The result in words for the person, about the proxy rather than the protocol. */
+/** The result in words for the person, about the tunnel rather than the protocol. */
 export function proxyTestWords (result: ProxyTestResult): string {
-  if (result.ok) return result.authentication === 'password' ? 'A SOCKS5 proxy answered. It asks for a user name and password, and each app gets its own.' : 'A SOCKS5 proxy answered.'
+  if (result.ok) return result.authentication === 'password' ? 'The tunnel answered. It asks for a user name and password, and each app gets its own.' : 'The tunnel answered.'
   switch (result.reason) {
     case 'no-proxy': return 'Enter an address first.'
     case 'unreachable': return 'Nothing answered at that address.'
     case 'silent': return 'It did not answer in time.'
-    case 'not-socks5': return 'Something answered, but it is not a SOCKS5 proxy.'
-    case 'refused': return 'A SOCKS5 proxy answered, but it takes neither of the ways Orivon signs in.'
+    case 'not-socks5': return 'Something answered, but it is not a SOCKS5 server.'
+    case 'refused': return 'The tunnel answered, but it takes neither of the ways Orivon signs in.'
   }
 }
 

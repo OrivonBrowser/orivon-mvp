@@ -1,7 +1,7 @@
 // Which apps are routed, through which proxy, and what each routed app needs running for it: its route (read by the
 // broker and the loader), its loopback front (read by Chromium) and its health (read by the Settings page and the
 // site-info popover). Electron-free. A routed app with no proxy set gets a route that refuses: it never falls back to
-// a direct one. When the store cannot say which apps are routed, every app is routed while a proxy is set.
+// a direct one. When the store cannot say which apps are routed, every app is routed while a tunnel is set.
 
 import type { Route, RouteFor, RouteProvider } from '../../broker/route/provider.js'
 import { createSocks5Provider, isolationCredentials, routeAnswered } from '../../broker/route/socks5.js'
@@ -31,7 +31,7 @@ export interface RouteHub {
   /** For `CreateBrokerOptions.routeFor` and the loader's reach path. */
   readonly routeFor: RouteFor
   isRouted: (origin: string) => boolean
-  /** Whether the list of routed apps could not be read, so that every app counts as routed while a proxy is set. */
+  /** Whether the list of routed apps could not be read, so that every app counts as routed while a tunnel is set. */
   unreadable: () => boolean
   state: (origin: string) => RouteState
   /** The app's front, started on first use. Rejects for an app that is not routed. */

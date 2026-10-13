@@ -12,9 +12,10 @@ the broker hands an app.
 **What a route does to `orivon.net`.** For an app that has one, `connect`, `connectSecure`,
 `lookup` and `udp.send` go through the route and nothing else: no name is resolved on this
 machine, nothing is dialled directly, and T20 is not asked, because the route is the app's proxy.
-What the route cannot carry is refused (`denied`), never sent direct. A failure inside the route
-is `unreachable`. `listen` and `udp.bind` are allowed with scope `local` and `denied` with scope
-`network`: a route gives no address others can reach. The grant checks are the ones an unrouted
+What the route cannot carry is refused, never sent direct: `denied` when the provider has no
+such operation (a provider without UDP), `unreachable` when the far end refuses it (a SOCKS5 server
+that refuses UDP ASSOCIATE). Any other failure inside the route is `unreachable` too.
+`listen` and `udp.bind` are allowed with scope `local` and `denied` with scope `network`: a route gives no address others can reach. The grant checks are the ones an unrouted
 app has, with one difference: a hostname is matched by name
 ([`../policy/connect-routed.ts`](../policy/connect-routed.ts)), because the address it points to is
 the proxy's to choose, so what a name that points into the local network reaches is the proxy's
