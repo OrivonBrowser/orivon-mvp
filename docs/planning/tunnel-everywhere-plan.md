@@ -70,12 +70,18 @@ to an origin the person set to off. Each part:
     identity.
   - Every other session the browser makes (extensions included) is pointed at a front or refused.
   - Every web contents gets `disable_non_proxied_udp`.
-- **Requests with no session.** `app.setProxy` points them at the shared front. The verifier host's
-  `net.fetch` (gateways, Helios RPC, CCIP-Read) then rides it.
-  - Its direct routes (the pinned dial T31 and T40 describe, the DNS-over-HTTPS fallback) already
-    stand down when a proxy applies. With everywhere on, main reports a proxy as applying, so they
-    stand down.
-  - Prove it in Step 0.
+  - DNS prefetching is off for the whole browser, from the first PR (`blink-settings`
+    `dnsPrefetchingEnabled=false`, set before `ready`). A page's `<link rel="dns-prefetch">` otherwise resolves its
+    name on this computer through the proxy.
+- **Requests with no session.** `app.setProxy` points them at the shared front. The verifier host's requests
+  (gateways, Helios RPC, CCIP-Read) then ride it, as Step 0 measured:
+  - The host fetches with `net.request` and a `login` listener that answers the front's secret, which main sends it
+    when it starts. It does not use `net.fetch`: the front's `407` is never answered for a utility process's
+    `net.fetch`.
+  - Its direct routes (the pinned dial T31 and T40 describe, the DNS-over-HTTPS fallback) already stand down when a
+    proxy applies. They read `app.resolveProxy`, which `app.setProxy` flips, so main need not report a proxy.
+    Those answers are snapshots taken when the host starts (`unproxiedGateways`, `ccipDirect`), so turning
+    "everywhere" on or off restarts the verifier host.
 - **The broker.** `routeFor(key)` returns a route for every origin that is on, each with its own
   isolation credentials. `reach.ts` follows it.
 - **Orivon's own requests:** self-update, telemetry and bug reports, Web3 Score, tab icons,
@@ -97,7 +103,8 @@ to an origin the person set to off. Each part:
 
 A new `check:egress`, with a test and a CI step like the other guards:
 - every file in `src/` that imports `node:net`, `node:tls`, `node:http`, `node:https`, `node:dgram`
-  or `node:dns`, or calls `net.request`, `net.fetch` or a session's `fetch`, is listed in one table
+  or `node:dns`, the broker's socket adapters or `socks`, or calls `net.request`, `net.fetch`, `setProxy`, a
+  session's `fetch`, `globalThis.fetch` or the global `fetch` (unless it declares its own), is listed in one table
   (`docs/architecture/egress.md`);
 - each entry says how that path takes the tunnel, or why it never leaves the computer;
 - a file that is not listed fails CI.
@@ -123,8 +130,8 @@ This is how a later change cannot add a path around the tunnel unnoticed.
 
 Through `node scripts/run-headless.mjs`, with a scratch profile and the fixture SOCKS5 server:
 
-1. With `app.setProxy` pointed at a front, the verifier host's `net.fetch` reaches the front, and
-   its direct routes stand down.
+1. With `app.setProxy` pointed at a front, the verifier host's requests reach the front, and its direct routes stand
+   down.
 2. With `defaultSession` pointed at a front:
    - an extension's background page or service worker reaches the front;
    - a page's service worker reaches the front;
@@ -133,6 +140,25 @@ Through `node scripts/run-headless.mjs`, with a scratch profile and the fixture 
    cookies in the shared session are untouched.
 
 **If 1 or 2 fails, stop and report.**
+
+### Results (Electron 44, measured)
+
+1. **`app.setProxy`.**
+   - A utility process's `net.fetch` reaches the front and gets its `407`: the application's `login` event is not
+     raised for it. A `net.request` in the utility process with a `login` listener passes, and the fixture sees the
+     name. The verifier host therefore fetches with `net.request`.
+   - `app.resolveProxy` answers `PROXY 127.0.0.1:<port>` after `app.setProxy` and `DIRECT` again after
+     `mode: 'direct'`; `defaultSession.resolveProxy` is unchanged by it. The verifier's checks read the first
+     (`verifier-subsystem.ts`), once when the host starts.
+2. **`defaultSession`.**
+   - An MV3 extension service worker, an MV2 background page, a page's service worker and a page's subresources
+     reach the front. A first request from an extension's service worker raises the application's `login` with
+     `webContents` null, which the app-level handler answers, so one handler covers extensions and workers.
+   - A page's `<link rel="dns-prefetch">` still made a lookup on this computer (the net log shows a speculative
+     resolver job). With `--blink-settings=dnsPrefetchingEnabled=false` the log shows none, and everything still
+     arrives through the front. `rel="preconnect"` made no lookup either way.
+3. **Own storage.** Cookies set by HTTP and by script in `persist:site-<sha256(origin)>` survive a full restart, and the
+   shared session's cookies for the same site stay separate and unchanged.
 
 ## Tests
 
@@ -168,7 +194,8 @@ Through `node scripts/run-headless.mjs`, with a scratch profile and the fixture 
 ## PRs
 
 1. **`stream/tunnel-egress`:** Step 0, `docs/architecture/egress.md` and `check:egress`, with every
-   path that exists today listed. No behaviour change.
+   path that exists today listed, and DNS prefetching off for the whole browser (it also closes the per-app tunnel's
+   leak for a routed app's page). No other behaviour change.
 2. **`stream/tunnel-websites`:** the store generalised, a site's own storage, the popover switch,
    the notice, and the leaving question for websites.
 3. **`stream/tunnel-everywhere`:** the browser-wide setting and every path in section The whole

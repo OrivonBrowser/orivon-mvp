@@ -24,6 +24,7 @@ import { subsystems } from './subsystems.js'
 import { DebouncedWriter } from './storage/debounced-writer.js'
 import { devOnlySwitches } from './shell/dev-switches.js'
 import { applyGlobalPrivacyControl } from './privacy/gpc-switch.js'
+import { disableDnsPrefetching } from './privacy/dns-prefetch-switch.js'
 import { readSettingBeforeReady } from './settings/settings-file.js'
 import { chromeUserAgent } from './shell/user-agent.js'
 import { planIntro } from './shell/intro-state.js'
@@ -69,6 +70,9 @@ app.userAgentFallback = chromeUserAgent(process.versions.chrome, process.platfor
 // verifierSubsystem's own beforeReady -- this one is not `.eth`-specific
 // (dev-switches.ts), so it lives here rather than there.
 for (const flag of devOnlySwitches()) app.commandLine.appendSwitch(flag)
+
+// Always: a page's dns-prefetch hint would resolve a name here that a proxy or tunnel resolves far away (privacy/dns-prefetch-switch.ts).
+disableDnsPrefetching(app.commandLine)
 
 // Subsystems register in subsystems.ts (the append point), never here.
 function report (failures: SubsystemFailure[]): void {

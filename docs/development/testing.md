@@ -408,13 +408,13 @@ outside `attach-view.ts`.
 
 ## Guards
 
-Eighteen checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,
+Nineteen checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,
 and CI's `check` job runs all of them; [`../../scripts/README.md`](../../scripts/README.md) says
 what each one enforces.
 
 `check:natives` · `check:contracts` · `check:secrets` · `check:vectors` · `check:comments` ·
 `check:size` · `check:questions` · `check:manifest-parity` · `check:page-globals` ·
-`check:dev-grant-absent` · `check:advisories` · `check:devlog` · `check:native-dialogs` ·
+`check:dev-grant-absent` · `check:advisories` · `check:devlog` · `check:native-dialogs` · `check:egress` ·
 `check:floating-promises` · `check:test-paths` · `check:impact-map` · `check:app-behaviours` · `check:contracts-surface` (the last two: section App behaviours)
 
 Every one is an exported pure function over a root directory, unit tested against temp fixtures
