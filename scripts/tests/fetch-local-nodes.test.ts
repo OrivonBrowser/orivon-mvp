@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_ENDPOINTS } from '../../src/main/verifier/endpoints.js'
-import { dirVariable, exitCodeFor, fetchLocalNode, fetchLocalNodes, gatewaysFrom, localNodeNames, notPublished } from '../fetch-local-nodes.mjs'
+import { dirVariable, dohEndpointsFrom, exitCodeFor, fetchLocalNode, fetchLocalNodes, gatewaysFrom, localNodeNames, notPublished } from '../fetch-local-nodes.mjs'
 
 const GLUE = Buffer.from('a pretend glue')
 const CORE = Buffer.from('a pretend core module')
@@ -85,6 +85,62 @@ describe('fetchLocalNode', () => {
     expect(failures[0]).toContain('HTTP 503')
   })
 
+  describe('when no request reaches a gateway by its name', () => {
+    const DOH = ['https://doh.example/dns-query']
+    /** Gateways no request reaches by name (a network whose DNS hijacks them), and a DNS-over-HTTPS endpoint answering from `answers`. */
+    const hijacked = (answers: Record<string, unknown>) => vi.fn(async (url: string, _init?: object) => {
+      const asked = new URL(url)
+      if (asked.host !== 'doh.example') throw new TypeError('fetch failed')
+      const body = Buffer.from(JSON.stringify(answers[asked.searchParams.get('name') ?? ''] ?? { Status: 3 }))
+      return { ok: true, status: 200, arrayBuffer: async () => bufferOf(body) }
+    })
+    const fromAddress = (answer: (url: string) => Buffer | number) => vi.fn(async (url: string, _address: string, _init?: object) => {
+      const given = answer(url)
+      return typeof given === 'number'
+        ? { ok: false, status: given, arrayBuffer: async () => new ArrayBuffer(0) }
+        : { ok: true, status: 200, arrayBuffer: async () => bufferOf(given) }
+    })
+
+    it('asks DNS-over-HTTPS for the gateway\'s address and fetches from that address', async () => {
+      const fetchImpl = hijacked({ 'one.example': { Status: 0, Answer: [{ type: 5, data: 'alias.example.' }, { type: 1, data: '192.0.2.7' }] } })
+      const addressFetch = fromAddress(served)
+      expect(await fetchLocalNode({ directory: dir, name: 'swarm-node', gateways: GATEWAYS, dohEndpoints: DOH, fetchImpl, addressFetch })).toEqual([])
+      expect(await readFile(join(dir, 'swarm-node.core.wasm'))).toEqual(CORE)
+      expect(fetchImpl).toHaveBeenCalledWith('https://doh.example/dns-query?name=one.example&type=A', expect.anything())
+      expect(addressFetch).toHaveBeenCalledWith('https://one.example/ipfs/bafyexample/swarm-node.js', '192.0.2.7', expect.anything())
+    })
+
+    it('asks DNS-over-HTTPS once per gateway, not once per file', async () => {
+      const fetchImpl = hijacked({ 'one.example': { Status: 0, Answer: [{ type: 1, data: '192.0.2.7' }] } })
+      await fetchLocalNode({ directory: dir, name: 'swarm-node', gateways: GATEWAYS, dohEndpoints: DOH, fetchImpl, addressFetch: fromAddress(served) })
+      expect(fetchImpl.mock.calls.filter(([url]) => url.startsWith('https://doh.example')).length).toBe(1)
+    })
+
+    it('still checks every hash of a file fetched from an address', async () => {
+      const fetchImpl = hijacked({ 'one.example': { Status: 0, Answer: [{ type: 1, data: '192.0.2.7' }] }, 'two.example': { Status: 0, Answer: [{ type: 1, data: '192.0.2.8' }] } })
+      const failures = await fetchLocalNode({ directory: dir, name: 'swarm-node', gateways: GATEWAYS, dohEndpoints: DOH, fetchImpl, addressFetch: fromAddress((url) => url.endsWith('.wasm') ? Buffer.from('tampered') : served(url)) })
+      expect(failures).toEqual([expect.stringContaining('swarm-node.core.wasm')])
+      expect(failures[0]).toContain('not the pinned file')
+      expect(await readdir(dir)).not.toContain('swarm-node.core.wasm')
+    })
+
+    it('never asks DNS-over-HTTPS about a gateway that answered over HTTP', async () => {
+      const fetchImpl = gateways(() => 503)
+      const addressFetch = fromAddress(served)
+      expect(await fetchLocalNode({ directory: dir, name: 'swarm-node', gateways: GATEWAYS, dohEndpoints: DOH, fetchImpl, addressFetch })).toHaveLength(2)
+      expect(fetchImpl.mock.calls.map(([url]) => new URL(url).host)).not.toContain('doh.example')
+      expect(addressFetch).not.toHaveBeenCalled()
+    })
+
+    it('names both tries when DNS-over-HTTPS has no address either', async () => {
+      const failures = await fetchLocalNode({ directory: dir, name: 'swarm-node', gateways: GATEWAYS, dohEndpoints: DOH, fetchImpl: hijacked({}), addressFetch: fromAddress(served) })
+      expect(failures).toHaveLength(2)
+      expect(failures[0]).toContain('https://one.example: fetch failed')
+      expect(failures[0]).toContain('https://one.example by DNS-over-HTTPS: no address for one.example')
+      expect(failures[0]).toContain('DNS status 3')
+    })
+  })
+
   it('says the node is not published, and asks nobody, while the manifest has a placeholder CID', async () => {
     await writeFile(join(dir, 'swarm-node.json'), MANIFEST('PLACEHOLDER-NOT-PUBLISHED'))
     const fetchImpl = gateways(served)
@@ -133,6 +189,17 @@ describe('gatewaysFrom', () => {
 
   it('refuses a source with none', () => {
     expect(() => gatewaysFrom('export const x = 1')).toThrow(/no gateways/)
+  })
+})
+
+describe('dohEndpointsFrom', () => {
+  it('reads the DNS-over-HTTPS endpoints the verifier asks from endpoints.ts, in order', async () => {
+    const source = await readFile(join(process.cwd(), 'src/main/verifier/endpoints.ts'), 'utf8')
+    expect(dohEndpointsFrom(source)).toEqual([...DEFAULT_ENDPOINTS.dnsOverHttps])
+  })
+
+  it('refuses a source with none', () => {
+    expect(() => dohEndpointsFrom('export const x = 1')).toThrow(/no DNS-over-HTTPS endpoints/)
   })
 })
 
