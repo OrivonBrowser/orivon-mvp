@@ -6,6 +6,7 @@
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { isCapabilityKind } from '../../broker/policy/request-grant.js'
 import type { DeviceRows } from '../devices/hid-rows.js'
+import type { RouteState } from '../route/route-hub.js'
 import type { SchemeChoices } from '../scheme-routing/scheme-choices.js'
 import type { InternalDomain } from '../pages/internal-ipc.js'
 import type { PermissionsController } from './permissions.js'
@@ -18,6 +19,17 @@ interface AppsRequest {
   readonly pickId?: unknown
   readonly key?: unknown
   readonly scheme?: unknown
+  readonly routed?: unknown
+}
+
+/** What an app's card needs to show and move the switch that sends its traffic through the person's proxy. */
+export interface AppRoutes {
+  /** What the app's route is doing: `off` for an app that is not routed. */
+  readonly stateOf: (origin: string) => RouteState
+  /** Why the switch cannot be turned on now (it can always be turned off), or undefined when it can. */
+  readonly blockedFor: (origin: string) => 'no-proxy' | 'not-cached' | undefined
+  /** Resolves once the app's sessions follow the switch, so the card is not told it is on while they are still direct. */
+  readonly set: (origin: string, routed: boolean) => Promise<void> | void
 }
 
 export interface AppsDeps {
@@ -28,6 +40,8 @@ export interface AppsDeps {
   /** The kinds of link each app was chosen to open (d-0596). */
   readonly links: Pick<SchemeChoices, 'schemesOf' | 'get' | 'forget'>
   readonly identity: () => Promise<'keychain' | 'session-only' | 'not-started'>
+  /** The per-app network route (ADR-0080). */
+  readonly routes: AppRoutes
 }
 
 /** The origin a request names, or null when it is not the canonical origin of an address. */
@@ -43,7 +57,7 @@ export function appsDomain (deps: AppsDeps): InternalDomain {
       switch (request.type) {
         case 'list': {
           const apps = await deps.permissions.list()
-          const withStorage = await Promise.all(apps.map(async (app) => ({ ...app, deviceRows: deps.devices.rows(app.origin), linkSchemes: deps.links.schemesOf(app.origin), storage: await orivonStorageFor(deps.userDataPath, app.origin, undefined, undefined) })))
+          const withStorage = await Promise.all(apps.map(async (app) => ({ ...app, deviceRows: deps.devices.rows(app.origin), linkSchemes: deps.links.schemesOf(app.origin), route: { state: deps.routes.stateOf(app.origin), blocked: deps.routes.blockedFor(app.origin) }, storage: await orivonStorageFor(deps.userDataPath, app.origin, undefined, undefined) })))
           return { apps: withStorage, identity: await deps.identity() }
         }
         case 'revoke': {
@@ -67,6 +81,14 @@ export function appsDomain (deps: AppsDeps): InternalDomain {
           const origin = originOf(request.origin)
           if (origin === null || typeof request.scheme !== 'string' || deps.links.get(request.scheme) !== origin) return { ok: false }
           return { ok: deps.links.forget(request.scheme) }
+        }
+        case 'setRoute': {
+          const origin = originOf(request.origin)
+          if (origin === null || typeof request.routed !== 'boolean') return { ok: false }
+          // Turning a route on needs a proxy and an app held in the cache; turning it off never waits on either.
+          if (request.routed && deps.routes.blockedFor(origin) !== undefined) return { ok: false }
+          await deps.routes.set(origin, request.routed)
+          return { ok: true }
         }
         default:
           return undefined

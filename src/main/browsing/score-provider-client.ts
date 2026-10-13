@@ -4,6 +4,7 @@
 import { createHash } from 'node:crypto'
 import { MAX_SCORE_FILE_BYTES, SCORE_STANDARD, findEvaluation, parseDescriptor } from '../../trust/score-provider.js'
 import type { ProviderDescriptor, ProviderVerdict } from '../../trust/score-provider.js'
+import { lookupSessionFor } from '../route/lookup-session.js'
 import { readCapped } from './favicon-fetch.js'
 import { parseOmniboxInput } from './omnibox.js'
 
@@ -16,16 +17,18 @@ export interface ScoreProviderDeps {
   /** The `web3.scoreProvider` setting, read on every lookup so a change applies at once. */
   readonly providerAddress: () => string
   readonly isDevEthName: (host: string) => boolean
-  readonly fetchJson: (url: string) => Promise<FetchedJson>
+  /** `origin` is the app the lookup is made for, when it is one: a routed app's lookup goes through its route. */
+  readonly fetchJson: (url: string, origin?: string) => Promise<FetchedJson>
   readonly now?: () => number
 }
 
 export interface ScoreProviderClient {
   /** The verdict on a website identifier (`sha256:…` or `cid:…`), `undefined` for a page with none.
-   * Past `waitMs` it answers `pending` and the lookup carries on, kept for the next ask. Never throws. */
-  readonly verdictFor: (id: string | undefined, waitMs?: number) => Promise<ProviderVerdict>
+   * Past `waitMs` it answers `pending` and the lookup carries on, kept for the next ask. `origin` is the app asked
+   * about, so a routed app's lookup leaves through its route. Never throws. */
+  readonly verdictFor: (id: string | undefined, waitMs?: number, origin?: string) => Promise<ProviderVerdict>
   /** The chosen provider's own name; its address when its description cannot be read; undefined with none chosen. Never throws. */
-  readonly providerName: () => Promise<string | undefined>
+  readonly providerName: (origin?: string) => Promise<string | undefined>
 }
 
 const ANSWER_KEPT_MS = 10 * 60_000
@@ -54,18 +57,20 @@ export function createScoreProviderClient (deps: ScoreProviderDeps): ScoreProvid
   const kept = new Map<string, { readonly at: number, readonly answer: Promise<FetchedJson> }>()
 
   // One fetch per URL while it is in flight or kept: the shield asks several times a second while a page loads.
-  async function cachedFetch (url: string): Promise<FetchedJson> {
+  async function cachedFetch (url: string, origin: string | undefined): Promise<FetchedJson> {
     const time = now()
     for (const [key, entry] of kept) if (time - entry.at >= ANSWER_KEPT_MS) kept.delete(key)
-    let entry = kept.get(url)
+    // A routed app's answer is its own: what its route could reach says nothing about a direct fetch, nor the reverse.
+    const key = `${origin ?? ''} ${url}`
+    let entry = kept.get(key)
     if (entry === undefined) {
-      entry = { at: time, answer: deps.fetchJson(url) }
-      kept.set(url, entry)
+      entry = { at: time, answer: deps.fetchJson(url, origin) }
+      kept.set(key, entry)
     }
     const answer = await entry.answer
-    if (answer.kind === 'failed' && now() - entry.at >= FAILURE_KEPT_MS && kept.get(url) === entry) {
-      kept.delete(url)
-      return await cachedFetch(url)
+    if (answer.kind === 'failed' && now() - entry.at >= FAILURE_KEPT_MS && kept.get(key) === entry) {
+      kept.delete(key)
+      return await cachedFetch(url, origin)
     }
     return answer
   }
@@ -74,15 +79,15 @@ export function createScoreProviderClient (deps: ScoreProviderDeps): ScoreProvid
     | { readonly kind: 'unreachable', readonly verdict: ProviderVerdict }
     | { readonly kind: 'described', readonly base: string, readonly descriptor: ProviderDescriptor }
 
-  async function describe (address: string): Promise<Described> {
+  async function describe (address: string, origin?: string): Promise<Described> {
     const typed = providerBase(address, deps.isDevEthName)
     if (typed === undefined) return { kind: 'unreachable', verdict: { status: 'unreachable', address, reason: 'It is not an address Orivon can open.' } }
     const descriptorUrl = `${typed}/provider.json`
     let base = typed
-    let fetched = await cachedFetch(descriptorUrl)
+    let fetched = await cachedFetch(descriptorUrl, origin)
     // A person types the name a provider is known by; web3-score-manager publishes its files in `score/` under it.
     if (fetched.kind === 'missing' && !typed.endsWith(`/${PUBLISHED_FOLDER}`)) {
-      const inFolder = await cachedFetch(`${typed}/${PUBLISHED_FOLDER}/provider.json`)
+      const inFolder = await cachedFetch(`${typed}/${PUBLISHED_FOLDER}/provider.json`, origin)
       if (inFolder.kind !== 'missing') {
         base = `${typed}/${PUBLISHED_FOLDER}`
         fetched = inFolder
@@ -95,14 +100,14 @@ export function createScoreProviderClient (deps: ScoreProviderDeps): ScoreProvid
     return { kind: 'described', base, descriptor }
   }
 
-  async function lookup (address: string, id: string): Promise<ProviderVerdict> {
-    const described = await describe(address)
+  async function lookup (address: string, id: string, origin: string | undefined): Promise<ProviderVerdict> {
+    const described = await describe(address, origin)
     if (described.kind === 'unreachable') return described.verdict
     const { base, descriptor } = described
     const provider = { name: descriptor.name, address }
     const bucket = bucketOf(id, descriptor.bucketHexChars)
     const bucketUrl = `${base}/website/${bucket}.json`
-    const file = await cachedFetch(bucketUrl)
+    const file = await cachedFetch(bucketUrl, origin)
     if (file.kind === 'missing') return { status: 'no-score', provider }
     if (file.kind === 'failed') return { status: 'unreachable', address, reason: file.reason }
     const found = findEvaluation(file.body, 'website', bucket, id)
@@ -111,21 +116,21 @@ export function createScoreProviderClient (deps: ScoreProviderDeps): ScoreProvid
   }
 
   return {
-    async providerName () {
+    async providerName (origin) {
       const address = deps.providerAddress().trim()
       if (address === '') return undefined
       try {
-        const described = await describe(address)
+        const described = await describe(address, origin)
         return described.kind === 'described' ? described.descriptor.name : address
       } catch {
         return address
       }
     },
-    async verdictFor (id, waitMs) {
+    async verdictFor (id, waitMs, origin) {
       const address = deps.providerAddress().trim()
       if (address === '') return { status: 'off' }
       if (id === undefined) return { status: 'not-assessable', address }
-      const answer = lookup(address, id)
+      const answer = lookup(address, id, origin)
       if (waitMs === undefined) return await answer
       let timer: ReturnType<typeof setTimeout> | undefined
       const pending = new Promise<ProviderVerdict>((resolve) => { timer = setTimeout(() => { resolve({ status: 'pending', address }) }, waitMs) })
@@ -141,10 +146,18 @@ export function createScoreProviderClient (deps: ScoreProviderDeps): ScoreProvid
 // net.fetch, not Node's fetch: only Chromium's stack honours the resolver rules that send `.eth`
 // and `*.orivon` to the verifier. Imported dynamically, as favicon-fetch.ts's header explains. Redirects
 // are followed because an `ipfs://` address is first served at a path that redirects to its own origin.
-export async function netFetchJson (url: string): Promise<FetchedJson> {
+export async function netFetchJson (url: string, origin?: string): Promise<FetchedJson> {
   const { net } = await import('electron')
+  // A routed app's lookup leaves through its route's session; when that cannot be had, it does not leave at all.
+  let routed: Awaited<ReturnType<typeof lookupSessionFor>>
   try {
-    const response = await net.fetch(url, { credentials: 'omit', redirect: 'follow', cache: 'no-store', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+    routed = origin === undefined ? undefined : await lookupSessionFor(origin)
+  } catch {
+    return { kind: 'failed', reason: `${url} could not be reached through this app's route.` }
+  }
+  try {
+    const init = { credentials: 'omit', redirect: 'follow', cache: 'no-store', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) } as const
+    const response = routed === undefined ? await net.fetch(url, init) : await routed.fetch(url, init)
     if (response.status === 404) return { kind: 'missing' }
     if (!response.ok) return { kind: 'failed', reason: `${url} answered ${String(response.status)}.` }
     const bytes = await readCapped(response.body, MAX_SCORE_FILE_BYTES)

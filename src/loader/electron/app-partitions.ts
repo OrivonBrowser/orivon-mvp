@@ -62,6 +62,21 @@ export function forEachAppSession (listener: (appSession: Session) => void): voi
   for (const appSession of [...appSessions]) listener(appSession)
 }
 
+/**
+ * Work to finish for an app's session before the app is served from it, so that nothing loads in a session that is
+ * not yet as it must be. Awaited in order by `prepareAppSession`.
+ */
+const appSessionPreparers: Array<(appSession: Session, origin: string) => Promise<void>> = []
+
+export function beforeAppSessionServes (preparer: (appSession: Session, origin: string) => Promise<void>): void {
+  appSessionPreparers.push(preparer)
+}
+
+/** Runs every preparer for `origin`'s session. A rejection stops the app being served from it. */
+export async function prepareAppSession (appSession: Session, origin: string): Promise<void> {
+  for (const preparer of appSessionPreparers) await preparer(appSession, origin)
+}
+
 /** The partitions whose handler answers from the origin's pin, a subset of `servedPartitions`: the rest answer from the verifier until the pin lands. */
 const pinnedPartitions = new Set<string>()
 

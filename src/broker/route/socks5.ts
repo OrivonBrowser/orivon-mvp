@@ -43,6 +43,20 @@ export function isolationCredentials (runSecret: Uint8Array = randomBytes(32)): 
   })
 }
 
+/** Closing the relay cannot reject on its own; a listener that throws is the only way, and it must not end the browser. */
+function reportCloseFailure (error: unknown): void {
+  console.error('[route] closing the datagram relay failed:', error)
+}
+
+/**
+ * Whether the proxy itself answered a failed connect: it refused to carry the stream (host unreachable, connection
+ * refused, a rule), which says nothing against the route. A proxy that cannot be reached, closes at once or fails the
+ * sign-in is not one that answered.
+ */
+export function routeAnswered (error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith('Socks5 proxy rejected connection')
+}
+
 function abandoned (): Error {
   return fail('revoked', 'the connection was abandoned')
 }
@@ -166,9 +180,9 @@ async function openUdp (options: Socks5ProviderOptions, signal: AbortSignal): Pr
     await new Promise<void>((resolve) => { try { socket.close(() => { resolve() }) } catch { resolve() } })
     closeListeners.each((listener) => { listener() })
   }
-  control.once('close', () => { void close() })
+  control.once('close', () => { close().catch(reportCloseFailure) })
   control.on('error', () => {})
-  socket.on('error', () => { void close() })
+  socket.on('error', () => { close().catch(reportCloseFailure) })
   // The relay is the only sender accepted: anything else that reaches this
   // port is not the route's.
   socket.on('message', (message, from) => {

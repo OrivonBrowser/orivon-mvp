@@ -115,6 +115,8 @@ hr {
 .site-header { display: flex; flex-direction: column; gap: 2px; }
 .site-origin { font-weight: 600; font-size: 14px; word-break: break-all; }
 .site-claim { color: var(--wink-dim); font-size: 12px; }
+.route-line { margin: 6px 0 0; padding: 0 2px; color: var(--wink-dim); font-size: 12px; }
+.route-line-down { color: var(--wwarn); }
 
 .connection-row {
   display: flex;

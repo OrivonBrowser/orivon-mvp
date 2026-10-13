@@ -32,6 +32,8 @@ export interface PageScoreDeps extends ScoreProviderDeps {
   readonly resolveEthContent: (host: string, partition: string) => Promise<string | undefined>
   /** The manifest of the content `cid` names, read through `origin` (`Loader.manifestAt`); the shield reads it the same way. */
   readonly manifestAt: (origin: string, cid: string) => Promise<ManifestAtRoot>
+  /** Whether `caller` is an app the person routed: its lookups go through its route, and the two reads that cannot (the verifier resolving a name, the loader reading a manifest from a gateway) do not happen. */
+  readonly routedCaller?: (caller: string) => boolean
 }
 
 export interface PageScoreLookup {
@@ -101,17 +103,20 @@ export function createPageScoreLookup (deps: PageScoreDeps): PageScoreLookup {
     if (configured === '') return { provider: null, level: null }
     const client = clientFor(caller)
     const named = contentNamedBy(address)
+    const routed = deps.routedCaller?.(caller) === true
     let content: { cid: string, origin: string } | undefined
     try {
-      content = named === undefined ? undefined : await contentOf(named, caller)
+      content = named === undefined || (routed && named.kind === 'eth') ? undefined : await contentOf(named, caller)
     } catch {
       content = undefined
     }
-    if (content === undefined) return { provider: await client.providerName() ?? configured, level: null }
-    const verdict = await client.verdictFor(scoreIdOf({ kind: 'cid', value: content.cid }))
+    if (content === undefined) return { provider: await client.providerName(caller) ?? configured, level: null }
+    const verdict = await client.verdictFor(scoreIdOf({ kind: 'cid', value: content.cid }), undefined, caller)
     switch (verdict.status) {
       case 'judged': {
         const level = verdict.evaluation.trustlessity.level
+        // The manifest that binds a level to its host is read from a gateway, which a routed app's lookup may not do.
+        if (routed) return { provider: verdict.provider.name, level: null }
         const home = await readHomeAtRoot(deps.manifestAt, content.origin, content.cid, verdict, HOME_WAIT_MS)
         // A judgement of content counts only at the host its manifest names; elsewhere the page is told what the shield shows: no judged level.
         const counted = judgedLevelCounts(home.binding)

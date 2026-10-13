@@ -30,6 +30,8 @@ import type { CapabilityRequest, WebsiteScore } from '../contracts/index.js'
 import type { ExtensionsApi } from './extensions/extensions-subsystem.js'
 import type { AppUpdates } from './install/app-updates.js'
 import type { ProviderVerdict } from '../trust/score-provider.js'
+import type { RouteService } from './route/route-service.js'
+import { createPublishedSlot } from './published-slot.js'
 
 export interface SubsystemContext {
   readonly app: App
@@ -139,6 +141,12 @@ export interface SubsystemContext {
    */
   readonly schemeHost: SchemeHost | undefined
   /**
+   * The network route each app can have (`./route/`): which apps are routed through the person's proxy, the front their
+   * Chromium sessions use and the route the broker and the loader read. Published by `routeSubsystem`, which is
+   * critical and listed above the broker: an app flagged as routed whose route did not start would go direct.
+   */
+  readonly routes: RouteService | undefined
+  /**
    * Whether the WebContents making a call is attributed to the origin it
    * claims -- `isAttributedSession`'s (`../broker/policy/origin.js`)
    * injected other half. Every renderer-reachable broker channel
@@ -191,30 +199,6 @@ export interface OpenTabs {
   readonly origins: () => string[]
 }
 
-/**
- * One field on `SubsystemContext` that may be published exactly once.
- * `broker` and `loader` both need this guarantee for the same reason (Rule
- * 3): a second published value means two independently-constructed
- * instances disagreeing about one running app's state. Keyed by context
- * rather than stored as an ordinary field so the value can be exposed as a
- * get-only accessor -- a plain mutable field would let `ctx.broker = x`
- * compile, relying on every caller going through `publishBroker` by
- * convention alone.
- */
-function createPublishedSlot<T> (label: string, hazard: string): {
-  get: (ctx: SubsystemContext) => T | undefined
-  publish: (ctx: SubsystemContext, value: T) => void
-} {
-  const byContext = new WeakMap<SubsystemContext, T>()
-  return {
-    get: (ctx) => byContext.get(ctx),
-    publish: (ctx, value) => {
-      if (byContext.has(ctx)) throw new Error(`ctx.${label} is already published; ${hazard}`)
-      byContext.set(ctx, value)
-    }
-  }
-}
-
 const brokerSlot = createPublishedSlot<Broker>('broker', 'a second Broker would create two disagreeing grant ledgers for one running app')
 const loaderSlot = createPublishedSlot<Loader>('loader', 'a second Loader would create two disagreeing ideas of what is installed for one running app')
 const requestGrantSlot = createPublishedSlot<(origin: string, request: CapabilityRequest, caller?: DialogCaller, abandoned?: AbortSignal) => Promise<boolean>>('requestGrant', 'a second one could close over a different Broker instance than the one every other subsystem reads')
@@ -229,6 +213,7 @@ const scoreVerdictForSlot = createPublishedSlot<(id: string | undefined, waitMs?
 
 const websiteScoreSlot = createPublishedSlot<(origin: string, address: string) => Promise<WebsiteScore>>('websiteScore', 'a second one would keep a second set of per-caller caches, and a page could tell them apart')
 const schemeHostSlot = createPublishedSlot<SchemeHost>('schemeHost', 'a second one would keep a second queue of links, and an app would hear each link from only one of them')
+const routesSlot = createPublishedSlot<RouteService>('routes', 'a second one would keep a second set of fronts, and a session could be pointed at one the broker does not know')
 const showNoticeSlot = createPublishedSlot<(notice: { readonly title: string, readonly message: string }) => void>('showNotice', 'a second one could draw a message somewhere the first does not')
 
 class SubsystemContextImpl implements SubsystemContext {
@@ -290,6 +275,10 @@ class SubsystemContextImpl implements SubsystemContext {
 
   get schemeHost (): SchemeHost | undefined {
     return schemeHostSlot.get(this)
+  }
+
+  get routes (): RouteService | undefined {
+    return routesSlot.get(this)
   }
 }
 
@@ -372,6 +361,11 @@ export function publishWebsiteScore (ctx: SubsystemContext, websiteScore: (origi
 /** The one sanctioned way to set `ctx.schemeHost` -- see `publishBroker`'s own doc; same guarantee, same reason. */
 export function publishSchemeHost (ctx: SubsystemContext, schemeHost: SchemeHost): void {
   schemeHostSlot.publish(ctx, schemeHost)
+}
+
+/** The one sanctioned way to set `ctx.routes` -- see `publishBroker`'s own doc; same guarantee, same reason. */
+export function publishRoutes (ctx: SubsystemContext, routes: RouteService): void {
+  routesSlot.publish(ctx, routes)
 }
 
 export interface Subsystem {

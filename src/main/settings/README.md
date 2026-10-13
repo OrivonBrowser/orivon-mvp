@@ -12,7 +12,7 @@ whose effect is not read on demand (today the theme).
 **What it depends on.** [`../browsing/search-engines.ts`](../browsing/search-engines.ts) (the
 custom search template's check), [`../storage/`](../storage/) (the debounced write) and
 [`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts)
-(`writeFileAtomic`). No `electron` import: the theme applier is handed the object it sets.
+(`writeFileAtomic`). `proxy-checks.ts` reads the `host:port` of the SOCKS5 proxy a routed app uses. No `electron` import: the theme applier is handed the object it sets.
 
 **What it must never import.** [`../shell/`](../shell/): the shell reads settings, never the reverse.
 

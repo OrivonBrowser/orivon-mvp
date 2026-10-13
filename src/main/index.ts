@@ -205,6 +205,7 @@ export function boot (runtime: Runtime): void {
       providerAddress: () => shell.settings.get('web3.scoreProvider'),
       isDevEthName,
       fetchJson: netFetchJson,
+      routedCaller: (caller) => ctx.routes?.hub.isRouted(caller) === true,
       resolveEthContent: verifierEthContentCid,
       manifestAt: async (origin, cid) => await ctx.loader?.manifestAt(origin, cid) ?? { kind: 'unread', reason: 'the loader is not running' }
     }).websiteScore)
@@ -223,6 +224,8 @@ export function boot (runtime: Runtime): void {
       shell.session.carry(() => shell.closedTabs.list().flatMap((entry) => entry.kind === 'window' && seeded.includes(entry.id) ? [entry.window] : []))
     }
     applyThemeSetting(shell.settings, nativeTheme)
+    // The proxy an app can be routed through is the saved one until now; from here the setting itself.
+    ctx.routes?.followSettings(shell.settings)
     // The host starts only when a .eth address is needed, by which time the settings have been read: the person's choice reaches it.
     configureVerifier({
       lightClientEnabled: () => shell.settings.get('web3.lightClient'),

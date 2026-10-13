@@ -386,6 +386,9 @@ export const brokerIpcSubsystem: Subsystem = {
   critical: true,
   afterReady: (ctx: SubsystemContext) => {
     const realNow = (): number => Date.now()
+    // Thrown rather than skipped: without the route store an app the person routed would go direct.
+    const routes = ctx.routes
+    if (routes === undefined) throw fail('internal', 'ctx.routes is not published -- the route subsystem is missing or misordered')
     const deps: CreateBrokerOptions = {
       dial: dialTcp,
       // `dialTls` -- ADR-0017's real node:tls stack, no override, no new
@@ -397,8 +400,8 @@ export const brokerIpcSubsystem: Subsystem = {
       listen: listenTcp,
       resolve: resolveHost,
       resolveLookup,
-      // No route store is wired: every `orivon.net` call keeps the direct path and T20.
-      routeFor: () => undefined,
+      // An app the person routed is carried by its route and by nothing else; the others keep the direct path and T20.
+      routeFor: routes.hub.routeFor,
       // T20's fail-closed check (security-model.md, docs/open-questions.md
       // A263), asked of the SAME session every ordinary page loads through
       // -- not a per-app or per-context one, since every net capability

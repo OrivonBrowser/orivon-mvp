@@ -1,8 +1,10 @@
 # `src/loader/electron/`: the Electron-specific machinery
 
 **What lives here.** `fetch.ts` (`Fetch` over Electron `net`, with the redirect rule),
-`resolve.ts` (DNS through `net.resolveHost`) and `serve.ts` (registers `protocol.handle` and
-`restorePinnedServing`).
+`resolve.ts` (DNS through `net.resolveHost`), `serve.ts` (registers `protocol.handle` and
+`restorePinnedServing`), `app-partitions.ts` (which origins have a session of their own, and the preparers that finish
+a session before an app is served from it) and `reach-route.ts` (the route of an app's third-party reach, supplied by
+main).
 
 **What it depends on.** `electron`, [`../../contracts/`](../../contracts/),
 [`../cache/`](../cache/), [`../serve/`](../serve/), [`../reach/`](../reach/) and
@@ -12,6 +14,11 @@
 the one folder in this directory that imports `electron`, and all of it is tied to Electron.
 
 ## Design notes
+
+**A session is prepared before its app is served from it.** `prepareAppSession` runs every preparer
+`beforeAppSessionServes` was given (main points a routed app's session at its proxy this way) and `serve.ts` awaits it
+before `registerAppOrigin`, so no page loads in a session that is not yet as it must be. A preparer that fails stops
+the app being served, not the browser.
 
 Why re-registering a handler is idempotent, why `restorePinnedServing` runs at startup, and why
 the CSP is read from the live grant ledger on every request (so a revoke narrows the very next

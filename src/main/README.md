@@ -5,7 +5,7 @@ subsystem registry every other stream plugs into, one directory per job
 ([`ADR-0023`](../../docs/decisions/ADR-0023-src-main-is-organised-by-job.md)). `start.ts`
 (the process entry: it takes the single-instance lock before `index.ts`, the rest of the browser, is loaded),
 `index.ts`, `registry.ts`, `subsystems.ts` and `channels.ts` stay at the top level: `registry.ts` and
-`channels.ts` are the seam other packages import as values.
+`channels.ts` are the seam other packages import as values; `published-slot.ts` is the one-time slot behind each field `registry.ts` lists.
 
 **Tied to Electron, entirely.** Only the pure `<name>.ts` files run under plain vitest.
 
@@ -78,6 +78,7 @@ rather than editing here.
 | [`verifier/`](verifier/) | Start the `.eth` verifier, trust its certificate, choose its checkpoint | host process, checkpoint, IPNS sequences | `verifier-subsystem.ts` only |
 | [`embed/`](embed/) | The pages an app shows inside itself, in a `<webview>` (`ADR-0039`) | which app owns which guest | `embed-host.ts` and `embed-subsystem.ts` only |
 | [`children/`](children/) | The hidden host each app's forked/threaded children run in, and how long they live (`ADR-0046`) | live pages per origin, one offscreen host per origin | `watch-pages.ts`, `child-host.ts` and `children-subsystem.ts` only |
+| [`route/`](route/) | The network route an installed app can have: which apps the person routed through their proxy, the loopback front their Chromium sessions use, and what routing does to those sessions (`ADR-0080`) | the routed apps in `routes.json` (memory only in a private session); one front per routed app | `route-subsystem.ts` only |
 | [`extensions/`](extensions/) | Install, register and load Chrome extensions | the installed-extension registry | all but `action-pins-runner.ts`, `action-pins.ts`, `base-manifest-source.ts`, `crx.ts`, `crx3-format.ts`, `details-optional.ts`, `dnr-action-options.ts`, `dnr-api.ts`, `dnr-match-log.ts`, `effective-manifest.ts`, `electron-chrome-extensions-lib.d.ts`, `extension-commands.ts`, `extension-host-access.ts`, `extension-known-permissions.ts`, `extension-permission-check.ts`, `extension-prefs-runner.ts`, `extension-prefs.ts`, `extension-sender-id-check.ts`, `extension-tab-details.ts`, `extension-tab-invocation.ts`, `extension-url-policy.ts`, `extensions-detail-parts.ts`, `extensions-domain.ts`, `extensions-install-test-hook.ts`, `extensions-menu-command.ts`, `extensions-menu-model.ts`, `extensions-menu-names.ts`, `extensions-menu-overlay.ts`, `extensions-menu-points.ts`, `extensions-page-commands.ts`, `extensions-view-runner.ts`, `extensions-view.ts`, `granted-host-rule.ts`, `granted-reconcile.ts`, `install-lifecycle.ts`, `install-private.ts`, `install-store-runner.ts`, `manifest-stage-granted.ts`, `manifest-stage-site-access.ts`, `optional-permissions.ts`, `permission-nag-limit.ts`, `permission-prompt-overlay.ts`, `registry-runner.ts`, `registry.ts`, `shortcuts-page.ts`, `site-reach-runner.ts`, `site-reach.ts`, `store-download-seam.ts`, `store-runner.ts`, `store-test-hook.ts` and `unpack-runner.ts` |
 
 ### The organising rule

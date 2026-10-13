@@ -37,7 +37,8 @@ export const embedSubsystem: Subsystem = {
   afterReady: (ctx: SubsystemContext) => {
     if (ctx.broker === undefined) throw new Error('embed subsystem requires ctx.broker -- check its position in subsystems.ts')
     const broker = ctx.broker
-    const host = installEmbedHost(broker)
+    // Read per request: a shown page's name is resolved here, unless the app is routed and its proxy resolves it.
+    const host = installEmbedHost(broker, undefined, (appOrigin) => ctx.routes?.hub.isRouted(appOrigin) === true)
     ipcMain.on(EMBED_SCRIPT_CHANNEL, (event) => {
       event.returnValue = embedScriptReply(host, broker, event.sender as WebContents)
     })

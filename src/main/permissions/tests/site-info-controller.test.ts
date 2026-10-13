@@ -74,6 +74,23 @@ function fakeLoader (overrides: Partial<Loader> = {}): Loader {
   }
 }
 
+describe('createSiteInfoController -- the route of a routed app', () => {
+  const routesWith = (state: string): SubsystemContext['routes'] => ({ hub: { state: () => state } }) as unknown as SubsystemContext['routes']
+
+  it('carries the state of the app\'s route, so the popover can say where its traffic goes and when the proxy is not answering', async () => {
+    for (const state of ['idle', 'ok', 'down', 'no-proxy']) {
+      const ctx = { ...ctxWith(createBroker(baseDeps())), routes: routesWith(state) } as unknown as SubsystemContext
+      expect((await createSiteInfoController(ctx, NO_TRUST).siteInfoFor(OTHER)).route, state).toBe(state)
+    }
+  })
+
+  it('carries nothing for an app that is not routed', async () => {
+    const ctx = { ...ctxWith(createBroker(baseDeps())), routes: routesWith('off') } as unknown as SubsystemContext
+    expect('route' in await createSiteInfoController(ctx, NO_TRUST).siteInfoFor(OTHER)).toBe(false)
+    expect('route' in await createSiteInfoController(ctxWith(createBroker(baseDeps())), NO_TRUST).siteInfoFor(OTHER)).toBe(false)
+  })
+})
+
 describe('createSiteInfoController -- siteInfoFor / siteSummaryFor', () => {
   it('an ordinary, never-registered origin reports nothing asked', async () => {
     const controller = createSiteInfoController(ctxWith(createBroker(baseDeps())), NO_TRUST)

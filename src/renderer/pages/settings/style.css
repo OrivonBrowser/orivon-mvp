@@ -176,6 +176,9 @@ details > summary { cursor: pointer; }
 .perm.warning .perm-text { color: var(--wwarn); }
 .perm-text { overflow-wrap: anywhere; }
 .app-stored { margin: 6px 0 0; font-size: 12.5px; }
+.app-route { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--wborder); }
+.app-route-text p { margin: 2px 0 0; }
+.route-test { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
 
 .clear-data { display: grid; gap: 10px; width: 100%; max-width: 480px; }
 .clear-history { display: flex; align-items: center; justify-content: space-between; gap: 10px; }

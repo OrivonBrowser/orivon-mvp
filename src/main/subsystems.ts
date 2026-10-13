@@ -28,6 +28,7 @@ import { localFilesSubsystem } from './local-files/local-files-subsystem.js'
 import { verifierSubsystem } from './verifier/verifier-subsystem.js'
 import { signInIdentitySubsystem } from './shell/sign-in-identity-headers.js'
 import { extensionsSubsystem } from './extensions/extensions-subsystem.js'
+import { routeSubsystem } from './route/route-subsystem.js'
 import { brokerIpcSubsystem } from '../broker/transport/ipc.js'
 import { devGrantSubsystem } from './dev/dev-grant.js'
 import { requestGrantSubsystem } from './consent/request-grant-subsystem.js'
@@ -66,6 +67,7 @@ export const subsystems: Subsystem[] = [
   // touches session.defaultSession (extensions/README.md's Design notes).
   // Reads neither ctx.broker nor ctx.loader.
   extensionsSubsystem,
+  routeSubsystem, // the network route an app can have: its store, fronts and Chromium sessions -> src/main/route/. Critical. Publishes ctx.routes, which brokerIpcSubsystem reads -- must stay above it. Reads ctx.broker only when a route changes.
   brokerIpcSubsystem, // build step 2: broker -> src/broker/. Writes ctx.broker -- anything reading it must be listed below this line. Reads ctx.senderAttributed -- must stay below sessionAttributionSubsystem.
   devGrantSubsystem, // queue item 0.3: dev-only grant hook -> src/main/dev-grant.ts. Reads ctx.broker -- must stay below brokerIpcSubsystem.
   requestGrantSubsystem, // queue item 4.1: app.requestGrant's mechanism -> src/main/request-grant.ts. Reads ctx.broker -- must stay below brokerIpcSubsystem.

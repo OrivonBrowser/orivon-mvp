@@ -33,6 +33,12 @@ never a pinned bundle, and nothing about serving one applies to it.
 
 ## Design notes
 
+**A routed app's names are not resolved here.** The A286 check resolves a `"*"`-admitted name through the guest's session
+before the load, which for an app routed through a proxy would be a lookup from this machine; `guestRequestAllowed`'s
+`routed` argument skips it (the proxy resolves the name and decides what it reaches), and still refuses a loopback or
+private address written in the URL. The embed partition itself is pointed at the app's front when the app's own session is
+(`../route/`).
+
 **`did-attach-webview` learns which app a guest belongs to from the guest's own `session`, not
 from re-reading the embedder's top frame.** `will-attach-webview` picks the guest's partition
 through `partitionReady(appOrigin)`, which records `appOrigin` against that partition's `Session`

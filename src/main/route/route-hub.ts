@@ -1,0 +1,141 @@
+// Which apps are routed, through which proxy, and what each routed app needs running for it: its route (read by the
+// broker and the loader), its loopback front (read by Chromium) and its health (read by the Settings page and the
+// site-info popover). Electron-free. A routed app with no proxy set gets a route that refuses: it never falls back to
+// a direct one.
+
+import type { Route, RouteFor, RouteProvider } from '../../broker/route/provider.js'
+import { createSocks5Provider, isolationCredentials, routeAnswered } from '../../broker/route/socks5.js'
+import { createRouteFor } from '../../broker/route/table.js'
+import type { RouteTarget } from '../../broker/route/table.js'
+import { fail } from '../../broker/errors.js'
+import { startRouteFront } from './front.js'
+import type { RouteFront } from './front.js'
+import type { RouteStore } from './route-store.js'
+
+export type RouteChangeCause = 'switch' | 'proxy'
+
+/** What the Settings page and the popover say about an app's route: `idle` is a route nothing has used yet. */
+export type RouteState = 'off' | 'no-proxy' | 'idle' | 'ok' | 'down'
+
+export interface RouteHubOptions {
+  readonly store: RouteStore
+  /** The proxy the person set, read on every use. */
+  readonly proxy: () => RouteTarget | undefined
+  /** Builds the provider for one app and proxy; the default is SOCKS5 with a distinct username and password per app. */
+  readonly providerFor?: (key: string, target: RouteTarget) => RouteProvider
+}
+
+export interface RouteHub {
+  /** For `CreateBrokerOptions.routeFor` and the loader's reach path. */
+  readonly routeFor: RouteFor
+  isRouted: (origin: string) => boolean
+  state: (origin: string) => RouteState
+  /** The app's front, started on first use. Rejects for an app that is not routed. */
+  front: (origin: string) => Promise<RouteFront>
+  /** The credentials the front listening on `port` expects, for the proxy challenge Chromium answers through the app. */
+  credentialsForPort: (port: number) => { readonly username: string, readonly password: string } | undefined
+  /** Call when the proxy setting changed. */
+  proxyChanged: () => void
+  /** Ends every tunnel the app has through its front. */
+  closeTunnels: (origin: string) => void
+  /** Called when an app's route was switched on or off, and for every routed app when the proxy changed. */
+  onChange: (listener: (origin: string, routed: boolean, cause: RouteChangeCause) => void) => () => void
+  /** Resolves when the fronts of switched-off apps have stopped. */
+  settled: () => Promise<void>
+  dispose: () => Promise<void>
+}
+
+const REFUSING_PROVIDER: RouteProvider = {
+  connect: async () => { throw fail('unreachable', 'no proxy is set for this app') }
+}
+const REFUSING_ROUTE: Route = { provider: REFUSING_PROVIDER }
+
+export function createRouteHub (options: RouteHubOptions): RouteHub {
+  const { store } = options
+  const credentials = isolationCredentials()
+  const health = new Map<string, 'ok' | 'down'>()
+  const fronts = new Map<string, Promise<RouteFront>>()
+  /** The fronts that are listening, which is what a challenge's port can name. */
+  const started = new Map<string, RouteFront>()
+  const stopping = new Set<Promise<void>>()
+  const listeners = new Set<(origin: string, routed: boolean, cause: RouteChangeCause) => void>()
+  const emit = (origin: string, routed: boolean, cause: RouteChangeCause): void => { for (const listener of [...listeners]) listener(origin, routed, cause) }
+
+  /** Everything that goes through an app's route, from any caller, counts toward its health. */
+  const tracked = (key: string, provider: RouteProvider): RouteProvider => ({
+    ...provider,
+    connect: async (host, port, signal) => {
+      try {
+        const socket = await provider.connect(host, port, signal)
+        health.set(key, 'ok')
+        return socket
+      } catch (error) {
+        // A proxy that refused one destination is up; only a route that could not be used says down.
+        if (!signal.aborted) health.set(key, routeAnswered(error) ? 'ok' : 'down')
+        throw error
+      }
+    }
+  })
+  const build = options.providerFor ?? ((key: string, target: RouteTarget) => createSocks5Provider({ host: target.host, port: target.port, credentials: credentials(key) }))
+  const table = createRouteFor({
+    targetFor: (key) => store.has(key) ? options.proxy() : undefined,
+    providerFor: (key, target) => tracked(key, build(key, target))
+  })
+  const routeFor: RouteFor = (key) => store.has(key) ? table(key) ?? REFUSING_ROUTE : undefined
+
+  const stopFront = (origin: string): void => {
+    const running = fronts.get(origin)
+    if (running === undefined) return
+    fronts.delete(origin)
+    started.delete(origin)
+    const stopped = running.then(async (front) => { await front.close() }, () => {}).finally(() => { stopping.delete(stopped) })
+    stopping.add(stopped)
+  }
+
+  store.onChange((origin, routed) => {
+    health.delete(origin)
+    if (!routed) stopFront(origin)
+    emit(origin, routed, 'switch')
+  })
+
+  return {
+    routeFor,
+    isRouted: (origin) => store.has(origin),
+    state: (origin) => {
+      if (!store.has(origin)) return 'off'
+      if (options.proxy() === undefined) return 'no-proxy'
+      return health.get(origin) ?? 'idle'
+    },
+    front: async (origin) => {
+      if (!store.has(origin)) throw new Error('this app is not routed')
+      let running = fronts.get(origin)
+      if (running === undefined) {
+        // Recorded as listening only while it is still the app's front: one that was switched off meanwhile is closing.
+        const starting: Promise<RouteFront> = startRouteFront({ provider: () => options.proxy() === undefined ? undefined : routeFor(origin)?.provider })
+          .then((front) => { if (fronts.get(origin) === starting) started.set(origin, front); return front })
+        running = starting
+        fronts.set(origin, starting)
+        starting.catch(() => { if (fronts.get(origin) === starting) fronts.delete(origin) })
+      }
+      return await running
+    },
+    credentialsForPort: (port) => {
+      for (const front of started.values()) if (front.port === port) return { username: front.username, password: front.secret }
+      return undefined
+    },
+    proxyChanged: () => {
+      health.clear()
+      for (const origin of store.origins()) {
+        void fronts.get(origin)?.then((front) => { front.closeTunnels() }, () => {})
+        emit(origin, true, 'proxy')
+      }
+    },
+    closeTunnels: (origin) => { void fronts.get(origin)?.then((front) => { front.closeTunnels() }, () => {}) },
+    onChange: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+    settled: async () => { await Promise.all([...stopping]) },
+    dispose: async () => {
+      for (const origin of [...fronts.keys()]) stopFront(origin)
+      await Promise.all([...stopping])
+    }
+  }
+}

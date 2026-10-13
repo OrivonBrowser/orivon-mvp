@@ -176,6 +176,28 @@ describe('guestRequestAllowed', () => {
 // ADR-0047: a local pattern reaches only a listener the embedding app itself
 // holds. The guard asks `listenerHeld` for the pattern's port, resolves no
 // name for it, and fails closed when it is not given the question at all.
+describe('guestRequestAllowed -- for a routed app', () => {
+  const resolverCalls: string[] = []
+  const resolve = async (host: string): Promise<readonly string[]> => { resolverCalls.push(host); return ['10.0.0.5'] }
+
+  it('lets a document under a "*" grant load by name without resolving the name here', async () => {
+    resolverCalls.length = 0
+    await expect(guestRequestAllowed('https://only-the-proxy-knows.test/', 'mainFrame', ['*'], resolve, () => false, true)).resolves.toBe(true)
+    expect(resolverCalls).toEqual([])
+  })
+
+  it('still refuses a loopback or private address written in the address, which needs no lookup to judge', async () => {
+    await expect(guestRequestAllowed('https://10.0.0.5/', 'mainFrame', ['*'], resolve, () => false, true)).resolves.toBe(false)
+    await expect(guestRequestAllowed('https://localhost/', 'mainFrame', ['*'], resolve, () => false, true)).resolves.toBe(false)
+    expect(resolverCalls).toEqual([])
+  })
+
+  it('keeps every other rule: no grant refuses, and an exact grant admits only its own origin', async () => {
+    await expect(guestRequestAllowed('https://example.com/', 'mainFrame', undefined, resolve, () => false, true)).resolves.toBe(false)
+    await expect(guestRequestAllowed('https://other.example/', 'mainFrame', ['https://example.com'], resolve, () => false, true)).resolves.toBe(false)
+  })
+})
+
 describe('guestRequestAllowed -- the local pattern', () => {
   const local = ['http://*.localhost:8123']
 
