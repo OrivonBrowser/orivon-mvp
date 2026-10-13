@@ -157,6 +157,23 @@ forgotten.
 - [ ] After publishing: the Release workflow is green and the release carries the deb, the
       AppImage, the Windows installer, both dmgs and `ipfs.json` ([`packaging.md`](packaging.md)
       section Releases); within about 15 minutes `ipfs://<cid>` from its notes opens in Orivon.
+- [ ] **The Microsoft Store package submitted** ([`packaging.md`](packaging.md) section The Microsoft Store package):
+      once the release's workflow run is green, download its `store-msix` artifact (the run's page lists it; it is
+      kept 30 days) and submit it in Partner Center. The first submission is made by hand, in this order:
+      1. Reserve the name, then copy the three values of **Product identity** into the `appx` block of
+         `electron-builder.yml` (identityName, publisher, publisherDisplayName), merge, and build the package again.
+         The Store refuses a package whose identity differs.
+      2. Upload the package in the submission's **Packages** step.
+      3. **Privacy policy URL:** the GitHub address of [`docs/privacy/notice.md`](../privacy/notice.md).
+      4. **Restricted capability `runFullTrust`:** a Win32 app needs it, and Electron cannot run without it. Say so:
+         Orivon is an Electron application, a full desktop program that cannot run in the Store's sandbox.
+      5. **Description:** it must say that Orivon runs third-party applications, and what it asks of the person
+         before one does.
+      6. **Age rating:** answer the questionnaire for a web browser (it reaches the open web and shows
+         user-generated content from it).
+      7. A later release is a new submission of the same listing with the new package; the Store checks that the
+         browser stays within two major versions of the current Chromium, so an Electron update is due at least
+         that often.
 - [ ] [`CHANGELOG.md`](../../CHANGELOG.md) updated.
 - [ ] Known limitations stated **in-product**, not only in the README: peers see the user's IP;
       no automatic port forwarding behind NAT; address-bar search text goes to DuckDuckGo.

@@ -28,6 +28,7 @@ import { defaultBrowserHost } from '../os/default-browser-runner.js'
 import { osDomain } from '../os/os-domain.js'
 import { checkUpdateNow } from '../self-update/update-check-runner.js'
 import { updatesDomain } from '../self-update/updates-domain.js'
+import { isStoreInstall } from '../os/windows-store.js'
 import { onTelemetryChanged } from '../../telemetry/runner.js'
 import { profilesDomain } from '../launch/profiles-domain.js'
 import { historyDomain } from '../history/history-domain.js'
@@ -84,7 +85,8 @@ function aboutDomain (): InternalDomain {
       node: process.versions.node,
       platform: process.platform,
       userAgent: session.defaultSession.getUserAgent(),
-      developerMode: devModeEnabled()
+      developerMode: devModeEnabled(),
+      updatesFromStore: isStoreInstall()
     })
   }
 }
@@ -211,7 +213,8 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       async () => await checkUpdateNow(app),
       services.profiles.isPrivate,
       (answer) => { services.internalPages.publish('updates.changed', answer, ['settings']) },
-      (caller, url) => { services.windows.findOwner(caller.contents)?.tabs.createTab(url) }
+      (caller, url) => { services.windows.findOwner(caller.contents)?.tabs.createTab(url) },
+      isStoreInstall()
     ),
     report: reportDomainFor(services, ctx),
     about: aboutDomain()

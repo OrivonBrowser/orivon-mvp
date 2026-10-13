@@ -15,6 +15,11 @@ export interface UpdateScheduleDeps {
   everyMs?: number
 }
 
+/** Whether a check may run: the person's setting, and never in a Store install, which the Store updates itself. */
+export function updateChecksEnabled (setting: boolean, storeInstall: boolean): boolean {
+  return setting && !storeInstall
+}
+
 /** Starts the schedule; the return stops it. A check never starts while another is still running. */
 export function scheduleUpdateChecks (deps: UpdateScheduleDeps): () => void {
   let running = false

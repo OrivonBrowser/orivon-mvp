@@ -18,6 +18,16 @@ describe('the updates domain', () => {
     expect(check).not.toHaveBeenCalled()
   })
 
+  it('looks at nothing in a Store install, and opens no release page, since the Store delivers updates', async () => {
+    const check = vi.fn(async () => ANSWER)
+    const open = vi.fn()
+    const domain = updatesDomain(check, false, () => {}, open, true)
+    expect(await domain.handle({ type: 'check' }, CALLER)).toEqual({ ok: false, reason: 'store' })
+    expect(await domain.handle({ type: 'openRelease' }, CALLER)).toEqual({ ok: false, reason: 'store' })
+    expect(check).not.toHaveBeenCalled()
+    expect(open).not.toHaveBeenCalled()
+  })
+
   it('is for Settings only, and answers nothing else', async () => {
     const domain = updatesDomain(async () => ANSWER, false)
     expect(domain.pages).toEqual(['settings'])

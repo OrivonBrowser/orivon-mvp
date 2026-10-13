@@ -17,7 +17,9 @@ export function updatesDomain (
   isPrivate: boolean,
   notify: (answer: UpdateAnswer) => void = () => {},
   /** Opens `url` in a new tab of the window `caller` is in. */
-  openPage: (caller: InternalCaller, url: string) => void = () => {}
+  openPage: (caller: InternalCaller, url: string) => void = () => {},
+  /** A Microsoft Store install is updated by the Store, so it neither looks nor sends the person to GitHub. */
+  fromStore = false
 ): InternalDomain {
   /** The tag of the newer release the last check found. The page never says which page to open: only that it wants this one. */
   let found: string | null = null
@@ -26,6 +28,7 @@ export function updatesDomain (
     handle: async (command, caller) => {
       const type = typeof command === 'object' && command !== null ? (command as { type?: unknown }).type : undefined
       if (type !== 'check' && type !== 'openRelease') return undefined
+      if (fromStore) return { ok: false, reason: 'store' }
       if (isPrivate) return { ok: false, reason: 'private' }
       if (type === 'openRelease') {
         if (found === null) return { ok: false, reason: 'none' }
