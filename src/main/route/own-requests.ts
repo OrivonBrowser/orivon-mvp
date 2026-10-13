@@ -92,7 +92,7 @@ export async function ownSiteSession (origin: string): Promise<object | undefine
 /**
  * `ordinary`, unless the whole browser is on the tunnel, when the request goes through it. `origin` is the website or app
  * the request is about, if any: one the person set to off is asked for directly, and one that is routed on its own (a tunnel
- * profile's website, a routed app) is asked for through its route even while the browser-wide setting is off, since the
+ * profile's website) is asked for through its route even while the browser-wide setting is off, since the
  * request would otherwise show the person's address to a site they only open through the tunnel.
  */
 export function ownFetch (ordinary: OwnFetch, origin?: string): OwnFetch {

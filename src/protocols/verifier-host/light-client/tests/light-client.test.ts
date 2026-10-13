@@ -244,10 +244,10 @@ describe('startHeliosLightClient -- a second client for the tunnel', () => {
     expect(tunnel).not.toHaveBeenCalled()
   })
 
-  it('sends a request to any other address to the first client\'s fetch, which refuses what it does not allow', async () => {
+  it('refuses a request to any other address, rather than hand it to either client\'s fetch', async () => {
     const { direct, tunnel } = await bothClients()
-    await globalThis.fetch('https://elsewhere.example/')
-    expect(direct).toHaveBeenCalledTimes(1)
+    await expect(globalThis.fetch('https://elsewhere.example/')).rejects.toThrow(/no client of this process uses/)
+    expect(direct).not.toHaveBeenCalled()
     expect(tunnel).not.toHaveBeenCalled()
   })
 })

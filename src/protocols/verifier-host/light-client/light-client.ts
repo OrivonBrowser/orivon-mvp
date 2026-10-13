@@ -102,8 +102,8 @@ function dispatcher (): Dispatcher {
     let response: Response
     if (execution !== undefined) response = await execution.viaExecution(request.url, forwarded)
     else if (consensus !== undefined) response = await consensus.fetch(`${consensus.realConsensus.replace(/\/$/, '')}${request.url.slice(consensus.consensus.length)}`, forwarded)
-    // Any other address is the first lane's to allow or refuse, and it allows only the servers it was configured with.
-    else response = await (lanes[0]?.fetch ?? (async () => { throw new Error('the light client has no network to use') }))(request.url, forwarded)
+    // Helios is only ever given the names of a lane, so any other address is refused rather than handed to a lane that might send it elsewhere.
+    else throw new Error(`the light client asked for ${new URL(request.url).origin}, which no client of this process uses`)
     // Electron's net.fetch leaves url empty; Helios parses it, and throws from inside its WASM, ending the process.
     if (response.url === '') Object.defineProperty(response, 'url', { value: request.url })
     return response

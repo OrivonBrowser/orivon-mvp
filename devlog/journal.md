@@ -30,6 +30,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Pre-release security review: scanners triaged, four code reviews; fixed proxy bypass on app loads, download retry session, extension pattern freeze.
 - Orivon also ships as a Microsoft Store package, signed by Microsoft, so Store installs show no SmartScreen warning; no certificate bought.
 - Nym mixnet ships inside Orivon as the default tunnel for installed apps: one tunnel per app, nothing to install; your own SOCKS5 stays a choice.
+- A .eth or ipfs:// site you open through your tunnel is now read entirely through it, name proofs and files; Swarm sites are refused with a reason.
 
 ### In my head
 

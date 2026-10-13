@@ -8,7 +8,7 @@ import { Agent as HttpAgent, request as httpRequest } from 'node:http'
 import type { ClientRequestArgs } from 'node:http'
 import { Agent as HttpsAgent, request as httpsRequest } from 'node:https'
 import type { RequestOptions } from 'node:https'
-import { connect as netConnect } from 'node:net'
+import { connect as netConnect, isIP } from 'node:net'
 import type { Socket } from 'node:net'
 import { connect as tlsConnect } from 'node:tls'
 import type { Duplex } from 'node:stream'
@@ -28,7 +28,7 @@ export class TunnelUnavailable extends Error {
 }
 
 export interface RoutedFetchOptions {
-  /** Read for every new connection, so a front main replaced is followed and an absent one fails the request. */
+  /** Read for every new connection; an absent front fails the request. Main hands the host the front once, when the host starts, so a front that closes is not followed until the host restarts. */
   readonly front: () => ProfileFront | undefined
   /** Test builds only: a plain-HTTP fixture gateway. */
   readonly allowHttp?: boolean
@@ -43,6 +43,7 @@ const DEFAULT_IDLE_TIMEOUT_MS = 30_000
 /** The tunnel may be starting: Nym takes seconds to bring a first stream up. */
 const DEFAULT_CONNECT_TIMEOUT_MS = 40_000
 const DEFAULT_MAX_SOCKETS = 8
+const TOTAL_SOCKETS = 32
 const MAX_HEAD_BYTES = 8 * 1024
 const AUTHORITY_HOST = /^[A-Za-z0-9._:[\]-]+$/
 
@@ -61,7 +62,7 @@ async function connectThroughFront (front: ProfileFront, host: string, port: num
     const cleanup = (): void => {
       clearTimeout(timer)
       socket.off('data', onData)
-      socket.off('error', fail)
+      socket.off('error', onError)
       socket.off('close', onClose)
     }
     function fail (error: Error): void {
@@ -69,6 +70,7 @@ async function connectThroughFront (front: ProfileFront, host: string, port: num
       socket.destroy()
       reject(error)
     }
+    function onError (error: Error): void { fail(new TunnelUnavailable(`the tunnel is not reachable: ${error.message}`)) }
     function onClose (): void { fail(new TunnelUnavailable(`the tunnel closed before it opened a connection to ${host}`)) }
     function onData (chunk: Buffer): void {
       received = Buffer.concat([received, chunk])
@@ -90,7 +92,7 @@ async function connectThroughFront (front: ProfileFront, host: string, port: num
       resolve(socket)
     }
     socket.on('data', onData)
-    socket.on('error', (error) => { fail(new TunnelUnavailable(`the tunnel is not reachable: ${error.message}`)) })
+    socket.on('error', onError)
     socket.on('close', onClose)
     socket.once('connect', () => {
       const credentials = Buffer.from(`${front.username}:${front.password}`).toString('base64')
@@ -118,14 +120,15 @@ function agentFor (secure: boolean, options: AgentSettings): HttpAgent {
       (carrier) => {
         // The stream arrives paused: a TLS layer takes it over, and a plain request reads it from here on.
         if (!secure) { carrier.resume(); done(null, carrier); return }
-        const tls = tlsConnect({ socket: carrier, host, servername: host, ca: options.ca })
+        const tls = tlsConnect({ socket: carrier, host, ...(isIP(host) === 0 ? { servername: host } : {}), ca: options.ca })
         done(null, tls)
       },
       (error: unknown) => { done(error instanceof Error ? error : new Error(String(error)), undefined as unknown as Duplex) }
     )
     return undefined
   }
-  const settings = { keepAlive: true, maxSockets: options.maxSockets }
+  // A pooled stream is a stream through the tunnel: bounded in total, and one idle for the request timeout is closed.
+  const settings = { keepAlive: true, maxSockets: options.maxSockets, maxTotalSockets: TOTAL_SOCKETS, timeout: DEFAULT_IDLE_TIMEOUT_MS }
   if (secure) {
     class FrontHttpsAgent extends HttpsAgent {
       override createConnection (args: ClientRequestArgs, callback?: (error: Error | null, stream: Duplex) => void): Duplex | null | undefined { return dial(args, callback) }
@@ -169,7 +172,6 @@ export function createRoutedFetch (options: RoutedFetchOptions): WebFetch {
     const requestOptions: RequestOptions = {
       method,
       hostname: parsed.hostname.replace(/^\[|\]$/g, ''),
-      servername: parsed.hostname,
       port: parsed.port !== '' ? parsed.port : secure ? 443 : 80,
       path: `${parsed.pathname}${parsed.search}`,
       headers,

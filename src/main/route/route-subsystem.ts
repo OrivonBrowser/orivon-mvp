@@ -120,7 +120,13 @@ export const routeSubsystem: Subsystem = {
     const tunnelFetch = createRequestFetch({ net, session: session.defaultSession, answer: answerRouteChallenge })
     const directFetch = createRequestFetch({ net, session: systemProxySession(), answer: (_info, callback) => { callback() } })
     // A website with its tunnel on is asked about (its app manifest, its files by the loader) in the tunnel profile's session, not the default one, which is direct while the whole browser is off the tunnel.
-    const siteSession = async (origin: string): Promise<Session | undefined> => routes.hub.profileFor(origin) === 'tunnel' ? await lookupSessionFor(origin) : undefined
+    const siteSession = async (origin: string): Promise<Session | undefined> => {
+      if (routes.hub.profileFor(origin) !== 'tunnel') return undefined
+      const routed = await lookupSessionFor(origin)
+      // A website that belongs in the tunnel profile is never asked about from the default session instead.
+      if (routed === undefined) throw new Error('the tunnel profile is not available, so this website is not asked about')
+      return routed
+    }
     const through = async (origin: string): Promise<typeof tunnelFetch | undefined> => {
       const routed = await siteSession(origin)
       return routed === undefined ? undefined : createRequestFetch({ net, session: routed, answer: answerRouteChallenge })

@@ -54,6 +54,9 @@ export const DEFAULT_CCIP_LIMITS: CcipLimits = { maxResponseBytes: 1024 * 1024, 
 const MAX_URLS = 8
 const HEX = /^0x(?:[0-9a-fA-F]{2})*$/
 
+/** Names that only mean something on a local network: a tunnel's far end would resolve them on its own side. */
+const LOCAL_NAME = /\.(?:local|lan|internal|home\.arpa|corp|home|intranet|private)$/i
+
 type UrlCheck = { readonly ok: true, readonly addresses: readonly string[] } | { readonly ok: false, readonly refusal: string }
 
 /** Whether a URL may be requested at all, and if so, the address(es) it must be dialled at -- resolved here, and nowhere else, so nothing later re-resolves the name at connect time. */
@@ -74,7 +77,7 @@ async function checkUrl (raw: string, deps: CcipDeps): Promise<UrlCheck> {
   // A protocol host resolves to the verifier itself, never to a public server.
   if (host === 'localhost' || host.endsWith('.localhost') || BUILTIN_ADDRESSES.routesToVerifier(host)) return { ok: false, refusal: `${host} is not a public name` }
   // Through the tunnel the far end resolves the name: resolving it here as well would be a lookup from this computer that the tunnel was set to hide, and its answer is not the address that gets dialled. Any other proxy keeps the check on what this computer resolves.
-  if (deps.farEnd === true) return { ok: true, addresses: [] }
+  if (deps.farEnd === true) return LOCAL_NAME.test(host) || !host.includes('.') ? { ok: false, refusal: `${host} is not a public name` } : { ok: true, addresses: [] }
   const addresses = await deps.resolveHost(host)
   if (addresses.length === 0) return { ok: false, refusal: `${host} resolved to no address` }
   const private_ = addresses.find((a) => !isPublicUnicast(a))
