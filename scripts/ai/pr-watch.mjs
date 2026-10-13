@@ -34,11 +34,23 @@ export function normalize (check) {
 }
 
 /**
+ * The checks without those a later run of the same check on this commit cancelled: a `ci:` label or a re-run starts a
+ * fresh run and cancels the one before, which stays in the rollup next to its replacement.
+ * @template {{ name: string, conclusion: string }} T
+ * @param {T[]} checks
+ * @returns {T[]}
+ */
+function current (checks) {
+  return checks.filter((check) => check.conclusion !== 'CANCELLED' || !checks.some((other) => other.name === check.name && other.conclusion !== 'CANCELLED'))
+}
+
+/**
  * What to do next for checks in this state.
  * @param {{ checks: Array<{ name: string, conclusion: string }>, state: string, reruns: number, maxReruns: number }} now
  * @returns {{ step: 'wait' | 'merge' | 'rerun' | 'fail' | 'stuck', failed?: string[] }}
  */
-export function nextStep ({ checks, state, reruns, maxReruns }) {
+export function nextStep ({ checks: all, state, reruns, maxReruns }) {
+  const checks = current(all)
   if (checks.length === 0 || checks.some((check) => check.conclusion === '')) return { step: 'wait' }
   const failed = checks.filter((check) => FAILED.has(check.conclusion)).map((check) => check.name)
   if (failed.length > 0) {
@@ -62,7 +74,7 @@ export function failedSpecs (log) {
 
 /** The workflow run ids of failed checks, from their job URLs. */
 export function runIds (checks) {
-  return [...new Set(checks.filter((check) => FAILED.has(check.conclusion)).map((check) => /\/runs\/(\d+)\//.exec(check.url)?.[1]).filter(Boolean))]
+  return [...new Set(current(checks).filter((check) => FAILED.has(check.conclusion)).map((check) => /\/runs\/(\d+)\//.exec(check.url)?.[1]).filter(Boolean))]
 }
 
 /**
