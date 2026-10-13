@@ -90,6 +90,8 @@ let routesOf: () => RouteService | undefined = () => undefined
  */
 export function tunnelDefaultChanged (): void {
   idleHost()
+  // Also when the host was not running: a node started for an earlier ask keeps dialling until it is stopped.
+  for (const node of NODES.values()) node.verifierIdle()
   changed()
 }
 

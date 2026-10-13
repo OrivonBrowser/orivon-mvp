@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto'
 import { MAX_SCORE_FILE_BYTES, SCORE_STANDARD, findEvaluation, parseDescriptor } from '../../trust/score-provider.js'
 import type { ProviderDescriptor, ProviderVerdict } from '../../trust/score-provider.js'
 import { directLookupSession, lookupSessionFor } from '../route/lookup-session.js'
+import { ownFetch } from '../route/own-requests.js'
 import { fetchThroughRoute } from '../route/routed-fetch.js'
 import { readCapped } from './favicon-fetch.js'
 import { parseOmniboxInput } from './omnibox.js'
@@ -159,8 +160,10 @@ export async function netFetchJson (url: string, origin?: string): Promise<Fetch
   try {
     const init = { credentials: 'omit', redirect: 'follow', cache: 'no-store', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) } as const
     // With no route and the whole browser on the tunnel, the default session is the tunnel's: a site set to off is asked about on the system's proxy.
-    const direct = routed === undefined ? directLookupSession() : undefined
-    const response = routed !== undefined ? await fetchThroughRoute(net, routed, url, init.signal) : direct !== undefined ? await direct.fetch(url, init) : await net.fetch(url, init)
+    // A lookup about no origin (an install, an update check) follows the default, as Orivon's own requests do: through the tunnel while it is on.
+    const direct = routed === undefined && origin !== undefined ? directLookupSession() : undefined
+    const ordinary = async (target: string, options?: RequestInit): Promise<Response> => direct !== undefined ? await direct.fetch(target, options) : await net.fetch(target, options)
+    const response = routed !== undefined ? await fetchThroughRoute(net, routed, url, init.signal) : origin === undefined ? await ownFetch(ordinary)(url, init) : await ordinary(url, init)
     if (response.status === 404) return { kind: 'missing' }
     if (!response.ok) return { kind: 'failed', reason: `${url} answered ${String(response.status)}.` }
     const bytes = await readCapped(response.body, MAX_SCORE_FILE_BYTES)

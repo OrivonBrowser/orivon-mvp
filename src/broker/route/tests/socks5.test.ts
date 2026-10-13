@@ -222,6 +222,20 @@ describe('UDP ASSOCIATE', () => {
     expect(proxy.datagrams).toEqual(['udp-name.test:5353'])
   })
 
+  it('declares the port of its own datagram socket in the request, so a relay can tell its client from any other program', async () => {
+    const target = await udpEchoServer()
+    const proxy = await fixture({ names: { 'udp-name.test:5353': { host: '127.0.0.1', port: target } } })
+    const udp = await createSocks5Provider({ host: proxy.host, port: proxy.port }).udp?.(NEVER)
+    cleanups.push(async () => { await udp?.close() })
+    const received = new Promise<RoutedDatagram>((resolve) => { udp?.onDatagram(resolve) })
+    await udp?.send({ host: 'udp-name.test', port: 5353, data: new Uint8Array([9]) })
+    await received
+
+    const asked = proxy.requests.find((request) => request.command === 'associate')
+    expect(asked?.destination).toBe('127.0.0.1')
+    expect(asked?.port, 'a port, not 0').toBeGreaterThan(0)
+  })
+
   it('sends to the proxy itself when it names the unspecified address as its relay', async () => {
     const target = await udpEchoServer()
     const proxy = await fixture({ unspecifiedRelay: true, names: { 'udp-name.test:5353': { host: '127.0.0.1', port: target } } })

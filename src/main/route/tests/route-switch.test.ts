@@ -145,3 +145,28 @@ describe('removing a website\'s separate storage', () => {
     expect(removeSiteStorage).not.toHaveBeenCalled()
   })
 })
+
+describe('a website that moves into a profile', () => {
+  it('has its service workers unregistered in the shared session it left', async () => {
+    const dropServiceWorkers = vi.fn(async () => {})
+    const { routeSwitch } = setup({ world: { dropServiceWorkers } })
+    await routeSwitch.setSite(SITE, true)
+    expect(dropServiceWorkers).toHaveBeenCalledWith(undefined, SITE)
+  })
+
+  it('has them unregistered in the shared session it left for the direct profile, and in none when it goes back to the default', async () => {
+    const dropServiceWorkers = vi.fn(async () => {})
+    const { routeSwitch } = setup({ everywhere: true, world: { dropServiceWorkers } })
+    await routeSwitch.setSite(SITE, false)
+    expect(dropServiceWorkers).toHaveBeenLastCalledWith(undefined, SITE)
+    await routeSwitch.setSite(SITE, true)
+    expect(dropServiceWorkers).toHaveBeenCalledTimes(1)
+  })
+
+  it('is not undone by workers that cannot be unregistered', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { routeSwitch, store } = setup({ world: { dropServiceWorkers: async () => { throw new Error('busy') } } })
+    await routeSwitch.setSite(SITE, true)
+    expect(store.stateOf(SITE)).toBe('on')
+  })
+})

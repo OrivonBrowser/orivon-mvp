@@ -45,6 +45,8 @@ export interface RouteControllerDeps {
   readonly setAppProxy?: (config: RouteProxyConfig) => Promise<void>
   /** Whether the session set its own proxy and answers for what it lets through, so the shared identity leaves it alone. */
   readonly ownProxy?: (session: RouteSession) => boolean
+  /** The proxy rule that reaches nothing: a listener on this computer that Orivon holds and that accepts and closes. A port nothing is expected to answer on when left out. */
+  readonly deadEnd?: () => string
 }
 
 export interface PrepareOptions {
@@ -79,6 +81,8 @@ export interface RouteController {
    * While the setting is off it is only remembered, so that turning the setting on reaches it.
    */
   adopt: (session: RouteSession) => void
+  /** Whether the session is pointed at a front, held on the rule that reaches nothing, or answers for a proxy of its own: a request in it cannot leave this computer unproxied. */
+  isTunnelled: (session: object) => boolean
   /** Points the shared identity once at start: its sessions, and the requests made with no session. Nothing while the browser-wide setting is off. */
   startShared: () => void
   /** Resolves when the switches heard so far have been applied. */
@@ -93,7 +97,7 @@ export interface TemporaryFront {
 }
 
 const CONFINED = 'disable_non_proxied_udp'
-/** The belt a web context already carries against WebRTC: a port nothing is expected to answer on. */
+/** The rule that reaches nothing when no listener of Orivon's own is supplied: a port nothing is expected to answer on. */
 const UNREACHABLE_PROXY = 'http://127.0.0.1:9'
 /** A call that never returns would hold the app's later switches behind it. */
 const SESSION_CALL_MS = 10_000
@@ -131,6 +135,8 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
   /** The host rules a session reaches directly besides this machine. */
   const bypasses = new Map<RouteSession, string>()
   const isApp = deps.isApp ?? (() => true)
+  /** The rule that reaches nothing: known at once, so that a session is stopped in the very turn it is made or switched on. */
+  const unreachable = (): string => deps.deadEnd?.() ?? UNREACHABLE_PROXY
   /** The sessions of temporary routed tabs, and the credentials their fronts expect, by port. */
   const temporarySessions = new Set<object>()
   const temporaryFronts = new Map<number, TemporaryFront>()
@@ -169,9 +175,16 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     }
     sessionsOf(origin).set(session, options.webrtc !== false)
     if (options.bypass !== undefined) bypasses.set(session, options.bypass)
-    const turn = (turns.get(session) ?? Promise.resolve()).then(async () => { await point(origin, session) })
-    turns.set(session, turn.catch(() => {}))
-    await turn
+    await inTurn(session, async () => { await point(origin, session) })
+  }
+
+  /** Runs `work` once the changes already under way to `session` are done, at once when there are none. */
+  function inTurn (session: RouteSession, work: () => Promise<void>): Promise<void> {
+    const earlier = turns.get(session)
+    const turn = earlier === undefined ? work() : earlier.then(work)
+    const tracked: Promise<void> = turn.catch(() => {}).finally(() => { if (turns.get(session) === tracked) turns.delete(session) })
+    turns.set(session, tracked)
+    return turn
   }
 
   async function pointAt (session: RouteSession, port: number): Promise<void> {
@@ -191,15 +204,22 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     }
   }
 
-  /** A rule that reaches nothing, for a session that could not be pointed at the app's front: a request there fails, it is never sent direct. */
+  /**
+   * A rule that reaches nothing, for a session that could not be pointed at the app's front, or must carry nothing until it is: a
+   * request there fails, it is never sent direct. The session counts as stopped at once; the rule is set in the session's turn, so
+   * a pointing asked for afterwards cannot be overtaken by it.
+   */
   async function confine (session: RouteSession): Promise<void> {
     // Recorded, so that switching the route off puts the session back on the system's proxy.
     pointedAt.set(session, CONFINED_FRONT)
-    try {
-      await within(session.setProxy({ mode: 'fixed_servers', proxyRules: UNREACHABLE_PROXY, proxyBypassRules: CONFINED_BYPASS }), callMs)
-    } catch (error) {
-      console.error('[route] could not stop a session that could not be routed:', error)
+    const stop = async (): Promise<void> => {
+      try {
+        await within(session.setProxy({ mode: 'fixed_servers', proxyRules: unreachable(), proxyBypassRules: CONFINED_BYPASS }), callMs)
+      } catch (error) {
+        console.error('[route] could not stop a session that could not be routed:', error)
+      }
     }
+    await inTurn(session, stop)
   }
 
   /** Points `session`, once more when putting it back on the system's proxy failed: a session left on a stopped front fails everything. */
@@ -225,10 +245,31 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
       console.error('[route] could not point the runtime\'s own requests at the tunnel:', error)
       if (!routed) return
       try {
-        await within(deps.setAppProxy({ mode: 'fixed_servers', proxyRules: UNREACHABLE_PROXY, proxyBypassRules: CONFINED_BYPASS }), callMs)
+        await within(deps.setAppProxy({ mode: 'fixed_servers', proxyRules: unreachable(), proxyBypassRules: CONFINED_BYPASS }), callMs)
       } catch (stopping) {
         console.error('[route] could not stop the runtime\'s own requests:', stopping)
       }
+    }
+  }
+
+  /** The sessions an identity points at its front, those the identity may not touch (claimed by an origin, or setting a proxy of their own) left out. */
+  function sessionsToPoint (origin: string): Array<[RouteSession, boolean]> {
+    return [...sessionsOf(origin)].filter(([session]) => origin !== SHARED_ORIGIN || (!claimed.has(session) && deps.ownProxy?.(session) !== true))
+  }
+
+  /** The stop of the requests made with no session, which pointing them at the front waits for. */
+  let appRequestsStopped: Promise<unknown> = Promise.resolve()
+
+  /**
+   * What happens at once, ahead of the queue, when an identity is switched on: every session of it that is not yet pointed at a
+   * front is stopped (a rule that reaches nothing), and for the shared identity so are the requests made with no session.
+   * Pointing them at the front follows in the queue; until then a request fails and none goes direct.
+   */
+  function stopFirst (origin: string): void {
+    for (const [session] of sessionsToPoint(origin)) if (!pointedAt.has(session)) confine(session).catch(() => {})
+    if (origin === SHARED_ORIGIN && deps.setAppProxy !== undefined) {
+      const setAppProxy = deps.setAppProxy
+      appRequestsStopped = within(setAppProxy({ mode: 'fixed_servers', proxyRules: unreachable(), proxyBypassRules: CONFINED_BYPASS }), callMs).catch((error: unknown) => { console.error('[route] could not stop the runtime\'s own requests:', error) })
     }
   }
 
@@ -247,7 +288,10 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
       const failed = sessions[index]?.[0]
       if (routed && failed !== undefined) await confine(failed)
     }
-    if (origin === SHARED_ORIGIN) await pointAppRequests(routed)
+    if (origin === SHARED_ORIGIN) {
+      await appRequestsStopped
+      await pointAppRequests(routed)
+    }
     for (const contents of contentsIn(origin, true)) {
       if (routed) {
         confined.add(contents)
@@ -274,6 +318,8 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
   }
 
   hub.onChange((origin, routed, cause) => {
+    // Synchronously, before anything is queued: the moment an origin is switched on its sessions stop carrying anything direct.
+    if (routed && cause === 'switch') stopFirst(origin)
     enqueue(origin, async () => { await apply(origin, routed, cause) })
   })
 
@@ -319,8 +365,11 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     },
     prepareSite: async (origin, session, bypass) => { await prepare(origin, session, { bypass }) },
     confineSite: confine,
+    isTunnelled: (session) => pointedAt.has(session as RouteSession) || deps.ownProxy?.(session as RouteSession) === true,
     startShared: () => {
-      if (hub.isRouted(SHARED_ORIGIN)) enqueue(SHARED_ORIGIN, async () => { await apply(SHARED_ORIGIN, true, 'proxy') })
+      if (!hub.isRouted(SHARED_ORIGIN)) return
+      stopFirst(SHARED_ORIGIN)
+      enqueue(SHARED_ORIGIN, async () => { await apply(SHARED_ORIGIN, true, 'proxy') })
     },
     adopt: (session) => {
       const shared = sessionsOf(SHARED_ORIGIN)

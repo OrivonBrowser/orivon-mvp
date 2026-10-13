@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ownDirectSession, ownFetch, ownRequestsTunnelled, ownRouteFor, setOwnRequests } from '../own-requests.js'
+import { ownDirectSession, ownFetch, ownRequestsSettled, ownRequestsTunnelled, ownRouteFor, setOwnRequests } from '../own-requests.js'
 
 const ordinary = vi.fn(async () => new Response('ordinary'))
 const tunnel = vi.fn(async () => new Response('tunnel'))
@@ -48,5 +48,31 @@ describe('how Orivon\'s own requests leave', () => {
     expect(await (await fetch('https://a.example')).text()).toBe('ordinary')
     on = true
     expect(await (await fetch('https://a.example')).text()).toBe('tunnel')
+  })
+})
+
+describe('while the sessions are still following a change of the setting', () => {
+  it('waits for them before deciding how to leave, and reads the setting after the wait', async () => {
+    let on = false
+    let done!: () => void
+    const pending = new Promise<void>((resolve) => { done = resolve })
+    setOwnRequests({ everywhere: () => on, isRouted: () => true, tunnel, direct, directSession: () => SESSION, settled: async () => { await pending } })
+    const answer = ownFetch(ordinary)('https://a.example')
+    on = true
+    await Promise.resolve()
+    expect(tunnel).not.toHaveBeenCalled()
+    done()
+    expect(await (await answer).text()).toBe('tunnel')
+    expect(ordinary).not.toHaveBeenCalled()
+  })
+
+  it('refuses when they do not follow in time, in either direction, and sends nothing', async () => {
+    setOwnRequests({ everywhere: () => true, isRouted: () => true, tunnel, direct, directSession: () => SESSION, settled: async () => { await new Promise<void>(() => {}) }, settleMs: 20 })
+    await expect(ownFetch(ordinary)('https://a.example')).rejects.toThrow('still being applied')
+    await expect(ownRequestsSettled()).rejects.toThrow('still being applied')
+    setOwnRequests({ everywhere: () => false, isRouted: () => true, tunnel, direct, directSession: () => SESSION, settled: async () => { await new Promise<void>(() => {}) }, settleMs: 20 })
+    await expect(ownFetch(ordinary)('https://a.example')).rejects.toThrow('still being applied')
+    expect(ordinary).not.toHaveBeenCalled()
+    expect(tunnel).not.toHaveBeenCalled()
   })
 })

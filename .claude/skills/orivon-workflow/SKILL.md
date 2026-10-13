@@ -36,6 +36,10 @@ Two practices with no tool behind them:
 - **`adversarial-reviewer` at the end of a build step only**, on the broker and the loader at
   minimum.
 - **No multi-lane review of a commit range** unless the owner asks for one.
+- **In a worktree, `/security-review` sees the primary checkout's diff, never the worktree's**, so run by a subagent it has
+  reviewed an empty diff without saying so. Review the branch instead: a read-only reviewer agent given
+  `git -C <worktree> diff origin/main...` to read, or the `adversarial-reviewer` skill pointed at that diff. Name the diff
+  in the prompt and check the report quotes a line from it.
 - Each run is one row in `docs/development/review-coverage.md`.
 
 ## At the end of a build step

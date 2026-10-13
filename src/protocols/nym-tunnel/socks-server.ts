@@ -13,6 +13,7 @@ import { AcquireError } from './instances.js'
 import type { Lease, TcpStream, UdpChannel } from './instances.js'
 import { USER_NAME } from './protocol.js'
 
+const CLIENT_ADDRESS = '127.0.0.1'
 const VERSION = 0x05
 const AUTH_VERSION = 0x01
 const METHOD_PASSWORD = 0x02
@@ -27,7 +28,11 @@ const REPLY_ADDRESS_NOT_SUPPORTED = 0x08
 
 /** A client that has not finished the handshake by now is dropped. */
 const HANDSHAKE_TIMEOUT_MS = 10_000
+/** Connections that have signed in and asked for something; one that has not is counted apart, so a flood of those takes no slot from them. */
 const MAX_CONNECTIONS = 512
+const MAX_UNAUTHENTICATED = 32
+/** What a client may have sent that has not been read yet: a handshake is a few hundred bytes, and more waits in the kernel, not here. */
+const MAX_UNREAD_BYTES = 16 * 1024
 /** How long a datagram receive waits before the association is looked at again: a closed channel cannot wake one. */
 const RECEIVE_SLICE_MS = 5_000
 const MAX_RECEIVE_ERRORS = 5
@@ -61,15 +66,20 @@ class Reader {
   private buffered = Buffer.alloc(0)
   private ended = false
   private wake: (() => void) | undefined
+  private held = false
 
   constructor (private readonly socket: Socket) {
     socket.on('data', this.onData)
+    // A client that is gone before it has asked for anything gives its place back at once, not when the handshake times out.
+    socket.on('end', this.onEnd)
     socket.on('close', this.onEnd)
     socket.on('error', this.onEnd)
   }
 
   private readonly onData = (chunk: Buffer): void => {
     this.buffered = Buffer.concat([this.buffered, chunk])
+    // A client that sends more than it is asked for is slowed, not buffered: the rest stays in the kernel.
+    if (this.buffered.length > MAX_UNREAD_BYTES && !this.held) { this.held = true; this.socket.pause() }
     this.wake?.()
   }
 
@@ -85,12 +95,14 @@ class Reader {
     }
     const out = this.buffered.subarray(0, count)
     this.buffered = this.buffered.subarray(count)
+    if (this.held && this.buffered.length <= MAX_UNREAD_BYTES) { this.held = false; this.socket.resume() }
     return out
   }
 
   /** Stops listening and hands over what came after the last read. */
   release (): Buffer {
     this.socket.off('data', this.onData)
+    this.held = false
     const rest = this.buffered
     this.buffered = Buffer.alloc(0)
     return rest
@@ -255,7 +267,11 @@ async function connect (socket: Socket, request: Request, lease: Lease, limits: 
   finish()
 }
 
-async function associate (control: Socket, lease: Lease): Promise<void> {
+/**
+ * `clientPort` is the port the client declared in its request, on this computer: the only one whose datagrams the relay passes
+ * on and the only one it answers. A client that declares none is refused before this runs.
+ */
+async function associate (control: Socket, lease: Lease, clientPort: number): Promise<void> {
   let channel: UdpChannel
   try {
     channel = await lease.tunnel.bindUdp()
@@ -292,12 +308,9 @@ async function associate (control: Socket, lease: Lease): Promise<void> {
   control.resume()
   control.write(reply(REPLY_OK, { address: '127.0.0.1', port: relay.address().port }))
 
-  // The first datagram fixes who the client is; a datagram from any other port is not the client's.
-  let client: { address: string, port: number } | undefined
+  // The client's datagrams come from the port it declared, on loopback; a datagram from any other sender is not the client's.
   relay.on('message', (message, from) => {
-    if (from.address !== '127.0.0.1') return
-    client ??= { address: from.address, port: from.port }
-    if (from.port !== client.port) return
+    if (from.address !== CLIENT_ADDRESS || from.port !== clientPort) return
     try {
       const frame = SocksClient.parseUDPFrame(message)
       if (frame.frameNumber !== 0) return
@@ -312,9 +325,9 @@ async function associate (control: Socket, lease: Lease): Promise<void> {
     try {
       const datagram = await channel.recv(RECEIVE_SLICE_MS)
       failures = 0
-      if (client === undefined || closed) continue
+      if (closed) continue
       const frame = SocksClient.createUDPFrame({ remoteHost: { host: datagram.host, port: datagram.port }, data: Buffer.from(datagram.data) })
-      relay.send(frame, client.port, client.address)
+      relay.send(frame, clientPort, CLIENT_ADDRESS)
     } catch (error) {
       if (closed || describe(error).includes('closed')) break
       if (describe(error).includes('timed out')) continue
@@ -326,7 +339,8 @@ async function associate (control: Socket, lease: Lease): Promise<void> {
   finish()
 }
 
-async function serve (socket: Socket, deps: SocksServerDeps): Promise<void> {
+/** `signedIn` is called once the client has signed in and asked for something: false when the server is full of such connections. */
+async function serve (socket: Socket, deps: SocksServerDeps, signedIn: () => boolean): Promise<void> {
   const reader = new Reader(socket)
   const timer = setTimeout(() => { socket.destroy() }, HANDSHAKE_TIMEOUT_MS)
   let request: Request | undefined
@@ -344,9 +358,12 @@ async function serve (socket: Socket, deps: SocksServerDeps): Promise<void> {
     setTimeout(() => { socket.destroy() }, 2_000).unref()
     return
   }
+  if (!signedIn()) { socket.destroy(); return }
   // What the client sends before the tunnel is up waits in the kernel, not in this process.
   socket.pause()
   if (request.command !== COMMAND_CONNECT && request.command !== COMMAND_ASSOCIATE) { socket.resume(); socket.end(reply(REPLY_COMMAND_NOT_SUPPORTED)); return }
+  // A relay that does not know which port is the client's would take the first datagram for it, from any program on this computer.
+  if (request.command === COMMAND_ASSOCIATE && request.destination.port === 0) { socket.resume(); socket.end(reply(REPLY_NOT_ALLOWED)); return }
 
   let lease: Lease
   try {
@@ -360,18 +377,33 @@ async function serve (socket: Socket, deps: SocksServerDeps): Promise<void> {
   }
   if (socket.destroyed) { lease.release(); return }
   if (request.command === COMMAND_CONNECT) await connect(socket, request, lease, { connectTimeoutMs: deps.connectTimeoutMs ?? CONNECT_TIMEOUT_MS, halfCloseGraceMs: deps.halfCloseGraceMs ?? HALF_CLOSE_GRACE_MS })
-  else await associate(socket, lease)
+  else await associate(socket, lease, request.destination.port)
 }
 
 export async function startSocksServer (port: number, deps: SocksServerDeps): Promise<SocksServer> {
   const open = new Set<Socket>()
+  /** Connections still signing in and connections that have signed in, counted apart: a flood of the first takes no place from the second. */
+  const counts = { unauthenticated: 0, authenticated: 0 }
   // Half-open, so a client that has sent all it will send still receives the answer.
   const server: Server = createServer({ allowHalfOpen: true }, (socket) => {
-    if (open.size >= MAX_CONNECTIONS) { socket.destroy(); return }
+    if (counts.unauthenticated >= MAX_UNAUTHENTICATED) { socket.destroy(); return }
+    counts.unauthenticated += 1
+    let gaveBack = false
     open.add(socket)
-    socket.on('close', () => { open.delete(socket) })
+    socket.on('close', () => {
+      open.delete(socket)
+      if (!gaveBack) counts.unauthenticated -= 1
+    })
     socket.on('error', () => {})
-    serve(socket, deps).catch((error: unknown) => {
+    const signedIn = (): boolean => {
+      gaveBack = true
+      counts.unauthenticated -= 1
+      if (counts.authenticated >= MAX_CONNECTIONS) return false
+      counts.authenticated += 1
+      socket.once('close', () => { counts.authenticated -= 1 })
+      return true
+    }
+    serve(socket, deps, signedIn).catch((error: unknown) => {
       console.error('[nym-tunnel] a SOCKS5 connection failed:', describe(error))
       socket.destroy()
     })

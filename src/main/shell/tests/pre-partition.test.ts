@@ -14,6 +14,7 @@ const isNavigationHeld = vi.fn(() => false)
 vi.mock('../navigation-hold.js', () => ({ isNavigationHeld }))
 
 const { repartitionBeforeCommit, repartitionOnFileBlock } = await import('../pre-partition.js')
+const { setSiteRoutes } = await import('../../route/site-routes.js')
 
 function rig (record: Record<string, unknown> = {}) {
   const wc = Object.assign(new EventEmitter(), { isDestroyed: () => false }) as unknown as WebContents & EventEmitter
@@ -29,7 +30,7 @@ function rig (record: Record<string, unknown> = {}) {
   return { fire, tab, hide: () => { on = false } }
 }
 
-beforeEach(() => { repartitionView.mockReset(); partitionChanged.mockReset(); partitionAfterFileBlock.mockReset(); isNavigationHeld.mockReset().mockReturnValue(false) })
+beforeEach(() => { setSiteRoutes(undefined); repartitionView.mockReset(); partitionChanged.mockReset(); partitionAfterFileBlock.mockReset(); isNavigationHeld.mockReset().mockReturnValue(false) })
 
 describe('repartitionBeforeCommit', () => {
   it.each(['will-navigate', 'will-redirect'] as const)('stops a main-frame %s into a cache-served partition and loads it there', async (name) => {
@@ -56,6 +57,32 @@ describe('repartitionBeforeCommit', () => {
     expect(rig().fire('will-navigate').preventDefault).not.toHaveBeenCalled()
     partitionChanged.mockReturnValue({ to: undefined })
     expect(rig().fire('will-navigate').preventDefault).not.toHaveBeenCalled()
+  })
+
+  describe('a move to the shared session from a session that sends the address differently', () => {
+    const differs = (): void => { setSiteRoutes({ profileFor: () => undefined, sentLikeItsOwn: () => false }) }
+
+    it.each(['will-navigate', 'will-redirect'] as const)('stops a main-frame %s and loads the address in the shared session, so its first request is not committed in the direct profile', async (name) => {
+      differs()
+      partitionChanged.mockReturnValue({ to: undefined })
+      const { fire } = rig({ partition: 'persist:direct-profile' })
+      const event = fire(name, { url: 'https://news.example/' })
+      expect(event.preventDefault).toHaveBeenCalled()
+      await new Promise((resolve) => setImmediate(resolve))
+      expect(repartitionView).toHaveBeenCalledWith('tab-1', expect.anything(), 'https://news.example/', undefined)
+    })
+
+    it('leaves it to run when the session sends the address as the shared one would', () => {
+      setSiteRoutes({ profileFor: () => undefined, sentLikeItsOwn: () => true })
+      partitionChanged.mockReturnValue({ to: undefined })
+      expect(rig({ partition: 'persist:direct-profile' }).fire('will-navigate').preventDefault).not.toHaveBeenCalled()
+    })
+
+    it('leaves a tab in a temporary routed session where it is', () => {
+      differs()
+      partitionChanged.mockReturnValue({ to: undefined })
+      expect(rig({ partition: 'orivon-route-tab-abc' }).fire('will-navigate').preventDefault).not.toHaveBeenCalled()
+    })
   })
 
   it('ignores a subframe, an already prevented navigation, a held one and a tab that is not showing', () => {

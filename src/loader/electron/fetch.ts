@@ -9,7 +9,7 @@ import { originFromUrl } from '../../broker/policy/origin.js'
 import { classifyAddress, isPublicUnicast } from '../../broker/policy/address.js'
 import { servedByVerifier } from '../fetch/verifier-origin.js'
 import { answerRouteChallenge } from '../../main/route/lookup-session.js'
-import { ownDirectSession, ownRouteFor } from '../../main/route/own-requests.js'
+import { ownDirectSession, ownRequestsSettled, ownRouteFor } from '../../main/route/own-requests.js'
 
 export const electronFetch: Fetch = async (url, pinnedAddresses, signal, headers) => {
   // Dynamically imported: outside a real Electron process (i.e. under
@@ -140,6 +140,8 @@ function toFetchResponse (url: string, response: IncomingMessage): FetchResponse
  */
 export async function netFetch (url: string, signal: AbortSignal, headers?: RequestHeaders): Promise<FetchResponse> {
   const { net } = await import('electron')
+  // While the setting is being applied the default session may still be direct or still on the front: the request waits, or is refused.
+  await ownRequestsSettled()
   return await new Promise<FetchResponse>((resolve, reject) => {
     // An origin set to off while the whole browser is on the tunnel is fetched on the system's proxy; otherwise the default session, which then is the tunnel's, whose front this request signs in to.
     const direct = ownRouteFor(new URL(url).origin) === 'direct' ? ownDirectSession() : undefined

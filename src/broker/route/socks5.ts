@@ -160,16 +160,45 @@ function listenersOf<T> (): { add: (listener: T) => void, each: (call: (listener
   return { add: (listener) => { all.push(listener) }, each: (call) => { for (const listener of all) call(listener) } }
 }
 
+/** Whether the proxy is on this computer, so the datagram socket stays on loopback too. */
+function proxyIsLocal (address: string): boolean {
+  return address === '127.0.0.1' || address === '::1'
+}
+
 async function openUdp (options: Socks5ProviderOptions, signal: AbortSignal): Promise<RoutedUdp> {
   const control = await connectToProxy(options, signal)
-  const established = await handshake(control, options, 'associate', { host: '0.0.0.0', port: 0 }, signal)
+  // The socket is bound before the request is made, and its port is the one the request declares: a relay that knows which
+  // port is the client's takes datagrams from that port alone, and no other program on this computer can use the association.
+  const peer = control.remoteAddress ?? options.host
+  const proxyFamily6 = isIP(peer) === 6
+  const local = proxyIsLocal(peer) ? (proxyFamily6 ? '::1' : '127.0.0.1') : (proxyFamily6 ? '::' : '0.0.0.0')
+  const socket: DgramSocket = createSocket(proxyFamily6 ? 'udp6' : 'udp4')
+  try {
+    await new Promise<void>((resolve, reject) => {
+      socket.once('error', reject)
+      socket.bind(0, local, () => { socket.off('error', reject); resolve() })
+    })
+  } catch (error) {
+    control.destroy()
+    try { socket.close() } catch { /* never bound */ }
+    throw error
+  }
+  let established: Established
+  try {
+    established = await handshake(control, options, 'associate', { host: local, port: socket.address().port }, signal)
+  } catch (error) {
+    try { socket.close() } catch { /* already closed */ }
+    throw error
+  }
   const relayPort = established.remoteHost?.port ?? 0
   // An address that is no address, or the unspecified one, means "where you reached me".
   const reported = established.remoteHost?.host ?? ''
   const relayHost = isIP(reported) === 0 || reported === '0.0.0.0' || reported === '::' ? control.remoteAddress ?? options.host : reported
-  if (relayPort === 0) { control.destroy(); throw fail('unreachable', 'the proxy gave no address for datagrams') }
-
-  const socket: DgramSocket = createSocket(isIP(relayHost) === 6 ? 'udp6' : 'udp4')
+  if (relayPort === 0 || (isIP(relayHost) === 6) !== proxyFamily6) {
+    control.destroy()
+    try { socket.close() } catch { /* already closed */ }
+    throw fail('unreachable', relayPort === 0 ? 'the proxy gave no address for datagrams' : 'the proxy answered with datagram address of another family than the one it was reached on')
+  }
   const datagramListeners = listenersOf<(datagram: RoutedDatagram) => void>()
   const closeListeners = listenersOf<() => void>()
   let closed = false
@@ -196,12 +225,7 @@ async function openUdp (options: Socks5ProviderOptions, signal: AbortSignal): Pr
       // A frame that does not parse is dropped, like any lost datagram.
     }
   })
-  const loopback = relayHost === '127.0.0.1' || relayHost === '::1'
   try {
-    await new Promise<void>((resolve, reject) => {
-      socket.once('error', reject)
-      socket.bind(0, loopback ? relayHost : isIP(relayHost) === 6 ? '::' : '0.0.0.0', () => { socket.off('error', reject); resolve() })
-    })
     // Connected to the relay, the kernel itself drops a datagram from any other sender.
     await new Promise<void>((resolve, reject) => {
       socket.once('error', reject)

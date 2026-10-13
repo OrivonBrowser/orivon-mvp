@@ -215,39 +215,100 @@ describe('the SOCKS5 server of the Nym tunnel', () => {
     await expect(SocksClient.createConnection({ proxy: proxyOf(port), command: 'connect', destination: { host: 'service.example', port: 80 } })).rejects.toThrow()
   })
 
-  it('carries UDP ASSOCIATE through the tunnel, the relay being on loopback and the datagrams only the client\'s', async () => {
-    const record = recorder()
-    const port = await start(async () => leaseOf(fakeTunnel(0, record), record), record)
-    const client = new SocksClient({ proxy: proxyOf(port), command: 'associate', destination: { host: '0.0.0.0', port: 0 } })
-    const { socket, remoteHost } = await new Promise<{ socket: Socket, remoteHost?: { host: string, port: number } }>((resolve, reject) => {
-      client.once('established', resolve)
-      client.once('error', reject)
-      client.connect()
-    })
-    expect(remoteHost?.host).toBe('127.0.0.1')
+  /** Binds a datagram socket first, as a client must, and declares its port in the request. */
+  async function associateFrom (port: number, declared?: number): Promise<{ socket: Socket, udp: ReturnType<typeof createSocket>, relayPort: number }> {
     const udp = createSocket('udp4')
     await new Promise<void>((resolve) => { udp.bind(0, '127.0.0.1', resolve) })
+    const client = new SocksClient({ proxy: proxyOf(port), command: 'associate', destination: { host: '127.0.0.1', port: declared ?? udp.address().port } })
+    try {
+      const { socket, remoteHost } = await new Promise<{ socket: Socket, remoteHost?: { host: string, port: number } }>((resolve, reject) => {
+        client.once('established', resolve)
+        client.once('error', reject)
+        client.connect()
+      })
+      return { socket, udp, relayPort: remoteHost?.port ?? 0 }
+    } catch (error) {
+      udp.close()
+      throw error
+    }
+  }
+
+  it('carries UDP ASSOCIATE through the tunnel, the relay being on loopback and the datagrams only the declared port\'s', async () => {
+    const record = recorder()
+    const port = await start(async () => leaseOf(fakeTunnel(0, record), record), record)
+    const { socket, udp, relayPort } = await associateFrom(port)
     const answer = new Promise<{ host: string, port: number, data: string }>((resolve) => {
       udp.once('message', (message) => {
         const frame = SocksClient.parseUDPFrame(message)
         resolve({ host: frame.remoteHost.host, port: frame.remoteHost.port, data: frame.data.toString() })
       })
     })
-    udp.send(SocksClient.createUDPFrame({ remoteHost: { host: 'dns.example', port: 53 }, data: Buffer.from('query') }), remoteHost?.port ?? 0, '127.0.0.1')
+    udp.send(SocksClient.createUDPFrame({ remoteHost: { host: 'dns.example', port: 53 }, data: Buffer.from('query') }), relayPort, '127.0.0.1')
     expect(await answer).toEqual({ host: 'dns.example', port: 53, data: 'query' })
-    expect(record.udpSent).toEqual(['dns.example:53'])
-
-    // A second socket cannot use the association the first one fixed.
-    const stranger = createSocket('udp4')
-    await new Promise<void>((resolve) => { stranger.bind(0, '127.0.0.1', resolve) })
-    stranger.send(SocksClient.createUDPFrame({ remoteHost: { host: 'other.example', port: 53 }, data: Buffer.from('x') }), remoteHost?.port ?? 0, '127.0.0.1')
-    await new Promise((resolve) => setTimeout(resolve, 150))
     expect(record.udpSent).toEqual(['dns.example:53'])
 
     socket.destroy()
     await new Promise((resolve) => setTimeout(resolve, 150))
     expect(record.released).toBe(1)
     udp.close()
+  })
+
+  it('takes no datagram from a program that is not at the declared port, even one that sends before the client does', async () => {
+    const record = recorder()
+    const port = await start(async () => leaseOf(fakeTunnel(0, record), record), record)
+    const { socket, udp, relayPort } = await associateFrom(port)
+
+    const stranger = createSocket('udp4')
+    await new Promise<void>((resolve) => { stranger.bind(0, '127.0.0.1', resolve) })
+    const strangerHeard: Buffer[] = []
+    stranger.on('message', (message) => { strangerHeard.push(message) })
+    stranger.send(SocksClient.createUDPFrame({ remoteHost: { host: 'other.example', port: 53 }, data: Buffer.from('x') }), relayPort, '127.0.0.1')
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    expect(record.udpSent).toEqual([])
+
+    udp.send(SocksClient.createUDPFrame({ remoteHost: { host: 'dns.example', port: 53 }, data: Buffer.from('query') }), relayPort, '127.0.0.1')
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    expect(record.udpSent).toEqual(['dns.example:53'])
+    expect(strangerHeard, 'and is never answered').toEqual([])
+
+    socket.destroy()
+    udp.close()
     stranger.close()
+  })
+
+  it('refuses an ASSOCIATE that declares no port, and never asks for a tunnel for it', async () => {
+    const record = recorder()
+    const port = await start(async () => { throw new Error('must not be asked') }, record)
+    await expect(associateFrom(port, 0)).rejects.toThrow(/NotAllowed/i)
+    expect(record.acquired).toEqual([])
+  })
+
+  it('does not buffer what a client that has not signed in keeps sending', async () => {
+    const record = recorder()
+    const port = await start(async () => { throw new Error('must not be asked') }, record)
+    const flood = netConnect(port, '127.0.0.1')
+    flood.on('error', () => {})
+    // Version 5, one method (password), then bytes that are not the rest of a handshake.
+    flood.write(Buffer.from([0x05, 0x01, 0x02]))
+    const noise = Buffer.alloc(64 * 1024, 0x41)
+    for (let i = 0; i < 64; i += 1) flood.write(noise)
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    // The server is still answering other clients.
+    await expect(SocksClient.createConnection({ proxy: proxyOf(port, 'not-the-secret'), command: 'connect', destination: { host: 'service.example', port: 80 } })).rejects.toThrow()
+    flood.destroy()
+  })
+
+  it('leaves the places of clients that have signed in alone when many that have not hold theirs', async () => {
+    const record = recorder()
+    const echo = await echoServer()
+    const port = await start(async () => leaseOf(fakeTunnel(echo, record), record), record, { halfCloseGraceMs: 30 })
+    const idle = Array.from({ length: 64 }, () => { const one = netConnect(port, '127.0.0.1'); one.on('error', () => {}); return one })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    // Past the small cap of unsigned connections nothing more is accepted from them, but a client with the secret has to be served once there is room.
+    for (const one of idle) one.destroy()
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    const { socket } = await SocksClient.createConnection({ proxy: proxyOf(port), command: 'connect', destination: { host: 'service.example', port: 4242 } })
+    socket.destroy()
+    expect(record.tcp).toEqual(['service.example:4242'])
   })
 })

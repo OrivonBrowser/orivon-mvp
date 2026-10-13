@@ -10,6 +10,7 @@ import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { sanitizeDirectUrl } from '../browsing/omnibox.js'
 import { askableScheme } from '../sessions/external-links.js'
 import type { Leave } from '../route/leave-decision.js'
+import { sessionRoutesLike } from '../route/site-routes.js'
 import { isTemporaryRoutePartition } from '../route/temporary-routes.js'
 import type { LeaveChoice } from './leaving-route.js'
 
@@ -67,6 +68,10 @@ export function routePopup (
   // Adopted anywhere else, its origin would run whatever the network sends,
   // with its grants.
   if (targetPartition !== undefined) return 'new-tab'
+  // An opener whose session would send the address differently from the shared one (a direct profile with the address on the
+  // tunnel, say) never has the popup's first request: it opens as a tab or a window of its own, where it loads in the right session.
+  // A blank popup holds no address yet, and moves when it navigates.
+  if (opener.partition !== undefined && details.url !== 'about:blank' && !sessionRoutesLike(opener.partition, details.url)) return 'new-tab'
   // Out onto the open web: only a page that asked for a popup window, or a
   // blank one it will fill, is waiting on the opener link. A link or a plain
   // window.open(url) loads in the right session from its first request.

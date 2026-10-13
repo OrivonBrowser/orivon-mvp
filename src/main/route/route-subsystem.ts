@@ -10,7 +10,7 @@ import { setReachRoute } from '../../loader/electron/reach-route.js'
 import { embedPartitionFor } from '../embed/embed-guard.js'
 import { publishRoutes } from '../registry.js'
 import type { Subsystem, SubsystemContext } from '../registry.js'
-import { readSettingBeforeReady } from '../settings/settings-file.js'
+import { everywhereBeforeReady, readSettingBeforeReady } from '../settings/settings-file.js'
 import { isOriginPinnedSync, isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isPersistableOrigin } from '../../broker/policy/origin.js'
@@ -24,7 +24,7 @@ import { createRequestFetch } from '../../loader/electron/request-fetch.js'
 import { mirrorExtensions } from '../extensions/profile-extensions.js'
 import { installExtensionRequestHandlers } from '../extensions/extensions-subsystem.js'
 import { servedOrigin } from './served-origin.js'
-import { mustLeaveSharedSession, setSiteRoutes, setSiteSessionEnsurer, siteProfileOf } from './site-routes.js'
+import { mustLeaveSession, setSiteRoutes, setSiteSessionEnsurer, siteProfileOf } from './site-routes.js'
 import { createSiteSessions } from './site-sessions.js'
 import type { SiteSession } from './site-sessions.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
@@ -36,6 +36,8 @@ import { createRouteService } from './route-service.js'
 import { SHARED_ORIGIN } from './route-hub.js'
 import { tunnelDefaultChanged } from '../verifier/verifier-subsystem.js'
 import { RouteStore } from './route-store.js'
+import { startDeadEnd } from './dead-end.js'
+import type { DeadEnd } from './dead-end.js'
 
 /** Sessions created before the controller exists, and after: each is adopted by the shared identity (`route-controller.ts`). */
 const created: object[] = []
@@ -51,12 +53,16 @@ export const routeSubsystem: Subsystem = {
       else adopt(made)
     })
   },
-  afterReady: (ctx: SubsystemContext) => {
+  afterReady: async (ctx: SubsystemContext) => {
     const userData = ctx.app.getPath('userData')
+    // Had before any session is stopped, so that stopping one takes no waiting: the listener a stopped session is pointed at.
+    const deadEnd: DeadEnd = await startDeadEnd()
+    const deadEndRule = (): string => `http://127.0.0.1:${String(deadEnd.port)}`
     const routes = createRouteService({
       store: new RouteStore(ctx.privateSession ? null : join(userData, 'routes.json')),
       savedProxy: readSettingBeforeReady(join(userData, 'settings.json'), 'network.route.proxy'),
-      savedEverywhere: readSettingBeforeReady(join(userData, 'settings.json'), 'network.tunnel.everywhere'),
+      // A settings file that cannot be used counts as the whole browser being on the tunnel (Settings says why).
+      savedEverywhere: everywhereBeforeReady(join(userData, 'settings.json')),
       savedKind: readSettingBeforeReady(join(userData, 'settings.json'), 'network.route.kind'),
       nym: createNym(),
       // Asked only when the list of tunnel settings cannot be read; the broker exists by then.
@@ -64,7 +70,8 @@ export const routeSubsystem: Subsystem = {
       switchWorld: {
         isPinned: isOriginPinnedSync,
         isPersistable: isPersistableOrigin,
-        removeSiteStorage: async (partition, origin) => { await siteSessions.removeStorage(partition, origin) }
+        removeSiteStorage: async (partition, origin) => { await siteSessions.removeStorage(partition, origin) },
+        dropServiceWorkers: async (partition, origin) => { await (partition === undefined ? session.defaultSession : session.fromPartition(partition)).clearStorageData({ origin, storages: ['serviceworkers'] }) }
       },
       electron: {
         isApp: isOriginServedFromCacheSync,
@@ -75,6 +82,7 @@ export const routeSubsystem: Subsystem = {
         sharedBypass: () => BUILTIN_ADDRESSES.routedSuffixes().map((suffix) => `*.${suffix}`).join(';'),
         setAppProxy: async (config) => { await app.setProxy(config) },
         ownProxy: hasOwnProxy,
+        deadEnd: deadEndRule,
         embedPartition: embedPartitionFor,
         allContents: () => webContents.getAllWebContents(),
         onContentsCreated: (listener) => { app.on('web-contents-created', (_event, contents) => { listener(contents) }) },
@@ -82,10 +90,19 @@ export const routeSubsystem: Subsystem = {
         onLogin: (listener) => { app.prependListener('login', (event, _contents, _details, info, callback) => { listener(event, info, callback) }) }
       }
     })
-    adopt = (made) => { routes.controller.adopt(made) }
-    for (const earlier of created.splice(0)) routes.controller.adopt(earlier as Session)
+    // Every session guards its own main frame: a website that belongs in another session, or a routed one in a session that is not tunnelled, is never loaded there.
+    let isTemporary: (target: object) => boolean = () => false
+    const guarded = new WeakSet<Session>()
+    const guardLoads = (target: Session): void => {
+      if (guarded.has(target)) return
+      guarded.add(target)
+      webRequestOwnerFor(target).onBeforeRequest(-2, { urls: ['http://*/*', 'https://*/*'], types: ['mainFrame'] }, () => true, (details, current) =>
+        details.resourceType === 'mainFrame' && mustLeaveSession(details.url, { shared: target === session.defaultSession, tunnelled: routes.controller.isTunnelled(target), temporary: isTemporary(target) }, isOriginServedFromCacheSync, routes.hub.isRouted) ? { cancel: true } : current)
+    }
+    adopt = (made) => { routes.controller.adopt(made); guardLoads(made) }
+    for (const earlier of created.splice(0)) adopt(earlier as Session)
     // The default session is the shared identity's, and is stopped before anything else is done while the whole browser is on the tunnel.
-    routes.controller.adopt(session.defaultSession)
+    adopt(session.defaultSession)
     routes.controller.startShared()
 
     // The session that asks what the system's proxy is (T20) never follows the tunnel; the lookups about a website set to off go through it too.
@@ -102,7 +119,7 @@ export const routeSubsystem: Subsystem = {
     setDirectLookupSource(() => routes.everywhere() ? systemProxySession() : undefined)
     const tunnelFetch = createRequestFetch({ net, session: session.defaultSession, answer: answerRouteChallenge })
     const directFetch = createRequestFetch({ net, session: systemProxySession(), answer: (_info, callback) => { callback() } })
-    setOwnRequests({ everywhere: routes.everywhere, isRouted: routes.hub.isRouted, tunnel: tunnelFetch, direct: directFetch, directSession: systemProxySession })
+    setOwnRequests({ everywhere: routes.everywhere, isRouted: routes.hub.isRouted, tunnel: tunnelFetch, direct: directFetch, directSession: systemProxySession, settled: routes.controller.settled })
 
     const siteSessions = createSiteSessions({
       controller: routes.controller,
@@ -129,17 +146,23 @@ export const routeSubsystem: Subsystem = {
       },
       fit: (target) => { announceWebsiteSession(target as Session) }
     })
-    // The verifier host reads whether a proxy applies once, when it starts, and fetches through the shared front when the whole browser is on the tunnel: it starts again once the sessions follow.
+    // The verifier host reads whether a proxy applies once, when it starts, and fetches through the shared front when the whole browser is on the tunnel: it stops at once, with the local nodes, and starts again with the new setting when something asks for it, once the sessions follow.
     routes.hub.onChange((origin) => {
-      if (origin === SHARED_ORIGIN) routes.controller.settled().then(() => { tunnelDefaultChanged() }, (error: unknown) => { console.error('[route] restarting the verifier after the default changed failed:', error) })
+      if (origin === SHARED_ORIGIN) tunnelDefaultChanged()
     })
-    setSiteRoutes({ profileFor: routes.hub.profileFor })
+    setSiteRoutes({
+      profileFor: routes.hub.profileFor,
+      sentLikeItsOwn: (partition, origin) => {
+        const holder = partition === undefined ? session.defaultSession : session.fromPartition(partition)
+        const here = routes.controller.isTunnelled(holder)
+        const there = routes.hub.isRouted(origin)
+        // A routed app's session or a temporary one may be the more tunnelled of the two; a profile may not.
+        return here === there || (here && siteProfileOf(partition) === undefined)
+      }
+    })
     // Sessions websites had of their own before the two profiles are cleared once; the person signs in again once.
     migrateLegacySites(routes.store, { clear: async (partition) => { await session.fromPartition(partition).clearData() } }).catch((error: unknown) => { console.error('[route] the migration to profiles failed:', error) })
     setSiteSessionEnsurer(siteSessions.ensure)
-    // The shell moves a tab before it loads a website that has a session of its own; this stops a load the move missed from reaching it in the shared session, untunnelled.
-    webRequestOwnerFor(session.defaultSession).onBeforeRequest(-2, { urls: ['http://*/*', 'https://*/*'], types: ['mainFrame'] }, () => true, (details, current) =>
-      details.resourceType === 'mainFrame' && mustLeaveSharedSession(details.url, isOriginServedFromCacheSync) ? { cancel: true } : current)
     setReachRoute(routes.hub.routeFor)
     setRouteChallengeSource(routes.controller.challengeCredentials)
     beforeAppSessionServes(async (appSession, origin) => { await routes.controller.appSessionRegistered(origin, appSession) })
@@ -157,6 +180,7 @@ export const routeSubsystem: Subsystem = {
         })
       }
     })
+    isTemporary = temporary.owns
     // The sessions handed out are Electron's own (`sessionFor` above), so the casts only restore what the controller's narrow type hides.
     // A site open in a temporary session is looked up about through that session; an app's own session wins for an app.
     setLookupSessionSource(async (origin) => await routes.controller.fetchSessionFor(origin) as Session | undefined
@@ -176,8 +200,10 @@ export const routeSubsystem: Subsystem = {
       routeSwitch: routes.routeSwitch
     })
     publishRoutes(ctx, routes)
+    // Whatever loads next (the person's extensions, the first window) finds the sessions already following the setting.
+    await routes.controller.settled()
     app.once('will-quit', () => {
-      void Promise.all([routes.hub.dispose(), temporary.dispose()]).catch((error: unknown) => { console.error('[route] stopping the fronts failed:', error) })
+      void Promise.all([routes.hub.dispose(), temporary.dispose(), deadEnd.close()]).catch((error: unknown) => { console.error('[route] stopping the fronts failed:', error) })
     })
   }
 }

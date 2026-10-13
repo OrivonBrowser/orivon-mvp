@@ -9,7 +9,8 @@ vi.mock('electron', () => ({ net: { fetch: vi.fn(), request: vi.fn() } }))
 
 const { net } = await import('electron')
 const { netFetchJson } = await import('../score-provider-client.js')
-const { setLookupSessionSource } = await import('../../route/lookup-session.js')
+const { setLookupSessionSource, setDirectLookupSource } = await import('../../route/lookup-session.js')
+const { setOwnRequests } = await import('../../route/own-requests.js')
 
 const ROUTE = { name: 'route' } as unknown as Session
 const APP = 'https://app.example'
@@ -34,6 +35,8 @@ beforeEach(() => {
   vi.mocked(net.fetch).mockReset()
   vi.mocked(net.request).mockReset()
   setLookupSessionSource(async (origin) => origin === APP ? ROUTE : undefined)
+  setOwnRequests(undefined)
+  setDirectLookupSource(() => undefined)
 })
 
 describe('netFetchJson', () => {
@@ -69,5 +72,31 @@ describe('netFetchJson', () => {
     expect(await netFetchJson('http://provider.example/a.json', 'https://other.example')).toEqual({ kind: 'ok', body: { a: 1 } })
 
     expect(net.request).not.toHaveBeenCalled()
+  })
+})
+
+describe('netFetchJson while the whole browser is on the tunnel', () => {
+  const OFF_SESSION = { name: 'system' } as unknown as Session
+  const tunnel = vi.fn(async () => new Response('{"through":"tunnel"}', { status: 200 }))
+  const direct = vi.fn(async () => new Response('{"through":"direct"}', { status: 200 }))
+  beforeEach(() => {
+    tunnel.mockClear()
+    direct.mockClear()
+    setOwnRequests({ everywhere: () => true, isRouted: (origin) => origin !== 'https://off.example', tunnel, direct, directSession: () => OFF_SESSION })
+    setDirectLookupSource(() => OFF_SESSION)
+    vi.mocked(net.fetch).mockResolvedValue(new Response('{"through":"default"}', { status: 200 }))
+  })
+
+  it('sends a lookup that is about no origin (an install, an update check) through the tunnel, never direct', async () => {
+    expect(await netFetchJson('http://provider.example/a.json')).toEqual({ kind: 'ok', body: { through: 'tunnel' } })
+    expect(tunnel).toHaveBeenCalledTimes(1)
+    expect(net.fetch).not.toHaveBeenCalled()
+  })
+
+  it('still sends a lookup about a site set to off on the system\'s proxy', async () => {
+    const fetchOnSession = vi.fn(async () => new Response('{"through":"off"}', { status: 200 }))
+    setDirectLookupSource(() => ({ fetch: fetchOnSession }) as unknown as Session)
+    expect(await netFetchJson('http://provider.example/a.json', 'https://off.example')).toEqual({ kind: 'ok', body: { through: 'off' } })
+    expect(tunnel).not.toHaveBeenCalled()
   })
 })

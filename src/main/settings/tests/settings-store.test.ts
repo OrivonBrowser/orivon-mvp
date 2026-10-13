@@ -138,7 +138,7 @@ describe('SettingsStore', () => {
     ['null'],
     [JSON.stringify({ version: 3, values: { 'appearance.theme': 'dark' } })],
     [JSON.stringify({ version: 1, values: 'dark' })]
-  ])('starts from the defaults for a file that is %s', async (content) => {
+  ])('starts from the defaults, with the tunnel held on for the whole browser, for a file that is %s', async (content) => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     await mkdir(join(dir, 'nested'), { recursive: true })
     await writeFile(file, content)
@@ -146,7 +146,8 @@ describe('SettingsStore', () => {
 
     await expect(store.load()).resolves.toBeUndefined()
 
-    expect(store.snapshot().changed).toEqual([])
+    expect(store.snapshot().changed).toEqual(['network.tunnel.everywhere'])
+    expect(store.get('appearance.theme')).toBe('system')
   })
 
   it('reads the file once, however many callers load', async () => {
@@ -263,5 +264,48 @@ describe('where a routed app leaves', () => {
     const store = new SettingsStore(file)
     await store.load()
     expect(store.set('network.route.kind', 'tor')).toEqual({ ok: false, reason: 'invalid-value' })
+  })
+})
+
+describe('SettingsStore with a settings file that cannot be used', () => {
+  it('holds the tunnel on for the whole browser, says so, and keeps a copy of the file', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await mkdir(join(dir, 'nested'), { recursive: true })
+    await writeFile(file, '{ not json')
+    const store = new SettingsStore(file)
+    await store.load()
+
+    expect(store.get('network.tunnel.everywhere')).toBe(true)
+    expect(store.fileUnreadable()).toBe(true)
+    expect(store.get('network.route.kind')).toBe('nym')
+    expect(await readFile(`${file}.unreadable`, 'utf8')).toBe('{ not json')
+  })
+
+  it('does the same for a file of a version this build does not read', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await mkdir(join(dir, 'nested'), { recursive: true })
+    await writeFile(file, JSON.stringify({ version: 99, values: { 'network.tunnel.everywhere': false } }))
+    const store = new SettingsStore(file)
+    await store.load()
+    expect(store.get('network.tunnel.everywhere')).toBe(true)
+    expect(store.fileUnreadable()).toBe(true)
+  })
+
+  it('lets the person turn it off, which then stops saying it is held', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await mkdir(join(dir, 'nested'), { recursive: true })
+    await writeFile(file, '{ not json')
+    const store = new SettingsStore(file)
+    await store.load()
+    store.set('network.tunnel.everywhere', false)
+    expect(store.get('network.tunnel.everywhere')).toBe(false)
+    expect(store.fileUnreadable()).toBe(false)
+  })
+
+  it('leaves a missing file and a good one alone', async () => {
+    const missing = new SettingsStore(file)
+    await missing.load()
+    expect(missing.get('network.tunnel.everywhere')).toBe(false)
+    expect(missing.fileUnreadable()).toBe(false)
   })
 })

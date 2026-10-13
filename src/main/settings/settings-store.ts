@@ -2,12 +2,12 @@
 // everything they did not. Only choices that differ from the default are
 // written, so a default that improves reaches everyone who never touched it.
 import { mkdirSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { copyFile, readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 import { DebouncedWriter } from '../storage/debounced-writer.js'
 import { SETTINGS, isSettingKey, validateSetting } from './schema.js'
-import { SETTINGS_FILE_VERSION, settingsFromFile } from './settings-file.js'
+import { SETTINGS_FILE_VERSION, isSettingsFile, settingsFromFile } from './settings-file.js'
 import type { SettingKey, SettingValue, SettingsValues } from './schema.js'
 
 export type SetResult = { readonly ok: true } | { readonly ok: false, readonly reason: 'unknown-key' | 'invalid-value' }
@@ -28,6 +28,7 @@ export class SettingsStore {
   private readonly listeners = new Set<(change: SettingChange) => void>()
   private loading: Promise<void> | null = null
   private atStart: Readonly<Record<SettingKey, SettingValue>> | null = null
+  private unreadable = false
   private readonly writer = new DebouncedWriter(async () => { this.writeNow() })
 
   constructor (private readonly filePath: string) {}
@@ -46,12 +47,40 @@ export class SettingsStore {
     try {
       parsed = JSON.parse(await readFile(this.filePath, 'utf8'))
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') console.warn('[orivon] settings file unreadable, using defaults:', error)
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.warn('[orivon] settings file unreadable, using defaults:', error)
+        await this.holdTunnelOn()
+      }
+      return
+    }
+    if (!isSettingsFile(parsed)) {
+      console.warn('[orivon] settings file is not one this version reads, using defaults')
+      await this.holdTunnelOn()
       return
     }
     const { overrides, dropped } = settingsFromFile(parsed)
     for (const [key, value] of overrides) this.overrides.set(key, value)
     if (dropped > 0) console.warn(`[orivon] ${String(dropped)} setting(s) in the settings file were not valid and were ignored`)
+  }
+
+  /**
+   * The file that holds the choices cannot be used, so what the person chose about the tunnel is not known: the whole browser
+   * goes through it (Nym, built in, unless the defaults say otherwise) until they say otherwise. A copy of the file is kept
+   * beside it, since the next change written replaces it.
+   */
+  private async holdTunnelOn (): Promise<void> {
+    this.unreadable = true
+    this.overrides.set('network.tunnel.everywhere', true)
+    try {
+      await copyFile(this.filePath, `${this.filePath}.unreadable`)
+    } catch (error) {
+      console.warn('[orivon] could not keep a copy of the settings file that cannot be read:', error)
+    }
+  }
+
+  /** Whether the settings file was there but could not be used, so that the tunnel was left on for the whole browser. */
+  fileUnreadable (): boolean {
+    return this.unreadable && this.overrides.get('network.tunnel.everywhere') === true
   }
 
   get<K extends SettingKey>(key: K): SettingsValues[K] {

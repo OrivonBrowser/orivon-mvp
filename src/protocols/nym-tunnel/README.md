@@ -11,7 +11,7 @@ is Nym's `smolmix` client with raw TCP and UDP added (`vendor/nym-smolmix/`), pu
 |---|---|
 | [`entry.ts`](entry.ts) | The process: takes `start{ config }` on its parent port, hands it to `service.ts`, and posts what happens |
 | [`service.ts`](service.ts) | The work apart from the process: the globals the module needs, the module loaded from its pinned files, the tunnels per user name, and the SOCKS5 server in front of them |
-| [`socks-server.ts`](socks-server.ts) | SOCKS5 on `127.0.0.1:<port>`: username/password only, the password being the secret (compared in constant time); CONNECT by name or address; UDP ASSOCIATE with the relay on loopback; no BIND, no other method |
+| [`socks-server.ts`](socks-server.ts) | SOCKS5 on `127.0.0.1:<port>`: username/password only, the password being the secret (compared in constant time); CONNECT by name or address; UDP ASSOCIATE with the relay on loopback, for the port the client declares; no BIND, no other method |
 | [`instances.ts`](instances.ts) | One tunnel per SOCKS5 user name; starts at the first request, which waits for it; closes after ten minutes unused; at most `maxInstances` alive, and past that a new app is refused, never given another app's tunnel |
 | [`module-loader.ts`](module-loader.ts) | Reads the glue and the `.wasm` once and hashes them against the pins, compiles the `.wasm` once, and brings a tunnel up in a fresh instance of the glue |
 | [`module-net.ts`](module-net.ts) | The module's only network: `fetch` and `WebSocket` over a dispatcher that dials `https:` and `wss:` alone, and only addresses that are public unicast |
@@ -39,11 +39,14 @@ The server here is about 300 lines over `node:net` and `node:dgram`, and uses th
 client) for the UDP frame format, so both ends read one implementation of it. Every rule is proved against that
 client in [`tests/socks-server.test.ts`](tests/socks-server.test.ts).
 
-**The relay accepts datagrams from one client.** The first datagram fixes the client's port on loopback; a datagram from any
-other port, or from any address but loopback, is dropped. The association ends with its control connection. The request's
-destination address does not say who the client is (the route's provider sends `0.0.0.0:0`), so a program on this
-computer that sent the relay's ephemeral port a datagram before the client did would be taken for it: the relay's
-port is told to the client alone, and this is a residual (`docs/architecture/security-model.md`, T85).
+**The relay accepts datagrams from the port the client declared.** The route's client binds its datagram socket first and
+declares that port in its UDP ASSOCIATE request; the relay passes on datagrams from `127.0.0.1` at that port and nowhere else,
+answers that port alone, and refuses a request that declares port 0, so a program on this computer that reaches the relay's
+ephemeral port cannot take the association by sending first. The association ends with its control connection.
+
+**A client that has not signed in is held small.** Such connections have a place of their own (32), apart from the 512 of
+clients that have signed in and asked for something, and what one sends is read a few kilobytes at a time: the rest waits in the
+kernel, not in this process. A client that closes before it asks for anything gives its place back at once.
 
 **A stream that never opens is refused after 45 seconds.** The module has a 30-second limit of its own for a TCP connect;
 a connect measured once did not return within 90 seconds, so the server does not rely on it. A stream that opens after

@@ -188,7 +188,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       clearShared: async () => { await session.fromPartition(LOCAL_FILES_PARTITION).clearData() }
     }),
     apps: appsDomain({ permissions, devices: deviceRows, links: services.schemeChoices, userDataPath: app.getPath('userData'), identity: identityKeyStorage, routes: appRoutes }),
-    route: routeDomain({ proxy: () => services.settings.get('network.route.proxy'), kind: () => services.settings.get('network.route.kind'), probe: probeSocks5, nym: routes.nym, routeSwitch: routes.routeSwitch }),
+    route: routeDomain({ proxy: () => services.settings.get('network.route.proxy'), kind: () => services.settings.get('network.route.kind'), probe: probeSocks5, nym: routes.nym, routeSwitch: routes.routeSwitch, settingsUnreadable: () => services.settings.fileUnreadable() }),
     web3: web3Domain({
       view: verifierView,
       enabled: () => services.settings.get('web3.lightClient'),

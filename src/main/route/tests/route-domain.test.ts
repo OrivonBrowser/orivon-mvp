@@ -58,7 +58,12 @@ describe('routeDomain', () => {
 
   it('says what Nym is doing', async () => {
     const nym: RouteDomainDeps['nym'] = { ...NYM_OFF, state: () => ({ state: 'connecting' }) }
-    expect(await domain('', async () => ({ ok: true, authentication: 'none' }), {}, 'nym', nym).handle({ type: 'status' }, CALLER)).toEqual({ nym: { state: 'connecting' } })
+    expect(await domain('', async () => ({ ok: true, authentication: 'none' }), {}, 'nym', nym).handle({ type: 'status' }, CALLER)).toEqual({ nym: { state: 'connecting' }, unreadable: false })
+  })
+
+  it('says when the settings file could not be read and the whole browser was put on the tunnel for that', async () => {
+    const held = routeDomain({ proxy: () => '', kind: () => 'nym', probe: async () => ({ ok: true, authentication: 'none' }), nym: NYM_OFF, routeSwitch: { rows: () => [], removeSiteStorage: async () => true }, settingsUnreadable: () => true })
+    expect(await held.handle({ type: 'status' }, CALLER)).toEqual({ nym: { state: 'off' }, unreadable: true })
   })
 
   it('lists the sites and apps with a setting or storage of their own', async () => {

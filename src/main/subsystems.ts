@@ -63,11 +63,12 @@ export const subsystems: Subsystem[] = [
   localFilesSubsystem,
   verifierSubsystem, // .eth names: resolver rules, certificate check, verifier host -> src/main/verifier/. Reads neither ctx.broker nor ctx.loader.
   signInIdentitySubsystem, // Firefox request headers on Google's sign-in hosts -> src/main/shell/sign-in-identity-headers.ts. Reads neither ctx.broker nor ctx.loader.
+  // The network route an app can have: its store, fronts and Chromium sessions -> src/main/route/. Critical. Publishes ctx.routes, which brokerIpcSubsystem reads -- must stay above it. Reads ctx.broker only when a route changes. Listed ahead of the extensions on purpose: with the whole browser on the tunnel, the default session is stopped and pointed at the front before the first extension loads into it.
+  routeSubsystem,
   // extensions -> src/main/extensions/. Listed here, before anything else
   // touches session.defaultSession (extensions/README.md's Design notes).
   // Reads neither ctx.broker nor ctx.loader.
   extensionsSubsystem,
-  routeSubsystem, // the network route an app can have: its store, fronts and Chromium sessions -> src/main/route/. Critical. Publishes ctx.routes, which brokerIpcSubsystem reads -- must stay above it. Reads ctx.broker only when a route changes.
   brokerIpcSubsystem, // build step 2: broker -> src/broker/. Writes ctx.broker -- anything reading it must be listed below this line. Reads ctx.senderAttributed -- must stay below sessionAttributionSubsystem.
   devGrantSubsystem, // queue item 0.3: dev-only grant hook -> src/main/dev-grant.ts. Reads ctx.broker -- must stay below brokerIpcSubsystem.
   requestGrantSubsystem, // queue item 4.1: app.requestGrant's mechanism -> src/main/request-grant.ts. Reads ctx.broker -- must stay below brokerIpcSubsystem.

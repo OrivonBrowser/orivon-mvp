@@ -4,6 +4,8 @@ import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { isNavigationHeld } from './navigation-hold.js'
 import { partitionAfterFileBlock, partitionChanged } from './tab-partition.js'
 import { repartitionView } from './tab-parking.js'
+import { sessionRoutesLike } from '../route/site-routes.js'
+import { isTemporaryRoutePartition } from '../route/temporary-routes.js'
 import type { TabRecord } from './tab-types.js'
 
 interface NavigationEvent {
@@ -21,8 +23,10 @@ interface NavigationEvent {
  * partition, where the pinned files answer (ADR-0056). Typed addresses already do the same
  * (`./tab-navigation.ts`).
  *
- * Only a move INTO a cache-served partition: leaving one for the open web still swaps at
- * `did-navigate`, where nothing of the app's is exposed to the page it reaches.
+ * A move INTO a session of its own is made here. A move to the shared session still swaps at
+ * `did-navigate`, where nothing of the app's is exposed to the page it reaches, unless the tab's session
+ * would send the address differently from the shared one (the tunnel's): then the first request must not
+ * commit there either.
  */
 export function repartitionBeforeCommit (wc: WebContents, id: string, record: TabRecord, shown: () => boolean): void {
   const view = record.view
@@ -33,7 +37,9 @@ export function repartitionBeforeCommit (wc: WebContents, id: string, record: Ta
     // that scheme is served at (`./served-address.ts`), and that URL is the one whose partition counts.
     const url = BUILTIN_ADDRESSES.servedUrl(event.url) ?? event.url
     const swap = partitionChanged(url, record.partition)
-    if (swap?.to === undefined) return
+    if (swap === undefined) return
+    // A move to the shared session waits for `did-navigate` when the tab's session sends the address as the shared one would (a popup then keeps its opener); when it would send it differently, as a direct profile or an app set to off does for an address on the tunnel, the first request must not commit there, so the tab moves now and a popup's opener is cut.
+    if (swap.to === undefined && (isTemporaryRoutePartition(record.partition) || sessionRoutesLike(record.partition, url))) return
     const nextPartition = swap.to
     event.preventDefault()
     // Not in the event: a view closed from inside its own navigation event is not safe to close.

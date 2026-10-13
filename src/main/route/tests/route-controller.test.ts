@@ -136,7 +136,7 @@ describe('an app\'s session that cannot be pointed when it is registered', () =>
     const broken = sessionFor('app')
     const original = broken.setProxy
     let refused = false
-    broken.setProxy = async (config) => { if (!refused) { refused = true; throw new Error('no proxy for you') } await original(config) }
+    broken.setProxy = async (config) => { if (!refused && config.proxyRules !== 'http://127.0.0.1:9') { refused = true; throw new Error('no proxy for you') } await original(config) }
 
     await expect(controller.appSessionRegistered(APP, broken)).rejects.toThrow('no proxy for you')
 
@@ -172,7 +172,7 @@ describe('switching a route on', () => {
     store.set(APP, true)
     await controller.settled()
 
-    expect(log.filter((entry) => entry.endsWith('.setProxy')).sort()).toEqual(['app.setProxy', `embed:${APP}.setProxy`])
+    expect([...new Set(log.filter((entry) => entry.endsWith('.setProxy')))].sort()).toEqual(['app.setProxy', `embed:${APP}.setProxy`])
     const lastSetProxy = Math.max(...log.map((entry, index) => entry.endsWith('.setProxy') ? index : -1))
     expect(log.indexOf('app.close'), 'connections close once the sessions are pointed').toBeGreaterThan(lastSetProxy)
     expect(log.indexOf(`broker.drop ${APP}`), 'handles close after the sessions are pointed and their connections closed').toBeGreaterThan(log.indexOf('app.close'))
@@ -272,7 +272,7 @@ describe('switching a route off', () => {
     store.set(APP, false)
     await controller.settled()
 
-    expect(hostSession.proxies).toEqual([expect.stringMatching(/^fixed_servers:/), 'system:'])
+    expect(hostSession.proxies).toEqual(['fixed_servers:http://127.0.0.1:9', expect.stringMatching(/^fixed_servers:http:\/\/127\.0\.0\.1:\d+$/), 'system:'])
     expect(host.policy).toEqual([])
   })
 })
@@ -283,7 +283,7 @@ describe('a session that cannot be pointed at the front', () => {
     const broken = sessionFor('app')
     const original = broken.setProxy
     let refused = false
-    broken.setProxy = async (config) => { if (!refused) { refused = true; throw new Error('no proxy for you') } await original(config) }
+    broken.setProxy = async (config) => { if (!refused && config.proxyRules !== 'http://127.0.0.1:9') { refused = true; throw new Error('no proxy for you') } await original(config) }
     await controller.appSessionRegistered(APP, broken)
 
     store.set(APP, true)
@@ -300,7 +300,7 @@ describe('a session that cannot be pointed at the front', () => {
     const broken = sessionFor('app')
     const original = broken.setProxy
     let refused = false
-    broken.setProxy = async (config) => { if (!refused) { refused = true; throw new Error('no proxy for you') } await original(config) }
+    broken.setProxy = async (config) => { if (!refused && config.proxyRules !== 'http://127.0.0.1:9') { refused = true; throw new Error('no proxy for you') } await original(config) }
     await controller.appSessionRegistered(APP, broken)
     store.set(APP, true)
     await controller.settled()
@@ -347,7 +347,7 @@ describe('what stays off the proxy', () => {
     const broken = sessionFor('app')
     const original = broken.setProxy
     let refused = false
-    broken.setProxy = async (config) => { if (!refused) { refused = true; throw new Error('no proxy for you') } await original(config) }
+    broken.setProxy = async (config) => { if (!refused && config.proxyRules !== 'http://127.0.0.1:9') { refused = true; throw new Error('no proxy for you') } await original(config) }
     await controller.appSessionRegistered(APP, broken)
 
     store.set(APP, true)
@@ -685,7 +685,7 @@ describe('the shared identity, while the whole browser is on the tunnel', () => 
     const { controller, hub, sessionFor, defaultSession } = shared(true)
     const made = sessionFor('somewhere')
     controller.adopt(made)
-    expect(made.proxies[0]).toBe('fixed_servers:http://127.0.0.1:9')
+    expect(made.proxies[0], 'in the same turn').toBe('fixed_servers:http://127.0.0.1:9')
     await controller.settled()
     const front = await hub.front('orivon-shared-tunnel')
     expect(made.proxies).toEqual(['fixed_servers:http://127.0.0.1:9', `fixed_servers:http://127.0.0.1:${String(front.port)}`])
@@ -701,8 +701,8 @@ describe('the shared identity, while the whole browser is on the tunnel', () => 
     flip(true)
     await controller.settled()
     const front = await hub.front('orivon-shared-tunnel')
-    expect(defaultSession.proxies).toEqual([`fixed_servers:http://127.0.0.1:${String(front.port)}`])
-    expect(appProxies).toEqual([`fixed_servers:http://127.0.0.1:${String(front.port)}:<-loopback>;localhost;*.localhost;127.0.0.1/8;[::1]`])
+    expect(defaultSession.proxies, 'stopped first, then pointed').toEqual(['fixed_servers:http://127.0.0.1:9', `fixed_servers:http://127.0.0.1:${String(front.port)}`])
+    expect(appProxies).toEqual(['fixed_servers:http://127.0.0.1:9:<-loopback>', `fixed_servers:http://127.0.0.1:${String(front.port)}:<-loopback>;localhost;*.localhost;127.0.0.1/8;[::1]`])
     expect(tab.policy).toEqual(['disable_non_proxied_udp'])
 
     flip(false)
@@ -755,7 +755,7 @@ describe('the shared identity, while the whole browser is on the tunnel', () => 
     flip(true)
     await controller.settled()
     const front = await hub.front('orivon-shared-tunnel')
-    expect(made.proxies).toEqual([`fixed_servers:http://127.0.0.1:${String(front.port)}`])
+    expect(made.proxies).toEqual(['fixed_servers:http://127.0.0.1:9', `fixed_servers:http://127.0.0.1:${String(front.port)}`])
   })
 
   it('stops the runtime\'s own requests when the shared front cannot be had', async () => {
