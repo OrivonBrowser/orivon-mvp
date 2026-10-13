@@ -25,6 +25,7 @@ export function sizeWords (bytes: number): string {
 
 /** What the switch that routes an app says under its label, about the person's situation rather than the program's. */
 export function routeWords (route: AppRow['route']): string {
+  if (route.unreadable === true) return 'Orivon could not read which apps you routed, so while a proxy is set every app goes through it. Mend or remove routes.json in your profile folder to choose again.'
   if (route.state === 'off') {
     if (route.blocked === 'no-proxy') return 'Set a proxy under Privacy and data first.'
     if (route.blocked === 'not-cached') return 'Only an app Orivon holds on this computer can be routed.'
@@ -37,7 +38,7 @@ export function routeWords (route: AppRow['route']): string {
 
 function routeRow (app: AppRow, state: SettingsState): HTMLElement {
   const on = app.route.state !== 'off'
-  const input = h('input', { type: 'checkbox', id: `route-${app.origin}`, checked: on, disabled: !on && app.route.blocked !== undefined })
+  const input = h('input', { type: 'checkbox', id: `route-${app.origin}`, checked: on, disabled: app.route.unreadable === true || (!on && app.route.blocked !== undefined) })
   input.addEventListener('change', () => {
     // A click leaves the switch focused, and a focused input that is not settled holds every redraw (main.ts).
     input.dataset['settled'] = 'true'
@@ -46,7 +47,7 @@ function routeRow (app: AppRow, state: SettingsState): HTMLElement {
   return h('div', { className: 'app-route' },
     h('div', { className: 'app-route-text' },
       h('label', { htmlFor: `route-${app.origin}`, textContent: 'Send this app\'s traffic through my proxy' }),
-      h('p', { className: app.route.state === 'down' || app.route.state === 'no-proxy' ? 'problem' : 'muted', textContent: routeWords(app.route) }),
+      h('p', { className: app.route.unreadable === true || app.route.state === 'down' || app.route.state === 'no-proxy' ? 'problem' : 'muted', textContent: routeWords(app.route) }),
       state.apps.routeRefused.has(app.origin) ? h('p', { className: 'problem', role: 'alert', textContent: 'That could not be changed. Check the proxy under Privacy and data.' }) : null),
     h('span', { className: 'switch' }, input, h('span', { className: 'track' })))
 }

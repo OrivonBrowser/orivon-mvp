@@ -13,26 +13,30 @@ const APP = 'https://one.example'
 const hubs: RouteHub[] = []
 afterEach(async () => { for (const hub of hubs.splice(0)) await hub.dispose() })
 
-interface FakeSession extends RouteSession { readonly name: string, readonly calls: string[], readonly proxies: string[] }
+interface FakeSession extends RouteSession { readonly name: string, readonly calls: string[], readonly proxies: string[], readonly bypass: string[] }
 
 function fakeSession (name: string, log: string[]): FakeSession {
   const calls: string[] = []
   const proxies: string[] = []
+  const bypass: string[] = []
   return {
     name,
     calls,
     proxies,
-    setProxy: async (config) => { calls.push('setProxy'); proxies.push(`${config.mode ?? ''}:${config.proxyRules ?? ''}`); log.push(`${name}.setProxy`) },
+    bypass,
+    setProxy: async (config) => { calls.push('setProxy'); proxies.push(`${config.mode ?? ''}:${config.proxyRules ?? ''}`); bypass.push(config.proxyBypassRules ?? ''); log.push(`${name}.setProxy`) },
     closeAllConnections: async () => { calls.push('close'); log.push(`${name}.close`) }
   }
 }
 
-function fakeContents (session: RouteSession): RouteContents & { policy: string[] } {
+function fakeContents (session: RouteSession, reloads: string[] = []): RouteContents & { policy: string[] } {
   const policy: string[] = []
-  return { session, policy, isDestroyed: () => false, setWebRTCIPHandlingPolicy: (value) => { policy.push(value) } }
+  const name = (session as Partial<FakeSession>).name ?? 'session'
+  return { session, policy, isDestroyed: () => false, getType: () => 'window', reload: () => { reloads.push(name) }, setWebRTCIPHandlingPolicy: (value) => { policy.push(value) } }
 }
 
-function setup (routed: readonly string[] = []) {
+function setup (options: { routed?: readonly string[], callTimeoutMs?: number } | readonly string[] = {}) {
+  const { routed = [], callTimeoutMs } = Array.isArray(options) ? { routed: options as readonly string[], callTimeoutMs: undefined } : options as { routed?: readonly string[], callTimeoutMs?: number }
   const store = new RouteStore(null)
   for (const origin of routed) store.set(origin, true)
   const hub = createRouteHub({ store, proxy: () => ({ host: '127.0.0.1', port: 9050 }), providerFor: () => ({ connect: async () => { throw new Error('unused') } }) })
@@ -50,19 +54,33 @@ function setup (routed: readonly string[] = []) {
   let created: ((contents: RouteContents) => void) | undefined
   let login: Parameters<RouteControllerDeps['onLogin']>[0] | undefined
   const dropped: string[] = []
+  /** The sessions whose pages were reloaded, by name. */
   const reloaded: string[] = []
+  const hangOn = new Set<string>()
   const deps: RouteControllerDeps = {
     hub,
-    broker: () => ({ dropOrigin: async (origin) => { dropped.push(origin); log.push('broker.drop') } }),
+    broker: () => ({
+      dropOrigin: async (origin) => {
+        dropped.push(origin)
+        log.push(`broker.drop ${origin}`)
+        if (hangOn.has(origin)) await new Promise<void>(() => {})
+      }
+    }),
     sessionFor,
     embedPartition: (origin) => `embed:${origin}`,
     allContents: () => contents,
     onContentsCreated: (listener) => { created = listener },
     onLogin: (listener) => { login = listener },
-    reloadTabs: (origin) => { reloaded.push(origin); log.push('reload') }
+    ...(callTimeoutMs === undefined ? {} : { callTimeoutMs })
   }
   const controller = createRouteController(deps)
-  return { store, hub, controller, sessionFor, requested: () => [...new Set(asked)], contents, log, dropped, reloaded, created: (one: RouteContents) => { created?.(one) }, login: (...args: Parameters<NonNullable<typeof login>>) => { login?.(...args) } }
+  /** A web contents in `session`, which the controller sees among all of them. */
+  const page = (session: RouteSession): RouteContents & { policy: string[] } => {
+    const one = fakeContents(session, reloaded)
+    contents.push(one)
+    return one
+  }
+  return { store, hub, controller, sessionFor, requested: () => [...new Set(asked)], contents, page, hangOn, log, dropped, reloaded, created: (one: RouteContents) => { created?.(one) }, login: (...args: Parameters<NonNullable<typeof login>>) => { login?.(...args) } }
 }
 
 describe('preparing a session', () => {
@@ -106,6 +124,27 @@ describe('preparing a session', () => {
   })
 })
 
+describe('an app\'s session that cannot be pointed when it is registered', () => {
+  it('is held on the rule that reaches nothing, and the failure is passed on so the loader does not open the app as a website', async () => {
+    const { controller, sessionFor } = setup([APP])
+    const broken = sessionFor('app')
+    const original = broken.setProxy
+    let refused = false
+    broken.setProxy = async (config) => { if (!refused) { refused = true; throw new Error('no proxy for you') } await original(config) }
+
+    await expect(controller.appSessionRegistered(APP, broken)).rejects.toThrow('no proxy for you')
+
+    expect(broken.proxies.at(-1)).toBe('fixed_servers:http://127.0.0.1:9')
+  })
+
+  it('is passed on without touching the session of an app that is not routed', async () => {
+    const { controller, sessionFor } = setup()
+    const session = sessionFor('app')
+    session.setProxy = async () => { throw new Error('unused') }
+    await expect(controller.appSessionRegistered(APP, session)).resolves.toBeUndefined()
+  })
+})
+
 describe('an app that is not routed', () => {
   it('leaves its embed session uncreated: asking for a session creates one on disk', async () => {
     const { controller, sessionFor, requested } = setup()
@@ -117,9 +156,11 @@ describe('an app that is not routed', () => {
 })
 
 describe('switching a route on', () => {
-  it('points every session of the app at the front, then closes its connections and handles, then reloads its tabs', async () => {
-    const { store, controller, sessionFor, log, dropped, reloaded } = setup()
+  it('points every session of the app at the front and closes its connections, then closes its handles, then reloads every page in those sessions', async () => {
+    const { store, controller, sessionFor, page, log, dropped, reloaded } = setup()
     await controller.appSessionRegistered(APP, sessionFor('app'))
+    page(sessionFor('app'))
+    page(sessionFor(`embed:${APP}`))
     log.length = 0
 
     store.set(APP, true)
@@ -127,11 +168,40 @@ describe('switching a route on', () => {
 
     expect(log.filter((entry) => entry.endsWith('.setProxy')).sort()).toEqual(['app.setProxy', `embed:${APP}.setProxy`])
     const lastSetProxy = Math.max(...log.map((entry, index) => entry.endsWith('.setProxy') ? index : -1))
-    expect(log.indexOf('broker.drop')).toBeGreaterThan(lastSetProxy)
-    expect(log.indexOf('app.close')).toBeGreaterThan(lastSetProxy)
-    expect(log.indexOf('reload')).toBeGreaterThan(log.indexOf('app.close'))
+    expect(log.indexOf('app.close'), 'connections close once the sessions are pointed').toBeGreaterThan(lastSetProxy)
+    expect(log.indexOf(`broker.drop ${APP}`), 'handles close after the sessions are pointed and their connections closed').toBeGreaterThan(log.indexOf('app.close'))
     expect(dropped).toEqual([APP])
-    expect(reloaded).toEqual([APP])
+    expect(reloaded.sort()).toEqual(['app', `embed:${APP}`])
+  })
+
+  it('reloads the embeds, the child host and a popup too, and no page of any other session', async () => {
+    const { store, controller, sessionFor, page, reloaded } = setup()
+    const host = sessionFor('child-host')
+    await controller.appSessionRegistered(APP, sessionFor('app'))
+    await controller.prepare(APP, host, { webrtc: false })
+    page(sessionFor('app'))
+    page(sessionFor('app'))
+    page(host)
+    page(sessionFor(`embed:${APP}`))
+    page(sessionFor('somewhere else'))
+
+    store.set(APP, true)
+    await controller.settled()
+
+    expect(reloaded.sort()).toEqual(['app', 'app', 'child-host', `embed:${APP}`])
+  })
+
+  it('leaves a developer tools page alone', async () => {
+    const { store, controller, sessionFor, contents, reloaded } = setup()
+    await controller.appSessionRegistered(APP, sessionFor('app'))
+    const tools = fakeContents(sessionFor('app'), reloaded)
+    ;(tools as { getType: () => string }).getType = () => 'remote'
+    contents.push(tools)
+
+    store.set(APP, true)
+    await controller.settled()
+
+    expect(reloaded).toEqual([])
   })
 
   it('puts the WebRTC policy on the web contents already open in those sessions, and on no others', async () => {
@@ -166,11 +236,10 @@ describe('switching a route on', () => {
 
 describe('switching a route off', () => {
   it('returns the sessions to the system\'s proxy, closes connections and handles, reloads, and restores the policy it set', async () => {
-    const { store, controller, sessionFor, contents, dropped, reloaded } = setup()
+    const { store, controller, sessionFor, page: pageIn, dropped, reloaded } = setup()
     store.set(APP, true)
     await controller.appSessionRegistered(APP, sessionFor('app'))
-    const page = fakeContents(sessionFor('app'))
-    contents.push(page)
+    const page = pageIn(sessionFor('app'))
     store.set(APP, false)
     store.set(APP, true)
     await controller.settled()
@@ -182,7 +251,7 @@ describe('switching a route off', () => {
     expect(sessionFor('app').proxies.at(-1)).toBe('system:')
     expect(page.policy.at(-1)).toBe('default')
     expect(dropped).toEqual([APP])
-    expect(reloaded).toEqual([APP])
+    expect(reloaded).toEqual(['app'])
   })
 
   it('leaves the WebRTC policy of a session that confines itself alone, in either direction', async () => {
@@ -239,9 +308,10 @@ describe('a session that cannot be pointed at the front', () => {
 
 describe('changing the proxy under a routed app', () => {
   it('closes connections and handles but does not reload the tabs', async () => {
-    const { store, hub, controller, sessionFor, dropped, reloaded } = setup()
+    const { store, hub, controller, sessionFor, page, dropped, reloaded } = setup()
     store.set(APP, true)
     await controller.appSessionRegistered(APP, sessionFor('app'))
+    page(sessionFor('app'))
     await controller.settled()
     dropped.length = 0
     reloaded.length = 0
@@ -253,6 +323,116 @@ describe('changing the proxy under a routed app', () => {
     expect(dropped).toEqual([APP])
     expect(reloaded).toEqual([])
     expect(sessionFor('app').calls.filter((call) => call === 'close').length).toBe(closesBefore + 1)
+  })
+})
+
+describe('what stays off the proxy', () => {
+  it('bypasses this machine alone: Chromium\'s implicit bypass of link-local addresses is taken away, so the local network goes through the front', async () => {
+    const { controller, sessionFor } = setup([APP])
+    const session = sessionFor('app')
+
+    await controller.prepare(APP, session)
+
+    expect(session.bypass).toEqual(['<-loopback>;localhost;*.localhost;127.0.0.1/8;[::1]'])
+  })
+
+  it('gives the rule that reaches nothing no bypass at all but the one that cancels the implicit ones', async () => {
+    const { store, controller, sessionFor } = setup()
+    const broken = sessionFor('app')
+    const original = broken.setProxy
+    let refused = false
+    broken.setProxy = async (config) => { if (!refused) { refused = true; throw new Error('no proxy for you') } await original(config) }
+    await controller.appSessionRegistered(APP, broken)
+
+    store.set(APP, true)
+    await controller.settled()
+
+    expect(broken.proxies.at(-1)).toBe('fixed_servers:http://127.0.0.1:9')
+    expect(broken.bypass.at(-1)).toBe('<-loopback>')
+  })
+})
+
+describe('an app whose handles will not close', () => {
+  const OTHER = 'https://two.example'
+  async function until (done: () => boolean): Promise<void> {
+    for (let waited = 0; waited < 2000 && !done(); waited += 5) await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(done()).toBe(true)
+  }
+
+  it('has its sessions pointed and their connections closed before the broker is asked, and does not hold another app\'s switch', async () => {
+    const { store, controller, sessionFor, page, hangOn, log, reloaded } = setup({ callTimeoutMs: 400 })
+    await controller.appSessionRegistered(APP, sessionFor('app'))
+    await controller.appSessionRegistered(OTHER, sessionFor('other'))
+    page(sessionFor('app'))
+    page(sessionFor('other'))
+    hangOn.add(APP)
+    log.length = 0
+
+    store.set(APP, true)
+    store.set(OTHER, true)
+    await until(() => reloaded.includes('other'))
+
+    expect(log.indexOf('app.setProxy')).toBeLessThan(log.indexOf('app.close'))
+    expect(log.indexOf('app.close'), 'the hung app\'s connections were closed before its handles were asked about').toBeLessThan(log.indexOf(`broker.drop ${APP}`))
+    expect(sessionFor('other').proxies.at(-1)).toMatch(/^fixed_servers:/)
+    expect(reloaded, 'the app whose handles hang waits for them, the other does not').not.toContain('app')
+
+    await controller.settled()
+    expect(reloaded.sort(), 'and is reloaded once the wait is over').toEqual(['app', 'other'])
+  })
+})
+
+describe('a switch-off that could not put a session back', () => {
+  it('tries again, and the session ends on the system\'s proxy', async () => {
+    const { store, controller, sessionFor } = setup()
+    const session = sessionFor('app')
+    const original = session.setProxy
+    let refused = 0
+    session.setProxy = async (config) => { if (config.mode === 'system' && refused < 1) { refused += 1; throw new Error('not now') } await original(config) }
+    store.set(APP, true)
+    await controller.appSessionRegistered(APP, session)
+
+    store.set(APP, false)
+    await controller.settled()
+
+    expect(session.proxies.at(-1)).toBe('system:')
+  })
+
+  it('stays marked as pointed at the front while it could not be put back, so the next pass tries once more', async () => {
+    const { store, controller, sessionFor } = setup()
+    const session = sessionFor('app')
+    const original = session.setProxy
+    let broken = true
+    session.setProxy = async (config) => { if (config.mode === 'system' && broken) throw new Error('not now'); await original(config) }
+    store.set(APP, true)
+    await controller.appSessionRegistered(APP, session)
+    store.set(APP, false)
+    await controller.settled()
+    expect(session.proxies.at(-1)).toMatch(/^fixed_servers:/)
+
+    broken = false
+    await controller.prepare(APP, session)
+
+    expect(session.proxies.at(-1)).toBe('system:')
+  })
+})
+
+describe('an app that was forgotten', () => {
+  it('drops the sessions it knew, so switching it on again points only the ones registered anew', async () => {
+    const { store, hub, controller, sessionFor } = setup()
+    store.set(APP, true)
+    await controller.appSessionRegistered(APP, sessionFor('app'))
+    await controller.settled()
+
+    store.set(APP, false)
+    controller.forget(APP)
+    await controller.settled()
+    const before = sessionFor('app').calls.length
+    store.set(APP, true)
+    await controller.settled()
+
+    expect(hub.isRouted(APP)).toBe(true)
+    expect(sessionFor('app').calls.length, 'the dropped session is not touched').toBe(before)
   })
 })
 

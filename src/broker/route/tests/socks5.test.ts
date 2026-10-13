@@ -3,10 +3,10 @@
 // each failure surfaces. The fixture knows names the machine's resolver does
 // not, so a client that resolved a name itself would fail these.
 
-import { createSocket } from 'node:dgram'
+import { createSocket, Socket as DatagramSocket } from 'node:dgram'
 import { createServer as createTcpServer } from 'node:net'
 import type { AddressInfo, Server, Socket } from 'node:net'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSocks5Provider, isolationCredentials, routeAnswered } from '../socks5.js'
 import type { RoutedDatagram } from '../provider.js'
 import { startSocks5Fixture } from './socks5-fixture.test-helpers.js'
@@ -232,6 +232,33 @@ describe('UDP ASSOCIATE', () => {
     await udp?.send({ host: 'udp-name.test', port: 5353, data: new Uint8Array([4]) })
 
     expect([...(await received).data]).toEqual([4])
+  })
+
+  it('connects its local socket to the relay the proxy named, so the kernel takes datagrams from nothing else', async () => {
+    const connect = vi.spyOn(DatagramSocket.prototype, 'connect')
+    cleanups.push(() => { connect.mockRestore() })
+    const target = await udpEchoServer()
+    const proxy = await fixture({ names: { 'udp-name.test:5353': { host: '127.0.0.1', port: target } } })
+    const udp = await createSocks5Provider({ host: proxy.host, port: proxy.port }).udp?.(NEVER)
+    cleanups.push(async () => { await udp?.close() })
+
+    expect(connect).toHaveBeenCalledTimes(1)
+    const [relayPort, relayHost] = connect.mock.calls[0] as unknown as [number, string]
+    expect(relayHost).toBe('127.0.0.1')
+    expect(relayPort).not.toBe(proxy.port)
+    const local = (connect.mock.contexts[0] as DatagramSocket).address()
+
+    // A program that is not the relay writes to the socket's port: nothing is delivered.
+    const stranger = createSocket('udp4')
+    cleanups.push(() => { stranger.close() })
+    const heard: RoutedDatagram[] = []
+    udp?.onDatagram((datagram) => { heard.push(datagram) })
+    const forged = Buffer.concat([Buffer.from([0, 0, 0, 1, 10, 0, 0, 1, 0, 80]), Buffer.from('forged')])
+    await new Promise<void>((resolve) => { stranger.send(forged, local.port, '127.0.0.1', () => { resolve() }) })
+    await udp?.send({ host: 'udp-name.test', port: 5353, data: new Uint8Array([9]) })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    expect(heard.map((datagram) => datagram.host)).toEqual(['udp-name.test'])
   })
 
   it('rejects when the proxy refuses UDP ASSOCIATE', async () => {

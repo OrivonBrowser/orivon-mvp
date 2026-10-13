@@ -183,8 +183,8 @@ async function openUdp (options: Socks5ProviderOptions, signal: AbortSignal): Pr
   control.once('close', () => { close().catch(reportCloseFailure) })
   control.on('error', () => {})
   socket.on('error', () => { close().catch(reportCloseFailure) })
-  // The relay is the only sender accepted: anything else that reaches this
-  // port is not the route's.
+  // The relay is the only sender accepted: the socket is connected to it below,
+  // and the check stays for the moment before that.
   socket.on('message', (message, from) => {
     if (from.address !== relayHost || from.port !== relayPort) return
     try {
@@ -201,6 +201,11 @@ async function openUdp (options: Socks5ProviderOptions, signal: AbortSignal): Pr
       socket.once('error', reject)
       socket.bind(0, loopback ? relayHost : isIP(relayHost) === 6 ? '::' : '0.0.0.0', () => { socket.off('error', reject); resolve() })
     })
+    // Connected to the relay, the kernel itself drops a datagram from any other sender.
+    await new Promise<void>((resolve, reject) => {
+      socket.once('error', reject)
+      socket.connect(relayPort, relayHost, () => { socket.off('error', reject); resolve() })
+    })
   } catch (error) {
     await close()
     throw error
@@ -211,7 +216,7 @@ async function openUdp (options: Socks5ProviderOptions, signal: AbortSignal): Pr
       if (closed) throw fail('closed', 'the datagram channel is closed')
       const frame = SocksClient.createUDPFrame({ remoteHost: { host: datagram.host, port: datagram.port }, data: Buffer.from(datagram.data) })
       await new Promise<void>((resolve, reject) => {
-        socket.send(frame, relayPort, relayHost, (error) => { if (error === null || error === undefined) resolve(); else reject(error) })
+        socket.send(frame, (error) => { if (error === null || error === undefined) resolve(); else reject(error) })
       })
     },
     onDatagram: datagramListeners.add,

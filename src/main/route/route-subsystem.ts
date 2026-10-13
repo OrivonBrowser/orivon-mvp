@@ -8,7 +8,6 @@ import type { Session } from 'electron'
 import { beforeAppSessionServes } from '../../loader/electron/app-partitions.js'
 import { setReachRoute } from '../../loader/electron/reach-route.js'
 import { embedPartitionFor } from '../embed/embed-guard.js'
-import { pagesInPartitionOf } from '../app-setup/pages-in-partition.js'
 import { publishRoutes } from '../registry.js'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { readSettingBeforeReady } from '../settings/settings-file.js'
@@ -24,6 +23,8 @@ export const routeSubsystem: Subsystem = {
     const routes = createRouteService({
       store: new RouteStore(ctx.privateSession ? null : join(userData, 'routes.json')),
       savedProxy: readSettingBeforeReady(join(userData, 'settings.json'), 'network.route.proxy'),
+      // Asked only when the list of routed apps cannot be read; the broker exists by then.
+      installed: () => [...new Set([...(ctx.broker?.app.registeredOriginsSync() ?? []), ...(ctx.broker?.app.persistedAppsSync().map((installed) => installed.origin) ?? [])])],
       electron: {
         broker: () => ctx.broker,
         sessionFor: (partition) => session.fromPartition(partition),
@@ -31,8 +32,7 @@ export const routeSubsystem: Subsystem = {
         allContents: () => webContents.getAllWebContents(),
         onContentsCreated: (listener) => { app.on('web-contents-created', (_event, contents) => { listener(contents) }) },
         // Ahead of the sheet that asks the person about a proxy's challenge, which must not see this one.
-        onLogin: (listener) => { app.prependListener('login', (event, _contents, _details, info, callback) => { listener(event, info, callback) }) },
-        reloadTabs: (origin) => { for (const contents of pagesInPartitionOf(origin)) if (!contents.isDestroyed()) contents.reload() }
+        onLogin: (listener) => { app.prependListener('login', (event, _contents, _details, info, callback) => { listener(event, info, callback) }) }
       }
     })
     setReachRoute(routes.hub.routeFor)

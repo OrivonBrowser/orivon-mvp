@@ -1,7 +1,7 @@
 // Which apps are routed, through which proxy, and what each routed app needs running for it: its route (read by the
 // broker and the loader), its loopback front (read by Chromium) and its health (read by the Settings page and the
 // site-info popover). Electron-free. A routed app with no proxy set gets a route that refuses: it never falls back to
-// a direct one.
+// a direct one. When the store cannot say which apps are routed, every app is routed while a proxy is set.
 
 import type { Route, RouteFor, RouteProvider } from '../../broker/route/provider.js'
 import { createSocks5Provider, isolationCredentials, routeAnswered } from '../../broker/route/socks5.js'
@@ -21,6 +21,8 @@ export interface RouteHubOptions {
   readonly store: RouteStore
   /** The proxy the person set, read on every use. */
   readonly proxy: () => RouteTarget | undefined
+  /** The apps installed on this computer, asked only when the store cannot say which are routed. */
+  readonly installed?: () => readonly string[]
   /** Builds the provider for one app and proxy; the default is SOCKS5 with a distinct username and password per app. */
   readonly providerFor?: (key: string, target: RouteTarget) => RouteProvider
 }
@@ -29,6 +31,8 @@ export interface RouteHub {
   /** For `CreateBrokerOptions.routeFor` and the loader's reach path. */
   readonly routeFor: RouteFor
   isRouted: (origin: string) => boolean
+  /** Whether the list of routed apps could not be read, so that every app counts as routed while a proxy is set. */
+  unreadable: () => boolean
   state: (origin: string) => RouteState
   /** The app's front, started on first use. Rejects for an app that is not routed. */
   front: (origin: string) => Promise<RouteFront>
@@ -77,11 +81,13 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
     }
   })
   const build = options.providerFor ?? ((key: string, target: RouteTarget) => createSocks5Provider({ host: target.host, port: target.port, credentials: credentials(key) }))
+  /** An unreadable list is not "nothing routed": with a proxy set, every app is. */
+  const routed = (origin: string): boolean => store.has(origin) || (store.unreadable() && options.proxy() !== undefined)
   const table = createRouteFor({
-    targetFor: (key) => store.has(key) ? options.proxy() : undefined,
+    targetFor: (key) => routed(key) ? options.proxy() : undefined,
     providerFor: (key, target) => tracked(key, build(key, target))
   })
-  const routeFor: RouteFor = (key) => store.has(key) ? table(key) ?? REFUSING_ROUTE : undefined
+  const routeFor: RouteFor = (key) => routed(key) ? table(key) ?? REFUSING_ROUTE : undefined
 
   const stopFront = (origin: string): void => {
     const running = fronts.get(origin)
@@ -100,19 +106,23 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
 
   return {
     routeFor,
-    isRouted: (origin) => store.has(origin),
+    isRouted: routed,
+    unreadable: () => store.unreadable(),
     state: (origin) => {
-      if (!store.has(origin)) return 'off'
+      if (!routed(origin)) return 'off'
       if (options.proxy() === undefined) return 'no-proxy'
       return health.get(origin) ?? 'idle'
     },
     front: async (origin) => {
-      if (!store.has(origin)) throw new Error('this app is not routed')
+      if (!routed(origin)) throw new Error('this app is not routed')
       let running = fronts.get(origin)
       if (running === undefined) {
         // Recorded as listening only while it is still the app's front: one that was switched off meanwhile is closing.
-        const starting: Promise<RouteFront> = startRouteFront({ provider: () => options.proxy() === undefined ? undefined : routeFor(origin)?.provider })
-          .then((front) => { if (fronts.get(origin) === starting) started.set(origin, front); return front })
+        const starting: Promise<RouteFront> = startRouteFront({
+          provider: () => options.proxy() === undefined ? undefined : routeFor(origin)?.provider,
+          // Its secret answers a proxy challenge for its port alone, so it goes with the port: a program that takes the port next is never answered.
+          onClosed: () => { void starting.then((front) => { if (started.get(origin) === front) { started.delete(origin); fronts.delete(origin) } }, () => {}) }
+        }).then((front) => { if (fronts.get(origin) === starting) started.set(origin, front); return front })
         running = starting
         fronts.set(origin, starting)
         starting.catch(() => { if (fronts.get(origin) === starting) fronts.delete(origin) })
@@ -125,9 +135,13 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
     },
     proxyChanged: () => {
       health.clear()
-      for (const origin of store.origins()) {
+      // With the list unreadable, setting or clearing the proxy changes which apps are routed at all.
+      const affected = new Set([...store.origins(), ...(store.unreadable() ? options.installed?.() ?? [] : [])])
+      for (const origin of affected) {
         void fronts.get(origin)?.then((front) => { front.closeTunnels() }, () => {})
-        emit(origin, true, 'proxy')
+        const now = routed(origin)
+        if (!now) stopFront(origin)
+        emit(origin, now, 'proxy')
       }
     },
     closeTunnels: (origin) => { void fronts.get(origin)?.then((front) => { front.closeTunnels() }, () => {}) },

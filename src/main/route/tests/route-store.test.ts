@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -63,23 +63,110 @@ describe('RouteStore', () => {
     expect(JSON.parse(readFileSync(path, 'utf8')).origins).toEqual([])
   })
 
-  it('starts empty over a damaged file', () => {
+  it('starts empty, and not unreadable, when there is no file yet', () => {
+    const store = new RouteStore(fileIn())
+    expect(store.origins()).toEqual([])
+    expect(store.unreadable()).toBe(false)
+  })
+})
+
+describe('a routes file that cannot be trusted', () => {
+  const damaged: Array<[string, (path: string) => void]> = [
+    ['is not JSON', (path) => { writeFileSync(path, '{ not json') }],
+    ['is of another version', (path) => { writeFileSync(path, JSON.stringify({ version: 2, origins: [APP] })) }],
+    ['is of another shape', (path) => { writeFileSync(path, JSON.stringify({ version: 1, origins: APP })) }],
+    ['cannot be read as a file', (path) => { mkdirSync(path) }]
+  ]
+
+  for (const [what, damage] of damaged) {
+    it(`reports itself unreadable when it ${what}, and lists no app`, () => {
+      const path = fileIn()
+      damage(path)
+      const store = new RouteStore(path)
+      expect(store.unreadable()).toBe(true)
+      expect(store.origins()).toEqual([])
+      expect(store.has(APP)).toBe(false)
+    })
+  }
+
+  it('keeps a copy of the file aside and leaves the file itself where it was', () => {
     const path = fileIn()
     writeFileSync(path, '{ not json')
-    expect(new RouteStore(path).origins()).toEqual([])
+    expect(new RouteStore(path).unreadable()).toBe(true)
+    expect(readFileSync(`${path}.corrupt`, 'utf8')).toBe('{ not json')
+    expect(readFileSync(path, 'utf8')).toBe('{ not json')
+  })
+
+  it('is unreadable again at the next start, because nothing replaced the file', () => {
+    const path = fileIn()
+    writeFileSync(path, '{ not json')
+    new RouteStore(path).origins()
+    expect(new RouteStore(path).unreadable()).toBe(true)
+  })
+
+  it('never writes over the file, and refuses to switch an app off, because the apps that were routed are not known', () => {
+    const path = fileIn()
+    writeFileSync(path, '{ not json')
+    const store = new RouteStore(path)
+    const heard = vi.fn()
+    store.onChange(heard)
+
+    expect(store.set(APP, true), 'on changes nothing the hub does not already do').toBe(false)
+    expect(() => store.set(APP, false)).toThrow(/could not be read/)
+    expect(readFileSync(path, 'utf8')).toBe('{ not json')
+    expect(heard).not.toHaveBeenCalled()
+  })
+
+  it('is never unreadable in a private session', () => {
+    expect(new RouteStore(null).unreadable()).toBe(false)
+  })
+})
+
+describe('saving the routed apps', () => {
+  const unwritable = (): string => join(fileIn(), 'missing-directory', 'routes.json')
+
+  it('reports a write that failed, and nothing changes: the app is not shown as routed when it is not saved', () => {
+    const store = new RouteStore(unwritable())
+    const heard = vi.fn()
+    store.onChange(heard)
+
+    expect(() => store.set(APP, true)).toThrow(/could not be saved/)
+
+    expect(store.has(APP)).toBe(false)
+    expect(heard).not.toHaveBeenCalled()
+  })
+
+  it('reports a failed switch-off the same way, and the app stays routed', () => {
+    const path = fileIn()
+    const store = new RouteStore(path)
+    store.set(APP, true)
+    rmSync(path)
+    mkdirSync(path)
+
+    expect(() => store.set(APP, false)).toThrow(/could not be saved/)
+
+    expect(store.has(APP)).toBe(true)
+  })
+
+  it('leaves no temporary file behind', () => {
+    const path = fileIn()
+    new RouteStore(path).set(APP, true)
+    expect(readdirSync(join(path, '..')).filter((name) => name.endsWith('.tmp'))).toEqual([])
+    expect(existsSync(path)).toBe(true)
   })
 })
 
 describe('parseRoutes', () => {
   it('keeps only the entries that are canonical origins, because the file is user-writable', () => {
     const raw = JSON.stringify({ version: 1, origins: [APP, 'https://x.example/path', 7, null, 'https://y.example', 'javascript:alert(1)'] })
-    expect([...parseRoutes(raw)]).toEqual([APP, 'https://y.example'])
+    expect([...(parseRoutes(raw) ?? [])]).toEqual([APP, 'https://y.example'])
   })
 
   it('reads nothing from a file of another version or shape', () => {
-    expect(parseRoutes(JSON.stringify({ version: 2, origins: [APP] })).size).toBe(0)
-    expect(parseRoutes(JSON.stringify({ version: 1, origins: APP })).size).toBe(0)
-    expect(parseRoutes(JSON.stringify([APP])).size).toBe(0)
-    expect(parseRoutes('null').size).toBe(0)
+    expect(parseRoutes(JSON.stringify({ version: 2, origins: [APP] }))).toBeUndefined()
+    expect(parseRoutes(JSON.stringify({ version: 1, origins: APP }))).toBeUndefined()
+    expect(parseRoutes(JSON.stringify([APP]))).toBeUndefined()
+    expect(parseRoutes('null')).toBeUndefined()
+    expect(parseRoutes('{ not json')).toBeUndefined()
   })
 })

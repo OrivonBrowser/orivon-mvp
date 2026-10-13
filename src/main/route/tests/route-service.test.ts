@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { createRouteService } from '../route-service.js'
 import type { ProxySettings } from '../route-service.js'
@@ -16,8 +19,7 @@ function service (savedProxy: string) {
       embedPartition: (origin) => `embed:${origin}`,
       allContents: () => [],
       onContentsCreated: () => {},
-      onLogin: () => {},
-      reloadTabs: () => {}
+      onLogin: () => {}
     }
   })
 }
@@ -58,5 +60,37 @@ describe('the route service', () => {
     const routes = service('')
     routes.followSettings(settingsWith('127.0.0.1:9050'))
     expect(routes.proxy()).toEqual({ host: '127.0.0.1', port: 9050 })
+  })
+
+  it('clears the route of an app that is forgotten, and tells the listeners the app is no longer routed', async () => {
+    const routes = service('127.0.0.1:9050')
+    routes.store.set(APP, true)
+    const heard = vi.fn()
+    routes.hub.onChange(heard)
+
+    routes.forget(APP)
+    await routes.controller.settled()
+
+    expect(routes.store.has(APP)).toBe(false)
+    expect(routes.hub.isRouted(APP)).toBe(false)
+    expect(heard).toHaveBeenCalledWith(APP, false, 'switch')
+  })
+
+  it('keeps the route of an app whose clearing could not be saved', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orivon-routes-service-'))
+    try {
+      const path = join(dir, 'routes.json')
+      const store = new RouteStore(path)
+      store.set(APP, true)
+      rmSync(path)
+      mkdirSync(path)
+      const routes = createRouteService({ store, savedProxy: '127.0.0.1:9050', electron: { broker: () => undefined, sessionFor: () => ({ setProxy: async () => {}, closeAllConnections: async () => {} }), embedPartition: (origin) => `embed:${origin}`, allContents: () => [], onContentsCreated: () => {}, onLogin: () => {} } })
+
+      routes.forget(APP)
+
+      expect(routes.hub.isRouted(APP)).toBe(true)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

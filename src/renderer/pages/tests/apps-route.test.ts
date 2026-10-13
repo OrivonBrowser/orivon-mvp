@@ -15,6 +15,14 @@ describe('routeWords', () => {
     expect(routeWords({ state: 'no-proxy', blocked: undefined })).toContain('not sent directly')
   })
 
+  it('says in one sentence that the list of routed apps could not be read, whatever the app\'s state', () => {
+    for (const state of ['off', 'idle', 'down'] as const) {
+      const words = routeWords({ state, blocked: undefined, unreadable: true })
+      expect(words).toContain('could not read which apps you routed')
+      expect(words).toContain('every app goes through it')
+    }
+  })
+
   it('says what a working route means, including that updates are not checked', () => {
     for (const state of ['idle', 'ok'] as const) {
       const words = routeWords({ state, blocked: undefined })
