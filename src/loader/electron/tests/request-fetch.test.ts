@@ -58,6 +58,18 @@ describe('a fetch made with net.request', () => {
     expect(second.options[0]).not.toHaveProperty('session')
   })
 
+  it('sends the session\'s cookies only when asked to, as the Reader\'s pictures need them', async () => {
+    const { net, options } = fakeNet((request) => { request.emit('response', answer(200, '')) })
+    await createRequestFetch({ net, answer: () => {}, credentials: 'include' })('https://a.example/x')
+    expect(options[0]).toMatchObject({ credentials: 'include', useSessionCookies: true })
+  })
+
+  it('asks for revalidation when the caller asked for no-store, which net.request cannot say', async () => {
+    const { net, headers } = fakeNet((request) => { request.emit('response', answer(200, '')) })
+    await createRequestFetch({ net, answer: () => {} })('https://a.example/x', { cache: 'no-store' })
+    expect(headers).toContainEqual(['Cache-Control', 'no-cache'])
+  })
+
   it('sends the method, headers and body of a POST, less the headers the network stack sets', async () => {
     const { net, options, headers, written } = fakeNet((request) => { request.emit('response', answer(204, '')) })
     const response = await createRequestFetch({ net, answer: () => {} })('https://gw.example/lookup', {

@@ -106,8 +106,8 @@ every other app and website is *not routed*.
   whole browser is on the tunnel (a session is stopped when it is made and then pointed at the shared front, unless its
   maker claims it: a web context confines itself harder). The direct profile and the session that asks what the system's
   proxy is stay on the system's. The engine also makes requests of its own with no web contents (the spellcheck
-  dictionary download is one); those take the proxy `app.setProxy` gives them, which is the shared front while the whole
-  browser is on the tunnel.
+  dictionary download is one); those take the default proxy, and whether `app.setProxy` reaches them is not measured:
+  Step 0 measured the requests a utility process makes with `net`, not the engine's own.
 - **A program Orivon starts.** Anything a spawned process dials is that process's own business.
 - **Code that passes `fetch` in.** The gateways, IPFS, Swarm and ENS readers and the loader's bundle reader receive a
   `fetch`; the file that builds it is the row above (`entry.ts`, `loader/electron/fetch.ts`).

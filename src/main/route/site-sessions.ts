@@ -24,8 +24,8 @@ export interface SiteSessionsDeps {
   readonly hold: (session: SiteSession, current: () => Promise<void>) => () => void
   /** Fits the session with what every session a website runs in carries: the privacy settings, the content blocks, the verifier's stamps. Throws when any of it could not be installed. */
   readonly fit: (session: SiteSession) => void
-  /** Puts the person's extensions in the session, once. Never throws: what cannot be loaded is logged. */
-  readonly extend?: (session: SiteSession) => Promise<void>
+  /** Puts the person's extensions in the session, once (`persistable`: Electron can load them there), and their request rules. Never throws: what cannot be loaded is logged. */
+  readonly extend?: (session: SiteSession, persistable: boolean) => Promise<void>
 }
 
 export interface SiteSessions {
@@ -58,8 +58,8 @@ export function createSiteSessions (deps: SiteSessionsDeps): SiteSessions {
         if (profile === undefined) throw new Error('a view was made in a website session this process did not name')
         deps.fit(session)
         await deps.controller.prepareSite(profileOrigin(profile), session, deps.bypass())
-        // The extensions load after the session is held on its route, never before: they make requests of their own. Electron loads none in a session kept in memory only, which is where a plain-http website lives.
-        if (partition.startsWith('persist:')) await deps.extend?.(session)
+        // The extensions load after the session is held on its route, never before: they make requests of their own. Electron loads none in a session kept in memory only, which is where a plain-http website lives, so `extend` is told.
+        await deps.extend?.(session, partition.startsWith('persist:'))
       })().catch(async (error: unknown) => {
         console.error('[route] could not point a website\'s session at its route:', error)
         await deps.controller.confineSite(session)

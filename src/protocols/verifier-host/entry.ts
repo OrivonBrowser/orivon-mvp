@@ -37,13 +37,14 @@ function main (): void {
     if (message.type === 'start') {
       if (host !== undefined) return
       const { front } = message.config
+      const tunnelFetch = front === undefined ? undefined : createRequestFetch({ net, answer: answerForFront(front) })
       host = startHost(message.config, {
         // No HTTP cache: one would answer a block another site's pages fetched faster, and so tell a page where the person has been (A256).
         // No credentials: this process's fetches are gateways, RPCs and DNS-over-HTTPS endpoints, never a page's own request, so nothing here should carry a cookie or a client certificate a session might hold.
-        // Through the tunnel's front (`config.front`), `net.fetch` would end at the front's 407, so `net.request` answers it: for the front's own port, and no other proxy.
-        fetch: front === undefined
+        // Through the tunnel's front (`config.front`), `net.fetch` would end at the front's 407, so `net.request` answers it: for the front's own port, and no other proxy. It asks for revalidation where `net.fetch` bypassed the cache, and this process's network context is no session's, so no page's fetch fills it.
+        fetch: tunnelFetch === undefined
           ? async (url, init) => await net.fetch(url, { ...init, cache: 'no-store', credentials: 'omit' })
-          : createRequestFetch({ net, answer: answerForFront(front) }),
+          : async (url, init) => await tunnelFetch(url, { ...init, cache: 'no-store' }),
         // A name is never resolved on this computer while the tunnel carries the host's requests: the far end resolves it.
         resolveHost: front === undefined
           ? async (name) => (await net.resolveHost(name)).endpoints.map((endpoint) => endpoint.address)

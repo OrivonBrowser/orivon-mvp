@@ -249,6 +249,11 @@ describe('a list of routed apps that cannot be read', () => {
     expect(hub.unreadable()).toBe(true)
   })
 
+  it('leaves the shared identity to the browser-wide setting: Orivon\'s own requests do not change with an unreadable list', () => {
+    const { hub } = unreadable()
+    expect(hub.isRouted(SHARED_ORIGIN)).toBe(false)
+  })
+
   it('routes nothing while no proxy is set', () => {
     const { hub } = unreadable(null)
 
@@ -267,7 +272,7 @@ describe('a list of routed apps that cannot be read', () => {
     hub.onChange(heard)
 
     setProxy({ host: '127.0.0.1', port: 9050 })
-    expect(heard.mock.calls).toEqual([[SHARED_ORIGIN, true, 'proxy'], [APP, true, 'proxy'], [OTHER, true, 'proxy']])
+    expect(heard.mock.calls).toEqual([[APP, true, 'proxy'], [OTHER, true, 'proxy']])
 
     heard.mockClear()
     setProxy(undefined)

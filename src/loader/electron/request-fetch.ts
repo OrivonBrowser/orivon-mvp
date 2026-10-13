@@ -21,6 +21,8 @@ export interface RequestFetchOptions {
   readonly session?: Session
   /** Answers the proxy's challenge, or cancels it by calling back with nothing. */
   readonly answer: AnswerChallenge
+  /** `include` sends and keeps the session's cookies, as `Session.fetch` did for the Reader's pictures; the default sends none. */
+  readonly credentials?: 'omit' | 'include'
 }
 
 /** Headers a request cannot carry itself: the network stack sets them. */
@@ -56,12 +58,14 @@ export function createRequestFetch (options: RequestFetchOptions): (url: string,
       const request = options.net.request({
         url,
         method: init.method ?? 'GET',
-        credentials: 'omit',
-        useSessionCookies: false,
+        credentials: options.credentials ?? 'omit',
+        useSessionCookies: options.credentials === 'include',
         redirect,
         ...(options.session === undefined ? {} : { session: options.session })
       })
       for (const [name, value] of headersOf(init.headers)) request.setHeader(name, value)
+      // `net.request` has no cache option: a call that asked for `no-store` asks for revalidation, so no cached answer is faster than the network's.
+      if (init.cache === 'no-store') request.setHeader('Cache-Control', 'no-cache')
       const onAbort = (): void => {
         reject(signal?.reason)
         request.abort()

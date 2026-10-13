@@ -32,7 +32,7 @@ function setup (prepare: () => Promise<void> = async () => {}) {
     bypass: () => '*.eth',
     hold: (session, ready) => { const one = { session, ready, watched: 0 }; held.push(one); return () => { one.watched += 1 } },
     fit: () => { log.push('fit') },
-    extend: async () => { log.push('extend') }
+    extend: async (_session, persistable) => { log.push(`extend ${String(persistable)}`) }
   }
   return { sites: createSiteSessions(deps), deps, held, log }
 }
@@ -45,14 +45,14 @@ describe('making a profile session ready', () => {
 
     expect(held).toHaveLength(1)
     await held[0]?.ready()
-    expect(log).toEqual(['fit', `prepare ${TUNNEL_PROFILE_ORIGIN} *.eth`, 'extend'])
+    expect(log).toEqual(['fit', `prepare ${TUNNEL_PROFILE_ORIGIN} *.eth`, 'extend true'])
   })
 
-  it('loads no extension into a profile kept in memory, which Electron cannot give one', async () => {
+  it('tells the extension step when the profile is kept in memory, where Electron cannot load an extension but the request rules still apply', async () => {
     const { sites, held, log } = setup()
     sites.ensure('tunnel-profile-memory')
     await held[0]?.ready()
-    expect(log).toEqual(['fit', `prepare ${TUNNEL_PROFILE_ORIGIN} *.eth`])
+    expect(log).toEqual(['fit', `prepare ${TUNNEL_PROFILE_ORIGIN} *.eth`, 'extend false'])
   })
 
   it('prepares the direct profile under the identity that is never routed', async () => {
@@ -80,7 +80,7 @@ describe('making a profile session ready', () => {
 
     await expect(held[0]?.ready()).rejects.toThrow(/no front/)
     expect(log).toContain('confine')
-    expect(log, 'no extension runs in a session that is refused').not.toContain('extend')
+    expect(log.filter((line) => line.startsWith('extend')), 'no extension runs in a session that is refused').toEqual([])
   })
 
   it('refuses everything in a session that is not a profile\'s', async () => {

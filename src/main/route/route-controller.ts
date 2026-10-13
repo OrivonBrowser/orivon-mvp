@@ -7,6 +7,7 @@ import type { Broker } from '../../broker/broker-contracts.js'
 import { originHash } from '../../broker/grants/origin-hash.js'
 import { SHARED_ORIGIN } from './route-hub.js'
 import { profilePartitionFor } from './site-partition.js'
+import { ensureSiteSession } from './site-routes.js'
 import type { RouteChangeCause, RouteHub } from './route-hub.js'
 
 export type RouteSession = Pick<Session, 'setProxy' | 'closeAllConnections'>
@@ -160,7 +161,8 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
   async function prepare (origin: string, session: RouteSession, options: PrepareOptions = {}): Promise<void> {
     // A session belongs to one origin's identity: an origin that prepares it takes it from the shared one.
     if (origin !== SHARED_ORIGIN) {
-      known.get(SHARED_ORIGIN)?.delete(session)
+      // What the shared identity set for it (the names the verifier answers for) goes with the claim: the claimant sets its own.
+      if (known.get(SHARED_ORIGIN)?.delete(session) === true) bypasses.delete(session)
       claimed.add(session)
     } else if (deps.sharedBypass !== undefined) {
       bypasses.set(session, deps.sharedBypass())
@@ -337,7 +339,12 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
       if (!isApp(origin)) {
         // A website is looked up about through the session it runs in, which is already prepared with the identity it shares: the tunnel profile's, or the default session when the whole browser is on the tunnel.
         const profile = hub.profileFor(origin)
-        if (profile === 'tunnel') return deps.sessionFor(profilePartitionFor('tunnel', origin))
+        if (profile === 'tunnel') {
+          // Made ready as a tab's view would: held shut until it is pointed at its front, never left on the system's proxy.
+          const partition = profilePartitionFor('tunnel', origin)
+          ensureSiteSession(partition)
+          return deps.sessionFor(partition)
+        }
         const shared = deps.defaultSession?.()
         if (profile === undefined && shared !== undefined && hub.isRouted(SHARED_ORIGIN)) return shared
       }

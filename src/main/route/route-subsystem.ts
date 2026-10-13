@@ -104,8 +104,8 @@ export const routeSubsystem: Subsystem = {
     const siteSessions = createSiteSessions({
       controller: routes.controller,
       sessionFor: (partition) => session.fromPartition(partition) as SiteSession,
-      extend: async (target) => {
-        await mirrorExtensions(target as unknown as Session, session.defaultSession)
+      extend: async (target, persistable) => {
+        if (persistable) await mirrorExtensions(target as unknown as Session, session.defaultSession)
         installExtensionRequestHandlers(target as unknown as Session)
       },
       // The names the verifier answers for reach it on this machine; the proxy never sees them.

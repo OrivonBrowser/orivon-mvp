@@ -118,6 +118,8 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
   const routed = (origin: string): boolean => {
     if (origin === TUNNEL_PROFILE_ORIGIN) return true
     if (origin === DIRECT_PROFILE_ORIGIN) return false
+    // The shared identity follows the browser-wide setting alone: an unreadable list puts every website in the tunnel profile, but Orivon's own requests do not change with it.
+    if (origin === SHARED_ORIGIN) return everywhere()
     return unreadableWithProxy() || tunnelStateOf(store.stateOf(origin), everywhere()) === 'on'
   }
   /** Whose front and credentials carry `origin`'s traffic: an app its own; a website with an `on` entry the tunnel profile's, which every such website shares; any other website the shared one. */

@@ -14,8 +14,8 @@ export function readerCommand (target: ShellWindow, services: ShellServices): vo
   void toggleReader(target.tabs, {
     articles: readerArticles,
     extract: extractArticle,
-    // `Session.fetch` cannot sign in to the tunnel's front, which the source tab's session may be pointed at: `net.request` answers it.
-    fetcher: (wc) => createRequestFetch({ net, session: wc.session, answer: answerRouteChallenge }),
+    // `Session.fetch` cannot sign in to the tunnel's front, which the source tab's session may be pointed at: `net.request` answers it, with the tab's cookies as `Session.fetch` sent them.
+    fetcher: (wc) => createRequestFetch({ net, session: wc.session, answer: answerRouteChallenge, credentials: 'include' }),
     publish: (topic, payload) => { services.internalPages.publish(topic, payload, ['reader']) },
     notify: (code) => { showToast(target, code) }
   }).catch((error: unknown) => { console.error('[reader] could not open reader view', error) })
