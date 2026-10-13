@@ -7,7 +7,7 @@ import type { NymState, NymTestResult } from '../main/route/nym-status.js'
 export function nymStatusWords (state: NymState): string {
   switch (state.state) {
     case 'off':
-    case 'idle': return 'Nym starts when an app that uses it makes a connection.'
+    case 'idle': return 'Starts when an app that uses it connects.'
     case 'connecting': return 'Connecting to Nym…'
     case 'ready': return 'Nym tunnel ready'
     case 'failed': return 'Nym is not answering'

@@ -9,7 +9,7 @@ describe('the words about Nym', () => {
     expect(nymStatusWords({ state: 'failed', reason: 'no gateway' })).toBe('Nym is not answering')
     expect(nymStatusWords({ state: 'unavailable', cause: 'not-in-build', reason: 'x' })).toBe('Nym is not in this build')
     expect(nymStatusWords({ state: 'unavailable', cause: 'proxy', reason: 'x' })).toContain('proxy')
-    expect(nymStatusWords({ state: 'off' })).toContain('starts')
+    expect(nymStatusWords({ state: 'off' })).toMatch(/starts/i)
   })
 
   it('gives the reason only for a state that has one', () => {

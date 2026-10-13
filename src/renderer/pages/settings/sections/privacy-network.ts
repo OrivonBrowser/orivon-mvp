@@ -88,7 +88,7 @@ export const privacyNetworkRows: readonly Row[] = [
   {
     id: 'route-nym-status',
     label: 'Nym',
-    help: 'Starts when an app that uses it makes its first connection, and stops some minutes after the last one. Nym\'s gateways see this computer\'s address; the sites an app reaches do not.',
+    help: 'Nym\'s gateways see this computer\'s address; the sites an app reaches see only an exit address. It stops some minutes after the last app stops using it.',
     keywords: ['nym', 'mixnet', 'tunnel', 'status', 'gateway'],
     group: GROUP,
     visible: (state) => state.value('network.route.kind') !== 'socks5',
