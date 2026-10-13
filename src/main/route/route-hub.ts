@@ -203,7 +203,8 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
       const affected = new Set([SHARED_ORIGIN, ...(options.installed?.() ?? [])])
       for (const origin of affected) {
         if (origin !== SHARED_ORIGIN && store.stateOf(origin) !== undefined) continue
-        const was = unreadableWithProxy() || tunnelStateOf(undefined, previous) === 'on'
+        // Read the way `routed` reads it: the shared identity follows the setting alone, an app also the unreadable list.
+        const was = origin === SHARED_ORIGIN ? previous : unreadableWithProxy() || tunnelStateOf(undefined, previous) === 'on'
         const is = routed(origin)
         if (!is) stopFront(origin)
         if (is !== was) emit(origin, is, 'switch')

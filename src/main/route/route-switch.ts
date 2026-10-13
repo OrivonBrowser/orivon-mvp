@@ -14,6 +14,8 @@ export interface RouteSwitchWorld {
   readonly isPersistable: (origin: string) => boolean
   /** Clears what the website at `origin` stored in the profile session named `partition`. */
   readonly removeSiteStorage?: (partition: string, origin: string) => Promise<void>
+  /** Unregisters the service workers of the website at `origin` in the session named `partition` (the shared session when undefined), so that a push or a sync wake cannot run it there. */
+  readonly dropServiceWorkers?: (partition: string | undefined, origin: string) => Promise<void>
 }
 
 /** One origin that has a setting of its own, or storage of its own, for the Settings list. */
@@ -66,6 +68,7 @@ export function createRouteSwitch (routes: Pick<RouteService, 'proxy' | 'store' 
     setSite: async (origin, on) => {
       if (!canTunnel(origin)) return
       const entry = entryFor(on ? 'on' : 'off', routes.hub.isEverywhere())
+      const before = profileOf(store.stateOf(origin))
       store.setEntry(origin, entry)
       // The record that its storage is kept follows the entry: a failure to save it must not undo a switch already made.
       const profile = profileOf(entry)
@@ -77,6 +80,14 @@ export function createRouteSwitch (routes: Pick<RouteService, 'proxy' | 'store' 
         }
       }
       await routes.controller.settled()
+      // A website that moved to another session must not wake in the one it left: its workers there would run with the other session's route.
+      if (profile !== before) {
+        try {
+          await world.dropServiceWorkers?.(before === undefined ? undefined : profilePartitionFor(before, origin), origin)
+        } catch (error) {
+          console.error('[route] could not unregister a website\'s service workers in the session it left:', error)
+        }
+      }
     },
     rows: () => {
       const entries = new Map(store.entries())

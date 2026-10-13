@@ -1,10 +1,11 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 // popups.ts constructs WebContentsView when it adopts a popup; routePopup
 // itself is pure, but the module cannot load without the mock.
 vi.mock('electron', () => ({ WebContentsView: vi.fn() }))
 
 const { routePopup } = await import('../popups.js')
+const { setSiteRoutes } = await import('../../route/site-routes.js')
 
 const APP = 'https://app.example/'
 const APP_PARTITION = 'persist:app'
@@ -106,5 +107,28 @@ describe('routePopup -- isApp: a granted or cache-served origin never keeps an o
   it('a cache-served app (with its own real partition) popped from a different origin stays severed -- isApp only reinforces the existing partition check', () => {
     const isCacheServed = (url: string): boolean => url.startsWith(APP)
     expect(routePopup(popupWindow(`${APP}signin`), onWeb, APP_PARTITION, isCacheServed)).toBe('new-tab')
+  })
+})
+
+describe('routePopup -- a popup is never kept in an opener session that would send it differently', () => {
+  const inDirectProfile = { url: 'https://off.example/', partition: 'persist:direct-profile' }
+  const differs = (): void => { setSiteRoutes({ profileFor: () => undefined, sentLikeItsOwn: () => false }) }
+  afterEach(() => { setSiteRoutes(undefined) })
+
+  it('opens a sized popup to an ordinary site as a window of its own, where it loads in the right session from its first request', () => {
+    differs()
+    expect(routePopup(popupWindow('https://news.example/'), inDirectProfile, undefined, notAnApp)).toBe('new-tab')
+  })
+
+  it('still adopts it when the opener\'s session sends it as the shared one would, and a blank popup either way', () => {
+    setSiteRoutes({ profileFor: () => undefined, sentLikeItsOwn: () => true })
+    expect(routePopup(popupWindow('https://news.example/'), inDirectProfile, undefined, notAnApp)).toBe('adopt')
+    differs()
+    expect(routePopup(scripted('about:blank'), inDirectProfile, undefined, notAnApp)).toBe('adopt')
+  })
+
+  it('adopts a popup into the opener\'s own session whatever it sends', () => {
+    differs()
+    expect(routePopup(popupWindow('https://off.example/other'), inDirectProfile, 'persist:direct-profile', notAnApp)).toBe('adopt')
   })
 })

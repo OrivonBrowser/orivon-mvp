@@ -5,7 +5,8 @@ import { app } from 'electron'
 import type { RouteService } from '../route/route-service.js'
 import { SHARED_ORIGIN } from '../route/route-hub.js'
 import type { HostConfig } from '../../protocols/verifier-host/protocol.js'
-import { unproxiedGateways } from './proxy-check.js'
+import { answersFront, unproxiedGateways } from './proxy-check.js'
+import { RefusedToStart } from './process-supervisor.js'
 
 /** Empty under the test seam: a hermetic run has no real gateways to check
  * a proxy against, and the fallback would only ever add noise there. */
@@ -36,8 +37,13 @@ export async function ccipDirectFor (seamActive: boolean): Promise<boolean> {
  * have been pointed at it (`app.setProxy`, which the host's checks of whether a proxy applies read); undefined otherwise.
  */
 export async function tunnelFront (routes: RouteService | undefined): Promise<NonNullable<HostConfig['front']> | undefined> {
-  if (routes === undefined || !routes.hub.isRouted(SHARED_ORIGIN)) return undefined
+  if (routes === undefined) return undefined
+  // In either direction: the sessions and the requests made with no session follow the setting before the host reads what applies.
   await routes.controller.settled()
+  if (!routes.hub.isRouted(SHARED_ORIGIN)) return undefined
   const front = await routes.hub.front(SHARED_ORIGIN)
+  // `app.setProxy` reaches a utility process's requests, which cannot be seen from here but through this answer: a host that would fetch around the tunnel is not started.
+  const answer = await app.resolveProxy('https://example.com/')
+  if (!answersFront(answer, front.port)) throw new RefusedToStart('the tunnel is on for the whole browser, but the requests the verifier makes were not pointed at it, so the verifier stays off')
   return { port: front.port, username: front.username, password: front.secret }
 }

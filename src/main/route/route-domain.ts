@@ -18,6 +18,8 @@ export interface RouteDomainDeps {
   readonly probe: (target: { readonly host: string, readonly port: number }) => Promise<Socks5Probe>
   readonly nym: { readonly state: () => NymState, readonly test: () => Promise<NymTestResult> }
   readonly routeSwitch: Pick<RouteSwitch, 'rows' | 'removeSiteStorage'>
+  /** Whether the settings file could not be used, so the whole browser was put on the tunnel until the person says otherwise. */
+  readonly settingsUnreadable?: () => boolean
 }
 
 export type ProxyTestReply = Socks5Probe | { readonly ok: false, readonly reason: 'no-proxy' } | ({ readonly nym: true } & NymTestResult)
@@ -25,6 +27,8 @@ export type ProxyTestReply = Socks5Probe | { readonly ok: false, readonly reason
 /** What the page is sent about Nym, on request and whenever it changes. */
 export interface NymView {
   readonly nym: NymState
+  /** The settings file could not be used and the whole browser is on the tunnel for that reason. */
+  readonly unreadable?: boolean
 }
 
 export function routeDomain (deps: RouteDomainDeps): InternalDomain {
@@ -34,7 +38,7 @@ export function routeDomain (deps: RouteDomainDeps): InternalDomain {
       const request = (typeof command === 'object' && command !== null ? command : {}) as { type?: unknown, origin?: unknown }
       switch (request.type) {
         case 'status':
-          return { nym: deps.nym.state() }
+          return { nym: deps.nym.state(), unreadable: deps.settingsUnreadable?.() === true }
         case 'test': {
           if (deps.kind() === 'nym') return { nym: true, ...await deps.nym.test() }
           const target = parseProxyAddress(deps.proxy())

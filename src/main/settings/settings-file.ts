@@ -1,7 +1,7 @@
 // Reading the settings file: what its text holds, validated against the schema, with no file access in the pure
 // part. The store reads it with the rest of start-up; `readSettingBeforeReady` reads one value ahead of everything,
 // for a setting that Chromium takes as a command-line switch before the first window.
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { SETTINGS, isSettingKey, validateSetting } from './schema.js'
 import type { SettingKey, SettingValue, SettingsValues } from './schema.js'
 
@@ -23,6 +23,13 @@ export interface ParsedSettings {
 function fromVersion1 (overrides: Map<SettingKey, SettingValue>): void {
   const address = overrides.get('network.route.proxy')
   if (typeof address === 'string' && address !== '' && !overrides.has('network.route.kind')) overrides.set('network.route.kind', 'socks5')
+}
+
+/** Whether `parsed` is the content of a settings file of a version this build reads. */
+export function isSettingsFile (parsed: unknown): boolean {
+  if (typeof parsed !== 'object' || parsed === null) return false
+  const { version, values } = parsed as { version?: unknown, values?: unknown }
+  return (version === SETTINGS_FILE_VERSION || version === 1) && typeof values === 'object' && values !== null
 }
 
 /** What a parsed settings file holds; nothing at all when it is not a settings file of a version this build reads. */
@@ -51,4 +58,22 @@ export function readSettingBeforeReady<K extends SettingKey> (filePath: string, 
     return SETTINGS[key].default as SettingsValues[K]
   }
   return (overrides.get(key) ?? SETTINGS[key].default) as SettingsValues[K]
+}
+
+/**
+ * Whether the settings file is there but cannot be used: not readable, not JSON, or not a settings file of a version this
+ * build reads. A file that is missing is no problem (the defaults apply). Synchronous, and never throws.
+ */
+export function settingsFileProblem (filePath: string): 'unreadable' | undefined {
+  try {
+    if (!existsSync(filePath)) return undefined
+    return isSettingsFile(JSON.parse(readFileSync(filePath, 'utf8'))) ? undefined : 'unreadable'
+  } catch {
+    return 'unreadable'
+  }
+}
+
+/** Whether the whole browser goes through the tunnel at start: the saved setting, or on when the file that holds it cannot be used, so that a damaged file never sends anything around the tunnel. */
+export function everywhereBeforeReady (filePath: string): boolean {
+  return settingsFileProblem(filePath) !== undefined || readSettingBeforeReady(filePath, 'network.tunnel.everywhere')
 }

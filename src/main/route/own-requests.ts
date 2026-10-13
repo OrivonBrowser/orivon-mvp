@@ -18,13 +18,39 @@ export interface OwnRequests {
   readonly direct: OwnFetch
   /** That session, for a caller that makes its own requests with `net.request`. */
   readonly directSession: () => object
+  /** Resolves when every session follows the browser-wide setting as it stands now. */
+  readonly settled?: () => Promise<void>
+  /** How long a request waits for that before it is refused; for a test. */
+  readonly settleMs?: number
 }
 
 let source: OwnRequests | undefined
+const SETTLE_MS = 15_000
+
+/**
+ * Waits for the sessions to follow the browser-wide setting, in either direction, and refuses when they do not within a bounded
+ * time: a request made while the default session is still direct (switching on) or still on the tunnel's front (switching off)
+ * would leave the wrong way.
+ */
+async function sessionsFollowSetting (current: OwnRequests): Promise<void> {
+  if (current.settled === undefined) return
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { reject(new Error('the tunnel setting is still being applied')) }, current.settleMs ?? SETTLE_MS) })
+  try {
+    await Promise.race([current.settled(), late])
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 /** Called once at start by whoever owns the routes. */
 export function setOwnRequests (next: OwnRequests | undefined): void {
   source = next
+}
+
+/** For a caller that decides how to leave itself: resolves once every session follows the browser-wide setting as it stands, and rejects when that takes too long. Nothing to wait for before routes run. */
+export async function ownRequestsSettled (): Promise<void> {
+  if (source !== undefined) await sessionsFollowSetting(source)
 }
 
 /** Whether Orivon's own requests must go through the tunnel now. */
@@ -54,6 +80,7 @@ export function ownDirectSession (): object | undefined {
  */
 export function ownFetch (ordinary: OwnFetch, origin?: string): OwnFetch {
   return async (url, init) => {
+    if (source !== undefined) await sessionsFollowSetting(source)
     const current = source
     if (current === undefined || !current.everywhere()) return await ordinary(url, init)
     if (origin !== undefined && !current.isRouted(origin)) return await current.direct(url, init)

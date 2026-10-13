@@ -102,6 +102,8 @@ export class RoutePart implements SettingsPart {
   busy = false
   /** What Nym is doing, kept in step with main. */
   nym: NymState = { state: 'off' }
+  /** The settings file could not be used, so the whole browser is on the tunnel until the person turns that off. */
+  heldOn = false
   /** The last answer and what it was for (Nym, or the address it asked): it is shown only while the setting still holds that. */
   last: { readonly subject: string, readonly result: ProxyTestResult } | null = null
 
@@ -116,9 +118,12 @@ export class RoutePart implements SettingsPart {
         const reply = await this.bridge.request('route', { type: 'list' }) as { rows?: unknown } | undefined
         this.rows = Array.isArray(reply?.rows) ? reply.rows as TunnelRowView[] : []
         try {
-          this.nym = nymStateOf((await this.bridge.request('route', { type: 'status' }) as { nym?: unknown } | undefined)?.nym)
+          const status = await this.bridge.request('route', { type: 'status' }) as { nym?: unknown, unreadable?: unknown } | undefined
+          this.nym = nymStateOf(status?.nym)
+          this.heldOn = status?.unreadable === true
         } catch {
           this.nym = { state: 'off' }
+          this.heldOn = false
         }
       } while (this.reloadAgain)
     } finally {

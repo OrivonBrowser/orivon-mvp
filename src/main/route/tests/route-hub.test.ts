@@ -279,6 +279,27 @@ describe('a list of routed apps that cannot be read', () => {
     expect(heard.mock.calls).toEqual([[APP, false, 'proxy'], [OTHER, false, 'proxy']])
   })
 
+  it('tells listeners the shared identity changed when the browser-wide setting flips, even with an unreadable list and a proxy set', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orivon-routes-hub-'))
+    dirs.push(dir)
+    const path = join(dir, 'routes.json')
+    writeFileSync(path, '{ not json')
+    let everywhere = false
+    const hub = createRouteHub({ store: new RouteStore(path), proxy: () => ({ host: '127.0.0.1', port: 9050 }), installed: () => [], everywhere: () => everywhere, providerFor: () => ({ connect: async () => { throw new Error('unused') } }) })
+    hubs.push(hub)
+    const heard = vi.fn()
+    hub.onChange(heard)
+
+    everywhere = true
+    hub.everywhereChanged(false)
+    expect(heard.mock.calls).toEqual([[SHARED_ORIGIN, true, 'switch']])
+
+    heard.mockClear()
+    everywhere = false
+    hub.everywhereChanged(true)
+    expect(heard.mock.calls).toEqual([[SHARED_ORIGIN, false, 'switch']])
+  })
+
   it('is not unreadable when the list is fine', () => {
     expect(setup().hub.unreadable()).toBe(false)
   })

@@ -8,6 +8,11 @@ import type { Profile } from './site-partition.js'
 export interface SiteRoutes {
   /** The profile the website at `origin` runs in (`RouteHub.profileFor`), or undefined for a website that follows the default session. */
   readonly profileFor: (origin: string) => Profile | undefined
+  /**
+   * Whether the website at `origin`, loaded in the session named `partition`, is sent no less tunnelled than in its own session:
+   * a session that is not tunnelled for an address that is gives no.
+   */
+  readonly sentLikeItsOwn?: (partition: string | undefined, origin: string) => boolean
 }
 
 let source: SiteRoutes | undefined
@@ -24,15 +29,34 @@ export function sitePartitionForOrigin (origin: string): string | undefined {
   return profile === undefined ? undefined : profilePartitionFor(profile, origin)
 }
 
-/**
- * Whether a navigation of a tab in the shared session to `url` must be refused: the website has a profile, and a load that
- * did not go through the shell's own move (a tab waking, Back onto an older page, a script's `loadURL`) would otherwise
- * reach it with the shared session's cookies, and without the tunnel if its entry is `on`. The tab's own view is moved by
- * the shell before it loads an address it is asked to open, so a refusal here only ever stops what that move missed.
- */
-export function mustLeaveSharedSession (url: string, servedFromCache: (origin: string) => boolean): boolean {
+/** `sentLikeItsOwn` for a web address: true when nothing is known (a test, a start-up not done) or the address has no origin the tunnel can carry. */
+export function sessionRoutesLike (partition: string | undefined, url: string): boolean {
   const origin = originFromUrl(url)
-  return origin !== null && !servedFromCache(origin) && sitePartitionForOrigin(origin) !== undefined
+  if (source?.sentLikeItsOwn === undefined || origin === null || !canTunnel(origin)) return true
+  return source.sentLikeItsOwn(partition, origin)
+}
+
+/** What a guard on a session knows of it when a main-frame load starts there. */
+export interface LoadingSession {
+  /** The default session, which a website that has a profile must never load in. */
+  readonly shared: boolean
+  /** Whether the session is pointed at a front (or held shut), or sets a proxy of its own that reaches nothing. */
+  readonly tunnelled: boolean
+  /** A session a routed app's page opened a website in "through my tunnel": any website may load there. */
+  readonly temporary: boolean
+}
+
+/**
+ * Whether a main-frame load of `url` in `session` must be cancelled because it belongs to another session and the shell did not
+ * move it there first: a website with a profile in the shared session, and a website that is routed in a session that is not
+ * (a direct profile, an app set to off, a session not yet pointed), which would reach it without the tunnel. A load the shell
+ * moves is stopped before it starts (`../shell/pre-partition.ts`), so this only ever stops what that move missed.
+ */
+export function mustLeaveSession (url: string, session: LoadingSession, servedFromCache: (origin: string) => boolean, routed: (origin: string) => boolean): boolean {
+  const origin = originFromUrl(url)
+  if (origin === null || session.temporary || servedFromCache(origin)) return false
+  if (session.shared && sitePartitionForOrigin(origin) !== undefined) return true
+  return canTunnel(origin) && !session.tunnelled && routed(origin)
 }
 
 let ensurer: ((partition: string) => void) | undefined

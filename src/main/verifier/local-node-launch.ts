@@ -34,7 +34,8 @@ export function createLocalNodeController (spec: LocalNodeSpec): LocalNodeContro
     artifact: async () => await locateArtifact({ env: process.env, packaged: app.isPackaged, resourcesPath: process.resourcesPath, sourceRoot: app.getAppPath() }, spec.manifest, spec.kind),
     // A node that dials around a proxy would show a person's address to its peers that the proxy was set to hide (T20).
     // `app.resolveProxy` follows `app.setProxy`, which the whole-browser tunnel sets: the node is then refused, with the tunnel named as the reason.
-    proxyConfigured: async () => (await unproxiedGateways(['https://example.com/'], async (url) => await app.resolveProxy(url))).length === 0,
+    // The setting counts before the proxy it sets is seen: a node asked for in the moment between the two must not start around the tunnel.
+    proxyConfigured: async () => ownRequestsTunnelled() || (await unproxiedGateways(['https://example.com/'], async (url) => await app.resolveProxy(url))).length === 0,
     tunnelOn: ownRequestsTunnelled,
     ...(spec.disabled === undefined ? {} : { disabled: spec.disabled }),
     ...(spec.options === undefined ? {} : { options: spec.options }),

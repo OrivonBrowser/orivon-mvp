@@ -7,7 +7,7 @@ window holding it. `window-frame.ts` is the native window itself and `window-opt
 opens. `window.ts` is the composition; its parts are `window-layout.ts` (where the chrome and the page
 area sit: the one place a page area is computed), `window-state.ts` (the `ShellState` push, and which
 overlays a tab switch or a navigation dismisses), `window-panels.ts` (the permissions and site-info
-popovers, and the extension popup's panel for the overlay host) and `shell-state-parts.ts` (the `ShellState` fields a feature adds; `state/update-offered.ts` is the one that lights the key icon's dot while the page in front has an update offer, and `pre-partition.ts` stops a link or redirect into a cache-served address before it commits so the pinned files answer, `ADR-0056`). `window-context.ts` is
+popovers, and the extension popup's panel for the overlay host) and `shell-state-parts.ts` (the `ShellState` fields a feature adds; `state/update-offered.ts` is the one that lights the key icon's dot while the page in front has an update offer, and `pre-partition.ts` stops a link or redirect into a cache-served address before it commits so the pinned files answer, `ADR-0056`, and stops a move to the shared session before it commits when the tab's session would send the address differently from it). `window-context.ts` is
 the `{ window, services }` pair a hook or an overlay handler receives.
 `tabs.ts` owns the tab collection, with `tab-state.ts` (the state a tab reports, plus what each
 `TAB_SIGNALS` entry adds), `tab-navigation.ts`, `tab-open.ts` (every way a tab is created) and
@@ -219,7 +219,11 @@ not `critical`.
 A popup that keeps `window.opener` is Chromium's own webContents, created in its opener's
 partition, and moving it would sever `opener`, which a sign-in popup needs to report back. The
 cost is an `ADR-0018` residual (A230): until its opener closes, an open-web page an app opens this
-way runs in the app's partition. The other direction is never allowed: a popup into an isolated
+way runs in the app's partition. It does not keep its opener when the opener's session would send
+the address less tunnelled than the shared session would (not through the tunnel for an address that is, as a
+direct profile or an app set to off does while the whole browser is on the tunnel): a sized
+`window.open` to such an address then opens as a window of its own, and a popup that navigates
+there moves, cutting `window.opener` (`site-routes.ts`'s `sessionRoutesLike`). The other direction is never allowed: a popup into an isolated
 app from any other session opens as an ordinary tab in the app's own session, the only place its
 pinned bundle is served (`ADR-0007`). A popup's app-tab flag follows its own URL, not its
 opener's. A window a page

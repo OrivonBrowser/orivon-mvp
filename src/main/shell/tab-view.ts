@@ -236,7 +236,7 @@ export function wireView (id: string, record: TabRecord): void {
     if (!record.isDashboardTab) {
       const swap = partitionChangedByPage(navigatedUrl, record.partition)
       const cutOpener = openerCutNeeded(wc, navigatedUrl, record.host.broker)
-      if (swap !== undefined && (cutOpener || !keepsOpenerSession(wc, swap))) {
+      if (swap !== undefined && (cutOpener || !keepsOpenerSession(wc, swap, record.partition, navigatedUrl))) {
         repartitionView(id, record, navigatedUrl, swap.to)
         return
       }

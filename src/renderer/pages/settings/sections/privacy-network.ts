@@ -125,7 +125,10 @@ export const privacyNetworkRows: readonly Row[] = [
     keywords: ['tunnel', 'proxy', 'tor', 'everything', 'all traffic', 'whole browser', 'everywhere', 'vpn', 'anonymous', 'default'],
     group: GROUP,
     control: { type: 'toggle', key: 'network.tunnel.everywhere', // With your own address as the tunnel and no address set it cannot be turned on, but it can always be turned off.
-      disabled: (state) => state.value('network.route.kind') !== 'nym' && String(state.value('network.route.proxy') ?? '').trim() === '' && state.value('network.tunnel.everywhere') !== true }
+      disabled: (state) => state.value('network.route.kind') !== 'nym' && String(state.value('network.route.proxy') ?? '').trim() === '' && state.value('network.tunnel.everywhere') !== true },
+    below: (state) => state.part<RoutePart>('route').heldOn && state.value('network.tunnel.everywhere') === true
+      ? h('p', { className: 'problem', role: 'status', textContent: 'This is on because your settings file could not be read, so Orivon does not guess that you wanted your traffic outside the tunnel; turn it off here if you did.' })
+      : null
   },
   {
     id: 'route-sites',
