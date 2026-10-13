@@ -1,16 +1,16 @@
 /**
- * Fetches the files of every local node: each `resources/<name>-node/<name>-node.json` manifest names the node's
- * files, which go into `resources/<name>-node/`, which git ignores. A node is a WebAssembly component transpiled
- * by jco, published as one IPFS directory, and each file is checked against its pinned size and sha256 before it
- * is kept.
+ * Fetches the files of every local node and of the Nym tunnel: each `resources/<name>/<name>.json` manifest, in a
+ * folder named `<something>-node` or `<something>-tunnel`, names the files that go into that folder, which git
+ * ignores. A node is a WebAssembly component transpiled by jco and the tunnel is Nym's wasm-bindgen module; each is
+ * published as one IPFS directory, and each file is checked against its pinned size and sha256 before it is kept.
  *
  * `postinstall`, `npm run dev` and `npm start` call it without `--required`: a failed download prints one
  * line and the browser starts, the node then stays off with that reason. Every `package:*` script passes
  * `--required`, so a release cannot ship with a download that failed. A manifest with no CID yet is not a
  * failed download: a package is built without the node, with a warning, and the node is off in it.
  *
- * `ORIVON_<NAME>_DIR` (`ORIVON_SWARM_NODE_DIR` for `swarm-node`) names a local directory to copy from instead of
- * the network (a build not yet published); every file is still checked.
+ * `ORIVON_<NAME>_DIR` (`ORIVON_SWARM_NODE_DIR` for `swarm-node`, `ORIVON_NYM_TUNNEL_DIR` for `nym-tunnel`) names a
+ * local directory to copy from instead of the network (a build not yet published); every file is still checked.
  *
  * A gateway that no request reaches by its name (a network whose DNS sends the name elsewhere) is asked again at
  * the IPv4 address the verifier's DNS-over-HTTPS endpoints give it, with its certificate still checked for its name.
@@ -28,7 +28,7 @@ import { isInvokedDirectly } from './cli.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const RESOURCES_DIR = join(here, '..', 'resources')
-const NODE_FOLDER = /^[a-z0-9][a-z0-9-]*-node$/
+export const NODE_FOLDER = /^[a-z0-9][a-z0-9-]*-(node|tunnel)$/
 const ENDPOINTS_FILE = join(here, '..', 'src', 'main', 'verifier', 'endpoints.ts')
 const TIMEOUT_MS = 120_000
 const DOH_TIMEOUT_MS = 10_000
@@ -213,7 +213,7 @@ function fetchFromAddress(url, address, { signal }, redirects = MAX_REDIRECTS) {
   })
 }
 
-/** The names of the local nodes this checkout has a manifest for. */
+/** The names of the local nodes and tunnels this checkout has a manifest for. */
 export function localNodeNames(resources = RESOURCES_DIR) {
   return readdirSync(resources, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && NODE_FOLDER.test(entry.name) && existsSync(join(resources, entry.name, `${entry.name}.json`)))

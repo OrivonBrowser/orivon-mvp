@@ -81,7 +81,7 @@ have to be rewritten? It is a measure of where care is worth spending.
 | [`src/protocols/swarm-node/`](src/protocols/swarm-node/) | Orivon's own Swarm light node, as a kind of local node: its arguments and config, and the peers that make it ready | **No** |
 | [`src/protocols/ipfs-node/`](src/protocols/ipfs-node/) | Orivon's own IPFS node, as a kind of local node: its arguments, the routing choice, and its health-check readiness | **No** |
 | [`test/apps/`](test/apps/) | The apps this repository's own test suite serves: the e2e fixture and an Orivon-native demo. Ported third-party apps live in `orivon-ports` | **No.** They touch only `orivon.*`, exactly like a third-party app |
-| [`vendor/`](vendor/) | Third-party source kept in its upstream shape, each with an `UPSTREAM.md` listing Orivon's patches: electron-browser-shell's Chrome-extension libraries (`ADR-0043`) and Firefox's `declarativeNetRequest` matcher (`ADR-0051`) | The extension libraries **entirely**; the matcher **no**, it is plain JavaScript |
+| [`vendor/`](vendor/) | Third-party source kept in its upstream shape, each with an `UPSTREAM.md` listing Orivon's patches: electron-browser-shell's Chrome-extension libraries (`ADR-0043`) and Firefox's `declarativeNetRequest` matcher (`ADR-0051`). `nym-smolmix/` holds no source, only the patch and build notes for Nym's WebAssembly mixnet client, which is built outside the app and published as `resources/nym-tunnel/` | The extension libraries **entirely**; the matcher **no**, it is plain JavaScript; the Nym module **no**, it is WebAssembly |
 | [`spike/`](spike/) | Week-0 evidence. **Historical, not live code** | n/a |
 
 Every directory carries a `README.md` saying what it depends on and what it must never import.

@@ -1,0 +1,196 @@
+diff --git a/wasm/smolmix/src/lib.rs b/wasm/smolmix/src/lib.rs
+index 19058cc..a392798 100644
+--- a/wasm/smolmix/src/lib.rs
++++ b/wasm/smolmix/src/lib.rs
+@@ -36,6 +36,8 @@ mod mixfetch;
+ #[cfg(all(target_arch = "wasm32", feature = "websocket"))]
+ mod mixwebsocket;
+ #[cfg(target_arch = "wasm32")]
++mod raw;
++#[cfg(target_arch = "wasm32")]
+ mod reactor;
+ #[cfg(target_arch = "wasm32")]
+ mod state;
+diff --git a/wasm/smolmix/src/raw.rs b/wasm/smolmix/src/raw.rs
+new file mode 100644
+index 0000000..6afed61
+--- /dev/null
++++ b/wasm/smolmix/src/raw.rs
+@@ -0,0 +1,177 @@
++// SPDX-License-Identifier: Apache-2.0
++
++//! Raw TCP and UDP sockets over the mixnet tunnel, exposed to JavaScript.
++//!
++//! `connectTcp(host, port)` and `bindUdp()` resolve hostnames through the tunnel's own DNS
++//! (never locally), then hand back a handle whose methods all return Promises.
++
++use std::cell::RefCell;
++use std::net::{IpAddr, SocketAddr};
++use std::rc::Rc;
++use std::time::Duration;
++
++use futures::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
++use futures::lock::Mutex;
++use js_sys::{Object, Promise, Reflect, Uint8Array};
++use wasm_bindgen::prelude::*;
++use wasm_bindgen_futures::future_to_promise;
++
++use crate::stream::{WasmTcpStream, WasmUdpSocket};
++use crate::{dns, ready_tunnel};
++
++const TCP_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
++const TCP_CLOSE_TIMEOUT: Duration = Duration::from_secs(3);
++const TCP_READ_CHUNK: usize = 16 * 1024;
++const UDP_MAX_DATAGRAM: usize = 65535;
++
++fn js_err(e: impl std::fmt::Display) -> JsValue {
++    js_sys::Error::new(&e.to_string()).into()
++}
++
++async fn resolve_host(host: &str) -> Result<IpAddr, JsValue> {
++    let tunnel = ready_tunnel().map_err(js_err)?;
++    dns::resolve(tunnel, host).await.map_err(js_err)
++}
++
++/// A TCP connection through the mixnet.
++#[wasm_bindgen]
++pub struct MixTcp {
++    reader: Rc<Mutex<ReadHalf<WasmTcpStream>>>,
++    writer: Rc<Mutex<WriteHalf<WasmTcpStream>>>,
++}
++
++/// Open a TCP connection to `host:port`. `host` is resolved through the mixnet.
++#[wasm_bindgen(js_name = "connectTcp")]
++pub fn connect_tcp(host: String, port: u16) -> Promise {
++    future_to_promise(async move {
++        let ip = resolve_host(&host).await?;
++        let tunnel = ready_tunnel().map_err(js_err)?;
++        let tcp = wasmtimer::tokio::timeout(
++            TCP_CONNECT_TIMEOUT,
++            tunnel.tcp_connect(SocketAddr::new(ip, port)),
++        )
++        .await
++        .map_err(|_| js_err("TCP connect timed out"))?
++        .map_err(js_err)?;
++        let (r, w) = tcp.split();
++        Ok(MixTcp {
++            reader: Rc::new(Mutex::new(r)),
++            writer: Rc::new(Mutex::new(w)),
++        }
++        .into())
++    })
++}
++
++#[wasm_bindgen]
++impl MixTcp {
++    /// Next chunk of bytes as a `Uint8Array`, or `null` once the peer has closed.
++    pub fn read(&self) -> Promise {
++        let reader = self.reader.clone();
++        future_to_promise(async move {
++            let mut buf = vec![0u8; TCP_READ_CHUNK];
++            let n = reader.lock().await.read(&mut buf).await.map_err(js_err)?;
++            Ok(if n == 0 {
++                JsValue::NULL
++            } else {
++                Uint8Array::from(&buf[..n]).into()
++            })
++        })
++    }
++
++    /// Write all of `data`; resolves once it is queued in the socket.
++    pub fn write(&self, data: Vec<u8>) -> Promise {
++        let writer = self.writer.clone();
++        future_to_promise(async move {
++            let mut w = writer.lock().await;
++            w.write_all(&data).await.map_err(js_err)?;
++            w.flush().await.map_err(js_err)?;
++            Ok(JsValue::UNDEFINED)
++        })
++    }
++
++    /// Send FIN and wait briefly for the close to complete.
++    pub fn close(&self) -> Promise {
++        let writer = self.writer.clone();
++        future_to_promise(async move {
++            let mut w = writer.lock().await;
++            let _ = wasmtimer::tokio::timeout(TCP_CLOSE_TIMEOUT, w.close()).await;
++            Ok(JsValue::UNDEFINED)
++        })
++    }
++}
++
++/// A UDP socket through the mixnet.
++#[wasm_bindgen]
++pub struct MixUdp {
++    sock: RefCell<Option<Rc<WasmUdpSocket>>>,
++}
++
++impl MixUdp {
++    fn socket(&self) -> Result<Rc<WasmUdpSocket>, JsValue> {
++        self.sock
++            .borrow()
++            .clone()
++            .ok_or_else(|| js_err("UDP socket closed"))
++    }
++}
++
++/// Bind a UDP socket on a fresh ephemeral port inside the tunnel.
++#[wasm_bindgen(js_name = "bindUdp")]
++pub fn bind_udp() -> Promise {
++    future_to_promise(async move {
++        let tunnel = ready_tunnel().map_err(js_err)?;
++        let sock = tunnel.udp_socket().await.map_err(js_err)?;
++        Ok(MixUdp {
++            sock: RefCell::new(Some(Rc::new(sock))),
++        }
++        .into())
++    })
++}
++
++#[wasm_bindgen]
++impl MixUdp {
++    /// Send one datagram. `host` is resolved through the mixnet unless it is an IP literal.
++    #[wasm_bindgen(js_name = "sendTo")]
++    pub fn send_to(&self, host: String, port: u16, data: Vec<u8>) -> Promise {
++        let sock = self.socket();
++        future_to_promise(async move {
++            let sock = sock?;
++            let ip = resolve_host(&host).await?;
++            let n = sock
++                .send_to(&data, SocketAddr::new(ip, port))
++                .await
++                .map_err(js_err)?;
++            Ok(JsValue::from_f64(n as f64))
++        })
++    }
++
++    /// Next datagram as `{ data: Uint8Array, host: string, port: number }`.
++    /// With `timeoutMs`, rejects when nothing arrives in time.
++    pub fn recv(&self, timeout_ms: Option<u32>) -> Promise {
++        let sock = self.socket();
++        future_to_promise(async move {
++            let sock = sock?;
++            let mut buf = vec![0u8; UDP_MAX_DATAGRAM];
++            let (n, src) = match timeout_ms {
++                Some(ms) => wasmtimer::tokio::timeout(
++                    Duration::from_millis(ms as u64),
++                    sock.recv_from(&mut buf),
++                )
++                .await
++                .map_err(|_| js_err("UDP receive timed out"))?,
++                None => sock.recv_from(&mut buf).await,
++            }
++            .map_err(js_err)?;
++            let out = Object::new();
++            Reflect::set(&out, &"data".into(), &Uint8Array::from(&buf[..n]))?;
++            Reflect::set(&out, &"host".into(), &src.ip().to_string().into())?;
++            Reflect::set(&out, &"port".into(), &JsValue::from_f64(src.port() as f64))?;
++            Ok(out.into())
++        })
++    }
++
++    /// Release the socket. A `recv` already waiting keeps it alive until it settles.
++    pub fn close(&self) {
++        self.sock.borrow_mut().take();
++    }
++}
