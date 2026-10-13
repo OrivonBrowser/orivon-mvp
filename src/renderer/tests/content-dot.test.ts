@@ -51,9 +51,9 @@ describe('the content dot', () => {
     expect(attrs.get('aria-description')).toBe(CONTENT_BLOCKED_NOTE)
   })
 
-  it('marks the key for a page on the tunnel, in three ways, and clears it', () => {
+  it('marks the key for a page on the tunnel, in two ways, and clears it', () => {
     const { attrs, render } = mount()
-    for (const tunnel of ['on', 'partial', 'down'] as const) {
+    for (const tunnel of ['on', 'down'] as const) {
       render(false, false, tunnel)
       expect(attrs.get('data-tunnel')).toBe(tunnel)
       expect(attrs.get('aria-description')).toBe(TUNNEL_NOTES[tunnel])

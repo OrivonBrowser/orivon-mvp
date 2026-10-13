@@ -30,9 +30,6 @@
   pointer-events: none;
 }
 
-/* The key for a page that goes through the tunnel: the accent colour, dashed when only part of the page does, and the
-   warning colour when the tunnel is not answering. */
-#site-permissions-btn[data-tunnel="on"],
-#site-permissions-btn[data-tunnel="partial"] { color: var(--waccent); }
-#site-permissions-btn[data-tunnel="partial"] { outline: 1.5px dashed var(--waccent); outline-offset: -2px; }
+/* The key for a page that goes through the tunnel: the accent colour, and the warning colour when the tunnel is not answering. */
+#site-permissions-btn[data-tunnel="on"] { color: var(--waccent); }
 #site-permissions-btn[data-tunnel="down"] { color: var(--winsecure); }

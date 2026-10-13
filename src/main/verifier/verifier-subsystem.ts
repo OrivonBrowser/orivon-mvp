@@ -14,10 +14,10 @@ import type { HostConfig, LightClientState, SiteProvenance } from '../../protoco
 import type { ContentAddress, PinRecord } from '../../broker/policy/pin.js'
 import { servedByVerifier } from '../../loader/fetch/verifier-origin.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
-import { PARTITION_HEADER } from '../../loader/fetch/content-root.js'
+import { PARTITION_HEADER, ROUTE_HEADER } from '../../loader/fetch/content-root.js'
 import { noteCertificate } from '../auth/note-certificate.js'
 import { ACCEPT, CHROMIUM_VERDICT, REJECT, refusalNote, verifierCertificateVerdict } from './certificate-check.js'
-import { requestPartition, withPartition } from './partition.js'
+import { requestPartition, withPartition, withRoute } from './partition.js'
 import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import { forEachWebsiteSession } from '../sessions/website-sessions.js'
 import { contentAddressOf } from './content-address.js'
@@ -37,7 +37,7 @@ import { chooseNameEvidence } from './name-evidence.js'
 import type { NameEvidence } from './name-evidence.js'
 import { checkpointProblem, lightClientView } from './status-view.js'
 import type { LightClientView } from './status-view.js'
-import { ccipDirectFor, tunnelFront, unproxiedGatewaysFor } from './host-proxy.js'
+import { ccipDirectFor, tunnelFront, tunnelProfileFront, unproxiedGatewaysFor } from './host-proxy.js'
 import { HostLifecycle } from './host-lifecycle.js'
 import { anyTabOnVerifiedOrigin } from './tab-on-verified-origin.js'
 import type { TabsOfWindow } from './tab-on-verified-origin.js'
@@ -177,8 +177,11 @@ export function verifiedHostFilter (): WebRequestFilter {
  * session and on each website's session of its own (see README.md's Design notes for why no other), LAST among
  * `onBeforeSendHeaders` handlers there, so nothing that runs before it --
  * including a future extension rule -- can set or remove this header.
+ * The same handler marks every request of the tunnel profile's session as a tunnel-profile website's, whatever frame it
+ * came from or whether it has one, and strips the mark from every other session's: the verifier fetches for it only
+ * through the tunnel.
  */
-function installPartitionStamp (target: Session): void {
+function installPartitionStamp (target: Session, tunnelProfile: boolean): void {
   webRequestOwnerFor(target).onBeforeSendHeaders(RUN_LAST, verifiedHostFilter(), targetsVerifiedHost, (details, current) => {
     let frame: WebFrameMain | null | undefined
     try {
@@ -187,7 +190,7 @@ function installPartitionStamp (target: Session): void {
       frame = undefined
     }
     const partition = requestPartition({ url: details.url, resourceType: details.resourceType, topUrl: frame?.top?.url })
-    return { ...current, requestHeaders: withPartition(current.requestHeaders, PARTITION_HEADER, partition) }
+    return { ...current, requestHeaders: withRoute(withPartition(current.requestHeaders, PARTITION_HEADER, partition), ROUTE_HEADER, tunnelProfile) }
   })
 }
 
@@ -237,6 +240,7 @@ function ipfsFromNode (seam: EthTestSeam | undefined): boolean {
 async function hostConfig (): Promise<HostConfig> {
   const seam = ethTestSeam()
   const front = await tunnelFront(routesOf())
+  const profileFront = await tunnelProfileFront(routesOf())
   const stored = verifierStore()
   let lightClient: Pick<HostConfig, 'lightClient' | 'lightClientOff'>
   if (lightClientSwitchedOff()) {
@@ -256,6 +260,7 @@ async function hostConfig (): Promise<HostConfig> {
     unproxiedGateways: front === undefined ? await unproxiedGatewaysFor(gateways, seam !== undefined) : [],
     ccipDirect: front === undefined && await ccipDirectFor(seam !== undefined),
     ...(front === undefined ? {} : { front }),
+    ...(profileFront === undefined ? {} : { profileFront }),
     ipnsNameServices: seam === undefined ? DEFAULT_ENDPOINTS.ipnsNameServices : [],
     dnsOverHttps: seam?.dnsOverHttps ?? DEFAULT_ENDPOINTS.dnsOverHttps,
     ipnsSequences: stored.ipnsSequences(),
@@ -265,6 +270,11 @@ async function hostConfig (): Promise<HostConfig> {
     swarmFeedIndexes: stored.swarmFeedIndexes(),
     ...(seam === undefined ? {} : { fixtures: seam.fixtures })
   }
+}
+
+/** `tunnel` when the website at `origin` lives in the tunnel profile: its name is then proved, and its files read, only through the tunnel. */
+function routeOf (origin: string): { readonly route?: 'tunnel' } {
+  return routesOf()?.hub.profileFor(origin) === 'tunnel' ? { route: 'tunnel' } : {}
 }
 
 /** The age of the newest checkpoint the light client could start from; undefined while it is off or none can start it. */
@@ -290,7 +300,7 @@ function lightClientCanStart (): boolean {
 export async function siteProvenance (origin: string): Promise<SiteProvenance | null> {
   if (supervisor === undefined) return null
   try {
-    return await supervisor.request({ kind: 'provenance', host: new URL(origin).hostname, partition: origin })
+    return await supervisor.request({ kind: 'provenance', host: new URL(origin).hostname, partition: origin, ...routeOf(origin) })
   } catch {
     return null
   }
@@ -320,7 +330,7 @@ export async function verifierContentAddress (origin: string, partition?: string
   startHost()
   await listeningGate.whenSettled()
   if (supervisor === undefined) throw new Error('the verifier has not started')
-  return contentAddressOf(await supervisor.request({ kind: 'mount', host: new URL(origin).hostname, partition: partition ?? new URL(origin).origin }, MOUNT_TIMEOUT_MS))
+  return contentAddressOf(await supervisor.request({ kind: 'mount', host: new URL(origin).hostname, partition: partition ?? new URL(origin).origin, ...routeOf(origin) }, MOUNT_TIMEOUT_MS))
 }
 
 /** The content CID a `.eth` host names, proven now in `partition`; undefined when it does not resolve. Never throws. */
@@ -373,7 +383,7 @@ export const verifierSubsystem: Subsystem = {
     BUILTIN_ADDRESSES.learnSchemes((name) => verifierStore().nameScheme(name))
     installCertificateCheck(session.defaultSession)
     // The shared session and each session of its own a website gets: any of them can load a `.eth` page.
-    forEachWebsiteSession((target) => { installPartitionStamp(target); installListeningGate(target) })
+    forEachWebsiteSession((target, tunnelProfile) => { installPartitionStamp(target, tunnelProfile); installListeningGate(target) })
     const host = new HostSupervisor({
       fork: () => utilityProcess.fork(join(__dirname, 'verifier-host.js'), [], { serviceName: 'Orivon verifier' }),
       config: hostConfig,

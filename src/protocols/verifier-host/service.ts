@@ -10,10 +10,11 @@ import { createRunCertificate } from './serve/certificate.js'
 import type { WebFetch } from './egress.js'
 import type { DirectFetch } from './direct-fetch.js'
 import { startProtocols } from './protocols.js'
+import { startTunnelProtocols } from './tunnel-protocols.js'
 import { NodeLinks } from './node-link.js'
 import type { FromHost, NodeNotice, HostConfig, HostReplies, HostRequest, LightClientConfig, LightClientState, SiteProvenance } from './protocol.js'
 import { createVerifierServer } from './serve/server.js'
-import { MOUNT_TIMEOUT_MS, Sites } from './serve/sites.js'
+import { MOUNT_TIMEOUT_MS, RoutedSites, Sites } from './serve/sites.js'
 import type { SiteRecord } from './serve/sites.js'
 
 export interface LightClient {
@@ -26,7 +27,8 @@ export interface HostDeps {
   readonly fetch: WebFetch
   readonly resolveHost: (host: string) => Promise<readonly string[]>
   readonly post: (message: FromHost) => void
-  readonly startLightClient: (config: LightClientConfig, fetch: WebFetch, report: (message: FromHost) => void) => LightClient
+  /** `route` tunnel: the client that proves the names of tunnel-profile websites, which reports nothing and has requests of its own. */
+  readonly startLightClient: (config: LightClientConfig, fetch: WebFetch, report: (message: FromHost) => void, route?: 'tunnel') => LightClient
   /** True only in a test build; fixture names are refused otherwise, whatever the config says. */
   readonly fixturesAllowed: boolean
   /** The DNS-tamper fallback's own egress (dns-fallback.ts), reached only
@@ -40,6 +42,8 @@ export interface HostDeps {
    * above, allows the POST form and follows a redirect (the caller decides
    * whether to, per hop). */
   readonly ccipFetch: DirectFetch
+  /** Everything a tunnel-profile website needs from the network goes through this and nothing else: the tunnel profile's front (`routed-fetch.ts`). */
+  readonly routedFetch: WebFetch
 }
 
 export interface RunningHost {
@@ -56,14 +60,16 @@ export interface RunningHost {
 export async function startHost (config: HostConfig, deps: HostDeps): Promise<RunningHost> {
   const nodes = new NodeLinks(deps.post)
   const controls = { lookupService: config.ipfsNode?.lookupService !== false }
-  const { protocols, lightClient } = startProtocols(config, deps, nodes, controls)
+  const { protocols, lightClient, stores } = startProtocols(config, deps, nodes, controls)
   const registry = new ProtocolRegistry(protocols)
+  const tunnelRegistry = new ProtocolRegistry(startTunnelProtocols(config, deps, stores).protocols)
   // A top-level-domain name is shown by where its content lives, which is known once a gatherer is chosen for its records.
-  const sites = new Sites(registry, Date.now, MOUNT_TIMEOUT_MS, (host, gatherer) => {
-    const served = registry.addresses.servedName(host)
-    const scheme = registry.schemeOfGatherer(gatherer)
+  const sitesOf = (of: ProtocolRegistry): Sites => new Sites(of, Date.now, MOUNT_TIMEOUT_MS, (host, gatherer) => {
+    const served = of.addresses.servedName(host)
+    const scheme = of.schemeOfGatherer(gatherer)
     if (served?.namespace.startsWith('.') === true && scheme !== undefined) deps.post({ type: 'name-scheme', host: served.name, scheme })
   })
+  const sites = new RoutedSites(sitesOf(registry), sitesOf(tunnelRegistry))
   const certificate = createRunCertificate()
   const server = createVerifierServer(registry, sites, certificate)
   await new Promise<void>((resolve, reject) => {
@@ -80,9 +86,9 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
   const answer = async (request: HostRequest): Promise<HostReplies[HostRequest['kind']]> => {
     switch (request.kind) {
       case 'status': return lightClient?.status() ?? { state: 'off' }
-      case 'mount': return provenanceOf(request.host, await sites.get(request.host, request.partition))
+      case 'mount': return provenanceOf(request.host, await sites.get(request.host, request.partition, request.route))
       case 'provenance': {
-        const current = await sites.current(request.host, request.partition)
+        const current = await sites.current(request.host, request.partition, request.route)
         return current === undefined ? null : provenanceOf(request.host, current)
       }
     }

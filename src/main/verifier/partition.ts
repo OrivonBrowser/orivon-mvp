@@ -38,3 +38,13 @@ export function withPartition (headers: Readonly<Record<string, string>>, header
   if (partition !== undefined) out[header] = partition
   return out
 }
+
+/**
+ * `headers` with the route header set to `tunnel` when the request is a tunnel-profile website's, and removed otherwise:
+ * whatever a page put there itself never reaches the verifier.
+ */
+export function withRoute (headers: Readonly<Record<string, string>>, header: string, tunnelProfile: boolean): Record<string, string> {
+  const out = Object.fromEntries(Object.entries(headers).filter(([name]) => name.toLowerCase() !== header))
+  if (tunnelProfile) out[header] = 'tunnel'
+  return out
+}

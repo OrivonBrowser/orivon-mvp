@@ -65,6 +65,8 @@ document over Chromium's ordinary networking, so it reaches the verifier exactly
 and `src/main/embed/embed-host.ts`'s `configureEmbedSession` installs the identical stamp there,
 reusing `partition.ts` rather than copying it.
 
+**The same handler marks a tunnel-profile website's requests.** `installPartitionStamp` is told by `website-sessions.ts` whether a session is the tunnel profile's, and sets `x-orivon-route: tunnel` on every request that session makes to the verifier, or strips the header on every other session (the embed's included), so a page cannot choose a route. The host serves a marked request from protocols that fetch only through the tunnel profile's front (`protocols/verifier-host/README.md`). Main asks the host about a website in that profile with the same mark in its mount and provenance requests (`routeOf`).
+
 **The host runs only while `.eth` or an address is in use.** [`host-lifecycle.ts`](host-lifecycle.ts) starts it on the
 first request to a host the verifier serves, or when the address bar's text names one
 ([`verifier-access.ts`](verifier-access.ts)'s `prewarmVerifier`, called from the omnibox), and puts it to sleep through
@@ -91,7 +93,7 @@ embed guest's session starts the host and waits for it from its own handler
 **The certificate check goes on every session, through `session-created`.** A partition without
 it cannot load any host the verifier serves.
 
-**The proxy check runs in main, not in the host** ([`proxy-check.ts`](proxy-check.ts), asked by [`host-proxy.ts`](host-proxy.ts), which also hands the host the tunnel's front while the whole browser is on the tunnel). It needs
+**The proxy check runs in main, not in the host** ([`proxy-check.ts`](proxy-check.ts), asked by [`host-proxy.ts`](host-proxy.ts), which also hands the host the tunnel's front while the whole browser is on the tunnel, and the tunnel profile's front for the fetches of a website in that profile). It needs
 `app.resolveProxy`, and a `utilityProcess` has no `session` to ask. It runs once per host start,
 per gateway, since a PAC script can answer differently per URL.
 

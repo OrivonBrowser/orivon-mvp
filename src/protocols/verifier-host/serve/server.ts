@@ -14,11 +14,12 @@ import type { ProtocolAddresses } from '../../address.js'
 import type { ProtocolRegistry } from '../../registry.js'
 import { contentTypeFor } from '../../../loader/serve/content-type.js'
 import { parseRange } from '../../../loader/serve/range.js'
-import { CONTENT_ROOT_HEADER, DDOC_MISMATCH, FAILURE_HEADER, PARTITION_HEADER } from '../../../loader/fetch/content-root.js'
+import { CONTENT_ROOT_HEADER, DDOC_MISMATCH, FAILURE_HEADER, PARTITION_HEADER, ROUTE_HEADER } from '../../../loader/fetch/content-root.js'
 import type { RunCertificate } from './certificate.js'
 import { ERROR_PAGE_CSP, renderErrorPage } from './error-pages.js'
 import { checkLeaf, expectedLeafOf, sliceChunks } from './leaf-check.js'
-import type { Sites } from './sites.js'
+import type { SiteSource } from './sites.js'
+import type { FetchRoute } from '../protocol.js'
 
 /** A file up to this size is read and verified whole before its first byte is sent to a page, so a failure is an error page, never half a document. */
 export const MAX_BUFFERED_BYTES = 16 * 1024 * 1024
@@ -145,6 +146,15 @@ function partitionOf (req: IncomingMessage, host: string): string | undefined {
   if (typeof named === 'string' && PARTITION.test(named)) return named
   const site = req.headers['sec-fetch-site']
   return site === 'none' || site === 'same-origin' ? `https://${host}` : undefined
+}
+
+/**
+ * How this request's fetches must leave: through the tunnel when the shell marked it as a tunnel-profile website's. The shell
+ * sets or strips the mark on every request of a website session, so a page cannot name its own; and a request with no mark
+ * is a direct website's, never a tunnel-profile one's.
+ */
+function routeOf (req: IncomingMessage): FetchRoute {
+  return req.headers[ROUTE_HEADER] === 'tunnel' ? 'tunnel' : 'direct'
 }
 
 /** The path of an origin-form request target. `//x/y` would read as an authority, so it is refused, not reinterpreted. */
@@ -333,7 +343,7 @@ function redirectToCanonical (registry: ProtocolRegistry, scheme: string, url: U
   }
 }
 
-async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMessage, res: ServerResponse, budget: BufferBudget, bufferedResponseDeadlineMs: number): Promise<void> {
+async function handle (registry: ProtocolRegistry, sites: SiteSource, req: IncomingMessage, res: ServerResponse, budget: BufferBudget, bufferedResponseDeadlineMs: number): Promise<void> {
   const host = hostOf(req, registry.addresses)
   if (host === undefined || (registry.addresses.servedName(host) === undefined && registry.addresses.schemeEndpoint(host) === undefined)) {
     res.writeHead(421, { 'content-type': 'text/plain' }).end("this server answers only the names and addresses Orivon's protocols serve")
@@ -366,7 +376,7 @@ async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMe
   let root: string | undefined
   const partition = partitionOf(req, host)
   try {
-    const { site } = await sites.get(host, partition)
+    const { site } = await sites.get(host, partition, routeOf(req))
     root = site.root.cid
     const etag = `"${root}"`
     // One install reads one root: a request naming another means the name moved on mid-load.
@@ -420,7 +430,7 @@ async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMe
 }
 
 /** `bufferedResponseDeadlineMs` defaults to `BUFFERED_RESPONSE_DEADLINE_MS`; a test shortens it rather than waiting the real deadline out. */
-export function createVerifierServer (registry: ProtocolRegistry, sites: Sites, certificate: RunCertificate, bufferedResponseDeadlineMs: number = BUFFERED_RESPONSE_DEADLINE_MS): Server {
+export function createVerifierServer (registry: ProtocolRegistry, sites: SiteSource, certificate: RunCertificate, bufferedResponseDeadlineMs: number = BUFFERED_RESPONSE_DEADLINE_MS): Server {
   // One budget for every request this server ever handles, not one per
   // request: it is what lets it track every partition's own share, and their combined total.
   const budget = new BufferBudget()

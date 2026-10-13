@@ -15,7 +15,7 @@ import { isOriginPinnedSync, isOriginServedFromCacheSync } from '../../loader/el
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isPersistableOrigin } from '../../broker/policy/origin.js'
 import { setLeavingRoutes } from './leaving-routes.js'
-import { answerRouteChallenge, setDirectLookupSource, setLookupSessionSource, setRouteChallengeSource } from './lookup-session.js'
+import { answerRouteChallenge, lookupSessionFor, setDirectLookupSource, setLookupSessionSource, setRouteChallengeSource } from './lookup-session.js'
 import { hasOwnProxy, markOwnProxy } from './own-proxy.js'
 import { migrateLegacySites } from './legacy-sites.js'
 import { setOwnRequests } from './own-requests.js'
@@ -119,7 +119,19 @@ export const routeSubsystem: Subsystem = {
     setDirectLookupSource(() => routes.everywhere() ? systemProxySession() : undefined)
     const tunnelFetch = createRequestFetch({ net, session: session.defaultSession, answer: answerRouteChallenge })
     const directFetch = createRequestFetch({ net, session: systemProxySession(), answer: (_info, callback) => { callback() } })
-    setOwnRequests({ everywhere: routes.everywhere, isRouted: routes.hub.isRouted, tunnel: tunnelFetch, direct: directFetch, directSession: systemProxySession, settled: routes.controller.sharedSettled })
+    // A website with its tunnel on is asked about (its app manifest, its files by the loader) in the tunnel profile's session, not the default one, which is direct while the whole browser is off the tunnel.
+    const siteSession = async (origin: string): Promise<Session | undefined> => {
+      if (routes.hub.profileFor(origin) !== 'tunnel') return undefined
+      const routed = await lookupSessionFor(origin)
+      // A website that belongs in the tunnel profile is never asked about from the default session instead.
+      if (routed === undefined) throw new Error('the tunnel profile is not available, so this website is not asked about')
+      return routed
+    }
+    const through = async (origin: string): Promise<typeof tunnelFetch | undefined> => {
+      const routed = await siteSession(origin)
+      return routed === undefined ? undefined : createRequestFetch({ net, session: routed, answer: answerRouteChallenge })
+    }
+    setOwnRequests({ everywhere: routes.everywhere, isRouted: routes.hub.isRouted, tunnel: tunnelFetch, direct: directFetch, directSession: systemProxySession, settled: routes.controller.sharedSettled, siteSession, through })
 
     const siteSessions = createSiteSessions({
       controller: routes.controller,
@@ -144,7 +156,7 @@ export const routeSubsystem: Subsystem = {
         watch()
         return watch
       },
-      fit: (target) => { announceWebsiteSession(target as Session) }
+      fit: (target, profile) => { announceWebsiteSession(target as Session, profile === 'tunnel') }
     })
     // The verifier host reads whether a proxy applies once, when it starts, and fetches through the shared front when the whole browser is on the tunnel: it stops at once, with the local nodes, and starts again with the new setting when something asks for it, once the sessions follow.
     routes.hub.onChange((origin) => {

@@ -50,7 +50,7 @@ shows grants or switches reaches the broker only through `permissions.ts` or
 what blocks turning it on (no proxy, or the app's files are not held here), and `setRoute` turns it on only when
 nothing blocks it; the popover's `SiteInfo.route` carries the state of a routed app so it can say where the traffic goes
 and when the tunnel is not answering. A website has the switch in the popover instead: `SiteInfo.tunnel` says whether it is on, whether turning it on needs
-the storage notice first, and whether it is a Web3 name whose own files stay outside the tunnel; `setTunnel` takes it through the route's one switch path. The route itself is [`../route/`](../route/README.md)'s.
+the storage notice first, and whether it is a Swarm address, which does not open while the tunnel is on for it; `setTunnel` takes it through the route's one switch path. The route itself is [`../route/`](../route/README.md)'s.
 
 **[`site-info-controller.ts`](site-info-controller.ts)'s `extensionsOnSite` (the extensions disclosure,
 `docs/planning/extensions-exploration.md`) is computed once, ahead of the registered/

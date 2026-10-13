@@ -63,8 +63,8 @@ export interface SiteUpdate {
 export type SiteRoute = 'idle' | 'ok' | 'down' | 'no-proxy' | 'temporary'
 
 /**
- * What the popover shows for a website's tunnel switch. `web3` marks a name or address whose own files Orivon fetches
- * itself, outside the tunnel; `unreadable` that the list of tunnel settings could not be read, so every site is on and the switch is fixed.
+ * What the popover shows for a website's tunnel switch. `swarm` marks an address read from the Swarm node Orivon runs, which
+ * cannot be sent through the tunnel, so the address does not open while the tunnel is on for it; `unreadable` that the list of tunnel settings could not be read, so every site is on and the switch is fixed.
  */
 export interface SiteTunnel {
   readonly on: boolean
@@ -72,7 +72,7 @@ export interface SiteTunnel {
   readonly blocked?: 'no-proxy'
   /** The change the switch makes next moves the website into this profile for the first time, so the person is told first. */
   readonly notice?: 'tunnel' | 'direct'
-  readonly web3: boolean
+  readonly swarm: boolean
   readonly unreadable: boolean
   /** The profile the website lives in now, when its entry puts it in one. */
   readonly profile?: 'tunnel' | 'direct'
