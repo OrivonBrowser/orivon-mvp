@@ -21,6 +21,12 @@ export function tunnelHint (tunnel: SiteTunnel): string | undefined {
   return undefined
 }
 
+/** The person's extensions run in a profile too, as far as Electron's own extension support goes; the rest stays in the default session. */
+export function extensionsHint (names: readonly string[], profile: 'tunnel' | 'direct' | undefined): string | undefined {
+  if (profile === undefined || names.length === 0) return undefined
+  return `Your extensions run in the ${profile} profile too: ${names.join(', ')}. Their toolbar buttons and popups, and any blocker that works through the browser's request API, stay with your normal browsing.`
+}
+
 export const TUNNEL_FAILED = 'The tunnel could not be changed for this site.'
 
 export interface TunnelCallbacks {
@@ -46,7 +52,7 @@ function paragraph (className: string, text: string): HTMLElement {
 }
 
 /** The switch row, its explanation, the status line of a site that is on, and the notice while it is open. */
-export function renderTunnelSection (container: HTMLElement, tunnel: SiteTunnel, route: SiteRoute | undefined, view: TunnelViewState, callbacks: TunnelCallbacks): void {
+export function renderTunnelSection (container: HTMLElement, tunnel: SiteTunnel, route: SiteRoute | undefined, extensions: readonly string[], view: TunnelViewState, callbacks: TunnelCallbacks): void {
   const section = document.createElement('div')
   section.className = 'tunnel-section'
 
@@ -65,6 +71,8 @@ export function renderTunnelSection (container: HTMLElement, tunnel: SiteTunnel,
   const hint = tunnelHint(tunnel)
   if (hint !== undefined) section.append(paragraph(tunnel.unreadable || tunnel.blocked !== undefined ? 'route-line route-line-down' : 'route-line', hint))
   if (tunnel.on && route !== undefined) section.append(renderRouteLine(route, tunnel.web3 ? 'web3' : 'site'))
+  const reach = extensionsHint(extensions, tunnel.profile)
+  if (reach !== undefined) section.append(paragraph('route-line', reach))
   if (view.failed) section.append(paragraph('route-line route-line-down', TUNNEL_FAILED))
 
   if (view.notice !== null) {

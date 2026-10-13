@@ -19,6 +19,7 @@ export async function mirrorExtensions (target: Session, source: Session): Promi
       console.error(`[extensions] could not load ${name} into a profile session: ${String(error)}`)
     }
   }
+  // orivon:floating-ok -- `load` catches everything it can throw
   source.extensions.on('extension-loaded', (_event, extension) => { void load(extension.path, extension.name) })
   source.extensions.on('extension-unloaded', (_event, extension) => {
     try {

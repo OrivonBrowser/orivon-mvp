@@ -48,6 +48,13 @@ describe('making a profile session ready', () => {
     expect(log).toEqual(['fit', `prepare ${TUNNEL_PROFILE_ORIGIN} *.eth`, 'extend'])
   })
 
+  it('loads no extension into a profile kept in memory, which Electron cannot give one', async () => {
+    const { sites, held, log } = setup()
+    sites.ensure('tunnel-profile-memory')
+    await held[0]?.ready()
+    expect(log).toEqual(['fit', `prepare ${TUNNEL_PROFILE_ORIGIN} *.eth`])
+  })
+
   it('prepares the direct profile under the identity that is never routed', async () => {
     const { sites, held, log } = setup()
     sites.ensure(DIRECT)

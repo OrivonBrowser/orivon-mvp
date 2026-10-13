@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SiteTunnel } from '../../main/permissions/site-info.js'
-import { storageNotice, tunnelHint } from '../site-info/tunnel-view.js'
+import { extensionsHint, storageNotice, tunnelHint } from '../site-info/tunnel-view.js'
 
 const base: SiteTunnel = { on: false, notice: 'tunnel', web3: false, unreadable: false }
 
@@ -33,5 +33,17 @@ describe('the hint under the tunnel switch', () => {
 
   it('says why the switch is fixed when the list of tunnel settings cannot be read', () => {
     expect(tunnelHint({ ...base, unreadable: true, on: true })).toContain('could not read your tunnel settings')
+  })
+})
+
+describe('the extensions a website in a profile keeps', () => {
+  it('names them and says what stays with normal browsing', () => {
+    expect(extensionsHint(['uBlock Origin', 'Dark Reader'], 'tunnel')).toBe('Your extensions run in the tunnel profile too: uBlock Origin, Dark Reader. Their toolbar buttons and popups, and any blocker that works through the browser\'s request API, stay with your normal browsing.')
+    expect(extensionsHint(['Dark Reader'], 'direct')).toContain('direct profile')
+  })
+
+  it('says nothing when no extension reaches the site or the website is not in a profile', () => {
+    expect(extensionsHint([], 'tunnel')).toBeUndefined()
+    expect(extensionsHint(['Dark Reader'], undefined)).toBeUndefined()
   })
 })

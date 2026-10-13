@@ -73,6 +73,8 @@ export interface SiteTunnel {
   readonly notice?: 'tunnel' | 'direct'
   readonly web3: boolean
   readonly unreadable: boolean
+  /** The profile the website lives in now, when its entry puts it in one. */
+  readonly profile?: 'tunnel' | 'direct'
 }
 
 export interface SiteInfo {

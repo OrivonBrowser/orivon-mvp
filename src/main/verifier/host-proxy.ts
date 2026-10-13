@@ -1,0 +1,43 @@
+// What the verifier host is told about the network when it starts: which gateways and which CCIP-Read hosts have no proxy
+// in front of them (the only ones its direct routes may dial around a proxy), and, while the whole browser is on the tunnel,
+// the front it fetches through. Read once per start, so the host restarts when any of it changes.
+import { app } from 'electron'
+import type { RouteService } from '../route/route-service.js'
+import { SHARED_ORIGIN } from '../route/route-hub.js'
+import type { HostConfig } from '../../protocols/verifier-host/protocol.js'
+import { unproxiedGateways } from './proxy-check.js'
+
+/** Empty under the test seam: a hermetic run has no real gateways to check
+ * a proxy against, and the fallback would only ever add noise there. */
+export async function unproxiedGatewaysFor (gateways: readonly string[], seamActive: boolean): Promise<string[]> {
+  if (seamActive) return []
+  return await unproxiedGateways(gateways, async (url) => await app.resolveProxy(url))
+}
+
+/**
+ * Whether the default session has no proxy in front of it at all, checked
+ * against a generic https URL rather than a real gateway: a CCIP-Read
+ * destination is a name's own resolver contract's choice, not known until
+ * long after the host has already started, so nothing narrower exists to
+ * check yet. Reuses `unproxiedGateways`'s own timeout and fail-closed
+ * (proxied) direction -- a check that cannot answer must never make
+ * `guardedCcipRequest` go around a proxy that is actually there. `false`
+ * (treated as proxied) under the test seam, same reasoning as
+ * `unproxiedGatewaysFor`.
+ */
+export async function ccipDirectFor (seamActive: boolean): Promise<boolean> {
+  if (seamActive) return false
+  const unproxied = await unproxiedGateways(['https://example.com/'], async (url) => await app.resolveProxy(url))
+  return unproxied.length > 0
+}
+
+/**
+ * The tunnel's front the host fetches through while the whole browser is on the tunnel, once the requests made with no session
+ * have been pointed at it (`app.setProxy`, which the host's checks of whether a proxy applies read); undefined otherwise.
+ */
+export async function tunnelFront (routes: RouteService | undefined): Promise<NonNullable<HostConfig['front']> | undefined> {
+  if (routes === undefined || !routes.hub.isRouted(SHARED_ORIGIN)) return undefined
+  await routes.controller.settled()
+  const front = await routes.hub.front(SHARED_ORIGIN)
+  return { port: front.port, username: front.username, password: front.secret }
+}

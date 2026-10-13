@@ -22,6 +22,7 @@ import { setOwnRequests } from './own-requests.js'
 import { setSystemProxyProbe } from './system-proxy.js'
 import { createRequestFetch } from '../../loader/electron/request-fetch.js'
 import { mirrorExtensions } from '../extensions/profile-extensions.js'
+import { installExtensionRequestHandlers } from '../extensions/extensions-subsystem.js'
 import { servedOrigin } from './served-origin.js'
 import { mustLeaveSharedSession, setSiteRoutes, setSiteSessionEnsurer, siteProfileOf } from './site-routes.js'
 import { createSiteSessions } from './site-sessions.js'
@@ -90,7 +91,7 @@ export const routeSubsystem: Subsystem = {
       if (systemSession === undefined) {
         systemSession = session.fromPartition('orivon-system-proxy')
         markOwnProxy(systemSession)
-        void systemSession.setProxy({ mode: 'system' })
+        systemSession.setProxy({ mode: 'system' }).catch((error: unknown) => { console.error('[route] could not put the system-proxy session on the system\'s proxy:', error) })
       }
       return systemSession
     }
@@ -103,7 +104,10 @@ export const routeSubsystem: Subsystem = {
     const siteSessions = createSiteSessions({
       controller: routes.controller,
       sessionFor: (partition) => session.fromPartition(partition) as SiteSession,
-      extend: async (target) => { await mirrorExtensions(target as unknown as Session, session.defaultSession) },
+      extend: async (target) => {
+        await mirrorExtensions(target as unknown as Session, session.defaultSession)
+        installExtensionRequestHandlers(target as unknown as Session)
+      },
       // The names the verifier answers for reach it on this machine; the proxy never sees them.
       bypass: () => BUILTIN_ADDRESSES.routedSuffixes().map((suffix) => `*.${suffix}`).join(';'),
       hold: (held, current) => {
@@ -128,7 +132,7 @@ export const routeSubsystem: Subsystem = {
     })
     setSiteRoutes({ profileFor: routes.hub.profileFor })
     // Sessions websites had of their own before the two profiles are cleared once; the person signs in again once.
-    void migrateLegacySites(routes.store, { clear: async (partition) => { await session.fromPartition(partition).clearData() } })
+    migrateLegacySites(routes.store, { clear: async (partition) => { await session.fromPartition(partition).clearData() } }).catch((error: unknown) => { console.error('[route] the migration to profiles failed:', error) })
     setSiteSessionEnsurer(siteSessions.ensure)
     // The shell moves a tab before it loads a website that has a session of its own; this stops a load the move missed from reaching it in the shared session, untunnelled.
     webRequestOwnerFor(session.defaultSession).onBeforeRequest(-2, { urls: ['http://*/*', 'https://*/*'], types: ['mainFrame'] }, () => true, (details, current) =>

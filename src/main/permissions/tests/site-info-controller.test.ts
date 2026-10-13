@@ -75,7 +75,7 @@ function fakeLoader (overrides: Partial<Loader> = {}): Loader {
 }
 
 describe('createSiteInfoController -- the route of a routed app', () => {
-  const routesWith = (state: string): SubsystemContext['routes'] => ({ hub: { state: () => state, isRouted: () => state !== 'off', unreadable: () => false, isEverywhere: () => false }, routeSwitch: { siteBlockedFor: () => undefined, siteNotice: () => 'tunnel' } }) as unknown as SubsystemContext['routes']
+  const routesWith = (state: string): SubsystemContext['routes'] => ({ hub: { state: () => state, isRouted: () => state !== 'off', unreadable: () => false, isEverywhere: () => false, profileFor: () => undefined }, routeSwitch: { siteBlockedFor: () => undefined, siteNotice: () => 'tunnel' } }) as unknown as SubsystemContext['routes']
 
   it('carries the state of the app\'s route, so the popover can say where its traffic goes and when the tunnel is not answering', async () => {
     for (const state of ['idle', 'ok', 'down', 'no-proxy']) {
@@ -418,7 +418,7 @@ describe('createSiteInfoController -- the tunnel switch of a website', () => {
   const SITE = 'https://news.example'
   function routesFor (options: { on?: boolean, blocked?: 'no-proxy' | 'local', notice?: 'tunnel' | 'direct' | null, unreadable?: boolean, everywhere?: boolean, setSite?: (origin: string, on: boolean) => Promise<void> } = {}): SubsystemContext['routes'] {
     return {
-      hub: { state: () => options.on === true ? 'ok' : 'off', isRouted: () => options.on === true, unreadable: () => options.unreadable === true, isEverywhere: () => options.everywhere === true },
+      hub: { state: () => options.on === true ? 'ok' : 'off', isRouted: () => options.on === true, unreadable: () => options.unreadable === true, isEverywhere: () => options.everywhere === true, profileFor: () => undefined },
       routeSwitch: {
         siteBlockedFor: () => options.blocked,
         siteNotice: () => options.notice === null ? undefined : options.notice ?? 'tunnel',

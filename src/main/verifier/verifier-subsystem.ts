@@ -37,7 +37,7 @@ import { chooseNameEvidence } from './name-evidence.js'
 import type { NameEvidence } from './name-evidence.js'
 import { checkpointProblem, lightClientView } from './status-view.js'
 import type { LightClientView } from './status-view.js'
-import { unproxiedGateways } from './proxy-check.js'
+import { ccipDirectFor, tunnelFront, unproxiedGatewaysFor } from './host-proxy.js'
 import { HostLifecycle } from './host-lifecycle.js'
 import { anyTabOnVerifiedOrigin } from './tab-on-verified-origin.js'
 import type { TabsOfWindow } from './tab-on-verified-origin.js'
@@ -49,7 +49,6 @@ import { IPFS_NODE_IDENTITY } from '../../protocols/ipfs-node/protocol.js'
 import { SWARM_NODE_IDENTITY } from '../../protocols/swarm-node/protocol.js'
 import type { NodeNotice } from '../../protocols/verifier-host/protocol.js'
 import type { RouteService } from '../route/route-service.js'
-import { SHARED_ORIGIN } from '../route/route-hub.js'
 
 /** Mounting may wait for the light client to sync, then resolve a name and follow its pointers. */
 const MOUNT_TIMEOUT_MS = 30_000
@@ -217,30 +216,6 @@ function chooseNow (): CheckpointChoice {
   return checkpoint
 }
 
-/** Empty under the test seam: a hermetic run has no real gateways to check
- * a proxy against, and the fallback would only ever add noise there. */
-async function unproxiedGatewaysFor (gateways: readonly string[], seamActive: boolean): Promise<string[]> {
-  if (seamActive) return []
-  return await unproxiedGateways(gateways, async (url) => await app.resolveProxy(url))
-}
-
-/**
- * Whether the default session has no proxy in front of it at all, checked
- * against a generic https URL rather than a real gateway: a CCIP-Read
- * destination is a name's own resolver contract's choice, not known until
- * long after the host has already started, so nothing narrower exists to
- * check yet. Reuses `unproxiedGateways`'s own timeout and fail-closed
- * (proxied) direction -- a check that cannot answer must never make
- * `guardedCcipRequest` go around a proxy that is actually there. `false`
- * (treated as proxied) under the test seam, same reasoning as
- * `unproxiedGatewaysFor`.
- */
-async function ccipDirectFor (seamActive: boolean): Promise<boolean> {
-  if (seamActive) return false
-  const unproxied = await unproxiedGateways(['https://example.com/'], async (url) => await app.resolveProxy(url))
-  return unproxied.length > 0
-}
-
 /** The Bee-API origins Swarm reads from: the node Orivon runs, unless a test build names its own. */
 function swarmEndpoints (seam: EthTestSeam | undefined): readonly string[] {
   return seam === undefined ? [swarmNodeEndpoint()] : seam.swarmEndpoints ?? []
@@ -257,21 +232,9 @@ function ipfsFromNode (seam: EthTestSeam | undefined): boolean {
   return seam === undefined && ipfsSourceChoice() === 'node'
 }
 
-/**
- * The tunnel's front the host fetches through while the whole browser is on the tunnel, once the requests made with no session
- * have been pointed at it (`app.setProxy`, which the host's checks of whether a proxy applies read); undefined otherwise.
- */
-async function tunnelFront (): Promise<NonNullable<HostConfig['front']> | undefined> {
-  const routes = routesOf()
-  if (routes === undefined || !routes.hub.isRouted(SHARED_ORIGIN)) return undefined
-  await routes.controller.settled()
-  const front = await routes.hub.front(SHARED_ORIGIN)
-  return { port: front.port, username: front.username, password: front.secret }
-}
-
 async function hostConfig (): Promise<HostConfig> {
   const seam = ethTestSeam()
-  const front = await tunnelFront()
+  const front = await tunnelFront(routesOf())
   const stored = verifierStore()
   let lightClient: Pick<HostConfig, 'lightClient' | 'lightClientOff'>
   if (lightClientSwitchedOff()) {

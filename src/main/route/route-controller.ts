@@ -326,7 +326,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
       shared.set(session, true)
       if (!hub.isRouted(SHARED_ORIGIN)) return
       // Stopped before anything can load in it, then pointed once the shared front runs (or claimed away meanwhile).
-      void confine(session)
+      confine(session).catch((error: unknown) => { console.error('[route] could not stop a new session:', error) })
       enqueue(SHARED_ORIGIN, async () => {
         if (claimed.has(session) || deps.ownProxy?.(session) === true) { shared.delete(session); return }
         await prepare(SHARED_ORIGIN, session)

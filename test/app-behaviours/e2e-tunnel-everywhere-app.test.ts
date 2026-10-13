@@ -148,7 +148,7 @@ it('[app:tunnel-everywhere-app-set-to-off-asks-the-system] an app switched off i
   await settings.locator(ROUTE_SWITCH).click()
   await settings.close()
   // The app's pages are reloaded when its route is switched.
-  expect(await waitFor(async () => (await tcp(NAME, decoy.port).catch(() => ({ ok: true, detail: '' }))).code !== undefined), 'the app\'s call no longer goes through the tunnel').toBe(true)
+  expect(await waitFor(async () => (await tcp(NAME, decoy.port).catch((): Attempt => ({ ok: true, detail: '' }))).code !== undefined), 'the app\'s call no longer goes through the tunnel').toBe(true)
 
   const byName = await tcp(NAME, decoy.port)
   expect(byName.ok, 'this computer cannot resolve the name').toBe(false)
@@ -166,6 +166,6 @@ it('[app:tunnel-everywhere-app-follows-the-default] switched on again, the app f
   const settings = await openApps()
   await settings.locator(ROUTE_SWITCH).click()
   await settings.close()
-  expect(await waitFor(async () => (await tcp(NAME, decoy.port).catch(() => ({ ok: false, detail: '' }))).ok), 'it reaches the real server through the tunnel again').toBe(true)
+  expect(await waitFor(async () => (await tcp(NAME, decoy.port).catch((): Attempt => ({ ok: false, detail: '' }))).ok), 'it reaches the real server through the tunnel again').toBe(true)
   expect(decoy.connections()).toBe(0)
 }, 3 * QA_TEST_TIMEOUT_MS)

@@ -58,8 +58,8 @@ export function createSiteSessions (deps: SiteSessionsDeps): SiteSessions {
         if (profile === undefined) throw new Error('a view was made in a website session this process did not name')
         deps.fit(session)
         await deps.controller.prepareSite(profileOrigin(profile), session, deps.bypass())
-        // The extensions load after the session is held on its route, never before: they make requests of their own.
-        await deps.extend?.(session)
+        // The extensions load after the session is held on its route, never before: they make requests of their own. Electron loads none in a session kept in memory only, which is where a plain-http website lives.
+        if (partition.startsWith('persist:')) await deps.extend?.(session)
       })().catch(async (error: unknown) => {
         console.error('[route] could not point a website\'s session at its route:', error)
         await deps.controller.confineSite(session)

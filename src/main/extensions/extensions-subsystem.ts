@@ -8,6 +8,7 @@
 
 import { join } from 'node:path'
 import { session, webContents } from 'electron'
+import type { Session } from 'electron'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { publishExtensions } from '../registry.js'
 import { readRegistry } from './registry-runner.js'
@@ -94,6 +95,17 @@ const refusingStore: StoreApi = {
   updateFromStore: async () => ({ installed: false, reason: PRIVATE_INSTALL_REASON })
 }
 
+let profileRequestHandlers: ((target: Session) => void) | undefined
+
+/**
+ * Puts the request rules the loaded extensions hold (`declarativeNetRequest`, and the webRequest-backed blockers that
+ * Orivon serves through them) on a profile session, so a blocker filters a website in a profile as it does in the default
+ * session. Nothing before the extensions subsystem has started.
+ */
+export function installExtensionRequestHandlers (target: Session): void {
+  profileRequestHandlers?.(target)
+}
+
 export const extensionsSubsystem: Subsystem = {
   name: 'extensions',
   afterReady: async (ctx: SubsystemContext) => {
@@ -120,6 +132,7 @@ export const extensionsSubsystem: Subsystem = {
       whenClosed: (tabId, run) => { webContents.fromId(tabId)?.once('destroyed', run) }
     })
     installDnrWebRequestHandlers(session.defaultSession, getDnrEngine, onRuleMatched, onTabNavigated)
+    profileRequestHandlers = (target) => { installDnrWebRequestHandlers(target, getDnrEngine, onRuleMatched, onTabNavigated) }
 
     const prefs = createExtensionPrefsStore(ctx.privateSession ? null : prefsFilePath(userDataPath))
     const manifests = createManifestApplier({ userDataPath, session: session.defaultSession, prefs, isOpen: extensionPageOpen, pages: extensionPagesAroundReload })
