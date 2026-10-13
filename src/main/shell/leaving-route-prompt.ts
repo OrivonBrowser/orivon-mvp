@@ -10,12 +10,13 @@ export type LeaveAnswer = 'proxy' | 'direct' | 'cancel'
 /** The question as the panel is given it; split out so the words are tested without a window. */
 export function leavingQuestion (leave: Leave): { message: string, detail: string, buttons: string[] } {
   const message = `${formatOriginForDisplay(leave.app)} wants to open ${formatOriginForDisplay(leave.origin)}.`
+  const own = leave.site === true ? 'site' : 'app'
   if (leave.kind === 'served') return { message, detail: 'Orivon loads this page itself, so it cannot go through your tunnel yet.', buttons: ['Directly', 'Cancel'] }
   return {
     message,
     detail: leave.kind === 'website'
-      ? 'Your tunnel is on for this app. Open the page through your tunnel, or directly?'
-      : 'Your tunnel is on for this app, and not for the app it wants to open. Open it through your tunnel, or directly?',
+      ? `Your tunnel is on for this ${own}. Open the page through your tunnel, or directly?`
+      : `Your tunnel is on for this ${own}, and not for the app it wants to open. Open it through your tunnel, or directly?`,
     buttons: [leave.kind === 'website' ? 'Through my tunnel' : `Use my tunnel for ${formatOriginForDisplay(leave.origin).replace(/^https:\/\//u, '')} too`, 'Directly', 'Cancel']
   }
 }

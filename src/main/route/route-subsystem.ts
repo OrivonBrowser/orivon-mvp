@@ -17,7 +17,11 @@ import { isPersistableOrigin } from '../../broker/policy/origin.js'
 import { setLeavingRoutes } from './leaving-routes.js'
 import { setLookupSessionSource, setRouteChallengeSource } from './lookup-session.js'
 import { servedOrigin } from './served-origin.js'
-import { createRouteSwitch } from './route-switch.js'
+import { mustLeaveSharedSession, setSiteRoutes, setSiteSessionEnsurer, siteOriginOf } from './site-routes.js'
+import { createSiteSessions } from './site-sessions.js'
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
+import { announceWebsiteSession } from '../sessions/website-sessions.js'
+import { webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import { createTemporaryRoutes, temporarySessionShowing } from './temporary-routes.js'
 import { createRouteService } from './route-service.js'
 import { RouteStore } from './route-store.js'
@@ -30,9 +34,15 @@ export const routeSubsystem: Subsystem = {
     const routes = createRouteService({
       store: new RouteStore(ctx.privateSession ? null : join(userData, 'routes.json')),
       savedProxy: readSettingBeforeReady(join(userData, 'settings.json'), 'network.route.proxy'),
-      // Asked only when the list of routed apps cannot be read; the broker exists by then.
+      // Asked only when the list of tunnel settings cannot be read; the broker exists by then.
       installed: () => [...new Set([...(ctx.broker?.app.registeredOriginsSync() ?? []), ...(ctx.broker?.app.persistedAppsSync().map((installed) => installed.origin) ?? [])])],
+      switchWorld: {
+        isPinned: isOriginPinnedSync,
+        isPersistable: isPersistableOrigin,
+        removeSiteStorage: async (partition) => { await siteSessions.removeStorage(partition) }
+      },
       electron: {
+        isApp: isOriginServedFromCacheSync,
         broker: () => ctx.broker,
         sessionFor: (partition) => session.fromPartition(partition),
         embedPartition: embedPartitionFor,
@@ -42,6 +52,32 @@ export const routeSubsystem: Subsystem = {
         onLogin: (listener) => { app.prependListener('login', (event, _contents, _details, info, callback) => { listener(event, info, callback) }) }
       }
     })
+    const siteSessions = createSiteSessions({
+      controller: routes.controller,
+      sessionFor: (partition) => session.fromPartition(partition),
+      // The names the verifier answers for reach it on this machine; the proxy never sees them.
+      bypass: () => BUILTIN_ADDRESSES.routedSuffixes().map((suffix) => `*.${suffix}`).join(';'),
+      hold: (held, current) => {
+        const handle = webRequestOwnerFor(held as Session).onBeforeRequest(-1, { urls: ['<all_urls>'] }, () => true, async (_details, soFar) => {
+          try {
+            await current()
+          } catch {
+            return { cancel: true }
+          }
+          return soFar
+        })
+        // Once the session is ready the handler is taken away; a session that could not be made ready keeps refusing everything until a later attempt works.
+        const watch = (): void => { current().then(() => { handle.remove() }, () => {}) }
+        watch()
+        return watch
+      },
+      fit: (target) => { announceWebsiteSession(target as Session) }
+    })
+    setSiteRoutes({ usesOwnSession: routes.hub.usesOwnSession })
+    setSiteSessionEnsurer(siteSessions.ensure)
+    // The shell moves a tab before it loads a website that has a session of its own; this stops a load the move missed from reaching it in the shared session, untunnelled.
+    webRequestOwnerFor(session.defaultSession).onBeforeRequest(-2, { urls: ['http://*/*', 'https://*/*'], types: ['mainFrame'] }, () => true, (details, current) =>
+      details.resourceType === 'mainFrame' && mustLeaveSharedSession(details.url, isOriginServedFromCacheSync) ? { cancel: true } : current)
     setReachRoute(routes.hub.routeFor)
     setRouteChallengeSource(routes.controller.challengeCredentials)
     beforeAppSessionServes(async (appSession, origin) => { await routes.controller.appSessionRegistered(origin, appSession) })
@@ -66,11 +102,15 @@ export const routeSubsystem: Subsystem = {
       world: {
         isRouted: routes.hub.isRouted,
         isInstalledApp: isOriginServedFromCacheSync,
-        routedOriginOf: (partition) => partition === undefined ? undefined : routes.store.origins().find((origin) => partitionFor(origin) === partition),
+        routedOriginOf: (partition) => {
+          if (partition === undefined) return undefined
+          const site = siteOriginOf(partition)
+          return site !== undefined ? (routes.hub.isRouted(site) ? site : undefined) : routes.store.origins().find((origin) => partitionFor(origin) === partition)
+        },
         servedOrigin
       },
       temporary,
-      routeSwitch: createRouteSwitch(routes, { isPinned: isOriginPinnedSync, isPersistable: isPersistableOrigin })
+      routeSwitch: routes.routeSwitch
     })
     publishRoutes(ctx, routes)
     app.once('will-quit', () => {

@@ -108,6 +108,22 @@ describe('clearing browsing data', () => {
     for (const local of [shared, own]) expect(local.clearData).toHaveBeenLastCalledWith({ dataTypes: ['cache'] })
   })
 
+  it('clears the session of its own each tunnelled website keeps, with the other website data and the cache, and not for history alone', async () => {
+    const { deps } = setup()
+    const site = { clearData: vi.fn(async () => {}), clearStorageData: vi.fn(async () => {}) }
+    const withSites = { ...deps, siteSessions: () => [site] }
+
+    await clearBrowsingData({ ...NOTHING, history: 'all' }, withSites)
+    expect(site.clearData).not.toHaveBeenCalled()
+
+    await clearBrowsingData({ ...NOTHING, siteData: true }, withSites)
+    expect((site.clearData.mock.calls as unknown[][])[0]?.[0]).toEqual({ dataTypes: expect.arrayContaining(['cookies', 'localStorage', 'indexedDB']) })
+    expect(site.clearStorageData).toHaveBeenCalledWith({ storages: ['cachestorage'] })
+
+    await clearBrowsingData({ ...NOTHING, cache: true }, withSites)
+    expect(site.clearData).toHaveBeenLastCalledWith({ dataTypes: ['cache'] })
+  })
+
   it('clears an app\'s storage only when asked for by name', async () => {
     const { deps, app, websites } = setup()
     await clearBrowsingData({ ...NOTHING, appData: true }, deps)

@@ -37,6 +37,7 @@ import type { DialogCaller } from '../consent/request-grant.js'
 import { isLocalFileKey } from '../../broker/policy/origin.js'
 import { defaultSessionGrantedOriginCsp, GRANTED_ORIGIN_CSP_FILTER } from './granted-origin-csp.js'
 import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
+import { forEachWebsiteSession } from '../sessions/website-sessions.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import { scoreLevelOverrideFor } from '../dev/score-levels.js'
 import { extensionNamesForOrigin } from '../extensions/site-reach-runner.js'
@@ -105,7 +106,8 @@ export const appInstallSubsystem: Subsystem = {
     // no per-origin registration needed on top of it (granted-origin-csp.ts's
     // own header explains the mechanism; RUN_LAST so Orivon's policy is
     // applied after anything else on this session).
-    webRequestOwnerFor(session.defaultSession).onHeadersReceived(RUN_LAST, GRANTED_ORIGIN_CSP_FILTER, () => true, defaultSessionGrantedOriginCsp(broker))
+    const grantedOriginCsp = defaultSessionGrantedOriginCsp(broker)
+    forEachWebsiteSession((target) => { webRequestOwnerFor(target).onHeadersReceived(RUN_LAST, GRANTED_ORIGIN_CSP_FILTER, () => true, grantedOriginCsp) })
     // ADR-0037: an L4 site's grants read without warnings on every one of
     // these -- the developer-only override is the only source of L4 today
     // (../dev/score-levels.ts), always named as an override, never as

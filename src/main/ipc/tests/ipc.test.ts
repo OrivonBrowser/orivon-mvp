@@ -34,6 +34,7 @@ function fakeSiteInfo (overrides: Partial<SiteInfoController> = {}): SiteInfoCon
     siteInfoFor: vi.fn(async () => { throw new Error('not stubbed') }),
     siteTrustFor: vi.fn(async () => null),
     storageDeclarationFor: vi.fn(async () => null),
+    setTunnel: vi.fn(async () => true),
     turnOn: vi.fn(async () => 'not-registered' as const),
     turnOff: vi.fn(async () => {}),
     revokePickedPath: vi.fn(async () => {}),

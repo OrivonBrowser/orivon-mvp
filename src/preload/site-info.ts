@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { SITE_INFO_COMMAND_CHANNEL } from '../main/channels.js'
-import type { ApplyResult, SiteDataSnapshot, SiteInfoCommand } from '../main/ipc/site-info-ipc.js'
+import type { ApplyResult, SiteDataSnapshot, SiteInfoCommand, TunnelResult } from '../main/ipc/site-info-ipc.js'
 import type { SiteInfo } from '../main/permissions/site-info.js'
 import type { SitePermissionsView } from '../main/site-settings/site-permissions-view.js'
 import type { SiteTrust } from '../main/browsing/site-trust.js'
@@ -55,6 +55,11 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
     applyUpdate: async (cid: string): Promise<ApplyOutcome> => {
       const result: unknown = await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'applyUpdate', cid } satisfies SiteInfoCommand)
       return (result ?? { ok: false, reason: 'no answer' }) as ApplyOutcome
+    },
+    /** The website's tunnel: on, or back to following the default. Main decides what it can do and answers the info after. */
+    setTunnel: async (on: boolean): Promise<TunnelResult | null> => {
+      const result: unknown = await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'setTunnel', on } satisfies SiteInfoCommand)
+      return (result ?? null) as TunnelResult | null
     },
     openHome: async (): Promise<void> => {
       await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'openHome' } satisfies SiteInfoCommand)

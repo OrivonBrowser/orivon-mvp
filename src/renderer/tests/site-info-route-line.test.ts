@@ -18,3 +18,17 @@ describe('the route line', () => {
     expect(routeLineWords('temporary')).toBe('This page goes through your tunnel, and nothing it stores is kept once its last tab is closed.')
   })
 })
+
+describe('the route line for a website', () => {
+  it('speaks of the site, not an app', () => {
+    expect(routeLineWords('ok', 'site')).toBe('This site\'s traffic goes through your tunnel.')
+    expect(routeLineWords('down', 'site')).toBe('Your tunnel is not answering, so this site\'s traffic is stopped.')
+    expect(routeLineWords('no-proxy', 'site')).toBe('No tunnel is set, so this site\'s traffic is stopped.')
+  })
+
+  it('says plainly that a Web3 name\'s own files stay outside the tunnel, and never that the whole site goes through it', () => {
+    const words = routeLineWords('ok', 'web3')
+    expect(words).toContain('outside the tunnel')
+    expect(words).not.toBe(routeLineWords('ok', 'site'))
+  })
+})
