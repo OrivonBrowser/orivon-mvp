@@ -8,17 +8,15 @@ import type { Session } from 'electron'
 import { beforeAppSessionServes } from '../../loader/electron/app-partitions.js'
 import { setReachRoute } from '../../loader/electron/reach-route.js'
 import { embedPartitionFor } from '../embed/embed-guard.js'
-import { pagesInPartitionOf } from '../app-setup/pages-in-partition.js'
 import { publishRoutes } from '../registry.js'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { readSettingBeforeReady } from '../settings/settings-file.js'
 import { isOriginPinnedSync, isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { isPersistableOrigin } from '../../broker/policy/origin.js'
 import { setLeavingRoutes } from './leaving-routes.js'
-import { setLookupSessionSource } from './lookup-session.js'
+import { setLookupSessionSource, setRouteChallengeSource } from './lookup-session.js'
 import { createRouteSwitch } from './route-switch.js'
 import { createTemporaryRoutes } from './temporary-routes.js'
-
 import { createRouteService } from './route-service.js'
 import { RouteStore } from './route-store.js'
 
@@ -30,6 +28,8 @@ export const routeSubsystem: Subsystem = {
     const routes = createRouteService({
       store: new RouteStore(ctx.privateSession ? null : join(userData, 'routes.json')),
       savedProxy: readSettingBeforeReady(join(userData, 'settings.json'), 'network.route.proxy'),
+      // Asked only when the list of routed apps cannot be read; the broker exists by then.
+      installed: () => [...new Set([...(ctx.broker?.app.registeredOriginsSync() ?? []), ...(ctx.broker?.app.persistedAppsSync().map((installed) => installed.origin) ?? [])])],
       electron: {
         broker: () => ctx.broker,
         sessionFor: (partition) => session.fromPartition(partition),
@@ -37,13 +37,13 @@ export const routeSubsystem: Subsystem = {
         allContents: () => webContents.getAllWebContents(),
         onContentsCreated: (listener) => { app.on('web-contents-created', (_event, contents) => { listener(contents) }) },
         // Ahead of the sheet that asks the person about a proxy's challenge, which must not see this one.
-        onLogin: (listener) => { app.prependListener('login', (event, _contents, _details, info, callback) => { listener(event, info, callback) }) },
-        reloadTabs: (origin) => { for (const contents of pagesInPartitionOf(origin)) if (!contents.isDestroyed()) contents.reload() }
+        onLogin: (listener) => { app.prependListener('login', (event, _contents, _details, info, callback) => { listener(event, info, callback) }) }
       }
     })
     setReachRoute(routes.hub.routeFor)
     // The sessions handed out are Electron's own (`sessionFor` above), so the cast only restores what the controller's narrow type hides.
     setLookupSessionSource(async (origin) => await routes.controller.fetchSessionFor(origin) as Session | undefined)
+    setRouteChallengeSource(routes.controller.challengeCredentials)
     beforeAppSessionServes(async (appSession, origin) => { await routes.controller.appSessionRegistered(origin, appSession) })
     const temporary = createTemporaryRoutes({
       controller: routes.controller,

@@ -58,6 +58,7 @@ import { LOCAL_FILES_PARTITION } from '../local-files/partition.js'
 import { siteSettingsControllerFor } from '../site-settings/site-settings-runner.js'
 import { createDeviceRows } from '../devices/hid-rows.js'
 import { forgetDevicesWhenGrantEnds } from '../devices/hid-grant-watch.js'
+import { forgetRoutesOfGoneApps } from '../route/forget-watch.js'
 import { isRegisteredAppOrigin } from '../site-settings/app-origin.js'
 import { isWebOrigin } from '../site-settings/site-settings-controller.js'
 import { sitesDomain } from '../site-settings/sites-domain.js'
@@ -105,7 +106,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   if (routes === undefined) throw new Error('startInternalPages requires ctx.routes -- check routeSubsystem\'s position in subsystems.ts')
   // An app can be routed once there is a proxy and its files are held here: its updates are not checked while routed, which a first visit has no pin to skip.
   const routeSwitch = createRouteSwitch(routes, { isPinned: isOriginPinnedSync, isPersistable: isPersistableOrigin })
-  const appRoutes: AppRoutes = { stateOf: (origin) => routes.hub.state(origin), blockedFor: routeSwitch.blockedFor, set: routeSwitch.set }
+  const appRoutes: AppRoutes = { stateOf: (origin) => routes.hub.state(origin), unreadable: () => routes.hub.unreadable(), blockedFor: routeSwitch.blockedFor, set: routeSwitch.set }
   const tasksEnv: TasksEnv = {
     windows: services.windows,
     extensionName: (id) => extensions.list().find((entry) => entry.id === id)?.name
@@ -249,6 +250,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   })
   if (ctx.broker !== undefined) forgetDevicesWhenGrantEnds(ctx.broker, services.hidDevices)
   if (ctx.broker !== undefined) forgetChoicesWhenGrantEnds(ctx.broker, services.schemeChoices)
+  if (ctx.broker !== undefined) forgetRoutesOfGoneApps(ctx.broker, routes)
   // The app a kind of link opens in is part of its card in Apps.
   services.schemeChoices.onChange(() => { services.internalPages.publish('apps.changed', undefined, ['settings']) })
   services.passwords.onChange(() => { services.internalPages.publish('passwords.changed', undefined, ['settings']) })

@@ -26,6 +26,8 @@ interface AppsRequest {
 export interface AppRoutes {
   /** What the app's route is doing: `off` for an app that is not routed. */
   readonly stateOf: (origin: string) => RouteState
+  /** Whether the list of routed apps could not be read, so every app is routed (or stopped) until it is mended. */
+  readonly unreadable: () => boolean
   /** Why the switch cannot be turned on now (it can always be turned off), or undefined when it can. */
   readonly blockedFor: (origin: string) => 'no-proxy' | 'not-cached' | undefined
   /** Resolves once the app's sessions follow the switch, so the card is not told it is on while they are still direct. */
@@ -57,7 +59,7 @@ export function appsDomain (deps: AppsDeps): InternalDomain {
       switch (request.type) {
         case 'list': {
           const apps = await deps.permissions.list()
-          const withStorage = await Promise.all(apps.map(async (app) => ({ ...app, deviceRows: deps.devices.rows(app.origin), linkSchemes: deps.links.schemesOf(app.origin), route: { state: deps.routes.stateOf(app.origin), blocked: deps.routes.blockedFor(app.origin) }, storage: await orivonStorageFor(deps.userDataPath, app.origin, undefined, undefined) })))
+          const withStorage = await Promise.all(apps.map(async (app) => ({ ...app, deviceRows: deps.devices.rows(app.origin), linkSchemes: deps.links.schemesOf(app.origin), route: { state: deps.routes.stateOf(app.origin), blocked: deps.routes.blockedFor(app.origin), unreadable: deps.routes.unreadable() }, storage: await orivonStorageFor(deps.userDataPath, app.origin, undefined, undefined) })))
           return { apps: withStorage, identity: await deps.identity() }
         }
         case 'revoke': {
@@ -87,7 +89,13 @@ export function appsDomain (deps: AppsDeps): InternalDomain {
           if (origin === null || typeof request.routed !== 'boolean') return { ok: false }
           // Turning a route on needs a proxy and an app held in the cache; turning it off never waits on either.
           if (request.routed && deps.routes.blockedFor(origin) !== undefined) return { ok: false }
-          await deps.routes.set(origin, request.routed)
+          // A choice that could not be kept is reported, never shown as made.
+          try {
+            await deps.routes.set(origin, request.routed)
+          } catch (error) {
+            console.error('[apps] a route could not be switched:', error)
+            return { ok: false }
+          }
           return { ok: true }
         }
         default:

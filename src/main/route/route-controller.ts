@@ -9,7 +9,7 @@ import type { RouteChangeCause, RouteHub } from './route-hub.js'
 
 export type RouteSession = Pick<Session, 'setProxy' | 'closeAllConnections'>
 /** `session` is compared by identity with the sessions prepared here, so it is only an object. */
-export type RouteContents = Pick<WebContents, 'isDestroyed' | 'setWebRTCIPHandlingPolicy'> & { readonly session: object }
+export type RouteContents = Pick<WebContents, 'isDestroyed' | 'setWebRTCIPHandlingPolicy' | 'reload' | 'getType'> & { readonly session: object }
 
 /** The `login` event's parts that matter here, so a fake can drive it. */
 export type RouteLoginListener = (
@@ -28,8 +28,8 @@ export interface RouteControllerDeps {
   readonly onContentsCreated: (listener: (contents: RouteContents) => void) => void
   /** The listener must run before the sheet that asks the person about a proxy's challenge. */
   readonly onLogin: (listener: RouteLoginListener) => void
-  /** Reloads the app's own tabs. */
-  readonly reloadTabs: (origin: string) => void
+  /** How long one call into a session or the broker may take before the switch goes on without it. */
+  readonly callTimeoutMs?: number
 }
 
 export interface PrepareOptions {
@@ -38,12 +38,16 @@ export interface PrepareOptions {
 }
 
 export interface RouteController {
+  /** What the front a proxy challenge came from expects, or undefined when it came from anything else. */
+  challengeCredentials: (info: { readonly isProxy: boolean, readonly host: string, readonly port: number }) => { readonly username: string, readonly password: string } | undefined
   /** Points `session` at the app's front when the app is routed (waiting for it), and back at the system's proxy when it no longer is. */
   prepare: (origin: string, session: RouteSession, options?: PrepareOptions) => Promise<void>
   /** An app's served session has appeared: prepares it and the app's embed session. */
   appSessionRegistered: (origin: string, session: RouteSession) => Promise<void>
   /** A session in memory pointed at the app's front, for the lookups made about a routed app; undefined when the app is not routed. */
   fetchSessionFor: (origin: string) => Promise<RouteSession | undefined>
+  /** The app is gone (forgotten): its sessions are no longer followed, and its lookup session is made anew if it is routed again. Call after its route was switched off. */
+  forget: (origin: string) => void
   /** Points a session that belongs to no app at a front of its own, and puts the WebRTC policy on every web contents that opens in it. */
   prepareTemporary: (session: RouteSession, front: TemporaryFront) => Promise<void>
   /** The session is gone: its front's challenge is no longer answered. */
@@ -62,14 +66,22 @@ export interface TemporaryFront {
 const CONFINED = 'disable_non_proxied_udp'
 /** The belt a web context already carries against WebRTC: a port nothing is expected to answer on. */
 const UNREACHABLE_PROXY = 'http://127.0.0.1:9'
-/** A session call that never returns would hold every later switch behind it. */
+/** A call that never returns would hold the app's later switches behind it. */
 const SESSION_CALL_MS = 10_000
+/**
+ * What Chromium may reach without the proxy: this machine and nothing else. `<-loopback>` takes away the bypass it
+ * applies to its own accord, which covers link-local addresses (169.254.0.0/16, fe80::/10) as well as loopback, and
+ * the rest puts back only what the app's own loopback pages (a served port, a `*.localhost` name) need.
+ */
+const ROUTED_BYPASS = '<-loopback>;localhost;*.localhost;127.0.0.1/8;[::1]'
+/** The rule that reaches nothing bypasses nothing: the implicit bypass of loopback and link-local is cancelled too. */
+const CONFINED_BYPASS = '<-loopback>'
 /** `pointedAt`'s value for a session held on the unreachable proxy: no front has this port. */
 const CONFINED_FRONT = 0
 
-async function within<T> (work: Promise<T>): Promise<T> {
+async function within<T> (work: Promise<T>, ms = SESSION_CALL_MS): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
-  const late = new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { reject(new Error('a session call did not finish')) }, SESSION_CALL_MS) })
+  const late = new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { reject(new Error('a call did not finish')) }, ms) })
   try {
     return await Promise.race([work, late])
   } finally {
@@ -79,6 +91,7 @@ async function within<T> (work: Promise<T>): Promise<T> {
 
 export function createRouteController (deps: RouteControllerDeps): RouteController {
   const { hub } = deps
+  const callMs = deps.callTimeoutMs ?? SESSION_CALL_MS
   /** Every session prepared for an app, and whether its pages are the controller's to confine. */
   const known = new Map<string, Map<RouteSession, boolean>>()
   /** The front each session points at now. */
@@ -86,19 +99,26 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
   /** Web contents given the policy here, which are the only ones restored. */
   const confined = new WeakSet<RouteContents>()
   const fetchSessions = new Map<string, RouteSession>()
-  /** The sessions of temporary routed tabs and the credentials their fronts expect, by port. */
+  /** The sessions of temporary routed tabs, and the credentials their fronts expect, by port. */
   const temporarySessions = new Set<object>()
   const temporaryFronts = new Map<number, TemporaryFront>()
-  let queue: Promise<void> = Promise.resolve()
+  /** One app's switches run in order, and never behind another app's. */
+  const queues = new Map<string, Promise<void>>()
 
   const sessionsOf = (origin: string): Map<RouteSession, boolean> => {
     let sessions = known.get(origin)
     if (sessions === undefined) { sessions = new Map(); known.set(origin, sessions) }
     return sessions
   }
-  const managedContents = (origin: string): RouteContents[] => {
-    const managed = [...sessionsOf(origin)].filter(([, webrtc]) => webrtc).map(([session]) => session)
-    return deps.allContents().filter((contents) => !contents.isDestroyed() && managed.some((session) => session === contents.session))
+  const contentsIn = (origin: string, onlyManaged: boolean): RouteContents[] => {
+    const wanted = [...sessionsOf(origin)].filter(([, webrtc]) => webrtc || !onlyManaged).map(([session]) => session)
+    return deps.allContents().filter((contents) => !contents.isDestroyed() && wanted.some((session) => session === contents.session))
+  }
+  const enqueue = (origin: string, work: () => Promise<void>): void => {
+    const next: Promise<void> = (queues.get(origin) ?? Promise.resolve()).then(work)
+      .catch((error: unknown) => { console.error('[route] could not apply a change of route:', error) })
+      .finally(() => { if (queues.get(origin) === next) queues.delete(origin) })
+    queues.set(origin, next)
   }
 
   /** One change to a session at a time: two callers must not both see it unpointed and both point it. */
@@ -113,7 +133,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
 
   async function pointAt (session: RouteSession, port: number): Promise<void> {
     if (pointedAt.get(session) === port) return
-    await within(session.setProxy({ mode: 'fixed_servers', proxyRules: `http://127.0.0.1:${String(port)}` }))
+    await within(session.setProxy({ mode: 'fixed_servers', proxyRules: `http://127.0.0.1:${String(port)}`, proxyBypassRules: ROUTED_BYPASS }), callMs)
     pointedAt.set(session, port)
   }
 
@@ -121,8 +141,9 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     if (hub.isRouted(origin)) {
       await pointAt(session, (await hub.front(origin)).port)
     } else if (pointedAt.has(session)) {
+      // Forgotten only once it is done: a session that could not be put back stays marked, so a later pass tries again.
+      await within(session.setProxy({ mode: 'system' }), callMs)
       pointedAt.delete(session)
-      await within(session.setProxy({ mode: 'system' }))
     }
   }
 
@@ -131,9 +152,20 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     // Recorded, so that switching the route off puts the session back on the system's proxy.
     pointedAt.set(session, CONFINED_FRONT)
     try {
-      await within(session.setProxy({ mode: 'fixed_servers', proxyRules: UNREACHABLE_PROXY }))
+      await within(session.setProxy({ mode: 'fixed_servers', proxyRules: UNREACHABLE_PROXY, proxyBypassRules: CONFINED_BYPASS }), callMs)
     } catch (error) {
       console.error('[route] could not stop a session that could not be routed:', error)
+    }
+  }
+
+  /** Points `session`, once more when putting it back on the system's proxy failed: a session left on a stopped front fails everything. */
+  async function pointWithRetry (origin: string, session: RouteSession, webrtc: boolean, routed: boolean): Promise<void> {
+    try {
+      await prepare(origin, session, { webrtc })
+    } catch (error) {
+      if (routed) throw error
+      console.error('[route] could not put a session back on the system\'s proxy, trying again:', error)
+      await prepare(origin, session, { webrtc })
     }
   }
 
@@ -141,14 +173,14 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     // Asking for a session creates it on disk, so the embed partition is touched only for an app that is routed.
     if (routed) sessionsOf(origin).set(deps.sessionFor(deps.embedPartition(origin)), true)
     const sessions = [...sessionsOf(origin)]
-    const pointed = await Promise.allSettled(sessions.map(async ([session, webrtc]) => { await prepare(origin, session, { webrtc }) }))
+    const pointed = await Promise.allSettled(sessions.map(async ([session, webrtc]) => { await pointWithRetry(origin, session, webrtc, routed) }))
     for (const [index, outcome] of pointed.entries()) {
       if (outcome.status === 'fulfilled') continue
       console.error('[route] could not point a session of the app at its route:', outcome.reason)
       const failed = sessions[index]?.[0]
       if (routed && failed !== undefined) await confine(failed)
     }
-    for (const contents of managedContents(origin)) {
+    for (const contents of contentsIn(origin, true)) {
       if (routed) {
         confined.add(contents)
         contents.setWebRTCIPHandlingPolicy(CONFINED)
@@ -157,18 +189,20 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
         contents.setWebRTCIPHandlingPolicy('default')
       }
     }
-    // What was opened before the switch is on the old route (or none), whatever the proxy now says.
+    // What was opened before the switch is on the old route (or none), whatever the proxy now says. The sessions are
+    // already on the new one, so nothing new opens on the old while the broker's handles are closed.
+    await Promise.allSettled(sessions.map(async ([session]) => { await within(session.closeAllConnections(), callMs) }))
     try {
-      await deps.broker()?.dropOrigin(origin)
+      await within(Promise.resolve(deps.broker()?.dropOrigin(origin)), callMs)
     } catch (error) {
       console.error('[route] could not close the app\'s open handles:', error)
     }
-    await Promise.allSettled(sessions.map(async ([session]) => { await within(session.closeAllConnections()) }))
-    if (cause === 'switch') deps.reloadTabs(origin)
+    // A page that held a peer connection, a worker or an embed from before the switch starts again on the new route.
+    if (cause === 'switch') for (const contents of contentsIn(origin, false)) if (contents.getType() !== 'remote') contents.reload()
   }
 
   hub.onChange((origin, routed, cause) => {
-    queue = queue.then(async () => { await apply(origin, routed, cause) }).catch((error: unknown) => { console.error('[route] could not apply a change of route:', error) })
+    enqueue(origin, async () => { await apply(origin, routed, cause) })
   })
 
   deps.onContentsCreated((contents) => {
@@ -184,20 +218,31 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     }
   })
 
+  const challengeCredentials: RouteController['challengeCredentials'] = (info) => {
+    if (!info.isProxy || info.host !== '127.0.0.1') return undefined
+    const temporary = temporaryFronts.get(info.port)
+    return temporary === undefined ? hub.credentialsForPort(info.port) : { username: temporary.username, password: temporary.secret }
+  }
+
   deps.onLogin((event, info, callback) => {
-    if (!info.isProxy || info.host !== '127.0.0.1') return
-    const front = temporaryFronts.get(info.port)
-    const credentials = front === undefined ? hub.credentialsForPort(info.port) : { username: front.username, password: front.secret }
+    const credentials = challengeCredentials(info)
     if (credentials === undefined) return
     event.preventDefault()
     callback(credentials.username, credentials.password)
   })
 
   return {
+    challengeCredentials,
     prepare,
     appSessionRegistered: async (origin, session) => {
-      await prepare(origin, session)
-      if (hub.isRouted(origin)) await prepare(origin, deps.sessionFor(deps.embedPartition(origin)))
+      try {
+        await prepare(origin, session)
+        if (hub.isRouted(origin)) await prepare(origin, deps.sessionFor(deps.embedPartition(origin)))
+      } catch (error) {
+        // The loader stops the app on this rejection; what the session holds meanwhile reaches nothing.
+        if (hub.isRouted(origin)) await confine(session)
+        throw error
+      }
     },
     fetchSessionFor: async (origin) => {
       if (!hub.isRouted(origin)) return undefined
@@ -208,6 +253,18 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
       }
       await prepare(origin, session, { webrtc: false })
       return session
+    },
+    forget: (origin) => {
+      enqueue(origin, async () => {
+        const sessions = sessionsOf(origin)
+        // A session still marked as pointed at a front is put back once more, and let go only when it is.
+        for (const session of [...sessions.keys()]) {
+          if (pointedAt.has(session)) await prepare(origin, session).catch((error: unknown) => { console.error('[route] a forgotten app\'s session is still on its front:', error) })
+          if (!pointedAt.has(session)) sessions.delete(session)
+        }
+        if (sessions.size === 0) known.delete(origin)
+        fetchSessions.delete(origin)
+      })
     },
     prepareTemporary: async (session, front) => {
       // Registered before the session is pointed, so a web contents made in it meanwhile already has the policy.
@@ -222,11 +279,11 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     },
     settled: async () => {
       await hub.settled()
-      let seen: Promise<void>
+      let seen: Array<Promise<void>>
       do {
-        seen = queue
-        await seen
-      } while (seen !== queue)
+        seen = [...queues.values()]
+        await Promise.all(seen)
+      } while ([...queues.values()].some((one) => !seen.includes(one)))
     }
   }
 }
