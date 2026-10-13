@@ -179,9 +179,10 @@ forgotten.
 - [ ] **The Microsoft Store package submitted** ([`packaging.md`](packaging.md) section The Microsoft Store package):
       once the release's workflow run is green, download its `store-msix` artifact (the run's page lists it; it is
       kept 30 days) and submit it in Partner Center. The first submission is made by hand, in this order:
-      1. Reserve the name, then copy the three values of **Product identity** into the `appx` block of
-         `electron-builder.yml` (identityName, publisher, publisherDisplayName), merge, and build the package again.
-         The Store refuses a package whose identity differs.
+      1. The product is an **MSIX or PWA app** (an "EXE or MSI app" product asks for installer switches and a
+         certificate-signed installer instead). Its **Product identity** values match the `appx` block of
+         `electron-builder.yml` (identityName, publisher, publisherDisplayName); the Store refuses a package whose
+         identity differs.
       2. Upload the package in the submission's **Packages** step.
       3. **Privacy policy URL:** the GitHub address of [`docs/privacy/notice.md`](../privacy/notice.md).
       4. **Restricted capability `runFullTrust`:** a Win32 app needs it, and Electron cannot run without it. Say so:
