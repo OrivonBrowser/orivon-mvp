@@ -29,7 +29,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - A routed app opening a website now asks first: through the proxy in a throwaway tab, directly, or not at all.
 - Pre-release security review: scanners triaged, four code reviews; fixed proxy bypass on app loads, download retry session, extension pattern freeze.
 - Orivon also ships as a Microsoft Store package, signed by Microsoft, so Store installs show no SmartScreen warning; no certificate bought.
-- Nym mixnet ships inside Orivon as the default tunnel for installed apps: one mixnet tunnel per app, nothing to install; your own SOCKS5 stays a choice.
+- Nym mixnet ships inside Orivon as the default tunnel for installed apps: one tunnel per app, nothing to install; your own SOCKS5 stays a choice.
 
 ### In my head
 
