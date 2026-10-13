@@ -105,6 +105,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Orivon's own IPFS and Swarm nodes are published on IPFS: new builds fetch them, so IPFS reads from your computer and Swarm switches on.
 - Installed apps can send all their traffic through a SOCKS5 proxy like Tor, per app; what it cannot carry is refused, never sent direct.
 - A routed app opening a website now asks first: through the proxy in a throwaway tab, directly, or not at all.
+- Pre-release security review: scanners triaged, four code reviews; fixed proxy bypass on app loads, download retry session, extension pattern freeze.
 
 ### In my head
 
