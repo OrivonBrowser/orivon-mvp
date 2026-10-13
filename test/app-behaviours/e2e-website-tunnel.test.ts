@@ -183,6 +183,7 @@ it('[app:tunnelled-website-gets-its-own-storage] the key and the popover say the
   expect(await popover.locator('.route-line').last().textContent()).toBe('This site\'s traffic goes through your tunnel.')
   await shoot(app, chrome, popover, 'website-tunnel-on')
   await closePopover()
+  await shoot(app, chrome, chrome, 'website-tunnel-key')
 }, 3 * QA_TEST_TIMEOUT_MS)
 
 it('[app:tunnelled-website-gets-its-own-storage] Settings lists the site, and removing its separate storage clears its session and nothing else', async () => {
@@ -193,6 +194,7 @@ it('[app:tunnelled-website-gets-its-own-storage] Settings lists the site, and re
   const row = settings.locator('#row-route-sites .tunnel-list-row')
   expect(await row.locator('.tunnel-list-origin').textContent()).toBe(siteOrigin())
   expect(await row.locator('.muted').textContent()).toBe('On: this site\'s traffic goes through your tunnel.')
+  await row.scrollIntoViewIfNeeded()
   await shoot(app, chrome, settings, 'website-tunnel-settings')
 
   await row.locator('button', { hasText: 'Remove its separate storage' }).click()
