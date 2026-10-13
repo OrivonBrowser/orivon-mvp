@@ -1,3 +1,4 @@
+import { NYM_TARGET } from '../../route/nym-provider.js'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -75,13 +76,20 @@ function fakeLoader (overrides: Partial<Loader> = {}): Loader {
 }
 
 describe('createSiteInfoController -- the route of a routed app', () => {
-  const routesWith = (state: string): SubsystemContext['routes'] => ({ hub: { state: () => state } }) as unknown as SubsystemContext['routes']
+  const routesWith = (state: string, proxy: unknown = { host: '127.0.0.1', port: 9050 }): SubsystemContext['routes'] => ({ hub: { state: () => state }, proxy: () => proxy, nym: { state: () => ({ state: 'connecting' }) } }) as unknown as SubsystemContext['routes']
 
   it('carries the state of the app\'s route, so the popover can say where its traffic goes and when the tunnel is not answering', async () => {
     for (const state of ['idle', 'ok', 'down', 'no-proxy']) {
       const ctx = { ...ctxWith(createBroker(baseDeps())), routes: routesWith(state) } as unknown as SubsystemContext
       expect((await createSiteInfoController(ctx, NO_TRUST).siteInfoFor(OTHER)).route, state).toBe(state)
     }
+  })
+
+  it('carries what Nym is doing when the app leaves through Nym, and not when it leaves through an address', async () => {
+    const onNym = { ...ctxWith(createBroker(baseDeps())), routes: routesWith('ok', NYM_TARGET) } as unknown as SubsystemContext
+    expect((await createSiteInfoController(onNym, NO_TRUST).siteInfoFor(OTHER)).nym).toEqual({ state: 'connecting' })
+    const onAddress = { ...ctxWith(createBroker(baseDeps())), routes: routesWith('ok') } as unknown as SubsystemContext
+    expect('nym' in await createSiteInfoController(onAddress, NO_TRUST).siteInfoFor(OTHER)).toBe(false)
   })
 
   it('carries nothing for an app that is not routed', async () => {

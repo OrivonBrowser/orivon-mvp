@@ -138,7 +138,7 @@ export function renderMainPage (
     }
   }
   container.append(header)
-  if (info.route !== undefined) container.append(renderRouteLine(info.route))
+  if (info.route !== undefined) container.append(renderRouteLine(info.route, info.nym))
   if (info.update !== undefined) container.append(renderUpdateCard(info.update, updateFailure, { onApply: callbacks.onApplyUpdate }))
 
   if (isFile) {

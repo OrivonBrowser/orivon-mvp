@@ -5,6 +5,7 @@
 // single god-object covering both the all-sites list and the per-site
 // popover (code-guidelines.md Rule 2).
 
+import { isNymTarget } from '../route/nym-provider.js'
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import { isLocalFileKey, isolationKeyFromUrl, originFromUrl } from '../../broker/policy/origin.js'
 import type { SubsystemContext } from '../registry.js'
@@ -108,7 +109,9 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     const info = await builtSiteInfoFor(url)
     const update = updateFor(info.origin)
     const route = ctx.routes?.hub.state(info.origin)
-    return { ...info, ...(update === undefined ? {} : { update }), ...(route === undefined || route === 'off' ? {} : { route }) }
+    const proxy = ctx.routes?.proxy()
+    const nym = route === undefined || route === 'off' || proxy === undefined || !isNymTarget(proxy) ? undefined : ctx.routes?.nym.state()
+    return { ...info, ...(update === undefined ? {} : { update }), ...(route === undefined || route === 'off' ? {} : { route }), ...(nym === undefined ? {} : { nym }) }
   }
 
   async function builtSiteInfoFor (url: string): Promise<SiteInfo> {

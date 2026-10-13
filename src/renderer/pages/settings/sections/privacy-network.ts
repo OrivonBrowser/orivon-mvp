@@ -1,4 +1,7 @@
 import type { Row } from '../model.js'
+import { h } from '../../shared/dom.js'
+import { nymReason, nymStatusWords } from '../../../nym-words.js'
+import type { RoutePart } from '../route-part.js'
 import { renderProxyTest } from './route-test-row.js'
 
 const GROUP = 'Connections and tracking'
@@ -75,18 +78,42 @@ export const privacyNetworkRows: readonly Row[] = [
     }
   },
   {
-    id: 'route-proxy',
+    id: 'route-kind',
     label: 'Tunnel for apps',
-    help: 'Your own SOCKS5 address, such as Tor\'s 127.0.0.1:9050. An installed app can send all of its network traffic through the tunnel. You turn it on for each app under Apps; until then nothing goes to it. Websites do not use it.',
-    keywords: ['tunnel', 'proxy', 'socks', 'socks5', 'tor', 'onion', 'route', 'vpn', 'anonymous', 'network', 'apps', 'host', 'port'],
+    help: 'Where the apps you send through a tunnel leave from. Nym is a mixnet built into Orivon: each app gets a tunnel of its own, and the sites it reaches see an exit address, not this computer. Or use your own SOCKS5 address, such as Tor\'s. You turn the tunnel on for each app under Apps; until then nothing goes through it. Websites do not use it.',
+    keywords: ['tunnel', 'proxy', 'socks', 'socks5', 'tor', 'onion', 'route', 'vpn', 'anonymous', 'network', 'apps', 'nym', 'mixnet', 'built in'],
     group: GROUP,
+    control: { type: 'choice', key: 'network.route.kind' }
+  },
+  {
+    id: 'route-nym-status',
+    label: 'Nym',
+    help: 'Starts when an app that uses it makes its first connection, and stops some minutes after the last one. Nym\'s gateways see this computer\'s address; the sites an app reaches do not.',
+    keywords: ['nym', 'mixnet', 'tunnel', 'status', 'gateway'],
+    group: GROUP,
+    visible: (state) => state.value('network.route.kind') !== 'socks5',
+    control: { type: 'info', text: (state) => nymStatusWords(state.part<RoutePart>('route').nym) },
+    below: (state) => {
+      const reason = nymReason(state.part<RoutePart>('route').nym)
+      return reason === undefined || reason === '' ? null : h('p', { className: 'muted', textContent: reason })
+    }
+  },
+  {
+    id: 'route-proxy',
+    label: 'SOCKS5 address',
+    help: 'Your own SOCKS5 server, such as Tor\'s 127.0.0.1:9050. Each app signs in with a user name of its own, so a server that separates circuits by it keeps the apps apart.',
+    keywords: ['tunnel', 'proxy', 'socks', 'socks5', 'tor', 'onion', 'route', 'anonymous', 'network', 'apps', 'host', 'port', 'address'],
+    group: GROUP,
+    visible: (state) => state.value('network.route.kind') === 'socks5',
     control: { type: 'text', key: 'network.route.proxy', placeholder: '127.0.0.1:9050', problem: 'Enter an address as host:port, like 127.0.0.1:9050' }
   },
   {
     id: 'route-proxy-test',
     label: 'Test the tunnel',
-    help: 'Checks that a SOCKS5 server answers at that address. It opens no connection through it.',
-    keywords: ['tunnel', 'proxy', 'socks', 'tor', 'test', 'check', 'route'],
+    helpFor: (state) => state.value('network.route.kind') === 'socks5'
+      ? 'Checks that a SOCKS5 server answers at that address. It opens no connection through it.'
+      : 'Brings Nym up, looks a name up through it and says how long that took.',
+    keywords: ['tunnel', 'proxy', 'socks', 'tor', 'test', 'check', 'route', 'nym'],
     group: GROUP,
     control: { type: 'custom', render: renderProxyTest }
   }

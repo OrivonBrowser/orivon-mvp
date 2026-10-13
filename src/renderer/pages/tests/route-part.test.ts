@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { OrivonInternal } from '../shared/bridge.js'
-import { proxyTestWords, resultOf, RoutePart } from '../settings/route-part.js'
+import { nymStateOf, proxyTestWords, resultOf, RoutePart } from '../settings/route-part.js'
 
 function part (reply: unknown | (() => Promise<unknown>)): { part: RoutePart, request: ReturnType<typeof vi.fn>, notify: ReturnType<typeof vi.fn> } {
   const request = vi.fn(async () => typeof reply === 'function' ? await (reply as () => Promise<unknown>)() : reply)
@@ -15,7 +15,7 @@ describe('RoutePart', () => {
     await route.test('127.0.0.1:9050')
 
     expect(request).toHaveBeenCalledWith('route', { type: 'test' })
-    expect(route.last).toEqual({ address: '127.0.0.1:9050', result: { ok: true, authentication: 'none' } })
+    expect(route.last).toEqual({ subject: '127.0.0.1:9050', result: { ok: true, authentication: 'none' } })
     expect(route.busy).toBe(false)
     expect(notify).toHaveBeenCalledTimes(2)
   })
@@ -52,5 +52,27 @@ describe('proxyTestWords', () => {
     for (const reason of ['no-proxy', 'unreachable', 'silent', 'not-socks5', 'refused'] as const) {
       expect(proxyTestWords({ ok: false, reason }).length, reason).toBeGreaterThan(10)
     }
+  })
+})
+
+describe('Nym in the tunnel part', () => {
+  it('reads a Nym test answer, and a reason it does not know as a connection that failed', () => {
+    expect(resultOf({ nym: true, ok: true, ms: 4200 })).toEqual({ nym: true, ok: true, ms: 4200 })
+    expect(resultOf({ nym: true, ok: false, reason: 'unavailable', detail: 'not in this build' })).toEqual({ nym: true, ok: false, reason: 'unavailable', detail: 'not in this build' })
+    expect(resultOf({ nym: true, ok: false, reason: 'because' })).toEqual({ nym: true, ok: false, reason: 'failed', detail: '' })
+    expect(resultOf({ nym: true, ok: true, ms: 'slow' })).toEqual({ nym: true, ok: false, reason: 'failed', detail: '' })
+  })
+
+  it('loads what Nym is doing, follows main\'s pushes, and reads anything else as not started', async () => {
+    const { part: route, request, notify } = part({ nym: { state: 'connecting' } })
+    await route.load()
+    expect(request).toHaveBeenCalledWith('route', { type: 'status' })
+    expect(route.nym).toEqual({ state: 'connecting' })
+    expect(route.handle('route.changed', { nym: { state: 'unavailable', cause: 'not-in-build', reason: 'missing' } })).toBe(true)
+    expect(route.nym).toEqual({ state: 'unavailable', cause: 'not-in-build', reason: 'missing' })
+    expect(notify).toHaveBeenCalledTimes(1)
+    expect(route.handle('apps.changed', undefined)).toBe(false)
+    expect(nymStateOf({ state: 'sleepy' })).toEqual({ state: 'off' })
+    expect(nymStateOf(null)).toEqual({ state: 'off' })
   })
 })

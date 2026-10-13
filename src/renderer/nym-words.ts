@@ -1,0 +1,43 @@
+// What the person is told about the Nym tunnel, in one place for the Settings page and the site-info popover. Composed
+// here from the state main reports, never from anything an app wrote.
+
+import type { NymState, NymTestResult } from '../main/route/nym-status.js'
+
+/** The status line: what Nym is doing now. */
+export function nymStatusWords (state: NymState): string {
+  switch (state.state) {
+    case 'off':
+    case 'idle': return 'Nym starts when an app that uses it makes a connection.'
+    case 'connecting': return 'Connecting to Nym…'
+    case 'ready': return 'Nym tunnel ready'
+    case 'failed': return 'Nym is not answering'
+    case 'unavailable':
+      if (state.cause === 'not-in-build') return 'Nym is not in this build'
+      if (state.cause === 'proxy') return 'Nym is off while a proxy is set'
+      return 'Nym is not available here'
+  }
+}
+
+/** Why, for a state that has a reason worth reading; undefined for one that has none. */
+export function nymReason (state: NymState): string | undefined {
+  return state.state === 'failed' || state.state === 'unavailable' ? state.reason : undefined
+}
+
+/** What the Test of Nym found, in words. */
+export function nymTestWords (result: NymTestResult): string {
+  if (result.ok) return `Nym answered: a name was looked up and reached through it in ${(result.ms / 1000).toFixed(1)} s.`
+  switch (result.reason) {
+    case 'unavailable': return `Nym cannot start: ${result.detail}`
+    case 'silent': return 'Nym did not answer in time.'
+    case 'failed': return 'Nym started, but a connection through it did not work.'
+  }
+}
+
+/** The popover's line about an app routed through Nym. */
+export function nymRouteLine (route: 'idle' | 'ok' | 'down' | 'no-proxy' | 'temporary', state: NymState): string {
+  if (route === 'temporary') return 'This page goes through Nym, and nothing it stores is kept once its last tab is closed.'
+  if (state.state === 'failed' || state.state === 'unavailable') return `${nymStatusWords(state)}, so this app's traffic is stopped.`
+  if (route === 'down') return 'Nym is not answering, so this app\'s traffic is stopped.'
+  const base = 'This app\'s traffic goes through Nym.'
+  return state.state === 'connecting' || state.state === 'ready' ? `${base} ${nymStatusWords(state)}` : base
+}
