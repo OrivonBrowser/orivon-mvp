@@ -33,7 +33,7 @@ import { createAppRequestHandler, fetchThirdParty, resolveVerifiedBundle } from 
 import { createLiveRequestHandler } from '../serve/live-serve.js'
 import type { LiveBundle } from '../serve/live-serve.js'
 import { fetchFromVerifier } from './fetch.js'
-import { isOriginPinnedSync, isOriginServedFromCacheSync, prepareAppSession, registerAppOrigin, retireAppOrigin } from './app-partitions.js'
+import { isOriginPinnedSync, isOriginServedFromCacheSync, prepareAppSessionOrStop, registerAppOrigin, retireAppOrigin } from './app-partitions.js'
 
 export { beforeAppSessionServes, forEachAppSession, prepareAppSession, isOriginPinnedSync, isOriginServedFromCacheSync, registerAppOrigin, retireAppOrigin } from './app-partitions.js'
 import { saveCheckRecord } from '../fetch/update-check.js'
@@ -280,7 +280,7 @@ export async function serveLiveFor (bundle: LiveBundle, broker?: Broker): Promis
   })
   const { session } = await import('electron')
   const appSession = session.fromPartition(partitionFor(origin))
-  await prepareAppSession(appSession, origin)
+  await prepareAppSessionOrStop(appSession, origin, 'verifier')
   registerAppOrigin(appSession, origin, handler, 'verifier')
 }
 
@@ -369,7 +369,7 @@ export async function registerServingFor (storage: LoaderStorage, origin: string
   )
   const { session } = await import('electron')
   const appSession = session.fromPartition(partitionFor(origin))
-  await prepareAppSession(appSession, origin)
+  await prepareAppSessionOrStop(appSession, origin, 'pin')
   registerAppOrigin(appSession, origin, handler)
   if (pin !== null) rememberServed(origin, pin)
 }

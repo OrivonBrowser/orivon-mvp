@@ -53,7 +53,8 @@ carried and another kind of provider plugs in without a caller changing.
 Measured on Electron 44 before building (headless, names only the front knew, a resolver that answered nothing):
 `http:`, `ws:`, `wss:` and `https:` in a session reach the front, with the name never resolved here (a WebSocket
 tunnels through `CONNECT`); the application's `login` event answers the front's `407` for requests with a web
-contents and without one (`session.fetch`, `net.request`); under `disable_non_proxied_udp` an `RTCPeerConnection`
+contents only, while a request the main process makes with `net.request` answers it through its own `login` event and
+`session.fetch` cannot answer it at all, so the lookups made about an app use `net.request`; under `disable_non_proxied_udp` an `RTCPeerConnection`
 given a STUN server gathers no candidate and sends nothing, where the default policy gathers candidates and sends;
 with the front stopped every request fails with `ERR_PROXY_CONNECTION_FAILED` and no connection is made, where the
 same request with `direct` reaches its target; and a `WebTransport` to a name a direct connection reaches sends

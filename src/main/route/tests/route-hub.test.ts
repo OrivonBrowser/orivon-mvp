@@ -1,7 +1,10 @@
 // The hub: which apps are routed, through which proxy, with one provider per app and one front per routed app. A
 // routed app never falls back to a direct route: with no proxy set its route refuses.
 
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { connect as netConnect } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { RouteProvider } from '../../../broker/route/provider.js'
 import type { RouteTarget } from '../../../broker/route/table.js'
@@ -181,5 +184,96 @@ describe('front', () => {
 
     expect(hub.credentialsForPort(front.port)).toEqual({ username: front.username, password: front.secret })
     expect(hub.credentialsForPort(front.port + 1)).toBeUndefined()
+  })
+
+  it('hands the secret of a port to nobody once its front is closing, so a later program on that port is not answered', async () => {
+    const { hub, store } = setup()
+    store.set(APP, true)
+    const front = await hub.front(APP)
+
+    store.set(APP, false)
+
+    expect(hub.credentialsForPort(front.port)).toBeUndefined()
+    await hub.settled()
+    expect(hub.credentialsForPort(front.port)).toBeUndefined()
+  })
+
+  it('hands the secret of a port to nobody once the app\'s front was closed by anything else', async () => {
+    const { hub, store } = setup()
+    store.set(APP, true)
+    const front = await hub.front(APP)
+
+    await front.close()
+
+    expect(hub.credentialsForPort(front.port)).toBeUndefined()
+    const next = await hub.front(APP)
+    expect(next).not.toBe(front)
+    expect(hub.credentialsForPort(next.port)).toEqual({ username: next.username, password: next.secret })
+  })
+
+  it('hands no secret out after the hub is disposed', async () => {
+    const { hub, store } = setup()
+    store.set(APP, true)
+    const front = await hub.front(APP)
+
+    await hub.dispose()
+
+    expect(hub.credentialsForPort(front.port)).toBeUndefined()
+  })
+})
+
+describe('a list of routed apps that cannot be read', () => {
+  const dirs: string[] = []
+  afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
+
+  function unreadable (initial: RouteTarget | null = { host: '127.0.0.1', port: 9050 }, installed: string[] = [APP, OTHER]) {
+    const dir = mkdtempSync(join(tmpdir(), 'orivon-routes-hub-'))
+    dirs.push(dir)
+    const path = join(dir, 'routes.json')
+    writeFileSync(path, '{ not json')
+    const store = new RouteStore(path)
+    let proxy: RouteTarget | undefined = initial ?? undefined
+    const hub = createRouteHub({ store, proxy: () => proxy, installed: () => installed, providerFor: () => ({ connect: async () => { throw new Error('unused') } }) })
+    hubs.push(hub)
+    return { store, hub, setProxy: (next: RouteTarget | undefined) => { proxy = next; hub.proxyChanged() } }
+  }
+
+  it('routes every installed app while a proxy is set, through the proxy, and no website', () => {
+    const { hub } = unreadable()
+
+    expect(hub.isRouted(APP)).toBe(true)
+    expect(hub.isRouted('https://a-website.example')).toBe(false)
+    expect(hub.routeFor('https://a-website.example')).toBeUndefined()
+    expect(hub.routeFor(OTHER)).toBeDefined()
+    expect(hub.unreadable()).toBe(true)
+  })
+
+  it('routes nothing while no proxy is set', () => {
+    const { hub } = unreadable(null)
+
+    expect(hub.isRouted(APP)).toBe(false)
+    expect(hub.routeFor(APP)).toBeUndefined()
+  })
+
+  it('starts a front for any app', async () => {
+    const { hub } = unreadable()
+    expect((await hub.front(APP)).port).toBeGreaterThan(0)
+  })
+
+  it('tells listeners about every installed app when the proxy is set or cleared, because that changes what is routed', () => {
+    const { hub, setProxy } = unreadable(null)
+    const heard = vi.fn()
+    hub.onChange(heard)
+
+    setProxy({ host: '127.0.0.1', port: 9050 })
+    expect(heard.mock.calls).toEqual([[APP, true, 'proxy'], [OTHER, true, 'proxy']])
+
+    heard.mockClear()
+    setProxy(undefined)
+    expect(heard.mock.calls).toEqual([[APP, false, 'proxy'], [OTHER, false, 'proxy']])
+  })
+
+  it('is not unreadable when the list is fine', () => {
+    expect(setup().hub.unreadable()).toBe(false)
   })
 })

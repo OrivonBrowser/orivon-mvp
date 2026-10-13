@@ -77,6 +77,24 @@ export async function prepareAppSession (appSession: Session, origin: string): P
   for (const preparer of appSessionPreparers) await preparer(appSession, origin)
 }
 
+/**
+ * `prepareAppSession`, and when it fails the app is still given its partition, answered by a handler that refuses
+ * every request and says why, before the failure is passed on. Without that the origin has no partition of its own,
+ * so a tab for it opens as an ordinary website on the shared session: for an app whose proxy route could not start,
+ * that is a direct connection. The only preparer is the route's, which is what the page says.
+ */
+export async function prepareAppSessionOrStop (appSession: Session, origin: string, from: 'pin' | 'verifier'): Promise<void> {
+  try {
+    await prepareAppSession(appSession, origin)
+  } catch (error) {
+    console.error('[loader] an app\'s session could not be prepared; the app is stopped, not opened as a website:', origin, error)
+    registerAppOrigin(appSession, origin, async () => new Response(STOPPED_PAGE, { status: 503, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } }), from)
+    throw error
+  }
+}
+
+const STOPPED_PAGE = '<!doctype html><meta charset="utf-8"><title>This app did not open</title><body style="font-family:system-ui;margin:3rem"><h1>This app did not open</h1><p>The proxy route could not start, so Orivon did not open this app and sent nothing. Check the proxy under Privacy and data, then open it again.</p></body>'
+
 /** The partitions whose handler answers from the origin's pin, a subset of `servedPartitions`: the rest answer from the verifier until the pin lands. */
 const pinnedPartitions = new Set<string>()
 

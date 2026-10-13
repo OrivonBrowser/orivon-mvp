@@ -17,7 +17,7 @@ export interface AppRow {
   readonly linkSchemes: readonly string[]
   readonly storage: { readonly filesBytes: number, readonly codeBytes: number }
   /** The switch that sends the app's traffic through the person's proxy: what its route is doing, and why it cannot be turned on. */
-  readonly route: { readonly state: RouteView, readonly blocked: 'no-proxy' | 'not-cached' | undefined }
+  readonly route: { readonly state: RouteView, readonly blocked: 'no-proxy' | 'not-cached' | undefined, readonly unreadable?: boolean }
 }
 
 export type RouteView = 'off' | 'no-proxy' | 'idle' | 'ok' | 'down'
