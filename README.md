@@ -244,14 +244,22 @@ against it changing a line. Read those files first if you want to know what Oriv
 |---|---|
 | 🐧 **Linux** | `.deb` for Debian and Ubuntu, AppImage for any distribution (x64) |
 | 🪟 **Windows** | Installer for x64: per user, no administrator needed |
-| 🍎 **macOS** | `.dmg` for Apple silicon and for Intel |
+| 🍎 **macOS** | One line in Terminal (below), or a `.dmg` for Apple silicon and for Intel |
+
+**macOS, one line.** Paste this into Terminal. It installs Orivon into Applications (or updates it)
+and opens it, with no Gatekeeper warning. The `.dmg` stays for people who prefer it.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/install-macos.sh | bash
+```
 
 **[Get the latest release →](https://github.com/OrivonBrowser/orivon-mvp/releases/latest)**
 &nbsp;·&nbsp; also at [`download.orivonstack.eth`](https://download.orivonstack.eth.limo)
 
 Every release is also published on IPFS, and its `ipfs://` address is in the release notes. The
-Windows and macOS packages are not signed with a bought certificate, so each system warns once
-before the first run ([what to click](docs/known-limitations.md#packages)).
+Windows installer and the macOS `.dmg` are not signed with a bought certificate, so each system
+warns once before the first run ([what to click](docs/known-limitations.md#packages)); the macOS
+Terminal install above does not warn.
 
 ### Run from source
 

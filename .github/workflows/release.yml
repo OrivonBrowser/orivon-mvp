@@ -15,6 +15,7 @@ on:
       - build/**
       - scripts/smoke-packaged.mjs
       - scripts/pin-releases.sh
+      - scripts/install-macos.sh
       - .github/workflows/release.yml
   workflow_dispatch:
 
@@ -118,6 +119,27 @@ jobs:
             # A helper of the Intel build, run under Rosetta, can hold the volume a few seconds longer.
             hdiutil detach "$mount" || { sleep 5; hdiutil detach -force "$mount"; }
           done
+
+      # The one-line Terminal install, on the package just built: no quarantine attribute, and it launches.
+      - name: Install with the one-line installer and launch it
+        if: matrix.platform == 'mac'
+        run: |
+          mkdir -p "$RUNNER_TEMP/apps-local"
+          ORIVON_DMG="$(ls release/*-arm64.dmg)" ORIVON_INSTALL_DIR="$RUNNER_TEMP/apps-local" ORIVON_NO_OPEN=1 bash scripts/install-macos.sh
+          if xattr -r "$RUNNER_TEMP/apps-local/Orivon.app" | grep -q com.apple.quarantine; then
+            echo "the installed app carries a quarantine attribute" >&2
+            exit 1
+          fi
+          node scripts/run-headless.mjs node scripts/smoke-packaged.mjs "$RUNNER_TEMP/apps-local/Orivon.app/Contents/MacOS/Orivon"
+
+      # The real path as a user runs it: the newest published release is looked up, downloaded and checked. During a
+      # release the new one has no packages yet, so this would test the previous release; PRs and manual runs only.
+      - name: Install the newest published release with the one-line installer
+        if: matrix.platform == 'mac' && github.event_name != 'release'
+        run: |
+          ORIVON_INSTALL_DIR="$RUNNER_TEMP/apps-release" ORIVON_NO_OPEN=1 bash scripts/install-macos.sh
+          test -d "$RUNNER_TEMP/apps-release/Orivon.app"
+          codesign --verify --deep --strict "$RUNNER_TEMP/apps-release/Orivon.app"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
