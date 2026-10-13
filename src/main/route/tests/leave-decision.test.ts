@@ -11,6 +11,7 @@ function world (overrides: Partial<LeaveWorld> = {}): LeaveWorld {
     isRouted: (origin) => origin === APP,
     isInstalledApp: (origin) => origin === APP || origin === OTHER_APP,
     routedOriginOf: (partition) => partition === APP_PARTITION ? APP : undefined,
+    servedOrigin: (url) => url.startsWith('ipfs://') ? url.replace(/^(ipfs:\/\/[^/]+).*$/u, '$1') : url.startsWith('https://ipfs.orivon/') ? `ipfs://${url.split('/')[3] ?? ''}` : undefined,
     ...overrides
   }
 }
@@ -46,6 +47,18 @@ describe('a routed app\'s page opening an address', () => {
     for (const target of ['about:blank', 'blob:https://routed.example/1', 'data:text/html,hi', 'javascript:1', 'file:///etc/hosts', 'orivon://settings/', 'mailto:a@b.example', 'not a url', '']) {
       expect(leavesRoute(`${APP}/`, target, world()), target).toBeUndefined()
     }
+  })
+
+  it('asks about an address Orivon serves itself as one that no proxy can carry, naming it as a person reads it', () => {
+    expect(leavesRoute(`${APP}/`, 'ipfs://bafyexample/page', world())).toEqual({ kind: 'served', origin: 'ipfs://bafyexample', app: APP })
+    expect(leavesRoute(`${APP}/`, 'https://ipfs.orivon/bafyexample/page', world())).toEqual({ kind: 'served', origin: 'ipfs://bafyexample', app: APP })
+    expect(leavesRoute('about:blank', 'ipfs://bafyexample', world(), APP_PARTITION)).toMatchObject({ kind: 'served', app: APP })
+  })
+
+  it('does not ask about a served address when the page is not a routed app\'s, or when it is an installed app', () => {
+    expect(leavesRoute('https://news.example/', 'ipfs://bafyexample', world())).toBeUndefined()
+    const installed = world({ isInstalledApp: () => true, servedOrigin: () => 'ipfs://other' })
+    expect(leavesRoute(`${APP}/`, 'https://other.example/', installed)).toEqual({ kind: 'app', origin: OTHER_APP, app: APP })
   })
 
   it('asks about this computer too: a page there is in the shared session, where whatever it opens is direct', () => {

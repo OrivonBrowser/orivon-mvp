@@ -157,6 +157,43 @@ describe('chooseLeave', () => {
     log.mockRestore()
   })
 
+  it('offers a page Orivon loads itself only directly: "directly" opens it, anything else cancels, and no session is made', async () => {
+    const served = { kind: 'served', origin: 'ipfs://bafyexample', app: 'https://routed.example' } as const
+    askToLeaveRoute.mockResolvedValue('direct')
+    expect(await chooseLeave(wc, served)).toEqual({ kind: 'direct' })
+    askToLeaveRoute.mockResolvedValue('proxy')
+    expect(await chooseLeave(wc, served)).toEqual({ kind: 'cancel' })
+    expect(openTemporaryRoute).not.toHaveBeenCalled()
+    expect(routeAppToo).not.toHaveBeenCalled()
+  })
+
+  it('asks one question at a time for an app and cancels its other requests unasked, remembering nothing', async () => {
+    let answer: (value: 'cancel' | 'direct') => void = () => {}
+    askToLeaveRoute.mockImplementationOnce(async () => await new Promise((resolve) => { answer = resolve }))
+    const first = chooseLeave(wc, WEBSITE)
+    expect(await chooseLeave({} as WebContents, { ...WEBSITE, origin: 'https://other-news.example' })).toEqual({ kind: 'cancel' })
+    expect(askToLeaveRoute).toHaveBeenCalledOnce()
+    expect(holdNavigation).toHaveBeenCalledOnce()
+    // Another routed app is not held up by it.
+    askToLeaveRoute.mockResolvedValueOnce('direct')
+    expect(await chooseLeave(wc, { ...WEBSITE, app: 'https://second-routed.example' })).toEqual({ kind: 'direct' })
+    answer('cancel')
+    expect(await first).toEqual({ kind: 'cancel' })
+    // Once it is answered the app is asked again, as often as it opens something.
+    askToLeaveRoute.mockResolvedValueOnce('direct')
+    expect(await chooseLeave(wc, WEBSITE)).toEqual({ kind: 'direct' })
+    expect(askToLeaveRoute).toHaveBeenCalledTimes(3)
+  })
+
+  it('lets the app ask again after a question that failed', async () => {
+    askToLeaveRoute.mockRejectedValueOnce(new Error('panel gone'))
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(await chooseLeave(wc, WEBSITE)).toEqual({ kind: 'cancel' })
+    log.mockRestore()
+    askToLeaveRoute.mockResolvedValueOnce('direct')
+    expect(await chooseLeave(wc, WEBSITE)).toEqual({ kind: 'direct' })
+  })
+
   it('cancels when the other app cannot be routed', async () => {
     askToLeaveRoute.mockResolvedValue('proxy')
     routeAppToo.mockResolvedValue(false)
@@ -178,8 +215,10 @@ describe('leaveForOpen', () => {
     expect(leaveFor).toHaveBeenCalledWith(APP_URL, 'https://news.example/a', 'persist:app-1')
   })
 
-  it('judges a protocol address by the address it is served at, and does not ask about a site there that no proxy could reach', () => {
-    expect(leaveForOpen(record, APP_URL, 'ipfs://some-name.eth/', 'persist:app-1')).toBeUndefined()
+  it('judges a protocol address by the address it is served at, and asks about it when Orivon loads it itself', () => {
+    const served = { kind: 'served', origin: 'ipfs://some-name.eth', app: 'https://routed.example' } as const
+    leaveFor.mockReturnValue(served)
+    expect(leaveForOpen(record, APP_URL, 'ipfs://some-name.eth/', 'persist:app-1')).toEqual(served)
     expect(leaveFor).toHaveBeenCalledWith(APP_URL, 'https://some-name.eth/', 'persist:app-1')
   })
 
