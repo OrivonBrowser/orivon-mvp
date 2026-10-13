@@ -38,7 +38,7 @@ Measured on Electron 44 before building (headless): cookies in `persist:site-<ha
 ## Consequences
 
 - Moving a website reloads it in a new view, so what the page held in memory is lost, and a form being typed is not kept.
-- A website in a session of its own is not reached by a Chrome extension: extensions load into the shared session ([`ADR-0044`](ADR-0044-a-grant-no-longer-gives-an-origin-its-own-session.md)), so an ad blocker does not run on a tunnelled website.
+- A website in a session of its own is not reached by a Chrome extension: extensions load into the shared session ([`ADR-0044`](ADR-0044-a-grant-no-longer-gives-an-origin-its-own-session.md)), so an ad blocker does not run on a tunnelled website; the popover names the extensions that stop.
 - A Web3 name's own files, its Helios RPC and CCIP calls are fetched by the verifier host outside the tunnel; the popover and the address bar's key say so, and the key is never shown as fully tunnelled for such a name.
 - When the list of tunnel settings cannot be read, every website counts as on while a tunnel is set, each in its own session, until the person mends the file.
 - `localhost`, loopback addresses and anything that is not an `http` or `https` origin cannot be switched.

@@ -11,6 +11,8 @@ export function forgetRoutesOfGoneApps (broker: WatchedBroker, routes: Pick<Rout
     if (!routes.hub.isRouted(origin)) return
     // A website with storage of its own was never an app: its grants changing says nothing about its tunnel.
     if (routes.store.isApart(origin)) return
+    // While the list cannot be read every origin counts as routed, so being routed says nothing about being an app.
+    if (routes.hub.unreadable()) return
     if (broker.app.isRegisteredSync(origin) || broker.app.persistedAppsSync().some((app) => app.origin === origin)) return
     routes.forget(origin)
   })

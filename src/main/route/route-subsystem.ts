@@ -57,17 +57,19 @@ export const routeSubsystem: Subsystem = {
       sessionFor: (partition) => session.fromPartition(partition),
       // The names the verifier answers for reach it on this machine; the proxy never sees them.
       bypass: () => BUILTIN_ADDRESSES.routedSuffixes().map((suffix) => `*.${suffix}`).join(';'),
-      hold: (held, ready) => {
-        const handle = webRequestOwnerFor(held as Session).onBeforeRequest(-1, { urls: ['<all_urls>'] }, () => true, async (_details, current) => {
+      hold: (held, current) => {
+        const handle = webRequestOwnerFor(held as Session).onBeforeRequest(-1, { urls: ['<all_urls>'] }, () => true, async (_details, soFar) => {
           try {
-            await ready
+            await current()
           } catch {
             return { cancel: true }
           }
-          return current
+          return soFar
         })
-        // A session that could not be made ready keeps refusing everything.
-        void ready.then(() => { handle.remove() }, () => {})
+        // Once the session is ready the handler is taken away; a session that could not be made ready keeps refusing everything until a later attempt works.
+        const watch = (): void => { current().then(() => { handle.remove() }, () => {}) }
+        watch()
+        return watch
       },
       fit: (target) => { announceWebsiteSession(target as Session) }
     })

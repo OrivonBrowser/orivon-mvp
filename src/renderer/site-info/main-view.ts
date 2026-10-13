@@ -144,7 +144,7 @@ export function renderMainPage (
   container.append(header)
   // A website has the tunnel switch, whose own line says what the tunnel does; an installed app has the line alone, its switch is on its card in Settings,
   // and a page opened through the tunnel from a routed app has the line alone as well: its session lasts until its last tab closes.
-  if (info.tunnel !== undefined && info.route !== 'temporary') renderTunnelSection(container, info.tunnel, info.route, tunnelView, callbacks.tunnel)
+  if (info.tunnel !== undefined && info.route !== 'temporary') renderTunnelSection(container, info.tunnel, info.route, info.extensionsOnSite, tunnelView, callbacks.tunnel)
   else if (info.route !== undefined) container.append(renderRouteLine(info.route))
   if (info.update !== undefined) container.append(renderUpdateCard(info.update, updateFailure, { onApply: callbacks.onApplyUpdate }))
 

@@ -19,6 +19,11 @@ export function tunnelHint (tunnel: SiteTunnel): string | undefined {
   return undefined
 }
 
+/** Extensions load into the shared session, so one that reaches this site stops working on it while it has storage of its own. */
+export function extensionsHint (names: readonly string[]): string | undefined {
+  return names.length === 0 ? undefined : `Extensions do not run on a site that goes through the tunnel: ${names.join(', ')}.`
+}
+
 export const TUNNEL_FAILED = 'The tunnel could not be changed for this site.'
 
 export interface TunnelCallbacks {
@@ -42,7 +47,7 @@ function paragraph (className: string, text: string): HTMLElement {
 }
 
 /** The switch row, its explanation, the status line of a site that is on, and the notice while it is open. */
-export function renderTunnelSection (container: HTMLElement, tunnel: SiteTunnel, route: SiteRoute | undefined, view: TunnelViewState, callbacks: TunnelCallbacks): void {
+export function renderTunnelSection (container: HTMLElement, tunnel: SiteTunnel, route: SiteRoute | undefined, extensions: readonly string[], view: TunnelViewState, callbacks: TunnelCallbacks): void {
   const section = document.createElement('div')
   section.className = 'tunnel-section'
 
@@ -61,6 +66,8 @@ export function renderTunnelSection (container: HTMLElement, tunnel: SiteTunnel,
   const hint = tunnelHint(tunnel)
   if (hint !== undefined) section.append(paragraph(tunnel.unreadable || tunnel.blocked !== undefined ? 'route-line route-line-down' : 'route-line', hint))
   if (tunnel.on && route !== undefined) section.append(renderRouteLine(route, tunnel.web3 ? 'web3' : 'site'))
+  const loses = extensionsHint(extensions)
+  if (loses !== undefined) section.append(paragraph('route-line', loses))
   if (view.failed) section.append(paragraph('route-line route-line-down', TUNNEL_FAILED))
 
   if (view.notice) {

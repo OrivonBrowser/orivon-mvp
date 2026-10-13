@@ -24,7 +24,7 @@ function setup (prepare: () => Promise<void> = async () => {}) {
     }
     return one
   }
-  const held: Array<{ session: SiteSession, ready: Promise<void> }> = []
+  const held: Array<{ session: SiteSession, ready: () => Promise<void>, watched: number }> = []
   const deps: SiteSessionsDeps = {
     controller: {
       prepareSite: vi.fn(async (origin: string, _session: RouteSessionLike, bypass: string) => { log.push(`prepare ${origin} ${bypass}`); await prepare() }),
@@ -32,7 +32,7 @@ function setup (prepare: () => Promise<void> = async () => {}) {
     },
     sessionFor,
     bypass: () => '*.eth',
-    hold: (session, ready) => { held.push({ session, ready }) },
+    hold: (session, ready) => { const one = { session, ready, watched: 0 }; held.push(one); return () => { one.watched += 1 } },
     fit: () => { log.push('fit') }
   }
   return { sites: createSiteSessions(deps), deps, held, log, sessionFor }
@@ -48,7 +48,7 @@ describe('making a website\'s session ready', () => {
     sites.ensure(partition)
 
     expect(held).toHaveLength(1)
-    await held[0]?.ready
+    await held[0]?.ready()
     expect(log).toEqual(['fit', `prepare ${SITE} *.eth`])
   })
 
@@ -72,7 +72,7 @@ describe('making a website\'s session ready', () => {
 
     sites.ensure(partition)
 
-    await expect(held[0]?.ready).rejects.toThrow(/no front/)
+    await expect(held[0]?.ready()).rejects.toThrow(/no front/)
     expect(log).toContain('confine')
   })
 
@@ -83,7 +83,30 @@ describe('making a website\'s session ready', () => {
     sites.ensure(sitePartitionFor('https://never-asked.example'))
 
     expect(deps.controller.prepareSite).not.toHaveBeenCalled()
-    await expect(held[0]?.ready).rejects.toThrow()
+    await expect(held[0]?.ready()).rejects.toThrow()
+  })
+})
+
+describe('a session that could not be made ready', () => {
+  it('is tried again the next time a view is made in it, and its hold is told to look again', async () => {
+    setSiteRoutes({ usesOwnSession: () => true })
+    const partition = sitePartitionForOrigin(SITE) as string
+    let failing = true
+    const { sites, held, deps } = setup(async () => { if (failing) throw new Error('no front') })
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    sites.ensure(partition)
+    await expect(held[0]?.ready()).rejects.toThrow(/no front/)
+
+    failing = false
+    sites.ensure(partition)
+    await held[0]?.ready()
+    expect(held).toHaveLength(1)
+    expect(held[0]?.watched).toBe(1)
+    expect(deps.controller.prepareSite).toHaveBeenCalledTimes(2)
+
+    sites.ensure(partition)
+    expect(deps.controller.prepareSite, 'a session that is ready is left alone').toHaveBeenCalledTimes(2)
   })
 })
 

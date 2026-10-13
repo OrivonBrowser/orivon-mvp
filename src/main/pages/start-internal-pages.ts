@@ -60,6 +60,7 @@ import { siteSettingsControllerFor } from '../site-settings/site-settings-runner
 import { createDeviceRows } from '../devices/hid-rows.js'
 import { forgetDevicesWhenGrantEnds } from '../devices/hid-grant-watch.js'
 import { forgetRoutesOfGoneApps } from '../route/forget-watch.js'
+import { sitePartitionFor } from '../route/site-partition.js'
 import { isRegisteredAppOrigin } from '../site-settings/app-origin.js'
 import { isWebOrigin } from '../site-settings/site-settings-controller.js'
 import { sitesDomain } from '../site-settings/sites-domain.js'
@@ -164,6 +165,8 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       siteSettings,
       websites: session.defaultSession,
       localFiles: () => allLocalPartitions().map((partition) => session.fromPartition(partition)),
+      // A website with a tunnel setting keeps its storage in a session of its own, which the shared session's clearing never reaches.
+      siteSessions: () => routes.store.apart().map((origin) => session.fromPartition(sitePartitionFor(origin))),
       // Only a CACHE-SERVED app still has a partition of its own to clear:
       // a granted-without-install app shares session.defaultSession, which
       // `websites` above already reaches. Calling session.fromPartition on

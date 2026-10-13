@@ -275,7 +275,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
         // A session still marked as pointed at a front is put back once more, and let go only when it is.
         for (const session of [...sessions.keys()]) {
           if (pointedAt.has(session)) await prepare(origin, session).catch((error: unknown) => { console.error('[route] a forgotten app\'s session is still on its front:', error) })
-          if (!pointedAt.has(session)) sessions.delete(session)
+          if (!pointedAt.has(session)) { sessions.delete(session); bypasses.delete(session) }
         }
         if (sessions.size === 0) known.delete(origin)
         fetchSessions.delete(origin)

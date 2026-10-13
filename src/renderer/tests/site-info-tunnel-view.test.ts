@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SiteTunnel } from '../../main/permissions/site-info.js'
-import { STORAGE_NOTICE, tunnelHint } from '../site-info/tunnel-view.js'
+import { extensionsHint, STORAGE_NOTICE, tunnelHint } from '../site-info/tunnel-view.js'
 
 const base: SiteTunnel = { on: false, needsNotice: true, web3: false, unreadable: false }
 
@@ -29,5 +29,15 @@ describe('the hint under the tunnel switch', () => {
 
   it('says why the switch is fixed when the list of tunnel settings cannot be read', () => {
     expect(tunnelHint({ ...base, unreadable: true, on: true })).toContain('could not read your tunnel settings')
+  })
+})
+
+describe('the extensions a tunnelled site loses', () => {
+  it('names them, because extensions load into the shared session', () => {
+    expect(extensionsHint(['uBlock Origin', 'Dark Reader'])).toBe('Extensions do not run on a site that goes through the tunnel: uBlock Origin, Dark Reader.')
+  })
+
+  it('says nothing when no extension reaches the site', () => {
+    expect(extensionsHint([])).toBeUndefined()
   })
 })

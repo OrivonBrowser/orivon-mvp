@@ -7,6 +7,8 @@ import { session } from 'electron'
 import type { Session } from 'electron'
 
 const announced = new Set<Session>()
+/** A session an installer failed on stays refused: running the installers again would put some of them on it twice. */
+const failed = new Map<Session, AggregateError>()
 const listeners = new Set<(target: Session) => void>()
 
 /** Calls `install` with the default session now, with every website session already announced, and with each new one as it is announced. */
@@ -21,6 +23,8 @@ export function forEachWebsiteSession (install: (target: Session) => void): void
  * rethrown at the end: a session that is missing a guard must not be used, so the caller refuses it.
  */
 export function announceWebsiteSession (target: Session): void {
+  const earlier = failed.get(target)
+  if (earlier !== undefined) throw earlier
   if (announced.has(target)) return
   announced.add(target)
   const failures: unknown[] = []
@@ -31,7 +35,11 @@ export function announceWebsiteSession (target: Session): void {
       failures.push(error)
     }
   }
-  if (failures.length > 0) throw new AggregateError(failures, 'a website session could not be fitted with everything it needs')
+  if (failures.length > 0) {
+    const error = new AggregateError(failures, 'a website session could not be fitted with everything it needs')
+    failed.set(target, error)
+    throw error
+  }
 }
 
 /** The default session and every website session announced so far. */

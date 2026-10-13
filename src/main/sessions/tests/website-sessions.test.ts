@@ -46,6 +46,15 @@ describe('the sessions a website runs in', () => {
     expect(second).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps refusing a session an installer failed on, without running the installers on it again', () => {
+    const install = vi.fn((target: unknown) => { if (target !== defaultSession) throw new Error('broke') })
+    sessions.forEachWebsiteSession(install as never)
+    const one = site('one')
+    expect(() => { sessions.announceWebsiteSession(one) }).toThrow(/could not be fitted/)
+    expect(() => { sessions.announceWebsiteSession(one) }).toThrow(/could not be fitted/)
+    expect(install).toHaveBeenCalledTimes(2)
+  })
+
   it('lists the default session and every website session announced', () => {
     const one = site('one')
     sessions.announceWebsiteSession(one)

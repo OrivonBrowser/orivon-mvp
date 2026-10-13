@@ -9,7 +9,7 @@ const tab = (over: Partial<TabInSession> & { id: string }): TabInSession => ({ u
 describe('which tabs move when a website\'s tunnel changes', () => {
   it('moves the tabs on the website into the session its state calls for', () => {
     const tabs = [tab({ id: '1' }), tab({ id: '2', url: `${SITE}/b?c=1` }), tab({ id: '3', url: 'https://other.example/' })]
-    expect(tabMovesFor(SITE, tabs, () => OWN)).toEqual([{ id: '1', url: `${SITE}/a`, to: OWN }, { id: '2', url: `${SITE}/b?c=1`, to: OWN }, { id: '3', url: 'https://other.example/', to: OWN }].slice(0, 2))
+    expect(tabMovesFor(SITE, tabs, () => OWN)).toEqual([{ id: '1', url: `${SITE}/a`, to: OWN }, { id: '2', url: `${SITE}/b?c=1`, to: OWN }])
   })
 
   it('moves a tab in the website\'s own session back to the shared one', () => {
