@@ -1,0 +1,13 @@
+# What CodeQL reads: the code a package ships (src/, vendor/) and the workflows. Tests, the developer and CI
+# scripts, the old probes under docs/ and the test-only spike/ tree are never packaged (electron-builder.yml ships
+# out/ and package.json), so an alert there is noise that hides one that matters.
+name: Orivon CodeQL
+queries:
+  - uses: security-extended
+paths-ignore:
+  - test
+  - scripts
+  - docs
+  - spike
+  - '**/tests'
+  - '**/*.test.ts'
