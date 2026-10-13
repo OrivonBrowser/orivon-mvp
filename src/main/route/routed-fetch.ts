@@ -19,12 +19,13 @@ export async function fetchThroughRoute (net: Pick<Net, 'request'>, session: Ses
     request.on('response', (response) => {
       // The signal covers the body too: a stalled body is cut off when it fires.
       signal.removeEventListener('abort', onAbort)
-      const cutOff = (): void => { response.destroy(signal.reason as Error) }
+      const stream = response as unknown as Readable
+      const cutOff = (): void => { stream.destroy(signal.reason as Error) }
       signal.addEventListener('abort', cutOff, { once: true })
-      response.once('close', () => { signal.removeEventListener('abort', cutOff) })
+      stream.once('close', () => { signal.removeEventListener('abort', cutOff) })
       const headers = new Headers()
       for (const [name, value] of Object.entries(response.headers)) for (const one of Array.isArray(value) ? value : [value]) headers.append(name, one)
-      const body = Readable.toWeb(response as unknown as Readable) as ReadableStream<Uint8Array>
+      const body = Readable.toWeb(stream) as ReadableStream<Uint8Array>
       resolve(new Response(response.statusCode === 204 || response.statusCode === 304 ? null : body, { status: response.statusCode, headers }))
     })
     request.on('error', (error) => {
