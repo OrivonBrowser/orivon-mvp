@@ -1,7 +1,7 @@
 // What the person is told about the Nym tunnel, in one place for the Settings page and the site-info popover. Composed
 // here from the state main reports, never from anything an app wrote.
 
-import type { NymState, NymTestResult } from '../main/route/nym-status.js'
+import type { NymState, NymTestResult } from '../../../main/route/nym-status.js'
 
 /** The status line: what Nym is doing now. */
 export function nymStatusWords (state: NymState): string {

@@ -3,7 +3,7 @@
 // name or address, and UDP ASSOCIATE with the relay on loopback. No BIND and no other method. README.md's Design
 // notes say why this is written here and not taken from a package.
 
-import { createHash, timingSafeEqual } from 'node:crypto'
+import { timingSafeEqual } from 'node:crypto'
 import { createSocket } from 'node:dgram'
 import type { Socket as DgramSocket } from 'node:dgram'
 import { createServer, isIPv6 } from 'node:net'
@@ -49,11 +49,11 @@ export interface SocksServer {
   close: () => Promise<void>
 }
 
-const digest = (text: string): Buffer => createHash('sha256').update(text).digest()
-
-/** Whether `given` is `secret`, compared in constant time over their hashes. */
+/** Whether `given` is `secret`. The comparison takes the same time wherever the two differ; only their lengths, which are fixed and not secret, may end it early. */
 export function sameSecret (given: string, secret: string): boolean {
-  return timingSafeEqual(digest(given), digest(secret))
+  const presented = Buffer.from(given, 'utf8')
+  const expected = Buffer.from(secret, 'utf8')
+  return presented.length === expected.length && timingSafeEqual(presented, expected)
 }
 
 /** Bytes a connection has received and not yet been asked for. */
@@ -159,8 +159,8 @@ async function handshake (socket: Socket, reader: Reader, secret: string): Promi
 
   if ((await reader.read(1))[0] !== AUTH_VERSION) return undefined
   const userName = (await reader.read((await reader.read(1))[0] ?? 0)).toString('utf8')
-  const password = (await reader.read((await reader.read(1))[0] ?? 0)).toString('utf8')
-  if (!USER_NAME.test(userName) || !sameSecret(password, secret)) { socket.end(Buffer.from([AUTH_VERSION, 0x01])); return undefined }
+  const presented = (await reader.read((await reader.read(1))[0] ?? 0)).toString('utf8')
+  if (!USER_NAME.test(userName) || !sameSecret(presented, secret)) { socket.end(Buffer.from([AUTH_VERSION, 0x01])); return undefined }
   socket.write(Buffer.from([AUTH_VERSION, 0x00]))
 
   const head = await reader.read(4)

@@ -1,6 +1,6 @@
 import type { SiteRoute } from '../../main/permissions/site-info.js'
 import type { NymState } from '../../main/route/nym-status.js'
-import { nymRouteLine } from '../nym-words.js'
+import { nymRouteLine } from '../pages/shared/nym-words.js'
 
 // The one line the popover shows for an origin the person routed through their tunnel, and the line that says so when
 // the tunnel is not answering. Composed here, never from anything an app wrote.

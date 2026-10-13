@@ -1,6 +1,6 @@
 import type { Row } from '../model.js'
 import { h } from '../../shared/dom.js'
-import { nymReason, nymStatusWords } from '../../../nym-words.js'
+import { nymReason, nymStatusWords } from '../../shared/nym-words.js'
 import type { RoutePart } from '../route-part.js'
 import { renderTunnelList } from './route-list-row.js'
 import { renderProxyTest } from './route-test-row.js'

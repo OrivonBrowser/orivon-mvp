@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nymReason, nymRouteLine, nymStatusWords, nymTestWords } from '../nym-words.js'
+import { nymReason, nymRouteLine, nymStatusWords, nymTestWords } from '../pages/shared/nym-words.js'
 import { routeLineWords } from '../site-info/route-line.js'
 
 describe('the words about Nym', () => {
