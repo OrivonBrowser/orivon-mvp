@@ -23,14 +23,17 @@ Every origin has a tunnel state: **on** or **off**.
 - **The browser's default** is `network.tunnel.everywhere`, off unless the person turns it on.
 - **A per-origin entry** (`on` or `off`) overrides the default for that site or app. With no entry,
   the origin follows the default.
-- **Storage:** a website whose state differs from the default gets a persistent session of its own,
-  `persist:site-<sha256(origin)>`, kept across restarts. Every other website stays in the shared
-  session. An installed app already has its own session, so its storage never moves.
-- **Before a website first moves** into its own storage, the person is told in plain words: "This
-  site gets its own storage. You will sign in to it again once, and what it stores stays apart from
-  the rest of your browsing." They confirm, or cancel. Setting it back to follow the default
-  returns it to the shared session. Its own storage is kept until the person removes it from the
-  site's row in Settings (*provisional*: settled by the owner's first use).
+- **Storage:** a website lives where its own entry puts it, never where the default says. An `on` entry puts it in the
+  tunnel profile, `persist:tunnel-profile`: one persistent session for every such website, always tunnelled, with one
+  front and one tunnel identity, and the person's extensions loaded once. An `off` entry puts it in the direct profile,
+  `persist:direct-profile`, shared the same way and never pointed at a front (the choice that matters while everywhere is
+  on; with it off the site stays there so that flipping the setting moves no login). A website with no entry stays in the
+  default session, which follows the setting. An installed app keeps its own session and identity, with no extensions.
+  The trade is accepted: every website in the tunnel profile shares one tunnel identity (ADR-0084).
+- **Before a website first moves** into a profile, the person is told in plain words: "This site moves to your tunnel
+  profile. You will sign in to it again once, and what it stores stays apart from your normal browsing." (direct profile
+  likewise). They confirm, or cancel. Giving up the entry returns the site to the default session; its data stays in the
+  profile until the person removes it from the site's row in Settings, which clears that site's data from the profile.
 - **The origin is the unit,** as for permissions and installed apps (*provisional*: a site spread
   over several subdomains needs one switch per origin).
 
@@ -47,11 +50,12 @@ Every origin has a tunnel state: **on** or **off**.
 
 ### A site in its own storage (`src/main/shell/tab-partition.ts`, `src/main/route/`)
 
-- `partitionForTarget` returns `persist:site-<hash>` for a website whose state differs from the
-  default. That session gets the same preparation an app's session gets:
-  - a front (its state is on) or nothing (its state is off while everywhere is on);
+- `partitionForTarget` returns the tunnel profile or the direct profile for a website with an entry. That session
+  gets the same preparation an app's session gets:
+  - a front (the tunnel profile) or nothing (the direct profile);
   - the WebRTC policy;
-  - icons and Web3 Score through it.
+  - icons and Web3 Score through it;
+  - the person's extensions, loaded once into the profile.
 - A tab moving between the shared session and a site's own session uses the existing cross-session
   move (`repartitionView`, as Back across sessions does).
 - Subresources and frames of other origins inside that tab ride its session, so they follow its

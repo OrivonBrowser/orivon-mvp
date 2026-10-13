@@ -52,7 +52,11 @@ an address a check already resolved, confirmed against Electron 44's API, the sa
 found no proxy in front of the default session. With one configured, the request goes back through
 `net` by hostname instead: a proxy must keep doing the resolving, never be silently gone around for
 one kind of request (T20), so the residual rebind window is accepted there rather than closed by
-bypassing it. `ccipDirect` is a snapshot taken once, when the host starts
+bypassing it. **While the whole browser is on the tunnel** (`HostConfig.front`) the host fetches with `net.request` and answers
+the front's proxy challenge itself, for that front's address and port alone ([`front-login.ts`](front-login.ts)), because `net.fetch` in a utility process raises no
+`login` event and would end at the front's `407`; main points the process's own requests at the front with `app.setProxy`, a name is
+never resolved on this computer (`resolveHost` refuses, and a CCIP-Read check resolves nothing, the far end does), and `unproxiedGateways` and `ccipDirect` are empty and false, so
+none of the host's direct routes is taken. Main restarts the host when the setting flips. `ccipDirect` is a snapshot taken once, when the host starts
 (`main/verifier/verifier-subsystem.ts`'s `ccipDirectFor`, checked against a generic URL since a
 CCIP-Read destination is not known yet); a proxy turned on mid-run is not seen until the host
 restarts, the same shape as `security-model.md` T40's own snapshot. The one OTHER path around

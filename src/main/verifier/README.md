@@ -91,7 +91,7 @@ embed guest's session starts the host and waits for it from its own handler
 **The certificate check goes on every session, through `session-created`.** A partition without
 it cannot load any host the verifier serves.
 
-**The proxy check runs in main, not in the host** ([`proxy-check.ts`](proxy-check.ts)). It needs
+**The proxy check runs in main, not in the host** ([`proxy-check.ts`](proxy-check.ts), asked by [`host-proxy.ts`](host-proxy.ts), which also hands the host the tunnel's front while the whole browser is on the tunnel). It needs
 `app.resolveProxy`, and a `utilityProcess` has no `session` to ask. It runs once per host start,
 per gateway, since a PAC script can answer differently per URL.
 
