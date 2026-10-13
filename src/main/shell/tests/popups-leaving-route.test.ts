@@ -56,7 +56,7 @@ describe('a routed app opening a window outside its sessions', () => {
     expect(openBlobTab).not.toHaveBeenCalled()
   })
 
-  it('opens a tab in the temporary routed session on "through my proxy", and never in the shared one', async () => {
+  it('opens a tab in the temporary routed session on "through my tunnel", and never in the shared one', async () => {
     processWindowBudget.reset()
     const { host, openTab, openBlobTab } = setup({ kind: 'website', partition: 'orivon-route-tab-1' })
     windowOpenHandler(host, () => APP)(details(SITE))

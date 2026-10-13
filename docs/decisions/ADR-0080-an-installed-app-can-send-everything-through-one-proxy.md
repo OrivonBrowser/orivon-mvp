@@ -7,11 +7,12 @@
 
 ## Decision
 
-A person sets one SOCKS5 proxy for the browser (Tor on `127.0.0.1:9050`, or any other) and turns it on for an
-installed app, one app at a time. From then on everything that app causes to leave the computer goes through
-that proxy: `orivon.net` calls, the pages it shows in a `<webview>`, the third-party `https` its page loads, the
-lookups the browser makes about it, and its child processes' sockets. What the proxy cannot carry is refused,
-never sent direct, and when the proxy stops answering the app's traffic stops with it. A name is sent to the proxy
+A person sets one SOCKS5 address for the browser (Tor on `127.0.0.1:9050`, or any other) and turns it on for an
+installed app, one app at a time. Everywhere a person reads it, the feature is called the tunnel; the SOCKS5
+server at its far end is the proxy. From then on everything that app causes to leave the computer goes through
+that tunnel: `orivon.net` calls, the pages it shows in a `<webview>`, the third-party `https` its page loads, the
+lookups the browser makes about it, and its child processes' sockets. What the tunnel cannot carry is refused,
+never sent direct, and when the tunnel stops answering the app's traffic stops with it. A name is sent to the proxy
 unresolved. Websites are not routed.
 
 The part that decides is a *route* (`src/broker/route/`): a provider that opens a TCP stream to `host:port` and
