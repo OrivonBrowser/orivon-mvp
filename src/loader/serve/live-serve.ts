@@ -309,7 +309,8 @@ export function createLiveRequestHandler (deps: LiveServeDeps): AppRequestHandle
       deps.recordCoverage?.('denied')
       return denyResponse(resolved.reason)
     }
-    if ('redirectTo' in resolved) return new Response(null, { status: 302, headers: { location: resolved.redirectTo } })
+    // The entry's own headers on the redirect: Electron shows the page the redirect's headers with the entry's body.
+    if ('redirectTo' in resolved) return new Response(null, { status: 302, headers: { ...await answerHeaders(resolved.redirectTo, version.manifest), location: resolved.redirectTo } })
 
     const path = resolved.canonicalPath
     const expected = leaves.get(path)

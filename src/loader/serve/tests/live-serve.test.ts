@@ -271,6 +271,19 @@ describe('the handler an app runs on before its files are pinned', () => {
     expect(response.status).toBe(302)
     expect(response.headers.get('location')).toBe('/app/index.html')
   })
+
+  it('gives that redirect the policy headers the entry itself carries, because Electron hands the page the redirect\'s headers with the entry\'s body', async () => {
+    for (const crossOriginIsolated of [false, true]) {
+      const { handle } = await handlerOver({ manifest: manifestOf({ entry: 'app/index.html', assets: ['app.js'], ...(crossOriginIsolated ? { crossOriginIsolated } : {}) }), declaration: undefined }, verifier((url) => url.endsWith('/app/index.html') ? new Response('<h1>app</h1>', { headers: { 'content-length': '12' } }) : undefined))
+      const redirect = await handle('/')
+      const entry = await handle('/app/index.html')
+      expect(redirect.status).toBe(302)
+      expect(entry.headers.get('content-security-policy')).toContain("default-src 'self'")
+      for (const name of ['content-security-policy', 'x-content-type-options', 'content-type', 'cross-origin-opener-policy', 'cross-origin-embedder-policy', 'cross-origin-resource-policy']) {
+        expect(redirect.headers.get(name), `${name} (isolated=${String(crossOriginIsolated)})`).toBe(entry.headers.get(name))
+      }
+    }
+  })
 })
 
 /** An ordinary host that serves FILES, noting what it was asked and answering as `answer` says. */

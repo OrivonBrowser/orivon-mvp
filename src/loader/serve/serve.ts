@@ -33,7 +33,7 @@ import type { Manifest, Pattern } from '../../contracts/index.js'
 import { entryCanonicalPath } from '../fetch/bundle.js'
 import { parseManifest } from '../manifest/manifest.js'
 import type { PinCoverageOutcome } from './pin-coverage.js'
-import { buildResponse, openServable } from './asset.js'
+import { buildResponse, openServable, redirectResponse } from './asset.js'
 import type { CspOptions } from './csp.js'
 import type { RetainedVerdicts } from './asset.js'
 import { isCorsPreflight, preflightResponse, withReachCors } from '../reach/cors.js'
@@ -382,7 +382,11 @@ export async function createAppRequestHandler (
       recordCoverage?.('denied')
       return denyResponse(resolved.reason)
     }
-    if ('redirectTo' in resolved) return new Response(null, { status: 302, headers: { location: resolved.redirectTo } })
+
+    const connectPatterns = grantedConnectPatterns === undefined ? [] : await grantedConnectPatterns()
+    const securePatterns = grantedSecurePatterns === undefined ? [] : await grantedSecurePatterns()
+    const mediaSources = grantedMediaSources === undefined ? {} : await grantedMediaSources()
+    if ('redirectTo' in resolved) return redirectResponse(resolved.redirectTo, connectPatterns, securePatterns, manifest.crossOriginIsolated === true, mediaSources)
 
     const servable = await openServable(storage, origin, resolved.canonicalPath, resolved.retainedLeaf, retainedVerdicts)
     if (!servable.ok) {
@@ -390,9 +394,6 @@ export async function createAppRequestHandler (
       return denyResponse(servable.reason)
     }
 
-    const connectPatterns = grantedConnectPatterns === undefined ? [] : await grantedConnectPatterns()
-    const securePatterns = grantedSecurePatterns === undefined ? [] : await grantedSecurePatterns()
-    const mediaSources = grantedMediaSources === undefined ? {} : await grantedMediaSources()
     const response = buildResponse(servable.file, request, connectPatterns, securePatterns, manifest.crossOriginIsolated === true, mediaSources)
     // A175: record what was actually SENT -- a Range request serves only a
     // slice, and a 416 serves no body at all, a KNOWN zero rather than a size

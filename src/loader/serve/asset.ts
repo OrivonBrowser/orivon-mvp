@@ -107,6 +107,24 @@ function bodyOf (file: ServableFile, start: number, end: number): ReadableStream
   }, { highWaterMark: 0 }) // the default of 1 would pull, and so open the file, before anyone reads
 }
 
+/**
+ * The answer to a request the app's own loader redirects (`/` to an entry in a subdirectory). It carries the headers
+ * the destination's own response would, from the same `policyHeaders` and `contentTypeFor`: on a session with any
+ * web-request listener, which is every session of the product, Electron hands the page the redirect's headers
+ * together with the destination's body, and the destination's own are dropped. Without them the document would run
+ * with no served CSP, no nosniff and no isolation.
+ */
+export function redirectResponse (
+  location: string,
+  connectPatterns: readonly Pattern[],
+  securePatterns: readonly Pattern[],
+  crossOriginIsolated = false,
+  liveCsp: Pick<CspOptions, 'ownListenerMedia' | 'appFiles'> = {}
+): Response {
+  const headers = { 'content-type': contentTypeFor(location), ...policyHeaders(connectPatterns, securePatterns, crossOriginIsolated, liveCsp), location }
+  return new Response(null, { status: 302, headers })
+}
+
 /** The headers every served app response carries, whether its bytes come off disk or from the verifier: nosniff, the CSP the live grants call for and, for an app that asked for it, isolation. */
 export function policyHeaders (
   connectPatterns: readonly Pattern[],
