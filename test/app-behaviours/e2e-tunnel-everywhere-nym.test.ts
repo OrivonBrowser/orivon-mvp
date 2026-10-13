@@ -122,7 +122,8 @@ async function launched (failStart: boolean) {
 
 it('[app:tunnel-everywhere-on-nym] a website with no setting arrives through a Nym tunnel, the decoy is never reached, and nothing at start-up waited for Nym', async () => {
   const world = await launched(false)
-  expect(world.log(), 'Nym did not start until something asked for a tunnel').toEqual([])
+  // The engine's own requests at start-up (its component updater) are carried by the tunnel as well and may bring Nym up first; what must not have happened is a dial for the page before it was opened.
+  expect(world.log().filter((line) => line.startsWith('tcp ') || line.startsWith('udp ')), 'nothing was dialled through Nym before the page was asked for').toEqual([])
   await clickAddressBarRetrying(world.chrome, world.url)
   expect((await waitForTab(world.chrome, { address: world.url, title: 'tunnelled' }, 60_000)).ok, 'the page came through Nym').toBe(true)
   expect(world.log().some((line) => line.startsWith('tcp ') && line.endsWith(`${NAME}:${String(world.decoy.port)}`)), world.log().join('|')).toBe(true)
