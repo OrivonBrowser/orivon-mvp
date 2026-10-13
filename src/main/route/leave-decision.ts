@@ -12,7 +12,7 @@ export interface LeaveWorld {
   /** The routed app whose own session is `partition`, if any: a document with no web address (`about:blank`, `data:`) still runs as that app. */
   readonly routedOriginOf: (partition: string | undefined) => string | undefined
   /** How a person reads `url` when Orivon's own nodes fetch and serve it (`ipfs://name`, a `.eth` name), or undefined for any other address. No proxy has a say in what those nodes load. */
-  readonly servedOrigin?: (url: string) => string | undefined
+  readonly servedOrigin: (url: string) => string | undefined
 }
 
 /** `app` is the routed app whose page asks; `origin` is what it wants to open. */
@@ -44,7 +44,7 @@ export function leavesRoute (fromUrl: string, toUrl: string, world: LeaveWorld, 
   const to = originFromUrl(toUrl)
   if (to === from) return undefined
   if (to !== null && world.isInstalledApp(to)) return world.isRouted(to) ? undefined : { kind: 'app', origin: to, app: from }
-  const served = world.servedOrigin?.(toUrl)
+  const served = world.servedOrigin(toUrl)
   if (served !== undefined) return { kind: 'served', origin: served, app: from }
   if (to === null) return undefined
   return { kind: 'website', origin: to, app: from }

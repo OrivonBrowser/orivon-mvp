@@ -32,9 +32,10 @@ export async function chooseLeave (contents: WebContents, leave: Leave): Promise
   // One question at a time for an app, in any of its tabs: what it asks meanwhile is cancelled as a blocked pop-up is,
   // and what it asks after the answer is asked again. Nothing is counted or remembered.
   if (asking.has(leave.app)) return { kind: 'cancel' }
-  asking.add(leave.app)
-  const release = holdNavigation(contents)
+  let release = (): void => {}
   try {
+    asking.add(leave.app)
+    release = holdNavigation(contents)
     const answer = await askToLeaveRoute({ contents }, leave)
     if (answer === 'cancel') return { kind: 'cancel' }
     if (answer === 'direct') return { kind: 'direct' }

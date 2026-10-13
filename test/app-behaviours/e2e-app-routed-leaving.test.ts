@@ -16,6 +16,7 @@ import { startSocks5Fixture } from '../../src/broker/route/tests/socks5-fixture.
 import type { Socks5Fixture } from '../../src/broker/route/tests/socks5-fixture.test-helpers.js'
 import type { Manifest } from '../../src/contracts/index.js'
 import { assertNoElectronSurvivors } from '../support/launch-electron.mjs'
+import { shoot } from '../support/auth-support.js'
 import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
 import { launchShell, QA_TEST_TIMEOUT_MS } from '../support/qa-helpers.js'
 import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
@@ -330,6 +331,8 @@ it('[app:routed-app-asks-before-opening-a-website] a page Orivon loads itself (i
   expect(said.message).toBe(`${ORIGIN} wants to open ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi.`)
   expect(said.detail).toBe('Orivon loads this page itself, so it cannot go through your proxy yet.')
   expect([...said.buttons].sort()).toEqual(['Cancel', 'Directly'])
+  await panel.waitForSelector('.q:not(.arming)')
+  await shoot(app, chrome, panel, 'routed-leaving-served')
   await answerQuestion(app, 'Cancel')
   expect(await waitFor(async () => await questionGone(app))).toBe(true)
   await delay(1000)

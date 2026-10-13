@@ -89,7 +89,7 @@ decision (`leave-decision.ts`) and the sessions it needs live here. *Through my 
 `temporary-routes.ts`, pointed at its own front through the controller's `prepareTemporary` (the one place a session
 is pointed at a front, so the app sessions' rules apply to it too); it is never registered with an app, so a change of
 an app's route cannot repoint it. It is in memory because its name has no `persist:` prefix, and it is cleared when the
-last web contents in it is destroyed. A page Orivon serves itself (`ipfs://`, `ipns://`, `bzz://`, a `.eth` name) is asked about with *Directly* and *Cancel* only: the verifier host and the Swarm node fetch it and are not routed per app, so there is nothing to route it through. One question at a time is open for an app, in any of its tabs; its other requests meanwhile are cancelled unasked and nothing is remembered. A popup that asked for a window of its own is adopted into the app's routed session
+last web contents in it is destroyed. A page Orivon serves itself (an address the protocol registry serves, or a `.eth` name) is asked about with *Directly* and *Cancel* only: the verifier host and the Swarm node fetch it and are not routed per app. One question is open per app at a time, in any of its tabs; its other requests meanwhile are cancelled unasked and nothing is remembered. A popup that asked for a window of its own is adopted into the app's routed session
 and is not asked about; an answer comes after `window.open` has returned, so such an open returns `null` whatever is
 chosen. A tab moved into a temporary session records it (`routedAway`) so that Forward onto that page does not load it
 in the shared session while the temporary one is alive.

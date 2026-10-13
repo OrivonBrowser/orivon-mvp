@@ -61,7 +61,7 @@ export const routeSubsystem: Subsystem = {
     // The sessions handed out are Electron's own (`sessionFor` above), so the casts only restore what the controller's narrow type hides.
     // A site open in a temporary session is looked up about through that session; an app's own session wins for an app.
     setLookupSessionSource(async (origin) => await routes.controller.fetchSessionFor(origin) as Session | undefined
-      ?? temporarySessionShowing(webContents.getAllWebContents(), temporary.owns, origin) as Session | undefined)
+      ?? (temporary.count() === 0 ? undefined : temporarySessionShowing(webContents.getAllWebContents(), temporary.owns, origin) as Session | undefined))
     setLeavingRoutes({
       world: {
         isRouted: routes.hub.isRouted,

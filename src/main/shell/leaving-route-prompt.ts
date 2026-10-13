@@ -20,21 +20,23 @@ export function leavingQuestion (leave: Leave): { message: string, detail: strin
   }
 }
 
+/** What each button of `leavingQuestion` answers, in the order shown. */
+function answersFor (leave: Leave): LeaveAnswer[] {
+  return leave.kind === 'served' ? ['direct', 'cancel'] : ['proxy', 'direct', 'cancel']
+}
+
 /** Escape, a closed tab and a new page in the tab all answer `cancel`. */
 export async function askToLeaveRoute (where: QuestionTarget, leave: Leave): Promise<LeaveAnswer> {
   const { message, detail, buttons } = leavingQuestion(leave)
-  // The choices are listed in the order shown: [proxy,] direct, cancel.
-  const hasProxy = buttons.length === 3
-  const direct = hasProxy ? 1 : 0
-  const cancel = buttons.length - 1
+  const answers = answersFor(leave)
   const { response } = await askQuestion(where, {
     kind: 'consent',
     buttons,
-    cancelId: cancel,
-    guarded: hasProxy ? [0, direct] : [direct],
+    cancelId: answers.indexOf('cancel'),
+    guarded: answers.flatMap((answer, index) => answer === 'cancel' ? [] : [index]),
     focus: 'dialog',
     message,
     detail
   }, { endOnNavigation: true })
-  return hasProxy && response === 0 ? 'proxy' : response === direct ? 'direct' : 'cancel'
+  return answers[response] ?? 'cancel'
 }
