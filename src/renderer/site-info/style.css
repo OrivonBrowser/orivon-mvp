@@ -118,6 +118,15 @@ hr {
 .route-line { margin: 6px 0 0; padding: 0 2px; color: var(--wink-dim); font-size: 12px; }
 .route-line-down { color: var(--wwarn); }
 
+/* --- The tunnel switch and the notice before a site moves ------------ */
+
+.tunnel-section { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.tunnel-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; background: var(--wsurface); border: 1px solid var(--wborder); }
+.tunnel-label { flex: 1; min-width: 0; }
+.tunnel-section .route-line { margin: 0; }
+.tunnel-notice { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; border-radius: 6px; background: color-mix(in srgb, var(--waccent) 12%, transparent); font-size: 12px; line-height: 1.5; }
+.tunnel-notice-text { margin: 0; }
+
 .connection-row {
   display: flex;
   align-items: center;

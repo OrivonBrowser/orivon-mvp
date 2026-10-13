@@ -8,6 +8,7 @@ import { localPartitionFor, partitionAfterFileBlock as fileBlockTarget } from '.
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { isTemporaryRoutePartition } from '../route/temporary-routes.js'
+import { sitePartitionForOrigin } from '../route/site-routes.js'
 
 /** The `additionalArguments` flag marking a registered app's tab. Spelled
  * again in preload/routed/fetch.ts rather than imported, for the reason
@@ -33,6 +34,9 @@ export const APP_TAB_FLAG = '--orivon-app-tab'
  * it in before: its own once the person has let it use Orivon permissions,
  * the shared one before (`localPartitionFor`).
  *
+ * A website whose tunnel state differs from the browser's default runs in a session of its own
+ * (`../route/site-partition.ts`), which an installed app never needs: its own partition is already apart.
+ *
  * `originFromUrl` derives an origin only for `http:`/`https:`, so a
  * `chrome-extension:` target always answers undefined: tabs.ts's
  * openTrusted() relies on this to put an extension-opened tab on
@@ -42,7 +46,8 @@ export function partitionForTarget (target: string): string | undefined {
   if (local !== undefined) return local
   const origin = originFromUrl(target)
   if (origin === null) return undefined
-  return isOriginServedFromCacheSync(origin) ? partitionFor(origin) : undefined
+  // A website whose tunnel state differs from the browser's default keeps its storage apart from the shared session.
+  return isOriginServedFromCacheSync(origin) ? partitionFor(origin) : sitePartitionForOrigin(origin)
 }
 
 /** Where a navigation must move a tab's view, or undefined for "stay put".

@@ -19,15 +19,16 @@ session. A row may not name a file that is gone or that the scan no longer match
 **The last column** says one of these:
 
 - **Loopback.** Never leaves this computer.
-- **Routed.** Takes the route of the app it works for, with the name unresolved here, and is refused or stopped
+- **Routed.** Takes the route of the app or website it works for, with the name unresolved here, and is refused or stopped
   when the route is down.
 - **The tunnel's own way in.** Connects to the person's SOCKS5 address, the one place a connection is direct by
   definition.
 - **Not routed.** Goes direct, or through whatever proxy the system gives the default session. An unrouted app
   or a website keeps this too.
 
-A routed app is one the person switched on in its card; every other app, and every website, is *not routed* in this
-build.
+A routed origin is an installed app the person switched on in its card, or a website they turned the tunnel on for from
+its site-info popover ([`ADR-0082`](../decisions/ADR-0082-a-websites-tunnel-state-is-kept-per-origin-and-a-website-that-differs-from-the-default-has-storage-of-its-own.md));
+every other app and website is *not routed* in this build.
 
 ## The broker's sockets (durable)
 
@@ -55,8 +56,8 @@ build.
 
 | File | Reaches | For | Tunnel |
 |---|---|---|---|
-| `src/main/browsing/favicon-fetch.ts` | The site a tab shows, and the host that holds its icon | A tab's icon, fetched by main | Routed for a routed app or a temporary routed tab (the lookup session); not routed otherwise |
-| `src/main/browsing/score-provider-client.ts` | The Web3 Score provider the person chose | The page's judged level, by hash bucket | Routed for a routed app's page (`fetchThroughRoute`; the two reads that cannot go through a session are skipped); not routed otherwise |
+| `src/main/browsing/favicon-fetch.ts` | The site a tab shows, and the host that holds its icon | A tab's icon, fetched by main | Routed for a routed app, a website with its tunnel on or a temporary routed tab (the lookup session); not routed otherwise |
+| `src/main/browsing/score-provider-client.ts` | The Web3 Score provider the person chose | The page's judged level, by hash bucket | Routed for a routed app's or tunnelled website's page (`fetchThroughRoute`; the two reads that cannot go through a session are skipped); not routed otherwise |
 | `src/main/children/child-host.ts` | The app's own session: the pin, and `reach` for a third-party `https` | Serving an app's child host document and files | Takes the app's route, since its session is pointed at the app's front |
 | `src/main/consent/grant-prompt-origin.ts` | Nothing: uses only `isIP` | Writing an origin for the permission dialog | Loopback |
 | `src/main/dev/local-ddoc.ts` | A loopback address or a developer `.eth` name, in developer mode only | Reading the DDOC file a local origin serves | Loopback |
@@ -66,9 +67,9 @@ build.
 | `src/main/omnibox/suggest-net.ts` | The person's search engine's suggestion address | Suggestions while typing in the address bar | Not routed |
 | `src/main/pages/serve.ts` | The renderer's dev server on loopback, in a source run only | Answering an `orivon://` page in development | Loopback |
 | `src/main/reader/reader-command.ts` | The hosts of an article's pictures, in the source tab's session | The Reader view's images | Takes the tab's session: routed in a temporary routed tab, not routed otherwise |
-| `src/main/route/front.ts` | Listens on `127.0.0.1`; opens streams only through the route's provider | The loopback HTTP proxy Chromium is pointed at for a routed app | Routed (this is the tunnel's local end) |
-| `src/main/route/route-controller.ts` | Sets the proxy of an app's sessions: its front, or a rule that reaches nothing | Where a session takes the tunnel | Routed (it makes sessions take it) |
-| `src/main/route/routed-fetch.ts` | A GET in the session a routed lookup uses | Tab icons and Web3 Score for a routed app, answering the front's proxy challenge | Routed |
+| `src/main/route/front.ts` | Listens on `127.0.0.1`; opens streams only through the route's provider | The loopback HTTP proxy Chromium is pointed at for a routed app or website | Routed (this is the tunnel's local end) |
+| `src/main/route/route-controller.ts` | Sets the proxy of an app's or a website's sessions: its front, or a rule that reaches nothing | Where a session takes the tunnel | Routed (it makes sessions take it) |
+| `src/main/route/routed-fetch.ts` | A GET in the session a routed lookup uses | Tab icons and Web3 Score for a routed app or website, answering the front's proxy challenge | Routed |
 | `src/main/self-update/update-check-runner.ts` | GitHub's releases API | Looking for a newer release | Not routed |
 | `src/main/sessions/web-context-host.ts` | Nothing from the session: its proxy is a port nothing listens on | A web context answers `https` itself (through `reach`), refuses `http` and WebSocket | Takes the app's route through `reach`; the session's proxy only confines it |
 | `src/main/settings/proxy-checks.ts` | Nothing: uses only `isIPv6` | Reading a SOCKS5 address | Loopback |
@@ -80,7 +81,7 @@ build.
 |---|---|---|---|
 | `src/protocols/local-node/node-net.ts` | Public peers by TCP, DNS resolvers by UDP port 53, through the broker's adapters; listens on loopback | The local IPFS and Swarm nodes' sockets | Not routed |
 | `src/protocols/local-node/service.ts` | The node's DNS-over-HTTPS endpoints with the process's own `fetch`; the node's own API on loopback; the adapters above | Running a local node, naming its peers, and waiting for its readiness | Not routed for the DNS-over-HTTPS lookups; loopback for the readiness check |
-| `src/protocols/verifier-host/entry.ts` | Through Electron's `net` in the verifier host: gateways, execution and consensus RPCs, DNS-over-HTTPS, name-service and CCIP-Read hosts, the Swarm and IPFS endpoints | Resolving `.eth` names and reading `ipfs://`, `ipns://` and `bzz://` | Not routed. It takes the default proxy only |
+| `src/protocols/verifier-host/entry.ts` | Through Electron's `net` in the verifier host: gateways, execution and consensus RPCs, DNS-over-HTTPS, name-service and CCIP-Read hosts, the Swarm and IPFS endpoints | Resolving `.eth` names and reading `ipfs://`, `ipns://` and `bzz://` | Not routed. It takes the default proxy only, also for a Web3 name whose website has the tunnel on: the popover and the address bar's key say the site is tunnelled in part |
 | `src/protocols/verifier-host/direct-fetch.ts` | One gateway or CCIP-Read host at an address pinned in advance, over `https`, with TLS checked against the real name | The DNS-tamper fallback and the pinned CCIP-Read request | Not routed. It runs only when no proxy applies to the host (T31, T40) |
 | `src/protocols/verifier-host/light-client/light-client.ts` | Nothing of its own: replaces the host's `globalThis.fetch` with the allowlisted one that calls `entry.ts`'s fetch, and removes `WebSocket` | Helios, the Ethereum light client | Not routed, as `entry.ts` |
 | `src/protocols/verifier-host/serve/server.ts` | Listens on loopback with TLS | The server every protocol host name resolves to | Loopback |
@@ -94,8 +95,8 @@ build.
 ## What the scan cannot see
 
 - **Chromium's own network stack.** Pages, their subresources, WebSocket, WebRTC, service workers and extensions do
-  not appear above: they take the proxy of the session they run in. A routed app's sessions and a temporary routed
-  tab point at a front; the shared session, ordinary tabs and extensions do not. The engine also makes requests of
+  not appear above: they take the proxy of the session they run in. A routed app's sessions, a routed website's session
+  of its own and a temporary routed tab point at a front; the shared session, ordinary tabs and extensions do not. The engine also makes requests of
   its own with no web contents (the spellcheck dictionary download is one); those take the default proxy.
 - **A program Orivon starts.** Anything a spawned process dials is that process's own business.
 - **Code that passes `fetch` in.** The gateways, IPFS, Swarm and ENS readers and the loader's bundle reader receive a

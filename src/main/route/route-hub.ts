@@ -1,7 +1,7 @@
-// Which apps are routed, through which proxy, and what each routed app needs running for it: its route (read by the
-// broker and the loader), its loopback front (read by Chromium) and its health (read by the Settings page and the
-// site-info popover). Electron-free. A routed app with no proxy set gets a route that refuses: it never falls back to
-// a direct one. When the store cannot say which apps are routed, every app is routed while a tunnel is set.
+// Which origins (installed apps and websites alike) go through the proxy, and what each needs running for it: its
+// route (read by the broker and the loader), its loopback front (read by Chromium) and its health (read by the Settings
+// page and the site-info popover). Electron-free. A routed origin with no proxy set gets a route that refuses: it never
+// falls back to a direct one. When the store cannot say what the person set, every origin is routed while a tunnel is set.
 
 import type { Route, RouteFor, RouteProvider } from '../../broker/route/provider.js'
 import { createSocks5Provider, isolationCredentials, routeAnswered } from '../../broker/route/socks5.js'
@@ -11,6 +11,7 @@ import { fail } from '../../broker/errors.js'
 import { startRouteFront } from './front.js'
 import type { RouteFront } from './front.js'
 import type { RouteStore } from './route-store.js'
+import { differsFromDefault, tunnelStateOf } from './route-state.js'
 
 export type RouteChangeCause = 'switch' | 'proxy'
 
@@ -21,7 +22,9 @@ export interface RouteHubOptions {
   readonly store: RouteStore
   /** The proxy the person set, read on every use. */
   readonly proxy: () => RouteTarget | undefined
-  /** The apps installed on this computer, asked only when the store cannot say which are routed: websites are never routed. */
+  /** Whether the whole browser goes through the tunnel unless an origin says otherwise: the default an origin with no entry follows. Off until the browser-wide setting exists. */
+  readonly everywhere?: () => boolean
+  /** The apps installed on this computer, asked when the proxy changes while the store cannot say what was set, so their sessions are pointed again. */
   readonly installed?: () => readonly string[]
   /** Builds the provider for one app and proxy; the default is SOCKS5 with a distinct username and password per app. */
   readonly providerFor?: (key: string, target: RouteTarget) => RouteProvider
@@ -31,7 +34,9 @@ export interface RouteHub {
   /** For `CreateBrokerOptions.routeFor` and the loader's reach path. */
   readonly routeFor: RouteFor
   isRouted: (origin: string) => boolean
-  /** Whether the list of routed apps could not be read, so that every app counts as routed while a tunnel is set. */
+  /** Whether a website at `origin` runs in a session of its own: its state differs from the default, or the store cannot be read. */
+  usesOwnSession: (origin: string) => boolean
+  /** Whether the list of tunnel settings could not be read, so that every origin counts as routed while a tunnel is set. */
   unreadable: () => boolean
   state: (origin: string) => RouteState
   /** The app's front, started on first use. Rejects for an app that is not routed. */
@@ -56,6 +61,7 @@ const REFUSING_ROUTE: Route = { provider: REFUSING_PROVIDER }
 
 export function createRouteHub (options: RouteHubOptions): RouteHub {
   const { store } = options
+  const everywhere = options.everywhere ?? (() => false)
   const credentials = isolationCredentials()
   const health = new Map<string, 'ok' | 'down'>()
   const fronts = new Map<string, Promise<RouteFront>>()
@@ -81,9 +87,9 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
     }
   })
   const build = options.providerFor ?? ((key: string, target: RouteTarget) => createSocks5Provider({ host: target.host, port: target.port, credentials: credentials(key) }))
-  /** An unreadable list is not "nothing routed": with a proxy set, every app is. */
-  const routed = (origin: string): boolean =>
-    store.has(origin) || (store.unreadable() && options.proxy() !== undefined && (options.installed === undefined || options.installed().includes(origin)))
+  /** An unreadable list is not "nothing routed": with a proxy set, every origin is. */
+  const unreadableWithProxy = (): boolean => store.unreadable() && options.proxy() !== undefined
+  const routed = (origin: string): boolean => unreadableWithProxy() || tunnelStateOf(store.stateOf(origin), everywhere()) === 'on'
   const table = createRouteFor({
     targetFor: (key) => routed(key) ? options.proxy() : undefined,
     providerFor: (key, target) => tracked(key, build(key, target))
@@ -99,15 +105,19 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
     stopping.add(stopped)
   }
 
-  store.onChange((origin, routed) => {
+  store.onChange((origin, entry, previous) => {
     health.delete(origin)
-    if (!routed) stopFront(origin)
-    emit(origin, routed, 'switch')
+    const now = tunnelStateOf(entry, everywhere()) === 'on'
+    // An entry that says what the default already says changes nothing for the origin.
+    if (now === (tunnelStateOf(previous, everywhere()) === 'on')) return
+    if (!now) stopFront(origin)
+    emit(origin, now, 'switch')
   })
 
   return {
     routeFor,
     isRouted: routed,
+    usesOwnSession: (origin) => unreadableWithProxy() || differsFromDefault(store.stateOf(origin), everywhere()),
     unreadable: () => store.unreadable(),
     state: (origin) => {
       if (!routed(origin)) return 'off'
@@ -115,7 +125,7 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
       return health.get(origin) ?? 'idle'
     },
     front: async (origin) => {
-      if (!routed(origin)) throw new Error('this app is not routed')
+      if (!routed(origin)) throw new Error('this origin is not routed')
       let running = fronts.get(origin)
       if (running === undefined) {
         // Recorded as listening only while it is still the app's front: one that was switched off meanwhile is closing.
@@ -136,8 +146,8 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
     },
     proxyChanged: () => {
       health.clear()
-      // With the list unreadable, setting or clearing the proxy changes which apps are routed at all.
-      const affected = new Set([...store.origins(), ...(store.unreadable() ? options.installed?.() ?? [] : [])])
+      // With the list unreadable, setting or clearing the proxy changes which origins are routed at all.
+      const affected = new Set([...store.origins(), ...fronts.keys(), ...(store.unreadable() ? options.installed?.() ?? [] : [])])
       for (const origin of affected) {
         void fronts.get(origin)?.then((front) => { front.closeTunnels() }, () => {})
         const now = routed(origin)

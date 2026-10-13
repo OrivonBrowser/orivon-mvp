@@ -17,6 +17,7 @@ import { sharingStatePart } from './state/sharing.js'
 import { shortcutsStatePart } from './state/shortcuts.js'
 import { sidePanelStatePart } from './state/side-panel.js'
 import { siteAccessStatePart } from './state/site-access.js'
+import { tunnelStatePart } from './state/tunnel.js'
 import { updateOfferedStatePart } from './state/update-offered.js'
 import type { ShellState, TabsSnapshot } from './tab-types.js'
 import type { WindowContext } from './window-context.js'
@@ -45,6 +46,7 @@ export const SHELL_STATE_PARTS: readonly ShellStatePart[] = [
   shortcutsStatePart,
   sidePanelStatePart,
   siteAccessStatePart,
+  tunnelStatePart,
   updateOfferedStatePart
 ]
 
