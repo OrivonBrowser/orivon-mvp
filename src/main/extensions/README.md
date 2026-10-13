@@ -122,7 +122,7 @@ same exception, reached only through the virtual specifiers above).
 | `dnr/`, `dnr-api.ts`, `dnr-action-options.ts`, `dnr-match-log.ts`, `dnr-webrequest.ts`, `extensions-dnr.ts` | `declarativeNetRequest`, applied by Orivon rather than Electron ([`ADR-0051`](../../../docs/decisions/ADR-0051-orivon-applies-extensions-declarativenetrequest-rules-itself.md)): the Electron-free engine and its disk reads (`dnr/README.md`), the `chrome.declarativeNetRequest` handlers and badge counts, and the handlers registered on the session's one `webRequest` owner |
 | `web-request/`, `web-request-api.ts`, `web-request-dispatch.ts` | `chrome.webRequest`, served by Orivon rather than Electron: the Electron-free filter, visibility, details and merge rules (`web-request/README.md`), the three router handlers an extension registers listeners through, and the dispatcher that sends each request to the page holding a listener, through the session's one webRequest owner |
 | `extensions-subsystem.ts` | Registers everything into the running app via `../registry.ts`, including the Chrome Web Store (`store-runner.ts`); also gives each profile session its library instance and the extensions it holds (`prepareProfileSession`, `wakeProfileSession`), and the request rules to a plain-http profile kept in memory |
-| `profile-extensions.ts`, `profile-demand.ts`, `profile-hosts.ts`, `profile-registry.ts` | The person's extensions in a persistent profile session (`../route/site-partition.ts`): one copy of each loaded in the session and kept in step with the default session's, on or off as a whole (`profile-extensions.ts`); whether a website is open in the session, which is what the direct profile's copies follow (`profile-demand.ts`, no `electron`); the library instance, rules and lifecycle each profile session gets (`profile-hosts.ts`); and the table the host reads to give a tab the instance of its own session (`profile-registry.ts`) |
+| `profile-extensions.ts`, `profile-demand.ts`, `profile-hosts.ts`, `profile-registry.ts` | The person's extensions in a persistent profile session (`../route/site-partition.ts`): one copy of each loaded in the session and kept in step with the default session's, on or off as a whole (`profile-extensions.ts`); whether a website is open in the session, which is what each profile's copies follow (`profile-demand.ts`, no `electron`); the library instance, rules and lifecycle each profile session gets (`profile-hosts.ts`); and the table the host reads to give a tab the instance of its own session (`profile-registry.ts`) |
 | `toolbar-partition.ts` | Points the toolbar's list in a window at the session of the tab in front |
 | `store-test-hook.ts` | Test builds only -- exposes the store methods on `globalThis` for `test/extensions/e2e-extensions-store.test.ts` |
 | `extensions-domain.ts` | The `orivon://extensions` page's `InternalDomain` -- validates every request, wires the pieces above to what the page asks |
@@ -148,11 +148,13 @@ rules an extension adds at run time (one `declarativeNetRequest` engine keyed by
 history, bookmarks and top sites, and the answer of `runtime.onInstalled`, which the first copy to ask takes. What a profile does not have: the side panel, the keyboard shortcuts of extension commands, and any
 extension in a plain-http website's profile, which is kept in memory, where Electron loads none.
 
-**The direct profile's copies run only while a website of the direct profile is open.** `profile-demand.ts` counts the pages of
-the session from the shell's tab events; `profile-hosts.ts` loads the copies when the first one opens (a view about to be
-made counts at once, so the requests of the session wait for the copies, as they wait for the route) and removes them,
-with their pages and workers, when the last one closes. With the whole browser on the tunnel an extension therefore makes no
-direct request while no excluded website is open. The tunnel profile's copies, once loaded, stay.
+**A profile's copies run only while a website of that profile is open.** `profile-demand.ts` counts the pages of the session
+from the shell's tab events; `profile-hosts.ts` loads the copies when the first one opens (a view about to be made counts at
+once, so the requests of the session wait for the copies, as they wait for the route) and removes them, with their pages and
+workers, when the last one closes, the same for the tunnel profile and the direct profile. An idle profile therefore holds no
+extension page, worker or memory (each active profile costs about 180 to 400 MB with the real uBlock Origin), and with the whole
+browser on the tunnel an extension makes no direct request while no excluded website is open. A page that shows an extension is
+no website. Each profile's extension settings are on disk, so they survive an unload.
 
 
 **An extension's side panel is a guest of the window's own panel, and `open()` needs the person's input.**

@@ -1,9 +1,10 @@
-// The person's extensions run in the two profile sessions as they do in the default one, and the direct profile's run only while
-// a website the person left out of the tunnel is open in it. With the whole browser on the tunnel:
+// The person's extensions run in the two profile sessions as they do in the default one, and each profile's run only while a
+// website is open in it. With the whole browser on the tunnel:
 //   - an MV2 extension's blocking webRequest listener (the way uBlock Origin blocks) cancels a fixture ad request from a page in
 //     the tunnel profile, and from one in the direct profile, as it does from a page in the default session;
 //   - while no website of the direct profile is open, the direct profile holds no extension and none of its copies makes a request;
-//     opening one brings the extension back, and closing it takes it away again.
+//     opening one brings the extension back, and closing it takes it away again;
+//   - the tunnel profile does the same: no extension, background page or worker while none of its websites is open.
 // Fixtures: test/apps/extensions/webrequest-mv2/ (blocks /wr-ads/) and test/apps/extensions/profile-beacon/ (asks a server of the
 // test for /beacon every 250 ms, naming its own copy).
 //
@@ -139,6 +140,20 @@ async function visit (name: Name): Promise<Page> {
   return view
 }
 
+/** The name the beacon extension's copy in `partition` stored for itself, once its background page is up. */
+const copyIn = async (partition: string | undefined): Promise<string> => {
+  let found = ''
+  await waitFor(async () => {
+    found = await app.evaluate(async ({ session, webContents }, [name, id]) => {
+      const target = name === undefined ? session.defaultSession : session.fromPartition(name)
+      const page = webContents.getAllWebContents().find((wc) => !wc.isDestroyed() && wc.session === target && wc.getType() === 'backgroundPage' && wc.getURL().startsWith(`chrome-extension://${id}/`))
+      return page === undefined ? '' : await page.executeJavaScript('new Promise((resolve) => chrome.storage.local.get("copy", (stored) => resolve(stored.copy || "")))') as string
+    }, [partition, beaconId] as const)
+    return found !== ''
+  }, 10_000).catch(() => false)
+  return found
+}
+
 const flag = async (view: Page, name: string): Promise<boolean> => await view.evaluate((n) => Boolean((window as unknown as Record<string, unknown>)[n]), name)
 
 /** The extensions a session holds, and the extension pages (background pages) that exist in it. */
@@ -175,23 +190,11 @@ it('[app:extensions-run-in-the-profiles] a blocking webRequest listener cancels 
 }, 4 * QA_TEST_TIMEOUT_MS)
 
 it('[app:extensions-run-in-the-profiles] with the whole browser on the tunnel, the direct profile holds no extension, and none of its copies makes a request, while no website of it is open', async () => {
-  // Three copies of the beacon run now: the default session's, the tunnel profile's and the direct profile's.
+  // The only tab is on a website of the direct profile: its copies run.
   expect(await inSession(DIRECT)).toMatchObject({ extensions: COPIES })
-  const copyIn = async (partition: string | undefined): Promise<string> => {
-    let found = ''
-    await waitFor(async () => {
-      found = await app.evaluate(async ({ session, webContents }, [name, id]) => {
-        const target = name === undefined ? session.defaultSession : session.fromPartition(name)
-        const page = webContents.getAllWebContents().find((wc) => !wc.isDestroyed() && wc.session === target && wc.getType() === 'backgroundPage' && wc.getURL().startsWith(`chrome-extension://${id}/`))
-        return page === undefined ? '' : await page.executeJavaScript('new Promise((resolve) => chrome.storage.local.get("copy", (stored) => resolve(stored.copy || "")))') as string
-      }, [partition, beaconId] as const)
-      return found !== ''
-    }, 10_000).catch(() => false)
-    return found
-  }
   const directCopy = await copyIn(DIRECT)
   expect(directCopy).toMatch(/^[a-z0-9]+$/)
-  expect(new Set([await copyIn(undefined), await copyIn(TUNNEL), directCopy]).size, 'each session has a copy of its own').toBe(3)
+  expect(new Set([await copyIn(undefined), directCopy]).size, 'each session has a copy of its own').toBe(2)
   const lastHeard = (): number => beacons.get(directCopy) ?? 0
   const heard = await waitFor(() => Date.now() - lastHeard() < 1_000)
   expect(heard, 'the direct profile\'s copy is asking while its website is open').toBe(true)
@@ -210,7 +213,7 @@ it('[app:extensions-run-in-the-profiles] with the whole browser on the tunnel, t
   const silentSince = Date.now()
   await delay(3_000)
   expect(lastHeard() < silentSince, 'the direct profile\'s copy made no request after it was taken away').toBe(true)
-  expect((await inSession(TUNNEL)).extensions, 'the tunnel profile keeps its own').toBe(COPIES)
+  expect((await inSession(TUNNEL)).extensions, 'the tunnel profile has no website open and holds none').toBe(0)
   expect((await inSession(undefined)).extensions).toBe(COPIES)
 
   // Another website of the direct profile opens: the extensions come back, with the same storage.
@@ -227,6 +230,38 @@ const inBeacon = async (partition: string, code: string): Promise<unknown> => aw
   if (page === undefined) throw new Error(`no beacon page in ${name as string}`)
   return await page.executeJavaScript(run as string)
 }, [partition, beaconId, code] as const)
+
+it('[app:extensions-run-in-the-profiles] the tunnel profile holds no extension, background page or worker while no website of it is open, and gets them back with the next', async () => {
+  await visit('tunnelled')
+  expect(await waitFor(async () => (await inSession(TUNNEL)).extensions === COPIES, 20_000), 'a tunnel website brings the extensions').toBe(true)
+  const tunnelCopy = await copyIn(TUNNEL)
+  expect(tunnelCopy).toMatch(/^[a-z0-9]+$/)
+  expect(tunnelCopy, 'the tunnel profile\'s copy is not the default session\'s').not.toBe(await copyIn(undefined))
+  expect(await waitFor(() => Date.now() - (beacons.get(tunnelCopy) ?? 0) < 1_000), 'the tunnel profile\'s copy is asking while its website is open').toBe(true)
+  expect(await waitFor(async () => (await inSession(TUNNEL)).workers > 0, 20_000), 'the third extension\'s service worker runs').toBe(true)
+
+  // The tab shows a page of an extension: no website of the tunnel profile is open.
+  await inBeacon(TUNNEL, `chrome.tabs.query({ active: true }).then(([tab]) => chrome.tabs.update(tab.id, { url: chrome.runtime.getURL('config.js') }))`)
+  expect(await waitFor(async () => {
+    const held = await inSession(TUNNEL)
+    return held.extensions === 0 && held.backgrounds === 0 && held.workers === 0
+  }, 20_000), 'a tab showing an extension keeps nothing running in the tunnel profile').toBe(true)
+
+  // A website of another session: the tunnel profile stays empty, and its copy goes quiet.
+  await visit('plain')
+  const silentSince = Date.now()
+  await delay(3_000)
+  expect(await inSession(TUNNEL)).toEqual({ extensions: 0, backgrounds: 0, workers: 0 })
+  expect((beacons.get(tunnelCopy) ?? 0) < silentSince, 'the tunnel profile\'s copy made no request after it was taken away').toBe(true)
+  expect((await inSession(undefined)).extensions).toBe(COPIES)
+
+  // The next website of the tunnel profile brings them back, with the same storage, and the blocking listener holds again.
+  const view = await visit('tunnelled')
+  expect(await waitFor(async () => (await inSession(TUNNEL)).extensions === COPIES, 20_000)).toBe(true)
+  expect(await copyIn(TUNNEL), 'the settings survived the unload').toBe(tunnelCopy)
+  expect(await waitFor(() => Date.now() - (beacons.get(tunnelCopy) ?? 0) < 1_000, 20_000), 'the copy asks again').toBe(true)
+  expect(await waitFor(async () => await flag(view, '__adBlocked'), 60_000), 'and blocks again').toBe(true)
+}, 4 * QA_TEST_TIMEOUT_MS)
 
 it('[app:extensions-run-in-the-profiles] a declarativeNetRequest rule an extension adds at run time in a profile blocks a request from a page of that profile', async () => {
   for (const [name, session, id] of [['tunnelled', TUNNEL, 901], ['direct', DIRECT, 902]] as const) {

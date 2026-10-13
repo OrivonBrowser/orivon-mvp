@@ -3,12 +3,11 @@
 // and the rules added at run time act on the tabs of that session; and the extensions themselves, one copy for every website
 // in the session (`profile-extensions.ts`).
 //
-// The tunnel profile loads them at its first view and keeps them. The direct profile loads them when a website the person left
-// out of the tunnel opens in it and removes them when the last one closes (`profile-demand.ts`), so that with the whole browser on
-// the tunnel an extension makes no request there while no such website is open. Tied to Electron.
+// Both profiles load them when their first website opens and remove them when their last one closes (`profile-demand.ts`), so an
+// idle profile holds no extension page or worker and costs no memory, and with the whole browser on the tunnel an extension makes
+// no direct request while no website the person left out of it is open. Tied to Electron.
 import type { Session } from 'electron'
 import type { ElectronChromeExtensions } from 'orivon:crx-extensions'
-import { profileOfPartition } from '../route/site-partition.js'
 import { createProfileDemand } from './profile-demand.js'
 import { createProfileExtensions } from './profile-extensions.js'
 import { registerProfile } from './profile-registry.js'
@@ -62,11 +61,8 @@ export function createProfileAttacher (deps: ProfileAttacherDeps): ProfileAttach
     installDnrWebRequestHandlers(target, deps.engine, onRuleMatched, onTabNavigated)
     deps.installApis(host, target)
 
-    // The tunnel profile's extensions stay on once they have been asked for; the direct profile's follow the websites open in it.
-    if (profileOfPartition(partition) === 'direct') {
-      // orivon:floating-ok -- `activate` and `deactivate` catch everything they can throw
-      demand.onChange((open) => { void (open ? extensions.activate() : extensions.deactivate()) })
-    }
+    // orivon:floating-ok -- `activate` and `deactivate` catch everything they can throw
+    demand.onChange((open) => { void (open ? extensions.activate() : extensions.deactivate()) })
     return {
       wake: () => {
         const ready = extensions.isReady()

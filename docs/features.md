@@ -61,7 +61,7 @@ rely on, row by row. A new feature adds its line here when it lands.
 - **Screen sharing**: a picker for a tab, a window or the screen, with a bar to stop.
 - **Chrome extensions**, MV3 and MV2, from the Chrome Web Store, a `.crx` or `.zip`, or a folder; full uBlock Origin works.
 - **Extension controls**: a toolbar menu with pinning, side panels, access sheets and command keys.
-- **Extensions in the tunnel and direct profiles**: your extensions run for websites you set to on or to off as they do for the rest, one copy of each per profile and not one per site; the toolbar follows the tab in front. The direct profile's copies run only while a site of it is open, so with the whole browser on the tunnel none makes a direct request while none is. Each profile keeps its own extension settings; side panels and command keys stay with your normal browsing.
+- **Extensions in the tunnel and direct profiles**: your extensions run for websites you set to on or to off as they do for the rest, one copy of each per profile and not one per site; the toolbar follows the tab in front. Each profile's copies run only while a site of it is open, so an idle profile costs no memory, and with the whole browser on the tunnel no extension makes a direct request while no excluded site is open. Each profile keeps its own extension settings; side panels and command keys stay with your normal browsing.
 - **Orivon and the operating system**: default browser registration, links from other programs, dock and taskbar entries, Share, and Create shortcut.
 - **About and a task manager**: `orivon://about` and `orivon://tasks`, with a way to end a tab that hangs.
 - **Real tab icons**, fetched by the main process and handed to the interface as data.
