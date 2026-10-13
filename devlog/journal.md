@@ -102,6 +102,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Swarm sites (bzz:// and .eth on Swarm) now load with every chunk checked against its hash; it stays off until Orivon's own Swarm node ships.
 - IPFS sites load from Orivon's own IPFS node on your computer, every block still checked; it switches on once the node is published.
 - A page can no longer tell which IPFS sites you opened: the node keeps a separate store per site, and tabs cannot reach it.
+- Orivon's own IPFS and Swarm nodes are published on IPFS: new builds fetch them, so IPFS reads from your computer and Swarm switches on.
 
 ### In my head
 

@@ -1,6 +1,6 @@
 # ADR-0079: IPFS content is read from Orivon's own node by default
 
-- **Status:** accepted; **amended 2026-10-13 (`d-0610`)**: the node resolves names over DNS-over-HTTPS first (see Amendment). *Provisional* on two calls: the fallback to public gateways when the node cannot run (what would settle it: the owner's answer on whether a person who chose the node should ever be served by gateways without being asked), and where the node's files are published (the manifest holds no CID until the owner approves publishing, and a build without the files runs IPFS from gateways).
+- **Status:** accepted; **amended 2026-10-13 (`d-0610`)**: the node resolves names over DNS-over-HTTPS first (see Amendment); **amended 2026-10-13 (`d-0612`)**: the node's files are published as one IPFS directory, pinned by the IPFS node that pins Orivon's releases, and a build fetches them by the CID in `resources/ipfs-node/ipfs-node.json`; a build without them runs IPFS from gateways. *Provisional* on one call: the fallback to public gateways when the node cannot run (what would settle it: the owner's answer on whether a person who chose the node should ever be served by gateways without being asked).
 - **Date:** 2026-10-12
 - **Type:** architecture / privacy
 - **Decided by:** owner (own node by default, public gateways as a setting: `d-0605`; ask the lookup service and the network at once, a setting turns the service off: `d-0606`); AI recommendation accepted by default for the fallback (`d-0607`)
