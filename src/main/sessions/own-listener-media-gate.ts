@@ -5,15 +5,16 @@
 // other port is cancelled before it connects. The decision is pure and lives in
 // ../../broker/policy/own-listener-media.ts, which also says why T12 reads the same afterwards.
 //
-// Installed on the default session, where a granted origin's page runs, and on each session an app is
+// Installed on every session a website runs in, where a granted origin's page runs, and on each session an app is
 // served from (a cache-served origin's own partition). Both register through the web-request owner,
 // never a raw `session.webRequest.onBeforeRequest`, which would replace a sibling's listener.
 
-import { session, webContents } from 'electron'
+import { webContents } from 'electron'
 import type { OnBeforeRequestListenerDetails, Session, WebFrameMain, WebRequestFilter } from 'electron'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { ownListenerMediaVerdict, requestingDocumentOf } from '../../broker/policy/own-listener-media.js'
 import { forEachAppSession, holdsListenGrant } from '../../loader/electron/serve.js'
+import { forEachWebsiteSession } from './website-sessions.js'
 import type { Subsystem } from '../registry.js'
 import { webRequestOwnerFor } from './web-request-owner.js'
 
@@ -64,7 +65,7 @@ export const ownListenerMediaGateSubsystem: Subsystem = {
   critical: true,
   afterReady: (ctx) => {
     const broker = (): Broker | undefined => ctx.broker
-    installOwnListenerMediaGate(session.defaultSession, broker)
+    forEachWebsiteSession((target) => { installOwnListenerMediaGate(target, broker) })
     forEachAppSession((appSession) => { installOwnListenerMediaGate(appSession, broker) })
   }
 }

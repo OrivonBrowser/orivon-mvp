@@ -15,12 +15,12 @@ export interface LeaveWorld {
   readonly servedOrigin: (url: string) => string | undefined
 }
 
-/** `app` is the routed app whose page asks; `origin` is what it wants to open. */
+/** `app` is the routed origin whose page asks (an installed app, or a website with its tunnel on, which `site` marks); `origin` is what it wants to open. */
 export type Leave =
-  | { readonly kind: 'website', readonly origin: string, readonly app: string }
-  | { readonly kind: 'app', readonly origin: string, readonly app: string }
+  | { readonly kind: 'website', readonly origin: string, readonly app: string, readonly site?: true }
+  | { readonly kind: 'app', readonly origin: string, readonly app: string, readonly site?: true }
   /** A page Orivon loads itself: the person can only open it directly, because the proxy cannot carry what the nodes fetch. */
-  | { readonly kind: 'served', readonly origin: string, readonly app: string }
+  | { readonly kind: 'served', readonly origin: string, readonly app: string, readonly site?: true }
 
 /**
  * The routed app the page at `url` in `partition` is: by its address (a `blob:` URL by the origin that made it), and
@@ -33,9 +33,9 @@ export function routedPageOrigin (url: string, partition: string | undefined, wo
 }
 
 /**
- * What asking is about, or undefined when the open needs no question: the page is not a routed app's, the address is
- * the app's own, has no web origin and is not one Orivon serves (`about:blank`, `data:`, `javascript:` stay in the
- * app's own session), or is an installed app whose route is on (it opens in its own routed session).
+ * What asking is about, or undefined when the open needs no question: the page is not a routed origin's, the address is
+ * its own, has no web origin and is not one Orivon serves (`about:blank`, `data:`, `javascript:` stay in the
+ * session the page runs in), or is another origin whose tunnel is on (it opens in a session of its own, behind its own front).
  * A loopback address is asked about too: it loads in the shared session, where whatever it then opens is direct.
  */
 export function leavesRoute (fromUrl: string, toUrl: string, world: LeaveWorld, fromPartition?: string): Leave | undefined {
@@ -43,9 +43,11 @@ export function leavesRoute (fromUrl: string, toUrl: string, world: LeaveWorld, 
   if (from === undefined) return undefined
   const to = originFromUrl(toUrl)
   if (to === from) return undefined
-  if (to !== null && world.isInstalledApp(to)) return world.isRouted(to) ? undefined : { kind: 'app', origin: to, app: from }
+  const site = world.isInstalledApp(from) ? {} : { site: true } as const
+  if (to !== null && world.isRouted(to)) return undefined
+  if (to !== null && world.isInstalledApp(to)) return { kind: 'app', origin: to, app: from, ...site }
   const served = world.servedOrigin(toUrl)
-  if (served !== undefined) return { kind: 'served', origin: served, app: from }
+  if (served !== undefined) return { kind: 'served', origin: served, app: from, ...site }
   if (to === null) return undefined
-  return { kind: 'website', origin: to, app: from }
+  return { kind: 'website', origin: to, app: from, ...site }
 }

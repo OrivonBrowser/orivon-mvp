@@ -7,6 +7,7 @@ import { servedByVerifier } from '../../loader/fetch/verifier-origin.js'
 import { LOADING_SCREEN_OVERLAY } from '../loading-screen/loading-screen-watch.js'
 import { requestSlot } from '../overlays/tab-slots.js'
 import { webRequestOwnerFor } from '../sessions/web-request-owner.js'
+import { forEachWebsiteSession } from '../sessions/website-sessions.js'
 import { goHome } from '../shell/home.js'
 import type { ShellInstaller } from '../shell/shell-installers.js'
 import { verifiedHostFilter } from '../verifier/verifier-subsystem.js'
@@ -58,16 +59,13 @@ export const installAppSetup: ShellInstaller = {
       stop: (contents) => { contents.stop() }
     })
     publishTabSetup(setup)
-    webRequestOwnerFor(session.defaultSession).onBeforeRequest(
-      AFTER_THE_LISTENING_GATE,
-      verifiedHostFilter(),
-      servedByVerifier,
-      firstVisitBeforeRequest({
-        firstVisit: firstVisitNow,
-        tabSetup: tabSetupNow,
-        contentsById: (id) => webContents.fromId(id),
-        windowForSender: (contents) => ctx.windowForSender?.(contents)
-      })
-    )
+    const visitStarts = firstVisitBeforeRequest({
+      firstVisit: firstVisitNow,
+      tabSetup: tabSetupNow,
+      contentsById: (id) => webContents.fromId(id),
+      windowForSender: (contents) => ctx.windowForSender?.(contents)
+    })
+    // A website in a session of its own is a first visit as much as one in the shared session.
+    forEachWebsiteSession((target) => { webRequestOwnerFor(target).onBeforeRequest(AFTER_THE_LISTENING_GATE, verifiedHostFilter(), servedByVerifier, visitStarts) })
   }
 }

@@ -89,3 +89,30 @@ describe('a routed app\'s page opening an address', () => {
     expect(leavesRoute(`${APP}/`, 'https://routed.example:8443/', world())).toMatchObject({ kind: 'website' })
   })
 })
+
+describe('a page of a website with its tunnel on opening an address', () => {
+  const SITE = 'https://news.example'
+  const siteWorld = (overrides: Partial<LeaveWorld> = {}): LeaveWorld => world({ isRouted: (origin) => origin === SITE, ...overrides })
+
+  it('asks about another website, as the site asking', () => {
+    expect(leavesRoute(`${SITE}/`, 'https://elsewhere.example/', siteWorld())).toEqual({ kind: 'website', origin: 'https://elsewhere.example', app: SITE, site: true })
+  })
+
+  it('asks about an installed app whose route is off, and about an address Orivon serves itself', () => {
+    expect(leavesRoute(`${SITE}/`, `${OTHER_APP}/`, siteWorld())).toEqual({ kind: 'app', origin: OTHER_APP, app: SITE, site: true })
+    expect(leavesRoute(`${SITE}/`, 'ipfs://abc/x', siteWorld())).toEqual({ kind: 'served', origin: 'ipfs://abc', app: SITE, site: true })
+  })
+
+  it('asks nothing about another website whose tunnel is on: it opens in a session of its own', () => {
+    expect(leavesRoute(`${SITE}/`, 'https://elsewhere.example/', siteWorld({ isRouted: () => true }))).toBeUndefined()
+  })
+
+  it('asks nothing about its own origin, and nothing for a document with no web address in its session', () => {
+    expect(leavesRoute(`${SITE}/a`, `${SITE}/b`, siteWorld())).toBeUndefined()
+    expect(leavesRoute('about:blank', 'https://elsewhere.example/', siteWorld({ routedOriginOf: () => SITE }), 'persist:site-x')).toEqual({ kind: 'website', origin: 'https://elsewhere.example', app: SITE, site: true })
+  })
+
+  it('does not mark a routed installed app as a site', () => {
+    expect(leavesRoute(`${APP}/`, 'https://news.example/', world())).toEqual({ kind: 'website', origin: 'https://news.example', app: APP })
+  })
+})

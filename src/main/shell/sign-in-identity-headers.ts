@@ -5,9 +5,9 @@
 // server redirect into a sign-in host changes it after loading stops), so
 // only a handler at the network layer can correct the request headers.
 // Tied to Electron.
-import { session } from 'electron'
 import type { Session } from 'electron'
 import { webRequestOwnerFor } from '../sessions/web-request-owner.js'
+import { forEachWebsiteSession } from '../sessions/website-sessions.js'
 import type { Subsystem } from '../registry.js'
 import { firefoxIdentityHeaders, firefoxUserAgent, isSignInHost } from './sign-in-identity.js'
 import { resolveSignInHosts } from './sign-in-identity-test-seam.js'
@@ -45,11 +45,12 @@ export function installSignInIdentityHeaders (target: Session, hosts: readonly s
   )
 }
 
-/** The default session only, like every other owner registration: the embed,
- * internal-page and web-context sessions register on webRequest directly, and
- * a cache-served app's own partition is not covered. Ordinary tabs and
- * granted network-served apps run in the default session. */
+/** The sessions websites run in, like every other owner registration of that
+ * kind: the embed, internal-page and web-context sessions register on webRequest
+ * directly, and a cache-served app's own partition is not covered. Ordinary tabs
+ * and granted network-served apps run in the default session, and a website
+ * whose tunnel state differs from the default in a session of its own. */
 export const signInIdentitySubsystem: Subsystem = {
   name: 'sign-in-identity',
-  afterReady: () => { installSignInIdentityHeaders(session.defaultSession) }
+  afterReady: () => { forEachWebsiteSession((target) => { installSignInIdentityHeaders(target) }) }
 }

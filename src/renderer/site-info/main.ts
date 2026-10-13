@@ -1,6 +1,6 @@
 import type { SiteInfo } from '../../main/permissions/site-info.js'
 import type { SiteTrust } from '../../main/browsing/site-trust.js'
-import type { ApplyResult, SiteDataSnapshot } from '../../main/ipc/site-info-ipc.js'
+import type { ApplyResult, SiteDataSnapshot, TunnelResult } from '../../main/ipc/site-info-ipc.js'
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import { closeOnEscape } from '../pages/shared/escape-closes.js'
 import type { ApplyOutcome } from '../../main/install/app-updates.js'
@@ -27,6 +27,7 @@ interface OrivonSiteInfo {
   setSitePermission: (kind: string, value: string) => Promise<SitePermissionsView | null>
   revokePickedPath: (pickId: string) => Promise<SiteInfo | null>
   applyUpdate: (cid: string) => Promise<ApplyOutcome>
+  setTunnel: (on: boolean) => Promise<TunnelResult | null>
   openHome: () => Promise<void>
   clearBrowserData: () => Promise<void>
   deleteLocalFile: () => Promise<boolean>
@@ -78,6 +79,9 @@ let data: SiteDataSnapshot | null = null
 const staged = new Map<CapabilityKind, boolean>()
 let pendingStaleCapabilities = new Set<CapabilityKind>()
 let showReloadBanner = false
+/** The storage notice is open: the tunnel switch was moved on and Confirm has not been pressed. */
+let tunnelNotice = false
+let tunnelFailed = false
 /** Why the last try at the offered update did not install, shown on its card. */
 let updateFailure: string | null = null
 /** Null for a site with no per-site settings: an app, which its capability rows already cover. */
@@ -136,8 +140,19 @@ function renderCurrent (): void {
       onManageExtensions: () => { void bridge.openExtensions() },
       onReload: () => { void bridge.reload() },
       onApplyUpdate: (cid) => { void applyUpdate(cid) },
-      onOpenHome: () => { void bridge.openHome() }
-    }, updateFailure)
+      onOpenHome: () => { void bridge.openHome() },
+      tunnel: {
+        onToggle: (next) => {
+          tunnelFailed = false
+          if (!next && tunnelNotice) { tunnelNotice = false; renderCurrent(); return }
+          // Turning it on for the first time moves the site into storage of its own: the person is told, and nothing changes until Confirm.
+          if (next && info?.tunnel?.needsNotice === true) { tunnelNotice = true; renderCurrent(); return }
+          void setTunnel(next)
+        },
+        onConfirm: () => { void setTunnel(true) },
+        onCancel: () => { tunnelNotice = false; renderCurrent() }
+      }
+    }, updateFailure, { notice: tunnelNotice, failed: tunnelFailed })
   } else if (page === 'web3') {
     renderWeb3Page(web3Section, trust, () => { page = 'main'; renderCurrent() })
   } else if (page === 'data' && info !== null) {
@@ -153,6 +168,15 @@ function renderCurrent (): void {
     })
   }
   reportContentHeight()
+}
+
+/** Turns the website's tunnel on or off; main moves the tab, and the popup draws what it says is now true. */
+async function setTunnel (on: boolean): Promise<void> {
+  tunnelNotice = false
+  const result = await bridge.setTunnel(on)
+  tunnelFailed = result === null || !result.ok
+  if (result !== null) info = result.info
+  renderCurrent()
 }
 
 /** Takes the offered update. Main asks the confirmation Trust & Force needs; the tabs reload when it installs, and this popup is done. */

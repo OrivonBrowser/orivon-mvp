@@ -39,6 +39,8 @@ export interface ClearDeps {
   readonly websites: Pick<Session, 'clearData' | 'clearStorageData'>
   /** The sessions local files run in, the shared one and each recorded file's: their storage and cache go with every website's. */
   readonly localFiles?: () => ReadonlyArray<Pick<Session, 'clearData' | 'clearStorageData'>>
+  /** The session of its own each website with a tunnel setting has had: its storage and cache go with every website's. */
+  readonly siteSessions?: () => ReadonlyArray<Pick<Session, 'clearData' | 'clearStorageData'>>
   /** The session of each app that holds permissions. */
   readonly appSessions: () => Promise<ReadonlyArray<Pick<Session, 'clearData'>>>
   /** The network each `.eth` name was last found on: a record of the names visited, forgotten with the cache and with all history. */
@@ -78,16 +80,16 @@ export async function clearBrowsingData (request: ClearRequest, deps: ClearDeps)
       await deps.websites.clearData({ dataTypes: [...SITE_DATA] })
       // What a site keeps through the Cache API: `clearData` files it under the HTTP cache, which is a choice of its own.
       await deps.websites.clearStorageData({ storages: ['cachestorage'] })
-      for (const local of deps.localFiles?.() ?? []) {
-        await local.clearData({ dataTypes: [...SITE_DATA] })
-        await local.clearStorageData({ storages: ['cachestorage'] })
+      for (const other of [...(deps.localFiles?.() ?? []), ...(deps.siteSessions?.() ?? [])]) {
+        await other.clearData({ dataTypes: [...SITE_DATA] })
+        await other.clearStorageData({ storages: ['cachestorage'] })
       }
     })
   }
   if (request.cache) {
     await attempt('cache', async () => {
       await deps.websites.clearData({ dataTypes: ['cache'] })
-      for (const local of deps.localFiles?.() ?? []) await local.clearData({ dataTypes: ['cache'] })
+      for (const other of [...(deps.localFiles?.() ?? []), ...(deps.siteSessions?.() ?? [])]) await other.clearData({ dataTypes: ['cache'] })
     })
   }
   if (request.cache || request.history === 'all') await attempt('nameSchemes', async () => { await deps.forgetNameSchemes() })

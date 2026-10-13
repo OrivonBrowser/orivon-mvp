@@ -13,7 +13,7 @@ server at its far end is the proxy. From then on everything that app causes to l
 that tunnel: `orivon.net` calls, the pages it shows in a `<webview>`, the third-party `https` its page loads, the
 lookups the browser makes about it, and its child processes' sockets. What the tunnel cannot carry is refused,
 never sent direct, and when the tunnel stops answering the app's traffic stops with it. A name is sent to the proxy
-unresolved. Websites are not routed.
+unresolved. This decision routes installed apps; [`ADR-0082`](ADR-0082-a-websites-tunnel-state-is-kept-per-origin-and-a-website-that-differs-from-the-default-has-storage-of-its-own.md) routes websites the same way.
 
 The part that decides is a *route* (`src/broker/route/`): a provider that opens a TCP stream to `host:port` and
 may also send UDP and resolve names. The SOCKS5 provider is the first. The broker reads the route of the caller on
@@ -80,5 +80,5 @@ goes to the session's handler and its `http` is mixed content.
 
 - **Cost to reverse:** moderate. The provider interface and the broker's reading of a route are small; the front and
   the session wiring are tied to Electron.
-- **What would make us revisit:** the verifier host taking a route per request, which ends the pause; a provider
-  other than SOCKS5; or routing websites, which first needs storage of their own.
+- **What would make us revisit:** the verifier host taking a route per request, which ends the pause; or a provider
+  other than SOCKS5.

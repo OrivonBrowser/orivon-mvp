@@ -1,4 +1,5 @@
 import type { Row } from '../model.js'
+import { renderTunnelList } from './route-list-row.js'
 import { renderProxyTest } from './route-test-row.js'
 
 const GROUP = 'Connections and tracking'
@@ -76,9 +77,9 @@ export const privacyNetworkRows: readonly Row[] = [
   },
   {
     id: 'route-proxy',
-    label: 'Tunnel for apps',
-    help: 'Your own SOCKS5 address, such as Tor\'s 127.0.0.1:9050. An installed app can send all of its network traffic through the tunnel. You turn it on for each app under Apps; until then nothing goes to it. Websites do not use it.',
-    keywords: ['tunnel', 'proxy', 'socks', 'socks5', 'tor', 'onion', 'route', 'vpn', 'anonymous', 'network', 'apps', 'host', 'port'],
+    label: 'Tunnel',
+    help: 'Your own SOCKS5 address, such as Tor\'s 127.0.0.1:9050. An installed app or a website can send all of its network traffic through the tunnel. You turn it on for each app under Apps, and for each website from the key in the address bar; until then nothing goes to it.',
+    keywords: ['tunnel', 'proxy', 'socks', 'socks5', 'tor', 'onion', 'route', 'vpn', 'anonymous', 'network', 'apps', 'sites', 'websites', 'host', 'port'],
     group: GROUP,
     control: { type: 'text', key: 'network.route.proxy', placeholder: '127.0.0.1:9050', problem: 'Enter an address as host:port, like 127.0.0.1:9050' }
   },
@@ -89,5 +90,13 @@ export const privacyNetworkRows: readonly Row[] = [
     keywords: ['tunnel', 'proxy', 'socks', 'tor', 'test', 'check', 'route'],
     group: GROUP,
     control: { type: 'custom', render: renderProxyTest }
+  },
+  {
+    id: 'route-sites',
+    label: 'Sites and apps with their own tunnel setting',
+    help: 'A website that goes through the tunnel keeps its cookies and storage apart from the rest of your browsing, and that storage stays when you turn the tunnel off for it, until you remove it here.',
+    keywords: ['tunnel', 'proxy', 'tor', 'sites', 'websites', 'apps', 'storage', 'cookies', 'separate', 'remove', 'sign in'],
+    group: GROUP,
+    control: { type: 'custom', wide: true, render: renderTunnelList }
   }
 ]
