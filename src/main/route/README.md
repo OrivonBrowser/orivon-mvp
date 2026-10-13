@@ -115,3 +115,9 @@ name's Helios RPC and CCIP-Read calls) are not routed, so such a site is tunnell
 
 **Turning the tunnel off keeps the website's storage.** The row stays in Settings, with the button that clears it, until the person removes it
 or the site goes back to the default with nothing stored. Turning it on again asks nothing, because the site is already apart.
+
+**The shared session refuses a load of a tunnelled website that the shell did not move.** The shell moves a tab into the website's session before it
+loads an address it was asked to open (a link, a redirect, the address bar). A load that skips that (a script's `loadURL`, a step in a view's own history
+onto an older page) would reach the site from the shared session, untunnelled and with its cookies, so `route-subsystem.ts` registers a main-frame handler on
+the shared session that cancels it (`site-routes.ts`'s `mustLeaveSharedSession`); the person reopens the address. A sleeping tab wakes through the move
+(`../memory-saver/sleep-tab.ts`). Frames of the site inside another page are not covered: they ride the page's session.

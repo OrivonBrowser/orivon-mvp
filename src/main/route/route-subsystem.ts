@@ -17,7 +17,7 @@ import { isPersistableOrigin } from '../../broker/policy/origin.js'
 import { setLeavingRoutes } from './leaving-routes.js'
 import { setLookupSessionSource, setRouteChallengeSource } from './lookup-session.js'
 import { servedOrigin } from './served-origin.js'
-import { setSiteRoutes, setSiteSessionEnsurer, siteOriginOf } from './site-routes.js'
+import { mustLeaveSharedSession, setSiteRoutes, setSiteSessionEnsurer, siteOriginOf } from './site-routes.js'
 import { createSiteSessions } from './site-sessions.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { announceWebsiteSession } from '../sessions/website-sessions.js'
@@ -75,6 +75,9 @@ export const routeSubsystem: Subsystem = {
     })
     setSiteRoutes({ usesOwnSession: routes.hub.usesOwnSession })
     setSiteSessionEnsurer(siteSessions.ensure)
+    // The shell moves a tab before it loads a website that has a session of its own; this stops a load the move missed from reaching it in the shared session, untunnelled.
+    webRequestOwnerFor(session.defaultSession).onBeforeRequest(-2, { urls: ['http://*/*', 'https://*/*'], types: ['mainFrame'] }, () => true, (details, current) =>
+      details.resourceType === 'mainFrame' && mustLeaveSharedSession(details.url, isOriginServedFromCacheSync) ? { cancel: true } : current)
     setReachRoute(routes.hub.routeFor)
     setRouteChallengeSource(routes.controller.challengeCredentials)
     beforeAppSessionServes(async (appSession, origin) => { await routes.controller.appSessionRegistered(origin, appSession) })

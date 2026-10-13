@@ -230,6 +230,24 @@ it('[app:tunnelled-website-gets-its-own-storage] turning the tunnel off returns 
   expect((await cookies(sitePartition())).sort()).toEqual(['kept=1', 'who=site'])
 }, 4 * QA_TEST_TIMEOUT_MS)
 
+it('[app:tunnelled-website-sends-nothing-direct] a load the shell did not move, into the shared session, is refused and reaches neither the site nor the tunnel', async () => {
+  // Another site in the shared session, then a script of the main process loads the tunnelled site in that same view, as a waking tab or a history step would.
+  const elsewhere = `http://127.0.0.1:${String(cdnReal.port)}/`
+  await clickAddressBarRetrying(chrome, elsewhere)
+  expect(await waitFor(async () => (await activeTabInfo(chrome)).address === elsewhere)).toBe(true)
+  await delay(500)
+  const direct = decoy.hits + real.hits
+  const tunnelled = socks.requests.length
+  await app.evaluate(({ webContents }, args) => {
+    const view = webContents.getAllWebContents().find((wc) => wc.getURL() === args.elsewhere)
+    void view?.loadURL(args.site).catch(() => {})
+  }, { elsewhere, site: siteUrl() })
+  await delay(2500)
+  expect(decoy.hits + real.hits, 'nothing reached the site directly').toBe(direct)
+  expect(socks.requests.length, 'and the refused load did not borrow the tunnel').toBe(tunnelled)
+  expect(['direct', 'tunnelled'], 'the site did not load in the shared session').not.toContain(await tabTitle())
+}, 3 * QA_TEST_TIMEOUT_MS)
+
 it('[app:tunnelled-website-sends-nothing-direct] with the tunnel stopped, the website fails and nothing reaches the site directly', async () => {
   const hits = decoy.hits + real.hits
   const cdnHits = cdnDecoy.hits

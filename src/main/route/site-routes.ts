@@ -1,6 +1,7 @@
 // What the shell reads to put a website in the session its tunnel state calls for: main supplies the answer once, as
 // `leaving-routes.ts` does, and a caller asks per navigation, so a switch flipped meanwhile is followed.
 
+import { originFromUrl } from '../../broker/policy/origin.js'
 import { canTunnel, isSitePartition, sitePartitionFor as nameOf } from './site-partition.js'
 
 export interface SiteRoutes {
@@ -24,6 +25,17 @@ export function sitePartitionForOrigin (origin: string): string | undefined {
   const partition = nameOf(origin)
   origins.set(partition, origin)
   return partition
+}
+
+/**
+ * Whether a navigation of a tab in the shared session to `url` must be refused: the website has a session of its own, and a
+ * load that did not go through the shell's own move (a tab waking, Back onto an older page, a script's `loadURL`) would
+ * otherwise reach it without the tunnel and with the shared session's cookies. The tab's own view is moved by the shell
+ * before it loads an address it is asked to open, so a refusal here only ever stops what that move missed.
+ */
+export function mustLeaveSharedSession (url: string, servedFromCache: (origin: string) => boolean): boolean {
+  const origin = originFromUrl(url)
+  return origin !== null && !servedFromCache(origin) && sitePartitionForOrigin(origin) !== undefined
 }
 
 let ensurer: ((partition: string) => void) | undefined

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ensureSiteSession, setSiteRoutes, setSiteSessionEnsurer, siteOriginOf, sitePartitionForOrigin } from '../site-routes.js'
+import { ensureSiteSession, mustLeaveSharedSession, setSiteRoutes, setSiteSessionEnsurer, siteOriginOf, sitePartitionForOrigin } from '../site-routes.js'
 import { sitePartitionFor } from '../site-partition.js'
 
 const SITE = 'https://news.example'
@@ -42,5 +42,23 @@ describe('making a website\'s session ready before a view is made in it', () => 
     ensureSiteSession('persist:app-abc')
     ensureSiteSession('persist:orivon-local-files')
     expect(ensure.mock.calls).toEqual([[sitePartitionFor(SITE)]])
+  })
+})
+
+describe('a load the shell\'s own move missed', () => {
+  const cached = (): boolean => false
+
+  it('is refused in the shared session for a website that has a session of its own, whatever the page of the address', () => {
+    setSiteRoutes({ usesOwnSession: (origin) => origin === SITE })
+    expect(mustLeaveSharedSession(`${SITE}/a?b=1#c`, cached)).toBe(true)
+    expect(mustLeaveSharedSession('https://other.example/', cached)).toBe(false)
+  })
+
+  it('is let through while no website has one, for this computer, for an address with no origin and for an app served from the cache', () => {
+    expect(mustLeaveSharedSession(`${SITE}/`, cached)).toBe(false)
+    setSiteRoutes({ usesOwnSession: () => true })
+    expect(mustLeaveSharedSession('http://localhost:3000/', cached)).toBe(false)
+    expect(mustLeaveSharedSession('about:blank', cached)).toBe(false)
+    expect(mustLeaveSharedSession(`${SITE}/`, () => true)).toBe(false)
   })
 })
