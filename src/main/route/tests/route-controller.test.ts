@@ -458,6 +458,19 @@ describe('the front\'s proxy challenge', () => {
   })
 })
 
+describe('the credentials for a front\'s challenge', () => {
+  it('are given to a request made from main for that front\'s port only', async () => {
+    const { hub, controller, sessionFor } = setup([APP])
+    await controller.appSessionRegistered(APP, sessionFor('app'))
+    const front = await hub.front(APP)
+
+    expect(controller.challengeCredentials({ isProxy: true, host: '127.0.0.1', port: front.port })).toEqual({ username: front.username, password: front.secret })
+    expect(controller.challengeCredentials({ isProxy: true, host: '127.0.0.1', port: front.port + 1 })).toBeUndefined()
+    expect(controller.challengeCredentials({ isProxy: false, host: '127.0.0.1', port: front.port })).toBeUndefined()
+    expect(controller.challengeCredentials({ isProxy: true, host: 'proxy.example', port: front.port })).toBeUndefined()
+  })
+})
+
 describe('the session lookups made about a routed app go through', () => {
   it('has none for an app that is not routed', async () => {
     const { controller } = setup()

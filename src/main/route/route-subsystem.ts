@@ -11,7 +11,7 @@ import { embedPartitionFor } from '../embed/embed-guard.js'
 import { publishRoutes } from '../registry.js'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { readSettingBeforeReady } from '../settings/settings-file.js'
-import { setLookupSessionSource } from './lookup-session.js'
+import { setLookupSessionSource, setRouteChallengeSource } from './lookup-session.js'
 import { createRouteService } from './route-service.js'
 import { RouteStore } from './route-store.js'
 
@@ -38,6 +38,7 @@ export const routeSubsystem: Subsystem = {
     setReachRoute(routes.hub.routeFor)
     // The sessions handed out are Electron's own (`sessionFor` above), so the cast only restores what the controller's narrow type hides.
     setLookupSessionSource(async (origin) => await routes.controller.fetchSessionFor(origin) as Session | undefined)
+    setRouteChallengeSource(routes.controller.challengeCredentials)
     beforeAppSessionServes(async (appSession, origin) => { await routes.controller.appSessionRegistered(origin, appSession) })
     publishRoutes(ctx, routes)
     app.once('will-quit', () => { void routes.hub.dispose().catch((error: unknown) => { console.error('[route] stopping the fronts failed:', error) }) })

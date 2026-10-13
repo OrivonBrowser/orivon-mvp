@@ -23,6 +23,7 @@ import { electronResolveHost } from '../../loader/electron/resolve.js'
 import { FaviconCache } from './favicon-cache.js'
 import { MAX_FAVICON_BYTES, toDataUrl } from './favicon-format.js'
 import { faviconTimeoutMs } from './favicon-timeout.js'
+import { answerRouteChallenge } from '../route/lookup-session.js'
 
 /** Real sites redirect a bare-domain icon URL to a `www` host, or move
  * `/favicon.ico` behind a CDN -- both cross-origin, both legitimate. Each
@@ -233,6 +234,8 @@ async function requestOnce (url: string, signal: AbortSignal, session: Session |
     })
     request.on('error', () => { settle({ kind: 'failed' }) })
     if (signal.aborted) { settle({ kind: 'failed' }); return }
+    // An app's front asks the request itself for the secret made for it: no web contents is there to raise `login` for the application.
+    request.on('login', (info, callback) => { answerRouteChallenge(info, callback) })
     signal.addEventListener('abort', onAbort, { once: true })
     request.end()
   })

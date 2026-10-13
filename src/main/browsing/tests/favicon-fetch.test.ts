@@ -403,6 +403,24 @@ describe('fetchFaviconDataUrlCached -- for a routed app', () => {
   })
 })
 
+describe('fetchFaviconDataUrlCached -- the front\'s proxy challenge', () => {
+  it('is answered by the request itself, because no web contents is there to raise the application\'s login event', async () => {
+    const { setRouteChallengeSource } = await import('../../route/lookup-session.js')
+    setRouteChallengeSource((info) => info.port === 4040 ? { username: 'orivon', password: 'secret' } : undefined)
+    const route = { name: 'route' } as unknown as Session
+    const answers: unknown[][] = []
+    mockRequestOnce((request) => {
+      request.emit('login', { isProxy: true, host: '127.0.0.1', port: 4040 }, (...given: unknown[]) => { answers.push(given) })
+      request.emit('login', { isProxy: true, host: '127.0.0.1', port: 5050 }, (...given: unknown[]) => { answers.push(given) })
+      request.emit('response', respondOk(200, [PNG_BYTES]))
+    })
+
+    await fetchFaviconDataUrlCached('https://93.184.216.34/icon.png', PUBLIC_PAGE, () => false, undefined, async () => route)
+
+    expect(answers).toEqual([['orivon', 'secret'], []])
+  })
+})
+
 describe('fetchFaviconDataUrlCached -- a route switched while the icon is being fetched', () => {
   const sessionOf = (name: string): Session => ({ name }) as unknown as Session
   const sessionsAsked = (): unknown[] => vi.mocked(net.request).mock.calls.map(([options]) => (options as unknown as { session?: unknown }).session)

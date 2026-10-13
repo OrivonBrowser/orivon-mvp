@@ -13,7 +13,8 @@ that is tied to the running browser: which apps the person routed, and what rout
 | `route-subsystem.ts` | Starts them, wires Electron's sessions, web contents and `login` event in, and publishes `ctx.routes` |
 | `forget-watch.ts` | Clears the route of an app the broker no longer knows, and lets go of its front and sessions |
 | `route-domain.ts` | What the Settings page may ask: whether the proxy answers |
-| `lookup-session.ts` | The session the browser's own lookups about a routed app go through (a tab icon from another host, the Web3 Score provider) |
+| `lookup-session.ts` | The session the browser's own lookups about a routed app go through (a tab icon from another host, the Web3 Score provider), and the answer to the front's proxy challenge for a request made from main |
+| `routed-fetch.ts` | A GET made by main through that session, as a `Response`, by `net.request` so that it can answer the challenge itself |
 
 **What it depends on.** [`../../broker/route/`](../../broker/route/) (the route, its SOCKS5 provider and the probe),
 [`../settings/proxy-checks.ts`](../settings/proxy-checks.ts), [`../../broker/grants/origin-hash.ts`](../../broker/grants/origin-hash.ts),
@@ -32,7 +33,9 @@ and a SOCKS5 server on loopback ([`../../broker/route/tests/`](../../broker/rout
 
 **The front is HTTP because Chromium cannot sign in to a SOCKS proxy.** It can send a user name and password to an HTTP
 proxy, so each app's front demands one secret, random per run and held only in this process, and the controller answers
-the `407` it gets from the application's `login` event, for that front's port alone. Without a secret any program on
+the `407` it gets from the application's `login` event, for that front's port alone. That event is raised for web contents
+only: a request the main process makes in an app's session (a tab icon, a Web3 Score lookup) is made with `net.request`
+and answers the `407` in its own `login` listener, because `Session.fetch` has no way to. Without a secret any program on
 this computer could use the route. The listener for that event is added ahead of the sheet that asks the person about
 a proxy's challenge, which then leaves an already answered one alone.
 

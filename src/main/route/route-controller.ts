@@ -38,6 +38,8 @@ export interface PrepareOptions {
 }
 
 export interface RouteController {
+  /** What the front a proxy challenge came from expects, or undefined when it came from anything else. */
+  challengeCredentials: (info: { readonly isProxy: boolean, readonly host: string, readonly port: number }) => { readonly username: string, readonly password: string } | undefined
   /** Points `session` at the app's front when the app is routed (waiting for it), and back at the system's proxy when it no longer is. */
   prepare: (origin: string, session: RouteSession, options?: PrepareOptions) => Promise<void>
   /** An app's served session has appeared: prepares it and the app's embed session. */
@@ -195,15 +197,17 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     }
   })
 
+  const challengeCredentials: RouteController['challengeCredentials'] = (info) => info.isProxy && info.host === '127.0.0.1' ? hub.credentialsForPort(info.port) : undefined
+
   deps.onLogin((event, info, callback) => {
-    if (!info.isProxy || info.host !== '127.0.0.1') return
-    const credentials = hub.credentialsForPort(info.port)
+    const credentials = challengeCredentials(info)
     if (credentials === undefined) return
     event.preventDefault()
     callback(credentials.username, credentials.password)
   })
 
   return {
+    challengeCredentials,
     prepare,
     appSessionRegistered: async (origin, session) => {
       try {

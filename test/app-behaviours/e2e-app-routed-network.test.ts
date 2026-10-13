@@ -7,8 +7,8 @@
 // The app turns its route on from the Settings page, as a person does, and then dials by name (`orivon.net.connect`,
 // `connectSecure`, a datagram, a WebSocket), has an image loaded from a granted https host (the loader's reach path)
 // and shows a page in a <webview> (Chromium's own network stack, through the app's loopback front). Its tab icon from
-// another host is fetched by the main process through the route, which must answer the front's proxy challenge. Every
-// one must show up in the SOCKS log and answer. What the route cannot carry is refused, and with the proxy stopped nothing
+// another host is fetched by the main process, in a request of its own that answers the front's proxy challenge (the
+// application's `login` event is raised for web contents only). Every one must show up in the SOCKS log and answer. What the route cannot carry is refused, and with the proxy stopped nothing
 // answers and nothing arrives anywhere else.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/app-behaviours/e2e-app-routed-network.test.ts
@@ -203,7 +203,7 @@ beforeAll(async () => {
     capabilities: {
       net: {
         tcp: { connect: [`tcp.socks.test:${String(ports.tcp)}`, `ws.socks.test:${String(ports.ws)}`, `missing.socks.test:${String(ports.tcp)}`, `127.0.0.1:${String(ports.hold)}`, `127.0.0.1:${String(ports.listen)}`], listen: { local: [String(ports.listen)] } },
-        https: { connect: [`tls.socks.test:${String(ports.tls)}`, `reach.socks.test:${String(ports.reach)}`] },
+        https: { connect: [`tls.socks.test:${String(ports.tls)}`, `reach.socks.test:${String(ports.reach)}`, `icon.socks.test:${String(ports.icon)}`] },
         udp: { bind: { local: ['47300-47399'] }, send: [`udp.socks.test:${String(ports.udp)}`] }
       },
       web: { embed: { origins: [`http://embed.socks.test:${String(ports.embed)}`] } }
@@ -307,8 +307,9 @@ it('[app:routed-app-sends-nothing-direct] an installed app switched on in Settin
   const shown = await call('embed', `http://embed.socks.test:${String(ports.embed)}/`)
   expect(shown, 'Chromium\'s own stack, through the front').toMatchObject({ ok: true, detail: 'shown through the front' })
 
-  // The tab's icon from another host is fetched by the main process, through the route's session and the app's front,
-  // which answers the front's 407: a dial of the name in the log means the challenge was answered.
+  // The tab's icon from another host is fetched by the main process, through the route's session and the app's front.
+  // No web contents is there to raise the application's `login` event, so the dial of the name in the log means the
+  // request answered the front's 407 itself. (Electron has no icon downloader of its own, so nothing else asks for it.)
   await view.evaluate((href) => {
     const link = document.createElement('link')
     link.rel = 'icon'
