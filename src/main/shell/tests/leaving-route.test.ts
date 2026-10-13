@@ -23,7 +23,7 @@ vi.mock('../../route/leaving-routes.js', () => ({ isRoutedPage: (url: string) =>
 const { askBeforeLeavingRoute, chooseLeave, leaveForOpen } = await import('../leaving-route.js')
 
 const APP_URL = 'https://routed.example/app'
-const WEBSITE = { kind: 'website', origin: 'https://news.example' } as const
+const WEBSITE = { kind: 'website', origin: 'https://news.example', app: 'https://routed.example' } as const
 
 function rig (record: Record<string, unknown> = {}) {
   const wc = Object.assign(new EventEmitter(), { isDestroyed: () => false, getURL: () => APP_URL }) as unknown as WebContents & EventEmitter
@@ -54,7 +54,7 @@ describe('askBeforeLeavingRoute', () => {
     const { fire } = rig()
     const event = fire(name)
     expect(event.preventDefault).toHaveBeenCalled()
-    expect(leaveFor).toHaveBeenCalledWith(APP_URL, 'https://news.example/a')
+    expect(leaveFor).toHaveBeenCalledWith(APP_URL, 'https://news.example/a', 'persist:app-1')
     await turn()
     expect(askToLeaveRoute).toHaveBeenCalledOnce()
   })
@@ -89,7 +89,7 @@ describe('askBeforeLeavingRoute', () => {
   })
 
   it('turns the other app\'s route on, then loads it, on "use my proxy for it too"', async () => {
-    leaveFor.mockReturnValue({ kind: 'app', origin: 'https://other.example' })
+    leaveFor.mockReturnValue({ kind: 'app', origin: 'https://other.example', app: 'https://routed.example' })
     askToLeaveRoute.mockResolvedValue('proxy')
     const { fire, tab } = rig()
     fire('will-navigate', { url: 'https://other.example/x' })
@@ -144,7 +144,7 @@ describe('chooseLeave', () => {
     const release = vi.fn()
     holdNavigation.mockReturnValue(release)
     askToLeaveRoute.mockImplementation(async () => { expect(release).not.toHaveBeenCalled(); return 'direct' })
-    expect(await chooseLeave(wc, APP_URL, WEBSITE)).toEqual({ kind: 'direct' })
+    expect(await chooseLeave(wc, WEBSITE)).toEqual({ kind: 'direct' })
     expect(holdNavigation).toHaveBeenCalledOnce()
     expect(release).toHaveBeenCalledOnce()
   })
@@ -153,14 +153,14 @@ describe('chooseLeave', () => {
     askToLeaveRoute.mockResolvedValue('proxy')
     openTemporaryRoute.mockRejectedValue(new Error('no front'))
     const log = vi.spyOn(console, 'error').mockImplementation(() => {})
-    expect(await chooseLeave(wc, APP_URL, WEBSITE)).toEqual({ kind: 'cancel' })
+    expect(await chooseLeave(wc, WEBSITE)).toEqual({ kind: 'cancel' })
     log.mockRestore()
   })
 
   it('cancels when the other app cannot be routed', async () => {
     askToLeaveRoute.mockResolvedValue('proxy')
     routeAppToo.mockResolvedValue(false)
-    expect(await chooseLeave(wc, APP_URL, { kind: 'app', origin: 'https://other.example' })).toEqual({ kind: 'cancel' })
+    expect(await chooseLeave(wc, { kind: 'app', origin: 'https://other.example', app: 'https://routed.example' })).toEqual({ kind: 'cancel' })
   })
 })
 
@@ -169,22 +169,22 @@ describe('leaveForOpen', () => {
 
   it('maps no address and asks nothing for a page that is not a routed app\'s', () => {
     isRoutedPage.mockReturnValue(false)
-    expect(leaveForOpen(record, 'https://news.example/', 'ipfs://some-name.eth/')).toBeUndefined()
+    expect(leaveForOpen(record, 'https://news.example/', 'ipfs://some-name.eth/', undefined)).toBeUndefined()
     expect(leaveFor).not.toHaveBeenCalled()
   })
 
   it('asks about an address as written', () => {
-    expect(leaveForOpen(record, APP_URL, 'https://news.example/a')).toEqual(WEBSITE)
-    expect(leaveFor).toHaveBeenCalledWith(APP_URL, 'https://news.example/a')
+    expect(leaveForOpen(record, APP_URL, 'https://news.example/a', 'persist:app-1')).toEqual(WEBSITE)
+    expect(leaveFor).toHaveBeenCalledWith(APP_URL, 'https://news.example/a', 'persist:app-1')
   })
 
   it('judges a protocol address by the address it is served at, and does not ask about a site there that no proxy could reach', () => {
-    expect(leaveForOpen(record, APP_URL, 'ipfs://some-name.eth/')).toBeUndefined()
-    expect(leaveFor).toHaveBeenCalledWith(APP_URL, 'https://some-name.eth/')
+    expect(leaveForOpen(record, APP_URL, 'ipfs://some-name.eth/', 'persist:app-1')).toBeUndefined()
+    expect(leaveFor).toHaveBeenCalledWith(APP_URL, 'https://some-name.eth/', 'persist:app-1')
   })
 
   it('still asks when a protocol address is an installed app whose route is off', () => {
-    leaveFor.mockReturnValue({ kind: 'app', origin: 'https://other.example' })
-    expect(leaveForOpen(record, APP_URL, 'ipfs://other.example/')).toEqual({ kind: 'app', origin: 'https://other.example' })
+    leaveFor.mockReturnValue({ kind: 'app', origin: 'https://other.example', app: 'https://routed.example' })
+    expect(leaveForOpen(record, APP_URL, 'ipfs://other.example/', 'persist:app-1')).toEqual({ kind: 'app', origin: 'https://other.example', app: 'https://routed.example' })
   })
 })

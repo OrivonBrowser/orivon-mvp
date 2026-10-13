@@ -30,12 +30,16 @@ const switchOf = (name: string): string => `.app-card:has-text("${name}") .app-r
 
 const APP_HTML = `<!doctype html><title>routed leaving</title><body>
 <a id="same" href="/other.html">same origin</a>
-<button id="open">open</button><button id="navigate">navigate</button>
+<button id="open">open</button><button id="navigate">navigate</button><button id="blob">blob</button>
 <script src="/app.js"></script></body>`
 const APP_SCRIPT = `
 document.getElementById('open').addEventListener('click', () => {
   const opened = window.open(window.__target)
   window.__opened = opened === null ? 'null' : 'window'
+})
+document.getElementById('blob').addEventListener('click', () => {
+  const page = new Blob(['<!doctype html><title>blob hop</title><meta http-equiv="refresh" content="0;url=' + window.__target + '">'], { type: 'text/html' })
+  location.href = URL.createObjectURL(page)
 })
 document.getElementById('navigate').addEventListener('click', () => { location.href = window.__target })
 `
@@ -162,7 +166,7 @@ async function pressInPage (page: Page, selector: string): Promise<void> {
 }
 
 /** Starts an open from the app's page by pressing its own button. A view under xvfb never reports itself stable to Playwright's pointer, so the press is the page's own `click()`. */
-async function clickOpen (button: 'open' | 'navigate', target: string): Promise<void> {
+async function clickOpen (button: 'open' | 'navigate' | 'blob', target: string): Promise<void> {
   await appPage.evaluate((address) => { (window as unknown as { __target: string }).__target = address }, target)
   await appPage.evaluate((id) => { document.getElementById(id)?.click() }, button)
 }
@@ -300,3 +304,17 @@ it('[app:routed-app-asks-before-opening-a-website] another installed app whose r
   await expectTab(`${OTHER}/other.html`, 'same origin page')
   expect(await questionGone(app)).toBe(true)
 }, 4 * QA_TEST_TIMEOUT_MS)
+
+it('[app:routed-app-asks-before-opening-a-website] a document the app made for itself, with no web address, asks as the app does', async () => {
+  appPage = await openApp()
+  const asked = proxied()
+  const hits = decoyHits
+  await clickOpen('blob', siteUrl('/blob'))
+  const panel = await waitQuestion(app)
+  expect((await readQuestion(panel)).message).toBe(`${ORIGIN} wants to open http://${SITE_NAME}:${String(sitePort)}.`)
+  await answerQuestion(app, 'Cancel')
+  expect(await waitFor(async () => await questionGone(app))).toBe(true)
+  await delay(1000)
+  expect(proxied(), 'nothing was sent to the proxy').toBe(asked)
+  expect(decoyHits, 'and nothing went direct').toBe(hits)
+}, 3 * QA_TEST_TIMEOUT_MS)

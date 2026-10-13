@@ -2,8 +2,7 @@
 // ask, a session to open the page in "through my proxy", and the app switch for "use my proxy for this app too". Main
 // supplies it once, as `lookup-session.ts` does; a caller asks per open, so a switch flipped meanwhile is followed.
 
-import { originFromUrl } from '../../broker/policy/origin.js'
-import { leavesRoute } from './leave-decision.js'
+import { leavesRoute, routedPageOrigin } from './leave-decision.js'
 import type { Leave, LeaveWorld } from './leave-decision.js'
 import type { RouteSwitch } from './route-switch.js'
 import type { TemporaryRoutes } from './temporary-routes.js'
@@ -21,16 +20,14 @@ export function setLeavingRoutes (next: LeavingRoutes | undefined): void {
   source = next
 }
 
-/** Whether the page at `url` is a routed app's: the cheap question every navigation of every tab asks first. */
-export function isRoutedPage (url: string): boolean {
-  if (source === undefined) return false
-  const origin = originFromUrl(url)
-  return origin !== null && source.world.isRouted(origin)
+/** Whether the page at `url` in `partition` is a routed app's: the cheap question every navigation of every tab asks first. */
+export function isRoutedPage (url: string, partition: string | undefined): boolean {
+  return source !== undefined && routedPageOrigin(url, partition, source.world) !== undefined
 }
 
-/** What asking is about when the page at `fromUrl` opens `toUrl`, or undefined when nothing needs asking (including a browser with no routes). */
-export function leaveFor (fromUrl: string, toUrl: string): Leave | undefined {
-  return source === undefined ? undefined : leavesRoute(fromUrl, toUrl, source.world)
+/** What asking is about when the page at `fromUrl` (in `partition`) opens `toUrl`, or undefined when nothing needs asking (including a browser with no routes). */
+export function leaveFor (fromUrl: string, toUrl: string, partition?: string): Leave | undefined {
+  return source === undefined ? undefined : leavesRoute(fromUrl, toUrl, source.world, partition)
 }
 
 /** A new in-memory session behind a front of its own, as the partition a tab is made in. */

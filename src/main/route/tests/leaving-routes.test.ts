@@ -7,7 +7,7 @@ function running (blocked: 'no-proxy' | 'not-cached' | undefined = undefined) {
   const set = vi.fn(async () => {})
   const session = {}
   setLeavingRoutes({
-    world: { isRouted: (origin) => origin === 'https://routed.example', isInstalledApp: (origin) => origin.endsWith('.example') },
+    world: { isRouted: (origin) => origin === 'https://routed.example', isInstalledApp: (origin) => origin.endsWith('.example'), routedOriginOf: (partition) => partition === 'persist:app-routed' ? 'https://routed.example' : undefined },
     temporary: { open: async () => 'orivon-route-tab-1', owns: (one) => one === session, isLive: (partition) => partition === 'orivon-route-tab-1' },
     routeSwitch: { blockedFor: () => blocked, set }
   })
@@ -18,7 +18,7 @@ describe('what the shell asks of the routes', () => {
   it('asks nothing, and refuses to make a session, when no routes are running', async () => {
     expect(leaveFor('https://routed.example/', 'https://news.example/')).toBeUndefined()
     expect(isTemporaryRouteSession({})).toBe(false)
-    expect(isRoutedPage('https://routed.example/')).toBe(false)
+    expect(isRoutedPage('https://routed.example/', undefined)).toBe(false)
     expect(isTemporaryRoutePartitionLive('orivon-route-tab-1')).toBe(false)
     expect(await routeAppToo('https://other.example')).toBe(false)
     await expect(openTemporaryRoute()).rejects.toThrow('no routes are running')
@@ -26,13 +26,15 @@ describe('what the shell asks of the routes', () => {
 
   it('decides over the world it was given, and hands out the temporary session', async () => {
     const { session } = running()
-    expect(leaveFor('https://routed.example/a', 'https://news.org/')).toEqual({ kind: 'website', origin: 'https://news.org' })
+    expect(leaveFor('https://routed.example/a', 'https://news.org/')).toEqual({ kind: 'website', origin: 'https://news.org', app: 'https://routed.example' })
     expect(await openTemporaryRoute()).toBe('orivon-route-tab-1')
     expect(isTemporaryRouteSession(session)).toBe(true)
     expect(isTemporaryRouteSession(undefined)).toBe(false)
-    expect(isRoutedPage('https://routed.example/page')).toBe(true)
-    expect(isRoutedPage('https://news.org/')).toBe(false)
-    expect(isRoutedPage('about:blank')).toBe(false)
+    expect(isRoutedPage('https://routed.example/page', undefined)).toBe(true)
+    expect(isRoutedPage('https://news.org/', undefined)).toBe(false)
+    expect(isRoutedPage('about:blank', undefined)).toBe(false)
+    expect(isRoutedPage('about:blank', 'persist:app-routed')).toBe(true)
+    expect(isRoutedPage('blob:https://routed.example/1', undefined)).toBe(true)
     expect(isTemporaryRoutePartitionLive('orivon-route-tab-1')).toBe(true)
     expect(isTemporaryRoutePartitionLive('orivon-route-tab-2')).toBe(false)
   })

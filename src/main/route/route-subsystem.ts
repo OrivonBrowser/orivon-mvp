@@ -12,6 +12,7 @@ import { publishRoutes } from '../registry.js'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { readSettingBeforeReady } from '../settings/settings-file.js'
 import { isOriginPinnedSync, isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
+import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isPersistableOrigin } from '../../broker/policy/origin.js'
 import { setLeavingRoutes } from './leaving-routes.js'
 import { setLookupSessionSource, setRouteChallengeSource } from './lookup-session.js'
@@ -59,7 +60,11 @@ export const routeSubsystem: Subsystem = {
       }
     })
     setLeavingRoutes({
-      world: { isRouted: routes.hub.isRouted, isInstalledApp: isOriginServedFromCacheSync },
+      world: {
+        isRouted: routes.hub.isRouted,
+        isInstalledApp: isOriginServedFromCacheSync,
+        routedOriginOf: (partition) => partition === undefined ? undefined : routes.store.origins().find((origin) => partitionFor(origin) === partition)
+      },
       temporary,
       routeSwitch: createRouteSwitch(routes, { isPinned: isOriginPinnedSync, isPersistable: isPersistableOrigin })
     })

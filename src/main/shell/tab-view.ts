@@ -391,8 +391,8 @@ export function wireView (id: string, record: TabRecord): void {
     gatewayTarget,
     popupBlocked: (details, from) => refuseHeldWindow(wc, details.url) || sitePopups.check(wc, from.url, details.url),
     openExternal: (url) => { void askExternalLink(wc, url).then((allowed) => { if (allowed) return shell.openExternal(url) }).catch(() => {}) },
-    leaveFor: (url, from) => leaveForOpen(record, from.url, url),
-    chooseLeave: async (leave, from) => await chooseLeave(wc, from.url, leave)
+    leaveFor: (url, from) => leaveForOpen(record, from.url, url, from.partition),
+    chooseLeave: async (leave) => await chooseLeave(wc, leave)
   }, () => ({ url: wc.getURL(), partition: record.partition })))
   wireTabSignals(id, record)
 }

@@ -15,7 +15,7 @@ const details = (url: string, features = '', disposition: Details['disposition']
 const APP = { url: 'https://routed.example/app', partition: 'persist:app-routed' }
 const SITE = 'https://news.example/story'
 
-function setup (choice: Choice, leave: ReturnType<NonNullable<Host['leaveFor']>> = { kind: 'website', origin: 'https://news.example' }) {
+function setup (choice: Choice, leave: ReturnType<NonNullable<Host['leaveFor']>> = { kind: 'website', origin: 'https://news.example', app: 'https://routed.example' }) {
   const openTab = vi.fn(() => undefined)
   const openWindow = vi.fn(() => undefined)
   const openBlobTab = vi.fn(() => undefined)
@@ -42,7 +42,7 @@ describe('a routed app opening a window outside its sessions', () => {
     processWindowBudget.reset()
     const { host, openTab, chooseLeave } = setup({ kind: 'cancel' })
     expect(windowOpenHandler(host, () => APP)(details(SITE)).action).toBe('deny')
-    expect(chooseLeave).toHaveBeenCalledWith({ kind: 'website', origin: 'https://news.example' }, APP)
+    expect(chooseLeave).toHaveBeenCalledWith({ kind: 'website', origin: 'https://news.example', app: 'https://routed.example' })
     expect(openTab).not.toHaveBeenCalled()
   })
 
@@ -76,7 +76,7 @@ describe('a routed app opening a window outside its sessions', () => {
 
   it('opens another app, once its route is on, as an ordinary tab', async () => {
     processWindowBudget.reset()
-    const { host, openTab } = setup({ kind: 'app' }, { kind: 'app', origin: 'https://other.example' })
+    const { host, openTab } = setup({ kind: 'app' }, { kind: 'app', origin: 'https://other.example', app: 'https://routed.example' })
     windowOpenHandler(host, () => APP)(details('https://other.example/x'))
     await settle()
     expect(openTab).toHaveBeenCalledWith('https://other.example/x', true, undefined)

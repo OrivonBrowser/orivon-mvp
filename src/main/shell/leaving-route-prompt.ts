@@ -12,9 +12,9 @@ const DIRECT = 1
 const CANCEL = 2
 
 /** The question as the panel is given it; split out so the words are tested without a window. */
-export function leavingQuestion (app: string, leave: Leave): { message: string, detail: string, buttons: [string, string, string] } {
+export function leavingQuestion (leave: Leave): { message: string, detail: string, buttons: [string, string, string] } {
   return {
-    message: `${formatOriginForDisplay(app)} wants to open ${formatOriginForDisplay(leave.origin)}.`,
+    message: `${formatOriginForDisplay(leave.app)} wants to open ${formatOriginForDisplay(leave.origin)}.`,
     detail: leave.kind === 'website'
       ? 'Your proxy is on for this app. Open the page through your proxy, or directly?'
       : 'Your proxy is on for this app, and not for the app it wants to open. Open it through your proxy, or directly?',
@@ -23,8 +23,8 @@ export function leavingQuestion (app: string, leave: Leave): { message: string, 
 }
 
 /** Escape, a closed tab and a new page in the tab all answer `cancel`. */
-export async function askToLeaveRoute (where: QuestionTarget, app: string, leave: Leave): Promise<LeaveAnswer> {
-  const { message, detail, buttons } = leavingQuestion(app, leave)
+export async function askToLeaveRoute (where: QuestionTarget, leave: Leave): Promise<LeaveAnswer> {
+  const { message, detail, buttons } = leavingQuestion(leave)
   const { response } = await askQuestion(where, {
     kind: 'consent',
     buttons,

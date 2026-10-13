@@ -107,7 +107,7 @@ export interface PopupHost {
   /** What opening `url` from a routed app's page asks the person, or undefined when nothing: the page is not a routed app's, or the address stays inside its sessions (route/leave-decision.ts). Absent in a test with no routes. */
   leaveFor?: (url: string, from: PopupOpener) => Leave | undefined
   /** Asks that question for the opener's tab and makes ready what the answer needs. Absent: such an open is cancelled. */
-  chooseLeave?: (leave: Leave, from: PopupOpener) => Promise<LeaveChoice>
+  chooseLeave?: (leave: Leave) => Promise<LeaveChoice>
 }
 
 /** The webContents Chromium already built for the open, if any -- present in the `options`
@@ -244,7 +244,7 @@ export function windowOpenHandler (
     const leave = host.leaveFor?.(details.url, from)
     if (leave !== undefined && !staysInOpenerSession(details, from, host)) {
       // Electron wants the answer to this call now and the person has not given theirs: the open is refused here (so `window.open` returns null) and made, if allowed, after the question.
-      void host.chooseLeave?.(leave, from).then((choice) => {
+      void host.chooseLeave?.(leave).then((choice) => {
         if (choice.kind === 'website') openInTemporary(host, details.url, choice.partition, active, loadOptions)
         else if (choice.kind !== 'cancel') openOutside()
       }).catch((error: unknown) => { console.error('[route] opening a window from a routed app failed:', error) })

@@ -15,7 +15,7 @@ that is tied to the running browser: which apps the person routed, and what rout
 | `route-domain.ts` | What the Settings page may ask: whether the proxy answers |
 | `lookup-session.ts` | The session the browser's own lookups about a routed app go through (a tab icon from another host, the Web3 Score provider), and the answer to the front's proxy challenge for a request made from main |
 | `routed-fetch.ts` | A GET made by main through that session, as a `Response`, by `net.request` so that it can answer the challenge itself |
-| `leave-decision.ts` | Pure: whether a page of a routed app opening an address needs the person asked first (not its own origin, not loopback, not an installed app whose route is on) |
+| `leave-decision.ts` | Pure: whether a page of a routed app opening an address needs the person asked first (not its own origin, not an installed app whose route is on; a page with no web address counts as the app whose session it runs in) |
 | `temporary-routes.ts` | The in-memory session a website opened "through my proxy" runs in: a front and proxy sign-in of its own, released with its last tab |
 | `route-switch.ts` | Turning an app's route on or off, shared by the app card and the question below |
 | `leaving-routes.ts` | What the shell asks of all this when a routed app's page opens an address: the decision, the temporary session, the app switch |

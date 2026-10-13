@@ -3,7 +3,6 @@
 // decision itself is `../route/leave-decision.ts`; this file asks, and moves the tab (or opens one) as the answer says.
 // Tied to Electron through the events of the `WebContents` it guards.
 import type { WebContents } from 'electron'
-import { originFromUrl } from '../../broker/policy/origin.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { isRoutedPage, leaveFor, openTemporaryRoute, routeAppToo } from '../route/leaving-routes.js'
 import type { Leave } from '../route/leave-decision.js'
@@ -26,12 +25,10 @@ export type LeaveChoice =
  * meanwhile), and makes ready what the answer needs: the temporary session for a website, the other app's route for an
  * app. A failure to make it ready cancels the open: it is never turned into a direct one.
  */
-export async function chooseLeave (contents: WebContents, openerUrl: string, leave: Leave): Promise<LeaveChoice> {
-  const app = originFromUrl(openerUrl)
-  if (app === null) return { kind: 'cancel' }
+export async function chooseLeave (contents: WebContents, leave: Leave): Promise<LeaveChoice> {
   const release = holdNavigation(contents)
   try {
-    const answer = await askToLeaveRoute({ contents }, app, leave)
+    const answer = await askToLeaveRoute({ contents }, leave)
     if (answer === 'cancel') return { kind: 'cancel' }
     if (answer === 'direct') return { kind: 'direct' }
     if (leave.kind === 'app') return await routeAppToo(leave.origin) ? { kind: 'app' } : { kind: 'cancel' }
@@ -55,11 +52,11 @@ function loadedAt (record: TabRecord, url: string): string {
  * asked about only when that is an installed app, because Orivon's nodes fetch it, not a server the page chose, and a
  * proxy has no say in that.
  */
-export function leaveForOpen (record: TabRecord, from: string, url: string): Leave | undefined {
+export function leaveForOpen (record: TabRecord, from: string, url: string, partition: string | undefined): Leave | undefined {
   // Most pages are no routed app's: that is settled before any address is mapped.
-  if (!isRoutedPage(from)) return undefined
+  if (!isRoutedPage(from, partition)) return undefined
   const target = loadedAt(record, url)
-  const leave = leaveFor(from, target)
+  const leave = leaveFor(from, target, partition)
   return leave?.kind === 'website' && target !== url ? undefined : leave
 }
 
@@ -82,11 +79,11 @@ export function askBeforeLeavingRoute (wc: WebContents, id: string, record: TabR
     // A question about this page is already open: the hold drops this navigation.
     if (isNavigationHeld(wc)) return
     const from = wc.getURL()
-    const leave = leaveForOpen(record, from, event.url)
+    const leave = leaveForOpen(record, from, event.url, record.partition)
     if (leave === undefined) return
     const url = loadedAt(record, event.url)
     event.preventDefault()
-    void chooseLeave(wc, from, leave).then((choice) => {
+    void chooseLeave(wc, leave).then((choice) => {
       // The tab moved, closed or went to another page while the question was open: the answer was about a page that is gone.
       if (choice.kind === 'cancel' || record.view !== view || wc.isDestroyed() || !shown()) return
       if (choice.kind === 'website') {
