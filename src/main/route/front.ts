@@ -24,6 +24,8 @@ export interface RouteFront {
 export interface RouteFrontOptions {
   /** Read on every request, so a changed proxy applies to the next one. Undefined means the app has no proxy to go through, and the front refuses. */
   readonly provider: () => RouteProvider | undefined
+  /** Called once when the front stops listening, whoever closed it. */
+  readonly onClosed?: () => void
   /** Testing only. */
   readonly secret?: string
 }
@@ -192,6 +194,7 @@ export async function startRouteFront (options: RouteFrontOptions): Promise<Rout
     server.once('error', reject)
     server.listen(0, '127.0.0.1', resolve)
   })
+  server.once('close', () => { options.onClosed?.() })
   const { port } = server.address() as AddressInfo
 
   const closeTunnels = (): void => { for (const socket of [...live]) socket.destroy() }

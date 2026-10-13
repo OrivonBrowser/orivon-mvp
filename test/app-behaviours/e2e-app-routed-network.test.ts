@@ -6,12 +6,14 @@
 //
 // The app turns its route on from the Settings page, as a person does, and then dials by name (`orivon.net.connect`,
 // `connectSecure`, a datagram, a WebSocket), has an image loaded from a granted https host (the loader's reach path)
-// and shows a page in a <webview> (Chromium's own network stack, through the app's loopback front). Every one must
-// show up in the SOCKS log and answer. What the route cannot carry is refused, and with the proxy stopped nothing
+// and shows a page in a <webview> (Chromium's own network stack, through the app's loopback front). Its tab icon from
+// another host is fetched by the main process, in a request of its own that answers the front's proxy challenge (the
+// application's `login` event is raised for web contents only). Every one must show up in the SOCKS log and answer. What the route cannot carry is refused, and with the proxy stopped nothing
 // answers and nothing arrives anywhere else.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/app-behaviours/e2e-app-routed-network.test.ts
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { createSocket } from 'node:dgram'
 import type { Socket as UdpSocket } from 'node:dgram'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -94,6 +96,13 @@ function certificate (dir: string, names: readonly string[]): { cert: string, ke
   return { cert: readFileSync(cert, 'utf8'), key: readFileSync(key, 'utf8'), path: cert }
 }
 
+/** The SHA-256 of the certificate's public key, as Chromium's `--ignore-certificate-errors-spki-list` takes it. */
+function spkiHash (certPath: string): string {
+  const pem = execFileSync('openssl', ['x509', '-pubkey', '-noout', '-in', certPath], { stdio: 'pipe' })
+  const der = execFileSync('openssl', ['pkey', '-pubin', '-outform', 'der'], { input: pem, stdio: 'pipe' })
+  return createHash('sha256').update(der).digest('base64')
+}
+
 let dir: string
 let socks: Socks5Fixture
 let secondSocks: Socks5Fixture
@@ -104,7 +113,7 @@ let script = ''
 const cleanups: Array<() => Promise<void> | void> = []
 
 /** Logical ports: every one is a port a decoy holds on loopback, and the SOCKS fixture maps the app's name:port to a real server elsewhere. */
-const ports = { tcp: 0, tls: 0, ws: 0, embed: 0, reach: 0, udp: 0, hold: 0, listen: 0 }
+const ports = { tcp: 0, tls: 0, ws: 0, embed: 0, reach: 0, icon: 0, udp: 0, hold: 0, listen: 0 }
 const decoys: Counting[] = []
 let udpDecoy: Awaited<ReturnType<typeof udpCounting>>
 let stunDecoy: Awaited<ReturnType<typeof udpCounting>>
@@ -112,11 +121,11 @@ let holdDecoy: Counting
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'orivon-routed-e2e-'))
-  const names = ['tls.socks.test', 'reach.socks.test']
+  const names = ['tls.socks.test', 'reach.socks.test', 'icon.socks.test']
   const tls = certificate(dir, names)
 
   // Decoys first: their ports are the ones the app is told.
-  for (const name of ['tcp', 'tls', 'ws', 'embed', 'reach'] as const) {
+  for (const name of ['tcp', 'tls', 'ws', 'embed', 'reach', 'icon'] as const) {
     const decoy = await counting()
     decoys.push(decoy)
     ports[name] = decoy.port
@@ -151,6 +160,7 @@ beforeAll(async () => {
       [`ws.socks.test:${String(ports.ws)}`]: local((websockets.address() as AddressInfo).port),
       [`embed.socks.test:${String(ports.embed)}`]: local((page.address() as AddressInfo).port),
       [`reach.socks.test:${String(ports.reach)}`]: local((images.address() as AddressInfo).port),
+      [`icon.socks.test:${String(ports.icon)}`]: local((images.address() as AddressInfo).port),
       [`udp.socks.test:${String(ports.udp)}`]: local(udpReal.port)
     }
   }
@@ -175,6 +185,8 @@ beforeAll(async () => {
   // The profile names the proxy; no app is routed yet.
   const launched = await launchShell({
     env: { NODE_EXTRA_CA_CERTS: tls.path },
+    // Chromium's own stack (the tab icon fetched by the main process) trusts this one key and no other.
+    args: [`--ignore-certificate-errors-spki-list=${spkiHash(tls.path)}`],
     seedProfile: async (userDataDir) => {
       writeFileSync(join(userDataDir, 'settings.json'), JSON.stringify({ version: 1, values: { 'network.route.proxy': `127.0.0.1:${String(socks.port)}` } }))
     }
@@ -191,7 +203,7 @@ beforeAll(async () => {
     capabilities: {
       net: {
         tcp: { connect: [`tcp.socks.test:${String(ports.tcp)}`, `ws.socks.test:${String(ports.ws)}`, `missing.socks.test:${String(ports.tcp)}`, `127.0.0.1:${String(ports.hold)}`, `127.0.0.1:${String(ports.listen)}`], listen: { local: [String(ports.listen)] } },
-        https: { connect: [`tls.socks.test:${String(ports.tls)}`, `reach.socks.test:${String(ports.reach)}`] },
+        https: { connect: [`tls.socks.test:${String(ports.tls)}`, `reach.socks.test:${String(ports.reach)}`, `icon.socks.test:${String(ports.icon)}`] },
         udp: { bind: { local: ['47300-47399'] }, send: [`udp.socks.test:${String(ports.udp)}`] }
       },
       web: { embed: { origins: [`http://embed.socks.test:${String(ports.embed)}`] } }
@@ -295,6 +307,17 @@ it('[app:routed-app-sends-nothing-direct] an installed app switched on in Settin
   const shown = await call('embed', `http://embed.socks.test:${String(ports.embed)}/`)
   expect(shown, 'Chromium\'s own stack, through the front').toMatchObject({ ok: true, detail: 'shown through the front' })
 
+  // The tab's icon from another host is fetched by the main process, through the route's session and the app's front.
+  // No web contents is there to raise the application's `login` event, so the dial of the name in the log means the
+  // request answered the front's 407 itself. (Electron has no icon downloader of its own, so nothing else asks for it.)
+  await view.evaluate((href) => {
+    const link = document.createElement('link')
+    link.rel = 'icon'
+    link.href = href
+    document.head.append(link)
+  }, `https://icon.socks.test:${String(ports.icon)}/icon.png`)
+  expect(await waitFor(() => dialed(socks, 'icon.socks.test', ports.icon)), 'the tab icon from another host went through the route').toBe(true)
+
   for (const [name, port] of [['tcp.socks.test', ports.tcp], ['tls.socks.test', ports.tls], ['ws.socks.test', ports.ws], ['reach.socks.test', ports.reach], ['embed.socks.test', ports.embed]] as const) {
     expect(dialed(socks, name, port), `${name}:${String(port)} was asked of the proxy`).toBe(true)
   }
@@ -317,6 +340,21 @@ it('[app:routed-app-keeps-its-loopback-listens] a routed app still listens on lo
   const direct = await call('tcp', '127.0.0.1', ports.hold)
   expect(direct.ok, 'a loopback address is reached directly').toBe(true)
   expect(socks.requests.slice(seen).filter((request) => request.port === ports.hold)).toEqual([])
+}, QA_TEST_TIMEOUT_MS)
+
+it('[app:routed-app-keeps-its-loopback-listens] Chromium sends the local network and link-local addresses through the proxy, and reaches this machine alone without it', async () => {
+  // A link-local address cannot be dialled from here without being assigned to an interface, so this asks Chromium which
+  // proxy it would use for each destination, in the app's own session: the decision a connection would follow.
+  const targets = ['http://169.254.169.254/', 'http://[fe80::1]/', 'http://192.168.1.5/', 'http://10.0.0.1/', 'http://printer.local/', 'http://example.com/', 'http://127.0.0.1:8080/', 'http://localhost:8080/', 'http://app.localhost/', 'http://[::1]:8080/']
+  const answers = await app.evaluate(async ({ webContents }, { origin, urls }) => {
+    const page = webContents.getAllWebContents().find((contents) => contents.getURL().startsWith(origin))
+    if (page === undefined) throw new Error('the app\'s page was not found')
+    return await Promise.all(urls.map(async (url) => [url, await page.session.resolveProxy(url)] as const))
+  }, { origin: ORIGIN, urls: targets })
+  const through = answers.filter(([, answer]) => answer.startsWith('PROXY 127.0.0.1:')).map(([url]) => url)
+  const direct = answers.filter(([, answer]) => answer === 'DIRECT').map(([url]) => url)
+  expect(through, JSON.stringify(answers)).toEqual(targets.slice(0, 6))
+  expect(direct, JSON.stringify(answers)).toEqual(targets.slice(6))
 }, QA_TEST_TIMEOUT_MS)
 
 it('[app:routed-app-refuses-what-the-route-cannot-carry] a routed app cannot listen where the network can reach it or look a name up, and with the proxy stopped nothing answers and nothing goes anywhere else', async () => {

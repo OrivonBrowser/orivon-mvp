@@ -1,6 +1,6 @@
 # ADR-0077: Swarm content is verified chunk by chunk and read only from a Bee node the person runs
 
-- **Status:** accepted. The node Orivon configures is [`ADR-0078`](ADR-0078-the-swarm-node-is-webassembly-in-a-utility-process-of-its-own.md)'s; a build made without that node's files opens no Swarm content outside tests. The files are published on IPFS and a build fetches them by the CID its manifest names (`d-0612`).
+- **Status:** accepted. The node Orivon configures is [`ADR-0078`](ADR-0078-the-swarm-node-is-webassembly-in-a-utility-process-of-its-own.md)'s; a build made without that node's files opens no Swarm content outside tests. The files are published on IPFS and a build fetches them by the CID its manifest names (`d-0613`).
 - **Date:** 2026-10-12
 - **Type:** architecture / security
 - **Decided by:** owner (items 1 to 4); AI recommendation accepted by default (the rest)

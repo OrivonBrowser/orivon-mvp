@@ -182,14 +182,8 @@ export async function captureFaviconInto (
     return
   }
   const stillTheSamePage = (): boolean => isStillCurrent() && !shouldClearFavicon(declaringOrigin, pageUrl())
-  // A routed app's icons from other hosts are fetched through its route; when that route cannot be had, they are not fetched.
-  let routeSession: Session | undefined
-  let routeUnavailable = false
-  try {
-    routeSession = await lookupSessionFor(declaringOrigin)
-  } catch {
-    routeUnavailable = true
-  }
+  // A routed app's icons from other hosts are fetched through its route, which is asked for again at every hop.
+  const routeLookup = async (): Promise<Session | undefined> => await lookupSessionFor(declaringOrigin)
 
   for (const candidate of candidates) {
     if (!stillTheSamePage()) return
@@ -203,7 +197,7 @@ export async function captureFaviconInto (
     // `data:` URL has no hostname, so isSafeFaviconUrl never accepts one).
     const dataUrl = /^data:/i.test(candidate)
       ? decodedDataUrlCandidate(candidate)
-      : routeUnavailable ? null : await fetchFaviconDataUrlCached(candidate, declaringPage, stillWanted, pageSession, routeSession)
+      : await fetchFaviconDataUrlCached(candidate, declaringPage, stillWanted, pageSession, routeLookup)
 
     if (!stillWanted()) return
     if (dataUrl === null) continue
