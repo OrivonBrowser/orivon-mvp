@@ -133,6 +133,25 @@ stop-everything result, not a bug to file.
 
 ---
 
+## 5. The macOS one-line install
+
+**Precondition.** A published release with both dmgs attached, and an Apple silicon Mac that has
+never opened Orivon (or has quit it).
+
+**Input.** The command in the README section Download, pasted into Terminal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/install-macos.sh | bash
+```
+
+**Assertions.** The script prints the release's tag and "Checked the SHA-256", Orivon opens with
+no Gatekeeper dialog, and **About** shows the release's version.
+
+**Fails if:** a Gatekeeper dialog appears, the digest check is skipped, or the script installs a
+different release than the newest one with a dmg attached.
+
+---
+
 ## Scheduled additions
 
 Written when the artefacts they depend on exist. Recorded here so the gap is known rather than

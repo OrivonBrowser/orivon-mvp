@@ -67,7 +67,7 @@ rely on, row by row. A new feature adds its line here when it lands.
 
 - **Bug reports**: a form that shows the report in full before Send, an opt-in crash dump, deletion from the server, and a local log.
 - **Telemetry**: opt-in, with a first-run choice, a Settings switch, a privacy notice and erasure.
-- **Packages for Linux, Windows and macOS** on every GitHub release (deb, AppImage, NSIS installer, dmg for Apple silicon and Intel), also published on IPFS.
+- **Packages for Linux, Windows and macOS** on every GitHub release (deb, AppImage, NSIS installer, dmg for Apple silicon and Intel), also published on IPFS. On macOS a one-line Terminal command installs or updates Orivon with no Gatekeeper warning.
 - **A Microsoft Store package** built with every Windows build and kept for upload to Partner Center (not on the release); a Store install is updated by the Store and looks for no update itself.
 - **Update check**: a check for a new release that links to its page.
 - **Run from source** on Linux, Windows and macOS with `npm install && npm start`.

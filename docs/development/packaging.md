@@ -189,6 +189,25 @@ Applications, the first open is refused: open **System Settings > Privacy & Secu
 **Open Anyway**, or run `xattr -dr com.apple.quarantine /Applications/Orivon.app`. The Intel dmg
 is built on an Apple silicon runner and launched there under Rosetta.
 
+**macOS one-line install.** `scripts/install-macos.sh`, run as
+`curl -fsSL https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/install-macos.sh | bash`,
+installs or updates Orivon with no Gatekeeper prompt. Gatekeeper only checks files that carry the
+`com.apple.quarantine` attribute, which a browser adds to a download and `curl` does not; Apple
+silicon still wants a signature, and the ad-hoc one the build has is enough. The script reads the
+newest releases from GitHub's API and takes the newest non-pre-release that has a dmg for the Mac's
+architecture with a digest, else the newest pre-release that has one (a release whose packages are not
+attached yet is skipped). It downloads that dmg, compares its SHA-256 with the digest GitHub reports
+for the asset, copies `Orivon.app` into `/Applications` (or `~/Applications` when the first is not
+writable; never sudo), checks `codesign --verify`, and opens it. It refuses to run while Orivon is
+running. The digest check guards against a broken or swapped download in transit, not against
+someone who controls the GitHub repository. It runs on macOS's own bash and tools. Four environment
+variables: `ORIVON_REPO` (the repository to read releases from), `ORIVON_DMG` (a local dmg, which
+skips the lookup, download and digest check), `ORIVON_INSTALL_DIR` (where `Orivon.app` goes) and
+`ORIVON_NO_OPEN=1` (do not open it). The release workflow installs the package it just built through
+the script and launches the result with the packaged smoke check; on pull requests and manual runs
+it also installs the newest published release through it, which exercises the lookup, download and
+digest check.
+
 **Signing later.** A Developer ID certificate (with notarization) and a Windows code-signing
 certificate would remove both warnings (the Store package has none to remove). electron-builder reads them from the environment
 (`CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`), so
