@@ -54,6 +54,14 @@ const DECLARATION_FILE = /\.d\.ts$/
 const SKIPPED_DIRECTORIES = new Set(['node_modules', 'out', 'dist', 'build', 'release', 'coverage', 'spike', 'vendor'])
 
 /**
+ * Top-level directories never walked: `resources/` holds data the app reads,
+ * never code (its README), and the files `fetch-bundled-extensions.mjs` and
+ * `fetch-local-nodes.mjs` download into it, which git ignores. Matched at the
+ * root only, so a `resources` folder inside `src/` is still checked.
+ */
+const SKIPPED_ROOT_DIRECTORIES = new Set(['resources'])
+
+/**
  * @param {string} file Root-relative, forward-slashed path.
  * @returns {boolean} True if `file` is a test file under the guideline's own
  *   definition: `*.test.ts`, anything under `test/` except `test/apps/`, or
@@ -126,6 +134,7 @@ export function checkFileSizes (root) {
 
       if (entry.isDirectory()) {
         if (entry.name.startsWith('.') || SKIPPED_DIRECTORIES.has(entry.name)) continue
+        if (dir === root && SKIPPED_ROOT_DIRECTORIES.has(entry.name)) continue
         walk(full)
         continue
       }
