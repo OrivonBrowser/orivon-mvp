@@ -6,7 +6,7 @@ that passes a check). `settings-store.ts` holds the person's choices for this pr
 in `<userData>/settings.json`, tells listeners about each change, and validates everything it is
 given. `settings-file.ts` is what the file's text holds once validated, and `readSettingBeforeReady`, which
 reads one value ahead of everything for a setting Chromium takes at start (Global Privacy Control; the store
-keeps the values it started with, `valuesAtStart`, so the page can say a restart is waiting). `settings-appliers.ts` is what a change does to the rest of the browser for the settings
+keeps the values it started with, `valuesAtStart`, so the page can say a restart is waiting). A file that is there and cannot be used (unreadable, or of a version this build does not read) is read as the whole browser being on the tunnel (`everywhereBeforeReady`, and the store holds `network.tunnel.everywhere` on, keeps a copy of the file beside it and says so through `fileUnreadable`), since what the person chose about the tunnel is not known; a missing file means the defaults. `settings-appliers.ts` is what a change does to the rest of the browser for the settings
 whose effect is not read on demand (today the theme).
 
 **What it depends on.** [`../browsing/search-engines.ts`](../browsing/search-engines.ts) (the
