@@ -202,7 +202,7 @@ it('[app:extensions-run-in-the-profiles] with the whole browser on the tunnel, t
   // The only tab is sent to a page of an extension (by the extension itself): that is no website, so the direct profile's copies go.
   expect(await sessionNameOf(url('direct'))).toBe(DIRECT)
   expect(await waitFor(async () => (await inSession(DIRECT)).workers > 0, 20_000), 'the service worker of the third extension runs while the site is open').toBe(true)
-  await inBeacon(DIRECT, `chrome.tabs.query({ active: true }).then(([tab]) => chrome.tabs.update(tab.id, { url: chrome.runtime.getURL('config.js') }))`)
+  await inBeacon(DIRECT, SHOW_EXTENSION_PAGE)
   expect(await waitFor(async () => (await inSession(DIRECT)).extensions === 0, 20_000), 'a tab showing an extension keeps nothing running').toBe(true)
   expect(await waitFor(async () => (await inSession(DIRECT)).workers === 0, 20_000), 'and no service worker either').toBe(true)
   await visit('direct')
@@ -223,6 +223,9 @@ it('[app:extensions-run-in-the-profiles] with the whole browser on the tunnel, t
   expect(await waitFor(async () => await flag(view, '__adBlocked'), 60_000), 'and blocks again').toBe(true)
 }, 4 * QA_TEST_TIMEOUT_MS)
 
+/** Sends the tab in front to a page of the extension and returns at once: the page that asks is unloaded with its extension, so it can never answer. */
+const SHOW_EXTENSION_PAGE = `(() => { chrome.tabs.query({ active: true }).then(([tab]) => chrome.tabs.update(tab.id, { url: chrome.runtime.getURL('config.js') })); return true })()`
+
 /** Runs `code` in the page of the beacon extension that session `partition` holds. */
 const inBeacon = async (partition: string, code: string): Promise<unknown> => await app.evaluate(async ({ session, webContents }, [name, id, run]) => {
   const target = session.fromPartition(name as string)
@@ -241,7 +244,7 @@ it('[app:extensions-run-in-the-profiles] the tunnel profile holds no extension, 
   expect(await waitFor(async () => (await inSession(TUNNEL)).workers > 0, 20_000), 'the third extension\'s service worker runs').toBe(true)
 
   // The tab shows a page of an extension: no website of the tunnel profile is open.
-  await inBeacon(TUNNEL, `chrome.tabs.query({ active: true }).then(([tab]) => chrome.tabs.update(tab.id, { url: chrome.runtime.getURL('config.js') }))`)
+  await inBeacon(TUNNEL, SHOW_EXTENSION_PAGE)
   expect(await waitFor(async () => {
     const held = await inSession(TUNNEL)
     return held.extensions === 0 && held.backgrounds === 0 && held.workers === 0
@@ -249,9 +252,11 @@ it('[app:extensions-run-in-the-profiles] the tunnel profile holds no extension, 
 
   // A website of another session: the tunnel profile stays empty, and its copy goes quiet.
   await visit('plain')
+  const gone = async (): Promise<boolean> => { const held = await inSession(TUNNEL); return held.extensions === 0 && held.backgrounds === 0 && held.workers === 0 }
+  expect(await waitFor(gone, 20_000), 'the last website closing takes everything away').toBe(true)
   const silentSince = Date.now()
   await delay(3_000)
-  expect(await inSession(TUNNEL)).toEqual({ extensions: 0, backgrounds: 0, workers: 0 })
+  expect(await gone(), 'and nothing comes back').toBe(true)
   expect((beacons.get(tunnelCopy) ?? 0) < silentSince, 'the tunnel profile\'s copy made no request after it was taken away').toBe(true)
   expect((await inSession(undefined)).extensions).toBe(COPIES)
 

@@ -152,7 +152,7 @@ extension in a plain-http website's profile, which is kept in memory, where Elec
 from the shell's tab events; `profile-hosts.ts` loads the copies when the first one opens (a view about to be made counts at
 once, so the requests of the session wait for the copies, as they wait for the route) and removes them, with their pages and
 workers, when the last one closes, the same for the tunnel profile and the direct profile. An idle profile therefore holds no
-extension page, worker or memory (each active profile costs about 180 to 400 MB with the real uBlock Origin), and with the whole
+extension page, worker or memory (each active profile costs about 100 to 400 MB with the real uBlock Origin), and with the whole
 browser on the tunnel an extension makes no direct request while no excluded website is open. A page that shows an extension is
 no website. Each profile's extension settings are on disk, so they survive an unload.
 
