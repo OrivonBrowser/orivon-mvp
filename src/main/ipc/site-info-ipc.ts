@@ -24,6 +24,7 @@ import type { CookieView } from '../privacy/cookie-list.js'
 import { cookieViewsFor, removeSiteCookie, removeSiteCookies } from '../privacy/cookie-runner.js'
 import type { BrowserStorageEstimate } from '../permissions/site-data-runner.js'
 import type { SitePermissionsAccess, SitePermissionsView } from '../site-settings/site-permissions-view.js'
+import { isTemporaryRouteSession } from '../route/leaving-routes.js'
 
 export interface SiteDataSnapshot {
   readonly cookieCount: number
@@ -133,6 +134,8 @@ export function registerSiteInfoIpc (
   closePopup: () => void = () => {},
   openHome: (domain: string) => void = () => {}
 ): void {
+  // A website the person opened through their proxy from a routed app says so, in the tab the popover is about.
+  const withRoute = (info: SiteInfo): SiteInfo => isTemporaryRouteSession(activeWebContents()?.session) ? { ...info, route: 'temporary' } : info
   // On the popup's own webContents: the handler goes with it, and two windows
   // can each have one open.
   siteInfoWebContents.ipc.handle(SITE_INFO_COMMAND_CHANNEL, async (
@@ -143,7 +146,7 @@ export function registerSiteInfoIpc (
 
     switch (command.type) {
       case 'get':
-        return await controller.siteInfoFor(origin)
+        return withRoute(await controller.siteInfoFor(origin))
       case 'trust':
         return await controller.siteTrustFor(origin)
       case 'data':
@@ -160,7 +163,7 @@ export function registerSiteInfoIpc (
             await controller.turnOff(origin, change.capability)
           }
         }
-        return { info: await controller.siteInfoFor(origin), staleCapabilities, refusedCapabilities }
+        return { info: withRoute(await controller.siteInfoFor(origin)), staleCapabilities, refusedCapabilities }
       }
       case 'sitePermissions':
         return sitePermissions.view(origin)

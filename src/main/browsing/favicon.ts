@@ -3,6 +3,7 @@
 
 import type { Session } from 'electron'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
+import { isTemporaryRouteSession } from '../route/leaving-routes.js'
 import { lookupSessionFor } from '../route/lookup-session.js'
 import { fetchFaviconDataUrlCached } from './favicon-fetch.js'
 import { decodeDataUrl, MAX_FAVICON_BYTES, toDataUrl } from './favicon-format.js'
@@ -182,8 +183,8 @@ export async function captureFaviconInto (
     return
   }
   const stillTheSamePage = (): boolean => isStillCurrent() && !shouldClearFavicon(declaringOrigin, pageUrl())
-  // A routed app's icons from other hosts are fetched through its route, which is asked for again at every hop.
-  const routeLookup = async (): Promise<Session | undefined> => await lookupSessionFor(declaringOrigin)
+  // A routed app's icons from other hosts are fetched through its route, which is asked for again at every hop. A page in a temporary routed session is its own route: its other hosts go through that session too.
+  const routeLookup = async (): Promise<Session | undefined> => isTemporaryRouteSession(pageSession) ? pageSession : await lookupSessionFor(declaringOrigin)
 
   for (const candidate of candidates) {
     if (!stillTheSamePage()) return

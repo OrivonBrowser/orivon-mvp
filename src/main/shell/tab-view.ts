@@ -17,6 +17,7 @@ import { watchPageDialogs } from './page-dialogs.js'
 import { windowOpenHandler } from './popups.js'
 import { watchFileNavigation } from './local-file-navigation.js'
 import { repartitionBeforeCommit, repartitionOnFileBlock } from './pre-partition.js'
+import { askBeforeLeavingRoute, chooseLeave, leaveForOpen } from './leaving-route.js'
 import { keepsOpenerSession, openerCutNeeded, popupTargetIsApp } from './popup-opener.js'
 import { DEFAULT_BACKGROUND } from './theme-colors.js'
 import { isDashboardUrl, sheetBackdropOf } from './sheet-backdrop.js'
@@ -40,7 +41,7 @@ import { wireSignInIdentity } from './sign-in-identity-tab.js'
 import { watchAppTab } from './app-tab-watch.js'
 import { wireTabSignals } from './tab-signals.js'
 import { readableNow } from '../reader/reader-signal.js'
-import { APP_TAB_FLAG, appTabArgsFor, appTabFlagChanged, appTabOrigins, appTabViews, partitionAfterFileBlock, partitionChanged, partitionForTarget } from './tab-partition.js'
+import { APP_TAB_FLAG, appTabArgsFor, appTabFlagChanged, appTabOrigins, appTabViews, partitionAfterFileBlock, partitionChanged, partitionChangedByPage, partitionForTarget } from './tab-partition.js'
 
 export { popupTargetIsApp } from './popup-opener.js'
 export { appTabArgsFor, appTabFlagChanged, appTabOrigins, appTabViews, partitionAfterFileBlock, partitionChanged, partitionForTarget } from './tab-partition.js'
@@ -174,6 +175,8 @@ export function wireView (id: string, record: TabRecord): void {
   wc.on('will-frame-navigate', refuseShellPage)
   wc.on('will-redirect', refuseShellPage)
   watchFileNavigation(wc, (url) => { if (shown()) void record.host.openLocalFile(url, true).catch((error: unknown) => { console.error('[shell] open local file failed:', error) }) })
+  // Ahead of the repartition below: a navigation this stops to ask about is not one it moves.
+  askBeforeLeavingRoute(wc, id, record, shown)
   repartitionBeforeCommit(wc, id, record, shown)
   repartitionOnFileBlock(wc, id, record, shown)
   wc.on('did-navigate', (_event, navigatedUrl: string) => {
@@ -229,7 +232,7 @@ export function wireView (id: string, record: TabRecord): void {
       resetViewBackground(view)
     }
     if (!record.isDashboardTab) {
-      const swap = partitionChanged(navigatedUrl, record.partition)
+      const swap = partitionChangedByPage(navigatedUrl, record.partition)
       const cutOpener = openerCutNeeded(wc, navigatedUrl, record.host.broker)
       if (swap !== undefined && (cutOpener || !keepsOpenerSession(wc, swap))) {
         repartitionView(id, record, navigatedUrl, swap.to)
@@ -387,7 +390,9 @@ export function wireView (id: string, record: TabRecord): void {
     isApp: (url) => popupTargetIsApp(url, record.host.broker),
     gatewayTarget,
     popupBlocked: (details, from) => refuseHeldWindow(wc, details.url) || sitePopups.check(wc, from.url, details.url),
-    openExternal: (url) => { void askExternalLink(wc, url).then((allowed) => { if (allowed) return shell.openExternal(url) }).catch(() => {}) }
+    openExternal: (url) => { void askExternalLink(wc, url).then((allowed) => { if (allowed) return shell.openExternal(url) }).catch(() => {}) },
+    leaveFor: (url, from) => leaveForOpen(record, from.url, url, from.partition),
+    chooseLeave: async (leave) => await chooseLeave(wc, leave)
   }, () => ({ url: wc.getURL(), partition: record.partition })))
   wireTabSignals(id, record)
 }

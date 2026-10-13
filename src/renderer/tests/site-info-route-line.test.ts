@@ -13,4 +13,8 @@ describe('the route line', () => {
     expect(routeLineWords('down')).toBe('Your proxy is not answering, so this app\'s network traffic is stopped.')
     expect(routeLineWords('no-proxy')).toBe('No proxy is set, so this app\'s network traffic is stopped.')
   })
+
+  it('says a page opened through the proxy from a routed app goes through it and keeps nothing', () => {
+    expect(routeLineWords('temporary')).toBe('This page goes through your proxy, and nothing it stores is kept once its last tab is closed.')
+  })
 })
