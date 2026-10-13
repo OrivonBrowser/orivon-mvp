@@ -194,6 +194,17 @@ forgotten.
       7. A later release is a new submission of the same listing with the new package; the Store checks that the
          browser stays within two major versions of the current Chromium, so an Electron update is due at least
          that often.
+- [ ] **The winget package** ([`packaging.md`](packaging.md) section winget). One-time setup, by the owner:
+      1. Create a **classic** personal access token (fine-grained tokens cannot open the pull request) with the
+         `public_repo` scope, in the account the pull requests should come from, and store it as the repository
+         secret `WINGET_TOKEN`. Until then the `winget` job of every release writes a warning and submits nothing.
+      2. Submit the first version of each identifier by hand, since the job only adds versions to a package that
+         exists: `Orivon.Browser.Preview` with the first pre-release, `Orivon.Browser` with the first full release.
+         Generate the manifests with `komac new` (the same Komac version as `release.yml`), submit them, and on that
+         first pull request accept Microsoft's contributor agreement with one comment when its bot asks.
+      3. Once a pull request is merged, `winget install Orivon.Browser.Preview` (or `Orivon.Browser`) installs
+         without SmartScreen; every release after it is submitted by the job.
+      After a release: the `winget` job's page shows either the pull request it opened or the warning naming what is missing.
 - [ ] [`CHANGELOG.md`](../../CHANGELOG.md) updated.
 - [ ] Known limitations stated **in-product**, not only in the README: peers see the user's IP;
       no automatic port forwarding behind NAT; address-bar search text goes to DuckDuckGo.
