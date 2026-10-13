@@ -154,6 +154,7 @@ export async function startRouteFront (options: RouteFrontOptions): Promise<Rout
       return
     }
     const carrier = opened.socket
+    if (res.destroyed) { carrier.destroy(); return }
     track(carrier)
     // A client that gave up leaves nothing open on the route.
     res.once('close', () => { if (!res.writableFinished) carrier.destroy() })
@@ -174,6 +175,9 @@ export async function startRouteFront (options: RouteFrontOptions): Promise<Rout
       }
       res.writeHead(answer.statusCode ?? 502, answer.statusMessage, forwarded)
       answer.pipe(res)
+      // A body cut short must not leave the client waiting for the rest.
+      answer.on('error', () => { res.destroy() })
+      answer.on('aborted', () => { res.destroy() })
     })
     upstream.on('error', () => {
       if (res.headersSent) res.destroy()

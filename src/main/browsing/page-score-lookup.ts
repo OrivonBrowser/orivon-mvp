@@ -110,7 +110,7 @@ export function createPageScoreLookup (deps: PageScoreDeps): PageScoreLookup {
     } catch {
       content = undefined
     }
-    if (content === undefined) return { provider: await client.providerName() ?? configured, level: null }
+    if (content === undefined) return { provider: await client.providerName(caller) ?? configured, level: null }
     const verdict = await client.verdictFor(scoreIdOf({ kind: 'cid', value: content.cid }), undefined, caller)
     switch (verdict.status) {
       case 'judged': {

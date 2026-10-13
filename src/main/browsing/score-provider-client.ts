@@ -28,7 +28,7 @@ export interface ScoreProviderClient {
    * about, so a routed app's lookup leaves through its route. Never throws. */
   readonly verdictFor: (id: string | undefined, waitMs?: number, origin?: string) => Promise<ProviderVerdict>
   /** The chosen provider's own name; its address when its description cannot be read; undefined with none chosen. Never throws. */
-  readonly providerName: () => Promise<string | undefined>
+  readonly providerName: (origin?: string) => Promise<string | undefined>
 }
 
 const ANSWER_KEPT_MS = 10 * 60_000
@@ -60,14 +60,16 @@ export function createScoreProviderClient (deps: ScoreProviderDeps): ScoreProvid
   async function cachedFetch (url: string, origin: string | undefined): Promise<FetchedJson> {
     const time = now()
     for (const [key, entry] of kept) if (time - entry.at >= ANSWER_KEPT_MS) kept.delete(key)
-    let entry = kept.get(url)
+    // A routed app's answer is its own: what its route could reach says nothing about a direct fetch, nor the reverse.
+    const key = `${origin ?? ''} ${url}`
+    let entry = kept.get(key)
     if (entry === undefined) {
       entry = { at: time, answer: deps.fetchJson(url, origin) }
-      kept.set(url, entry)
+      kept.set(key, entry)
     }
     const answer = await entry.answer
-    if (answer.kind === 'failed' && now() - entry.at >= FAILURE_KEPT_MS && kept.get(url) === entry) {
-      kept.delete(url)
+    if (answer.kind === 'failed' && now() - entry.at >= FAILURE_KEPT_MS && kept.get(key) === entry) {
+      kept.delete(key)
       return await cachedFetch(url, origin)
     }
     return answer
@@ -114,11 +116,11 @@ export function createScoreProviderClient (deps: ScoreProviderDeps): ScoreProvid
   }
 
   return {
-    async providerName () {
+    async providerName (origin) {
       const address = deps.providerAddress().trim()
       if (address === '') return undefined
       try {
-        const described = await describe(address)
+        const described = await describe(address, origin)
         return described.kind === 'described' ? described.descriptor.name : address
       } catch {
         return address

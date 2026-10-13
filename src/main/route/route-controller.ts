@@ -53,6 +53,8 @@ const CONFINED = 'disable_non_proxied_udp'
 const UNREACHABLE_PROXY = 'http://127.0.0.1:9'
 /** A session call that never returns would hold every later switch behind it. */
 const SESSION_CALL_MS = 10_000
+/** `pointedAt`'s value for a session held on the unreachable proxy: no front has this port. */
+const CONFINED_FRONT = 0
 
 async function within<T> (work: Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -109,7 +111,8 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
 
   /** A rule that reaches nothing, for a session that could not be pointed at the app's front: a request there fails, it is never sent direct. */
   async function confine (session: RouteSession): Promise<void> {
-    pointedAt.delete(session)
+    // Recorded, so that switching the route off puts the session back on the system's proxy.
+    pointedAt.set(session, CONFINED_FRONT)
     try {
       await within(session.setProxy({ mode: 'fixed_servers', proxyRules: UNREACHABLE_PROXY }))
     } catch (error) {

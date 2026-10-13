@@ -141,6 +141,18 @@ async function readCappedBody (request: Request): Promise<Buffer | null> {
   return Buffer.concat(chunks)
 }
 
+function routedConnection (provider: RouteProvider, host: string, port: number, ca: ReachDialOptions['ca'], signal: AbortSignal): NonNullable<ClientRequestArgs['createConnection']> {
+  return (_options, callback) => {
+    provider.connect(host, port, signal).then((carrier) => {
+      // The request is gone already (aborted, timed out): nothing may keep the route's stream.
+      if (signal.aborted) { carrier.destroy(); return }
+      // The certificate is verified against the name the app was granted, as on a direct dial.
+      callback?.(null, tlsConnect({ socket: carrier, host, ...(isIP(host) === 0 ? { servername: host } : {}), ca }))
+    }, (error: unknown) => { callback?.(error instanceof Error ? error : new Error('the route could not carry the request'), undefined as never) })
+    return undefined
+  }
+}
+
 /**
  * Builds a `ReachDial` (serve.ts's own type) that performs a real HTTPS
  * request to `host`:`port` over Node's own network stack, forwarding
@@ -161,18 +173,6 @@ async function readCappedBody (request: Request): Promise<Buffer | null> {
  * refusing rather than letting an app drive unbounded allocation in this
  * privileged process.
  */
-function routedConnection (provider: RouteProvider, host: string, port: number, ca: ReachDialOptions['ca'], signal: AbortSignal): NonNullable<ClientRequestArgs['createConnection']> {
-  return (_options, callback) => {
-    provider.connect(host, port, signal).then((carrier) => {
-      // The request is gone already (aborted, timed out): nothing may keep the route's stream.
-      if (signal.aborted) { carrier.destroy(); return }
-      // The certificate is verified against the name the app was granted, as on a direct dial.
-      callback?.(null, tlsConnect({ socket: carrier, host, ...(isIP(host) === 0 ? { servername: host } : {}), ca }))
-    }, (error: unknown) => { callback?.(error instanceof Error ? error : new Error('the route could not carry the request'), undefined as never) })
-    return undefined
-  }
-}
-
 export function nodeReachDial (options: ReachDialOptions = {}): ReachDial {
   const idleTimeoutMs = options.idleTimeoutMs ?? REACH_IDLE_TIMEOUT_MS
   return async (request, host, port) => {

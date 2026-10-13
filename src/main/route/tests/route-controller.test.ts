@@ -219,6 +219,22 @@ describe('a session that cannot be pointed at the front', () => {
     expect(dropped).toEqual([APP])
     expect(log).toContain('app.close')
   })
+
+  it('goes back to the system\'s proxy when the route is switched off, never staying on the rule that reaches nothing', async () => {
+    const { store, controller, sessionFor } = setup()
+    const broken = sessionFor('app')
+    const original = broken.setProxy
+    let refused = false
+    broken.setProxy = async (config) => { if (!refused) { refused = true; throw new Error('no proxy for you') } await original(config) }
+    await controller.appSessionRegistered(APP, broken)
+    store.set(APP, true)
+    await controller.settled()
+
+    store.set(APP, false)
+    await controller.settled()
+
+    expect(broken.proxies.at(-1)).toBe('system:')
+  })
 })
 
 describe('changing the proxy under a routed app', () => {
