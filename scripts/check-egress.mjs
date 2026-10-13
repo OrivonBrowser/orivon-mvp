@@ -1,19 +1,25 @@
 /**
  * Fails the build if a file in src/ can reach the network and docs/architecture/egress.md does not list it, or if
- * that page lists a file that is no longer there.
+ * that page lists a file that is gone or that the scan no longer matches.
  *
  * The tunnel (ADR-0080) only holds if no path to the network is added around it unnoticed. The table says, for every
  * such file, what it reaches, what for, and how it takes the tunnel (or why it never leaves this computer). A file is
  * a path to the network when it imports `net`, `tls`, `http`, `https`, `http2`, `dgram` or `dns` (with or without
- * `node:`, a type-only import excepted), the `socks` package or the broker's socket adapters, calls Electron's `net.request` or `net.fetch`, a session's `fetch`, any
- * `setProxy`, or `globalThis.fetch`, or, outside the renderer, the preload scripts and the Node shim (code that runs in a
- * page or a worker, whose `fetch` is the page's own), calls a session's `fetch` or the global `fetch`
- * without declaring a `fetch` of its own (a parameter, a destructured option or a local: an injected one is
- * the caller's path, and the caller is listed).
+ * `node:`, a type-only import excepted), the `socks` package or the broker's socket adapters, calls Electron's
+ * `net.request` or `net.fetch`, any `setProxy`, or `globalThis.fetch`, or, outside the renderer, the preload scripts
+ * and the Node shim (code that runs in a page or a worker, whose `fetch` is the page's own), calls a session's
+ * `fetch` or the global `fetch` without declaring a `fetch` of its own (a parameter, a destructured option or a
+ * local: an injected one is the caller's path, and the caller is listed), falls back to the global `fetch`, or
+ * constructs a `WebSocket`, `EventSource` or `XMLHttpRequest`.
  *
  * SCOPE: git-tracked source under src/, tests excluded. Regex over the code with comments blanked, not an AST
- * (scripts/README.md limits a guard to `node:*` builtins). A row may name a file the scan does not match, but not a
- * file that is gone. `deps.fetch` and `options.fetch` are an injected function, not a session's.
+ * (scripts/README.md limits a guard to `node:*` builtins). A row may not name a
+ * file the scan no longer matches, so the table cannot keep claiming a path that is gone. `deps.fetch` and
+ * `options.fetch` are an injected function, not a session's.
+ *
+ * KNOWN LIMITS: a `fetch` declared anywhere in a file excuses every bare `fetch(` call in it, and the global `fetch`
+ * passed as a value (`run(fetch)`) is seen only as a fallback (`?? fetch`). A program Orivon starts is not a path
+ * this scan names.
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -40,6 +46,12 @@ const FETCH_MEMBER = /([\w$]*)\s*\??\.\s*fetch\b/g
 const INJECTED = new Set(['deps', 'options', 'opts', 'this'])
 const SET_PROXY = /\.setProxy\s*\(/
 const BARE_FETCH = /(?<![\w$.])fetch\s*\(/
+/** Falling back to the global `fetch` when none was injected: `deps.fetch ?? fetch`. A declaration elsewhere in the file does not excuse it. */
+const FETCH_FALLBACK = /(?:\?\?|\|\|)\s*fetch\b(?!\s*[(:=])/
+/** Electron's `net` under another name: `import { net as enet }`, `const { request } = net`. */
+const NET_ALIAS = [/\{[^}]*\bnet\s+as\s+[\w$]+[^}]*\}\s*from\s*['"]electron['"]/, /\}\s*=\s*net\b(?![\w$.])/]
+/** Other ways for Node-side code to open a connection of its own. */
+const CONSTRUCTED = /\bnew\s+(WebSocket|EventSource|XMLHttpRequest)\b/g
 /** A `fetch` the file declares itself: a local, an import, a destructured option, or a parameter or property typed as a function. */
 const DECLARED_FETCH = [
   /\b(?:const|let|var|function)\s+fetch\b/,
@@ -86,6 +98,9 @@ export function findEgress (text, file) {
     else if (receiver !== 'net' && !INJECTED.has(receiver) && !PAGE_SIDE.test(file)) add('calls a session\'s fetch')
   }
   if (SET_PROXY.test(code)) add('calls setProxy')
+  if (NET_ALIAS.some((alias) => alias.test(code))) add('uses Electron net under another name')
+  if (!PAGE_SIDE.test(file)) for (const match of code.matchAll(CONSTRUCTED)) add(`constructs a ${match[1]}`)
+  if (!PAGE_SIDE.test(file) && FETCH_FALLBACK.test(code)) add('falls back to the global fetch')
   if (!PAGE_SIDE.test(file) && BARE_FETCH.test(code) && !DECLARED_FETCH.some((declared) => declared.test(code))) add('calls the global fetch')
   return reasons
 }
@@ -122,10 +137,9 @@ export function checkEgress (root) {
     return { ok: false, unlisted, stale, unreadable, error: `could not read ${TABLE_FILE}: ${err.code ?? err.message}` }
   }
 
-  const sources = new Set()
+  const matched = new Set()
   for (const file of files) {
     if (!SOURCE.test(file) || NOT_SOURCE.test(file)) continue
-    sources.add(file)
     let text
     try {
       text = readFileSync(join(root, file), 'utf8')
@@ -134,9 +148,10 @@ export function checkEgress (root) {
       continue
     }
     const reasons = findEgress(text, file)
+    if (reasons.length > 0) matched.add(file)
     if (reasons.length > 0 && !listed.has(file)) unlisted.push({ file, reasons })
   }
-  for (const file of listed) if (!new Set(files).has(file)) stale.push(file)
+  for (const file of listed) if (!matched.has(file) && !unreadable.some((entry) => entry.file === file)) stale.push(file)
 
   unlisted.sort((a, b) => a.file.localeCompare(b.file))
   stale.sort()

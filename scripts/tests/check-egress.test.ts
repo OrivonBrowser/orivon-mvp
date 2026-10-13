@@ -47,7 +47,13 @@ describe('what findEgress sees', () => {
     ['a fetch through a web contents', 'await wc.session.fetch(url, init)\n'],
     ['app.setProxy', 'await app.setProxy({ mode: \'direct\' })\n'],
     ['session.setProxy', 'await session.setProxy({ mode: \'system\' })\n'],
-    ['globalThis.fetch', 'const original = globalThis.fetch\n']
+    ['globalThis.fetch', 'const original = globalThis.fetch\n'],
+    ['a fallback to the global fetch', 'const get = deps.fetch ?? fetch\n'],
+    ['a fallback to the global fetch declared elsewhere', 'function g (fetch: Fetch) {}\nconst get = deps.fetch || fetch\n'],
+    ['Electron net under another name', 'import { net as enet } from \'electron\'\n'],
+    ['a request function taken out of net', 'const { request } = net\n'],
+    ['a WebSocket', 'const socket = new WebSocket(url)\n'],
+    ['an EventSource', 'const events = new EventSource(url)\n']
   ])('sees %s', (_name, source) => {
     expect(reasons(source).length).toBeGreaterThan(0)
   })
@@ -79,6 +85,7 @@ describe('what findEgress leaves alone', () => {
     ['a fetch the file receives untyped', 'export const get = (fetch) => fetch(url)\n'],
     ['a fetch destructured from an option object', 'const { fetch } = options\nawait fetch(url)\n'],
     ['a local named fetch', 'const fetch = makeFetch()\nawait fetch(url)\n'],
+    ['an unrelated property that reads net', 'const x = { net: orivon.net as SocketNet }\n'],
     ['a method of the class itself', 'void this.fetch()\n'],
     ['a method called fetch on something else', 'await cache.fetchOne(url)\nconst prefetch = 1\nprefetch(2)\n']
   ])('ignores %s', (_name, source) => {
@@ -86,7 +93,11 @@ describe('what findEgress leaves alone', () => {
   })
 
   it('does not take an object key for a declaration of fetch', () => {
-    expect(reasons('const config = { fetch: deps.dohFetch ?? fetch }\nawait fetch(url)\n', 'src/protocols/a.ts')).toEqual(['calls the global fetch'])
+    expect(reasons('const config = { fetch: deps.dohFetch ?? fetch }\nawait fetch(url)\n', 'src/protocols/a.ts')).toEqual(['falls back to the global fetch', 'calls the global fetch'])
+  })
+
+  it('leaves a WebSocket in a page-side file alone', () => {
+    expect(reasons('new WebSocket(url)\n', 'src/renderer/a.ts')).toEqual([])
   })
 
   it('leaves a fetch in a page-side file alone, and globalThis.fetch in it is still seen', () => {
@@ -120,8 +131,14 @@ describe('checkEgress', () => {
     expect(result.stale).toEqual(['src/main/gone.ts'])
   })
 
-  it('passes a file in the table, and a row for a file the scan does not match but that exists', () => {
+  it('fails a row for a file that exists but no longer reaches the network', () => {
     const result = checkEgress(repo({ 'src/main/a.ts': code, 'src/main/b.ts': 'export const b = 1\n', [TABLE_FILE]: table('src/main/a.ts', 'src/main/b.ts') }))
+    expect(result.ok).toBe(false)
+    expect(result.stale).toEqual(['src/main/b.ts'])
+  })
+
+  it('passes a file in the table', () => {
+    const result = checkEgress(repo({ 'src/main/a.ts': code, [TABLE_FILE]: table('src/main/a.ts') }))
     expect(result).toEqual({ ok: true, unlisted: [], stale: [], unreadable: [] })
   })
 

@@ -11,9 +11,10 @@ routed* are taken through the tunnel.
 **What the scan finds.** A file that imports `net`, `tls`, `http`, `https`, `http2`, `dgram` or `dns` (with or
 without `node:`; a type-only import does not count), the `socks` package or the broker's socket adapters
 (`src/broker/adapters/`), calls Electron's `net.request` or `net.fetch`, a session's `fetch`, any `setProxy`, or
-`globalThis.fetch`, or calls the global `fetch` without declaring one of its own. Code that runs in a page or a worker
-(`src/renderer/`, `src/preload/`, `src/shim/`) is not scanned for `fetch`, since its `fetch` is the page's own
-and rides the page's session. A row may name a file the scan does not match; it may not name a file that is gone.
+`globalThis.fetch`; calls the global `fetch` without declaring one of its own, or falls back to it; or constructs a
+`WebSocket`, `EventSource` or `XMLHttpRequest`. Code that runs in a page or a worker (`src/renderer/`,
+`src/preload/`, `src/shim/`) is not scanned for `fetch`, since its `fetch` is the page's own and rides the page's
+session. A row may not name a file that is gone or that the scan no longer matches.
 
 **The last column** says one of these:
 
@@ -96,6 +97,7 @@ build.
   not appear above: they take the proxy of the session they run in. A routed app's sessions and a temporary routed
   tab point at a front; the shared session, ordinary tabs and extensions do not. The engine also makes requests of
   its own with no web contents (the spellcheck dictionary download is one); those take the default proxy.
+- **A program Orivon starts.** Anything a spawned process dials is that process's own business.
 - **Code that passes `fetch` in.** The gateways, IPFS, Swarm and ENS readers and the loader's bundle reader receive a
   `fetch`; the file that builds it is the row above (`entry.ts`, `loader/electron/fetch.ts`).
 - **The local nodes' guest code.** What a WebAssembly node does with its sockets goes through `node-net.ts`.
