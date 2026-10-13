@@ -49,9 +49,15 @@ function loadedAt (record: TabRecord, url: string): string {
   return BUILTIN_ADDRESSES.servedUrl(url) ?? gatewayRedirectFor(record.host.services?.settings, url) ?? url
 }
 
-/** What a window the page of `from` opens at `url` asks the person, or undefined (route/leave-decision.ts). */
+/**
+ * What the page of `from` opening `url` asks the person, or undefined (route/leave-decision.ts). An address Orivon
+ * loads from its own nodes (`ipfs://`, a `.eth` gateway address) is judged by the address it is served at, which names
+ * an installed app or nothing the proxy could reach: it is asked about only when it is an installed app.
+ */
 export function leaveForOpen (record: TabRecord, from: string, url: string): Leave | undefined {
-  return leaveFor(from, loadedAt(record, url))
+  const target = loadedAt(record, url)
+  const leave = leaveFor(from, target)
+  return leave?.kind === 'website' && target !== url ? undefined : leave
 }
 
 interface NavigationEvent {
@@ -74,7 +80,7 @@ export function askBeforeLeavingRoute (wc: WebContents, id: string, record: TabR
     if (isNavigationHeld(wc)) return
     const url = loadedAt(record, event.url)
     const from = wc.getURL()
-    const leave = leaveFor(from, url)
+    const leave = leaveForOpen(record, from, event.url)
     if (leave === undefined) return
     event.preventDefault()
     void chooseLeave(wc, from, leave).then((choice) => {

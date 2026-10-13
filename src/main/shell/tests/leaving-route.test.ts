@@ -19,7 +19,7 @@ const openTemporaryRoute = vi.fn(async () => 'orivon-route-tab-1')
 const routeAppToo = vi.fn(async (_origin?: string) => true)
 vi.mock('../../route/leaving-routes.js', () => ({ leaveFor: (...args: unknown[]) => leaveFor(...args), openTemporaryRoute: () => openTemporaryRoute(), routeAppToo: (origin: string) => routeAppToo(origin) }))
 
-const { askBeforeLeavingRoute, chooseLeave } = await import('../leaving-route.js')
+const { askBeforeLeavingRoute, chooseLeave, leaveForOpen } = await import('../leaving-route.js')
 
 const APP_URL = 'https://routed.example/app'
 const WEBSITE = { kind: 'website', origin: 'https://news.example' } as const
@@ -159,5 +159,24 @@ describe('chooseLeave', () => {
     askToLeaveRoute.mockResolvedValue('proxy')
     routeAppToo.mockResolvedValue(false)
     expect(await chooseLeave(wc, APP_URL, { kind: 'app', origin: 'https://other.example' })).toEqual({ kind: 'cancel' })
+  })
+})
+
+describe('leaveForOpen', () => {
+  const record = { host: { services: undefined } } as never
+
+  it('asks about an address as written', () => {
+    expect(leaveForOpen(record, APP_URL, 'https://news.example/a')).toEqual(WEBSITE)
+    expect(leaveFor).toHaveBeenCalledWith(APP_URL, 'https://news.example/a')
+  })
+
+  it('judges a protocol address by the address it is served at, and does not ask about a site there that no proxy could reach', () => {
+    expect(leaveForOpen(record, APP_URL, 'ipfs://some-name.eth/')).toBeUndefined()
+    expect(leaveFor).toHaveBeenCalledWith(APP_URL, 'https://some-name.eth/')
+  })
+
+  it('still asks when a protocol address is an installed app whose route is off', () => {
+    leaveFor.mockReturnValue({ kind: 'app', origin: 'https://other.example' })
+    expect(leaveForOpen(record, APP_URL, 'ipfs://other.example/')).toEqual({ kind: 'app', origin: 'https://other.example' })
   })
 })

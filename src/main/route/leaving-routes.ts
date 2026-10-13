@@ -47,8 +47,3 @@ export async function routeAppToo (origin: string): Promise<boolean> {
   await source.routeSwitch.set(origin, true)
   return true
 }
-
-/** Whether the app's route can be turned on now. */
-export function canRouteApp (origin: string): boolean {
-  return source !== undefined && source.routeSwitch.blockedFor(origin) === undefined
-}
