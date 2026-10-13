@@ -194,8 +194,8 @@ it('[app:routed-app-asks-before-opening-a-website] asks, in the window, whether 
   const panel = await waitQuestion(app)
   const said = await readQuestion(panel)
   expect(said.message).toBe(`${ORIGIN} wants to open http://${SITE_NAME}:${String(sitePort)}.`)
-  expect(said.detail).toBe('Your proxy is on for this app. Open the page through your proxy, or directly?')
-  expect([...said.buttons].sort()).toEqual(['Cancel', 'Directly', 'Through my proxy'])
+  expect(said.detail).toBe('Your tunnel is on for this app. Open the page through your tunnel, or directly?')
+  expect([...said.buttons].sort()).toEqual(['Cancel', 'Directly', 'Through my tunnel'])
   expect((await tabIds(chrome)).length, 'nothing opened while the question is open').toBe(before)
   expect(proxied() + decoyHits).toBe(0)
 
@@ -208,9 +208,9 @@ it('[app:routed-app-asks-before-opening-a-website] asks, in the window, whether 
   expect(await appPage.evaluate(() => (window as unknown as { __opened?: string }).__opened)).toBe('null')
 }, 3 * QA_TEST_TIMEOUT_MS)
 
-it('[app:routed-app-asks-before-opening-a-website] "Through my proxy" opens the page in a temporary session that goes through the proxy and keeps nothing', async () => {
+it('[app:routed-app-asks-before-opening-a-website] "Through my tunnel" opens the page in a temporary session that goes through the proxy and keeps nothing', async () => {
   await clickOpen('open', siteUrl('/one'))
-  await answerQuestion(app, 'Through my proxy')
+  await answerQuestion(app, 'Through my tunnel')
   const page = await expectTab(siteUrl('/one'), 'proxied')
   expect(proxied(), 'the proxy was asked for the site').toBeGreaterThan(0)
   expect(decoyHits, 'nothing reached the decoy').toBe(0)
@@ -228,7 +228,7 @@ it('[app:routed-app-asks-before-opening-a-website] "Through my proxy" opens the 
   expect(await waitFor(() => findPopup() !== undefined)).toBe(true)
   const popover = findPopup() as Page
   await popover.waitForSelector('.route-line')
-  expect(await popover.locator('.route-line').textContent()).toBe('This page goes through your proxy, and nothing it stores is kept once its last tab is closed.')
+  expect(await popover.locator('.route-line').textContent()).toBe('This page goes through your tunnel, and nothing it stores is kept once its last tab is closed.')
   await chrome.click('#site-permissions-btn')
   expect(await waitFor(() => findPopup() === undefined)).toBe(true)
   await delay(400)
@@ -242,7 +242,7 @@ it('[app:routed-app-asks-before-opening-a-website] "Through my proxy" opens the 
   // A second page opened through the proxy gets credentials of its own: Tor gives it other circuits.
   appPage = await openApp()
   await clickOpen('open', siteUrl('/three'))
-  await answerQuestion(app, 'Through my proxy')
+  await answerQuestion(app, 'Through my tunnel')
   await expectTab(siteUrl('/three'), 'proxied')
   const second = socks.requests.filter((request) => request.destination === SITE_NAME).at(-1)?.userId
   expect(second).not.toBe(first)
@@ -259,7 +259,7 @@ it('[app:routed-app-asks-before-opening-a-website] "Directly" opens the page as 
   expect(proxied(), 'the proxy was not asked').toBe(asked)
 }, 3 * QA_TEST_TIMEOUT_MS)
 
-it('[app:routed-app-asks-before-opening-a-website] a navigation of the app\'s own tab asks too: Escape stays, "Through my proxy" moves the same tab, and Back returns to the app', async () => {
+it('[app:routed-app-asks-before-opening-a-website] a navigation of the app\'s own tab asks too: Escape stays, "Through my tunnel" moves the same tab, and Back returns to the app', async () => {
   appPage = await openApp()
   const tabs = (await tabIds(chrome)).length
   const asked = proxied()
@@ -274,7 +274,7 @@ it('[app:routed-app-asks-before-opening-a-website] a navigation of the app\'s ow
   expect(proxied()).toBe(asked)
 
   await clickOpen('navigate', siteUrl('/nav'))
-  await answerQuestion(app, 'Through my proxy')
+  await answerQuestion(app, 'Through my tunnel')
   await expectTab(siteUrl('/nav'), 'proxied')
   expect((await tabIds(chrome)).length, 'the app\'s own tab moved; no tab was added').toBe(tabs)
   const hitsNow = decoyHits
@@ -291,8 +291,8 @@ it('[app:routed-app-asks-before-opening-a-website] another installed app whose r
   await clickOpen('open', `${OTHER}/`)
   const panel = await waitQuestion(app)
   const said = await readQuestion(panel)
-  expect([...said.buttons].sort()).toEqual(['Cancel', 'Directly', `Use my proxy for ${OTHER.replace('https://', '')} too`])
-  await answerQuestion(app, `Use my proxy for ${OTHER.replace('https://', '')} too`)
+  expect([...said.buttons].sort()).toEqual(['Cancel', 'Directly', `Use my tunnel for ${OTHER.replace('https://', '')} too`])
+  await answerQuestion(app, `Use my tunnel for ${OTHER.replace('https://', '')} too`)
   await expectTab(`${OTHER}/`, 'routed leaving')
 
   const settings = await openSettings()
@@ -329,7 +329,7 @@ it('[app:routed-app-asks-before-opening-a-website] a page Orivon loads itself (i
   const panel = await waitQuestion(app)
   const said = await readQuestion(panel)
   expect(said.message).toBe(`${ORIGIN} wants to open ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi.`)
-  expect(said.detail).toBe('Orivon loads this page itself, so it cannot go through your proxy yet.')
+  expect(said.detail).toBe('Orivon loads this page itself, so it cannot go through your tunnel yet.')
   expect([...said.buttons].sort()).toEqual(['Cancel', 'Directly'])
   await panel.waitForSelector('.q:not(.arming)')
   await shoot(app, chrome, panel, 'routed-leaving-served')

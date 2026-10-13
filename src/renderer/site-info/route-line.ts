@@ -1,15 +1,15 @@
 import type { SiteRoute } from '../../main/permissions/site-info.js'
 
-// The one line the popover shows for an app the person routed through their proxy, and the line that says so when the
-// proxy is not answering. Composed here, never from anything an app wrote.
+// The one line the popover shows for an app the person routed through their tunnel, and the line that says so when the
+// tunnel is not answering. Composed here, never from anything an app wrote.
 
 export function routeLineWords (route: SiteRoute): string {
   switch (route) {
-    case 'down': return 'Your proxy is not answering, so this app\'s network traffic is stopped.'
-    case 'no-proxy': return 'No proxy is set, so this app\'s network traffic is stopped.'
-    case 'temporary': return 'This page goes through your proxy, and nothing it stores is kept once its last tab is closed.'
+    case 'down': return 'Your tunnel is not answering, so this app\'s traffic is stopped.'
+    case 'no-proxy': return 'No tunnel is set, so this app\'s traffic is stopped.'
+    case 'temporary': return 'This page goes through your tunnel, and nothing it stores is kept once its last tab is closed.'
     case 'idle':
-    case 'ok': return 'This app\'s network traffic goes through your proxy.'
+    case 'ok': return 'This app\'s traffic goes through your tunnel.'
   }
 }
 

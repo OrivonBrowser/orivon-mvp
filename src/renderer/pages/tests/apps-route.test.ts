@@ -5,7 +5,7 @@ import type { OrivonInternal } from '../shared/bridge.js'
 
 describe('routeWords', () => {
   it('says why the switch cannot be turned on, in words about the person\'s situation', () => {
-    expect(routeWords({ state: 'off', blocked: 'no-proxy' })).toContain('Set a proxy')
+    expect(routeWords({ state: 'off', blocked: 'no-proxy' })).toContain('Set a tunnel')
     expect(routeWords({ state: 'off', blocked: 'not-cached' })).toContain('holds on this computer')
     expect(routeWords({ state: 'off', blocked: undefined })).toContain('connects as you do')
   })
@@ -27,7 +27,7 @@ describe('routeWords', () => {
   it('says what a working route means, including that updates are not checked', () => {
     for (const state of ['idle', 'ok'] as const) {
       const words = routeWords({ state, blocked: undefined })
-      expect(words).toContain('leaves through your proxy')
+      expect(words).toContain('leaves through your tunnel')
       expect(words).toContain('updates are not checked')
     }
   })

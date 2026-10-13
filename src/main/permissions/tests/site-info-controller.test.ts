@@ -77,7 +77,7 @@ function fakeLoader (overrides: Partial<Loader> = {}): Loader {
 describe('createSiteInfoController -- the route of a routed app', () => {
   const routesWith = (state: string): SubsystemContext['routes'] => ({ hub: { state: () => state } }) as unknown as SubsystemContext['routes']
 
-  it('carries the state of the app\'s route, so the popover can say where its traffic goes and when the proxy is not answering', async () => {
+  it('carries the state of the app\'s route, so the popover can say where its traffic goes and when the tunnel is not answering', async () => {
     for (const state of ['idle', 'ok', 'down', 'no-proxy']) {
       const ctx = { ...ctxWith(createBroker(baseDeps())), routes: routesWith(state) } as unknown as SubsystemContext
       expect((await createSiteInfoController(ctx, NO_TRUST).siteInfoFor(OTHER)).route, state).toBe(state)

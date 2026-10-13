@@ -1,4 +1,4 @@
-// A website a routed app's page opens "through my proxy" runs in a session made for it: in memory, behind a front of its
+// A website a routed app's page opens "through my tunnel" runs in a session made for it: in memory, behind a front of its
 // own that signs in to the proxy with credentials of its own (so Tor gives it circuits apart from the app's), and gone
 // with the last tab that used it. Electron-free over the parts it drives.
 

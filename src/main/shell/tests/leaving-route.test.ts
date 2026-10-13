@@ -67,7 +67,7 @@ describe('askBeforeLeavingRoute', () => {
     expect(askToLeaveRoute).not.toHaveBeenCalled()
   })
 
-  it('opens the website in a temporary routed session in the same tab on "through my proxy"', async () => {
+  it('opens the website in a temporary routed session in the same tab on "through my tunnel"', async () => {
     askToLeaveRoute.mockResolvedValue('proxy')
     const { fire, tab } = rig()
     fire('will-navigate')
@@ -88,7 +88,7 @@ describe('askBeforeLeavingRoute', () => {
     expect(repartitionView).not.toHaveBeenCalled()
   })
 
-  it('turns the other app\'s route on, then loads it, on "use my proxy for it too"', async () => {
+  it('turns the other app\'s route on, then loads it, on "use my tunnel for it too"', async () => {
     leaveFor.mockReturnValue({ kind: 'app', origin: 'https://other.example', app: 'https://routed.example' })
     askToLeaveRoute.mockResolvedValue('proxy')
     const { fire, tab } = rig()
