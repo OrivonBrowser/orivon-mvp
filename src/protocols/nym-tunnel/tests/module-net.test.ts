@@ -97,3 +97,20 @@ describe('the module network', () => {
     socket.close()
   })
 })
+
+describe('the module network once installed as the globals', () => {
+  it('still reaches the original fetch and WebSocket, not itself', async () => {
+    const original = { fetch: globalThis.fetch, WebSocket: globalThis.WebSocket }
+    const calls: string[] = []
+    const stand: typeof fetch = async (input) => { calls.push(String(input)); return new Response('x') }
+    globalThis.fetch = stand
+    try {
+      const network = createModuleNetwork(undefined, undefined)
+      globalThis.fetch = network.fetch
+      await expect(network.fetch('https://127.0.0.1:1/')).resolves.toBeInstanceOf(Response)
+      expect(calls).toEqual(['https://127.0.0.1:1/'])
+    } finally {
+      globalThis.fetch = original.fetch
+    }
+  })
+})

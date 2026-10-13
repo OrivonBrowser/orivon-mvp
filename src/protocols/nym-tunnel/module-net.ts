@@ -61,7 +61,8 @@ export interface ModuleNetwork {
 }
 
 /** What the module's `fetch` and `WebSocket` are, over a dispatcher made from `dial`. The default dial is the system's resolver, checked. */
-export function createModuleNetwork (dial?: Connector, real: { fetch: typeof fetch, WebSocket: typeof WebSocket } = globalThis): ModuleNetwork {
+export function createModuleNetwork (dial?: Connector, real: { fetch: typeof fetch, WebSocket: typeof WebSocket } = { fetch: globalThis.fetch, WebSocket: globalThis.WebSocket }): ModuleNetwork {
+  // Taken now, not when called: the result is installed as the globals themselves, and a lookup then would call itself.
   const connector = dial ?? (buildConnector({ lookup: checkedLookup() as never }) as unknown as Connector)
   const dispatcher = new Agent({ connect: checkedConnector(connector) as never })
   const base = real.WebSocket
