@@ -74,7 +74,7 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
 13. **Ask questions trough the tool** and never stop working until feedback/decision from owner is the only real bottleneck, owner may be sleeping, and his response should not be the reason for you to stop unless there is no other way around.
 14. **Merge session changes in a PR's by yourself**, unless owner decision is critical. Same for orivon-ports repo operations as well. This is preferred for faster development. Most of the times if you wait for my approval to merge a PR to main you will end un in a conflict loop, since development goes so fast. If you don't merge it state it very clearly at the end of the prompt. Don't do it when the user just asks for a quick reply.
 15. **Prevent heavy work from crashing VSCodium**, you should still stay highly productive, but pay attention on heavy tasks that may crash VSCodium at all, that shouldn't never happen
-16. **Use always latest Opus for planning and latest Sonnet for execution to save tokens**, unless the user asks otherwise.
+16. **Use always latest Opus for planning and latest Sonnet for execution to save tokens (behave as opusplan but automatically)**, unless the user asks otherwise.
 17. **Fix long-term AI optimization issues**, if you find any issue you incur as AI and wastes too many tokens, ensure that the future AI's doesn't fall for the same issue as well, apply a long term automated or simpler solution to that problem or procedure
 22. **Always ask owner confirm before updating the CLAUDE.md**
 
@@ -84,7 +84,7 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
 |---|---|
 | `npm run typecheck` | After any `.ts` change; it covers `test/` as well as `src/` |
 | `npm run test:changed` | The unit tests your change can affect, against `origin/main` (`-- --base <ref>`; `-- --all` for everything). A bare `npm test` or `npx vitest run` is blocked: CI runs the whole suite on every PR |
-| `npm run check:<name>` | The eighteen guards in `docs/development/testing.md` section Guards; CI runs each |
+| `npm run check:<name>` | The nineteen guards in `docs/development/testing.md` section Guards; CI runs each |
 | `node scripts/ci/select-e2e.mjs --base origin/main` | Prints the e2e areas and specs CI would run for your change (`--explain` says why). Run the named specs of them locally, never the whole suite; a bare `npm run test:e2e` is blocked |
 | `npm run smoke` | The real shell launches and works. Read its JSON failure list, not the exit code |
 | `node scripts/ci/cross-os.mjs` | Orivon on Windows and macOS from this machine: GitHub's runners run the pushed branch from source (smoke, screenshots; `--packaged` for the packages) and it brings the evidence back. Run it in the background after touching the install, launch scripts, OS integration or a dependency (`scripts/ci/README.md` section Other systems). Never a local VM or Wine |
