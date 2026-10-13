@@ -200,7 +200,8 @@ forgotten.
          secret `WINGET_TOKEN`. Until then the `winget` job of every release writes a warning and submits nothing.
       2. Submit the first version of each identifier by hand, since the job only adds versions to a package that
          exists: `Orivon.Browser.Preview` with the first pre-release, `Orivon.Browser` with the first full release.
-         Generate the manifests with `komac new` (the same Komac version as `release.yml`), submit them, and on that
+         Generate the manifests with `komac new` (the same Komac version as `release.yml`) and submit them (`komac new --submit`,
+         or `komac submit <folder>` for manifests already written), and on that
          first pull request accept Microsoft's contributor agreement with one comment when its bot asks.
       3. Once a pull request is merged, `winget install Orivon.Browser.Preview` (or `Orivon.Browser`) installs
          without SmartScreen; every release after it is submitted by the job.
