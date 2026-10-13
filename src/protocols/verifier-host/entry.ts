@@ -11,6 +11,7 @@
 import { net } from 'electron'
 import { createRequestFetch } from '../../loader/electron/request-fetch.js'
 import { createDirectFetch } from './direct-fetch.js'
+import { answerForFront } from './front-login.js'
 import { startHeliosLightClient } from './light-client/light-client.js'
 import type { FromHost, ToHost } from './protocol.js'
 import { startHost } from './service.js'
@@ -42,7 +43,7 @@ function main (): void {
         // Through the tunnel's front (`config.front`), `net.fetch` would end at the front's 407, so `net.request` answers it: for the front's own port, and no other proxy.
         fetch: front === undefined
           ? async (url, init) => await net.fetch(url, { ...init, cache: 'no-store', credentials: 'omit' })
-          : createRequestFetch({ net, answer: (info, callback) => { if (info.isProxy && info.host === '127.0.0.1' && info.port === front.port) callback(front.username, front.password); else callback() } }),
+          : createRequestFetch({ net, answer: answerForFront(front) }),
         // A name is never resolved on this computer while the tunnel carries the host's requests: the far end resolves it.
         resolveHost: front === undefined
           ? async (name) => (await net.resolveHost(name)).endpoints.map((endpoint) => endpoint.address)

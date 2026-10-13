@@ -78,7 +78,7 @@ export const privacyNetworkRows: readonly Row[] = [
   {
     id: 'route-proxy',
     label: 'Tunnel',
-    help: 'Your own SOCKS5 address, such as Tor\'s 127.0.0.1:9050. An installed app or a website can send all of its network traffic through the tunnel. You turn it on for each app under Apps, and for each website from the key in the address bar; until then nothing goes to it.',
+    help: 'Your own SOCKS5 address, such as Tor\'s 127.0.0.1:9050. An installed app or a website can send all of its network traffic through the tunnel. You turn it on for each app under Apps, and for each website from the key in the address bar, or for everything at once below; until then nothing goes to it.',
     keywords: ['tunnel', 'proxy', 'socks', 'socks5', 'tor', 'onion', 'route', 'vpn', 'anonymous', 'network', 'apps', 'sites', 'websites', 'host', 'port'],
     group: GROUP,
     control: { type: 'text', key: 'network.route.proxy', placeholder: '127.0.0.1:9050', problem: 'Enter an address as host:port, like 127.0.0.1:9050' }
@@ -92,9 +92,18 @@ export const privacyNetworkRows: readonly Row[] = [
     control: { type: 'custom', render: renderProxyTest }
   },
   {
+    id: 'route-everywhere',
+    label: 'Send all of Orivon\'s traffic through the tunnel',
+    help: 'Every website and app follows this unless you set it to off from its own switch, and so does what Orivon sends for itself: update checks, usage statistics you agreed to, search suggestions and the Web3 names Orivon reads. Left outside the tunnel: this computer, the connection to the tunnel itself, and the sites and apps you set to off. The IPFS and Swarm nodes Orivon can run are off meanwhile, because they connect to their peers themselves; IPFS is read through gateways instead.',
+    keywords: ['tunnel', 'proxy', 'tor', 'everything', 'all traffic', 'whole browser', 'everywhere', 'vpn', 'anonymous', 'default'],
+    group: GROUP,
+    control: { type: 'toggle', key: 'network.tunnel.everywhere', // Without a tunnel address it cannot be turned on, but it can always be turned off.
+      disabled: (state) => String(state.value('network.route.proxy') ?? '').trim() === '' && state.value('network.tunnel.everywhere') !== true }
+  },
+  {
     id: 'route-sites',
     label: 'Sites and apps with their own tunnel setting',
-    help: 'A website that goes through the tunnel keeps its cookies and storage apart from the rest of your browsing, and that storage stays when you turn the tunnel off for it, until you remove it here.',
+    help: 'A website you turn the tunnel on for lives in your tunnel profile, one you turn it off for while everything else is on lives in your direct profile, and each profile keeps its cookies and storage apart from your normal browsing. The storage stays when you give the setting up, until you remove it here.',
     keywords: ['tunnel', 'proxy', 'tor', 'sites', 'websites', 'apps', 'storage', 'cookies', 'separate', 'remove', 'sign in'],
     group: GROUP,
     control: { type: 'custom', wide: true, render: renderTunnelList }

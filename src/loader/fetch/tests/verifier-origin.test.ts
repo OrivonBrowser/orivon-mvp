@@ -28,3 +28,24 @@ describe('ensurePublicUnicastOrigin for a .eth origin', () => {
     expect((await ensurePublicUnicastOrigin('http://freetube.eth', async () => ['127.0.0.1'])).ok).toBe(false)
   })
 })
+
+describe('ensurePublicUnicastOrigin while the whole browser is on the tunnel', () => {
+  const farEnd = (resolve: (host: string) => Promise<string[]>, atFarEnd: (origin: string) => boolean) => Object.assign(resolve, { atFarEnd })
+
+  it('resolves no name here, since the far end resolves it, and hands on no address', async () => {
+    let asked = 0
+    const resolver = farEnd(async () => { asked++; return ['127.0.0.1'] }, () => true)
+    expect(await ensurePublicUnicastOrigin('https://app.example', resolver)).toEqual({ ok: true, addresses: [] })
+    expect(asked).toBe(0)
+  })
+
+  it('still refuses a literal that is not public, a plain-http origin and a .localhost name', async () => {
+    const resolver = farEnd(async () => [], () => true)
+    for (const origin of ['https://127.0.0.1', 'https://10.0.0.8', 'http://app.example', 'https://app.localhost']) expect((await ensurePublicUnicastOrigin(origin, resolver)).ok, origin).toBe(false)
+  })
+
+  it('resolves as it always did for an origin the tunnel does not carry', async () => {
+    const resolver = farEnd(async () => ['93.184.216.34'], () => false)
+    expect(await ensurePublicUnicastOrigin('https://app.example', resolver)).toEqual({ ok: true, addresses: ['93.184.216.34'] })
+  })
+})

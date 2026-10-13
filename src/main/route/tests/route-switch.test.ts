@@ -102,9 +102,9 @@ describe('the list of origins with a setting or storage of their own', () => {
     const rows = routeSwitch.rows().sort((a, b) => a.origin.localeCompare(b.origin))
 
     expect(rows).toEqual([
-      { origin: APP, kind: 'app', entry: 'on', state: 'idle', profile: 'tunnel', apart: false },
-      { origin: SITE, kind: 'site', entry: 'on', state: 'idle', profile: 'tunnel', apart: true },
-      { origin: 'https://old.example', kind: 'site', entry: undefined, state: 'off', profile: undefined, apart: true }
+      { origin: APP, kind: 'app', entry: 'on', state: 'idle', profile: 'tunnel', apart: false, apartIn: [] },
+      { origin: SITE, kind: 'site', entry: 'on', state: 'idle', profile: 'tunnel', apart: true, apartIn: ['tunnel'] },
+      { origin: 'https://old.example', kind: 'site', entry: undefined, state: 'off', profile: undefined, apart: true, apartIn: ['tunnel'] }
     ])
   })
 })

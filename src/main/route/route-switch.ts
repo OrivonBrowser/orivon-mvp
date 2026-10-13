@@ -27,6 +27,8 @@ export interface TunnelRow {
   readonly profile: Profile | undefined
   /** A website with storage in a profile that "Remove its separate storage" clears. */
   readonly apart: boolean
+  /** The profiles it has storage in. */
+  readonly apartIn: readonly Profile[]
 }
 
 export interface RouteSwitch {
@@ -84,7 +86,8 @@ export function createRouteSwitch (routes: Pick<RouteService, 'proxy' | 'store' 
         entry: entries.get(origin),
         state: routes.hub.state(origin),
         profile: profileOf(entries.get(origin)),
-        apart: store.isApartAnywhere(origin)
+        apart: store.isApartAnywhere(origin),
+        apartIn: PROFILES.filter((profile) => store.isApart(origin, profile))
       }))
     },
     removeSiteStorage: async (origin) => {

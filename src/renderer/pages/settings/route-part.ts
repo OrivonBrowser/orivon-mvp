@@ -38,20 +38,28 @@ export interface TunnelRowView {
   readonly kind: 'app' | 'site'
   readonly entry: 'on' | 'off' | undefined
   readonly state: 'off' | 'no-proxy' | 'idle' | 'ok' | 'down'
+  /** The profile its entry puts a website in. */
+  readonly profile: 'tunnel' | 'direct' | undefined
   readonly apart: boolean
+  /** The profiles it has storage in. */
+  readonly apartIn: readonly ('tunnel' | 'direct')[]
 }
 
 /** What a row says about the origin's tunnel, in words. */
 export function tunnelRowWords (row: TunnelRowView): string {
   const subject = row.kind === 'app' ? 'app' : 'site'
-  if (row.entry === undefined) return `This ${subject} follows your browser's tunnel setting. Its separate storage is kept.`
-  if (row.entry === 'off') return `The tunnel is off for this ${subject}.`
+  if (row.entry === undefined) {
+    const kept = row.apartIn.length === 0 ? '' : ` What it stored in your ${row.apartIn.join(' and ')} profile is kept.`
+    return `This ${subject} follows your browser's tunnel setting.${kept}`
+  }
+  if (row.entry === 'off') return `The tunnel is off for this ${subject}.${row.kind === 'site' ? ' It lives in your direct profile.' : ''}`
+  const where = row.kind === 'site' ? ' It lives in your tunnel profile.' : ''
   switch (row.state) {
-    case 'no-proxy': return `On, but no tunnel is set, so this ${subject}'s traffic is stopped.`
-    case 'down': return `On, but your tunnel is not answering, so this ${subject}'s traffic is stopped.`
+    case 'no-proxy': return `On, but no tunnel is set, so this ${subject}'s traffic is stopped.${where}`
+    case 'down': return `On, but your tunnel is not answering, so this ${subject}'s traffic is stopped.${where}`
     case 'off':
     case 'idle':
-    case 'ok': return `On: this ${subject}'s traffic goes through your tunnel.`
+    case 'ok': return `On: this ${subject}'s traffic goes through your tunnel.${where}`
   }
 }
 

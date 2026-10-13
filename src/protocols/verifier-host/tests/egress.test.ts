@@ -172,3 +172,21 @@ describe('guardedCcipRequest, with a proxy configured (direct: false)', () => {
     await expect(guardedCcipRequest({ data: DATA, sender: SENDER, urls: ['https://gateway.example/a'] }, proxiedDeps(away))).rejects.toThrow(/another origin/)
   })
 })
+
+describe('guardedCcipRequest, through the tunnel (farEnd)', () => {
+  const tunnelled = (fetch: WebFetch): CcipDeps => ({ directFetch: NO_DIRECT_FETCH, fetch, resolveHost: async () => { throw new Error('a name must not be resolved on this computer') }, direct: false, farEnd: true })
+
+  it('fetches by hostname and resolves nothing here: the far end resolves the name', async () => {
+    const fetch = recording(() => json({ data: '0xfeed' }))
+    expect(await guardedCcipRequest({ data: DATA, sender: SENDER, urls: ['https://gateway.example/{sender}/{data}.json'] }, tunnelled(fetch))).toBe('0xfeed')
+    expect(fetch.calls[0]?.url).toBe(`https://gateway.example/${SENDER.toLowerCase()}/${DATA}.json`)
+  })
+
+  it('still refuses http, a non-443 port, an address that is not public and a name of this computer, without fetching', async () => {
+    const fetch = recording(() => json({ data: '0xfeed' }))
+    for (const url of ['http://gateway.example/{data}', 'https://93.184.216.34:6379/{data}', 'https://127.0.0.1/{data}', 'https://localhost/{data}', 'https://x.localhost/{data}']) {
+      await expect(guardedCcipRequest({ data: DATA, sender: SENDER, urls: [url] }, tunnelled(fetch)), url).rejects.toThrow(/no offchain gateway answered/)
+    }
+    expect(fetch.calls).toEqual([])
+  })
+})

@@ -1,11 +1,10 @@
-// A plain website the person turns the tunnel on for runs in a session of its own: the popover tells them first, then
+// A plain website the person turns the tunnel on for runs in the tunnel profile: the popover tells them first, then
 // the page and a subresource from another host arrive through the SOCKS5 fixture, its cookie lives apart from the shared
 // session's, and turning the tunnel off again returns the tab to the shared session with that cookie untouched. The
 // fixture names resolve (on loopback) in the browser to a decoy on the same port as the fixture's names, so a request
 // that went direct would show the decoy's page and count a hit.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/app-behaviours/e2e-website-tunnel.test.ts
-import { createHash } from 'node:crypto'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -24,7 +23,7 @@ import { activeTabInfo, delay, waitFor, waitForTab } from '../support/smoke-help
 
 const SITE_NAME = 'site.socks.test'
 const CDN_NAME = 'cdn.socks.test'
-const NOTICE = 'This site gets its own storage. You\'ll sign in to it again once, and what it stores stays apart from the rest of your browsing.'
+const NOTICE = 'This site moves to your tunnel profile. You\'ll sign in to it again once, and what it stores stays apart from your normal browsing.'
 const SWITCH_LABEL = 'Use the tunnel for this site'
 
 interface Hosted { port: number, hits: number, close: () => Promise<void> }
@@ -59,7 +58,8 @@ const cleanups: Array<() => Promise<void> | void> = []
 
 const siteUrl = (): string => `http://${SITE_NAME}:${String(decoy.port)}/`
 const siteOrigin = (): string => `http://${SITE_NAME}:${String(decoy.port)}`
-const sitePartition = (): string => `site-${createHash('sha256').update(siteOrigin(), 'utf8').digest('hex')}`
+// The fixture site is plain http, which may not be written to disk, so its profile is the in-memory one.
+const profilePartition = 'tunnel-profile-memory'
 const asked = (name: string, port: number): number => socks.requests.filter((request) => request.destination === name && request.port === port).length
 const findPopup = (): Page | undefined => app.windows().find((w) => w.url().includes('/site-info/') && !w.isClosed())
 
@@ -143,7 +143,7 @@ it('[app:tunnelled-website-gets-its-own-storage] a website in the shared session
   await closePopover()
 }, 3 * QA_TEST_TIMEOUT_MS)
 
-it('[app:tunnelled-website-gets-its-own-storage] the notice comes first, Cancel changes nothing, and Confirm moves the site into storage of its own', async () => {
+it('[app:tunnelled-website-gets-its-own-storage] the notice comes first, Cancel changes nothing, and Confirm moves the site into the tunnel profile', async () => {
   const popover = await openPopover()
   await popover.click('#tunnel-switch')
   await popover.waitForSelector('.tunnel-notice')
@@ -170,9 +170,9 @@ it('[app:tunnelled-website-gets-its-own-storage] the notice comes first, Cancel 
   expect(asked(SITE_NAME, decoy.port), 'the page came through the tunnel').toBeGreaterThan(0)
   expect(await waitFor(() => asked(CDN_NAME, cdnDecoy.port) > 0), 'and so did its image from another host').toBe(true)
   expect(cdnDecoy.hits, 'which never went direct').toBe(cdnBefore)
-  expect(socks.requests.find((request) => request.destination === SITE_NAME)?.userId, 'it signed in to the tunnel with credentials of its own').toBeDefined()
+  expect(socks.requests.find((request) => request.destination === SITE_NAME)?.userId, 'it signed in to the tunnel with the credentials the tunnel profile shares').toBeDefined()
 
-  expect(await cookies(sitePartition()), 'its cookie lives in the site\'s own session').toEqual(['who=site'])
+  expect(await cookies(profilePartition), 'its cookie lives in the tunnel profile').toEqual(['who=site'])
   expect(await cookies(undefined), 'the shared session\'s cookie is untouched').toEqual(['who=shared'])
 }, 4 * QA_TEST_TIMEOUT_MS)
 
@@ -186,19 +186,19 @@ it('[app:tunnelled-website-gets-its-own-storage] the key and the popover say the
   await shoot(app, chrome, chrome, 'website-tunnel-key')
 }, 3 * QA_TEST_TIMEOUT_MS)
 
-it('[app:tunnelled-website-gets-its-own-storage] Settings lists the site, and removing its separate storage clears its session and nothing else', async () => {
+it('[app:tunnelled-website-gets-its-own-storage] Settings lists the site, and removing its separate storage clears that site\'s data in the profile and nothing else', async () => {
   await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/privacy') })
   expect(await waitFor(() => app.windows().some((w) => w.url().startsWith('orivon://settings')))).toBe(true)
   const settings = app.windows().find((w) => w.url().startsWith('orivon://settings')) as Page
   await settings.waitForSelector('#row-route-sites .tunnel-list-row')
   const row = settings.locator('#row-route-sites .tunnel-list-row')
   expect(await row.locator('.tunnel-list-origin').textContent()).toBe(siteOrigin())
-  expect(await row.locator('.muted').textContent()).toBe('On: this site\'s traffic goes through your tunnel.')
+  expect(await row.locator('.muted').textContent()).toBe('On: this site\'s traffic goes through your tunnel. It lives in your tunnel profile.')
   await row.scrollIntoViewIfNeeded()
   await shoot(app, chrome, settings, 'website-tunnel-settings')
 
   await row.locator('button', { hasText: 'Remove its separate storage' }).click()
-  expect(await waitFor(async () => (await cookies(sitePartition())).length === 0)).toBe(true)
+  expect(await waitFor(async () => (await cookies(profilePartition)).length === 0)).toBe(true)
   expect(await cookies(undefined), 'the shared session keeps its cookie').toEqual(['who=shared'])
   expect(await settings.locator('#row-route-sites .tunnel-list-row').count(), 'the site still has its setting').toBe(1)
   await settings.close()
@@ -208,7 +208,7 @@ it('[app:tunnelled-website-gets-its-own-storage] turning the tunnel off returns 
   // The site wrote a cookie again after its storage was cleared; it is kept when the tunnel goes off.
   await app.evaluate(async ({ session }, args) => {
     await session.fromPartition(args.partition).cookies.set({ url: args.url, name: 'kept', value: '1' })
-  }, { partition: sitePartition(), url: siteUrl() })
+  }, { partition: profilePartition, url: siteUrl() })
 
   // The tab moves to another view, which closes the popover: it is opened again for each press.
   const off = await openPopover()
@@ -217,7 +217,7 @@ it('[app:tunnelled-website-gets-its-own-storage] turning the tunnel off returns 
   expect(await sessionOfTab(siteUrl())).toMatchObject({ isDefault: true })
   expect(decoy.hits, 'the page came from the site itself again').toBeGreaterThan(0)
   expect(await cookies(undefined), 'the shared session\'s cookie is as it was').toEqual(['who=shared'])
-  expect(await cookies(sitePartition()), 'the site\'s own storage is kept').toEqual(['kept=1'])
+  expect(await cookies(profilePartition), 'the site\'s own storage is kept').toEqual(['kept=1'])
   expect(await waitFor(async () => await chrome.getAttribute('#site-permissions-btn', 'data-tunnel') === null)).toBe(true)
   await delay(500)
   if (findPopup() !== undefined) await closePopover()
@@ -227,7 +227,7 @@ it('[app:tunnelled-website-gets-its-own-storage] turning the tunnel off returns 
   await on.click('#tunnel-switch')
   expect(await waitFor(async () => await tabTitle() === 'tunnelled', 20_000), 'no notice stood in the way').toBe(true)
   expect(await sessionOfTab(siteUrl())).toMatchObject({ isDefault: false })
-  expect((await cookies(sitePartition())).sort()).toEqual(['kept=1', 'who=site'])
+  expect((await cookies(profilePartition)).sort()).toEqual(['kept=1', 'who=site'])
 }, 4 * QA_TEST_TIMEOUT_MS)
 
 it('[app:tunnelled-website-sends-nothing-direct] a load the shell did not move, into the shared session, is refused and reaches neither the site nor the tunnel', async () => {

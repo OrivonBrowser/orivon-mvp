@@ -5,7 +5,7 @@ import type { RouteSwitch } from '../route-switch.js'
 
 const CALLER = {} as never
 
-const ROWS = [{ origin: 'https://news.example', kind: 'site', entry: 'on', state: 'idle', profile: 'tunnel', apart: true }] as const
+const ROWS = [{ origin: 'https://news.example', kind: 'site', entry: 'on', state: 'idle', profile: 'tunnel', apart: true, apartIn: ['tunnel'] }] as const
 
 function domain (proxy: string, probe: (target: { host: string, port: number }) => Promise<Socks5Probe>, routeSwitch: Partial<RouteSwitch> = {}) {
   return routeDomain({ proxy: () => proxy, probe, routeSwitch: { rows: () => [...ROWS], removeSiteStorage: async () => true, ...routeSwitch } })
