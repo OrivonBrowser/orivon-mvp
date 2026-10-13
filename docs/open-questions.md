@@ -1632,3 +1632,27 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** install the package from the first CI artifact on a Windows machine and check each (rec.); wait for the Store's pre-launch report.
 - **Who decides:** research first
 - **Blocks:** nothing
+
+### A411: An app that declares no storage quota may fill the disk **[OWNER]**
+
+- **Question:** An `fs` grant with no `quotaBytes` has no limit, and no screen shows how much space an app uses. Should an undeclared quota default to a share of the free disk, or the person be asked for a number?
+- **Why it matters:** `security-model.md` T11: one app can fill the disk the profile lives on, and the manifest example's 50 GiB is only an example, not a default.
+- **Options:** a default of a fraction of free disk measured when the grant is made, with the prompt naming it (rec.); a fixed default; leave it unlimited and show usage in Settings.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A412: An app's request to a host it holds `https.connect` for ignores a configured proxy **[OWNER]**
+
+- **Question:** The loader dials a third-party request an app's page makes from Node and never asks the session whether a proxy applies; `orivon.net` calls do, and a routed app is covered by its route. Should this path refuse, as `orivon.net.connectSecure` does, when a proxy is configured and the app is not routed?
+- **Why it matters:** `security-model.md` T20: a person who set a system proxy or Tor to cover the browser is not covered for this request, which leaves directly.
+- **Options:** ask the session's proxy resolution before the dial and deny unless it answers direct (rec.); send the request through the session's own network stack instead; keep and document it.
+- **Who decides:** owner
+- **Blocks:** nothing
+
+### A413: A declared `0.0.0.0` reaches this device and the consent does not say so **[AI-REC]**
+
+- **Question:** A `tcp.connect` pattern that names the literal `0.0.0.0` is accepted, though connecting to it reaches this computer on Linux and macOS, and the prompt words it "an unspecified address". Refuse it, or word it as this device?
+- **Why it matters:** `security-model.md` T12: the person reads a harmless-sounding address and grants reach to local services.
+- **Options:** word it as reaching this device in `grant-prompt-connect.ts` (rec.); refuse the unspecified class when a pattern is declared.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** nothing

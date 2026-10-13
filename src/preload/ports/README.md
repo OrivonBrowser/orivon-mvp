@@ -26,5 +26,6 @@ The throughput evidence does not cover `net.connect`. Spike gate 0 measured 1134
 `contextBridge` clone to the structured clone (three copies of every byte, two on the renderer
 main thread). That path is unmeasured.
 
-The smoke check asserts `require` and `process` are `undefined` in every window it drives. If
-that ever regresses, stop.
+The smoke check asserts `require` and `process` are `undefined` in every window it drives: the
+browser's own chrome, the new-tab dashboard, one ordinary tab and any overlay that is up. It drives
+no app tab, so a leak in the preload an app tab gets is not caught by it. If that ever regresses, stop.
