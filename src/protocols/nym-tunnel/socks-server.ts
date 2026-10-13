@@ -36,6 +36,8 @@ export interface SocksServerDeps {
   /** The password every client must send. */
   readonly secret: string
   readonly acquire: (userName: string) => Promise<Lease>
+  /** How long a stream may take to open through a tunnel; the module's own limit is not always the end of a connect that hangs. */
+  readonly connectTimeoutMs?: number
   /** Why a client was refused a tunnel the server could not give, for the status line. */
   readonly onRefused?: (userName: string, error: AcquireError) => void
 }
@@ -167,10 +169,27 @@ async function handshake (socket: Socket, reader: Reader, secret: string): Promi
   return { userName, command, destination, reader }
 }
 
-async function connect (socket: Socket, request: Request, lease: Lease): Promise<void> {
+export const CONNECT_TIMEOUT_MS = 45_000
+
+/** The stream, or a refusal after `ms`; a stream that arrives after that is closed, not left open. */
+async function openStream (lease: Lease, destination: Destination, ms: number): Promise<TcpStream> {
+  const opening = lease.tunnel.connectTcp(destination.host, destination.port)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const expired = new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { reject(new Error('the connection through Nym took too long')) }, ms) })
+  try {
+    return await Promise.race([opening, expired])
+  } catch (error) {
+    opening.then(async (late) => { await late.close() }, () => {}).catch(() => {})
+    throw error
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function connect (socket: Socket, request: Request, lease: Lease, connectTimeoutMs: number): Promise<void> {
   let stream: TcpStream
   try {
-    stream = await lease.tunnel.connectTcp(request.destination.host, request.destination.port)
+    stream = await openStream(lease, request.destination, connectTimeoutMs)
   } catch {
     lease.release()
     socket.end(reply(REPLY_HOST_UNREACHABLE))
@@ -318,7 +337,7 @@ async function serve (socket: Socket, deps: SocksServerDeps): Promise<void> {
     return
   }
   if (socket.destroyed) { lease.release(); return }
-  if (request.command === COMMAND_CONNECT) await connect(socket, request, lease)
+  if (request.command === COMMAND_CONNECT) await connect(socket, request, lease, deps.connectTimeoutMs ?? CONNECT_TIMEOUT_MS)
   else await associate(socket, lease)
 }
 

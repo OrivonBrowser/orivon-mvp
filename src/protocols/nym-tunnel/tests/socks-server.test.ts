@@ -76,8 +76,8 @@ async function echoServer (): Promise<number> {
   return (server.address() as AddressInfo).port
 }
 
-async function start (acquire: (name: string) => Promise<Lease>, record: Recorder): Promise<number> {
-  socks = await startSocksServer(0, { secret: SECRET, acquire: async (name) => { record.acquired.push(name); return await acquire(name) } })
+async function start (acquire: (name: string) => Promise<Lease>, record: Recorder, connectTimeoutMs?: number): Promise<number> {
+  socks = await startSocksServer(0, { secret: SECRET, ...(connectTimeoutMs === undefined ? {} : { connectTimeoutMs }), acquire: async (name) => { record.acquired.push(name); return await acquire(name) } })
   return socks.port
 }
 
@@ -160,6 +160,19 @@ describe('the SOCKS5 server of the Nym tunnel', () => {
     const port = await start(async () => leaseOf(fakeTunnel(echo, record, { failConnect: true }), record), record)
     await expect(SocksClient.createConnection({ proxy: proxyOf(port), command: 'connect', destination: { host: 'service.example', port: 80 } })).rejects.toThrow(/HostUnreachable/i)
     expect(record.released).toBe(1)
+  })
+
+  it('gives up on a stream that never opens, answers unreachable, and closes it should it open late', async () => {
+    const record = recorder()
+    let open: (stream: TcpStream) => void = () => {}
+    const closed: string[] = []
+    const hanging: Tunnel = { connectTcp: async () => await new Promise<TcpStream>((resolve) => { open = resolve }), bindUdp: async () => { throw new Error('no') }, disconnect: async () => {} }
+    const port = await start(async () => leaseOf(hanging, record), record, 150)
+    await expect(SocksClient.createConnection({ proxy: proxyOf(port), command: 'connect', destination: { host: 'service.example', port: 80 } })).rejects.toThrow(/HostUnreachable/i)
+    expect(record.released).toBe(1)
+    open({ read: async () => null, write: async () => {}, close: async () => { closed.push('closed') } })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(closed).toEqual(['closed'])
   })
 
   it('refuses an app past the cap as not allowed, and closes the connection of a tunnel that did not come up', async () => {

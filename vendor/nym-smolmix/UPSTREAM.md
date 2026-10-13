@@ -4,10 +4,11 @@
 - Tag: `nym-binaries-v2026.20-glasgow`
 - Commit: `28904698fd68337cc722d51ab21f29f4fd6c56ce`
 - License: Apache-2.0 (`LICENSES/Apache-2.0.txt` in the clone, which the published files carry as `LICENSE`). Nym's
-  tree has no `NOTICE` file, so none is published. The crate's dependencies are Apache-2.0, MIT, BSD, ISC, 0BSD,
-  MPL-2.0 (two crates) or CDLA-Permissive-2.0; none is GPL. *Provisional:* the artifact carries Nym's licence, not
-  each dependency's own notice text. A per-crate notice file (Nym's `about.toml` and `about.hbs` produce one with
-  `cargo about`) settles it, and is added if the owner wants the artifact to carry them.
+  tree has no `NOTICE` file, so none is published. The crates the module is compiled from are under Apache-2.0, MIT,
+  BSD-2-Clause, BSD-3-Clause, ISC, 0BSD, CC0-1.0, MPL-2.0 (two crates), CDLA-Permissive-2.0, Unicode-3.0 or Zlib; none
+  is GPL. The published files carry each crate's licence text and copyright notice as `THIRD_PARTY_LICENSES`, which
+  the build makes with `cargo-about` from the lockfile, for the `wasm32-unknown-unknown` target alone, and fails if a
+  crate has a licence `about.toml` does not accept.
 - Vendored: only the patch below. Nym's source is cloned at build time into a cache outside this repository and is
   never committed.
 
@@ -16,6 +17,7 @@
 | File | Holds |
 |---|---|
 | `smolmix-raw-tcp-udp.patch` | The one change to Nym's source |
+| `about.toml`, `third-party-licenses.hbs` | The licences `cargo-about` accepts, and the plain-text template of `THIRD_PARTY_LICENSES` |
 | `README.md` | Copied into the published directory as its `README.md` |
 | `UPSTREAM.md` | This page |
 
@@ -38,8 +40,8 @@ never a step of installing or running Orivon.
 ## Build
 
 - Rust 1.99.0 with the `wasm32-unknown-unknown` target (rustup), `git` and `tar`.
-- `wasm-bindgen` 0.2.122 and `wasm-pack` 0.15.0: the release archives, each checked against its pinned sha256 (the
-  digests are the ones GitHub publishes for the release), fetched into the cache. The version of `wasm-bindgen` is the
+- `wasm-bindgen` 0.2.122, `wasm-pack` 0.15.0 and `cargo-about` 0.9.2: the release archives, each checked against its pinned sha256 (the
+  digests are the ones GitHub publishes for the release; `cargo-about` has none for macOS on Intel, where the build stops), fetched into the cache. The version of `wasm-bindgen` is the
   one Nym's `Cargo.lock` pins.
 - The command is the crate's own, `wasm-pack build --scope nymproject --target web --out-name smolmix_wasm`, from
   `wasm/smolmix` (its Makefile target `build-rust` minus `mark-pkg-private`, which only edits a `package.json` that is

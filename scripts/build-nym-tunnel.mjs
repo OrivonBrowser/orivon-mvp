@@ -3,9 +3,10 @@
  *
  * A developer step, never part of `npm install` (Rule 8: it needs rustup). It clones the pinned tag into a cache
  * directory outside this repository, checks the commit, applies `vendor/nym-smolmix/smolmix-raw-tcp-udp.patch`,
- * fetches the pinned `wasm-bindgen` and `wasm-pack` binaries (each checked against its sha256) and runs the
- * crate's own `wasm-pack build`. The cache is `~/.cache/orivon-nym-build`; the files to publish are left in its
- * `artifact` folder, and the `files` array for `resources/nym-tunnel/nym-tunnel.json` is printed.
+ * fetches the pinned `wasm-bindgen`, `wasm-pack` and `cargo-about` binaries (each checked against its sha256), runs the
+ * crate's own `wasm-pack build` and makes the notices of every crate in it (`THIRD_PARTY_LICENSES`). The cache is
+ * `~/.cache/orivon-nym-build`; the files to publish are left in its `artifact` folder, and the `files` array for
+ * `resources/nym-tunnel/nym-tunnel.json` is printed.
  *
  *   node scripts/build-nym-tunnel.mjs
  *
@@ -35,18 +36,23 @@ export const RUSTC_VERSION = '1.99.0'
 const CRATE = join('wasm', 'smolmix')
 const PATCH = 'smolmix-raw-tcp-udp.patch'
 const FILES = ['smolmix_wasm.js', 'smolmix_wasm_bg.wasm', 'smolmix_wasm.d.ts']
+/** The notices of every crate compiled into the module, made by `cargo-about` from the lockfile (about.toml says which licences are accepted). */
+const NOTICES = 'THIRD_PARTY_LICENSES'
 
 const WASM_BINDGEN = 'https://github.com/wasm-bindgen/wasm-bindgen/releases/download/0.2.122'
 const WASM_PACK = 'https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15.0'
+const CARGO_ABOUT = 'https://github.com/EmbarkStudios/cargo-about/releases/download/0.9.2'
 /** The prebuilt binaries by `<platform>-<arch>`: archive, its sha256, and the folder and executable inside it. */
 export const TOOLS = {
   'linux-x64': [
     { name: 'wasm-bindgen', url: `${WASM_BINDGEN}/wasm-bindgen-0.2.122-x86_64-unknown-linux-musl.tar.gz`, sha256: '122a3fe2ea9c6e3e89b50e42dd1a346e499f3f65a54aae0b4eaeb658139d1e0e', folder: 'wasm-bindgen-0.2.122-x86_64-unknown-linux-musl' },
-    { name: 'wasm-pack', url: `${WASM_PACK}/wasm-pack-v0.15.0-x86_64-unknown-linux-musl.tar.gz`, sha256: 'c09f971ecaed9a2efc80fdcea7a00ef6b53c7fadc8c57d1f61b53a6aa66b668a', folder: 'wasm-pack-v0.15.0-x86_64-unknown-linux-musl' }
+    { name: 'wasm-pack', url: `${WASM_PACK}/wasm-pack-v0.15.0-x86_64-unknown-linux-musl.tar.gz`, sha256: 'c09f971ecaed9a2efc80fdcea7a00ef6b53c7fadc8c57d1f61b53a6aa66b668a', folder: 'wasm-pack-v0.15.0-x86_64-unknown-linux-musl' },
+    { name: 'cargo-about', url: `${CARGO_ABOUT}/cargo-about-0.9.2-x86_64-unknown-linux-musl.tar.gz`, sha256: '9099a59e820c38a68b9d65f300662a567d56562f9a10f6aa4c7e86c17c2566af', folder: 'cargo-about-0.9.2-x86_64-unknown-linux-musl' }
   ],
   'linux-arm64': [
     { name: 'wasm-bindgen', url: `${WASM_BINDGEN}/wasm-bindgen-0.2.122-aarch64-unknown-linux-gnu.tar.gz`, sha256: '1c0b2f0471e773f2369feb64e4ca18f2b45fabf9996d55425b34c1ba6ae7c89f', folder: 'wasm-bindgen-0.2.122-aarch64-unknown-linux-gnu' },
-    { name: 'wasm-pack', url: `${WASM_PACK}/wasm-pack-v0.15.0-aarch64-unknown-linux-musl.tar.gz`, sha256: 'e17ef0806381c3a0acb9c9ddad643a49facaa5a2ecf657a421d4d8f3357a24b7', folder: 'wasm-pack-v0.15.0-aarch64-unknown-linux-musl' }
+    { name: 'wasm-pack', url: `${WASM_PACK}/wasm-pack-v0.15.0-aarch64-unknown-linux-musl.tar.gz`, sha256: 'e17ef0806381c3a0acb9c9ddad643a49facaa5a2ecf657a421d4d8f3357a24b7', folder: 'wasm-pack-v0.15.0-aarch64-unknown-linux-musl' },
+    { name: 'cargo-about', url: `${CARGO_ABOUT}/cargo-about-0.9.2-aarch64-unknown-linux-musl.tar.gz`, sha256: 'af5169282fb6f84e13471493f405437e43ac517744c9ae12fbe2cdf0a6f0e5a8', folder: 'cargo-about-0.9.2-aarch64-unknown-linux-musl' }
   ],
   'darwin-x64': [
     { name: 'wasm-bindgen', url: `${WASM_BINDGEN}/wasm-bindgen-0.2.122-x86_64-apple-darwin.tar.gz`, sha256: 'cb500a6b249c20474bbdd86d4d8d593fa65c9e5dbd56abb1ae7ee48c08390a11', folder: 'wasm-bindgen-0.2.122-x86_64-apple-darwin' },
@@ -54,11 +60,13 @@ export const TOOLS = {
   ],
   'darwin-arm64': [
     { name: 'wasm-bindgen', url: `${WASM_BINDGEN}/wasm-bindgen-0.2.122-aarch64-apple-darwin.tar.gz`, sha256: '36beadc86c5c02c511a152e8fc2c63850646887e97dc94ae04553640f839e808', folder: 'wasm-bindgen-0.2.122-aarch64-apple-darwin' },
-    { name: 'wasm-pack', url: `${WASM_PACK}/wasm-pack-v0.15.0-aarch64-apple-darwin.tar.gz`, sha256: '0abff4a03d670b6c00ea31d0e1608a72407e355f3d3765e9c30eb45cd5b7e318', folder: 'wasm-pack-v0.15.0-aarch64-apple-darwin' }
+    { name: 'wasm-pack', url: `${WASM_PACK}/wasm-pack-v0.15.0-aarch64-apple-darwin.tar.gz`, sha256: '0abff4a03d670b6c00ea31d0e1608a72407e355f3d3765e9c30eb45cd5b7e318', folder: 'wasm-pack-v0.15.0-aarch64-apple-darwin' },
+    { name: 'cargo-about', url: `${CARGO_ABOUT}/cargo-about-0.9.2-aarch64-apple-darwin.tar.gz`, sha256: 'ae72f0df0c399a1e96336f696fa55b1b28679fd725632eba8cf8e4568467cc3e', folder: 'cargo-about-0.9.2-aarch64-apple-darwin' }
   ],
   'win32-x64': [
     { name: 'wasm-bindgen', url: `${WASM_BINDGEN}/wasm-bindgen-0.2.122-x86_64-pc-windows-msvc.tar.gz`, sha256: '03ba3056eb0c2ad2d0d30a0c0edefb590656a1e237596226804abb87b71b77ad', folder: 'wasm-bindgen-0.2.122-x86_64-pc-windows-msvc' },
-    { name: 'wasm-pack', url: `${WASM_PACK}/wasm-pack-v0.15.0-x86_64-pc-windows-msvc.tar.gz`, sha256: '518dc51180c7bc864699c9279b3bc99025bc109123e0249a34ba34d130a509bf', folder: 'wasm-pack-v0.15.0-x86_64-pc-windows-msvc' }
+    { name: 'wasm-pack', url: `${WASM_PACK}/wasm-pack-v0.15.0-x86_64-pc-windows-msvc.tar.gz`, sha256: '518dc51180c7bc864699c9279b3bc99025bc109123e0249a34ba34d130a509bf', folder: 'wasm-pack-v0.15.0-x86_64-pc-windows-msvc' },
+    { name: 'cargo-about', url: `${CARGO_ABOUT}/cargo-about-0.9.2-x86_64-pc-windows-msvc.tar.gz`, sha256: '1c03e5890238562497c2d89a3b75b02560af349c1fc3e713d3284f532a5cd748', folder: 'cargo-about-0.9.2-x86_64-pc-windows-msvc' }
   ]
 }
 
@@ -100,6 +108,7 @@ async function prepareTools(tools) {
   const key = `${process.platform}-${process.arch}`
   const pinned = TOOLS[key]
   if (pinned === undefined) throw new Error(`no pinned wasm-bindgen and wasm-pack for ${key}`)
+  if (!pinned.some((tool) => tool.name === 'cargo-about')) throw new Error(`no pinned cargo-about for ${key}, which the notices of the crates need (cargo-about has no release for it)`)
   const folders = []
   for (const tool of pinned) {
     const folder = join(tools, tool.folder)
@@ -162,9 +171,11 @@ export async function build({ cache, out }) {
   await mkdir(out, { recursive: true })
   for (const name of FILES) await copyFile(join(crate, 'pkg', name), join(out, name))
   await copyFile(join(source, 'LICENSES', 'Apache-2.0.txt'), join(out, 'LICENSE'))
+  // For the wasm target alone, so a crate that is only built for another is not listed; a crate whose licence is not in about.toml fails the build.
+  run('cargo-about', ['generate', '--config', join(VENDOR, 'about.toml'), '--manifest-path', join(crate, 'Cargo.toml'), '--target', 'wasm32-unknown-unknown', '--locked', '--output-file', join(out, NOTICES), join(VENDOR, 'third-party-licenses.hbs')], { cwd: source, env })
   await copyFile(join(VENDOR, 'README.md'), join(out, 'README.md'))
   const files = []
-  for (const name of [...FILES, 'LICENSE', 'README.md']) {
+  for (const name of [...FILES, 'LICENSE', NOTICES, 'README.md']) {
     const bytes = await readFile(join(out, name))
     files.push({ name, bytes: bytes.length, sha256: sha256(bytes) })
   }
