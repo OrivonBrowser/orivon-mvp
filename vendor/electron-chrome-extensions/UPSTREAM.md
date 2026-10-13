@@ -916,6 +916,15 @@ and `api/common.ts`/`impl.ts` sit on the same import path and needed no patch of
     both files and a unit test share the one matcher. `*` is any run of characters and everything else is
     literal, as before; `<all_urls>` still matches every address. The old `.*` did not cross a line break
     and `matchesGlob` does, which only matters for a title that has one.
+73. **A toolbar list that changes partition follows the new one.** `src/browser-action.ts`: the
+    `<browser-action-list>` element registered itself as an observer of its `partition` once, when it
+    connected, so setting the attribute fetched the new partition's state once and heard none of its
+    later updates (a badge, an icon). A changed `partition` now removes the observer of the old one and
+    adds the new. Reason: the shell moves the list to the profile session of the tab in front.
+74. **The action menu builder is told the session.** `src/browser/api/browser-action.ts`:
+    `ActionMenuBuilder` takes the toolbar's `session` as a third argument. Reason: with an instance of
+    the library in each profile session, "Options" in a button's menu must open the page of the
+    instance that was clicked.
 
 Nothing else changed; upstream code is not reformatted.
 

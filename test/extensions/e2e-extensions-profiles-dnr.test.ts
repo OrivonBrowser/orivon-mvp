@@ -1,7 +1,7 @@
 // A request-blocking extension filters a website in a profile as it does in the default session: its static
 // declarativeNetRequest rule blocks the script on a website in the tunnel profile and on one in the direct profile, and
 // a website in the default session is filtered as before. The rules belong to the extension, loaded once into each
-// profile session; the toolbar and popup stay the default session's.
+// profile session.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/extensions/e2e-extensions-profiles-dnr.test.ts
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'

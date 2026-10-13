@@ -50,8 +50,10 @@ export interface InstallContext {
   readonly prefs?: ExtensionPrefsStore
   /** This runtime is private or a guest: every install route refuses (install-private.ts). */
   readonly privateSession?: boolean
-  /** Empties the loaded extension's chrome.storage; an uninstall runs it first (extension-data.ts). */
-  readonly clearExtensionStorage?: (id: string) => Promise<void>
+  /** Empties the loaded extension's chrome.storage in `target` (the default session when none is named); an uninstall runs it first (extension-data.ts). */
+  readonly clearExtensionStorage?: (id: string, target?: Session) => Promise<void>
+  /** The profile sessions the extension may be loaded in as well, whose copy of its data goes with it. */
+  readonly profileSessions?: () => readonly Session[]
   /** Whether an extension installed now gets a toolbar button (the `extensions.pinInstalled` setting); unset: no. */
   readonly pinInstalled?: () => boolean
   /** Closes every side panel the extension has open, so none writes storage back; an uninstall runs it before `clearExtensionStorage`. */

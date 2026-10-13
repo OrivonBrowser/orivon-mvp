@@ -133,7 +133,7 @@ export const privacyNetworkRows: readonly Row[] = [
   {
     id: 'route-sites',
     label: 'Sites and apps with their own tunnel setting',
-    help: 'A website you turn the tunnel on for lives in your tunnel profile, one you turn it off for while everything else is on lives in your direct profile, and each profile keeps its cookies and storage apart from your normal browsing. The storage stays when you give the setting up, until you remove it here.',
+    help: 'A website you turn the tunnel on for lives in your tunnel profile, one you turn it off for while everything else is on lives in your direct profile, and each profile keeps its cookies and storage apart from your normal browsing. Your extensions run in both profiles, each with settings of its own, and the direct profile\'s run only while one of its sites is open. The storage stays when you give the setting up, until you remove it here.',
     keywords: ['tunnel', 'proxy', 'tor', 'sites', 'websites', 'apps', 'storage', 'cookies', 'separate', 'remove', 'sign in'],
     group: GROUP,
     control: { type: 'custom', wide: true, render: renderTunnelList }

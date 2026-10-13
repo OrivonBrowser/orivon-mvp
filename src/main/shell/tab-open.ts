@@ -84,10 +84,10 @@ export class TabOpener {
     return built === undefined ? undefined : this.addAndShow(built, active)
   }
 
-  /** createTab() for a trusted caller (the extension host): skips the sanitizeDirectUrl gate that refuses chrome-extension: outright, since its own policy already checked `target`. */
-  openTrusted (target?: string): [string, WebContents] | undefined {
+  /** createTab() for a trusted caller (the extension host): skips the sanitizeDirectUrl gate that refuses chrome-extension: outright, since its own policy already checked `target`. `partition` is the session the page must run in when the caller names one (a profile's, for a page of an extension in it). */
+  openTrusted (target?: string, partition?: string): [string, WebContents] | undefined {
     if (this.host.atCapacity()) return undefined
-    const built = target === undefined ? this.factory.content() : this.factory.trusted(target)
+    const built = target === undefined ? this.factory.content() : this.factory.trusted(target, partition)
     this.host.add(built.id, built.record)
     void built.record.view.webContents.loadURL(built.target)
     this.host.activate(built.id)

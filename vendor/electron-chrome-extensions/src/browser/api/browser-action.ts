@@ -59,9 +59,12 @@ export function setActionClickInterceptor(
 // item does are Orivon's. `extensionItems` is what the extension's own
 // contextMenus asked for under 'browser_action'; the builder places them.
 // Unset: the library's own menu.
+// Orivon patch (UPSTREAM.md patch 74): `session` is the one the menu's toolbar belongs to, so
+// an item that opens the extension's own page opens it in the instance the person clicked.
 export type ActionMenuBuilder = (
   extensionId: string,
   extensionItems: Electron.MenuItem[],
+  session: Electron.Session,
 ) => Array<Electron.MenuItemConstructorOptions | Electron.MenuItem>
 
 let gActionMenuBuilder: ActionMenuBuilder | undefined
@@ -684,7 +687,7 @@ export class BrowserActionAPI {
     // Orivon patch (UPSTREAM.md patch 50): Orivon's own menu, when it set one.
     if (gActionMenuBuilder) {
       const own = Menu.buildFromTemplate(
-        gActionMenuBuilder(extensionId, this.ctx.store.buildMenuItems(extensionId, 'browser_action')),
+        gActionMenuBuilder(extensionId, this.ctx.store.buildMenuItems(extensionId, 'browser_action'), this.ctx.session),
       )
       own.popup({
         x: Math.floor(anchorRect.x),

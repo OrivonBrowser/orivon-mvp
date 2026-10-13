@@ -24,10 +24,15 @@ export function tunnelHint (tunnel: SiteTunnel): string | undefined {
   return undefined
 }
 
-/** The person's extensions run in a profile too, as far as Electron's own extension support goes; the rest stays in the default session. */
+/**
+ * The person's extensions run in a profile too, with their toolbar buttons, popups and request blockers. What a profile does not
+ * give them is said here: a side panel and a keyboard shortcut work in the normal browsing only, each profile keeps the settings
+ * of its own copy, and the direct profile's copies run only while one of its sites is open.
+ */
 export function extensionsHint (names: readonly string[], profile: 'tunnel' | 'direct' | undefined): string | undefined {
   if (profile === undefined || names.length === 0) return undefined
-  return `Your extensions run in the ${profile} profile too: ${names.join(', ')}. Their toolbar buttons and popups, and any blocker that works through the browser's request API, stay with your normal browsing.`
+  const when = profile === 'direct' ? ' They run only while a site of this profile is open.' : ''
+  return `Your extensions run in the ${profile} profile too: ${names.join(', ')}.${when} Each profile keeps its own settings for them, and their side panels and keyboard shortcuts work only in your normal browsing.`
 }
 
 export const TUNNEL_FAILED = 'The tunnel could not be changed for this site.'

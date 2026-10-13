@@ -21,6 +21,7 @@ vi.mock('electron', () => ({
   ipcMain: { on: vi.fn() },
   session: {
     defaultSession: {
+      isDefault: true,
       extensions: { getExtension, addListener: vi.fn(), setMaxListeners: vi.fn(), getMaxListeners: () => 10 },
       serviceWorkers: { on: vi.fn() },
       webRequest: { onBeforeRequest: vi.fn(), onBeforeSendHeaders: vi.fn(), onHeadersReceived: vi.fn() }
@@ -32,6 +33,7 @@ vi.mock('electron', () => ({
 vi.mock('orivon:crx-extensions', () => ({
   ElectronChromeExtensions: class {
     static handleCRXProtocol = vi.fn()
+    static fromSession (target: any) { return target?.isDefault === true ? lastInstance : undefined }
     on = vi.fn()
     addTab = vi.fn()
     removeTab = vi.fn()
@@ -74,7 +76,7 @@ function buildShell (): {
   shellWindow: any
 } {
   const win = { id: 1 } as unknown as BaseWindow
-  const shellWindow = { window: win, tabs: { openTrusted: vi.fn() } }
+  const shellWindow = { window: win, tabs: { openTrusted: vi.fn() }, chrome: { webContents: { isDestroyed: () => false, executeJavaScript: vi.fn(async () => undefined) } } }
   const findTab = vi.fn()
   let subscribed: any
   const services = {

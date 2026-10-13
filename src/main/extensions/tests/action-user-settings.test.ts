@@ -23,7 +23,7 @@ vi.mock('../extensions-view-runner.js', () => ({
 }))
 
 const { ExtensionRouter } = await import('../../../../vendor/electron-chrome-extensions/src/browser/router.js')
-const { actionUserSettingsApi, watchPinSetting } = await import('../action-pins-runner.js')
+const { actionUserSettingsApi, profileActionSettingsApi, watchPinSetting } = await import('../action-pins-runner.js')
 
 const A = 'a'.repeat(32)
 const B = 'b'.repeat(32)
@@ -65,7 +65,9 @@ function rig (): Rig {
       listAllActions: () => [{ id: A, title: 'Alpha', hasPopup: true, badge: '4' }],
       activateAction: activate
     },
-    session: { extensions: { getExtension: (id: string) => extensions.get(id) ?? null } } as unknown as Session,
+    session: { extensions: { on: vi.fn(), getExtension: (id: string) => extensions.get(id) ?? null } } as unknown as Session,
+    hostFor: (target: Session) => target === ctx.session ? ctx.host : undefined,
+    tab: () => undefined,
     shell: () => services,
     extensions: () => ({
       list: () => [{ id: A, name: 'Alpha', enabled: true }, { id: B, name: 'Beta', enabled: false }],
@@ -193,10 +195,50 @@ describe('the dependencies of the Extensions menu', () => {
     expect(deps?.isEnabled(B)).toBe(false)
     expect(deps?.actions(9).get(A)).toEqual({ hasPopup: true, badge: '4' })
     expect(deps?.optionsUrl(B)).toBeUndefined()
-    const tab = { session: r.ctx.session } as never
+    const tab = { session: r.ctx.session, isDestroyed: () => false } as never
     expect(deps?.canActivate(tab)).toBe(true)
     expect(deps?.canActivate({ session: {} } as never)).toBe(false)
     deps?.activate(A, tab, { x: 1, y: 2, width: 3, height: 4 })
     expect(r.activate).toHaveBeenCalledWith(A, tab, { x: 1, y: 2, width: 3, height: 4 })
+  })
+})
+
+describe('a library instance of a profile session', () => {
+  it('answers getUserSettings and hears the pin setting like the default one, and takes over none of the process-wide parts', () => {
+    const r = rig()
+    const before = extensionsMenuDeps()
+    const profileHandlers = new Map<string, (event: ApiEvent) => unknown>()
+    const profileNotify = vi.fn()
+    const profileSend = vi.fn()
+    const profile = {
+      ...r.ctx,
+      handle: (name: string, run: (event: ApiEvent) => unknown) => { profileHandlers.set(name, run) },
+      sendEvent: profileSend,
+      host: { notifyActionsChanged: profileNotify }
+    } as unknown as ExtensionApiContext
+    profileActionSettingsApi.install(profile)
+
+    expect(profileHandlers.get('browserAction.getUserSettings')?.(event(A))).toEqual({ isOnToolbar: true })
+    expect(extensionsMenuDeps(), 'the Extensions menu keeps the default instance\'s dependencies').toBe(before)
+
+    r.pinNew.value = false
+    for (const listener of r.settingListeners) listener({ key: 'extensions.pinNew' })
+    expect(r.notify, 'the default instance\'s toolbar is told').toHaveBeenCalled()
+    expect(profileNotify, 'and so is the profile\'s').toHaveBeenCalled()
+  })
+
+  it('has the Extensions menu act on the instance of the tab\'s own session', () => {
+    const r = rig()
+    const profileSession = {} as Session
+    const profileHost = { listAllActions: () => [{ id: A, title: 'Alpha', hasPopup: false, badge: '' }], activateAction: vi.fn() }
+    const tab = { session: profileSession, isDestroyed: () => false } as never
+    ;(r.ctx as unknown as { hostFor: (target: Session) => unknown }).hostFor = (target) => target === profileSession ? profileHost : target === r.ctx.session ? r.ctx.host : undefined
+    ;(r.ctx as unknown as { tab: (id: unknown) => unknown }).tab = (id) => id === 5 ? { contents: tab } : undefined
+    const deps = extensionsMenuDeps()
+    expect(deps?.canActivate(tab)).toBe(true)
+    expect(deps?.actions(5).get(A)).toEqual({ hasPopup: false, badge: '' })
+    deps?.activate(A, tab, { x: 1, y: 2, width: 3, height: 4 })
+    expect(profileHost.activateAction).toHaveBeenCalledWith(A, tab, { x: 1, y: 2, width: 3, height: 4 })
+    expect(r.activate).not.toHaveBeenCalled()
   })
 })

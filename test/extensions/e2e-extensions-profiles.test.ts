@@ -1,8 +1,7 @@
 // The person's extensions load into the two persistent profile sessions websites with an entry of their own live in, once each, and
 // not once per site: a content script runs on a website in the tunnel profile and on one in the direct profile, however many
 // websites share a profile; every tunnelled website shares one session; the extensions of the default session are the
-// same ones. The profile sessions get Electron's own extension support (content scripts, background), not the toolbar,
-// popup and request-blocking pieces that belong to the default session.
+// same ones. (The toolbar, popup, webRequest blockers and the direct profile's lifecycle are the other specs of this row.)
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/extensions/e2e-extensions-profiles.test.ts
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'

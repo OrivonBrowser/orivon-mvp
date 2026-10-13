@@ -136,10 +136,11 @@ export class TabFactory {
   /** A URL a trusted main-process caller has already checked against its own
    * policy (today: the extension host's extension-url-policy.ts) -- same
    * session/app-tab handling as content(), without its sanitizeDirectUrl
-   * gate, which refuses chrome-extension: outright. */
-  trusted (requested: string): BuiltTab & { readonly target: string } {
+   * gate, which refuses chrome-extension: outright. `named` is the session the caller
+   * says the page belongs in (a profile's, for a page of an extension in it). */
+  trusted (requested: string, named?: string): BuiltTab & { readonly target: string } {
     const target = this.opensAs(requested)
-    const partition = partitionForTarget(target)
+    const partition = named ?? partitionForTarget(target)
     const view = makeTabView(this.appPreload, partition, appTabArgsFor(target, this.broker()))
     const id = makeTabId()
     const record = this.recordFor(view, partition)

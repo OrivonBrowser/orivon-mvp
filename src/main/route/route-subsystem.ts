@@ -21,15 +21,14 @@ import { migrateLegacySites } from './legacy-sites.js'
 import { setOwnRequests } from './own-requests.js'
 import { setSystemProxyProbe } from './system-proxy.js'
 import { createRequestFetch } from '../../loader/electron/request-fetch.js'
-import { mirrorExtensions } from '../extensions/profile-extensions.js'
-import { installExtensionRequestHandlers } from '../extensions/extensions-subsystem.js'
+import { prepareProfileSession, wakeProfileSession } from '../extensions/extensions-subsystem.js'
 import { servedOrigin } from './served-origin.js'
 import { mustLeaveSession, setSiteRoutes, setSiteSessionEnsurer, siteProfileOf } from './site-routes.js'
 import { createSiteSessions } from './site-sessions.js'
 import type { SiteSession } from './site-sessions.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { announceWebsiteSession } from '../sessions/website-sessions.js'
-import { webRequestOwnerFor } from '../sessions/web-request-owner.js'
+import { webRequestOwnerFor, type WebRequestHandlerHandle } from '../sessions/web-request-owner.js'
 import { createTemporaryRoutes, temporarySessionShowing } from './temporary-routes.js'
 import { createNym } from './nym-launch.js'
 import { createRouteService } from './route-service.js'
@@ -136,23 +135,33 @@ export const routeSubsystem: Subsystem = {
     const siteSessions = createSiteSessions({
       controller: routes.controller,
       sessionFor: (partition) => session.fromPartition(partition) as SiteSession,
-      extend: async (target, persistable) => {
-        if (persistable) await mirrorExtensions(target as unknown as Session, session.defaultSession)
-        installExtensionRequestHandlers(target as unknown as Session)
-      },
+      prepare: (target, persistable, partition) => { prepareProfileSession(target as unknown as Session, partition, persistable) },
+      wake: (target) => wakeProfileSession(target as unknown as Session),
       // The names the verifier answers for reach it on this machine; the proxy never sees them.
       bypass: () => BUILTIN_ADDRESSES.routedSuffixes().map((suffix) => `*.${suffix}`).join(';'),
       hold: (held, current) => {
-        const handle = webRequestOwnerFor(held as Session).onBeforeRequest(-1, { urls: ['<all_urls>'] }, () => true, async (_details, soFar) => {
-          try {
-            await current()
-          } catch {
-            return { cancel: true }
-          }
-          return soFar
-        })
-        // Once the session is ready the handler is taken away; a session that could not be made ready keeps refusing everything until a later attempt works.
-        const watch = (): void => { current().then(() => { handle.remove() }, () => {}) }
+        let handle: WebRequestHandlerHandle | undefined
+        const arm = (): void => {
+          handle ??= webRequestOwnerFor(held as Session).onBeforeRequest(-1, { urls: ['<all_urls>'] }, () => true, async (_details, soFar) => {
+            try {
+              await current()
+            } catch {
+              return { cancel: true }
+            }
+            return soFar
+          })
+        }
+        arm()
+        // Once the session is ready the handler is taken away; a session that could not be made ready keeps refusing everything until a later attempt works. A later attempt (the extensions waking) arms it again until its own end.
+        const watch = (): void => {
+          arm()
+          const waiting = current()
+          waiting.then(() => {
+            if (current() !== waiting) return
+            handle?.remove()
+            handle = undefined
+          }, () => {})
+        }
         watch()
         return watch
       },
