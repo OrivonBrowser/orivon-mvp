@@ -238,12 +238,13 @@ describe('a list of routed apps that cannot be read', () => {
     return { store, hub, setProxy: (next: RouteTarget | undefined) => { proxy = next; hub.proxyChanged() } }
   }
 
-  it('routes every installed app while a tunnel is set, through it, and no website', () => {
+  it('routes every origin while a tunnel is set, installed apps and websites alike, through it', () => {
     const { hub } = unreadable()
 
     expect(hub.isRouted(APP)).toBe(true)
-    expect(hub.isRouted('https://a-website.example')).toBe(false)
-    expect(hub.routeFor('https://a-website.example')).toBeUndefined()
+    expect(hub.isRouted('https://a-website.example')).toBe(true)
+    expect(hub.routeFor('https://a-website.example')).toBeDefined()
+    expect(hub.usesOwnSession('https://a-website.example')).toBe(true)
     expect(hub.routeFor(OTHER)).toBeDefined()
     expect(hub.unreadable()).toBe(true)
   })
@@ -275,5 +276,85 @@ describe('a list of routed apps that cannot be read', () => {
 
   it('is not unreadable when the list is fine', () => {
     expect(setup().hub.unreadable()).toBe(false)
+  })
+})
+
+describe('a website in the hub', () => {
+  const SITE = 'https://news.example'
+
+  it('is routed by an entry of its own and by nothing else, with the default off', () => {
+    const { hub, store } = setup()
+    expect(hub.isRouted(SITE)).toBe(false)
+    expect(hub.usesOwnSession(SITE)).toBe(false)
+
+    store.setEntry(SITE, 'on')
+    expect(hub.isRouted(SITE)).toBe(true)
+    expect(hub.usesOwnSession(SITE)).toBe(true)
+    expect(hub.routeFor(SITE)).toBeDefined()
+  })
+
+  it('stores an off entry and changes nothing for the site while the default is off', () => {
+    const { hub, store } = setup()
+    const heard = vi.fn()
+    hub.onChange(heard)
+
+    store.setEntry(SITE, 'off')
+
+    expect(store.stateOf(SITE)).toBe('off')
+    expect(hub.isRouted(SITE)).toBe(false)
+    expect(hub.usesOwnSession(SITE)).toBe(false)
+    expect(heard).not.toHaveBeenCalled()
+  })
+
+  it('signs in to the tunnel with credentials of its own, apart from every other origin', () => {
+    const { hub, store, built } = setup()
+    store.setEntry(SITE, 'on')
+    store.set(APP, true)
+    hub.routeFor(SITE)
+    hub.routeFor(APP)
+    expect(built.map((one) => one.key).sort()).toEqual([SITE, APP].sort())
+  })
+
+  it('tells listeners when its tunnel is turned on and off, and runs a front only while on', async () => {
+    const { hub, store } = setup()
+    const heard = vi.fn()
+    hub.onChange(heard)
+    store.setEntry(SITE, 'on')
+    const front = await hub.front(SITE)
+    expect(front.port).toBeGreaterThan(0)
+    store.setEntry(SITE, undefined)
+    await hub.settled()
+    expect(heard.mock.calls).toEqual([[SITE, true, 'switch'], [SITE, false, 'switch']])
+    await expect(hub.front(SITE)).rejects.toThrow(/not routed/)
+  })
+
+  it('follows the browser-wide default when there is one: an entry that says what the default says changes nothing', () => {
+    let everywhere = true
+    const store = new RouteStore(null)
+    const hub = createRouteHub({ store, proxy: () => ({ host: '127.0.0.1', port: 9050 }), everywhere: () => everywhere, providerFor: () => ({ connect: async () => { throw new Error('unused') } }) })
+    hubs.push(hub)
+    const heard = vi.fn()
+    hub.onChange(heard)
+
+    expect(hub.isRouted(SITE)).toBe(true)
+    expect(hub.usesOwnSession(SITE)).toBe(false)
+    store.setEntry(SITE, 'on')
+    expect(heard).not.toHaveBeenCalled()
+    store.setEntry(SITE, 'off')
+    expect(hub.isRouted(SITE)).toBe(false)
+    expect(hub.usesOwnSession(SITE)).toBe(true)
+    expect(heard.mock.calls).toEqual([[SITE, false, 'switch']])
+    everywhere = false
+    expect(hub.usesOwnSession(SITE)).toBe(false)
+  })
+
+  it('has the proxy changing affect its front too', async () => {
+    const { hub, store, setProxy } = setup()
+    store.setEntry(SITE, 'on')
+    await hub.front(SITE)
+    const heard = vi.fn()
+    hub.onChange(heard)
+    setProxy(undefined)
+    expect(heard.mock.calls).toContainEqual([SITE, true, 'proxy'])
   })
 })

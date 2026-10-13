@@ -11,6 +11,8 @@ import { createRouteHub } from './route-hub.js'
 import type { RouteHub } from './route-hub.js'
 import { createNymProvider, isNymTarget, NYM_TARGET } from './nym-provider.js'
 import type { NymSubsystem } from './nym-subsystem.js'
+import { createRouteSwitch } from './route-switch.js'
+import type { RouteSwitch, RouteSwitchWorld } from './route-switch.js'
 import type { RouteStore } from './route-store.js'
 
 export type RouteKind = 'nym' | 'socks5'
@@ -25,6 +27,8 @@ export interface RouteService {
   readonly hub: RouteHub
   readonly controller: RouteController
   readonly store: RouteStore
+  /** The one path that turns an app's or a website's tunnel on or off. */
+  readonly routeSwitch: RouteSwitch
   /** Where routed traffic leaves now: Nym's target, the SOCKS5 address, or undefined when the choice is an address and none is set or it is not one. */
   proxy: () => RouteTarget | undefined
   /** The provider for a target that is not a SOCKS5 address (Nym), or undefined for one that is. */
@@ -47,8 +51,12 @@ export interface RouteServiceOptions {
   /** The saved choice of where routed traffic leaves, read the same way. */
   readonly savedKind: RouteKind
   readonly nym: NymSubsystem
-  /** The apps installed here, asked only while the store cannot say which are routed. */
+  /** The apps installed here, asked only while the store cannot say what was set. */
   readonly installed?: () => readonly string[]
+  /** Whether the whole browser goes through the tunnel unless an origin says otherwise; off until the browser-wide setting exists. */
+  readonly everywhere?: () => boolean
+  /** What the switch reads about the world: the app's files held here, its origin written to disk, and a website's own storage. */
+  readonly switchWorld?: RouteSwitchWorld
   readonly electron: Omit<RouteControllerDeps, 'hub'>
 }
 
@@ -59,12 +67,14 @@ export function createRouteService (options: RouteServiceOptions): RouteService 
   // The user name is the same hash of the key the SOCKS5 provider sends, so Nym isolates by app as a SOCKS5 proxy would.
   const isolation = isolationCredentials()
   const providerFor = (key: string, target: RouteTarget): RouteProvider | undefined => isNymTarget(target) ? createNymProvider(options.nym, isolation(key).userId) : undefined
-  const hub = createRouteHub({ store: options.store, proxy, providerFor, ...(options.installed === undefined ? {} : { installed: options.installed }) })
+  const hub = createRouteHub({ store: options.store, proxy, providerFor, ...(options.installed === undefined ? {} : { installed: options.installed }), ...(options.everywhere === undefined ? {} : { everywhere: options.everywhere }) })
   const controller = createRouteController({ ...options.electron, hub })
+  const routeSwitch = createRouteSwitch({ proxy, store: options.store, controller, hub }, options.switchWorld ?? { isPinned: () => false, isPersistable: () => false })
   return {
     hub,
     controller,
     store: options.store,
+    routeSwitch,
     proxy,
     providerFor,
     nym: options.nym,

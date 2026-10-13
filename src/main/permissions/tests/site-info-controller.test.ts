@@ -2,7 +2,7 @@ import { NYM_TARGET } from '../../route/nym-provider.js'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createBroker } from '../../../broker/index.js'
 import { APP, baseDeps, manifestWith } from '../../../broker/tests/index.test-helpers.js'
 import type { Broker } from '../../../broker/broker-contracts.js'
@@ -76,7 +76,7 @@ function fakeLoader (overrides: Partial<Loader> = {}): Loader {
 }
 
 describe('createSiteInfoController -- the route of a routed app', () => {
-  const routesWith = (state: string, proxy: unknown = { host: '127.0.0.1', port: 9050 }): SubsystemContext['routes'] => ({ hub: { state: () => state }, proxy: () => proxy, nym: { state: () => ({ state: 'connecting' }) } }) as unknown as SubsystemContext['routes']
+  const routesWith = (state: string, proxy: unknown = { host: '127.0.0.1', port: 9050 }): SubsystemContext['routes'] => ({ hub: { state: () => state, isRouted: () => state !== 'off', unreadable: () => false }, routeSwitch: { siteBlockedFor: () => undefined, siteNeedsNotice: () => true }, proxy: () => proxy, nym: { state: () => ({ state: 'connecting' }) } }) as unknown as SubsystemContext['routes']
 
   it('carries the state of the app\'s route, so the popover can say where its traffic goes and when the tunnel is not answering', async () => {
     for (const state of ['idle', 'ok', 'down', 'no-proxy']) {
@@ -419,5 +419,74 @@ describe('createSiteInfoController -- storageDeclarationFor', () => {
   it('null for an unregistered origin', async () => {
     const controller = createSiteInfoController(ctxWith(createBroker(baseDeps())), NO_TRUST)
     expect(await controller.storageDeclarationFor(OTHER)).toBeNull()
+  })
+})
+
+describe('createSiteInfoController -- the tunnel switch of a website', () => {
+  const SITE = 'https://news.example'
+  function routesFor (options: { on?: boolean, blocked?: 'no-proxy' | 'local', needsNotice?: boolean, unreadable?: boolean, setSite?: (origin: string, on: boolean) => Promise<void> } = {}): SubsystemContext['routes'] {
+    return {
+      hub: { state: () => options.on === true ? 'ok' : 'off', isRouted: () => options.on === true, unreadable: () => options.unreadable === true },
+      proxy: () => ({ host: '127.0.0.1', port: 9050 }),
+      routeSwitch: {
+        siteBlockedFor: () => options.blocked,
+        siteNeedsNotice: () => options.needsNotice !== false,
+        setSite: options.setSite ?? (async () => {})
+      }
+    } as unknown as SubsystemContext['routes']
+  }
+  const controllerWith = (routes: SubsystemContext['routes'], trust: SiteTrustSources = NO_TRUST) =>
+    createSiteInfoController({ ...ctxWith(createBroker(baseDeps())), routes } as unknown as SubsystemContext, trust)
+
+  it('offers the switch for an ordinary website, with what the popover needs to ask first', async () => {
+    const info = await controllerWith(routesFor({ needsNotice: true })).siteInfoFor(SITE)
+    expect(info.tunnel).toEqual({ on: false, needsNotice: true, web3: false, unreadable: false })
+  })
+
+  it('says it is on, and that no notice is needed once the site has storage of its own', async () => {
+    const info = await controllerWith(routesFor({ on: true, needsNotice: false })).siteInfoFor(SITE)
+    expect(info.tunnel).toMatchObject({ on: true, needsNotice: false })
+    expect(info.route).toBe('ok')
+  })
+
+  it('says why it cannot be turned on, and when the list of tunnel settings could not be read', async () => {
+    expect((await controllerWith(routesFor({ blocked: 'no-proxy' })).siteInfoFor(SITE)).tunnel?.blocked).toBe('no-proxy')
+    expect((await controllerWith(routesFor({ unreadable: true, on: true })).siteInfoFor(SITE)).tunnel?.unreadable).toBe(true)
+  })
+
+  it('marks a Web3 name, whose own files Orivon fetches itself', async () => {
+    expect((await controllerWith(routesFor()).siteInfoFor('https://vitalik.eth')).tunnel?.web3).toBe(true)
+    expect((await controllerWith(routesFor()).siteInfoFor('https://abc.ipfs.orivon')).tunnel?.web3).toBe(true)
+  })
+
+  it('has no switch for this computer, an installed app, a local file or when routes are not running', async () => {
+    expect((await controllerWith(routesFor()).siteInfoFor('http://127.0.0.1:8080')).tunnel).toBeUndefined()
+    expect((await controllerWith(routesFor()).siteInfoFor('http://localhost:3000')).tunnel).toBeUndefined()
+    expect((await controllerWith(routesFor(), { ...NO_TRUST, isOriginServedFromCacheSync: () => true }).siteInfoFor(SITE)).tunnel).toBeUndefined()
+    expect((await controllerWith(undefined).siteInfoFor(SITE)).tunnel).toBeUndefined()
+  })
+
+  it('turns the tunnel on or back to the default through the one switch path, and says whether it did', async () => {
+    const setSite = vi.fn(async () => {})
+    const controller = controllerWith(routesFor({ setSite }))
+    expect(await controller.setTunnel(SITE, true)).toBe(true)
+    expect(await controller.setTunnel(SITE, false)).toBe(true)
+    expect(setSite.mock.calls).toEqual([[SITE, true], [SITE, false]])
+  })
+
+  it('refuses to turn it on when it is blocked, but always turns it off', async () => {
+    const setSite = vi.fn(async () => {})
+    const controller = controllerWith(routesFor({ blocked: 'no-proxy', setSite }))
+    expect(await controller.setTunnel(SITE, true)).toBe(false)
+    expect(await controller.setTunnel(SITE, false)).toBe(true)
+    expect(setSite.mock.calls).toEqual([[SITE, false]])
+  })
+
+  it('refuses an installed app, whose card has its own switch, and reports a choice that could not be kept', async () => {
+    const setSite = vi.fn(async () => { throw new Error('disk full') })
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(await controllerWith(routesFor({ setSite }), { ...NO_TRUST, isOriginServedFromCacheSync: () => true }).setTunnel(SITE, true)).toBe(false)
+    expect(setSite).not.toHaveBeenCalled()
+    expect(await controllerWith(routesFor({ setSite })).setTunnel(SITE, true)).toBe(false)
   })
 })

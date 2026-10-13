@@ -60,13 +60,12 @@ import { siteSettingsControllerFor } from '../site-settings/site-settings-runner
 import { createDeviceRows } from '../devices/hid-rows.js'
 import { forgetDevicesWhenGrantEnds } from '../devices/hid-grant-watch.js'
 import { forgetRoutesOfGoneApps } from '../route/forget-watch.js'
+import { sitePartitionFor } from '../route/site-partition.js'
 import { isRegisteredAppOrigin } from '../site-settings/app-origin.js'
 import { isWebOrigin } from '../site-settings/site-settings-controller.js'
 import { sitesDomain } from '../site-settings/sites-domain.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
-import { createRouteSwitch } from '../route/route-switch.js'
-import { isPersistableOrigin } from '../../broker/policy/origin.js'
-import { isOriginPinnedSync, isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
+import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { nodeLoaderStorage } from '../../loader/cache/node-storage.js'
 import { createPermissionsController } from '../permissions/permissions.js'
 import type { SubsystemContext } from '../registry.js'
@@ -107,7 +106,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   const routes = ctx.routes
   if (routes === undefined) throw new Error('startInternalPages requires ctx.routes -- check routeSubsystem\'s position in subsystems.ts')
   // An app can be routed once there is a proxy and its files are held here: its updates are not checked while routed, which a first visit has no pin to skip.
-  const routeSwitch = createRouteSwitch(routes, { isPinned: isOriginPinnedSync, isPersistable: isPersistableOrigin })
+  const routeSwitch = routes.routeSwitch
   const appRoutes: AppRoutes = { stateOf: (origin) => routes.hub.state(origin), unreadable: () => routes.hub.unreadable(), blockedFor: routeSwitch.blockedFor, set: routeSwitch.set }
   const tasksEnv: TasksEnv = {
     windows: services.windows,
@@ -166,6 +165,8 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       siteSettings,
       websites: session.defaultSession,
       localFiles: () => allLocalPartitions().map((partition) => session.fromPartition(partition)),
+      // A website with a tunnel setting keeps its storage in a session of its own, which the shared session's clearing never reaches.
+      siteSessions: () => routes.store.apart().map((origin) => session.fromPartition(sitePartitionFor(origin))),
       // Only a CACHE-SERVED app still has a partition of its own to clear:
       // a granted-without-install app shares session.defaultSession, which
       // `websites` above already reaches. Calling session.fromPartition on
@@ -187,7 +188,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       clearShared: async () => { await session.fromPartition(LOCAL_FILES_PARTITION).clearData() }
     }),
     apps: appsDomain({ permissions, devices: deviceRows, links: services.schemeChoices, userDataPath: app.getPath('userData'), identity: identityKeyStorage, routes: appRoutes }),
-    route: routeDomain({ proxy: () => services.settings.get('network.route.proxy'), kind: () => services.settings.get('network.route.kind'), probe: probeSocks5, nym: routes.nym }),
+    route: routeDomain({ proxy: () => services.settings.get('network.route.proxy'), kind: () => services.settings.get('network.route.kind'), probe: probeSocks5, nym: routes.nym, routeSwitch: routes.routeSwitch }),
     web3: web3Domain({
       view: verifierView,
       enabled: () => services.settings.get('web3.lightClient'),
@@ -219,10 +220,10 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   // whose history box follows 'history.remember'.
   services.settings.onChange((change) => { services.internalPages.publish('settings.changed', change, ['settings', 'extensions', 'import']) })
   // An app's route switch is on its card in Apps: it follows the switch itself, and whether there is a proxy to turn it on for.
-  routes.hub.onChange(() => { services.internalPages.publish('apps.changed', undefined, ['settings']) })
+  routes.hub.onChange(() => { services.internalPages.publish('apps.changed', undefined, ['settings']); services.internalPages.publish('route.changed', undefined, ['settings']) })
   services.settings.onChange((change) => { if (change.key === 'network.route.proxy' || change.key === 'network.route.kind') services.internalPages.publish('apps.changed', undefined, ['settings']) })
   routes.nym.onChange(() => {
-    services.internalPages.publish('route.changed', { nym: routes.nym.state() }, ['settings'])
+    services.internalPages.publish('nym.changed', { nym: routes.nym.state() }, ['settings'])
     services.internalPages.publish('apps.changed', undefined, ['settings'])
   })
   services.searchEngines.onChange(() => { services.internalPages.publish('searchEngines.changed', undefined, ['settings']) })

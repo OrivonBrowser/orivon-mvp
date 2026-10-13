@@ -1,7 +1,7 @@
 # `src/protocols/nym-tunnel/`: the host that runs Nym's mixnet client as WebAssembly, and offers it as a SOCKS5 server
 
 **What lives here.** The utility process that carries an installed app's traffic through the Nym mixnet when the
-person routed the app and left the tunnel on its default ([`ADR-0082`](../../../docs/decisions/ADR-0082-nym-is-the-built-in-tunnel-and-runs-in-a-utility-process-of-its-own.md)).
+person routed the app and left the tunnel on its default ([`ADR-0083`](../../../docs/decisions/ADR-0083-nym-is-the-built-in-tunnel-and-runs-in-a-utility-process-of-its-own.md)).
 The process offers SOCKS5 (CONNECT and UDP ASSOCIATE) on a loopback port, behind a secret, so the tunnel for apps
 ([`../../main/route/`](../../main/route/)) reaches it exactly as it reaches a SOCKS5 server the person runs. The module
 is Nym's `smolmix` client with raw TCP and UDP added (`vendor/nym-smolmix/`), published on IPFS and pinned by hash in

@@ -18,6 +18,7 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+- **`tunnelled-website-gets-its-own-storage`** and **`tunnelled-website-sends-nothing-direct`**: new rows. A website the person turns the tunnel on for from its site-info popover runs in a session of its own, apart from the shared one, behind its own tunnel sign-in. An app whose pages are also opened as websites must not assume that a visit in the shared session and one through the tunnel share cookies or storage. Recheck: any port a person may open by its address through Tor.
 - **`routed-app-sends-nothing-direct`**, **`routed-app-keeps-its-loopback-listens`** and **`routed-app-refuses-what-the-route-cannot-carry`**: new rows. An installed app the person routes through their tunnel, a SOCKS5 server (Settings > Privacy and data sets it, the app's card in Apps turns it on) sends everything through it: `connect`, `connectSecure`, datagrams and the page's own network use the tunnel with the name unresolved, `lookup` and a `network`-scope `listen` are `denied`, and WebRTC and the app's update checks are off. An app must not rely on `dns.lookup`, a LAN listener or a direct route while routed. Recheck: any port a person may run through Tor.
 - **`routed-app-on-nym-sends-nothing-direct`** and **`routed-app-on-nym-fails-closed`**: new rows. The tunnel for installed apps is Nym by default: a routed app's `connect` and datagrams leave through a mixnet tunnel of its own, built into Orivon, with nothing set up; a person can still choose their own SOCKS5 address, and an address saved earlier stays the choice. Nothing to do for apps; recheck ports that tell a person to run Tor.
 - **`routed-app-asks-before-opening-a-website`**: new row. A routed app's page that navigates its tab, opens a window or follows a `target=_blank` link to an address outside its own sessions now asks the person first, each time: through their tunnel (a temporary in-memory session, kept apart from the app's), directly, or not at all. `window.open` to such an address returns `null` whatever the answer, because it is answered after the call returns, so an app must not wait on that window's `opener`; a popup that asks for a window of its own (sized, `popup`) is unchanged. Recheck: any port a person may run through Tor that opens links to other sites.
@@ -91,6 +92,8 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
+- **A website can go through the tunnel too**: the key in the address bar offers "Use the tunnel for this site". The site then gets its own
+  storage, kept apart from the rest of your browsing (you are told first, and sign in to it again once), and Settings lists the sites and apps with a setting of their own (ADR-0082).
 - **An installed app can send everything through a tunnel**: set your own SOCKS5 address (Tor on `127.0.0.1:9050`, say) as the tunnel under Privacy and data, then
   turn it on for an app on its card in Apps. Its connections, datagrams, shown pages and image loads leave through the tunnel, what the tunnel
   cannot carry is refused, and the app stops when the tunnel does. Its updates are not checked, and WebRTC is off, while it is on (ADR-0080).
@@ -590,6 +593,8 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Security
 
+- **A website that moves into its own session keeps every setting it had**: the privacy signals, third-party cookie blocking, HTTPS-only, the per-site
+  content blocks, the sign-in headers and the verifier's stamps are installed on every session a website runs in, through one seam, and a session missing one is refused (ADR-0082).
 - **Every panel, bar and sheet Orivon draws over a page shares one sandboxed bridge**, and each can reach only its own
   handler, checked by frame and exact address on every call (ADR-0048).
 - **A site's permissions work only from a page that committed in that site's own session**: a page

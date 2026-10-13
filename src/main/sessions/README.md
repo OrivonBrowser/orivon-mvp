@@ -29,6 +29,7 @@ from, with the pure decision in [`../../broker/policy/own-listener-media.ts`](..
 media request for `/orivon/app/<path>` to the `orivon-file:` scheme and answers that scheme with the app's own
 file (`app-file-response.ts`, no Electron in it), with the pure decision in
 [`../../broker/policy/app-files-by-url.ts`](../../broker/policy/app-files-by-url.ts).
+`website-sessions.ts` is the list of sessions a website runs in (the default one, and the session of its own a website gets when its tunnel state differs from the default, `../route/`): a control that guards or adjusts a website's requests installs through `forEachWebsiteSession`, so a website that moves into its own session keeps it, and a session missing one is refused.
 `session-attribution.ts` publishes
 `ctx.senderAttributed` (`../registry.ts`): whether a WebContents is attributed to the origin it
 claims, decided at that document's own commit and reused afterward rather than re-decided live (except a cache-served origin and a local file, checked live),
@@ -192,9 +193,9 @@ independent features registering directly on the same session would fight over w
 (`onSendHeaders`, `onResponseStarted`, `onBeforeRedirect`, `onCompleted`, `onErrorOccurred`); every caller instead registers a
 handler with an `order`, a `WebRequestFilter` and a URL predicate, and `web-request-compose.ts`'s
 pure logic runs them in order, threading each one's result to the next. Used for
-`session.defaultSession` today: the verifier's partition stamp (`../verifier/verifier-
+the sessions a website runs in (`website-sessions.ts`) today: the verifier's partition stamp (`../verifier/verifier-
 subsystem.ts`), the granted-origin CSP (`../install/granted-origin-csp.ts`), the Firefox
-request headers on Google's sign-in hosts (`../shell/sign-in-identity-headers.ts`) and the three
+request headers on Google's sign-in hosts (`../shell/sign-in-identity-headers.ts`) the privacy and content-setting handlers, and, on `session.defaultSession` alone, the three
 `declarativeNetRequest` handlers (`../extensions/dnr-webrequest.ts`) and the extension `webRequest`
 dispatcher (`../extensions/web-request-dispatch.ts`). The embed session
 ([`../embed/embed-host.ts`](../embed/embed-host.ts)), the internal-pages session

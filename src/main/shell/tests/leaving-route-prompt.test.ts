@@ -27,3 +27,11 @@ describe('the question a routed app raises by opening an address', () => {
     expect(question.message).toBe('https://routed.example wants to open https://...com.attacker.example.')
   })
 })
+
+describe('the question for a website with its tunnel on', () => {
+  it('says the tunnel is on for this site', () => {
+    const question = leavingQuestion({ kind: 'website', origin: 'https://other.example', app: 'https://news.example', site: true })
+    expect(question.detail).toBe('Your tunnel is on for this site. Open the page through your tunnel, or directly?')
+    expect(question.buttons).toEqual(['Through my tunnel', 'Directly', 'Cancel'])
+  })
+})

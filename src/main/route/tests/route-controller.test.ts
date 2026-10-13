@@ -35,8 +35,8 @@ function fakeContents (session: RouteSession, reloads: string[] = []): RouteCont
   return { session, policy, isDestroyed: () => false, getType: () => 'window', reload: () => { reloads.push(name) }, setWebRTCIPHandlingPolicy: (value) => { policy.push(value) } }
 }
 
-function setup (options: { routed?: readonly string[], callTimeoutMs?: number } | readonly string[] = {}) {
-  const { routed = [], callTimeoutMs } = Array.isArray(options) ? { routed: options as readonly string[], callTimeoutMs: undefined } : options as { routed?: readonly string[], callTimeoutMs?: number }
+function setup (options: { routed?: readonly string[], callTimeoutMs?: number, isApp?: (origin: string) => boolean } | readonly string[] = {}) {
+  const { routed = [], callTimeoutMs, isApp } = Array.isArray(options) ? { routed: options as readonly string[], callTimeoutMs: undefined, isApp: undefined } : options as { routed?: readonly string[], callTimeoutMs?: number, isApp?: (origin: string) => boolean }
   const store = new RouteStore(null)
   for (const origin of routed) store.set(origin, true)
   const hub = createRouteHub({ store, proxy: () => ({ host: '127.0.0.1', port: 9050 }), providerFor: () => ({ connect: async () => { throw new Error('unused') } }) })
@@ -71,7 +71,8 @@ function setup (options: { routed?: readonly string[], callTimeoutMs?: number } 
     allContents: () => contents,
     onContentsCreated: (listener) => { created = listener },
     onLogin: (listener) => { login = listener },
-    ...(callTimeoutMs === undefined ? {} : { callTimeoutMs })
+    ...(callTimeoutMs === undefined ? {} : { callTimeoutMs }),
+    ...(isApp === undefined ? {} : { isApp })
   }
   const controller = createRouteController(deps)
   /** A web contents in `session`, which the controller sees among all of them. */
@@ -572,5 +573,83 @@ describe('a temporary routed session', () => {
     const after = vi.fn()
     login({ preventDefault: () => {} }, { isProxy: true, host: '127.0.0.1', port: front.port }, after)
     expect(after).not.toHaveBeenCalled()
+  })
+})
+
+describe('a website\'s session of its own', () => {
+  const SITE = 'https://news.example'
+  const VERIFIED = '*.eth;*.orivon'
+
+  it('is pointed at the website\'s front, with this machine and the verifier\'s names reaching it without the proxy, and no direct fallback', async () => {
+    const { hub, controller, sessionFor, store } = setup({ isApp: () => false })
+    store.setEntry(SITE, 'on')
+    const session = sessionFor('site')
+
+    await controller.prepareSite(SITE, session, VERIFIED)
+
+    const front = await hub.front(SITE)
+    expect(session.proxies).toEqual([`fixed_servers:http://127.0.0.1:${String(front.port)}`])
+    expect(session.bypass[0]).toBe(`<-loopback>;localhost;*.localhost;127.0.0.1/8;[::1];${VERIFIED}`)
+    expect(session.proxies.join()).not.toMatch(/direct/)
+  })
+
+  it('gives web contents in it the WebRTC policy that keeps UDP off the network, while the website is routed', async () => {
+    const { controller, sessionFor, store, created, page } = setup({ isApp: () => false })
+    store.setEntry(SITE, 'on')
+    const session = sessionFor('site')
+    await controller.prepareSite(SITE, session, VERIFIED)
+
+    const one = page(session)
+    created(one)
+
+    expect(one.policy).toEqual(['disable_non_proxied_udp'])
+  })
+
+  it('makes no embed session and reloads no page when the website is switched, because its tab moves instead', async () => {
+    const { controller, sessionFor, store, page, requested, reloaded, dropped } = setup({ isApp: () => false })
+    const session = sessionFor('site')
+    await controller.prepareSite(SITE, session, VERIFIED)
+    page(session)
+
+    store.setEntry(SITE, 'on')
+    await controller.settled()
+
+    expect(requested()).not.toContain(`embed:${SITE}`)
+    expect(reloaded).toEqual([])
+    expect(dropped).toEqual([SITE])
+    expect(session.proxies.at(-1)).toMatch(/^fixed_servers:/)
+  })
+
+  it('goes back to the system\'s proxy when the website\'s tunnel is turned off, keeping the session', async () => {
+    const { controller, sessionFor, store } = setup({ isApp: () => false })
+    store.setEntry(SITE, 'on')
+    const session = sessionFor('site')
+    await controller.prepareSite(SITE, session, VERIFIED)
+
+    store.setEntry(SITE, undefined)
+    await controller.settled()
+
+    expect(session.proxies.at(-1)).toBe('system:')
+  })
+
+  it('keeps an app\'s behaviour: its embed session is made and its pages reload on a switch', async () => {
+    const { controller, sessionFor, store, page, requested, reloaded } = setup()
+    const session = sessionFor('app')
+    await controller.prepare(APP, session)
+    page(session)
+
+    store.set(APP, true)
+    await controller.settled()
+
+    expect(requested()).toContain(`embed:${APP}`)
+    expect(reloaded).toEqual(['app'])
+  })
+
+  it('can be confined to a rule that reaches nothing', async () => {
+    const { controller, sessionFor } = setup()
+    const session = sessionFor('site')
+    await controller.confineSite(session)
+    expect(session.proxies).toEqual(['fixed_servers:http://127.0.0.1:9'])
+    expect(session.bypass).toEqual(['<-loopback>'])
   })
 })

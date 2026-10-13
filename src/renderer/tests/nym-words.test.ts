@@ -31,7 +31,7 @@ describe('the words about Nym', () => {
     expect(nymRouteLine('idle', { state: 'idle' })).toBe('This app\'s traffic goes through Nym.')
     expect(nymRouteLine('down', { state: 'failed', reason: 'x' })).toBe('Nym is not answering, so this app\'s traffic is stopped.')
     expect(nymRouteLine('ok', { state: 'unavailable', cause: 'not-in-build', reason: 'x' })).toBe('Nym is not in this build, so this app\'s traffic is stopped.')
-    expect(routeLineWords('ok', { state: 'connecting' })).toContain('Connecting to Nym…')
+    expect(routeLineWords('ok', 'app', { state: 'connecting' })).toContain('Connecting to Nym…')
     expect(routeLineWords('ok')).toBe('This app\'s traffic goes through your tunnel.')
   })
 })

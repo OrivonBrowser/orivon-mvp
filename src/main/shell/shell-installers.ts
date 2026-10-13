@@ -29,6 +29,7 @@ import { installQuestions } from './question/install-questions.js'
 import { installSidePanel } from '../side-panel/install-side-panel.js'
 import { installContentSettings } from '../site-settings/install-content-settings.js'
 import { installSitePermissions } from '../site-settings/install-site-permissions.js'
+import { installSiteSessions } from './install-site-sessions.js'
 import { installTabGroups } from '../tab-groups/install-tab-groups.js'
 import type { ShellServices } from './shell-services.js'
 
@@ -61,6 +62,7 @@ export const SHELL_INSTALLERS: readonly ShellInstaller[] = [
   installReader,
   installSidePanel,
   installSitePermissions,
+  installSiteSessions,
   installTabGroups,
   installTabSlots,
   installTabVisibility,

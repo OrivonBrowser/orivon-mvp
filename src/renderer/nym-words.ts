@@ -34,11 +34,11 @@ export function nymTestWords (result: NymTestResult): string {
 }
 
 /** The popover's line about an app routed through Nym. */
-export function nymRouteLine (route: 'idle' | 'ok' | 'down' | 'no-proxy' | 'temporary', state: NymState): string {
+export function nymRouteLine (route: 'idle' | 'ok' | 'down' | 'no-proxy' | 'temporary', state: NymState, noun: 'app' | 'site' = 'app'): string {
   if (route === 'temporary') return 'This page goes through Nym, and nothing it stores is kept once its last tab is closed.'
-  if (state.state === 'failed' || state.state === 'unavailable') return `${nymStatusWords(state)}, so this app's traffic is stopped.`
-  if (route === 'down') return 'Nym is not answering, so this app\'s traffic is stopped.'
-  const base = 'This app\'s traffic goes through Nym.'
+  if (state.state === 'failed' || state.state === 'unavailable') return `${nymStatusWords(state)}, so this ${noun}'s traffic is stopped.`
+  if (route === 'down') return `Nym is not answering, so this ${noun}'s traffic is stopped.`
+  const base = `This ${noun}'s traffic goes through Nym.`
   if (state.state === 'ready') return `${base} ${nymStatusWords(state)}${state.reason === undefined ? '' : `. ${state.reason}`}`
   return state.state === 'connecting' ? `${base} ${nymStatusWords(state)}` : base
 }

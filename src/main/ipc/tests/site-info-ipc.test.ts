@@ -51,6 +51,7 @@ function fakeController (overrides: Partial<SiteInfoController> = {}): SiteInfoC
     siteInfoFor: vi.fn(async () => EMPTY_INFO),
     siteTrustFor: vi.fn(async () => null),
     storageDeclarationFor: vi.fn(async () => null),
+    setTunnel: vi.fn(async () => true),
     turnOn: vi.fn(async () => 'ok' as const),
     turnOff: vi.fn(async () => {}),
     revokePickedPath: vi.fn(async () => {}),
@@ -121,6 +122,37 @@ describe('registerSiteInfoIpc -- applyUpdate', () => {
     await dispatch({ type: 'applyUpdate', cid: 'bafyexample' }, OTHER_FRAME_URL)
 
     expect(controller.applyUpdate).not.toHaveBeenCalled()
+  })
+})
+
+describe('registerSiteInfoIpc -- setTunnel', () => {
+  it('turns the tunnel of the popup\'s fixed origin on or off, whatever origin the command names, and returns the info after', async () => {
+    const controller = fakeController()
+    register(controller)
+
+    const on = await dispatch({ type: 'setTunnel', on: true, origin: 'https://evil.example' })
+    const off = await dispatch({ type: 'setTunnel', on: false })
+
+    expect(controller.setTunnel).toHaveBeenNthCalledWith(1, ORIGIN, true)
+    expect(controller.setTunnel).toHaveBeenNthCalledWith(2, ORIGIN, false)
+    expect(on).toEqual({ ok: true, info: EMPTY_INFO })
+    expect(off).toEqual({ ok: true, info: EMPTY_INFO })
+  })
+
+  it('says it was not done when the controller could not', async () => {
+    const controller = fakeController({ setTunnel: vi.fn(async () => false) })
+    register(controller)
+    expect(await dispatch({ type: 'setTunnel', on: true })).toEqual({ ok: false, info: EMPTY_INFO })
+  })
+
+  it('refuses a value that is not a boolean, without reaching the controller, and answers nothing from another frame', async () => {
+    const controller = fakeController()
+    register(controller)
+    for (const on of [undefined, 1, 'true', null]) {
+      expect(await dispatch({ type: 'setTunnel', on })).toEqual({ ok: false, info: EMPTY_INFO })
+    }
+    expect(await dispatch({ type: 'setTunnel', on: true }, OTHER_FRAME_URL)).toBeUndefined()
+    expect(controller.setTunnel).not.toHaveBeenCalled()
   })
 })
 

@@ -51,6 +51,10 @@ import { NativeTabDrag } from './native-tab-drag.js'
 import { imageToDataUrl, previewSizeFor, TearDragController } from './tear-drag.js'
 import { captureTabPage } from './tab-view.js'
 import { WindowRegistry } from './window-registry.js'
+import { isTemporaryRoutePartition } from '../route/temporary-routes.js'
+import { tunnelMarkFor } from '../route/tunnel-mark.js'
+import type { TunnelMark } from '../route/tunnel-mark.js'
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import type { SubsystemContext } from '../registry.js'
 import { TabLifecycle } from './tab-lifecycle.js'
 import { KIOSK_FLAG } from '../window-state/kiosk.js'
@@ -94,6 +98,11 @@ export interface ShellServices {
   readonly updateOffers: {
     readonly pending: (origin: string) => UpdateOffer | undefined
     readonly onChange: (listener: (origin: string) => void) => () => void
+  }
+  /** What the address bar's key says about a page and the tunnel; null while the routes are not running or the page is not on the tunnel. */
+  readonly tunnel: {
+    readonly markOf: (url: string, partition: string | undefined) => TunnelMark | null
+    readonly onChange: (listener: () => void) => () => void
   }
   /** What the person told each site it may do; a private session keeps it in memory. */
   readonly siteSettings: SiteSettingsStore
@@ -167,6 +176,15 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
     updateOffers: {
       pending: (origin) => ctx.appUpdates?.pending(origin),
       onChange: (listener) => ctx.appUpdates?.onChange(listener) ?? (() => {})
+    },
+    tunnel: {
+      markOf: (url, partition) => {
+        const origin = originFromUrl(url)
+        const routes = ctx.routes
+        if (origin === null || routes === undefined) return null
+        return tunnelMarkFor({ state: routes.hub.state(origin), temporary: isTemporaryRoutePartition(partition), web3: BUILTIN_ADDRESSES.routesToVerifier(new URL(origin).hostname) })
+      },
+      onChange: (listener) => ctx.routes?.hub.onChange(() => { listener() }) ?? (() => {})
     },
     siteSettings: new SiteSettingsStore(runtime.isPrivate ? null : join(userDataPath, 'site-settings.json')),
     shortcuts: new ShortcutService(shortcutStore, platform),

@@ -1,9 +1,9 @@
-# ADR-0082: Nym is the built-in tunnel for installed apps, and runs as WebAssembly in a utility process of its own
+# ADR-0083: Nym is the built-in tunnel for installed apps, and runs as WebAssembly in a utility process of its own
 
 - **Status:** accepted
 - **Date:** 2026-10-13
 - **Type:** architecture / security
-- **Decided by:** owner (Nym ships inside Orivon and is the default far end of the tunnel, a person can choose their own SOCKS5 address instead, and Nym is named plainly: `d-0619`); AI recommendation accepted by default for the process shape (`d-0620`)
+- **Decided by:** owner (Nym ships inside Orivon and is the default far end of the tunnel, a person can choose their own SOCKS5 address instead, and Nym is named plainly: `d-0620`); AI recommendation accepted by default for the process shape (`d-0621`)
 
 ## Decision
 

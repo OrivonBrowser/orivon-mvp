@@ -2,6 +2,7 @@ import type { Row } from '../model.js'
 import { h } from '../../shared/dom.js'
 import { nymReason, nymStatusWords } from '../../../nym-words.js'
 import type { RoutePart } from '../route-part.js'
+import { renderTunnelList } from './route-list-row.js'
 import { renderProxyTest } from './route-test-row.js'
 
 const GROUP = 'Connections and tracking'
@@ -79,9 +80,9 @@ export const privacyNetworkRows: readonly Row[] = [
   },
   {
     id: 'route-kind',
-    label: 'Tunnel for apps',
-    help: 'Where the apps you send through a tunnel leave from. Nym is a mixnet built into Orivon: each app gets a tunnel of its own, and the sites it reaches see an exit address, not this computer. Or use your own SOCKS5 address, such as Tor\'s. You turn the tunnel on for each app under Apps; until then nothing goes through it. Websites do not use it.',
-    keywords: ['tunnel', 'proxy', 'socks', 'socks5', 'tor', 'onion', 'route', 'vpn', 'anonymous', 'network', 'apps', 'nym', 'mixnet', 'built in'],
+    label: 'Tunnel',
+    help: 'Where the apps and websites you send through a tunnel leave from. Nym is a mixnet built into Orivon: each app or website gets a tunnel of its own, and the sites it reaches see an exit address, not this computer. Or use your own SOCKS5 address, such as Tor\'s. You turn it on for each app under Apps, and for each website from the key in the address bar; until then nothing goes through it.',
+    keywords: ['tunnel', 'proxy', 'socks', 'socks5', 'tor', 'onion', 'route', 'vpn', 'anonymous', 'network', 'apps', 'sites', 'websites', 'nym', 'mixnet', 'built in'],
     group: GROUP,
     control: { type: 'choice', key: 'network.route.kind' }
   },
@@ -116,5 +117,13 @@ export const privacyNetworkRows: readonly Row[] = [
     keywords: ['tunnel', 'proxy', 'socks', 'tor', 'test', 'check', 'route', 'nym'],
     group: GROUP,
     control: { type: 'custom', render: renderProxyTest }
+  },
+  {
+    id: 'route-sites',
+    label: 'Sites and apps with their own tunnel setting',
+    help: 'A website that goes through the tunnel keeps its cookies and storage apart from the rest of your browsing, and that storage stays when you turn the tunnel off for it, until you remove it here.',
+    keywords: ['tunnel', 'proxy', 'tor', 'sites', 'websites', 'apps', 'storage', 'cookies', 'separate', 'remove', 'sign in'],
+    group: GROUP,
+    control: { type: 'custom', wide: true, render: renderTunnelList }
   }
 ]

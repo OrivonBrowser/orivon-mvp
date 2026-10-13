@@ -4,6 +4,7 @@ import type { ShellState, TabState } from '../../main/shell/tabs.js'
 import { paintMark, paintShield, shieldLabel, web3Shield } from '../web3-shield.js'
 import type { ChromeContext, ChromeModule } from './context.js'
 import { hasSite, must } from './context.js'
+import { TUNNEL_NOTES } from './content-dot.js'
 
 function originOf (url: string): string | null {
   try {
@@ -31,6 +32,7 @@ export function createSiteBadges (): ChromeModule {
   let shieldOrigin: string | null = null
   let permissionsRequestUrl: string | null = null
   let connectionSecure = false
+  let tunnelNote = ''
 
   function applyShield (score: Web3Score | null): void {
     if (shieldEl === undefined || web3ScoreBtn === undefined || web3MarkEl === undefined) return
@@ -80,7 +82,7 @@ export function createSiteBadges (): ChromeModule {
     sitePermissionsBtn.hidden = !summary.asked
     sitePermissionsBtn.classList.toggle('has-warning', summary.warning)
     const permissions = summary.warning ? 'Permissions — this site has an unlimited grant' : 'Permissions'
-    const label = connectionSecure ? `${permissions}. Connection is secure` : permissions
+    const label = [permissions, ...(connectionSecure ? ['Connection is secure'] : []), ...(tunnelNote === '' ? [] : [tunnelNote])].join('. ')
     sitePermissionsBtn.title = label
     sitePermissionsBtn.setAttribute('aria-label', label)
   }
@@ -135,8 +137,9 @@ export function createSiteBadges (): ChromeModule {
         ctx.shell.openSiteInfo(ctx.anchorFor(permissionsBtn), 'main', active.url)
       })
     },
-    render: (_state: ShellState, ctx) => {
+    render: (state: ShellState, ctx) => {
       const active = ctx.activeTab()
+      tunnelNote = state.tunnel === undefined || state.tunnel === null ? '' : TUNNEL_NOTES[state.tunnel]
       updateShield(active, ctx)
       updatePermissionsBadge(active, ctx)
     }
