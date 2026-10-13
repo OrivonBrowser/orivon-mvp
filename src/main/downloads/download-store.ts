@@ -39,7 +39,8 @@ function parseEntry (raw: unknown): DownloadEntry | null {
     state: state as DownloadState,
     ...(REASONS.includes(reason as DownloadReason) ? { reason: reason as DownloadReason } : {}),
     ...(isCount(endedAt) ? { endedAt } : {}),
-    ...(entry['held'] === true ? { held: true } : {})
+    ...(entry['held'] === true ? { held: true } : {}),
+    ...(entry['ownSession'] === true ? { ownSession: true as const } : {})
   }
 }
 

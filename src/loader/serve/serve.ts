@@ -116,6 +116,8 @@ export type RecordPinCoverage = (outcome: PinCoverageOutcome, bytes?: number) =>
 export { isNavigationRequest, resolveRequestPath } from './path.js'
 export type { ResolvedRequest } from './path.js'
 
+const SYSTEM_PROXY_REFUSAL = 'a system proxy is configured; this app is not routed, so Orivon will not reach the host around it'
+
 function denyResponse (reason: string): Response {
   return new Response(`Orivon: ${reason}`, { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } })
 }
@@ -204,7 +206,7 @@ export async function fetchThirdParty (
   const decision = await authoriseReach(url.hostname, port)
   if (!decision.allowed) {
     recordCoverage?.('denied')
-    return denyResponse('this host is not granted to this app')
+    return denyResponse(decision.reason === 'system-proxy' ? SYSTEM_PROXY_REFUSAL : 'this host is not granted to this app')
   }
   if (appOrigin !== undefined && isCorsPreflight(request)) return preflightResponse(request, appOrigin)
 
@@ -222,10 +224,13 @@ export async function fetchThirdParty (
     releaseReachSlot?.()
   }
   // A grant revoked while this request waited in the queue must not dial.
-  if (reserved instanceof Promise && !(await authoriseReach(url.hostname, port)).allowed) {
-    release()
-    recordCoverage?.('denied')
-    return denyResponse('this host is not granted to this app')
+  if (reserved instanceof Promise) {
+    const again = await authoriseReach(url.hostname, port)
+    if (!again.allowed) {
+      release()
+      recordCoverage?.('denied')
+      return denyResponse(again.reason === 'system-proxy' ? SYSTEM_PROXY_REFUSAL : 'this host is not granted to this app')
+    }
   }
 
   let response: Response

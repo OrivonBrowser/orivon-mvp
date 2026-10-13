@@ -61,7 +61,8 @@ export function machineDeps (settings: Pick<SettingsStore, 'get'>): DownloadDeps
     trash: async (path) => { await shell.trashItem(path) },
     rename: renameSync,
     removeFile: (path) => { rmSync(path, { force: true }) },
-    fetchAgain: (url) => { session.defaultSession.downloadURL(url) },
+    fetchAgain: (url, inSession) => { (inSession ?? session.defaultSession).downloadURL(url) },
+    isOwnSession: (other) => other !== session.defaultSession,
     now: Date.now,
     newId: () => randomBytes(8).toString('hex')
   }

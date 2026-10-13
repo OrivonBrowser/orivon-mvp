@@ -49,6 +49,9 @@ export class FakeItem extends EventEmitter {
   asItem (): DownloadItem { return this as unknown as DownloadItem }
 }
 
-export function fakeContents (id: number, url = 'https://site.example/page'): WebContents {
-  return { id, getURL: () => url, isDestroyed: () => false } as unknown as WebContents
+/** The one session every fake page shares unless a test gives it another. */
+export const DEFAULT_SESSION = { downloadURL: () => {} }
+
+export function fakeContents (id: number, url = 'https://site.example/page', session: object = DEFAULT_SESSION): WebContents {
+  return { id, getURL: () => url, isDestroyed: () => false, session } as unknown as WebContents
 }

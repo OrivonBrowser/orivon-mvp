@@ -126,6 +126,7 @@ export function stubBroker (
         calls.push({ method: 'app.socketAllowanceSync', origin, args: undefined })
         return overrides.socketAllowanceSync?.(origin) ?? LIMITS.defaultConcurrentSockets
       },
+      reachBypassesProxy: async () => false,
       registeredOriginsSync: () => [],
       persistedAppsSync: () => [],
       // Present so this stub still satisfies `Broker`; no test here drives
