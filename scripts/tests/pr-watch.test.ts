@@ -43,6 +43,14 @@ describe('nextStep', () => {
   it('never reruns any other failed check', () => {
     expect(nextStep({ ...base, checks: [fail('check'), fail('e2e-shard-1')] })).toEqual({ step: 'fail', failed: ['check', 'e2e-shard-1'] })
   })
+
+  it('reads past a check that a later run of the same check on the same commit cancelled', () => {
+    const cancelled = (name: string) => ({ name, conclusion: 'CANCELLED' })
+    expect(nextStep({ ...base, checks: [cancelled('check'), pass('check'), cancelled('scope'), pass('scope')] }).step).toBe('merge')
+    expect(nextStep({ ...base, checks: [cancelled('check'), { name: 'check', conclusion: '' }] }).step).toBe('wait')
+    expect(nextStep({ ...base, checks: [cancelled('check'), fail('check')] })).toEqual({ step: 'fail', failed: ['check'] })
+    expect(nextStep({ ...base, checks: [pass('scope'), cancelled('check')] })).toEqual({ step: 'fail', failed: ['check'] })
+  })
 })
 
 describe('failedSpecs', () => {
