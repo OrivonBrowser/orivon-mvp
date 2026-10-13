@@ -7,7 +7,7 @@ name: Release
 # package identity; it is kept as the workflow artifact `store-msix`, never attached to a release.
 # A pull request that touches packaging runs the same jobs without publishing. Each release
 # also gets an ipfs.json and its CID in its description, and a pinning node puts it on IPFS
-# (scripts/pin-releases.sh).
+# (scripts/pin-releases.sh), and its Windows installer is offered to winget (the winget job).
 on:
   release:
     types: [published]
@@ -27,6 +27,8 @@ permissions:
 env:
   KUBO_VERSION: v0.43.1
   KUBO_SHA256: 3f2bf974ab2a3ec6d997fac7d8cb46f59983a7cddd0b55ef998e6ce379155fb2
+  KOMAC_VERSION: v2.16.0
+  KOMAC_SHA256: 7d2707fa6210f2789a3702de49fbd150b736dbf426ee0b9bc8e098736f9fd82d
 
 jobs:
   package:
@@ -339,3 +341,101 @@ jobs:
           printf '%s\n\n### On IPFS\n\nThe same files, as one folder: `ipfs://%s`. Open it in Orivon, or run `ipfs get %s`. The Orivon node pins it within about 15 minutes, with the two releases before it.\n' \
             "$body" "$cid" "$cid" > notes.md
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
+
+  # Offers the Windows installer to winget-pkgs as a pull request from the owner's account. A winget
+  # install is never met with SmartScreen: the default source is trusted. It runs after `publish`, so
+  # the installer is a public asset, and it never checks out the repository or runs npm: the only
+  # program it runs besides the runner's own gh is the Komac pinned above, and only the last step
+  # holds the token. A release never goes red for a winget step that is not set up yet: that step
+  # writes a warning and succeeds (packaging.md section winget).
+  winget:
+    if: github.event_name == 'release'
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Choose the package, its version and its installer
+        id: choose
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+          HAS_TOKEN: ${{ secrets.WINGET_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          if [ "$PRERELEASE" = true ]; then
+            id=Orivon.Browser.Preview
+            dir=manifests/o/Orivon/Browser/Preview
+          else
+            id=Orivon.Browser
+            dir=manifests/o/Orivon/Browser
+          fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "run=false" >> "$GITHUB_OUTPUT"
+          steps="Steps: docs/development/release-checklist.md, item The winget package."
+
+          if [ "$HAS_TOKEN" != true ]; then
+            echo "::warning title=winget::$id $version was not submitted to winget-pkgs: the repository secret WINGET_TOKEN is empty. $steps"
+            exit 0
+          fi
+
+          # The versions winget-pkgs holds. A missing folder is a 404: the package is new to winget. The
+          # preview folder sits inside the full release's, so it is not a version.
+          if listing=$(gh api "repos/microsoft/winget-pkgs/contents/$dir" --jq '[.[] | select(.type == "dir") | .name | select(. != "Preview")] | join(" ")' 2>err.txt); then
+            :
+          elif grep -q 'HTTP 404' err.txt; then
+            listing=
+          else
+            cat err.txt >&2
+            exit 1
+          fi
+          if [ -z "$listing" ]; then
+            echo "::warning title=winget::$id $version was not submitted to winget-pkgs: it holds no version of $id yet, and Komac only adds a version to a package that exists. Submit the first one by hand. $steps"
+            exit 0
+          fi
+          for existing in $listing; do
+            if [ "$existing" = "$version" ]; then
+              echo "::notice title=winget::winget-pkgs already holds $id $version."
+              exit 0
+            fi
+          done
+
+          # Komac's own check for an open pull request is a prompt, which ends the run without submitting when CI=true.
+          open=$(gh api -X GET search/issues -f q="repo:microsoft/winget-pkgs is:pr is:open in:title \"$id version $version\"" --jq .total_count)
+          if [ "$open" != 0 ]; then
+            echo "::notice title=winget::winget-pkgs already has an open pull request for $id $version."
+            exit 0
+          fi
+
+          url=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq "[.assets[] | select(.name == \"Orivon-Setup-$version-x64.exe\") | .url] | first // empty")
+          if [ -z "$url" ]; then
+            echo "::warning title=winget::$id $version was not submitted to winget-pkgs: the release has no asset Orivon-Setup-$version-x64.exe."
+            exit 0
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "run=true" >> "$GITHUB_OUTPUT"
+
+      - name: Install Komac
+        if: steps.choose.outputs.run == 'true'
+        run: |
+          curl -fsSL -o komac.tar.gz "https://github.com/russellbanks/Komac/releases/download/$KOMAC_VERSION/komac-${KOMAC_VERSION#v}-x86_64-unknown-linux-gnu.tar.gz"
+          echo "$KOMAC_SHA256  komac.tar.gz" | sha256sum -c -
+          tar -xzf komac.tar.gz komac
+
+      # Komac forks winget-pkgs into the token's account when there is no fork, and opens the pull request from it.
+      - name: Submit the version to winget-pkgs
+        if: steps.choose.outputs.run == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
+          PACKAGE_ID: ${{ steps.choose.outputs.id }}
+          VERSION: ${{ steps.choose.outputs.version }}
+          URL: ${{ steps.choose.outputs.url }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: >-
+          ./komac update "$PACKAGE_ID" --version "$VERSION" --urls "$URL"
+          --release-notes-url "https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
+          --created-with "Orivon release workflow" --created-with-url "https://github.com/$GITHUB_REPOSITORY"
+          --skip-pr-check --submit
