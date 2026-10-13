@@ -137,6 +137,37 @@ WantedBy=timers.target
 `journalctl -u orivon-release-pinner` shows each run: a line per release pinned, refused or
 unpinned. A refused release is not downloaded again until its `ipfs.json` names another CID.
 
+## winget
+
+Every GitHub release also offers its Windows installer to [winget-pkgs](https://github.com/microsoft/winget-pkgs), the
+repository behind `winget install`. winget's default source is trusted, and winget marks an installer it downloads from it
+as coming from a trusted zone, so a winget install is not met with SmartScreen. That comes from reading winget's source,
+not from a run of Orivon's own installer (*provisional*: the first install of a merged Orivon package settles it).
+
+| Release | Package identifier |
+|---|---|
+| marked pre-release on GitHub | `Orivon.Browser.Preview` |
+| a full release | `Orivon.Browser` |
+
+The `winget` job of `release.yml` runs on a published release, after `publish` has attached the installer. It never
+checks out the repository or runs npm; the one program it downloads is [Komac](https://github.com/russellbanks/Komac),
+at the version and sha256 pinned in the workflow's `env`, and only its last step holds the token. It takes the version from
+the tag without its `v`, looks the installer up among the release's assets (`Orivon-Setup-<version>-x64.exe`) and runs
+`komac update`, which downloads the installer, reads its product code and uninstall entry, copies the previous version's
+descriptive fields and opens a pull request to `microsoft/winget-pkgs` from the fork it creates in the token's account.
+
+It succeeds with a warning, or a notice, and submits nothing, when:
+
+- the repository secret `WINGET_TOKEN` is empty;
+- winget-pkgs holds no version of the identifier yet, because Komac only adds a version to a package that exists (the
+  first version of each identifier is submitted by hand, [`release-checklist.md`](release-checklist.md) item The winget package);
+- winget-pkgs already holds that version, or has an open pull request for it;
+- the release has no such installer asset.
+
+Any other failure (Komac itself, the network) fails the job and only that job: the release and its packages are already
+published. Komac's own check for an open pull request is a prompt that ends a run with `CI=true` without submitting, so the
+job passes `--skip-pr-check` and does the check itself.
+
 ## The Microsoft Store package
 
 The Windows build also writes `Orivon-Store-<version>-x64.appx` (the `appx` target and block of
