@@ -4,21 +4,21 @@
  * A developer step, never part of `npm install` (Rule 8: it needs rustup). It clones the pinned tag into a cache
  * directory outside this repository, checks the commit, applies `vendor/nym-smolmix/smolmix-raw-tcp-udp.patch`,
  * fetches the pinned `wasm-bindgen` and `wasm-pack` binaries (each checked against its sha256) and runs the
- * crate's own `wasm-pack build`. The files to publish are left in `<cache>/artifact` (or `--out <dir>`), and the
- * `files` array for `resources/nym-tunnel/nym-tunnel.json` is printed.
+ * crate's own `wasm-pack build`. The cache is `~/.cache/orivon-nym-build`; the files to publish are left in its
+ * `artifact` folder, and the `files` array for `resources/nym-tunnel/nym-tunnel.json` is printed.
  *
- *   node scripts/build-nym-tunnel.mjs [--cache <dir>] [--out <dir>]
+ *   node scripts/build-nym-tunnel.mjs
  *
  * Needs `git`, `tar` and rustup's Rust 1.99.0 with the `wasm32-unknown-unknown` target:
  *   rustup toolchain install 1.99.0 --target wasm32-unknown-unknown
  *
- * `ORIVON_NYM_BUILD_CACHE` names the default cache directory. Plain Node, so it runs on every system (Rule 8).
+ * Plain Node, so it runs on every system (Rule 8).
  */
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { delimiter, dirname, join, resolve } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { isInvokedDirectly } from './cli.mjs'
@@ -110,10 +110,7 @@ async function prepareTools(tools) {
     const bytes = Buffer.from(await response.arrayBuffer())
     if (sha256(bytes) !== tool.sha256) throw new Error(`${tool.url} is not the pinned archive (sha256 ${sha256(bytes)})`)
     await mkdir(tools, { recursive: true })
-    const archive = join(tools, `${tool.folder}.tar.gz`)
-    await writeFile(archive, bytes)
-    run('tar', ['-xzf', archive, '-C', tools])
-    await rm(archive)
+    run('tar', ['-xzf', '-', '-C', tools], { input: bytes, stdio: ['pipe', 'inherit', 'inherit'] })
   }
   return folders
 }
@@ -174,14 +171,9 @@ export async function build({ cache, out }) {
   return files
 }
 
-function option(name) {
-  const at = process.argv.indexOf(name)
-  return at === -1 ? undefined : process.argv[at + 1]
-}
-
 if (isInvokedDirectly(import.meta.url)) {
-  const cache = resolve(option('--cache') ?? process.env.ORIVON_NYM_BUILD_CACHE ?? join(homedir(), '.cache', 'orivon-nym-build'))
-  const out = resolve(option('--out') ?? join(cache, 'artifact'))
+  const cache = join(homedir(), '.cache', 'orivon-nym-build')
+  const out = join(cache, 'artifact')
   try {
     const files = await build({ cache, out })
     console.log(`\nbuilt into ${out}; the files for resources/nym-tunnel/nym-tunnel.json:`)
