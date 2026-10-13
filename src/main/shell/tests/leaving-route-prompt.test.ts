@@ -1,0 +1,22 @@
+import { describe, expect, it } from 'vitest'
+import { leavingQuestion } from '../leaving-route-prompt.js'
+
+describe('the question a routed app raises by opening an address', () => {
+  it('names the app and the site, and offers the proxy, direct and cancel, in that order', () => {
+    const question = leavingQuestion('https://routed.example', { kind: 'website', origin: 'https://news.example' })
+    expect(question.message).toBe('https://routed.example wants to open https://news.example.')
+    expect(question.detail).toBe('Your proxy is on for this app. Open the page through your proxy, or directly?')
+    expect(question.buttons).toEqual(['Through my proxy', 'Directly', 'Cancel'])
+  })
+
+  it('offers to route the other app too when the address is an installed app whose route is off', () => {
+    const question = leavingQuestion('https://routed.example', { kind: 'app', origin: 'https://other.example' })
+    expect(question.buttons).toEqual(['Use my proxy for other.example too', 'Directly', 'Cancel'])
+    expect(question.detail).toContain('not for the app it wants to open')
+  })
+
+  it('shows the deciding end of a long host, as the grant prompt does', () => {
+    const question = leavingQuestion('https://routed.example', { kind: 'website', origin: 'https://accounts.google.com.attacker.example' })
+    expect(question.message).toBe('https://routed.example wants to open https://...com.attacker.example.')
+  })
+})

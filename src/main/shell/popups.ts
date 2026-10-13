@@ -8,6 +8,9 @@ import type { HandlerDetails, LoadURLOptions, WebContents, WebPreferences, Windo
 import { localFileKey, originFromUrl } from '../../broker/policy/origin.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { askableScheme } from '../sessions/external-links.js'
+import type { Leave } from '../route/leave-decision.js'
+import { isTemporaryRoutePartition } from '../route/temporary-routes.js'
+import type { LeaveChoice } from './leaving-route.js'
 
 export type PopupRoute = 'adopt' | 'new-tab'
 
@@ -101,6 +104,10 @@ export interface PopupHost {
   popupBlocked?: (details: HandlerDetails, opener: PopupOpener) => boolean
   /** Asks the person whether `url`, an address another program on the computer handles, may be handed to it: what a click on a link to it does. Absent in a test with no gate: such an open does nothing. */
   openExternal?: (url: string) => void
+  /** What opening `url` from a routed app's page asks the person, or undefined when nothing: the page is not a routed app's, or the address stays inside its sessions (route/leave-decision.ts). Absent in a test with no routes. */
+  leaveFor?: (url: string, from: PopupOpener) => Leave | undefined
+  /** Asks that question for the opener's tab and makes ready what the answer needs. Absent: such an open is cancelled. */
+  chooseLeave?: (leave: Leave, from: PopupOpener) => Promise<LeaveChoice>
 }
 
 /** The webContents Chromium already built for the open, if any -- present in the `options`
@@ -187,6 +194,16 @@ function newWindowLimiter (): Budget {
   return newBudget(MAX_NEW_WINDOWS_PER_MINUTE_PER_TAB, NEW_WINDOW_MIN_SPACING_MS)
 }
 
+/** A popup that asked for a window of its own is adopted into the opener's session, which for a routed app is routed: it is not the open web the question is about. A featureless open that is adopted (a shift-click) has no window of Chromium's to adopt and loads in the shared session. */
+function staysInOpenerSession (details: HandlerDetails, from: PopupOpener, host: PopupHost): boolean {
+  return details.features.trim() !== '' && host.gatewayTarget?.(details.url) === undefined && routePopup(details, from, host.partitionFor(details.url), host.isApp) === 'adopt'
+}
+
+/** An ordinary website opened from a page that is itself in a temporary routed session loads in that session, never in the shared one. */
+function opensInTemporarySession (url: string, from: PopupOpener, host: PopupHost): boolean {
+  return isTemporaryRoutePartition(from.partition) && host.gatewayTarget?.(url) === undefined && host.partitionFor(url) === undefined && originFromUrl(url) !== null
+}
+
 export function windowOpenHandler (
   host: PopupHost,
   opener: () => PopupOpener
@@ -211,6 +228,22 @@ export function windowOpenHandler (
       return { action: 'deny' }
     }
     const loadOptions = loadOptionsFor(details)
+    // As a new tab or window: a burst is bounded per tab and per process, and a window falls back to a tab.
+    const openOutside = (): void => {
+      const canOpenWindow = details.disposition === 'new-window' && processWindowBudget.allow() && limiter.allow()
+      if (!canOpenWindow || host.openWindow(details.url, loadOptions) === undefined) {
+        host.openTab(details.url, active, loadOptions)
+      }
+    }
+    const leave = host.leaveFor?.(details.url, from)
+    if (leave !== undefined && !staysInOpenerSession(details, from, host)) {
+      // Electron wants the answer to this call now and the person has not given theirs: the open is refused here (so `window.open` returns null) and made, if allowed, after the question.
+      void host.chooseLeave?.(leave, from).then((choice) => {
+        if (choice.kind === 'website') host.openBlobTab(details.url, choice.partition, active, loadOptions)
+        else if (choice.kind !== 'cancel') openOutside()
+      }).catch((error: unknown) => { console.error('[route] opening a window from a routed app failed:', error) })
+      return { action: 'deny' }
+    }
     if (host.gatewayTarget?.(details.url) !== undefined || routePopup(details, from, host.partitionFor(details.url), host.isApp) === 'new-tab') {
       // routePopup's 'new-tab' returns before disposition is ever weighed (a builtin address, a
       // cross-origin app target, an opener-severing feature) -- but a shift-click still reaches
@@ -218,10 +251,8 @@ export function windowOpenHandler (
       // Electron 44: a plain click or window.open() with no sizing features never produces it,
       // only a real sized popup or a genuine shift-click do), so it still deserves a window, not a
       // tab, through the same rate-limited path.
-      const canOpenWindow = details.disposition === 'new-window' && processWindowBudget.allow() && limiter.allow()
-      if (!canOpenWindow || host.openWindow(details.url, loadOptions) === undefined) {
-        host.openTab(details.url, active, loadOptions)
-      }
+      if (opensInTemporarySession(details.url, from, host)) host.openBlobTab(details.url, from.partition, active, loadOptions)
+      else openOutside()
       return { action: 'deny' }
     }
     return {
@@ -248,6 +279,9 @@ export function windowOpenHandler (
           // the shift-click/new-window branch below, since a blob: URL has no safe "new window" of
           // its own either; it only ever means "a tab in the session that minted it".
           if (blobMintedByOpener(details.url, from)) {
+            const opened = host.openBlobTab(details.url, from.partition, active, loadOptions)
+            if (opened !== undefined) return opened
+          } else if (opensInTemporarySession(details.url, from, host)) {
             const opened = host.openBlobTab(details.url, from.partition, active, loadOptions)
             if (opened !== undefined) return opened
           } else if (details.disposition === 'new-window' && processWindowBudget.allow() && limiter.allow()) {

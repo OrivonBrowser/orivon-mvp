@@ -12,7 +12,13 @@ import { pagesInPartitionOf } from '../app-setup/pages-in-partition.js'
 import { publishRoutes } from '../registry.js'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { readSettingBeforeReady } from '../settings/settings-file.js'
+import { isOriginPinnedSync, isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
+import { isPersistableOrigin } from '../../broker/policy/origin.js'
+import { setLeavingRoutes } from './leaving-routes.js'
 import { setLookupSessionSource } from './lookup-session.js'
+import { createRouteSwitch } from './route-switch.js'
+import { createTemporaryRoutes } from './temporary-routes.js'
+
 import { createRouteService } from './route-service.js'
 import { RouteStore } from './route-store.js'
 
@@ -39,7 +45,27 @@ export const routeSubsystem: Subsystem = {
     // The sessions handed out are Electron's own (`sessionFor` above), so the cast only restores what the controller's narrow type hides.
     setLookupSessionSource(async (origin) => await routes.controller.fetchSessionFor(origin) as Session | undefined)
     beforeAppSessionServes(async (appSession, origin) => { await routes.controller.appSessionRegistered(origin, appSession) })
+    const temporary = createTemporaryRoutes({
+      controller: routes.controller,
+      proxy: routes.proxy,
+      sessionFor: (partition) => session.fromPartition(partition),
+      liveContentsIn: (inside) => webContents.getAllWebContents().filter((contents) => !contents.isDestroyed() && contents.session === inside).length,
+      onContentsGone: (listener) => {
+        app.on('web-contents-created', (_event, contents) => {
+          // Read now: a destroyed contents no longer answers for its session.
+          const own = contents.session
+          contents.once('destroyed', () => { listener(own) })
+        })
+      }
+    })
+    setLeavingRoutes({
+      world: { isRouted: routes.hub.isRouted, isInstalledApp: isOriginServedFromCacheSync },
+      temporary,
+      routeSwitch: createRouteSwitch(routes, { isPinned: isOriginPinnedSync, isPersistable: isPersistableOrigin })
+    })
     publishRoutes(ctx, routes)
-    app.once('will-quit', () => { void routes.hub.dispose().catch((error: unknown) => { console.error('[route] stopping the fronts failed:', error) }) })
+    app.once('will-quit', () => {
+      void Promise.all([routes.hub.dispose(), temporary.dispose()]).catch((error: unknown) => { console.error('[route] stopping the fronts failed:', error) })
+    })
   }
 }

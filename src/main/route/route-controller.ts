@@ -44,8 +44,19 @@ export interface RouteController {
   appSessionRegistered: (origin: string, session: RouteSession) => Promise<void>
   /** A session in memory pointed at the app's front, for the lookups made about a routed app; undefined when the app is not routed. */
   fetchSessionFor: (origin: string) => Promise<RouteSession | undefined>
+  /** Points a session that belongs to no app at a front of its own, and puts the WebRTC policy on every web contents that opens in it. */
+  prepareTemporary: (session: RouteSession, front: TemporaryFront) => Promise<void>
+  /** The session is gone: its front's challenge is no longer answered. */
+  releaseTemporary: (session: RouteSession, front: TemporaryFront) => void
   /** Resolves when the switches heard so far have been applied. */
   settled: () => Promise<void>
+}
+
+/** What the controller needs of a front that is not an app's: where it listens and what it expects. */
+export interface TemporaryFront {
+  readonly port: number
+  readonly username: string
+  readonly secret: string
 }
 
 const CONFINED = 'disable_non_proxied_udp'
@@ -75,6 +86,9 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
   /** Web contents given the policy here, which are the only ones restored. */
   const confined = new WeakSet<RouteContents>()
   const fetchSessions = new Map<string, RouteSession>()
+  /** The sessions of temporary routed tabs and the credentials their fronts expect, by port. */
+  const temporarySessions = new Set<object>()
+  const temporaryFronts = new Map<number, TemporaryFront>()
   let queue: Promise<void> = Promise.resolve()
 
   const sessionsOf = (origin: string): Map<RouteSession, boolean> => {
@@ -97,12 +111,15 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     await turn
   }
 
+  async function pointAt (session: RouteSession, port: number): Promise<void> {
+    if (pointedAt.get(session) === port) return
+    await within(session.setProxy({ mode: 'fixed_servers', proxyRules: `http://127.0.0.1:${String(port)}` }))
+    pointedAt.set(session, port)
+  }
+
   async function point (origin: string, session: RouteSession): Promise<void> {
     if (hub.isRouted(origin)) {
-      const front = await hub.front(origin)
-      if (pointedAt.get(session) === front.port) return
-      await within(session.setProxy({ mode: 'fixed_servers', proxyRules: `http://127.0.0.1:${String(front.port)}` }))
-      pointedAt.set(session, front.port)
+      await pointAt(session, (await hub.front(origin)).port)
     } else if (pointedAt.has(session)) {
       pointedAt.delete(session)
       await within(session.setProxy({ mode: 'system' }))
@@ -155,6 +172,10 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
   })
 
   deps.onContentsCreated((contents) => {
+    if (temporarySessions.has(contents.session)) {
+      confined.add(contents)
+      contents.setWebRTCIPHandlingPolicy(CONFINED)
+    }
     for (const [origin, sessions] of known) {
       if (sessions.get(contents.session as RouteSession) === true && hub.isRouted(origin)) {
         confined.add(contents)
@@ -165,7 +186,8 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
 
   deps.onLogin((event, info, callback) => {
     if (!info.isProxy || info.host !== '127.0.0.1') return
-    const credentials = hub.credentialsForPort(info.port)
+    const front = temporaryFronts.get(info.port)
+    const credentials = front === undefined ? hub.credentialsForPort(info.port) : { username: front.username, password: front.secret }
     if (credentials === undefined) return
     event.preventDefault()
     callback(credentials.username, credentials.password)
@@ -186,6 +208,17 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
       }
       await prepare(origin, session, { webrtc: false })
       return session
+    },
+    prepareTemporary: async (session, front) => {
+      // Registered before the session is pointed, so a web contents made in it meanwhile already has the policy.
+      temporarySessions.add(session)
+      temporaryFronts.set(front.port, front)
+      await pointAt(session, front.port)
+    },
+    releaseTemporary: (session, front) => {
+      temporarySessions.delete(session)
+      temporaryFronts.delete(front.port)
+      pointedAt.delete(session)
     },
     settled: async () => {
       await hub.settled()

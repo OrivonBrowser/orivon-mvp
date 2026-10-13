@@ -31,12 +31,13 @@ export function refuseHeldWindow (wc: object, url: string): boolean {
   return true
 }
 
-type Refusable = { preventDefault: () => void, url: string, isMainFrame?: boolean }
+type Refusable = { preventDefault: () => void, url: string, isMainFrame?: boolean, defaultPrevented?: boolean }
 
 /** Drops what the page itself starts while held: a new address, a redirect, a script. A change of the address inside the same document fires none of these, so a single-page app keeps routing. */
 export function refuseHeldNavigation (wc: WebContents): void {
   const refuse = (event: Refusable): void => {
-    if (!isNavigationHeld(wc)) return
+    // Already stopped by whoever raised the question: nothing is dropped here.
+    if (!isNavigationHeld(wc) || event.defaultPrevented) return
     console.log('[orivon] dropped a navigation while a question about the page is open:', event.url)
     event.preventDefault()
   }

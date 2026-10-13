@@ -296,3 +296,50 @@ describe('the session lookups made about a routed app go through', () => {
     expect(sessionFor(session.name)).toBe(session)
   })
 })
+
+describe('a temporary routed session', () => {
+  const front = { port: 41_001, username: 'orivon', secret: 'temporary-secret' }
+
+  it('is pointed at its own front, never at the app\'s, and stays there when an app\'s route changes', async () => {
+    const { store, controller, sessionFor } = setup([APP])
+    await controller.appSessionRegistered(APP, sessionFor('app'))
+    const session = sessionFor('temporary')
+
+    await controller.prepareTemporary(session, front)
+    store.set(APP, false)
+    store.set(APP, true)
+    await controller.settled()
+
+    expect(session.proxies).toEqual(['fixed_servers:http://127.0.0.1:41001'])
+    expect(session.proxies.join()).not.toMatch(/direct/)
+  })
+
+  it('puts the WebRTC policy on the web contents opened in it, and on no others', async () => {
+    const { controller, sessionFor, created } = setup()
+    const session = sessionFor('temporary')
+    await controller.prepareTemporary(session, front)
+
+    const inside = fakeContents(session)
+    const outside = fakeContents(sessionFor('other'))
+    created(inside)
+    created(outside)
+
+    expect(inside.policy).toEqual(['disable_non_proxied_udp'])
+    expect(outside.policy).toEqual([])
+  })
+
+  it('has its front\'s challenge answered until it is released', async () => {
+    const { controller, sessionFor, login } = setup()
+    const session = sessionFor('temporary')
+    await controller.prepareTemporary(session, front)
+
+    const answered = vi.fn()
+    login({ preventDefault: () => {} }, { isProxy: true, host: '127.0.0.1', port: front.port }, answered)
+    expect(answered).toHaveBeenCalledWith('orivon', 'temporary-secret')
+
+    controller.releaseTemporary(session, front)
+    const after = vi.fn()
+    login({ preventDefault: () => {} }, { isProxy: true, host: '127.0.0.1', port: front.port }, after)
+    expect(after).not.toHaveBeenCalled()
+  })
+})

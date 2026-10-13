@@ -6,6 +6,7 @@ import { startNavigation } from './leave-page-prompt.js'
 import { listOf } from './tab-history.js'
 import { EMPTY_OUTER, stepBack, stepForward } from './tab-outer-history.js'
 import { appTabFlagChanged, partitionChanged } from './tab-partition.js'
+import { isTemporaryRoutePartitionLive } from '../route/leaving-routes.js'
 import type { TabRecord } from './tab-types.js'
 
 /** Moves the tab to a view of `target`'s session when the tab's own is not it, or its app-tab flag differs
@@ -15,8 +16,14 @@ export function repartitionForTarget (id: string, record: TabRecord, target: str
   if (swap === undefined && !appTabFlagChanged(target, record.view, record.host.broker)) return false
   // swap.to can itself be undefined (PartitionSwap's own doc) -- ??
   // would wrongly read that as "no swap" and keep the old partition.
-  repartitionView(id, record, target, swap !== undefined ? swap.to : record.partition, step)
+  repartitionView(id, record, target, swap !== undefined ? stepTarget(record, swap.to, step) : record.partition, step)
   return true
+}
+
+/** A step onto a page of the open web, from the tab's other session, goes back to the temporary routed session the tab left an app for, while that is alive: Forward onto a page the person chose to open through their proxy never loads it directly. */
+function stepTarget (record: TabRecord, to: string | undefined, step: boolean): string | undefined {
+  if (!step || to !== undefined || record.routedAway === undefined || !isTemporaryRoutePartitionLive(record.routedAway)) return to
+  return record.routedAway
 }
 
 /** Back from the first page of the tab's view, or Forward from its last, to the page of the tab's outer history
