@@ -106,6 +106,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Installed apps can send all their traffic through a SOCKS5 proxy like Tor, per app; what it cannot carry is refused, never sent direct.
 - A routed app opening a website now asks first: through the proxy in a throwaway tab, directly, or not at all.
 - Pre-release security review: scanners triaged, four code reviews; fixed proxy bypass on app loads, download retry session, extension pattern freeze.
+- Orivon also ships as a Microsoft Store package, signed by Microsoft, so Store installs show no SmartScreen warning; no certificate bought.
 
 ### In my head
 
