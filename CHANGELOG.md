@@ -100,7 +100,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
-- **Nym privacy**: Settings > Privacy and data offers Balanced (the default, a fraction of the processor time) or Strongest (Nym's steady decoy traffic, about a third of a core for each open tunnel).
+- **Nym privacy**: Settings > Privacy and data offers Balanced (the default, a fraction of the processor time) or Strongest (Nym's steady decoy traffic, about a third of a core for each open tunnel). Tunnels now start at Balanced unless you choose Strongest.
 - **A website can go through the tunnel too**: the key in the address bar offers "Use the tunnel for this site". The site then gets its own
   storage, kept apart from the rest of your browsing (you are told first, and sign in to it again once), and Settings lists the sites and apps with a setting of their own (ADR-0082).
 - **An installed app can send everything through a tunnel**: set your own SOCKS5 address (Tor on `127.0.0.1:9050`, say) as the tunnel under Privacy and data, then

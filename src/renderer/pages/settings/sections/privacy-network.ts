@@ -102,7 +102,7 @@ export const privacyNetworkRows: readonly Row[] = [
   {
     id: 'route-nym-privacy',
     label: 'Nym privacy',
-    help: 'Balanced: uses little power. Someone watching your connection can see roughly when you are active, not what you do. Strongest: Nym\'s full protection, a steady stream of decoy traffic that hides when you are active. It uses about a third of a processor core for each open tunnel. A tunnel that is open is replaced as soon as its app stops using it.',
+    help: 'Balanced: uses little power. Someone watching your connection can see roughly when you are active, not what you do. Strongest: Nym\'s full protection, a steady stream of decoy traffic that hides when you are active. It uses about a third of a processor core for each open tunnel. A tunnel that is open is replaced when its app has nothing open on it, so an app that always has a connection open keeps its old level.',
     keywords: ['nym', 'mixnet', 'privacy', 'cover traffic', 'decoy', 'power', 'battery', 'cpu', 'processor', 'balanced', 'strongest', 'tunnel'],
     group: GROUP,
     visible: (state) => state.value('network.route.kind') !== 'socks5',
