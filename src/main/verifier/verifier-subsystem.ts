@@ -25,6 +25,7 @@ import { chooseCheckpoint, MAX_CHECKPOINT_AGE_SECONDS, slotTimestamp } from './c
 import type { CheckpointChoice } from './checkpoint.js'
 import { DEFAULT_ENDPOINTS } from './endpoints.js'
 import { HostSupervisor } from './host-supervisor.js'
+import { TrafficLedger } from './traffic-ledger.js'
 import type { ProcessInfo } from './process-supervisor.js'
 import { loopbackPort } from './loopback-port.js'
 import shippedCheckpoint from './mainnet-checkpoint.json'
@@ -323,19 +324,11 @@ export async function verifierEthContentCid (host: string, partition: string): P
   }
 }
 
-/** What the verifier host has read from each local node this session (`node-traffic.ts`): by the node's name, reads in flight now and bytes read in all, the bytes of earlier hosts included. */
-const traffic = new Map<string, { active: number, bytes: number }>()
-const trafficBefore = new Map<string, number>()
+/** What the verifier host has read from each local node this session (`traffic-ledger.ts`): reads in flight now, and bytes in all, those of earlier hosts included. */
+const ledger = new TrafficLedger(new Set(NODES.keys()))
 
 export function nodeTraffic (node: string): { readonly active: number, readonly bytes: number } {
-  const now = traffic.get(node)
-  return { active: now?.active ?? 0, bytes: (trafficBefore.get(node) ?? 0) + (now?.bytes ?? 0) }
-}
-
-/** The host is gone or asleep: what it counted is kept, and nothing is in flight. */
-function foldTraffic (): void {
-  for (const [node, counted] of traffic) trafficBefore.set(node, (trafficBefore.get(node) ?? 0) + counted.bytes)
-  traffic.clear()
+  return ledger.read(node)
 }
 
 /** The verifier host's process while it runs, for the popup's memory and uptime rows. */
@@ -395,7 +388,7 @@ export const verifierSubsystem: Subsystem = {
           changed()
         },
         idle: () => {
-          foldTraffic()
+          ledger.fold()
           fingerprint = undefined
           hostDown = undefined
           hostAsleep = true
@@ -415,7 +408,7 @@ export const verifierSubsystem: Subsystem = {
           changed()
         },
         down: (reason) => {
-          foldTraffic()
+          ledger.fold()
           fingerprint = undefined
           hostAsleep = false
           hostDown = reason
@@ -443,8 +436,7 @@ export const verifierSubsystem: Subsystem = {
         nameScheme: (name, scheme) => {
           if (verifierStore().saveNameScheme(name, scheme)) announceNameSchemeChange()
         },
-        // Only the nodes this build runs: the host parses hostile content, and a name it makes up is never kept.
-        nodeTraffic: (name, active, bytes) => { if (NODES.has(name)) traffic.set(name, { active, bytes }) },
+        nodeTraffic: (name, active, bytes) => { ledger.record(name, active, bytes) },
         nodeWanted: (name) => {
           const node = NODES.get(name)
           if (node === undefined) return
