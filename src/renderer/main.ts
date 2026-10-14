@@ -1,6 +1,6 @@
 import type { OrivonShell } from '../preload/shell.js'
 import { createChromeContext, must } from './chrome/context.js'
-import { guardMiddleClickPaste } from './middle-click-guard.js'
+import { guardMiddleClickPaste } from './pages/shared/middle-click-guard.js'
 import { dispatchShellEvent, initModules, renderModules } from './chrome/modules.js'
 
 // The chrome view's whole job: render ShellState, turn clicks and typing into orivonShell.* commands.

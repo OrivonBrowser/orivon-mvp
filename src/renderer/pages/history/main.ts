@@ -3,7 +3,7 @@
 // closed a moment ago. What is kept, and for how long, is set in Settings.
 import type { HistoryEntry } from '../../../main/history/history-store.js'
 import type { HistoryStatus } from '../../../main/history/history-service.js'
-import { guardMiddleClickPaste } from '../../middle-click-guard.js'
+import { guardMiddleClickPaste } from '../shared/middle-click-guard.js'
 import { internalBridge } from '../shared/bridge.js'
 import { h, replaceChildren } from '../shared/dom.js'
 import { clockIcon } from '../shared/icons.js'

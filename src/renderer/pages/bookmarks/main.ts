@@ -1,6 +1,6 @@
 // The Bookmarks page: every bookmark and folder in a tree and a list, with search, editing in place, filing rows in
 // folders by dialog or drag, delete with undo, and the bookmarks saved as the HTML file other browsers read.
-import { guardMiddleClickPaste } from '../../middle-click-guard.js'
+import { guardMiddleClickPaste } from '../shared/middle-click-guard.js'
 import { coalesce } from '../shared/coalesce.js'
 import { h, replaceChildren } from '../shared/dom.js'
 import { bookmarkIcon, moreIcon, plusIcon } from '../shared/icons.js'

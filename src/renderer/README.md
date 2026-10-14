@@ -5,7 +5,7 @@ entirely.
 
 | Entry | What it is |
 |---|---|
-| (top level) | The chrome view: `main.ts` starts the modules in [`chrome/`](chrome/) (tab strip, navigation, site badges, the toolbar cluster, the bookmarks bar; each a `ChromeModule`), and the tab drag helpers here (`tab-drag.ts`, the pointer-capture drag, and `native-tab-drag.ts`, the browser's own drag and drop that a native Wayland session uses; and `middle-click-guard.ts`, installed once by the chrome, the overlay page and the history and bookmarks pages so a middle-click that acts does not paste the Linux selection into the focused field), in its own `WebContentsView` above the active tab |
+| (top level) | The chrome view: `main.ts` starts the modules in [`chrome/`](chrome/) (tab strip, navigation, site badges, the toolbar cluster, the bookmarks bar; each a `ChromeModule`), and the tab drag helpers here (`tab-drag.ts`, the pointer-capture drag, and `native-tab-drag.ts`, the browser's own drag and drop that a native Wayland session uses), in its own `WebContentsView` above the active tab |
 | [`chrome/`](chrome/) | The chrome view's features, one file each, and the three toolbar slots a feature puts a button in |
 | [`newtab/`](newtab/) | The new-tab dashboard: ordinary content in a fresh tab's own view (`src/main/shell/tabs.ts`'s `createTab()`), not part of the chrome |
 | [`permissions/`](permissions/) | The all-sites permissions popup: every app and its grants, revoke-only |
@@ -14,7 +14,7 @@ entirely.
 | [`overlay/`](overlay/) | The one page every overlay shows: the main menu, and a page per feature that shows Orivon HTML above the page (`src/main/overlays/`) |
 | [`drop-catcher/`](drop-catcher/) | The empty transparent page of the view laid over a window's page while a tab is dragged (`src/main/shell/drop-catcher.ts`); its preload does the listening |
 | [`split-frame/`](split-frame/) | The view behind the two panes of a split: the divider, the ring round the pane in use, and where a dragged tab would go |
-| [`pages/`](pages/) | The shell's own pages, each a tab (`orivon://settings`, `history`, `downloads`, `bookmarks`, `import`, `about`, `tasks`, `profiles`, `private`, `extensions`, `report`), on the tokens and controls in `pages/shared/` |
+| [`pages/`](pages/) | The shell's own pages, each a tab (`orivon://settings`, `history`, `downloads`, `bookmarks`, `import`, `about`, `tasks`, `profiles`, `private`, `extensions`, `report`), on the tokens and controls in `pages/shared/`. `pages/shared/middle-click-guard.ts` is installed once by the chrome, the overlay page and the history and bookmarks pages, so a middle-click that acts does not paste the Linux selection into the focused field; it lives under `pages/` because a page in development reaches only `/pages/`, `/src/`, `/node_modules/` and `/@` paths of the dev server |
 
 **What it depends on.** The chrome view on `src/preload/shell.ts`'s commands, typed by that file's
 `OrivonShell` so a dropped command fails the typecheck, and `newtab/` on

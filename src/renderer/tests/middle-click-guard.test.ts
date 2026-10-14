@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { guardMiddleClickPaste, isEditableTarget } from '../middle-click-guard.js'
-import type { MouseUpEventLike } from '../middle-click-guard.js'
+import { guardMiddleClickPaste, isEditableTarget } from '../pages/shared/middle-click-guard.js'
+import type { MouseUpEventLike } from '../pages/shared/middle-click-guard.js'
 
 function install (): (event: Partial<MouseUpEventLike> & { target: unknown }) => boolean {
   let listener: ((event: MouseUpEventLike) => void) | undefined

@@ -2,7 +2,7 @@
 // view's overlay, mounts it, tells it about each show, reports the content
 // height so main can size the view, and closes on Escape.
 import { h } from '../pages/shared/dom.js'
-import { guardMiddleClickPaste } from '../middle-click-guard.js'
+import { guardMiddleClickPaste } from '../pages/shared/middle-click-guard.js'
 import { createOverlay, mountPage, readyEvents, shownPayload } from './kit.js'
 import { OVERLAY_PAGES } from './pages.js'
 
