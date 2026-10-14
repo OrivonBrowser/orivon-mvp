@@ -123,6 +123,17 @@ describe('registerDnrApiHandlers', () => {
     expect(handler.callback({ extension: { id: 'ext-1' } }, { regex: 'a.*b' })).toEqual({ isSupported: true })
   })
 
+  it('isRegexSupported refuses what the rule validator refuses, so an extension learns of it', () => {
+    const router = fakeRouter()
+    registerDnrApiHandlers(router as any, fakeBadgeHost(), '/userdata')
+    const handler = router.handlers.get('declarativeNetRequest.isRegexSupported')!
+    const ask = (regex: string) => handler.callback({ extension: { id: 'ext-1' } }, { regex })
+    expect(ask('(?:[a-z0-9/._-]+)+\\x01')).toEqual({ isSupported: false, reason: 'memoryLimitExceeded' })
+    expect(ask('a'.repeat(2049))).toEqual({ isSupported: false, reason: 'memoryLimitExceeded' })
+    expect(ask('(a)\\1')).toEqual({ isSupported: false, reason: 'syntaxError' })
+    expect(ask('^https?://(?:[a-z0-9-]+\\.)*example\\.com/')).toEqual({ isSupported: true })
+  })
+
   it('getMatchedRules requires declarativeNetRequestFeedback, refusing an extension without it even though it holds plain declarativeNetRequest', () => {
     registryEntries = [extensionEntry('ext-1', ['declarativeNetRequest'])]
     const router = fakeRouter()

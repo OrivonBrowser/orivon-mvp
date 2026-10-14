@@ -45,6 +45,15 @@ none of them Electron-specific.
 
 ## Design notes
 
+**A `regexFilter` is bounded before it is compiled.** Chrome matches it with RE2, in time linear in
+the URL; this engine uses the JavaScript `RegExp`, which backtracks, and `evaluate()` runs on the
+main thread for every request. `RuleValidator` therefore refuses a pattern that is over 2,048
+characters, that uses a backreference or lookaround, or that could take exponential or high-degree
+polynomial time (`vendor/firefox-dnr/adapters/dnr-regex-safety.mjs`, patch 18): a repeated group
+whose iterations can be cut apart in more than one way, an alternation inside a repeated group
+whose branches start alike, or three overlapping unbounded repetitions in a row. A static ruleset
+drops such a rule like any other invalid one, and `isRegexSupported` gives the same answer.
+
 **Static rules draw on a global pool, as in Chrome.** An extension's enabled static rulesets hold
 up to `GUARANTEED_MINIMUM_STATIC_RULES` (30,000) rules on their own; rules beyond that come out
 of a pool of 300,000 shared by every extension (`GLOBAL_STATIC_RULE_POOL`, `dnr-engine.ts`),

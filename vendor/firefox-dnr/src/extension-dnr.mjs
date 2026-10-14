@@ -73,6 +73,7 @@
 import { ExtensionError, DefaultWeakMap } from '../adapters/dnr-errors.mjs'
 import { newURI, applyQueryTransform, applyURLTransform } from '../adapters/dnr-uri.mjs'
 import { getBaseDomain } from '../adapters/dnr-domain.mjs'
+import { regexFilterProblem } from '../adapters/dnr-regex-safety.mjs'
 import { ExtensionDNRLimits } from './dnr-limits.mjs'
 
 // Patch 16 (UPSTREAM.md): the scheme allowlist a redirect's final target
@@ -1223,6 +1224,14 @@ class RuleValidator {
       }
     } else if (regexFilter != null) {
       if (!checkEmptyOrNonASCII(regexFilter, 'regexFilter')) {
+        return false
+      }
+      // Patch 18 (UPSTREAM.md): Chrome matches regexFilter with RE2, in time
+      // linear in the URL; this engine uses the backtracking RegExp, so a
+      // pattern that could blow up is refused here instead.
+      const problem = regexFilterProblem(regexFilter)
+      if (problem) {
+        this.#collectInvalidRule(rule, problem.message)
         return false
       }
       try {

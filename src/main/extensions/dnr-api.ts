@@ -8,6 +8,7 @@
 // loaded manifest no longer has it.
 
 import type { ExtensionRouterHandle } from 'orivon:crx-extensions'
+import { regexFilterProblem } from '../../../vendor/firefox-dnr/adapters/dnr-regex-safety.mjs'
 import { getCachedStrippedPermissions, getDnrEngine, slotDirForLoadedExtension } from './extensions-dnr.js'
 import { parseActionOptions } from './dnr-action-options.js'
 import { writeBadgeCountMode, writeDynamicRules, writeEnabledRulesetOverride } from './dnr/dnr-runner.js'
@@ -197,18 +198,19 @@ export function registerDnrApiHandlers(
   handle(
     'declarativeNetRequest.isRegexSupported',
     (_event, options: { regex: string, isCaseSensitive?: boolean }) => {
-      // This engine's regexFilter matcher is a plain JS RegExp
-      // (vendor/firefox-dnr/src/extension-dnr.mjs's compileRegexFilter), not
-      // RE2 like Chrome's real one: this answers "does RegExp accept it",
-      // not whether Chrome's own (narrower) RE2 syntax or complexity limits
-      // would also accept it.
+      // The matcher is a backtracking JS RegExp, not RE2: this answers what the
+      // rule validator would do with the pattern (syntax, then the size and
+      // backtracking bounds of dnr-regex-safety.mjs). That is stricter than
+      // Chrome's RE2 only where a backtracking engine needs a bound.
       try {
         // eslint-disable-next-line no-new -- validity check only
         new RegExp(options.regex, options.isCaseSensitive === false ? 'i' : '')
-        return { isSupported: true }
       } catch {
         return { isSupported: false, reason: 'syntaxError' }
       }
+      const problem = regexFilterProblem(options.regex)
+      if (problem === null) return { isSupported: true }
+      return { isSupported: false, reason: problem.kind === 'syntax' ? 'syntaxError' : 'memoryLimitExceeded' }
     },
     gated
   )
