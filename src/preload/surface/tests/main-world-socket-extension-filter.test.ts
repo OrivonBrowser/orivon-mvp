@@ -436,6 +436,89 @@ describe('installOrivon: real caller attribution', () => {
       await expect(corePrototypeTamperedCall()).rejects.toMatchObject({ name: 'OrivonError', code: 'denied' })
     })
 
+    // Bypass: the CallSite array was converted with the saved Array.prototype.map,
+    // which builds its result through the LIVE Array.prototype.constructor and
+    // Array[Symbol.species]; a MAIN-world script that redefines either after
+    // install could hand back a forged, extension-free frame list. Fixed: the
+    // list is built by an indexed loop into a literal, with no built-in a page can
+    // redefine consulted after install. Each tamper below runs from an extension
+    // frame in the same realm the install ran in, after it.
+    const SWALLOWING_SPECIES = `
+      const forgedFrame = { getFileName: () => 'https://forged.example/page.js' }
+      const swallower = function () {
+        return new Proxy({}, {
+          defineProperty () { return true },
+          has (_t, key) { return key === '0' },
+          get (_t, key) { return key === 'length' ? 1 : key === '0' ? { fileName: 'https://forged.example/page.js' } : undefined }
+        })
+      }
+    `
+    const TAMPERS: Record<string, string> = {
+      'Array.prototype.constructor species': `${SWALLOWING_SPECIES}\nArray.prototype.constructor = { [Symbol.species]: swallower }`,
+      'Array[Symbol.species] getter': `${SWALLOWING_SPECIES}\nObject.defineProperty(Array, Symbol.species, { get () { return swallower }, configurable: true })`,
+      'an Array.prototype index setter and getter': `
+        const lie = { fileName: 'https://forged.example/page.js' }
+        for (const i of [0, 1, 2, 3, 4, 5, 6, 7]) Object.defineProperty(Array.prototype, i, { set () {}, get () { return lie }, configurable: true })
+      `,
+      'Array.prototype[Symbol.iterator] and Array.prototype.length-reading helpers': `
+        Array.prototype[Symbol.iterator] = function* () { yield { fileName: 'https://forged.example/page.js' } }
+        Array.prototype.push = function () { return 0 }
+        Array.prototype.indexOf = function () { return 0 }
+        Array.prototype.includes = function () { return true }
+        Array.prototype.toString = function () { return 'https://forged.example/page.js' }
+      `,
+      'Object.prototype accessors a property descriptor would read': `
+        for (const key of ['get', 'set', 'value', 'writable', 'enumerable', 'configurable', 'fileName', 'length']) {
+          Object.defineProperty(Object.prototype, key, Object.assign(Object.create(null), { get () { return key === 'fileName' ? 'https://forged.example/page.js' : undefined }, set () {}, configurable: true }))
+        }
+      `
+    }
+
+    function tamperedRealm (tamper: string): { call: (filename: string, expression: string) => unknown } {
+      const context = vm.createContext({})
+      new vm.Script(`
+        ${FAKE_BRIDGE_SRC}
+        const installOrivon = ${installOrivon.toString()}
+        globalThis.target = {}
+        installOrivon(fakeBridge(), ${JSON.stringify(LIMITS)}, globalThis.target)
+      `, { filename: 'https://orivon-test.example/install.js' }).runInContext(context)
+      // orivon:locked-global -- the throwaway vm realm's own built-ins, simulating a MAIN-world extension script that runs after install, never the real process's own
+      new vm.Script(tamper, { filename: 'chrome-extension://abcdefghijklmnopabcdefghijklmnop/tamper.js' }).runInContext(context)
+      return { call: (filename, expression) => new vm.Script(expression, { filename }).runInContext(context) }
+    }
+    const EXTENSION_FILE_NAME = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop/content.js'
+    const PAGE_FILE_NAME = 'https://orivon-test.example/app.js'
+    const MANIFEST_CALL = 'target.orivon.app.manifest()'
+    const SYNC_CALL = 'target.orivon.fs.readFileSync("/a")'
+    const PAGE_ATTRIBUTION = 'const slot = target[Symbol.for("orivon.internal-net")]; function exclude () { return slot.callerIsPage(exclude) }; exclude()'
+
+    describe.each(Object.entries(TAMPERS))('after %s is redefined', (_name, tamper) => {
+      it('a call from an extension frame is still refused', async () => {
+        await expect(tamperedRealm(tamper).call(EXTENSION_FILE_NAME, MANIFEST_CALL)).rejects.toMatchObject({ name: 'OrivonError', code: 'denied' })
+      })
+
+      it('the synchronous method still refuses an extension frame by throwing', () => {
+        expect(() => tamperedRealm(tamper).call(EXTENSION_FILE_NAME, SYNC_CALL)).toThrow(expect.objectContaining({ name: 'OrivonError', code: 'denied' }))
+      })
+
+      it('the routed network still sees an extension frame as not the page', () => {
+        expect(tamperedRealm(tamper).call(EXTENSION_FILE_NAME, PAGE_ATTRIBUTION)).toBe(false)
+      })
+
+      it('a call from the page\'s own frame still works', async () => {
+        const realm = tamperedRealm(tamper)
+        await expect(realm.call(PAGE_FILE_NAME, MANIFEST_CALL)).resolves.toEqual({ orivonApiVersion: 0 })
+        expect(realm.call(PAGE_FILE_NAME, PAGE_ATTRIBUTION)).toBe(true)
+      })
+
+      it('Error.prepareStackTrace and stackTraceLimit are put back after a call', async () => {
+        const realm = tamperedRealm(tamper)
+        const before = realm.call(PAGE_FILE_NAME, 'JSON.stringify([Object.getOwnPropertyDescriptor(Error, "prepareStackTrace") === undefined, Error.stackTraceLimit])')
+        await realm.call(PAGE_FILE_NAME, MANIFEST_CALL)
+        expect(realm.call(PAGE_FILE_NAME, 'JSON.stringify([Object.getOwnPropertyDescriptor(Error, "prepareStackTrace") === undefined, Error.stackTraceLimit])')).toBe(before)
+      })
+    })
+
     it('did not touch this process\'s own String/Array/RegExp prototypes', () => {
       expect('abc'.indexOf('b')).toBe(1)
       expect('abc'.startsWith('ab')).toBe(true)
