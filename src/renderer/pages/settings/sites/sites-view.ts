@@ -26,10 +26,12 @@ function kindRow (origin: string, row: SiteKindRow, part: SitesPart): HTMLElemen
 }
 
 function deviceRow (origin: string, device: SiteDeviceRow, part: SitesPart): HTMLElement {
-  const forget = h('button', { className: 'btn small', type: 'button', textContent: 'Forget', onclick: () => { void part.forgetDevice(origin, device.key) } })
-  forget.setAttribute('aria-label', `Forget ${device.label} on ${hostOf(origin)}`)
-  forget.dataset['focusKey'] = `${origin}:device:${device.key}`
-  return h('li', { className: 'site-kind' }, h('span', { className: 'site-kind-label' }, h('span', { textContent: device.label })), forget)
+  // A device the site may use is a switch that is on; switching it off takes the approval away and the row goes.
+  const input = h('input', { type: 'checkbox', checked: true })
+  input.setAttribute('aria-label', `${device.label} on ${hostOf(origin)}`)
+  input.dataset['focusKey'] = `${origin}:device:${device.key}`
+  input.addEventListener('change', () => { input.dataset['settled'] = 'true'; void part.forgetDevice(origin, device.key) })
+  return h('li', { className: 'site-kind' }, h('span', { className: 'site-kind-label' }, h('span', { textContent: device.label })), h('span', { className: 'switch' }, input, h('span', { className: 'track' })))
 }
 
 function resetButton (site: SiteSummary, part: SitesPart): HTMLButtonElement {

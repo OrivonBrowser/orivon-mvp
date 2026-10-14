@@ -14,6 +14,7 @@ import { startupDomain } from '../startup/startup-domain.js'
 import { shortcutsDomain } from '../shortcuts/shortcuts-domain.js'
 import { pagesDomain } from './pages-domain.js'
 import { appsDomain } from '../permissions/apps-domain.js'
+import { createAppSwitches } from '../permissions/app-switches.js'
 import type { AppRoutes } from '../permissions/apps-domain.js'
 import { probeSocks5 } from '../../broker/route/socks5-probe.js'
 import { routeDomain } from '../route/route-domain.js'
@@ -187,7 +188,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       deleteFile: async (key) => await deleteLocalFileData({ broker: ctx.broker, userDataPath: app.getPath('userData'), clearPartition: async (partition) => { await session.fromPartition(partition).clearData() } }, key),
       clearShared: async () => { await session.fromPartition(LOCAL_FILES_PARTITION).clearData() }
     }),
-    apps: appsDomain({ permissions, devices: deviceRows, links: services.schemeChoices, userDataPath: app.getPath('userData'), identity: identityKeyStorage, routes: appRoutes }),
+    apps: appsDomain({ permissions, switches: createAppSwitches(ctx), devices: deviceRows, links: services.schemeChoices, userDataPath: app.getPath('userData'), identity: identityKeyStorage, routes: appRoutes }),
     route: routeDomain({ proxy: () => services.settings.get('network.route.proxy'), kind: () => services.settings.get('network.route.kind'), probe: probeSocks5, nym: routes.nym, routeSwitch: routes.routeSwitch, settingsUnreadable: () => services.settings.fileUnreadable() }),
     web3: web3Domain({
       view: verifierView,

@@ -62,3 +62,29 @@ describe('AppsState.setRoute', () => {
     expect(request).toHaveBeenCalledWith('apps', { type: 'setRoute', origin: 'https://app.example', routed: true })
   })
 })
+
+describe('AppsState.setCapability', () => {
+  const ROW = { capability: 'https.connect', on: true, canTurnOn: true, warning: false, message: 'Connect to a.example', patterns: ['a.example:443'] }
+
+  it('sends the switch with the patterns its row offered, and reads the list again', async () => {
+    const request = vi.fn(async (_domain: string, command: { type: string }) => command.type === 'list' ? { apps: [], identity: 'keychain' } : { ok: true })
+    const apps = new AppsState({ request } as unknown as OrivonInternal, () => {})
+
+    await apps.setCapability('https://app.example', ROW, false)
+    expect(request).toHaveBeenCalledWith('apps', { type: 'setCapability', origin: 'https://app.example', capability: 'https.connect', on: false, patterns: ['a.example:443'] })
+    expect(request).toHaveBeenLastCalledWith('apps', { type: 'list' })
+    expect(apps.capabilityRefused.size).toBe(0)
+  })
+
+  it('remembers a turn-on that main refused, or that failed, until the next press', async () => {
+    const request = vi.fn(async (_domain: string, command: { type: string }): Promise<unknown> => command.type === 'list' ? { apps: [], identity: 'keychain' } : { ok: false, reason: 'stale' })
+    const apps = new AppsState({ request } as unknown as OrivonInternal, () => {})
+
+    await apps.setCapability('https://app.example', ROW, true)
+    expect(apps.capabilityRefused.has('https://app.example|https.connect')).toBe(true)
+
+    request.mockImplementation(async (_domain: string, command: { type: string }) => command.type === 'list' ? { apps: [], identity: 'keychain' } : { ok: true })
+    await apps.setCapability('https://app.example', ROW, true)
+    expect(apps.capabilityRefused.size).toBe(0)
+  })
+})

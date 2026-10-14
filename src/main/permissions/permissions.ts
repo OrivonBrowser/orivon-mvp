@@ -250,15 +250,10 @@ export class PermissionsRegistry {
     for (const app of broker.app.persistedAppsSync()) {
       if (loaded.has(app.origin) || isLocalFileKey(app.origin)) continue
       const described = buildPersistedAppPermissions(app, levelOverrideFor(app.origin))
-      // An app whose last capability was revoked leaves an empty record behind
-      // (`revoke` does not delete the file when the set empties). Showing that
-      // as a card with no rows and no revoke button would be a permanent piece
-      // of furniture a person cannot act on or dismiss -- so a persisted app
-      // with nothing left to revoke is not listed. BOTH row kinds count: an
-      // app with grants all revoked but a picked path still live is exactly
-      // as actionable as one the other way around. A LOADED app with zero of
-      // either still is, above, because it is genuinely installed and running.
-      if (described.rows.length === 0 && described.pickedPathRows.length === 0) continue
+      // An app whose last capability was switched off leaves a record behind with nothing granted. It is listed
+      // while the refusal is remembered, because its card is where the person finds the app to allow it again;
+      // a record that holds nothing and remembers no refusal has nothing to show.
+      if (described.rows.length === 0 && described.pickedPathRows.length === 0 && ((await broker.declinedCapabilitiesFor(app.origin)) ?? []).length === 0) continue
       results.push(described)
     }
     return results
