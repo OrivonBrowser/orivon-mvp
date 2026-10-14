@@ -8,7 +8,7 @@ import type { OverlayDef, OverlayHandler, OverlayWindow } from '../../overlays/o
 import { createKeyQuiet } from '../../overlays/key-quiet.js'
 import { slotClosed } from '../../overlays/tab-slots.js'
 import type { ShellWindow } from '../window-registry.js'
-import { DOUBLE_PRESS_MS, GUARD_MS, MAX_INPUT, viewOf, type QuestionResult, type QuestionSpec, type QuestionView } from './question-spec.js'
+import { DOUBLE_PRESS_MS, GUARD_MS, MAX_CHOICES, MAX_INPUT, viewOf, type QuestionResult, type QuestionSpec, type QuestionView } from './question-spec.js'
 
 /** Anchored by `crossingAnchor`, so its top edge lies inside the toolbar. */
 export const QUESTION_OVERLAY = 'question'
@@ -42,20 +42,21 @@ export function heldQuestion (id: unknown): Held | undefined {
   return typeof id === 'string' ? held.get(id) : undefined
 }
 
-interface Answer { id: string, button: number, text: string | undefined, checkbox: boolean | undefined }
+interface Answer { id: string, button: number, text: string | undefined, checkbox: boolean | undefined, chosen: readonly string[] | undefined }
 
-const KEYS = new Set(['id', 'button', 'text', 'checkbox'])
+const KEYS = new Set(['id', 'button', 'text', 'checkbox', 'chosen'])
 
-/** Only `{ id, button }` with an optional `text` and `checkbox`, and no other key. */
+/** Only `{ id, button }` with an optional `text`, `checkbox` and `chosen`, and no other key. */
 function asAnswer (command: unknown): Answer | undefined {
   if (typeof command !== 'object' || command === null) return undefined
   const record = command as Record<string, unknown>
   if (Object.keys(record).some((key) => !KEYS.has(key))) return undefined
-  const { id, button, text, checkbox } = record
+  const { id, button, text, checkbox, chosen } = record
   if (typeof id !== 'string' || typeof button !== 'number' || !Number.isInteger(button)) return undefined
   if (text !== undefined && (typeof text !== 'string' || text.length > MAX_INPUT)) return undefined
   if (checkbox !== undefined && typeof checkbox !== 'boolean') return undefined
-  return { id, button, text, checkbox }
+  if (chosen !== undefined && (!Array.isArray(chosen) || chosen.length > MAX_CHOICES || !chosen.every((entry) => typeof entry === 'string'))) return undefined
+  return { id, button, text, checkbox, chosen: chosen as readonly string[] | undefined }
 }
 
 /** The page's report that the question is in its document: `{ type: 'drawn', id }` and nothing else. */
@@ -75,6 +76,11 @@ function asArrival (command: unknown): Arrival | undefined {
   const { type, id, button } = record
   if (Object.keys(record).length !== 3 || (type !== 'enter' && type !== 'leave')) return undefined
   return typeof id === 'string' && typeof button === 'number' && Number.isInteger(button) ? { type, id, button } : undefined
+}
+
+/** The ids the page named that main offered, each once, in the order they were offered: an id main never sent is dropped. */
+function offeredOnly (choices: NonNullable<QuestionSpec['choices']>, named: readonly string[] | undefined): readonly string[] {
+  return choices.filter((choice) => named?.includes(choice.id) === true).map((choice) => choice.id)
 }
 
 function idOf (payload: unknown): string | undefined {
@@ -153,11 +159,13 @@ export function createQuestionPanel (name: string, now: () => number = Date.now)
         }
         if (answer.text !== undefined && spec.input === undefined) return undefined
         if (answer.checkbox !== undefined && spec.checkboxLabel === undefined) return undefined
+        if (answer.chosen !== undefined && spec.choices === undefined) return undefined
         entry.settle({
           response: answer.button,
           clicked: true,
           checkboxChecked: answer.checkbox === true,
-          ...(spec.input === undefined ? {} : { text: answer.text ?? spec.input.initial })
+          ...(spec.input === undefined ? {} : { text: answer.text ?? spec.input.initial }),
+          ...(spec.choices === undefined ? {} : { chosen: offeredOnly(spec.choices, answer.chosen) })
         })
         close()
         return undefined

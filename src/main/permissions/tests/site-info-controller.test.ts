@@ -112,14 +112,14 @@ describe('createSiteInfoController -- siteInfoFor / siteSummaryFor', () => {
   it('an ordinary website always shows the key, because its popover lists what it may do', async () => {
     const controller = createSiteInfoController(ctxWith(createBroker(baseDeps())), NO_TRUST)
 
-    expect(await controller.siteSummaryFor(OTHER)).toEqual({ asked: true, warning: false })
-    expect(await controller.siteSummaryFor('http://127.0.0.1:8080/page')).toEqual({ asked: true, warning: false })
+    expect(await controller.siteSummaryFor(OTHER)).toEqual({ asked: true, warning: false, missing: false })
+    expect(await controller.siteSummaryFor('http://127.0.0.1:8080/page')).toEqual({ asked: true, warning: false, missing: false })
   })
 
   it('a malformed url also reports nothing asked, rather than throwing', async () => {
     const controller = createSiteInfoController(ctxWith(createBroker(baseDeps())), NO_TRUST)
     const summary = await controller.siteSummaryFor('not a url at all')
-    expect(summary).toEqual({ asked: false, warning: false })
+    expect(summary).toEqual({ asked: false, warning: false, missing: false })
   })
 
   it('a registered app with a declared, not-yet-held capability reports asked, not warning', async () => {
@@ -129,7 +129,7 @@ describe('createSiteInfoController -- siteInfoFor / siteSummaryFor', () => {
 
     const summary = await controller.siteSummaryFor(APP)
 
-    expect(summary).toEqual({ asked: true, warning: false })
+    expect(summary).toEqual({ asked: true, warning: false, missing: true })
   })
 
   it('an unlimited grant reports warning', async () => {
@@ -145,8 +145,47 @@ describe('createSiteInfoController -- siteInfoFor / siteSummaryFor', () => {
 
   it('with no broker published yet, reports no warning rather than throwing', async () => {
     const controller = createSiteInfoController(ctxWith(undefined), NO_TRUST)
-    expect(await controller.siteSummaryFor(APP)).toEqual({ asked: true, warning: false })
-    expect(await controller.siteSummaryFor('ipfs://bafy')).toEqual({ asked: false, warning: false })
+    expect(await controller.siteSummaryFor(APP)).toEqual({ asked: true, warning: false, missing: false })
+    expect(await controller.siteSummaryFor('ipfs://bafy')).toEqual({ asked: false, warning: false, missing: false })
+  })
+
+  it('a registered app holding everything it declared is missing nothing', async () => {
+    const broker = createBroker(baseDeps())
+    await broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 1024 } }))
+    await broker.grant(APP, 'fs', [])
+    const controller = createSiteInfoController(ctxWith(broker), NO_TRUST)
+
+    expect((await controller.siteSummaryFor(APP)).missing).toBe(false)
+  })
+
+  it('a registered app holding part of what it declared is missing something', async () => {
+    const broker = createBroker(baseDeps())
+    await broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 1024 }, id: {} }))
+    await broker.grant(APP, 'fs', [])
+    const controller = createSiteInfoController(ctxWith(broker), NO_TRUST)
+
+    expect((await controller.siteSummaryFor(APP)).missing).toBe(true)
+  })
+
+  it.each(['later', 'declined'] as const)('an app that was never let in (%s) is missing its permissions, and its popup offers the question back', async (reason) => {
+    const askAgain = vi.fn(async () => {})
+    const controller = createSiteInfoController(ctxWith(createBroker(baseDeps())), NO_TRUST, async () => false, { notLetIn: (origin) => origin === OTHER ? reason : undefined, askAgain })
+
+    expect((await controller.siteSummaryFor(OTHER)).missing).toBe(true)
+    expect((await controller.siteInfoFor(OTHER)).notLetIn).toBe(reason)
+    expect((await controller.siteSummaryFor('https://elsewhere.example')).missing).toBe(false)
+    expect('notLetIn' in await controller.siteInfoFor('https://elsewhere.example')).toBe(false)
+
+    expect(await controller.reviewPermissions(OTHER)).toBe(true)
+    expect(askAgain).toHaveBeenCalledWith(OTHER)
+  })
+
+  it('reviewing permissions does nothing for an origin that was let in or is no app', async () => {
+    const askAgain = vi.fn(async () => {})
+    const controller = createSiteInfoController(ctxWith(createBroker(baseDeps())), NO_TRUST, async () => false, { notLetIn: () => undefined, askAgain })
+
+    expect(await controller.reviewPermissions(OTHER)).toBe(false)
+    expect(askAgain).not.toHaveBeenCalled()
   })
 })
 
@@ -155,7 +194,7 @@ describe('createSiteInfoController -- a local file', () => {
 
   it('shows the key for a local file, asked or not, and a local file never has a Web3 Score', async () => {
     const controller = createSiteInfoController(ctxWith(createBroker(baseDeps()), fakeLoader()), NO_TRUST)
-    expect(await controller.siteSummaryFor(`${FILE}?x=1#top`)).toEqual({ asked: true, warning: false })
+    expect(await controller.siteSummaryFor(`${FILE}?x=1#top`)).toEqual({ asked: true, warning: false, missing: false })
     expect(await controller.siteTrustFor(FILE)).toBeNull()
     expect((await controller.siteInfoFor(FILE)).origin).toBe(FILE)
   })

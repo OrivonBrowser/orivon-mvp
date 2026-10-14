@@ -93,6 +93,48 @@ describe('the question handler', () => {
     expect(r.results).toEqual([{ clicked: true, response: 0, checkboxChecked: false }])
   })
 
+  describe('a question with switches', () => {
+    const CHOICES = normaliseSpec({ kind: 'consent', message: 'Allow?', buttons: ['Grant all', 'Close'], cancelId: 1, guarded: [0, 1], choices: [{ id: 'fs', icon: 'fs', message: 'Store files' }, { id: 'id', icon: 'id', message: 'Know who you are' }] })
+    const answered = (chosen: unknown): ReturnType<typeof rig> => {
+      const r = rig(CHOICES)
+      r.handler.show?.({ id: r.id })
+      draw(r)
+      r.clock.now += GUARD_MS
+      r.handler.request({ id: r.id, button: 1, chosen })
+      return r
+    }
+
+    it('answers with the switched-on ids it offered, in the order it offered them', () => {
+      expect(answered(['id', 'fs']).results).toEqual([{ clicked: true, response: 1, checkboxChecked: false, chosen: ['fs', 'id'] }])
+    })
+
+    it('drops an id it never offered, and a repeated one', () => {
+      expect(answered(['fs', 'fs', 'secrets', '__proto__']).results[0]?.chosen).toEqual(['fs'])
+    })
+
+    it('answers with none when the page names none, or does not say', () => {
+      expect(answered([]).results[0]?.chosen).toEqual([])
+      expect(answered(undefined).results[0]?.chosen).toEqual([])
+    })
+
+    it('refuses an answer whose list is not text, or longer than any question can have', () => {
+      expect(answered([1]).results).toEqual([])
+      expect(answered('fs').results).toEqual([])
+      expect(answered(Array.from({ length: 200 }, () => 'fs')).results).toEqual([])
+    })
+
+    it('refuses a list for a question that offers no switches, and answers a way out without one', () => {
+      const r = rig()
+      r.handler.show?.({ id: r.id })
+      draw(r)
+      r.clock.now += GUARD_MS
+      r.handler.request({ id: r.id, button: 0, chosen: ['fs'] })
+      expect(r.results).toEqual([])
+      r.handler.disposed?.()
+      expect(r.results).toEqual([{ response: 1, checkboxChecked: false }])
+    })
+  })
+
   it('takes the letters typed into a question\'s own text box as its answer, so Enter right after them answers', () => {
     const r = rig(normaliseSpec({ kind: 'confirm', message: 'Your name?', buttons: ['OK', 'Cancel'], cancelId: 1, guarded: [0], input: { initial: '' } }))
     r.handler.show?.({ id: r.id })

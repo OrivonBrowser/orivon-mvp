@@ -20,7 +20,7 @@ import { join } from 'node:path'
 import { DeclinedApps, installDeclinedApps } from './declined-apps.js'
 import { createFirstVisit } from './first-visit.js'
 import { installFromHint } from './app-install.js'
-import { createInstallConsentPrompt, createPerCapabilityConsentPrompt } from '../consent/install-consent-prompt.js'
+import { createInstallConsentPrompt } from '../consent/install-consent-prompt.js'
 import { createCapabilityPrompt, createReconsentPrompt, createRollbackChoicePrompt } from '../consent/update-outcomes-prompt.js'
 import { createUpdatePrompts } from '../consent/update-offer-prompts.js'
 import type { UpdateOutcomeDeps } from '../consent/update-outcomes.js'
@@ -122,11 +122,10 @@ export const appInstallSubsystem: Subsystem = {
       return extensions === undefined ? [] : await extensionNamesForOrigin(extensions, origin, isOriginServedFromCacheSync)
     }
     const consent = createInstallConsentPrompt(scoreLevelOverrideFor, extensionsOnSite)
-    const perCapabilityConsent = createPerCapabilityConsentPrompt(scoreLevelOverrideFor, extensionsOnSite)
     const reconsentPrompt = createReconsentPrompt()
     const capabilityPrompt = createCapabilityPrompt(scoreLevelOverrideFor)
     const rollbackChoicePrompt = createRollbackChoicePrompt()
-    const outcomeDeps: UpdateOutcomeDeps = { broker, loader, consent, perCapabilityConsent, reconsentPrompt, capabilityPrompt, rollbackChoicePrompt }
+    const outcomeDeps: UpdateOutcomeDeps = { broker, loader, consent, reconsentPrompt, capabilityPrompt, rollbackChoicePrompt }
     // An installed app whose name moved is offered, never installed unasked (ADR-0056).
     const updates = createAppUpdates({
       outcome: outcomeDeps,
@@ -162,7 +161,7 @@ export const appInstallSubsystem: Subsystem = {
     const declined = new DeclinedApps(ctx.privateSession ? undefined : join(ctx.app.getPath('userData'), 'declined-apps.json'))
     installDeclinedApps(declined)
     const firstVisit = createFirstVisit({
-      deps: { broker, loader, consent, perCapabilityConsent, capabilityPrompt, declined, blocked: blockOpenTabs({ tabsOn: (origin) => ctx.openTabs?.on(origin) ?? [], pagesOf: pagesInPartitionOf, setup: tabSetupNow }), askerFor: (origin) => { const tab = ctx.openTabs?.on(origin)[0]; return tab === undefined ? undefined : dialogCallerFor(tab, (sender) => ctx.windowForSender?.(sender as never)) }, backgroundDelayMs: backgroundPinDelayMs() },
+      deps: { broker, loader, consent, capabilityPrompt, declined, blocked: blockOpenTabs({ tabsOn: (origin) => ctx.openTabs?.on(origin) ?? [], pagesOf: pagesInPartitionOf, setup: tabSetupNow }), askerFor: (origin) => { const tab = ctx.openTabs?.on(origin)[0]; return tab === undefined ? undefined : dialogCallerFor(tab, (sender) => ctx.windowForSender?.(sender as never)) }, backgroundDelayMs: backgroundPinDelayMs() },
       untouched: (origin) => isLocalFileKey(origin) || grantableWithoutInstall(origin, devModeEnabled()) || !origin.startsWith('https://'),
       servedFromCache: isOriginServedFromCacheSync
     })
@@ -199,7 +198,7 @@ export const appInstallSubsystem: Subsystem = {
         // (grantableWithoutInstall's own true/false split), so sharing the
         // queue costs nothing and closes the same race for both.
         const outcome = await withOriginQueue(hintingOrigin, async () => await grantWithoutInstall(
-          { broker, fetchManifest: fetchGrantManifest, consent, perCapabilityConsent },
+          { broker, fetchManifest: fetchGrantManifest, consent },
           hintingOrigin,
           caller
         ))

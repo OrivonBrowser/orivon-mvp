@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cleanText, GUARD_MS, MAX_BUTTONS, normaliseSpec, sanitizePageText, viewOf, type QuestionSpec } from '../question-spec.js'
+import { cleanText, GUARD_MS, MAX_BUTTONS, MAX_CHOICES, normaliseSpec, sanitizePageText, viewOf, type QuestionSpec } from '../question-spec.js'
 
 const spec = (over: Partial<QuestionSpec> = {}): QuestionSpec => ({ kind: 'consent', message: 'Allow?', buttons: ['Allow', 'Cancel'], cancelId: 1, ...over })
 
@@ -106,5 +106,36 @@ describe('double-press buttons', () => {
     const spec = normaliseSpec({ kind: 'consent', message: 'm', buttons: ['Allow', 'No'], cancelId: 1, doublePress: [0] })
     expect(viewOf('id', spec)).toMatchObject({ doublePress: [0], doublePressMs: 1500 })
     expect(viewOf('id', normaliseSpec({ kind: 'notice', message: 'm', buttons: ['OK'], cancelId: 0 })).doublePress).toEqual([])
+  })
+})
+
+describe('choices', () => {
+  const rows: NonNullable<QuestionSpec['choices']> = [{ id: 'fs', icon: 'fs', message: 'Store files' }, { id: 'id', icon: 'id', message: 'Know who you are', warning: true }]
+  const withChoices = (choices: NonNullable<QuestionSpec['choices']>, over: Partial<QuestionSpec> = {}): QuestionSpec => normaliseSpec(spec({ buttons: ['Grant all', 'Close'], cancelId: 1, choices, ...over }))
+
+  it('keeps the rows in order, with a warning only where it was set, and no row on unless it was', () => {
+    expect(withChoices(rows).choices).toEqual([{ id: 'fs', icon: 'fs', message: 'Store files' }, { id: 'id', icon: 'id', message: 'Know who you are', warning: true }])
+    expect(withChoices([{ id: 'fs', icon: 'fs', message: 'Store files', on: true }]).choices).toEqual([{ id: 'fs', icon: 'fs', message: 'Store files', on: true }])
+  })
+
+  it('cleans the text of every row, drops a row with no id or a repeated id, and caps the count', () => {
+    const out = withChoices([{ id: 'a', icon: 'fs', message: 'm‮\u0001' }, { id: '', icon: 'fs', message: 'no id' }, { id: 'a', icon: 'fs', message: 'twice' }])
+    expect(out.choices).toEqual([{ id: 'a', icon: 'fs', message: 'm' }])
+    const many = withChoices(Array.from({ length: MAX_CHOICES + 10 }, (_, i) => ({ id: `c${String(i)}`, icon: 'fs', message: 'x' })))
+    expect(many.choices).toHaveLength(MAX_CHOICES)
+  })
+
+  it('cleans the note, and a question without rows has neither field', () => {
+    expect(withChoices(rows, { choicesNote: 'together‮' }).choicesNote).toBe('together')
+    const plain = normaliseSpec(spec())
+    expect('choices' in plain).toBe(false)
+    expect('choicesNote' in plain).toBe(false)
+  })
+
+  it('reaches the panel as written', () => {
+    const view = viewOf('id', withChoices(rows, { choicesNote: 'note' }))
+    expect(view.choices).toEqual(rows)
+    expect(view.choicesNote).toBe('note')
+    expect(viewOf('id', normaliseSpec(spec())).choices).toBeUndefined()
   })
 })
