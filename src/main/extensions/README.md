@@ -407,7 +407,9 @@ manifest `key` is read the way Chromium reads it (`canonicalizeManifestKey`: PEM
 whitespace stripped, strict base64, parsed as an SPKI public key and re-exported), so the id
 Orivon computes is the id Electron loads; a key that does not parse is refused, and a copy whose
 loaded id still differs is unloaded and rolled back like a failed load. A keyed `.zip` whose id
-matches an installed `.zip` or `.crx` entry installs into that entry's slot as its update.
+matches an installed `.zip` entry installs into that entry's slot as its update; one whose id matches
+an entry installed from a signed `.crx` is refused (`refuseUnsignedOverSigned`), since the key in a
+`.zip` is public and proves nothing.
 
 **Every read-modify-write of the registry runs under `withRegistryLock`** (`registry-runner.ts`):
 the extensions page, the store page's IPC and the store updater's background checks can all touch

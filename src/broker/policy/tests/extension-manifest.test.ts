@@ -357,6 +357,21 @@ describe('describeExtensionInstall', () => {
     expect(description.warning).toBe(true)
   })
 
+  it.each([
+    [['https://*/*']],
+    [['http://*/*']],
+    [['https://*/*', 'http://*/*']],
+    [['http://*/*', 'https://*/*', 'https://example.com/*']],
+    [['https://*/foo*']]
+  ])('words and flags %j as all websites, like <all_urls>', (hostPermissions) => {
+    const facts = factsOf({ manifest_version: 3, name: 'Split', version: '1.0.0', host_permissions: hostPermissions })
+    const description = describeExtensionInstall(facts, 'file')
+    expect(description.warning).toBe(true)
+    expect(description.detail).toContain('Read and change all your data on all websites')
+    expect(description.detail).not.toContain('these sites')
+    expect(describeHostAccess(facts)).toBe('Read and change all your data on all websites')
+  })
+
   it('lists specific hosts, first five then "and N more", when access is not all-sites', () => {
     const hosts = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((h) => `https://${h}.example/*`)
     const facts = factsOf({ manifest_version: 3, name: 'SomeSites', version: '1.0.0', host_permissions: hosts })

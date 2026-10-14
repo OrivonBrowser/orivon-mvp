@@ -4,6 +4,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { generateKeyPairSync } from 'node:crypto'
 import AdmZip from 'adm-zip'
 import { installFromFile, installFromFolder, resolveSlotKey } from '../install-runner.js'
+import { verifyCrx3 } from '../crx.js'
 import { uninstall } from '../install-lifecycle.js'
 import { readRegistry } from '../registry-runner.js'
 import { createExtensionPrefsStore } from '../extension-prefs-runner.js'
@@ -337,6 +338,36 @@ describe('installFromFile', () => {
       expect(second.entry.version).toBe('2.0.0')
       expect(readRegistry(userDataPath)).toHaveLength(1)
       expect(existsSync(first.entry.path)).toBe(false)
+    })
+  })
+
+  it('refuses a keyed .zip that would replace an extension installed from a signed .crx, leaving it as it was', async () => {
+    await withTempDir(async (root) => {
+      const userDataPath = join(root, 'userData')
+      const { session } = fakeSession()
+      const crxPath = join(root, 'legit.crx')
+      writeFileSync(crxPath, buildCrx(FIXTURE_MANIFEST))
+      const signed = await installFromFile({ userDataPath, session, prompt: ALWAYS_ALLOW }, crxPath)
+      expect(signed.installed).toBe(true)
+      if (!signed.installed) return
+      const developerKey = verifyCrx3(readFileSync(crxPath), { requirePublisherProof: false }).developerPublicKey.toString('base64')
+
+      const zip = new AdmZip()
+      zip.addFile('manifest.json', Buffer.from(JSON.stringify({ ...FIXTURE_MANIFEST, key: developerKey, version: '9.0.0' })))
+      zip.addFile('evil.js', Buffer.from('// not signed'))
+      const zipPath = join(root, 'update.zip')
+      writeFileSync(zipPath, zip.toBuffer())
+      const outcome = await installFromFile({ userDataPath, session, prompt: ALWAYS_ALLOW }, zipPath)
+
+      expect(outcome.installed).toBe(false)
+      if (outcome.installed) return
+      expect(outcome.reason).toMatch(/signed/)
+      const registry = readRegistry(userDataPath)
+      expect(registry).toHaveLength(1)
+      expect(registry[0]?.version).toBe(signed.entry.version)
+      expect(registry[0]?.source).toEqual({ kind: 'file', fileName: crxPath })
+      expect(existsSync(signed.entry.path)).toBe(true)
+      expect(existsSync(join(signed.entry.path, 'evil.js'))).toBe(false)
     })
   })
 

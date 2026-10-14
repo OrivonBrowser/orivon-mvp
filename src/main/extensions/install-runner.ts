@@ -123,9 +123,28 @@ export interface PendingInstall {
   readonly write: (targetDir: string, manifestJson: string) => void
 }
 
+/**
+ * A package with no developer signature (a `.zip`) may update the slot of an
+ * earlier `.zip`, never one whose installed copy came from a signed `.crx`:
+ * a `.zip` can carry that extension's public key, so what it proves is
+ * nothing, and the replacement would inherit the signed copy's grants, pin
+ * and storage. A copy from the store is a different slot, which the one-id,
+ * one-slot refusal below keeps apart.
+ */
+function refuseUnsignedOverSigned (ctx: InstallContext, pending: PendingInstall): InstallOutcome | undefined {
+  if (pending.developerPublicKey !== undefined || pending.source.kind !== 'file') return undefined
+  const slotDir = join(extensionsRoot(ctx.userDataPath), pending.slot)
+  const signed = readRegistry(ctx.userDataPath).find((existing) =>
+    existing.path.startsWith(`${slotDir}${sep}`) && existing.source.kind === 'file' && existing.source.fileName.toLowerCase().endsWith('.crx'))
+  if (signed === undefined) return undefined
+  return { installed: false, reason: `install refused: this file has no signature and would replace "${signed.name}", which was installed from a signed .crx` }
+}
+
 export async function finishInstall (ctx: InstallContext, pending: PendingInstall, where?: InstallWhere): Promise<InstallOutcome> {
   const refused = refusePrivateInstall(ctx)
   if (refused !== undefined) return refused
+  const unsignedOverSigned = refuseUnsignedOverSigned(ctx, pending)
+  if (unsignedOverSigned !== undefined) return unsignedOverSigned
   const manifestResult = readExtensionManifest(pending.rawManifest)
   if (!manifestResult.ok) return { installed: false, reason: `manifest refused: ${manifestResult.reason}` }
   const { facts } = manifestResult
