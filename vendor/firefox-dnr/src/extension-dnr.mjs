@@ -73,7 +73,7 @@
 import { ExtensionError, DefaultWeakMap } from '../adapters/dnr-errors.mjs'
 import { newURI, applyQueryTransform, applyURLTransform } from '../adapters/dnr-uri.mjs'
 import { getBaseDomain } from '../adapters/dnr-domain.mjs'
-import { regexFilterProblem } from '../adapters/dnr-regex-safety.mjs'
+import { compileRegexFilter } from '../adapters/dnr-regex.mjs'
 import { ExtensionDNRLimits } from './dnr-limits.mjs'
 
 // Patch 16 (UPSTREAM.md): the scheme allowlist a redirect's final target
@@ -902,10 +902,6 @@ class RequestDataForUrlFilter {
   }
 }
 
-function compileRegexFilter(regexFilter, isUrlFilterCaseSensitive) {
-  return new RegExp(regexFilter, isUrlFilterCaseSensitive ? '' : 'i')
-}
-
 // Patch 6 (UPSTREAM.md): ModifyHeadersBase/ModifyRequestHeaders/
 // ModifyResponseHeaders no longer mutate a live ChannelWrapper (Orivon's
 // engine does not hold one -- see DnrDecision in dnr-engine.ts). They collect
@@ -1226,21 +1222,15 @@ class RuleValidator {
       if (!checkEmptyOrNonASCII(regexFilter, 'regexFilter')) {
         return false
       }
-      // Patch 18 (UPSTREAM.md): Chrome matches regexFilter with RE2, in time
-      // linear in the URL; this engine uses the backtracking RegExp, so a
-      // pattern that could blow up is refused here instead.
-      const problem = regexFilterProblem(regexFilter)
-      if (problem) {
-        this.#collectInvalidRule(rule, problem.message)
-        return false
-      }
+      // Patch 18 (UPSTREAM.md): compiled with RE2 (linear time), as Chrome
+      // does, so a pattern RE2 refuses makes the rule invalid.
       try {
         this.#lastCompiledRegexFilter = compileRegexFilter(
           regexFilter,
           rule.condition.isUrlFilterCaseSensitive
         )
-      } catch {
-        this.#collectInvalidRule(rule, 'regexFilter is not a valid regular expression')
+      } catch (error) {
+        this.#collectInvalidRule(rule, error.message)
         return false
       }
     }

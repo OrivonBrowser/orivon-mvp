@@ -8,7 +8,7 @@
 // loaded manifest no longer has it.
 
 import type { ExtensionRouterHandle } from 'orivon:crx-extensions'
-import { regexFilterProblem } from '../../../vendor/firefox-dnr/adapters/dnr-regex-safety.mjs'
+import { regexFilterProblem } from '../../../vendor/firefox-dnr/adapters/dnr-regex.mjs'
 import { getCachedStrippedPermissions, getDnrEngine, slotDirForLoadedExtension } from './extensions-dnr.js'
 import { parseActionOptions } from './dnr-action-options.js'
 import { writeBadgeCountMode, writeDynamicRules, writeEnabledRulesetOverride } from './dnr/dnr-runner.js'
@@ -198,17 +198,10 @@ export function registerDnrApiHandlers(
   handle(
     'declarativeNetRequest.isRegexSupported',
     (_event, options: { regex: string, isCaseSensitive?: boolean }) => {
-      // The matcher is a backtracking JS RegExp, not RE2: this answers what the
-      // rule validator would do with the pattern (syntax, then the size and
-      // backtracking bounds of dnr-regex-safety.mjs). That is stricter than
-      // Chrome's RE2 only where a backtracking engine needs a bound.
-      try {
-        // eslint-disable-next-line no-new -- validity check only
-        new RegExp(options.regex, options.isCaseSensitive === false ? 'i' : '')
-      } catch {
-        return { isSupported: false, reason: 'syntaxError' }
-      }
-      const problem = regexFilterProblem(options.regex)
+      // Answered by the compile the rule validator itself runs (RE2, so a
+      // backreference or lookaround is refused as in Chrome); a pattern over
+      // Chrome's length cap is the one memory-limit refusal.
+      const problem = regexFilterProblem(options.regex, options.isCaseSensitive !== false)
       if (problem === null) return { isSupported: true }
       return { isSupported: false, reason: problem.kind === 'syntax' ? 'syntaxError' : 'memoryLimitExceeded' }
     },

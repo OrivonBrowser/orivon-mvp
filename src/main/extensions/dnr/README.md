@@ -45,14 +45,14 @@ none of them Electron-specific.
 
 ## Design notes
 
-**A `regexFilter` is bounded before it is compiled.** Chrome matches it with RE2, in time linear in
-the URL; this engine uses the JavaScript `RegExp`, which backtracks, and `evaluate()` runs on the
-main thread for every request. `RuleValidator` therefore refuses a pattern that is over 2,048
-characters, that uses a backreference or lookaround, or that could take exponential or high-degree
-polynomial time (`vendor/firefox-dnr/adapters/dnr-regex-safety.mjs`, patch 18): a repeated group
-whose iterations can be cut apart in more than one way, an alternation inside a repeated group
-whose branches start alike, or three overlapping unbounded repetitions in a row. A static ruleset
-drops such a rule like any other invalid one, and `isRegexSupported` gives the same answer.
+**A `regexFilter` is matched by RE2, in linear time.** Chrome matches it with RE2, and so does this
+engine (`vendor/firefox-dnr/adapters/dnr-regex.mjs`, patch 18, on `re2js`, a pure JavaScript port),
+because `evaluate()` runs on the main thread for every request and a backtracking `RegExp` could
+stall the browser on one crafted URL. A pattern over 2,048 characters, or one RE2 does not accept (a
+backreference or a lookaround), makes the rule invalid: a static ruleset drops it like any other
+invalid rule, a dynamic or session update throws, and `isRegexSupported` gives the same answer.
+RE2 matching costs several times what `RegExp` does for an ordinary pattern, which is why the number
+of regex rules stays capped at `MAX_NUMBER_OF_REGEX_RULES`.
 
 **Static rules draw on a global pool, as in Chrome.** An extension's enabled static rulesets hold
 up to `GUARANTEED_MINIMUM_STATIC_RULES` (30,000) rules on their own; rules beyond that come out

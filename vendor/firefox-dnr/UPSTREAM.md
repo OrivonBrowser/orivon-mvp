@@ -480,19 +480,18 @@ patch.
     `Host` is a request-only header. `src/main/extensions/dnr/tests/modify-headers.test.ts`'s
     "Host header" `describe` block is the regression test.
 
-18. **`regexFilter` is bounded before it is compiled, in `adapters/dnr-regex-safety.mjs`.**
-    Firefox and Chrome match `regexFilter` with RE2, which runs in time linear in the URL and has
-    no backreferences or lookarounds; this engine compiles the pattern to a JavaScript `RegExp`,
-    which backtracks, and evaluates it synchronously for every request. `#checkCondUrlFilterAndRegexFilter`
-    therefore asks `regexFilterProblem()` first and rejects the rule, like any other invalid
-    rule, when the pattern is longer than 2048 characters (Chrome's cap), uses a backreference
-    or lookaround, repeats a group whose iterations can be cut apart in more than one way
-    (`(a+)+`, `(a|a)*`), or holds three unbounded repetitions in one sequence that can trade
-    characters. The check is conservative and works on ASCII sets; a delimited group such as
-    `(?:[a-z0-9-]+\.)*` and one or two `.*` stay valid. A linear-time engine was not adopted
-    because the matcher also needs capture groups for `regexSubstitution`.
-    `src/main/extensions/dnr/tests/regex-safety.test.ts` is the regression test, and
-    `declarativeNetRequest.isRegexSupported` (`src/main/extensions/dnr-api.ts`) asks the same function.
+18. **`regexFilter` is compiled with RE2, in `adapters/dnr-regex.mjs`, not with `RegExp`.**
+    Firefox and Chrome both match `regexFilter` with RE2, which runs in time linear in the URL and
+    has no backreferences or lookarounds; a JavaScript `RegExp` backtracks, and this engine
+    evaluates every request on the main thread. `compileRegexFilter` therefore builds the pattern
+    with `re2js` (MIT, a pure JavaScript port of RE2 with no dependencies and no native code) and
+    returns a small object with the two calls the engine makes, `test(url)` and `exec(url)` (an
+    array of the whole match and each group, `undefined` for a group that did not take part, for
+    `regexSubstitution`). Case sensitivity follows `isUrlFilterCaseSensitive`. A pattern longer
+    than 2048 characters (Chrome's cap), or one RE2 does not accept, makes the rule invalid like
+    any other invalid rule. `regexFilterProblem()` gives `declarativeNetRequest.isRegexSupported`
+    (`src/main/extensions/dnr-api.ts`) the same answer. `src/main/extensions/dnr/tests/regex-filter.test.ts`
+    is the regression test.
 
 Nothing else changed: class/function bodies, the top-of-file design comment,
 and every doc comment not touched by a patch above are upstream's own words,
