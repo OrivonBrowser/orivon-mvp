@@ -72,7 +72,7 @@ export function createNodeLink (post: (message: FromHost) => void, identity: Nod
   const counted = (fetch: Fetch): Fetch => async (url, init) => {
     traffic.begin()
     try {
-      return traffic.wrap(await fetch(url, init))
+      return traffic.wrap(await fetch(url, init), init.signal)
     } catch (error) {
       traffic.end()
       throw error

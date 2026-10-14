@@ -4,7 +4,7 @@
 import { app } from 'electron'
 import { ipfsNode } from '../verifier/ipfs-node-subsystem.js'
 import { swarmNode } from '../verifier/swarm-node-subsystem.js'
-import { nodeTraffic, onVerifierChange, verifierProcessInfo, verifierView } from '../verifier/verifier-subsystem.js'
+import { lightClientForcedOff, nodeTraffic, onVerifierChange, verifierProcessInfo, verifierView } from '../verifier/verifier-subsystem.js'
 import type { SettingsStore } from '../settings/settings-store.js'
 import type { SubsystemContext } from '../registry.js'
 import { createNetworksSource } from './networks-source.js'
@@ -28,7 +28,7 @@ function readMetrics (): readonly ProcessMetric[] {
 export function createNetworks (settings: SettingsStore, ctx: SubsystemContext): NetworksSource {
   return createNetworksSource({
     settings: { get: (key) => settings.get(key), set: (key, value) => settings.set(key, value), onChange: (listener) => settings.onChange(listener) },
-    lightClient: { view: verifierView, forcedOff: () => process.env['ORIVON_ETH_LIGHT_CLIENT'] === 'off', process: verifierProcessInfo, onChange: onVerifierChange },
+    lightClient: { view: verifierView, forcedOff: lightClientForcedOff, process: verifierProcessInfo, onChange: onVerifierChange },
     ipfs: ipfsNode,
     swarm: swarmNode,
     traffic: nodeTraffic,

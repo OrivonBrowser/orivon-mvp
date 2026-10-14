@@ -7,8 +7,9 @@ certificate check each session applies, starting and restarting the verifier hos
 checkpoint ([`ADR-0031`](../../../docs/decisions/ADR-0031-helios-is-the-light-client.md)), what the
 host verified between runs (IPNS sequences, Swarm feed indexes, and the address scheme each `.eth` name's content was last found under), the per-site partition stamp, the gateway proxy check, and the
 wording of the status and a name's evidence for Settings and the site-info popover.
-The person can switch the light client off in Settings (`web3.lightClient`, read once when Orivon
-starts, through `configureVerifier`, so a host that sleeps and wakes keeps that run's choice); the environment switch still forces it off, and
+The person can switch the light client off in Settings or from the Available networks popup (`web3.lightClient`, read at each
+start of the host through `configureVerifier` and applied at once: see below); the environment switch still forces it off
+(`lightClientForcedOff`, the one place that reads it), and
 [`web3-domain.ts`](web3-domain.ts) is what the Settings page reads.
 
 **Tied to Electron.** [`verifier-subsystem.ts`](verifier-subsystem.ts) and
@@ -133,10 +134,12 @@ exited, and replaces the partition salt (`verifier-store.ts`).
 
 **The light client, the Swarm node and the process facts apply at once or are read live.** `lightClientSettingChanged` puts the
 verifier host to sleep when `web3.lightClient` changes, so its next start builds the config from the new choice; the person's
-setting is read at each start (`configureVerifier`), and the environment's force-off still wins. `swarmSettingChanged` makes the
-Swarm node's controller read its `disabled` hook again (`LocalNodeController.reconsider`): a node that must not run is stopped
-and says why (`SWARM_SWITCHED_OFF`, which also names where to switch it on, and which a bzz:// page repeats), and one that may run
-again is asked for as usual, with no refusal remembered. Every supervisor can say its running process (`processInfo`: the
+setting is read at each start (`configureVerifier`), and the environment's force-off still wins. A host that sleeps stops the IPFS
+and Swarm nodes with it, as it does after ten idle minutes, and each starts again at the next ask. `swarmSettingChanged` makes the
+Swarm node's controller read its `disabled` hook again (`LocalNodeController.reconsider`, which also drops a check under way and
+reads the switch again once one ends) and puts the host to sleep too, so nothing mounted from Swarm outlives a switch-off: a node
+that must not run is stopped and says why (`SWARM_SWITCHED_OFF`, which also names where to switch it on, and which a bzz:// page
+repeats), and one that may run again is asked for as usual, with no refusal remembered. Every supervisor can say its running process (`processInfo`: the
 process id and when it was forked), which `../networks/` matches to Electron's metrics. The verifier host counts what it reads from
 each node (`node-traffic.ts` in `protocols/verifier-host/`) and posts it at most once a second while the node is read; main keeps
 the last figures and folds a host's bytes into the session's total when the host sleeps (`nodeTraffic`).

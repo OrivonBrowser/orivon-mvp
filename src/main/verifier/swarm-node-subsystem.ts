@@ -28,11 +28,6 @@ export const swarmNode = createLocalNodeSubsystem({
   disabled: () => ethTestSeam() !== undefined ? 'a test build serves Swarm from its own endpoints' : allowedByPerson() ? undefined : SWARM_SWITCHED_OFF
 })
 
-/** The person switched the node on or off: applied at once. */
-export function swarmSettingChanged (): void {
-  swarmNode.reconsider()
-}
-
 export function swarmNodeState (): SwarmNodeState {
   return swarmNode.state()
 }

@@ -21,7 +21,7 @@ import { probeSocks5 } from '../../broker/route/socks5-probe.js'
 import { routeDomain } from '../route/route-domain.js'
 import { forgetChoicesWhenGrantEnds } from '../scheme-routing/grant-watch.js'
 import { identityKeyStorage } from '../keyring/electron-keychain.js'
-import { forgetIpfsNodeData, forgetNameSchemes, onVerifierChange, verifierView } from '../verifier/verifier-subsystem.js'
+import { forgetIpfsNodeData, forgetNameSchemes, lightClientForcedOff, onVerifierChange, verifierView } from '../verifier/verifier-subsystem.js'
 import { web3Domain } from '../verifier/web3-domain.js'
 import { appDomain } from './app-domain.js'
 import { telemetryDomain } from './telemetry-domain.js'
@@ -194,7 +194,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     web3: web3Domain({
       view: verifierView,
       enabled: () => services.settings.get('web3.lightClient'),
-      forcedOff: () => process.env['ORIVON_ETH_LIGHT_CLIENT'] === 'off'
+      forcedOff: lightClientForcedOff
     }),
     app: appDomain(app, services.profiles.isPrivate),
     os: osDomain(defaultBrowserHost, services.profiles.isPrivate, async (ms) => { await new Promise<void>((resolve) => { setTimeout(resolve, ms) }) }),

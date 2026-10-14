@@ -15,8 +15,8 @@ export interface NodeTraffic {
   begin: () => void
   /** A read ended without a response (it failed or was aborted). */
   end: () => void
-  /** The response of a read that began: its body is counted as it is read, and the read ends with the body. */
-  wrap: (response: Response) => Response
+  /** The response of a read that began: its body is counted as it is read, and the read ends with the body, with `signal` aborting, or when the response is dropped unread and collected. */
+  wrap: (response: Response, signal?: AbortSignal) => Response
   snapshot: () => TrafficSnapshot
 }
 
@@ -30,6 +30,7 @@ export function createNodeTraffic (report: (active: number, bytes: number) => vo
   const now = options.now ?? Date.now
   const later = options.later ?? ((callback, ms) => { setTimeout(callback, ms).unref() })
   let active = 0
+  const dropped = new FinalizationRegistry<() => void>((finish) => { finish() })
   let bytes = 0
   let reportedAt = Number.NEGATIVE_INFINITY
   let scheduled = false
@@ -53,11 +54,13 @@ export function createNodeTraffic (report: (active: number, bytes: number) => vo
     begin: () => { active += 1; changed() },
     end,
     snapshot: () => ({ active, bytes }),
-    wrap: (response) => {
+    wrap: (response, signal) => {
       if (response.body === null) { end(); return response }
       const reader = response.body.getReader()
       let finished = false
       const finish = (): void => { if (!finished) { finished = true; end() } }
+      // A caller that gives up aborts, and one that drops the response unread is collected: a read never stays in flight for ever.
+      signal?.addEventListener('abort', finish, { once: true })
       const counted = new ReadableStream<Uint8Array>({
         pull: async (controller) => {
           try {
@@ -74,6 +77,7 @@ export function createNodeTraffic (report: (active: number, bytes: number) => vo
       })
       const wrapped = new Response(counted, { status: response.status, statusText: response.statusText, headers: response.headers })
       // `url` and `redirected` are read-only properties of a response made by `fetch`; a reader of the node's answers may ask where it came from.
+      dropped.register(wrapped, finish)
       Object.defineProperty(wrapped, 'url', { value: response.url })
       Object.defineProperty(wrapped, 'redirected', { value: response.redirected })
       return wrapped

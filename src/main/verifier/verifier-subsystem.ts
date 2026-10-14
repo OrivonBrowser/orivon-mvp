@@ -122,10 +122,22 @@ export function ipfsSettingsChanged (setting: 'source' | 'lookupService'): void 
 
 /**
  * The person switched the light client on or off: applied at once. The host builds its config when it starts, so it sleeps
- * and its next request rebuilds it with the new choice; the IPFS and Swarm nodes it reads from are left running, and a
- * `.eth` page open now says why it cannot load until the light client is on again.
+ * and its next request rebuilds it with the new choice. A host that sleeps stops the IPFS and Swarm nodes with it, as it
+ * does after ten idle minutes: each starts again at the next ask. A `.eth` page open now says why it cannot load until the
+ * light client is on again.
  */
 export function lightClientSettingChanged (): void {
+  idleHost()
+  changed()
+}
+
+/**
+ * The person switched the Swarm node on or off: applied at once. The node's controller reads its switch again (a node that
+ * must not run is stopped and says why), and the host sleeps, so nothing it mounted from Swarm outlives a switch-off and its
+ * next start asks the node again.
+ */
+export function swarmSettingChanged (): void {
+  swarmNode.reconsider()
   idleHost()
   changed()
 }
@@ -141,7 +153,10 @@ export async function forgetIpfsNodeData (): Promise<void> {
   idleHost()
 }
 
-const lightClientSwitchedOff = (): boolean => process.env['ORIVON_ETH_LIGHT_CLIENT'] === 'off' || !enabledByPerson()
+/** Whether this run was started with the light client forced off from outside (`ORIVON_ETH_LIGHT_CLIENT=off`): no setting changes that. */
+export const lightClientForcedOff = (): boolean => process.env['ORIVON_ETH_LIGHT_CLIENT'] === 'off'
+
+const lightClientSwitchedOff = (): boolean => lightClientForcedOff() || !enabledByPerson()
 
 function changed (): void {
   for (const listener of listeners) listener()
@@ -425,7 +440,8 @@ export const verifierSubsystem: Subsystem = {
         nameScheme: (name, scheme) => {
           if (verifierStore().saveNameScheme(name, scheme)) announceNameSchemeChange()
         },
-        nodeTraffic: (name, active, bytes) => { traffic.set(name, { active, bytes }) },
+        // Only the nodes this build runs: the host parses hostile content, and a name it makes up is never kept.
+        nodeTraffic: (name, active, bytes) => { if (NODES.has(name)) traffic.set(name, { active, bytes }) },
         nodeWanted: (name) => {
           const node = NODES.get(name)
           if (node === undefined) return

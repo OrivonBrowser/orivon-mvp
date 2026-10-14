@@ -35,6 +35,28 @@ describe('what the host counts of its reads from a local node', () => {
     expect(traffic.snapshot().active).toBe(0)
   })
 
+  it('ends a read whose caller aborted it, though its body was never read', () => {
+    const { traffic } = harness()
+    const controller = new AbortController()
+    traffic.begin()
+    traffic.wrap(new Response(bodyOf(10)), controller.signal)
+    expect(traffic.snapshot().active).toBe(1)
+    controller.abort()
+    expect(traffic.snapshot().active).toBe(0)
+  })
+
+  it('ends a read once, whichever of the body\'s end and the abort comes first', async () => {
+    const { traffic } = harness()
+    const controller = new AbortController()
+    traffic.begin()
+    traffic.begin()
+    const first = traffic.wrap(new Response(bodyOf(4)), controller.signal)
+    await first.arrayBuffer()
+    expect(traffic.snapshot().active).toBe(1)
+    controller.abort()
+    expect(traffic.snapshot().active).toBe(1)
+  })
+
   it('ends a read that failed before it had a response', () => {
     const { traffic } = harness()
     traffic.begin()

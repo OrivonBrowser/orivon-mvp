@@ -338,4 +338,38 @@ describe('switching Nym off', () => {
     await asked
     expect(processes).toHaveLength(1)
   })
+
+  it('starts nothing when it is switched off while the files are being checked, and refuses that ask', async () => {
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const { nym, processes, settle } = harness({ artifact: async () => { await gate; return { ok: true, directory: '/module' } } })
+    const asked = nym.ensure()
+    const refused = expect(asked).rejects.toThrow(/switched off/)
+    await settle()
+    nym.setEnabled(false)
+    release()
+    await refused
+    await settle()
+    expect(processes).toHaveLength(0)
+    expect(nym.state()).toMatchObject({ state: 'unavailable', cause: 'other' })
+  })
+
+  it('does not answer an ask with an address when it is switched off while the proxy is being checked', async () => {
+    const clock = { now: 1_000 }
+    let release: (set: boolean) => void = () => {}
+    let calls = 0
+    const { nym, processes, settle } = harness({ now: () => clock.now, proxyConfigured: async () => { calls += 1; return calls === 1 ? false : await new Promise<boolean>((resolve) => { release = resolve }) } })
+    const first = nym.ensure()
+    await settle()
+    processes[0]?.say({ type: 'listening' })
+    await first
+    // The proxy answer is reused for a few seconds: a later ask finds it stale and asks the system again.
+    clock.now += 10_000
+    const asked = nym.ensure()
+    const refused = expect(asked).rejects.toBeInstanceOf(NymUnavailable)
+    await settle()
+    nym.setEnabled(false)
+    release(false)
+    await refused
+  })
 })

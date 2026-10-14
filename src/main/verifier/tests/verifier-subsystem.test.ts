@@ -339,6 +339,34 @@ describe('the verifier subsystem', () => {
     expect(started(1)?.config?.lightClientOff).toMatch(/switched off/)
   })
 
+  it('puts the host to sleep when the Swarm node is switched, so what it mounted from Swarm and its Swarm config do not outlive the switch', async () => {
+    vi.resetModules()
+    vi.setSystemTime(SHIPPED_AT_MS + DAY_MS)
+    const subsystem = await import('../verifier-subsystem.js')
+    await subsystem.verifierSubsystem.afterReady?.({} as never)
+    let swarmOn = true
+    subsystem.configureVerifier({ lightClientEnabled: () => true, windows: () => tabs.open, servedFromCache: () => false, swarmNodeEnabled: () => swarmOn })
+    void subsystem.verifierContentAddress('https://vitalik.eth').catch(() => {})
+    await vi.advanceTimersByTimeAsync(0)
+    forks()[0]?.listens()
+    swarmOn = false
+    subsystem.swarmSettingChanged()
+    expect(forks()[0]?.killed).toBe(true)
+  })
+
+  it('keeps what the host counted of the nodes it knows and forgets any other name, which a hostile host could send for ever', async () => {
+    const { request, nodeTraffic } = await launch()
+    void request()
+    await vi.advanceTimersByTimeAsync(0)
+    forks()[0]?.listens()
+    forks()[0]?.emit('message', { type: 'node-traffic', node: 'ipfs-node', active: 2, bytes: 500 })
+    forks()[0]?.emit('message', { type: 'node-traffic', node: 'made-up-node', active: 9, bytes: 9_000 })
+    expect(nodeTraffic('ipfs-node')).toEqual({ active: 2, bytes: 500 })
+    expect(nodeTraffic('made-up-node')).toEqual({ active: 0, bytes: 0 })
+    forks()[0]?.emit('exit', 1)
+    expect(nodeTraffic('ipfs-node')).toEqual({ active: 0, bytes: 500 })
+  })
+
   it('says the light client is on and waiting before any .eth address was opened', async () => {
     const { verifierView } = await launch()
     expect(verifierView()).toMatchObject({ state: 'waiting', summary: expect.stringMatching(/^On, and waiting/) })

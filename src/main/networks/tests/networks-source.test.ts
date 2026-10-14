@@ -72,6 +72,32 @@ describe('the view the popup is drawn from', () => {
   })
 })
 
+describe('the dot on a push', () => {
+  it('is read from what the last change left, not built again by every push: the nodes are asked once until one changes', () => {
+    const r = rig()
+    const viewed = vi.fn(() => r.light)
+    const source = createNetworksSource({ ...r.env, lightClient: { ...r.env.lightClient, view: viewed } })
+    expect(source.dot()).toBe('none')
+    source.dot()
+    source.dot()
+    expect(viewed).toHaveBeenCalledTimes(1)
+    r.ipfsState = { state: 'failed', reason: 'it trapped' }
+    r.emit.nodes()
+    expect(source.dot()).toBe('red')
+    expect(viewed).toHaveBeenCalledTimes(2)
+  })
+
+  it('follows a switch moved in Settings too', () => {
+    const r = rig()
+    r.ipfsState = { state: 'ready', peers: 0 }
+    const source = createNetworksSource(r.env)
+    expect(source.dot()).toBe('green')
+    r.values['web3.ipfsSource'] = 'gateways'
+    r.emit.setting('web3.ipfsSource')
+    expect(source.dot()).toBe('none')
+  })
+})
+
 describe('moving a card\'s switch', () => {
   it('writes the setting Settings uses for the same thing, and the value that means the switch\'s position', () => {
     expect(switchSetting('light-client', false)).toEqual({ key: 'web3.lightClient', value: false })

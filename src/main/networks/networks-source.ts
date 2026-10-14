@@ -119,9 +119,28 @@ export function createNetworksSource (env: NetworksEnv): NetworksSource {
     }
   }
 
+  /** What the last change left: the dot, until a node or a switch changes. A push of every window reads it, so it is never built from the nodes again meanwhile (the light client's view can read a file). */
+  let dot: Dot | undefined
+  let watching = false
+  const subscribe = (listener: () => void): (() => void) => {
+    const stops = [
+      env.lightClient.onChange(listener),
+      env.ipfs.onChange(listener),
+      env.swarm.onChange(listener),
+      env.nym.onChange(listener),
+      env.settings.onChange(({ key }) => { if (WATCHED.has(key)) listener() })
+    ]
+    return () => { for (const stop of stops) stop() }
+  }
+
   return {
     view: () => buildNetworksView(facts(env.metrics())),
-    dot: () => dotOf(buildNetworksView(facts([])).cards),
+    dot: () => {
+      // Watching starts with the first read, once Nym and the rest are there to be watched, and then lasts.
+      if (!watching) { watching = true; subscribe(() => { dot = undefined }) }
+      dot ??= dotOf(buildNetworksView(facts([])).cards)
+      return dot
+    },
     setSwitch: (id, on) => {
       if (!isNetworkId(id) || typeof on !== 'boolean') return false
       const card = buildNetworksView(facts([])).cards.find((candidate) => candidate.id === id)
@@ -129,15 +148,7 @@ export function createNetworksSource (env: NetworksEnv): NetworksSource {
       const change = switchSetting(id, on)
       return env.settings.set(change.key, change.value).ok
     },
-    onChange: (listener) => {
-      const stops = [
-        env.lightClient.onChange(listener),
-        env.ipfs.onChange(listener),
-        env.swarm.onChange(listener),
-        env.nym.onChange(listener),
-        env.settings.onChange(({ key }) => { if (WATCHED.has(key)) listener() })
-      ]
-      return () => { for (const stop of stops) stop() }
-    }
+    // The cached dot goes first, so a listener that reads it on this very change reads the new one.
+    onChange: (listener) => subscribe(() => { dot = undefined; listener() })
   }
 }

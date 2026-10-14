@@ -145,6 +145,12 @@ export class LocalNodeController {
     }
     if (this.supervisor.restarting || this.now() < this.refusedUntil) return this.current
     const verdict = await this.check()
+    // The person's switch can have gone off while the files were being read: it is asked again before anything starts.
+    const disabled = this.deps.disabled?.()
+    if (disabled !== undefined) {
+      this.refuse(disabled)
+      return this.current
+    }
     if ('reason' in verdict) {
       this.refuse(verdict.reason)
       return this.current
@@ -160,6 +166,8 @@ export class LocalNodeController {
    */
   reconsider (): void {
     this.refusedUntil = 0
+    // A check under way started before this change: nobody joins it, and its answer is read against the switch again.
+    this.checking = undefined
     const disabled = this.deps.disabled?.()
     if (disabled !== undefined) {
       this.supervisor.idle()
@@ -197,7 +205,11 @@ export class LocalNodeController {
 
   /** Whether the node may start now: the directory its files are in, or why not. Asked once at a time. The proxy comes first, so nothing is read from disk while one is set. */
   private async check (): Promise<Verdict> {
-    this.checking ??= this.look().finally(() => { this.checking = undefined })
+    if (this.checking === undefined) {
+      // Only its own entry is cleared: a check that `reconsider` dropped must not clear the one that replaced it.
+      const pending: Promise<Verdict> = this.look().finally(() => { if (this.checking === pending) this.checking = undefined })
+      this.checking = pending
+    }
     return await this.checking
   }
 
@@ -214,6 +226,12 @@ export class LocalNodeController {
     const approved = this.approved
     this.approved = undefined
     const verdict: Verdict = approved === undefined ? await this.check() : { directory: approved }
+    const disabled = this.deps.disabled?.()
+    if (disabled !== undefined) {
+      this.refusal = disabled
+      this.refuse(disabled)
+      throw new RefusedToStart(disabled)
+    }
     if ('reason' in verdict) {
       this.refusal = verdict.reason
       this.refuse(verdict.reason)

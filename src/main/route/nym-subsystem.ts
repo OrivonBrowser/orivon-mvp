@@ -142,9 +142,12 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
   const supervisor = new NymSupervisor({
     fork: deps.fork,
     config: async (): Promise<NymTunnelConfig> => {
+      // A restart on the backoff reads the switch again: it may have moved since the start was asked for.
+      if (isSwitchedOff()) throw new RefusedToStart(NYM_SWITCHED_OFF)
       const taken = approved
       approved = undefined
       const verdict = taken === undefined ? await check() : { directory: taken }
+      if (isSwitchedOff()) throw new RefusedToStart(NYM_SWITCHED_OFF)
       if ('reason' in verdict) {
         refuse(verdict)
         throw new RefusedToStart(verdict.reason)
@@ -184,15 +187,20 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
     ...(deps.now === undefined ? {} : { now: deps.now })
   })
 
+  /** Whether the person has switched Nym off; says so once in the state. Asked again after every wait, because the switch can move during one. */
+  const isSwitchedOff = (): boolean => {
+    if (!switchedOff) return false
+    if (refusal?.reason !== NYM_SWITCHED_OFF) refuse({ reason: NYM_SWITCHED_OFF, cause: 'other' })
+    return true
+  }
+
   const ensure = async (): Promise<NymEndpoint> => {
     cancelStop()
-    if (switchedOff) {
-      if (refusal?.reason !== NYM_SWITCHED_OFF) refuse({ reason: NYM_SWITCHED_OFF, cause: 'other' })
-      throw new NymUnavailable(NYM_SWITCHED_OFF)
-    }
+    if (isSwitchedOff()) throw new NymUnavailable(NYM_SWITCHED_OFF)
     if (listening && endpoint !== undefined) {
       // A proxy set while the host runs: its connections to the gateways would now go around it.
       if (await proxyIsSet()) { supervisor.idle(); refuse(PROXY_VERDICT); throw new NymUnavailable(PROXY_VERDICT.reason) }
+      if (isSwitchedOff()) throw new NymUnavailable(NYM_SWITCHED_OFF)
       return endpoint
     }
     if (!running) {
@@ -200,6 +208,7 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
       if (now() < refusedUntil && current.state === 'failed') throw new NymUnavailable(current.reason)
       refusal = undefined
       const verdict = await check()
+      if (isSwitchedOff()) throw new NymUnavailable(NYM_SWITCHED_OFF)
       if ('reason' in verdict) { refuse(verdict); throw new NymUnavailable(verdict.reason) }
       approved = verdict.directory
       supervisor.start()
@@ -211,6 +220,7 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
         waiters.push(waiter)
       })
     }
+    if (isSwitchedOff()) throw new NymUnavailable(NYM_SWITCHED_OFF)
     if (endpoint === undefined) throw new NymUnavailable('Nym is not running')
     // Nothing may come of this ask (a client with the wrong secret): the host must not outlive it for ever.
     if (current.state === 'idle') armStop()

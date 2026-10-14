@@ -1,9 +1,6 @@
-// The `WebContentsView` lifecycle every toolbar popup in this chrome shares
-// -- sizing, click-away dismissal, content-height resizing -- extracted
-// once a second popup (../permissions/site-info-panel.js, the site-info
-// popover) needed the exact same mechanism ../networks/networks-panel.ts already
-// had (code-guidelines.md Rule 3). Neither caller's own domain (grant rows,
-// site info) belongs here; this file only ever moves a rectangle of
+// The `WebContentsView` lifecycle the toolbar popups share: sizing, click-away dismissal and content-height resizing.
+// The site-info popup (./site-info-panel.ts) and the Available networks popup (../networks/networks-panel.ts) are built
+// on it. Neither caller's own domain (site facts, node cards) belongs here; this file only ever moves a rectangle of
 // somebody else's web content around.
 //
 // WHY A SEPARATE VIEW, NOT A REGION OF THE CHROME VIEW: the chrome view is
