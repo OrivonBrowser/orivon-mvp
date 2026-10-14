@@ -4,7 +4,7 @@ import type { ShellState, TabState } from '../../main/shell/tabs.js'
 import { paintMark, paintShield, shieldLabel, web3Shield } from '../web3-shield.js'
 import type { ChromeContext, ChromeModule } from './context.js'
 import { hasSite, must } from './context.js'
-import { TUNNEL_NOTES } from './content-dot.js'
+import { MISSING_NOTE, TUNNEL_NOTES } from './content-dot.js'
 
 function originOf (url: string): string | null {
   try {
@@ -82,7 +82,8 @@ export function createSiteBadges (): ChromeModule {
     sitePermissionsBtn.hidden = !summary.asked
     sitePermissionsBtn.classList.toggle('has-warning', summary.warning)
     const permissions = summary.warning ? 'Permissions — this site has an unlimited grant' : 'Permissions'
-    const label = [permissions, ...(connectionSecure ? ['Connection is secure'] : []), ...(tunnelNote === '' ? [] : [tunnelNote])].join('. ')
+    sitePermissionsBtn.toggleAttribute('data-missing', summary.missing)
+    const label = [permissions, ...(summary.missing ? [MISSING_NOTE] : []), ...(connectionSecure ? ['Connection is secure'] : []), ...(tunnelNote === '' ? [] : [tunnelNote])].join('. ')
     sitePermissionsBtn.title = label
     sitePermissionsBtn.setAttribute('aria-label', label)
   }
@@ -93,7 +94,7 @@ export function createSiteBadges (): ChromeModule {
     permissionsRequestUrl = url
     connectionSecure = active?.connection === 'secure'
     if (url === null) {
-      applyPermissionsBadge({ asked: false, warning: false })
+      applyPermissionsBadge({ asked: false, warning: false, missing: false })
       return
     }
     void ctx.shell.siteSummaryFor(url).then((summary) => {

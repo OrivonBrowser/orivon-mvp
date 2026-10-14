@@ -121,10 +121,44 @@ describe('createFirstVisit', () => {
     expect(await grantsOf(h)).toEqual([])
   })
 
+  it('names why an app was never let in, and gives the question back: the dismissal and the refusal are forgotten, and what the dismissal kept staged is let go', async () => {
+    const staged = bundle(VERIFIED)
+    const dismissed = harness({ bundles: [staged], answer: 'dismissed' })
+    const visit = createFirstVisit({ deps: depsOf(dismissed, 0), untouched: () => false, servedFromCache: () => false })
+    expect(visit.notLetIn(dismissed.origin)).toBeUndefined()
+    await visit.run(dismissed.origin, dismissed.url, present, dismissed.host)
+    expect(visit.notLetIn(dismissed.origin)).toBe('later')
+    await vi.waitFor(() => { expect(dismissed.loader.fetchForInstall).toHaveBeenCalled() })
+    await visit.askAgain(dismissed.origin)
+    expect(visit.notLetIn(dismissed.origin)).toBeUndefined()
+    expect(staged.discard).toHaveBeenCalled()
+    expect(await visit.kindOf(dismissed.origin)).toBe('first')
+
+    const refused = harness({ answer: false })
+    const other = over(refused)
+    await other.run(refused.origin, refused.url, present, refused.host)
+    expect(other.notLetIn(refused.origin)).toBe('declined')
+    expect(await other.askAgain(refused.origin)).toBe(true)
+    expect(other.notLetIn(refused.origin)).toBeUndefined()
+    expect(refused.declined.has(refused.origin)).toBe(false)
+    expect(await other.kindOf(refused.origin)).toBe('first')
+  })
+
+  it('is not an app that was never let in once it is let in, and asks the question again after the dismissal is forgotten', async () => {
+    const h = harness({ answer: 'dismissed' })
+    const visit = over(h)
+    await visit.run(h.origin, h.url, present, h.host)
+    await visit.askAgain(h.origin)
+    h.consent.mockImplementation(async (_o, _m, capabilities) => capabilities)
+    expect((await visit.run(h.origin, h.url, present, h.host)).outcome).toBe('entered')
+    expect(visit.notLetIn(h.origin)).toBeUndefined()
+    expect(h.consent).toHaveBeenCalledTimes(2)
+  })
+
   it('drops a second visit from the tab that is already being asked: a reload or the page\'s own hint is the same visit', async () => {
     let answer = (_yes: boolean): void => {}
     const h = harness()
-    h.consent.mockImplementation(async () => { h.events.push('ask'); return await new Promise<boolean>((resolve) => { answer = resolve }) })
+    h.consent.mockImplementation(async (_o, _m, capabilities) => { h.events.push('ask'); return (await new Promise<boolean>((resolve) => { answer = resolve })) ? capabilities : [] })
     const visit = over(h)
     const first = visit.run(h.origin, h.url, present, h.host)
     await vi.waitFor(() => { expect(h.consent).toHaveBeenCalled() })

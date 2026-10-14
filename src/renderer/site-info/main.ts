@@ -34,6 +34,7 @@ interface OrivonSiteInfo {
   removeCookie: (key: string) => Promise<void>
   clearCookies: () => Promise<void>
   reload: () => Promise<void>
+  reviewPermissions: () => Promise<void>
   openSiteSettings: () => Promise<void>
   openExtensions: () => Promise<void>
   openCertificate: () => Promise<void>
@@ -140,6 +141,7 @@ function renderCurrent (): void {
       },
       onManageExtensions: () => { void bridge.openExtensions() },
       onReload: () => { void bridge.reload() },
+      onReviewPermissions: () => { void bridge.reviewPermissions() },
       onApplyUpdate: (cid) => { void applyUpdate(cid) },
       onOpenHome: () => { void bridge.openHome() },
       tunnel: {

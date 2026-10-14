@@ -3,7 +3,7 @@
 **What lives here.** Every grant decision this browser makes, in three layers per feature:
 `install-consent.ts` (whose `requestInstallConsent` says what the question came to: granted, declined, not asked or left), `request-grant.ts` and `update-outcomes.ts` decide;
 `grant-prompt-render.ts` (with `grant-prompt-connect.ts`, `grant-prompt-origin.ts`,
-`grant-prompt-choice.ts` and `grant-prompt-extensions.ts`) turns a decision into words; the three
+`install-consent-panel.ts`, `capability-row.ts` and `grant-prompt-extensions.ts`) turns a decision into words; the three
 `*-prompt.ts` files put those words to the person as a question in the panel of the tab that asked
 (`ask-caller.ts` is what they share). `grant-level.ts` is the one place a Level 4 site's summary loses its
 warning (`ADR-0037`). `local-file-consent.ts` is the question for a file on this computer: warning style, the file's path, what Orivon cannot
@@ -70,8 +70,7 @@ helper across a boundary neither side should depend on.
 **The tab's page is held while its question is open, and the question can be withdrawn.** A page
 that navigated away, redirected itself or opened a window while the question about it was up would
 make the answer apply to a different page, or (on a first visit) rebuild the tab as the app before
-the person had said yes. Each `*-prompt.ts` takes `holdNavigation` around its question (the whole
-staged sequence of the per-capability prompt, gaps included), and `grantWithoutInstall` takes
+the person had said yes. Each `*-prompt.ts` takes `holdNavigation` around its question, and `grantWithoutInstall` takes
 `DialogCaller.hold` from before it registers the origin until the question is answered;
 `../shell/tab-view.ts` drops a main-frame navigation, a redirect and a window the page starts while a
 hold is taken, and logs it. A change of address inside the same document is not a navigation and
@@ -134,14 +133,19 @@ unheld (A157).** `app.requestGrant` is a second door to a grant, open while the 
 scripts run, so an app can hold one declared capability before install consent asks. Treating
 "any declared capability held" as "already asked" would withhold every other one forever.
 
-**[`install-consent.ts`](install-consent.ts) and
-[`install-consent-prompt.ts`](install-consent-prompt.ts): the `'per-capability'` path (A138,
-A162).** One `outstanding` filter (neither held nor declined) replaces the two whole-set checks,
-which break once one sitting can accept part of a request and refuse the rest. The all-or-nothing
-dialog still shows the whole declared set, so a person never under-reads what the app holds; the
-per-capability one asks only about `outstanding`. The surface is a staged sequence of
-questions: one `Allow all` / `Choose individually` / `Deny all` overview, then one screen per
-capability that still lists every capability being decided. One screen with a checkbox list
-would be a change of wording for every consent and is not built. *Provisional:* the panel
-(`../shell/question/`) can draw it if a true checkbox list is wanted. A refusal appends to the remembered-decline
-record, never replaces it, so an earlier "no" nobody revisited survives.
+**[`install-consent.ts`](install-consent.ts) and [`install-consent-prompt.ts`](install-consent-prompt.ts): the first-visit
+question is one panel of switches for both consent granularities (`ADR-0085`; A138, A162, A172).** One `outstanding` filter
+(neither held nor declined) says what is asked, so a person is never re-asked about a capability already decided, and a
+manifest that widens is asked about what is new only. The prompt answers the subset the person allowed: Grant all answers
+every row, Close the rows switched on (none, a refusal recorded one by one and, on a first visit, the site's refusal),
+Escape and the other ways out `null`, which records nothing. `InstallConsentPrompt` is that one type; a prompt's answer is
+filtered back down to `outstanding`, so a broken prompt asks again next time and never grants what nobody was shown. A refusal appends to the
+remembered-decline record, never replaces it, so an earlier "no" nobody revisited survives.
+
+**[`install-consent-panel.ts`](install-consent-panel.ts) words the panel from the same rows as the key popup.** A row comes
+from `capability-row.ts`'s `offerCapability`, which `../permissions/site-info.ts` uses for its off rows too, so the two
+surfaces never word a capability differently; the icon is the capability's own, drawn by the overlay page. Rows are one per
+capability, never merged the way the whole-set dialogs merge a listen and bind pair, because each is a switch. The header keeps the order the
+whole-set dialogs have (AR-03): origin first, then the message, the rows, the claimed name, the home line and the extensions line,
+and the claim is never beside the origin. The question for a file on this computer is its own prompt (`local-file-consent.ts`,
+a boolean) and is not this panel.

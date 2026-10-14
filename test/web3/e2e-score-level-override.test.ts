@@ -6,7 +6,7 @@
 // allows loopback, dev mode or not), with the developer-only Website/Delivery
 // level override (`src/main/dev/score-levels.ts`) forcing one origin to
 // Level 4 and leaving a second, identical origin as a control at Level 1.
-// The test reads the question the panel draws and presses its real "Allow".
+// The test reads the question the panel draws and presses its real "Grant all".
 // Everything else -- the manifest hint, the grant, the shield, the popup, the
 // panel -- is the shipped code path.
 //
@@ -91,13 +91,13 @@ it(
 
         // --- Origin A: overridden to Website Level 4 ----------------------
         await clickAddressBarRetrying(chrome, a.url)
-        const dialogA: QuestionText = await answerAndRead(running, 'Allow')
+        const dialogA: QuestionText = await answerAndRead(running, 'Grant all')
         const keyAppearedA = await waitFor(async () => (await chrome.getAttribute('#site-permissions-btn', 'hidden')) === null, 15_000)
         check('origin A: the key appeared once the loopback grant-without-install flow granted it', keyAppearedA)
         await chrome.waitForTimeout(500) // past the repartition, same margin e2e-site-info.test.ts's reloadAndSettle uses
 
         check(`origin A's question is drawn plain, not in the warning style (${JSON.stringify(dialogA)})`, !dialogA.warning)
-        check('origin A\'s question carries the plain "Unlimited network access" line, no ⚠', dialogA.detail.includes('Unlimited network access') && !dialogA.detail.includes('⚠'))
+        check('origin A\'s question carries the plain "Unlimited network access" line, no ⚠', [...dialogA.choices, dialogA.detail].join('\n').includes('Unlimited network access') && ![...dialogA.choices, dialogA.detail].join('\n').includes('⚠'))
 
         const shieldA = await readShield(chrome)
         check(`origin A's shield paints Level 4, marked "Web3" (${JSON.stringify(shieldA)})`, shieldA.level === '4' && shieldA.mark === 'Web3')
@@ -138,12 +138,12 @@ it(
 
         // --- Origin B: the control, no override at all ---------------------
         await clickAddressBarRetrying(chrome, b.url)
-        const dialogB: QuestionText = await answerAndRead(running, 'Allow')
+        const dialogB: QuestionText = await answerAndRead(running, 'Grant all')
         const keyAppearedB = await waitFor(async () => (await chrome.getAttribute('#site-permissions-btn', 'hidden')) === null, 15_000)
         check('origin B: the key appeared once its own loopback grant landed', keyAppearedB)
         await chrome.waitForTimeout(500)
 
-        check(`origin B's question is still drawn in the warning style, with ⚠ (${JSON.stringify(dialogB)})`, dialogB.warning && dialogB.detail.includes('⚠'))
+        check(`origin B's question is still drawn in the warning style, with ⚠ (${JSON.stringify(dialogB)})`, dialogB.warning && dialogB.choices.join('\n').includes('⚠'))
         check('no native message box was opened for either question', (await noNativeDialogs(running)).length === 0)
 
         const shieldB = await readShield(chrome)
