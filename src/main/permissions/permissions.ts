@@ -175,7 +175,7 @@ export function buildPersistedAppPermissions (app: PersistedApp, level?: ScoreLe
  * storage layer's job is the shape. Failing it falls back to showing the
  * origin, exactly as a missing name does, so the row stays useful.
  */
-function displayableName (name: string | undefined): string | undefined {
+export function displayableName (name: string | undefined): string | undefined {
   if (name === undefined) return undefined
   if (name.length === 0 || name.length > MAX_DISPLAYED_NAME_LENGTH) return undefined
   if (UNSAFE_TEXT_CHARS.test(name)) return undefined
@@ -250,14 +250,11 @@ export class PermissionsRegistry {
     for (const app of broker.app.persistedAppsSync()) {
       if (loaded.has(app.origin) || isLocalFileKey(app.origin)) continue
       const described = buildPersistedAppPermissions(app, levelOverrideFor(app.origin))
-      // An app whose last capability was revoked leaves an empty record behind
-      // (`revoke` does not delete the file when the set empties). Showing that
-      // as a card with no rows and no revoke button would be a permanent piece
-      // of furniture a person cannot act on or dismiss -- so a persisted app
-      // with nothing left to revoke is not listed. BOTH row kinds count: an
-      // app with grants all revoked but a picked path still live is exactly
-      // as actionable as one the other way around. A LOADED app with zero of
-      // either still is, above, because it is genuinely installed and running.
+      // An app whose last capability was revoked leaves an empty record behind (`revoke` does not delete the file
+      // when the set empties). Showing that as a card with nothing to revoke would be furniture a person cannot act
+      // on, so a persisted app holding neither a grant nor a picked path is not listed. (Settings lists it anyway,
+      // while its refusal is remembered: `app-switches.ts`'s `idleApps`.) A LOADED app with neither still is, above,
+      // because it is genuinely installed and running.
       if (described.rows.length === 0 && described.pickedPathRows.length === 0) continue
       results.push(described)
     }
