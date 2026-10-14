@@ -2,9 +2,8 @@
 // session are loaded in the profile session too, once, and follow the default session's loading and unloading while they
 // are on, so a hundred websites in a profile cost one copy of each extension and not a hundred.
 //
-// The copies are on or off as a whole. The tunnel profile's stay on once its first website has asked for them. The direct
-// profile's are on only while one of the websites the person left out of the tunnel is open there (`profile-demand.ts`): off,
-// no extension of theirs has a page, a worker or a request in that session. Tied to Electron.
+// The copies are on or off as a whole: on only while a website is open in the profile (`profile-demand.ts`); off, no extension
+// of theirs has a page, a worker or a request in that session. Tied to Electron.
 import type { Extension, LoadExtensionOptions } from 'electron'
 
 /** What this needs of a session's `extensions`: Electron's own, narrowed so that a test can supply a fake. */

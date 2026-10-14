@@ -47,7 +47,9 @@ describe('making a profile session ready before a view is made in it', () => {
     ensureSiteSession('persist:tunnel-profile')
     ensureSiteSession('persist:app-abc')
     ensureSiteSession('persist:orivon-local-files')
-    expect(ensure.mock.calls).toEqual([['persist:tunnel-profile']])
+    expect(ensure.mock.calls).toEqual([['persist:tunnel-profile', true]])
+    ensureSiteSession('persist:direct-profile', false)
+    expect(ensure.mock.calls.at(-1)).toEqual(['persist:direct-profile', false])
   })
 })
 

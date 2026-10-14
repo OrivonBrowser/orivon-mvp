@@ -1,6 +1,6 @@
 // Whether a profile session has a reason to run the person's extensions: a website is open in it, or a view is about to be
-// made in it. The direct profile's extensions run only while this is true, so nothing of theirs makes a request in that
-// session while no website the person left out of the tunnel is open. Pure over a clock and a timer.
+// made in it. A profile's extensions run only while this is true, so nothing of theirs is loaded or makes a request in that
+// session while no website is open in it. Pure over a clock and a timer.
 
 /** How long a view about to be made counts as open when it never appears (a tab that failed to start). */
 export const WAKE_GRACE_MS = 15_000
