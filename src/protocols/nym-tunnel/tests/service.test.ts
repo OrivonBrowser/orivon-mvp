@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { connect as netConnect } from 'node:net'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SocksClient } from 'socks'
 import { installModuleGlobals, startHost } from '../service.js'
 import type { RunningHost } from '../service.js'
@@ -16,12 +16,13 @@ const WASM = Buffer.from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00])
 
 /** A module with the exports the real one has, whose tunnels "connect" to nothing and count what happens. */
 const FAKE_GLUE = `
-let ups = globalThis.__nymFakeUps ??= { count: 0, failNext: false }
+let ups = globalThis.__nymFakeUps ??= { count: 0, failNext: false, options: [] }
 let mine = 0
 export function initSync () {}
 export function main () {}
 export async function setupMixTunnel (options) {
   if (ups.failNext) throw new Error('gateway unreachable')
+  ups.options.push({ disablePoissonTraffic: options.disablePoissonTraffic, disableCoverTraffic: options.disableCoverTraffic })
   mine = ++ups.count
 }
 export async function connectTcp (host, port) {
@@ -64,7 +65,7 @@ async function configure (overrides: Partial<NymTunnelConfig> = {}, source = FAK
   const glue = `${source}\n// ${Math.random().toString(36)}`
   await writeFile(join(dir, MODULE_GLUE), glue)
   await writeFile(join(dir, MODULE_WASM), WASM)
-  return { moduleDir: dir, files: [pin(MODULE_GLUE, Buffer.from(glue)), pin(MODULE_WASM, WASM)], port: 0, secret: SECRET, maxInstances: 2, ...overrides }
+  return { moduleDir: dir, files: [pin(MODULE_GLUE, Buffer.from(glue)), pin(MODULE_WASM, WASM)], port: 0, secret: SECRET, maxInstances: 2, privacy: 'balanced', ...overrides }
 }
 
 const noGlobals = async (): Promise<void> => {}
@@ -103,9 +104,28 @@ describe('the Nym tunnel host', () => {
     expect(host.instances.snapshot().ready).toBe(2)
   })
 
+  it('makes each tunnel at the level the host holds, and a change reaches the tunnels started after it and replaces the idle one now', async () => {
+    host = await startHost(await configure({ privacy: 'balanced' }), { post: (message) => { posted.push(message) }, prepare: noGlobals, loader: { importGlue: importGlueNatively } })
+    const connect = async (userId: string): Promise<void> => {
+      const { socket } = await SocksClient.createConnection({ proxy: { host: '127.0.0.1', port: host?.server.port ?? 0, type: 5, userId, password: SECRET }, command: 'connect', destination: { host: 'service.example', port: 443 } })
+      socket.destroy()
+    }
+    const started = (): unknown[] => (globalThis as { __nymFakeUps?: { options: unknown[] } }).__nymFakeUps?.options ?? []
+    await connect('app-one')
+    expect(started()).toEqual([{ disablePoissonTraffic: true, disableCoverTraffic: false }])
+
+    host.setPrivacy('strongest')
+    await vi.waitFor(() => { expect(host?.instances.snapshot().ready, 'the idle tunnel was closed at once').toBe(0) })
+    await connect('app-one')
+    expect(started()).toEqual([{ disablePoissonTraffic: true, disableCoverTraffic: false }, { disablePoissonTraffic: false, disableCoverTraffic: false }])
+
+    host.setPrivacy('strongest')
+    expect(host.instances.snapshot().ready, 'the same level again replaces nothing').toBe(1)
+  })
+
   it('says which tunnel could not come up, and closes that connection', async () => {
     host = await startHost(await configure(), { post: (message) => { posted.push(message) }, prepare: noGlobals, loader: { importGlue: importGlueNatively } })
-    ;(globalThis as { __nymFakeUps?: { count: number, failNext: boolean } }).__nymFakeUps = { count: 0, failNext: true }
+    ;(globalThis as { __nymFakeUps?: { count: number, failNext: boolean, options: unknown[] } }).__nymFakeUps = { count: 0, failNext: true, options: [] }
     await expect(SocksClient.createConnection({ proxy: { host: '127.0.0.1', port: host.server.port, type: 5, userId: 'app-one', password: SECRET }, command: 'connect', destination: { host: 'service.example', port: 443 } })).rejects.toThrow()
     const last = posted.filter((message) => message.type === 'instances').at(-1)
     expect(last).toMatchObject({ type: 'instances', ready: 0, connecting: 0 })

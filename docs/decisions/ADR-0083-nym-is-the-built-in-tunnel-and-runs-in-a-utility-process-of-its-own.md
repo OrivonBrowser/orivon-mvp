@@ -3,7 +3,7 @@
 - **Status:** accepted
 - **Date:** 2026-10-13
 - **Type:** architecture / security
-- **Decided by:** owner (Nym ships inside Orivon and is the default far end of the tunnel, a person can choose their own SOCKS5 address instead, and Nym is named plainly: `d-0621`); AI recommendation accepted by default for the process shape (`d-0622`)
+- **Decided by:** owner (Nym ships inside Orivon and is the default far end of the tunnel, a person can choose their own SOCKS5 address instead, and Nym is named plainly: `d-0621`); AI recommendation accepted by default for the process shape (`d-0622`); the privacy level, Balanced by default (`d-0639`)
 
 ## Decision
 
@@ -26,6 +26,7 @@ stops it ten minutes after the last tunnel is gone, and does not start it while 
 The host looks names up itself (datagrams through the tunnel to a public resolver, any number at once) and hands the module addresses, so
 the module's one-at-a-time lookup holds nothing back; a tunnel that cannot come up is tried again under a new identity, and one whose
 streams stall is closed and replaced at the next request (`d-0637`).
+Each tunnel is made at a **privacy level** (`network.nym.privacy`, under the tunnel choice in Settings when Nym is the far end). *Balanced*, the default, passes `disablePoissonTraffic` to the module's `setupMixTunnel`: no steady stream of packets, loop cover traffic kept, about 4 to 9% of a processor core for an idle tunnel. *Strongest* passes Nym's own defaults: a steady stream with decoys in every gap, about 35% of a core for each open tunnel. A change applies to tunnels started after it: the host closes an idle tunnel at once and one in use when its last stream ends, so the next request starts one at the new level. The exposure Balanced accepts is in `T85`.
 A person's existing SOCKS5 address keeps working as it did: a settings file written before the choice existed
 keeps its address as the choice.
 
@@ -48,6 +49,8 @@ DNS only; the tunnel needs any TCP stream and UDP datagrams, so the module gets 
   SOCKS5 server that isolates by credentials (Tor's default) is what the route already promises.
 - **Reuse a module instance after a tunnel closes.** Not possible: after `disconnectMixTunnel` the same instance refuses
   a new tunnel (measured), so each tunnel is a fresh instance.
+- **Nym's defaults for every tunnel.** Rejected as the default: a third of a processor core for each open tunnel, for as long as it is open, on a computer that may be a laptop on battery. It stays a choice (Strongest).
+- **Turning off loop cover traffic as well.** Not offered: it brought an idle tunnel to 0.1% but leaves the connection carrying nothing when idle, which shows when each tunnel is in use to the second.
 - **A maintained SOCKS5 server package.** None carries UDP ASSOCIATE; the host's is about 300 lines (see its README).
 
 ## Reasoning
@@ -67,6 +70,8 @@ person who prefers Tor keeps it.
 - Nym's gateways see this computer's address; the destinations see the exit. A first connection takes about ten
   seconds on a cold start (a tunnel up in 3 to 8 s, a first HTTPS GET in 5 to 6 s) and a UDP round trip about a second.
 - The process holds about 130 MB with the module loaded and 6 to 15 MB more per tunnel (222 MB at six).
+- Each open tunnel costs about 4 to 9% of a core at Balanced and about 35% at Strongest, measured idle; throughput was the same in every setting measured (300 KB in 9 to 17 s).
+- Under Balanced, someone watching the connection to a gateway can see roughly when the person is active; Strongest hides it (`T85`).
 - Each tunnel's module instance stays in the process until it exits, so the process is replaced after it has started 24 tunnels.
 - The module cannot half-close a stream, so a client's end of sending is not passed on: the stream is closed ten quiet seconds after it.
 - `settings.json` is written as version 2; a build before this one reads none of it.

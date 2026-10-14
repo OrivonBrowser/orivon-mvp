@@ -2,7 +2,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_SCORE_PROVIDER } from '../schema.js'
+import { DEFAULT_NYM_PRIVACY, NYM_PRIVACY_LEVELS } from '../../../protocols/nym-tunnel/protocol.js'
+import { DEFAULT_SCORE_PROVIDER, describeSettings } from '../schema.js'
 import { readSettingBeforeReady } from '../settings-file.js'
 import { SettingsStore } from '../settings-store.js'
 
@@ -264,6 +265,49 @@ describe('where a routed app leaves', () => {
     const store = new SettingsStore(file)
     await store.load()
     expect(store.set('network.route.kind', 'tor')).toEqual({ ok: false, reason: 'invalid-value' })
+  })
+})
+
+describe('the Nym privacy level', () => {
+  let dir = ''
+  let file = ''
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'orivon-settings-privacy-'))
+    file = join(dir, 'settings.json')
+  })
+  afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
+
+  it('is balanced until the person chooses, and a file written before the setting existed keeps it so', async () => {
+    await writeFile(file, JSON.stringify({ version: 2, values: { 'network.route.kind': 'nym' } }))
+    const store = new SettingsStore(file)
+    await store.load()
+    expect(store.get('network.nym.privacy')).toBe('balanced')
+    expect(readSettingBeforeReady(file, 'network.nym.privacy')).toBe('balanced')
+  })
+
+  it('keeps strongest across a restart, and reads it before the store does', async () => {
+    const first = new SettingsStore(file)
+    await first.load()
+    expect(first.set('network.nym.privacy', 'strongest')).toMatchObject({ ok: true })
+    await first.flush()
+    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({ version: 2, values: { 'network.nym.privacy': 'strongest' } })
+    expect(readSettingBeforeReady(file, 'network.nym.privacy')).toBe('strongest')
+    const second = new SettingsStore(file)
+    await second.load()
+    expect(second.get('network.nym.privacy')).toBe('strongest')
+  })
+
+  it('refuses a level that is neither, from a call and from a file', async () => {
+    const store = new SettingsStore(file)
+    await store.load()
+    expect(store.set('network.nym.privacy', 'off')).toEqual({ ok: false, reason: 'invalid-value' })
+    await writeFile(file, JSON.stringify({ version: 2, values: { 'network.nym.privacy': 'weakest' } }))
+    expect(readSettingBeforeReady(file, 'network.nym.privacy')).toBe('balanced')
+  })
+
+  it('offers the levels the Nym host knows, in the same words', async () => {
+    const described = describeSettings().find((setting) => setting.key === 'network.nym.privacy')
+    expect(described).toMatchObject({ kind: 'enum', options: [...NYM_PRIVACY_LEVELS], default: DEFAULT_NYM_PRIVACY })
   })
 })
 

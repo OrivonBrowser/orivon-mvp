@@ -79,14 +79,16 @@ A tunnel that cannot come up (a gateway that closes the connection, or none that
 identity, which is what makes the module pick another gateway; a request waits for all three (95 seconds).
 
 **The Settings test's tunnel does not outlive its answer.** Each tunnel sends cover traffic and builds Sphinx packets for as long as it
-is open, which costs about a third of a core (below), so the user name made for the test (`orivon-test-` and a word) is closed five seconds after its connection ends, not ten minutes.
+is open, which costs processor time (below), so the user name made for the test (`orivon-test-` and a word) is closed five seconds after its connection ends, not ten minutes.
 
-**What a tunnel costs the processor, and the module's options.** Measured with the pinned module under plain Node on an eight-core
-computer, a tunnel with nothing going through it uses 26 to 37% of one core (a single thread: the cover and Poisson-timed packets are
+**What a tunnel costs the processor, and the two privacy levels.** Measured with the pinned module on an eight-core computer, a tunnel with nothing going through it uses 26 to 37% of one core by default (a single thread: the cover and Poisson-timed packets are
 built in WebAssembly, nearly all of it curve25519 in `smolmix_wasm`), in an Electron utility process the same. It
 is the module's own traffic, not a loop here: `read()`, `recv()` and the server wait on promises and timers. `setupMixTunnel` takes `disableCoverTraffic` and
-`disablePoissonTraffic`; with the first an idle tunnel used 0.8 to 26% (1.7% in a further run), with the second 1.2 to 3.2%, with both 0.1%. A 300 KB download through a tunnel took 9 to 16 s by default, 10 to 13 s without cover traffic, 13 to 16 s without the Poisson stream and 11 to 17 s with neither (two to three runs each; the mixnet's own variation is as large as the differences). Each is a choice about what a network observer can learn from when packets are sent, so neither is changed here: this build
-leaves both on. *Provisional*: the owner decides; these figures are the input.
+`disablePoissonTraffic`; with the first an idle tunnel used 0.8 to 26%, with the second 1.2 to 3.2% in a first run, with both 0.1%. A 300 KB download through a tunnel took 9 to 16 s by default, 10 to 13 s without cover traffic, 13 to 16 s without the Poisson stream and 11 to 17 s with neither (two to three runs each; the mixnet's own variation is as large as the differences).
+Each is a choice about what a network observer can learn from when packets are sent: Nym sends packets at a steady randomised rate (about 50 a second), with decoys filling any gap, so an observer of the connection cannot tell when the person is active, and loop cover packets (about five a second) besides.
+The host offers two levels ([`protocol.ts`](protocol.ts)'s `mixOptionsFor`), set by `network.nym.privacy` and made known to the host in its config and by a `privacy` message:
+**Balanced**, the default, passes `disablePoissonTraffic`: the steady stream is off and loop cover traffic stays, so real activity shows as bursts to someone watching the connection, though the mixnodes still delay and mix the packets. **Strongest** passes Nym's own defaults. Idle, measured again with the level in place (60 s each, after a stream had been opened and closed): Strongest 34 to 38% of a core, Balanced 8 to 9% in the host alone, 4 to 6% for a tunnel nothing has been opened through, and 7 to 15% in the whole browser with every site on the tunnel. Throughput did not differ.
+A level applies to the tunnels started after it: `instances.ts`'s `renewAll` closes a tunnel nobody is using at once and one in use when its last stream or association ends, so the next request starts one at the new level. A busy app therefore keeps its tunnel at the old level until it has a moment with nothing open.
 
 **The module's network is a dispatcher, not a wrapper.** A check made on a name before the module dials it would let a
 name that answers differently the second time lead to a private address. `module-net.ts` puts the check where the dial

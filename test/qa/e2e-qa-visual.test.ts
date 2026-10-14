@@ -271,17 +271,17 @@ for (const scheme of SCHEMES) {
         const settings = await openInternal(app, chrome, 'settings', '/privacy')
         await settings.waitForSelector('#row-route-kind')
         await settings.locator('#row-route-kind').scrollIntoViewIfNeeded()
-        check('the tunnel choice is Nym (built in), the Nym status line is shown and the address row is not', (await settings.locator('#row-route-kind select').inputValue()) === 'nym' && await settings.locator('#row-route-nym-status').isVisible() && !(await settings.locator('#row-route-proxy').isVisible()))
+        check('the tunnel choice is Nym (built in), the Nym status line is shown and the address row is not', (await settings.locator('#row-route-kind select').inputValue()) === 'nym' && await settings.locator('#row-route-nym-status').isVisible() && await settings.locator('#row-route-nym-privacy select').inputValue() === 'balanced' && !(await settings.locator('#row-route-proxy').isVisible()))
         await state(check, app, `settings-tunnel-nym-${scheme}`, {
-          expected: 'orivon://settings/privacy is open with the "Tunnel" row showing the choice "Nym (built in)", under it a "Nym" row saying "Starts when an app that uses it connects." and a "Test the tunnel" row with a Test button. No address field is shown.',
+          expected: 'orivon://settings/privacy is open with the "Tunnel" row showing the choice "Nym (built in)", under it a "Nym" row saying "Starts when an app that uses it connects.", a "Nym privacy" row with a choice showing "Balanced" and one sentence for each of Balanced and Strongest, and a "Test the tunnel" row with a Test button. No address field is shown.',
           action: 'Opened orivon://settings/privacy on a fresh profile and scrolled to the tunnel rows.'
         })
         await settings.locator('#row-route-kind select').selectOption('socks5')
         await settings.waitForSelector('#row-route-proxy input')
         await settings.locator('#row-route-kind').scrollIntoViewIfNeeded()
-        check('choosing the address shows its field and hides the Nym status', await settings.locator('#row-route-proxy input').isVisible() && !(await settings.locator('#row-route-nym-status').isVisible()))
+        check('choosing the address shows its field and hides the Nym status and the Nym privacy choice', await settings.locator('#row-route-proxy input').isVisible() && !(await settings.locator('#row-route-nym-status').isVisible()) && !(await settings.locator('#row-route-nym-privacy').isVisible()))
         await state(check, app, `settings-tunnel-address-${scheme}`, {
-          expected: 'The "Tunnel" row shows "Your own SOCKS5 address"; under it a "SOCKS5 address" row with an empty text field whose placeholder is 127.0.0.1:9050, and the "Test the tunnel" row with a Test button that is greyed out. The Nym row is gone.',
+          expected: 'The "Tunnel" row shows "Your own SOCKS5 address"; under it a "SOCKS5 address" row with an empty text field whose placeholder is 127.0.0.1:9050, and the "Test the tunnel" row with a Test button that is greyed out. The Nym and Nym privacy rows are gone.',
           action: 'Chose "Your own SOCKS5 address" in the tunnel row.'
         })
       })

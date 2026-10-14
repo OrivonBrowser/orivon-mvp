@@ -3,7 +3,8 @@
 // Started and stopped by src/main/route/ (nym-subsystem.ts).
 
 import { startHost } from './service.js'
-import { NYM_TUNNEL_IDENTITY } from './protocol.js'
+import type { RunningHost } from './service.js'
+import { isNymPrivacy, NYM_TUNNEL_IDENTITY } from './protocol.js'
 import type { FromHost, ToHost } from './protocol.js'
 import { envName } from '../local-node/protocol.js'
 
@@ -17,13 +18,18 @@ function main (): void {
   process.on('unhandledRejection', (reason) => {
     console.error('[nym-tunnel] an unhandled rejection:', reason instanceof Error ? reason.message : String(reason))
   })
-  let started = false
+  let running: Promise<RunningHost> | undefined
   process.parentPort.on('message', (event) => {
     const message = event.data as ToHost
-    if (message.type !== 'start' || started) return
-    started = true
+    if (message.type === 'privacy') {
+      // One that arrives before the start message is no loss: the start carries the level main holds by then.
+      if (isNymPrivacy(message.privacy)) void running?.then((host) => { host.setPrivacy(message.privacy) }, () => {})
+      return
+    }
+    if (message.type !== 'start' || running !== undefined) return
     const log = process.env[envName(NYM_TUNNEL_IDENTITY.name, 'LOG')] === '1' || message.config.log === true
-    startHost(message.config, { post, log }).catch(() => {
+    running = startHost(message.config, { post, log })
+    running.catch(() => {
       // startHost already posted why.
     })
   })

@@ -192,11 +192,11 @@ it('shows the ten rows in Settings, saves a choice, applies it on the next reque
   try {
     const userData = await userDataOf(app)
     const page = await openSettings(app, chrome)
-    for (const id of ['cookies', 'global-privacy-control', 'do-not-track', 'https-only', 'secure-dns', 'route-kind', 'route-nym-status', 'route-proxy-test', 'route-everywhere', 'route-sites']) expect(await page.locator(`#row-${id}`).count()).toBe(1)
+    for (const id of ['cookies', 'global-privacy-control', 'do-not-track', 'https-only', 'secure-dns', 'route-kind', 'route-nym-status', 'route-nym-privacy', 'route-proxy-test', 'route-everywhere', 'route-sites']) expect(await page.locator(`#row-${id}`).count()).toBe(1)
     // The address row is shown only for the choice of an address.
     expect(await page.locator('#row-route-proxy').count()).toBe(0)
     expect(await page.locator('#row-cookies').evaluate((row) => row.parentElement?.previousElementSibling?.textContent ?? '')).toBe('Connections and tracking')
-    expect(await page.locator('#row-cookies').evaluate((row) => row.parentElement?.querySelectorAll('.row').length)).toBe(10)
+    expect(await page.locator('#row-cookies').evaluate((row) => row.parentElement?.querySelectorAll('.row').length)).toBe(11)
     expect(await page.locator('#row-cookies option').allTextContents()).toEqual(['Allow all cookies', 'Block third-party cookies'])
     expect(await page.locator('#row-secure-dns option').allTextContents()).toEqual(['Off (use this computer\'s DNS)', 'Automatic (use secure DNS when the provider offers it)', 'Cloudflare (1.1.1.1)', 'Quad9 (9.9.9.9)'])
     await page.evaluate(() => { document.querySelector('.group-label')?.scrollIntoView() })
