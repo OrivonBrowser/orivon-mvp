@@ -45,6 +45,22 @@ function current (checks) {
 }
 
 /**
+ * The PR's head once it is `wanted`, or the last one read when `budgetMs` runs out: GitHub moves a PR's head some
+ * seconds after a push lands, so a watch started right after a push would otherwise call it missing.
+ * @param {() => string} readHead
+ * @param {string} wanted
+ * @param {{ budgetMs: number, pollMs: number, sleep: (ms: number) => Promise<void> }} timing
+ */
+export async function headOnceSeen (readHead, wanted, { budgetMs, pollMs, sleep }) {
+  let head = readHead()
+  for (let waited = 0; head !== wanted && waited < budgetMs; waited += pollMs) {
+    await sleep(pollMs)
+    head = readHead()
+  }
+  return head
+}
+
+/**
  * What to do next for checks in this state.
  * @param {{ checks: Array<{ name: string, conclusion: string }>, state: string, reruns: number, maxReruns: number }} now
  * @returns {{ step: 'wait' | 'merge' | 'rerun' | 'fail' | 'stuck', failed?: string[] }}
@@ -138,6 +154,7 @@ async function watch (pr, { maxReruns, merge, squash, stop, worktree }) {
   let { head } = read(pr)
   if (worktree !== undefined) {
     const local = execFileSync('git', ['-C', worktree, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+    head = await headOnceSeen(() => read(pr).head, local, { budgetMs: PUSH_SEEN_MS, pollMs: 5000, sleep })
     if (local !== head) { console.log(`${worktree} is at ${local.slice(0, 8)}, the PR at ${head.slice(0, 8)}: push it or name the right worktree`); return 2 }
   }
   let reruns = 0
