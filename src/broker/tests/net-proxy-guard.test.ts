@@ -14,6 +14,7 @@ import {
   APP, baseDeps, brokerWithConnectGrant, brokerWithConnectSecureGrant, manifestWith, okListenedServer, okUdpSocket
 } from './index.test-helpers.js'
 import { createBroker } from '../index.js'
+import { GENERIC_PROXY_PROBE_URL } from '../policy/proxy-guard.js'
 import type { Datagram } from '../../contracts/index.js'
 
 const PROXIED = async (): Promise<boolean> => true
@@ -89,5 +90,29 @@ describe('T20: a DIRECT answer changes nothing', () => {
 
     expect(socket.id).toEqual(expect.any(String))
     expect(seen).toEqual(['https://93.184.216.34:443/'])
+  })
+
+  it('an over-long host is refused before the probe runs, for every outbound entry point', async () => {
+    const asked: string[] = []
+    const probe = async (url: string): Promise<boolean> => { asked.push(url); return false }
+    const huge = 'a'.repeat(128 * 1024)
+
+    const plain = await brokerWithConnectGrant({ proxyConfigured: probe })
+    expect((await rejection(plain.net.connect(APP, { host: huge, port: 443 }))).code).toBe('denied')
+
+    const secure = await brokerWithConnectSecureGrant({ proxyConfigured: probe })
+    expect((await rejection(secure.net.connectSecure(APP, { host: huge, port: 443 }))).code).toBe('denied')
+
+    const udp = createBroker(baseDeps({ proxyConfigured: probe, bind: async () => okUdpSocket() }))
+    udp.registerApp(APP, manifestWith({ net: { udp: { bind: { network: ['6881-6889'] }, send: ['*:*'] } } }))
+    await udp.grant(APP, 'udp.bind.network', ['6881-6889'])
+    await udp.grant(APP, 'udp.send', ['*:*'])
+    const socket = await udp.net.udpBind(APP, { port: 6885 })
+    const sent = await socket.send({ data: new Uint8Array([1]), address: huge, port: 443, family: 'IPv4' })
+    expect(sent).toEqual({ sent: false, code: 'denied' })
+
+    expect(await udp.app.reachBypassesProxy(APP, huge, 443)).toBe(true)
+    // Binding probes the generic URL; nothing derived from the app's host is ever asked.
+    expect(asked.filter((url) => url !== GENERIC_PROXY_PROBE_URL)).toEqual([])
   })
 })

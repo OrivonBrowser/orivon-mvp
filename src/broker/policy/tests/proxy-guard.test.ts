@@ -17,6 +17,23 @@ describe('proxyProbeUrl', () => {
   it('omits the port for a lookup, which names no port at all', () => {
     expect(proxyProbeUrl('api.example.com')).toBe('https://api.example.com/')
   })
+  it('accepts the longest DNS name and answers null for one byte more', () => {
+    const longest = `${'a'.repeat(63)}.${'b'.repeat(63)}.${'c'.repeat(63)}.${'d'.repeat(61)}`
+    expect(longest).toHaveLength(253)
+    expect(proxyProbeUrl(longest, 443)).toBe(`https://${longest}:443/`)
+    expect(proxyProbeUrl(`${longest}e`, 443)).toBeNull()
+  })
+  it('answers null for a host the URL would have to escape or that carries more than an address', () => {
+    for (const host of ['', 'a/b', 'a b', 'a@b', 'a?b', 'a#b', 'a:443/x', 'caf\u00e9.example', 'a'.repeat(128 * 1024)]) {
+      expect(proxyProbeUrl(host, 443), host.slice(0, 20)).toBeNull()
+    }
+    expect(proxyProbeUrl(42 as unknown as string, 443)).toBeNull()
+  })
+  it('answers null for a port that is not a port number', () => {
+    for (const port of [-1, 65536, 1.5, Number.NaN, '443' as unknown as number]) {
+      expect(proxyProbeUrl('api.example.com', port)).toBeNull()
+    }
+  })
 })
 
 describe('GENERIC_PROXY_PROBE_URL', () => {

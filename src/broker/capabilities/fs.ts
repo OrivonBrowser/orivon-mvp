@@ -30,6 +30,17 @@ import type { GrantLedger } from '../grants/grant-ledger.js'
 import type { Broker, BrokerFsSync, CreateBrokerOptions, OpenedFile, RawFileStat } from '../broker-contracts.js'
 import type { Grant, OrivonError } from '../../contracts/index.js'
 
+/**
+ * The most files and directories a synchronous call walks. The walks (measuring the app's tree for its quota, sizing what
+ * a recursive rm frees) block the main thread, and an app makes empty entries at no quota cost, so the walk is bounded by
+ * entries, not bytes. Past it the call is refused and the asynchronous one, which does not block, does the work.
+ */
+export const SYNC_WALK_ENTRY_LIMIT = 4096
+
+function tooLargeForSync (): OrivonError {
+  return fail('limit', 'this folder holds too many entries for a synchronous call; use the asynchronous call')
+}
+
 export interface FsCapabilityOptions {
   readonly deps: CreateBrokerOptions
   readonly handleTable: HandleTable
@@ -186,13 +197,14 @@ export function createFsCapability ({ deps, handleTable, ledger, canonical }: Fs
   /** `ensureMeasured`, blocking: the first synchronous charge or refund walks the origin's files itself rather than skip the quota. A failed walk starts from zero and is retried next call. */
   function ensureMeasuredSync (key: string): void {
     if (measuredDone.has(key)) return
-    let usage: number
+    let usage: number | null
     try {
-      usage = syncIo().diskUsage(deps.fs.rootFor(key))
+      usage = syncIo().diskUsage(deps.fs.rootFor(key), SYNC_WALK_ENTRY_LIMIT)
     } catch (error) {
       if (isOrivonErrorLike(error)) throw error
       return
     }
+    if (usage === null) throw tooLargeForSync()
     measuredDone.add(key)
     measured.set(key, Promise.resolve())
     ledger.chargeFsBytes(key, usage)
@@ -210,11 +222,14 @@ export function createFsCapability ({ deps, handleTable, ledger, canonical }: Fs
 
   /** `bytesAt`, blocking. */
   function bytesAtSync (path: string): number {
+    let usage: number | null
     try {
-      return syncIo().diskUsage(path)
+      usage = syncIo().diskUsage(path, SYNC_WALK_ENTRY_LIMIT)
     } catch {
       return 0
     }
+    if (usage === null) throw tooLargeForSync()
+    return usage
   }
 
   /** `writeFile`'s blocking twin: the same growth-only charge against the same ledger, the same refund when nothing landed or the file shrank. */
