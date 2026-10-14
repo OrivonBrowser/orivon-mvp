@@ -32,6 +32,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Nym mixnet ships inside Orivon as the default tunnel for installed apps: one tunnel per app, nothing to install; your own SOCKS5 stays a choice.
 - A .eth or ipfs:// site opened through your tunnel is now read entirely through it, name proofs included; Swarm sites are refused.
 - The tunnel now works per site or for the whole browser; tunnelled sites share one profile that keeps their logins and extensions.
+- A toolbar button lists the nodes Orivon runs on your machine, with memory, a switch each and a status dot; permissions are Settings switches.
 - An app's first-visit question is now a panel of switches, Grant all or Close; the key shows a dot while permissions are off.
 - Swarm and .eth IPFS sites now work on Windows: both local nodes silently failed to start there. Error pages gain Try again.
 - A slow IPFS node no longer leaves pages half loaded: a file it could not give is asked again once its memory clears.

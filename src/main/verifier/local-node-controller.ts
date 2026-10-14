@@ -12,7 +12,7 @@ import type { NodeIdentity } from '../../protocols/local-node/kind.js'
 import type { LocalNodeConfig, LocalNodeState, PinnedFile } from '../../protocols/local-node/protocol.js'
 import { HostLifecycle } from './host-lifecycle.js'
 import { RefusedToStart } from './process-supervisor.js'
-import type { HostProcess } from './process-supervisor.js'
+import type { HostProcess, ProcessInfo } from './process-supervisor.js'
 import type { ArtifactStatus } from './local-node-artifact.js'
 import { LocalNodeSupervisor } from './local-node-supervisor.js'
 
@@ -122,6 +122,11 @@ export class LocalNodeController {
     return this.current
   }
 
+  /** The node's process while it runs. */
+  processInfo (): ProcessInfo | undefined {
+    return this.supervisor.processInfo()
+  }
+
   /** Called whenever the state changes; returns the unsubscribe. */
   onChange (listener: () => void): () => void {
     this.listeners.add(listener)
@@ -140,6 +145,12 @@ export class LocalNodeController {
     }
     if (this.supervisor.restarting || this.now() < this.refusedUntil) return this.current
     const verdict = await this.check()
+    // The person's switch can have gone off while the files were being read: it is asked again before anything starts.
+    const disabled = this.deps.disabled?.()
+    if (disabled !== undefined) {
+      this.refuse(disabled)
+      return this.current
+    }
     if ('reason' in verdict) {
       this.refuse(verdict.reason)
       return this.current
@@ -147,6 +158,23 @@ export class LocalNodeController {
     this.approved = verdict.directory
     this.lifecycle.request()
     return await this.settled()
+  }
+
+  /**
+   * The person's switch for this node changed, or a reason it must not run did: a node that runs while it must not is
+   * stopped and the state says why; one that may run again is asked for as usual, with no refusal remembered.
+   */
+  reconsider (): void {
+    this.refusedUntil = 0
+    // A check under way started before this change: nobody joins it, and its answer is read against the switch again.
+    this.checking = undefined
+    const disabled = this.deps.disabled?.()
+    if (disabled !== undefined) {
+      this.supervisor.idle()
+      this.set({ state: 'off', reason: disabled })
+    } else if (this.current.state === 'off' && this.current.reason !== undefined) {
+      this.set({ state: 'off' })
+    }
   }
 
   /** The verifier host went to sleep, and with it the only thing that reads from the node. */
@@ -177,7 +205,11 @@ export class LocalNodeController {
 
   /** Whether the node may start now: the directory its files are in, or why not. Asked once at a time. The proxy comes first, so nothing is read from disk while one is set. */
   private async check (): Promise<Verdict> {
-    this.checking ??= this.look().finally(() => { this.checking = undefined })
+    if (this.checking === undefined) {
+      // Only its own entry is cleared: a check that `reconsider` dropped must not clear the one that replaced it.
+      const pending: Promise<Verdict> = this.look().finally(() => { if (this.checking === pending) this.checking = undefined })
+      this.checking = pending
+    }
     return await this.checking
   }
 
@@ -194,6 +226,12 @@ export class LocalNodeController {
     const approved = this.approved
     this.approved = undefined
     const verdict: Verdict = approved === undefined ? await this.check() : { directory: approved }
+    const disabled = this.deps.disabled?.()
+    if (disabled !== undefined) {
+      this.refusal = disabled
+      this.refuse(disabled)
+      throw new RefusedToStart(disabled)
+    }
     if ('reason' in verdict) {
       this.refusal = verdict.reason
       this.refuse(verdict.reason)

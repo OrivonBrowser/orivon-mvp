@@ -19,6 +19,11 @@ function isRecord (value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
+/** A count that cannot be negative or fractional; a hostile host cannot make main hold a huge or odd number. */
+function isCount (value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+}
+
 function isDecimal (value: unknown): value is string {
   return typeof value === 'string' && DECIMAL.test(value)
 }
@@ -140,6 +145,7 @@ export function isFromHost (message: unknown): message is FromHost {
     case 'checkpoint': return typeof message['root'] === 'string' && BLOCK_ROOT_PATTERN.test(message['root']) && typeof message['timestamp'] === 'number'
     case 'ipns-sequence': return typeof message['key'] === 'string' && isDecimal(message['sequence'])
     case 'node-wanted': return typeof message['node'] === 'string'
+    case 'node-traffic': return typeof message['node'] === 'string' && isCount(message['active']) && isCount(message['bytes'])
     case 'swarm-feed-index': return typeof message['feed'] === 'string' && isDecimal(message['index'])
     case 'name-scheme': return isNameScheme(message['host'], message['scheme'])
     case 'reply':

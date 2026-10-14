@@ -17,6 +17,12 @@ export interface LightClientView {
   /** What the servers below learn, and which of their answers are used unchecked. */
   readonly about: string
   readonly endpoints: ReadonlyArray<{ readonly label: string, readonly urls: readonly string[] }>
+  /** The newest block the light client has verified, while it follows the chain. */
+  readonly block?: number
+  /** When that block was produced, in ms since the epoch: the head's age is now minus this. */
+  readonly headAt?: number
+  /** How old the checkpoint it starts from is, in seconds, when one can be used. */
+  readonly checkpointAgeSeconds?: number
   /** The Swarm node Orivon runs, when this run uses it. */
   readonly swarmNode?: SwarmNodeView
   /** Orivon's IPFS node, when the person reads IPFS from it. */
@@ -97,8 +103,11 @@ function summaryOf (facts: VerifierFacts, now: number): { state: LightClientView
 }
 
 export function lightClientView (facts: VerifierFacts, now: number): LightClientView {
+  const head = facts.lightClient.state === 'synced' && !facts.switchedOff && facts.hostDown === undefined && !facts.hostAsleep ? facts.lightClient : undefined
   return {
     ...summaryOf(facts, now),
+    ...(head !== undefined && { block: head.block, headAt: head.at }),
+    ...(facts.checkpoint?.ok === true && { checkpointAgeSeconds: facts.checkpoint.ageSeconds }),
     checkpoint: checkpointLine(facts.checkpoint),
     about: ABOUT,
     ...(facts.swarmNode !== undefined && { swarmNode: swarmNodeView(facts.swarmNode) }),

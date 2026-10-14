@@ -460,3 +460,75 @@ describe('what a start costs', () => {
     errors.mockRestore()
   })
 })
+
+describe('the person switching the node off and on', () => {
+  it('stops a running node and says why it is off, and refuses the next ask in the same words', async () => {
+    const h = harness()
+    const asked = h.controller.ensure()
+    await settle()
+    h.nodes[0]?.say({ type: 'ready', peers: 3 })
+    await asked
+    h.disabled = 'Swarm is switched off'
+    h.controller.reconsider()
+    expect(h.nodes[0]?.killed).toBe(true)
+    expect(h.controller.state()).toEqual({ state: 'off', reason: 'Swarm is switched off' })
+    expect(await h.controller.ensure()).toEqual({ state: 'off', reason: 'Swarm is switched off' })
+    expect(h.nodes).toHaveLength(1)
+  })
+
+  it('lets the next ask start it as soon as it is switched back on, without waiting out the memory of the refusal', async () => {
+    const h = harness()
+    h.disabled = 'Swarm is switched off'
+    await h.controller.ensure()
+    h.disabled = undefined
+    h.controller.reconsider()
+    expect(h.controller.state()).toEqual({ state: 'off' })
+    void h.controller.ensure()
+    await settle()
+    expect(h.nodes).toHaveLength(1)
+  })
+
+  it('names the process while it runs, with when it was forked', async () => {
+    const h = harness()
+    expect(h.controller.processInfo()).toBeUndefined()
+    void h.controller.ensure()
+    await settle()
+    expect(h.controller.processInfo()).toEqual({ pid: undefined, startedAt: 1_000_000 })
+  })
+})
+
+describe('the person switching the node off while it is being asked for', () => {
+  function gated (): { release: () => void, extra: Partial<ControllerDeps> } {
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    return { release, extra: { artifact: async () => { await gate; return { ok: true, directory: '/artifact' } } } }
+  }
+
+  it('starts nothing when the switch goes off during the check, and keeps the reason in the state', async () => {
+    const { release, extra } = gated()
+    const h = harness(undefined, undefined, extra)
+    const asked = h.controller.ensure()
+    await settle()
+    h.disabled = 'Swarm is switched off'
+    h.controller.reconsider()
+    release()
+    expect(await asked).toEqual({ state: 'off', reason: 'Swarm is switched off' })
+    await settle()
+    expect(h.nodes).toHaveLength(0)
+    expect(h.controller.state()).toEqual({ state: 'off', reason: 'Swarm is switched off' })
+  })
+
+  it('answers an ask made after the switch went off at once, not with the stale check that was under way', async () => {
+    const { release, extra } = gated()
+    const h = harness(undefined, undefined, extra)
+    void h.controller.ensure()
+    await settle()
+    h.disabled = 'Swarm is switched off'
+    h.controller.reconsider()
+    expect(await h.controller.ensure()).toEqual({ state: 'off', reason: 'Swarm is switched off' })
+    release()
+    await settle()
+    expect(h.nodes).toHaveLength(0)
+  })
+})
+

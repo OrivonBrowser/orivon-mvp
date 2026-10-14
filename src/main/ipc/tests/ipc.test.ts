@@ -7,8 +7,8 @@ import type { SiteInfoController } from '../../permissions/site-info-controller.
 // commands are exercised end-to-end by scripts/smoke.mjs instead) -- this
 // file covers only the commands this lane and the site-info lane added on
 // COMMAND_CHANNEL: the toolbar key's per-tab summary, and opening the
-// all-sites and site-info popups. Listing every app and revoking live on
-// the all-sites popup's OWN channel instead (permissions-ipc.test.ts); the
+// Available networks and site-info popups. The cards and their switches live on
+// the Available networks popup's OWN channel instead (networks-ipc.test.ts); the
 // site-info popup's own get/apply/trust/data commands live on ITS own
 // channel too (site-info-ipc.test.ts) -- see ShellCommand's own doc on why.
 
@@ -48,7 +48,7 @@ function fakeSiteInfo (overrides: Partial<SiteInfoController> = {}): SiteInfoCon
 
 function actions (overrides: Partial<ShellActions> = {}): ShellActions {
   return {
-    openPermissions: vi.fn(),
+    openNetworks: vi.fn(),
     openSiteInfo: vi.fn(),
     runCommand: vi.fn(),
     openMenu: vi.fn(),
@@ -155,28 +155,26 @@ describe('registerShellIpc -- press', () => {
   })
 })
 
-describe('registerShellIpc -- openPermissions', () => {
-  it('toggles the all-sites popup, passing the tune icon\'s anchor and the tab url when given', async () => {
-    const openPermissions = vi.fn()
-    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ openPermissions }))
+describe('registerShellIpc -- openNetworks', () => {
+  it('toggles the Available networks popup, passing the button\'s anchor', async () => {
+    const openNetworks = vi.fn()
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ openNetworks }))
 
-    // The anchor is the chrome view's measurement of its own tune icon --
+    // The anchor is the chrome view's measurement of its own button --
     // main has no way to derive it, so it always rides the command.
     const anchor = { x: 900, y: 44, width: 32, height: 32 }
-    await dispatch({ type: 'openPermissions', anchor })
-    await dispatch({ type: 'openPermissions', url: 'https://app.example/some/page', anchor })
+    await dispatch({ type: 'openNetworks', anchor })
 
-    expect(openPermissions).toHaveBeenNthCalledWith(1, anchor, undefined)
-    expect(openPermissions).toHaveBeenNthCalledWith(2, anchor, 'https://app.example/some/page')
+    expect(openNetworks).toHaveBeenCalledExactlyOnceWith(anchor)
   })
 
-  it('refuses openPermissions from a frame that is not the chrome view\'s own', async () => {
-    const openPermissions = vi.fn()
-    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ openPermissions }))
+  it('refuses openNetworks from a frame that is not the chrome view\'s own', async () => {
+    const openNetworks = vi.fn()
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ openNetworks }))
 
-    await dispatch({ type: 'openPermissions', anchor: { x: 900, y: 44, width: 32, height: 32 } }, OTHER_FRAME)
+    await dispatch({ type: 'openNetworks', anchor: { x: 900, y: 44, width: 32, height: 32 } }, OTHER_FRAME)
 
-    expect(openPermissions).not.toHaveBeenCalled()
+    expect(openNetworks).not.toHaveBeenCalled()
   })
 })
 

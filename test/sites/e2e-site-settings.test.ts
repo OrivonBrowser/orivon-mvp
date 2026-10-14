@@ -386,7 +386,7 @@ it('sets a kind the site never asked about from "Add a permission", lists it in 
   }
 }, E2E_TIMEOUT_MS)
 
-it('opens the Site settings page from the popover\'s footer and from the all-sites panel\'s link', async () => {
+it('opens the Site settings page from the popover\'s footer', async () => {
   const { app, chrome } = await launchShell()
   try {
     await visit(app, chrome, `${origins.a}/`)
@@ -397,20 +397,6 @@ it('opens the Site settings page from the popover\'s footer and from the all-sit
     await popup.click('.nav-row:has(span:text-is("Site settings"))')
     expect(await waitFor(() => settingsPage(app) !== undefined)).toBe(true)
     expect(await waitFor(() => infoPage(app) === undefined)).toBe(true)
-    expect((settingsPage(app) as Page).url()).toContain('/sites')
-
-    // The all-sites panel: a link under its list.
-    await activateTab(chrome, 0)
-    await chrome.click('#permissions-btn')
-    const panelOf = (): Page | undefined => app.windows().find((w) => w.url().endsWith('/renderer/permissions/index.html') && !w.isClosed())
-    expect(await waitFor(() => panelOf() !== undefined)).toBe(true)
-    const panel = panelOf() as Page
-    await panel.waitForSelector('#site-settings-link')
-    expect(await textOf(panel, '#site-settings-link')).toEqual(['All site settings'])
-    await shootBoth(app, 'all-sites-link', panel)
-    await panel.click('#site-settings-link')
-    expect(await waitFor(() => panelOf() === undefined)).toBe(true)
-    await activateTab(chrome, 1)
     expect((settingsPage(app) as Page).url()).toContain('/sites')
   } finally {
     await closeElectron(app)

@@ -1,8 +1,8 @@
 // The site-info popup's own command channel -- one page of Orivon
 // capability switches, a Web3 Score page, and a Cookies and site data
 // page, all for the ONE origin this popup was opened for. The same
-// sender-identity check as ./permissions-ipc.ts, against the site-info
-// popup's own webContents instead of the all-sites panel's.
+// sender-identity check as ./networks-ipc.ts, against the site-info
+// popup's own webContents instead of the Available networks popup's.
 //
 // THE ORIGIN IS FIXED AT CONSTRUCTION, NEVER A COMMAND FIELD. Every
 // command below acts on exactly the `origin` this function was called
@@ -90,13 +90,13 @@ export type SiteInfoCommand =
   | { type: 'openExtensions' }
   /** The Certificate row: closes this popup and opens the certificate viewer for the active tab. */
   | { type: 'certificate' }
-  /** Same contract as ./permissions-ipc.ts's own `contentHeight`. */
+  /** Same contract as ./networks-ipc.ts's own `contentHeight`. */
   | { type: 'contentHeight'; height: number }
   /** Escape in the popup's page: closes the popup. No argument. */
   | { type: 'close' }
 
 /** Identity alone is not enough (open-questions.md A269), the same reason
- * ./permissions-ipc.ts's own `isFromPermissionsPanel` checks the URL too --
+ * ./networks-ipc.ts's own `isFromNetworksPanel` checks the URL too --
  * see that function's doc. `popupUrl` is the address this popup was created
  * with, which `lock-navigation.ts` refuses to ever change. */
 function isFromSiteInfoWindow (event: IpcMainInvokeEvent, siteInfoWebContents: WebContents, popupUrl: string): boolean {

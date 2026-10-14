@@ -1,8 +1,8 @@
 // The site-info popup: what the shield and key toolbar icons open. Shares
-// its `WebContentsView` lifecycle with ./permissions-panel.ts through
+// its `WebContentsView` lifecycle with ../networks/networks-panel.ts through
 // ./popover-view.js; this file owns the site-info content on top of it.
 //
-// LEFT-ALIGNED, unlike the all-sites panel: both toolbar icons that open
+// LEFT-ALIGNED, unlike the Available networks popup: both toolbar icons that open
 // this sit near the LEFT edge of the address pill, so a right-aligned
 // popup would hang off the window's own left edge instead of the icon.
 
@@ -23,7 +23,7 @@ export type SiteInfoPage = 'main' | 'web3'
 
 export interface SiteInfoPanel {
   /** Clicking the icon that opened the popup again closes it, the same
-   * `toggle` shape ./permissions-panel.ts already has; clicking the other
+   * `toggle` shape ../networks/networks-panel.ts already has; clicking the other
    * icon while it shows swaps it to that icon's page. Opening it on a
    * DIFFERENT origin never happens through this alone: window.ts closes
    * this popup on every active-tab and active-origin change first

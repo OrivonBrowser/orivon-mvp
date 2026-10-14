@@ -5,7 +5,7 @@ import type { ShellEvent } from '../main/shell/shell-events.js'
 import type { ShellState } from '../main/shell/tabs.js'
 import type { SiteSummary } from '../main/permissions/site-info-controller.js'
 import type { Web3Score } from '../main/browsing/site-trust.js'
-import type { PanelAnchor } from '../main/permissions/permissions-panel.js'
+import type { PanelAnchor } from '../main/networks/networks-panel.js'
 import type { SiteInfoPage } from '../main/permissions/site-info-panel.js'
 import type { PressButton } from '../main/shell/press-stamps.js'
 import { injectBrowserAction } from '../../vendor/electron-chrome-extensions/src/browser-action.js'
@@ -55,9 +55,8 @@ export interface OrivonShell {
   siteSummaryFor: (url: string) => Promise<SiteSummary>
   /** The Web3 Score shield's data, `null` when there is nothing to show. */
   web3ScoreFor: (url: string) => Promise<Web3Score | null>
-  /** Opens (or closes) the all-sites popup. `url`, when given, is the tab
-   * whose card to scroll to. */
-  openPermissions: (anchor: PanelAnchor, url?: string) => void
+  /** Opens (or closes) the Available networks popup. */
+  openNetworks: (anchor: PanelAnchor) => void
   /** Opens (or closes) the site-info popup; `page` says which icon was clicked. */
   openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => void
   /** Opens (or closes) the main menu under the button that opens it. */
@@ -113,7 +112,7 @@ function send (command: ShellCommand): void {
   void ipcRenderer.invoke(COMMAND_CHANNEL, command)
 }
 
-/** The permissions commands need the reply `send` above discards --
+/** The commands that answer need the reply `send` above discards --
  * `ipcMain.handle`'s return value, round-tripped back through the same
  * `invoke` call every command here already makes. */
 async function request<T> (command: ShellCommand): Promise<T> {
@@ -140,7 +139,7 @@ const api: OrivonShell = {
   // The toolbar key's own at-a-glance state (a round trip, via `request`
   // above -- see ShellCommand's own doc on 'siteSummaryFor' for why
   // listing/revoking, and the full per-capability list, are NOT here), and
-  // opening the all-sites and site-info popups (fire-and-forget, like
+  // opening the Available networks and site-info popups (fire-and-forget, like
   // every other command above).
   siteSummaryFor: async (url: string) => await request<SiteSummary>({ type: 'siteSummaryFor', url }),
   // The address-bar shield's own displayed Website and Delivery level --
@@ -149,14 +148,12 @@ const api: OrivonShell = {
   // folded into the permissions payload, which answers a different question
   // (what can this app do, not how trustless its delivery is).
   web3ScoreFor: async (url: string) => await request<Web3Score | null>({ type: 'web3ScoreFor', url }),
-  // `anchor` is the tune icon's own rect, read by the chrome view -- main
+  // `anchor` is the button's own rect, read by the chrome view -- main
   // has no way to know where the toolbar put that button. Passed through
-  // verbatim; permissions-panel.ts clamps it to the window rather than
+  // verbatim; networks-panel.ts clamps it to the window rather than
   // trusting it as a bounds.
-  openPermissions: (anchor: PanelAnchor, url?: string) => {
-    send(url === undefined ? { type: 'openPermissions', anchor } : { type: 'openPermissions', url, anchor })
-  },
-  // Same anchor contract as openPermissions, for the shield or key that opens
+  openNetworks: (anchor: PanelAnchor) => { send({ type: 'openNetworks', anchor }) },
+  // Same anchor contract as openNetworks, for the shield or key that opens
   // the per-site popup instead -- `page` says which icon was clicked.
   openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => {
     send(url === undefined ? { type: 'openSiteInfo', anchor, page } : { type: 'openSiteInfo', url, anchor, page })

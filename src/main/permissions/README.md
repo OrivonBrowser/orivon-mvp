@@ -1,11 +1,11 @@
 # `src/main/permissions/`: the grant list, and the per-site popover
 
-**What lives here.** Three surfaces, each behind its own controller.
+**What lives here.** The grant list, the apps card in Settings and the per-site popover, each behind its own controller.
 
-- **All sites**, off the toolbar's tune icon: `permissions.ts` (`PermissionsController`) lists
-  grants and revokes them, recording each revoke as a declined capability (`d-0087`), and lists
-  each site's remembered notification answer for reset. Revoke only: forgetting an app entirely
-  is `GrantLedger.forgetOrigin`. A local file is not listed here: it is not an app a person installed, and the privacy page lists the recorded ones. `permissions-panel.ts` is its popup.
+- **The grant list**: `permissions.ts` (`PermissionsController`) lists every app the broker knows with what it holds
+  and the files it was given, and takes a picked path away; a revoke it makes is recorded as a declined capability
+  (`d-0087`). Forgetting an app entirely is `GrantLedger.forgetOrigin`. A local file is not listed here: it is not an app a
+  person installed, and the privacy page lists the recorded ones.
 - **The apps card in Settings**: `apps-domain.ts` (the `apps` domain, checking every field of a request) and `app-switches.ts`
   (`AppSwitches`: one row per capability an app declares or holds, built by `app-capability-rows.ts` for an app not opened this session,
   and the switch that moves one through `site-switches.ts`, the door the key popup uses). A permission is switched, never revoked
@@ -19,13 +19,13 @@ reports the update a moved name offers the installed app and takes the person's 
 off, or the app was never let in), and an app never let in carries `SiteInfo.notLetIn` and has `reviewPermissions`
 (`ADR-0085`); what it asks of the first visit (`AppEntry`) is injected by `../shell/window-panels.ts`.
 
-Both popups share their `WebContentsView` lifecycle through `popover-view.ts`: it closes a popup on blur, on Escape
+The site-info popup and the Available networks popup ([`../networks/`](../networks/README.md)) share their `WebContentsView` lifecycle through `popover-view.ts`: it closes a popup on blur, on Escape
 (each page asks main to close it over its own channel) and when another popup opens, hands the keyboard back to the tab in front
 when the popup held it, and keys a toggle by the icon that asked, so the key and the shield swap one page for the other. A re-click on the icon that opened it is judged by the stamped press it completes (`../shell/press-stamps.ts`), so a slow click closes the popup and leaves it closed. Rows take an
 optional displayed Website level; at Level 4 their warnings are gone
 ([`ADR-0037`](../../../docs/decisions/ADR-0037-a-level-4-site-s-grants-are-shown-without-warnings.md)).
 
-**Tied to Electron.** The two `-panel` files and `popover-view.ts` import `electron` values;
+**Tied to Electron.** `site-info-panel.ts` and `popover-view.ts` import `electron` values;
 `site-info.ts` and `site-switches.ts` are pure. The loader's `electron/serve.ts` functions are
 injected by `../shell/window.ts`, never imported here.
 
@@ -38,10 +38,9 @@ types), [`../../loader/`](../../loader/) (`index.ts`, `manifest/manifest.ts`),
 [`../extensions/site-reach-runner.ts`](../extensions/site-reach-runner.ts)'s
 `extensionNamesForOrigin` (`site-info-controller.ts` only -- the extensions disclosure,
 `docs/planning/extensions-exploration.md`),
-[`../sessions/notification-decisions.ts`](../sessions/notification-decisions.ts),
 `../shell/renderer-entry.ts`, `../shell/lock-navigation.ts`, `../shell/press-stamps.ts`, `../shell/shell-session.ts`,
 `../shell/theme-colors.ts`, `../shell/view-background-test-hook.ts`,
-`../ipc/permissions-ipc.ts`, `../ipc/site-info-ipc.ts`, the top-level
+`../ipc/site-info-ipc.ts`, the top-level
 `channels.ts`/`registry.ts`, `node:fs/promises`, `node:path`.
 
 **What it must never import.** Nothing bypasses either controller. Every renderer surface that

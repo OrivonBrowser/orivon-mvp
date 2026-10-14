@@ -8,7 +8,7 @@ entirely.
 | (top level) | The chrome view: `main.ts` starts the modules in [`chrome/`](chrome/) (tab strip, navigation, site badges, the toolbar cluster, the bookmarks bar; each a `ChromeModule`), and the tab drag helpers here (`tab-drag.ts`, the pointer-capture drag, and `native-tab-drag.ts`, the browser's own drag and drop that a native Wayland session uses), in its own `WebContentsView` above the active tab |
 | [`chrome/`](chrome/) | The chrome view's features, one file each, and the three toolbar slots a feature puts a button in |
 | [`newtab/`](newtab/) | The new-tab dashboard: ordinary content in a fresh tab's own view (`src/main/shell/tabs.ts`'s `createTab()`), not part of the chrome |
-| [`permissions/`](permissions/) | The all-sites permissions popup: every app and its grants, revoke-only |
+| [`networks/`](networks/) | The Available networks popup: a card for each node Orivon runs on this computer, with its status, its switch and its figures |
 | [`site-info/`](site-info/) | The per-site popup: connection row, this site's switches and permission selects, its Web3 Score and site data pages |
 | [`intro/`](intro/) | The welcome screen, a full-window view over the shell (`src/main/shell/intro-view.ts`) |
 | [`overlay/`](overlay/) | The one page every overlay shows: the main menu, and a page per feature that shows Orivon HTML above the page (`src/main/overlays/`) |
@@ -21,7 +21,7 @@ entirely.
 `src/preload/newtab.ts`'s, degrading to plain markup outside a fresh tab. `pages/` depends on
 `src/preload/internal.ts`'s one `request` and `onEvent` and holds no capability of its own: it is
 served with a CSP that allows no network. `intro/` has no preload: it reports "Enter Orivon"
-through its URL hash, which `intro-view.ts` watches. `permissions/permissions-view.ts` imports [`src/protocols/builtin.ts`](../protocols/builtin.ts)
+through its URL hash, which `intro-view.ts` watches. `pages/settings/apps-view.ts` imports [`src/protocols/builtin.ts`](../protocols/builtin.ts)
 for pure string work (showing `ipfs://<cid>` as an address). `site-info/` imports
 [`src/trust/domain-binding.ts`](../trust/domain-binding.ts) for the same, naming the home an app declares.
 

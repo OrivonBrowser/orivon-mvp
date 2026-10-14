@@ -4,7 +4,7 @@ import type { CapabilityGrantSummary } from '../grant-prompt-connect.js'
 
 // ADR-0037: an L4 site's grants carry no warnings, on every consent
 // surface -- one rule, applied at row-building time, so every caller
-// (dialogs, the site-info popup, the all-sites panel) gets it identically
+// (dialogs, the site-info popup, the apps card in Settings) gets it identically
 // rather than each re-deriving its own "is this L4" branch.
 
 describe('summaryAtLevel', () => {
