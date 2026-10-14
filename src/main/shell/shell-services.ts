@@ -57,6 +57,8 @@ import type { TunnelMark } from '../route/tunnel-mark.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import type { SubsystemContext } from '../registry.js'
 import { TabLifecycle } from './tab-lifecycle.js'
+import { createNetworks } from '../networks/networks-runner.js'
+import type { NetworksSource } from '../networks/networks-source.js'
 import { KIOSK_FLAG } from '../window-state/kiosk.js'
 import { FileWindowStateStore, NullWindowStateStore } from '../window-state/window-state-store.js'
 import type { WindowStateStore } from '../window-state/window-state-store.js'
@@ -104,6 +106,8 @@ export interface ShellServices {
     readonly markOf: (url: string, partition: string | undefined) => TunnelMark | null
     readonly onChange: (listener: () => void) => () => void
   }
+  /** The nodes Orivon runs on this computer, for the Available networks popup and the dot on its button. */
+  readonly networks: NetworksSource
   /** What the person told each site it may do; a private session keeps it in memory. */
   readonly siteSettings: SiteSettingsStore
   readonly shortcuts: ShortcutService
@@ -186,6 +190,7 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
       },
       onChange: (listener) => ctx.routes?.hub.onChange(() => { listener() }) ?? (() => {})
     },
+    networks: createNetworks(settings, ctx),
     siteSettings: new SiteSettingsStore(runtime.isPrivate ? null : join(userDataPath, 'site-settings.json')),
     shortcuts: new ShortcutService(shortcutStore, platform),
     shortcutStore,

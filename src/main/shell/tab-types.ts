@@ -119,6 +119,8 @@ export interface ShellState extends TabsSnapshot {
   updateOffered: boolean
   /** Whether the active page goes through the tunnel (`../route/tunnel-mark.ts`), for the mark on the address bar's key. */
   tunnel: TunnelMark | null
+  /** The dot on the Available networks button: green while a node runs, amber while one starts or syncs, red when one the person switched on failed, none when nothing runs. */
+  networksDot: 'green' | 'amber' | 'red' | 'none'
   /** Which profile this window is, for the chip beside the menu. */
   profile: { name: string, color: string, isPrivate: boolean, shown: boolean }
   /** The extensions loaded now, and whether the toolbar shows the Extensions button (`toolbar.extensions`). */

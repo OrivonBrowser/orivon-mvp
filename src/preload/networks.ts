@@ -1,78 +1,46 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { LIGHT_CLIENT_STATUS_CHANNEL, PERMISSIONS_COMMAND_CHANNEL } from '../main/channels.js'
-import type { PermissionsCommand } from '../main/ipc/permissions-ipc.js'
-import type { LightClientView } from '../main/verifier/status-view.js'
-import type { AppPermissions, SiteNotificationRow } from '../main/permissions/permissions.js'
-import type { CapabilityKind, GrantId } from '../contracts/index.js'
+import { NETWORKS_CHANGED_CHANNEL, NETWORKS_COMMAND_CHANNEL } from '../main/channels.js'
+import type { NetworksCommand } from '../main/ipc/networks-ipc.js'
+import type { NetworksView } from '../main/networks/networks-view.js'
 
-// Loaded ONLY by the permissions panel's own WebContentsView
-// (src/main/permissions/permissions-panel.ts) -- queue item 4.4's permissions surface.
-// This page never navigates anywhere else (no links, no
-// address bar), but the check below still runs before exposing anything
-// privileged -- the same defense-in-depth newtab.ts applies for a page that
-// COULD navigate, kept here so this file is not the one preload in the
-// codebase that trusts webPreferences.additionalArguments without checking
-// location.href against it. src/main/ipc/permissions-ipc.ts re-verifies the same
-// thing from the authoritative main-process side, on every call; neither
-// layer trusts the other.
-const URL_PREFIX = '--orivon-permissions-url='
-const FOCUS_PREFIX = '--orivon-focus-origin='
+// Loaded ONLY by the Available networks popup's own WebContentsView (src/main/networks/networks-panel.ts).
+// This page never navigates anywhere else (no links, no address bar), but the check below still runs before exposing
+// anything privileged -- the same defense-in-depth newtab.ts applies for a page that COULD navigate, kept here so this
+// file is not the one preload in the codebase that trusts webPreferences.additionalArguments without checking
+// location.href against it. src/main/ipc/networks-ipc.ts re-verifies the same thing from the authoritative
+// main-process side, on every call; neither layer trusts the other.
+const URL_PREFIX = '--orivon-networks-url='
 const expectedUrl = process.argv.find((arg) => arg.startsWith(URL_PREFIX))?.slice(URL_PREFIX.length)
-const focusOrigin = process.argv.find((arg) => arg.startsWith(FOCUS_PREFIX))?.slice(FOCUS_PREFIX.length)
+
+function isView (value: unknown): value is NetworksView {
+  return typeof value === 'object' && value !== null && Array.isArray((value as { cards?: unknown }).cards)
+}
 
 if (expectedUrl !== undefined && location.href === expectedUrl) {
-  contextBridge.exposeInMainWorld('orivonPermissions', {
-    list: async (): Promise<readonly AppPermissions[]> => {
-      const result: unknown = await ipcRenderer.invoke(PERMISSIONS_COMMAND_CHANNEL, { type: 'list' } satisfies PermissionsCommand)
-      return Array.isArray(result) ? result as AppPermissions[] : []
+  contextBridge.exposeInMainWorld('orivonNetworks', {
+    /** The cards as they are now; null when main did not answer with any. */
+    view: async (): Promise<NetworksView | null> => {
+      const result: unknown = await ipcRenderer.invoke(NETWORKS_COMMAND_CHANNEL, { type: 'view' } satisfies NetworksCommand)
+      return isView(result) ? result : null
     },
-    revoke: async (origin: string, grantId: GrantId): Promise<void> => {
-      await ipcRenderer.invoke(PERMISSIONS_COMMAND_CHANNEL, { type: 'revoke', origin, grantId } satisfies PermissionsCommand)
+    /** Moves one card's switch; false when it did not move. The new cards arrive through `onChange`. */
+    setSwitch: async (id: string, on: boolean): Promise<boolean> => {
+      const result: unknown = await ipcRenderer.invoke(NETWORKS_COMMAND_CHANNEL, { type: 'setSwitch', id, on } satisfies NetworksCommand)
+      return result === true
     },
-    revokeCapability: async (origin: string, capability: CapabilityKind): Promise<void> => {
-      await ipcRenderer.invoke(PERMISSIONS_COMMAND_CHANNEL, { type: 'revokeCapability', origin, capability } satisfies PermissionsCommand)
+    /** Pushed by main on every change of a node and every two seconds for the figures, while the popup is open. */
+    onChange: (listener: (view: NetworksView) => void): void => {
+      ipcRenderer.on(NETWORKS_CHANGED_CHANNEL, (_event, view: unknown) => { if (isView(view)) listener(view) })
     },
-    revokePickedPath: async (origin: string, pickId: string): Promise<void> => {
-      await ipcRenderer.invoke(PERMISSIONS_COMMAND_CHANNEL, { type: 'revokePickedPath', origin, pickId } satisfies PermissionsCommand)
-    },
-    listSiteNotifications: async (): Promise<readonly SiteNotificationRow[]> => {
-      const result: unknown = await ipcRenderer.invoke(PERMISSIONS_COMMAND_CHANNEL, { type: 'listSiteNotifications' } satisfies PermissionsCommand)
-      return Array.isArray(result) ? result as SiteNotificationRow[] : []
-    },
-    resetSiteNotifications: async (origin: string): Promise<void> => {
-      await ipcRenderer.invoke(PERMISSIONS_COMMAND_CHANNEL, { type: 'resetSiteNotifications', origin } satisfies PermissionsCommand)
-    },
-    /** The "All site settings" link. */
-    openSiteSettings: async (): Promise<void> => {
-      await ipcRenderer.invoke(PERMISSIONS_COMMAND_CHANNEL, { type: 'openSiteSettings' } satisfies PermissionsCommand)
-    },
-    /** The Ethereum light client's state in words; null when this build has none to report. */
-    lightClient: async (): Promise<LightClientView | null> => {
-      const result: unknown = await ipcRenderer.invoke(PERMISSIONS_COMMAND_CHANNEL, { type: 'lightClient' } satisfies PermissionsCommand)
-      return typeof result === 'object' && result !== null ? result as LightClientView : null
-    },
-    /** Pushed by main whenever that state changes while the panel is open. */
-    onLightClient: (listener: (view: LightClientView) => void): void => {
-      ipcRenderer.on(LIGHT_CLIENT_STATUS_CHANNEL, (_event, view: unknown) => {
-        if (typeof view === 'object' && view !== null) listener(view as LightClientView)
-      })
-    },
-    /** Escape in the page: asks main to close the panel and hand the keyboard back to the tab. */
+    /** Escape in the page: asks main to close the popup and hand the keyboard back to the tab. */
     close: (): void => {
-      void ipcRenderer.invoke(PERMISSIONS_COMMAND_CHANNEL, { type: 'close' } satisfies PermissionsCommand)
+      void ipcRenderer.invoke(NETWORKS_COMMAND_CHANNEL, { type: 'close' } satisfies NetworksCommand)
     },
-    /** Tells main how tall the rendered content is, so the panel sizes to it
-     * (src/main/permissions/permissions-panel.ts). Fire-and-forget: a panel that failed
-     * to resize is cosmetic, and must never break rendering the list. */
+    /** Tells main how tall the rendered content is, so the popup sizes to it. Fire-and-forget: a popup that failed to resize is cosmetic, and must never break rendering the cards. */
     reportHeight: (height: number): void => {
-      void ipcRenderer.invoke(PERMISSIONS_COMMAND_CHANNEL, { type: 'contentHeight', height } satisfies PermissionsCommand)
-    },
-    /** Read-only -- which app's card, if any, to scroll to on load. `null`
-     * for an ordinary open from the toolbar's own "Permissions" button. */
-    focusOrigin: focusOrigin ?? null
+      void ipcRenderer.invoke(NETWORKS_COMMAND_CHANNEL, { type: 'contentHeight', height } satisfies NetworksCommand)
+    }
   })
 }
-// No else branch, unlike newtab.ts: this window is never anything BUT the
-// permissions page (it has no bookmarks bar, no address bar, nothing for a
-// user to navigate away with), so there is no second, unprivileged surface
-// to fall back to.
+// No else branch, unlike newtab.ts: this window is never anything BUT the networks popup (it has no bookmarks bar, no
+// address bar, nothing for a user to navigate away with), so there is no second, unprivileged surface to fall back to.

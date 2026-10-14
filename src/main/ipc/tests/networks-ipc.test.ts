@@ -1,173 +1,80 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { PermissionsController, SiteNotificationsController } from '../../permissions/permissions.js'
+import type { NetworksSource } from '../../networks/networks-source.js'
+import type { NetworksView } from '../../networks/networks-view.js'
 
-// The settings window's own channel (queue item 4.4) -- list()/revoke()
-// dispatch, and the sender-identity check every command here gets (mirrors
-// ipc.ts's own isFromChrome, against this window's webContents instead).
-// The permissions.test.ts suite already proves revoke() tears down a real
-// handle through `PermissionsController`; this file proves the IPC layer
-// on top of it reaches that same controller and refuses an impostor sender.
+// The popup's own channel: the view and the switch reach the one source, only from the popup's own frame at the
+// address it was created at, and nothing is pushed once the cleanup has run.
 
 const handlers = new Map<string, (event: unknown, command: unknown) => unknown>()
 
-const { registerPermissionsIpc } = await import('../permissions-ipc.js')
-const { PERMISSIONS_COMMAND_CHANNEL } = await import('../../channels.js')
+const { registerNetworksIpc, REFRESH_MS } = await import('../networks-ipc.js')
+const { NETWORKS_CHANGED_CHANNEL, NETWORKS_COMMAND_CHANNEL } = await import('../../channels.js')
 
-const PANEL_URL = 'app://orivon/permissions/index.html'
-const PERMISSIONS_FRAME = { url: PANEL_URL }
-// The handler is registered on the panel's own webContents.
-const permissionsWebContents = { mainFrame: PERMISSIONS_FRAME, ipc: { handle: (channel: string, fn: (event: unknown, command: unknown) => unknown) => { handlers.set(channel, fn) } } } as unknown as import('electron').WebContents
+const PANEL_URL = 'app://orivon/networks/index.html'
+const PANEL_FRAME = { url: PANEL_URL }
 const OTHER_FRAME = { url: PANEL_URL }
+const VIEW: NetworksView = { cards: [], dot: 'none' }
 
-function fakePermissions (overrides: Partial<PermissionsController> = {}): PermissionsController {
-  return {
-    list: vi.fn(async () => []),
-    forUrl: vi.fn(async () => null),
-    revoke: vi.fn(async () => {}),
-    revokeCapability: vi.fn(async () => {}),
-    revokePickedPath: vi.fn(async () => {}),
-    ...overrides
-  }
+function panelContents (send = vi.fn(), destroyed = false): import('electron').WebContents {
+  return { mainFrame: PANEL_FRAME, isDestroyed: () => destroyed, send, ipc: { handle: (channel: string, fn: (event: unknown, command: unknown) => unknown) => { handlers.set(channel, fn) } } } as unknown as import('electron').WebContents
 }
 
-function dispatch (command: unknown, senderFrame: unknown = PERMISSIONS_FRAME): unknown {
-  const fn = handlers.get(PERMISSIONS_COMMAND_CHANNEL)
-  if (fn === undefined) throw new Error('registerPermissionsIpc did not register a handler')
+function fakeSource (overrides: Partial<NetworksSource> = {}): NetworksSource {
+  return { view: vi.fn(() => VIEW), dot: vi.fn(() => 'none' as const), setSwitch: vi.fn(() => true), onChange: vi.fn(() => () => {}), ...overrides }
+}
+
+const noTimers = { every: () => () => {} }
+
+function dispatch (command: unknown, senderFrame: unknown = PANEL_FRAME): unknown {
+  const fn = handlers.get(NETWORKS_COMMAND_CHANNEL)
+  if (fn === undefined) throw new Error('registerNetworksIpc did not register a handler')
   return fn({ senderFrame }, command)
 }
 
-describe('registerPermissionsIpc', () => {
-  it('list calls permissions.list() and returns what it resolves', async () => {
-    const permissions = fakePermissions({ list: vi.fn(async () => [{ origin: 'https://app.example', appName: 'Test', rows: [], pickedPathRows: [] }]) })
-    registerPermissionsIpc(permissionsWebContents, PANEL_URL, permissions)
-
-    const result = await dispatch({ type: 'list' })
-
-    expect(permissions.list).toHaveBeenCalledOnce()
-    expect(result).toEqual([{ origin: 'https://app.example', appName: 'Test', rows: [], pickedPathRows: [] }])
+describe('registerNetworksIpc', () => {
+  it('answers view with the cards, and setSwitch by moving the switch and saying whether it moved', async () => {
+    const source = fakeSource()
+    registerNetworksIpc(panelContents(), PANEL_URL, source, () => {}, () => {}, noTimers)
+    expect(await dispatch({ type: 'view' })).toEqual(VIEW)
+    expect(await dispatch({ type: 'setSwitch', id: 'ipfs', on: false })).toBe(true)
+    expect(source.setSwitch).toHaveBeenCalledWith('ipfs', false)
   })
 
-  it('revoke forwards origin and grantId to permissions.revoke() -- the settings page\'s own Revoke button', async () => {
-    const permissions = fakePermissions()
-    registerPermissionsIpc(permissionsWebContents, PANEL_URL, permissions)
-
-    await dispatch({ type: 'revoke', origin: 'https://app.example', grantId: 'g1' })
-
-    expect(permissions.revoke).toHaveBeenCalledWith('https://app.example', 'g1')
+  it('refuses every command from a frame that is not the popup\'s own, and from a null frame', async () => {
+    const source = fakeSource()
+    registerNetworksIpc(panelContents(), PANEL_URL, source, () => {}, () => {}, noTimers)
+    for (const frame of [OTHER_FRAME, null]) {
+      expect(await dispatch({ type: 'view' }, frame)).toBeUndefined()
+      expect(await dispatch({ type: 'setSwitch', id: 'ipfs', on: false }, frame)).toBeUndefined()
+    }
+    expect(source.view).not.toHaveBeenCalled()
+    expect(source.setSwitch).not.toHaveBeenCalled()
   })
 
-  it('refuses every command from a frame that is not the settings window\'s own', async () => {
-    const permissions = fakePermissions()
-    registerPermissionsIpc(permissionsWebContents, PANEL_URL, permissions)
-
-    await dispatch({ type: 'list' }, OTHER_FRAME)
-    await dispatch({ type: 'revoke', origin: 'https://app.example', grantId: 'g1' }, OTHER_FRAME)
-
-    expect(permissions.list).not.toHaveBeenCalled()
-    expect(permissions.revoke).not.toHaveBeenCalled()
-  })
-
-  it('refuses a command whose senderFrame is null', async () => {
-    const permissions = fakePermissions()
-    registerPermissionsIpc(permissionsWebContents, PANEL_URL, permissions)
-
-    await dispatch({ type: 'list' }, null)
-
-    expect(permissions.list).not.toHaveBeenCalled()
-  })
-
-  // A269: identity alone lets a `senderFrame` reference kept past a
-  // navigation Electron re-points elsewhere still pass -- the SAME frame
-  // object, but committed at a URL that is no longer the panel's own.
-  it('refuses a command from the panel\'s own frame reference once its committed URL is no longer the panel\'s', async () => {
-    const permissions = fakePermissions()
-    registerPermissionsIpc(permissionsWebContents, PANEL_URL, permissions)
-    const originalUrl = PERMISSIONS_FRAME.url
-    PERMISSIONS_FRAME.url = 'https://attacker.example/'
-
+  it('refuses a command from the popup\'s own frame once its committed URL is no longer the popup\'s', async () => {
+    const source = fakeSource()
+    registerNetworksIpc(panelContents(), PANEL_URL, source, () => {}, () => {}, noTimers)
+    PANEL_FRAME.url = 'https://attacker.example/'
     try {
-      await dispatch({ type: 'list' })
-      expect(permissions.list).not.toHaveBeenCalled()
+      expect(await dispatch({ type: 'setSwitch', id: 'nym', on: false })).toBeUndefined()
+      expect(source.setSwitch).not.toHaveBeenCalled()
     } finally {
-      PERMISSIONS_FRAME.url = originalUrl
+      PANEL_FRAME.url = PANEL_URL
     }
   })
 
-  // The site list: each site's notification answer, and Reset, which
-  // forgets it so the site asks again.
-  it('lists the sites\' notification answers, and resets one by origin', async () => {
-    const rows = [{ origin: 'https://chat.example', allowed: true, message: 'Can show notifications.' }]
-    const sites: SiteNotificationsController = { list: vi.fn(() => rows), reset: vi.fn() }
-    registerPermissionsIpc(permissionsWebContents, PANEL_URL, fakePermissions(), () => {}, sites)
-
-    expect(await dispatch({ type: 'listSiteNotifications' })).toEqual(rows)
-    await dispatch({ type: 'resetSiteNotifications', origin: 'https://chat.example' })
-    expect(sites.reset).toHaveBeenCalledWith('https://chat.example')
+  it('resizes only to a finite height', async () => {
+    const heights = vi.fn()
+    registerNetworksIpc(panelContents(), PANEL_URL, fakeSource(), heights, () => {}, noTimers)
+    await dispatch({ type: 'contentHeight', height: 300 })
+    await dispatch({ type: 'contentHeight', height: Number.NaN })
+    await dispatch({ type: 'contentHeight', height: Number.POSITIVE_INFINITY })
+    expect(heights.mock.calls).toEqual([[300]])
   })
 
-  it('ignores a reset whose origin is not a string, and one from another frame', async () => {
-    const sites: SiteNotificationsController = { list: vi.fn(() => []), reset: vi.fn() }
-    registerPermissionsIpc(permissionsWebContents, PANEL_URL, fakePermissions(), () => {}, sites)
-
-    await dispatch({ type: 'resetSiteNotifications', origin: 42 })
-    await dispatch({ type: 'resetSiteNotifications', origin: 'https://chat.example' }, OTHER_FRAME)
-    await dispatch({ type: 'listSiteNotifications' }, OTHER_FRAME)
-    expect(sites.reset).not.toHaveBeenCalled()
-    expect(sites.list).not.toHaveBeenCalled()
-  })
-
-  it('lists no sites when the panel was given no site list', async () => {
-    registerPermissionsIpc(permissionsWebContents, PANEL_URL, fakePermissions())
-    expect(await dispatch({ type: 'listSiteNotifications' })).toEqual([])
-  })
-})
-
-describe('registerPermissionsIpc: the link to Site settings', () => {
-  it('opens Site settings from the panel only, and does nothing when no opener was wired', async () => {
-    const open = vi.fn()
-    registerPermissionsIpc(permissionsWebContents, PANEL_URL, fakePermissions(), () => {}, undefined, undefined, open)
-    await dispatch({ type: 'openSiteSettings' })
-    expect(open).toHaveBeenCalledTimes(1)
-    await dispatch({ type: 'openSiteSettings' }, OTHER_FRAME)
-    expect(open).toHaveBeenCalledTimes(1)
-  })
-})
-
-describe('registerPermissionsIpc: the light client section', () => {
-  const VIEW = { state: 'synced' as const, summary: 'Following the chain.', checkpoint: 'Checkpoint 3 hours old.', about: 'It proves names.', endpoints: [] }
-
-  it('answers lightClient with the current view, and null when there is no source', async () => {
-    registerPermissionsIpc(permissionsWebContents, PANEL_URL, fakePermissions(), () => {}, undefined, { view: () => VIEW, subscribe: () => () => {} })
-    expect(await dispatch({ type: 'lightClient' })).toEqual(VIEW)
-    registerPermissionsIpc(permissionsWebContents, PANEL_URL, fakePermissions())
-    expect(await dispatch({ type: 'lightClient' })).toBeNull()
-  })
-
-  it('pushes each change while open, and stops once the returned cleanup runs', async () => {
-    const send = vi.fn()
-    const contents = { mainFrame: PERMISSIONS_FRAME, isDestroyed: () => false, send, ipc: { handle: (channel: string, fn: (event: unknown, command: unknown) => unknown) => { handlers.set(channel, fn) } } } as unknown as import('electron').WebContents
-    let listener: (() => void) | undefined
-    const cleanup = registerPermissionsIpc(contents, PANEL_URL, fakePermissions(), () => {}, undefined, {
-      view: () => VIEW,
-      subscribe: (l) => { listener = l; return () => { listener = undefined } }
-    })
-    listener?.()
-    const { LIGHT_CLIENT_STATUS_CHANNEL } = await import('../../channels.js')
-    expect(send).toHaveBeenCalledExactlyOnceWith(LIGHT_CLIENT_STATUS_CHANNEL, VIEW)
-    cleanup()
-    expect(listener).toBeUndefined()
-  })
-
-  it('refuses the command from any other frame', async () => {
-    registerPermissionsIpc(permissionsWebContents, PANEL_URL, fakePermissions(), () => {}, undefined, { view: () => VIEW, subscribe: () => () => {} })
-    expect(await dispatch({ type: 'lightClient' }, OTHER_FRAME)).toBeUndefined()
-  })
-})
-
-describe('registerPermissionsIpc: closing from the panel', () => {
-  it('asks the panel to close, after the reply has gone, and only for the panel itself', async () => {
+  it('asks the popup to close after the reply has gone, and only for the popup itself', async () => {
     const close = vi.fn()
-    registerPermissionsIpc(permissionsWebContents, PANEL_URL, fakePermissions(), () => {}, undefined, undefined, () => {}, close)
+    registerNetworksIpc(panelContents(), PANEL_URL, fakeSource(), () => {}, close, noTimers)
     await dispatch({ type: 'close' })
     expect(close).not.toHaveBeenCalled()
     await new Promise((resolve) => { setImmediate(resolve) })
@@ -175,5 +82,31 @@ describe('registerPermissionsIpc: closing from the panel', () => {
     await dispatch({ type: 'close' }, OTHER_FRAME)
     await new Promise((resolve) => { setImmediate(resolve) })
     expect(close).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('what is pushed while the popup is open', () => {
+  it('sends the cards on every change and every two seconds, and nothing after the cleanup', () => {
+    const send = vi.fn()
+    let change: (() => void) | undefined
+    let tick: (() => void) | undefined
+    let period = 0
+    const stops = { listener: vi.fn(), timer: vi.fn() }
+    const cleanup = registerNetworksIpc(panelContents(send), PANEL_URL, fakeSource({ onChange: (listener) => { change = listener; return stops.listener } }), () => {}, () => {}, { every: (callback, ms) => { tick = callback; period = ms; return stops.timer } })
+    expect(period).toBe(REFRESH_MS)
+    change?.()
+    tick?.()
+    expect(send.mock.calls).toEqual([[NETWORKS_CHANGED_CHANNEL, VIEW], [NETWORKS_CHANGED_CHANNEL, VIEW]])
+    cleanup()
+    expect(stops.listener).toHaveBeenCalledTimes(1)
+    expect(stops.timer).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends nothing to a popup that is already destroyed', () => {
+    const send = vi.fn()
+    let tick: (() => void) | undefined
+    registerNetworksIpc(panelContents(send, true), PANEL_URL, fakeSource(), () => {}, () => {}, { every: (callback) => { tick = callback; return () => {} } })
+    tick?.()
+    expect(send).not.toHaveBeenCalled()
   })
 })

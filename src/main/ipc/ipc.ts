@@ -19,7 +19,7 @@ import { navigateFromBrowser, openFromBrowser } from '../shell/open-from-browser
 import type { TabManager } from '../shell/tabs.js'
 import type { SiteInfoController } from '../permissions/site-info-controller.js'
 import { web3Score } from '../browsing/site-trust.js'
-import type { PanelAnchor } from '../permissions/permissions-panel.js'
+import type { PanelAnchor } from '../networks/networks-panel.js'
 import { isCommandId } from '../shortcuts/commands.js'
 import type { CommandId } from '../shortcuts/commands.js'
 import type { SiteInfoPage } from '../permissions/site-info-panel.js'
@@ -61,24 +61,21 @@ export type ShellCommand =
    * `siteSummaryFor` already is. `null` when there is nothing to show
    * (no loader published, no canonical origin). */
   | { type: 'web3ScoreFor'; url: string }
-  /** Opens, or closes, the all-sites permissions popup under the
-   * toolbar cluster's tune icon -- see ./permissions-panel.ts. `url` is
-   * the active TAB's url, not yet an origin (window.ts derives one via
-   * originFromUrl on the way), and says which app's card to scroll to; it
-   * is absent when no tab has one.
+  /** Opens, or closes, the Available networks popup under its toolbar
+   * button -- see ../networks/networks-panel.ts.
    *
    * `anchor` is the icon's own rect, measured by the chrome view. Main
    * cannot derive it: where that button sits depends on the toolbar's CSS
    * and the window width, both of which live in the renderer. It is only a
    * position -- treated as a hint and clamped to the window in
    * panelBounds(), never trusted as a bounds to set directly. */
-  | { type: 'openPermissions'; url?: string; anchor: PanelAnchor }
+  | { type: 'openNetworks'; anchor: PanelAnchor }
   /** Opens, or closes, the site-info popup under the address pill's shield
    * or key -- see ./site-info-panel.ts. Same `anchor`/`url` shape as
-   * `openPermissions`; `page` is which icon was clicked (the shield opens
+   * `openNetworks`; `page` is which icon was clicked (the shield opens
    * straight to the Web3 Score page, the key to the main page). */
   | { type: 'openSiteInfo'; url?: string; anchor: PanelAnchor; page: SiteInfoPage }
-  /** Opens, or closes, the main menu under the toolbar's menu button. Same `anchor` contract as `openPermissions`. */
+  /** Opens, or closes, the main menu under the toolbar's menu button. Same `anchor` contract as `openNetworks`. */
   | { type: 'openMenu'; anchor: PanelAnchor }
   /** A pointer went down on a toolbar button that opens a popup. Main stamps the moment with its own clock, so the click
    * that follows is judged against the press however long the button was held (../shell/press-stamps.ts). */
@@ -147,7 +144,7 @@ function isNonce (value: unknown): value is string {
 
 /** What the chrome's commands do that is the window's own business rather than the tab collection's. */
 export interface ShellActions {
-  openPermissions: (anchor: PanelAnchor, url?: string) => void
+  openNetworks: (anchor: PanelAnchor) => void
   openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => void
   runCommand: (id: CommandId) => void
   openMenu: (anchor: PanelAnchor) => void
@@ -239,8 +236,8 @@ export function registerShellIpc (
         return siteInfo.siteSummaryFor(command.url)
       case 'web3ScoreFor':
         return siteInfo.siteTrustFor(command.url).then(web3Score)
-      case 'openPermissions':
-        actions.openPermissions(command.anchor, command.url)
+      case 'openNetworks':
+        actions.openNetworks(command.anchor)
         return
       case 'openSiteInfo':
         actions.openSiteInfo(command.anchor, command.page, command.url)

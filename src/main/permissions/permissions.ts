@@ -182,9 +182,6 @@ function displayableName (name: string | undefined): string | undefined {
   return name
 }
 
-export { createSiteNotificationsController, describeSiteNotifications } from './site-notification-rows.js'
-export type { SiteNotificationRow, SiteNotificationSource, SiteNotificationsController } from './site-notification-rows.js'
-
 /** Matches `manifest.ts`'s own MAX_NAME_LENGTH. Not imported because that constant is private to it; kept equal deliberately, and the test asserts the boundary. */
 const MAX_DISPLAYED_NAME_LENGTH = 200
 

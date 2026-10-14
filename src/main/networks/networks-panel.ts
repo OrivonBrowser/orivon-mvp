@@ -1,59 +1,45 @@
-// Queue item 4.4's permissions surface, as an in-window panel hanging off
-// the toolbar cluster's tune icon -- owner, 2026-09-16, replacing the
-// separate BaseWindow this used to open. A browser does not send you to
-// another window to see what a site may do, and neither should this.
-//
-// The `WebContentsView` lifecycle (sizing, click-away dismissal, content-
-// height resizing) lives in ./popover-view.js, shared with the site-info
-// popover (./site-info-panel.js); this file owns only the grant-list
-// content on top of it.
+// The Available networks popup, as an in-window panel hanging off the toolbar button of the same name. The
+// `WebContentsView` lifecycle (sizing, click-away dismissal, content-height resizing) lives in
+// ../permissions/popover-view.js, shared with the site-info popover; this file owns only the cards on top of it.
 
 import type { BaseWindow, View, WebContents } from 'electron'
-import type { PermissionsController, SiteNotificationsController } from './permissions.js'
-import { registerPermissionsIpc } from '../ipc/permissions-ipc.js'
-import { createPopoverView } from './popover-view.js'
-import { onVerifierChange, verifierView } from '../verifier/verifier-subsystem.js'
-import type { PopoverAnchor } from './popover-view.js'
+import { registerNetworksIpc } from '../ipc/networks-ipc.js'
+import { createPopoverView } from '../permissions/popover-view.js'
+import type { PopoverAnchor } from '../permissions/popover-view.js'
 import { PANEL_POPOVER_BACKGROUND } from '../shell/theme-colors.js'
+import type { NetworksSource } from './networks-source.js'
 
-export type { PopoverAnchor as PanelAnchor } from './popover-view.js'
+export type { PopoverAnchor as PanelAnchor } from '../permissions/popover-view.js'
 
-export interface PermissionsPanel {
-  /** Clicking the tune icon again while the panel is open closes it, the
-   * way every browser's own toolbar popup behaves. */
-  toggle: (anchor: PopoverAnchor, focusOrigin: string | undefined, pressedAt?: number) => void
+export interface NetworksPanel {
+  /** Pressing the button again while the popup is open closes it, the way every browser's own toolbar popup behaves. */
+  toggle: (anchor: PopoverAnchor, pressedAt?: number) => void
   close: () => void
   isOpen: () => boolean
   restack: () => void
 }
 
-export function createPermissionsPanel (
+export function createNetworksPanel (
   win: BaseWindow,
   contentView: View,
-  permissions: PermissionsController,
+  networks: Pick<NetworksSource, 'view' | 'setSwitch' | 'onChange'>,
   dirname: string,
-  sites: SiteNotificationsController,
-  openSiteSettings: () => void,
   activeContents: () => WebContents | undefined
-): PermissionsPanel {
+): NetworksPanel {
   const popover = createPopoverView(win, contentView, {
     dirname,
-    entryPath: '/permissions/',
-    entry: 'permissions',
-    preloadRelPath: '../preload/permissions.js',
-    urlArgName: 'orivon-permissions-url',
+    entryPath: '/networks/',
+    entry: 'networks',
+    preloadRelPath: '../preload/networks.js',
+    urlArgName: 'orivon-networks-url',
     align: 'right',
     background: PANEL_POPOVER_BACKGROUND,
     activeContents,
-    registerIpc: (webContents, url, onContentHeight) => {
-      return registerPermissionsIpc(webContents, url, permissions, onContentHeight, sites, { view: verifierView, subscribe: onVerifierChange }, openSiteSettings, () => { popover.close() })
-    }
+    registerIpc: (webContents, url, onContentHeight) => registerNetworksIpc(webContents, url, networks, onContentHeight, () => { popover.close() })
   })
 
   return {
-    toggle (anchor, focusOrigin, pressedAt) {
-      popover.toggle(anchor, focusOrigin !== undefined ? [`--orivon-focus-origin=${focusOrigin}`] : [], undefined, pressedAt)
-    },
+    toggle: (anchor, pressedAt) => { popover.toggle(anchor, [], undefined, pressedAt) },
     close: popover.close,
     isOpen: popover.isOpen,
     restack: popover.restack

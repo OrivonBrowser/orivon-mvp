@@ -86,8 +86,7 @@
 #web3-score-btn .web3-shield { flex: none; }
 
 /* The site-info popup's other entry point -- an unlimited grant among its
-   rows tints the key the same warning colour the all-sites list's own
-   rows use for the identical fact (permissions-view.ts). */
+   rows tints the key in the warning colour. */
 #site-permissions-btn.has-warning { color: var(--winsecure); }
 
 .addressbar {
@@ -324,13 +323,24 @@ browser-action-list::part(badge) {
   opacity: 0.55;
   cursor: not-allowed;
 }
-.statusdot {
+/* The dot on the Available networks button: how the nodes are. Green while one runs, amber while one starts or
+   syncs, red when one that is switched on failed, and none while nothing runs. */
+.networks-btn { position: relative; }
+.networks-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
   width: 8px;
   height: 8px;
-  flex: none;
+  box-sizing: border-box;
   border-radius: 50%;
-  background: var(--wok);
+  border: 1.5px solid var(--wchrome);
+  pointer-events: none;
 }
+.networks-dot[data-dot='none'] { display: none; }
+.networks-dot[data-dot='green'] { background: var(--wok); }
+.networks-dot[data-dot='amber'] { background: var(--wwarn-mark); }
+.networks-dot[data-dot='red'] { background: var(--winsecure); }
 
 /* Where a feature adds a toolbar button without editing index.html (chrome/toolbar-button.ts). Buttons
    sit in ascending `order`; a slot with nothing visible in it takes no room, not even the gap its
@@ -358,8 +368,7 @@ browser-action-list::part(badge) {
   .bookmarkbtn { margin: 0 4px; }
   .toolbar-cluster { margin-left: 4px; }
   .toolbar-cluster .sep,
-  #identity,
-  .statusdot { display: none; }
+  #identity { display: none; }
   browser-action-list { max-width: 32px; overflow: hidden; }
   browser-action-list::part(action) { flex: none; }
   .profile-chip { max-width: 72px; }

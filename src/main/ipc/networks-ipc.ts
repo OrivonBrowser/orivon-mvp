@@ -1,107 +1,69 @@
-// The permissions panel's own command channel -- list every app's grants,
-// revoke one. The sender must be the panel's own top frame, by identity;
-// unlike ipc.ts's `isFromChrome` its URL is not compared too, and whether it
-// should be is open-questions.md A269. The panel's view is locked to its
-// document (lock-navigation.ts) and its preload gates on the URL. The handler
-// is registered on the panel's own webContents, so it goes when the panel
-// does -- see permissions-panel.ts.
+// The Available networks popup's own command channel: the cards, and a switch. The sender must be the popup's own top
+// frame, by identity and by the address it was created at (the popup's view is locked to its document,
+// lock-navigation.ts, and its preload gates on the URL). The handler is registered on the popup's own webContents, so it
+// goes when the popup does -- see ../networks/networks-panel.ts. While the popup is open, main pushes the cards on every
+// change and every two seconds for the figures; nothing is pushed or polled once the popup is gone.
 
 import type { IpcMainInvokeEvent, WebContents } from 'electron'
-import { LIGHT_CLIENT_STATUS_CHANNEL, PERMISSIONS_COMMAND_CHANNEL } from '../channels.js'
-import type { LightClientView } from '../verifier/status-view.js'
-import type { AppPermissions, PermissionsController, SiteNotificationRow, SiteNotificationsController } from '../permissions/permissions.js'
-import type { CapabilityKind, GrantId } from '../../contracts/index.js'
+import { NETWORKS_CHANGED_CHANNEL, NETWORKS_COMMAND_CHANNEL } from '../channels.js'
+import type { NetworksSource } from '../networks/networks-source.js'
+import type { NetworksView } from '../networks/networks-view.js'
 
-export type PermissionsCommand =
-  | { type: 'list' }
-  | { type: 'revoke', origin: string, grantId: GrantId }
-  /** For an app that is not loaded this session: its grants live only on disk
-   * and have no live id, so the capability itself is the address. An origin
-   * holds at most one grant per capability, so this is not ambiguous. */
-  | { type: 'revokeCapability', origin: string, capability: CapabilityKind }
-  /** D-0007's own revoke button, addressed by pickId -- a picked path is
-   * never a CapabilityKind, so `revokeCapability` cannot reach it. */
-  | { type: 'revokePickedPath', origin: string, pickId: string }
-  /** How tall the rendered list actually is, so the panel can size itself to
-   * its content the way a toolbar popup does. Sent by the page after every
-   * render, because the list arrives over IPC and the first paint is always
-   * an empty one. Advisory: permissions-panel.ts clamps it. */
+export type NetworksCommand =
+  | { type: 'view' }
+  /** Moves one card's switch. The reply says whether it moved; the new cards follow as a push. */
+  | { type: 'setSwitch', id: string, on: boolean }
+  /** How tall the rendered cards are, so the popup sizes to them. Advisory: the panel clamps it. */
   | { type: 'contentHeight', height: number }
-  /** Each site's remembered notification answer: a Chromium permission, not
-   * a grant, so its own list. Reset forgets one, and the site asks again. */
-  | { type: 'listSiteNotifications' }
-  | { type: 'resetSiteNotifications', origin: string }
-  /** The Ethereum light client's state, read-only. Changes are pushed on LIGHT_CLIENT_STATUS_CHANNEL while the panel is open. */
-  | { type: 'lightClient' }
-  /** The "All site settings" link: closes the panel and opens the Site settings page. No argument. */
-  | { type: 'openSiteSettings' }
-  /** Escape in the panel's page: closes the panel. No argument. */
+  /** Escape in the popup's page: closes it. No argument. */
   | { type: 'close' }
 
-export interface LightClientSource {
-  view: () => LightClientView
-  /** Returns the unsubscribe. */
-  subscribe: (listener: () => void) => () => void
+/** How often the figures (memory, CPU, bytes) are pushed while the popup is open. */
+export const REFRESH_MS = 2_000
+
+/** Identity alone is not enough: a `senderFrame` reference can survive a navigation Electron re-points it after, so the committed URL is checked too, as ./ipc.ts's `isFromChrome` does. */
+function isFromNetworksPanel (event: IpcMainInvokeEvent, panel: WebContents, panelUrl: string): boolean {
+  return event.senderFrame !== null && event.senderFrame === panel.mainFrame && event.senderFrame.url === panelUrl
 }
 
-/** Identity alone is not enough (open-questions.md A269): a `senderFrame`
- * reference can survive a navigation Electron re-points it after, so the
- * URL is checked too, the same defence-in-depth ../ipc.ts's own
- * `isFromChrome` already applies to COMMAND_CHANNEL. `panelUrl` is the
- * address this popup was created with, which `lock-navigation.ts` refuses
- * to ever change. */
-function isFromPermissionsPanel (event: IpcMainInvokeEvent, permissionsWebContents: WebContents, panelUrl: string): boolean {
-  return event.senderFrame !== null && event.senderFrame === permissionsWebContents.mainFrame && event.senderFrame.url === panelUrl
+export interface NetworksTimers {
+  /** Calls `callback` every `ms` until the returned stop runs. */
+  readonly every: (callback: () => void, ms: number) => () => void
 }
 
-export function registerPermissionsIpc (
-  permissionsWebContents: WebContents,
+const REAL_TIMERS: NetworksTimers = { every: (callback, ms) => { const timer = setInterval(callback, ms); return () => { clearInterval(timer) } } }
+
+export function registerNetworksIpc (
+  panel: WebContents,
   panelUrl: string,
-  permissions: PermissionsController,
+  source: Pick<NetworksSource, 'view' | 'setSwitch' | 'onChange'>,
   onContentHeight: (height: number) => void = () => {},
-  sites?: SiteNotificationsController,
-  lightClient?: LightClientSource,
-  openSiteSettings: () => void = () => {},
-  closePanel: () => void = () => {}
+  closePanel: () => void = () => {},
+  timers: NetworksTimers = REAL_TIMERS
 ): () => void {
-  const unsubscribe = lightClient?.subscribe(() => {
-    if (!permissionsWebContents.isDestroyed()) permissionsWebContents.send(LIGHT_CLIENT_STATUS_CHANNEL, lightClient.view())
-  })
-  // On the panel's own webContents: the handler goes with it, and two windows
-  // can each have one open.
-  permissionsWebContents.ipc.handle(PERMISSIONS_COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: PermissionsCommand): void | readonly SiteNotificationRow[] | LightClientView | null | Promise<void | readonly AppPermissions[]> => {
-    if (!isFromPermissionsPanel(event, permissionsWebContents, panelUrl)) return
-
+  const push = (): void => {
+    if (!panel.isDestroyed()) panel.send(NETWORKS_CHANGED_CHANNEL, source.view() satisfies NetworksView)
+  }
+  const stopListening = source.onChange(push)
+  const stopTimer = timers.every(push, REFRESH_MS)
+  // On the popup's own webContents: the handler goes with it, and two windows can each have one open.
+  panel.ipc.handle(NETWORKS_COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: NetworksCommand): void | boolean | NetworksView => {
+    if (!isFromNetworksPanel(event, panel, panelUrl)) return
     switch (command.type) {
-      case 'list':
-        return permissions.list()
-      case 'revoke':
-        return permissions.revoke(command.origin, command.grantId)
-      case 'revokeCapability':
-        return permissions.revokeCapability(command.origin, command.capability)
-      case 'revokePickedPath':
-        return permissions.revokePickedPath(command.origin, command.pickId)
+      case 'view':
+        return source.view()
+      case 'setSwitch':
+        // Typed on the wire, not trusted: the renderer picks the payload.
+        return source.setSwitch(command.id, command.on)
       case 'contentHeight':
-        // Number.isFinite, not a bare typeof check: NaN and Infinity are both
-        // numbers, and either would reach setBounds as a corrupt height.
+        // Number.isFinite, not a bare typeof check: NaN and Infinity are both numbers, and either would reach setBounds as a corrupt height.
         if (Number.isFinite(command.height)) onContentHeight(command.height)
         return
-      case 'listSiteNotifications':
-        return sites?.list() ?? []
-      case 'resetSiteNotifications':
-        // Typed on the wire, not trusted: the renderer picks the payload.
-        if (typeof command.origin === 'string') sites?.reset(command.origin)
-        return
-      case 'lightClient':
-        return lightClient?.view() ?? null
-      case 'openSiteSettings':
-        openSiteSettings()
-        return
       case 'close':
-        // After the reply: a non-warm panel's close destroys this webContents, which would drop an invoke still waiting.
+        // After the reply: a non-warm popup's close destroys this webContents, which would drop an invoke still waiting.
         setImmediate(closePanel)
         return
     }
   })
-  return () => { unsubscribe?.() }
+  return () => { stopListening(); stopTimer() }
 }
