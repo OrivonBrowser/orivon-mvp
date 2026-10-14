@@ -28,7 +28,7 @@ import { confine, fsError, guarded, type PathLike } from './paths.js'
 import { decode, encode, encodingOf } from '../encoding.js'
 import { VIRTUAL_ROOT } from '../virtual-root.js'
 import { Buffer } from 'buffer'
-import { join } from 'path'
+import { join } from 'path/posix'
 
 export interface ReadFileOptions { encoding?: string | null }
 export interface WriteFileOptions { encoding?: string | null, flag?: string }

@@ -9,6 +9,9 @@ export type ErrorPage = ResolutionFailure
 
 export const ERROR_PAGE_CSP = "default-src 'none'; style-src 'unsafe-inline'"
 
+/** The failures a later attempt may pass: the page offers to make one. */
+const MAY_PASS: ReadonlySet<ErrorPage> = new Set<ErrorPage>(['not-synced', 'unavailable'])
+
 const PAGES: Readonly<Record<ErrorPage, { status: number, title: string, lead: string }>> = {
   'not-synced': {
     status: 503,
@@ -48,10 +51,12 @@ function escapeHtml (text: string): string {
 
 export function renderErrorPage (page: ErrorPage, shown: string, detail: string): { status: number, html: string } {
   const { status, title, lead } = PAGES[page]
+  // No script runs here: a link to this very address is a navigation, which the verifier answers with a new attempt.
+  const retry = MAY_PASS.has(page) ? '<p><a class="retry" href="">Try again</a></p>' : ''
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="color-scheme" content="light dark"><title>${escapeHtml(title)}</title>
-<style>body{font:15px/1.5 system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem}code{word-break:break-all}.detail{opacity:.7;font-size:13px}</style></head>
-<body><h1>${escapeHtml(title)}</h1><p>${escapeHtml(lead)}</p><p><code>${escapeHtml(shown)}</code></p><p class="detail">${escapeHtml(detail)}</p></body></html>
+<style>body{font:15px/1.5 system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem}code{word-break:break-all}.detail{opacity:.7;font-size:13px}.retry{display:inline-block;padding:.4rem 1rem;border:1px solid currentColor;border-radius:6px;color:inherit;text-decoration:none}</style></head>
+<body><h1>${escapeHtml(title)}</h1><p>${escapeHtml(lead)}</p><p><code>${escapeHtml(shown)}</code></p><p class="detail">${escapeHtml(detail)}</p>${retry}</body></html>
 `
   return { status, html }
 }
