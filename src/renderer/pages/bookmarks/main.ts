@@ -1,5 +1,6 @@
 // The Bookmarks page: every bookmark and folder in a tree and a list, with search, editing in place, filing rows in
 // folders by dialog or drag, delete with undo, and the bookmarks saved as the HTML file other browsers read.
+import { guardMiddleClickPaste } from '../shared/middle-click-guard.js'
 import { coalesce } from '../shared/coalesce.js'
 import { h, replaceChildren } from '../shared/dom.js'
 import { bookmarkIcon, moreIcon, plusIcon } from '../shared/icons.js'
@@ -17,6 +18,8 @@ import { renderEdit } from './view-edit.js'
 import { applyRoving, applySelection, renderCrumbs, renderEmpty, renderList, renderSkeleton, rowElement } from './view-list.js'
 import type { RowActions } from './view-list.js'
 import { renderTree, treeItem } from './view-tree.js'
+
+guardMiddleClickPaste(document)
 
 const SEARCH_DELAY_MS = 200
 const ADDRESS_PROBLEM = 'Enter a web address that starts with http:// or https://'

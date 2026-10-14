@@ -230,8 +230,8 @@ async function main () {
         inert: Array.from(document.querySelectorAll('#featured-grid .tile')).filter((el) => el.disabled).length
       }))
       check(
-        'the dashboard shows Orivon Featured: Explore, The Lounge, FreeTube, ASGARDEX and Element, each a live tile',
-        /^orivon featured$/i.test(tiles.title ?? '') && tiles.labels.join() === 'Explore,The Lounge,FreeTube,ASGARDEX,Element' && tiles.inert === 0,
+        'the dashboard shows Orivon Featured: Explore, WebTorrent, ASGARDEX, Ledger Wallet and The Lounge, each a live tile',
+        /^orivon featured$/i.test(tiles.title ?? '') && tiles.labels.join() === 'Explore,WebTorrent,ASGARDEX,Ledger Wallet,The Lounge' && tiles.inert === 0,
         JSON.stringify(tiles)
       )
 

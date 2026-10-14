@@ -29,7 +29,7 @@ function main (): void {
     }
     const log = process.env[envName(kind.name, 'LOG')] === '1'
     startNode(kind, message.config, { post, ...(log ? { onLog: (line: string) => { console.log(`[${kind.name}] ${line}`) } } : {}) }).catch(() => {
-      // startNode already posted why.
+      // startNode posts the reason of every setup failure before it rethrows.
     })
   })
 }

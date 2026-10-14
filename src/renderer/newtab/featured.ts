@@ -8,8 +8,8 @@ export interface FeaturedEntry {
 
 export const FEATURED: readonly FeaturedEntry[] = [
   { title: 'Explore', url: 'ipfs://explore.orivonstack.eth', icon: new URL('./featured/explore.svg', import.meta.url).href },
-  { title: 'The Lounge', url: 'ipfs://thelounge.orivonstack.eth', icon: new URL('./featured/thelounge.png', import.meta.url).href },
-  { title: 'FreeTube', url: 'ipfs://freetube.orivonstack.eth', icon: new URL('./featured/freetube.png', import.meta.url).href },
+  { title: 'WebTorrent', url: 'ipfs://webtorrent.orivonstack.eth', icon: new URL('./featured/webtorrent.png', import.meta.url).href },
   { title: 'ASGARDEX', url: 'ipfs://asgardex.orivonstack.eth', icon: new URL('./featured/asgardex.png', import.meta.url).href },
-  { title: 'Element', url: 'ipfs://element.orivonstack.eth', icon: new URL('./featured/element.png', import.meta.url).href }
+  { title: 'Ledger Wallet', url: 'ipfs://ledgerwallet.orivonstack.eth', icon: new URL('./featured/ledgerwallet.png', import.meta.url).href },
+  { title: 'The Lounge', url: 'ipfs://thelounge.orivonstack.eth', icon: new URL('./featured/thelounge.png', import.meta.url).href }
 ]
