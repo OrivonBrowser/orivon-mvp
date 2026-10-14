@@ -29,7 +29,8 @@ export interface AppSwitches {
 /** The Website level an origin is displayed at, when one is forced (ADR-0037: at Level 4 its rows carry no warning); none by default. */
 type LevelOverrideFor = (origin: string) => ScoreLevel | undefined
 
-export function createAppSwitches (ctx: SubsystemContext, levelOverrideFor: LevelOverrideFor = () => undefined): AppSwitches {
+/** `changed` tells the chrome that what it knows of an app's permissions moved, so the key's dot follows a switch of this card at once (`../app-setup/entry-changes.ts`). */
+export function createAppSwitches (ctx: SubsystemContext, levelOverrideFor: LevelOverrideFor = () => undefined, changed: () => void = () => {}): AppSwitches {
   return {
     async rowsFor (origin) {
       const broker = ctx.broker
@@ -61,8 +62,13 @@ export function createAppSwitches (ctx: SubsystemContext, levelOverrideFor: Leve
     async set (origin, capability, on, shown) {
       const broker = ctx.broker
       if (broker === undefined) return 'not-registered'
-      if (on) return await turnOnCapability(broker, origin, capability, shown)
+      if (on) {
+        const result = await turnOnCapability(broker, origin, capability, shown)
+        if (result === 'ok') changed()
+        return result
+      }
       await turnOffCapability(broker, origin, capability)
+      changed()
       return 'ok'
     }
   }

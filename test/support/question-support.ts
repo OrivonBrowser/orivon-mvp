@@ -71,7 +71,18 @@ export async function questionGone (app: App): Promise<boolean> {
   return !(await questionShown(app))
 }
 
-export interface QuestionText { origin: string, title: string, message: string, detail: string, buttons: string[], warning: boolean }
+export interface QuestionText {
+  origin: string
+  title: string
+  message: string
+  detail: string
+  buttons: string[]
+  warning: boolean
+  /** The words of each switch row, in order (a question that asks for several things at once). */
+  choices: string[]
+  /** The line under the switches, when it shows. */
+  note: string
+}
 
 /** What the panel says, as the person reads it. */
 export async function readQuestion (page: Page): Promise<QuestionText> {
@@ -83,9 +94,23 @@ export async function readQuestion (page: Page): Promise<QuestionText> {
       message: text('.q-message'),
       detail: text('.q-detail'),
       buttons: Array.from(document.querySelectorAll('.q .btn-row .btn')).map((button) => button.textContent ?? ''),
-      warning: document.querySelector('.q.q-warning') !== null
+      warning: document.querySelector('.q.q-warning') !== null,
+      choices: Array.from(document.querySelectorAll('.q .q-choice .q-choice-message')).map((row) => row.textContent ?? ''),
+      note: (document.querySelector('.q .q-note') as HTMLElement | null)?.hidden === false ? document.querySelector('.q .q-note')?.textContent ?? '' : ''
     }
   })
+}
+
+/** Switches the row of this capability on (or off again) in the panel that is on screen. */
+export async function switchRow (page: Page, capability: string, on = true): Promise<void> {
+  const row = page.locator(`.q .q-switch[data-choice="${capability}"]`)
+  if ((await row.getAttribute('aria-checked')) !== String(on)) await row.click()
+  await page.waitForSelector(`.q .q-switch[data-choice="${capability}"][aria-checked="${String(on)}"]`)
+}
+
+/** The capability ids of the panel's rows, and which of them are switched on. */
+export async function readSwitches (page: Page): Promise<Array<{ capability: string, on: boolean }>> {
+  return await page.evaluate(() => Array.from(document.querySelectorAll('.q .q-switch')).map((control) => ({ capability: (control as HTMLElement).dataset['choice'] ?? '', on: control.getAttribute('aria-checked') === 'true' })))
 }
 
 /** Waits out the guard, then presses the button with this label. The panel may already be gone by the time the click settles. */
@@ -107,7 +132,7 @@ export async function answerAndRead (app: App, label: string): Promise<QuestionT
   return said
 }
 
-/** Waits for the panel and presses its first listed button, the accepting one in every consent question (`Allow`, or `Allow all` where the app asked per capability), returning what it said first. */
+/** Waits for the panel and presses its first listed button, the accepting one in every consent question (`Allow`, or `Grant all` where the question is a panel of switches), returning what it said first. */
 export async function answerAccepting (app: App): Promise<QuestionText> {
   const page = await waitQuestion(app)
   const said = await readQuestion(page)

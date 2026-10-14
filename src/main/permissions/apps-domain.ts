@@ -49,6 +49,8 @@ export interface AppsDeps {
   readonly identity: () => Promise<'keychain' | 'session-only' | 'not-started'>
   /** The per-app network route (ADR-0080). */
   readonly routes: AppRoutes
+  /** Called after a picked path was taken away, which the key counts: the chrome then asks main for the key again. */
+  readonly changed?: () => void
 }
 
 /** The origin a request names, or null when it is not the canonical origin of an address. */
@@ -91,6 +93,7 @@ export function appsDomain (deps: AppsDeps): InternalDomain {
           const origin = originOf(request.origin)
           if (origin === null || typeof request.pickId !== 'string' || request.pickId === '') return { ok: false }
           await deps.permissions.revokePickedPath(origin, request.pickId)
+          deps.changed?.()
           return { ok: true }
         }
         case 'forgetDevice': {

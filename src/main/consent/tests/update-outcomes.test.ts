@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
+import { grantAll } from './install-consent.test-helpers.js'
+import type { InstallConsentPrompt } from '../install-consent.js'
 import { driveLoadResult } from '../update-outcomes.js'
 import type { UpdateOutcomeDeps } from '../update-outcomes.js'
 import { APP } from '../../../broker/transport/tests/ipc.test-helpers.js'
@@ -123,7 +125,7 @@ describe('driveLoadResult: needs-reconsent', () => {
     const installed: LoadResult = { outcome: 'installed', canonicalOrigin: APP, manifest: pending.manifest, pin: { schema: 1, origin: APP, bundleHash: pending.tree.root, assets: [], version: pending.manifest.version, pinnedAt: 0 } }
     const loader = fakeLoader({ outcome: 'rejected', reason: 'unused' }, { installFetched: vi.fn(async () => installed) })
     const registerApp = vi.fn(async () => {})
-    const consent = vi.fn(async () => true)
+    const consent = vi.fn(grantAll)
     const reconsentPrompt = vi.fn(async () => true)
 
     await driveLoadResult({ broker: fakeBroker({ registerApp }), loader, consent, reconsentPrompt }, pending, NO_GRANTS)
@@ -500,7 +502,7 @@ describe('driveLoadResult: the tab is held from registering the origin until the
     const manifest = manifestWithCapabilities()
     const installed: LoadResult = { outcome: 'installed', canonicalOrigin: APP, manifest, pin: { schema: 1, origin: APP, bundleHash: 'sha256:' + 'a'.repeat(64), assets: [], version: manifest.version, pinnedAt: 0 } }
     const registerApp = vi.fn(async () => { events.push('register') })
-    const consent = vi.fn(async () => { events.push('ask'); return true })
+    const consent = vi.fn<InstallConsentPrompt>(async (_origin, _manifest, capabilities) => { events.push('ask'); return capabilities })
 
     await driveLoadResult({ broker: fakeBroker({ registerApp }), loader: fakeLoader({ outcome: 'rejected', reason: 'unused' }), consent }, installed, NO_GRANTS, caller(events))
 
@@ -511,7 +513,7 @@ describe('driveLoadResult: the tab is held from registering the origin until the
     const events: string[] = []
     const manifest = manifestWithCapabilities()
     const installed: LoadResult = { outcome: 'installed', canonicalOrigin: APP, manifest, pin: { schema: 1, origin: APP, bundleHash: 'sha256:' + 'a'.repeat(64), assets: [], version: manifest.version, pinnedAt: 0 } }
-    const consent = vi.fn(async () => true)
+    const consent = vi.fn(grantAll)
     const broker = fakeBroker({ registerApp: async () => { throw new Error('floor not persisted') } })
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
 

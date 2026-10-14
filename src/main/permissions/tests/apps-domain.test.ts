@@ -50,6 +50,15 @@ describe('the apps domain', () => {
     expect(permissions.revokePickedPath).toHaveBeenCalledWith('https://app.example', 'pick-1')
   })
 
+  it('tells the chrome after it took a picked path away, because the key counts picked paths', async () => {
+    const changed = vi.fn()
+    const domain = appsDomain({ permissions: { list: async () => [], revokePickedPath: async () => {} }, switches: { rowsFor: async () => [], idleApps: async () => [], set: async () => 'ok' }, devices: NO_DEVICES, links: new SchemeChoices(null), userDataPath: dir, identity: async () => 'session-only', routes: NO_ROUTES, changed })
+    await domain.handle({ type: 'revokePickedPath', origin: 'https://app.example', pickId: 'pick-1' }, CALLER)
+    expect(changed).toHaveBeenCalledTimes(1)
+    await domain.handle({ type: 'revokePickedPath', origin: 'https://app.example', pickId: '' }, CALLER)
+    expect(changed).toHaveBeenCalledTimes(1)
+  })
+
   it('adds the apps that hold nothing and remember a refusal to the list, which the grant list leaves out', async () => {
     const { call, switches } = setup()
     switches.idleApps.mockResolvedValueOnce([{ origin: 'https://idle.example', appName: 'Idle' }])

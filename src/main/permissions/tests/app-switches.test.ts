@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createBroker } from '../../../broker/index.js'
 import { nodeLedgerStorage } from '../../../broker/grants/node-ledger-storage.js'
 import { APP, baseDeps, manifestWith } from '../../../broker/tests/index.test-helpers.js'
@@ -44,6 +44,21 @@ describe('the apps card switches for an app that is open', () => {
     expect(await switches.set(APP, 'tcp.connect', true, off?.patterns ?? [])).toBe('ok')
     expect(broker.app.heldSync(APP, 'tcp.connect')).toBe(true)
     expect(await broker.declinedCapabilitiesFor(APP)).toBeUndefined()
+  })
+
+  it('tells the chrome after each switch it moved, so the key\'s dot follows at once, and not after one it refused', async () => {
+    const broker = brokerOver()
+    await broker.registerApp(APP, MANIFEST)
+    await broker.grant(APP, 'tcp.connect', ['api.example.com:443'])
+    const changed = vi.fn()
+    const switches = createAppSwitches(ctxOf(broker), () => undefined, changed)
+    await switches.set(APP, 'tcp.connect', false, [])
+    expect(changed).toHaveBeenCalledTimes(1)
+    await switches.set(APP, 'tcp.connect', true, ['other.example:443'])
+    expect(changed).toHaveBeenCalledTimes(1)
+    const row = (await switches.rowsFor(APP)).find((candidate) => candidate.capability === 'tcp.connect')
+    await switches.set(APP, 'tcp.connect', true, row?.patterns ?? [])
+    expect(changed).toHaveBeenCalledTimes(2)
   })
 
   it('grants nothing when the patterns the row showed are not what the manifest says now', async () => {

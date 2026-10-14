@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { InstallConsentPrompt } from '../../consent/install-consent.js'
 import { grantableWithoutInstall, grantWithoutInstall } from '../grant-without-install.js'
 import { MAX_MANIFEST_BYTES } from '../../../loader/manifest/manifest.js'
 import type { Broker } from '../../../broker/broker-contracts.js'
+import { grantAll } from '../../consent/tests/install-consent.test-helpers.js'
 
 const MANIFEST = {
   orivonApiVersion: 0,
@@ -94,7 +96,7 @@ describe('grantableWithoutInstall', () => {
 describe('grantWithoutInstall', () => {
   it('registers the origin and asks for consent, without any bundle', async () => {
     const { broker, registerApp } = fakeBroker()
-    const consent = vi.fn(async () => true)
+    const consent = vi.fn(grantAll)
     const result = await grantWithoutInstall(
       { broker, fetchManifest: okFetch(JSON.stringify(MANIFEST)), consent },
       'http://127.0.0.1:8874'
@@ -107,14 +109,14 @@ describe('grantWithoutInstall', () => {
   it('fetches the manifest from the well-known path, never from a hinted path', async () => {
     const { broker } = fakeBroker()
     const fetchManifest = vi.fn(okFetch(JSON.stringify(MANIFEST)))
-    await grantWithoutInstall({ broker, fetchManifest, consent: async () => true }, 'http://127.0.0.1:8874')
+    await grantWithoutInstall({ broker, fetchManifest, consent: grantAll }, 'http://127.0.0.1:8874')
     expect(fetchManifest).toHaveBeenCalledWith('http://127.0.0.1:8874/.well-known/orivon.json')
   })
 
   it('reports newlyRegistered false for an origin already registered, so no reload is forced', async () => {
     const { broker } = fakeBroker(true)
     const result = await grantWithoutInstall(
-      { broker, fetchManifest: okFetch(JSON.stringify(MANIFEST)), consent: async () => true },
+      { broker, fetchManifest: okFetch(JSON.stringify(MANIFEST)), consent: grantAll },
       'http://127.0.0.1:8874'
     )
     expect(result).toEqual({ outcome: 'granted-without-install', canonicalOrigin: 'http://127.0.0.1:8874', newlyRegistered: false })
@@ -131,7 +133,7 @@ describe('grantWithoutInstall', () => {
     ]
     for (const [label, fetchManifest] of cases) {
       const { broker, registerApp } = fakeBroker()
-      const result = await grantWithoutInstall({ broker, fetchManifest, consent: async () => true }, 'http://127.0.0.1:8874')
+      const result = await grantWithoutInstall({ broker, fetchManifest, consent: grantAll }, 'http://127.0.0.1:8874')
       expect(result.outcome, label).toBe('rejected')
       expect(registerApp, label).not.toHaveBeenCalled()
     }
@@ -143,14 +145,14 @@ describe('grantWithoutInstall', () => {
     const text = JSON.stringify({ ...MANIFEST, assets }, null, 2)
     expect(text.length).toBeGreaterThan(64 * 1024)
     const { broker } = fakeBroker()
-    const result = await grantWithoutInstall({ broker, fetchManifest: okFetch(text), consent: async () => true }, 'http://127.0.0.1:8874')
+    const result = await grantWithoutInstall({ broker, fetchManifest: okFetch(text), consent: grantAll }, 'http://127.0.0.1:8874')
     expect(result.outcome).toBe('granted-without-install')
   })
 
   it('rejects rather than throwing when the fetch itself fails', async () => {
     const { broker, registerApp } = fakeBroker()
     const result = await grantWithoutInstall(
-      { broker, fetchManifest: async () => { throw new Error('ECONNREFUSED') }, consent: async () => true },
+      { broker, fetchManifest: async () => { throw new Error('ECONNREFUSED') }, consent: grantAll },
       'http://127.0.0.1:8874'
     )
     expect(result.outcome).toBe('rejected')
@@ -159,7 +161,7 @@ describe('grantWithoutInstall', () => {
 
   it('refuses a re-hint whose manifest WIDENS a held grant, before registering it or prompting -- an all-or-nothing accept would re-grant it under a row labelled already allowed', async () => {
     const { broker, registerApp } = fakeBroker(true, [{ capability: 'https.connect', patterns: ['api.example.com:443'] }])
-    const consent = vi.fn(async () => true)
+    const consent = vi.fn(grantAll)
     const widened = { ...MANIFEST, capabilities: { net: { https: { connect: ['*:*'] } }, fs: { quotaBytes: 1024 } } }
     const result = await grantWithoutInstall({ broker, fetchManifest: okFetch(JSON.stringify(widened)), consent }, 'http://127.0.0.1:8874')
     expect(result.outcome).toBe('rejected')
@@ -169,7 +171,7 @@ describe('grantWithoutInstall', () => {
 
   it('still prompts when a re-hint only ADDS a capability, leaving held ones as they were', async () => {
     const { broker, registerApp } = fakeBroker(true, [{ capability: 'https.connect', patterns: ['api.example.com:443'] }])
-    const consent = vi.fn(async () => true)
+    const consent = vi.fn(grantAll)
     const added = { ...MANIFEST, capabilities: { ...MANIFEST.capabilities, fs: { quotaBytes: 1024 } } }
     const result = await grantWithoutInstall({ broker, fetchManifest: okFetch(JSON.stringify(added)), consent }, 'http://127.0.0.1:8874')
     expect(result).toEqual({ outcome: 'granted-without-install', canonicalOrigin: 'http://127.0.0.1:8874', newlyRegistered: false })
@@ -188,7 +190,7 @@ describe('grantWithoutInstall', () => {
       const events: string[] = []
       const { broker, registerApp } = fakeBroker()
       registerApp.mockImplementation(async () => { events.push('register') })
-      const consent = vi.fn(async () => { events.push('ask'); return true })
+      const consent = vi.fn<InstallConsentPrompt>(async (_origin, _manifest, capabilities) => { events.push('ask'); return capabilities })
 
       await grantWithoutInstall({ broker, fetchManifest: okFetch(JSON.stringify(MANIFEST)), consent }, 'http://127.0.0.1:8874', caller(events))
 
@@ -200,7 +202,7 @@ describe('grantWithoutInstall', () => {
       const { broker, registerApp } = fakeBroker()
       registerApp.mockRejectedValueOnce(new Error('no room'))
 
-      await expect(grantWithoutInstall({ broker, fetchManifest: okFetch(JSON.stringify(MANIFEST)), consent: async () => true }, 'http://127.0.0.1:8874', caller(events))).rejects.toThrow('no room')
+      await expect(grantWithoutInstall({ broker, fetchManifest: okFetch(JSON.stringify(MANIFEST)), consent: grantAll }, 'http://127.0.0.1:8874', caller(events))).rejects.toThrow('no room')
 
       expect(events).toEqual(['hold', 'release'])
     })
@@ -209,7 +211,7 @@ describe('grantWithoutInstall', () => {
       const events: string[] = []
       const { broker } = fakeBroker()
 
-      await grantWithoutInstall({ broker, fetchManifest: okFetch('<!doctype html>'), consent: async () => true }, 'http://127.0.0.1:8874', caller(events))
+      await grantWithoutInstall({ broker, fetchManifest: okFetch('<!doctype html>'), consent: grantAll }, 'http://127.0.0.1:8874', caller(events))
 
       expect(events).toEqual([])
     })

@@ -61,7 +61,7 @@ it('[app:first-visit-service-worker-is-checked] checks a service worker\'s scrip
       const fineRoot = gateway.roots['fine']!
       await clickAddressBarRetrying(chrome, `ipfs://${fineRoot}`)
       await waitQuestion(running, 60_000)
-      await answerQuestion(running, 'Allow')
+      await answerQuestion(running, 'Grant all')
       await waitForTab(chrome, { address: `ipfs://${fineRoot}/`, title: 'Fine worker app' }, 60_000)
       check('a worker with the declared bytes registers', await waitFor(async () => (await swState(fineRoot)) === 'registered', 30_000))
 
@@ -70,7 +70,7 @@ it('[app:first-visit-service-worker-is-checked] checks a service worker\'s scrip
       await clickAddressBarRetrying(chrome, `ipfs://${scriptRoot}`)
       await waitQuestion(running, 60_000)
       const beforeScript = (await running.evaluate(() => (globalThis as { __pageLog?: string[] }).__pageLog ?? [])).length
-      await answerQuestion(running, 'Allow')
+      await answerQuestion(running, 'Grant all')
       const scriptWarning = await waitSheet(running, 60_000)
       check(`a security warning names the worker (${JSON.stringify(scriptWarning.text.files)})`, /security warning/i.test(scriptWarning.text.title) && scriptWarning.text.files.includes('/sw.js'))
       check('its code never ran in the app after Allow', !(await running.evaluate(() => (globalThis as { __pageLog?: string[] }).__pageLog ?? [])).slice(beforeScript).some((line) => line.includes('BAD-WORKER-RAN')))
@@ -82,7 +82,7 @@ it('[app:first-visit-service-worker-is-checked] checks a service worker\'s scrip
       const fetchingRoot = gateway.roots['fetching']!
       await clickAddressBarRetrying(chrome, `ipfs://${fetchingRoot}`)
       await waitQuestion(running, 60_000)
-      await answerQuestion(running, 'Allow')
+      await answerQuestion(running, 'Grant all')
       const fetchWarning = await waitSheet(running, 60_000)
       check(`a security warning names what the worker fetched (${JSON.stringify(fetchWarning.text.files)})`, /security warning/i.test(fetchWarning.text.title) && fetchWarning.text.files.includes('/probe.js'))
       await pressSheet(fetchWarning.page, 'Go back')
