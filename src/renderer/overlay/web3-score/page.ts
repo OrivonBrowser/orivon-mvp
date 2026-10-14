@@ -27,10 +27,11 @@ function levelRow ({ level, meaning }: { level: ScoreLevel, meaning: string }): 
       h('p', { className: 'ws-level-meaning' }, meaning)))
 }
 
-function unscoredNote (): HTMLParagraphElement {
+/** The closing note, with the gray mark a Level 2 site shows until the provider has judged it. */
+function providerNote (): HTMLParagraphElement {
   const mark = h('span', { className: 'web3-mark' })
   paintMark(mark, 2, true)
-  return h('p', { className: 'ws-note ws-unscored' }, mark, ' Checked at Level 2; no provider has judged it.')
+  return h('p', { className: 'ws-note ws-unscored' }, 'Orivon checks Levels 1 and 2 on this computer. Levels 3 and 4 come from the score provider you choose; until it has judged a site, the mark reads ', mark, '.')
 }
 
 export const web3ScorePage: OverlayPage = {
@@ -40,10 +41,9 @@ export const web3ScorePage: OverlayPage = {
     const learn = h('button', { type: 'button', className: 'link-btn', onclick: () => { void overlay.request({ type: 'learn' }) } }, 'How scores work')
     content.append(h('div', { className: 'ws', role: 'dialog', ariaLabel: 'Web3 Score' },
       h('div', { className: 'ws-head' }, icon, h('h1', { className: 'sheet-title' }, 'Web3 Score')),
-      h('p', { className: 'ws-lead' }, 'Open a site and this shield shows its Web3 Score: how little you have to trust the people behind it. The higher the level, the less trust it asks for.'),
+      h('p', { className: 'ws-lead' }, 'Open a site and this shield shows its Web3 Score: how little you have to trust the people behind it.'),
       h('ol', { className: 'ws-levels' }, ...LEVELS.map(levelRow)),
-      unscoredNote(),
-      h('p', { className: 'ws-note' }, 'Orivon checks Levels 1 and 2 on this computer. Levels 3 and 4 come from the score provider you choose.'),
+      providerNote(),
       h('div', { className: 'ws-foot' }, provider, learn)))
     return { shown () {} }
   }

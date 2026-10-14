@@ -46,8 +46,7 @@ body[data-overlay='web3-score'] .ws-note {
   font-size: 12px;
   line-height: 1.45;
 }
-body[data-overlay='web3-score'] .ws-unscored .web3-mark { margin-right: 4px; vertical-align: middle; }
-body[data-overlay='web3-score'] .ws-unscored + .ws-note { margin-top: 6px; padding-top: 0; border-top: 0; }
+body[data-overlay='web3-score'] .ws-unscored .web3-mark { vertical-align: middle; }
 body[data-overlay='web3-score'] .ws-foot { display: flex; justify-content: space-between; margin-top: 8px; }
 body[data-overlay='web3-score'] .ws-foot .link-btn { padding-left: 0; padding-right: 0; }
 
