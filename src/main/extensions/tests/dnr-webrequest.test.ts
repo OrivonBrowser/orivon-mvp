@@ -6,7 +6,8 @@ import type { Session } from 'electron'
 // instead of driving a real Session's 'extension-loaded'/'-unloaded'.
 let dnrActiveListener: ((active: boolean) => void) | undefined
 vi.mock('../extensions-dnr.js', () => ({
-  onDnrActiveChange: (listener: (active: boolean) => void) => { dnrActiveListener = listener }
+  onDnrActiveChange: (listener: (active: boolean) => void) => { dnrActiveListener = listener },
+  hasFeedbackCapableExtension: () => false
 }))
 
 import {
@@ -257,6 +258,46 @@ describe('installDnrWebRequestHandlers', () => {
       listener('onHeadersReceived')({ ...request }, callback)
       await vi.waitFor(() => { expect(callback).toHaveBeenCalledTimes(1) })
       expect(callback).toHaveBeenCalledWith({})
+    })
+
+    describe('the Chrome Web Store', () => {
+      type Name = 'onBeforeRequest' | 'onBeforeSendHeaders' | 'onHeadersReceived'
+      const store = 'https://chromewebstore.google.com/detail/x/abc'
+      const decisions = [
+        decisionOf({ cancel: true }),
+        decisionOf({ redirectUrl: 'https://evil.example/replacement.js' }),
+        decisionOf({ requestHeaders: [{ header: 'X-Test', operation: 'set', value: '1' }], responseHeaders: [{ header: 'X-Test', operation: 'set', value: '1' }] }),
+      ]
+
+      async function answer (decision: Record<string, unknown>, name: Name, details: Record<string, unknown>): Promise<unknown> {
+        const { session, webRequest } = fakeSession()
+        dnrActiveListener = undefined
+        installDnrWebRequestHandlers(session, () => ({ evaluate: () => decision }) as never)
+        dnrActiveListener!(true)
+        const callback = vi.fn()
+        ;(webRequest[name].mock.calls.at(-1)![1] as Listener)(details, callback)
+        await vi.waitFor(() => { expect(callback).toHaveBeenCalledTimes(1) })
+        return callback.mock.calls[0]![0]
+      }
+
+      it.each(decisions)('leaves a request for a store page untouched: %j', async (decision) => {
+        for (const name of ['onBeforeRequest', 'onBeforeSendHeaders', 'onHeadersReceived'] as const) {
+          expect(await answer(decision, name, { ...request, url: store, requestHeaders: { Accept: '*/*' }, responseHeaders: {} })).toEqual({})
+        }
+        expect(await answer(decision, 'onBeforeRequest', { ...request, url: 'https://chrome.google.com/webstore/detail/x' })).toEqual({})
+      })
+
+      it('leaves a request made by a store page untouched, by its frame origin and by the page address', async () => {
+        const frame = fakeFrame({ frameTreeNodeId: 1, origin: 'https://chromewebstore.google.com' })
+        const fromFrame = { ...request, url: 'https://cdn.example/x.js', frame }
+        expect(await answer(decisions[0]!, 'onBeforeRequest', fromFrame)).toEqual({})
+        const fromPage = { ...request, url: 'https://cdn.example/x.js', webContents: { isDestroyed: () => false, getURL: () => store } }
+        expect(await answer(decisions[1]!, 'onBeforeRequest', fromPage)).toEqual({})
+      })
+
+      it('still applies a rule to an ordinary page', async () => {
+        expect(await answer(decisions[0]!, 'onBeforeRequest', { ...request, url: 'https://cdn.example/x.js' })).toEqual({ cancel: true })
+      })
     })
 
     it('sends the changed headers when a modifyHeaders rule matched', async () => {
