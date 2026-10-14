@@ -21,6 +21,7 @@ import { checkConnectSecure } from '../policy/connect-secure.js'
 import { normalizeHost } from '../policy/canonical-host.js'
 import { proxyProbeUrl } from '../policy/proxy-guard.js'
 import { classifyAddress } from '../policy/address.js'
+import { reachesOwnLoopbackPort } from '../policy/own-loopback.js'
 import { NO_RESOLVER, isLoopbackTarget } from '../policy/connect-routed.js'
 import { dialSecureThroughRoute } from '../route/routed-secure.js'
 
@@ -85,7 +86,7 @@ export function createConnectSecure ({ deps, handleTable, ledger, canonical, soc
         // never `servername`. An unbound handshake adds the address check on
         // top, so an option can only ever narrow what this reaches.
         const decision = checkConnectSecure(current.patterns, hostArg, port)
-        if (!decision.allowed) throw fail('denied', 'the secure connection was not authorised')
+        if (!decision.allowed || reachesOwnLoopbackPort([decision.host], port, deps.ownLoopbackPort)) throw fail('denied', 'the secure connection was not authorised')
         host = decision.host
         bound = bindsGrantedName(host, options)
         if (viaRoute) {
@@ -106,8 +107,10 @@ export function createConnectSecure ({ deps, handleTable, ledger, canonical, soc
           // TLS connect, which resolves it internally -- neither call is one a
           // configured proxy ever sees (T20). A routed app reaching this
           // machine is checked without a resolver and dialled as literals.
-          if (route === undefined && await deps.proxyConfigured(proxyProbeUrl(host, port))) {
-            throw fail('denied', 'a system proxy is configured; connectSecure refuses to bypass it')
+          if (route === undefined) {
+            const probeUrl = proxyProbeUrl(host, port)
+            if (probeUrl === null) throw fail('denied', 'the connection was not authorised')
+            if (await deps.proxyConfigured(probeUrl)) throw fail('denied', 'a system proxy is configured; connectSecure refuses to bypass it')
           }
           const target = bound && route === undefined ? { host, port } : await addressCheckedTarget(current.patterns, host, port, route === undefined ? deps.resolve : NO_RESOLVER)
           // Without this, a grant revoked between the policy check and the

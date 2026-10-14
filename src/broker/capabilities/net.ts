@@ -11,6 +11,7 @@ import type { GrantLedger } from '../grants/grant-ledger.js'
 import { fail } from '../errors.js'
 import { mapIoError } from '../io-errors.js'
 import { checkConnect, connectStillAuthorised } from '../policy/connect.js'
+import { reachesOwnLoopbackPort } from '../policy/own-loopback.js'
 import { NO_RESOLVER, checkRoutedConnect, isLoopbackTarget, routedStillAuthorised } from '../policy/connect-routed.js'
 import { dialThroughRoute } from '../route/routed-socket.js'
 import { checkLookup } from '../policy/lookup.js'
@@ -131,11 +132,13 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical, lis
           // proxy even on the path that then denies the connect itself (T20).
           // A routed app has its route as its proxy, and reaches only this
           // machine here, which needs no resolver.
-          if (route === undefined && await deps.proxyConfigured(proxyProbeUrl(opts.host, opts.port))) {
-            throw fail('denied', 'a system proxy is configured; tcp.connect refuses to bypass it')
+          if (route === undefined) {
+            const probeUrl = proxyProbeUrl(opts.host, opts.port)
+            if (probeUrl === null) throw fail('denied', 'the connection was not authorised')
+            if (await deps.proxyConfigured(probeUrl)) throw fail('denied', 'a system proxy is configured; tcp.connect refuses to bypass it')
           }
           const decision = await checkConnect(current.patterns, opts.host, opts.port, route === undefined ? deps.resolve : NO_RESOLVER)
-          if (!decision.allowed) throw fail('denied', 'the connection was not authorised')
+          if (!decision.allowed || reachesOwnLoopbackPort(decision.addresses, opts.port, deps.ownLoopbackPort)) throw fail('denied', 'the connection was not authorised')
           // Checked here too, not only after `dial` resolves below: without
           // this, a grant revoked while resolve was still pending would still
           // reach `deps.dial`, and correctness would depend entirely on the
@@ -251,7 +254,9 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical, lis
         // T20 covers resolution too ("Same for DNS resolution",
         // security-model.md): checked before the real DNS call below, which
         // no proxy sees.
-        if (await deps.proxyConfigured(proxyProbeUrl(authorisedHostname))) {
+        const probeUrl = proxyProbeUrl(authorisedHostname)
+        if (probeUrl === null) throw fail('denied', 'the hostname was not authorised by any held network grant')
+        if (await deps.proxyConfigured(probeUrl)) {
           throw fail('denied', 'a system proxy is configured; net.lookup refuses to bypass it')
         }
         try {

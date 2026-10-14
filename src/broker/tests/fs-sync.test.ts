@@ -1,12 +1,13 @@
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createBroker } from '../index.js'
 import { nodeFs } from '../adapters/node-adapters.js'
 import { isOrivonErrorLike } from '../errors.js'
 import { rejection } from '../handles/tests/handles.test-helpers.js'
 import { APP, baseDeps, manifestWith, stubFs } from './index.test-helpers.js'
+import { SYNC_WALK_ENTRY_LIMIT } from '../capabilities/fs.js'
 import type { Broker } from '../broker-contracts.js'
 
 // The page's synchronous path-based calls (Broker.fs.sync) share the async
@@ -184,5 +185,78 @@ describe('fs.sync: the storage quota is enforced on the same ledger as the async
   it('an undeclared quota is unlimited', async () => {
     const { broker } = await realBroker()
     broker.fs.sync.writeFile(APP, 'a', bytes(100_000))
+  })
+})
+
+describe('fs.sync: a call never walks more than a bounded number of entries on the main thread', () => {
+  /** `count` empty files under `dir`, made the way an app makes them: through the async calls. */
+  async function fill (root: string, dir: string, count: number): Promise<void> {
+    await mkdir(join(root, dir), { recursive: true })
+    for (let i = 0; i < count; i += SYNC_FILL_BATCH) {
+      await Promise.all(Array.from({ length: Math.min(SYNC_FILL_BATCH, count - i) }, async (_, k) => { await writeFile(join(root, dir, `f${String(i + k)}`), '') }))
+    }
+  }
+  const SYNC_FILL_BATCH = 500
+
+  it('refuses the first synchronous write over a root past the bound as limit, without writing', async () => {
+    const { broker, root } = await realBroker(1_000)
+    await fill(root, 'many', SYNC_WALK_ENTRY_LIMIT + 10)
+
+    const error = thrown(() => broker.fs.sync.writeFile(APP, 'new', bytes(1)))
+
+    expect(isOrivonErrorLike(error) && error.code === 'limit').toBe(true)
+    expect((await rejection(broker.fs.stat(APP, 'new'))).code).toBe('notFound')
+  })
+
+  it('refuses a synchronous recursive rm of a tree past the bound as limit and removes nothing', async () => {
+    const { broker, root } = await realBroker()
+    await fill(root, 'many', SYNC_WALK_ENTRY_LIMIT + 10)
+    await broker.fs.writeFile(APP, 'measured', bytes(1)) // the async path measures the root, so only the rm walk is bounded
+
+    const error = thrown(() => { broker.fs.sync.rm(APP, 'many', { recursive: true }) })
+
+    expect(isOrivonErrorLike(error) && error.code === 'limit').toBe(true)
+    expect((await broker.fs.readdir(APP, 'many')).length).toBe(SYNC_WALK_ENTRY_LIMIT + 10)
+  })
+
+  it('the async call still removes the same tree, and a small tree still works synchronously afterwards', async () => {
+    const { broker, root } = await realBroker()
+    await fill(root, 'many', SYNC_WALK_ENTRY_LIMIT + 10)
+
+    await broker.fs.rm(APP, 'many', { recursive: true })
+    broker.fs.sync.writeFile(APP, 'small', bytes(3))
+    broker.fs.sync.mkdir(APP, 'd/e', { recursive: true })
+    broker.fs.sync.rm(APP, 'd', { recursive: true })
+
+    expect(Array.from(await broker.fs.readFile(APP, 'small'))).toEqual([0, 0, 0])
+  })
+
+  it('a root over the bound is measured by the async path, after which synchronous calls work again', async () => {
+    const { broker, root } = await realBroker(1_000)
+    await fill(root, 'many', SYNC_WALK_ENTRY_LIMIT + 10)
+    expect(isOrivonErrorLike(thrown(() => broker.fs.sync.writeFile(APP, 'a', bytes(1))))).toBe(true)
+
+    await broker.fs.writeFile(APP, 'b', bytes(1))
+    broker.fs.sync.writeFile(APP, 'a', bytes(1))
+
+    expect(Array.from(await broker.fs.readFile(APP, 'a'))).toEqual([0])
+  })
+
+  it('the refused first call starts the asynchronous measure, so a retry of the same synchronous call succeeds on its own', async () => {
+    const { broker, root } = await realBroker(1_000)
+    await fill(root, 'many', SYNC_WALK_ENTRY_LIMIT + 10)
+    expect(isOrivonErrorLike(thrown(() => broker.fs.sync.writeFile(APP, 'a', bytes(1))))).toBe(true)
+
+    await vi.waitFor(() => { broker.fs.sync.writeFile(APP, 'a', bytes(1)) }, { timeout: 5_000 })
+
+    expect(Array.from(await broker.fs.readFile(APP, 'a'))).toEqual([0])
+  })
+
+  it('a tree exactly at the bound still works', async () => {
+    const { broker, root } = await realBroker(1_000)
+    // The root directory is itself one entry.
+    await fill(root, 'many', SYNC_WALK_ENTRY_LIMIT - 2)
+
+    broker.fs.sync.writeFile(APP, 'a', bytes(1))
   })
 })

@@ -7,6 +7,9 @@ export function createReachProxyCheck (deps: Pick<CreateBrokerOptions, 'routeFor
   return async (origin, host, port) => {
     const key = isolationKeyFromUrl(origin) ?? origin
     if (deps.routeFor?.(key) !== undefined) return false
-    return await deps.proxyConfigured(proxyProbeUrl(host, port))
+    const url = proxyProbeUrl(host, port)
+    // A host no URL can honestly name is not reached; the caller refuses it as it does a proxied one.
+    if (url === null) return true
+    return await deps.proxyConfigured(url)
   }
 }
