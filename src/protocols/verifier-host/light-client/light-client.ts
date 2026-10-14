@@ -13,7 +13,7 @@ import { BLOCK_ROOT_PATTERN } from '../protocol.js'
 import type { FromHost, LightClientConfig, LightClientState } from '../protocol.js'
 import type { LightClient } from '../service.js'
 
-/** How long a `.eth` load waits for the first sync before "cannot verify yet". */
+/** How long a `.eth` load waits for the first sync before "cannot verify yet", with no tunnel (pace.ts holds the tunnel's). */
 export const SYNC_WAIT_MS = 8_000
 const SYNC_TIMEOUT_MS = 5 * 60_000
 const FIRST_RETRY_MS = 5_000
@@ -113,7 +113,13 @@ function dispatcher (): Dispatcher {
   return dispatch
 }
 
-export function startHeliosLightClient (config: LightClientConfig, fetch: WebFetch, report: (message: FromHost) => void, route: 'direct' | 'tunnel' = 'direct'): LightClient {
+/** What pace.ts says about when the client starts and how long a request waits for its first sync. */
+export interface LightClientPace {
+  readonly syncWaitMs: number
+  readonly startAfterMs: number
+}
+
+export function startHeliosLightClient (config: LightClientConfig, fetch: WebFetch, report: (message: FromHost) => void, route: 'direct' | 'tunnel' = 'direct', pace: LightClientPace = { syncWaitMs: SYNC_WAIT_MS, startAfterMs: 0 }): LightClient {
   if (!BLOCK_ROOT_PATTERN.test(config.checkpoint)) throw new Error(`not a checkpoint: ${config.checkpoint}`)
   const primary = config.executionRpcs[0]
   if (primary === undefined) throw new Error('no execution RPC configured')
@@ -231,14 +237,22 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
       setTimeout(() => { void run(attempt + 1) }, delay).unref()
     }
   }
-  void run(0)
+  let begun = false
+  const begin = (): void => {
+    if (begun) return
+    begun = true
+    void run(0)
+  }
+  if (pace.startAfterMs <= 0) begin()
+  else setTimeout(begin, pace.startAfterMs).unref()
 
   return {
     status: () => state,
     provider: {
       request: async (args) => {
+        begin()
         // A failed client retries on its own schedule, so waiting here would only delay the answer.
-        if (state.state === 'starting' || state.state === 'syncing') await withTimeout(synced, SYNC_WAIT_MS, 'syncing').catch(() => {})
+        if (state.state === 'starting' || state.state === 'syncing') await withTimeout(synced, pace.syncWaitMs, 'syncing').catch(() => {})
         const client = helios
         const now = state
         if (client === undefined || now.state !== 'synced') throw new ResolutionError('not-synced', notSyncedReason(now))

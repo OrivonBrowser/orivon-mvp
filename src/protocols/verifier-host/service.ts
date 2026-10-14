@@ -14,7 +14,9 @@ import { startTunnelProtocols } from './tunnel-protocols.js'
 import { NodeLinks } from './node-link.js'
 import type { FromHost, NodeNotice, HostConfig, HostReplies, HostRequest, LightClientConfig, LightClientState, SiteProvenance } from './protocol.js'
 import { createVerifierServer } from './serve/server.js'
-import { MOUNT_TIMEOUT_MS, RoutedSites, Sites } from './serve/sites.js'
+import type { LightClientPace } from './light-client/light-client.js'
+import { paceOf } from './pace.js'
+import { RoutedSites, Sites } from './serve/sites.js'
 import type { SiteRecord } from './serve/sites.js'
 
 export interface LightClient {
@@ -28,7 +30,7 @@ export interface HostDeps {
   readonly resolveHost: (host: string) => Promise<readonly string[]>
   readonly post: (message: FromHost) => void
   /** `route` tunnel: the client that proves the names of tunnel-profile websites, which reports nothing and has requests of its own. */
-  readonly startLightClient: (config: LightClientConfig, fetch: WebFetch, report: (message: FromHost) => void, route?: 'tunnel') => LightClient
+  readonly startLightClient: (config: LightClientConfig, fetch: WebFetch, report: (message: FromHost) => void, route?: 'tunnel', pace?: LightClientPace) => LightClient
   /** True only in a test build; fixture names are refused otherwise, whatever the config says. */
   readonly fixturesAllowed: boolean
   /** The DNS-tamper fallback's own egress (dns-fallback.ts), reached only
@@ -64,12 +66,12 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
   const registry = new ProtocolRegistry(protocols)
   const tunnelRegistry = new ProtocolRegistry(startTunnelProtocols(config, deps, stores).protocols)
   // A top-level-domain name is shown by where its content lives, which is known once a gatherer is chosen for its records.
-  const sitesOf = (of: ProtocolRegistry): Sites => new Sites(of, Date.now, MOUNT_TIMEOUT_MS, (host, gatherer) => {
+  const sitesOf = (of: ProtocolRegistry, tunnelled: boolean): Sites => new Sites(of, Date.now, paceOf(tunnelled).mountTimeoutMs, (host, gatherer) => {
     const served = of.addresses.servedName(host)
     const scheme = of.schemeOfGatherer(gatherer)
     if (served?.namespace.startsWith('.') === true && scheme !== undefined) deps.post({ type: 'name-scheme', host: served.name, scheme })
   })
-  const sites = new RoutedSites(sitesOf(registry), sitesOf(tunnelRegistry))
+  const sites = new RoutedSites(sitesOf(registry, config.front !== undefined), sitesOf(tunnelRegistry, true))
   const certificate = createRunCertificate()
   const server = createVerifierServer(registry, sites, certificate)
   await new Promise<void>((resolve, reject) => {

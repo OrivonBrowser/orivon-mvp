@@ -5,9 +5,10 @@ import { startSocks5Fixture } from '../../../broker/route/tests/socks5-fixture.t
 import type { Socks5Fixture } from '../../../broker/route/tests/socks5-fixture.test-helpers.js'
 import type { FromHost, NymTunnelConfig } from '../../../protocols/nym-tunnel/protocol.js'
 import type { HostProcess } from '../../verifier/process-supervisor.js'
-import { createNymSubsystem, LISTEN_WAIT_MS, NymUnavailable, RECYCLE_AFTER_STARTS, STOP_AFTER_LAST_TUNNEL_MS } from '../nym-subsystem.js'
+import { createNymSubsystem, LISTEN_WAIT_MS, NymUnavailable, RECYCLE_AFTER_STARTS, STOP_AFTER_LAST_TUNNEL_MS, TEST_WAIT_MS } from '../nym-subsystem.js'
 import type { NymDeps, NymSubsystem } from '../nym-subsystem.js'
 import { isFromHost } from '../nym-messages.js'
+import { SHORT_LIVED_USER } from '../../../protocols/nym-tunnel/protocol.js'
 
 class FakeProcess implements HostProcess {
   readonly posted: Array<{ type: string, config?: NymTunnelConfig }> = []
@@ -252,7 +253,30 @@ describe('the Test of Nym', () => {
     const answer = await result
     expect(answer.ok).toBe(true)
     expect(answer.ok ? answer.ms : 0).toBeGreaterThan(0)
-    expect(fixture.requests.at(-1)).toMatchObject({ command: 'connect', destination: 'example.com', port: 443, userId: 'orivon-settings-test' })
+    expect(fixture.requests.at(-1)).toMatchObject({ command: 'connect', destination: 'example.com', port: 443, userId: SHORT_LIVED_USER })
+  })
+
+  it('says why a tunnel did not come up when the host reported it, not only that a connection failed', async () => {
+    fixture = await startSocks5Fixture({ preferAuth: true, names: {} })
+    const { nym, processes, settle } = harness({ freshPort: () => fixture?.port ?? 0 })
+    const result = nym.test()
+    await settle()
+    processes[0]?.say({ type: 'listening' })
+    processes[0]?.say({ type: 'instances', connecting: 0, ready: 0, started: 1, problem: 'a Nym tunnel could not come up: gateway selection error' })
+    const answer = await result
+    expect(answer).toMatchObject({ ok: false, reason: 'failed' })
+    expect(answer.ok ? '' : answer.detail).toContain('gateway selection error')
+  })
+
+  it('is answered within one minute counted from the press, whatever it waits for', async () => {
+    const { nym, processes, settle, timers } = harness({ listenWaitMs: 10 * 60_000 })
+    const result = nym.test()
+    await settle()
+    expect(processes).toHaveLength(1)
+    const bound = timers.find((timer) => timer.ms === TEST_WAIT_MS)
+    expect(bound, 'one timer of a minute covers the bring-up and the connection').toBeDefined()
+    bound?.callback()
+    expect(await result).toMatchObject({ ok: false, reason: 'silent' })
   })
 
   it('says it could not when Nym is not available, with the reason', async () => {

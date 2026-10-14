@@ -9,6 +9,7 @@ import { buildSite } from '../../../../test/apps/swarm-gateway/encode.mjs'
 import { EgressRefused, guardedCcipRequest } from '../egress.js'
 import type { FromHost, HostConfig, LightClientConfig } from '../protocol.js'
 import { ResolutionError } from '../../resolution/records.js'
+import { DIRECT_PACE, TUNNEL_PACE } from '../pace.js'
 import { startHost } from '../service.js'
 import type { HostDeps, LightClient, RunningHost } from '../service.js'
 import { SWARM_NOT_TUNNELLED, tunnelCcipDeps } from '../tunnel-protocols.js'
@@ -159,6 +160,20 @@ describe('the light client of a tunnel-profile website', () => {
     expect(spied.routed).toEqual(['https://rpc.example/', 'https://beacon.example/eth/v1/beacon/headers'])
     expect(spied.direct).toEqual([])
     await expect(tunnelFetch('https://elsewhere.example/')).rejects.toBeInstanceOf(EgressRefused)
+  })
+
+  it('is told to wait the tunnel\'s time for a first sync, and the shared client is told the same, and to start late, only while the whole browser is on the tunnel', async () => {
+    const waits: Array<{ route: 'tunnel' | undefined, wait: number | undefined, startAfter: number | undefined }> = []
+    const lightClient = (): LightClient => ({ status: () => ({ state: 'off' }), provider: { request: async () => { throw new ResolutionError('not-synced', 'x') } } })
+    const record = (_config: LightClientConfig, _fetch: HostDeps['fetch'], _report: unknown, route?: 'tunnel', pace?: { syncWaitMs: number, startAfterMs: number }): LightClient => { waits.push({ route, wait: pace?.syncWaitMs, startAfter: pace?.startAfterMs }); return lightClient() }
+    const direct = await startHost(config({ lightClient: CONFIG }), deps({ startLightClient: record }))
+    running.push(direct)
+    await get(direct.port, 'unknown.eth', true)
+    expect(waits).toEqual([{ route: undefined, wait: DIRECT_PACE.syncWaitMs, startAfter: 0 }, { route: 'tunnel', wait: TUNNEL_PACE.syncWaitMs, startAfter: 0 }])
+    waits.length = 0
+    const through = await startHost(config({ lightClient: CONFIG, front: { port: 1, username: 'u', password: 'p' } }), deps({ startLightClient: record }))
+    running.push(through)
+    expect(waits).toEqual([{ route: undefined, wait: TUNNEL_PACE.syncWaitMs, startAfter: TUNNEL_PACE.lightClientStartAfterMs }])
   })
 
   it('never starts for a website that is not in the tunnel profile', async () => {

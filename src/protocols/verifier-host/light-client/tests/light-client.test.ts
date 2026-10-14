@@ -150,6 +150,43 @@ describe('startHeliosLightClient -- one bad refresh does not fail every mount', 
     await requested
   })
 
+  it('waits the time it was given for a first sync, not the direct one', async () => {
+    const helios = fakeHelios()
+    let finish: () => void = () => {}
+    helios.waitSynced = async () => await new Promise<void>((resolve) => { finish = resolve })
+    vi.mocked(createHeliosProvider).mockResolvedValue(helios as never)
+    const client = startHeliosLightClient(CONFIG, (async () => new Response('{}')) as never, () => {}, 'direct', { syncWaitMs: 40_000, startAfterMs: 0 })
+    await vi.advanceTimersByTimeAsync(10)
+    let answer: string | undefined
+    void client.provider.request({ method: 'eth_chainId' }).then(() => { answer = 'answered' }, (error: unknown) => { answer = `failed: ${(error as Error).message}` })
+    await vi.advanceTimersByTimeAsync(SYNC_WAIT_MS + 1_000)
+    expect(answer, 'still waiting after the direct time').toBeUndefined()
+    finish()
+    await vi.advanceTimersByTimeAsync(100)
+    expect(answer).toBe('answered')
+  })
+
+  it('with a start delay, waits to sync until a request needs it or the delay is over, whichever comes first', async () => {
+    const helios = fakeHelios()
+    vi.mocked(createHeliosProvider).mockResolvedValue(helios as never)
+    const later = startHeliosLightClient(CONFIG, (async () => new Response('{}')) as never, () => {}, 'direct', { syncWaitMs: 8_000, startAfterMs: 60_000 })
+    await vi.advanceTimersByTimeAsync(59_000)
+    expect(createHeliosProvider).not.toHaveBeenCalled()
+    expect(later.status().state).toBe('starting')
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(createHeliosProvider).toHaveBeenCalledTimes(1)
+    await synced(later)
+
+    vi.mocked(createHeliosProvider).mockClear()
+    const asked = startHeliosLightClient(CONFIG, (async () => new Response('{}')) as never, () => {}, 'direct', { syncWaitMs: 8_000, startAfterMs: 60_000 })
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(createHeliosProvider).not.toHaveBeenCalled()
+    const answered = asked.provider.request({ method: 'eth_chainId' })
+    await vi.advanceTimersByTimeAsync(100)
+    expect(createHeliosProvider).toHaveBeenCalledTimes(1)
+    await expect(answered).resolves.toBe('0x1')
+  })
+
   it('wakes a request waiting while syncing as soon as a refresh recovers, not after SYNC_WAIT_MS', async () => {
     const helios = fakeHelios()
     vi.mocked(createHeliosProvider).mockResolvedValue(helios as never)
