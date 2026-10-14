@@ -7,6 +7,7 @@ import { createServer } from 'node:https'
 import type { Server } from 'node:https'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { TLSSocket } from 'node:tls'
+import { isDnsLabel } from '../../resolution/dns-name.js'
 import { ResolutionError } from '../../resolution/records.js'
 import type { GatheredFile } from '../../resolution/providers.js'
 import { MAX_ADDRESS_NAME } from '../../address.js'
@@ -316,6 +317,9 @@ function redirectTo (res: ServerResponse, origin: string, path: string, search: 
   res.writeHead(301, { location: `${origin}${path}${search}`, 'cache-control': 'no-store', 'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}` }).end()
 }
 
+/** Every dot-separated label a DNS label, so the text can only be one host. */
+const isHostName = (name: string): boolean => name.split('.').every(isDnsLabel)
+
 /**
  * `https://ipfs.orivon/<name>/<path>`, where a typed or linked `ipfs://` address
  * lands: redirected to the origin of the name's canonical spelling, so one
@@ -329,7 +333,8 @@ function redirectToCanonical (registry: ProtocolRegistry, scheme: string, url: U
     // Any page can send one of these, and a protocol's parser may be slow on a long string.
     if (decoded.length > MAX_ADDRESS_NAME) throw new ResolutionError('invalid-name', `${scheme}:// names are at most ${String(MAX_ADDRESS_NAME)} characters`)
     // A top-level-domain name already has its own origin: send it straight there, never through this scheme's own resolution.
-    const named = registry.addresses.nameOrigin(decoded)
+    // Only a spelling that is already a host name: encoded delimiters would otherwise end the host inside the Location.
+    const named = isHostName(decoded) ? registry.addresses.nameOrigin(decoded) : undefined
     if (named !== undefined) {
       redirectTo(res, named, path, url.search)
       return
