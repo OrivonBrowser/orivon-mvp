@@ -30,6 +30,7 @@ import { OPEN_TAB_CHECK_MS, startUpdateWatch } from './update-watch.js'
 import { backgroundPinDelayMs, updateWatchMs } from '../verifier/test-seam.js'
 import { grantableWithoutInstall, grantWithoutInstall } from './grant-without-install.js'
 import { grantLocalFile } from './local-file-grant.js'
+import { announceEntryChange } from '../app-setup/entry-changes.js'
 import { createLocalFileConsentPrompt } from '../consent/local-file-consent.js'
 import { localFileApps } from '../local-files/local-file-apps.js'
 import { localPartitionFor } from '../local-files/partition.js'
@@ -161,7 +162,7 @@ export const appInstallSubsystem: Subsystem = {
     const declined = new DeclinedApps(ctx.privateSession ? undefined : join(ctx.app.getPath('userData'), 'declined-apps.json'))
     installDeclinedApps(declined)
     const firstVisit = createFirstVisit({
-      deps: { broker, loader, consent, capabilityPrompt, declined, blocked: blockOpenTabs({ tabsOn: (origin) => ctx.openTabs?.on(origin) ?? [], pagesOf: pagesInPartitionOf, setup: tabSetupNow }), askerFor: (origin) => { const tab = ctx.openTabs?.on(origin)[0]; return tab === undefined ? undefined : dialogCallerFor(tab, (sender) => ctx.windowForSender?.(sender as never)) }, backgroundDelayMs: backgroundPinDelayMs() },
+      deps: { broker, loader, consent, capabilityPrompt, declined, changed: announceEntryChange, blocked: blockOpenTabs({ tabsOn: (origin) => ctx.openTabs?.on(origin) ?? [], pagesOf: pagesInPartitionOf, setup: tabSetupNow }), askerFor: (origin) => { const tab = ctx.openTabs?.on(origin)[0]; return tab === undefined ? undefined : dialogCallerFor(tab, (sender) => ctx.windowForSender?.(sender as never)) }, backgroundDelayMs: backgroundPinDelayMs() },
       untouched: (origin) => isLocalFileKey(origin) || grantableWithoutInstall(origin, devModeEnabled()) || !origin.startsWith('https://'),
       servedFromCache: isOriginServedFromCacheSync
     })

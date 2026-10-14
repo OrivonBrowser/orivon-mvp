@@ -169,7 +169,7 @@ describe('createSiteInfoController -- siteInfoFor / siteSummaryFor', () => {
 
   it.each(['later', 'declined'] as const)('an app that was never let in (%s) is missing its permissions, and its popup offers the question back', async (reason) => {
     const askAgain = vi.fn(async () => {})
-    const controller = createSiteInfoController(ctxWith(createBroker(baseDeps())), NO_TRUST, async () => false, { notLetIn: (origin) => origin === OTHER ? reason : undefined, askAgain })
+    const controller = createSiteInfoController(ctxWith(createBroker(baseDeps())), NO_TRUST, async () => false, { notLetIn: (origin) => origin === OTHER ? reason : undefined, askAgain, changed: () => {} })
 
     expect((await controller.siteSummaryFor(OTHER)).missing).toBe(true)
     expect((await controller.siteInfoFor(OTHER)).notLetIn).toBe(reason)
@@ -182,7 +182,7 @@ describe('createSiteInfoController -- siteInfoFor / siteSummaryFor', () => {
 
   it('reviewing permissions does nothing for an origin that was let in or is no app', async () => {
     const askAgain = vi.fn(async () => {})
-    const controller = createSiteInfoController(ctxWith(createBroker(baseDeps())), NO_TRUST, async () => false, { notLetIn: () => undefined, askAgain })
+    const controller = createSiteInfoController(ctxWith(createBroker(baseDeps())), NO_TRUST, async () => false, { notLetIn: () => undefined, askAgain, changed: () => {} })
 
     expect(await controller.reviewPermissions(OTHER)).toBe(false)
     expect(askAgain).not.toHaveBeenCalled()

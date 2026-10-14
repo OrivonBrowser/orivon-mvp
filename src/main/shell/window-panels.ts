@@ -24,6 +24,7 @@ import type { ShellServices } from './shell-services.js'
 import type { TabManager } from './tabs.js'
 import { reloadFromCard } from './reload-from-card.js'
 import { firstVisitNow } from '../app-setup/tab-setup-ref.js'
+import { announceEntryChange } from '../app-setup/entry-changes.js'
 
 export interface WindowPanelsDeps {
   readonly ctx: SubsystemContext
@@ -60,7 +61,7 @@ export function createWindowPanels ({ ctx, win, services, tabs, overlays, dirnam
   const siteInfoController = createSiteInfoController(ctx, { isOriginServedFromCacheSync, isOriginPinnedSync, pinCoverageFor, nameEvidenceFor: verifierNameEvidence, levelOverrideFor: scoreLevelOverrideFor, deliveryOverrideFor: deliveryLevelOverrideFor, localDdocHashFor, providerVerdictFor: services.scoreProvider.verdictFor },
     async (key) => await deleteLocalFileData({ broker: ctx.broker, userDataPath: app.getPath('userData'), clearPartition: async (partition) => { await session.fromPartition(partition).clearData() } }, key),
     // The first visit is built after the windows, so it is read at the moment of use.
-    { notLetIn: (origin) => firstVisitNow()?.notLetIn(origin), askAgain: async (origin) => { await firstVisitNow()?.askAgain(origin) } })
+    { notLetIn: (origin) => firstVisitNow()?.notLetIn(origin), askAgain: async (origin) => { await firstVisitNow()?.askAgain(origin) }, changed: announceEntryChange })
 
   // The permissions surface is a panel inside this window rather than a
   // second one -- ./permissions-panel.ts.

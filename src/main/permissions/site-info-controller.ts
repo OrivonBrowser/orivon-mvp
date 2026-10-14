@@ -45,9 +45,11 @@ export interface AppEntry {
   readonly notLetIn: (origin: string) => 'later' | 'declined' | undefined
   /** Gives the first-visit question back for `origin`. */
   readonly askAgain: (origin: string) => Promise<void>
+  /** Called after a switch of the popup moved, so the key can show or drop its dot. */
+  readonly changed: () => void
 }
 
-const NO_ENTRY: AppEntry = { notLetIn: () => undefined, askAgain: async () => {} }
+const NO_ENTRY: AppEntry = { notLetIn: () => undefined, askAgain: async () => {}, changed: () => {} }
 
 const EMPTY_SITE_INFO = (origin: string, extensionsOnSite: readonly string[] = []): SiteInfo => ({
   origin, displayOrigin: origin, claimedName: undefined, homeDomain: undefined, update: undefined, asked: false, capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite
@@ -252,13 +254,16 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     async turnOn (origin, capability, shownPatterns) {
       const broker = ctx.broker
       if (broker === undefined) return 'not-registered'
-      return await turnOnCapability(broker, origin, capability, shownPatterns)
+      const result = await turnOnCapability(broker, origin, capability, shownPatterns)
+      entry.changed()
+      return result
     },
 
     async turnOff (origin, capability) {
       const broker = ctx.broker
       if (broker === undefined) return
       await turnOffCapability(broker, origin, capability)
+      entry.changed()
     },
 
     async revokePickedPath (origin, pickId) {

@@ -42,6 +42,8 @@ export interface FirstVisitDeps {
   readonly capabilityPrompt?: CapabilityPromptPrompt | undefined
   /** Who to ask, in which tab, when a new version of an app asks for more than it was granted. */
   readonly askerFor?: ((origin: string) => DialogCaller | undefined) | undefined
+  /** Called when an origin becomes, or stops being, an app Orivon was never let into, so the chrome can ask again about its key. */
+  readonly changed?: (() => void) | undefined
   /** How long after a tab is let in the background download waits, so it begins once the first page is up. */
   readonly backgroundDelayMs?: number | undefined
 }
@@ -150,6 +152,7 @@ export async function runFirstVisit (deps: FirstVisitDeps, hintingOrigin: string
     }
     if (ask.outcome === 'denied') {
       deps.declined.add(origin)
+      deps.changed?.()
       host.plain()
       return { outcome: 'plain', why: 'denied' }
     }
@@ -330,7 +333,7 @@ export function createFirstVisit (options: FirstVisitOptions): FirstVisit {
       const kind = await kindOf(origin)
       if (kind !== 'first') return { outcome: kind }
       const result = await runFirstVisit(deps, origin, hintedUrl, caller, host, signal)
-      if (result.outcome === 'later') notNow.set(origin, result.keeper)
+      if (result.outcome === 'later') { notNow.set(origin, result.keeper); deps.changed?.() }
       if (result.outcome === 'entered') {
         // The download holds the origin's queue after the visit has returned, so nothing installs the same files beside it.
         // An app whose download did not finish stays settling for the run: the ordinary install path, which checks no
@@ -359,6 +362,7 @@ export function createFirstVisit (options: FirstVisitOptions): FirstVisit {
     const kept = notNow.get(origin)
     notNow.delete(origin)
     deps.declined.remove(origin)
+    deps.changed?.()
     // The dismissal kept its staged cache for the run; the visit that follows stages its own.
     await kept?.cancel()
   }
