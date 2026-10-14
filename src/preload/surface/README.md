@@ -82,7 +82,13 @@ frozen `Error.prepareStackTrace` is -- main-world code that obtains its own `Cal
 `prepareStackTrace`) cannot make a later frame lie about its origin by replacing a prototype
 method. V8 defines those methods non-writable and non-configurable, so on Electron 44 the
 replacement itself fails (`test/extensions/e2e-extensions-orivon-filter.test.ts` measures it); the
-comparison guards an engine that allows it. The decision, over the CallSites excluding `guarded`'s own frame
+comparison guards an engine that allows it. The frame list is built by an indexed loop into
+an array literal, each element written with the saved `Reflect.defineProperty` and a
+null-prototype descriptor, and the capture's own descriptors and holder object have no
+prototype either: nothing a page can redefine after install (`Array.prototype.constructor`,
+`Array[Symbol.species]`, an `Array.prototype` index setter, `Symbol.iterator`, fields on
+`Object.prototype`) is consulted between the capture and the decision, so none can swap in a
+forged list. The decision, over the CallSites excluding `guarded`'s own frame
 (`Error.captureStackTrace`'s second argument does the excluding): refuse if any frame's file
 name, script name or eval origin CONTAINS a `chrome-extension://` script (refusing more is
 safe); otherwise refuse unless some frame is page code -- checked STARTS-WITH, and only over the
