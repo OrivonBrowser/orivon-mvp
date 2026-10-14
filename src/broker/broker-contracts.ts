@@ -186,6 +186,8 @@ export interface CreateBrokerOptions extends RouteBrokerOptions {
   readonly listen: Listen
   readonly resolve: Resolver
   readonly proxyConfigured: ProxyProbe
+  /** True for a loopback port Orivon listens on (verifier, local node, route front): `connect` refuses this machine there whatever the grant says. Read per call. */
+  readonly ownLoopbackPort?: (port: number) => boolean
   /** `orivon.net.lookup`'s real DNS call (d-0030) -- ../adapters/node-adapters.ts's `resolveLookup`. */
   readonly resolveLookup: (hostname: string) => Promise<readonly LookupAddress[]>
   /** Clock, read once per grant -- `Grant.grantedAt`. Injected so a test can freeze it. */

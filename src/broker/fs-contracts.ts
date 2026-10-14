@@ -120,8 +120,12 @@ export interface BrokerFsSync {
   stat(path: string): RawFileStat
   rm(path: string, opts?: { recursive?: boolean }): void
   rename(from: string, to: string): void
-  /** `BrokerFs.diskUsage`, blocking: the bytes the regular files at or under `path` occupy, symlinks never followed, 0 for nothing there. */
-  diskUsage(path: string): number
+  /**
+   * `BrokerFs.diskUsage`, blocking: the bytes the regular files at or under `path` occupy, symlinks never followed, 0 for
+   * nothing there. With `maxEntries`, the walk stops at that many files and directories and answers `null`: the caller
+   * refuses rather than let one call block the main thread for as long as the app's own tree is large.
+   */
+  diskUsage(path: string, maxEntries?: number): number | null
 }
 
 /**

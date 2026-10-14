@@ -79,8 +79,9 @@ export function createUdpBind ({ deps, handleTable, ledger, canonical, socketAll
     try {
       // Same T20 ordering as `connect`'s: before `checkConnect` resolves
       // anything, not after. A routed app has its route as its proxy.
-      if (live === undefined && await deps.proxyConfigured(proxyProbeUrl(datagram.address, datagram.port))) {
-        return { sent: false, code: 'denied' }
+      if (live === undefined) {
+        const probeUrl = proxyProbeUrl(datagram.address, datagram.port)
+        if (probeUrl === null || await deps.proxyConfigured(probeUrl)) return { sent: false, code: 'denied' }
       }
       // Only this machine is reached directly while a route is in force, and
       // that needs no resolver.
