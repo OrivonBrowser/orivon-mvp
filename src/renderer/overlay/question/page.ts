@@ -107,7 +107,7 @@ export const questionPage: OverlayPage = {
     /** One row per thing the question asks for: its icon, its words, and a switch. Switching grants nothing by itself; a button does. */
     function choiceRows (view: QuestionView): HTMLElement | undefined {
       if (view.choices === undefined) return undefined
-      const note = view.choicesNote === undefined ? undefined : h('p', { className: 'q-detail q-note' }, view.choicesNote)
+      const note = view.choicesNote === undefined ? undefined : h('p', { className: 'q-note' }, view.choicesNote)
       const showNote = (): void => { if (note !== undefined) note.hidden = (view.choices ?? []).every((choice) => switchedOn.has(choice.id)) }
       const items = view.choices.map((choice) => {
         const control = h('button', { type: 'button', className: `q-switch${switchedOn.has(choice.id) ? ' on' : ''}` }, h('span', { className: 'q-switch-thumb' }))

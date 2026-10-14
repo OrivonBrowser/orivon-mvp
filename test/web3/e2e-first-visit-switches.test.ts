@@ -70,6 +70,7 @@ it('[app:first-visit-asks-with-switches] [app:first-visit-key-dot] [app:first-vi
       const asked = await readQuestion(panel)
       check(`the panel offers Close and Grant all, Close first (${JSON.stringify(asked.buttons)})`, JSON.stringify(asked.buttons) === JSON.stringify(['Close', 'Grant all']))
       check(`it has a row for each permission the app asked for (${JSON.stringify(asked.choices)})`, asked.choices.length === 2 && asked.choices.some((row) => /files/i.test(row)))
+      check(`the detail is the claimed name, not the together line (${JSON.stringify(asked.detail)})`, asked.detail.startsWith('Claims to be'))
       check('every switch starts off', (await readSwitches(panel)).every((row) => !row.on))
       check(`it says the permissions were asked for together while one is off (${JSON.stringify(asked.note)})`, asked.note.includes('asked for these together'))
       check('the origin is named once', [asked.origin, asked.title, asked.message, asked.detail].join('\n').split(asked.origin).length === 2)
