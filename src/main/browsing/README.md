@@ -39,6 +39,14 @@ dependency on tab-collection state, which keeps it importable under plain vitest
 
 ## Design notes
 
+**A judged score stays while the provider cannot be asked, and a Level 2 site no provider has judged reads Web?.**
+`score-provider-client.ts` remembers the last `judged` or `no-score` verdict per page, provider address and route, and
+`verdictToShow` (`../../trust/score-provider.ts`) shows it in place of `pending` and `unreachable`; the next answer the
+provider gives, lower or higher, replaces it, and a changed provider address finds nothing kept. `web3Score` marks a reply
+`unscored` when the displayed level is the observed 2 and no provider judged the page (a developer override stays as it
+is), and the shield draws that as a gray Web? (`../../renderer/web3-shield.ts`). The Website level itself is kept, where the
+verifier cannot be asked, by `../verifier/kept-provenance.ts`.
+
 **A routed app's lookups leave through its route.** A tab's icon from another host and the Web3 Score provider's answer are
 fetched from main, which would otherwise use the default session. For an app the person routed, `favicon-fetch.ts` and
 `score-provider-client.ts` ask `../route/lookup-session.ts` for the session of the app's route and use it for those

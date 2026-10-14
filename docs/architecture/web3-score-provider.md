@@ -70,7 +70,8 @@ finds its identifier there itself.
 **No entry is not an error.** A provider answers 404 for a bucket it has nothing in, or serves
 the file with an empty `entries`; both mean "no score". Any other failure (an unreachable host, a
 status other than 200 or 404, a malformed file) means "this provider did not answer", which a
-client shows as such and never as "no score".
+client shows as such and never as "no score". A client that already holds a provider's score for a site keeps showing it while the
+provider cannot be asked; only an answer the provider gives replaces it.
 
 ### Test vectors
 
@@ -186,6 +187,10 @@ What follows bounds this build of Orivon, not the standard.
   judged Level 3 or 4 with the provider's name; the page keeps what Orivon itself observed beside
   it. Levels 1 and 2 are observed, so a website evaluation at 1 or 2 only marks 3 and 4 as not
   met, and the shown level stays the observed one.
+- **Web? until judged.** A Level 2 site no provider has judged (none chosen, not reached yet, no score for
+  it) carries a gray Web? mark in place of Web2.5; the shield keeps Level 2's colour.
+- **A score stays while the provider cannot be asked.** The last score a provider gave for a site is shown
+  while a later ask is under way or fails, and is replaced by the next answer, lower, higher or "no score".
 - **Only at the domain the manifest names.** A manifest is a leaf of the content address, so a
   judgement of the content covers the `domain` its manifest names (`capability-api.md`, `domain`),
   and the level counts only at that host (`ADR-0056`). The same files under another name, a

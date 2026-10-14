@@ -10,7 +10,7 @@ import { app, session, utilityProcess } from 'electron'
 import type { Session, WebFrameMain, WebRequestFilter } from 'electron'
 import type { Subsystem } from '../registry.js'
 import { devEthNames, isDevEthName } from '../dev/eth-resolver.js'
-import type { HostConfig, LightClientState, SiteProvenance } from '../../protocols/verifier-host/protocol.js'
+import type { HostConfig, LightClientState, NodeNotice, SiteProvenance } from '../../protocols/verifier-host/protocol.js'
 import type { ContentAddress, PinRecord } from '../../broker/policy/pin.js'
 import { servedByVerifier } from '../../loader/fetch/verifier-origin.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
@@ -32,10 +32,10 @@ import shippedCheckpoint from './mainnet-checkpoint.json'
 import { composeResolverRules } from './resolver-rules.js'
 import { ListeningGate } from './listening-gate.js'
 import { announceNameSchemeChange } from './name-scheme-events.js'
-import type { EthTestSeam } from './test-seam.js'
-import { ethTestSeam, exposeVerifierStart, noteVerifierListening, verifierStartDelayMs } from './test-seam.js'
+import { ethTestSeam, exposeVerifierStart, noteVerifierListening, verifierStartDelayMs, type EthTestSeam } from './test-seam.js'
 import { VerifierStore } from './verifier-store.js'
 import { chooseNameEvidence } from './name-evidence.js'
+import { lastProvenance } from './kept-provenance.js'
 import type { NameEvidence } from './name-evidence.js'
 import { checkpointProblem, lightClientView } from './status-view.js'
 import type { LightClientView } from './status-view.js'
@@ -50,7 +50,6 @@ import { configureIpfsNode, ipfsNode, ipfsNodeEndpoint, ipfsNodeState } from './
 import type { LocalNodeSubsystem } from './local-node-subsystem.js'
 import { IPFS_NODE_IDENTITY } from '../../protocols/ipfs-node/protocol.js'
 import { SWARM_NODE_IDENTITY } from '../../protocols/swarm-node/protocol.js'
-import type { NodeNotice } from '../../protocols/verifier-host/protocol.js'
 import type { RouteService } from '../route/route-service.js'
 
 /** A mount may wait for the light client to sync, resolve a name and follow its pointers: the host's own bound (verifier-host/pace.ts) and this much beyond it, so the host's answer is the one that comes. */
@@ -279,10 +278,10 @@ function lightClientCanStart (): boolean {
  * showing that origin sees it; null when it is not mounted there or the host
  * is down.
  */
-export async function siteProvenance (origin: string): Promise<SiteProvenance | null> {
+export async function siteProvenance (origin: string, route = routeOf(origin)): Promise<SiteProvenance | null> {
   if (supervisor === undefined) return null
   try {
-    return await supervisor.request({ kind: 'provenance', host: new URL(origin).hostname, partition: origin, ...routeOf(origin) })
+    return await supervisor.request({ kind: 'provenance', host: new URL(origin).hostname, partition: origin, ...route })
   } catch {
     return null
   }
@@ -291,11 +290,12 @@ export async function siteProvenance (origin: string): Promise<SiteProvenance | 
 /** How a `.eth` name or an address led to the content this tab shows, for the site-info popover; undefined for any other origin. */
 export async function verifierNameEvidence (origin: string, pin: PinRecord | null, servedFromCache: boolean): Promise<NameEvidence | undefined> {
   if (!servedByVerifier(origin)) return undefined
-  const live = await siteProvenance(origin)
+  const route = routeOf(origin)
+  const { provenance: live, kept } = lastProvenance.resolve(`${origin} ${route.route ?? ''}`, await siteProvenance(origin, route))
   const address = BUILTIN_ADDRESSES.servedName(new URL(origin).hostname)?.namespace.endsWith(':') === true
   // An address needs no light client, so its state would explain nothing.
   const unanswered = address ? 'The verifier has not loaded it in this tab yet.' : verifierView().summary
-  return chooseNameEvidence(pin?.content, servedFromCache, live, unanswered, Date.now(), address, nodeEndpointNames())
+  return chooseNameEvidence(pin?.content, servedFromCache, live, unanswered, Date.now(), address, nodeEndpointNames(), kept)
 }
 
 /**
@@ -480,7 +480,7 @@ export const verifierSubsystem: Subsystem = {
       ready: async () => { await listeningGate.whenSettled() },
       servesName: (name) => isDevEthName(name) || ethTestSeam()?.fixtures[name] !== undefined || lightClientCanStart()
     })
-    exposeVerifierStart(() => { startHost() })
+    exposeVerifierStart(() => { startHost() }, () => { host.idle() })
     lifecycle.refreshAtLaunch()
     app.on('will-quit', () => {
       lifecycle.dispose()
