@@ -35,6 +35,6 @@ and nothing is kept in the host, so a restart or a sleep loses nothing. A mismat
 
 **A failure page for a failure that may pass offers Try again, and a person's own request for the page really tries again.** The
 unavailable and not-synced pages ([`error-pages.ts`](error-pages.ts)) carry a link to their own address, styled as a button, because the pages run
-no script. `sites.ts` remembers a failed mount for `FAILURE_TTL_MS` so that a failed page's own requests do not each start the mount; a top-level
-document load (`sec-fetch-mode: navigate` with `sec-fetch-dest: document`: the click, a reload, a typed address) skips that memory and starts
-the mount again, joining one still running. A frame or a subresource keeps the memory.
+no script. `sites.ts` remembers a failed mount for `FAILURE_TTL_MS` so that a failed page's own requests do not each start the mount; a navigation
+(`sec-fetch-mode: navigate` with `sec-fetch-dest` document, iframe or frame: the click, a reload, a typed address, a frame's own load) skips that memory and starts
+the mount again, joining one still running, so a page of frames starts one. A subresource keeps the memory.

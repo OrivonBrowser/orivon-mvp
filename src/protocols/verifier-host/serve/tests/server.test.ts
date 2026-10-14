@@ -91,14 +91,18 @@ const site: MountedSite = {
   ddoc: () => ({ status: 'met', refusals: [] })
 }
 const record: NameRecord = { type: 'contenthash', pointer: { kind: 'ipfs', cid: ROOT }, provenance: { via: 'fixture' } }
-let flakyResolves = 0
+const flakyResolves = new Map<string, number>()
 const resolver: NameResolver = {
   id: 'stub',
   namespaces: ['.eth'],
   resolve: async (name) => {
-    if (name === 'flaky.eth' && (flakyResolves += 1) === 1) throw new ResolutionError('unavailable', 'no gateway answered')
+    if (name.endsWith('flaky.eth')) {
+      const seen = (flakyResolves.get(name) ?? 0) + 1
+      flakyResolves.set(name, seen)
+      if (seen === 1) throw new ResolutionError('unavailable', 'no gateway answered')
+    }
     if (name === 'syncing.eth') throw new ResolutionError('not-synced', 'light client syncing')
-    if (name === 'site.eth' || name === 'flaky.eth' || name === 'part.eth' || name === 'own.eth') return [record]
+    if (name === 'site.eth' || name.endsWith('flaky.eth') || name === 'part.eth' || name === 'own.eth') return [record]
     throw new ResolutionError('not-found', 'no such name')
   }
 }
@@ -280,19 +284,27 @@ describe('the .eth loopback server', () => {
     expect((await get('/bad.js')).body.toString()).not.toContain('Try again')
   })
 
-  it('answers Try again with a new attempt, though the failed one is remembered for any other request', async () => {
-    const top = { 'sec-fetch-site': 'none' }
-    const failed = await get('/', { host: 'flaky.eth', headers: top })
+  const NAV = { 'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'navigate' }
+  const SUBRESOURCE = { 'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'no-cors', 'sec-fetch-dest': 'script' }
+
+  it('answers Try again with a new attempt, though the failed one is remembered for a subresource', async () => {
+    const failed = await get('/', { host: 'flaky.eth', headers: { 'sec-fetch-site': 'none' } })
     expect(failed.status).toBe(502)
     expect(failed.body.toString()).toContain('Try again')
-    // A subresource or a frame of the failed page does not start the mount again.
-    expect((await get('/app.js', { host: 'flaky.eth', headers: { 'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'no-cors', 'sec-fetch-dest': 'script' } })).status).toBe(502)
-    expect((await get('/', { host: 'flaky.eth', headers: { 'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'iframe' } })).status).toBe(502)
-    expect(flakyResolves).toBe(1)
-    const retried = await get('/', { host: 'flaky.eth', headers: { 'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document' } })
+    expect((await get('/app.js', { host: 'flaky.eth', headers: SUBRESOURCE })).status).toBe(502)
+    expect(flakyResolves.get('flaky.eth')).toBe(1)
+    const retried = await get('/', { host: 'flaky.eth', headers: { ...NAV, 'sec-fetch-dest': 'document' } })
     expect(retried.status).toBe(200)
     expect(retried.body.toString()).toBe('<h1>home</h1>')
-    expect(flakyResolves).toBe(2)
+    expect(flakyResolves.get('flaky.eth')).toBe(2)
+  })
+
+  it('answers Try again inside a frame with a new attempt too', async () => {
+    const host = 'frame.flaky.eth'
+    expect((await get('/', { host, headers: { 'sec-fetch-site': 'none' } })).status).toBe(502)
+    expect((await get('/app.js', { host, headers: SUBRESOURCE })).status).toBe(502)
+    expect((await get('/', { host, headers: { ...NAV, 'sec-fetch-dest': 'iframe' } })).status).toBe(200)
+    expect(flakyResolves.get(host)).toBe(2)
   })
 
   it('sends none of a small file that fails verification part-way: the error page instead', async () => {
