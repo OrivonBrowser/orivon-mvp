@@ -90,7 +90,7 @@ function fixtureManifest (): Manifest {
   }
 }
 
-it('shows a permission granted elsewhere, and its revoke, on an already-open Apps section', async () => {
+it('shows a permission granted elsewhere, and its being switched off, on an already-open Apps section', async () => {
   const { app, chrome } = await launched()
   try {
     const fixtureOrigin = 'http://127.0.0.1:47501'
@@ -108,11 +108,9 @@ it('shows a permission granted elsewhere, and its revoke, on an already-open App
 
     await devRevoke(app, fixtureOrigin, granted.id)
 
-    // The card itself stays (it is a loaded app for the rest of the session,
-    // permissions.ts's own PermissionsRegistry.list() doc): what has to
-    // disappear live is the one permission row the revoke took away.
-    expect(await waitFor(async () => (await card.locator('.perm').count()) === 0)).toBe(true)
-    expect(await card.textContent()).toContain('Nothing is granted to it now.')
+    // The card stays, and so does the row (it is a loaded app for the rest of the session, and the app declares
+    // the permission): what changes live is the row's switch, which turns off.
+    expect(await waitFor(async () => !(await card.locator('.perm[data-capability="tcp.connect"] input').isChecked()))).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
