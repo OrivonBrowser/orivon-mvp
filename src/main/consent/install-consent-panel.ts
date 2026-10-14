@@ -15,6 +15,8 @@ export interface InstallPanelRow {
   readonly capability: CapabilityKind
   readonly warning: boolean
   readonly message: string
+  /** What the grant reaches beyond the headline: shown under the row, as the whole-set dialogs do. */
+  readonly explanation: string | undefined
 }
 
 export interface InstallPanelContent {
@@ -38,7 +40,7 @@ export function describeInstallPanel (
   const rows: InstallPanelRow[] = []
   for (const capability of capabilities) {
     const offered = offerCapability(manifest, capability, level)
-    if (offered !== undefined) rows.push({ capability, warning: offered.warning, message: offered.message })
+    if (offered !== undefined) rows.push({ capability, warning: offered.warning, message: offered.message, explanation: offered.explanation })
   }
   const displayOrigin = formatOriginForDisplay(origin)
   const home = homeLine(originHost(origin), manifest.domain)

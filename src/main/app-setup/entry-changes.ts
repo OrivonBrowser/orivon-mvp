@@ -10,5 +10,8 @@ export function onEntryChange (listener: () => void): () => void {
 }
 
 export function announceEntryChange (): void {
-  for (const listener of [...listeners]) listener()
+  for (const listener of [...listeners]) {
+    // A listener that throws must not break the first visit that announced.
+    try { listener() } catch (error) { console.error('[entry-changes] a listener failed:', error) }
+  }
 }

@@ -39,7 +39,7 @@ export function createInstallConsentPrompt (levelOverrideFor: LevelOverrideFor =
         title: content.title,
         message: content.message,
         detail: content.detail,
-        choices: content.rows.map((row) => ({ id: row.capability, icon: row.capability, message: row.message, warning: row.warning })),
+        choices: content.rows.map((row) => ({ id: row.capability, icon: row.capability, message: row.message, warning: row.warning, ...(row.explanation === undefined ? {} : { detail: row.explanation }) })),
         ...(content.note === undefined ? {} : { choicesNote: content.note }),
         buttons: ['Grant all', 'Close'],
         cancelId: CLOSE,

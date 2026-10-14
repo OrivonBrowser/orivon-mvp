@@ -21,7 +21,7 @@ export function isQuestionView (value: unknown): value is QuestionView {
 }
 
 function isChoiceList (value: unknown): boolean {
-  return value === undefined || (Array.isArray(value) && value.every((entry) => isRecord(entry) && typeof entry['id'] === 'string' && typeof entry['icon'] === 'string' && typeof entry['message'] === 'string' &&
+  return value === undefined || (Array.isArray(value) && value.every((entry) => isRecord(entry) && typeof entry['id'] === 'string' && typeof entry['icon'] === 'string' && typeof entry['message'] === 'string' && optionalString(entry['detail']) &&
     (entry['warning'] === undefined || typeof entry['warning'] === 'boolean') && (entry['on'] === undefined || typeof entry['on'] === 'boolean')))
 }
 

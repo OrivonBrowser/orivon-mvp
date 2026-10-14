@@ -118,6 +118,11 @@ describe('choices', () => {
     expect(withChoices([{ id: 'fs', icon: 'fs', message: 'Store files', on: true }]).choices).toEqual([{ id: 'fs', icon: 'fs', message: 'Store files', on: true }])
   })
 
+  it('keeps a row\'s detail, cleaned, and lets a long row through whole', () => {
+    const long = 'x'.repeat(3000)
+    expect(withChoices([{ id: 'a', icon: 'fs', message: long, detail: 'reach‮' }]).choices).toEqual([{ id: 'a', icon: 'fs', message: long, detail: 'reach' }])
+  })
+
   it('cleans the text of every row, drops a row with no id or a repeated id, and caps the count', () => {
     const out = withChoices([{ id: 'a', icon: 'fs', message: 'm‮\u0001' }, { id: '', icon: 'fs', message: 'no id' }, { id: 'a', icon: 'fs', message: 'twice' }])
     expect(out.choices).toEqual([{ id: 'a', icon: 'fs', message: 'm' }])

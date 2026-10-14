@@ -116,6 +116,8 @@ export const questionPage: OverlayPage = {
         control.setAttribute('aria-label', choice.message)
         control.dataset['choice'] = choice.id
         control.addEventListener('click', () => {
+          // A click or key meant for the page, landing as the panel appears, must not decide anything.
+          if (root.classList.contains('arming')) return
           if (switchedOn.has(choice.id)) switchedOn.delete(choice.id)
           else switchedOn.add(choice.id)
           const on = switchedOn.has(choice.id)
@@ -124,7 +126,7 @@ export const questionPage: OverlayPage = {
           showNote()
         })
         const icon = isGrantIconKind(choice.icon) ? grantIcon(choice.icon) : undefined
-        return h('li', { className: `q-choice${choice.warning === true ? ' warning' : ''}` }, icon, h('span', { className: 'q-choice-message' }, choice.message), control)
+        return h('li', { className: `q-choice${choice.warning === true ? ' warning' : ''}` }, icon, h('span', { className: 'q-choice-text' }, h('span', { className: 'q-choice-message' }, choice.message), choice.detail === undefined ? undefined : h('span', { className: 'q-choice-detail' }, choice.detail)), control)
       })
       if (note !== undefined) showNote()
       return h('div', { className: 'q-choices' }, h('ul', { className: 'q-choice-list' }, ...items), note)

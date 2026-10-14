@@ -11,6 +11,8 @@ export interface QuestionChoice {
   readonly id: string
   readonly icon: string
   readonly message: string
+  /** A line under the message, in the dimmer style: what the row reaches beyond its headline. */
+  readonly detail?: string
   readonly warning?: boolean
   /** The switch starts on. */
   readonly on?: boolean
@@ -94,7 +96,7 @@ export const MAX_INPUT = 100_000
 
 const MAX_LABEL = 60
 const MAX_CHOICE_ID = 60
-const MAX_CHOICE_MESSAGE = 600
+const MAX_CHOICE_MESSAGE = 4000
 const MAX_TITLE = 120
 const MAX_ORIGIN = 300
 const MAX_MESSAGE = 2000
@@ -145,6 +147,7 @@ function cleanChoices (choices: readonly QuestionChoice[]): readonly QuestionCho
       id,
       icon: cleanText(choice.icon, MAX_CHOICE_ID),
       message: cleanText(choice.message, MAX_CHOICE_MESSAGE),
+      ...(choice.detail === undefined ? {} : { detail: cleanText(choice.detail, MAX_CHOICE_MESSAGE) }),
       ...(choice.warning === true ? { warning: true } : {}),
       ...(choice.on === true ? { on: true } : {})
     })

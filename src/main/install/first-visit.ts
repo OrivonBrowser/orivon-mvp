@@ -287,8 +287,8 @@ export interface FirstVisit {
   resume: () => Promise<void>
   /** Why an origin is an app Orivon was never let into: its question was dismissed this run (`later`) or answered with nothing switched on (`declined`). Undefined for every other origin. */
   notLetIn: (origin: string) => 'later' | 'declined' | undefined
-  /** Forgets that the question was dismissed or refused, and lets go of the cache a dismissal kept staged: the next visit asks again. */
-  askAgain: (origin: string) => Promise<void>
+  /** Forgets that the question was dismissed or refused, and lets go of the cache a dismissal kept staged: the next visit asks again. False when a refusal could not be forgotten, so nothing will ask. */
+  askAgain: (origin: string) => Promise<boolean>
 }
 
 export interface FirstVisitOptions {
@@ -358,13 +358,17 @@ export function createFirstVisit (options: FirstVisitOptions): FirstVisit {
     return deps.declined.has(origin) && !deps.broker.app.isRegisteredSync(origin) ? 'declined' : undefined
   }
 
-  async function askAgain (origin: string): Promise<void> {
-    const kept = notNow.get(origin)
-    notNow.delete(origin)
-    deps.declined.remove(origin)
-    deps.changed?.()
-    // The dismissal kept its staged cache for the run; the visit that follows stages its own.
-    await kept?.cancel()
+  async function askAgain (origin: string): Promise<boolean> {
+    // On the origin's queue, so a visit that starts meanwhile never has its staged files discarded by the old one's cache.
+    return await withOriginQueue(origin, async () => {
+      const kept = notNow.get(origin)
+      // The dismissal kept its staged cache for the run; the visit that follows stages its own.
+      await kept?.cancel()
+      notNow.delete(origin)
+      const forgotten = !deps.declined.has(origin) || deps.declined.remove(origin)
+      deps.changed?.()
+      return forgotten
+    })
   }
 
   return { kindOf, run, resume, notLetIn, askAgain }

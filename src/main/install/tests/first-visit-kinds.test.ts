@@ -138,7 +138,7 @@ describe('createFirstVisit', () => {
     const other = over(refused)
     await other.run(refused.origin, refused.url, present, refused.host)
     expect(other.notLetIn(refused.origin)).toBe('declined')
-    await other.askAgain(refused.origin)
+    expect(await other.askAgain(refused.origin)).toBe(true)
     expect(other.notLetIn(refused.origin)).toBeUndefined()
     expect(refused.declined.has(refused.origin)).toBe(false)
     expect(await other.kindOf(refused.origin)).toBe('first')

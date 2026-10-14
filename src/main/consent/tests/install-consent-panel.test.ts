@@ -18,6 +18,12 @@ describe('describeInstallPanel', () => {
     }
   })
 
+  it('carries what a grant reaches beyond its headline, so the person is told as the whole-set dialogs tell them', () => {
+    const rows = describeInstallPanel(ORIGIN, MANIFEST, ['fs', 'tcp.connect']).rows
+    expect(rows.find((row) => row.capability === 'fs')?.explanation).toBeUndefined()
+    expect(rows.find((row) => row.capability === 'tcp.connect')?.explanation).toEqual(expect.stringMatching(/\S/))
+  })
+
   it('shows only the capabilities it is given, so what is held or refused already is not a row', () => {
     expect(describeInstallPanel(ORIGIN, MANIFEST, ['fs']).rows.map((row) => row.capability)).toEqual(['fs'])
   })

@@ -10,6 +10,8 @@ import type { ScoreLevel } from '../../trust/website-level.js'
 export interface OfferedCapability {
   readonly warning: boolean
   readonly message: string
+  /** The sentence that says what the grant reaches beyond the headline, when there is one. */
+  readonly explanation: string | undefined
   /** What switching the capability on would grant under the manifest as it is now. */
   readonly patterns: readonly Pattern[]
 }
@@ -18,6 +20,6 @@ export interface OfferedCapability {
 export function offerCapability (manifest: Manifest, capability: CapabilityKind, level?: ScoreLevel): OfferedCapability | undefined {
   const decision = decideGrantRequest(manifest, capability, undefined)
   if (!decision.allowed) return undefined
-  const { warning, message } = summaryAtLevel(describeCapabilityGrant(capability, decision.patterns), level)
-  return { warning, message, patterns: decision.patterns }
+  const { warning, message, explanation } = summaryAtLevel(describeCapabilityGrant(capability, decision.patterns), level)
+  return { warning, message, explanation, patterns: decision.patterns }
 }

@@ -61,7 +61,7 @@ export function createWindowPanels ({ ctx, win, services, tabs, overlays, dirnam
   const siteInfoController = createSiteInfoController(ctx, { isOriginServedFromCacheSync, isOriginPinnedSync, pinCoverageFor, nameEvidenceFor: verifierNameEvidence, levelOverrideFor: scoreLevelOverrideFor, deliveryOverrideFor: deliveryLevelOverrideFor, localDdocHashFor, providerVerdictFor: services.scoreProvider.verdictFor },
     async (key) => await deleteLocalFileData({ broker: ctx.broker, userDataPath: app.getPath('userData'), clearPartition: async (partition) => { await session.fromPartition(partition).clearData() } }, key),
     // The first visit is built after the windows, so it is read at the moment of use.
-    { notLetIn: (origin) => firstVisitNow()?.notLetIn(origin), askAgain: async (origin) => { await firstVisitNow()?.askAgain(origin) }, changed: announceEntryChange })
+    { notLetIn: (origin) => firstVisitNow()?.notLetIn(origin), askAgain: async (origin) => await firstVisitNow()?.askAgain(origin) ?? false, changed: announceEntryChange })
 
   // The permissions surface is a panel inside this window rather than a
   // second one -- ./permissions-panel.ts.

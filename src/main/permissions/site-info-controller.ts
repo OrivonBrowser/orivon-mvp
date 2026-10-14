@@ -44,12 +44,12 @@ export interface AppEntry {
   /** Why `origin` is an app Orivon was never let into, when it is one. */
   readonly notLetIn: (origin: string) => 'later' | 'declined' | undefined
   /** Gives the first-visit question back for `origin`. */
-  readonly askAgain: (origin: string) => Promise<void>
+  readonly askAgain: (origin: string) => Promise<boolean>
   /** Called after a switch of the popup moved, so the key can show or drop its dot. */
   readonly changed: () => void
 }
 
-const NO_ENTRY: AppEntry = { notLetIn: () => undefined, askAgain: async () => {}, changed: () => {} }
+const NO_ENTRY: AppEntry = { notLetIn: () => undefined, askAgain: async () => true, changed: () => {} }
 
 const EMPTY_SITE_INFO = (origin: string, extensionsOnSite: readonly string[] = []): SiteInfo => ({
   origin, displayOrigin: origin, claimedName: undefined, homeDomain: undefined, update: undefined, asked: false, capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite
@@ -278,8 +278,7 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
 
     async reviewPermissions (origin) {
       if (entry.notLetIn(origin) === undefined) return false
-      await entry.askAgain(origin)
-      return true
+      return await entry.askAgain(origin)
     }
   }
 }

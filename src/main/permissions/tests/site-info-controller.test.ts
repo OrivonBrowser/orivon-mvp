@@ -168,7 +168,7 @@ describe('createSiteInfoController -- siteInfoFor / siteSummaryFor', () => {
   })
 
   it.each(['later', 'declined'] as const)('an app that was never let in (%s) is missing its permissions, and its popup offers the question back', async (reason) => {
-    const askAgain = vi.fn(async () => {})
+    const askAgain = vi.fn(async () => true)
     const controller = createSiteInfoController(ctxWith(createBroker(baseDeps())), NO_TRUST, async () => false, { notLetIn: (origin) => origin === OTHER ? reason : undefined, askAgain, changed: () => {} })
 
     expect((await controller.siteSummaryFor(OTHER)).missing).toBe(true)
@@ -180,8 +180,24 @@ describe('createSiteInfoController -- siteInfoFor / siteSummaryFor', () => {
     expect(askAgain).toHaveBeenCalledWith(OTHER)
   })
 
+  it('reviewing permissions says no when the refusal could not be forgotten, so nothing reloads for a question that will not come', async () => {
+    const controller = createSiteInfoController(ctxWith(createBroker(baseDeps())), NO_TRUST, async () => false, { notLetIn: () => 'declined', askAgain: async () => false, changed: () => {} })
+    expect(await controller.reviewPermissions(OTHER)).toBe(false)
+  })
+
+  it('announces a change after a switch of the popup moves, either way', async () => {
+    const broker = createBroker(baseDeps())
+    await broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 1024 } }))
+    const changed = vi.fn()
+    const controller = createSiteInfoController(ctxWith(broker), NO_TRUST, async () => false, { notLetIn: () => undefined, askAgain: async () => true, changed })
+    const row = (await controller.siteInfoFor(APP)).capabilityRows[0]
+    await controller.turnOn(APP, 'fs', row?.patterns ?? [])
+    await controller.turnOff(APP, 'fs')
+    expect(changed).toHaveBeenCalledTimes(2)
+  })
+
   it('reviewing permissions does nothing for an origin that was let in or is no app', async () => {
-    const askAgain = vi.fn(async () => {})
+    const askAgain = vi.fn(async () => true)
     const controller = createSiteInfoController(ctxWith(createBroker(baseDeps())), NO_TRUST, async () => false, { notLetIn: () => undefined, askAgain, changed: () => {} })
 
     expect(await controller.reviewPermissions(OTHER)).toBe(false)
