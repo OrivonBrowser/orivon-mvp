@@ -134,6 +134,19 @@ it('prepareWindow sets the size the window keeps even when called the moment the
   }
 }, QA_TEST_TIMEOUT_MS)
 
+/** The Settings page draws all its rows again whenever one of its parts reports (the tunnel, the profiles, the sites), and a redraw drops the scroll and detaches the row. So the row is scrolled to once the page has been quiet for half a second, from the page itself, which holds no element across a redraw. */
+async function scrollToTunnelRow (settings: Page): Promise<void> {
+  await settings.evaluate(async () => {
+    await new Promise<void>((resolve) => {
+      let timer = setTimeout(done, 500)
+      const watching = new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(done, 500) })
+      function done (): void { watching.disconnect(); resolve() }
+      watching.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true })
+    })
+    ;(document.getElementById('row-route-kind') as (HTMLElement & { scrollIntoViewIfNeeded?: () => void }) | null)?.scrollIntoViewIfNeeded?.()
+  })
+}
+
 for (const scheme of SCHEMES) {
   it(`the shell looks right in each state it can be in (${scheme})`, async () => {
     const { app, chrome } = await launchShell({ scheme })
@@ -269,8 +282,8 @@ for (const scheme of SCHEMES) {
     try {
       await runPhase('visual states of Settings > Privacy and data > Tunnel', async (check) => {
         const settings = await openInternal(app, chrome, 'settings', '/privacy')
-        await settings.waitForSelector('#row-route-kind')
-        await settings.locator('#row-route-kind').scrollIntoViewIfNeeded()
+        await settings.waitForSelector('#row-route-nym-status:has-text("Starts when")')
+        await scrollToTunnelRow(settings)
         check('the tunnel choice is Nym (built in), the Nym status line is shown and the address row is not', (await settings.locator('#row-route-kind select').inputValue()) === 'nym' && await settings.locator('#row-route-nym-status').isVisible() && await settings.locator('#row-route-nym-privacy select').inputValue() === 'balanced' && !(await settings.locator('#row-route-proxy').isVisible()))
         await state(check, app, `settings-tunnel-nym-${scheme}`, {
           expected: 'orivon://settings/privacy is open with the "Tunnel" row showing the choice "Nym (built in)", under it a "Nym" row saying "Starts when an app that uses it connects.", a "Nym privacy" row with a choice showing "Balanced" and one sentence for each of Balanced and Strongest, and a "Test the tunnel" row with a Test button. No address field is shown.',
@@ -278,7 +291,7 @@ for (const scheme of SCHEMES) {
         })
         await settings.locator('#row-route-kind select').selectOption('socks5')
         await settings.waitForSelector('#row-route-proxy input')
-        await settings.locator('#row-route-kind').scrollIntoViewIfNeeded()
+        await scrollToTunnelRow(settings)
         check('choosing the address shows its field and hides the Nym status and the Nym privacy choice', await settings.locator('#row-route-proxy input').isVisible() && !(await settings.locator('#row-route-nym-status').isVisible()) && !(await settings.locator('#row-route-nym-privacy').isVisible()))
         await state(check, app, `settings-tunnel-address-${scheme}`, {
           expected: 'The "Tunnel" row shows "Your own SOCKS5 address"; under it a "SOCKS5 address" row with an empty text field whose placeholder is 127.0.0.1:9050, and the "Test the tunnel" row with a Test button that is greyed out. The Nym and Nym privacy rows are gone.',
