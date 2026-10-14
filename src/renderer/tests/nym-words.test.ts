@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nymReason, nymRouteLine, nymStatusWords, nymTestWords } from '../pages/shared/nym-words.js'
+import { nymReason, nymRouteLine, nymStatusWords, nymTestingWords, nymTestWords } from '../pages/shared/nym-words.js'
 import { routeLineWords } from '../site-info/route-line.js'
 
 describe('the words about Nym', () => {
@@ -23,6 +23,11 @@ describe('the words about Nym', () => {
     expect(nymTestWords({ ok: false, reason: 'unavailable', detail: 'not in this build' })).toContain('not in this build')
     expect(nymTestWords({ ok: false, reason: 'silent', detail: '' })).toContain('did not answer')
     expect(nymTestWords({ ok: false, reason: 'failed', detail: '' })).toContain('did not work')
+    expect(nymTestWords({ ok: false, reason: 'failed', detail: 'a Nym tunnel could not come up: no gateway' })).toContain('no gateway')
+  })
+
+  it('says while a test runs that it can take up to a minute', () => {
+    expect(nymTestingWords()).toMatch(/up to a minute/)
   })
 
   it('tells the popover where an app on Nym stands', () => {

@@ -39,6 +39,7 @@ import { checkpointProblem, lightClientView } from './status-view.js'
 import type { LightClientView } from './status-view.js'
 import { ccipDirectFor, tunnelFront, tunnelProfileFront, unproxiedGatewaysFor } from './host-proxy.js'
 import { HostLifecycle } from './host-lifecycle.js'
+import { paceOf } from '../../protocols/verifier-host/pace.js'
 import { anyTabOnVerifiedOrigin } from './tab-on-verified-origin.js'
 import type { TabsOfWindow } from './tab-on-verified-origin.js'
 import { provideVerifierAccess } from './verifier-access.js'
@@ -50,8 +51,9 @@ import { SWARM_NODE_IDENTITY } from '../../protocols/swarm-node/protocol.js'
 import type { NodeNotice } from '../../protocols/verifier-host/protocol.js'
 import type { RouteService } from '../route/route-service.js'
 
-/** Mounting may wait for the light client to sync, then resolve a name and follow its pointers. */
-const MOUNT_TIMEOUT_MS = 30_000
+/** A mount may wait for the light client to sync, resolve a name and follow its pointers: the host's own bound (verifier-host/pace.ts) and this much beyond it, so the host's answer is the one that comes. */
+const MOUNT_GRACE_MS = 5_000
+let hostThroughTunnel = false
 /** How long a request to a verifier-served host waits for the host to listen: about three times the slowest start measured (3 s), so a host that never answers still ends in the ordinary error. */
 const LISTEN_WAIT_MS = 10_000
 
@@ -241,6 +243,7 @@ async function hostConfig (): Promise<HostConfig> {
   const seam = ethTestSeam()
   const front = await tunnelFront(routesOf())
   const profileFront = await tunnelProfileFront(routesOf())
+  hostThroughTunnel = front !== undefined
   const stored = verifierStore()
   let lightClient: Pick<HostConfig, 'lightClient' | 'lightClientOff'>
   if (lightClientSwitchedOff()) {
@@ -330,7 +333,7 @@ export async function verifierContentAddress (origin: string, partition?: string
   startHost()
   await listeningGate.whenSettled()
   if (supervisor === undefined) throw new Error('the verifier has not started')
-  return contentAddressOf(await supervisor.request({ kind: 'mount', host: new URL(origin).hostname, partition: partition ?? new URL(origin).origin, ...routeOf(origin) }, MOUNT_TIMEOUT_MS))
+  return contentAddressOf(await supervisor.request({ kind: 'mount', host: new URL(origin).hostname, partition: partition ?? new URL(origin).origin, ...routeOf(origin) }, paceOf(hostThroughTunnel || routeOf(origin).route === 'tunnel').mountTimeoutMs + MOUNT_GRACE_MS))
 }
 
 /** The content CID a `.eth` host names, proven now in `partition`; undefined when it does not resolve. Never throws. */

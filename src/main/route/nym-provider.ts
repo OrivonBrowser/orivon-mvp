@@ -19,8 +19,8 @@ export function isNymTarget (target: RouteTarget): boolean {
   return target.host === NYM_TARGET.host && target.port === NYM_TARGET.port
 }
 
-/** A tunnel comes up in a few seconds and a first connection through it takes a few more; the host itself gives up after 30 s. */
-export const NYM_CONNECT_TIMEOUT_MS = 70_000
+/** A tunnel comes up in a few seconds and a first connection through it takes a few more; the host gives up on a tunnel that cannot come up after three attempts, 95 s at most. */
+export const NYM_CONNECT_TIMEOUT_MS = 100_000
 
 export function createNymProvider (nym: { ensure: () => Promise<NymEndpoint> }, userId: string): RouteProvider {
   const through = async (): Promise<RouteProvider> => {

@@ -29,8 +29,13 @@ export function nymTestWords (result: NymTestResult): string {
   switch (result.reason) {
     case 'unavailable': return `Nym cannot start: ${result.detail}`
     case 'silent': return 'Nym did not answer in time.'
-    case 'failed': return 'Nym started, but a connection through it did not work.'
+    case 'failed': return `Nym started, but a connection through it did not work${result.detail === '' ? '.' : `: ${result.detail}`}`
   }
+}
+
+/** What stands beside the button while a test runs: a tunnel can take a good while to come up. */
+export function nymTestingWords (): string {
+  return 'Testing: bringing a tunnel up through the mixnet can take up to a minute.'
 }
 
 /** The popover's line about an app routed through Nym. */
