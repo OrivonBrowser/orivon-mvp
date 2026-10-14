@@ -40,8 +40,8 @@ export const INTERNAL_PAGE_BACKGROUND: ThemeColorPair = { light: '#f4f4f8', dark
 /** Literally the `--wbg` pair of `body[data-surface='menu']` in renderer/overlay/surface.css. */
 export const MENU_POPOVER_BACKGROUND: ThemeColorPair = { light: '#f2f2f7', dark: '#2b2c31' }
 
-/** Literally permissions/style.css's and site-info/style.css's own `--wbg`
- * pair -- identical in both files on purpose (permissions-panel.ts,
+/** Literally networks/style.css's and site-info/style.css's own `--wbg`
+ * pair -- identical in both files on purpose (networks-panel.ts,
  * site-info-panel.ts): both are the same toolbar-popup surface. */
 export const PANEL_POPOVER_BACKGROUND: ThemeColorPair = { light: '#e5e5ec', dark: '#1e1f24' }
 

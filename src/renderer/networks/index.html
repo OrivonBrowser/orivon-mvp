@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- Same shape as newtab/index.html's CSP: no network requests of its
+         own -- every fact on this page comes over IPC (orivonNetworks.*),
+         never a fetch. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'none'"
+    />
+    <title>Available networks</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <!-- The Available networks popup's own WebContentsView
+         (src/main/networks/networks-panel.ts), anchored under the
+         toolbar button of the same name, inside the shell window. -->
+    <main class="page">
+      <header class="page-header">
+        <h1>Available networks</h1>
+        <p class="subtitle">The networks Orivon runs on this computer, so pages load without a company's server in between.</p>
+      </header>
+      <div id="cards" class="cards" role="list"></div>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

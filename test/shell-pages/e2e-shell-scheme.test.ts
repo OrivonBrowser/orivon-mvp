@@ -98,13 +98,13 @@ it('loads the menu overlay, both popovers and the split frame from the shell sch
     await info.keyboard.press('Escape').catch(() => undefined)
     expect(await waitFor(() => pageWith(app, '/site-info/index.html') === undefined)).toBe(true)
 
-    await chrome.click('#permissions-btn')
-    expect(await waitFor(() => pageWith(app, '/permissions/index.html') !== undefined)).toBe(true)
-    const permissions = pageWith(app, '/permissions/index.html') as Page
-    expect(permissions.url().startsWith(`${SHELL}permissions/index.html`)).toBe(true)
-    expect(await bridgeOf(permissions, 'orivonPermissions')).toBe('object')
-    await permissions.keyboard.press('Escape').catch(() => undefined)
-    expect(await waitFor(() => pageWith(app, '/permissions/index.html') === undefined)).toBe(true)
+    await chrome.click('#networks-btn')
+    expect(await waitFor(() => pageWith(app, '/networks/index.html') !== undefined)).toBe(true)
+    const networks = pageWith(app, '/networks/index.html') as Page
+    expect(networks.url().startsWith(`${SHELL}networks/index.html`)).toBe(true)
+    expect(await bridgeOf(networks, 'orivonNetworks')).toBe('object')
+    await networks.keyboard.press('Escape').catch(() => undefined)
+    expect(await waitFor(() => pageWith(app, '/networks/index.html') === undefined)).toBe(true)
 
     await chrome.click('#new-tab')
     await visit(app, chrome, `${origin}/b`)

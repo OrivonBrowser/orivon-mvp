@@ -138,5 +138,7 @@ export type FromHost =
   | { readonly type: 'ipns-sequence', readonly key: string, readonly sequence: string }
   | { readonly type: 'swarm-feed-index', readonly feed: string, readonly index: string }
   | NodeWanted
+  /** What the host has read from the local node `node` this session: reads in flight now, and bytes read in all. Sent at most once a second, and only while the node is read. */
+  | { readonly type: 'node-traffic', readonly node: string, readonly active: number, readonly bytes: number }
   /** A top-level-domain name was mounted from content of the protocol serving `scheme`, so the shell can show `<scheme>://<host>`. */
   | { readonly type: 'name-scheme', readonly host: string, readonly scheme: string }

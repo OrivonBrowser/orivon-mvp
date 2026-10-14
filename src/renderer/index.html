@@ -115,16 +115,15 @@
 
       <div class="toolbar-cluster">
         <span class="sep" aria-hidden="true"></span>
-        <!-- The all-sites popup: every app, all its grants, revoke-only --
-             see src/main/permissions/permissions-panel.ts. A tune icon,
-             never a key: the key now lives in the pill and means THIS
-             site only. -->
-        <button id="permissions-btn" class="iconbtn" type="button" title="All sites' permissions" aria-label="All sites' permissions">
+        <!-- The Available networks popup: the nodes Orivon runs on this computer (src/main/networks/networks-panel.ts). The
+             dot says how they are: green while one runs, amber while one starts or syncs, red when one that is
+             switched on failed. The icon is lucide's `network` (ISC licence, https://lucide.dev). -->
+        <button id="networks-btn" class="iconbtn networks-btn" type="button" title="Available networks" aria-label="Available networks">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <line x1="4" y1="6" x2="20" y2="6" /><circle cx="14" cy="6" r="2" fill="currentColor" />
-            <line x1="4" y1="12" x2="20" y2="12" /><circle cx="8" cy="12" r="2" fill="currentColor" />
-            <line x1="4" y1="18" x2="20" y2="18" /><circle cx="16" cy="18" r="2" fill="currentColor" />
+            <rect x="16" y="16" width="6" height="6" rx="1" /><rect x="2" y="16" width="6" height="6" rx="1" /><rect x="9" y="2" width="6" height="6" rx="1" />
+            <path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3" /><path d="M12 12V8" />
           </svg>
+          <span class="networks-dot" data-dot="none" aria-hidden="true"></span>
         </button>
         <!-- One button per extension with a browser action (ADR-0043); shows
              nothing when none has one. `partition` addresses the session
@@ -134,13 +133,13 @@
              injectBrowserAction(), after its own URL gate passes. -->
         <browser-action-list partition="orivon-extensions-default" aria-label="Extensions"></browser-action-list>
         <div id="cluster-slot" class="toolbar-slot"></div>
-        <button id="identity" class="iconbtn" type="button" disabled title="Identity — not in v0">
+        <!-- The wallet: hidden until a wallet is built, which anchors on this button. -->
+        <button id="identity" class="iconbtn" type="button" hidden disabled title="Wallet — not built yet">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1" />
             <path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4" />
           </svg>
         </button>
-        <span class="statusdot" aria-hidden="true" title="Node status — not in v0"></span>
         <!-- Which profile this window is, once there is more than one, and always in a private window. Opens the page that manages them. -->
         <button id="profile-chip" class="profile-chip" type="button" hidden></button>
         <button id="menu" class="iconbtn" type="button" title="Menu">

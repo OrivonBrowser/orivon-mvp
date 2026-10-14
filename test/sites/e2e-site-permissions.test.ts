@@ -2,7 +2,7 @@
 // shell and an ordinary loopback website: pointer lock, and keyboard lock in
 // fullscreen, pass with a notice saying how to leave; an external link opens
 // only once the person allows it, and exactly the URL they were shown; a
-// site's notification answer is listed in the permissions panel, where Reset
+// site's notification answer is listed under Settings, Sites, where Reset
 // forgets it; and it is asked once, remembered across a restart, and read
 // back by Notification.permission.
 //
@@ -251,8 +251,8 @@ it('lets a page lock the pointer and keyboard with a notice, and open an externa
 
 // Reads and resets stored answers only: no page here touches the
 // Notification API, so this runs on any runner.
-it('lists each site\'s notification answer in the permissions panel, and Reset forgets it on disk', async () => {
-  await runPhase('site-notification-panel', async (check) => {
+it('lists each site\'s notification answer under Settings, Sites, and Reset forgets it on disk', async () => {
+  await runPhase('site-notification-list', async (check) => {
     const decisions = { version: 1, origins: { [ORIGIN]: 'allow', 'https://ads.example': 'block' } }
     const app = await launchElectron({
       appPath: '.',
@@ -263,25 +263,27 @@ it('lists each site\'s notification answer in the permissions panel, and Reset f
       await waitFor(() => app.windows().length === 2)
       const chrome = findChrome(app)
       await waitForAddressBarStable(chrome)
-      await chrome.click('#permissions-btn')
-      let panel: Page | undefined
-      await waitFor(() => { panel = app.windows().find((w) => w.url().endsWith('/renderer/permissions/index.html')); return panel !== undefined })
-      if (panel === undefined) throw new Error('the permissions panel did not open')
-      const settings = panel
-      const cards = async (): Promise<Array<{ origin: string, message: string }>> => await evaluateRetrying(settings, () =>
-        Array.from(document.querySelectorAll<HTMLElement>('.app-card')).map((card) => ({
-          origin: card.dataset['origin'] ?? '',
-          message: card.querySelector('.permission-message')?.textContent ?? ''
-        })))
-      const listed = await waitFor(async () => (await cards()).length === 2)
-      check('each decided site has a card saying what it may do', listed && JSON.stringify(await cards()) === JSON.stringify([
-        { origin: ORIGIN, message: 'Can show notifications.' },
-        { origin: 'https://ads.example', message: 'Blocked from showing notifications.' }
-      ]), JSON.stringify(await cards()))
+      await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/sites') })
+      let settings: Page | undefined
+      await waitFor(() => { settings = app.windows().find((w) => w.url().startsWith('orivon://settings') && !w.isClosed()); return settings !== undefined })
+      if (settings === undefined) throw new Error('the Settings page did not open')
+      const sites = settings
+      await sites.waitForSelector('#row-sites-list .site-item')
+      const badges = async (): Promise<Array<{ origin: string, badges: string[] }>> => (await evaluateRetrying(sites, () =>
+        Array.from(document.querySelectorAll<HTMLElement>('#row-sites-list .site-item')).map((item) => ({
+          origin: item.dataset['origin'] ?? '',
+          badges: Array.from(item.querySelectorAll('.badge')).map((badge) => badge.textContent ?? '')
+        })))).sort((a: { origin: string }, b: { origin: string }) => a.origin.localeCompare(b.origin))
+      const listed = await waitFor(async () => (await badges()).length === 2)
+      check('Settings, Sites lists each decided site with what it may do', listed && JSON.stringify(await badges()) === JSON.stringify([
+        { origin: ORIGIN, badges: ['Notifications allowed'] },
+        { origin: 'https://ads.example', badges: ['Notifications blocked'] }
+      ]), JSON.stringify(await badges()))
 
-      await settings.click('[data-origin="https://ads.example"] .revoke-btn')
-      const reset = await waitFor(async () => (await cards()).length === 1)
-      check('Reset removes that site\'s card, and only that one', reset && (await cards())[0]?.origin === ORIGIN, JSON.stringify(await cards()))
+      await sites.click('#row-sites-list .site-item[data-origin="https://ads.example"] .btn.icon')
+      await sites.click('#row-sites-list .site-item[data-origin="https://ads.example"] .btn.danger.armed')
+      const reset = await waitFor(async () => (await badges()).length === 1)
+      check('Reset removes that site, and only that one', reset && (await badges())[0]?.origin === ORIGIN, JSON.stringify(await badges()))
       const userData = await app.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))
       const saved = JSON.parse(readFileSync(join(userData, 'notification-decisions.json'), 'utf8')) as { origins: Record<string, string> }
       check('and forgets its answer on disk', JSON.stringify(saved.origins) === JSON.stringify({ [ORIGIN]: 'allow' }), JSON.stringify(saved))

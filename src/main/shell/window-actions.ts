@@ -6,7 +6,7 @@ import type { ShellActions } from '../ipc/ipc.js'
 import { copyLinkCommand, emailLinkCommand } from '../os/share-commands.js'
 import { realShareDeps } from '../os/share-runner.js'
 import { shareAddressFor } from '../os/share.js'
-import type { PermissionsPanel } from '../permissions/permissions-panel.js'
+import type { NetworksPanel } from '../networks/networks-panel.js'
 import type { SiteInfoPanel } from '../permissions/site-info-panel.js'
 import { isRect } from './actions/overlay.js'
 import { runChromeAction } from './chrome-actions.js'
@@ -31,7 +31,7 @@ export interface WindowParts {
   readonly services: ShellServices
   /** Closes the overlay popups but not the two panels above, which a caller toggles itself. */
   readonly closeOverlays: () => void
-  readonly panels: { readonly permissions: PermissionsPanel, readonly siteInfo: SiteInfoPanel }
+  readonly panels: { readonly networks: NetworksPanel, readonly siteInfo: SiteInfoPanel }
   readonly openWindow: (options: ShellWindowOptions) => void
   /** How tall the top of the window (tab strip and toolbar) is: where another window's strip can be dropped on. */
   readonly topHeight: number
@@ -92,23 +92,17 @@ export function shellActions (parts: WindowParts): ShellActions {
   }
 
   return {
-    openPermissions: (anchor, url) => {
-      const pressedAt = presses.take('permissions')
-      // The chrome view sends the active TAB's url, not an origin -- same
-      // `originFromUrl` tab-view.ts's own appTabArgsFor already uses for
-      // the identical derivation. undefined (no tab, or the dashboard) and
-      // an unparseable url both mean "no particular app to scroll to", not
-      // an error.
-      const focusOrigin = url === undefined ? undefined : originFromUrl(url) ?? undefined
+    openNetworks: (anchor) => {
+      const pressedAt = presses.take('networks')
       panels.siteInfo.close() // only one popup open at a time
       closeOverlays()
-      panels.permissions.toggle(anchor, focusOrigin, pressedAt)
+      panels.networks.toggle(anchor, pressedAt)
     },
     openSiteInfo: (anchor, page, url) => {
       const pressedAt = presses.take(page)
       const origin = url === undefined ? undefined : isolationKeyFromUrl(url) ?? undefined
       if (origin === undefined) return // no canonical origin -- nothing this popup can show
-      panels.permissions.close()
+      panels.networks.close()
       closeOverlays()
       panels.siteInfo.toggle(anchor, origin, page, pressedAt)
     },

@@ -8,7 +8,7 @@ import { createPermissionsController } from '../permissions.js'
 import type { SubsystemContext } from '../../registry.js'
 import { grantAll } from '../../consent/tests/install-consent.test-helpers.js'
 
-// A revoke in the permissions panel is the person saying no to that
+// A revoke from the grant list is the person saying no to that
 // capability, so the install-consent dialog, which runs again on every
 // launch's first visit, must not ask for it again. Decision 10: nor may the
 // app get a SECOND dialog out of it by calling app.requestGrant itself -- a
@@ -27,7 +27,7 @@ async function installedAndAccepted (broker: Broker): Promise<void> {
   await requestInstallConsent(broker, grantAll, APP, MANIFEST)
 }
 
-describe('revoking from the permissions panel', () => {
+describe('revoking from the grant list', () => {
   it('records the capability as declined, so the next launch\'s install consent does not ask again', async () => {
     const storage = memoryLedgerStorage()
     const firstRun = createBroker(baseDeps({ ledgerStorage: storage }))

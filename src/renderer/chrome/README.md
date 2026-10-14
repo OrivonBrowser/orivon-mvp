@@ -30,7 +30,7 @@ Electron, entirely: it runs in the chrome's `WebContentsView` on `src/preload/sh
 | `sharing-chip.ts` | the mark in the address bar for a page that is sharing a screen, a window or a tab; it brings back the window's sharing bar |
 | `popups-chip.ts` | the mark in the address bar for a page whose pop-ups were blocked, with a count from two; it opens the `popups-blocked` bubble |
 | `side-panel-button.ts` | the cluster's side panel button: pressed while open, disabled in a window too narrow for a panel |
-| `cluster.ts` | the bookmark star, the zoom chip, the all-sites button, the profile chip, the menu button |
+| `cluster.ts` | the bookmark star, the zoom chip, the Available networks button and its dot, the profile chip, the menu button |
 | `bookmark-star.ts` | the star: opens the bookmark bubble under itself, and answers Mod+D with its rectangle |
 | `bookmarks-bar.ts` | the row under the toolbar: the bar's items, folder menus, the overflow button, the right-click menu |
 | `bar-overflow.ts` | pure: which items fit, where an arrow key goes, what an event from main is worth |

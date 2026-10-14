@@ -47,12 +47,11 @@ export const PORT_CHANNEL = 'orivon:port'
  * ../broker/transport/sync-fs.ts. */
 export const SYNC_CONTROL_CHANNEL = 'orivon:control-sync'
 
-/** The all-sites permissions popup's own WebContentsView -> main:
- * list/revoke (queue item 4.4). A separate channel from COMMAND_CHANNEL:
- * this is its own popup view, not the chrome view, so its sender check is
- * against ITS OWN webContents identity, never chrome's. See
- * ./ipc/permissions-ipc.ts. */
-export const PERMISSIONS_COMMAND_CHANNEL = 'orivon-permissions:command'
+/** The Available networks popup's own WebContentsView -> main: the cards
+ * and the switches (`./ipc/networks-ipc.ts`). A separate channel from
+ * COMMAND_CHANNEL: this is its own popup view, not the chrome view, so its
+ * sender check is against ITS OWN webContents identity, never chrome's. */
+export const NETWORKS_COMMAND_CHANNEL = 'orivon-networks:command'
 
 /** Ordinary tab -> main: reports a `<link rel="orivon-manifest">` hint's
  * href, seen at most once per navigation (src/preload/manifest-hint.ts).
@@ -79,16 +78,16 @@ export const FORM_FILL_CHANNEL = 'orivon-forms:fill'
 /** The site-info popup's own WebContentsView -> main: the current site's
  * capability switches, its Web3 Score evidence, and its Cookies and site
  * data page (`./ipc/site-info-ipc.ts`). A separate channel from
- * PERMISSIONS_COMMAND_CHANNEL -- two independent popup views, each its own
+ * NETWORKS_COMMAND_CHANNEL -- two independent popup views, each its own
  * webContents identity, opened at different toolbar icons and never both
  * at once (`./permissions/popover-view.ts`). */
 export const SITE_INFO_COMMAND_CHANNEL = 'orivon-site-info:command'
 
 /**
- * Main to the settings panel only: the light client's state, sent whenever
- * it changes while the panel is open, so the page never polls for it.
+ * Main to the Available networks popup only: the cards, sent whenever a node changes and every two seconds for the
+ * figures, while the popup is open, so the page never polls.
  */
-export const LIGHT_CLIENT_STATUS_CHANNEL = 'orivon-permissions:light-client'
+export const NETWORKS_CHANGED_CHANNEL = 'orivon-networks:changed'
 
 /**
  * A page an app shows inside itself -> main (ADR-0039): the shell's own

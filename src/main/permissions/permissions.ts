@@ -1,10 +1,9 @@
 // Queue item 4.4's main-process half: the grant list, with revocation
 // (d-0027, owner decision 9 -- a grant lasts until revoked, and is visible
-// in a list the user can revoke from). Two renderer surfaces
-// (src/renderer/permissions-view.ts, the settings panel; the toolbar's
-// address-bar icon) both go through `PermissionsController` below, never
-// the broker directly -- neither is a `broker` import away from the trust
-// boundary this file already crossed once.
+// in a list the user can revoke from). The apps card in Settings
+// goes through `PermissionsController` below, never the broker directly --
+// it is not a `broker` import away from the trust boundary this file already
+// crossed once.
 //
 // REVOKE ONLY. There is no "forget this app entirely" here: that is
 // `GrantLedger.forgetOrigin` (ADR-0009's 2026-09-04 amendment), which has no
@@ -181,9 +180,6 @@ export function displayableName (name: string | undefined): string | undefined {
   if (UNSAFE_TEXT_CHARS.test(name)) return undefined
   return name
 }
-
-export { createSiteNotificationsController, describeSiteNotifications } from './site-notification-rows.js'
-export type { SiteNotificationRow, SiteNotificationSource, SiteNotificationsController } from './site-notification-rows.js'
 
 /** Matches `manifest.ts`'s own MAX_NAME_LENGTH. Not imported because that constant is private to it; kept equal deliberately, and the test asserts the boundary. */
 const MAX_DISPLAYED_NAME_LENGTH = 200
