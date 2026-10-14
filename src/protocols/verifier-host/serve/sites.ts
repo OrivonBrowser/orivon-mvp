@@ -81,14 +81,18 @@ export class Sites {
     private readonly onGatherer: (host: string, gatherer: string) => void = () => {}
   ) {}
 
-  /** Throws a ResolutionError. With no partition the mount is served once and never kept, nor are its blocks. */
-  async get (host: string, partition: string | undefined): Promise<SiteRecord> {
+  /**
+   * Throws a ResolutionError. With no partition the mount is served once and never kept, nor are its blocks.
+   * `retry` is a person's own request for the page (a reload, a click on Try again): it does not replay a
+   * remembered failure, and starts the mount again. A mount still running is joined, never restarted.
+   */
+  async get (host: string, partition: string | undefined, retry = false): Promise<SiteRecord> {
     if (partition === undefined) return await this.mount(host, undefined)
     const key = `${partition} ${host}`
     const current = this.entries.get(key)
     const now = this.now()
 
-    if (current !== undefined && current.expires > now) {
+    if (current !== undefined && current.expires > now && !(retry && current.failed)) {
       this.use(key, current)
       return await current.settled
     }
@@ -203,7 +207,7 @@ export class Sites {
 
 /** What the server asks to mount a site: by the route its fetches take. */
 export interface SiteSource {
-  get: (host: string, partition: string | undefined, route?: FetchRoute) => Promise<SiteRecord>
+  get: (host: string, partition: string | undefined, route?: FetchRoute, retry?: boolean) => Promise<SiteRecord>
 }
 
 /**
@@ -217,8 +221,8 @@ export class RoutedSites implements SiteSource {
     return route === 'tunnel' ? this.tunnel : this.direct
   }
 
-  async get (host: string, partition: string | undefined, route?: FetchRoute): Promise<SiteRecord> {
-    return await this.for(route).get(host, partition)
+  async get (host: string, partition: string | undefined, route?: FetchRoute, retry = false): Promise<SiteRecord> {
+    return await this.for(route).get(host, partition, retry)
   }
 
   async current (host: string, partition: string, route?: FetchRoute): Promise<SiteRecord | undefined> {

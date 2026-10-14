@@ -5,7 +5,7 @@
 // readFileSync and evaluated by vm.compileFunction, which needs the served
 // CSP's 'unsafe-eval' (the same CSP a page and a child host carry).
 
-import { dirname, resolve } from 'path'
+import { dirname, resolve } from 'path/posix'
 import { refuseShim } from '../errors.js'
 import { readFileSync } from '../fs/fs.js'
 import { hasBuiltin, loadBuiltin } from './cjs-builtins.js'

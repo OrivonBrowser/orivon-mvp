@@ -70,16 +70,22 @@ export async function startNode (kind: NodeKind, config: LocalNodeConfig, deps: 
     deps.onLog?.(line)
   }
   let portTaken = false
-  const imports = componentImports({
-    fs: await createConfinedFs(config.dataDir),
-    net: createNodeNet(config.apiPort, deps.net ?? { ...REAL, lookup: createNodeLookup({ endpoints: config.dohEndpoints ?? [], fetch: deps.dohFetch ?? fetch, system: resolveLookup }) }, { apiPortTaken: () => { portTaken = true } }),
-    preopens: { [GUEST_DATA_DIR]: '/orivon/app' },
-    args: kind.arguments(config),
-    env: {},
-    stdin: new InputStream(async () => new Uint8Array(0)),
-    stdout: lineSink(onLine),
-    stderr: lineSink(onLine)
-  })
+  let imports: ReturnType<typeof componentImports>
+  try {
+    imports = componentImports({
+      fs: await createConfinedFs(config.dataDir),
+      net: createNodeNet(config.apiPort, deps.net ?? { ...REAL, lookup: createNodeLookup({ endpoints: config.dohEndpoints ?? [], fetch: deps.dohFetch ?? fetch, system: resolveLookup }) }, { apiPortTaken: () => { portTaken = true } }),
+      preopens: { [GUEST_DATA_DIR]: '/orivon/app' },
+      args: kind.arguments(config),
+      env: {},
+      stdin: new InputStream(async () => new Uint8Array(0)),
+      stdout: lineSink(onLine),
+      stderr: lineSink(onLine)
+    })
+  } catch (error) {
+    post({ type: 'failed', stage: 'start', message: `could not set up the node's files and network: ${describe(error)}` })
+    throw error
+  }
   let loaded
   try {
     loaded = await loadComponent(config.componentDir, config.componentName, config.files, imports, deps.loader)

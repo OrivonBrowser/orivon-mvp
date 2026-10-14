@@ -73,6 +73,15 @@ describe('startNode, for a second kind of node', () => {
     expect(record.watched).toEqual([])
   })
 
+  it('posts why when the node\'s files or network cannot be set up, so main never waits on a node that cannot start', async () => {
+    const { kind, record } = secondKind()
+    await writeFile(join(directory, 'blocker'), 'a file where the data directory should be')
+    const config = { ...configOf([{ name: 'second-node.js', bytes: 1, sha256: 'a'.repeat(64) }]), dataDir: join(directory, 'blocker', 'data') }
+    await expect(startNode(kind, config, { post })).rejects.toThrow()
+    expect(posted).toEqual([{ type: 'failed', stage: 'start', message: expect.stringMatching(/could not set up the node's files and network: .*(ENOTDIR|EEXIST)/) as string }])
+    expect(record.watched).toEqual([])
+  })
+
   it('refuses a file that is not the pinned one, whatever the kind', async () => {
     const { kind } = secondKind()
     const files = await install()

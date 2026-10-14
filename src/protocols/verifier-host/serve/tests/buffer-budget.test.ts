@@ -18,7 +18,7 @@ import { IPFS } from '../../../ipfs/descriptor.js'
 import { createIpfsAddressResolvers } from '../../../ipfs/address-resolver.js'
 import { createRunCertificate } from '../certificate.js'
 import { MAX_BUFFERED_BYTES, createVerifierServer } from '../server.js'
-import { Sites } from '../sites.js'
+import { RoutedSites, Sites } from '../sites.js'
 
 const ROOT = 'bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi'
 // One backing store: every request's chunks are views of it, the way requests
@@ -49,7 +49,7 @@ const registry = new ProtocolRegistry([
 let server: Server
 let port: number
 beforeAll(async () => {
-  server = createVerifierServer(registry, new Sites(registry), createRunCertificate())
+  server = createVerifierServer(registry, new RoutedSites(new Sites(registry), new Sites(registry)), createRunCertificate())
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   port = (server.address() as AddressInfo).port
 })
@@ -148,7 +148,7 @@ describe('the loopback server, releasing a buffered reservation on a deadline', 
   let deadlineServer: Server
   let deadlinePort: number
   beforeAll(async () => {
-    deadlineServer = createVerifierServer(registry, new Sites(registry), createRunCertificate(), DEADLINE_MS)
+    deadlineServer = createVerifierServer(registry, new RoutedSites(new Sites(registry), new Sites(registry)), createRunCertificate(), DEADLINE_MS)
     await new Promise<void>((resolve) => deadlineServer.listen(0, '127.0.0.1', resolve))
     deadlinePort = (deadlineServer.address() as AddressInfo).port
   })

@@ -32,3 +32,9 @@ process-global `reflect-metadata` polyfill, in the process that holds every untr
 The server buffers that one file (waiting a bounded time for room in the same budget the small-file path uses), hashes it with the loader's leaf function
 under the request's canonical path and sends it only if the leaf matches, cutting a range from the buffered file. The expected leaf is on the request
 and nothing is kept in the host, so a restart or a sleep loses nothing. A mismatch is a `502` with `x-orivon-failure: ddoc-mismatch`.
+
+**A failure page for a failure that may pass offers Try again, and a person's own request for the page really tries again.** The
+unavailable and not-synced pages ([`error-pages.ts`](error-pages.ts)) carry a link to their own address, styled as a button, because the pages run
+no script. `sites.ts` remembers a failed mount for `FAILURE_TTL_MS` so that a failed page's own requests do not each start the mount; a navigation
+(`sec-fetch-mode: navigate` with `sec-fetch-dest` document, iframe or frame: the click, a reload, a typed address, a frame's own load) skips that memory and starts
+the mount again, joining one still running, so a page of frames starts one. A subresource keeps the memory.
