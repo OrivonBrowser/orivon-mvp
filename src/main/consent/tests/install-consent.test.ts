@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { grantAll, grantNone } from './install-consent.test-helpers.js'
 import { requestInstallConsent } from '../install-consent.js'
 import { APP, stubBroker } from '../../../broker/transport/tests/ipc.test-helpers.js'
 import type { BrokerCall } from '../../../broker/transport/tests/ipc.test-helpers.js'
@@ -23,7 +24,7 @@ describe('requestInstallConsent (stubbed broker)', () => {
   it('never prompts, and never touches grants(), for a manifest declaring no capabilities', async () => {
     const calls: BrokerCall[] = []
     const broker = stubBroker(calls)
-    const consent = vi.fn(async () => true)
+    const consent = vi.fn(grantAll)
 
     await requestInstallConsent(broker, consent, APP, manifestWith({}))
 
@@ -31,7 +32,7 @@ describe('requestInstallConsent (stubbed broker)', () => {
     expect(calls).toEqual([])
   })
 
-  it('prompts once with the whole declared set, and grants every accepted capability', async () => {
+  it('prompts once with what is outstanding, and grants every accepted capability', async () => {
     const calls: BrokerCall[] = []
     const broker = stubBroker(calls, {
       grants: async () => [],
@@ -40,31 +41,22 @@ describe('requestInstallConsent (stubbed broker)', () => {
       grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
     })
     const manifest = manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } }, fs: { quotaBytes: 1024 } })
-    const consent = vi.fn(async () => true)
+    const consent = vi.fn(grantAll)
 
     await requestInstallConsent(broker, consent, APP, manifest)
 
     expect(consent).toHaveBeenCalledOnce()
-    // Nothing held -- the fourth argument (A170) is an empty list.
-    expect(consent).toHaveBeenCalledWith(APP, manifest, expect.arrayContaining(['tcp.connect', 'fs']), [])
+    expect(consent).toHaveBeenCalledWith(APP, manifest, expect.arrayContaining(['tcp.connect', 'fs']))
     expect(calls).toContainEqual({ method: 'grant', origin: APP, args: { capability: 'tcp.connect', patterns: ['api.example.com:443'] } })
     expect(calls).toContainEqual({ method: 'grant', origin: APP, args: { capability: 'fs', patterns: [] } })
-    // Accepting clears any earlier decline -- see the "clears a previous
-    // decline" suite below for the case where one actually existed.
-    expect(calls).toContainEqual({ method: 'clearDeclinedConsent', origin: APP, args: undefined })
+    expect(calls.some((call) => call.method === 'recordDeclinedConsent')).toBe(false)
   })
 
-  // The clear-before-grant ordering matters, not just that both happen: see
-  // install-consent.ts's own comment on why. Proven here even though one of
-  // the two grant calls fails, so a real partial-failure run still shows the
-  // clear landing first -- a reordering that put it after would leave a
-  // capability that failed to grant still covered by the now-stale decline.
-  it('clears the declined-consent record BEFORE granting, even when one capability fails to grant', async () => {
+  it('records nothing as declined for a capability that fails to grant, so it is asked about again', async () => {
     const calls: BrokerCall[] = []
     const broker = stubBroker(calls, {
       grants: async () => [],
       declinedCapabilitiesFor: async () => undefined,
-      clearDeclinedConsent: async () => {},
       grant: async (origin, capability, patterns) => {
         if (capability === 'fs') throw new Error('disk full')
         return { id: 'g1', origin, capability, patterns, grantedAt: 0 }
@@ -73,20 +65,16 @@ describe('requestInstallConsent (stubbed broker)', () => {
     const manifest = manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } }, fs: { quotaBytes: 1024 } })
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    await requestInstallConsent(broker, async () => true, APP, manifest)
+    await requestInstallConsent(broker, grantAll, APP, manifest)
     consoleError.mockRestore()
 
-    const clearIndex = calls.findIndex((call) => call.method === 'clearDeclinedConsent')
-    const firstGrantIndex = calls.findIndex((call) => call.method === 'grant')
-    expect(clearIndex).toBeGreaterThanOrEqual(0)
-    expect(firstGrantIndex).toBeGreaterThanOrEqual(0)
-    expect(clearIndex).toBeLessThan(firstGrantIndex)
+    expect(calls.some((call) => call.method === 'recordDeclinedConsent' || call.method === 'clearDeclinedConsent')).toBe(false)
   })
 
   it('does not prompt again when the origin already holds a live grant for every declared capability', async () => {
     const calls: BrokerCall[] = []
     const broker = stubBroker(calls, { grants: async () => [grant()] })
-    const consent = vi.fn(async () => true)
+    const consent = vi.fn(grantAll)
 
     await requestInstallConsent(broker, consent, APP, manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } } }))
 
@@ -116,15 +104,14 @@ describe('requestInstallConsent (stubbed broker)', () => {
       clearDeclinedConsent: async () => {},
       grant: async (origin, capability, patterns) => ({ id: 'g2', origin, capability, patterns, grantedAt: 0 })
     })
-    const consent = vi.fn(async () => true)
+    const consent = vi.fn(grantAll)
     const manifest = manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } }, fs: { quotaBytes: 1024 } })
 
     await requestInstallConsent(broker, consent, APP, manifest)
 
     expect(consent).toHaveBeenCalledOnce()
-    // A170: the fourth argument is exactly the held set -- tcp.connect,
-    // the capability this test grants out of band before the dialog runs.
-    expect(consent).toHaveBeenCalledWith(APP, manifest, expect.arrayContaining(['tcp.connect', 'fs']), ['tcp.connect'])
+    // Only fs is outstanding: tcp.connect was granted out of band before the dialog ran.
+    expect(consent).toHaveBeenCalledWith(APP, manifest, ['fs'])
     // fs is the capability the old check silently withheld forever.
     expect(calls).toContainEqual({ method: 'grant', origin: APP, args: { capability: 'fs', patterns: [] } })
     // tcp.connect is already held with the manifest's own exact pattern --
@@ -141,7 +128,7 @@ describe('requestInstallConsent (stubbed broker)', () => {
       declinedCapabilitiesFor: async () => undefined,
       recordDeclinedConsent: async () => {}
     })
-    const consent = vi.fn(async () => false)
+    const consent = vi.fn(grantNone)
 
     await requestInstallConsent(broker, consent, APP, manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } } }))
 
@@ -157,7 +144,7 @@ describe('requestInstallConsent (stubbed broker)', () => {
       declinedCapabilitiesFor: async () => undefined,
       recordDeclinedConsent: async () => {}
     })
-    const consent = vi.fn(async () => false)
+    const consent = vi.fn(grantNone)
     const manifest = manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } }, fs: { quotaBytes: 1024 } })
 
     await requestInstallConsent(broker, consent, APP, manifest)
@@ -186,13 +173,11 @@ describe('requestInstallConsent (stubbed broker)', () => {
       declinedCapabilitiesFor: async () => undefined,
       recordDeclinedConsent: async () => {}
     })
-    const consent = vi.fn(async () => false)
+    const consent = vi.fn(grantNone)
     const manifest = manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } }, fs: { quotaBytes: 1024 } })
 
     await requestInstallConsent(broker, consent, APP, manifest)
 
-    // The dialog still shows the whole declared set (A157) -- only the
-    // RECORD must narrow to what was actually outstanding.
     expect(consent).toHaveBeenCalledOnce()
     expect(calls).toContainEqual({ method: 'recordDeclinedConsent', origin: APP, args: ['tcp.connect'] })
   })
@@ -215,7 +200,7 @@ describe('requestInstallConsent (stubbed broker)', () => {
       declinedCapabilitiesFor: async () => ['fs'],
       recordDeclinedConsent: async () => {}
     })
-    const consent = vi.fn(async () => false)
+    const consent = vi.fn(grantNone)
     const manifest = manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } } })
 
     await requestInstallConsent(broker, consent, APP, manifest)
@@ -264,7 +249,7 @@ describe('requestInstallConsent (stubbed broker)', () => {
         grants: async () => [],
         declinedCapabilitiesFor: async () => ['tcp.connect']
       })
-      const consent = vi.fn(async () => true)
+      const consent = vi.fn(grantAll)
 
       await requestInstallConsent(broker, consent, APP, manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } } }))
 
@@ -272,7 +257,7 @@ describe('requestInstallConsent (stubbed broker)', () => {
       expect(calls.some((call) => call.method === 'grant')).toBe(false)
     })
 
-    it('asks again when the manifest now declares MORE than was declined -- a different question', async () => {
+    it('asks again when the manifest now declares MORE than was declined, but only about what is new', async () => {
       const calls: BrokerCall[] = []
       const broker = stubBroker(calls, {
         grants: async () => [],
@@ -280,14 +265,13 @@ describe('requestInstallConsent (stubbed broker)', () => {
         clearDeclinedConsent: async () => {},
         grant: async (origin, capability, patterns) => ({ id: 'g3', origin, capability, patterns, grantedAt: 0 })
       })
-      const consent = vi.fn(async () => true)
+      const consent = vi.fn(grantAll)
       const widened = manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } }, fs: { quotaBytes: 1024 } })
 
       await requestInstallConsent(broker, consent, APP, widened)
 
       expect(consent).toHaveBeenCalledOnce()
-      // Nothing held -- the fourth argument (A170) is an empty list.
-      expect(consent).toHaveBeenCalledWith(APP, widened, expect.arrayContaining(['tcp.connect', 'fs']), [])
+      expect(consent).toHaveBeenCalledWith(APP, widened, ['fs'])
     })
 
     it('stays suppressed when the manifest now declares LESS than was declined -- AI recommendation, retunable (A145)', async () => {
@@ -296,7 +280,7 @@ describe('requestInstallConsent (stubbed broker)', () => {
         grants: async () => [],
         declinedCapabilitiesFor: async () => ['tcp.connect', 'fs']
       })
-      const consent = vi.fn(async () => true)
+      const consent = vi.fn(grantAll)
       const narrowed = manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } } })
 
       await requestInstallConsent(broker, consent, APP, narrowed)
@@ -319,10 +303,10 @@ describe('requestInstallConsent: a caller that has left by the time consent() re
       grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
     })
     const manifest = manifestWith({ fs: { quotaBytes: 1024 } })
-    const consent = vi.fn(async () => true)
+    const consent = vi.fn(grantAll)
     const caller = { window: () => undefined, stillOn: () => false }
 
-    await requestInstallConsent(broker, consent, APP, manifest, undefined, caller)
+    await requestInstallConsent(broker, consent, APP, manifest, caller)
 
     expect(calls.some((call) => call.method === 'grant')).toBe(false)
   })
@@ -334,10 +318,10 @@ describe('requestInstallConsent: a caller that has left by the time consent() re
       declinedCapabilitiesFor: async () => undefined
     })
     const manifest = manifestWith({ fs: { quotaBytes: 1024 } })
-    const consent = vi.fn(async () => true)
+    const consent = vi.fn(grantAll)
     const caller = { window: () => undefined, stillOn: () => false }
 
-    await requestInstallConsent(broker, consent, APP, manifest, undefined, caller)
+    await requestInstallConsent(broker, consent, APP, manifest, caller)
 
     expect(calls.some((call) => call.method === 'recordDeclinedConsent')).toBe(false)
     expect(calls.some((call) => call.method === 'clearDeclinedConsent')).toBe(false)
@@ -352,10 +336,10 @@ describe('requestInstallConsent: a caller that has left by the time consent() re
       grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
     })
     const manifest = manifestWith({ fs: { quotaBytes: 1024 } })
-    const consent = vi.fn(async () => true)
+    const consent = vi.fn(grantAll)
     const caller = { window: () => undefined, stillOn: () => true }
 
-    await requestInstallConsent(broker, consent, APP, manifest, undefined, caller)
+    await requestInstallConsent(broker, consent, APP, manifest, caller)
 
     expect(calls).toContainEqual({ method: 'grant', origin: APP, args: { capability: 'fs', patterns: [] } })
   })
@@ -366,7 +350,7 @@ describe('requestInstallConsent (real broker) -- proves "once per origin, ever" 
     const broker = createBroker(baseDeps())
     const manifest = manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } } })
     await broker.registerApp(APP, manifest)
-    const consent = vi.fn(async () => true)
+    const consent = vi.fn(grantAll)
 
     await requestInstallConsent(broker, consent, APP, manifest)
     expect(consent).toHaveBeenCalledOnce()
@@ -385,7 +369,7 @@ describe('requestInstallConsent (real broker) -- proves "once per origin, ever" 
 
     const firstRun = createBroker(baseDeps({ ledgerStorage: storage }))
     await firstRun.registerApp(APP, manifest)
-    const consent = vi.fn(async () => true)
+    const consent = vi.fn(grantAll)
     await requestInstallConsent(firstRun, consent, APP, manifest)
     expect(consent).toHaveBeenCalledOnce()
 
@@ -403,7 +387,7 @@ describe('requestInstallConsent (real broker) -- proves "once per origin, ever" 
     const broker = createBroker(baseDeps())
     const manifest = manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } }, fs: { quotaBytes: 1024 } })
     await broker.registerApp(APP, manifest)
-    const consent = vi.fn(async () => false)
+    const consent = vi.fn(grantNone)
 
     await requestInstallConsent(broker, consent, APP, manifest)
 
@@ -420,7 +404,7 @@ describe('requestInstallConsent (real broker) -- proves "once per origin, ever" 
 
     const firstRun = createBroker(baseDeps({ ledgerStorage: storage }))
     await firstRun.registerApp(APP, manifest)
-    const consent = vi.fn(async () => false)
+    const consent = vi.fn(grantNone)
     await requestInstallConsent(firstRun, consent, APP, manifest)
     expect(consent).toHaveBeenCalledOnce()
 
@@ -432,27 +416,26 @@ describe('requestInstallConsent (real broker) -- proves "once per origin, ever" 
     expect(await secondRun.app.grants(APP)).toEqual([])
   })
 
-  it('A145: a declined visit whose manifest later widens is asked again, for the whole new set', async () => {
+  it('A145: a declined visit whose manifest later widens is asked again, about the new capability only', async () => {
     const storage = memoryLedgerStorage()
     const narrow = manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } } })
     const wide = manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } }, fs: { quotaBytes: 1024 } })
 
     const firstRun = createBroker(baseDeps({ ledgerStorage: storage }))
     await firstRun.registerApp(APP, narrow)
-    const decline = vi.fn(async () => false)
+    const decline = vi.fn(grantNone)
     await requestInstallConsent(firstRun, decline, APP, narrow)
     expect(decline).toHaveBeenCalledOnce()
 
     const secondRun = createBroker(baseDeps({ ledgerStorage: storage }))
     await secondRun.registerApp(APP, wide)
-    const accept = vi.fn(async () => true)
+    const accept = vi.fn(grantAll)
     await requestInstallConsent(secondRun, accept, APP, wide)
 
     expect(accept).toHaveBeenCalledOnce()
-    // Nothing held -- the fourth argument (A170) is an empty list.
-    expect(accept).toHaveBeenCalledWith(APP, wide, expect.arrayContaining(['tcp.connect', 'fs']), [])
+    expect(accept).toHaveBeenCalledWith(APP, wide, ['fs'])
     const grants = await secondRun.app.grants(APP)
-    expect(grants.map((g) => g.capability).sort()).toEqual(['fs', 'tcp.connect'])
+    expect(grants.map((g) => g.capability).sort()).toEqual(['fs'])
   })
 
   it('A145: a declined visit whose manifest later narrows is NOT asked again -- retunable design choice', async () => {
@@ -462,34 +445,34 @@ describe('requestInstallConsent (real broker) -- proves "once per origin, ever" 
 
     const firstRun = createBroker(baseDeps({ ledgerStorage: storage }))
     await firstRun.registerApp(APP, wide)
-    const decline = vi.fn(async () => false)
+    const decline = vi.fn(grantNone)
     await requestInstallConsent(firstRun, decline, APP, wide)
     expect(decline).toHaveBeenCalledOnce()
 
     const secondRun = createBroker(baseDeps({ ledgerStorage: storage }))
     await secondRun.registerApp(APP, narrow)
-    const wouldAccept = vi.fn(async () => true)
+    const wouldAccept = vi.fn(grantAll)
     await requestInstallConsent(secondRun, wouldAccept, APP, narrow)
 
     expect(wouldAccept).not.toHaveBeenCalled()
     expect(await secondRun.app.grants(APP)).toEqual([])
   })
 
-  it('accepting after an earlier decline clears the remembered no, so a later narrower visit is not affected by stale state', async () => {
+  it('accepting what a widening added leaves the earlier no standing, so it is never asked again', async () => {
     const storage = memoryLedgerStorage()
     const narrow = manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } } })
     const wide = manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } }, fs: { quotaBytes: 1024 } })
 
     const run1 = createBroker(baseDeps({ ledgerStorage: storage }))
     await run1.registerApp(APP, narrow)
-    await requestInstallConsent(run1, async () => false, APP, narrow) // declines tcp.connect only
+    await requestInstallConsent(run1, grantNone, APP, narrow) // declines tcp.connect only
 
     const run2 = createBroker(baseDeps({ ledgerStorage: storage }))
     await run2.registerApp(APP, wide)
-    await requestInstallConsent(run2, async () => true, APP, wide) // widens, asked again, accepts everything
+    await requestInstallConsent(run2, grantAll, APP, wide) // widens, asked about fs only, accepts it
 
-    expect(await run2.declinedCapabilitiesFor(APP)).toBeUndefined()
-    expect((await run2.app.grants(APP)).map((g) => g.capability).sort()).toEqual(['fs', 'tcp.connect'])
+    expect(await run2.declinedCapabilitiesFor(APP)).toEqual(['tcp.connect'])
+    expect((await run2.app.grants(APP)).map((g) => g.capability).sort()).toEqual(['fs'])
   })
 
   // THE ADVERSARIAL TEST: a remembered "no" must never become, or imply, a
@@ -503,11 +486,11 @@ describe('requestInstallConsent (real broker) -- proves "once per origin, ever" 
   it('a remembered decline never results in a live grant, across repeated restarts, even when the prompt would always say yes if asked', async () => {
     const storage = memoryLedgerStorage()
     const manifest = manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } }, fs: { quotaBytes: 1024 } })
-    const wouldAlwaysAccept = vi.fn(async () => true)
+    const wouldAlwaysAccept = vi.fn(grantAll)
 
     const firstRun = createBroker(baseDeps({ ledgerStorage: storage }))
     await firstRun.registerApp(APP, manifest)
-    await requestInstallConsent(firstRun, async () => false, APP, manifest) // the one real decline
+    await requestInstallConsent(firstRun, grantNone, APP, manifest) // the one real decline
     expect(await firstRun.app.grants(APP)).toEqual([])
 
     for (let restart = 0; restart < 3; restart++) {

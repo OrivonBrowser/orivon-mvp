@@ -175,3 +175,8 @@ export function grantIcon (kind: GrantIconKind): SVGSVGElement {
   el.classList.add('grant-icon')
   return el
 }
+
+/** Whether `kind` names an icon: a row whose icon id main sent is drawn without one when it does not. */
+export function isGrantIconKind (kind: string): kind is GrantIconKind {
+  return Object.hasOwn(BUILDERS, kind)
+}

@@ -10,6 +10,7 @@ describe('isQuestionView', () => {
   it('accepts what main sends', () => {
     expect(isQuestionView(view)).toBe(true)
     expect(isQuestionView({ ...view, doublePress: [0] })).toBe(true)
+    expect(isQuestionView({ ...view, choices: [{ id: 'fs', icon: 'fs', message: 'Store files' }, { id: 'id', icon: 'id', message: 'm', detail: 'reach', warning: true, on: false }], choicesNote: 'together' })).toBe(true)
     expect(isQuestionView({ ...view, kind: 'page-prompt', input: { initial: 'x', max: 100_000 }, checkboxLabel: 'Stop', title: 't', detail: 'd', origin: 'https://a.example', focus: 0 })).toBe(true)
   })
 
@@ -18,6 +19,9 @@ describe('isQuestionView', () => {
     ['no buttons', { ...view, buttons: [] }], ['a button that is not text', { ...view, buttons: ['a', 1] }], ['no guard length', { ...view, guardMs: undefined }],
     ['a guarded list of text', { ...view, guarded: ['0'] }], ['a focus it does not know', { ...view, focus: 'button' }], ['an input without its initial text', { ...view, input: {} }],
     ['a warning that is not a boolean', { ...view, warning: 'yes' }],
+    ['rows that are not a list', { ...view, choices: 'fs' }], ['a row with no id', { ...view, choices: [{ icon: 'fs', message: 'm' }] }], ['a row whose switch is not a boolean', { ...view, choices: [{ id: 'a', icon: 'fs', message: 'm', on: 'yes' }] }],
+    ['a row whose detail is not text', { ...view, choices: [{ id: 'a', icon: 'fs', message: 'm', detail: 3 }] }],
+    ['a note that is not text', { ...view, choices: [], choicesNote: 3 }],
     ['a double-press list of text', { ...view, doublePress: ['0'] }], ['no double-press window', { ...view, doublePressMs: undefined }]
   ])('refuses %s', (_name, value) => {
     expect(isQuestionView(value)).toBe(false)

@@ -93,6 +93,74 @@ describe('the question handler', () => {
     expect(r.results).toEqual([{ clicked: true, response: 0, checkboxChecked: false }])
   })
 
+  describe('a question with switches', () => {
+    const CHOICES = normaliseSpec({ kind: 'consent', message: 'Allow?', buttons: ['Grant all', 'Close'], cancelId: 1, guarded: [0, 1], choices: [{ id: 'fs', icon: 'fs', message: 'Store files' }, { id: 'id', icon: 'id', message: 'Know who you are' }] })
+    const answered = (chosen: unknown): ReturnType<typeof rig> => {
+      const r = rig(CHOICES)
+      r.handler.show?.({ id: r.id })
+      draw(r)
+      r.clock.now += GUARD_MS
+      r.handler.request({ id: r.id, button: 1, chosen })
+      return r
+    }
+
+    it('answers with the switched-on ids it offered, in the order it offered them', () => {
+      expect(answered(['id', 'fs']).results).toEqual([{ clicked: true, response: 1, checkboxChecked: false, chosen: ['fs', 'id'] }])
+    })
+
+    it('drops an id it never offered, and a repeated one', () => {
+      expect(answered(['fs', 'fs', 'secrets', '__proto__']).results[0]?.chosen).toEqual(['fs'])
+    })
+
+    it('answers with none when the page names none, or does not say', () => {
+      expect(answered([]).results[0]?.chosen).toEqual([])
+      expect(answered(undefined).results[0]?.chosen).toEqual([])
+    })
+
+    it('refuses an answer whose list is not text, or longer than any question can have', () => {
+      expect(answered([1]).results).toEqual([])
+      expect(answered('fs').results).toEqual([])
+      expect(answered(Array.from({ length: 200 }, () => 'fs')).results).toEqual([])
+    })
+
+    it('hands the switches back as each row\'s `on` when the same question is shown again, and starts a question over with its own', () => {
+      const r = rig(CHOICES)
+      const first = r.handler.show?.({ id: r.id }) as { choices: Array<{ id: string, on?: boolean }> }
+      expect(first.choices.map((choice) => choice.on)).toEqual([undefined, undefined])
+      draw(r)
+      expect(r.handler.request({ type: 'switched', id: r.id, chosen: ['id'] })).toBe(true)
+      const again = r.handler.show?.({ id: r.id }) as { choices: Array<{ id: string, on?: boolean }> }
+      expect(again.choices.map((choice) => [choice.id, choice.on])).toEqual([['fs', false], ['id', true]])
+      const other = rig(CHOICES)
+      expect((other.handler.show?.({ id: other.id }) as { choices: Array<{ on?: boolean }> }).choices.map((choice) => choice.on)).toEqual([undefined, undefined])
+    })
+
+    it('keeps only offered ids in what the page reports, and refuses a report for another question or one with no switches', () => {
+      const r = rig(CHOICES)
+      r.handler.show?.({ id: r.id })
+      r.handler.request({ type: 'switched', id: r.id, chosen: ['id', 'secrets', '__proto__'] })
+      const view = r.handler.show?.({ id: r.id }) as { choices: Array<{ id: string, on?: boolean }> }
+      expect(view.choices.map((choice) => [choice.id, choice.on])).toEqual([['fs', false], ['id', true]])
+      expect(r.handler.request({ type: 'switched', id: 'made-up', chosen: [] })).toBeUndefined()
+      expect(r.handler.request({ type: 'switched', id: r.id, chosen: [1] })).toBeUndefined()
+      expect(r.handler.request({ type: 'switched', id: r.id, chosen: [], extra: 1 })).toBeUndefined()
+      const plain = rig()
+      plain.handler.show?.({ id: plain.id })
+      expect(plain.handler.request({ type: 'switched', id: plain.id, chosen: ['fs'] })).toBeUndefined()
+    })
+
+    it('refuses a list for a question that offers no switches, and answers a way out without one', () => {
+      const r = rig()
+      r.handler.show?.({ id: r.id })
+      draw(r)
+      r.clock.now += GUARD_MS
+      r.handler.request({ id: r.id, button: 0, chosen: ['fs'] })
+      expect(r.results).toEqual([])
+      r.handler.disposed?.()
+      expect(r.results).toEqual([{ response: 1, checkboxChecked: false }])
+    })
+  })
+
   it('takes the letters typed into a question\'s own text box as its answer, so Enter right after them answers', () => {
     const r = rig(normaliseSpec({ kind: 'confirm', message: 'Your name?', buttons: ['OK', 'Cancel'], cancelId: 1, guarded: [0], input: { initial: '' } }))
     r.handler.show?.({ id: r.id })

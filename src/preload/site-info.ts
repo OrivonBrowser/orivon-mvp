@@ -80,6 +80,9 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
     reload: async (): Promise<void> => {
       await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'reload' } satisfies SiteInfoCommand)
     },
+    reviewPermissions: async (): Promise<void> => {
+      await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'reviewPermissions' } satisfies SiteInfoCommand)
+    },
     openSiteSettings: async (): Promise<void> => {
       await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'openSiteSettings' } satisfies SiteInfoCommand)
     },

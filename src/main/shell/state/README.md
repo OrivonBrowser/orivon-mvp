@@ -9,7 +9,8 @@ bindings the chrome names in tooltips, live with the Shortcuts settings), `group
 `full-screen.ts` (whether the window fills the screen, for the window buttons the chrome draws on macOS then),
 `content-blocked.ts` (whether the page in front is on a site with JavaScript, images or sound switched off, for the
 mark on the address bar's key) and `extensions.ts` (how many extensions are loaded and whether the Extensions button
-shows, live with its setting and with extensions loading). Each is listed in
+shows, live with its setting and with extensions loading) and `entry-changes.ts` (no field: it pushes the state when an app's permissions change,
+so the chrome asks again whether the key wears its dot). Each is listed in
 [`../shell-state-parts.ts`](../shell-state-parts.ts), which reads every part on each push and unsubscribes its
 watchers when the window closes.
 

@@ -24,7 +24,7 @@ Electron, entirely: it runs in the chrome's `WebContentsView` on `src/preload/sh
 | `reader-button.ts` | the book in the address pill while the page in front looks like an article; opens reader view |
 | `password-key.ts` | the password button in the address pill: saved logins for this site, or an offer to keep the last sign-in |
 | `prompt-anchor.ts` | reports the address pill's rectangle to main (`prompt.anchor`), so a prompt can open under it |
-| `site-badges.ts` | the Web3 Score shield and mark, the permissions key |
+| `site-badges.ts` | the Web3 Score shield and mark, the permissions key and its `data-missing` attribute (an app's permissions are not all granted), drawn as a dot by `styles/content-dot.css` |
 | `site-access-chip.ts` | the mark in the address bar for a page that asked for the camera, a location or another permission; it opens the review bubble |
 | `content-dot.ts` | a mark on the address bar's key for a site with JavaScript, images or sound switched off: an attribute on `site-badges`'s button, drawn by `styles/content-dot.css` |
 | `sharing-chip.ts` | the mark in the address bar for a page that is sharing a screen, a window or a tab; it brings back the window's sharing bar |

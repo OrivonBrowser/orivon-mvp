@@ -60,7 +60,7 @@ it('[app:first-visit-blocks-a-file-that-differs-from-the-declaration] [app:first
       await clickAddressBarRetrying(chrome, `ipfs://${scriptRoot}`)
       await waitQuestion(running, 60_000)
       const beforeScript = (await pageLog(running)).length
-      await answerQuestion(running, 'Allow')
+      await answerQuestion(running, 'Grant all')
       const warning = await waitSheet(running)
       check(`a security warning is shown (${warning.text.title})`, /security warning/i.test(warning.text.title))
       check(`it names the file that differs (${JSON.stringify(warning.text.files)})`, warning.text.files.includes('/app.js'))
@@ -77,14 +77,14 @@ it('[app:first-visit-blocks-a-file-that-differs-from-the-declaration] [app:first
       await clickAddressBarRetrying(chrome, `ipfs://${scriptRoot}`)
       await waitQuestion(running, 60_000)
       check('visiting it again asks again', true)
-      await answerQuestion(running, 'Deny')
+      await answerQuestion(running, 'Close')
 
       // 2. A first document that differs never loads as the app.
       const htmlOrigin = `https://${htmlRoot}.ipfs.orivon`
       await clickAddressBarRetrying(chrome, `ipfs://${htmlRoot}`)
       await waitQuestion(running, 60_000)
       const beforeHtml = (await pageLog(running)).length
-      await answerQuestion(running, 'Allow')
+      await answerQuestion(running, 'Grant all')
       const badHtml = await waitSheet(running)
       check(`a security warning is shown for the first document (${badHtml.text.title})`, /security warning/i.test(badHtml.text.title))
       check(`it names the document (${JSON.stringify(badHtml.text.files)})`, badHtml.text.files.includes('/index.html'))
@@ -98,7 +98,7 @@ it('[app:first-visit-blocks-a-file-that-differs-from-the-declaration] [app:first
       gateway.failNext('flaky', '.well-known/orivon-ddoc.json', 502, 500)
       await clickAddressBarRetrying(chrome, `ipfs://${flakyRoot}`)
       await waitQuestion(running, 60_000)
-      await answerQuestion(running, 'Allow')
+      await answerQuestion(running, 'Grant all')
       const retry = await waitSheet(running, 150_000)
       check(`a retry sheet names what could not be read (${retry.text.title})`, /couldn't check/i.test(retry.text.title))
       check(`it offers Try again (${JSON.stringify(retry.text.buttons)})`, retry.text.buttons.includes('Try again'))

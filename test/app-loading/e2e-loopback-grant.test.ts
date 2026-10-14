@@ -108,7 +108,7 @@ it.skipIf(!ORDINARY_BUILD)(
             banner: document.querySelector('.notice strong')?.textContent ?? '(no banner)'
           }))
 
-        check(`the consent question was asked in the panel, naming the app's origin: ${JSON.stringify(asked.origin)}`, asked.buttons.some((label) => label.startsWith('Allow')) && asked.origin.includes(`127.0.0.1:${String(PORT)}`))
+        check(`the consent question was asked in the panel, naming the app's origin: ${JSON.stringify(asked.origin)}`, asked.buttons.includes('Grant all') && asked.origin.includes(`127.0.0.1:${String(PORT)}`))
         check('no native message box was opened for it', (await noNativeDialogs(app)).length === 0, JSON.stringify(await noNativeDialogs(app)))
         check(
           'ACCEPTING THE PROMPT MAKES THE TAB AN APP TAB: window.fetch is not the platform\'s own, so the routed fetch is installed, from a plain http loopback URL, with nothing installed to disk',

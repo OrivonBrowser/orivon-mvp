@@ -59,7 +59,7 @@ The question panel: every question the browser puts to the person is asked throu
 `question/question-spec.ts` is the spec and the cleaning every string passes through (pure, no `electron`),
 `question/question-overlay.ts` is the overlay and the map of questions main holds under random ids (it also decides a
 `doublePress` button: one that answers only on a second press within 1,500 ms, armed after the guard and an arrival of the
-pointer or the focus on it), and
+pointer or the focus on it) and answers the switches of a spec's `choices` (a row each, off unless the spec says; the answer names the ids left on, and main keeps only ids it offered), and
 `question/install-questions.ts` binds the ask to this process's windows. The panel is drawn in the window of the tab
 the question belongs to, under the address pill with its top edge inside the toolbar; a background tab's question waits
 for its tab, a kiosk draws it centred, and only a question asked when no shell window exists opens a native box.

@@ -8,6 +8,7 @@ import { contentBlockedStatePart } from './state/content-blocked.js'
 import { addressBarStatePart } from './state/address-bar.js'
 import { groupsStatePart } from './state/groups.js'
 import { downloadsStatePart } from './state/downloads.js'
+import { entryChangesStatePart } from './state/entry-changes.js'
 import { extensionsStatePart } from './state/extensions.js'
 import { fullScreenStatePart } from './state/full-screen.js'
 import { homeStatePart } from './state/home.js'
@@ -37,6 +38,7 @@ export const SHELL_STATE_PARTS: readonly ShellStatePart[] = [
   bookmarkedStatePart,
   contentBlockedStatePart,
   downloadsStatePart,
+  entryChangesStatePart,
   extensionsStatePart,
   fullScreenStatePart,
   groupsStatePart,

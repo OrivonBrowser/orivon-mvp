@@ -1,5 +1,6 @@
 /* A small dot on the address bar's key for a site with JavaScript, images or sound switched off (after the key),
-   and one before it for an installed app with a new version offered. */
+   one before it for an installed app with a new version offered, and one below it, at the right, for an app whose
+   permissions are not all granted. */
 
 #site-permissions-btn { position: relative; }
 #site-permissions-btn[data-content-blocked]::after {
@@ -21,6 +22,21 @@
   position: absolute;
   top: 1px;
   left: 1px;
+  width: 7px;
+  height: 7px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--waccent);
+  border: 1.5px solid var(--wchrome);
+  pointer-events: none;
+}
+
+#site-permissions-btn .key-dot { display: none; }
+#site-permissions-btn[data-missing] .key-dot {
+  display: block;
+  position: absolute;
+  bottom: 1px;
+  right: 1px;
   width: 7px;
   height: 7px;
   box-sizing: border-box;

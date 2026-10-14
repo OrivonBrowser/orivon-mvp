@@ -6,6 +6,7 @@ import { requestInstallConsent } from '../../consent/install-consent.js'
 import { requestGrant } from '../../consent/request-grant.js'
 import { createPermissionsController } from '../permissions.js'
 import type { SubsystemContext } from '../../registry.js'
+import { grantAll } from '../../consent/tests/install-consent.test-helpers.js'
 
 // A revoke from the grant list is the person saying no to that
 // capability, so the install-consent dialog, which runs again on every
@@ -23,7 +24,7 @@ const MANIFEST = manifestWith({ net: { tcp: { connect: ['api.example.com:443'] }
 
 async function installedAndAccepted (broker: Broker): Promise<void> {
   await broker.registerApp(APP, MANIFEST)
-  await requestInstallConsent(broker, async () => true, APP, MANIFEST)
+  await requestInstallConsent(broker, grantAll, APP, MANIFEST)
 }
 
 describe('revoking from the grant list', () => {
@@ -38,7 +39,7 @@ describe('revoking from the grant list', () => {
 
     const secondRun = createBroker(baseDeps({ ledgerStorage: storage }))
     await secondRun.registerApp(APP, MANIFEST)
-    const consent = vi.fn(async () => true)
+    const consent = vi.fn(grantAll)
     await requestInstallConsent(secondRun, consent, APP, MANIFEST)
 
     expect(consent).not.toHaveBeenCalled()

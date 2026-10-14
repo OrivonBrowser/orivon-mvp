@@ -13,7 +13,7 @@ the page's height and close it on Escape. A page that throws leaves an error sta
 **Tied to Electron, entirely.** A sandboxed renderer document; it reaches main only through the bridge that
 [`../../preload/overlay.ts`](../../preload/overlay.ts) exposes as `window.orivonOverlay`.
 
-**What it depends on.** `kit.ts` and the DOM helpers and icons of [`../pages/shared/`](../pages/shared/), and
+**What it depends on.** `kit.ts` and the DOM helpers and icons of [`../pages/shared/`](../pages/shared/), [`../grant-icons.ts`](../grant-icons.ts) (the question page's switch rows), and
 [`../web3-shield.ts`](../web3-shield.ts), the one module every surface draws the Web3 Score shield and mark from. A page may
 import types, never values, from its own feature's `src/main/<feature>/` directory.
 

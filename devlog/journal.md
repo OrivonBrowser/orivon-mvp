@@ -33,6 +33,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - A .eth or ipfs:// site opened through your tunnel is now read entirely through it, name proofs included; Swarm sites are refused.
 - The tunnel now works per site or for the whole browser; tunnelled sites share one profile that keeps their logins and extensions.
 - A toolbar button lists the nodes Orivon runs on your machine, with memory, a switch each and a status dot; permissions are Settings switches.
+- An app's first-visit question is now a panel of switches, Grant all or Close; the key shows a dot while permissions are off.
 
 ### In my head
 
