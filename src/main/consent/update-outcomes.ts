@@ -25,7 +25,7 @@ import type { Broker } from '../../broker/broker-contracts.js'
 import type { CapabilityKind, Manifest } from '../../contracts/index.js'
 import type { LoadContext, LoadInstalled, LoadResult, LoadUpdateAvailable, Loader } from '../../loader/index.js'
 import { requestInstallConsent } from './install-consent.js'
-import type { InstallConsentPrompt, PerCapabilityConsentPrompt } from './install-consent.js'
+import type { InstallConsentPrompt } from './install-consent.js'
 import { grantChangedCapabilities } from './grant-changed-capabilities.js'
 import type { DialogCaller } from './request-grant.js'
 
@@ -37,10 +37,6 @@ export interface UpdateOutcomeDeps {
   readonly broker: Broker
   readonly loader: Loader
   readonly consent?: InstallConsentPrompt
-  /** A138's 'per-capability' path -- used by requestInstallConsent instead
-   * of `consent` only when a manifest declares `consentGranularity:
-   * 'per-capability'` AND this is wired; see install-consent.ts's own doc. */
-  readonly perCapabilityConsent?: PerCapabilityConsentPrompt
   readonly reconsentPrompt?: ReconsentPrompt
   readonly capabilityPrompt?: CapabilityPromptPrompt
   readonly rollbackChoicePrompt?: RollbackChoicePrompt
@@ -72,7 +68,7 @@ async function finishInstall (deps: UpdateOutcomeDeps, result: LoadInstalled, ca
     } catch (error) {
       console.error('[app-install] registerApp failed after a successful install; the bundle is installed but its version floor was not persisted', result.canonicalOrigin, error)
     }
-    await requestInstallConsent(deps.broker, deps.consent, result.canonicalOrigin, result.manifest, deps.perCapabilityConsent, caller)
+    await requestInstallConsent(deps.broker, deps.consent, result.canonicalOrigin, result.manifest, caller)
   } finally {
     release?.()
   }

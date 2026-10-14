@@ -7,7 +7,7 @@ The order itself (the page loads, ask and cache beside it, reload as the app on 
 what the person sees and how a tab is sent into the app. `block-tabs.ts` covers the tabs of an app found bad. `first-visit-hook.ts` is the default session's `onBeforeRequest`
 handler that notices a tab's top-level GET to an origin Orivon has never held and starts the visit beside it (the request is never held), `tab-host.ts` is the way a visit enters or leaves one tab,
 `tab-screens.ts` is the cover and the sheets for one tab, `setup-sheet-overlay.ts` is the sheet (a security warning, or "Couldn't download" with Try again), `setup-text.ts` is every word on
-them, `install-app-setup.ts` wires the hook, and `tab-setup-ref.ts` holds what the visit reads from the shell (the screens, and the first visit that `../install/app-install-subsystem.ts` builds). The cover is the loading-screen overlay,
+them, `install-app-setup.ts` wires the hook, and `tab-setup-ref.ts` holds what the visit reads from the shell, `entry-changes.ts` tells the chrome an app's permissions changed so its key asks again for its dot (the screens, and the first visit that `../install/app-install-subsystem.ts` builds). The cover is the loading-screen overlay,
 shown only under a sheet ([`../loading-screen/`](../loading-screen/README.md)); the sheet's page is [`../../renderer/overlay/app-setup/`](../../renderer/overlay/app-setup/).
 
 **What it depends on.** [`../install/`](../install/) (`first-visit.ts` types), [`../loading-screen/`](../loading-screen/) (the cover's overlay name and

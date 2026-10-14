@@ -380,9 +380,7 @@ function describeCapabilitySet (
   // contributed to it (recovered by matching on `message`, the same key
   // mergeRowsWithIdenticalMessage itself merges on) is already held -- a
   // row combining a held capability with a not-yet-decided one still reads
-  // as something Deny genuinely affects. Wording matches
-  // describeCapabilityChoice's own `[Allowed]`/`[Denied]` bracket
-  // convention (grant-prompt-choice.ts) rather than inventing a second one.
+  // as something Deny genuinely affects.
   const rowLines = mergedRows.map((row) => {
     const contributing = rowCapabilities.filter((_, index) => rows[index]?.message === row.message).flat()
     const isHeld = contributing.length > 0 && contributing.every((capability) => held.includes(capability))
@@ -417,7 +415,6 @@ function describeCapabilitySet (
  * `held` (A170) names whatever `capabilities` already holds through a
  * SEPARATE door (`app.requestGrant`) -- each such row is marked, so Deny
  * visibly does not cover it. Defaults to none, so every pre-existing caller
- * (including the per-capability overview, ./install-consent-prompt.ts)
  * keeps rendering exactly as before. `extensionsOnSite` is the same
  * disclosure `describeGrantRequest` takes, and defaults the same way.
  */

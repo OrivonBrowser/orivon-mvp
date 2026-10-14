@@ -31,7 +31,7 @@ function screensFake (): TabScreens & { calls: string[] } {
 function rig (options: { kind?: 'first' | 'declined' | 'known' | 'settling' | 'later', run?: (host: SetupHost) => Promise<FirstVisitResult>, screens?: boolean, contents?: boolean } = {}): { handler: ReturnType<typeof firstVisitBeforeRequest>, screens: ReturnType<typeof screensFake>, visit: FirstVisit, run: ReturnType<typeof vi.fn> } {
   const screens = screensFake()
   const run = vi.fn(async (_origin: string, _url: string, _caller: unknown, host: SetupHost, _signal?: AbortSignal): Promise<FirstVisitResult> => await (options.run ?? (async () => { host.plain(); return { outcome: 'plain', why: 'website' } }))(host))
-  const visit: FirstVisit = { kindOf: vi.fn(async () => options.kind ?? 'first'), run: run as unknown as FirstVisit['run'], resume: async () => {} }
+  const visit: FirstVisit = { kindOf: vi.fn(async () => options.kind ?? 'first'), run: run as unknown as FirstVisit['run'], resume: async () => {}, notLetIn: () => undefined, askAgain: async () => true }
   const contents = { isDestroyed: () => false } as unknown as WebContents
   const handler = firstVisitBeforeRequest({
     firstVisit: () => visit,
