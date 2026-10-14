@@ -146,6 +146,7 @@
   "test/web3/e2e-eth-website-level.test.ts": 21,
   "test/web3/e2e-ipfs-address.test.ts": 3,
   "test/web3/e2e-ipfs-first-load.test.ts": 6,
+  "test/web3/e2e-ipfs-node-retry.test.ts": 8,
   "test/web3/e2e-ipfs-install.test.ts": 4,
   "test/web3/e2e-local-dev-ddoc.test.ts": 21,
   "test/web3/e2e-score-level-override.test.ts": 7,

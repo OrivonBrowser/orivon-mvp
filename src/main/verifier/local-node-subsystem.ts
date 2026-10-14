@@ -21,6 +21,8 @@ export interface LocalNodeSubsystemSpec {
   readonly disabled?: () => string | undefined
   /** What the person chose that the node's arguments follow, read at each start. */
   readonly options?: () => Readonly<Record<string, string>>
+  /** A test build's stand-in for the node: ready at this endpoint, with nothing started. */
+  readonly standIn?: () => { readonly endpoint: string } | undefined
   /** The files in its data directory that hold what it kept about the sites it served, removed by `forget`. */
   readonly kept?: readonly string[]
 }
@@ -66,11 +68,12 @@ export function createLocalNodeSubsystem (spec: LocalNodeSubsystemSpec): LocalNo
     })
     return controller
   }
+  const READY: LocalNodeState = { state: 'ready', peers: 0 }
   return {
-    ensure: async () => await created().ensure(),
-    state: () => controller?.state() ?? { state: 'off' },
+    ensure: async () => spec.standIn?.() !== undefined ? READY : await created().ensure(),
+    state: () => spec.standIn?.() !== undefined ? READY : controller?.state() ?? { state: 'off' },
     processInfo: () => controller?.processInfo(),
-    endpoint: () => `http://127.0.0.1:${String(nodePort(spec.kind.name))}`,
+    endpoint: () => spec.standIn?.()?.endpoint ?? `http://127.0.0.1:${String(nodePort(spec.kind.name))}`,
     reconsider: () => { controller?.reconsider() },
     verifierIdle: () => { controller?.verifierIdle() },
     forget: async () => { await created().forget(spec.kept ?? []) },

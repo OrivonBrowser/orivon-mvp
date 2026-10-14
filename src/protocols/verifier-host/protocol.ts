@@ -81,6 +81,8 @@ export interface HostConfig {
     readonly partitionSalt: string
     /** Whether a name service may be asked for an IPNS record after the node. It follows the lookup-service setting; `ipfs-lookup` changes it while the host runs. */
     readonly lookupService: boolean
+    /** Test builds only: the wait before a block the node could not give is asked for again, in place of the node's own memory. */
+    readonly retryWaitMs?: number
   }
   /** Test builds only: `.eth` names mapped to content with no light client. */
   readonly fixtures?: Readonly<Record<string, string>>

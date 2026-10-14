@@ -113,23 +113,59 @@ describe('the IPFS gatherer over a node on this computer', () => {
     expect((await gatherer(gw).mount('a.eth', records)).servedFrom).toEqual({ kind: 'gateways' })
   })
 
-  it('asks the node once, and reports it unavailable at once, when the node answers 504 for content it could not find', async () => {
+  const PATIENT = { waitMs: 30, maxRetries: 2, startByMs: 10_000 }
+  const nodeGatherer = (gw: ReturnType<typeof fakeGateways>, blockRetry = PATIENT): ReturnType<typeof createIpfsGatherer> =>
+    createIpfsGatherer({ fetch: gw.fetch, gateways: [NODE], resolveTxt: async () => [], ipnsSequences: memorySequenceStore(), localNode: true, limits: { blockRetry } })
+
+  it('asks the node again after its own wait, and reports it unavailable only once the retries are spent, when the node keeps answering 504', async () => {
     const gw = fakeGateways(dag.blocks)
     gw.failNext(NODE, 504, 10)
-    const viaNode = createIpfsGatherer({ fetch: gw.fetch, gateways: [NODE], resolveTxt: async () => [], ipnsSequences: memorySequenceStore(), localNode: true })
-    const site = await viaNode.mount('a.eth', [onChain({ kind: 'ipfs', cid: dag.root.toString() })])
+    const site = await nodeGatherer(gw).mount('a.eth', [onChain({ kind: 'ipfs', cid: dag.root.toString() })])
     await expect(read(site, '/')).rejects.toMatchObject({ failure: 'unavailable', message: expect.stringContaining('answered 504') as string })
+    expect(gw.requests).toHaveLength(1 + PATIENT.maxRetries)
+  })
+
+  it.each([404, 504])('serves a file the node first answered %i for, once the wait has passed, in the same request', async (status) => {
+    const gw = fakeGateways(dag.blocks)
+    gw.failNext(NODE, status, 1)
+    const site = await nodeGatherer(gw).mount('a.eth', [onChain({ kind: 'ipfs', cid: dag.root.toString() })])
+    const started = Date.now()
+    expect(await read(site, '/app.js')).toBe('run()')
+    expect(Date.now() - started).toBeGreaterThanOrEqual(PATIENT.waitMs - 5)
+    expect(new Set(gw.requests.map((url) => new URL(url).origin))).toEqual(new Set([NODE]))
+  })
+
+  it('stops asking the node the moment the request is no longer wanted', async () => {
+    const gw = fakeGateways(dag.blocks)
+    gw.failNext(NODE, 404, 10)
+    const site = await nodeGatherer(gw, { ...PATIENT, waitMs: 5_000 }).mount('a.eth', [onChain({ kind: 'ipfs', cid: dag.root.toString() })])
+    const left = new AbortController()
+    const opening = site.open('/app.js', undefined, left.signal)
+    const settled = expect(opening).rejects.toBeDefined()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    left.abort(new Error('the client went away'))
+    await settled
     expect(gw.requests).toHaveLength(1)
+  })
+
+  it('asks a pool of public gateways no more often for a 404 than before: the patient retry is the node\'s alone', async () => {
+    const gw = fakeGateways(dag.blocks)
+    gw.missing.add(A)
+    gw.missing.add(B)
+    const site = await gatherer(gw).mount('a.eth', [onChain({ kind: 'ipfs', cid: dag.root.toString() })])
+    await expect(read(site, '/')).rejects.toMatchObject({ failure: 'unavailable' })
+    expect(gw.requests).toHaveLength(2)
   })
 
   it('fails a read as unverifiable, and DDOC with it, when the node sends a block that fails its hash', async () => {
     const gw = fakeGateways(dag.blocks)
     const [key] = [...dag.blocks].find(([k]) => CID.parse(k).code === 0x55)!
     gw.tamper(key, [NODE])
-    const viaNode = createIpfsGatherer({ fetch: gw.fetch, gateways: [NODE], resolveTxt: async () => [], ipnsSequences: memorySequenceStore(), localNode: true })
+    const viaNode = nodeGatherer(gw)
     const site = await viaNode.mount('a.eth', [onChain({ kind: 'ipfs', cid: dag.root.toString() })])
     await expect(read(site, '/')).rejects.toMatchObject({ failure: 'unverifiable' })
     expect(site.ddoc()).toMatchObject({ status: 'failed' })
+    expect(gw.requests.filter((url) => url.includes(key))).toHaveLength(1)
   })
 })
 
