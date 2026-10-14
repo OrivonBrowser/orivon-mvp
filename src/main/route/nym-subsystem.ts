@@ -9,7 +9,7 @@ import { createSocks5Provider } from '../../broker/route/socks5.js'
 import { SHORT_LIVED_USER } from '../../protocols/nym-tunnel/protocol.js'
 import type { NymPrivacy, NymTunnelConfig, PinnedFile } from '../../protocols/nym-tunnel/protocol.js'
 import type { ArtifactStatus } from '../verifier/local-node-artifact.js'
-import type { HostProcess } from '../verifier/process-supervisor.js'
+import type { HostProcess, ProcessInfo } from '../verifier/process-supervisor.js'
 import { RefusedToStart } from '../verifier/process-supervisor.js'
 import type { NymState, NymTestResult } from './nym-status.js'
 import { NymSupervisor } from './nym-supervisor.js'
@@ -22,6 +22,9 @@ export interface NymEndpoint {
 
 /** Why Nym cannot carry traffic now; an app's connection through it fails closed with this. */
 export class NymUnavailable extends Error {}
+
+/** Why Nym is refused while the person has it switched off, and where to switch it on. */
+export const NYM_SWITCHED_OFF = 'Nym is switched off. Switch it on in Settings under Privacy and data, or from Available networks in the toolbar.'
 
 export const STOP_AFTER_LAST_TUNNEL_MS = 10 * 60_000
 export const LISTEN_WAIT_MS = 15_000
@@ -61,6 +64,12 @@ export interface NymSubsystem {
   /** Starts the host if need be and resolves with where it listens. Rejects with `NymUnavailable` when Nym cannot run. */
   ensure: () => Promise<NymEndpoint>
   state: () => NymState
+  /** How many tunnels the host has connecting and open, from its last report; none while it does not run. */
+  tunnels: () => { readonly connecting: number, readonly ready: number }
+  /** The host's process while it runs. */
+  processInfo: () => ProcessInfo | undefined
+  /** The person's switch: off stops the host and refuses every ask (a tunnel is stopped, never sent direct); on lets the next ask start it. */
+  setEnabled: (enabled: boolean) => void
   onChange: (listener: () => void) => () => void
   /** Brings Nym up if need be, opens a stream to a name through it, and says how long that took. */
   test: () => Promise<NymTestResult>
@@ -86,6 +95,8 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
   let refusal: Extract<Verdict, { reason: string }> | undefined
   let approved: string | undefined
   let checking: Promise<Verdict> | undefined
+  let switchedOff = false
+  let tunnelCounts = { connecting: 0, ready: 0 }
   let stopTimer: unknown
   let privacy = deps.privacy
   let waiters: Array<{ resolve: () => void, reject: (error: Error) => void }> = []
@@ -120,7 +131,7 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
   }
 
   const look = async (): Promise<Verdict> => {
-    const disabled = deps.disabled?.()
+    const disabled = switchedOff ? NYM_SWITCHED_OFF : deps.disabled?.()
     if (disabled !== undefined) return { reason: disabled, cause: 'other' }
     if (await proxyIsSet()) return PROXY_VERDICT
     const artifact = await deps.artifact()
@@ -139,9 +150,12 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
   const supervisor = new NymSupervisor({
     fork: deps.fork,
     config: async (): Promise<NymTunnelConfig> => {
+      // A restart on the backoff reads the switch again: it may have moved since the start was asked for.
+      if (isSwitchedOff()) throw new RefusedToStart(NYM_SWITCHED_OFF)
       const taken = approved
       approved = undefined
       const verdict = taken === undefined ? await check() : { directory: taken }
+      if (isSwitchedOff()) throw new RefusedToStart(NYM_SWITCHED_OFF)
       if ('reason' in verdict) {
         refuse(verdict)
         throw new RefusedToStart(verdict.reason)
@@ -151,13 +165,14 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
     },
     events: {
       starting: () => { running = true; listening = false; set({ state: 'connecting' }) },
-      idle: () => { running = false; listening = false; endpoint = undefined; cancelStop(); set(current.state === 'failed' ? current : { state: 'off' }); settle(new NymUnavailable('Nym was stopped')) },
+      idle: () => { running = false; listening = false; endpoint = undefined; tunnelCounts = { connecting: 0, ready: 0 }; cancelStop(); set(current.state === 'failed' ? current : { state: 'off' }); settle(new NymUnavailable('Nym was stopped')) },
       listening: () => {
         listening = true
         if (current.state === 'connecting') set({ state: 'idle' })
         settle()
       },
       instances: (connecting, ready, started, problem) => {
+        tunnelCounts = { connecting, ready }
         if (connecting > 0) { cancelStop(); set({ state: 'connecting' }); return }
         if (ready > 0) { cancelStop(); set({ state: 'ready', ...(problem === undefined ? {} : { reason: problem }) }); return }
         if (problem !== undefined) set({ state: 'failed', reason: problem })
@@ -170,6 +185,7 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
         if (refusal !== undefined && !restarting) { running = false; listening = false; settle(new NymUnavailable(refusal.reason)); return }
         console.error(`[nym-tunnel] ${reason}`)
         listening = false
+        tunnelCounts = { connecting: 0, ready: 0 }
         if (!restarting) { running = false; refusedUntil = now() + REFUSAL_MEMORY_MS }
         set({ state: 'failed', reason })
         settle(new NymUnavailable(reason))
@@ -179,11 +195,20 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
     ...(deps.now === undefined ? {} : { now: deps.now })
   })
 
+  /** Whether the person has switched Nym off; says so once in the state. Asked again after every wait, because the switch can move during one. */
+  const isSwitchedOff = (): boolean => {
+    if (!switchedOff) return false
+    if (refusal?.reason !== NYM_SWITCHED_OFF) refuse({ reason: NYM_SWITCHED_OFF, cause: 'other' })
+    return true
+  }
+
   const ensure = async (): Promise<NymEndpoint> => {
     cancelStop()
+    if (isSwitchedOff()) throw new NymUnavailable(NYM_SWITCHED_OFF)
     if (listening && endpoint !== undefined) {
       // A proxy set while the host runs: its connections to the gateways would now go around it.
       if (await proxyIsSet()) { supervisor.idle(); refuse(PROXY_VERDICT); throw new NymUnavailable(PROXY_VERDICT.reason) }
+      if (isSwitchedOff()) throw new NymUnavailable(NYM_SWITCHED_OFF)
       return endpoint
     }
     if (!running) {
@@ -191,6 +216,7 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
       if (now() < refusedUntil && current.state === 'failed') throw new NymUnavailable(current.reason)
       refusal = undefined
       const verdict = await check()
+      if (isSwitchedOff()) throw new NymUnavailable(NYM_SWITCHED_OFF)
       if ('reason' in verdict) { refuse(verdict); throw new NymUnavailable(verdict.reason) }
       approved = verdict.directory
       supervisor.start()
@@ -202,6 +228,7 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
         waiters.push(waiter)
       })
     }
+    if (isSwitchedOff()) throw new NymUnavailable(NYM_SWITCHED_OFF)
     if (endpoint === undefined) throw new NymUnavailable('Nym is not running')
     // Nothing may come of this ask (a client with the wrong secret): the host must not outlive it for ever.
     if (current.state === 'idle') armStop()
@@ -245,6 +272,20 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
   return {
     ensure,
     state: () => current,
+    tunnels: () => tunnelCounts,
+    processInfo: () => supervisor.processInfo(),
+    setEnabled: (enabled) => {
+      if (switchedOff === !enabled) return
+      switchedOff = !enabled
+      refusedUntil = 0
+      if (switchedOff) {
+        supervisor.idle()
+        refuse({ reason: NYM_SWITCHED_OFF, cause: 'other' })
+      } else if (current.state === 'unavailable' && refusal?.reason === NYM_SWITCHED_OFF) {
+        refusal = undefined
+        set({ state: 'off' })
+      }
+    },
     onChange: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     test,
     setPrivacy: (next) => {

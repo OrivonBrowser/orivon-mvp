@@ -222,6 +222,19 @@ for (const scheme of SCHEMES) {
           ignore: [FIXTURE_ADDRESS]
         })
         await chrome.click('#web3-score-btn')
+        expect(await waitFor(async () => !(await popoverShown(app, '/site-info/')))).toBe(true)
+
+        await delay(450) // past the debounce that reads a toggle just after a close as that close's echo
+        await chrome.click('#networks-btn')
+        expect(await waitFor(async () => await popoverShown(app, '/networks/'))).toBe(true)
+        expect(await popupSized(app, '/networks/')).toBe(true)
+        await state(check, app, `networks-popup-${scheme}`, {
+          expected: 'The popup under the Available networks button, the network icon at the top right, is headed "Available networks" with one plain line under it, and lists four cards in order: Ethereum light client, IPFS node, Swarm node and Nym tunnel. Each has a status word, a switch at the right (the light client\'s off and dimmed in a test run), one sentence and, where a node runs, figures; none is cut off or overlaps, and the popup sits inside the window.',
+          action: 'Closed the shield popup and clicked the Available networks button on the fixture page.',
+          ignore: [FIXTURE_ADDRESS]
+        })
+        await chrome.click('#networks-btn')
+        expect(await waitFor(async () => !(await popoverShown(app, '/networks/')))).toBe(true)
 
         await chrome.click('#address')
         await chrome.fill('#address', 'http://unresolvable.invalid/')
@@ -378,7 +391,7 @@ for (const scheme of SCHEMES) {
           action: 'Resized the window content to 800x600 on the dashboard.'
         }, { width: 800, height: 600 })
         await state(check, app, `dashboard-500x400-${scheme}`, {
-          expected: 'At the smallest size a window can have, 500x400, the toolbar is one row: back, forward, reload, the star, an address field wide enough to read an address in, the all-sites button, the Extensions button, the side-panel button and the menu. The identity placeholder and the node-status dot are gone, and nothing is cut or overlaps.',
+          expected: 'At the smallest size a window can have, 500x400, the toolbar is one row: back, forward, reload, the star, an address field wide enough to read an address in, the Available networks button, the Extensions button, the side-panel button and the menu. The separator in the cluster is gone, and nothing is cut or overlaps.',
           action: 'Resized the window content to 500x400, the minimum, on the dashboard.'
         }, { width: 500, height: 400 })
       })

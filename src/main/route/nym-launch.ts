@@ -21,8 +21,8 @@ const MANIFEST: LocalNodeManifest = manifest
 /** The most tunnels the host keeps at once. About 15 MB each beyond the first, README.md of the host has the measurement. */
 export const MAX_NYM_TUNNELS = 6
 
-/** The Nym tunnel, stopped when the app quits. The process is forked the first time something asks for it; `privacy` is the saved level, which the route service keeps current from then on. */
-export function createNym (privacy: NymPrivacy): NymSubsystem {
+/** The Nym tunnel, stopped when the app quits. The process is forked the first time something asks for it; `privacy` is the saved level and `enabled` the saved switch, which the route service keeps current from then on. */
+export function createNym (privacy: NymPrivacy, enabled = true): NymSubsystem {
   const seam = nymTestModule(process.env)
   const made = createNymSubsystem({
     fork: () => utilityProcess.fork(join(__dirname, 'nym-tunnel-host.js'), [], { serviceName: `Orivon ${NYM_TUNNEL_IDENTITY.noun}` }),
@@ -37,6 +37,7 @@ export function createNym (privacy: NymPrivacy): NymSubsystem {
     privacy,
     log: process.env[envName(NYM_TUNNEL_IDENTITY.name, 'LOG')] === '1'
   })
+  made.setEnabled(enabled)
   app.on('will-quit', () => { made.stop() })
   return made
 }

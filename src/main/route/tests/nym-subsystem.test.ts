@@ -330,3 +330,98 @@ describe('what the host may say', () => {
     expect(isFromHost(message)).toBe(expected)
   })
 })
+
+describe('what the Networks popup reads of Nym', () => {
+  it('keeps how many tunnels are connecting and open from the last report, and forgets them when the host stops', async () => {
+    const { nym, processes, settle } = harness()
+    expect(nym.tunnels()).toEqual({ connecting: 0, ready: 0 })
+    const asked = nym.ensure()
+    await settle()
+    processes[0]?.say({ type: 'listening' })
+    await asked
+    processes[0]?.say({ type: 'instances', connecting: 1, ready: 2, started: 3 })
+    expect(nym.tunnels()).toEqual({ connecting: 1, ready: 2 })
+    nym.stop()
+    await settle()
+    expect(nym.tunnels()).toEqual({ connecting: 0, ready: 0 })
+  })
+
+  it('names the process while it runs, so its memory and age can be read', async () => {
+    const { nym, processes, settle } = harness({ now: () => 5_000 })
+    expect(nym.processInfo()).toBeUndefined()
+    void nym.ensure().catch(() => {})
+    await settle()
+    expect(processes).toHaveLength(1)
+    expect(nym.processInfo()).toEqual({ pid: undefined, startedAt: 5_000 })
+  })
+})
+
+describe('switching Nym off', () => {
+  it('refuses every ask, in words that say where to switch it on, and starts nothing', async () => {
+    const { nym, processes } = harness()
+    nym.setEnabled(false)
+    await expect(nym.ensure()).rejects.toThrow(/switched off.*Settings/)
+    expect(processes).toHaveLength(0)
+    expect(nym.state()).toMatchObject({ state: 'unavailable', cause: 'other' })
+    expect(await nym.test()).toMatchObject({ ok: false, reason: 'unavailable' })
+  })
+
+  it('stops a host that runs, so a tunnel is refused rather than carried on', async () => {
+    const { nym, processes, settle } = harness()
+    const asked = nym.ensure()
+    await settle()
+    processes[0]?.say({ type: 'listening' })
+    await asked
+    nym.setEnabled(false)
+    await settle()
+    expect(processes[0]?.killed).toBe(true)
+    await expect(nym.ensure()).rejects.toBeInstanceOf(NymUnavailable)
+  })
+
+  it('starts again at the next ask once it is switched back on, without waiting out the memory of the refusal', async () => {
+    const { nym, processes, settle } = harness()
+    nym.setEnabled(false)
+    await expect(nym.ensure()).rejects.toBeInstanceOf(NymUnavailable)
+    nym.setEnabled(true)
+    expect(nym.state()).toEqual({ state: 'off' })
+    const asked = nym.ensure()
+    await settle()
+    processes[0]?.say({ type: 'listening' })
+    await asked
+    expect(processes).toHaveLength(1)
+  })
+
+  it('starts nothing when it is switched off while the files are being checked, and refuses that ask', async () => {
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const { nym, processes, settle } = harness({ artifact: async () => { await gate; return { ok: true, directory: '/module' } } })
+    const asked = nym.ensure()
+    const refused = expect(asked).rejects.toThrow(/switched off/)
+    await settle()
+    nym.setEnabled(false)
+    release()
+    await refused
+    await settle()
+    expect(processes).toHaveLength(0)
+    expect(nym.state()).toMatchObject({ state: 'unavailable', cause: 'other' })
+  })
+
+  it('does not answer an ask with an address when it is switched off while the proxy is being checked', async () => {
+    const clock = { now: 1_000 }
+    let release: (set: boolean) => void = () => {}
+    let calls = 0
+    const { nym, processes, settle } = harness({ now: () => clock.now, proxyConfigured: async () => { calls += 1; return calls === 1 ? false : await new Promise<boolean>((resolve) => { release = resolve }) } })
+    const first = nym.ensure()
+    await settle()
+    processes[0]?.say({ type: 'listening' })
+    await first
+    // The proxy answer is reused for a few seconds: a later ask finds it stale and asks the system again.
+    clock.now += 10_000
+    const asked = nym.ensure()
+    const refused = expect(asked).rejects.toBeInstanceOf(NymUnavailable)
+    await settle()
+    nym.setEnabled(false)
+    release(false)
+    await refused
+  })
+})

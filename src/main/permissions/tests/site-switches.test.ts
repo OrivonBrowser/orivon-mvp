@@ -47,7 +47,7 @@ describe('turnOffCapability', () => {
     expect(await broker.declinedCapabilitiesFor(APP)).toEqual(['fs', 'tcp.connect'])
   })
 
-  it('turning off an app\'s only grant leaves it registered but holding nothing -- the all-sites list still finds it via registeredOriginsSync', async () => {
+  it('turning off an app\'s only grant leaves it registered but holding nothing -- the apps card in Settings still finds it via registeredOriginsSync', async () => {
     const broker = realBroker()
     await broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 1024 } }))
     await broker.grant(APP, 'fs', [])

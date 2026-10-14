@@ -17,7 +17,7 @@ import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { PARTITION_HEADER, ROUTE_HEADER } from '../../loader/fetch/content-root.js'
 import { noteCertificate } from '../auth/note-certificate.js'
 import { ACCEPT, CHROMIUM_VERDICT, REJECT, refusalNote, verifierCertificateVerdict } from './certificate-check.js'
-import { requestPartition, withPartition, withRoute } from './partition.js'
+import { installPartitionStamp, targetsVerifiedHost, verifiedHostFilter } from './partition-stamp.js'
 import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import { forEachWebsiteSession } from '../sessions/website-sessions.js'
 import { contentAddressOf } from './content-address.js'
@@ -25,6 +25,8 @@ import { chooseCheckpoint, MAX_CHECKPOINT_AGE_SECONDS, slotTimestamp } from './c
 import type { CheckpointChoice } from './checkpoint.js'
 import { DEFAULT_ENDPOINTS } from './endpoints.js'
 import { HostSupervisor } from './host-supervisor.js'
+import { TrafficLedger } from './traffic-ledger.js'
+import type { ProcessInfo } from './process-supervisor.js'
 import { loopbackPort } from './loopback-port.js'
 import shippedCheckpoint from './mainnet-checkpoint.json'
 import { composeResolverRules } from './resolver-rules.js'
@@ -43,7 +45,7 @@ import { paceOf } from '../../protocols/verifier-host/pace.js'
 import { anyTabOnVerifiedOrigin } from './tab-on-verified-origin.js'
 import type { TabsOfWindow } from './tab-on-verified-origin.js'
 import { provideVerifierAccess } from './verifier-access.js'
-import { swarmNode, swarmNodeEndpoint, swarmNodeState } from './swarm-node-subsystem.js'
+import { configureSwarmNode, swarmNode, swarmNodeEndpoint, swarmNodeState } from './swarm-node-subsystem.js'
 import { configureIpfsNode, ipfsNode, ipfsNodeEndpoint, ipfsNodeState } from './ipfs-node-subsystem.js'
 import type { LocalNodeSubsystem } from './local-node-subsystem.js'
 import { IPFS_NODE_IDENTITY } from '../../protocols/ipfs-node/protocol.js'
@@ -96,14 +98,13 @@ export function tunnelDefaultChanged (): void {
   changed()
 }
 
-/** Lets the person's setting, and not only the environment, switch the light client off. Read once, here, at launch:
- * the choice applies from Orivon's next start, as Settings says, however often the host sleeps and wakes before it. */
-export function configureVerifier (options: { lightClientEnabled: () => boolean, windows: () => readonly TabsOfWindow[], servedFromCache: (origin: string) => boolean, ipfsSource?: () => 'node' | 'gateways', ipfsLookupService?: () => boolean }): void {
+/** Lets the person's setting, and not only the environment, switch the light client off. Read each time the host builds its config and each time a view is drawn, so a change reaches the next start; `lightClientSettingChanged` makes that next start now. */
+export function configureVerifier (options: { lightClientEnabled: () => boolean, windows: () => readonly TabsOfWindow[], servedFromCache: (origin: string) => boolean, ipfsSource?: () => 'node' | 'gateways', ipfsLookupService?: () => boolean, swarmNodeEnabled?: () => boolean }): void {
   if (options.ipfsSource !== undefined) ipfsSourceChoice = options.ipfsSource
   if (options.ipfsLookupService !== undefined) ipfsLookupServiceChoice = options.ipfsLookupService
   configureIpfsNode({ lookupService: () => ipfsLookupServiceChoice() })
-  const enabledAtLaunch = options.lightClientEnabled()
-  enabledByPerson = () => enabledAtLaunch
+  if (options.swarmNodeEnabled !== undefined) configureSwarmNode({ enabled: options.swarmNodeEnabled })
+  enabledByPerson = options.lightClientEnabled
   tabsOnVerifiedOrigin = () => anyTabOnVerifiedOrigin(options.windows(), options.servedFromCache)
 }
 
@@ -122,6 +123,28 @@ export function ipfsSettingsChanged (setting: 'source' | 'lookupService'): void 
 }
 
 /**
+ * The person switched the light client on or off: applied at once. The host builds its config when it starts, so it sleeps
+ * and its next request rebuilds it with the new choice. A host that sleeps stops the IPFS and Swarm nodes with it, as it
+ * does after ten idle minutes: each starts again at the next ask. A `.eth` page open now says why it cannot load until the
+ * light client is on again.
+ */
+export function lightClientSettingChanged (): void {
+  idleHost()
+  changed()
+}
+
+/**
+ * The person switched the Swarm node on or off: applied at once. The node's controller reads its switch again (a node that
+ * must not run is stopped and says why), and the host sleeps, so nothing it mounted from Swarm outlives a switch-off and its
+ * next start asks the node again.
+ */
+export function swarmSettingChanged (): void {
+  swarmNode.reconsider()
+  idleHost()
+  changed()
+}
+
+/**
  * Clearing cached data or all history: the IPFS node stops and its block store is deleted, and the salt its partition
  * keys are made with is replaced, so nothing it kept about the sites visited can be read back or asked for.
  */
@@ -132,7 +155,10 @@ export async function forgetIpfsNodeData (): Promise<void> {
   idleHost()
 }
 
-const lightClientSwitchedOff = (): boolean => process.env['ORIVON_ETH_LIGHT_CLIENT'] === 'off' || !enabledByPerson()
+/** Whether this run was started with the light client forced off from outside (`ORIVON_ETH_LIGHT_CLIENT=off`): no setting changes that. */
+export const lightClientForcedOff = (): boolean => process.env['ORIVON_ETH_LIGHT_CLIENT'] === 'off'
+
+const lightClientSwitchedOff = (): boolean => lightClientForcedOff() || !enabledByPerson()
 
 function changed (): void {
   for (const listener of listeners) listener()
@@ -145,53 +171,6 @@ function installCertificateCheck (target: Session): void {
     // Only a connection that was accepted can describe the page that loaded: Chromium's own checks passed, or the verifier's certificate matched.
     noteCertificate(request.hostname, verdict === ACCEPT || (verdict === CHROMIUM_VERDICT && request.errorCode === 0), request.validatedCertificate, request.certificate)
     callback(verdict)
-  })
-}
-
-/** Only a request whose host a protocol actually routes to the verifier --
- * `verifiedHostFilter` below builds Electron's own coarse `{ urls }` filter
- * from the same `routedSuffixes()`, so this is the precise check the owner
- * runs on whatever that filter already let through. */
-function targetsVerifiedHost (url: string): boolean {
-  if (!url.startsWith('https://')) return false
-  let hostname: string
-  try {
-    hostname = new URL(url).hostname
-  } catch {
-    return false
-  }
-  return BUILTIN_ADDRESSES.routesToVerifier(hostname)
-}
-
-/** Electron's own `{ urls }` filter for `installPartitionStamp` below --
- * `*.` matches a suffix's own bare host as well as any subdomain (Chromium's
- * match-pattern syntax), covering exactly what `routesToVerifier` (and so
- * `targetsVerifiedHost` above) accepts. */
-export function verifiedHostFilter (): WebRequestFilter {
-  return { urls: BUILTIN_ADDRESSES.routedSuffixes().map((suffix) => `https://*.${suffix}/*`) }
-}
-
-/**
- * Stamps every page's request to the verifier with the partition its top-level page
- * owns, and strips whatever a request set itself: a worker's request has no
- * frame, and could otherwise name any partition. Installed on the default
- * session and on each website's session of its own (see README.md's Design notes for why no other), LAST among
- * `onBeforeSendHeaders` handlers there, so nothing that runs before it --
- * including a future extension rule -- can set or remove this header.
- * The same handler marks every request of the tunnel profile's session as a tunnel-profile website's, whatever frame it
- * came from or whether it has one, and strips the mark from every other session's: the verifier fetches for it only
- * through the tunnel.
- */
-function installPartitionStamp (target: Session, tunnelProfile: boolean): void {
-  webRequestOwnerFor(target).onBeforeSendHeaders(RUN_LAST, verifiedHostFilter(), targetsVerifiedHost, (details, current) => {
-    let frame: WebFrameMain | null | undefined
-    try {
-      frame = details.frame
-    } catch {
-      frame = undefined
-    }
-    const partition = requestPartition({ url: details.url, resourceType: details.resourceType, topUrl: frame?.top?.url })
-    return { ...current, requestHeaders: withRoute(withPartition(current.requestHeaders, PARTITION_HEADER, partition), ROUTE_HEADER, tunnelProfile) }
   })
 }
 
@@ -345,6 +324,18 @@ export async function verifierEthContentCid (host: string, partition: string): P
   }
 }
 
+/** What the verifier host has read from each local node this session (`traffic-ledger.ts`): reads in flight now, and bytes in all, those of earlier hosts included. */
+const ledger = new TrafficLedger(new Set(NODES.keys()))
+
+export function nodeTraffic (node: string): { readonly active: number, readonly bytes: number } {
+  return ledger.read(node)
+}
+
+/** The verifier host's process while it runs, for the popup's memory and uptime rows. */
+export function verifierProcessInfo (): ProcessInfo | undefined {
+  return supervisor?.processInfo()
+}
+
 /** The light client's state in words, for the Settings section and the site-info popover. */
 export function verifierView (): LightClientView {
   return lightClientView({
@@ -397,6 +388,7 @@ export const verifierSubsystem: Subsystem = {
           changed()
         },
         idle: () => {
+          ledger.fold()
           fingerprint = undefined
           hostDown = undefined
           hostAsleep = true
@@ -416,6 +408,7 @@ export const verifierSubsystem: Subsystem = {
           changed()
         },
         down: (reason) => {
+          ledger.fold()
           fingerprint = undefined
           hostAsleep = false
           hostDown = reason
@@ -443,6 +436,7 @@ export const verifierSubsystem: Subsystem = {
         nameScheme: (name, scheme) => {
           if (verifierStore().saveNameScheme(name, scheme)) announceNameSchemeChange()
         },
+        nodeTraffic: (name, active, bytes) => { ledger.record(name, active, bytes) },
         nodeWanted: (name) => {
           const node = NODES.get(name)
           if (node === undefined) return

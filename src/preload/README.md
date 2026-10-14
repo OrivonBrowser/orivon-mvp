@@ -45,7 +45,7 @@ across this boundary.
 |---|---|---|
 | `app.ts` | every ordinary tab | `./page-dialogs.ts`'s `prompt` wrapper; `./ordinary-tab.ts`'s `exposeOrdinaryTabSurface()` only from the top frame (`./frame.ts`'s `inMainFrame()`): `window.orivon` and what depends on it -- none of that on a `chrome-extension:` page, which still gets the `prompt` wrapper |
 | `shell.ts` | only the chrome view, and only at the URL `--orivon-shell-url` names | Tab commands, typed by its `OrivonShell` |
-| `permissions.ts` | only the all-sites popup (`src/main/permissions/permissions-panel.ts`), and only at its expected URL | `orivonPermissions`: list and revoke grants, list and reset notification answers; `src/main/ipc/permissions-ipc.ts` re-verifies the sender on every call |
+| `networks.ts` | only the Available networks popup (`src/main/networks/networks-panel.ts`), and only at its expected URL | `orivonNetworks`: the cards, a card's switch, a push on every change; `src/main/ipc/networks-ipc.ts` re-verifies the sender on every call |
 | `overlay.ts` | only an overlay view (`src/main/overlays/overlay-view.ts`), and only at the exact URL main built for it | `orivonOverlay`: which overlay this is, `ready`, `request`, `size`, `close` and `onEvent`; `src/main/overlays/overlay-ipc.ts` re-verifies the sender on every call, and the host runs only the handler of the overlay the view was built for |
 | `split-frame.ts` | only the view behind a split (`src/main/shell/split-frame.ts`) | `orivonSplit`: what to draw, and drag the divider to a place or reset it |
 | `drop-catcher.ts` | only the transparent view over a window's page while a tab is dragged (`src/main/shell/drop-catcher.ts`), and only at its expected URL | nothing: it listens for the drag's events on its own document and reports where they were to main; only a drag carrying the tab type is touched |
@@ -70,7 +70,7 @@ across this boundary.
 `location.href` against the URL main passed them (`--orivon-shell-url` and its siblings) before exposing
 anything. The chrome view, the popups and the split view are also locked to that document
 (`src/main/shell/lock-navigation.ts`); a fresh tab is not, since it navigates. Main re-verifies the sender on
-every call: `ipc.ts`'s `isFromChrome` by frame identity and URL, `newtab-ipc.ts` by URL, `permissions-ipc.ts`,
+every call: `ipc.ts`'s `isFromChrome` by frame identity and URL, `newtab-ipc.ts` by URL, `networks-ipc.ts`,
 `overlay-ipc.ts` and `site-info-ipc.ts` by identity and URL (A269), and site-info fixes the origin itself.
 
 ## The rule that governs this directory

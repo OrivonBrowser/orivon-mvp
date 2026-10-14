@@ -12,7 +12,7 @@ export const SHELL_HOST = 'renderer'
 export const isShellSchemeUrl = (url: string): boolean => url.startsWith(`${SHELL_SCHEME}:`)
 
 /** The entries that run in `SHELL_PARTITION`; they may read every file under `assets/`. Keys of the renderer's `rollupOptions.input`. */
-export const SHELL_SESSION_ENTRIES = ['index', 'intro', 'permissions', 'site-info', 'overlay', 'split-frame', 'drop-catcher'] as const
+export const SHELL_SESSION_ENTRIES = ['index', 'intro', 'networks', 'site-info', 'overlay', 'split-frame', 'drop-catcher'] as const
 
 /** The entries that run in the default session, beside websites: only the new-tab page. It may read only the files its own build reaches. */
 export const DEFAULT_SESSION_ENTRIES = ['newtab'] as const

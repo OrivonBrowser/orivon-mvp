@@ -5,7 +5,7 @@ import type { SitePermissionsAccess } from '../../site-settings/site-permissions
 
 // The site-info popup's own channel -- get/trust/data/apply/
 // revokePickedPath/clearBrowserData/reload/openSiteSettings, and the sender-
-// identity check every command here gets (mirrors permissions-ipc.ts's own
+// identity check every command here gets (mirrors networks-ipc.ts's own
 // isFromPermissionsPanel, against this popup's webContents instead).
 // site-info-controller.test.ts already proves turnOn/turnOff reach a real
 // broker; this file proves the IPC layer on top routes to the ORIGIN it
