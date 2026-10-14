@@ -34,6 +34,7 @@ import { createBroker } from '../../src/broker/index.js'
 import { baseDeps, manifestWith } from '../../src/broker/tests/index.test-helpers.js'
 import { requestInstallConsent } from '../../src/main/consent/install-consent.js'
 import type { InstallConsentPrompt } from '../../src/main/consent/install-consent.js'
+import { grantAll, grantNone } from '../../src/main/consent/tests/install-consent.test-helpers.js'
 
 const ORIGIN = 'https://install-consent-journey-e2e.orivon.test'
 /** An address literal, matching test/apps/fixture's own manifest convention (its README:
@@ -63,7 +64,7 @@ describe('d-0025: install-time consent gates the grant, against a real Broker', 
     expect(await connectDenialCode(broker, GRANTED_TARGET)).toBe('denied')
     expect(await broker.app.grants(ORIGIN)).toEqual([])
 
-    const decline: InstallConsentPrompt = async () => false
+    const decline: InstallConsentPrompt = grantNone
     await requestInstallConsent(broker, decline, ORIGIN, manifest)
     expect(await connectDenialCode(broker, GRANTED_TARGET)).toBe('denied')
     expect(await broker.app.grants(ORIGIN)).toEqual([])
@@ -74,7 +75,7 @@ describe('d-0025: install-time consent gates the grant, against a real Broker', 
     // time. `wouldAccept` is wired to accept if it is ever called, so a
     // regression that stopped suppressing would show up here as a live
     // grant, not just as an extra prompt call.
-    const wouldAccept: InstallConsentPrompt = async () => true
+    const wouldAccept: InstallConsentPrompt = grantAll
     const wouldAcceptCalls: unknown[] = []
     await requestInstallConsent(broker, async (...args) => { wouldAcceptCalls.push(args); return await wouldAccept(...args) }, ORIGIN, manifest)
     expect(wouldAcceptCalls).toHaveLength(0)
@@ -87,7 +88,7 @@ describe('d-0025: install-time consent gates the grant, against a real Broker', 
     // docs/open-questions.md A145 for what that UI gap still is.
     await broker.clearDeclinedConsent(ORIGIN)
 
-    const accept: InstallConsentPrompt = async () => true
+    const accept: InstallConsentPrompt = grantAll
     await requestInstallConsent(broker, accept, ORIGIN, manifest)
     const grants = await broker.app.grants(ORIGIN)
     expect(grants).toHaveLength(1)

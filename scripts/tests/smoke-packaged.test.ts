@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { attachPort, devToolsPort, shellTarget } from '../smoke-packaged.mjs'
+import { BUNDLED_EXTENSION_ID, attachPort, bundledExtensionRunning, devToolsPort, shellTarget } from '../smoke-packaged.mjs'
+
+describe('bundledExtensionRunning', () => {
+  it('sees uBlock Origin by any target of its extension origin', () => {
+    expect(bundledExtensionRunning([
+      { type: 'page', url: 'orivon-shell://renderer/index.html' },
+      { type: 'background_page', url: `chrome-extension://${BUNDLED_EXTENSION_ID}/background.html` }
+    ])).toBe(true)
+  })
+
+  it('is false for another extension, a page that names the id, or no targets', () => {
+    expect(bundledExtensionRunning([
+      { type: 'background_page', url: 'chrome-extension://abcdefghijklmnopabcdefghijklmnop/background.html' },
+      { type: 'page', url: `https://site.example/?id=chrome-extension://${BUNDLED_EXTENSION_ID}/` }
+    ])).toBe(false)
+    expect(bundledExtensionRunning([])).toBe(false)
+  })
+})
 
 describe('devToolsPort', () => {
   it('reads the port from the line Chromium prints', () => {

@@ -6,6 +6,18 @@
 /** `consent` and `confirm` change what a page or app may do or hold; `notice` only informs; the `page-*` kinds are a page's own alert, confirm and prompt, drawn in a style a page cannot dress up as a grant. */
 export type QuestionKind = 'consent' | 'confirm' | 'notice' | 'page-alert' | 'page-confirm' | 'page-prompt'
 
+/** One switch of a question that asks for several things at once. `icon` names the grant icon the row wears. */
+export interface QuestionChoice {
+  readonly id: string
+  readonly icon: string
+  readonly message: string
+  /** A line under the message, in the dimmer style: what the row reaches beyond its headline. */
+  readonly detail?: string
+  readonly warning?: boolean
+  /** The switch starts on. */
+  readonly on?: boolean
+}
+
 export interface QuestionSpec {
   readonly kind: QuestionKind
   readonly title?: string
@@ -33,6 +45,10 @@ export interface QuestionSpec {
   /** A text box, for a page's `prompt()`. */
   readonly input?: { readonly initial: string }
   readonly checkboxLabel?: string
+  /** Rows with a switch each, drawn under the message; the answer names the ones left on. */
+  readonly choices?: readonly QuestionChoice[]
+  /** A line under the rows that shows only while some switch is off. */
+  readonly choicesNote?: string
 }
 
 /** The same shape as Electron's `MessageBoxReturnValue`, so a call site swaps one call for the other. */
@@ -42,6 +58,8 @@ export interface QuestionResult {
   readonly text?: string
   /** The person pressed this button, as opposed to a way out (Escape, a closed tab, a navigation, an abort) answering with `cancelId`. */
   readonly clicked?: true
+  /** The ids of the `choices` left switched on when a button was pressed; absent for a way out and for a question with no choices. */
+  readonly chosen?: readonly string[]
 }
 
 /** What the panel's page is told on each show; main alone decides every field. */
@@ -61,6 +79,8 @@ export interface QuestionView {
   readonly focus: 'dialog' | number
   readonly input: { readonly initial: string, readonly max: number } | undefined
   readonly checkboxLabel: string | undefined
+  readonly choices: readonly QuestionChoice[] | undefined
+  readonly choicesNote: string | undefined
   readonly guardMs: number
 }
 
@@ -69,10 +89,14 @@ export const GUARD_MS = 500
 /** The second press of a double-press button must come within this long of the first. */
 export const DOUBLE_PRESS_MS = 1500
 export const MAX_BUTTONS = 4
+/** The most rows a question's switches may hold: more than a manifest can declare capabilities. */
+export const MAX_CHOICES = 30
 /** The longest text a question's box holds: what a page's own request may carry, so a page's default comes back whole. */
 export const MAX_INPUT = 100_000
 
 const MAX_LABEL = 60
+const MAX_CHOICE_ID = 60
+const MAX_CHOICE_MESSAGE = 4000
 const MAX_TITLE = 120
 const MAX_ORIGIN = 300
 const MAX_MESSAGE = 2000
@@ -111,6 +135,26 @@ export const isPageKind = (kind: QuestionKind): boolean => kind.startsWith('page
 /** True for the kinds that change what is allowed: they need the toolbar in view, so the person sees where the question comes from. */
 export const needsToolbar = (spec: Pick<QuestionSpec, 'kind'>): boolean => spec.kind === 'consent' || spec.kind === 'confirm'
 
+/** Rows with a clean, unique id and text, at most MAX_CHOICES of them. */
+function cleanChoices (choices: readonly QuestionChoice[]): readonly QuestionChoice[] {
+  const seen = new Set<string>()
+  const kept: QuestionChoice[] = []
+  for (const choice of choices) {
+    const id = cleanText(choice.id, MAX_CHOICE_ID)
+    if (id === '' || seen.has(id) || kept.length >= MAX_CHOICES) continue
+    seen.add(id)
+    kept.push({
+      id,
+      icon: cleanText(choice.icon, MAX_CHOICE_ID),
+      message: cleanText(choice.message, MAX_CHOICE_MESSAGE),
+      ...(choice.detail === undefined ? {} : { detail: cleanText(choice.detail, MAX_CHOICE_MESSAGE) }),
+      ...(choice.warning === true ? { warning: true } : {}),
+      ...(choice.on === true ? { on: true } : {})
+    })
+  }
+  return kept
+}
+
 const inRange = (index: number, length: number): boolean => Number.isInteger(index) && index >= 0 && index < length
 
 /** The spec with every string cleaned and every index kept inside the buttons. Throws on a spec with no button to answer with. */
@@ -134,7 +178,9 @@ export function normaliseSpec (spec: QuestionSpec): QuestionSpec {
     ...(doublePress.length === 0 ? {} : { doublePress }),
     focus: wanted === 'dialog' || inRange(wanted, buttons.length) ? wanted : 'dialog',
     ...(spec.input === undefined ? {} : { input: { initial: cleanText(spec.input.initial, MAX_INPUT) } }),
-    ...(spec.checkboxLabel === undefined ? {} : { checkboxLabel: cleanText(spec.checkboxLabel, MAX_LABEL) })
+    ...(spec.checkboxLabel === undefined ? {} : { checkboxLabel: cleanText(spec.checkboxLabel, MAX_LABEL) }),
+    ...(spec.choices === undefined ? {} : { choices: cleanChoices(spec.choices) }),
+    ...(spec.choicesNote === undefined ? {} : { choicesNote: cleanText(spec.choicesNote, MAX_MESSAGE) })
   }
 }
 
@@ -173,6 +219,8 @@ export function viewOf (id: string, spec: QuestionSpec): QuestionView {
     focus: spec.focus ?? 'dialog',
     input: spec.input === undefined ? undefined : { initial: spec.input.initial, max: MAX_INPUT },
     checkboxLabel: spec.checkboxLabel,
+    choices: spec.choices,
+    choicesNote: spec.choicesNote,
     guardMs: GUARD_MS
   }
 }

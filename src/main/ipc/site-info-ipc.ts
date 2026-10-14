@@ -81,6 +81,8 @@ export type SiteInfoCommand =
   | { type: 'setTunnel'; on: boolean }
   /** "Delete data" of the local file this popup was opened for: no argument, main reads the key. Answers whether every step succeeded. */
   | { type: 'deleteLocalFile' }
+  /** "Review permissions" of an app that was never let in: the question is given back and the tab in front reloads, so the first visit asks again. No argument: main reads the origin. */
+  | { type: 'reviewPermissions' }
   | { type: 'openSiteSettings' }
   /** The extensions disclosure's own "Manage" link (docs/planning/extensions-
    * exploration.md): opens `orivon://extensions` the same way `openSiteSettings`
@@ -219,6 +221,9 @@ export function registerSiteInfoIpc (
       }
       case 'reload':
         reloadActiveTab()
+        return
+      case 'reviewPermissions':
+        if (await controller.reviewPermissions(origin)) reloadActiveTab()
         return
       case 'deleteLocalFile':
         return await controller.deleteLocalFileData(origin)
