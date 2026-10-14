@@ -30,23 +30,26 @@ export type GrantId = string
 export type Pattern = string
 
 /**
- * How much control a person gets over which of this app's declared
- * capabilities they actually grant. See `Manifest.consentGranularity`, which
- * is where the default-when-absent and the reason the app (not Orivon)
- * chooses are argued.
+ * Whether this app's code copes with holding only part of the capabilities it
+ * declares. The person chooses either way: the install question has one switch
+ * per capability for every app. See `Manifest.consentGranularity`, which is
+ * where the default-when-absent and the reason the app (not Orivon) declares it
+ * are argued.
  */
 export type ConsentGranularity =
   /**
-   * The whole declared capability set is one decision: accept everything,
-   * or run nothing. There is no moment where the app holds part of what it
-   * declared -- every grant it ever receives is all of it or none of it.
+   * The app asked for its capabilities together, and its code may break
+   * without one of them. The install question and the key popup warn that
+   * turning one off may break it, and a person can still keep a subset, so
+   * the app can run holding part of what it declared. It finds out what it
+   * holds from `orivon.app.grants()`.
    */
   | 'all-or-nothing'
   /**
-   * Each declared capability is its own decision. A person can grant the
-   * app's network access and refuse its filesystem access in the same
-   * sitting. The app finds out what it actually got from
-   * `orivon.app.grants()`, which may report less than its manifest declared.
+   * Each declared capability is its own decision, and the app handles a
+   * refused one: no warning shows when a switch is off. The app finds out
+   * what it actually got from `orivon.app.grants()`, which may report less
+   * than its manifest declared.
    */
   | 'per-capability'
 
@@ -89,37 +92,29 @@ export interface Manifest {
   readonly assets?: readonly string[]
   readonly capabilities: Capabilities
   /**
-   * Which consent style this app can survive -- see `ConsentGranularity`
-   * for what each value means for the person granting it. **The app
-   * declares this, not Orivon**, because only the app's own author knows
-   * which their code can survive: code ported from Node or Electron was
+   * Whether this app's code copes with a refused capability -- see
+   * `ConsentGranularity`. **The app declares this, not Orivon**, because
+   * only the app's own author knows: code ported from Node or Electron was
    * never written to handle a capability being refused, so a person
-   * refusing just one of several requested capabilities is not a smaller
-   * version of that app working, it is an unhandled crash wearing a
-   * different shape. An app written for Orivon from the start can check
-   * `orivon.app.grants()` on purpose and degrade a missing capability
-   * gracefully, so its author is free to offer a person real per-item
-   * choice instead.
+   * refusing one of several requested capabilities may get an unhandled
+   * crash rather than a smaller version of the app. An app written for
+   * Orivon from the start can check `orivon.app.grants()` on purpose and
+   * degrade a missing capability gracefully.
    *
-   * OMITTED MEANS `'all-or-nothing'`. Every manifest written before this
-   * field existed was written with no knowledge that a partial grant could
-   * ever happen -- which describes a ported app exactly -- so the safe
-   * reading of silence is the one that can never hand an unprepared app a
-   * state it has no code path for. This costs the generous case (a person
-   * who wants the app but not its filesystem access still has only the
-   * choice to decline the whole thing) to avoid the unsafe one (an app
-   * mid-crash on a refusal its own code has no way to interpret). A person
-   * who wants finer control over an app that has not opted in still has
-   * the settings-list revoke path (`docs/open-questions.md` A101) once the
-   * app is running -- narrower than a row in the install prompt, but not
-   * nothing.
-   * ONE FLAG FOR THE WHOLE MANIFEST, not one per capability. The choice
-   * this expresses is about whether the app's OWN CODE can cope with an
-   * incomplete grant at all, which is a property of the app as a whole --
-   * a ported app has no code path for a missing filesystem grant any more
-   * than for a missing network one, so a finer split would ask an author
-   * to answer a question their code does not actually distinguish.
-   * (`docs/open-questions.md` A138.)
+   * The person decides in every case. The install question offers one
+   * switch per capability for every app, and the key popup and Settings
+   * turn each one on or off later. This field decides only whether Orivon
+   * warns, while a switch is off, that the app may break (ADR-0085).
+   *
+   * OMITTED MEANS `'all-or-nothing'`. A manifest that does not say makes no
+   * promise to cope with a partial grant, which describes a ported app
+   * exactly, so silence keeps the warning.
+   *
+   * ONE FLAG FOR THE WHOLE MANIFEST, not one per capability: whether the
+   * app's own code copes with an incomplete grant is a property of the app
+   * as a whole -- a ported app has no code path for a missing filesystem
+   * grant any more than for a missing network one, so a finer split would
+   * ask an author to answer a question their code does not distinguish.
    */
   readonly consentGranularity?: ConsentGranularity
   /**
