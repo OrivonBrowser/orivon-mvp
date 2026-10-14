@@ -176,16 +176,17 @@ field is ignored, and the loader logs a warning naming it. An unknown field anyw
 
 ### `consentGranularity`: who decides whole-or-part, and why it defaults closed
 
-Whether a person may accept only *part* of what an app requests (grant its network access,
-refuse its filesystem access) is **the app's own declaration to make**, not the browser's.
+Whether the person is told that accepting only *part* of what an app requests (its network access
+but not its filesystem access) may break it is **the app's own declaration to make**, not the browser's.
 `Manifest.consentGranularity` is that declaration, `'all-or-nothing'` or `'per-capability'` (`src/contracts/manifest.ts`'s
 `ConsentGranularity`).
 
-**`'all-or-nothing'`** presents the whole declared capability set as one accept/decline choice.
-The app either runs with everything it asked for, or does not run; there is no state where it
-holds part of what it declared. **`'per-capability'`** lets the person decide each declared
-capability on its own, and the app finds out what it actually got from `orivon.app.grants()`,
-which may report less than its manifest declared.
+**Both values ask with the same first-visit panel** (`ADR-0085`): one row and one switch for each capability still
+to be decided, all off, and the buttons Grant all and Close. Close keeps the rows switched on, so the app may hold part
+of what it declared whichever value it has, and finds out what it actually got from `orivon.app.grants()`. The value
+decides one line: an **`'all-or-nothing'`** app, which says its code cannot cope with a missing capability, has the
+panel add "This app asked for these together; turning one off may break it." while a switch is off, and the key popup
+says the same when a switch there is turned off; a **`'per-capability'`** app, which says it can, has no such line.
 
 **The app declares this, not Orivon**, for a concrete reason, not a preference: only the app's
 own author knows which their code can survive. Code ported from Node or Electron was never
@@ -197,12 +198,8 @@ capability gracefully, so its author is free to offer real per-item control inst
 
 **Omitting the field means `'all-or-nothing'`.** Every manifest written before this field
 existed was written with no knowledge that a partial grant could ever happen, which describes a
-ported app exactly, so the safe reading of silence is the one that can never hand an unprepared
-app a state it has no code path for. This costs the generous case (a person who wants the app
-but not its filesystem access has only the choice to decline the whole thing) to avoid the
-unsafe one (an app crashing mid-run on a refusal it cannot interpret). A person who wants finer
-control over an app that has not opted in still has the settings-list revoke path (A101) once
-the app is running, narrower than a row in the install prompt but real.
+ported app exactly, so the safe reading of silence is the one that tells the person so. The cost is a
+line of warning on a panel whose switches work all the same.
 
 **One flag for the whole manifest, not one per capability.** The question this answers, can the
 app's own code cope with an incomplete grant, is a property of the app as a whole: a ported app
@@ -211,9 +208,9 @@ splitting the choice per capability would ask an author to answer a question the
 actually distinguish.
 
 `docs/open-questions.md` A138 carries the fuller argument. The loader
-parses the field (`src/loader/manifest/manifest.ts`), and the install-time consent dialog reads it:
-`src/main/consent/install-consent.ts`'s `requestInstallConsent` branches its whole staged Allow-all /
-Choose-individually / Deny-all sequence on `manifest.consentGranularity === 'per-capability'`.
+parses the field (`src/loader/manifest/manifest.ts`), and the first-visit panel reads it:
+`src/main/consent/install-consent-panel.ts`'s `describeInstallPanel` adds the together line only for an
+`'all-or-nothing'` manifest.
 Three update-time prompts (reconsent, capability-widening, rollback) do not yet honour it; see
 `docs/open-questions.md` A162.
 
