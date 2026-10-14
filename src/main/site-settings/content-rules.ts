@@ -4,6 +4,7 @@
 // never touched (its own policy and grants are its contract), and only
 // `http(s)` pages have a setting at all. Pure: no `electron` import.
 import { originFromUrl } from '../../broker/policy/origin.js'
+import { ruleAddress } from './effective-page.js'
 import type { SiteDecision, SiteSettingsStore } from './site-settings-store.js'
 
 export type ContentKind = 'javascript' | 'images' | 'sound' | 'popups'
@@ -17,19 +18,24 @@ export interface ContentRulesDeps {
 }
 
 export interface ContentRules {
-  /** The site's effective answer for `kind` on the page at `topUrl`, or undefined when the page has no setting (not `http(s)`, or an app). */
-  valueFor: (kind: ContentKind, topUrl: string | undefined) => SiteDecision | undefined
+  /**
+   * The site's effective answer for `kind` on the page at `topUrl`, or undefined when the page has no setting (not `http(s)`, or an app).
+   * With `openerUrl`, a blank or `blob:` document takes the site of the document that opened it, and one whose site cannot be told gets the kind's default.
+   */
+  valueFor: (kind: ContentKind, topUrl: string | undefined, openerUrl?: () => string | undefined) => SiteDecision | undefined
   scriptsBlocked: (topUrl: string | undefined) => boolean
   imagesBlocked: (topUrl: string | undefined) => boolean
-  soundBlocked: (topUrl: string | undefined) => boolean
+  soundBlocked: (topUrl: string | undefined, openerUrl?: () => string | undefined) => boolean
 }
 
 const isWebAddress = (url: string): boolean => url.startsWith('http://') || url.startsWith('https://')
 
 export function createContentRules (deps: ContentRulesDeps): ContentRules {
-  const valueFor = (kind: ContentKind, topUrl: string | undefined): SiteDecision | undefined => {
-    if (topUrl === undefined || !isWebAddress(topUrl)) return undefined
-    const origin = originFromUrl(topUrl)
+  const valueFor = (kind: ContentKind, topUrl: string | undefined, openerUrl?: () => string | undefined): SiteDecision | undefined => {
+    const address = ruleAddress(topUrl, openerUrl)
+    if (address === undefined) return undefined
+    if (address === 'unknown') return deps.defaultFor(kind)
+    const origin = originFromUrl(address)
     if (origin === null || deps.isApp(origin)) return undefined
     return deps.store.get(origin, kind) ?? deps.defaultFor(kind)
   }
@@ -37,7 +43,7 @@ export function createContentRules (deps: ContentRulesDeps): ContentRules {
     valueFor,
     scriptsBlocked: (topUrl) => valueFor('javascript', topUrl) === 'block',
     imagesBlocked: (topUrl) => valueFor('images', topUrl) === 'block',
-    soundBlocked: (topUrl) => valueFor('sound', topUrl) === 'block'
+    soundBlocked: (topUrl, openerUrl) => valueFor('sound', topUrl, openerUrl) === 'block'
   }
 }
 

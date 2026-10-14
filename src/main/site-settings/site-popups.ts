@@ -4,6 +4,7 @@
 // `tab-view.ts` asks `sitePopups.check` from the window-open handler without
 // holding a store or a window.
 import type { WebContents } from 'electron'
+import { openerUrlOf } from './effective-page.js'
 import { PopupBlocks } from './popup-blocks.js'
 import type { PopupBlocker } from './popup-blocker.js'
 import { TabInteraction } from './tab-interaction.js'
@@ -17,7 +18,7 @@ export const sitePopups = {
   bind (next: PopupBlocker<WebContents>): void { blocker = next },
   /** True when the open is refused; false before the installer ran, so nothing is blocked then. */
   check (tab: WebContents, openerUrl: string, targetUrl: string): boolean {
-    return blocker?.check(tab, openerUrl, targetUrl) ?? false
+    return blocker?.check(tab, openerUrl, targetUrl, () => openerUrlOf(tab)) ?? false
   },
   watch (tab: WebContents): void { blocker?.watch(tab) }
 }

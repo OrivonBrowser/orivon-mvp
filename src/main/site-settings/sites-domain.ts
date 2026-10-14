@@ -28,6 +28,12 @@ export interface DeclinedAppRows {
   remove: (origin: string) => boolean
 }
 
+/** Forgets every site's answers and every website's approved devices: what "Reset all" in Settings and "Site settings and permissions" in Clear browsing data both do. An app's devices stay. */
+export function resetAllSiteSettings (controller: Pick<SiteSettingsController, 'resetAll'>, devices?: Pick<DeviceRows, 'forgetAllWebsites'>): void {
+  controller.resetAll()
+  devices?.forgetAllWebsites()
+}
+
 export function sitesDomain (controller: SiteSettingsController, options: { isPrivate: boolean, devices?: DeviceRows, declinedApps?: DeclinedAppRows }): InternalDomain {
   const devices = options.devices
   /** The sites with an answer, and the ones that only hold an approved device, each with how many devices (ADR-0068). */
@@ -70,8 +76,7 @@ export function sitesDomain (controller: SiteSettingsController, options: { isPr
         case 'askAgain':
           return typeof request.origin === 'string' ? { ok: options.declinedApps?.remove(request.origin) === true } : undefined
         case 'resetAll':
-          controller.resetAll()
-          devices?.forgetAllWebsites()
+          resetAllSiteSettings(controller, devices)
           return { ok: true }
         default:
           return undefined

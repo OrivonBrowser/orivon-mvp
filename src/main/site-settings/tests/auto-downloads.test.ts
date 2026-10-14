@@ -11,7 +11,9 @@ const SITE = 'https://files.example'
 
 class FakeTab extends EventEmitter {
   destroyed = false
-  getURL (): string { return `${SITE}/page` }
+  url = `${SITE}/page`
+  opener: { url: string } | null = null
+  getURL (): string { return this.url }
   isDestroyed (): boolean { return this.destroyed }
 }
 
@@ -165,5 +167,67 @@ describe('automatic downloads', () => {
     await r.settle()
     expect(second.cancel).toHaveBeenCalled()
     expect(r.store.get(SITE, 'autoDownloads')).toBeUndefined()
+  })
+})
+
+describe('automatic downloads from a blank or blob: page', () => {
+  function blank (url: string, opener: string | null) {
+    const r = rig({ defaultFor: 'block' })
+    const tab = new FakeTab()
+    tab.url = url
+    tab.opener = opener === null ? null : { url: opener }
+    r.start(false, tab)
+    return { r, tab }
+  }
+
+  it('refuses the second unclicked one of a site told to block, unasked', () => {
+    for (const url of ['about:blank', '', `blob:${SITE}/uuid`]) {
+      const r = rig()
+      r.store.set(SITE, 'autoDownloads', 'block')
+      const tab = new FakeTab()
+      tab.url = url
+      tab.opener = { url: `${SITE}/page` }
+      expect(r.start(false, tab).cancel).not.toHaveBeenCalled()
+      const second = r.start(false, tab)
+      expect(second.cancel, url).toHaveBeenCalled()
+      expect(r.ask).not.toHaveBeenCalled()
+    }
+  })
+
+  it('lets it through when the site that made the page allowed automatic downloads', () => {
+    const r = rig()
+    r.store.set(SITE, 'autoDownloads', 'allow')
+    const tab = new FakeTab()
+    tab.url = 'about:blank'
+    tab.opener = { url: `${SITE}/page` }
+    r.start(false, tab)
+    const second = r.start(false, tab)
+    expect(second.cancel).not.toHaveBeenCalled()
+    expect(second.pause).not.toHaveBeenCalled()
+  })
+
+  it('refuses without asking when the site has no answer, since there is no page to ask about', () => {
+    const r = rig()
+    const tab = new FakeTab()
+    tab.url = 'about:blank'
+    tab.opener = { url: `${SITE}/page` }
+    r.start(false, tab)
+    const second = r.start(false, tab)
+    expect(second.cancel).toHaveBeenCalled()
+    expect(r.ask).not.toHaveBeenCalled()
+  })
+
+  it('refuses when the opener cannot be told', () => {
+    const { tab, r } = blank('about:blank', null)
+    expect(r.start(false, tab).cancel).toHaveBeenCalled()
+  })
+
+  it('leaves an app\'s blank popup alone', () => {
+    const r = rig({ apps: [SITE] })
+    const tab = new FakeTab()
+    tab.url = 'about:blank'
+    tab.opener = { url: `${SITE}/page` }
+    r.start(false, tab)
+    expect(r.start(false, tab).cancel).not.toHaveBeenCalled()
   })
 })

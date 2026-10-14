@@ -78,3 +78,15 @@ export function ensureSiteSession (partition: string, wake = true): void {
 export function siteProfileOf (partition: string | undefined): Profile | undefined {
   return profileOfPartition(partition)
 }
+
+let made: (() => string[]) | undefined
+
+/** Called once at start by whoever owns the routes: which profile sessions this run has made. */
+export function setMadeSiteSessions (next: (() => string[]) | undefined): void {
+  made = next
+}
+
+/** The names of the profile sessions made so far in this run; none before start. */
+export function madeSiteSessions (): string[] {
+  return made?.() ?? []
+}

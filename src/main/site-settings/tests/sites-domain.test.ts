@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest'
 import type { InternalCaller } from '../../pages/internal-ipc.js'
 import { createSiteSettingsController } from '../site-settings-controller.js'
 import { SiteSettingsStore } from '../site-settings-store.js'
-import { sitesDomain } from '../sites-domain.js'
+import { resetAllSiteSettings, sitesDomain } from '../sites-domain.js'
+import { clearBrowsingData } from '../../privacy/clear-data.js'
+import { HidApprovals } from '../../devices/hid-approvals.js'
+import { createDeviceRows } from '../../devices/hid-rows.js'
+import { createHidGate } from '../../devices/hid-gate.js'
 
 const SHOP = 'https://shop.example'
 const caller = { page: 'settings', contents: {} } as unknown as InternalCaller
@@ -172,3 +176,51 @@ describe('the sites domain: apps whose first visit was refused', () => {
   })
 })
 
+
+describe('forgetting every site\'s answers', () => {
+  const APP = 'https://app.example'
+  const NANO = { vendorId: 0x2c97, productId: 0x4011, serialNumber: '0001', name: 'Nano X' }
+
+  function world () {
+    const store = new SiteSettingsStore(null)
+    const controller = createSiteSettingsController({
+      store,
+      notifications: { get: () => undefined, set: () => {}, forget: () => {}, clear: () => {}, entries: () => [], onChange: () => () => {} },
+      defaultFor: (kind) => kind.values[0] ?? 'ask',
+      isApp: (origin) => origin === APP
+    })
+    const approvals = new HidApprovals(null)
+    approvals.approve(SHOP, NANO)
+    approvals.approve(APP, NANO)
+    const devices = createDeviceRows(approvals, (origin) => origin !== APP)
+    const gate = createHidGate({
+      approvals,
+      isApp: (origin) => origin === APP,
+      appPatterns: (origin) => origin === APP ? ['vendor=2c97'] : undefined,
+      siteBlocked: () => false,
+      requestAsk: () => {}
+    })
+    return { controller, devices, gate }
+  }
+
+  it('lets the privacy clear\'s "Site settings and permissions" forget the websites\' approved devices too, and leave an app\'s alone', async () => {
+    const { controller, devices, gate } = world()
+    expect(gate.devicePermission(SHOP, NANO)).toBe(true)
+
+    await clearBrowsingData(
+      { history: 'none', siteData: false, cache: false, zoomLevels: false, appData: false, siteSettings: true },
+      {
+        history: { removeRange: () => {}, clear: () => {} },
+        zoom: { clear: () => {} },
+        siteSettings: { resetAll: () => { resetAllSiteSettings(controller, devices) } },
+        websites: { clearData: async () => {}, clearStorageData: async () => {} },
+        appSessions: async () => [],
+        forgetNameSchemes: async () => {},
+        now: () => 0
+      }
+    )
+
+    expect(gate.devicePermission(SHOP, NANO)).toBe(false)
+    expect(gate.devicePermission(APP, NANO)).toBe(true)
+  })
+})

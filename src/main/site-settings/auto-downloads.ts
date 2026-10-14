@@ -5,6 +5,7 @@
 // Tied to Electron only through the `DownloadItem` it is handed.
 import type { DownloadItem, WebContents } from 'electron'
 import { originFromUrl } from '../../broker/policy/origin.js'
+import { openerUrlOf, ruleAddress } from './effective-page.js'
 import type { StartInfo } from '../downloads/download-service.js'
 import type { SiteKind } from './kinds.js'
 import type { PageAccess } from './page-access.js'
@@ -50,6 +51,12 @@ export function createAutoDownloads (deps: AutoDownloadsDeps): (info: StartInfo)
     try { item.cancel() } catch (error) { console.error('[auto-downloads] could not cancel a download:', error) }
   }
 
+  function decideWithoutAsking (item: DownloadItem, tab: WebContents, origin: string | null): void {
+    if (origin !== null && deps.store.get(origin, KIND) === 'allow') return
+    if (origin !== null) deps.access.note(tab, origin, KIND, 'blocked')
+    refuse(item)
+  }
+
   async function decide (item: DownloadItem, tab: WebContents, origin: string, document: Document): Promise<void> {
     const stored: SiteDecision | undefined = deps.store.get(origin, KIND)
     if (stored === 'allow') return
@@ -80,8 +87,16 @@ export function createAutoDownloads (deps: AutoDownloadsDeps): (info: StartInfo)
     document.started += 1
     if (userGesture || earlier === 0) return
     const pageUrl = contents.getURL()
-    const origin = pageUrl.startsWith('http') ? originFromUrl(pageUrl) : null
-    if (origin === null || deps.isApp(origin)) return
+    const address = ruleAddress(pageUrl, () => openerUrlOf(contents))
+    if (address === undefined) return
+    // A blank or `blob:` page has no address of its own to ask about: the site that made it decides, and a download neither allowed nor refused by that site's answer or the default is refused unasked.
+    const origin = address === 'unknown' ? null : originFromUrl(address)
+    if (origin !== null && deps.isApp(origin)) return
+    if (address === 'unknown' || address !== pageUrl) {
+      void decideWithoutAsking(item, contents, origin)
+      return
+    }
+    if (origin === null) return
     void decide(item, contents, origin, document).catch((error: unknown) => {
       console.error('[auto-downloads] the decision failed; the download is cancelled:', error)
       refuse(item)

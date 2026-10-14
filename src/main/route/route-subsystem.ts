@@ -23,7 +23,7 @@ import { setSystemProxyProbe } from './system-proxy.js'
 import { createRequestFetch } from '../../loader/electron/request-fetch.js'
 import { prepareProfileSession, wakeProfileSession } from '../extensions/extensions-subsystem.js'
 import { servedOrigin } from './served-origin.js'
-import { mustLeaveSession, setSiteRoutes, setSiteSessionEnsurer, siteProfileOf } from './site-routes.js'
+import { mustLeaveSession, setSiteRoutes, setMadeSiteSessions, setSiteSessionEnsurer, siteProfileOf } from './site-routes.js'
 import { createSiteSessions } from './site-sessions.js'
 import type { SiteSession } from './site-sessions.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
@@ -184,6 +184,7 @@ export const routeSubsystem: Subsystem = {
     // Sessions websites had of their own before the two profiles are cleared once; the person signs in again once.
     migrateLegacySites(routes.store, { clear: async (partition) => { await session.fromPartition(partition).clearData() } }).catch((error: unknown) => { console.error('[route] the migration to profiles failed:', error) })
     setSiteSessionEnsurer(siteSessions.ensure)
+    setMadeSiteSessions(siteSessions.made)
     setReachRoute(routes.hub.routeFor)
     setRouteChallengeSource(routes.controller.challengeCredentials)
     beforeAppSessionServes(async (appSession, origin) => { await routes.controller.appSessionRegistered(origin, appSession) })
@@ -192,6 +193,7 @@ export const routeSubsystem: Subsystem = {
       proxy: routes.proxy,
       providerFor: routes.providerFor,
       sessionFor: (partition) => session.fromPartition(partition),
+      announce: (target) => { announceWebsiteSession(target as unknown as Session) },
       liveContentsIn: (inside) => webContents.getAllWebContents().filter((contents) => !contents.isDestroyed() && contents.session === inside).length,
       onContentsGone: (listener) => {
         app.on('web-contents-created', (_event, contents) => {

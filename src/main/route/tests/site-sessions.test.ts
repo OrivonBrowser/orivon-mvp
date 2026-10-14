@@ -38,6 +38,17 @@ function setup (prepare: () => Promise<void> = async () => {}, wake: (session: S
   return { sites: createSiteSessions(deps), deps, held, log }
 }
 
+describe('the sessions made in this run', () => {
+  it('names a profile session once a view or a lookup made it ready, and none before', () => {
+    const { sites } = setup()
+    expect(sites.made()).toEqual([])
+    sites.ensure('tunnel-profile-memory', true)
+    sites.ensure(TUNNEL, false)
+    sites.ensure(TUNNEL, true)
+    expect(sites.made()).toEqual(['tunnel-profile-memory', TUNNEL])
+  })
+})
+
 describe('making a profile session ready', () => {
   it('prepares the tunnel profile under its own identity, with the verifier\'s names, then loads the extensions, and holds its requests until then', async () => {
     const { sites, held, log } = setup()

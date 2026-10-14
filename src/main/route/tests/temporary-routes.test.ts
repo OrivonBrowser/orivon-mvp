@@ -6,12 +6,13 @@ import type { TemporaryRoutes, TemporaryRoutesDeps, TemporarySession } from '../
 const made: TemporaryRoutes[] = []
 afterEach(async () => { for (const routes of made.splice(0)) await routes.dispose() })
 
-function setup (options: { unusedMs?: number, prepare?: () => Promise<void> } = {}) {
+function setup (options: { unusedMs?: number, prepare?: () => Promise<void>, announce?: (session: object) => void } = {}) {
   const sessions = new Map<string, TemporarySession & { cleared: string[] }>()
   const live = new Map<object, number>()
   let gone: ((session: object) => void) | undefined
   const prepared: Array<{ session: object, port: number, username: string }> = []
   const released: object[] = []
+  const announced: object[] = []
   const deps: TemporaryRoutesDeps = {
     controller: {
       prepareTemporary: async (session, front) => { await options.prepare?.(); prepared.push({ session, port: front.port, username: front.username }) },
@@ -33,13 +34,14 @@ function setup (options: { unusedMs?: number, prepare?: () => Promise<void> } = 
       }
       return session
     },
+    announce: (session) => { options.announce?.(session); announced.push(session) },
     liveContentsIn: (session) => live.get(session) ?? 0,
     onContentsGone: (listener) => { gone = listener },
     ...(options.unusedMs === undefined ? {} : { unusedMs: options.unusedMs })
   }
   const routes = createTemporaryRoutes(deps)
   made.push(routes)
-  return { routes, sessions, live, prepared, released, closeTab: (session: object) => { live.set(session, (live.get(session) ?? 1) - 1); gone?.(session) } }
+  return { routes, sessions, live, prepared, released, announced, closeTab: (session: object) => { live.set(session, (live.get(session) ?? 1) - 1); gone?.(session) } }
 }
 
 describe('a temporary routed session', () => {
@@ -93,6 +95,27 @@ describe('a temporary routed session', () => {
     const { routes } = setup({ prepare: async () => { throw new Error('no session') } })
     await expect(routes.open()).rejects.toThrow('no session')
     expect(routes.count()).toBe(0)
+  })
+})
+
+describe('the website controls on a temporary session', () => {
+  it('announces the session as a website session before it is pointed at its front', async () => {
+    const order: string[] = []
+    const { routes, sessions, announced } = setup({ announce: () => { order.push('announce') }, prepare: async () => { order.push('prepare') } })
+    const partition = await routes.open()
+    expect(announced).toEqual([sessions.get(partition)])
+    expect(order).toEqual(['announce', 'prepare'])
+  })
+
+  it('refuses the tab, and releases the session unpointed, when a website control could not be installed', async () => {
+    const prepared = vi.fn(async () => {})
+    const { routes, sessions, announced } = setup({ announce: () => { throw new Error('a guard is missing') }, prepare: prepared })
+    await expect(routes.open()).rejects.toThrow('a guard is missing')
+    expect(prepared).not.toHaveBeenCalled()
+    expect(announced).toEqual([])
+    expect(routes.count()).toBe(0)
+    const [session] = [...sessions.values()]
+    await vi.waitFor(() => { expect(session?.cleared.sort()).toEqual(['cache', 'connections', 'storage']) })
   })
 })
 
