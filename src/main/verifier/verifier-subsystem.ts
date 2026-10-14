@@ -51,9 +51,8 @@ import { SWARM_NODE_IDENTITY } from '../../protocols/swarm-node/protocol.js'
 import type { NodeNotice } from '../../protocols/verifier-host/protocol.js'
 import type { RouteService } from '../route/route-service.js'
 
-/** Mounting may wait for the light client to sync, then resolve a name and follow its pointers; a few seconds beyond the host's own bound (verifier-host/pace.ts), so the host's answer is the one that comes. */
+/** A mount may wait for the light client to sync, resolve a name and follow its pointers: the host's own bound (verifier-host/pace.ts) and this much beyond it, so the host's answer is the one that comes. */
 const MOUNT_GRACE_MS = 5_000
-/** Whether the host read from this start was told the whole browser is on the tunnel. */
 let hostThroughTunnel = false
 /** How long a request to a verifier-served host waits for the host to listen: about three times the slowest start measured (3 s), so a host that never answers still ends in the ordinary error. */
 const LISTEN_WAIT_MS = 10_000
