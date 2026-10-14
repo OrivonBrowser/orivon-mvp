@@ -175,7 +175,7 @@ export function buildPersistedAppPermissions (app: PersistedApp, level?: ScoreLe
  * storage layer's job is the shape. Failing it falls back to showing the
  * origin, exactly as a missing name does, so the row stays useful.
  */
-function displayableName (name: string | undefined): string | undefined {
+export function displayableName (name: string | undefined): string | undefined {
   if (name === undefined) return undefined
   if (name.length === 0 || name.length > MAX_DISPLAYED_NAME_LENGTH) return undefined
   if (UNSAFE_TEXT_CHARS.test(name)) return undefined
@@ -250,10 +250,12 @@ export class PermissionsRegistry {
     for (const app of broker.app.persistedAppsSync()) {
       if (loaded.has(app.origin) || isLocalFileKey(app.origin)) continue
       const described = buildPersistedAppPermissions(app, levelOverrideFor(app.origin))
-      // An app whose last capability was switched off leaves a record behind with nothing granted. It is listed
-      // while the refusal is remembered, because its card is where the person finds the app to allow it again;
-      // a record that holds nothing and remembers no refusal has nothing to show.
-      if (described.rows.length === 0 && described.pickedPathRows.length === 0 && ((await broker.declinedCapabilitiesFor(app.origin)) ?? []).length === 0) continue
+      // An app whose last capability was revoked leaves an empty record behind (`revoke` does not delete the file
+      // when the set empties). Showing that as a card with nothing to revoke would be furniture a person cannot act
+      // on, so a persisted app holding neither a grant nor a picked path is not listed. (Settings lists it anyway,
+      // while its refusal is remembered: `app-switches.ts`'s `idleApps`.) A LOADED app with neither still is, above,
+      // because it is genuinely installed and running.
+      if (described.rows.length === 0 && described.pickedPathRows.length === 0) continue
       results.push(described)
     }
     return results

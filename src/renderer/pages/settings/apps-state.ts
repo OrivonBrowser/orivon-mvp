@@ -70,17 +70,17 @@ export class AppsState {
     this.changed()
   }
 
-  /** Capabilities whose last turn-on was refused, so the row can say so until the next press. */
-  readonly capabilityRefused = new Set<string>()
+  /** Capabilities whose last switch was refused, by the way it was moved (true: on), so the row can say what could not be done until the next press. */
+  readonly capabilityRefused = new Map<string, boolean>()
 
   async setCapability (origin: string, row: CapabilityRow, on: boolean): Promise<void> {
     const key = `${origin}|${row.capability}`
     this.capabilityRefused.delete(key)
     try {
       const reply = await this.bridge.request('apps', { type: 'setCapability', origin, capability: row.capability, on, patterns: row.patterns }) as { ok?: unknown } | undefined
-      if (reply?.ok !== true) this.capabilityRefused.add(key)
+      if (reply?.ok !== true) this.capabilityRefused.set(key, on)
     } catch {
-      this.capabilityRefused.add(key)
+      this.capabilityRefused.set(key, on)
     }
     await this.load()
   }

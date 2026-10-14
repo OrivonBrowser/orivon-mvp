@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { routeWords } from '../settings/apps-view.js'
+import { capabilityFailure, routeWords } from '../settings/apps-view.js'
 import { AppsState } from '../settings/apps-state.js'
 import type { OrivonInternal } from '../shared/bridge.js'
 
@@ -81,10 +81,20 @@ describe('AppsState.setCapability', () => {
     const apps = new AppsState({ request } as unknown as OrivonInternal, () => {})
 
     await apps.setCapability('https://app.example', ROW, true)
-    expect(apps.capabilityRefused.has('https://app.example|https.connect')).toBe(true)
+    expect(apps.capabilityRefused.get('https://app.example|https.connect')).toBe(true)
 
     request.mockImplementation(async (_domain: string, command: { type: string }) => command.type === 'list' ? { apps: [], identity: 'keychain' } : { ok: true })
     await apps.setCapability('https://app.example', ROW, true)
     expect(apps.capabilityRefused.size).toBe(0)
+  })
+
+  it('remembers which way the switch was moved, so the row can say what could not be done', async () => {
+    const request = vi.fn(async (_domain: string, command: { type: string }): Promise<unknown> => command.type === 'list' ? { apps: [], identity: 'keychain' } : { ok: false })
+    const apps = new AppsState({ request } as unknown as OrivonInternal, () => {})
+
+    await apps.setCapability('https://app.example', ROW, false)
+    expect(apps.capabilityRefused.get('https://app.example|https.connect')).toBe(false)
+    expect(capabilityFailure(false)).toMatch(/turn that off/)
+    expect(capabilityFailure(true)).toMatch(/turn that on/)
   })
 })
