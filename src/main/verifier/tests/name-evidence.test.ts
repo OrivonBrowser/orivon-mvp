@@ -191,4 +191,18 @@ describe('chooseNameEvidence', () => {
     expect(none).toMatchObject({ content: undefined, nameProven: false, line: 'Name not verified. Catching up with the chain, since just now.' })
     expect(chooseNameEvidence(undefined, false, null, 'Not loaded yet.', NOW, true).line).toBe('Address not verified. Not loaded yet.')
   })
+
+  it('keeps the Website level a site earned when the verifier cannot be asked, and says it is the last check', () => {
+    const last = provenance({ mountedAt: NOW - 20 * 60_000 })
+    const evidence = chooseNameEvidence(undefined, false, last, 'x', NOW, false, {}, true)
+    expect(evidence.content).toEqual({ source: 'live', cid: CID, pointersVerified: true })
+    expect(evidence.rows).toContainEqual({ term: 'Checked', value: '20 minutes ago' })
+    expect(evidence.rows).toContainEqual({ term: 'Now', value: 'It could not be checked again just now, so this is the last check.' })
+    expect(chooseNameEvidence(undefined, false, last, 'x', NOW, false).rows.some((row) => row.term === 'Now')).toBe(false)
+  })
+
+  it('still reports a file that failed its check, kept or not', () => {
+    const tampered = provenance({ ddoc: { status: 'failed', resource: '/app.js', refusals: [] } })
+    expect(chooseNameEvidence(undefined, false, tampered, 'x', NOW, false, {}, true).content).toMatchObject({ failedResource: '/app.js' })
+  })
 })

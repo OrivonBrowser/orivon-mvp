@@ -37,7 +37,7 @@ export function createSiteBadges (): ChromeModule {
   function applyShield (score: Web3Score | null): void {
     if (shieldEl === undefined || web3ScoreBtn === undefined || web3MarkEl === undefined) return
     paintShield(shieldEl, score?.level ?? null)
-    paintMark(web3MarkEl, score?.level ?? null)
+    paintMark(web3MarkEl, score?.level ?? null, score?.unscored === true)
     const label = shieldLabel(score)
     web3ScoreBtn.title = label
     web3ScoreBtn.setAttribute('aria-label', label)

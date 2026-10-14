@@ -46,6 +46,8 @@ body[data-overlay='web3-score'] .ws-note {
   font-size: 12px;
   line-height: 1.45;
 }
+body[data-overlay='web3-score'] .ws-unscored .web3-mark { margin-right: 4px; vertical-align: middle; }
+body[data-overlay='web3-score'] .ws-unscored + .ws-note { margin-top: 6px; padding-top: 0; border-top: 0; }
 body[data-overlay='web3-score'] .ws-foot { display: flex; justify-content: space-between; margin-top: 8px; }
 body[data-overlay='web3-score'] .ws-foot .link-btn { padding-left: 0; padding-right: 0; }
 
@@ -77,8 +79,10 @@ body[data-overlay='web3-score'] .web3-mark::before {
 body[data-overlay='web3-score'] .web3-mark[data-mark='Web2'] { --tone: #f97316; --ink: #c2410c; }
 body[data-overlay='web3-score'] .web3-mark[data-mark='Web2.5'] { --tone: #eab308; --ink: #a16207; }
 body[data-overlay='web3-score'] .web3-mark[data-mark='Web3'] { --tone: #22c55e; --ink: #15803d; }
+body[data-overlay='web3-score'] .web3-mark[data-mark='Web?'] { --tone: #9ca3af; --ink: #4b5563; }
 @media (prefers-color-scheme: dark) {
   body[data-overlay='web3-score'] .web3-mark[data-mark='Web2'] { --ink: #fdba74; }
   body[data-overlay='web3-score'] .web3-mark[data-mark='Web2.5'] { --ink: #fde047; }
   body[data-overlay='web3-score'] .web3-mark[data-mark='Web3'] { --ink: #86efac; }
+  body[data-overlay='web3-score'] .web3-mark[data-mark='Web?'] { --ink: #d1d5db; }
 }

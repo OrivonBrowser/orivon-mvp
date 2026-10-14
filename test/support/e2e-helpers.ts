@@ -317,7 +317,7 @@ export async function navigateToFixture (
 }
 
 /**
- * The toolbar's Web3 Score shield level and its Web2/Web2.5/Web3 mark ('' while
+ * The toolbar's Web3 Score shield level and its Web2/Web2.5/Web3/Web? mark ('' while
  * hidden), read once `web3ScoreFor` has answered. src/renderer/main.ts clears
  * both when the active origin changes and paints the answer when it lands, so a
  * read straight after navigating can catch the cleared state.

@@ -47,6 +47,8 @@ export interface ClearDeps {
   readonly forgetNameSchemes: () => Promise<void>
   /** What the IPFS node kept about the sites it served: stopped, and its block store deleted, with the cache and with all history. */
   readonly forgetNodeData?: () => Promise<void>
+  /** The Website level each site last earned, which stays while a site cannot be looked at again: forgotten with site data, the cache and all history. */
+  readonly forgetEarnedLevels?: () => void
   readonly now: () => number
 }
 
@@ -94,6 +96,7 @@ export async function clearBrowsingData (request: ClearRequest, deps: ClearDeps)
   }
   if (request.cache || request.history === 'all') await attempt('nameSchemes', async () => { await deps.forgetNameSchemes() })
   if (request.cache || request.history === 'all') await attempt('nodeData', async () => { await deps.forgetNodeData?.() })
+  if (request.siteData || request.cache || request.history === 'all') await attempt('earnedLevels', () => { deps.forgetEarnedLevels?.() })
   if (request.zoomLevels) await attempt('zoomLevels', () => { deps.zoom.clear() })
   if (request.siteSettings) await attempt('siteSettings', () => { deps.siteSettings.resetAll() })
   if (request.appData) {

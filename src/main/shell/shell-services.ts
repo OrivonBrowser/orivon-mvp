@@ -56,6 +56,7 @@ import { tunnelMarkFor } from '../route/tunnel-mark.js'
 import type { TunnelMark } from '../route/tunnel-mark.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import type { SubsystemContext } from '../registry.js'
+import { scoreAnswerKeptMs } from '../verifier/test-seam.js'
 import { TabLifecycle } from './tab-lifecycle.js'
 import { KIOSK_FLAG } from '../window-state/kiosk.js'
 import { FileWindowStateStore, NullWindowStateStore } from '../window-state/window-state-store.js'
@@ -172,7 +173,7 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
     searchEngines: new SearchEngineStore(join(userDataPath, 'search-engines.json'), { readOnly: runtime.isPrivate }),
     session: runtime.isPrivate || kiosk ? new NullSessionStore() : new SessionStore(join(userDataPath, 'session.json')),
     settings,
-    scoreProvider: createScoreProviderClient({ providerAddress: () => settings.get('web3.scoreProvider'), isDevEthName, fetchJson: netFetchJson }),
+    scoreProvider: createScoreProviderClient({ providerAddress: () => settings.get('web3.scoreProvider'), isDevEthName, fetchJson: netFetchJson, answerKeptMs: scoreAnswerKeptMs() }),
     updateOffers: {
       pending: (origin) => ctx.appUpdates?.pending(origin),
       onChange: (listener) => ctx.appUpdates?.onChange(listener) ?? (() => {})

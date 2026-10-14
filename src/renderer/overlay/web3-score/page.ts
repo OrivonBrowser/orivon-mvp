@@ -1,5 +1,6 @@
 // The card the Web3 Score shield opens on a new tab: what the shield shows once a site is open, and each level drawn
-// as the address bar draws it, the shield in its colour and the Web2 / Web2.5 / Web3 mark beside it.
+// as the address bar draws it, the shield in its colour and the Web2 / Web2.5 / Web3 mark beside it, and the gray Web? mark
+// of a Level 2 site no provider has scored.
 import { h } from '../../pages/shared/dom.js'
 import type { ScoreLevel } from '../../../trust/website-level.js'
 import { paintMark, paintShield, web3Shield } from '../../web3-shield.js'
@@ -26,6 +27,12 @@ function levelRow ({ level, meaning }: { level: ScoreLevel, meaning: string }): 
       h('p', { className: 'ws-level-meaning' }, meaning)))
 }
 
+function unscoredNote (): HTMLParagraphElement {
+  const mark = h('span', { className: 'web3-mark' })
+  paintMark(mark, 2, true)
+  return h('p', { className: 'ws-note ws-unscored' }, mark, ' The score provider has not reached a site yet, or has no score for it, so only Levels 1 and 2 are known. It may still be judged Level 3 or 4.')
+}
+
 export const web3ScorePage: OverlayPage = {
   mount (content, overlay: Overlay) {
     const icon = web3Shield()
@@ -35,6 +42,7 @@ export const web3ScorePage: OverlayPage = {
       h('div', { className: 'ws-head' }, icon, h('h1', { className: 'sheet-title' }, 'Web3 Score')),
       h('p', { className: 'ws-lead' }, 'Open a site and this shield shows its Web3 Score: how little you have to trust the people behind it. The higher the level, the less trust it asks for.'),
       h('ol', { className: 'ws-levels' }, ...LEVELS.map(levelRow)),
+      unscoredNote(),
       h('p', { className: 'ws-note' }, 'Orivon checks Levels 1 and 2 on this computer. Levels 3 and 4 come from the score provider you choose.'),
       h('div', { className: 'ws-foot' }, provider, learn)))
     return { shown () {} }
