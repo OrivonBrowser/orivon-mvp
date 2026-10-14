@@ -121,6 +121,120 @@ describe('createScoreProviderClient', () => {
     expect(failing.asked).toHaveLength(2)
   })
 
+  it('keeps the judged level a provider gave while a later ask cannot reach it, and takes a changed answer at once', async () => {
+    const clock = { t: 0 }
+    const files: Record<string, FetchedJson> = { ...withAsgardex }
+    const provider = fakeProvider(files)
+    const { verdictFor } = createScoreProviderClient({ providerAddress: () => BASE, isDevEthName: () => false, fetchJson: provider.fetchJson, now: () => clock.t })
+    expect(await verdictFor(ASGARDEX)).toMatchObject({ status: 'judged' })
+
+    delete files[`${BASE}/provider.json`]
+    files[`${BASE}/website/4c.json`] = { kind: 'failed', reason: 'down' }
+    clock.t = 11 * 60_000
+    expect(await verdictFor(ASGARDEX)).toMatchObject({ status: 'judged', evaluation: { trustlessity: { level: 3 } } })
+    clock.t = 40 * 60_000
+    expect(await verdictFor(ASGARDEX)).toMatchObject({ status: 'judged' })
+
+    files[`${BASE}/provider.json`] = ok(DESCRIPTOR)
+    files[`${BASE}/website/4c.json`] = ok({ standard: SCORE_STANDARD, subject: 'website', bucket: '4c', entries: [{ ...EVALUATION, trustlessity: { level: 2 } }] })
+    clock.t = 52 * 60_000
+    expect(await verdictFor(ASGARDEX)).toMatchObject({ status: 'judged', evaluation: { trustlessity: { level: 2 } } })
+
+    files[`${BASE}/website/4c.json`] = ok({ standard: SCORE_STANDARD, subject: 'website', bucket: '4c', entries: [] })
+    clock.t = 64 * 60_000
+    expect(await verdictFor(ASGARDEX)).toMatchObject({ status: 'no-score' })
+  })
+
+  it('keeps a judged level through a lookup still under way, not only through a failed one', async () => {
+    const clock = { t: 0 }
+    let hold: (() => void) | undefined
+    let slow = false
+    const { verdictFor } = createScoreProviderClient({
+      providerAddress: () => BASE,
+      isDevEthName: () => false,
+      now: () => clock.t,
+      fetchJson: async (url) => {
+        if (slow) await new Promise<void>((resolve) => { hold = resolve })
+        return withAsgardex[url] ?? { kind: 'missing' }
+      }
+    })
+    expect(await verdictFor(ASGARDEX, 50)).toMatchObject({ status: 'judged' })
+    slow = true
+    clock.t = 11 * 60_000
+    expect(await verdictFor(ASGARDEX, 10)).toMatchObject({ status: 'judged' })
+    hold?.()
+  })
+
+  it('keeps nothing across a changed provider, a page never judged, or a provider turned off', async () => {
+    const clock = { t: 0 }
+    let address = BASE
+    const files: Record<string, FetchedJson> = { ...withAsgardex }
+    const provider = fakeProvider(files)
+    const { verdictFor } = createScoreProviderClient({ providerAddress: () => address, isDevEthName: () => false, fetchJson: provider.fetchJson, now: () => clock.t })
+    await verdictFor(ASGARDEX)
+    const other = 'http://127.0.0.1:7861/score'
+    address = other
+    expect(await verdictFor(ASGARDEX)).toMatchObject({ status: 'unreachable', address: other })
+    address = '  '
+    expect(await verdictFor(ASGARDEX)).toEqual({ status: 'off' })
+    address = BASE
+    delete files[`${BASE}/provider.json`]
+    clock.t = 11 * 60_000
+    expect(await verdictFor('sha256:' + '0'.repeat(64))).toMatchObject({ status: 'unreachable' })
+  })
+
+  it('forgets what it kept when told to', async () => {
+    const clock = { t: 0 }
+    const files: Record<string, FetchedJson> = { ...withAsgardex }
+    const provider = fakeProvider(files)
+    const { verdictFor, forget } = createScoreProviderClient({ providerAddress: () => BASE, isDevEthName: () => false, fetchJson: provider.fetchJson, now: () => clock.t })
+    await verdictFor(ASGARDEX)
+    forget()
+    delete files[`${BASE}/provider.json`]
+    clock.t = 11 * 60_000
+    expect(await verdictFor(ASGARDEX)).toMatchObject({ status: 'unreachable' })
+  })
+
+  it('does not keep a verdict whose lookup was still running when it was told to forget', async () => {
+    const clock = { t: 0 }
+    let release: (() => void) | undefined
+    let hold = false
+    const files: Record<string, FetchedJson> = { ...withAsgardex }
+    const { verdictFor, forget } = createScoreProviderClient({
+      providerAddress: () => BASE,
+      isDevEthName: () => false,
+      now: () => clock.t,
+      fetchJson: async (url) => {
+        if (hold) await new Promise<void>((resolve) => { release = resolve })
+        return files[url] ?? { kind: 'missing' }
+      }
+    })
+    hold = true
+    const running = verdictFor(ASGARDEX)
+    await new Promise<void>((resolve) => { setTimeout(resolve, 0) })
+    forget()
+    release?.()
+    await new Promise<void>((resolve) => { setTimeout(resolve, 0) })
+    release?.()
+    expect(await running).toMatchObject({ status: 'judged' })
+    hold = false
+    delete files[`${BASE}/provider.json`]
+    clock.t = 11 * 60_000
+    expect(await verdictFor(ASGARDEX)).toMatchObject({ status: 'unreachable' })
+  })
+
+  it('keeps a routed app\'s judged level apart from a direct lookup\'s', async () => {
+    const clock = { t: 0 }
+    const files: Record<string, FetchedJson> = { ...withAsgardex }
+    const provider = fakeProvider(files)
+    const { verdictFor } = createScoreProviderClient({ providerAddress: () => BASE, isDevEthName: () => false, fetchJson: provider.fetchJson, now: () => clock.t })
+    await verdictFor(ASGARDEX, undefined, 'https://routed.eth')
+    delete files[`${BASE}/provider.json`]
+    clock.t = 11 * 60_000
+    expect(await verdictFor(ASGARDEX, undefined, 'https://routed.eth')).toMatchObject({ status: 'judged' })
+    expect(await verdictFor(ASGARDEX)).toMatchObject({ status: 'unreachable' })
+  })
+
   it('shares one fetch between lookups made while it is in flight', async () => {
     const { verdictFor, asked } = client(withAsgardex)
     await Promise.all([verdictFor(ASGARDEX), verdictFor(ASGARDEX), verdictFor(ASGARDEX)])

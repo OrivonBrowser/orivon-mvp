@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { SCORE_STANDARD, findEvaluation, parseDescriptor, scoreIdOf } from '../score-provider.js'
+import { SCORE_STANDARD, findEvaluation, parseDescriptor, scoreIdOf, verdictToShow } from '../score-provider.js'
+import type { ProviderVerdict } from '../score-provider.js'
 
 const HASH = 'sha256:' + 'ab'.repeat(32)
 const CID = 'bafybeieqer67ojhi6q3eiatmrcu3r3mqjehn7hwit2satqjfnljo65fb4q'
@@ -109,5 +110,32 @@ describe('findEvaluation', () => {
     expect(lookup([entry({ version: 7 })])).toEqual({ kind: 'none' })
     expect(lookup([entry({ evidence: Array.from({ length: 11 }, () => 'https://e.example') })])).toEqual({ kind: 'none' })
     expect(lookup([entry({ operations: Array.from({ length: 33 }, () => ({ name: 'Op', trustlessity: { level: 1 } })) })])).toEqual({ kind: 'none' })
+  })
+})
+
+describe('verdictToShow', () => {
+  const provider = { name: 'P', address: 'ipfs://x/score' }
+  const judged = (level: number): ProviderVerdict => ({ status: 'judged', provider, evaluation: { id: HASH, name: 'E', version: undefined, evaluated: '2026-10-03', trustlessity: { level, privacy: false }, summary: undefined, operations: [], connections: [], evidence: [] } })
+  const noScore: ProviderVerdict = { status: 'no-score', provider }
+  const pending: ProviderVerdict = { status: 'pending', address: provider.address }
+  const unreachable: ProviderVerdict = { status: 'unreachable', address: provider.address, reason: 'down' }
+
+  it('keeps what the provider last settled while it cannot be asked', () => {
+    expect(verdictToShow(pending, judged(4))).toEqual(judged(4))
+    expect(verdictToShow(unreachable, judged(4))).toEqual(judged(4))
+    expect(verdictToShow(unreachable, noScore)).toEqual(noScore)
+  })
+
+  it('shows an answer the provider gave now, lower or higher than the last', () => {
+    expect(verdictToShow(judged(2), judged(4))).toEqual(judged(2))
+    expect(verdictToShow(noScore, judged(4))).toEqual(noScore)
+    expect(verdictToShow(judged(4), noScore)).toEqual(judged(4))
+  })
+
+  it('has nothing to keep for a page never answered, or a provider turned off', () => {
+    expect(verdictToShow(pending, undefined)).toEqual(pending)
+    expect(verdictToShow(unreachable, undefined)).toEqual(unreachable)
+    expect(verdictToShow({ status: 'off' }, judged(4))).toEqual({ status: 'off' })
+    expect(verdictToShow({ status: 'not-assessable', address: provider.address }, judged(4))).toEqual({ status: 'not-assessable', address: provider.address })
   })
 })
