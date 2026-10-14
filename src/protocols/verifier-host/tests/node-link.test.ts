@@ -6,10 +6,12 @@ import { IPFS_NODE_IDENTITY, IPFS_NODE_WORDS } from '../../ipfs-node/protocol.js
 
 afterEach(() => { vi.useRealTimers() })
 
-function harness (waitMs = 20_000): { link: ReturnType<typeof createNodeLink>, posted: FromHost[], clock: { now: number } } {
+function harness (waitMs = 20_000): { link: ReturnType<typeof createNodeLink>, posted: FromHost[], traffic: FromHost[], clock: { now: number } } {
   const posted: FromHost[] = []
+  const traffic: FromHost[] = []
   const clock = { now: 1_000_000 }
-  return { link: createNodeLink((message) => posted.push(message), SWARM_NODE_IDENTITY, SWARM_NODE_WORDS, { waitMs, now: () => clock.now }), posted, clock }
+  // What the host counts of its reads is its own message, checked on its own below.
+  return { link: createNodeLink((message) => (message.type === 'node-traffic' ? traffic : posted).push(message), SWARM_NODE_IDENTITY, SWARM_NODE_WORDS, { waitMs, now: () => clock.now }), posted, traffic, clock }
 }
 
 const idle = (): AbortSignal => new AbortController().signal
@@ -137,6 +139,24 @@ describe('the verifier host\'s link to the Swarm node', () => {
       expect(await response.text()).toBe('chunk')
       expect(read).toHaveBeenCalledTimes(1)
       expect(posted).toEqual([{ type: 'node-wanted', node: 'swarm-node' }])
+    })
+
+    it('counts the reads in flight and the bytes read, and tells main under the node\'s own name', async () => {
+      const { link, traffic } = harness()
+      const read = vi.fn(async () => new Response('chunk-bytes'))
+      const response = await link.reading(read)('http://127.0.0.1:1/chunks/aa', { headers: {}, signal: idle() })
+      expect(traffic).toEqual([{ type: 'node-traffic', node: 'swarm-node', active: 1, bytes: 0 }])
+      expect(await response.text()).toBe('chunk-bytes')
+      expect(link.snapshot()).toEqual({ active: 0, bytes: 11 })
+    })
+
+    it('does not leave a read in flight when the node was gone and the read failed', async () => {
+      const { link } = harness()
+      const read = vi.fn(async (): Promise<Response> => { throw new Error('refused') })
+      const controller = new AbortController()
+      controller.abort()
+      await expect(link.reading(read)('http://127.0.0.1:1/chunks/aa', { headers: {}, signal: controller.signal })).rejects.toThrow('refused')
+      expect(link.snapshot().active).toBe(0)
     })
 
     it('asks for the node again when a read finds it gone, and reads again once main says it is ready', async () => {

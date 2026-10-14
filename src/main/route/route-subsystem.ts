@@ -63,7 +63,7 @@ export const routeSubsystem: Subsystem = {
       // A settings file that cannot be used counts as the whole browser being on the tunnel (Settings says why).
       savedEverywhere: everywhereBeforeReady(join(userData, 'settings.json')),
       savedKind: readSettingBeforeReady(join(userData, 'settings.json'), 'network.route.kind'),
-      nym: createNym(readSettingBeforeReady(join(userData, 'settings.json'), 'network.nym.privacy')),
+      nym: createNym(readSettingBeforeReady(join(userData, 'settings.json'), 'network.nym.privacy'), readSettingBeforeReady(join(userData, 'settings.json'), 'network.nym.enabled')),
       // Asked only when the list of tunnel settings cannot be read; the broker exists by then.
       installed: () => [...new Set([...(ctx.broker?.app.registeredOriginsSync() ?? []), ...(ctx.broker?.app.persistedAppsSync().map((installed) => installed.origin) ?? [])])],
       switchWorld: {

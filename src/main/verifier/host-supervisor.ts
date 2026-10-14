@@ -18,6 +18,8 @@ export interface SupervisorEvents extends ProcessEvents {
   /** A mount needs the local node of a kind, by its name. */
   nodeWanted?: (node: string) => void
   nameScheme: (host: string, scheme: string) => void
+  /** What the host has read from a local node, by its name: reads in flight and bytes read this session. */
+  nodeTraffic?: (node: string, active: number, bytes: number) => void
 }
 
 export type SupervisorDeps = ProcessDeps<HostConfig, SupervisorEvents>
@@ -77,6 +79,7 @@ export class HostSupervisor extends ProcessSupervisor<HostConfig, FromHost, Supe
       case 'checkpoint': events.checkpoint(message.root, message.timestamp); break
       case 'ipns-sequence': events.ipnsSequence(message.key, message.sequence); break
       case 'node-wanted': events.nodeWanted?.(message.node); break
+      case 'node-traffic': events.nodeTraffic?.(message.node, message.active, message.bytes); break
       case 'swarm-feed-index': events.swarmFeedIndex(message.feed, message.index); break
       case 'name-scheme': events.nameScheme(message.host, message.scheme); break
       case 'reply': {

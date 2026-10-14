@@ -12,6 +12,7 @@ import { nodePort, renewNodePort } from './loopback-port.js'
 import type { LocalNodeController } from './local-node-controller.js'
 import { createLocalNodeController } from './local-node-launch.js'
 import type { LocalNodeManifest } from './local-node-artifact.js'
+import type { ProcessInfo } from './process-supervisor.js'
 
 export interface LocalNodeSubsystemSpec {
   readonly kind: NodeIdentity
@@ -31,10 +32,14 @@ export interface LocalNodeSubsystem {
   ensure: () => Promise<LocalNodeState>
   /** What the node is doing; off while nothing has asked for it. */
   state: () => LocalNodeState
+  /** The node's process while it runs. */
+  processInfo: () => ProcessInfo | undefined
   /** The node's API origin, `http://127.0.0.1:<port>`. */
   endpoint: () => string
   /** Stops the node and deletes what it kept (`kept`), once its process has exited. A node that never ran has nothing running to stop. */
   forget: () => Promise<void>
+  /** The person's switch for the node changed: a node that must not run is stopped, and one that may is asked for as usual. */
+  reconsider: () => void
   /** The verifier host went to sleep: nothing reads from the node, so it sleeps too. */
   verifierIdle: () => void
   /** Called whenever what `state` says may have changed; returns the unsubscribe. */
@@ -67,7 +72,9 @@ export function createLocalNodeSubsystem (spec: LocalNodeSubsystemSpec): LocalNo
   return {
     ensure: async () => spec.standIn?.() !== undefined ? READY : await created().ensure(),
     state: () => spec.standIn?.() !== undefined ? READY : controller?.state() ?? { state: 'off' },
+    processInfo: () => controller?.processInfo(),
     endpoint: () => spec.standIn?.()?.endpoint ?? `http://127.0.0.1:${String(nodePort(spec.kind.name))}`,
+    reconsider: () => { controller?.reconsider() },
     verifierIdle: () => { controller?.verifierIdle() },
     forget: async () => { await created().forget(spec.kept ?? []) },
     onChange: (listener) => created().onChange(listener),

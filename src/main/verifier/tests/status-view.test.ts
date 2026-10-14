@@ -18,6 +18,17 @@ describe('lightClientView', () => {
     expect(view.checkpoint).toBe('Checkpoint 3 hours old, last verified on this computer.')
   })
 
+  it('carries the block and when it was produced as numbers, and the age of the checkpoint it starts from, for the Networks popup', () => {
+    const view = lightClientView(facts({ lightClient: { state: 'synced', block: 26_047_527, at: NOW - 2 * 60_000 } }), NOW)
+    expect(view).toMatchObject({ block: 26_047_527, headAt: NOW - 2 * 60_000, checkpointAgeSeconds: 3 * 3600 })
+  })
+
+  it('carries no block while the light client is off, asleep or down, whatever it last reported', () => {
+    for (const over of [{ switchedOff: true }, { hostAsleep: true }, { hostDown: 'it exited' }]) {
+      expect(lightClientView(facts({ ...over, lightClient: { state: 'synced', block: 1, at: NOW } }), NOW)).not.toHaveProperty('block')
+    }
+  })
+
   it('stops saying synced once its newest block is old, whatever it last reported', () => {
     const view = lightClientView(facts({ lightClient: { state: 'synced', block: 26_047_527, at: NOW - 12 * 60_000 } }), NOW)
     expect(view).toMatchObject({ state: 'syncing', summary: 'Behind the chain: the newest block it has verified, 26,047,527, was produced 12 minutes ago.' })

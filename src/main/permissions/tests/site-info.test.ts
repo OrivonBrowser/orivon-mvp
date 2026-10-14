@@ -100,7 +100,7 @@ describe('buildSiteInfo -- capability rows', () => {
 })
 
 describe('buildSiteInfo -- picked paths', () => {
-  it('renders one row per picked path, worded the same as the all-sites list', () => {
+  it('renders one row per picked path, worded the same as the apps card in Settings', () => {
     const info = buildSiteInfo(APP, manifestWith({}), [], [{ id: 'pick-1', kind: 'file', path: '/home/person/notes.txt', pickedAt: 0 }], true)
     expect(info.pickedPathRows).toEqual([
       { pickId: 'pick-1', kind: 'file', warning: false, message: 'Can read and change "/home/person/notes.txt", including emptying it.' }

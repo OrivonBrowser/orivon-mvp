@@ -135,6 +135,7 @@
   "test/toolbar/e2e-address-focus.test.ts": 4,
   "test/toolbar/e2e-omnibox.test.ts": 19,
   "test/toolbar/e2e-search-engines.test.ts": 22,
+  "test/toolbar/e2e-networks-popup.test.ts": 12,
   "test/toolbar/e2e-toolbar-popups.test.ts": 27,
   "test/web3/e2e-eth-framing.test.ts": 11,
   "test/web3/e2e-eth-install.test.ts": 3,

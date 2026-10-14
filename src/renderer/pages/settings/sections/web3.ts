@@ -14,21 +14,9 @@ export const web3: Section = {
     {
       id: 'web3-light-client',
       label: 'Verify .eth names on this computer',
-      help: 'A light client proves what a .eth name points to before its page loads, so nobody has to be trusted to say. Turn it off and no .eth name loads. It is read when Orivon starts.',
+      help: 'A light client proves what a .eth name points to before its page loads, so nobody has to be trusted to say. Turn it off and no .eth name loads. A change applies at once.',
       keywords: ['ethereum', 'ens', 'eth', 'light client', 'helios', 'verify', 'names', 'ipfs'],
       control: { type: 'toggle', key: 'web3.lightClient', disabled: (state) => state.web3.status?.forcedOff === true }
-    },
-    {
-      id: 'web3-restart',
-      label: 'Start again to apply',
-      help: 'The choice above is read when Orivon starts. Your tabs and windows are not restored.',
-      keywords: ['restart', 'relaunch', 'apply'],
-      control: {
-        type: 'action',
-        label: 'Restart Orivon',
-        run: async (state) => { await state.web3.relaunch() }
-      },
-      visible: (state) => state.web3.needsRestart(state.value('web3.lightClient') === true) && state.profiles?.isPrivate !== true && state.web3.status?.forcedOff !== true
     },
     {
       id: 'web3-forced-off',
@@ -72,6 +60,13 @@ export const web3: Section = {
       keywords: ['ipfs', 'node', 'status'],
       visible: (state) => state.web3.status?.view.ipfsNode !== undefined,
       control: { type: 'info', text: (state) => state.web3.status?.view.ipfsNode?.summary ?? '' }
+    },
+    {
+      id: 'web3-swarm-enabled',
+      label: 'Run a Swarm node on this computer',
+      help: 'Swarm content loads only from a node Orivon runs here, which starts when a Swarm address is opened. Turn it off and a Swarm address says Swarm is off. A change applies at once.',
+      keywords: ['swarm', 'bzz', 'node', 'bee', 'peers', 'network'],
+      control: { type: 'toggle', key: 'web3.swarmNode' }
     },
     {
       id: 'web3-swarm-node',

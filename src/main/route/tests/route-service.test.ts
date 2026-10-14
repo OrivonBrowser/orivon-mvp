@@ -11,7 +11,7 @@ import { RouteStore } from '../route-store.js'
 
 const APP = 'https://one.example'
 
-const FAKE_NYM: NymSubsystem = { ensure: async () => ({ port: 1, secret: 's' }), state: () => ({ state: 'off' }), onChange: () => () => {}, test: async () => ({ ok: true, ms: 1 }), setPrivacy: () => {}, stop: () => {} }
+const FAKE_NYM: NymSubsystem = { ensure: async () => ({ port: 1, secret: 's' }), state: () => ({ state: 'off' }), onChange: () => () => {}, test: async () => ({ ok: true, ms: 1 }), tunnels: () => ({ connecting: 0, ready: 0 }), processInfo: () => undefined, setEnabled: () => {}, setPrivacy: () => {}, stop: () => {} }
 
 function service (savedProxy: string, savedKind: RouteKind = 'socks5', nym: NymSubsystem = FAKE_NYM) {
   const store = new RouteStore(null)
@@ -31,7 +31,8 @@ function service (savedProxy: string, savedKind: RouteKind = 'socks5', nym: NymS
   })
 }
 
-function settingsWith (initial: string, initialKind: RouteKind = 'socks5', initialEverywhere = false): ProxySettings & { set: (value: string) => void, setKind: (kind: RouteKind) => void, setEverywhere: (value: boolean) => void, setPrivacy: (level: NymPrivacy) => void } {
+function settingsWith (initial: string, initialKind: RouteKind = 'socks5', initialEverywhere = false): ProxySettings & { set: (value: string) => void, setKind: (kind: RouteKind) => void, setEverywhere: (value: boolean) => void, setNym: (value: boolean) => void, setPrivacy: (level: NymPrivacy) => void } {
+  let nymOn = true
   let privacy: NymPrivacy = 'balanced'
   let value = initial
   let kind = initialKind
@@ -39,11 +40,12 @@ function settingsWith (initial: string, initialKind: RouteKind = 'socks5', initi
   const listeners = new Set<(change: { readonly key: string }) => void>()
   const tell = (key: string): void => { for (const listener of [...listeners]) listener({ key }) }
   return {
-    get: ((key: string) => key === 'network.route.kind' ? kind : key === 'network.route.proxy' ? value : key === 'network.nym.privacy' ? privacy : everywhere) as ProxySettings['get'],
+    get: ((key: string) => key === 'network.route.kind' ? kind : key === 'network.route.proxy' ? value : key === 'network.nym.enabled' ? nymOn : key === 'network.nym.privacy' ? privacy : everywhere) as ProxySettings['get'],
     onChange: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     set: (next) => { value = next; tell('network.route.proxy') },
     setKind: (next) => { kind = next; tell('network.route.kind') },
     setEverywhere: (next) => { everywhere = next; tell('network.tunnel.everywhere') },
+    setNym: (next) => { nymOn = next; tell('network.nym.enabled') },
     setPrivacy: (next) => { privacy = next; tell('network.nym.privacy') }
   }
 }
@@ -156,6 +158,16 @@ describe('the route service', () => {
     settings.setKind('socks5')
     expect(routes.proxy()).toEqual({ host: '127.0.0.1', port: 9150 })
     expect(heard).toHaveBeenCalledTimes(2)
+  })
+
+  it('hands the person\'s Nym switch to Nym when the settings are followed, and again when it changes', () => {
+    const setEnabled = vi.fn()
+    const routes = service('', 'nym', { ...FAKE_NYM, setEnabled })
+    const settings = settingsWith('', 'nym')
+    routes.followSettings(settings)
+    expect(setEnabled).toHaveBeenLastCalledWith(true)
+    settings.setNym(false)
+    expect(setEnabled).toHaveBeenLastCalledWith(false)
   })
 
   it('gives Nym the saved privacy level when the settings are followed, and each change after it', () => {

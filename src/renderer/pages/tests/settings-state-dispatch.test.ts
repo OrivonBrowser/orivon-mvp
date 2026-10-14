@@ -11,7 +11,7 @@ const REPLIES: Record<string, unknown> = {
   about: { version: '1.0.0', electron: '1', chromium: '1', node: '1', platform: 'linux', userAgent: 'x', developerMode: false },
   shortcuts: { platform: 'linux', rows: [] },
   privacy: { history: { remembering: true, problem: null, count: 0 }, zoomSites: 0 },
-  web3: { view: { state: 'off' }, enabled: false, enabledAtStart: false, forcedOff: false },
+  web3: { view: { state: 'off' }, enabled: false, forcedOff: false },
   profiles: { profiles: [{ id: 'default', name: 'Default', current: true }], isPrivate: false },
   apps: { apps: [], identity: 'not-started' },
   telemetry: { private: false, consent: 'undecided' }

@@ -90,8 +90,8 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
   let lastActiveTabId: string | null = null
   /** Previous push's active tab's own origin -- catches the site-info
    * popup's own extra close condition: the SAME tab navigating to a
-   * DIFFERENT origin (never a reason to close the all-sites popup, which
-   * shows every app, not just the active tab's). `null` for no active tab
+   * DIFFERENT origin (never a reason to close the Available networks popup,
+   * which shows the nodes, not the active tab's site). `null` for no active tab
    * or one with no canonical origin (the dashboard, about:blank). */
   let lastActiveOrigin: string | null = null
   /** Previous push's active tab's URL without its fragment, to tell a navigation from a scroll to an anchor. */
@@ -129,7 +129,7 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
     }
     // The site-info popup describes ONE origin -- a same-tab navigation
     // to a different one (the active tab id unchanged) leaves it showing
-    // stale data otherwise. The all-sites popup lists every app and is
+    // stale data otherwise. The Available networks popup shows the nodes and is
     // unaffected by this on its own.
     const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId)
     const activeOrigin = activeTab === undefined ? null : originFromUrl(activeTab.url)
