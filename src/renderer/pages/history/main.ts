@@ -3,6 +3,7 @@
 // closed a moment ago. What is kept, and for how long, is set in Settings.
 import type { HistoryEntry } from '../../../main/history/history-store.js'
 import type { HistoryStatus } from '../../../main/history/history-service.js'
+import { guardMiddleClickPaste } from '../shared/middle-click-guard.js'
 import { internalBridge } from '../shared/bridge.js'
 import { h, replaceChildren } from '../shared/dom.js'
 import { clockIcon } from '../shared/icons.js'
@@ -23,6 +24,7 @@ import { renderBanner, renderEmpty } from './view-status.js'
 import { applyRoving, renderSections, rowElement } from './view-rows.js'
 import type { Disposition, RowActions } from './view-rows.js'
 
+guardMiddleClickPaste(document)
 const bridge = internalBridge()
 const SEARCH_DELAY_MS = 200
 const ARMED_MS = 4000
