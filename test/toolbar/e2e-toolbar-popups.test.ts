@@ -87,7 +87,7 @@ it('Escape closes the all-sites popup and gives the keyboard back to the page', 
   const { app, chrome } = await launchShell()
   try {
     await ready(app, chrome)
-    await chrome.locator('#permissions-btn').click()
+    await chrome.locator('#networks-btn').click()
     expect(await waitFor(async () => await permissionsShown(app))).toBe(true)
     expect(await waitForKeyboardAt(app, '/permissions/')).toBe(true)
     await pressKey(app, '/permissions/', 'Escape')
@@ -182,11 +182,11 @@ it('the all-sites popup reopens on screen after every way it can have been close
     const open = async (): Promise<void> => {
       // Past the debounce that reads a toggle just after a blur close as that close's echo.
       await delay(450)
-      await chrome.locator('#permissions-btn').click()
+      await chrome.locator('#networks-btn').click()
       expect(await waitFor(async () => await permissionsShown(app))).toBe(true)
     }
     const closedBy: Record<string, () => Promise<void>> = {
-      'the button again': async () => { await chrome.locator('#permissions-btn').click() },
+      'the button again': async () => { await chrome.locator('#networks-btn').click() },
       'a click into the page': async () => {
         await app.evaluate(({ webContents }) => { webContents.getAllWebContents().find((wc) => wc.getType() === 'window' && /\/newtab\/|127\.0\.0\.1/.test(wc.getURL()))?.focus() })
       },
@@ -224,7 +224,7 @@ async function permissionsContentsId (app: ElectronApplication): Promise<number 
 async function openPermissions (app: ElectronApplication, chrome: Page): Promise<void> {
   // Past the debounce that reads a toggle just after a blur close as that close's echo.
   await delay(450)
-  await chrome.locator('#permissions-btn').click()
+  await chrome.locator('#networks-btn').click()
   expect(await waitFor(async () => await permissionsShown(app))).toBe(true)
 }
 

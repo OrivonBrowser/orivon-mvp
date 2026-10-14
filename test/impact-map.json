@@ -34,7 +34,7 @@
     { "prefix": "src/renderer/drop-catcher", "run": ["tabs"] },
     { "prefix": "src/renderer/split-frame", "run": ["tabs"] },
     { "prefix": "src/renderer/overlay", "run": ["window", "toolbar", "page", "qa"] },
-    { "prefix": "src/renderer/permissions", "run": ["sites"] },
+    { "prefix": "src/renderer/networks", "run": ["toolbar", "web3"] },
     { "prefix": "src/renderer/site-info", "run": ["sites"] },
     { "prefix": "src/renderer/intro", "run": ["shell-pages"] },
     { "prefix": "src/renderer/newtab", "run": ["shell-pages"] },

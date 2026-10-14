@@ -401,8 +401,8 @@ it('opens the Site settings page from the popover\'s footer and from the all-sit
 
     // The all-sites panel: a link under its list.
     await activateTab(chrome, 0)
-    await chrome.click('#permissions-btn')
-    const panelOf = (): Page | undefined => app.windows().find((w) => w.url().endsWith('/renderer/permissions/index.html') && !w.isClosed())
+    await chrome.click('#networks-btn')
+    const panelOf = (): Page | undefined => app.windows().find((w) => w.url().endsWith('/renderer/networks/index.html') && !w.isClosed())
     expect(await waitFor(() => panelOf() !== undefined)).toBe(true)
     const panel = panelOf() as Page
     await panel.waitForSelector('#site-settings-link')

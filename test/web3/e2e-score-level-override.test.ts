@@ -118,9 +118,9 @@ it(
         await waitFor(() => findPopup(running, '/site-info/') === undefined, 5_000)
         await chrome.waitForTimeout(400)
 
-        await chrome.click('#permissions-btn')
-        await waitFor(() => findPopup(running, '/renderer/permissions/') !== undefined, 5_000)
-        const settingsA = findPopup(running, '/renderer/permissions/')
+        await chrome.click('#networks-btn')
+        await waitFor(() => findPopup(running, '/renderer/networks/') !== undefined, 5_000)
+        const settingsA = findPopup(running, '/renderer/networks/')
         if (settingsA === undefined) throw new Error('the all-sites panel did not open')
         await waitFor(async () => (await settingsA.$$(`[data-origin="${originA}"] .permission-row`)).length > 0, 5_000)
         const cardA = await settingsA.evaluate((origin) => {
@@ -132,8 +132,8 @@ it(
         }, originA)
         check(`origin A's settings card carries no warning either (${JSON.stringify(cardA)})`, cardA.warned === 0 && cardA.icons > 0)
 
-        await chrome.click('#permissions-btn')
-        await waitFor(() => findPopup(running, '/renderer/permissions/') === undefined, 5_000)
+        await chrome.click('#networks-btn')
+        await waitFor(() => findPopup(running, '/renderer/networks/') === undefined, 5_000)
         await chrome.waitForTimeout(400)
 
         // --- Origin B: the control, no override at all ---------------------

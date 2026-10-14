@@ -67,7 +67,7 @@ for (const [width, height] of [[700, 760], [800, 700], [850, 700]] as const) {
 
 // The permissions panel is a popover of its own (src/main/permissions/popover-view.ts), anchored under the toolbar's
 // tune icon at the right: a window shrunk under it leaves it outside, and Chromium blurs it inside the resize.
-const panelShown = async (app: App): Promise<boolean> => await popoverShown(app, '/renderer/permissions/')
+const panelShown = async (app: App): Promise<boolean> => await popoverShown(app, '/renderer/networks/')
 
 it('shrinking the window with the permissions panel open keeps the main process alive, and the panel opens again', async () => {
   const app = await launchElectron({ appPath: '.', ...SILENT })
@@ -76,7 +76,7 @@ it('shrinking the window with the permissions panel open keeps the main process 
     const chrome = findChrome(app)
     await clickAddressBarRetrying(chrome, siteUrl)
     expect((await waitForTab(chrome, { address: siteUrl })).ok).toBe(true)
-    await chrome.click('#permissions-btn')
+    await chrome.click('#networks-btn')
     expect(await waitFor(async () => await panelShown(app))).toBe(true)
 
     await app.evaluate(({ BaseWindow }) => { BaseWindow.getAllWindows()[0]?.setSize(700, 760) })
@@ -87,7 +87,7 @@ it('shrinking the window with the permissions panel open keeps the main process 
     expect(mainOutput(app)).not.toContain('uncaught exception')
 
     await delay(350)
-    await chrome.click('#permissions-btn')
+    await chrome.click('#networks-btn')
     expect(await waitFor(async () => await panelShown(app))).toBe(true)
   } finally {
     await closeElectron(app)
