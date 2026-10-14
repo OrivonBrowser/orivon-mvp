@@ -3,6 +3,7 @@
 // moves a switch only through `./site-switches.ts`, the door the key popup uses, so the two never disagree.
 
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
+import type { ScoreLevel } from '../../trust/website-level.js'
 import type { SubsystemContext } from '../registry.js'
 import { buildSiteInfo } from './site-info.js'
 import type { SiteCapabilityRow } from './site-info.js'
@@ -17,7 +18,10 @@ export interface AppSwitches {
   readonly set: (origin: string, capability: CapabilityKind, on: boolean, shown: readonly Pattern[]) => Promise<TurnOnResult>
 }
 
-export function createAppSwitches (ctx: SubsystemContext): AppSwitches {
+/** The Website level an origin is displayed at, when one is forced (ADR-0037: at Level 4 its rows carry no warning); none by default. */
+type LevelOverrideFor = (origin: string) => ScoreLevel | undefined
+
+export function createAppSwitches (ctx: SubsystemContext, levelOverrideFor: LevelOverrideFor = () => undefined): AppSwitches {
   return {
     async rowsFor (origin) {
       const broker = ctx.broker
@@ -25,13 +29,13 @@ export function createAppSwitches (ctx: SubsystemContext): AppSwitches {
       if (broker.app.isRegisteredSync(origin)) {
         try {
           const [manifest, grants, pickedPaths] = await Promise.all([broker.app.manifest(origin), broker.app.grants(origin), broker.app.pickedPaths(origin)])
-          return withUndeclaredHeld(buildSiteInfo(origin, manifest, grants, pickedPaths, true).capabilityRows, grants)
+          return withUndeclaredHeld(buildSiteInfo(origin, manifest, grants, pickedPaths, true, levelOverrideFor(origin)).capabilityRows, grants, levelOverrideFor(origin))
         } catch {
           // A manifest that cannot be read this moment: the record on disk still says what is held.
         }
       }
       const persisted = broker.app.persistedAppsSync().find((app) => app.origin === origin)
-      return persisted === undefined ? [] : persistedCapabilityRows(persisted, (await broker.declinedCapabilitiesFor(origin)) ?? [])
+      return persisted === undefined ? [] : persistedCapabilityRows(persisted, (await broker.declinedCapabilitiesFor(origin)) ?? [], levelOverrideFor(origin))
     },
 
     async set (origin, capability, on, shown) {

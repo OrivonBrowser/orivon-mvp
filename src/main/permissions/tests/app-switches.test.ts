@@ -53,6 +53,14 @@ describe('the apps card switches for an app that is open', () => {
     expect(broker.app.heldSync(APP, 'tcp.connect')).toBe(false)
   })
 
+  it('shows an unlimited grant without its warning at Level 4, and with it otherwise (ADR-0037)', async () => {
+    const broker = brokerOver()
+    await broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['*:*'] } } }))
+    await broker.grant(APP, 'tcp.connect', ['*:*'])
+    expect((await createAppSwitches(ctxOf(broker)).rowsFor(APP))[0]).toMatchObject({ warning: true })
+    expect((await createAppSwitches(ctxOf(broker), () => 4).rowsFor(APP))[0]).toMatchObject({ warning: false })
+  })
+
   it('refuses to turn on a capability the manifest does not declare', async () => {
     const broker = brokerOver()
     await broker.registerApp(APP, MANIFEST)
