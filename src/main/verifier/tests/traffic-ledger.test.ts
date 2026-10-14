@@ -20,7 +20,26 @@ describe('the traffic the verifier host reports', () => {
     ledger.record('swarm-node', 3, 400)
     ledger.fold()
     expect(ledger.read('swarm-node')).toEqual({ active: 0, bytes: 400 })
+    ledger.open()
     ledger.record('swarm-node', 1, 50)
     expect(ledger.read('swarm-node')).toEqual({ active: 1, bytes: 450 })
+  })
+
+  it('ignores a report that arrives after its host was folded, so the bytes are not counted twice', () => {
+    const ledger = new TrafficLedger(new Set(['ipfs-node']))
+    ledger.record('ipfs-node', 3, 400)
+    ledger.fold()
+    ledger.record('ipfs-node', 3, 450)
+    ledger.fold()
+    expect(ledger.read('ipfs-node')).toEqual({ active: 0, bytes: 400 })
+  })
+
+  it('counts the reports of the next host once it has started', () => {
+    const ledger = new TrafficLedger(new Set(['ipfs-node']))
+    ledger.record('ipfs-node', 3, 400)
+    ledger.fold()
+    ledger.open()
+    ledger.record('ipfs-node', 1, 50)
+    expect(ledger.read('ipfs-node')).toEqual({ active: 1, bytes: 450 })
   })
 })

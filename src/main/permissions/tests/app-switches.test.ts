@@ -83,6 +83,35 @@ describe('the apps card switches for an app that is open', () => {
   })
 })
 
+describe('turning a capability off from the apps card', () => {
+  it('writes no decline for a capability the app does not declare, or for an origin nobody knows', async () => {
+    const broker = brokerOver()
+    await broker.registerApp(APP, MANIFEST)
+    const switches = createAppSwitches(ctxOf(broker))
+    expect(await switches.set(APP, 'media.camera', false, [])).toBe('not-declared')
+    expect(await switches.set('https://nobody.example', 'fs', false, [])).toBe('not-registered')
+    expect(await broker.declinedCapabilitiesFor(APP)).toBeUndefined()
+    expect(await broker.declinedCapabilitiesFor('https://nobody.example')).toBeUndefined()
+  })
+
+  it('does not tell the chrome about a switch it refused', async () => {
+    const broker = brokerOver()
+    await broker.registerApp(APP, MANIFEST)
+    const changed = vi.fn()
+    await createAppSwitches(ctxOf(broker), () => undefined, changed).set(APP, 'media.camera', false, [])
+    expect(changed).not.toHaveBeenCalled()
+  })
+
+  it('refuses for an app not opened since Orivon started when its record neither holds nor remembers the capability', async () => {
+    const first = brokerOver()
+    await first.registerApp(APP, MANIFEST)
+    await first.grant(APP, 'fs', [])
+    const broker = brokerOver()
+    expect(await createAppSwitches(ctxOf(broker)).set(APP, 'media.camera', false, [])).toBe('not-declared')
+    expect(await broker.declinedCapabilitiesFor(APP)).toBeUndefined()
+  })
+})
+
 describe('the apps card switches for an app not opened since Orivon started', () => {
   async function restarted (): Promise<Broker> {
     const first = brokerOver()

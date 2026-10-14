@@ -30,6 +30,11 @@ export interface InstallPanelContent {
   readonly note: string | undefined
 }
 
+/** The capabilities the panel can show as a row. Only these may be asked about or refused: a "no" is recorded for what the person saw. */
+export function offeredCapabilities (manifest: Manifest, capabilities: readonly CapabilityKind[]): readonly CapabilityKind[] {
+  return capabilities.filter((capability) => offerCapability(manifest, capability) !== undefined)
+}
+
 export function describeInstallPanel (
   origin: string,
   manifest: Manifest,

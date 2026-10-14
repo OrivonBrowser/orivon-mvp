@@ -135,7 +135,7 @@ scripts run, so an app can hold one declared capability before install consent a
 
 **[`install-consent.ts`](install-consent.ts) and [`install-consent-prompt.ts`](install-consent-prompt.ts): the first-visit
 question is one panel of switches for both consent granularities (`ADR-0085`; A138, A162, A172).** One `outstanding` filter
-(neither held nor declined) says what is asked, so a person is never re-asked about a capability already decided, and a
+(neither held nor declined, and a capability the panel can show as a row: only what a person saw can be refused) says what is asked, so a person is never re-asked about a capability already decided, and a
 manifest that widens is asked about what is new only. The prompt answers the subset the person allowed: Grant all answers
 every row, Close the rows switched on (none, a refusal recorded one by one and, on a first visit, the site's refusal),
 Escape and the other ways out `null`, which records nothing. `InstallConsentPrompt` is that one type; a prompt's answer is

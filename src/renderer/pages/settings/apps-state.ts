@@ -73,14 +73,22 @@ export class AppsState {
   /** Capabilities whose last switch was refused, by the way it was moved (true: on), so the row can say what could not be done until the next press. */
   readonly capabilityRefused = new Map<string, boolean>()
 
+  /** Capabilities whose switch has a request under way: the row holds its switch until main has answered, so a quick second press cannot cross the first. */
+  readonly capabilityBusy = new Set<string>()
+
   async setCapability (origin: string, row: CapabilityRow, on: boolean): Promise<void> {
     const key = `${origin}|${row.capability}`
+    if (this.capabilityBusy.has(key)) return
     this.capabilityRefused.delete(key)
+    this.capabilityBusy.add(key)
+    this.changed()
     try {
       const reply = await this.bridge.request('apps', { type: 'setCapability', origin, capability: row.capability, on, patterns: row.patterns }) as { ok?: unknown } | undefined
       if (reply?.ok !== true) this.capabilityRefused.set(key, on)
     } catch {
       this.capabilityRefused.set(key, on)
+    } finally {
+      this.capabilityBusy.delete(key)
     }
     await this.load()
   }

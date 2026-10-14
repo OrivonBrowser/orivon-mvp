@@ -166,7 +166,7 @@ flowchart LR
     B --> C["Every IPFS block<br/>hashed against its CID"]
     C --> D["Manifest:<br/>what the app needs"]
     D --> E{"You decide,<br/>in plain words"}
-    E -- Allow --> F["The app runs<br/>in a tab"]
+    E -- Grant --> F["The app runs<br/>in a tab"]
     F <--> G["Broker checks<br/>every call"]
     G <--> H["Network · files · keys"]
 ```

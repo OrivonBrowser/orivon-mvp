@@ -16,14 +16,21 @@ const MANIFEST: LocalNodeManifest = manifest
 /** Whether the person lets the node ask a lookup service. Set once the settings are read; until then it is on, the setting's default. */
 let lookupServiceAllowed: () => boolean = () => true
 
-export function configureIpfsNode (options: { lookupService: () => boolean }): void {
+/** Whether the person reads IPFS from the node. Set once the settings are read; until then it is, the setting's default. */
+let readFromNode: () => boolean = () => true
+
+export function configureIpfsNode (options: { lookupService: () => boolean, readFromNode: () => boolean }): void {
   lookupServiceAllowed = options.lookupService
+  readFromNode = options.readFromNode
 }
+
+/** Why the node does not run while IPFS is read from public gateways, and where the person switches it on. */
+export const IPFS_NODE_SWITCHED_OFF = 'IPFS is read from public gateways. Switch to your own IPFS node in Settings under Web3, or from Available networks in the toolbar'
 
 export const ipfsNode = createLocalNodeSubsystem({
   kind: IPFS_NODE_IDENTITY,
   manifest: MANIFEST,
-  disabled: () => ethTestSeam() === undefined ? undefined : 'a test build serves IPFS from its own endpoints',
+  disabled: () => ethTestSeam() !== undefined ? 'a test build serves IPFS from its own endpoints' : readFromNode() ? undefined : IPFS_NODE_SWITCHED_OFF,
   standIn: () => ethTestSeam()?.ipfsNode,
   options: () => routingOptions(lookupServiceAllowed()),
   // SQLite's journal and write-ahead log sit beside the database.
