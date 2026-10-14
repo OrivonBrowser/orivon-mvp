@@ -26,6 +26,7 @@ import { partitionStoreKey } from './partition-key.js'
 import { SWARM_NODE_IDENTITY, SWARM_NODE_WORDS } from '../swarm-node/protocol.js'
 import type { Fetch } from '../gateways/gateways.js'
 import type { HostDeps, LightClient } from './service.js'
+import { lightClientPace, paceOf } from './pace.js'
 
 export interface RunningProtocols {
   /** In the order their providers are tried. */
@@ -155,7 +156,7 @@ function startEns (config: HostConfig, deps: HostDeps): { protocol: Protocol, li
     resolvers.push(offResolver(config.lightClientOff ?? 'the Ethereum light client is not running, so no .eth name can be verified'))
     return { protocol: defineProtocol(ENS, { resolvers }), lightClient: undefined }
   }
-  const lightClient = deps.startLightClient(config.lightClient, allowlisted([...config.lightClient.executionRpcs, config.lightClient.consensusRpc], deps.fetch, 'the light client'), deps.post)
+  const lightClient = deps.startLightClient(config.lightClient, allowlisted([...config.lightClient.executionRpcs, config.lightClient.consensusRpc], deps.fetch, 'the light client'), deps.post, undefined, lightClientPace(paceOf(config.front !== undefined)))
   resolvers.push(createEnsResolver({
     provider: lightClient.provider,
     ccipRequest: async (parameters, signal) => await guardedCcipRequest(parameters, { directFetch: deps.ccipFetch, fetch: deps.fetch, resolveHost: deps.resolveHost, direct: config.ccipDirect, farEnd: config.front !== undefined }, DEFAULT_CCIP_LIMITS, signal)

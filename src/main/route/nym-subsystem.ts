@@ -6,6 +6,7 @@
 import { randomBytes } from 'node:crypto'
 import type { Socket } from 'node:net'
 import { createSocks5Provider } from '../../broker/route/socks5.js'
+import { SHORT_LIVED_USER } from '../../protocols/nym-tunnel/protocol.js'
 import type { NymTunnelConfig, PinnedFile } from '../../protocols/nym-tunnel/protocol.js'
 import type { ArtifactStatus } from '../verifier/local-node-artifact.js'
 import type { HostProcess } from '../verifier/process-supervisor.js'
@@ -30,7 +31,6 @@ export const RECYCLE_AFTER_STARTS = 24
 const PROXY_CHECK_REUSE_MS = 5_000
 /** A refusal is answered from memory for this long before the files and the proxy are looked at again. */
 export const REFUSAL_MEMORY_MS = 10_000
-const TEST_USER = 'orivon-settings-test'
 const TEST_DESTINATION = { host: 'example.com', port: 443 }
 export const TEST_WAIT_MS = 60_000
 
@@ -202,22 +202,31 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
 
   const test = async (): Promise<NymTestResult> => {
     const started = now()
-    let where: NymEndpoint
-    try {
-      where = await ensure()
-    } catch (error) {
-      return { ok: false, reason: 'unavailable', detail: error instanceof Error ? error.message : String(error) }
-    }
+    // One bound for the whole press, so the person is never left on "Testing" for the sum of the waits inside it.
     const abort = new AbortController()
     const timer = setTimer(() => { abort.abort() }, TEST_WAIT_MS)
+    const silent: NymTestResult = { ok: false, reason: 'silent', detail: `no answer within ${String(TEST_WAIT_MS / 1000)} s` }
+    const expired = new Promise<never>((_resolve, reject) => { abort.signal.addEventListener('abort', () => { reject(new Error('the test ran out of time')) }, { once: true }) })
+    expired.catch(() => {})
     let socket: Socket | undefined
     try {
-      const provider = createSocks5Provider({ host: '127.0.0.1', port: where.port, credentials: { userId: TEST_USER, password: where.secret }, timeoutMs: TEST_WAIT_MS })
-      socket = await provider.connect(TEST_DESTINATION.host, TEST_DESTINATION.port, abort.signal)
-      return { ok: true, ms: now() - started }
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error)
-      return abort.signal.aborted ? { ok: false, reason: 'silent', detail } : { ok: false, reason: 'failed', detail }
+      let where: NymEndpoint
+      try {
+        where = await Promise.race([ensure(), expired])
+      } catch (error) {
+        if (abort.signal.aborted) return silent
+        return { ok: false, reason: 'unavailable', detail: error instanceof Error ? error.message : String(error) }
+      }
+      try {
+        const provider = createSocks5Provider({ host: '127.0.0.1', port: where.port, credentials: { userId: SHORT_LIVED_USER, password: where.secret }, timeoutMs: TEST_WAIT_MS })
+        socket = await provider.connect(TEST_DESTINATION.host, TEST_DESTINATION.port, abort.signal)
+        return { ok: true, ms: now() - started }
+      } catch (error) {
+        if (abort.signal.aborted) return silent
+        // The host knows why a tunnel did not come up; the connection only says that it was closed.
+        const detail = current.state === 'failed' ? current.reason : error instanceof Error ? error.message : String(error)
+        return { ok: false, reason: 'failed', detail }
+      }
     } finally {
       clearTimer(timer)
       socket?.destroy()

@@ -40,10 +40,18 @@ export class AcquireError extends Error {
   }
 }
 
+/** What a stream's opening came to: `opened`, `stalled` (nothing answered: the tunnel may be dead) or `refused` (something answered, and said no). */
+export type StreamOutcome = 'opened' | 'stalled' | 'refused'
+
+/** A connection through a tunnel that nothing answered; a tunnel that stalls again and again is replaced. */
+export class StallError extends Error {}
+
 /** A tunnel held for a stream or an association: released when that ends. */
 export interface Lease {
   readonly tunnel: Tunnel
   release: () => void
+  /** Says how a stream's opening went, so a tunnel that carries nothing is replaced and not kept for every request to fail on. */
+  report: (outcome: StreamOutcome) => void
 }
 
 export interface InstancesSnapshot {
@@ -63,19 +71,29 @@ export interface InstancesDeps {
   readonly startWaitMs: number
   /** How long a tunnel nothing uses is kept. */
   readonly idleMs: number
+  /** How long the tunnel of one user name is kept when nothing uses it, where that is not `idleMs`: a name made for one short use. */
+  readonly idleMsOf?: (id: string) => number | undefined
   readonly onChange: (snapshot: InstancesSnapshot) => void
+  /** How many module instances exist, where that is more than the tunnels started (a tunnel that is tried again leaves one per attempt). */
+  readonly instancesMade?: () => number
 }
 
 /** The longest `problem` text, so that main accepts the message it is in (protocol.ts's limit is 500). */
 const MAX_PROBLEM = 400
 export const DEFAULT_START_WAIT_MS = 30_000
 export const DEFAULT_IDLE_MS = 10 * 60_000
+/** Stalled openings in a row that end a tunnel: a new one has to prove itself, so it gets fewer; README.md's Design notes say why. */
+export const STALLS_TO_REPLACE_NEW = 2
+export const STALLS_TO_REPLACE = 3
 
 interface Entry {
   readonly id: string
   readonly starting: Promise<Tunnel>
   tunnel?: Tunnel
   leases: number
+  /** Openings in a row that stalled, and whether any stream has ever opened. */
+  stalls: number
+  proven: boolean
   idleSince: number
   idleTimer?: ReturnType<typeof setTimeout>
   gone: boolean
@@ -110,7 +128,7 @@ export function createInstances (deps: InstancesDeps): Instances {
       if (entry.tunnel === undefined) connecting += 1
       else ready += 1
     }
-    return { connecting, ready, started, ...(problem === undefined ? {} : { problem }) }
+    return { connecting, ready, started: Math.max(started, deps.instancesMade?.() ?? 0), ...(problem === undefined ? {} : { problem }) }
   }
   const changed = (): void => { deps.onChange(snapshot()) }
 
@@ -127,7 +145,7 @@ export function createInstances (deps: InstancesDeps): Instances {
   const armIdle = (entry: Entry): void => {
     clearTimeout(entry.idleTimer)
     entry.idleSince = Date.now()
-    entry.idleTimer = setTimeout(() => { retire(entry) }, deps.idleMs)
+    entry.idleTimer = setTimeout(() => { retire(entry) }, deps.idleMsOf?.(entry.id) ?? deps.idleMs)
     entry.idleTimer.unref()
   }
 
@@ -147,7 +165,7 @@ export function createInstances (deps: InstancesDeps): Instances {
   const begin = (id: string): Entry => {
     started += 1
     const starting = deps.start(id)
-    const entry: Entry = { id, starting, leases: 0, idleSince: Date.now(), gone: false }
+    const entry: Entry = { id, starting, leases: 0, stalls: 0, proven: false, idleSince: Date.now(), gone: false }
     entries.set(id, entry)
     starting.then(
       (tunnel) => {
@@ -191,6 +209,15 @@ export function createInstances (deps: InstancesDeps): Instances {
       let released = false
       return {
         tunnel,
+        report: (outcome) => {
+          if (outcome === 'opened') { waiting.stalls = 0; waiting.proven = true; return }
+          if (outcome === 'refused') return
+          waiting.stalls += 1
+          if (waiting.stalls >= (waiting.proven ? STALLS_TO_REPLACE : STALLS_TO_REPLACE_NEW)) {
+            problem = bounded('a Nym tunnel carried nothing, so it was closed; the next connection starts another')
+            retire(waiting)
+          }
+        },
         release: () => {
           if (released) return
           released = true

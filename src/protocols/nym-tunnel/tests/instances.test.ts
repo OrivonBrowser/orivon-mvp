@@ -12,7 +12,7 @@ function fakeTunnel (log: string[], id: string): Tunnel {
 
 interface Pending { readonly id: string, resolve: () => void, reject: (error: Error) => void }
 
-function harness (options: { cap?: number, startWaitMs?: number, idleMs?: number } = {}) {
+function harness (options: { cap?: number, startWaitMs?: number, idleMs?: number, idleMsOf?: (id: string) => number } = {}) {
   const log: string[] = []
   const pending: Pending[] = []
   const snapshots: InstancesSnapshot[] = []
@@ -20,6 +20,7 @@ function harness (options: { cap?: number, startWaitMs?: number, idleMs?: number
     cap: options.cap ?? 2,
     startWaitMs: options.startWaitMs ?? 30_000,
     idleMs: options.idleMs ?? 600_000,
+    ...(options.idleMsOf === undefined ? {} : { idleMsOf: options.idleMsOf }),
     onChange: (snapshot) => { snapshots.push(snapshot) },
     start: async (id) => {
       log.push(`start ${id}`)
@@ -175,5 +176,60 @@ describe('instances', () => {
     await b
     expect(log).toContain('disconnect app-a')
     expect(log).toContain('disconnect app-b')
+  })
+
+  it('replaces a tunnel whose first two connections stalled, so the next request gets a tunnel that works', async () => {
+    const { instances, log, pending } = harness()
+    const first = instances.acquire('app-a')
+    pending[0]?.resolve()
+    const a = await first
+    const b = await instances.acquire('app-a')
+    a.report('stalled')
+    expect(log).not.toContain('disconnect app-a')
+    b.report('stalled')
+    expect(log).toContain('disconnect app-a')
+    expect(instances.snapshot().ready).toBe(0)
+    const next = instances.acquire('app-a')
+    expect(pending).toHaveLength(2)
+    pending[1]?.resolve()
+    expect((await next).tunnel).not.toBe(a.tunnel)
+  })
+
+  it('keeps a tunnel that has opened a stream through two stalls, and replaces it at the third in a row', async () => {
+    const { instances, log, pending } = harness()
+    const asked = instances.acquire('app-a')
+    pending[0]?.resolve()
+    const lease = await asked
+    lease.report('opened')
+    lease.report('stalled')
+    lease.report('stalled')
+    expect(log).not.toContain('disconnect app-a')
+    lease.report('opened')
+    lease.report('stalled')
+    lease.report('stalled')
+    expect(log).not.toContain('disconnect app-a')
+    lease.report('stalled')
+    expect(log).toContain('disconnect app-a')
+  })
+
+  it('does not count a refusal against the tunnel', async () => {
+    const { instances, log, pending } = harness()
+    const asked = instances.acquire('app-a')
+    pending[0]?.resolve()
+    const lease = await asked
+    for (let i = 0; i < 5; i += 1) lease.report('refused')
+    expect(log).not.toContain('disconnect app-a')
+  })
+
+  it('closes a tunnel kept for a short use soon after it was last used', async () => {
+    const { instances, log, pending } = harness({ idleMsOf: (id) => id === 'test-user' ? 5_000 : 600_000 })
+    const test = instances.acquire('test-user')
+    const other = instances.acquire('app-a')
+    pending.forEach((entry) => { entry.resolve() })
+    ;(await test).release()
+    ;(await other).release()
+    await vi.advanceTimersByTimeAsync(5_001)
+    expect(log).toContain('disconnect test-user')
+    expect(log).not.toContain('disconnect app-a')
   })
 })

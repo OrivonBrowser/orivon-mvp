@@ -22,6 +22,7 @@ import { offResolver } from './protocols.js'
 import type { SharedStores } from './protocols.js'
 import type { HostDeps, LightClient } from './service.js'
 import type { Fetch } from '../gateways/gateways.js'
+import { TUNNEL_PACE } from './pace.js'
 
 /** What the person is told when a Swarm site is opened with the tunnel on for it. */
 export const SWARM_NOT_TUNNELLED = 'Swarm content loads only from the Swarm node Orivon runs on this computer, and that node cannot send its traffic through your tunnel for one site. This site is not opened while the tunnel is on for it; turn the tunnel off for it to open it.'
@@ -65,7 +66,7 @@ function startEns (config: HostConfig, deps: HostDeps, fetch: HostDeps['fetch'])
     resolvers.push(offResolver(config.lightClientOff ?? 'the Ethereum light client is not running, so no .eth name can be verified'))
     return defineProtocol(ENS, { resolvers })
   }
-  const provider = lazyProvider(() => deps.startLightClient(lightClient, allowlisted([...lightClient.executionRpcs, lightClient.consensusRpc], fetch, 'the light client'), () => {}, 'tunnel'))
+  const provider = lazyProvider(() => deps.startLightClient(lightClient, allowlisted([...lightClient.executionRpcs, lightClient.consensusRpc], fetch, 'the light client'), () => {}, 'tunnel', { syncWaitMs: TUNNEL_PACE.syncWaitMs, startAfterMs: 0 }))
   const ccip = tunnelCcipDeps(fetch)
   resolvers.push(createEnsResolver({ provider, ccipRequest: async (parameters, signal) => await guardedCcipRequest(parameters, ccip, DEFAULT_CCIP_LIMITS, signal) }))
   return defineProtocol(ENS, { resolvers })

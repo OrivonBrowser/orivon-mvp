@@ -23,6 +23,9 @@ at most six at once: past that a new app is refused, never given another app's t
 network is `https` and `wss` to public addresses, enforced where the dial takes its addresses. Main starts
 the process when the first routed app needs it, on a quiet loopback port under a secret made for each start,
 stops it ten minutes after the last tunnel is gone, and does not start it while a system proxy is configured.
+The host looks names up itself (datagrams through the tunnel to a public resolver, any number at once) and hands the module addresses, so
+the module's one-at-a-time lookup holds nothing back; a tunnel that cannot come up is tried again under a new identity, and one whose
+streams stall is closed and replaced at the next request (`d-0632`).
 A person's existing SOCKS5 address keeps working as it did: a settings file written before the choice existed
 keeps its address as the choice.
 

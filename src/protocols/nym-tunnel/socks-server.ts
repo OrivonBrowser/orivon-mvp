@@ -9,7 +9,7 @@ import type { Socket as DgramSocket } from 'node:dgram'
 import { createServer, isIPv6 } from 'node:net'
 import type { AddressInfo, Server, Socket } from 'node:net'
 import { SocksClient } from 'socks'
-import { AcquireError } from './instances.js'
+import { AcquireError, StallError } from './instances.js'
 import type { Lease, TcpStream, UdpChannel } from './instances.js'
 import { USER_NAME } from './protocol.js'
 
@@ -191,7 +191,7 @@ export const HALF_CLOSE_GRACE_MS = 10_000
 async function openStream (lease: Lease, destination: Destination, ms: number): Promise<TcpStream> {
   const opening = lease.tunnel.connectTcp(destination.host, destination.port)
   let timer: ReturnType<typeof setTimeout> | undefined
-  const expired = new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { reject(new Error('the connection through Nym took too long')) }, ms) })
+  const expired = new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { reject(new StallError('the connection through Nym took too long')) }, ms) })
   try {
     return await Promise.race([opening, expired])
   } catch (error) {
@@ -206,11 +206,13 @@ async function connect (socket: Socket, request: Request, lease: Lease, limits: 
   let stream: TcpStream
   try {
     stream = await openStream(lease, request.destination, limits.connectTimeoutMs)
-  } catch {
+  } catch (error) {
+    lease.report(error instanceof StallError ? 'stalled' : 'refused')
     lease.release()
     socket.end(reply(REPLY_HOST_UNREACHABLE))
     return
   }
+  lease.report('opened')
   if (socket.destroyed) {
     lease.release()
     stream.close().catch(() => {})
