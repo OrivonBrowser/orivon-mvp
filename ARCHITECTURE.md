@@ -178,8 +178,10 @@ you disagree with one, the ADR is where the objections are already answered.
 - **Trust is shown as a level with its evidence, never as a bare grade.** The address bar's Web3
   Score shield and the Web3 Score page it opens lead with the canonical Website level, coloured
   red/orange/yellow/green, and a mark at the pill's right end names it: Web2 (Level 1), Web2.5
-  (Levels 2-3) or Web3 (Level 4). Level 1 or 2 is what the machine
-  observed: whether the site meets DDOC. Level 3 and above are the judgement of the provider the
+  (Levels 2-3) or Web3 (Level 4), or a gray Web? for a Level 2 site no provider has judged yet. Level 1 or 2 is what the machine
+  observed: whether the site meets DDOC. A level a loaded site earned stays while Orivon cannot look
+  again (offline, a tunnel down, a provider unreachable); only evidence against it, a file that fails its
+  check, a moved name or a provider's lower answer, lowers it. Level 3 and above are the judgement of the provider the
   person chose (any address Orivon opens, asked by hash bucket so a request never names the site),
   named, shown grey `?` when it has not judged, and kept apart from what was observed; a
   developer-only override can preview one, always named as an override. Only that override's

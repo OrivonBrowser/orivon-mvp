@@ -84,7 +84,7 @@ it('in developer mode, a loopback URL and dev .eth names (a subname too) that se
       for (const url of [`http://127.0.0.1:${String(withTree.port)}/`, `http://${ETH_NAME}/`, `http://${ETH_SUBNAME}/`]) {
         await navigateToFixture(app, url, 'ddoc fixture')
         const reading = await readScore(app)
-        check(`${url}: the shield paints Level 2, marked "Web2.5" (${reading.level}/${reading.mark})`, reading.level === '2' && reading.mark === 'Web2.5')
+        check(`${url}: the shield paints Level 2, marked "Web?" because no provider scored it (${reading.level}/${reading.mark})`, reading.level === '2' && reading.mark === 'Web?')
         check(`${url}: the Web3 Score page leads with Website level 2 (${reading.heading})`, reading.heading === 'Website level 2')
         check(`${url}: it says DDOC is marked only because of developer mode (${reading.devNote})`, reading.devNote.includes('only because Orivon is running in developer mode'))
         check(`${url}: its DDOC row names the local origin`, reading.text.includes('Served by this local origin, counted in developer mode only'))

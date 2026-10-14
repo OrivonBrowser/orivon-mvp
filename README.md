@@ -190,7 +190,7 @@ flowchart LR
 | Level | What it means | Mark |
 |:---:|---|:---:|
 | 1 | A standard website | Web2 |
-| 2 | The site publishes a hash of its files (DDOC), so you can check you got exactly what its owner published | Web2.5 |
+| 2 | The site publishes a hash of its files (DDOC), so you can check you got exactly what its owner published | Web2.5, or Web? until a provider has judged it |
 | 3 | Its code is open source and runs nothing external without your informed consent | Web2.5 |
 | 4 | Trustless in its operations and connections | Web3 |
 

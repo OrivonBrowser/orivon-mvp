@@ -84,7 +84,7 @@ async function judgedThrough (address: (gateway: FixtureGateway) => string, phas
 
       await navigateToFixture(app, `http://127.0.0.1:${String(unscored.port)}/`, 'unscored fixture')
       const plain = await readScore(app, '2')
-      check(`a page the provider has no score for keeps Level 2 (${plain.level})`, plain.level === '2')
+      check(`a page the provider has no score for keeps Level 2, marked "Web?" (${plain.level}/${plain.mark})`, plain.level === '2' && plain.mark === 'Web?')
       check('its page says the provider has no score for it', plain.text.includes(`${PROVIDER_NAME} has no score for this page`))
 
       const asked = gateway.requests.filter((url) => url.endsWith('?format=raw'))

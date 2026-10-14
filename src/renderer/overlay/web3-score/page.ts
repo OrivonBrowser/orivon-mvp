@@ -1,5 +1,6 @@
 // The card the Web3 Score shield opens on a new tab: what the shield shows once a site is open, and each level drawn
-// as the address bar draws it, the shield in its colour and the Web2 / Web2.5 / Web3 mark beside it.
+// as the address bar draws it, the shield in its colour and the Web2 / Web2.5 / Web3 mark beside it, and the gray Web? mark
+// of a Level 2 site no provider has scored.
 import { h } from '../../pages/shared/dom.js'
 import type { ScoreLevel } from '../../../trust/website-level.js'
 import { paintMark, paintShield, web3Shield } from '../../web3-shield.js'
@@ -26,6 +27,13 @@ function levelRow ({ level, meaning }: { level: ScoreLevel, meaning: string }): 
       h('p', { className: 'ws-level-meaning' }, meaning)))
 }
 
+/** The closing note, with the gray mark a Level 2 site shows until the provider has judged it. */
+function providerNote (): HTMLParagraphElement {
+  const mark = h('span', { className: 'web3-mark' })
+  paintMark(mark, 2, true)
+  return h('p', { className: 'ws-note ws-unscored' }, 'Orivon checks Levels 1 and 2 on this computer. Levels 3 and 4 come from the score provider you choose; until it has judged a site, the mark reads ', mark, '.')
+}
+
 export const web3ScorePage: OverlayPage = {
   mount (content, overlay: Overlay) {
     const icon = web3Shield()
@@ -33,9 +41,9 @@ export const web3ScorePage: OverlayPage = {
     const learn = h('button', { type: 'button', className: 'link-btn', onclick: () => { void overlay.request({ type: 'learn' }) } }, 'How scores work')
     content.append(h('div', { className: 'ws', role: 'dialog', ariaLabel: 'Web3 Score' },
       h('div', { className: 'ws-head' }, icon, h('h1', { className: 'sheet-title' }, 'Web3 Score')),
-      h('p', { className: 'ws-lead' }, 'Open a site and this shield shows its Web3 Score: how little you have to trust the people behind it. The higher the level, the less trust it asks for.'),
+      h('p', { className: 'ws-lead' }, 'Open a site and this shield shows its Web3 Score: how little you have to trust the people behind it.'),
       h('ol', { className: 'ws-levels' }, ...LEVELS.map(levelRow)),
-      h('p', { className: 'ws-note' }, 'Orivon checks Levels 1 and 2 on this computer. Levels 3 and 4 come from the score provider you choose.'),
+      providerNote(),
       h('div', { className: 'ws-foot' }, provider, learn)))
     return { shown () {} }
   }

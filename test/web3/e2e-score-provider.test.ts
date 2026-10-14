@@ -94,8 +94,8 @@ it('the provider chosen in Settings judges a checked page, is named wherever its
 
       await navigateToFixture(app, `http://127.0.0.1:${String(unscored.port)}/`, 'unscored fixture')
       const plain = await readScore(app, '2')
-      check(`a page the provider has no score for keeps Level 2 (${plain.level}/${plain.mark})`, plain.level === '2' && plain.mark === 'Web2.5')
-      check(`its label names no provider (${plain.label})`, !plain.label.includes('judged'))
+      check(`a page the provider has no score for keeps Level 2, marked "Web?" (${plain.level}/${plain.mark})`, plain.level === '2' && plain.mark === 'Web?')
+      check(`its label names no provider and says it has no score yet (${plain.label})`, !plain.label.includes('judged') && plain.label.includes('no Web3 Score for this site yet'))
       check('its page says the provider has no score for it', plain.text.includes(`${PROVIDER_NAME} has no score for this page`))
 
       await navigateToFixture(app, `http://127.0.0.1:${String(slow.port)}/`, 'slow fixture')
