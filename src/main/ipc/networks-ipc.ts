@@ -21,6 +21,9 @@ export type NetworksCommand =
 /** How often the figures (memory, CPU, bytes) are pushed while the popup is open. */
 export const REFRESH_MS = 2_000
 
+/** The least time between two pushes caused by changes: a peer joining or leaving can change a card many times a second, and each push reads the processes' figures. */
+export const PUSH_GAP_MS = 300
+
 /** Identity alone is not enough: a `senderFrame` reference can survive a navigation Electron re-points it after, so the committed URL is checked too, as ./ipc.ts's `isFromChrome` does. */
 function isFromNetworksPanel (event: IpcMainInvokeEvent, panel: WebContents, panelUrl: string): boolean {
   return event.senderFrame !== null && event.senderFrame === panel.mainFrame && event.senderFrame.url === panelUrl
@@ -29,9 +32,16 @@ function isFromNetworksPanel (event: IpcMainInvokeEvent, panel: WebContents, pan
 export interface NetworksTimers {
   /** Calls `callback` every `ms` until the returned stop runs. */
   readonly every: (callback: () => void, ms: number) => () => void
+  /** Calls `callback` once after `ms` unless the returned stop runs first. */
+  readonly after: (callback: () => void, ms: number) => () => void
+  readonly now: () => number
 }
 
-const REAL_TIMERS: NetworksTimers = { every: (callback, ms) => { const timer = setInterval(callback, ms); return () => { clearInterval(timer) } } }
+const REAL_TIMERS: NetworksTimers = {
+  every: (callback, ms) => { const timer = setInterval(callback, ms); return () => { clearInterval(timer) } },
+  after: (callback, ms) => { const timer = setTimeout(callback, ms); return () => { clearTimeout(timer) } },
+  now: Date.now
+}
 
 export function registerNetworksIpc (
   panel: WebContents,
@@ -41,10 +51,20 @@ export function registerNetworksIpc (
   closePanel: () => void = () => {},
   timers: NetworksTimers = REAL_TIMERS
 ): () => void {
+  let lastPush = Number.NEGATIVE_INFINITY
   const push = (): void => {
+    lastPush = timers.now()
     if (!panel.isDestroyed()) panel.send(NETWORKS_CHANGED_CHANNEL, source.view() satisfies NetworksView)
   }
-  const stopListening = source.onChange(push)
+  // A change pushes at once when the gap since the last push is over, and otherwise once when it is: a burst costs two pushes.
+  let waiting: (() => void) | undefined
+  const pushSoon = (): void => {
+    if (waiting !== undefined) return
+    const wait = lastPush + PUSH_GAP_MS - timers.now()
+    if (wait <= 0) { push(); return }
+    waiting = timers.after(() => { waiting = undefined; push() }, wait)
+  }
+  const stopListening = source.onChange(pushSoon)
   const stopTimer = timers.every(push, REFRESH_MS)
   // On the popup's own webContents: the handler goes with it, and two windows can each have one open.
   panel.ipc.handle(NETWORKS_COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: NetworksCommand): void | boolean | NetworksView => {
@@ -65,5 +85,5 @@ export function registerNetworksIpc (
         return
     }
   })
-  return () => { stopListening(); stopTimer() }
+  return () => { stopListening(); stopTimer(); waiting?.(); waiting = undefined }
 }
