@@ -436,13 +436,11 @@ describe('installOrivon: real caller attribution', () => {
       await expect(corePrototypeTamperedCall()).rejects.toMatchObject({ name: 'OrivonError', code: 'denied' })
     })
 
-    // Bypass: the CallSite array was converted with the saved Array.prototype.map,
-    // which builds its result through the LIVE Array.prototype.constructor and
-    // Array[Symbol.species]; a MAIN-world script that redefines either after
-    // install could hand back a forged, extension-free frame list. Fixed: the
-    // list is built by an indexed loop into a literal, with no built-in a page can
-    // redefine consulted after install. Each tamper below runs from an extension
-    // frame in the same realm the install ran in, after it.
+    // The frame list is built without consulting any built-in a MAIN-world script
+    // can redefine after install (array species, index accessors, iterators,
+    // Object.prototype fields), so none can stand in a forged, extension-free list.
+    // Each tamper below runs from an extension frame in the same realm the install
+    // ran in, after it.
     const SWALLOWING_SPECIES = `
       const forgedFrame = { getFileName: () => 'https://forged.example/page.js' }
       const swallower = function () {
