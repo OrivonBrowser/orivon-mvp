@@ -121,6 +121,46 @@ describe('instances', () => {
     expect(log).toContain('disconnect app-a')
   })
 
+  it('renewAll closes a tunnel nobody uses at once, and the next request starts another', async () => {
+    const { instances, log, pending } = harness()
+    const asked = instances.acquire('app-a')
+    pending[0]?.resolve()
+    ;(await asked).release()
+    instances.renewAll()
+    expect(log).toContain('disconnect app-a')
+    expect(instances.snapshot().ready).toBe(0)
+    const again = instances.acquire('app-a')
+    expect(log.filter((line) => line === 'start app-a')).toHaveLength(2)
+    pending[1]?.resolve()
+    await again
+  })
+
+  it('renewAll leaves a tunnel in use alone until its last lease ends, and then closes it', async () => {
+    const { instances, log, pending } = harness()
+    const asked = instances.acquire('app-a')
+    pending[0]?.resolve()
+    const lease = await asked
+    instances.renewAll()
+    expect(log).not.toContain('disconnect app-a')
+    expect(instances.snapshot().ready).toBe(1)
+    lease.release()
+    expect(log).toContain('disconnect app-a')
+    expect(instances.snapshot().ready).toBe(0)
+  })
+
+  it('renewAll leaves a tunnel started after it alone, and replaces one that was still coming up when it ran once it is free', async () => {
+    const { instances, log, pending } = harness()
+    const early = instances.acquire('app-a')
+    instances.renewAll()
+    pending[0]?.resolve()
+    ;(await early).release()
+    expect(log, 'begun before the renewal').toContain('disconnect app-a')
+    const late = instances.acquire('app-b')
+    pending[1]?.resolve()
+    ;(await late).release()
+    expect(log, 'begun after it').not.toContain('disconnect app-b')
+  })
+
   it('keeps a tunnel while a second lease on it is held', async () => {
     const { instances, log, pending } = harness()
     const first = instances.acquire('app-a')

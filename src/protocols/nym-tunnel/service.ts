@@ -9,7 +9,7 @@ import type { LoaderSeams } from './module-loader.js'
 import { createModuleNetwork } from './module-net.js'
 import type { ModuleNetwork } from './module-net.js'
 import { failure, SHORT_LIVED_IDLE_MS, SHORT_LIVED_USER_PREFIX } from './protocol.js'
-import type { FromHost, NymTunnelConfig } from './protocol.js'
+import type { FromHost, NymPrivacy, NymTunnelConfig } from './protocol.js'
 import { PinMismatch } from '../local-node/pinned-file.js'
 import { startSocksServer } from './socks-server.js'
 import type { SocksServer } from './socks-server.js'
@@ -28,6 +28,8 @@ export interface HostDeps {
 export interface RunningHost {
   readonly instances: Instances
   readonly server: SocksServer
+  /** Tunnels started from now on are made at `privacy`, and the running ones are replaced as soon as nothing is using them. */
+  setPrivacy: (privacy: NymPrivacy) => void
   stop: () => Promise<void>
 }
 
@@ -67,12 +69,13 @@ export async function startHost (config: NymTunnelConfig, deps: HostDeps): Promi
     throw error
   }
 
+  let privacy = config.privacy
   const instances = createInstances({
     cap: config.maxInstances,
     startWaitMs: deps.startWaitMs ?? DEFAULT_START_WAIT_MS,
     idleMs: deps.idleMs ?? DEFAULT_IDLE_MS,
     idleMsOf: (id) => id.startsWith(SHORT_LIVED_USER_PREFIX) ? SHORT_LIVED_IDLE_MS : undefined,
-    start: async (id) => await module.start(id),
+    start: async (id) => await module.start(id, privacy),
     instancesMade: () => module.instances(),
     onChange: (snapshot) => { post({ type: 'instances', ...snapshot }) }
   })
@@ -90,6 +93,11 @@ export async function startHost (config: NymTunnelConfig, deps: HostDeps): Promi
   return {
     instances,
     server,
+    setPrivacy: (next) => {
+      if (next === privacy) return
+      privacy = next
+      instances.renewAll()
+    },
     stop: async () => {
       await server.close()
       await instances.closeAll()
