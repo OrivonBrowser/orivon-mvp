@@ -16,6 +16,10 @@ import { RE2JS } from 're2js'
 /** Chrome's cap on a `regexFilter`. */
 export const MAX_REGEX_FILTER_LENGTH = 2048
 
+/** The largest compiled program (`programSize()`) accepted: RE2 refuses a regex too large once compiled, and
+ * `re2js` has no such limit of its own. Ordinary rules compile to 27 to 130. */
+export const MAX_REGEX_PROGRAM_SIZE = 256
+
 /** The two calls the engine makes of a compiled filter. */
 class CompiledRegexFilter {
   #pattern
@@ -58,13 +62,17 @@ export function compileRegexFilter(regexFilter, isUrlFilterCaseSensitive) {
       { kind: 'complexity' }
     )
   }
+  let pattern
   try {
-    const flags = isUrlFilterCaseSensitive ? 0 : RE2JS.CASE_INSENSITIVE
-    return new CompiledRegexFilter(RE2JS.compile(regexFilter, flags))
+    pattern = RE2JS.compile(regexFilter, isUrlFilterCaseSensitive ? 0 : RE2JS.CASE_INSENSITIVE)
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
     throw Object.assign(new Error(`regexFilter is not a valid regular expression: ${reason}`), { kind: 'syntax' })
   }
+  if (pattern.programSize() > MAX_REGEX_PROGRAM_SIZE) {
+    throw Object.assign(new Error('regexFilter is too large once compiled'), { kind: 'complexity' })
+  }
+  return new CompiledRegexFilter(pattern)
 }
 
 /**

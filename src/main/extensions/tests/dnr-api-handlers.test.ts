@@ -129,6 +129,7 @@ describe('registerDnrApiHandlers', () => {
     const handler = router.handlers.get('declarativeNetRequest.isRegexSupported')!
     const ask = (regex: string) => handler.callback({ extension: { id: 'ext-1' } }, { regex })
     expect(ask('a'.repeat(2049))).toEqual({ isSupported: false, reason: 'memoryLimitExceeded' })
+    expect(ask(`${'[a-z]{1000}'.repeat(10)}[0-9]`)).toEqual({ isSupported: false, reason: 'memoryLimitExceeded' })
     expect(ask('(a)\\1')).toEqual({ isSupported: false, reason: 'syntaxError' })
     expect(ask('(?=a)b')).toEqual({ isSupported: false, reason: 'syntaxError' })
     expect(ask('^https?://(?:[a-z0-9-]+\\.)*example\\.com/')).toEqual({ isSupported: true })

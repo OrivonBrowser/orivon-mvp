@@ -53,9 +53,19 @@ describe('regexFilter is matched by RE2, in linear time', () => {
     expect(compileRegexFilter('x', true).exec('y')).toBeNull()
   })
 
-  it('refuses a pattern over 2048 characters and keeps one at the limit', () => {
+  it('refuses a pattern over 2048 characters and keeps a long literal one', () => {
     expect(regexFilterProblem('a'.repeat(2049), true)?.kind).toBe('complexity')
-    expect(regexFilterProblem('a'.repeat(2048), true)).toBeNull()
+    expect(regexFilterProblem('a'.repeat(200), true)).toBeNull()
+  })
+
+  it('refuses a pattern that compiles to a large program, and keeps an ordinary long one', () => {
+    const large = `${'[a-z]{1000}'.repeat(10)}[0-9]`
+    expect(large.length).toBeLessThan(2048)
+    expect(regexFilterProblem(large, true)?.kind).toBe('complexity')
+    const ordinary = '^https?://[a-z0-9.-]+/[a-z]{3,12}/[0-9]{4,8}/[a-z0-9_-]{6,40}\\.html$'
+    expect(regexFilterProblem(ordinary, true)).toBeNull()
+    expect(compileRegexFilter(ordinary, true).test('https://a.example.com/abc/12345/some_page-1.html')).toBe(true)
+    expect(compileRegexFilter(ordinary, true).test('https://a.example.com/abc/12/page.html')).toBe(false)
   })
 
   it.each(['(a)\\1', '(?=a)b', '(?!a)b', '(?<=a)b', '(?<!a)b', '(unclosed'])('refuses %j, which RE2 does not accept', pattern => {

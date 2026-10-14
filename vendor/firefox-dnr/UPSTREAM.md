@@ -488,8 +488,9 @@ patch.
     returns a small object with the two calls the engine makes, `test(url)` and `exec(url)` (an
     array of the whole match and each group, `undefined` for a group that did not take part, for
     `regexSubstitution`). Case sensitivity follows `isUrlFilterCaseSensitive`. A pattern longer
-    than 2048 characters (Chrome's cap), or one RE2 does not accept, makes the rule invalid like
-    any other invalid rule. `regexFilterProblem()` gives `declarativeNetRequest.isRegexSupported`
+    than 2048 characters (Chrome's cap), one that compiles to a program over 256 instructions
+    (`re2js` has no size limit of its own, RE2 refuses one too large), or one RE2 does not accept,
+    makes the rule invalid like any other invalid rule. `regexFilterProblem()` gives `declarativeNetRequest.isRegexSupported`
     (`src/main/extensions/dnr-api.ts`) the same answer. `src/main/extensions/dnr/tests/regex-filter.test.ts`
     is the regression test.
 
