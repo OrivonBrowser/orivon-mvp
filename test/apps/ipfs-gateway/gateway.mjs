@@ -128,6 +128,11 @@ export async function startFixtureGateway (sites, options = {}) {
       if (cid === undefined) throw new Error(`no file ${path} in ${site}`)
       failures.set(cid, { status, times })
     },
+    /** Answer this site's root block with `status` for its next `times` requests (0 stops): the site cannot be mounted while it is unwell. */
+    failRoot: (site, status, times = 1) => {
+      if (roots[site] === undefined) throw new Error(`no site ${site}`)
+      failures.set(CID.parse(roots[site]).toString(), { status, times })
+    },
     /** Gone at once, as a dead gateway is: open connections are cut, or a client that keeps reusing one holds close() open. */
     close: async () => {
       const closed = new Promise((resolve) => { server.close(() => { resolve(undefined) }) })
