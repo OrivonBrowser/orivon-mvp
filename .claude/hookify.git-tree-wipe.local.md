@@ -2,7 +2,7 @@
 name: block-destructive-git-tree-wipe
 enabled: true
 event: bash
-pattern: (?:^|[;&|]\s*)git\s+(?:-C\s+\S+\s+)?(?:reset\s+(?:--\S+\s+)*--hard|checkout\s+(?:-f\b|--force\b|(?:--\s+)?[.:])|restore\s+(?:(?:--(?!staged\b)\S+|-\w)\s+)*(?:--\s+)?[.:]|clean\s+(?:-\w*f|--force)|stash\s+(?:drop|clear)\b|switch\s+(?:\S+\s+)*(?:-f\b|--force\b|--discard-changes\b))
+pattern: (?:^|[;&|]\s*)git\s+(?:-C\s+\S+\s+)?(?:reset\s+(?:--\S+\s+)*--hard|checkout\s+(?:-f\b|--force\b|(?:--\s+)?[.:])|restore\s+(?:(?:--(?!staged\b)\S+|-\w)\s+)*(?:--\s+)?[.:]|clean\s+(?:-\w*f|--force)|stash\s+(?:drop|clear)\b|stash\s+(?:pop|apply)(?:\s+--index)?\s*(?:$|[;&|])|switch\s+(?:\S+\s+)*(?:-f\b|--force\b|--discard-changes\b))
 action: block
 ---
 
@@ -11,9 +11,12 @@ uncommitted work.**
 
 `git reset --hard`, `git checkout -- .`, `git restore .`, `git clean -f*`, `git stash drop|clear`
 and a forced `git switch` destroy it silently and unrecoverably, stashes other agents parked
-included. Wiping the tree is never the recovery from a failed checkout. Instead:
+included. A bare `git stash pop` or `apply` is refused too: the stash list is shared by every worktree,
+so without a named entry it takes the newest stash of whichever session parked one last. Wiping the
+tree is never the recovery from a failed checkout. Instead:
 
 - **Blocked by a checkout or pull?** Work in a worktree (see `block-in-place-branch-switch`).
-- **Need a clean tree?** `git stash push -m "<who/why>"`, then `git stash pop` in the same session.
+- **Need a clean tree?** `git stash push -m "<who/why>"`, then find it with `git stash list` and
+  `git stash pop stash@{N}` naming that entry, in the same session.
 - **Reverting one file you just wrote?** Name it: `git checkout -- <path>`. `.` and `:/` are blocked.
 - **Anything wider** is the owner's call. Stop and ask.
