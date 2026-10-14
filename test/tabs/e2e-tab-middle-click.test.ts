@@ -1,7 +1,8 @@
-// A middle-click on a tab closes it. On Linux Blink also pastes the selection into the focused field on the middle
-// button's release unless the release is default-prevented, so with the address bar focused the paste would land in
-// it before the tab went. The real clipboard is not driven (it hangs under xvfb): what is read is that the release is
-// cancelled over a tab, that it is not over the field, and that the address text stayed.
+// A middle-click on a tab closes it (a background one here, so the address bar stays on the active tab's). On Linux
+// Blink also pastes the selection into the focused field on the middle button's release unless the release is
+// default-prevented, so with the address bar focused the paste would land in it before the tab went. The real
+// clipboard is not driven (it hangs under xvfb): what is read is that the release is cancelled over a tab, that it is
+// not over the field, and that the address text stayed.
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron } from '../support/launch-electron.mjs'
@@ -45,7 +46,7 @@ it('a middle release over a tab is cancelled, over the address field it is not',
     await chrome.fill('#address', TYPED)
 
     const ids = await tabIds(chrome)
-    const closing = ids[1] as string
+    const closing = ids[0] as string
     const at = await centre(chrome, `.tab[data-id="${closing}"]`)
     await chrome.mouse.click(at.x, at.y, { button: 'middle' })
     expect(await waitFor(async () => (await tabIds(chrome)).length === 1)).toBe(true)
