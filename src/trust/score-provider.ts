@@ -157,3 +157,16 @@ export function findEvaluation (file: unknown, subject: ScoreSubject, bucket: st
   const evaluation = parseEvaluation(entry, subject, id)
   return evaluation === undefined ? { kind: 'none' } : { kind: 'found', evaluation }
 }
+
+/** A verdict that answers the question: the provider gave a score, or said it has none. */
+export function isSettled (verdict: ProviderVerdict): verdict is Extract<ProviderVerdict, { status: 'judged' | 'no-score' }> {
+  return verdict.status === 'judged' || verdict.status === 'no-score'
+}
+
+/**
+ * What to show for a lookup: a provider that could not be asked (still under way, or unreachable) does not
+ * withdraw what it last settled for the same page; an answer it gives now, higher or lower, replaces it.
+ */
+export function verdictToShow (fresh: ProviderVerdict, lastSettled: ProviderVerdict | undefined): ProviderVerdict {
+  return (fresh.status === 'pending' || fresh.status === 'unreachable') && lastSettled !== undefined ? lastSettled : fresh
+}

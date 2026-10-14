@@ -97,13 +97,15 @@ function liveLine (provenance: SiteProvenance, now: number): string {
   return `Name verified by the light client at block ${blockNumber(named.provenance.block)}, ${ago(now - provenance.mountedAt)}`
 }
 
-export function liveNameEvidence (provenance: SiteProvenance, now: number, endpointNames: EndpointNames = {}): NameEvidence {
+/** `kept`: the verifier could not be asked now, so `provenance` is the last time it was. */
+export function liveNameEvidence (provenance: SiteProvenance, now: number, endpointNames: EndpointNames = {}, kept = false): NameEvidence {
   const loadedFrom = servedFromLine(provenance.servedFrom)
   const rows = [
     ...provenance.pointers.map((step) => stepRow(step, provenance.pointers.some((p) => p.step === 'swarm-feed'))),
     { term: 'Content', value: shortId(provenance.root.cid) },
     ...(loadedFrom === undefined ? [] : [{ term: 'Loaded from', value: loadedFrom }]),
-    { term: 'Checked', value: ago(now - provenance.mountedAt) }
+    { term: 'Checked', value: ago(now - provenance.mountedAt) },
+    ...(kept ? [{ term: 'Now', value: 'It could not be checked again just now, so this is the last check.' }] : [])
   ]
   const refused = provenance.ddoc.refusals
   if (refused.length > 0) {
@@ -147,10 +149,11 @@ export function chooseNameEvidence (
   unanswered: string,
   now: number,
   address: boolean,
-  endpointNames: EndpointNames = {}
+  endpointNames: EndpointNames = {},
+  keptLive = false
 ): NameEvidence {
   if (pinned !== undefined && (servedFromCache || live === null)) return pinnedNameEvidence(pinned, address)
-  if (live !== null) return liveNameEvidence(live, now, endpointNames)
+  if (live !== null) return liveNameEvidence(live, now, endpointNames, keptLive)
   const term = address ? 'Address' : 'Name'
   return { content: undefined, nameProven: false, line: `${term} not verified. ${unanswered}`, rows: [{ term, value: `Not verified. ${unanswered}` }] }
 }

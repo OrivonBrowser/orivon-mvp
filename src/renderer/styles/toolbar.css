@@ -185,7 +185,7 @@
   background: var(--whover-soft);
 }
 /* The Web2 / Web2.5 / Web3 mark at the pill's right end (web3-shield.ts's
-   paintMark): orange, yellow, green. --tone draws the dot and tints the
+   paintMark): orange, yellow, green, and gray for Web?. --tone draws the dot and tints the
    plate; --ink is the text, one step darker in light mode and one lighter
    in dark, since the raw tone (yellow above all) is too faint as small text
    on either surface. */
@@ -222,10 +222,12 @@
 .web3-mark[data-mark='Web2'] { --tone: #f97316; --ink: #c2410c; }
 .web3-mark[data-mark='Web2.5'] { --tone: #eab308; --ink: #a16207; }
 .web3-mark[data-mark='Web3'] { --tone: #22c55e; --ink: #15803d; }
+.web3-mark[data-mark='Web?'] { --tone: #9ca3af; --ink: #4b5563; }
 @media (prefers-color-scheme: dark) {
   .web3-mark[data-mark='Web2'] { --ink: #fdba74; }
   .web3-mark[data-mark='Web2.5'] { --ink: #fde047; }
   .web3-mark[data-mark='Web3'] { --ink: #86efac; }
+  .web3-mark[data-mark='Web?'] { --ink: #d1d5db; }
 }
 
 .toolbar-cluster {
