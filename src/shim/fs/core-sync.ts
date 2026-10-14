@@ -25,7 +25,7 @@ import { encode, encodingOf } from '../encoding.js'
 import { VIRTUAL_ROOT } from '../virtual-root.js'
 import type { MkdirOptions, ReaddirOptions, RmdirOptions, RmOptions, WriteFileOptions } from './core.js'
 import { Buffer } from 'buffer'
-import { join } from 'path'
+import { join } from 'path/posix'
 
 export function doStatSync (path: PathLike): NodeStats {
   const confined = confineSync(path, 'stat', 'fs.statSync')

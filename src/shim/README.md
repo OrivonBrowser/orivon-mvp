@@ -36,6 +36,10 @@ bundler needs one exact entry per specifier, `node:` forms included (webpack: `u
 and `tests/support/` keep `node:*`; `tests/support/page-buffer.ts` and `page-stream.ts` give a
 test the page's own classes.
 
+**Guest paths are POSIX whatever runs the shim.** The virtual root and a WASI guest name are slash paths, so a module that handles one imports
+`path/posix`, never a bare `path`: a page gets the polyfill for both, but the local nodes run the WASI host in a Node process where a bare
+`path` is the platform's own (backslashes on Windows). `tests/guest-paths-posix.test.ts` fails a shim source that imports the bare form.
+
 **`zlib` is gzip/deflate only**: `browserify-zlib` predates brotli. Why each polyfill package was
 chosen: [`shim-dependency-review.md`](../../docs/planning/shim-dependency-review.md) section Status.
 

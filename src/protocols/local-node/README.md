@@ -57,6 +57,11 @@ kind's folder, so a kind's code cannot leak into the shared host.
 
 ## Design notes
 
+**A node that cannot be set up says why at once.** `startNode` ([`service.ts`](service.ts)) posts `failed` for any throw before the component
+runs: the data directory, the files and network handed to the component, the load. Main then marks the node failed, a Swarm page names the
+reason, and IPFS reads from its gateways without waiting for a node that will never answer. Guest paths in the WASI host are POSIX on every
+platform (`../../shim/README.md`), whatever the host process's own `path` is.
+
 **A node holds no grant, so the seam is the whole defence.** An app's sockets pass the broker's
 grants; a component's pass `node-net.ts` alone. A hostile peer, or a hostile DNS answer, can ask the
 node to connect anywhere it can name. The rules, each proved by a test in `tests/node-net.test.ts`:

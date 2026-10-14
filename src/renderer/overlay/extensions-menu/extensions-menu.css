@@ -50,8 +50,7 @@ body[data-overlay='extensions-menu'] .em-main:focus-visible,
 body[data-overlay='extensions-menu'] .em-actions .btn.icon:focus-visible,
 body[data-overlay='extensions-menu'] .em-manage:focus-visible,
 body[data-overlay='extensions-menu'] .em-back:focus-visible,
-body[data-overlay='extensions-menu'] .em-more-item:focus-visible,
-body[data-overlay='extensions-menu'] .link-btn:focus-visible {
+body[data-overlay='extensions-menu'] .em-more-item:focus-visible {
   outline: 2px solid var(--waccent-text);
   outline-offset: -2px;
 }

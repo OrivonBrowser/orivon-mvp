@@ -25,6 +25,8 @@ version 1 settings files were written, and a choice left at its default is never
 and no choice is a person who set up their own server: it reads as `socks5`, and the store writes version 2, where an
 address with no choice is a person who chose Nym. A build that reads only version 1 ignores a version 2 file whole.
 
+**A new setting leaves the file version alone when its absence already means its default.** `network.nym.privacy` is read as Balanced from a file that has no entry, so no file needs rewriting and the version stays 2; only a choice that must be told from a missing one (the `network.route.kind` case above) needs a new version. A build that does not know a key drops it when it reads the file.
+
 **Only a choice that differs from the default is written.** A default that improves later then
 reaches everyone who never touched it, and "changed from default" is a fact of the file rather than a
 comparison against a copy of the defaults the page would have to carry.

@@ -38,6 +38,7 @@ function harness (overrides: Partial<NymDeps> = {}) {
     proxyConfigured: async () => false,
     freshPort: () => ports++,
     maxInstances: 6,
+    privacy: 'balanced',
     setTimer: (callback, ms) => { const timer: Timer = { callback, ms, cancelled: false }; timers.push(timer); return timer },
     clearTimer: (timer) => { (timer as Timer).cancelled = true },
     ...overrides
@@ -60,6 +61,33 @@ describe('the Nym tunnel as the shell reaches it', () => {
     processes[0]?.say({ type: 'listening' })
     expect(await asked).toEqual({ port: 31_000, secret: config?.secret })
     expect(nym.state()).toEqual({ state: 'idle' })
+  })
+
+  it('starts the host at the saved privacy level, tells a running host about a change once, and starts the next host at the new level', async () => {
+    const { nym, processes, settle } = harness({ privacy: 'strongest' })
+    const asked = nym.ensure()
+    await settle()
+    expect(processes[0]?.config?.privacy).toBe('strongest')
+    processes[0]?.say({ type: 'listening' })
+    await asked
+
+    nym.setPrivacy('balanced')
+    nym.setPrivacy('balanced')
+    expect(processes[0]?.posted.filter((entry) => entry.type === 'privacy')).toEqual([{ type: 'privacy', privacy: 'balanced' }])
+
+    nym.stop()
+  })
+
+  it('says nothing to a host that is not running, and the host that starts later has the level', async () => {
+    const { nym, processes, settle } = harness()
+    nym.setPrivacy('strongest')
+    expect(processes).toHaveLength(0)
+    const asked = nym.ensure()
+    await settle()
+    expect(processes[0]?.config?.privacy).toBe('strongest')
+    processes[0]?.say({ type: 'listening' })
+    await asked
+    nym.stop()
   })
 
   it('does not fork a second host for a second ask, and follows the tunnels the host reports', async () => {

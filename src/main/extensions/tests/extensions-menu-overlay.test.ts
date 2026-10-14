@@ -83,7 +83,7 @@ describe('the overlay declaration', () => {
 
   it('gives a window with no extension host a handler that does nothing', () => {
     const handler = extensionsMenuOverlay.attach({} as OverlayWindow)
-    expect(handler.request({ type: 'store' })).toBeUndefined()
+    expect(handler.request({ type: 'manage-all' })).toBeUndefined()
   })
 
   it('attaches to the installed dependencies', async () => {
@@ -196,7 +196,7 @@ describe('pin', () => {
   })
 })
 
-describe('options, manage, manage-all, store and remove', () => {
+describe('options, manage, manage-all and remove', () => {
   it('opens the options page as a tab and closes the menu', async () => {
     const r = rig()
     await r.handler.request({ type: 'options', id: A })
@@ -216,13 +216,6 @@ describe('options, manage, manage-all, store and remove', () => {
     expect(r.tabs.openInternal).toHaveBeenLastCalledWith('extensions', `/details?id=${B}`)
     await r.handler.request({ type: 'manage-all' })
     expect(r.tabs.openInternal).toHaveBeenLastCalledWith('extensions')
-  })
-
-  it('opens the Chrome Web Store in a new tab', async () => {
-    const r = rig({ enabled: [] })
-    await r.handler.request({ type: 'store' })
-    expect(r.tabs.createTab).toHaveBeenCalledWith('https://chromewebstore.google.com/category/extensions')
-    expect(r.close).toHaveBeenCalled()
   })
 
   it('removes an extension, tells the extensions page and answers with the rest', async () => {

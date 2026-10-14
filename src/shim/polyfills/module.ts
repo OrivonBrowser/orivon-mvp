@@ -1,7 +1,7 @@
 // `module` module target: createRequire, which loads a native addon by its
 // `.node` path (../addon/) and any other file or builtin through cjs-loader.ts.
 
-import { dirname, resolve } from 'path'
+import { dirname, resolve } from 'path/posix'
 import { loadAddon } from '../addon/index.js'
 import { SHIM_MODULE_MAP } from '../module-map.js'
 import { registerBuiltin } from './cjs-builtins.js'
