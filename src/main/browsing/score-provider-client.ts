@@ -68,9 +68,11 @@ export function createScoreProviderClient (deps: ScoreProviderDeps): ScoreProvid
   // The last verdict the provider settled per page, which an ask it cannot answer does not withdraw (verdictToShow).
   // Unlike `kept` it does not expire: it is replaced by the next answer the provider does give.
   const settled = new Map<string, ProviderVerdict>()
+  // A lookup begun before `forget` must not write its verdict back afterwards.
+  let generation = 0
 
-  function remember (key: string, verdict: ProviderVerdict): ProviderVerdict {
-    if (!isSettled(verdict)) return verdict
+  function remember (key: string, verdict: ProviderVerdict, askedIn: number): ProviderVerdict {
+    if (!isSettled(verdict) || askedIn !== generation) return verdict
     settled.delete(key)
     settled.set(key, verdict)
     if (settled.size > SETTLED_KEPT) settled.delete(settled.keys().next().value as string)
@@ -137,7 +139,7 @@ export function createScoreProviderClient (deps: ScoreProviderDeps): ScoreProvid
   }
 
   return {
-    forget: () => { settled.clear() },
+    forget: () => { generation += 1; settled.clear() },
     async providerName (origin) {
       const address = deps.providerAddress().trim()
       if (address === '') return undefined
@@ -153,7 +155,8 @@ export function createScoreProviderClient (deps: ScoreProviderDeps): ScoreProvid
       if (address === '') return { status: 'off' }
       if (id === undefined) return { status: 'not-assessable', address }
       const key = `${origin ?? ''} ${address} ${id}`
-      const answer = lookup(address, id, origin).then((verdict) => remember(key, verdict))
+      const askedIn = generation
+      const answer = lookup(address, id, origin).then((verdict) => remember(key, verdict, askedIn))
       if (waitMs === undefined) return verdictToShow(await answer, settled.get(key))
       let timer: ReturnType<typeof setTimeout> | undefined
       const pending = new Promise<ProviderVerdict>((resolve) => { timer = setTimeout(() => { resolve({ status: 'pending', address }) }, waitMs) })

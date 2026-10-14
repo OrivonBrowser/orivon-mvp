@@ -30,8 +30,7 @@ import shippedCheckpoint from './mainnet-checkpoint.json'
 import { composeResolverRules } from './resolver-rules.js'
 import { ListeningGate } from './listening-gate.js'
 import { announceNameSchemeChange } from './name-scheme-events.js'
-import type { EthTestSeam } from './test-seam.js'
-import { ethTestSeam, exposeVerifierStart, noteVerifierListening, verifierStartDelayMs } from './test-seam.js'
+import { ethTestSeam, exposeVerifierStart, noteVerifierListening, verifierStartDelayMs, type EthTestSeam } from './test-seam.js'
 import { VerifierStore } from './verifier-store.js'
 import { chooseNameEvidence } from './name-evidence.js'
 import { lastProvenance } from './kept-provenance.js'
@@ -300,10 +299,10 @@ function lightClientCanStart (): boolean {
  * showing that origin sees it; null when it is not mounted there or the host
  * is down.
  */
-export async function siteProvenance (origin: string): Promise<SiteProvenance | null> {
+export async function siteProvenance (origin: string, route = routeOf(origin)): Promise<SiteProvenance | null> {
   if (supervisor === undefined) return null
   try {
-    return await supervisor.request({ kind: 'provenance', host: new URL(origin).hostname, partition: origin, ...routeOf(origin) })
+    return await supervisor.request({ kind: 'provenance', host: new URL(origin).hostname, partition: origin, ...route })
   } catch {
     return null
   }
@@ -312,7 +311,8 @@ export async function siteProvenance (origin: string): Promise<SiteProvenance | 
 /** How a `.eth` name or an address led to the content this tab shows, for the site-info popover; undefined for any other origin. */
 export async function verifierNameEvidence (origin: string, pin: PinRecord | null, servedFromCache: boolean): Promise<NameEvidence | undefined> {
   if (!servedByVerifier(origin)) return undefined
-  const { provenance: live, kept } = lastProvenance.resolve(`${origin} ${routeOf(origin).route ?? ''}`, await siteProvenance(origin))
+  const route = routeOf(origin)
+  const { provenance: live, kept } = lastProvenance.resolve(`${origin} ${route.route ?? ''}`, await siteProvenance(origin, route))
   const address = BUILTIN_ADDRESSES.servedName(new URL(origin).hostname)?.namespace.endsWith(':') === true
   // An address needs no light client, so its state would explain nothing.
   const unanswered = address ? 'The verifier has not loaded it in this tab yet.' : verifierView().summary

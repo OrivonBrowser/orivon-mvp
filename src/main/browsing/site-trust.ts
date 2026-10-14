@@ -78,6 +78,8 @@ export interface Web3Score {
   readonly localDev: boolean
   /** The level is the one this browser observed (2) and no provider has judged the page: its mark reads "Web?", not "Web2.5". */
   readonly unscored: boolean
+  /** No Web3 Score provider is chosen, so no score is coming: the tooltip says so instead of "yet". */
+  readonly noProvider: boolean
 }
 
 export function web3Score (trust: SiteTrust | null): Web3Score | null {
@@ -91,7 +93,8 @@ export function web3Score (trust: SiteTrust | null): Web3Score | null {
     delivery: trust.displayedDelivery,
     deliveryOverridden: trust.deliveryOverride !== undefined,
     localDev: trust.ddoc.status === 'local-dev',
-    unscored: !overridden && trust.displayedLevel === 2 && trust.judged.status !== 'judged'
+    unscored: !overridden && trust.displayedLevel === 2 && trust.judged.status !== 'judged',
+    noProvider: trust.judged.status === 'off'
   }
 }
 

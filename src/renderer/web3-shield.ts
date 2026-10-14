@@ -59,7 +59,7 @@ export function paintMark (el: HTMLElement, level: ScoreLevel | null, unscored =
 export function shieldLabel (score: Web3Score | null): string {
   if (score === null) return 'Web3 Score'
   const mark = web3Mark(score.level, score.unscored)
-  const base = `Website level ${String(score.level)} (${mark})${mark === 'Web?' ? ': no Web3 Score for this site yet' : ''}`
+  const base = `Website level ${String(score.level)} (${mark})${mark === 'Web?' ? (score.noProvider ? ': no Web3 Score provider is chosen' : ': no Web3 Score for this site yet') : ''}`
   if (score.overridden) return `${base} (developer override)`
   const judged = score.judgedBy === undefined ? base : `${base}, judged by ${score.judgedBy}`
   return score.localDev ? `${judged} (developer mode)` : judged

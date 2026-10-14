@@ -30,7 +30,7 @@ function levelRow ({ level, meaning }: { level: ScoreLevel, meaning: string }): 
 function unscoredNote (): HTMLParagraphElement {
   const mark = h('span', { className: 'web3-mark' })
   paintMark(mark, 2, true)
-  return h('p', { className: 'ws-note ws-unscored' }, mark, ' The score provider has not reached a site yet, or has no score for it, so only Levels 1 and 2 are known. It may still be judged Level 3 or 4.')
+  return h('p', { className: 'ws-note ws-unscored' }, mark, ' Checked at Level 2; no provider has judged it.')
 }
 
 export const web3ScorePage: OverlayPage = {

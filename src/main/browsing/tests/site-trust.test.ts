@@ -149,17 +149,17 @@ describe('web3Score -- the toolbar shield IPC\'s reply, the smallest slice of Si
 
   it('carries the displayed level and delivery, and whether each is overridden', () => {
     const trust = buildSiteTrust(ORIGIN, null, false, undefined, undefined, 2_000, undefined, 4, 3)
-    expect(web3Score(trust)).toEqual({ level: 4, overridden: true, judgedBy: undefined, pending: false, delivery: 3, deliveryOverridden: true, localDev: false, unscored: false })
+    expect(web3Score(trust)).toEqual({ level: 4, overridden: true, judgedBy: undefined, pending: false, delivery: 3, deliveryOverridden: true, localDev: false, unscored: false, noProvider: true })
   })
 
   it('overridden is false on each axis when nothing was overridden', () => {
     const trust = buildSiteTrust(ORIGIN, null, false, undefined, undefined, 2_000)
-    expect(web3Score(trust)).toEqual({ level: 1, overridden: false, judgedBy: undefined, pending: false, delivery: 1, deliveryOverridden: false, localDev: false, unscored: false })
+    expect(web3Score(trust)).toEqual({ level: 1, overridden: false, judgedBy: undefined, pending: false, delivery: 1, deliveryOverridden: false, localDev: false, unscored: false, noProvider: true })
   })
 
   it('localDev names a level that rests on a developer-mode local DDOC', () => {
     const trust = buildSiteTrust('http://127.0.0.1:8875', null, false, undefined, undefined, 2_000, undefined, undefined, undefined, LOCAL_HASH)
-    expect(web3Score(trust)).toEqual({ level: 2, overridden: false, judgedBy: undefined, pending: false, delivery: 1, deliveryOverridden: false, localDev: true, unscored: true })
+    expect(web3Score(trust)).toEqual({ level: 2, overridden: false, judgedBy: undefined, pending: false, delivery: 1, deliveryOverridden: false, localDev: true, unscored: true, noProvider: true })
   })
 })
 
@@ -235,6 +235,13 @@ describe('a Web3 Score provider\'s verdict', () => {
     }
   })
 
+  it('says no provider is chosen only when the verdict is off, not while one is asked or fails', () => {
+    expect(web3Score(withProviderVerdict(installed(), { status: 'off' }, HOME))).toMatchObject({ unscored: true, noProvider: true })
+    for (const verdict of [{ status: 'pending', address: 'x' }, { status: 'unreachable', address: 'x', reason: 'down' }, { status: 'not-assessable', address: 'x' }] as const) {
+      expect(web3Score(withProviderVerdict(installed(), verdict, HOME))?.noProvider).toBe(false)
+    }
+  })
+
   it('does not mark a page unscored once a provider judged it, nor at Level 1, nor under an override', () => {
     expect(web3Score(withProviderVerdict(installed(), judged(2), HOME))?.unscored).toBe(false)
     expect(web3Score(withProviderVerdict(installed(), judged(3), HOME))?.unscored).toBe(false)
@@ -245,7 +252,7 @@ describe('a Web3 Score provider\'s verdict', () => {
 
   it('marks a developer-mode local DDOC unscored too: nothing has judged it either', () => {
     const local = buildSiteTrust('http://127.0.0.1:8875', null, false, undefined, undefined, 2_000, undefined, undefined, undefined, LOCAL_HASH)
-    expect(web3Score(withProviderVerdict(local, { status: 'no-score', provider: { name: 'P', address: 'x' } }, HOME))).toMatchObject({ localDev: true, unscored: true })
+    expect(web3Score(withProviderVerdict(local, { status: 'no-score', provider: { name: 'P', address: 'x' } }, HOME))).toMatchObject({ localDev: true, unscored: true, noProvider: false })
   })
 
   it('never lifts a page whose DDOC does not hold, whatever the verdict says', () => {

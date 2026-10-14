@@ -9,7 +9,7 @@ import type { Web3Score } from '../../main/browsing/site-trust.js'
 // renderer module in this tree already follows.
 
 function score (overrides: Partial<Web3Score> = {}): Web3Score {
-  return { level: 1, overridden: false, judgedBy: undefined, pending: false, delivery: 1, deliveryOverridden: false, localDev: false, unscored: false, ...overrides }
+  return { level: 1, overridden: false, judgedBy: undefined, pending: false, delivery: 1, deliveryOverridden: false, localDev: false, unscored: false, noProvider: false, ...overrides }
 }
 
 describe('web3Mark', () => {
@@ -37,6 +37,10 @@ describe('shieldLabel', () => {
 
   it('says a Level 2 site has no Web3 Score yet, marked Web?', () => {
     expect(shieldLabel(score({ level: 2, unscored: true }))).toBe('Website level 2 (Web?): no Web3 Score for this site yet')
+  })
+
+  it('says no provider is chosen, not that a score is coming, when none is set', () => {
+    expect(shieldLabel(score({ level: 2, unscored: true, noProvider: true }))).toBe('Website level 2 (Web?): no Web3 Score provider is chosen')
   })
 
   it('keeps naming developer mode beside Web?', () => {
