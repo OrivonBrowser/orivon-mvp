@@ -234,9 +234,9 @@ function nodeEndpointNames (): Readonly<Record<string, string>> {
   return { [ipfsNodeEndpoint()]: "Orivon's IPFS node", [swarmNodeEndpoint()]: "Orivon's Swarm node" }
 }
 
-/** Whether IPFS is read from the node Orivon runs: the person's choice, never in a test build, which serves IPFS from its own endpoints. */
+/** Whether IPFS is read from the node Orivon runs: the person's choice; a test build serves IPFS from its own endpoints, or from a fixture standing in for the node when it names one. */
 function ipfsFromNode (seam: EthTestSeam | undefined): boolean {
-  return seam === undefined && ipfsSourceChoice() === 'node'
+  return seam === undefined ? ipfsSourceChoice() === 'node' : seam.ipfsNode !== undefined
 }
 
 async function hostConfig (): Promise<HostConfig> {
@@ -269,7 +269,7 @@ async function hostConfig (): Promise<HostConfig> {
     ipnsSequences: stored.ipnsSequences(),
     swarmEndpoints: swarmEndpoints(seam),
     ...(seam === undefined && { swarmNode: true }),
-    ...(ipfsFromNode(seam) && { ipfsNode: { endpoint: ipfsNodeEndpoint(), partitionSalt: stored.partitionSalt(), lookupService: ipfsLookupServiceChoice() } }),
+    ...(ipfsFromNode(seam) && { ipfsNode: { endpoint: ipfsNodeEndpoint(), partitionSalt: stored.partitionSalt(), lookupService: ipfsLookupServiceChoice(), ...(seam?.ipfsNode?.retryWaitMs !== undefined && { retryWaitMs: seam.ipfsNode.retryWaitMs }) } }),
     swarmFeedIndexes: stored.swarmFeedIndexes(),
     ...(seam === undefined ? {} : { fixtures: seam.fixtures })
   }

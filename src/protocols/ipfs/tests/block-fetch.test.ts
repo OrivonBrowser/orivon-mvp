@@ -223,3 +223,60 @@ describe('fetchVerifiedBlock -- passes', () => {
     await expect(promise).rejects.toMatchObject({ failure: 'unavailable' })
   })
 })
+
+describe('fetchVerifiedBlock -- a gateway that is only slow', () => {
+  /** The first `holds` requests never answer; the rest are served from `blocks`. */
+  function slowThenServing (holds: number): { fetch: FetchDeps['fetch'], requests: string[] } {
+    const gateways = fakeGateways(dag.blocks)
+    let seen = 0
+    return {
+      requests: gateways.requests,
+      fetch: async (url, init) => {
+        if (seen++ < holds) {
+          gateways.requests.push(url)
+          return await new Promise<Response>((_resolve, reject) => { init.signal.addEventListener('abort', () => { reject(new Error('aborted (simulated hang)')) }, { once: true }) })
+        }
+        return await gateways.fetch(url, init)
+      }
+    }
+  }
+
+  it('a lone gateway that sent nothing in time is asked again, and serves the block', async () => {
+    const slow = slowThenServing(1)
+    const d = { ...deps(fakeGateways(dag.blocks), [A], { blockTimeoutMs: 40 }), fetch: slow.fetch }
+    expect(await fetchVerifiedBlock(leaf, d, signal, noRefusal)).toEqual(leafBytes)
+    expect(slow.requests).toHaveLength(2)
+  })
+
+  it('every gateway of a pass timing out earns another pass', async () => {
+    const slow = slowThenServing(2)
+    const d = { ...deps(fakeGateways(dag.blocks), [A, B], { blockTimeoutMs: 80, hedgeDelayMs: 10 }), fetch: slow.fetch }
+    expect(await fetchVerifiedBlock(leaf, d, signal, noRefusal)).toEqual(leafBytes)
+  })
+
+  it('a timeout beside a plain 404 earns no other pass: the 404 says one gateway lacks it, the pass was not all slowness', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    gateways.missing.add(A)
+    gateways.hanging.add(B)
+    const d = deps(gateways, [A, B], { blockTimeoutMs: 40, hedgeDelayMs: 10 })
+    await expect(fetchVerifiedBlock(leaf, d, signal, noRefusal)).rejects.toMatchObject({ failure: 'unavailable' })
+    expect(gateways.requests).toHaveLength(2)
+  })
+
+  it('stays bounded: a gateway that never answers is asked at most MAX_PASSES times', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    gateways.hanging.add(A)
+    const d = deps(gateways, [A], { blockTimeoutMs: 20 })
+    await expect(fetchVerifiedBlock(leaf, d, signal, noRefusal)).rejects.toMatchObject({ failure: 'unavailable' })
+    expect(gateways.requests.length).toBeLessThanOrEqual(MAX_PASSES)
+    expect(gateways.requests.length).toBeGreaterThan(1)
+  })
+
+  it('a local node that sent nothing in time is not asked again by the passes: its retry is the patient one', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    gateways.hanging.add(A)
+    const d = { ...deps(gateways, [A], { blockTimeoutMs: 20 }), pool: new GatewayPool([A], 4, Date.now, { serverErrorsAreAnswers: true }) }
+    await expect(fetchVerifiedBlock(leaf, d, signal, noRefusal)).rejects.toMatchObject({ failure: 'unavailable' })
+    expect(gateways.requests).toHaveLength(1)
+  })
+})
