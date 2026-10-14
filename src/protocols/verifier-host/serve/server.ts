@@ -157,6 +157,15 @@ function routeOf (req: IncomingMessage): FetchRoute {
   return req.headers[ROUTE_HEADER] === 'tunnel' ? 'tunnel' : 'direct'
 }
 
+/**
+ * A person asking for the page itself (typed, a reload, a click on a link or on Try again), as the browser marks a
+ * top-level document load. A frame or a subresource is not one: it keeps a remembered failure, so a failed page's
+ * own requests do not each start the mount again.
+ */
+function isTopLevelNavigation (req: IncomingMessage): boolean {
+  return req.headers['sec-fetch-mode'] === 'navigate' && req.headers['sec-fetch-dest'] === 'document'
+}
+
 /** The path of an origin-form request target. `//x/y` would read as an authority, so it is refused, not reinterpreted. */
 function pathOf (target: string | undefined, host: string): URL | undefined {
   if (target === undefined || !target.startsWith('/') || target.startsWith('//')) return undefined
@@ -376,7 +385,7 @@ async function handle (registry: ProtocolRegistry, sites: SiteSource, req: Incom
   let root: string | undefined
   const partition = partitionOf(req, host)
   try {
-    const { site } = await sites.get(host, partition, routeOf(req))
+    const { site } = await sites.get(host, partition, routeOf(req), isTopLevelNavigation(req))
     root = site.root.cid
     const etag = `"${root}"`
     // One install reads one root: a request naming another means the name moved on mid-load.
