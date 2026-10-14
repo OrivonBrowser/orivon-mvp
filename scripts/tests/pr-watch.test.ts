@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { failedSpecs, nextStep, normalize, runIds, updateBranch } from '../ai/pr-watch.mjs'
+import { failedSpecs, headOnceSeen, nextStep, normalize, runIds, updateBranch } from '../ai/pr-watch.mjs'
 
 const pass = (name: string) => ({ name, conclusion: 'SUCCESS' })
 const fail = (name: string) => ({ name, conclusion: 'FAILURE' })
@@ -74,6 +74,21 @@ describe('runIds', () => {
       { name: 'live (macos)', conclusion: 'CANCELLED', url: url(9, 3) },
       { name: 'check', conclusion: 'SUCCESS', url: url(8, 4) }
     ])).toEqual(['7', '9'])
+  })
+})
+
+describe('headOnceSeen', () => {
+  const timing = { budgetMs: 20, pollMs: 5, sleep: async () => {} }
+
+  it('waits for a PR head that lags a push that landed', async () => {
+    const heads = ['old', 'old', 'new']
+    expect(await headOnceSeen(() => heads.shift() ?? 'new', 'new', timing)).toBe('new')
+  })
+
+  it('gives the last head read once the budget is spent, so an unpushed commit is still named', async () => {
+    let reads = 0
+    expect(await headOnceSeen(() => { reads += 1; return 'old' }, 'new', timing)).toBe('old')
+    expect(reads).toBe(5)
   })
 })
 
