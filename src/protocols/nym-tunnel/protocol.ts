@@ -47,5 +47,10 @@ export function failure (stage: FailureStage, message: string): FromHost {
   return { type: 'failed', stage, message: message.length > MAX_FAILURE_MESSAGE ? `${message.slice(0, MAX_FAILURE_MESSAGE - 1)}…` : message }
 }
 
+/** A user name made for one short use (the Settings test): its tunnel is closed soon after the use ends, since it costs a core's worth of cover traffic for as long as it is open. */
+export const SHORT_LIVED_USER_PREFIX = 'orivon-test-'
+export const SHORT_LIVED_USER = 'orivon-test-settings'
+export const SHORT_LIVED_IDLE_MS = 5_000
+
 /** The user names a SOCKS5 client may send: what `isolationCredentials` makes, and what a test may use. */
 export const USER_NAME = /^[\w.-]{1,64}$/

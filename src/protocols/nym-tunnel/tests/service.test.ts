@@ -28,7 +28,26 @@ export async function connectTcp (host, port) {
   const sent = []
   return { read: async () => null, write: async (bytes) => { sent.push(bytes) }, close: async () => {} }
 }
-export async function bindUdp () { throw new Error('not in this fake') }
+export async function bindUdp () {
+  const inbox = []
+  let wake
+  let closed = false
+  return {
+    sendTo: async (host, port, bytes) => {
+      const query = Buffer.from(bytes)
+      let end = 12
+      while (query[end] !== 0) end += query[end] + 1
+      const answer = Buffer.concat([Buffer.from([query[0], query[1], 0x81, 0x80, 0, 1, 0, 1, 0, 0, 0, 0]), query.subarray(12, end + 5), Buffer.from([0xc0, 12, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 203, 0, 113, 7])])
+      inbox.push({ data: new Uint8Array(answer), host, port })
+      wake?.()
+    },
+    recv: async () => {
+      while (inbox.length === 0) { if (closed) throw new Error('UDP socket closed'); await new Promise((resolve) => { wake = resolve }) }
+      return inbox.shift()
+    },
+    close: () => { closed = true; wake?.() }
+  }
+}
 export async function disconnectMixTunnel () {}
 `
 

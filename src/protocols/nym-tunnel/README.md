@@ -12,8 +12,9 @@ is Nym's `smolmix` client with raw TCP and UDP added (`vendor/nym-smolmix/`), pu
 | [`entry.ts`](entry.ts) | The process: takes `start{ config }` on its parent port, hands it to `service.ts`, and posts what happens |
 | [`service.ts`](service.ts) | The work apart from the process: the globals the module needs, the module loaded from its pinned files, the tunnels per user name, and the SOCKS5 server in front of them |
 | [`socks-server.ts`](socks-server.ts) | SOCKS5 on `127.0.0.1:<port>`: username/password only, the password being the secret (compared in constant time); CONNECT by name or address; UDP ASSOCIATE with the relay on loopback, for the port the client declares; no BIND, no other method |
-| [`instances.ts`](instances.ts) | One tunnel per SOCKS5 user name; starts at the first request, which waits for it; closes after ten minutes unused; at most `maxInstances` alive, and past that a new app is refused, never given another app's tunnel |
-| [`module-loader.ts`](module-loader.ts) | Reads the glue and the `.wasm` once and hashes them against the pins, compiles the `.wasm` once, and brings a tunnel up in a fresh instance of the glue |
+| [`instances.ts`](instances.ts) | One tunnel per SOCKS5 user name; starts at the first request, which waits for it; closes after ten minutes unused (a name made for one short use, the Settings test, after five seconds); replaces a tunnel whose streams stall; at most `maxInstances` alive, and past that a new app is refused, never given another app's tunnel |
+| [`module-loader.ts`](module-loader.ts) | Reads the glue and the `.wasm` once and hashes them against the pins, compiles the `.wasm` once, and brings a tunnel up in a fresh instance of the glue, trying again under a new identity when a gateway fails; hands the module addresses, never names |
+| [`dns.ts`](dns.ts) | The lookups of one tunnel: A, then AAAA, queries sent as datagrams through the tunnel to a public resolver, any number at once, each retried, with a cache that follows the answers' lifetimes |
 | [`module-net.ts`](module-net.ts) | The module's only network: `fetch` and `WebSocket` over a dispatcher that dials `https:` and `wss:` alone, and only addresses that are public unicast |
 | [`protocol.ts`](protocol.ts) | What main and this process say to each other: plain data |
 
@@ -64,6 +65,28 @@ again from a `data:` URL made of the bytes that were hashed, with a comment of i
 and instantiates the one compiled `.wasm`. The instances stay in this process until it exits, so the process reports how many tunnels it has started and main
 replaces it, as soon as no tunnel is open, after 24 (`RECYCLE_AFTER_STARTS`), and in any case ten minutes after the last
 tunnel closes.
+
+**Names are looked up here, not by the module.** The module resolves a name inside `connectTcp` under one lock that it holds for
+the whole query, so every new name waits behind the one before it (about a second each through the mixnet) and a datagram lost on the way stalls them all for the module's 30
+seconds; a tunnel that answers no datagram at all would fail every connection for good. [`dns.ts`](dns.ts) asks for itself: queries to `8.8.8.8` (the module's own first choice) that go on to `1.1.1.1` after three quiet
+seconds and to `8.8.8.8` again after six, any number at once, over the tunnel's own datagram socket, so the resolver sees the exit and nothing is looked up on this
+computer. The module is then given an address. Answers are kept for their lifetime (30 seconds to five minutes). A name the resolver says does not exist, or that both resolvers fail for, is a refusal of that name; only a name that
+no resolver answered for within twelve seconds counts against the tunnel. The cache is shared by everything that uses a tunnel, which with the whole browser on the tunnel is every site: a page can time whether another asked for a name lately (*provisional*; the host does not see the site).
+
+**A tunnel that carries nothing is closed, and the next request gets another.** A lookup that no resolver answered, a datagram socket that cannot be bound, or a stream that does not open in 45 seconds is a *stall*; a refusal by the destination (the module's own connect timeout included, which a destination can cause by itself) is not. A tunnel that has opened nothing yet is closed at its second stall in a
+row, one that has opened a stream at its third, and any stream that opens clears the count; a stall of an opening that began before another stream opened is not counted, and a user name's tunnel is replaced at most once a minute, because a page chooses what it asks for and so what stalls.
+A tunnel that cannot come up (a gateway that closes the connection, or none that answers in 30 seconds) is tried again, up to three times, under a new
+identity, which is what makes the module pick another gateway; a request waits for all three (95 seconds).
+
+**The Settings test's tunnel does not outlive its answer.** Each tunnel sends cover traffic and builds Sphinx packets for as long as it
+is open, which costs about a third of a core (below), so the user name made for the test (`orivon-test-` and a word) is closed five seconds after its connection ends, not ten minutes.
+
+**What a tunnel costs the processor, and the module's options.** Measured with the pinned module under plain Node on an eight-core
+computer, a tunnel with nothing going through it uses 26 to 37% of one core (a single thread: the cover and Poisson-timed packets are
+built in WebAssembly, nearly all of it curve25519 in `smolmix_wasm`), in an Electron utility process the same. It
+is the module's own traffic, not a loop here: `read()`, `recv()` and the server wait on promises and timers. `setupMixTunnel` takes `disableCoverTraffic` and
+`disablePoissonTraffic`; with the first an idle tunnel used 0.8 to 26% (1.7% in a further run), with the second 1.2 to 3.2%, with both 0.1%. A 300 KB download through a tunnel took 9 to 16 s by default, 10 to 13 s without cover traffic, 13 to 16 s without the Poisson stream and 11 to 17 s with neither (two to three runs each; the mixnet's own variation is as large as the differences). Each is a choice about what a network observer can learn from when packets are sent, so neither is changed here: this build
+leaves both on. *Provisional*: the owner decides; these figures are the input.
 
 **The module's network is a dispatcher, not a wrapper.** A check made on a name before the module dials it would let a
 name that answers differently the second time lead to a private address. `module-net.ts` puts the check where the dial

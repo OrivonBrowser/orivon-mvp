@@ -11,73 +11,13 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
+import { EMPTY_WASM, FAKE_NYM_MODULE } from './nym-stand-in.js'
 import { assertNoElectronSurvivors } from '../support/launch-electron.mjs'
 import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
 import { launchShell, QA_TEST_TIMEOUT_MS } from '../support/qa-helpers.js'
 import { activeTabInfo, delay, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 const NAME = 'plain.nym.test'
-const EMPTY_WASM = Buffer.from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00])
-
-/** The stand-in module. It reads its targets and its log from the file the test names, at each use. */
-const FAKE_MODULE = `
-import net from 'node:net'
-import dgram from 'node:dgram'
-import fs from 'node:fs'
-const config = () => JSON.parse(fs.readFileSync(process.env.ORIVON_TEST_NYM_FAKE, 'utf8'))
-const log = (line) => fs.appendFileSync(config().log, line + '\\n')
-let client = ''
-export function initSync () {}
-export function main () {}
-export async function setupMixTunnel (options) {
-  if (config().failStart) throw new Error('the stand-in gateway is unreachable')
-  client = options.clientId.replace(/-[0-9a-f]{12}$/, '')
-  log('up ' + client)
-}
-export async function disconnectMixTunnel () { log('down ' + client) }
-export async function connectTcp (host, port) {
-  const target = config().targets[host + ':' + port]
-  if (target === undefined) throw new Error('no such name')
-  log('tcp ' + client + ' ' + host + ':' + port)
-  const socket = net.connect(target.port, target.host)
-  await new Promise((resolve, reject) => { socket.once('connect', resolve); socket.once('error', reject) })
-  const chunks = []
-  let wake
-  socket.on('data', (data) => { chunks.push(new Uint8Array(data)); wake?.() })
-  socket.on('close', () => { chunks.push(null); wake?.() })
-  socket.on('error', () => {})
-  return {
-    read: async () => { while (chunks.length === 0) await new Promise((resolve) => { wake = resolve }); return chunks.shift() },
-    write: async (bytes) => { socket.write(bytes) },
-    close: async () => { socket.end() }
-  }
-}
-export async function bindUdp () {
-  const queue = []
-  let wake
-  let closed = false
-  const socket = dgram.createSocket('udp4')
-  return {
-    sendTo: async (host, port, bytes) => {
-      const target = config().targets[host + ':' + port]
-      if (target === undefined) throw new Error('no such name')
-      log('udp ' + client + ' ' + host + ':' + port)
-      socket.once('message', (data) => { queue.push({ data: new Uint8Array(data), host: '203.0.113.9', port }); wake?.() })
-      socket.send(bytes, target.port, target.host)
-    },
-    recv: async (timeoutMs) => {
-      const deadline = Date.now() + (timeoutMs ?? 60000)
-      while (queue.length === 0) {
-        if (closed) throw new Error('UDP socket closed')
-        if (Date.now() > deadline) throw new Error('UDP receive timed out')
-        await new Promise((resolve) => { wake = resolve; setTimeout(resolve, 50) })
-      }
-      return queue.shift()
-    },
-    close: () => { closed = true; try { socket.close() } catch {} }
-  }
-}
-`
 
 
 interface Hosted { port: number, hits: () => number, close: () => Promise<void> }
@@ -100,7 +40,7 @@ async function launched (failStart: boolean) {
   cleanups.push(() => { rmSync(dir, { recursive: true, force: true }) })
   const moduleDir = join(dir, 'module')
   mkdirSync(moduleDir)
-  writeFileSync(join(moduleDir, 'smolmix_wasm.js'), FAKE_MODULE)
+  writeFileSync(join(moduleDir, 'smolmix_wasm.js'), FAKE_NYM_MODULE)
   writeFileSync(join(moduleDir, 'smolmix_wasm_bg.wasm'), EMPTY_WASM)
   const decoy = await host('direct')
   const real = await host('tunnelled')

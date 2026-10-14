@@ -3,7 +3,7 @@ import type { AddressInfo, Server, Socket } from 'node:net'
 import { createSocket } from 'node:dgram'
 import { afterEach, describe, expect, it } from 'vitest'
 import { SocksClient } from 'socks'
-import { AcquireError } from '../instances.js'
+import { AcquireError, StallError } from '../instances.js'
 import type { Lease, TcpStream, Tunnel, UdpChannel } from '../instances.js'
 import { Reader, startSocksServer } from '../socks-server.js'
 import type { SocksServer } from '../socks-server.js'
@@ -14,15 +14,17 @@ interface Recorder {
   readonly tcp: string[]
   readonly udpSent: string[]
   readonly acquired: string[]
+  readonly outcomes: string[]
   released: number
 }
 
 /** A tunnel that connects to an echo server on this computer whatever the name, and answers a datagram with the same bytes. */
-function fakeTunnel (echoPort: number, record: Recorder, options: { failConnect?: boolean } = {}): Tunnel {
+function fakeTunnel (echoPort: number, record: Recorder, options: { failConnect?: boolean, stallConnect?: boolean } = {}): Tunnel {
   return {
     connectTcp: async (host, port) => {
       record.tcp.push(`${host}:${String(port)}`)
       if (options.failConnect === true) throw new Error('no route')
+      if (options.stallConnect === true) throw new StallError('no resolver answered')
       const socket: Socket = netConnect(echoPort, '127.0.0.1')
       await new Promise<void>((resolve, reject) => { socket.once('connect', resolve); socket.once('error', reject) })
       const chunks: Array<Uint8Array | null> = []
@@ -82,11 +84,11 @@ async function start (acquire: (name: string) => Promise<Lease>, record: Recorde
 }
 
 function recorder (): Recorder {
-  return { tcp: [], udpSent: [], acquired: [], released: 0 }
+  return { tcp: [], udpSent: [], acquired: [], outcomes: [], released: 0 }
 }
 
 function leaseOf (tunnel: Tunnel, record: Recorder): Lease {
-  return { tunnel, release: () => { record.released += 1 } }
+  return { tunnel, release: () => { record.released += 1 }, report: (outcome) => { record.outcomes.push(outcome) } }
 }
 
 afterEach(async () => {
@@ -160,6 +162,21 @@ describe('the SOCKS5 server of the Nym tunnel', () => {
     const port = await start(async () => leaseOf(fakeTunnel(echo, record, { failConnect: true }), record), record)
     await expect(SocksClient.createConnection({ proxy: proxyOf(port), command: 'connect', destination: { host: 'service.example', port: 80 } })).rejects.toThrow(/HostUnreachable/i)
     expect(record.released).toBe(1)
+    expect(record.outcomes, 'a destination that said no says nothing against the tunnel').toEqual(['refused'])
+  })
+
+  it('tells the tunnel when a stream opened, and when nothing answered', async () => {
+    const record = recorder()
+    const echo = await echoServer()
+    const port = await start(async () => leaseOf(fakeTunnel(echo, record), record), record, { halfCloseGraceMs: 30 })
+    const { socket } = await SocksClient.createConnection({ proxy: proxyOf(port), command: 'connect', destination: { host: 'service.example', port: 4242 } })
+    socket.destroy()
+    expect(record.outcomes).toEqual(['opened'])
+    await socks?.close()
+    const stalled = recorder()
+    const stalledPort = await start(async () => leaseOf(fakeTunnel(echo, stalled, { stallConnect: true }), stalled), stalled)
+    await expect(SocksClient.createConnection({ proxy: proxyOf(stalledPort), command: 'connect', destination: { host: 'service.example', port: 80 } })).rejects.toThrow(/HostUnreachable/i)
+    expect(stalled.outcomes).toEqual(['stalled'])
   })
 
   it('gives up on a stream that never opens, answers unreachable, and closes it should it open late', async () => {
@@ -170,6 +187,7 @@ describe('the SOCKS5 server of the Nym tunnel', () => {
     const port = await start(async () => leaseOf(hanging, record), record, { connectTimeoutMs: 150 })
     await expect(SocksClient.createConnection({ proxy: proxyOf(port), command: 'connect', destination: { host: 'service.example', port: 80 } })).rejects.toThrow(/HostUnreachable/i)
     expect(record.released).toBe(1)
+    expect(record.outcomes).toEqual(['stalled'])
     open({ read: async () => null, write: async () => {}, close: async () => { closed.push('closed') } })
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(closed).toEqual(['closed'])
