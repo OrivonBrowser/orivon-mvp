@@ -1,6 +1,6 @@
-// The apps that hold permissions, as the page knows them: what each may do, the
+// The apps as the page knows them: a switch for each thing one may do, the
 // files it was given, what it has stored, and whether the identity key is kept.
-// Revoking goes through main, which checks the request; the list is fetched
+// A switch goes through main, which checks the request; the list is fetched
 // again after, so the page never shows a permission main no longer has. A
 // grant or revoke made elsewhere (the site-info popover, another Settings
 // window, install) arrives as `apps.changed` and reloads the same way.
@@ -10,14 +10,26 @@ import { coalesce } from '../shared/coalesce.js'
 export interface AppRow {
   readonly origin: string
   readonly appName: string
-  readonly rows: ReadonlyArray<{ readonly capability: string, readonly warning: boolean, readonly message: string }>
+  /** One row per capability the app declares or holds, each with the switch that moves it. */
+  readonly capabilityRows: ReadonlyArray<CapabilityRow>
   readonly pickedPathRows: ReadonlyArray<{ readonly pickId: string, readonly kind: string, readonly warning: boolean, readonly message: string }>
   readonly deviceRows: ReadonlyArray<{ readonly key: string, readonly label: string }>
-  /** The kinds of link the person chose this app to open (`magnet`), each shown with a button that takes it back. */
+  /** The kinds of link the person chose this app to open (`magnet`), each shown with a switch that takes it back. */
   readonly linkSchemes: readonly string[]
   readonly storage: { readonly filesBytes: number, readonly codeBytes: number }
   /** The switch that sends the app's traffic through the person's proxy: what its route is doing, and why it cannot be turned on. */
   readonly route: { readonly state: RouteView, readonly blocked: 'no-proxy' | 'not-cached' | undefined, readonly unreadable?: boolean }
+}
+
+export interface CapabilityRow {
+  readonly capability: string
+  readonly on: boolean
+  /** False for an off row that cannot be turned on from here: the app is not open, so its manifest cannot bound a grant. */
+  readonly canTurnOn: boolean
+  readonly warning: boolean
+  readonly message: string
+  /** What turning the row on would grant, sent back so main can tell the manifest moved since the row was drawn. */
+  readonly patterns: readonly string[]
 }
 
 export type RouteView = 'off' | 'no-proxy' | 'idle' | 'ok' | 'down'
@@ -58,8 +70,18 @@ export class AppsState {
     this.changed()
   }
 
-  async revoke (origin: string, capability: string): Promise<void> {
-    await this.bridge.request('apps', { type: 'revoke', origin, capability })
+  /** Capabilities whose last switch was refused, by the way it was moved (true: on), so the row can say what could not be done until the next press. */
+  readonly capabilityRefused = new Map<string, boolean>()
+
+  async setCapability (origin: string, row: CapabilityRow, on: boolean): Promise<void> {
+    const key = `${origin}|${row.capability}`
+    this.capabilityRefused.delete(key)
+    try {
+      const reply = await this.bridge.request('apps', { type: 'setCapability', origin, capability: row.capability, on, patterns: row.patterns }) as { ok?: unknown } | undefined
+      if (reply?.ok !== true) this.capabilityRefused.set(key, on)
+    } catch {
+      this.capabilityRefused.set(key, on)
+    }
     await this.load()
   }
 

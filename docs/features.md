@@ -60,6 +60,7 @@ rely on, row by row. A new feature adds its line here when it lands.
 - **Passwords**: a local store encrypted by the system keyring, with save, fill, a generator and CSV import and export.
 - **Privacy controls**: third-party cookie blocking, Do Not Track, Global Privacy Control, HTTPS-only, secure DNS, a certificate viewer and Clear browsing data.
 - **Per-site permissions**: prompts for camera, microphone, location, clipboard and more; a popover, a Settings page, a pop-up blocker, and per-site JavaScript, images, sound and downloads.
+- **A switch for everything an app may do**: under Settings, Apps, each installed app has a card with one row per capability it declares, the same rows and words as the key popup, each with a switch that applies at once. Switching one off is remembered, so the app stays on the list to be switched on again; picked files, approved devices and chosen link kinds are switches that are on, and switching one off takes it away. Extra access given to an extension is a switch the same way.
 - **Screen sharing**: a picker for a tab, a window or the screen, with a bar to stop.
 - **Chrome extensions**, MV3 and MV2, from the Chrome Web Store, a `.crx` or `.zip`, or a folder; full uBlock Origin works.
 - **Extension controls**: a toolbar menu with pinning, side panels, access sheets and command keys.
