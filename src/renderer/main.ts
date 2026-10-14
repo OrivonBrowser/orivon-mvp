@@ -1,5 +1,6 @@
 import type { OrivonShell } from '../preload/shell.js'
 import { createChromeContext, must } from './chrome/context.js'
+import { guardMiddleClickPaste } from './middle-click-guard.js'
 import { dispatchShellEvent, initModules, renderModules } from './chrome/modules.js'
 
 // The chrome view's whole job: render ShellState, turn clicks and typing into orivonShell.* commands.
@@ -19,6 +20,8 @@ const shell = must(window.orivonShell, 'orivonShell not exposed -- the preload d
 // See ../style.css's [data-platform] rules -- reserves room for Electron's native window buttons before the
 // first paint, rather than waiting on a state push.
 document.documentElement.dataset['platform'] = shell.platform
+
+guardMiddleClickPaste(document)
 
 const { ctx, setState } = createChromeContext(shell)
 initModules(ctx)

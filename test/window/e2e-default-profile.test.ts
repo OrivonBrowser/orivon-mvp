@@ -17,10 +17,10 @@ const UBLOCK_ORIGIN_ID = 'fkgkibajhfbepljeaefdnfnegdcjomkh'
 const BAR = ['Uniswap', 'James Carnley', 'ENS Interviews', 'Web3 Compass', 'Vitalik Buterin']
 const FEATURED = [
   ['Explore', 'ipfs://explore.orivonstack.eth'],
-  ['The Lounge', 'ipfs://thelounge.orivonstack.eth'],
-  ['FreeTube', 'ipfs://freetube.orivonstack.eth'],
+  ['WebTorrent', 'ipfs://webtorrent.orivonstack.eth'],
   ['ASGARDEX', 'ipfs://asgardex.orivonstack.eth'],
-  ['Element', 'ipfs://element.orivonstack.eth']
+  ['Ledger Wallet', 'ipfs://ledgerwallet.orivonstack.eth'],
+  ['The Lounge', 'ipfs://thelounge.orivonstack.eth']
 ]
 
 afterAll(async () => { expect(await assertNoElectronSurvivors()).toEqual([]) })

@@ -2,6 +2,7 @@
 // view's overlay, mounts it, tells it about each show, reports the content
 // height so main can size the view, and closes on Escape.
 import { h } from '../pages/shared/dom.js'
+import { guardMiddleClickPaste } from '../middle-click-guard.js'
 import { createOverlay, mountPage, readyEvents, shownPayload } from './kit.js'
 import { OVERLAY_PAGES } from './pages.js'
 
@@ -13,6 +14,7 @@ function showError (root: HTMLElement): void {
 }
 
 if (content === null) throw new Error('overlay document has no #content')
+guardMiddleClickPaste(document)
 if (bridge === undefined) {
   // The preload exposes nothing at any address but the one main built.
   showError(content)

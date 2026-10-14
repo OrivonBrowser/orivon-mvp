@@ -5,7 +5,7 @@ entirely.
 
 | Entry | What it is |
 |---|---|
-| (top level) | The chrome view: `main.ts` starts the modules in [`chrome/`](chrome/) (tab strip, navigation, site badges, the toolbar cluster, the bookmarks bar; each a `ChromeModule`), and the tab drag helpers here (`tab-drag.ts`, the pointer-capture drag, and `native-tab-drag.ts`, the browser's own drag and drop that a native Wayland session uses), in its own `WebContentsView` above the active tab |
+| (top level) | The chrome view: `main.ts` starts the modules in [`chrome/`](chrome/) (tab strip, navigation, site badges, the toolbar cluster, the bookmarks bar; each a `ChromeModule`), and the tab drag helpers here (`tab-drag.ts`, the pointer-capture drag, and `native-tab-drag.ts`, the browser's own drag and drop that a native Wayland session uses; and `middle-click-guard.ts`, installed once by the chrome, the overlay page and the history and bookmarks pages so a middle-click that acts does not paste the Linux selection into the focused field), in its own `WebContentsView` above the active tab |
 | [`chrome/`](chrome/) | The chrome view's features, one file each, and the three toolbar slots a feature puts a button in |
 | [`newtab/`](newtab/) | The new-tab dashboard: ordinary content in a fresh tab's own view (`src/main/shell/tabs.ts`'s `createTab()`), not part of the chrome |
 | [`permissions/`](permissions/) | The all-sites permissions popup: every app and its grants, revoke-only |
