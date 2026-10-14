@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createBroker } from '../index.js'
 import { nodeFs } from '../adapters/node-adapters.js'
 import { isOrivonErrorLike } from '../errors.js'
@@ -238,6 +238,16 @@ describe('fs.sync: a call never walks more than a bounded number of entries on t
 
     await broker.fs.writeFile(APP, 'b', bytes(1))
     broker.fs.sync.writeFile(APP, 'a', bytes(1))
+
+    expect(Array.from(await broker.fs.readFile(APP, 'a'))).toEqual([0])
+  })
+
+  it('the refused first call starts the asynchronous measure, so a retry of the same synchronous call succeeds on its own', async () => {
+    const { broker, root } = await realBroker(1_000)
+    await fill(root, 'many', SYNC_WALK_ENTRY_LIMIT + 10)
+    expect(isOrivonErrorLike(thrown(() => broker.fs.sync.writeFile(APP, 'a', bytes(1))))).toBe(true)
+
+    await vi.waitFor(() => { broker.fs.sync.writeFile(APP, 'a', bytes(1)) }, { timeout: 5_000 })
 
     expect(Array.from(await broker.fs.readFile(APP, 'a'))).toEqual([0])
   })

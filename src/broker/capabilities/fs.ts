@@ -194,7 +194,7 @@ export function createFsCapability ({ deps, handleTable, ledger, canonical }: Fs
     return deps.fs.sync
   }
 
-  /** `ensureMeasured`, blocking: the first synchronous charge or refund walks the origin's files itself rather than skip the quota. A failed walk starts from zero and is retried next call. */
+  /** `ensureMeasured`, blocking: the first synchronous charge or refund walks the origin's files itself rather than skip the quota, within `SYNC_WALK_ENTRY_LIMIT`. A failed walk starts from zero and is retried next call. */
   function ensureMeasuredSync (key: string): void {
     if (measuredDone.has(key)) return
     let usage: number | null
@@ -204,7 +204,11 @@ export function createFsCapability ({ deps, handleTable, ledger, canonical }: Fs
       if (isOrivonErrorLike(error)) throw error
       return
     }
-    if (usage === null) throw tooLargeForSync()
+    if (usage === null) {
+      // An app that only has the synchronous calls cannot switch to the async one: measure in the background so a retry passes.
+      void ensureMeasured(key) // orivon:floating-ok -- ensureMeasured catches its own failure
+      throw tooLargeForSync()
+    }
     measuredDone.add(key)
     measured.set(key, Promise.resolve())
     ledger.chargeFsBytes(key, usage)
