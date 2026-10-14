@@ -1,5 +1,5 @@
 // The "Extra access you allowed" card: each item the person granted with a
-// Turn off that takes it back at once, and, below, what the extension may still
+// switch that is on and takes it back at once when turned off, and, below, what the extension may still
 // ask for. Main sends the words; the page never builds them.
 import { h } from '../../shared/dom.js'
 import type { DetailsPayload } from '../state.js'
@@ -17,17 +17,13 @@ function optionalOf (details: DetailsPayload): OptionalDetails | null {
 
 function grantRow (item: GrantedItem, details: DetailsPayload, ctx: PageContext): HTMLElement {
   const command = item.kind === 'permission' ? 'revokePermission' : 'revokeOrigin'
-  const remove = h('button', {
-    type: 'button',
-    className: 'btn small',
-    textContent: 'Turn off',
-    ariaLabel: `Turn off: ${item.words}`,
-    onclick: () => {
-      remove.disabled = true
-      void ctx.request(command, { id: details.id, [item.kind]: item.value }).then(ctx.refresh)
-    }
+  const input = h('input', { type: 'checkbox', checked: true })
+  input.setAttribute('aria-label', item.words)
+  input.addEventListener('change', () => {
+    input.disabled = true
+    void ctx.request(command, { id: details.id, [item.kind]: item.value }).then(ctx.refresh)
   })
-  return h('li', { className: 'grant-row' }, h('span', { className: 'grant-words', textContent: item.words }), remove)
+  return h('li', { className: 'grant-row' }, h('span', { className: 'grant-words', textContent: item.words }), h('span', { className: 'switch' }, input, h('span', { className: 'track' })))
 }
 
 export const optionalSection: DetailSection = {

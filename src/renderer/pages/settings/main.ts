@@ -100,11 +100,15 @@ function render (): void {
   const focusedControl = active instanceof HTMLSelectElement ? 'select' : active instanceof HTMLInputElement && active.type === 'checkbox' ? 'input[type=checkbox]' : undefined
   const focusedChoice = focusedControl === undefined ? undefined : active?.closest('.row')?.id
   const wasSettled = active instanceof HTMLElement && active.dataset['settled'] === 'true'
+  // A control that carries a key (the switches of the apps list, all in one row) is found again by it.
+  const focusKey = active instanceof HTMLElement ? active.dataset['focusKey'] : undefined
   // A control that keeps its nodes across redraws (`data-keep-focus`) takes the keyboard back by reference.
   const kept = document.activeElement instanceof HTMLElement && document.activeElement.closest('[data-keep-focus]') !== null ? document.activeElement : null
   renderNav()
   replaceChildren(content, query === '' ? renderSectionBody(current) : renderSearchBody(query))
-  const refocused = focusedChoice !== undefined && focusedControl !== undefined ? document.getElementById(focusedChoice)?.querySelector<HTMLElement>(focusedControl) : null
+  const byKey = focusKey === undefined ? null : content.querySelector<HTMLElement>(`[data-focus-key="${CSS.escape(focusKey)}"]`)
+  // A keyed switch that is gone (an item switched off for good) leaves the keyboard nowhere, never on another card's switch.
+  const refocused = focusKey !== undefined ? byKey : (focusedChoice !== undefined && focusedControl !== undefined ? document.getElementById(focusedChoice)?.querySelector<HTMLElement>(focusedControl) : null)
   if (refocused !== null && refocused !== undefined) {
     // The rebuilt control is as finished as the one it replaces; unsettled, it would hold every later redraw.
     if (wasSettled) refocused.dataset['settled'] = 'true'

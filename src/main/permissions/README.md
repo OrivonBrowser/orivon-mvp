@@ -1,11 +1,15 @@
 # `src/main/permissions/`: the grant list, and the per-site popover
 
-**What lives here.** Two surfaces, each behind its own controller.
+**What lives here.** Three surfaces, each behind its own controller.
 
 - **All sites**, off the toolbar's tune icon: `permissions.ts` (`PermissionsController`) lists
   grants and revokes them, recording each revoke as a declined capability (`d-0087`), and lists
   each site's remembered notification answer for reset. Revoke only: forgetting an app entirely
   is `GrantLedger.forgetOrigin`. A local file is not listed here: it is not an app a person installed, and the privacy page lists the recorded ones. `permissions-panel.ts` is its popup.
+- **The apps card in Settings**: `apps-domain.ts` (the `apps` domain, checking every field of a request) and `app-switches.ts`
+  (`AppSwitches`: one row per capability an app declares or holds, built by `app-capability-rows.ts` for an app not opened this session,
+  and the switch that moves one through `site-switches.ts`, the door the key popup uses). A permission is switched, never revoked
+  with a button; an app switched fully off is still listed, because its record remembers the refusal.
 - **One site**, off the address pill's shield and key (`d-0037`; a local file is named by its path, shows no Web3 Score, and has Turn off and Delete data): `site-info.ts` (pure, one row
   per declared capability), `site-switches.ts` (turn one capability off or on, re-validated
   against the manifest), `site-info-controller.ts` (the surface's one door to the broker and

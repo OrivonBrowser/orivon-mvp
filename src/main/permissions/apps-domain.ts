@@ -1,8 +1,8 @@
-// What the Settings page may ask about the apps that hold permissions: the same
-// list the toolbar's all-sites panel shows, what each has stored, whether the
-// identity key is kept, and revoking one permission, one picked path, one approved device or the kind of link it was chosen to open. The
-// requests are data from a document, so each field is checked here, and a
-// revoke reaches the broker only through the permissions controller.
+// What the Settings page may ask about the apps: every app the broker knows, with a switch per capability
+// it declares (the rows the key popup shows), what each has stored, whether the identity key is kept, and
+// switching one capability, picked path, approved device or kind of link it was chosen to open. The
+// requests are data from a document, so each field is checked here, and a switch reaches the broker only
+// through `./app-switches.ts` and the permissions controller.
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { isCapabilityKind } from '../../broker/policy/request-grant.js'
 import type { DeviceRows } from '../devices/hid-rows.js'
@@ -10,12 +10,15 @@ import type { RouteState } from '../route/route-hub.js'
 import type { SchemeChoices } from '../scheme-routing/scheme-choices.js'
 import type { InternalDomain } from '../pages/internal-ipc.js'
 import type { PermissionsController } from './permissions.js'
+import type { AppSwitches } from './app-switches.js'
 import { orivonStorageFor } from './site-data-runner.js'
 
 interface AppsRequest {
   readonly type?: unknown
   readonly origin?: unknown
   readonly capability?: unknown
+  readonly on?: unknown
+  readonly patterns?: unknown
   readonly pickId?: unknown
   readonly key?: unknown
   readonly scheme?: unknown
@@ -35,7 +38,9 @@ export interface AppRoutes {
 }
 
 export interface AppsDeps {
-  readonly permissions: Pick<PermissionsController, 'list' | 'revokeCapability' | 'revokePickedPath'>
+  readonly permissions: Pick<PermissionsController, 'list' | 'revokePickedPath'>
+  /** The capability rows of each app, and the switch that moves one. */
+  readonly switches: AppSwitches
   readonly userDataPath: string
   /** The USB devices the person approved for each app (ADR-0068). */
   readonly devices: Pick<DeviceRows, 'rows' | 'forget'>
@@ -44,12 +49,22 @@ export interface AppsDeps {
   readonly identity: () => Promise<'keychain' | 'session-only' | 'not-started'>
   /** The per-app network route (ADR-0080). */
   readonly routes: AppRoutes
+  /** Called after a picked path was taken away, which the key counts: the chrome then asks main for the key again. */
+  readonly changed?: () => void
 }
 
 /** The origin a request names, or null when it is not the canonical origin of an address. */
 function originOf (value: unknown): string | null {
   return typeof value === 'string' && originFromUrl(value) === value ? value : null
 }
+
+/** The patterns a row offered, or null when the field is not a short list of strings. */
+function patternsOf (value: unknown): readonly string[] | null {
+  return Array.isArray(value) && value.length <= MAX_PATTERNS && value.every((item) => typeof item === 'string') ? value as string[] : null
+}
+
+/** The most patterns a manifest may declare for one capability (`manifest.ts`), so a longer list is not a row Orivon drew. */
+const MAX_PATTERNS = 256
 
 export function appsDomain (deps: AppsDeps): InternalDomain {
   return {
@@ -58,20 +73,27 @@ export function appsDomain (deps: AppsDeps): InternalDomain {
       const request = (typeof command === 'object' && command !== null ? command : {}) as AppsRequest
       switch (request.type) {
         case 'list': {
-          const apps = await deps.permissions.list()
-          const withStorage = await Promise.all(apps.map(async (app) => ({ ...app, deviceRows: deps.devices.rows(app.origin), linkSchemes: deps.links.schemesOf(app.origin), route: { state: deps.routes.stateOf(app.origin), blocked: deps.routes.blockedFor(app.origin), unreadable: deps.routes.unreadable() }, storage: await orivonStorageFor(deps.userDataPath, app.origin, undefined, undefined) })))
+          const listed = await deps.permissions.list()
+          // An app that holds nothing and remembers a refusal is on the card list too, though the grant list leaves it out.
+          const idle = await deps.switches.idleApps(new Set(listed.map((app) => app.origin)))
+          const apps = [...listed, ...idle.map(({ origin, appName }) => ({ origin, appName, rows: [], pickedPathRows: [] }))]
+          const withStorage = await Promise.all(apps.map(async ({ rows: _held, ...app }) => ({ ...app, capabilityRows: await deps.switches.rowsFor(app.origin), deviceRows: deps.devices.rows(app.origin), linkSchemes: deps.links.schemesOf(app.origin), route: { state: deps.routes.stateOf(app.origin), blocked: deps.routes.blockedFor(app.origin), unreadable: deps.routes.unreadable() }, storage: await orivonStorageFor(deps.userDataPath, app.origin, undefined, undefined) })))
           return { apps: withStorage, identity: await deps.identity() }
         }
-        case 'revoke': {
+        case 'setCapability': {
           const origin = originOf(request.origin)
-          if (origin === null || typeof request.capability !== 'string' || !isCapabilityKind(request.capability)) return { ok: false }
-          await deps.permissions.revokeCapability(origin, request.capability)
-          return { ok: true }
+          if (origin === null || typeof request.capability !== 'string' || !isCapabilityKind(request.capability) || typeof request.on !== 'boolean') return { ok: false }
+          const shown = request.on ? patternsOf(request.patterns) : []
+          if (shown === null) return { ok: false }
+          const result = await deps.switches.set(origin, request.capability, request.on, shown)
+          // 'stale': the manifest changed since the row was drawn, so the page draws it again before asking.
+          return result === 'ok' ? { ok: true } : { ok: false, reason: result }
         }
         case 'revokePickedPath': {
           const origin = originOf(request.origin)
           if (origin === null || typeof request.pickId !== 'string' || request.pickId === '') return { ok: false }
           await deps.permissions.revokePickedPath(origin, request.pickId)
+          deps.changed?.()
           return { ok: true }
         }
         case 'forgetDevice': {

@@ -3,7 +3,7 @@ import type { Section } from '../model.js'
 export const apps: Section = {
   id: 'apps',
   title: 'Apps',
-  intro: 'Apps ask for what they need, and a permission lasts until you take it back. Taking one back applies at once.',
+  intro: 'Apps ask for what they need, and a permission lasts until you switch it off. Switching one on or off applies at once.',
   rows: [
     {
       id: 'apps-extensions',
@@ -24,8 +24,9 @@ export const apps: Section = {
     {
       id: 'apps-list',
       label: 'Permissions and files',
+      help: 'Each app lists everything it may do. Switch one off to take it away.',
       group: 'Apps',
-      keywords: ['permissions', 'grants', 'revoke', 'apps', 'files', 'network', 'storage', 'access', 'folder', 'allow'],
+      keywords: ['permissions', 'grants', 'revoke', 'switch', 'apps', 'files', 'network', 'storage', 'access', 'folder', 'allow'],
       control: { type: 'apps' }
     },
     {

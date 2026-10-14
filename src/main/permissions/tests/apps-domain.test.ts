@@ -20,15 +20,18 @@ const DEVICE = { key: 'k1', label: 'Nano X (USB 2c97:4011)' }
 
 const NO_ROUTES = { stateOf: () => 'off' as const, unreadable: () => false, blockedFor: () => undefined, set: () => {} }
 
-function setup (devices: Parameters<typeof appsDomain>[0]['devices'] = NO_DEVICES, links = new SchemeChoices(null), routes: Parameters<typeof appsDomain>[0]['routes'] = NO_ROUTES): { call: (command: unknown) => Promise<unknown>, permissions: Record<'list' | 'revokeCapability' | 'revokePickedPath', ReturnType<typeof vi.fn>> } {
-  const permissions = { list: vi.fn(async () => [APP]), revokeCapability: vi.fn(async () => {}), revokePickedPath: vi.fn(async () => {}) }
-  const domain = appsDomain({ permissions, devices, links, userDataPath: dir, identity: async () => 'session-only', routes })
-  return { call: async (command) => await domain.handle(command, CALLER), permissions }
+const FS_ROW = { capability: 'fs' as const, on: true, canTurnOn: true, warning: false, message: 'Store files in a private folder for this app on this device', patterns: [] }
+
+function setup (devices: Parameters<typeof appsDomain>[0]['devices'] = NO_DEVICES, links = new SchemeChoices(null), routes: Parameters<typeof appsDomain>[0]['routes'] = NO_ROUTES): { call: (command: unknown) => Promise<unknown>, permissions: Record<'list' | 'revokePickedPath', ReturnType<typeof vi.fn>>, switches: Record<'rowsFor' | 'set' | 'idleApps', ReturnType<typeof vi.fn>> } {
+  const permissions = { list: vi.fn(async () => [APP]), revokePickedPath: vi.fn(async () => {}) }
+  const switches = { rowsFor: vi.fn(async () => [FS_ROW]), idleApps: vi.fn(async () => []), set: vi.fn(async (): Promise<'ok' | 'stale'> => 'ok') }
+  const domain = appsDomain({ permissions, switches, devices, links, userDataPath: dir, identity: async () => 'session-only', routes })
+  return { call: async (command) => await domain.handle(command, CALLER), permissions, switches }
 }
 
 describe('the apps domain', () => {
   it('is for Settings only', () => {
-    expect(appsDomain({ permissions: {} as never, devices: NO_DEVICES, links: new SchemeChoices(null), userDataPath: dir, identity: async () => 'keychain', routes: NO_ROUTES }).pages).toEqual(['settings'])
+    expect(appsDomain({ permissions: {} as never, switches: {} as never, devices: NO_DEVICES, links: new SchemeChoices(null), userDataPath: dir, identity: async () => 'keychain', routes: NO_ROUTES }).pages).toEqual(['settings'])
   })
 
   it('lists the apps with what each has stored, and where the identity key is kept', async () => {
@@ -38,15 +41,31 @@ describe('the apps domain', () => {
     await writeFile(join(root, 'files', 'a.txt'), 'x'.repeat(100))
     await writeFile(join(root, 'code', 'index.js'), 'y'.repeat(30))
     const { call } = setup()
-    expect(await call({ type: 'list' })).toEqual({ apps: [{ ...APP, deviceRows: [], linkSchemes: [], route: { state: 'off', blocked: undefined, unreadable: false }, storage: { filesBytes: 100, filesQuotaBytes: undefined, codeBytes: 30, codeVersion: undefined } }], identity: 'session-only' })
+    expect(await call({ type: 'list' })).toEqual({ apps: [{ origin: APP.origin, appName: APP.appName, pickedPathRows: [], capabilityRows: [FS_ROW], deviceRows: [], linkSchemes: [], route: { state: 'off', blocked: undefined, unreadable: false }, storage: { filesBytes: 100, filesQuotaBytes: undefined, codeBytes: 30, codeVersion: undefined } }], identity: 'session-only' })
   })
 
-  it('takes back a permission or a picked path for an origin and a name that are what they should be', async () => {
+  it('takes back a picked path for an origin and a name that are what they should be', async () => {
     const { call, permissions } = setup()
-    expect(await call({ type: 'revoke', origin: 'https://app.example', capability: 'fs' })).toEqual({ ok: true })
     expect(await call({ type: 'revokePickedPath', origin: 'https://app.example', pickId: 'pick-1' })).toEqual({ ok: true })
-    expect(permissions.revokeCapability).toHaveBeenCalledWith('https://app.example', 'fs')
     expect(permissions.revokePickedPath).toHaveBeenCalledWith('https://app.example', 'pick-1')
+  })
+
+  it('tells the chrome after it took a picked path away, because the key counts picked paths', async () => {
+    const changed = vi.fn()
+    const domain = appsDomain({ permissions: { list: async () => [], revokePickedPath: async () => {} }, switches: { rowsFor: async () => [], idleApps: async () => [], set: async () => 'ok' }, devices: NO_DEVICES, links: new SchemeChoices(null), userDataPath: dir, identity: async () => 'session-only', routes: NO_ROUTES, changed })
+    await domain.handle({ type: 'revokePickedPath', origin: 'https://app.example', pickId: 'pick-1' }, CALLER)
+    expect(changed).toHaveBeenCalledTimes(1)
+    await domain.handle({ type: 'revokePickedPath', origin: 'https://app.example', pickId: '' }, CALLER)
+    expect(changed).toHaveBeenCalledTimes(1)
+  })
+
+  it('adds the apps that hold nothing and remember a refusal to the list, which the grant list leaves out', async () => {
+    const { call, switches } = setup()
+    switches.idleApps.mockResolvedValueOnce([{ origin: 'https://idle.example', appName: 'Idle' }])
+    const reply = await call({ type: 'list' }) as { apps: Array<{ origin: string, capabilityRows: unknown[], pickedPathRows: unknown[] }> }
+    expect(switches.idleApps).toHaveBeenCalledWith(new Set(['https://app.example']))
+    expect(reply.apps.map((app) => app.origin)).toEqual(['https://app.example', 'https://idle.example'])
+    expect(reply.apps[1]).toMatchObject({ appName: 'Idle', pickedPathRows: [] })
   })
 
   it('lists each app with the devices the person approved for it', async () => {
@@ -87,23 +106,33 @@ describe('the apps domain', () => {
     expect(links.get('magnet')).toBe('https://app.example')
   })
 
-  it('takes back each media permission, which are capability kinds like the rest', async () => {
-    const { call, permissions } = setup()
+  it('switches each capability, media ones included, off without patterns and on with the patterns the row offered', async () => {
+    const { call, switches } = setup()
     for (const capability of ['media.camera', 'media.microphone', 'media.screen']) {
-      expect(await call({ type: 'revoke', origin: 'https://app.example', capability })).toEqual({ ok: true })
-      expect(permissions.revokeCapability).toHaveBeenCalledWith('https://app.example', capability)
+      expect(await call({ type: 'setCapability', origin: 'https://app.example', capability, on: false, patterns: ['ignored'] })).toEqual({ ok: true })
+      expect(switches.set).toHaveBeenLastCalledWith('https://app.example', capability, false, [])
     }
+    expect(await call({ type: 'setCapability', origin: 'https://app.example', capability: 'https.connect', on: true, patterns: ['a.example:443'] })).toEqual({ ok: true })
+    expect(switches.set).toHaveBeenLastCalledWith('https://app.example', 'https.connect', true, ['a.example:443'])
   })
 
-  it('refuses an origin that is not the canonical origin of an address, a capability that does not exist, and a pick with no id', async () => {
-    const { call, permissions } = setup()
+  it('says why a switch was not turned on, so the page draws the row again', async () => {
+    const { call, switches } = setup()
+    switches.set.mockResolvedValueOnce('stale')
+    expect(await call({ type: 'setCapability', origin: 'https://app.example', capability: 'fs', on: true, patterns: [] })).toEqual({ ok: false, reason: 'stale' })
+  })
+
+  it('refuses an origin that is not the canonical origin of an address, a capability that does not exist, a switch that is not on or off and a pick with no id', async () => {
+    const { call, permissions, switches } = setup()
     for (const origin of ['https://app.example/path', 'not a url', 'HTTPS://APP.EXAMPLE', '', 5, null, undefined]) {
-      expect(await call({ type: 'revoke', origin, capability: 'fs' }), String(origin)).toEqual({ ok: false })
+      expect(await call({ type: 'setCapability', origin, capability: 'fs', on: false }), String(origin)).toEqual({ ok: false })
       expect(await call({ type: 'revokePickedPath', origin, pickId: 'p' }), String(origin)).toEqual({ ok: false })
     }
-    for (const capability of ['everything', '', 3, null, { toString: () => 'fs' }]) expect(await call({ type: 'revoke', origin: 'https://app.example', capability })).toEqual({ ok: false })
+    for (const capability of ['everything', '', 3, null, { toString: () => 'fs' }]) expect(await call({ type: 'setCapability', origin: 'https://app.example', capability, on: false })).toEqual({ ok: false })
+    for (const on of ['yes', 1, null, undefined]) expect(await call({ type: 'setCapability', origin: 'https://app.example', capability: 'fs', on })).toEqual({ ok: false })
+    for (const patterns of ['a', [5], [null], Array.from({ length: 257 }, () => 'a')]) expect(await call({ type: 'setCapability', origin: 'https://app.example', capability: 'fs', on: true, patterns })).toEqual({ ok: false })
     for (const pickId of ['', 5, null]) expect(await call({ type: 'revokePickedPath', origin: 'https://app.example', pickId })).toEqual({ ok: false })
-    expect(permissions.revokeCapability).not.toHaveBeenCalled()
+    expect(switches.set).not.toHaveBeenCalled()
     expect(permissions.revokePickedPath).not.toHaveBeenCalled()
   })
 
