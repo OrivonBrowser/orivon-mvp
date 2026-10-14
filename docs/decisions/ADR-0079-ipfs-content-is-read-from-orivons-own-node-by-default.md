@@ -110,6 +110,17 @@ the system resolver only when no endpoint answered, so a hijacked name no longer
 and the owner may prefer other providers or none. Measured on a network that hijacks `delegated-ipfs.dev`: a
 DNSLink site only that service knew went from "not available" after about 35 s to shown after about 22 s.
 
+## Amendment recorded 2026-10-14
+
+The Consequences line that says a 5xx is the node's answer, "neither retried nor cooled for", and that the page then
+shows its "not available" error at once, holds for a mount and for the first answer only. A file of a page the node
+could not give (a 404, a 5xx or no answer in 45 s) is asked for again after 32 s, twice at most, each retry starting
+within 90 s of the first try and only while the page still wants the file (`d-0646`). The wait outlasts the 30 s the
+node remembers an empty lookup or a failed handshake for, during which it answers the same miss at once, and a page
+that met such a miss on a slow line used to keep a stylesheet, script or image missing until a reload. A block the
+node lacks is still never asked of a public gateway. Provisional: the two tries and the bound come from one node's
+measured figures.
+
 ## Reversibility
 
 - **Cost to reverse:** low. Changing the default is a schema line; removing the node is one kind, one manifest
