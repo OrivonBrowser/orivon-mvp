@@ -8,14 +8,14 @@ import { PinMismatch, readPinned } from '../local-node/pinned-file.js'
 import { createResolver, DnsError } from './dns.js'
 import { StallError } from './instances.js'
 import type { TcpStream, Tunnel, UdpChannel } from './instances.js'
-import { MODULE_GLUE, MODULE_WASM } from './protocol.js'
-import type { PinnedFile } from './protocol.js'
+import { MODULE_GLUE, MODULE_WASM, mixOptionsFor } from './protocol.js'
+import type { MixPrivacyOptions, NymPrivacy, PinnedFile } from './protocol.js'
 
 /** What the glue exports that this host calls. */
 export interface ModuleExports {
   initSync: (input: { module: WebAssembly.Module }) => unknown
   main: () => void
-  setupMixTunnel: (options: { clientId: string }) => Promise<unknown>
+  setupMixTunnel: (options: { clientId: string } & MixPrivacyOptions) => Promise<unknown>
   connectTcp: (host: string, port: number) => Promise<TcpStream>
   bindUdp: () => Promise<UdpChannel>
   disconnectMixTunnel: () => Promise<unknown>
@@ -38,8 +38,8 @@ export const START_TIMEOUT_MS = 30_000
 export const START_ATTEMPTS = 3
 
 export interface NymModule {
-  /** Brings up a tunnel in a module instance of its own, for the user name `name`; a failed attempt is tried again under a new identity. */
-  start: (name: string) => Promise<Tunnel>
+  /** Brings up a tunnel in a module instance of its own, for the user name `name`, at the privacy level `privacy`; a failed attempt is tried again under a new identity. */
+  start: (name: string, privacy: NymPrivacy) => Promise<Tunnel>
   /** How many module instances have been made, failed attempts included: each stays in memory until the process exits. */
   instances: () => number
 }
@@ -64,7 +64,7 @@ export async function loadNymModule (directory: string, files: readonly PinnedFi
   // Fails here, not at the first tunnel, when the glue is not the module.
   exportsOf(await importGlue(glue))
 
-  const attempt = async (name: string): Promise<Tunnel> => {
+  const attempt = async (name: string, privacy: NymPrivacy): Promise<Tunnel> => {
     instance += 1
     // The same text under a name of its own is a module of its own: its wasm state is not shared.
     const source = Buffer.concat([glue, Buffer.from(`\n//# orivon-instance ${String(instance)}\n`)])
@@ -77,7 +77,7 @@ export async function loadNymModule (directory: string, files: readonly PinnedFi
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
       await Promise.race([
-        module.setupMixTunnel({ clientId }),
+        module.setupMixTunnel({ clientId, ...mixOptionsFor(privacy) }),
         new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { reject(new Error(`no gateway answered within ${String(Math.round(limit / 1000))} s`)) }, limit) })
       ])
     } catch (error) {
@@ -111,12 +111,12 @@ export async function loadNymModule (directory: string, files: readonly PinnedFi
 
   return {
     instances: () => instance,
-    start: async (name) => {
+    start: async (name, privacy) => {
       const attempts = seams.startAttempts ?? START_ATTEMPTS
       let last: unknown
       for (let tried = 0; tried < attempts; tried += 1) {
         try {
-          return await attempt(name)
+          return await attempt(name, privacy)
         } catch (error) {
           last = error
         }
