@@ -194,6 +194,25 @@ it('[app:routed-app-on-nym-sends-nothing-direct] an installed app routed with th
   await expect.poll(async () => await privacy.locator('#row-route-proxy-test').innerText(), { timeout: 20_000 }).toContain('Nym answered')
 }, 3 * QA_TEST_TIMEOUT_MS)
 
+it('[app:nym-privacy-level-applies] tunnels are made at Balanced (no steady stream, loop cover traffic kept) until Settings says Strongest, which closes the idle tunnel and makes the next one with Nym\'s own defaults', async () => {
+  const scene = await scenario(false)
+  await switchRouteOn(scene)
+  const options = (): string[] => scene.log().filter((line) => line.startsWith('options ')).map((line) => line.slice(line.indexOf('{')))
+  const BALANCED = '{"disablePoissonTraffic":true,"disableCoverTraffic":false}'
+  const STRONGEST = '{"disablePoissonTraffic":false,"disableCoverTraffic":false}'
+
+  expect(await scene.call('tcp', 'tcp.nym.test', scene.ports.tcp), 'connect by name').toMatchObject({ ok: true })
+  expect(options(), 'by default the tunnel is Balanced').toEqual([BALANCED])
+
+  const privacy = await scene.settings('privacy')
+  expect(await privacy.locator('#row-route-nym-privacy select').inputValue()).toBe('balanced')
+  await privacy.locator('#row-route-nym-privacy select').selectOption('strongest')
+  expect(await waitFor(() => scene.log().some((line) => line.startsWith('down ')), 20_000), `the idle tunnel was closed: ${scene.log().join('|')}`).toBe(true)
+
+  expect(await scene.call('tcp', 'tcp.nym.test', scene.ports.tcp), 'connect again').toMatchObject({ ok: true })
+  expect(options(), 'the tunnel made after the switch is Strongest').toEqual([BALANCED, STRONGEST])
+}, 3 * QA_TEST_TIMEOUT_MS)
+
 it('[app:routed-app-on-nym-fails-closed] with a Nym that cannot start, the routed app\'s connections fail, nothing is sent direct, and Settings says Nym is not answering', async () => {
   const scene = await scenario(true)
   await switchRouteOn(scene)

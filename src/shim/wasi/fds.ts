@@ -1,7 +1,7 @@
 // The program's descriptor table, and how a guest path relative to one of
 // its directory descriptors becomes the confined path orivon.fs takes.
 
-import { normalize } from 'path'
+import { normalize } from 'path/posix'
 import type { FileHandle } from '../../contracts/handles.js'
 import type { SyncFileHandle } from './effects.js'
 import { Errno } from './errno.js'

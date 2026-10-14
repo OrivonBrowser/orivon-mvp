@@ -109,6 +109,35 @@ describe('Sites', () => {
     expect(calls.n).toBe(2)
   })
 
+  it('remembers a failure for a request that is not a person\'s own, and tries again for one that is', async () => {
+    const clock = { now: 0 }
+    let up = false
+    const { registry: r, calls } = registry(async () => { if (!up) throw new Error('down'); return [record] })
+    const sites = new Sites(r, () => clock.now)
+    await expect(sites.get('flaky.eth', P)).rejects.toMatchObject({ failure: 'unavailable' })
+    await expect(sites.get('flaky.eth', P)).rejects.toMatchObject({ failure: 'unavailable' })
+    expect(calls.n).toBe(1)
+    up = true
+    await expect(sites.get('flaky.eth', P)).rejects.toMatchObject({ failure: 'unavailable' })
+    expect(calls.n).toBe(1)
+    expect((await sites.get('flaky.eth', P, true)).site).toBe(site)
+    expect(calls.n).toBe(2)
+    expect((await sites.get('flaky.eth', P)).site).toBe(site)
+    expect(calls.n).toBe(2)
+  })
+
+  it('joins a mount that is still running for a person\'s own request, never restarts it', async () => {
+    let release: () => void = () => {}
+    const { registry: r, calls } = registry(async () => { await new Promise<void>((resolve) => { release = resolve }); return [record] })
+    const sites = new Sites(r)
+    const first = sites.get('slow.eth', P)
+    const again = sites.get('slow.eth', P, true)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    release()
+    await Promise.all([first, again])
+    expect(calls.n).toBe(1)
+  })
+
   it('proves only a few names at once, and the rest wait their turn', async () => {
     let running = 0
     let peak = 0

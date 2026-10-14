@@ -5,7 +5,7 @@
 // notes, "One virtual root", says why. Also the Node-shaped error every fs
 // module in this package throws.
 
-import { isAbsolute, normalize } from 'path'
+import { isAbsolute, normalize } from 'path/posix'
 import { getOrivon } from '../orivon-global.js'
 import { codedError, toNodeError } from '../node-errors.js'
 import { fsQueue, retryLimited } from '../limit-retry.js'

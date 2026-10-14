@@ -28,6 +28,7 @@ export async function setupMixTunnel (options) {
   if (tunnelNumber <= (config().failFirstSetups ?? 0)) throw new Error('the stand-in gateway closed the connection')
   if (config().startDelayMs) await new Promise((resolve) => setTimeout(resolve, config().startDelayMs))
   client = options.clientId.replace(/-[0-9a-f]{12}$/, '')
+  log('options ' + client + ' ' + JSON.stringify({ disablePoissonTraffic: options.disablePoissonTraffic, disableCoverTraffic: options.disableCoverTraffic }))
   log('up ' + client)
 }
 export async function disconnectMixTunnel () { log('down ' + client) }
