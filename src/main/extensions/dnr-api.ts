@@ -8,6 +8,7 @@
 // loaded manifest no longer has it.
 
 import type { ExtensionRouterHandle } from 'orivon:crx-extensions'
+import { regexFilterProblem } from '../../../vendor/firefox-dnr/adapters/dnr-regex.mjs'
 import { getCachedStrippedPermissions, getDnrEngine, slotDirForLoadedExtension } from './extensions-dnr.js'
 import { parseActionOptions } from './dnr-action-options.js'
 import { writeBadgeCountMode, writeDynamicRules, writeEnabledRulesetOverride } from './dnr/dnr-runner.js'
@@ -197,18 +198,12 @@ export function registerDnrApiHandlers(
   handle(
     'declarativeNetRequest.isRegexSupported',
     (_event, options: { regex: string, isCaseSensitive?: boolean }) => {
-      // This engine's regexFilter matcher is a plain JS RegExp
-      // (vendor/firefox-dnr/src/extension-dnr.mjs's compileRegexFilter), not
-      // RE2 like Chrome's real one: this answers "does RegExp accept it",
-      // not whether Chrome's own (narrower) RE2 syntax or complexity limits
-      // would also accept it.
-      try {
-        // eslint-disable-next-line no-new -- validity check only
-        new RegExp(options.regex, options.isCaseSensitive === false ? 'i' : '')
-        return { isSupported: true }
-      } catch {
-        return { isSupported: false, reason: 'syntaxError' }
-      }
+      // Answered by the compile the rule validator itself runs (RE2, so a
+      // backreference or lookaround is refused as in Chrome); a pattern over
+      // Chrome's length cap is the one memory-limit refusal.
+      const problem = regexFilterProblem(options.regex, options.isCaseSensitive !== false)
+      if (problem === null) return { isSupported: true }
+      return { isSupported: false, reason: problem.kind === 'syntax' ? 'syntaxError' : 'memoryLimitExceeded' }
     },
     gated
   )
