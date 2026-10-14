@@ -45,7 +45,7 @@ function emptyState (): HTMLElement {
   return h('div', { className: 'empty-state' },
     puzzleIcon(),
     h('strong', { textContent: 'No extensions installed' }),
-    h('p', { textContent: 'Install one from the Chrome Web Store, or from a file on this computer.' }))
+    h('p', { textContent: 'Install one from a file on this computer.' }))
 }
 
 function skeleton (): HTMLElement {
@@ -88,8 +88,7 @@ export function listView (badges: readonly CardBadge[]): ExtensionView {
           replaceChildren(root,
             actions(ctx, redraw),
             message === null ? null : h('div', { className: 'banner error', role: 'alert', textContent: message }),
-            rows.length === 0 ? emptyState() : h('div', { className: 'ext-list' }, ...rows.map((ext) => card(ext, ctx, badges))),
-            h('a', { className: 'store-link link-btn', href: 'https://chromewebstore.google.com/category/extensions', target: '_blank', rel: 'noopener', textContent: 'Get more extensions from the Chrome Web Store' }))
+            rows.length === 0 ? emptyState() : h('div', { className: 'ext-list' }, ...rows.map((ext) => card(ext, ctx, badges))))
         })
       })
     }
