@@ -43,3 +43,14 @@ nothing in 25 to 93 s): 12 concurrent block reads, a 45 s block timeout, a 15 s 
 service is asked inside a mount, a 5xx taken as the node's answer that it found nothing (so no retry passes and no
 cooldown), and a block that fails its hash sits the node out for 30 seconds instead of dropping it for the
 session. The hedge delay (2 s) is unchanged: a hedge has no second endpoint to ask here.
+
+**A block the node could not give is asked for again, patiently.** The node remembers an empty lookup for
+about 30 s, and a handshake a peer cut makes it answer a misleading instant 404 for as long. A page's files hit
+that window together, and Chromium never asks again for a stylesheet, script or image that got an error page. So
+`block-fetch.ts` asks again after `LOCAL_NODE_MISS_MEMORY_MS` (32 s, the memory plus a margin), twice at most, a
+retry starting no later than 90 s after the first try began and only while the request is still wanted
+(`retryWhileWanted`, in [`../gateways/fetch-passes.ts`](../gateways/fetch-passes.ts); the figures and what they
+mean for the worst wait are with `LOCAL_NODE_BLOCK_RETRY` in `gatherer.ts`). Only an `unavailable` failure is
+asked again: a lie or an unsupported block never is, and a block the node lacks is never asked of a public
+gateway. A mount keeps its own budget. The gateways' own passes are the retry for public gateways and set no
+`blockRetry`.

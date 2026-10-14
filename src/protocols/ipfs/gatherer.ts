@@ -13,6 +13,7 @@ import { resolveIpnsKey } from './ipns.js'
 import type { SequenceStore } from './ipns.js'
 import { DEFAULT_LIMITS } from './limits.js'
 import type { IpfsLimits } from './limits.js'
+import type { PatientRetry } from '../gateways/fetch-passes.js'
 import { followPointer } from './pointers.js'
 import type { PointerResolvers } from './pointers.js'
 import { openPath } from './unixfs.js'
@@ -51,6 +52,21 @@ export const LOCAL_NODE_QUARANTINE_MS = 30_000
  * empty lookup for 30 s, so asking again within that answers at once.
  */
 export const LOCAL_NODE_BLOCK_TIMEOUT_MS = 45_000
+/**
+ * How long the real node holds on to a failed lookup, and so how long a block it could not give is not asked for
+ * again: it remembers an empty lookup for about 30 s and answers it again at once, and a peer that cuts the first
+ * handshake makes it mark every provider bad for 30 s, answering a misleading instant 404 meanwhile. Two seconds
+ * more than that, so the retry never lands on the last moment of the memory.
+ */
+export const LOCAL_NODE_MISS_MEMORY_MS = 32_000
+/**
+ * A block the node could not give is asked for again, a file's page loading whole instead of missing its
+ * stylesheet. Twice: a lookup the memory made fail instantly is cured by one wait; a second covers a network
+ * that only just connected. A retry starts no later than 90 s after the first try began: two quick failures
+ * (0 s, 32 s, 64 s) get both retries, a first try that spent its whole 45 s timeout gets one (45 s + 32 s),
+ * and no file waits longer than about two minutes (77 s + a last 45 s) before it is called missing.
+ */
+export const LOCAL_NODE_BLOCK_RETRY: PatientRetry = { waitMs: LOCAL_NODE_MISS_MEMORY_MS, maxRetries: 2, startByMs: 90_000 }
 /** How long an IPNS record may take from a local node (about 10 s measured): short enough that a name service is asked within a mount's 25 s when the node has nothing. */
 export const LOCAL_NODE_RECORD_TIMEOUT_MS = 15_000
 
@@ -62,7 +78,7 @@ function loadable (records: readonly NameRecord[]): NameRecord | undefined {
 
 export function createIpfsGatherer (options: IpfsGathererOptions): DataGatherer {
   const local = options.localNode === true
-  const limits: IpfsLimits = { ...DEFAULT_LIMITS, ...(local && { perGatewayConcurrency: LOCAL_NODE_CONCURRENCY, blockTimeoutMs: LOCAL_NODE_BLOCK_TIMEOUT_MS, recordTimeoutMs: LOCAL_NODE_RECORD_TIMEOUT_MS }), ...options.limits }
+  const limits: IpfsLimits = { ...DEFAULT_LIMITS, ...(local && { perGatewayConcurrency: LOCAL_NODE_CONCURRENCY, blockTimeoutMs: LOCAL_NODE_BLOCK_TIMEOUT_MS, recordTimeoutMs: LOCAL_NODE_RECORD_TIMEOUT_MS, blockRetry: LOCAL_NODE_BLOCK_RETRY }), ...options.limits }
   const pool = new GatewayPool(options.gateways, limits.perGatewayConcurrency, Date.now, local ? { lieQuarantineMs: LOCAL_NODE_QUARANTINE_MS, serverErrorsAreAnswers: true } : {})
   const cache = new BlockCache()
   const nodeOrigins = new Set(options.gateways.map((gateway) => new URL(gateway).origin))

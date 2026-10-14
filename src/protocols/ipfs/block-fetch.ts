@@ -9,7 +9,7 @@ import { askGateway, readCapped } from '../gateways/gateways.js'
 import type { Fetch, GatewayPool } from '../gateways/gateways.js'
 import type { IpfsLimits } from './limits.js'
 import { BlockRefused, checkCidAccepted, inlineBlock, verifyBlock } from './verify-block.js'
-import { failedAttempt, fetchAcrossGateways } from '../gateways/fetch-passes.js'
+import { failedAttempt, fetchAcrossGateways, retryWhileWanted } from '../gateways/fetch-passes.js'
 import type { AttemptOutcome } from '../gateways/race.js'
 
 export interface FetchDeps {
@@ -37,7 +37,7 @@ async function attemptGateway (gateway: string, cid: CID, key: string, deps: Fet
       signal
     )
   } catch (error) {
-    return failedAttempt(error, gateway, unwell)
+    return failedAttempt(error, gateway, unwell, !deps.pool.serverErrorsAreAnswers)
   }
   unwell.delete(gateway)
   try {
@@ -55,7 +55,8 @@ async function attemptGateway (gateway: string, cid: CID, key: string, deps: Fet
 
 /** Throws a ResolutionError: `unsupported` before any gateway is asked, for
  * a CID this build cannot verify at all; otherwise `unverifiable` once a
- * gateway has lied, or `unavailable` when none answered.
+ * gateway has lied, or `unavailable` when none answered, after the patient
+ * retries `limits.blockRetry` allows (a local node's) are spent.
  */
 export async function fetchVerifiedBlock (cid: CID, deps: FetchDeps, signal: AbortSignal, onRefusal: (refusal: Refusal) => void): Promise<Uint8Array> {
   try {
@@ -74,5 +75,7 @@ export async function fetchVerifiedBlock (cid: CID, deps: FetchDeps, signal: Abo
   }
 
   const key = cid.toString()
-  return await fetchAcrossGateways(`block ${key}`, { pool: deps.pool, hedgeDelayMs: deps.limits.hedgeDelayMs }, (gateway, attemptSignal, unwell) => attemptGateway(gateway, cid, key, deps, attemptSignal, onRefusal, unwell), signal)
+  const once = async (): Promise<Uint8Array> => await fetchAcrossGateways(`block ${key}`, { pool: deps.pool, hedgeDelayMs: deps.limits.hedgeDelayMs }, (gateway, attemptSignal, unwell) => attemptGateway(gateway, cid, key, deps, attemptSignal, onRefusal, unwell), signal)
+  const { blockRetry } = deps.limits
+  return blockRetry === undefined ? await once() : await retryWhileWanted(once, blockRetry, () => deps.pool.now(), signal)
 }

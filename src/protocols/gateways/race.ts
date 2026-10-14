@@ -17,7 +17,8 @@ export class Outrun extends Error {
 export type AttemptOutcome<T> =
   | { readonly kind: 'verified', readonly value: T }
   | { readonly kind: 'lied', readonly reason: string }
-  | { readonly kind: 'failed', readonly retryable: boolean, readonly reason: string }
+  /** `timedOut`: the source sent nothing in time. A pass in which every failure timed out earns another pass, though one timeout beside a plain miss does not. */
+  | { readonly kind: 'failed', readonly retryable: boolean, readonly reason: string, readonly timedOut?: boolean }
   | { readonly kind: 'fatal', readonly error: ResolutionError }
 
 /** A FIFO of attempt outcomes, with a `next()` that genuinely waits -- no
@@ -97,6 +98,8 @@ export async function racePass<T> (
     let nextIndex = 0
     let lied = false
     let retryable = false
+    let failures = 0
+    let timeouts = 0
     const reasons: string[] = []
 
     // Applies one outcome, returning the pass's final result if this one
@@ -105,7 +108,11 @@ export async function racePass<T> (
       if (outcome.kind === 'verified') winner = index
       if (outcome.kind === 'verified' || outcome.kind === 'fatal') return outcome
       if (outcome.kind === 'lied') lied = true
-      else retryable = retryable || outcome.retryable
+      else {
+        retryable = retryable || outcome.retryable
+        failures++
+        if (outcome.timedOut === true) timeouts++
+      }
       reasons.push(outcome.reason)
       return undefined
     }
@@ -152,7 +159,7 @@ export async function racePass<T> (
         const result = handle(await queue.next(callerSignal))
         if (result !== undefined) return result
       }
-      if (inFlight === 0 && nextIndex >= candidates.length) return { kind: 'exhausted', lied, retryable, reasons }
+      if (inFlight === 0 && nextIndex >= candidates.length) return { kind: 'exhausted', lied, retryable: retryable || (failures > 0 && timeouts === failures), reasons }
       if (inFlight < MAX_ATTEMPTS_IN_FLIGHT) start()
     }
   } finally {
