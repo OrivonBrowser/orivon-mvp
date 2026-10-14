@@ -31,11 +31,13 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Orivon also ships as a Microsoft Store package, signed by Microsoft, so Store installs show no SmartScreen warning; no certificate bought.
 - Nym mixnet ships inside Orivon as the default tunnel for installed apps: one tunnel per app, nothing to install; your own SOCKS5 stays a choice.
 - A .eth or ipfs:// site opened through your tunnel is now read entirely through it, name proofs included; Swarm sites are refused.
+- The tunnel now works per site or for the whole browser; tunnelled sites share one profile that keeps their logins and extensions.
 
 ### In my head
 
 - Swarm should come from a node on the user's own machine, never public gateways: trustless and permissionless, or not at all.
 - Letting users pin sites and serve them to others is the next step for the IPFS node; today it only reads.
 - A per-app tunnel belongs at Orivon's socket layer, not the OS: any protocol an app builds rides it, no drivers.
+- Extensions per tunnel profile, never per site: a hundred tunnelled sites should cost one copy of uBlock, not a hundred.
 
 ### Non-repo
