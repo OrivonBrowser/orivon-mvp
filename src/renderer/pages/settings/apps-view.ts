@@ -45,6 +45,8 @@ function routeRow (app: AppRow, state: SettingsState): HTMLElement {
   const input = h('input', { type: 'checkbox', id: `route-${app.origin}`, checked: on, disabled: app.route.unreadable === true || (!on && app.route.blocked !== undefined) })
   input.dataset['focusKey'] = `${app.origin}|route`
   input.addEventListener('change', () => {
+    // A switch whose request is in flight stays enabled, so the keyboard keeps it through the redraw (a disabled input cannot hold focus), and a press is put back.
+    if (options.busy === true) { input.checked = !input.checked; return }
     // A click leaves the switch focused, and a focused input that is not settled holds every redraw (main.ts).
     input.dataset['settled'] = 'true'
     void state.apps.setRoute(app.origin, input.checked)
@@ -67,18 +69,21 @@ export function capabilityFailure (on: boolean): string {
 }
 
 /** One row of a card: what the permission is, in words, and the switch that gives or takes it. */
-function switchRow (icon: SVGSVGElement, message: string, options: { on: boolean, disabled: boolean, warning: boolean, focusKey: string, note?: string, problem?: string }, change: (on: boolean) => void): HTMLElement {
+function switchRow (icon: SVGSVGElement, message: string, options: { on: boolean, disabled: boolean, busy?: boolean, warning: boolean, focusKey: string, note?: string, problem?: string }, change: (on: boolean) => void): HTMLElement {
   const input = h('input', { type: 'checkbox', checked: options.on, disabled: options.disabled })
   // Every switch of every card is in the one row, so the page finds this one again after a redraw by its key (main.ts).
   input.dataset['focusKey'] = options.focusKey
   input.setAttribute('aria-label', message)
   input.addEventListener('change', () => {
+    // A switch whose request is in flight stays enabled, so the keyboard keeps it through the redraw (a disabled input cannot hold focus), and a press is put back.
+    if (options.busy === true) { input.checked = !input.checked; return }
     // A click leaves the switch focused, and a focused input that is not settled holds every redraw (main.ts).
     input.dataset['settled'] = 'true'
     change(input.checked)
   })
   icon.setAttribute('aria-hidden', 'true')
-  return h('li', { className: options.warning ? 'perm warning' : 'perm' },
+  input.setAttribute('aria-busy', String(options.busy === true))
+  return h('li', { className: `perm${options.warning ? ' warning' : ''}${options.busy === true ? ' busy' : ''}` },
     icon,
     h('span', { className: 'perm-text' },
       h('span', { textContent: message }),
@@ -92,7 +97,7 @@ function capabilityRow (app: AppRow, row: CapabilityRow, state: SettingsState): 
   const blocked = !row.on && !row.canTurnOn
   const busy = state.apps.capabilityBusy.has(`${app.origin}|${row.capability}`)
   const item = switchRow(grantIcon(row.capability as GrantIconKind), row.message,
-    { on: row.on, disabled: blocked || busy, warning: row.warning, focusKey: `${app.origin}|cap|${row.capability}`, ...(blocked ? { note: OPEN_APP_FIRST } : {}), ...(refused === undefined ? {} : { problem: capabilityFailure(refused) }) },
+    { on: row.on, disabled: blocked, busy, warning: row.warning, focusKey: `${app.origin}|cap|${row.capability}`, ...(blocked ? { note: OPEN_APP_FIRST } : {}), ...(refused === undefined ? {} : { problem: capabilityFailure(refused) }) },
     (on) => { void state.apps.setCapability(app.origin, row, on) })
   item.dataset['capability'] = row.capability
   return item
