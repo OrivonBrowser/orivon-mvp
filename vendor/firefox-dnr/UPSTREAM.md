@@ -480,6 +480,20 @@ patch.
     `Host` is a request-only header. `src/main/extensions/dnr/tests/modify-headers.test.ts`'s
     "Host header" `describe` block is the regression test.
 
+18. **`regexFilter` is compiled with RE2, in `adapters/dnr-regex.mjs`, not with `RegExp`.**
+    Firefox and Chrome both match `regexFilter` with RE2, which runs in time linear in the URL and
+    has no backreferences or lookarounds; a JavaScript `RegExp` backtracks, and this engine
+    evaluates every request on the main thread. `compileRegexFilter` therefore builds the pattern
+    with `re2js` (MIT, a pure JavaScript port of RE2 with no dependencies and no native code) and
+    returns a small object with the two calls the engine makes, `test(url)` and `exec(url)` (an
+    array of the whole match and each group, `undefined` for a group that did not take part, for
+    `regexSubstitution`). Case sensitivity follows `isUrlFilterCaseSensitive`. A pattern longer
+    than 2048 characters (Chrome's cap), one that compiles to a program over 256 instructions
+    (`re2js` has no size limit of its own, RE2 refuses one too large), or one RE2 does not accept,
+    makes the rule invalid like any other invalid rule. `regexFilterProblem()` gives `declarativeNetRequest.isRegexSupported`
+    (`src/main/extensions/dnr-api.ts`) the same answer. `src/main/extensions/dnr/tests/regex-filter.test.ts`
+    is the regression test.
+
 Nothing else changed: class/function bodies, the top-of-file design comment,
 and every doc comment not touched by a patch above are upstream's own words,
 reformatted only where ESLint-style (`let`→`const` where safe, semicolons

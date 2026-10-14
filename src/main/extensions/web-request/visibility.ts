@@ -33,6 +33,12 @@ function isProtectedUrl (url: URL): boolean {
   return url.hostname === 'chrome.google.com' && url.pathname.startsWith('/webstore')
 }
 
+/** Whether `url` is on the web store, for the request rules that do not go through `requestVisibleTo`. */
+export function isWebStoreUrl (url: string): boolean {
+  const parsed = parse(url)
+  return parsed !== undefined && isProtectedUrl(parsed)
+}
+
 const NAVIGATION_TYPES = new Set(['main_frame', 'sub_frame'])
 
 function parse (url: string): URL | undefined {

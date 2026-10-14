@@ -56,10 +56,13 @@ describe('hostWords', () => {
 })
 
 describe('the helpers describeHostAccess shares', () => {
-  it('knows the two all-sites patterns and nothing narrower', () => {
-    expect(isAllSitesPattern('<all_urls>')).toBe(true)
-    expect(isAllSitesPattern('*://*/*')).toBe(true)
-    expect(isAllSitesPattern('http://*/*')).toBe(false)
+  it('knows <all_urls> and every pattern whose host is a wildcard, whatever its scheme, and nothing narrower', () => {
+    for (const pattern of ['<all_urls>', '*://*/*', 'http://*/*', 'https://*/*', 'https://*/foo*', '*://*/', 'ftp://*/*']) {
+      expect(isAllSitesPattern(pattern), pattern).toBe(true)
+    }
+    for (const pattern of ['https://*.example.com/*', 'https://example.com/*', 'http://localhost/*', 'file:///*']) {
+      expect(isAllSitesPattern(pattern), pattern).toBe(false)
+    }
     expect(friendlyHost('https://a.example/x')).toBe('a.example')
   })
 })
