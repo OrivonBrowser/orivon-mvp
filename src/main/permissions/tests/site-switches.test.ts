@@ -62,8 +62,33 @@ describe('turnOffCapability', () => {
     const broker = realBroker()
     await broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 1024 } }))
 
-    await expect(turnOffCapability(broker, APP, 'fs')).resolves.toBeUndefined()
+    await expect(turnOffCapability(broker, APP, 'fs')).resolves.toBe('ok')
     expect(await broker.declinedCapabilitiesFor(APP)).toEqual(['fs'])
+  })
+
+  it('writes no decline for a capability the app does not declare or hold', async () => {
+    const broker = realBroker()
+    await broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 1024 } }))
+
+    await expect(turnOffCapability(broker, APP, 'media.camera')).resolves.toBe('not-declared')
+    expect(await broker.declinedCapabilitiesFor(APP)).toBeUndefined()
+  })
+
+  it('writes no decline for an origin Orivon holds no record of', async () => {
+    const broker = realBroker()
+
+    await expect(turnOffCapability(broker, APP, 'fs')).resolves.toBe('not-registered')
+    expect(await broker.declinedCapabilitiesFor(APP)).toBeUndefined()
+  })
+
+  it('still switches off a grant the manifest no longer declares, which the card shows as a row', async () => {
+    const broker = realBroker()
+    await broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 1024 } }))
+    await broker.grant(APP, 'fs', [])
+    await broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } } }))
+
+    await expect(turnOffCapability(broker, APP, 'fs')).resolves.toBe('ok')
+    expect(await broker.app.grants(APP)).toEqual([])
   })
 })
 

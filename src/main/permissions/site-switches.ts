@@ -12,6 +12,35 @@ import { addDeclinedCapability, clearDeclinedCapability } from '../consent/reque
 import { isUnrecordedLocalFile } from '../local-files/local-file-apps.js'
 import { grantChangedCapabilities } from '../consent/grant-changed-capabilities.js'
 
+/** What `turnOnCapability` actually did, or why it did nothing. */
+export type TurnOnResult =
+  | 'ok'
+  | 'stale' // the manifest changed since the row's patterns were shown; nothing granted.
+  | 'not-declared' // the current manifest no longer declares this capability at all.
+  | 'not-registered' // no manifest is loaded for this origin this session.
+
+/** What `turnOffCapability` did: `ok`, or why it wrote nothing. */
+export type TurnOffResult = Extract<TurnOnResult, 'ok' | 'not-declared' | 'not-registered'>
+
+/**
+ * Whether the card has a row for `capability` of `origin`: the app declares it, holds it, or (for an app not opened
+ * since Orivon started, known only by its record) holds it or remembers a refusal of it.
+ */
+async function rowExists (broker: Broker, origin: string, capability: CapabilityKind): Promise<TurnOffResult> {
+  if (broker.app.isRegisteredSync(origin)) {
+    try {
+      const [manifest, grants] = await Promise.all([broker.app.manifest(origin), broker.app.grants(origin)])
+      return decideGrantRequest(manifest, capability, undefined).allowed || grants.some((grant) => grant.capability === capability) ? 'ok' : 'not-declared'
+    } catch {
+      // A manifest that cannot be read this moment: the record on disk still says what is held.
+    }
+  }
+  const persisted = broker.app.persistedAppsSync().find((app) => app.origin === origin)
+  if (persisted === undefined) return 'not-registered'
+  const declined = (await broker.declinedCapabilitiesFor(origin)) ?? []
+  return capability in persisted.grants || declined.includes(capability) ? 'ok' : 'not-declared'
+}
+
 /**
  * Revokes `capability` and records the decline, so a later visit does not
  * re-prompt for it (`../../loader/index.js`'s `withoutSwitchedOffCapabilities`
@@ -19,19 +48,16 @@ import { grantChangedCapabilities } from '../consent/grant-changed-capabilities.
  * decline set (`../../broker/grants/declined-consent.js`), so this goes
  * through `addDeclinedCapability`'s union rather than writing one directly
  * -- an unrelated capability this origin was already declined for must
- * survive turning a DIFFERENT one off.
+ * survive turning a DIFFERENT one off. A decline is written only for a
+ * capability the card has a row for, as turning one on already requires.
  */
-export async function turnOffCapability (broker: Broker, origin: string, capability: CapabilityKind): Promise<void> {
+export async function turnOffCapability (broker: Broker, origin: string, capability: CapabilityKind): Promise<TurnOffResult> {
+  const known = await rowExists(broker, origin, capability)
+  if (known !== 'ok') return known
   await broker.revokePersisted(origin, capability)
   await addDeclinedCapability(broker, origin, capability)
+  return 'ok'
 }
-
-/** What `turnOnCapability` actually did, or why it did nothing. */
-export type TurnOnResult =
-  | 'ok'
-  | 'stale' // the manifest changed since the row's patterns were shown; nothing granted.
-  | 'not-declared' // the current manifest no longer declares this capability at all.
-  | 'not-registered' // no manifest is loaded for this origin this session.
 
 /**
  * Grants `capability`, bounded to the CURRENT manifest's own declared

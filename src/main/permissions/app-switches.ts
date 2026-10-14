@@ -67,9 +67,9 @@ export function createAppSwitches (ctx: SubsystemContext, levelOverrideFor: Leve
         if (result === 'ok') changed()
         return result
       }
-      await turnOffCapability(broker, origin, capability)
-      changed()
-      return 'ok'
+      const result = await turnOffCapability(broker, origin, capability)
+      if (result === 'ok') changed()
+      return result
     }
   }
 }
