@@ -11,7 +11,7 @@ import type { FirstDeclaration, FirstManifestApp, Loader, PendingConsent } from 
 import type { BadData, LiveHooks, LiveVersion } from '../../loader/serve/live-serve.js'
 import { applyInstallConsent, askInstallConsent } from '../consent/install-consent-ask.js'
 import type { InstallAsk } from '../consent/install-consent-ask.js'
-import type { InstallConsentPrompt, PerCapabilityConsentPrompt } from '../consent/install-consent.js'
+import type { InstallConsentPrompt } from '../consent/install-consent.js'
 import type { DialogCaller } from '../consent/request-grant.js'
 import type { CapabilityPromptPrompt } from '../consent/update-outcomes.js'
 import type { DeclinedApps } from './declined-apps.js'
@@ -30,9 +30,8 @@ export interface FirstVisitDeps {
   readonly broker: Broker
   readonly loader: Pick<Loader, 'readManifest' | 'readDeclaration' | 'serveLive' | 'endLive' | 'rememberConsent' | 'pendingConsents' | 'fetchForInstall' | 'installFetched' | 'pinFor'>
   readonly consent?: InstallConsentPrompt | undefined
-  readonly perCapabilityConsent?: PerCapabilityConsentPrompt | undefined
   /** The origins whose question was answered Deny: written by a pressed Deny and by nothing else. */
-  readonly declined: Pick<DeclinedApps, 'has' | 'add'>
+  readonly declined: Pick<DeclinedApps, 'has' | 'add' | 'remove'>
   /**
    * Empties every open tab of an origin, and `entered` (the tab this visit let in), closes the other pages of its
    * partition, and covers the tabs with a sheet, when bad data is found after they were let in. `emptied` settles once
@@ -43,6 +42,8 @@ export interface FirstVisitDeps {
   readonly capabilityPrompt?: CapabilityPromptPrompt | undefined
   /** Who to ask, in which tab, when a new version of an app asks for more than it was granted. */
   readonly askerFor?: ((origin: string) => DialogCaller | undefined) | undefined
+  /** Called when an origin becomes, or stops being, an app Orivon was never let into, so the chrome can ask again about its key. */
+  readonly changed?: (() => void) | undefined
   /** How long after a tab is let in the background download waits, so it begins once the first page is up. */
   readonly backgroundDelayMs?: number | undefined
 }
@@ -141,7 +142,7 @@ export async function runFirstVisit (deps: FirstVisitDeps, hintingOrigin: string
   try {
     // The page keeps running while the question is open, and the question goes when the app is stopped or the tab leaves the origin.
     const withdrawn = signal === undefined ? keeper.signal : AbortSignal.any([keeper.signal, signal])
-    const ask = await askInstallConsent(deps.broker, deps.consent, origin, read.manifest, deps.perCapabilityConsent, caller === undefined ? undefined : { ...caller, signal: withdrawn, unheld: true })
+    const ask = await askInstallConsent(deps.broker, deps.consent, origin, read.manifest, caller === undefined ? undefined : { ...caller, signal: withdrawn, unheld: true })
     if (keeper.stopped()) return left()
     if (gone()) return left()
     if (ask.outcome === 'left') {
@@ -151,6 +152,7 @@ export async function runFirstVisit (deps: FirstVisitDeps, hintingOrigin: string
     }
     if (ask.outcome === 'denied') {
       deps.declined.add(origin)
+      deps.changed?.()
       host.plain()
       return { outcome: 'plain', why: 'denied' }
     }
@@ -283,6 +285,10 @@ export interface FirstVisit {
   run: (origin: string, hintedUrl: string, caller: DialogCaller | undefined, host: SetupHost, signal?: AbortSignal) => Promise<FirstVisitResult>
   /** At start: serves again every app that was allowed and not yet pinned, before any tab can ask for it. */
   resume: () => Promise<void>
+  /** Why an origin is an app Orivon was never let into: its question was dismissed this run (`later`) or answered with nothing switched on (`declined`). Undefined for every other origin. */
+  notLetIn: (origin: string) => 'later' | 'declined' | undefined
+  /** Forgets that the question was dismissed or refused, and lets go of the cache a dismissal kept staged: the next visit asks again. False when a refusal could not be forgotten, so nothing will ask. */
+  askAgain: (origin: string) => Promise<boolean>
 }
 
 export interface FirstVisitOptions {
@@ -327,7 +333,7 @@ export function createFirstVisit (options: FirstVisitOptions): FirstVisit {
       const kind = await kindOf(origin)
       if (kind !== 'first') return { outcome: kind }
       const result = await runFirstVisit(deps, origin, hintedUrl, caller, host, signal)
-      if (result.outcome === 'later') notNow.set(origin, result.keeper)
+      if (result.outcome === 'later') { notNow.set(origin, result.keeper); deps.changed?.() }
       if (result.outcome === 'entered') {
         // The download holds the origin's queue after the visit has returned, so nothing installs the same files beside it.
         // An app whose download did not finish stays settling for the run: the ordinary install path, which checks no
@@ -347,5 +353,23 @@ export function createFirstVisit (options: FirstVisitOptions): FirstVisit {
     }
   }
 
-  return { kindOf, run, resume }
+  function notLetIn (origin: string): 'later' | 'declined' | undefined {
+    if (notNow.has(origin)) return 'later'
+    return deps.declined.has(origin) && !deps.broker.app.isRegisteredSync(origin) ? 'declined' : undefined
+  }
+
+  async function askAgain (origin: string): Promise<boolean> {
+    // On the origin's queue, so a visit that starts meanwhile never has its staged files discarded by the old one's cache.
+    return await withOriginQueue(origin, async () => {
+      const kept = notNow.get(origin)
+      // The dismissal kept its staged cache for the run; the visit that follows stages its own.
+      await kept?.cancel()
+      notNow.delete(origin)
+      const forgotten = !deps.declined.has(origin) || deps.declined.remove(origin)
+      deps.changed?.()
+      return forgotten
+    })
+  }
+
+  return { kindOf, run, resume, notLetIn, askAgain }
 }

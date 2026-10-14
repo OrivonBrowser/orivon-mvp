@@ -3,21 +3,21 @@
 // reports the answer, touching no grant and recording no refusal; `applyInstallConsent` makes the grants once
 // the app is registered. `requestInstallConsent` (./install-consent.ts) is both at once, for an app Orivon already holds.
 //
-// Only a pressed Deny is a no. Escape, a closed tab, a navigation or a prompt that failed answer `left`: nothing is
-// recorded, and the next visit asks again.
+// Closing the question with nothing switched on is a no. Escape, a closed tab, a navigation or a prompt that failed
+// answer `left`: nothing is recorded, and the next visit asks again.
 import { patternSetFromCapabilities } from '../../broker/policy/manifest-patterns.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import type { CapabilityKind, Manifest } from '../../contracts/index.js'
 import { grantChangedCapabilities } from './grant-changed-capabilities.js'
-import type { InstallConsentPrompt, PerCapabilityConsentPrompt } from './install-consent.js'
+import type { InstallConsentPrompt } from './install-consent.js'
 import type { DialogCaller } from './request-grant.js'
 
 export type InstallAsk =
-  /** Nothing declared, everything held or refused one by one earlier, or no prompt wired. */
+  /** Nothing declared, everything held or refused earlier, or no prompt wired. */
   | { readonly outcome: 'not-asked' }
   /** Nobody answered: the tab moved on, the person dismissed the question, or the prompt failed. */
   | { readonly outcome: 'left' }
-  /** The person pressed Deny. */
+  /** The person closed the question with every switch off. */
   | { readonly outcome: 'denied' }
   | { readonly outcome: 'accepted', readonly capabilities: readonly CapabilityKind[], readonly refused: readonly CapabilityKind[] }
 
@@ -26,7 +26,6 @@ export async function askInstallConsent (
   consent: InstallConsentPrompt | undefined,
   origin: string,
   manifest: Manifest,
-  perCapabilityConsent?: PerCapabilityConsentPrompt,
   caller?: DialogCaller
 ): Promise<InstallAsk> {
   // Every key was set by patternSetFromCapabilities itself, so this cast trusts nothing untrusted.
@@ -38,35 +37,20 @@ export async function askInstallConsent (
   const outstanding = refusedBefore === undefined ? notHeld : notHeld.filter((capability) => !refusedBefore.includes(capability))
   if (outstanding.length === 0) return { outcome: 'not-asked' }
 
-  if (manifest.consentGranularity === 'per-capability' && perCapabilityConsent !== undefined) {
-    let chosen: readonly CapabilityKind[] | null
-    try {
-      chosen = caller === undefined ? await perCapabilityConsent(origin, manifest, outstanding) : await perCapabilityConsent(origin, manifest, outstanding, caller)
-    } catch (error) {
-      console.error('[install-consent] the per-capability consent prompt threw; nothing decided this visit', origin, error)
-      return { outcome: 'left' }
-    }
-    if (chosen === null || (caller !== undefined && !caller.stillOn(origin))) return { outcome: 'left' }
-    // A broken prompt must fail toward asking again, never toward granting something nobody was shown.
-    const answered: readonly CapabilityKind[] = chosen
-    const accepted = outstanding.filter((capability) => answered.includes(capability))
-    if (accepted.length === 0) return { outcome: 'denied' }
-    return { outcome: 'accepted', capabilities: accepted, refused: outstanding.filter((capability) => !accepted.includes(capability)) }
-  }
-
   if (consent === undefined) return { outcome: 'not-asked' }
-  let answer: boolean | 'dismissed'
+  let chosen: readonly CapabilityKind[] | null
   try {
-    // The whole declared set, so a person choosing all-or-nothing sees the complete picture.
-    answer = caller === undefined
-      ? await consent(origin, manifest, declared, held.map((grant) => grant.capability))
-      : await consent(origin, manifest, declared, held.map((grant) => grant.capability), caller)
+    chosen = caller === undefined ? await consent(origin, manifest, outstanding) : await consent(origin, manifest, outstanding, caller)
   } catch (error) {
     console.error('[install-consent] the consent prompt threw; nothing decided this visit', origin, error)
     return { outcome: 'left' }
   }
-  if (answer === 'dismissed' || (caller !== undefined && !caller.stillOn(origin))) return { outcome: 'left' }
-  return answer ? { outcome: 'accepted', capabilities: declared, refused: [] } : { outcome: 'denied' }
+  if (chosen === null || (caller !== undefined && !caller.stillOn(origin))) return { outcome: 'left' }
+  // A broken prompt must fail toward asking again, never toward granting something nobody was shown.
+  const answered: readonly CapabilityKind[] = chosen
+  const accepted = outstanding.filter((capability) => answered.includes(capability))
+  if (accepted.length === 0) return { outcome: 'denied' }
+  return { outcome: 'accepted', capabilities: accepted, refused: outstanding.filter((capability) => !accepted.includes(capability)) }
 }
 
 /** Grants what `ask` accepted, bounded to `manifest`'s own declared patterns, and records what was refused one by one. */

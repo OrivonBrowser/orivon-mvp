@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
+import { grantAll, grantNone, dismissed } from './install-consent.test-helpers.js'
+import type { InstallConsentPrompt } from '../install-consent.js'
 import { applyInstallConsent, askInstallConsent } from '../install-consent-ask.js'
 import type { DialogCaller } from '../request-grant.js'
 import { APP, stubBroker } from '../../../broker/transport/tests/ipc.test-helpers.js'
@@ -6,7 +8,7 @@ import type { BrokerCall } from '../../../broker/transport/tests/ipc.test-helper
 import { manifestWith } from '../../../broker/tests/index.test-helpers.js'
 
 // The first visit's two halves of the install question (ADR-0074): asking decides and records nothing,
-// applying grants only once the files are checked, and only an explicit Deny is a no.
+// applying grants only once the files are checked, and closing with nothing switched on is a no.
 
 const MANIFEST = manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } }, fs: { quotaBytes: 1024 } })
 const PER_CAPABILITY = { ...MANIFEST, consentGranularity: 'per-capability' as const }
@@ -24,54 +26,52 @@ function broker (calls: BrokerCall[] = [], held: readonly string[] = [], decline
 }
 
 describe('askInstallConsent', () => {
-  it('accepts the whole declared set on Allow, and touches no grant', async () => {
+  it('accepts every switched-on capability, and touches no grant', async () => {
     const calls: BrokerCall[] = []
-    const ask = await askInstallConsent(broker(calls), async () => true, APP, MANIFEST)
+    const ask = await askInstallConsent(broker(calls), grantAll, APP, MANIFEST)
     expect(ask).toEqual({ outcome: 'accepted', capabilities: expect.arrayContaining(['tcp.connect', 'fs']), refused: [] })
     expect(calls.filter((call) => call.method === 'grant' || call.method === 'recordDeclinedConsent' || call.method === 'clearDeclinedConsent')).toEqual([])
   })
 
-  it('is denied only for the Deny button, and records nothing', async () => {
+  it('accepts a subset and names what was left off, for both granularities', async () => {
+    const onlyFs: InstallConsentPrompt = async () => ['fs']
+    expect(await askInstallConsent(broker(), onlyFs, APP, MANIFEST)).toEqual({ outcome: 'accepted', capabilities: ['fs'], refused: ['tcp.connect'] })
+    expect(await askInstallConsent(broker(), onlyFs, APP, PER_CAPABILITY)).toEqual({ outcome: 'accepted', capabilities: ['fs'], refused: ['tcp.connect'] })
+  })
+
+  it('is denied when the question was closed with nothing switched on, and records nothing', async () => {
     const calls: BrokerCall[] = []
-    expect(await askInstallConsent(broker(calls), async () => false, APP, MANIFEST)).toEqual({ outcome: 'denied' })
+    expect(await askInstallConsent(broker(calls), grantNone, APP, MANIFEST)).toEqual({ outcome: 'denied' })
+    expect(await askInstallConsent(broker(calls), grantNone, APP, PER_CAPABILITY)).toEqual({ outcome: 'denied' })
     expect(calls.some((call) => call.method === 'recordDeclinedConsent')).toBe(false)
   })
 
   it('is left for Escape, a closed tab, a navigation, a prompt that failed, or a tab that moved on', async () => {
-    expect(await askInstallConsent(broker(), async () => 'dismissed', APP, MANIFEST)).toEqual({ outcome: 'left' })
+    expect(await askInstallConsent(broker(), dismissed, APP, MANIFEST)).toEqual({ outcome: 'left' })
+    expect(await askInstallConsent(broker(), dismissed, APP, PER_CAPABILITY)).toEqual({ outcome: 'left' })
     expect(await askInstallConsent(broker(), async () => { throw new Error('no window') }, APP, MANIFEST)).toEqual({ outcome: 'left' })
-    expect(await askInstallConsent(broker(), async () => true, APP, MANIFEST, undefined, gone)).toEqual({ outcome: 'left' })
-    expect(await askInstallConsent(broker(), async () => true, APP, MANIFEST, undefined, present)).toMatchObject({ outcome: 'accepted' })
+    expect(await askInstallConsent(broker(), grantAll, APP, MANIFEST, gone)).toEqual({ outcome: 'left' })
+    expect(await askInstallConsent(broker(), grantAll, APP, MANIFEST, present)).toMatchObject({ outcome: 'accepted' })
   })
 
   it('asks nothing of a manifest that declares nothing, or whose declared set is all held, or when no prompt is wired', async () => {
-    const consent = vi.fn(async () => true)
+    const consent = vi.fn(grantAll)
     expect(await askInstallConsent(broker(), consent, APP, manifestWith({}))).toEqual({ outcome: 'not-asked' })
     expect(await askInstallConsent(broker([], ['tcp.connect', 'fs']), consent, APP, MANIFEST)).toEqual({ outcome: 'not-asked' })
     expect(await askInstallConsent(broker(), undefined, APP, MANIFEST)).toEqual({ outcome: 'not-asked' })
     expect(consent).not.toHaveBeenCalled()
   })
 
-  it('does not ask again about a capability an earlier question already refused one by one', async () => {
-    const consent = vi.fn(async () => true)
+  it('does not ask again about a capability an earlier question already refused', async () => {
+    const consent = vi.fn(grantAll)
     expect(await askInstallConsent(broker([], [], ['tcp.connect', 'fs']), consent, APP, MANIFEST)).toEqual({ outcome: 'not-asked' })
     expect(consent).not.toHaveBeenCalled()
   })
 
-  it('per capability: accepts the subset, and names what was refused', async () => {
-    const ask = await askInstallConsent(broker(), undefined, APP, PER_CAPABILITY, async () => ['fs'])
-    expect(ask).toEqual({ outcome: 'accepted', capabilities: ['fs'], refused: ['tcp.connect'] })
-  })
-
-  it('per capability: is denied when none is accepted, and left when the questions were dismissed', async () => {
-    expect(await askInstallConsent(broker(), undefined, APP, PER_CAPABILITY, async () => [])).toEqual({ outcome: 'denied' })
-    expect(await askInstallConsent(broker(), undefined, APP, PER_CAPABILITY, async () => null)).toEqual({ outcome: 'left' })
-    expect(await askInstallConsent(broker(), undefined, APP, PER_CAPABILITY, async () => ['fs'], gone)).toEqual({ outcome: 'left' })
-    expect(await askInstallConsent(broker(), undefined, APP, PER_CAPABILITY, async () => { throw new Error('x') })).toEqual({ outcome: 'left' })
-  })
-
-  it('per capability: never accepts what it did not ask about', async () => {
-    const ask = await askInstallConsent(broker([], ['fs']), undefined, APP, PER_CAPABILITY, async () => ['fs', 'tcp.connect', 'id'] as never)
+  it('asks only about what is outstanding, and never accepts what it did not ask about', async () => {
+    const consent = vi.fn<InstallConsentPrompt>(async () => ['fs', 'tcp.connect', 'id'])
+    const ask = await askInstallConsent(broker([], ['fs']), consent, APP, MANIFEST)
+    expect(consent).toHaveBeenCalledWith(APP, MANIFEST, ['tcp.connect'])
     expect(ask).toEqual({ outcome: 'accepted', capabilities: ['tcp.connect'], refused: [] })
   })
 })

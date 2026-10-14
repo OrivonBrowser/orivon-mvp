@@ -46,7 +46,7 @@ function manifest (): Manifest {
   }
 }
 
-it('lists an app that holds a permission with what it has stored, and takes the permission back', async () => {
+it('lists an app that holds a permission with what it has stored, and switches the permission off and on', async () => {
   const { app, chrome } = await launched()
   try {
     const origin = 'http://127.0.0.1:47391'
@@ -68,9 +68,27 @@ it('lists an app that holds a permission with what it has stored, and takes the 
     // Windows always keep it in theirs (the Keychain, DPAPI).
     expect(await page.locator('#row-apps-identity .value').textContent()).toContain(process.platform === 'linux' ? 'Made again each time' : 'Kept in your system\'s keyring')
 
-    await card.locator('.perm button', { hasText: 'Revoke' }).click()
-    expect(await waitFor(async () => (await card.locator('.perm').count()) === 0)).toBe(true)
-    expect(await card.textContent()).toContain('Nothing is granted to it now.')
+    const permission = card.locator('.perm[data-capability="tcp.connect"]')
+    expect(await permission.locator('input').isChecked()).toBe(true)
+    await permission.locator('.switch').click()
+    // The row stays, off, so the app is still where the person finds it to allow it again.
+    expect(await waitFor(async () => !(await permission.locator('input').isChecked()))).toBe(true)
+    expect(await card.locator('.perm').count()).toBe(1)
+    await permission.locator('.switch').click()
+    expect(await waitFor(async () => await permission.locator('input').isChecked())).toBe(true)
+
+    // With two apps listed, a switch of the second keeps the keyboard after the redraw, not the first app's.
+    const second = 'http://127.0.0.1:47392'
+    await app.evaluate(async (_electron, request: DevGrantRequest) => {
+      const hook = (globalThis as unknown as { __orivonDevGrant?: (r: DevGrantRequest) => Promise<Grant> }).__orivonDevGrant
+      if (typeof hook === 'function') await hook(request)
+    }, { origin: second, manifest: manifest(), capability: 'tcp.connect', patterns: ['127.0.0.1:9'] } satisfies DevGrantRequest)
+    const other = page.locator(`.app-card[data-origin="${second}"]`)
+    await other.waitFor()
+    await other.locator('.perm[data-capability="tcp.connect"] input').focus()
+    await other.locator('.perm[data-capability="tcp.connect"] input').press('Space')
+    expect(await waitFor(async () => !(await other.locator('.perm[data-capability="tcp.connect"] input').isChecked()))).toBe(true)
+    expect(await page.evaluate((origin) => document.activeElement?.closest('.app-card')?.getAttribute('data-origin') === origin, second)).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)

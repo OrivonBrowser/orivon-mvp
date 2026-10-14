@@ -111,7 +111,12 @@ export function harness (options: {
       return { outcome: 'installed' as const, canonicalOrigin: installOrigin, manifest, pin: { schema: 1 as const, origin: installOrigin, bundleHash: tree.root, assets: [], version: manifest.version, pinnedAt: 0 } }
     })
   }
-  const consent = vi.fn<InstallConsentPrompt>(async () => { events.push('ask'); await noteGrants('ask'); return options.answer ?? true })
+  const consent = vi.fn<InstallConsentPrompt>(async (_origin, _manifest, capabilities) => {
+    events.push('ask')
+    await noteGrants('ask')
+    const answer = options.answer ?? true
+    return answer === 'dismissed' ? null : answer ? capabilities : []
+  })
   const answerWidening: Harness['answerWidening'] = { current: true }
   const capabilityPrompt = vi.fn<NonNullable<FirstVisitDeps['capabilityPrompt']>>(async () => { events.push('widening-question'); return typeof answerWidening.current === 'function' ? await answerWidening.current() : answerWidening.current })
   const blocked = vi.fn<NonNullable<FirstVisitDeps['blocked']>>(() => { events.push('blocked-tabs'); return { emptied: Promise.resolve(), dismissed: Promise.resolve() } })

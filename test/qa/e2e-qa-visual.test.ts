@@ -394,17 +394,23 @@ for (const scheme of SCHEMES) {
         const grant = await waitQuestion(app)
         await grant.waitForSelector('.q:not(.arming)')
         const said = await readQuestion(grant)
-        check('the consent question names the app origin and offers Allow and Deny', said.buttons.includes('Allow') && said.buttons.includes('Deny'), JSON.stringify(said))
+        check('the consent question names the app origin and offers Grant all and Close', said.buttons.includes('Grant all') && said.buttons.includes('Close'), JSON.stringify(said))
         const shown = [said.origin, said.title, said.message, said.detail].join('\n')
         check('the consent question names the origin once', said.origin.length > 0 && shown.split(said.origin).length === 2, JSON.stringify(said))
         const grantFit = await panelFits(grant)
         check('the consent card sits inside its view, uncut and unscrolled', grantFit.fits, grantFit.detail)
         await state(check, app, `question-consent-${scheme}`, {
-          expected: 'A question panel floats over the page, directly under the address pill with its top edge crossing into the toolbar: a header naming the 127.0.0.1 origin that is asking, a message about what the app wants, and two readable buttons, Allow and Deny, with Allow the filled one. Text and buttons are fully inside the panel in this colour scheme, nothing is cut, and the page and toolbar stay visible around it.',
+          expected: 'A question panel floats over the page, directly under the address pill with its top edge crossing into the toolbar: a header naming the 127.0.0.1 origin that is asking, a message about what the app wants, and a switch row for each permission the app asks for, all off, and two readable buttons, Close as plain text and Grant all, the filled one. Text and buttons are fully inside the panel in this colour scheme, nothing is cut, and the page and toolbar stay visible around it.',
           action: 'Typed the address of a loopback app that advertises a manifest and waited for its grant question to arm.',
           ignore: [FIXTURE_ADDRESS, CONSENT_ORIGIN_LINE]
         })
-        await answerQuestion(app, 'Deny')
+        await answerQuestion(app, 'Close')
+        await chrome.waitForSelector('#site-permissions-btn[data-missing]', { timeout: 20_000 })
+        await state(check, app, `key-dot-${scheme}`, {
+          expected: 'The address pill after the question was closed with every switch off: the key beside the address wears a small filled dot in the accent colour at its bottom right, fully inside the pill and clear of the key glyph, and nothing else on the pill changed. The dot reads clearly against the pill in this colour scheme.',
+          action: 'Closed the consent question with no switch on and waited for the key to show its dot.',
+          ignore: [FIXTURE_ADDRESS]
+        })
 
         await visit(app, chrome, `${dialogs.origin}/`)
         const view = findViewShowing(app, chrome, `${dialogs.origin}/`) as Page

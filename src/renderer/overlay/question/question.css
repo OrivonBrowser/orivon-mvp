@@ -23,3 +23,26 @@ body[data-overlay^='question'] .q-page .q-message { font-weight: 400; }
 
 /* A double-press button after its first press: it says so, and keeps the look until the second press or the timeout. */
 body[data-overlay^='question'] .btn.pressed { outline: 2px solid var(--wwarn-mark, #c2410c); outline-offset: 2px; }
+
+/* A question with switches: a row per thing asked for, the way out as a plain link beside the one button that grants. */
+body[data-overlay^='question'] .q-choices { margin-top: 10px; }
+body[data-overlay^='question'] .q-choice-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; }
+body[data-overlay^='question'] .q-choice { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 6px; background: var(--wsurface); }
+body[data-overlay^='question'] .q-choice.warning { background: var(--wwarn-wash); border: 1px solid color-mix(in srgb, var(--wwarn) 40%, transparent); }
+body[data-overlay^='question'] .q-choice .grant-icon { width: 16px; height: 16px; flex: none; color: var(--wink-dim); }
+body[data-overlay^='question'] .q-choice-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+body[data-overlay^='question'] .q-choice-message { font-size: 13px; overflow-wrap: anywhere; white-space: pre-wrap; }
+body[data-overlay^='question'] .q-choice-detail { font-size: 12px; color: var(--wink-dim); overflow-wrap: anywhere; white-space: pre-wrap; }
+body[data-overlay^='question'] .q-note { margin: 8px 0 0; color: var(--wink-dim); font-size: 12.5px; line-height: 1.5; overflow-wrap: anywhere; }
+body[data-overlay^='question'] .q-note[hidden] { display: none; }
+body[data-overlay^='question'] .q-switch { flex: none; position: relative; width: 34px; height: 20px; padding: 0; border: 0; border-radius: 10px; background: var(--wborder); cursor: pointer; transition: background 0.15s; }
+body[data-overlay^='question'] .q-switch.on { background: var(--waccent); }
+body[data-overlay^='question'] .q-switch-thumb { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: white; transition: left 0.15s; }
+body[data-overlay^='question'] .q-switch.on .q-switch-thumb { left: 16px; }
+body[data-overlay^='question'] .q-switch:focus-visible { outline: 2px solid var(--waccent); outline-offset: 2px; }
+body[data-overlay^='question'] .q-with-choices .btn-row { justify-content: flex-end; align-items: center; gap: 10px; }
+body[data-overlay^='question'] .q-with-choices .btn-row .btn:not(.primary) { background: none; border-color: transparent; color: var(--waccent-text); box-shadow: none; }
+body[data-overlay^='question'] .q-with-choices .btn-row .btn:not(.primary):hover { text-decoration: underline; background: none; }
+@media (prefers-reduced-motion: reduce) {
+  body[data-overlay^='question'] .q-switch, body[data-overlay^='question'] .q-switch-thumb { transition: none; }
+}

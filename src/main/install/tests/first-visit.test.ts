@@ -16,7 +16,7 @@ describe('runFirstVisit, for an app a verifier serves', () => {
   it('caches the app from the moment its manifest is read, beside the question: the tree read, every file fetched, nothing granted, served or pinned', async () => {
     let answer = (_yes: boolean): void => {}
     const h = harness()
-    h.consent.mockImplementation(async () => { h.events.push('ask'); await new Promise<boolean>((resolve) => { answer = resolve }); return true })
+    h.consent.mockImplementation(async (_o, _m, capabilities) => { h.events.push('ask'); return (await new Promise<boolean>((resolve) => { answer = resolve })) ? capabilities : [] })
     const pending = runFirstVisit(depsOf(h, 0), h.origin, h.url, present, h.host)
     await vi.waitFor(() => { expect(h.consent).toHaveBeenCalled() })
     await vi.waitFor(() => { expect(h.loader.fetchForInstall).toHaveBeenCalled() })
@@ -36,7 +36,7 @@ describe('runFirstVisit, for an app a verifier serves', () => {
   it('pins what caching staged when the answer is yes, before the tab reloads, so the reload is served from the pin', async () => {
     let answer = (_yes: boolean): void => {}
     const h = harness()
-    h.consent.mockImplementation(async () => { h.events.push('ask'); await new Promise<boolean>((resolve) => { answer = resolve }); return true })
+    h.consent.mockImplementation(async (_o, _m, capabilities) => { h.events.push('ask'); return (await new Promise<boolean>((resolve) => { answer = resolve })) ? capabilities : [] })
     const pending = runFirstVisit(depsOf(h, 0), h.origin, h.url, present, h.host)
     await vi.waitFor(() => { expect(h.loader.fetchForInstall).toHaveBeenCalled() })
     await new Promise((resolve) => setTimeout(resolve, 20))
@@ -62,7 +62,7 @@ describe('runFirstVisit, for an app a verifier serves', () => {
     let answer = (_yes: boolean): void => {}
     const staged = bundle(VERIFIED)
     const h = harness({ bundles: [staged] })
-    h.consent.mockImplementation(async () => { h.events.push('ask'); return await new Promise<boolean>((resolve) => { answer = resolve }) })
+    h.consent.mockImplementation(async (_o, _m, capabilities) => { h.events.push('ask'); return (await new Promise<boolean>((resolve) => { answer = resolve })) ? capabilities : [] })
     const pending = runFirstVisit(depsOf(h, 0), h.origin, h.url, present, h.host)
     await vi.waitFor(() => { expect(h.loader.fetchForInstall).toHaveBeenCalled() })
     await new Promise((resolve) => setTimeout(resolve, 20))
@@ -79,7 +79,7 @@ describe('runFirstVisit, for an app a verifier serves', () => {
     const staged = bundle(VERIFIED)
     const h = harness({ bundles: [staged], answer: 'dismissed' })
     const away = new AbortController()
-    h.consent.mockImplementation(async () => { away.abort(); return 'dismissed' })
+    h.consent.mockImplementation(async () => { away.abort(); return null })
     const result = await runFirstVisit(depsOf(h, 0), h.origin, h.url, present, h.host, away.signal)
     expect(result.outcome).toBe('left')
     await vi.waitFor(() => { expect(staged.discard).toHaveBeenCalled() })
@@ -91,7 +91,7 @@ describe('runFirstVisit, for an app a verifier serves', () => {
     const away = new AbortController()
     const h = harness()
     let asker: DialogCaller | undefined
-    h.consent.mockImplementation(async (_origin, _manifest, _declared, _held, caller) => { asker = caller; return await new Promise<boolean>(() => {}) })
+    h.consent.mockImplementation(async (_origin, _manifest, _declared, caller) => { asker = caller; return await new Promise<null>(() => {}) })
     void runFirstVisit(depsOf(h), h.origin, h.url, present, h.host, away.signal)
     await vi.waitFor(() => { expect(asker).toBeDefined() })
     expect(asker?.unheld).toBe(true)
@@ -104,7 +104,7 @@ describe('runFirstVisit, for an app a verifier serves', () => {
     let answer = (_yes: boolean): void => {}
     const mismatched = bundle(VERIFIED, { declaration: DIFFERENT, content: CONTENT })
     const h = harness({ bundles: [mismatched] })
-    h.consent.mockImplementation(async () => { h.events.push('ask'); return await new Promise<boolean>((resolve) => { answer = resolve }) })
+    h.consent.mockImplementation(async (_o, _m, capabilities) => { h.events.push('ask'); return (await new Promise<boolean>((resolve) => { answer = resolve })) ? capabilities : [] })
     const pending = runFirstVisit(depsOf(h, 0), h.origin, h.url, present, h.host)
     await vi.waitFor(() => { expect(h.blocked).toHaveBeenCalledTimes(1) })
     expect(h.blocked).toHaveBeenCalledWith(h.origin, expect.objectContaining({ kind: 'blocked', differing: ['/index.html'] }), undefined)
@@ -122,7 +122,7 @@ describe('runFirstVisit, for an app a verifier serves', () => {
     for (const declaration of [{ kind: 'failed' as const, reason: 'block does not hash to its CID', integrity: true as const }, { kind: 'mismatch' as const, differing: ['/.well-known/orivon.json'] }]) {
       const h = harness({ declarations: [declaration] })
       let asker: DialogCaller | undefined
-      h.consent.mockImplementation(async (_origin, _manifest, _declared, _held, caller) => { h.events.push('ask'); asker = caller; return await new Promise<boolean>(() => {}) })
+      h.consent.mockImplementation(async (_origin, _manifest, _declared, caller) => { h.events.push('ask'); asker = caller; return await new Promise<null>(() => {}) })
       void runFirstVisit(depsOf(h, 0), h.origin, h.url, present, h.host)
       await vi.waitFor(() => { expect(h.blocked).toHaveBeenCalledTimes(1) })
       expect(h.blocked.mock.calls[0]?.[1]).toMatchObject({ kind: 'blocked' })
@@ -136,7 +136,7 @@ describe('runFirstVisit, for an app a verifier serves', () => {
   it('does not hold the question for the declared tree', async () => {
     let release = (): void => {}
     const h = harness({ declarationGate: new Promise<void>((resolve) => { release = resolve }) })
-    const answered = h.consent.mockImplementation(async () => { h.events.push('ask'); return true })
+    const answered = h.consent.mockImplementation(async (_o, _m, capabilities) => { h.events.push('ask'); return capabilities })
     const pending = run(h)
     await vi.waitFor(() => { expect(answered).toHaveBeenCalled() })
     expect(h.events).not.toContain('serve-live')
@@ -243,7 +243,7 @@ describe('runFirstVisit, for an app a verifier serves', () => {
         vi.mocked(h.loader.rememberConsent).mockImplementationOnce(async () => { fire(h); await new Promise((resolve) => setTimeout(resolve, 15)); h.state.pending = true })
       }, LATE],
       ['pinning what was staged', (h) => {
-        h.consent.mockImplementation(async () => { await vi.waitFor(() => { expect(h.loader.fetchForInstall).toHaveBeenCalled() }); await new Promise((resolve) => setTimeout(resolve, 20)); return true })
+        h.consent.mockImplementation(async (_o, _m, capabilities) => { await vi.waitFor(() => { expect(h.loader.fetchForInstall).toHaveBeenCalled() }); await new Promise((resolve) => setTimeout(resolve, 20)); return capabilities })
         vi.mocked(h.loader.installFetched).mockImplementationOnce(async (origin, manifest, tree) => {
           fire(h)
           await new Promise((resolve) => setTimeout(resolve, 15))
@@ -267,7 +267,7 @@ describe('runFirstVisit, for an app a verifier serves', () => {
 
   it('lets nothing in when a block landed before the answer, though the answer is yes', async () => {
     const h = harness({ declarations: [{ kind: 'mismatch', differing: ['/index.html'] }] })
-    h.consent.mockImplementation(async () => { await vi.waitFor(() => { expect(h.blocked).toHaveBeenCalled() }); return true })
+    h.consent.mockImplementation(async (_o, _m, capabilities) => { await vi.waitFor(() => { expect(h.blocked).toHaveBeenCalled() }); return capabilities })
     const result = await run(h)
     expect(result.outcome).toBe('left')
     expect(await grantsOf(h)).toEqual([])

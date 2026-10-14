@@ -47,7 +47,7 @@ const EMPTY_INFO: SiteInfo = { origin: ORIGIN, displayOrigin: ORIGIN, claimedNam
 
 function fakeController (overrides: Partial<SiteInfoController> = {}): SiteInfoController {
   return {
-    siteSummaryFor: vi.fn(async () => ({ asked: false, warning: false })),
+    siteSummaryFor: vi.fn(async () => ({ asked: false, warning: false, missing: false })),
     siteInfoFor: vi.fn(async () => EMPTY_INFO),
     siteTrustFor: vi.fn(async () => null),
     storageDeclarationFor: vi.fn(async () => null),
@@ -57,6 +57,7 @@ function fakeController (overrides: Partial<SiteInfoController> = {}): SiteInfoC
     revokePickedPath: vi.fn(async () => {}),
     deleteLocalFileData: vi.fn(async () => false),
     applyUpdate: vi.fn(async () => ({ ok: true as const })),
+    reviewPermissions: vi.fn(async () => true),
     ...overrides
   }
 }
@@ -293,6 +294,21 @@ describe('registerSiteInfoIpc -- revokePickedPath / reload / openSiteSettings', 
 
     expect(controller.revokePickedPath).toHaveBeenCalledWith(ORIGIN, 'pick-1')
     expect(result).toBe(EMPTY_INFO)
+  })
+
+  it('reviewPermissions gives the question back for the popup\'s own origin, then reloads the tab in front', async () => {
+    const controller = fakeController()
+    const { reloadActiveTab } = register(controller)
+    await dispatch({ type: 'reviewPermissions', origin: 'https://other.example' })
+    expect(controller.reviewPermissions).toHaveBeenCalledWith(ORIGIN)
+    expect(reloadActiveTab).toHaveBeenCalledTimes(1)
+  })
+
+  it('reviewPermissions reloads nothing for an origin that was never let out of the question', async () => {
+    const controller = fakeController({ reviewPermissions: vi.fn(async () => false) })
+    const { reloadActiveTab } = register(controller)
+    await dispatch({ type: 'reviewPermissions' })
+    expect(reloadActiveTab).not.toHaveBeenCalled()
   })
 
   it('reload calls the injected reloadActiveTab, not a command with a tab id to trust', async () => {

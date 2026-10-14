@@ -1,17 +1,23 @@
 # `src/main/permissions/`: the grant list, and the per-site popover
 
-**What lives here.** Two surfaces, each behind its own controller.
+**What lives here.** Three surfaces, each behind its own controller.
 
 - **All sites**, off the toolbar's tune icon: `permissions.ts` (`PermissionsController`) lists
   grants and revokes them, recording each revoke as a declined capability (`d-0087`), and lists
   each site's remembered notification answer for reset. Revoke only: forgetting an app entirely
   is `GrantLedger.forgetOrigin`. A local file is not listed here: it is not an app a person installed, and the privacy page lists the recorded ones. `permissions-panel.ts` is its popup.
+- **The apps card in Settings**: `apps-domain.ts` (the `apps` domain, checking every field of a request) and `app-switches.ts`
+  (`AppSwitches`: one row per capability an app declares or holds, built by `app-capability-rows.ts` for an app not opened this session,
+  and the switch that moves one through `site-switches.ts`, the door the key popup uses). A permission is switched, never revoked
+  with a button; an app switched fully off is still listed, because its record remembers the refusal.
 - **One site**, off the address pill's shield and key (`d-0037`; a local file is named by its path, shows no Web3 Score, and has Turn off and Delete data): `site-info.ts` (pure, one row
   per declared capability), `site-switches.ts` (turn one capability off or on, re-validated
   against the manifest), `site-info-controller.ts` (the surface's one door to the broker and
   loader), `site-data-runner.ts` (Cookies and site data I/O) and `site-info-panel.ts`. The controller also
 reports the update a moved name offers the installed app and takes the person's choice to apply it
-(`ADR-0056`).
+(`ADR-0056`). Its `siteSummaryFor` says whether the toolbar key wears a dot (`missing`: an app's declared capability is
+off, or the app was never let in), and an app never let in carries `SiteInfo.notLetIn` and has `reviewPermissions`
+(`ADR-0085`); what it asks of the first visit (`AppEntry`) is injected by `../shell/window-panels.ts`.
 
 Both popups share their `WebContentsView` lifecycle through `popover-view.ts`: it closes a popup on blur, on Escape
 (each page asks main to close it over its own channel) and when another popup opens, hands the keyboard back to the tab in front

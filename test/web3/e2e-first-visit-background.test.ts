@@ -54,7 +54,7 @@ it('[app:first-visit-pins-in-the-background] pins the whole app once it is cache
       const goodOrigin = `https://${goodRoot}.ipfs.orivon`
       await clickAddressBarRetrying(chrome, `ipfs://${goodRoot}`)
       await waitQuestion(running, 60_000)
-      await answerQuestion(running, 'Allow')
+      await answerQuestion(running, 'Grant all')
       const entered = await waitForTab(chrome, { address: `ipfs://${goodRoot}/`, title: 'Pinned app' }, 60_000)
       check(`the app opened (${JSON.stringify(entered.info)})`, entered.ok)
       check('it is pinned in the background', await waitFor(() => existsSync(pinPath(userData, goodOrigin)), 60_000))
@@ -107,7 +107,7 @@ it('[app:first-visit-background-mismatch-blocks] blocks an allowed app whose fil
       const lateOrigin = `https://${lateRoot}.ipfs.orivon`
       await clickAddressBarRetrying(chrome, `ipfs://${lateRoot}`)
       await waitQuestion(running, 60_000)
-      await answerQuestion(running, 'Allow')
+      await answerQuestion(running, 'Grant all')
       const warning = await waitSheet(running, 90_000)
       check(`a security warning is shown (${warning.text.title})`, /security warning/i.test(warning.text.title))
       check(`it names the file that differs (${JSON.stringify(warning.text.files)})`, warning.text.files.includes('/later.js'))
@@ -157,7 +157,7 @@ it('[app:first-visit-resumes-after-a-restart] serves an app that was allowed and
       for (const [root, title] of [[goodRoot, 'Resumed app'], [lateRoot, 'Late app']] as const) {
         await clickAddressBarRetrying(chrome, `ipfs://${root}`)
         await waitQuestion(first, 60_000)
-        await answerQuestion(first, 'Allow')
+        await answerQuestion(first, 'Grant all')
         const opened = await waitForTab(chrome, { address: `ipfs://${root}/`, title }, 60_000)
         check(`${title} opened (${JSON.stringify(opened.info)})`, opened.ok)
         let entered = null as PageFacts | null
@@ -233,7 +233,7 @@ it('[app:first-visit-follows-a-new-version] follows an app whose name is republi
       await waitForAddressBarStable(chrome)
       await clickAddressBarRetrying(chrome, `ipns://${key}`)
       await waitQuestion(before, 60_000)
-      await answerQuestion(before, 'Allow')
+      await answerQuestion(before, 'Grant all')
       let first = null as PageFacts | null
       await waitFor(async () => { first = await pageAt(before, `${origin}/`); return first?.ran === 'v1' && first.hasProcess }, 60_000)
       check(`the first version runs as an app tab (${JSON.stringify(first)})`, first?.ran === 'v1' && first.hasProcess)

@@ -1,6 +1,8 @@
 import type { ChromeModule } from './context.js'
 
 export const CONTENT_BLOCKED_NOTE = 'JavaScript, images or sound are blocked on this site'
+/** What the key says while an app's permissions are not all granted; `site-badges` adds it to the key's label and `data-missing` draws the dot (`styles/content-dot.css`). */
+export const MISSING_NOTE = 'Some permissions this site asked for are off'
 export const UPDATE_OFFERED_NOTE = 'A new version of this app is available'
 
 /** What the key says when the page in front is on the tunnel (`main/route/tunnel-mark.ts`). */

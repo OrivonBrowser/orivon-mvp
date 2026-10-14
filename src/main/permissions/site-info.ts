@@ -12,7 +12,7 @@
 import type { NymState } from '../route/nym-status.js'
 import type { CapabilityKind, ConsentGranularity, Grant, Manifest, Pattern } from '../../contracts/index.js'
 import type { PickedPath } from '../../broker/broker-contracts.js'
-import { decideGrantRequest } from '../../broker/policy/request-grant.js'
+import { offerCapability } from '../consent/capability-row.js'
 import { patternSetFromCapabilities } from '../../broker/policy/manifest-patterns.js'
 import { describeCapabilityGrant, formatOriginForDisplay } from '../consent/grant-prompt-render.js'
 import { summaryAtLevel } from '../consent/grant-level.js'
@@ -114,6 +114,8 @@ export interface SiteInfo {
    * of `buildSiteInfo` here and in tests keeps building the same shape.
    */
   readonly extensionsOnSite: readonly string[]
+  /** Set for an app Orivon was never let into -- its first-visit question was dismissed (`later`) or closed with nothing switched on (`declined`) -- so the popup can offer the question back. */
+  readonly notLetIn?: 'later' | 'declined'
 }
 
 /**
@@ -148,13 +150,10 @@ export function buildSiteInfo (
       continue
     }
 
-    // Not held: what turning this on would grant, under the CURRENT
-    // manifest -- never the raw declaration unnarrowed, matching
-    // grantChangedCapabilities's own call shape one level up.
-    const decision = decideGrantRequest(manifest, capability, undefined)
-    if (!decision.allowed) continue // decideGrantRequest fails-closed; nothing to switch.
-    const { warning, message } = summaryAtLevel(describeCapabilityGrant(capability, decision.patterns), level)
-    capabilityRows.push({ capability, on: false, canTurnOn: registered, warning, message, patterns: decision.patterns })
+    // Not held: what turning this on would grant, under the CURRENT manifest -- never the raw declaration unnarrowed.
+    const offered = offerCapability(manifest, capability, level)
+    if (offered === undefined) continue // decideGrantRequest fails-closed; nothing to switch.
+    capabilityRows.push({ capability, on: false, canTurnOn: registered, warning: offered.warning, message: offered.message, patterns: offered.patterns })
   }
 
   const pickedPathRows = pickedPaths.map((pick): PickedPathRow => {
