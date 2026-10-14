@@ -9,7 +9,7 @@ import type { NameResolver } from '../resolution/providers.js'
 import { ENS } from '../ens/descriptor.js'
 import { createEnsResolver } from '../ens/resolver.js'
 import type { SequenceStore } from '../ipfs/ipns.js'
-import { createIpfsGatherer } from '../ipfs/gatherer.js'
+import { createIpfsGatherer, LOCAL_NODE_BLOCK_RETRY } from '../ipfs/gatherer.js'
 import { createNodeFirstGatherer } from '../ipfs/node-first.js'
 import { ipfsProtocol, ipfsProtocolOf } from '../ipfs/protocol.js'
 import type { FeedIndexStore } from '../swarm/feed.js'
@@ -122,6 +122,7 @@ function startIpfs (config: HostConfig, deps: HostDeps, node: NodeLink | undefin
     // With the lookup service off, nothing third-party is asked for a record either, so "only the IPFS network is asked" is true.
     ipnsNameServices: () => controls.lookupService ? config.ipnsNameServices : [],
     localNode: true,
+    ...(config.ipfsNode.retryWaitMs !== undefined && { limits: { blockRetry: { ...LOCAL_NODE_BLOCK_RETRY, waitMs: config.ipfsNode.retryWaitMs } } }),
     storeKey: { header: PARTITION_HEADER, key: (partition: string) => partitionStoreKey(config.ipfsNode?.partitionSalt ?? '', partition) },
     ...common
   }
