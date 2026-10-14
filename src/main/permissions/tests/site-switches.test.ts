@@ -92,6 +92,40 @@ describe('turnOffCapability', () => {
   })
 })
 
+describe('two quick presses of one switch', () => {
+  /** A broker whose revocation takes a moment, as a disk write does. */
+  function slowRevoke (broker: Broker): Broker {
+    const slow = Object.create(broker) as Broker
+    slow.revokePersisted = async (...args) => { await new Promise((resolve) => setTimeout(resolve, 20)); return await broker.revokePersisted(...args) }
+    return slow
+  }
+
+  it('leave storage as the last press asked, whichever finishes first', async () => {
+    const broker = realBroker()
+    await broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 1024 } }))
+    await broker.grant(APP, 'fs', [])
+    const slow = slowRevoke(broker)
+
+    const off = turnOffCapability(slow, APP, 'fs')
+    const on = turnOnCapability(slow, APP, 'fs', [])
+    await Promise.all([off, on])
+
+    expect((await broker.app.grants(APP)).map((grant) => grant.capability)).toEqual(['fs'])
+    expect(await broker.declinedCapabilitiesFor(APP)).toBeUndefined()
+  })
+
+  it('leave it off when the last press was off', async () => {
+    const broker = realBroker()
+    await broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 1024 } }))
+    await broker.recordDeclinedConsent(APP, ['fs'])
+
+    await Promise.all([turnOnCapability(broker, APP, 'fs', []), turnOffCapability(slowRevoke(broker), APP, 'fs')])
+
+    expect(await broker.app.grants(APP)).toEqual([])
+    expect(await broker.declinedCapabilitiesFor(APP)).toEqual(['fs'])
+  })
+})
+
 describe('turnOnCapability', () => {
   it('grants exactly the shown patterns when the manifest still agrees, and clears the decline', async () => {
     const broker = realBroker()

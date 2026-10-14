@@ -88,6 +88,38 @@ describe('AppsState.setCapability', () => {
     expect(apps.capabilityRefused.size).toBe(0)
   })
 
+  it('holds the switch while its request is in flight, and sends a second press of it nowhere', async () => {
+    let release: () => void = () => {}
+    const request = vi.fn(async (_domain: string, command: { type: string }): Promise<unknown> => {
+      if (command.type === 'list') return { apps: [], identity: 'keychain' }
+      await new Promise<void>((resolve) => { release = resolve })
+      return { ok: true }
+    })
+    const changed = vi.fn()
+    const apps = new AppsState({ request } as unknown as OrivonInternal, changed)
+    const key = 'https://app.example|https.connect'
+
+    const first = apps.setCapability('https://app.example', ROW, false)
+    expect(apps.capabilityBusy.has(key)).toBe(true)
+    expect(changed).toHaveBeenCalled()
+    await apps.setCapability('https://app.example', ROW, true)
+    expect(request.mock.calls.filter(([, command]) => (command as { type: string }).type === 'setCapability')).toHaveLength(1)
+
+    release()
+    await first
+    expect(apps.capabilityBusy.has(key)).toBe(false)
+  })
+
+  it('frees the switch when its request failed', async () => {
+    const request = vi.fn(async (_domain: string, command: { type: string }): Promise<unknown> => {
+      if (command.type === 'list') return { apps: [], identity: 'keychain' }
+      throw new Error('gone')
+    })
+    const apps = new AppsState({ request } as unknown as OrivonInternal, () => {})
+    await apps.setCapability('https://app.example', ROW, false)
+    expect(apps.capabilityBusy.size).toBe(0)
+  })
+
   it('remembers which way the switch was moved, so the row can say what could not be done', async () => {
     const request = vi.fn(async (_domain: string, command: { type: string }): Promise<unknown> => command.type === 'list' ? { apps: [], identity: 'keychain' } : { ok: false })
     const apps = new AppsState({ request } as unknown as OrivonInternal, () => {})

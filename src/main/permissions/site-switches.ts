@@ -12,6 +12,18 @@ import { addDeclinedCapability, clearDeclinedCapability } from '../consent/reque
 import { isUnrecordedLocalFile } from '../local-files/local-file-apps.js'
 import { grantChangedCapabilities } from '../consent/grant-changed-capabilities.js'
 
+/** The tail of the switches under way for each origin and capability: the next one waits for it. */
+const switching = new Map<string, Promise<unknown>>()
+
+/** Runs `move` after every earlier switch of the same capability of the same origin, so two quick presses end as the last one asked. */
+function inTurn<T> (origin: string, capability: CapabilityKind, move: () => Promise<T>): Promise<T> {
+  const key = `${origin}|${capability}`
+  const run = (switching.get(key) ?? Promise.resolve()).then(move, move)
+  const tail = run.catch(() => {}).finally(() => { if (switching.get(key) === tail) switching.delete(key) })
+  switching.set(key, tail)
+  return run
+}
+
 /** What `turnOnCapability` actually did, or why it did nothing. */
 export type TurnOnResult =
   | 'ok'
@@ -51,7 +63,11 @@ async function rowExists (broker: Broker, origin: string, capability: Capability
  * survive turning a DIFFERENT one off. A decline is written only for a
  * capability the card has a row for, as turning one on already requires.
  */
-export async function turnOffCapability (broker: Broker, origin: string, capability: CapabilityKind): Promise<TurnOffResult> {
+export function turnOffCapability (broker: Broker, origin: string, capability: CapabilityKind): Promise<TurnOffResult> {
+  return inTurn(origin, capability, async () => await turnOff(broker, origin, capability))
+}
+
+async function turnOff (broker: Broker, origin: string, capability: CapabilityKind): Promise<TurnOffResult> {
   const known = await rowExists(broker, origin, capability)
   if (known !== 'ok') return known
   await broker.revokePersisted(origin, capability)
@@ -73,12 +89,16 @@ export async function turnOffCapability (broker: Broker, origin: string, capabil
  * lets the caller re-read `site-info.js`'s fresh rows and redraw before
  * asking again.
  */
-export async function turnOnCapability (
+export function turnOnCapability (
   broker: Broker,
   origin: string,
   capability: CapabilityKind,
   shownPatterns: readonly Pattern[]
 ): Promise<TurnOnResult> {
+  return inTurn(origin, capability, async () => await turnOn(broker, origin, capability, shownPatterns))
+}
+
+async function turnOn (broker: Broker, origin: string, capability: CapabilityKind, shownPatterns: readonly Pattern[]): Promise<TurnOnResult> {
   if (!broker.app.isRegisteredSync(origin) || isUnrecordedLocalFile(origin)) return 'not-registered'
 
   let manifest

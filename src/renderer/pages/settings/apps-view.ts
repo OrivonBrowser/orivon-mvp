@@ -90,8 +90,9 @@ function switchRow (icon: SVGSVGElement, message: string, options: { on: boolean
 function capabilityRow (app: AppRow, row: CapabilityRow, state: SettingsState): HTMLElement {
   const refused = state.apps.capabilityRefused.get(`${app.origin}|${row.capability}`)
   const blocked = !row.on && !row.canTurnOn
+  const busy = state.apps.capabilityBusy.has(`${app.origin}|${row.capability}`)
   const item = switchRow(grantIcon(row.capability as GrantIconKind), row.message,
-    { on: row.on, disabled: blocked, warning: row.warning, focusKey: `${app.origin}|cap|${row.capability}`, ...(blocked ? { note: OPEN_APP_FIRST } : {}), ...(refused === undefined ? {} : { problem: capabilityFailure(refused) }) },
+    { on: row.on, disabled: blocked || busy, warning: row.warning, focusKey: `${app.origin}|cap|${row.capability}`, ...(blocked ? { note: OPEN_APP_FIRST } : {}), ...(refused === undefined ? {} : { problem: capabilityFailure(refused) }) },
     (on) => { void state.apps.setCapability(app.origin, row, on) })
   item.dataset['capability'] = row.capability
   return item
