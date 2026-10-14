@@ -2,14 +2,13 @@
 // from its pinned files, the tunnels per user name, and the SOCKS5 server in front of them. entry.ts gives this the
 // parent port; a test gives it a directory and a recorder.
 
-import { randomBytes } from 'node:crypto'
 import { createInstances, DEFAULT_IDLE_MS, DEFAULT_START_WAIT_MS } from './instances.js'
 import type { Instances } from './instances.js'
 import { loadNymModule } from './module-loader.js'
 import type { LoaderSeams } from './module-loader.js'
 import { createModuleNetwork } from './module-net.js'
 import type { ModuleNetwork } from './module-net.js'
-import { failure } from './protocol.js'
+import { failure, SHORT_LIVED_IDLE_MS, SHORT_LIVED_USER_PREFIX } from './protocol.js'
 import type { FromHost, NymTunnelConfig } from './protocol.js'
 import { PinMismatch } from '../local-node/pinned-file.js'
 import { startSocksServer } from './socks-server.js'
@@ -72,7 +71,9 @@ export async function startHost (config: NymTunnelConfig, deps: HostDeps): Promi
     cap: config.maxInstances,
     startWaitMs: deps.startWaitMs ?? DEFAULT_START_WAIT_MS,
     idleMs: deps.idleMs ?? DEFAULT_IDLE_MS,
-    start: async (id) => await module.start(`${id}-${randomBytes(6).toString('hex')}`),
+    idleMsOf: (id) => id.startsWith(SHORT_LIVED_USER_PREFIX) ? SHORT_LIVED_IDLE_MS : undefined,
+    start: async (id) => await module.start(id),
+    instancesMade: () => module.instances(),
     onChange: (snapshot) => { post({ type: 'instances', ...snapshot }) }
   })
   let server: SocksServer

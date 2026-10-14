@@ -1,7 +1,7 @@
 // The "Test the tunnel" row's control: a button and the answer beside it, a custom control because it is a result
 // rather than a setting.
 import { h } from '../../shared/dom.js'
-import { nymTestWords } from '../../shared/nym-words.js'
+import { nymTestingWords, nymTestWords } from '../../shared/nym-words.js'
 import { proxyTestWords } from '../route-part.js'
 import type { RoutePart } from '../route-part.js'
 import type { SettingsState } from '../state.js'
@@ -25,6 +25,8 @@ export function renderProxyTest (state: SettingsState): HTMLElement {
   const answer = part.last !== null && part.last.subject === subject ? part.last.result : null
   const words = answer === null ? '' : answer.nym === true ? nymTestWords(answer) : proxyTestWords(answer)
   return h('span', { className: 'route-test' },
-    answer === null ? h('span') : h('span', { className: answer.ok ? 'muted' : 'problem', role: answer.ok ? 'status' : 'alert', textContent: words }),
+    // An earlier answer is not left standing next to "Testing…".
+    part.busy && onNym ? h('span', { className: 'muted', role: 'status', textContent: nymTestingWords() })
+      : answer === null ? h('span') : h('span', { className: answer.ok ? 'muted' : 'problem', role: answer.ok ? 'status' : 'alert', textContent: words }),
     button)
 }
