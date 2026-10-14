@@ -122,7 +122,8 @@ it('moves the IPFS, Swarm and Nym switches by the settings Settings uses, and Se
     await reopened.waitForSelector('.card')
     await reopened.locator('.card[data-id="swarm"] .switch').click()
     expect(await waitFor(async () => (await cardOf(reopened, 'swarm'))?.on === true)).toBe(true)
-    expect(await waitFor(async () => (await settingsFile(app))['web3.swarmNode'] === true)).toBe(true)
+    // Back at its default, the setting is no longer kept in the file at all.
+    expect(await waitFor(async () => (await settingsFile(app))['web3.swarmNode'] === undefined)).toBe(true)
   } finally {
     await closeElectron(app)
   }

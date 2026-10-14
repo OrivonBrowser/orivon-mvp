@@ -276,8 +276,8 @@ it('lists each site\'s notification answer under Settings, Sites, and Reset forg
         })))).sort((a: { origin: string }, b: { origin: string }) => a.origin.localeCompare(b.origin))
       const listed = await waitFor(async () => (await badges()).length === 2)
       check('Settings, Sites lists each decided site with what it may do', listed && JSON.stringify(await badges()) === JSON.stringify([
-        { origin: 'https://ads.example', badges: ['Notifications blocked'] },
-        { origin: ORIGIN, badges: ['Notifications allowed'] }
+        { origin: ORIGIN, badges: ['Notifications allowed'] },
+        { origin: 'https://ads.example', badges: ['Notifications blocked'] }
       ]), JSON.stringify(await badges()))
 
       await sites.click('#row-sites-list .site-item[data-origin="https://ads.example"] .btn.icon')
