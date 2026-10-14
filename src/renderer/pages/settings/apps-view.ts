@@ -43,6 +43,7 @@ export function routeWords (route: AppRow['route']): string {
 function routeRow (app: AppRow, state: SettingsState): HTMLElement {
   const on = app.route.state !== 'off'
   const input = h('input', { type: 'checkbox', id: `route-${app.origin}`, checked: on, disabled: app.route.unreadable === true || (!on && app.route.blocked !== undefined) })
+  input.dataset['focusKey'] = `${app.origin}|route`
   input.addEventListener('change', () => {
     // A click leaves the switch focused, and a focused input that is not settled holds every redraw (main.ts).
     input.dataset['settled'] = 'true'
@@ -58,11 +59,18 @@ function routeRow (app: AppRow, state: SettingsState): HTMLElement {
 
 /** Why an off switch cannot be turned on from this page. */
 export const OPEN_APP_FIRST = 'Open the app once to turn this on again.'
-const TURN_ON_REFUSED = 'Orivon could not turn that on. The app may have changed what it asks for: look at the row and try again.'
+/** What a row says when its switch could not be moved, by the way the person moved it. */
+export function capabilityFailure (on: boolean): string {
+  return on
+    ? 'Orivon could not turn that on. The app may have changed what it asks for: look at the row and try again.'
+    : 'Orivon could not turn that off. Try again.'
+}
 
 /** One row of a card: what the permission is, in words, and the switch that gives or takes it. */
-function switchRow (icon: SVGSVGElement, message: string, options: { on: boolean, disabled: boolean, warning: boolean, note?: string, problem?: string }, change: (on: boolean) => void): HTMLElement {
+function switchRow (icon: SVGSVGElement, message: string, options: { on: boolean, disabled: boolean, warning: boolean, focusKey: string, note?: string, problem?: string }, change: (on: boolean) => void): HTMLElement {
   const input = h('input', { type: 'checkbox', checked: options.on, disabled: options.disabled })
+  // Every switch of every card is in the one row, so the page finds this one again after a redraw by its key (main.ts).
+  input.dataset['focusKey'] = options.focusKey
   input.setAttribute('aria-label', message)
   input.addEventListener('change', () => {
     // A click leaves the switch focused, and a focused input that is not settled holds every redraw (main.ts).
@@ -80,10 +88,10 @@ function switchRow (icon: SVGSVGElement, message: string, options: { on: boolean
 }
 
 function capabilityRow (app: AppRow, row: CapabilityRow, state: SettingsState): HTMLElement {
-  const refused = state.apps.capabilityRefused.has(`${app.origin}|${row.capability}`)
+  const refused = state.apps.capabilityRefused.get(`${app.origin}|${row.capability}`)
   const blocked = !row.on && !row.canTurnOn
   const item = switchRow(grantIcon(row.capability as GrantIconKind), row.message,
-    { on: row.on, disabled: blocked, warning: row.warning, ...(blocked ? { note: OPEN_APP_FIRST } : {}), ...(refused ? { problem: TURN_ON_REFUSED } : {}) },
+    { on: row.on, disabled: blocked, warning: row.warning, focusKey: `${app.origin}|cap|${row.capability}`, ...(blocked ? { note: OPEN_APP_FIRST } : {}), ...(refused === undefined ? {} : { problem: capabilityFailure(refused) }) },
     (on) => { void state.apps.setCapability(app.origin, row, on) })
   item.dataset['capability'] = row.capability
   return item
@@ -92,9 +100,9 @@ function capabilityRow (app: AppRow, row: CapabilityRow, state: SettingsState): 
 function card (app: AppRow, state: SettingsState): HTMLElement {
   const rows = [
     ...app.capabilityRows.map((row) => capabilityRow(app, row, state)),
-    ...app.pickedPathRows.map((row) => switchRow(grantIcon(row.kind === 'directory' ? 'directory' : 'file'), row.message, { on: true, disabled: false, warning: row.warning }, () => { void state.apps.revokePickedPath(app.origin, row.pickId) })),
-    ...app.deviceRows.map((row) => switchRow(grantIcon('devices.hid'), `Can use ${row.label}.`, { on: true, disabled: false, warning: false }, () => { void state.apps.forgetDevice(app.origin, row.key) })),
-    ...app.linkSchemes.map((scheme) => switchRow(globeIcon(), `Opens ${scheme} links.`, { on: true, disabled: false, warning: false }, () => { void state.apps.forgetLink(app.origin, scheme) }))
+    ...app.pickedPathRows.map((row) => switchRow(grantIcon(row.kind === 'directory' ? 'directory' : 'file'), row.message, { on: true, disabled: false, warning: row.warning, focusKey: `${app.origin}|pick|${row.pickId}` }, () => { void state.apps.revokePickedPath(app.origin, row.pickId) })),
+    ...app.deviceRows.map((row) => switchRow(grantIcon('devices.hid'), `Can use ${row.label}.`, { on: true, disabled: false, warning: false, focusKey: `${app.origin}|device|${row.key}` }, () => { void state.apps.forgetDevice(app.origin, row.key) })),
+    ...app.linkSchemes.map((scheme) => switchRow(globeIcon(), `Opens ${scheme} links.`, { on: true, disabled: false, warning: false, focusKey: `${app.origin}|link|${scheme}` }, () => { void state.apps.forgetLink(app.origin, scheme) }))
   ]
   const stored = `Stores ${sizeWords(app.storage.filesBytes)} of files and ${sizeWords(app.storage.codeBytes)} of its own code.`
   const section = h('section', { className: 'app-card' },

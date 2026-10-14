@@ -4,16 +4,24 @@
 
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import type { ScoreLevel } from '../../trust/website-level.js'
+import { isLocalFileKey } from '../../broker/policy/origin.js'
 import type { SubsystemContext } from '../registry.js'
 import { buildSiteInfo } from './site-info.js'
 import type { SiteCapabilityRow } from './site-info.js'
 import { persistedCapabilityRows, withUndeclaredHeld } from './app-capability-rows.js'
+import { displayableName } from './permissions.js'
 import { turnOffCapability, turnOnCapability } from './site-switches.js'
 import type { TurnOnResult } from './site-switches.js'
 
 export interface AppSwitches {
   /** One row per capability the app declares or holds; empty when nothing is known about the origin. */
   readonly rowsFor: (origin: string) => Promise<readonly SiteCapabilityRow[]>
+  /**
+   * The apps Orivon holds a record of that hold nothing and remember a refusal, other than `listed`: the apps whose
+   * card is where the person finds them to switch something on again. Never loaded this session, so with no rows
+   * (`rowsFor` has them); kept apart from the grant list, which leaves an empty record out.
+   */
+  readonly idleApps: (listed: ReadonlySet<string>) => Promise<ReadonlyArray<{ readonly origin: string, readonly appName: string }>>
   /** Moves one switch. `shown` is what the row offered, so a manifest that changed meanwhile grants nothing. */
   readonly set: (origin: string, capability: CapabilityKind, on: boolean, shown: readonly Pattern[]) => Promise<TurnOnResult>
 }
@@ -36,6 +44,18 @@ export function createAppSwitches (ctx: SubsystemContext, levelOverrideFor: Leve
       }
       const persisted = broker.app.persistedAppsSync().find((app) => app.origin === origin)
       return persisted === undefined ? [] : persistedCapabilityRows(persisted, (await broker.declinedCapabilitiesFor(origin)) ?? [], levelOverrideFor(origin))
+    },
+
+    async idleApps (listed) {
+      const broker = ctx.broker
+      if (broker === undefined) return []
+      const idle: Array<{ origin: string, appName: string }> = []
+      for (const app of broker.app.persistedAppsSync()) {
+        if (listed.has(app.origin) || isLocalFileKey(app.origin) || Object.keys(app.grants).length > 0 || Object.keys(app.pickedPaths).length > 0) continue
+        if (((await broker.declinedCapabilitiesFor(app.origin)) ?? []).length === 0) continue
+        idle.push({ origin: app.origin, appName: displayableName(app.appName) ?? app.origin })
+      }
+      return idle
     },
 
     async set (origin, capability, on, shown) {

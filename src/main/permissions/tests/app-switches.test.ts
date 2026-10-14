@@ -94,7 +94,10 @@ describe('the apps card switches for an app not opened since Orivon started', ()
     const rows = await switches.rowsFor(APP)
     expect(rows.map((row) => [row.capability, row.on, row.canTurnOn]).sort()).toEqual([['fs', false, false], ['tcp.connect', false, false]])
     expect(await switches.set(APP, 'fs', true, [])).toBe('not-registered')
-    expect((await createPermissionsController(ctxOf(broker)).list()).map((app) => app.origin)).toEqual([APP])
+    // The grant list leaves it out, as it always did; the Settings card adds it through `idleApps`.
+    expect(await createPermissionsController(ctxOf(broker)).list()).toEqual([])
+    expect(await switches.idleApps(new Set())).toEqual([{ origin: APP, appName: expect.any(String) as string }])
+    expect(await switches.idleApps(new Set([APP]))).toEqual([])
   })
 
   it('does not list a record that holds nothing and remembers no refusal', async () => {
@@ -102,5 +105,6 @@ describe('the apps card switches for an app not opened since Orivon started', ()
     await broker.revokePersisted(APP, 'fs')
     await broker.revokePersisted(APP, 'tcp.connect')
     expect(await createPermissionsController(ctxOf(broker)).list()).toEqual([])
+    expect(await createAppSwitches(ctxOf(broker)).idleApps(new Set())).toEqual([])
   })
 })

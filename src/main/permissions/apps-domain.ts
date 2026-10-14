@@ -71,7 +71,10 @@ export function appsDomain (deps: AppsDeps): InternalDomain {
       const request = (typeof command === 'object' && command !== null ? command : {}) as AppsRequest
       switch (request.type) {
         case 'list': {
-          const apps = await deps.permissions.list()
+          const listed = await deps.permissions.list()
+          // An app that holds nothing and remembers a refusal is on the card list too, though the grant list leaves it out.
+          const idle = await deps.switches.idleApps(new Set(listed.map((app) => app.origin)))
+          const apps = [...listed, ...idle.map(({ origin, appName }) => ({ origin, appName, rows: [], pickedPathRows: [] }))]
           const withStorage = await Promise.all(apps.map(async ({ rows: _held, ...app }) => ({ ...app, capabilityRows: await deps.switches.rowsFor(app.origin), deviceRows: deps.devices.rows(app.origin), linkSchemes: deps.links.schemesOf(app.origin), route: { state: deps.routes.stateOf(app.origin), blocked: deps.routes.blockedFor(app.origin), unreadable: deps.routes.unreadable() }, storage: await orivonStorageFor(deps.userDataPath, app.origin, undefined, undefined) })))
           return { apps: withStorage, identity: await deps.identity() }
         }

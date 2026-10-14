@@ -76,6 +76,19 @@ it('lists an app that holds a permission with what it has stored, and switches t
     expect(await card.locator('.perm').count()).toBe(1)
     await permission.locator('.switch').click()
     expect(await waitFor(async () => await permission.locator('input').isChecked())).toBe(true)
+
+    // With two apps listed, a switch of the second keeps the keyboard after the redraw, not the first app's.
+    const second = 'http://127.0.0.1:47392'
+    await app.evaluate(async (_electron, request: DevGrantRequest) => {
+      const hook = (globalThis as unknown as { __orivonDevGrant?: (r: DevGrantRequest) => Promise<Grant> }).__orivonDevGrant
+      if (typeof hook === 'function') await hook(request)
+    }, { origin: second, manifest: manifest(), capability: 'tcp.connect', patterns: ['127.0.0.1:9'] } satisfies DevGrantRequest)
+    const other = page.locator(`.app-card[data-origin="${second}"]`)
+    await other.waitFor()
+    await other.locator('.perm[data-capability="tcp.connect"] input').focus()
+    await other.locator('.perm[data-capability="tcp.connect"] input').press('Space')
+    expect(await waitFor(async () => !(await other.locator('.perm[data-capability="tcp.connect"] input').isChecked()))).toBe(true)
+    expect(await page.evaluate((origin) => document.activeElement?.closest('.app-card')?.getAttribute('data-origin') === origin, second)).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)

@@ -22,9 +22,9 @@ const NO_ROUTES = { stateOf: () => 'off' as const, unreadable: () => false, bloc
 
 const FS_ROW = { capability: 'fs' as const, on: true, canTurnOn: true, warning: false, message: 'Store files in a private folder for this app on this device', patterns: [] }
 
-function setup (devices: Parameters<typeof appsDomain>[0]['devices'] = NO_DEVICES, links = new SchemeChoices(null), routes: Parameters<typeof appsDomain>[0]['routes'] = NO_ROUTES): { call: (command: unknown) => Promise<unknown>, permissions: Record<'list' | 'revokePickedPath', ReturnType<typeof vi.fn>>, switches: Record<'rowsFor' | 'set', ReturnType<typeof vi.fn>> } {
+function setup (devices: Parameters<typeof appsDomain>[0]['devices'] = NO_DEVICES, links = new SchemeChoices(null), routes: Parameters<typeof appsDomain>[0]['routes'] = NO_ROUTES): { call: (command: unknown) => Promise<unknown>, permissions: Record<'list' | 'revokePickedPath', ReturnType<typeof vi.fn>>, switches: Record<'rowsFor' | 'set' | 'idleApps', ReturnType<typeof vi.fn>> } {
   const permissions = { list: vi.fn(async () => [APP]), revokePickedPath: vi.fn(async () => {}) }
-  const switches = { rowsFor: vi.fn(async () => [FS_ROW]), set: vi.fn(async (): Promise<'ok' | 'stale'> => 'ok') }
+  const switches = { rowsFor: vi.fn(async () => [FS_ROW]), idleApps: vi.fn(async () => []), set: vi.fn(async (): Promise<'ok' | 'stale'> => 'ok') }
   const domain = appsDomain({ permissions, switches, devices, links, userDataPath: dir, identity: async () => 'session-only', routes })
   return { call: async (command) => await domain.handle(command, CALLER), permissions, switches }
 }
@@ -48,6 +48,15 @@ describe('the apps domain', () => {
     const { call, permissions } = setup()
     expect(await call({ type: 'revokePickedPath', origin: 'https://app.example', pickId: 'pick-1' })).toEqual({ ok: true })
     expect(permissions.revokePickedPath).toHaveBeenCalledWith('https://app.example', 'pick-1')
+  })
+
+  it('adds the apps that hold nothing and remember a refusal to the list, which the grant list leaves out', async () => {
+    const { call, switches } = setup()
+    switches.idleApps.mockResolvedValueOnce([{ origin: 'https://idle.example', appName: 'Idle' }])
+    const reply = await call({ type: 'list' }) as { apps: Array<{ origin: string, capabilityRows: unknown[], pickedPathRows: unknown[] }> }
+    expect(switches.idleApps).toHaveBeenCalledWith(new Set(['https://app.example']))
+    expect(reply.apps.map((app) => app.origin)).toEqual(['https://app.example', 'https://idle.example'])
+    expect(reply.apps[1]).toMatchObject({ appName: 'Idle', pickedPathRows: [] })
   })
 
   it('lists each app with the devices the person approved for it', async () => {
