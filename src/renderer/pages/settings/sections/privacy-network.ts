@@ -87,6 +87,15 @@ export const privacyNetworkRows: readonly Row[] = [
     control: { type: 'choice', key: 'network.route.kind' }
   },
   {
+    id: 'route-nym-enabled',
+    label: 'Let Nym run',
+    help: 'Turn it off and Nym stops. Every app and website set to use the tunnel, and the whole browser if you chose that, is then stopped rather than sent directly, until you turn it on again. A change applies at once.',
+    keywords: ['nym', 'mixnet', 'tunnel', 'off', 'stop', 'switch', 'network'],
+    group: GROUP,
+    visible: (state) => state.value('network.route.kind') !== 'socks5',
+    control: { type: 'toggle', key: 'network.nym.enabled' }
+  },
+  {
     id: 'route-nym-status',
     label: 'Nym',
     help: 'Nym\'s gateways see this computer\'s address; the sites an app reaches see only an exit address. It stops some minutes after the last app stops using it.',

@@ -12,7 +12,7 @@ import type { NodeIdentity } from '../../protocols/local-node/kind.js'
 import type { LocalNodeConfig, LocalNodeState, PinnedFile } from '../../protocols/local-node/protocol.js'
 import { HostLifecycle } from './host-lifecycle.js'
 import { RefusedToStart } from './process-supervisor.js'
-import type { HostProcess } from './process-supervisor.js'
+import type { HostProcess, ProcessInfo } from './process-supervisor.js'
 import type { ArtifactStatus } from './local-node-artifact.js'
 import { LocalNodeSupervisor } from './local-node-supervisor.js'
 
@@ -122,6 +122,11 @@ export class LocalNodeController {
     return this.current
   }
 
+  /** The node's process while it runs. */
+  processInfo (): ProcessInfo | undefined {
+    return this.supervisor.processInfo()
+  }
+
   /** Called whenever the state changes; returns the unsubscribe. */
   onChange (listener: () => void): () => void {
     this.listeners.add(listener)
@@ -147,6 +152,21 @@ export class LocalNodeController {
     this.approved = verdict.directory
     this.lifecycle.request()
     return await this.settled()
+  }
+
+  /**
+   * The person's switch for this node changed, or a reason it must not run did: a node that runs while it must not is
+   * stopped and the state says why; one that may run again is asked for as usual, with no refusal remembered.
+   */
+  reconsider (): void {
+    this.refusedUntil = 0
+    const disabled = this.deps.disabled?.()
+    if (disabled !== undefined) {
+      this.supervisor.idle()
+      this.set({ state: 'off', reason: disabled })
+    } else if (this.current.state === 'off' && this.current.reason !== undefined) {
+      this.set({ state: 'off' })
+    }
   }
 
   /** The verifier host went to sleep, and with it the only thing that reads from the node. */

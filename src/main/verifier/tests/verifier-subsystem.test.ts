@@ -304,15 +304,39 @@ describe('the verifier subsystem', () => {
     expect(view.summary).toMatch(/^On, and waiting/)
   })
 
-  it('keeps the light client choice it was started with when the setting changes, as Settings says it applies at the next start', async () => {
+  it('follows the light client switch at once: the view says off, and the host\'s next start is told it is off', async () => {
     vi.resetModules()
     vi.setSystemTime(SHIPPED_AT_MS + DAY_MS)
     const subsystem = await import('../verifier-subsystem.js')
     await subsystem.verifierSubsystem.afterReady?.({} as never)
     let enabled = true
     subsystem.configureVerifier({ lightClientEnabled: () => enabled, windows: () => tabs.open, servedFromCache: () => false })
+    expect(subsystem.verifierView()).toMatchObject({ state: 'waiting' })
     enabled = false
-    expect(subsystem.verifierView()).toMatchObject({ state: 'waiting', summary: expect.stringMatching(/^On, and waiting/) })
+    expect(subsystem.verifierView()).toMatchObject({ state: 'off', summary: expect.stringMatching(/^Switched off/) })
+  })
+
+  it('puts the host to sleep when the light client is switched, so its next start builds its config from the new choice', async () => {
+    vi.resetModules()
+    vi.setSystemTime(SHIPPED_AT_MS + DAY_MS)
+    const subsystem = await import('../verifier-subsystem.js')
+    await subsystem.verifierSubsystem.afterReady?.({} as never)
+    const started = (index: number): { config?: { lightClient?: unknown, lightClientOff?: string } } | undefined => (forks()[index]?.sent as Array<{ type: string, config?: { lightClient?: unknown, lightClientOff?: string } }>).find((message) => message.type === 'start')
+    let enabled = true
+    subsystem.configureVerifier({ lightClientEnabled: () => enabled, windows: () => tabs.open, servedFromCache: () => false })
+    void subsystem.verifierContentAddress('https://vitalik.eth').catch(() => {})
+    await vi.advanceTimersByTimeAsync(0)
+    forks()[0]?.listens()
+    expect(started(0)?.config?.lightClient).toBeDefined()
+    enabled = false
+    subsystem.lightClientSettingChanged()
+    expect(forks()[0]?.killed).toBe(true)
+    forks()[0]?.emit('exit', 0)
+    void subsystem.verifierContentAddress('https://vitalik.eth').catch(() => {})
+    await vi.advanceTimersByTimeAsync(0)
+    expect(forks()).toHaveLength(2)
+    expect(started(1)?.config?.lightClient).toBeUndefined()
+    expect(started(1)?.config?.lightClientOff).toMatch(/switched off/)
   })
 
   it('says the light client is on and waiting before any .eth address was opened', async () => {

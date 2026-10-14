@@ -41,7 +41,8 @@ import { installFocusedContentsGuard } from './focus/focused-contents-guard.js'
 import { runUpdateCheck } from './self-update/update-check-runner.js'
 import { scheduleUpdateChecks, updateChecksEnabled } from './self-update/update-schedule.js'
 import { isStoreInstall } from './os/windows-store.js'
-import { configureVerifier, ipfsSettingsChanged, verifierEthContentCid } from './verifier/verifier-subsystem.js'
+import { configureVerifier, ipfsSettingsChanged, lightClientSettingChanged, verifierEthContentCid } from './verifier/verifier-subsystem.js'
+import { swarmSettingChanged } from './verifier/swarm-node-subsystem.js'
 import { createPageScoreLookup } from './browsing/page-score-lookup.js'
 import { installSchemeRouting } from './scheme-routing/install-scheme-routing.js'
 import { netFetchJson } from './browsing/score-provider-client.js'
@@ -237,12 +238,15 @@ export function boot (runtime: Runtime): void {
       windows: () => shell.windows.all(),
       servedFromCache: isOriginPinnedSync,
       ipfsSource: () => shell.settings.get('web3.ipfsSource') === 'gateways' ? 'gateways' : 'node',
-      ipfsLookupService: () => shell.settings.get('web3.ipfsLookupService')
+      ipfsLookupService: () => shell.settings.get('web3.ipfsLookupService'),
+      swarmNodeEnabled: () => shell.settings.get('web3.swarmNode')
     })
-    // Where IPFS is read from applies at once: the node and the verifier host start again from the new choice.
+    // Where IPFS is read from, and whether the light client runs, apply at once: the node and the verifier host start again from the new choice.
     shell.settings.onChange(({ key }) => {
       if (key === 'web3.ipfsSource') ipfsSettingsChanged('source')
       else if (key === 'web3.ipfsLookupService') ipfsSettingsChanged('lookupService')
+      else if (key === 'web3.lightClient') lightClientSettingChanged()
+      else if (key === 'web3.swarmNode') swarmSettingChanged()
     })
     shell.history.prune()
     startInternalPages(shell, ctx)

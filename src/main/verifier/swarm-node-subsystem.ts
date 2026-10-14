@@ -12,11 +12,26 @@ import { ethTestSeam } from './test-seam.js'
 
 const MANIFEST: LocalNodeManifest = manifest
 
+/** Whether the person lets the node run. Set once the settings are read; until then it is on, the setting's default. */
+let allowedByPerson: () => boolean = () => true
+
+export function configureSwarmNode (options: { enabled: () => boolean }): void {
+  allowedByPerson = options.enabled
+}
+
+/** Why a Swarm address says Swarm is off, and where the person turns it on. */
+export const SWARM_SWITCHED_OFF = 'Swarm is switched off. Switch it on in Settings under Web3, or from Available networks in the toolbar'
+
 export const swarmNode = createLocalNodeSubsystem({
   kind: SWARM_NODE_IDENTITY,
   manifest: MANIFEST,
-  disabled: () => ethTestSeam() === undefined ? undefined : 'a test build serves Swarm from its own endpoints'
+  disabled: () => ethTestSeam() !== undefined ? 'a test build serves Swarm from its own endpoints' : allowedByPerson() ? undefined : SWARM_SWITCHED_OFF
 })
+
+/** The person switched the node on or off: applied at once. */
+export function swarmSettingChanged (): void {
+  swarmNode.reconsider()
+}
 
 export function swarmNodeState (): SwarmNodeState {
   return swarmNode.state()

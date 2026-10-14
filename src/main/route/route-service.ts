@@ -19,7 +19,7 @@ export type RouteKind = 'nym' | 'socks5'
 
 /** The part of the settings store the proxy, the choice of tunnel and the browser-wide setting are read from. */
 export interface ProxySettings {
-  get: ((key: 'network.route.proxy') => string) & ((key: 'network.route.kind') => RouteKind) & ((key: 'network.tunnel.everywhere') => boolean)
+  get: ((key: 'network.route.proxy') => string) & ((key: 'network.route.kind') => RouteKind) & ((key: 'network.tunnel.everywhere') => boolean) & ((key: 'network.nym.enabled') => boolean)
   onChange: (listener: (change: { readonly key: string }) => void) => () => void
 }
 
@@ -46,6 +46,7 @@ export interface RouteService {
 const KEY = 'network.route.proxy'
 const KIND_KEY = 'network.route.kind'
 const EVERYWHERE_KEY = 'network.tunnel.everywhere'
+const NYM_KEY = 'network.nym.enabled'
 
 export interface RouteServiceOptions {
   readonly store: RouteStore
@@ -114,11 +115,14 @@ export function createRouteService (options: RouteServiceOptions): RouteService 
         everywhereNow = next
         hub.everywhereChanged(previous)
       }
+      const readNym = (): void => { options.nym.setEnabled(settings.get(NYM_KEY)) }
       read()
       readEverywhere()
+      readNym()
       settings.onChange((change) => {
         if (change.key === KEY || change.key === KIND_KEY) read()
         else if (change.key === EVERYWHERE_KEY) readEverywhere()
+        else if (change.key === NYM_KEY) readNym()
       })
     }
   }

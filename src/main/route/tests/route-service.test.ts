@@ -10,7 +10,7 @@ import { RouteStore } from '../route-store.js'
 
 const APP = 'https://one.example'
 
-const FAKE_NYM: NymSubsystem = { ensure: async () => ({ port: 1, secret: 's' }), state: () => ({ state: 'off' }), onChange: () => () => {}, test: async () => ({ ok: true, ms: 1 }), stop: () => {} }
+const FAKE_NYM: NymSubsystem = { ensure: async () => ({ port: 1, secret: 's' }), state: () => ({ state: 'off' }), onChange: () => () => {}, test: async () => ({ ok: true, ms: 1 }), tunnels: () => ({ connecting: 0, ready: 0 }), processInfo: () => undefined, setEnabled: () => {}, stop: () => {} }
 
 function service (savedProxy: string, savedKind: RouteKind = 'socks5', nym: NymSubsystem = FAKE_NYM) {
   const store = new RouteStore(null)
@@ -30,18 +30,20 @@ function service (savedProxy: string, savedKind: RouteKind = 'socks5', nym: NymS
   })
 }
 
-function settingsWith (initial: string, initialKind: RouteKind = 'socks5', initialEverywhere = false): ProxySettings & { set: (value: string) => void, setKind: (kind: RouteKind) => void, setEverywhere: (value: boolean) => void } {
+function settingsWith (initial: string, initialKind: RouteKind = 'socks5', initialEverywhere = false): ProxySettings & { set: (value: string) => void, setKind: (kind: RouteKind) => void, setEverywhere: (value: boolean) => void, setNym: (value: boolean) => void } {
+  let nymOn = true
   let value = initial
   let kind = initialKind
   let everywhere = initialEverywhere
   const listeners = new Set<(change: { readonly key: string }) => void>()
   const tell = (key: string): void => { for (const listener of [...listeners]) listener({ key }) }
   return {
-    get: ((key: string) => key === 'network.route.kind' ? kind : key === 'network.route.proxy' ? value : everywhere) as ProxySettings['get'],
+    get: ((key: string) => key === 'network.route.kind' ? kind : key === 'network.route.proxy' ? value : key === 'network.nym.enabled' ? nymOn : everywhere) as ProxySettings['get'],
     onChange: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     set: (next) => { value = next; tell('network.route.proxy') },
     setKind: (next) => { kind = next; tell('network.route.kind') },
-    setEverywhere: (next) => { everywhere = next; tell('network.tunnel.everywhere') }
+    setEverywhere: (next) => { everywhere = next; tell('network.tunnel.everywhere') },
+    setNym: (next) => { nymOn = next; tell('network.nym.enabled') }
   }
 }
 
@@ -153,6 +155,16 @@ describe('the route service', () => {
     settings.setKind('socks5')
     expect(routes.proxy()).toEqual({ host: '127.0.0.1', port: 9150 })
     expect(heard).toHaveBeenCalledTimes(2)
+  })
+
+  it('hands the person\'s Nym switch to Nym when the settings are followed, and again when it changes', () => {
+    const setEnabled = vi.fn()
+    const routes = service('', 'nym', { ...FAKE_NYM, setEnabled })
+    const settings = settingsWith('', 'nym')
+    routes.followSettings(settings)
+    expect(setEnabled).toHaveBeenLastCalledWith(true)
+    settings.setNym(false)
+    expect(setEnabled).toHaveBeenLastCalledWith(false)
   })
 
   it('fails a routed app\'s connection closed when Nym cannot run, and never dials direct', async () => {

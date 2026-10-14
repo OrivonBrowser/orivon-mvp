@@ -21,7 +21,7 @@ const MANIFEST: LocalNodeManifest = manifest
 export const MAX_NYM_TUNNELS = 6
 
 /** The Nym tunnel, stopped when the app quits. The process is forked the first time something asks for it. */
-export function createNym (): NymSubsystem {
+export function createNym (enabled = true): NymSubsystem {
   const seam = nymTestModule(process.env)
   const made = createNymSubsystem({
     fork: () => utilityProcess.fork(join(__dirname, 'nym-tunnel-host.js'), [], { serviceName: `Orivon ${NYM_TUNNEL_IDENTITY.noun}` }),
@@ -35,6 +35,7 @@ export function createNym (): NymSubsystem {
     maxInstances: MAX_NYM_TUNNELS,
     log: process.env[envName(NYM_TUNNEL_IDENTITY.name, 'LOG')] === '1'
   })
+  made.setEnabled(enabled)
   app.on('will-quit', () => { made.stop() })
   return made
 }

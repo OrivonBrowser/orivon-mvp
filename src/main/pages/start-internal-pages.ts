@@ -193,7 +193,6 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     web3: web3Domain({
       view: verifierView,
       enabled: () => services.settings.get('web3.lightClient'),
-      enabledAtStart: services.settings.get('web3.lightClient'),
       forcedOff: () => process.env['ORIVON_ETH_LIGHT_CLIENT'] === 'off'
     }),
     app: appDomain(app, services.profiles.isPrivate),

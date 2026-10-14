@@ -8,6 +8,7 @@ import { ResolutionError } from '../resolution/records.js'
 import type { Fetch } from '../gateways/gateways.js'
 import type { NodeIdentity } from '../local-node/kind.js'
 import type { FromHost, NodeNotice } from './protocol.js'
+import { createNodeTraffic } from './node-traffic.js'
 
 /** Within the 30 s a mount may take, how long it waits for the node to find its peers. */
 export const NODE_WAIT_MS = 20_000
@@ -29,6 +30,8 @@ export interface NodeLink {
   notice: (notice: NodeNotice) => void
   /** A chunk is being read from the node: refreshes its idle wait, with a message every few seconds at most. */
   touch: () => void
+  /** What this link has read from the node: reads in flight and bytes, as it last counted them. */
+  snapshot: () => { readonly active: number, readonly bytes: number }
   /** `fetch` for the node's endpoint: each read keeps the node awake, and a read that finds it gone asks for it again once, as a mount does. */
   reading: (fetch: Fetch) => Fetch
 }
@@ -64,6 +67,17 @@ export function createNodeLink (post: (message: FromHost) => void, identity: Nod
   let askedAt = Number.NEGATIVE_INFINITY
   let refreshing: Promise<void> | undefined
   const waiting = new Set<() => void>()
+  const traffic = createNodeTraffic((active, bytes) => { post({ type: 'node-traffic', node: identity.name, active, bytes }) }, options.now === undefined ? {} : { now: options.now })
+  /** A read counts from its start to the end of its body, so a popup can say what the node is doing for the person. */
+  const counted = (fetch: Fetch): Fetch => async (url, init) => {
+    traffic.begin()
+    try {
+      return traffic.wrap(await fetch(url, init))
+    } catch (error) {
+      traffic.end()
+      throw error
+    }
+  }
 
   const ask = (): void => {
     askedAt = now()
@@ -102,10 +116,12 @@ export function createNodeLink (post: (message: FromHost) => void, identity: Nod
       for (const wake of [...waiting]) wake()
     },
     ensure: async (signal) => { await wait(signal, false) },
+    snapshot: traffic.snapshot,
     touch: () => {
       if (now() - askedAt >= touchEveryMs) ask()
     },
-    reading: (fetch) => async (url, init) => {
+    reading: (plain) => async (url, init) => {
+      const fetch = counted(plain)
       link.touch()
       try {
         return await fetch(url, init)

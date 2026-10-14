@@ -25,6 +25,7 @@ import { chooseCheckpoint, MAX_CHECKPOINT_AGE_SECONDS, slotTimestamp } from './c
 import type { CheckpointChoice } from './checkpoint.js'
 import { DEFAULT_ENDPOINTS } from './endpoints.js'
 import { HostSupervisor } from './host-supervisor.js'
+import type { ProcessInfo } from './process-supervisor.js'
 import { loopbackPort } from './loopback-port.js'
 import shippedCheckpoint from './mainnet-checkpoint.json'
 import { composeResolverRules } from './resolver-rules.js'
@@ -42,7 +43,7 @@ import { HostLifecycle } from './host-lifecycle.js'
 import { anyTabOnVerifiedOrigin } from './tab-on-verified-origin.js'
 import type { TabsOfWindow } from './tab-on-verified-origin.js'
 import { provideVerifierAccess } from './verifier-access.js'
-import { swarmNode, swarmNodeEndpoint, swarmNodeState } from './swarm-node-subsystem.js'
+import { configureSwarmNode, swarmNode, swarmNodeEndpoint, swarmNodeState } from './swarm-node-subsystem.js'
 import { configureIpfsNode, ipfsNode, ipfsNodeEndpoint, ipfsNodeState } from './ipfs-node-subsystem.js'
 import type { LocalNodeSubsystem } from './local-node-subsystem.js'
 import { IPFS_NODE_IDENTITY } from '../../protocols/ipfs-node/protocol.js'
@@ -95,14 +96,13 @@ export function tunnelDefaultChanged (): void {
   changed()
 }
 
-/** Lets the person's setting, and not only the environment, switch the light client off. Read once, here, at launch:
- * the choice applies from Orivon's next start, as Settings says, however often the host sleeps and wakes before it. */
-export function configureVerifier (options: { lightClientEnabled: () => boolean, windows: () => readonly TabsOfWindow[], servedFromCache: (origin: string) => boolean, ipfsSource?: () => 'node' | 'gateways', ipfsLookupService?: () => boolean }): void {
+/** Lets the person's setting, and not only the environment, switch the light client off. Read each time the host builds its config and each time a view is drawn, so a change reaches the next start; `lightClientSettingChanged` makes that next start now. */
+export function configureVerifier (options: { lightClientEnabled: () => boolean, windows: () => readonly TabsOfWindow[], servedFromCache: (origin: string) => boolean, ipfsSource?: () => 'node' | 'gateways', ipfsLookupService?: () => boolean, swarmNodeEnabled?: () => boolean }): void {
   if (options.ipfsSource !== undefined) ipfsSourceChoice = options.ipfsSource
   if (options.ipfsLookupService !== undefined) ipfsLookupServiceChoice = options.ipfsLookupService
   configureIpfsNode({ lookupService: () => ipfsLookupServiceChoice() })
-  const enabledAtLaunch = options.lightClientEnabled()
-  enabledByPerson = () => enabledAtLaunch
+  if (options.swarmNodeEnabled !== undefined) configureSwarmNode({ enabled: options.swarmNodeEnabled })
+  enabledByPerson = options.lightClientEnabled
   tabsOnVerifiedOrigin = () => anyTabOnVerifiedOrigin(options.windows(), options.servedFromCache)
 }
 
@@ -117,6 +117,16 @@ export function ipfsSettingsChanged (setting: 'source' | 'lookupService'): void 
   if (setting === 'source') idleHost()
   // A running host asks a name service for an IPNS record only while the lookup service is allowed.
   else supervisor?.send({ type: 'ipfs-lookup', allowed: ipfsLookupServiceChoice() })
+  changed()
+}
+
+/**
+ * The person switched the light client on or off: applied at once. The host builds its config when it starts, so it sleeps
+ * and its next request rebuilds it with the new choice; the IPFS and Swarm nodes it reads from are left running, and a
+ * `.eth` page open now says why it cannot load until the light client is on again.
+ */
+export function lightClientSettingChanged (): void {
+  idleHost()
   changed()
 }
 
@@ -342,6 +352,26 @@ export async function verifierEthContentCid (host: string, partition: string): P
   }
 }
 
+/** What the verifier host has read from each local node this session (`node-traffic.ts`): by the node's name, reads in flight now and bytes read in all, the bytes of earlier hosts included. */
+const traffic = new Map<string, { active: number, bytes: number }>()
+const trafficBefore = new Map<string, number>()
+
+export function nodeTraffic (node: string): { readonly active: number, readonly bytes: number } {
+  const now = traffic.get(node)
+  return { active: now?.active ?? 0, bytes: (trafficBefore.get(node) ?? 0) + (now?.bytes ?? 0) }
+}
+
+/** The host is gone or asleep: what it counted is kept, and nothing is in flight. */
+function foldTraffic (): void {
+  for (const [node, counted] of traffic) trafficBefore.set(node, (trafficBefore.get(node) ?? 0) + counted.bytes)
+  traffic.clear()
+}
+
+/** The verifier host's process while it runs, for the popup's memory and uptime rows. */
+export function verifierProcessInfo (): ProcessInfo | undefined {
+  return supervisor?.processInfo()
+}
+
 /** The light client's state in words, for the Settings section and the site-info popover. */
 export function verifierView (): LightClientView {
   return lightClientView({
@@ -394,6 +424,7 @@ export const verifierSubsystem: Subsystem = {
           changed()
         },
         idle: () => {
+          foldTraffic()
           fingerprint = undefined
           hostDown = undefined
           hostAsleep = true
@@ -413,6 +444,7 @@ export const verifierSubsystem: Subsystem = {
           changed()
         },
         down: (reason) => {
+          foldTraffic()
           fingerprint = undefined
           hostAsleep = false
           hostDown = reason
@@ -440,6 +472,7 @@ export const verifierSubsystem: Subsystem = {
         nameScheme: (name, scheme) => {
           if (verifierStore().saveNameScheme(name, scheme)) announceNameSchemeChange()
         },
+        nodeTraffic: (name, active, bytes) => { traffic.set(name, { active, bytes }) },
         nodeWanted: (name) => {
           const node = NODES.get(name)
           if (node === undefined) return

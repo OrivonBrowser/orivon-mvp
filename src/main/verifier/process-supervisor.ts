@@ -9,6 +9,15 @@ export interface HostProcess {
   postMessage: (message: unknown) => void
   on: ((event: 'message', listener: (message: unknown) => void) => unknown) & ((event: 'exit', listener: (code: number) => void) => unknown)
   kill: () => boolean
+  /** The operating system's id of the process, once it has started. */
+  readonly pid?: number | undefined
+}
+
+/** A running process, for what shows its memory and how long it has been up. */
+export interface ProcessInfo {
+  readonly pid: number | undefined
+  /** When it was forked, in ms since the epoch. */
+  readonly startedAt: number
 }
 
 export interface ProcessEvents {
@@ -150,6 +159,11 @@ export abstract class ProcessSupervisor<Config, Message extends { readonly type:
   async whenGone (): Promise<void> {
     if (this.leaving === undefined) return
     await new Promise<void>((resolve) => { this.goneWaiters.push(resolve) })
+  }
+
+  /** The process that runs now, or undefined while none does (never started, asleep, crashed). */
+  processInfo (): ProcessInfo | undefined {
+    return this.child === undefined ? undefined : { pid: this.child.pid, startedAt: this.startedAt }
   }
 
   /** Whether a crashed process waits on its backoff to be forked again. */

@@ -460,3 +460,39 @@ describe('what a start costs', () => {
     errors.mockRestore()
   })
 })
+
+describe('the person switching the node off and on', () => {
+  it('stops a running node and says why it is off, and refuses the next ask in the same words', async () => {
+    const h = harness()
+    const asked = h.controller.ensure()
+    await settle()
+    h.nodes[0]?.say({ type: 'ready', peers: 3 })
+    await asked
+    h.disabled = 'Swarm is switched off'
+    h.controller.reconsider()
+    expect(h.nodes[0]?.killed).toBe(true)
+    expect(h.controller.state()).toEqual({ state: 'off', reason: 'Swarm is switched off' })
+    expect(await h.controller.ensure()).toEqual({ state: 'off', reason: 'Swarm is switched off' })
+    expect(h.nodes).toHaveLength(1)
+  })
+
+  it('lets the next ask start it as soon as it is switched back on, without waiting out the memory of the refusal', async () => {
+    const h = harness()
+    h.disabled = 'Swarm is switched off'
+    await h.controller.ensure()
+    h.disabled = undefined
+    h.controller.reconsider()
+    expect(h.controller.state()).toEqual({ state: 'off' })
+    void h.controller.ensure()
+    await settle()
+    expect(h.nodes).toHaveLength(1)
+  })
+
+  it('names the process while it runs, with when it was forked', async () => {
+    const h = harness()
+    expect(h.controller.processInfo()).toBeUndefined()
+    void h.controller.ensure()
+    await settle()
+    expect(h.controller.processInfo()).toEqual({ pid: undefined, startedAt: 1_000_000 })
+  })
+})

@@ -70,6 +70,8 @@ const SPECS = {
   'privacy.secureDns': { kind: 'enum', options: ['off', 'automatic', 'cloudflare', 'quad9'], default: 'off' },
   // Where a routed app's traffic leaves: Nym, built in, or the SOCKS5 address below. Settings files from before this choice existed keep their address as the choice (settings-file.ts).
   'network.route.kind': { kind: 'enum', options: ['nym', 'socks5'], default: 'nym', labels: { nym: 'Nym (built in)', socks5: 'Your own SOCKS5 address' } },
+  // Whether the Nym tunnel built into Orivon may run. Off stops it and refuses every app, website and browser-wide route that uses it (they are stopped, never sent direct); it matters only while the tunnel kind above is Nym. Applied at once.
+  'network.nym.enabled': { kind: 'bool', default: true },
   // The one SOCKS5 proxy (host:port, such as Tor on 127.0.0.1:9050) an installed app can be routed through when the choice above is a SOCKS5 address; empty is none. Which apps use it is route-store's.
   'network.route.proxy': { kind: 'text', default: '', maxLength: 300, check: isEmptyOrProxyAddress },
   // Whether everything Orivon sends goes through that proxy unless a site or app is set to off: the state an origin with no entry of its own follows (route-store's `on` and `off` entries override it).
@@ -96,12 +98,14 @@ const SPECS = {
   'autofill.addresses': { kind: 'bool', default: true },
   // Whether Orivon asks GitHub, once a day, if a newer release exists. It never installs anything. Off until the owner decides.
   'updates.check': { kind: 'bool', default: false },
-  // Whether `.eth` names are proven by a light client that runs on this computer. Read when Orivon starts.
+  // Whether `.eth` names are proven by a light client that runs on this computer. Applied at once.
   'web3.lightClient': { kind: 'bool', default: true },
   // Where IPFS content is read from: the node Orivon runs on this computer, or public gateways. Applied at once.
   'web3.ipfsSource': { kind: 'enum', options: ['node', 'gateways'], default: 'node', labels: { node: 'Your own IPFS node', gateways: 'Public IPFS gateways' } },
   // Whether the node may ask a lookup service, as well as the IPFS network, who holds a site. Applied at once; read only while the source is the node.
   'web3.ipfsLookupService': { kind: 'bool', default: true },
+  // Whether the Swarm node Orivon runs on this computer may start. Off stops it and a bzz:// address says Swarm is off. Applied at once.
+  'web3.swarmNode': { kind: 'bool', default: true },
   // Where judged Web3 Score levels are read (docs/architecture/web3-score-provider.md). Empty asks nobody.
   'web3.scoreProvider': { kind: 'text', default: DEFAULT_SCORE_PROVIDER, maxLength: 2048, check: isEmptyOrAddress },
   // Whether a tab asked to open `<name>.eth.limo` (or `.eth.link`) opens `<name>.eth` instead. Applied at once.
