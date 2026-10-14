@@ -24,6 +24,7 @@ export const ipfsNode = createLocalNodeSubsystem({
   kind: IPFS_NODE_IDENTITY,
   manifest: MANIFEST,
   disabled: () => ethTestSeam() === undefined ? undefined : 'a test build serves IPFS from its own endpoints',
+  standIn: () => ethTestSeam()?.ipfsNode,
   options: () => routingOptions(lookupServiceAllowed()),
   // SQLite's journal and write-ahead log sit beside the database.
   kept: [DATABASE_FILE, `${DATABASE_FILE}-journal`, `${DATABASE_FILE}-wal`, `${DATABASE_FILE}-shm`]

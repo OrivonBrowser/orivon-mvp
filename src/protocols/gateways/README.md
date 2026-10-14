@@ -24,3 +24,11 @@ what a verified answer is, and whether a lie was told.
 **A gateway is trusted for availability only.** Nothing here reads a body as true. The caller hashes
 what `askGateway` returns and drops a gateway that lied (`GatewayPool.drop`); a gateway that is merely
 slow, rate limited or unwell is cooled, and one that does not hold the item is not a strike at all.
+
+**What earns another pass.** A rate limit, an unreachable gateway or a gateway's own 5xx earns another pass (three
+passes in all), and so does a pass in which every gateway asked sent nothing within the block wait: the timed-out
+gateways cool after a second timeout, so the next pass prefers the others. A timeout beside a plain 404 does not
+(`failedAttempt`, `racePass`). A source whose timeout is its answer, a local node, is not passed again at once:
+`retryWhileWanted` in [`fetch-passes.ts`](fetch-passes.ts) asks it again after the wait its memory needs, within a
+count of tries and a time, and stops when the caller leaves. The IPFS protocol sets the figures; Swarm chunk reads
+set none and count no timeout as a reason for another pass.

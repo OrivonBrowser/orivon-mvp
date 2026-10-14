@@ -1,7 +1,7 @@
 // WebHID with a device attached (ADR-0068): a virtual USB HID device made through Docker and /dev/uhid, seen by
 // Chromium's own HID stack. An app that only calls `getDevices()` is asked in its tab to connect the device; Allow
 // is remembered and told to the page as a `connect` event; "Not now" keeps the device away; a second serial number
-// is a second question; Forget and revoking the grant take the approval back. A website picks in the chooser.
+// is a second question; Switching the device off and switching the grant off take the approval back. A website picks in the chooser.
 // The specs skip, with the reason on the console, where Docker or /dev/uhid is missing; ORIVON_REQUIRE_VIRTUAL_HID=1
 // (CI) turns that into a failure.
 //
@@ -131,7 +131,7 @@ test('[app:app-hid-approved-device-is-remembered] an approved device is listed a
   }
 }, QA_TEST_TIMEOUT_MS * 4)
 
-test('[app:app-hid-device-can-be-forgotten] Forget in Settings and revoking the grant both make the device unlisted and asked about again', async () => {
+test('[app:app-hid-device-can-be-forgotten] Switching the device off in Settings and switching the grant off both make the device unlisted and asked about again', async () => {
   const device = await plug('SN-A')
   const { app: electron, chrome } = await launchShell()
   try {
@@ -146,8 +146,8 @@ test('[app:app-hid-device-can-be-forgotten] Forget in Settings and revoking the 
       const card = settings.locator('.app-card', { hasText: `127.0.0.1:${port}` })
       check('[app:app-hid-device-can-be-forgotten] the app\'s card lists the device', await waitFor(async () => (await card.locator('.perm', { hasText: 'Test Key' }).count()) === 1))
       await shoot(electron, chrome, settings, 'hid-settings-apps')
-      await card.locator('.perm', { hasText: 'Test Key' }).locator('button', { hasText: 'Forget' }).click()
-      check('[app:app-hid-device-can-be-forgotten] Forget removes the row', await waitFor(async () => (await card.locator('.perm', { hasText: 'Test Key' }).count()) === 0))
+      await card.locator('.perm', { hasText: 'Test Key' }).locator('.switch').click()
+      check('[app:app-hid-device-can-be-forgotten] switching the device off removes the row', await waitFor(async () => (await card.locator('.perm', { hasText: 'Test Key' }).count()) === 0))
       await chrome.evaluate(() => { document.querySelectorAll<HTMLElement>('.tab')[0]?.click() })
       check('[app:app-hid-device-can-be-forgotten] the page no longer lists the device', await waitFor(async () => (await listedDevices(view)).length === 0))
       const again = await readQuestion(await waitQuestion(electron))
@@ -157,7 +157,7 @@ test('[app:app-hid-device-can-be-forgotten] Forget in Settings and revoking the 
 
       const page = await openSettings(electron, chrome, '/apps')
       const revokeCard = page.locator('.app-card', { hasText: `127.0.0.1:${port}` })
-      await revokeCard.locator('.perm', { hasText: 'USB devices' }).locator('button', { hasText: 'Revoke' }).click()
+      await revokeCard.locator('.perm', { hasText: 'USB devices' }).locator('.switch').click()
       check('[app:app-hid-device-can-be-forgotten] revoking the grant removes the device row with it', await waitFor(async () => (await revokeCard.locator('.perm', { hasText: 'Test Key' }).count()) === 0))
       await chrome.evaluate(() => { document.querySelectorAll<HTMLElement>('.tab')[0]?.click() })
       check('[app:app-hid-device-can-be-forgotten] the page lists nothing, and no question follows', await waitFor(async () => (await listedDevices(view)).length === 0) && await questionGone(electron))
@@ -168,7 +168,7 @@ test('[app:app-hid-device-can-be-forgotten] Forget in Settings and revoking the 
   }
 }, QA_TEST_TIMEOUT_MS * 4)
 
-test('[app:website-hid-chooser-unless-blocked] a website picks the device in the chooser, keeps it across a reload, and Forget under Sites takes it back', async () => {
+test('[app:website-hid-chooser-unless-blocked] a website picks the device in the chooser, keeps it across a reload, and switching it off under Sites takes it back', async () => {
   const device = await plug('SN-A')
   const { app: electron, chrome } = await launchShell()
   try {
@@ -192,9 +192,9 @@ test('[app:website-hid-chooser-unless-blocked] a website picks the device in the
       await settings.locator('#row-sites-list .site-toggle').first().click()
       await settings.waitForSelector('#row-sites-list .site-kinds li')
       await shoot(electron, chrome, settings, 'hid-settings-sites')
-      await settings.locator('#row-sites-list .site-kinds li', { hasText: 'Test Key' }).locator('button', { hasText: 'Forget' }).click()
+      await settings.locator('#row-sites-list .site-kinds li', { hasText: 'Test Key' }).locator('.switch').click()
       await chrome.evaluate(() => { document.querySelectorAll<HTMLElement>('.tab')[0]?.click() })
-      check('[app:website-hid-chooser-unless-blocked] after Forget the page lists nothing', await waitFor(async () => (await listedDevices(view)).length === 0))
+      check('[app:website-hid-chooser-unless-blocked] after the switch is turned off the page lists nothing', await waitFor(async () => (await listedDevices(view)).length === 0))
     })
   } finally {
     await closeElectron(electron)

@@ -9,7 +9,7 @@ import type { GatewayPool } from './gateways.js'
 import { racePass } from './race.js'
 import type { AttemptOutcome, PassResult } from './race.js'
 
-/** A pass that met a rate limit, an unreachable gateway or a gateway's own 5xx earns another, up to this many passes in all. */
+/** A pass that met a rate limit, an unreachable gateway or a gateway's own 5xx, or in which every gateway sent nothing in time, earns another, up to this many passes in all. */
 export const MAX_PASSES = 3
 
 export interface PassDeps {
@@ -20,15 +20,52 @@ export interface PassDeps {
 /**
  * What a failed `askGateway` means for the race: a cancelled attempt is
  * never retried, a rate limit, an unreachable gateway or a 5xx earns
- * another pass, and a 5xx marks the gateway `unwell`. Rethrows anything
+ * another pass, and a 5xx marks the gateway `unwell`. A timeout earns
+ * another pass only when the caller says so (`timeoutsEarnPass`) and every
+ * gateway of the pass timed out (race.ts); a source whose timeout is its answer
+ * (a local node) never does, and `retryWhileWanted` waits for it instead. Rethrows anything
  * that is not a GatewayFailure.
  */
-export function failedAttempt (error: unknown, gateway: string, unwell: Set<string>): AttemptOutcome<never> {
+export function failedAttempt (error: unknown, gateway: string, unwell: Set<string>, timeoutsEarnPass = false): AttemptOutcome<never> {
   if (!(error instanceof GatewayFailure)) throw error
   if (error.outcome.kind === 'cancelled') return { kind: 'failed', retryable: false, reason: `${gateway}: cancelled` }
   if (error.outcome.kind === 'server-error') unwell.add(gateway)
   else unwell.delete(gateway)
-  return { kind: 'failed', retryable: error.outcome.kind === 'rate-limited' || error.outcome.kind === 'unreachable' || error.outcome.kind === 'server-error', reason: error.message }
+  const retryable = error.outcome.kind === 'rate-limited' || error.outcome.kind === 'unreachable' || error.outcome.kind === 'server-error'
+  const timedOut = timeoutsEarnPass && error.outcome.kind === 'timeout'
+  return { kind: 'failed', retryable, reason: error.message, ...(timedOut && { timedOut }) }
+}
+
+/**
+ * For a source that remembers a failed lookup for a while and answers it again at once (a local node:
+ * a miss, a 5xx or a timeout of its own is its answer, and asking within its memory gets the same
+ * answer): how long to wait before asking again, how many more tries, and how late after the first
+ * try began a retry may still start.
+ */
+export interface PatientRetry {
+  readonly waitMs: number
+  readonly maxRetries: number
+  readonly startByMs: number
+}
+
+/**
+ * `attempt`, and again after `retry.waitMs` each time it ends `unavailable`, while the caller still
+ * wants it (`signal`), within `retry.maxRetries` and starting no retry later than `retry.startByMs`
+ * after the first try began. Any other failure (a lie, an unsupported CID, a bug) ends it at once, and
+ * the last failure is the one thrown.
+ */
+export async function retryWhileWanted<T> (attempt: () => Promise<T>, retry: PatientRetry, now: () => number, signal: AbortSignal): Promise<T> {
+  const startedAt = now()
+  for (let retries = 0; ; retries++) {
+    try {
+      return await attempt()
+    } catch (error) {
+      if (!(error instanceof ResolutionError) || error.failure !== 'unavailable' || signal.aborted) throw error
+      if (retries >= retry.maxRetries || now() - startedAt + retry.waitMs > retry.startByMs) throw error
+      await sleepOrAbort(retry.waitMs, signal)
+      if (signal.aborted) throw error
+    }
+  }
 }
 
 /**

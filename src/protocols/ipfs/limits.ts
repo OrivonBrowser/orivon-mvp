@@ -2,6 +2,8 @@
 // truncated success. Set with margin over what real sites measured: the
 // largest block 318 KB, 289 links in one node, a file DAG six levels deep.
 
+import type { PatientRetry } from '../gateways/fetch-passes.js'
+
 export interface IpfsLimits {
   /** The trustless gateway spec's own ceiling for one block. */
   readonly maxBlockBytes: number
@@ -11,6 +13,8 @@ export interface IpfsLimits {
   readonly maxDagDepth: number
   readonly maxBytesPerOpen: number
   readonly blockTimeoutMs: number
+  /** For a source that remembers a failed lookup: a block it could not give is asked for again after its memory has passed. Unset for public gateways, whose passes already retry. */
+  readonly blockRetry?: PatientRetry
   /** The wait for one IPNS record from one source; `blockTimeoutMs` when unset. */
   readonly recordTimeoutMs?: number
   /** Per gateway, not a total shared across all of them -- a hung gateway

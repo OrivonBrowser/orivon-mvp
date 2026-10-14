@@ -17,6 +17,8 @@ export interface EthTestSeam {
   readonly gateways: readonly string[] | undefined
   readonly swarmEndpoints: readonly string[] | undefined
   readonly dnsOverHttps: readonly string[] | undefined
+  /** A fixture standing in for the IPFS node Orivon runs: IPFS is read from it, as from the real one, and `retryWaitMs` replaces the wait before a block it could not give is asked for again. */
+  readonly ipfsNode?: { readonly endpoint: string, readonly retryWaitMs?: number }
 }
 
 function list (value: string | undefined): string[] | undefined {
@@ -32,7 +34,10 @@ export function parseEthTestSeam (env: Readonly<Record<string, string | undefine
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed) || !Object.values(parsed).every((v) => typeof v === 'string')) {
     throw new Error('ORIVON_TEST_ETH_FIXTURES must be a JSON object of "name.eth": "ipfs://..." or "bzz://..."')
   }
-  return { fixtures: parsed as Record<string, string>, gateways: list(env['ORIVON_TEST_IPFS_GATEWAYS']), swarmEndpoints: list(env['ORIVON_TEST_SWARM_ENDPOINTS']), dnsOverHttps: list(env['ORIVON_TEST_DOH']) }
+  const nodeEndpoint = env['ORIVON_TEST_IPFS_NODE']?.trim()
+  const retryWait = Number(env['ORIVON_TEST_IPFS_NODE_RETRY_WAIT_MS'])
+  const ipfsNode = nodeEndpoint === undefined || nodeEndpoint === '' ? undefined : { endpoint: nodeEndpoint, ...(Number.isFinite(retryWait) && retryWait > 0 && { retryWaitMs: retryWait }) }
+  return { fixtures: parsed as Record<string, string>, gateways: list(env['ORIVON_TEST_IPFS_GATEWAYS']), swarmEndpoints: list(env['ORIVON_TEST_SWARM_ENDPOINTS']), dnsOverHttps: list(env['ORIVON_TEST_DOH']), ...(ipfsNode !== undefined && { ipfsNode }) }
 }
 
 export function ethTestSeam (): EthTestSeam | undefined {
