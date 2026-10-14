@@ -1,7 +1,7 @@
 # `src/main/privacy/`: what the browser keeps, and what it lets out
 
 **What lives here.** Two jobs. Forgetting: `clear-data.ts` does "Clear browsing data": history back as far as
-chosen, the cookies and storage of ordinary websites, the cache, the saved zoom levels, and (only when asked for
+chosen, the cookies and storage of ordinary websites (the shared session, each profile session a website with a tunnel entry runs in, and a profile's in-memory session when this run has made one), the cache, the saved zoom levels, the answers given per site together with the websites' approved devices, and (only when asked for
 by name) the browser storage of every cache-served app that holds permissions; `privacy-domain.ts` is what the
 Settings page may ask: how much is kept, and to clear. `local-files-domain.ts` is what Settings may ask about local files: the recorded files, deleting one's data, and clearing what the others share. Letting out: the network privacy controls, all on the
 default session's one web-request owner. `net-handlers.ts` holds the three handlers (the `DNT` header,

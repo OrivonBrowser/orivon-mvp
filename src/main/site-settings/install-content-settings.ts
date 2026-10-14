@@ -83,7 +83,7 @@ export const installContentSettings: ShellInstaller = {
       siteSettings.onChange(syncHandlers)
     })
 
-    siteSound.bind((pageUrl) => rules.soundBlocked(pageUrl))
+    siteSound.bind((pageUrl, openerUrl) => rules.soundBlocked(pageUrl, openerUrl))
     const applySound = (): void => {
       for (const window of services.windows.all()) {
         for (const id of window.tabs.ids()) {

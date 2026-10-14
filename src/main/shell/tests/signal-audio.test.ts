@@ -35,6 +35,14 @@ describe('the audio signal', () => {
     expect(mutedFor({ muted: false } as never, page(false, 'https://other.test/') as never)).toBe(false)
   })
 
+  it('mutes a blank or blob: page of a silenced site by the page that opened it', () => {
+    siteSound.bind((url, opener) => (url.startsWith('https://quiet.test') ? url : opener() ?? '').startsWith('https://quiet.test'))
+    const popup = (url: string, opener: string | null): never => Object.assign(page(false, url), { opener: opener === null ? null : { url: opener } }) as never
+    expect(mutedFor({} as never, popup('about:blank', 'https://quiet.test/a'))).toBe(true)
+    expect(mutedFor({} as never, popup('about:blank', 'https://other.test/'))).toBe(false)
+    expect(mutedFor({} as never, popup('about:blank', null))).toBe(false)
+  })
+
   it('applies the site rule again when a navigation lands on another site', () => {
     const wc = page(false, 'https://example.test/')
     const { record, emitState } = tabOf(wc, false)

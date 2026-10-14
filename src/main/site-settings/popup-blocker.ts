@@ -19,8 +19,8 @@ export interface PopupBlockerDeps<T extends Tab> {
 }
 
 export interface PopupBlocker<T extends Tab> {
-  /** Whether the window `tab`'s page, now at `openerUrl`, is opening toward `targetUrl` is refused. A refusal is recorded for the chip. */
-  check: (tab: T, openerUrl: string, targetUrl: string) => boolean
+  /** Whether the window `tab`'s page, now at `openerUrl`, is opening toward `targetUrl` is refused. A refusal is recorded for the chip. `openedBy` reads the address of the page that opened `tab` itself, for a tab still at a blank or `blob:` address. */
+  check: (tab: T, openerUrl: string, targetUrl: string, openedBy?: () => string | undefined) => boolean
   /** Starts listening to a tab's input, ahead of the first window it might open. */
   watch: (tab: T) => void
 }
@@ -29,9 +29,9 @@ export function createPopupBlocker<T extends Tab> (deps: PopupBlockerDeps<T>): P
   const clock = deps.clock ?? Date.now
   return {
     watch: (tab) => { deps.interaction.watch(tab) },
-    check: (tab, openerUrl, targetUrl) => {
+    check: (tab, openerUrl, targetUrl, openedBy) => {
       // No value: the opener is not a website, or is a registered app.
-      const value = deps.rules.valueFor('popups', openerUrl)
+      const value = deps.rules.valueFor('popups', openerUrl, openedBy ?? (() => undefined))
       if (value === undefined) return false
       deps.interaction.watch(tab)
       const { at, consumed } = deps.interaction.read(tab)

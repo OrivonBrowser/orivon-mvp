@@ -45,6 +45,8 @@ export interface SiteSessions {
    * in the session with no view: it is held on its route like any, and the extensions are neither loaded nor waited for.
    */
   ensure: (partition: string, wake: boolean) => void
+  /** The names of the profile sessions made ready (or tried) in this run: a session not among them does not exist yet. */
+  made: () => string[]
   /** Clears what a website stored in the profile session named `partition` (cookies, storage, cache), and nothing of any other website. */
   removeStorage: (partition: string, origin: string) => Promise<void>
 }
@@ -116,6 +118,7 @@ export function createSiteSessions (deps: SiteSessionsDeps): SiteSessions {
         fresh.watch()
       }
     },
+    made: () => [...entries.keys()],
     removeStorage: async (partition, origin) => {
       await deps.sessionFor(partition).clearData({ origins: [origin] })
     }

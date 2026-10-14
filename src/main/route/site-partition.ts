@@ -31,6 +31,20 @@ export function profilePartitionFor (profile: Profile, origin: string): string {
   return profilePartition(profile, isPersistableOrigin(origin))
 }
 
+/**
+ * The profile sessions a clear of site data must reach: the kept session of each profile some website has an entry in, and
+ * the memory session of a profile only if `made` (the session names this run has made) holds it, so that a clear never makes
+ * a session just to empty it.
+ */
+export function profilePartitionsToClear (hasEntries: (profile: Profile) => boolean, made: readonly string[]): string[] {
+  const names: string[] = []
+  for (const profile of PROFILES) {
+    if (hasEntries(profile)) names.push(profilePartition(profile, true))
+    if (made.includes(profilePartition(profile, false))) names.push(profilePartition(profile, false))
+  }
+  return names
+}
+
 /** The profile a session name stands for, or undefined for any other session. */
 export function profileOfPartition (partition: string | undefined): Profile | undefined {
   if (partition === undefined) return undefined

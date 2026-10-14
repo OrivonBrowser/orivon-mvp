@@ -2,13 +2,14 @@
 // tab's record, not to a webContents, so it survives the view swap a cross-origin navigation makes.
 import type { WebContents } from 'electron'
 import type { TabSignal } from '../tab-signals.js'
+import { openerUrlOf } from '../../site-settings/effective-page.js'
 import { siteSound } from '../../site-settings/site-sound.js'
 import { contain } from '../contain.js'
 import type { TabRecord } from '../tab-types.js'
 
 /** Whether this tab's page is to be silent: the person muted the tab, or its site is told to be silent. The one place a rule for muting is decided. */
 export function mutedFor (record: TabRecord, wc: WebContents): boolean {
-  return record.muted === true || siteSound.blocked(wc.getURL())
+  return record.muted === true || siteSound.blocked(wc.getURL(), () => openerUrlOf(wc))
 }
 
 /** Puts the record's mute on the page it shows now. */
@@ -39,7 +40,7 @@ export const audioSignal: TabSignal = {
       muted: record.muted === true,
       audible,
       // Present only when true: a tab that is not silenced by its site carries no extra field.
-      ...(audible && wc !== undefined && siteSound.blocked(wc.getURL()) ? { siteMuted: true } : {})
+      ...(audible && wc !== undefined && siteSound.blocked(wc.getURL(), () => openerUrlOf(wc)) ? { siteMuted: true } : {})
     }
   }
 }

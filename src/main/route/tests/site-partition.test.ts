@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canTunnel, isProfilePartition, profileOf, profileOfPartition, profilePartition, profilePartitionFor } from '../site-partition.js'
+import { canTunnel, isProfilePartition, profileOf, profileOfPartition, profilePartition, profilePartitionFor, profilePartitionsToClear } from '../site-partition.js'
 
 describe('the profile an entry puts a website in', () => {
   it('is the tunnel profile for an on entry, the direct profile for an off one, and none for a website with no entry', () => {
@@ -39,5 +39,22 @@ describe('which origins can go through the tunnel', () => {
 
   it('is not this computer, a non-canonical origin or an address with no origin', () => {
     for (const origin of ['http://localhost:3000', 'https://app.localhost', 'http://127.0.0.1:8080', 'http://[::1]/', 'https://news.example/path', 'orivon://settings', 'about:blank', '']) expect(canTunnel(origin), origin).toBe(false)
+  })
+})
+
+describe('the profile sessions a clear of site data reaches', () => {
+  it('is the kept session of a profile some website has an entry in, and the memory session of a profile only when it was made in this run', () => {
+    const apart = (profile: 'tunnel' | 'direct'): boolean => profile === 'tunnel'
+    expect(profilePartitionsToClear(apart, [])).toEqual(['persist:tunnel-profile'])
+    expect(profilePartitionsToClear(apart, ['tunnel-profile-memory'])).toEqual(['persist:tunnel-profile', 'tunnel-profile-memory'])
+  })
+
+  it('includes the memory session of a profile with no entry left, since it still holds what a plain-http website stored', () => {
+    expect(profilePartitionsToClear(() => false, ['direct-profile-memory'])).toEqual(['direct-profile-memory'])
+  })
+
+  it('names no session that was not made, and ignores any made session that is not a profile\'s', () => {
+    expect(profilePartitionsToClear(() => false, [])).toEqual([])
+    expect(profilePartitionsToClear(() => false, ['persist:tunnel-profile', 'orivon-route-tab-x'])).toEqual([])
   })
 })
