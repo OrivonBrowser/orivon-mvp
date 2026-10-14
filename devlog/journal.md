@@ -38,6 +38,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - A slow IPFS node no longer leaves pages half loaded: a file it could not give is asked again once its memory clears.
 - Going offline no longer strips a loaded Web3 site's score; a site no provider has judged shows a gray Web? instead of Web2.5.
 - The new tab's Orivon Featured row is now Explore, WebTorrent, ASGARDEX, Ledger Wallet and The Lounge; no more Chrome Web Store advice.
+- Deep security audit (Cloudflare's method): no critical or high; all 15 confirmed findings fixed, including extension regex rules now matched in linear time.
 
 ### In my head
 
