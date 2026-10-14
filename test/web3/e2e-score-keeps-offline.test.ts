@@ -31,6 +31,13 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
+/** The shield asks again whenever the active tab changes: leave the site for a new tab and come back to the first. */
+async function askAgain (chrome: ReturnType<typeof findChrome>): Promise<void> {
+  await chrome.click('#new-tab')
+  await waitFor(async () => await chrome.evaluate(() => document.querySelector('#web3-score-btn .web3-shield')?.hasAttribute('data-level') === false), 5_000)
+  await chrome.locator('.tab').first().click()
+}
+
 it('a loaded .eth site keeps its judged Level 4 while the gateways, the provider and the verifier mounts are gone, and a tampered file still drops it', async () => {
   await runPhase('score-keeps-offline', async (check) => {
     // A gateway that served a tampered block is dropped for the session, so the tampered site has a gateway of its own.
@@ -72,7 +79,12 @@ it('a loaded .eth site keeps its judged Level 4 while the gateways, the provider
       check('the verifier host is listening', listening)
       if (!listening) throw new Error('the verifier host never reported listening')
 
-      await navigateToFixture(app, 'https://tampered.eth/', 'tampered fixture')
+      const view = await navigateToFixture(app, 'https://tampered.eth/', 'tampered fixture')
+      // The refusal of the script is what the verifier reports; the shield reads it when it next asks.
+      const refused = await waitFor(async () => await view.evaluate(async () => await fetch('/app.js').then((r) => r.status, () => 0)) !== 200, 30_000)
+      check('the tampered script is refused', refused)
+      const chrome = findChrome(app)
+      await askAgain(chrome)
       const tampered = await readScore(app, '1')
       check(`a site with a tampered file is Level 1, marked "Web2" (${tampered.level}/${tampered.mark})`, tampered.level === '1' && tampered.mark === 'Web2')
 
@@ -87,13 +99,8 @@ it('a loaded .eth site keeps its judged Level 4 while the gateways, the provider
       providerClosed = true
       await gateway.close()
       await running.evaluate(() => { (globalThis as { __orivonDevEthFixtures?: { idle?: () => void } }).__orivonDevEthFixtures?.idle?.() })
-      const chrome = findChrome(app)
       await chrome.waitForTimeout(FILES_KEPT_MS + 500)
-
-      // The shield asks again whenever the active tab changes: leave the site for a new tab and come back.
-      await chrome.click('#new-tab')
-      await waitFor(async () => await chrome.evaluate(() => document.querySelector('#web3-score-btn .web3-shield')?.hasAttribute('data-level') === false), 5_000)
-      await chrome.locator('.tab').first().click()
+      await askAgain(chrome)
       const offline = await readScore(app, '4')
       check(`offline, the shield still paints Level 4, marked "Web3" (${offline.level}/${offline.mark})`, offline.level === '4' && offline.mark === 'Web3')
       check(`the label still names the provider (${offline.label})`, offline.label === `Website level 4 (Web3), judged by ${PROVIDER_NAME}`)
