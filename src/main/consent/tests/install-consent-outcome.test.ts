@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { grantAll, grantNone } from './install-consent.test-helpers.js'
+import { dismissed, grantAll, grantNone } from './install-consent.test-helpers.js'
 import { requestInstallConsent } from '../install-consent.js'
 import type { DialogCaller } from '../request-grant.js'
+import type { BrokerCall } from '../../../broker/transport/tests/ipc.test-helpers.js'
 import { APP, stubBroker } from '../../../broker/transport/tests/ipc.test-helpers.js'
 import { manifestWith } from '../../../broker/tests/index.test-helpers.js'
 
@@ -54,6 +55,13 @@ describe('requestInstallConsent: the outcome', () => {
     expect(await requestInstallConsent(b, grantNone, APP, MANIFEST, gone)).toBe('left')
     expect(recorded).not.toHaveBeenCalled()
     expect(await requestInstallConsent(broker(), grantAll, APP, MANIFEST, present)).toBe('granted')
+  })
+
+  it('is left, recording nothing and granting nothing, when the question was dismissed rather than answered', async () => {
+    const calls: BrokerCall[] = []
+    const b = stubBroker(calls, { grants: async () => [], declinedCapabilitiesFor: async () => undefined })
+    expect(await requestInstallConsent(b, dismissed, APP, MANIFEST)).toBe('left')
+    expect(calls.filter((call) => ['recordDeclinedConsent', 'clearDeclinedConsent', 'grant'].includes(call.method))).toEqual([])
   })
 
   it('is left when the prompt itself failed', async () => {
