@@ -8,13 +8,13 @@ import { isIP } from 'node:net'
 import type { UdpChannel } from './instances.js'
 
 export class DnsError extends Error {
-  constructor (readonly kind: 'no-such-name' | 'timeout' | 'invalid' | 'closed', message: string) {
+  constructor (readonly kind: 'no-such-name' | 'failed' | 'timeout' | 'invalid' | 'closed', message: string) {
     super(message)
   }
 }
 
 export interface Resolver {
-  /** The address of `host`; a literal address comes back as it is. Rejects with a `DnsError`. */
+  /** The address of `host`; a literal address comes back as it is. Rejects with a `DnsError`: `timeout` only when no resolver answered at all. */
   resolve: (host: string) => Promise<string>
   close: () => void
 }
@@ -52,7 +52,9 @@ interface Query {
   readonly id: number
   readonly name: string
   readonly type: number
-  readonly accept: (answer: Answer) => void
+  readonly accept: (answer: Answer, from: string) => void
+  /** Ends the query with an error, and stops its timers. */
+  readonly fail: (error: DnsError) => void
 }
 
 interface Answer {
@@ -98,7 +100,8 @@ function formatAddress (bytes: Buffer): string {
 
 /** What a response says of the question it answers: its id, the name it asks, its code, and every address of `type` it holds; undefined for bytes that are not a response. */
 export function parseResponse (message: Buffer, type: number): { id: number, name: string, answer: Answer } | undefined {
-  if (message.length < 12 || (message[2] ?? 0) < 0x80) return undefined
+  // A response (QR set) that is not truncated (TC clear): a truncated one is not the answer to ask for again over TCP, which a tunnel's datagrams do not carry.
+  if (message.length < 12 || ((message[2] ?? 0) & 0x80) === 0 || ((message[2] ?? 0) & 0x02) !== 0) return undefined
   const id = message.readUInt16BE(0)
   const rcode = (message[3] ?? 0) & 0x0f
   const questions = message.readUInt16BE(4)
@@ -118,6 +121,7 @@ export function parseResponse (message: Buffer, type: number): { id: number, nam
     }
     const end = skipName(message, at)
     if (end < 0 || end + 4 > message.length) return undefined
+    if (i === 0 && message.readUInt16BE(end) !== type) return undefined
     at = end + 4
   }
   const addresses: string[] = []
@@ -149,6 +153,7 @@ export function createResolver (options: ResolverOptions): Resolver {
   const asking = new Map<string, Promise<string>>()
   const pending = new Map<number, Query>()
   let channel: Promise<UdpChannel> | undefined
+  let active: UdpChannel | undefined
   let closed = false
 
   const receive = async (udp: UdpChannel): Promise<void> => {
@@ -162,7 +167,7 @@ export function createResolver (options: ResolverOptions): Resolver {
         const query = bytes.length < 2 ? undefined : pending.get(bytes.readUInt16BE(0))
         if (query === undefined) continue
         const response = parseResponse(bytes, query.type)
-        if (response !== undefined && response.name === query.name) query.accept(response.answer)
+        if (response !== undefined && response.name === query.name) query.accept(response.answer, datagram.host)
       } catch (error) {
         const text = error instanceof Error ? error.message : String(error)
         if (closed || text.includes('closed')) break
@@ -172,15 +177,16 @@ export function createResolver (options: ResolverOptions): Resolver {
         await new Promise<void>((resolve) => { setTimeout(resolve, 200) })
       }
     }
-    // A socket that stopped is replaced by the next lookup, not kept.
-    if (channel !== undefined) channel = undefined
+    // A socket that stopped is closed and replaced by the next lookup, not kept.
+    udp.close()
+    if (active === udp) { active = undefined; channel = undefined }
   }
 
   const socket = async (): Promise<UdpChannel> => {
     if (channel === undefined) {
       const bound = options.bind()
       channel = bound
-      bound.then((udp) => { void receive(udp) }, () => { if (channel === bound) channel = undefined })
+      bound.then((udp) => { active = udp; void receive(udp) }, () => { if (channel === bound) channel = undefined })
     }
     return await channel
   }
@@ -192,32 +198,48 @@ export function createResolver (options: ResolverOptions): Resolver {
     }
   }
 
-  /** One question, sent to the primary, again to the fallback after `attemptMs` of quiet, and again to the primary; the first answer that says something wins. */
+  /**
+   * One question, sent to the primary, again to the fallback after `attemptMs` of quiet, and again to the primary; the first
+   * answer that says something wins. A resolver that answers with a failure (SERVFAIL, REFUSED) has answered: the other is still
+   * waited for, and when both have failed or the time is up after one has, the name is the one at fault, never the tunnel.
+   */
   const ask = async (name: string, type: number): Promise<Answer> => {
     const udp = await socket()
     const id = unusedId()
     return await new Promise<Answer>((resolve, reject) => {
       const timers: Array<ReturnType<typeof setTimeout>> = []
-      const done = (): void => { for (const timer of timers) clearTimeout(timer); pending.delete(id) }
+      const failedBy = new Set<string>()
+      let finished = false
+      const end = (): void => { finished = true; for (const timer of timers) clearTimeout(timer); pending.delete(id) }
+      const fail = (error: DnsError): void => { if (finished) return; end(); reject(error) }
       const send = (server: string): void => {
+        if (finished) return
         try {
           udp.sendTo(server, DNS_PORT, encodeQuery(id, name, type)).catch(() => {})
         } catch (error) {
-          done()
-          reject(error instanceof DnsError ? error : new DnsError('closed', 'the tunnel cannot send a datagram'))
+          fail(error instanceof DnsError ? error : new DnsError('closed', 'the tunnel cannot send a datagram'))
         }
       }
       pending.set(id, {
         id,
         name: name.toLowerCase(),
         type,
-        // SERVFAIL and the like say nothing about the name: the other resolver is still waited for.
-        accept: (answer) => { if (answer.rcode === 0 || answer.rcode === RCODE_NXDOMAIN) { done(); resolve(answer) } }
+        fail,
+        accept: (answer, from) => {
+          if (finished) return
+          if (answer.rcode === 0 || answer.rcode === RCODE_NXDOMAIN) { end(); resolve(answer); return }
+          failedBy.add(from)
+          if (failedBy.has(primary) && failedBy.has(fallback)) fail(new DnsError('failed', `the resolvers could not answer for ${name}`))
+        }
       })
       send(primary)
       timers.push(setTimeout(() => { send(fallback) }, attemptMs))
       timers.push(setTimeout(() => { send(primary) }, attemptMs * 2))
-      timers.push(setTimeout(() => { done(); reject(new DnsError('timeout', `no resolver answered for ${name} within ${String(Math.round(totalMs / 1000))} s`)) }, totalMs))
+      timers.push(setTimeout(() => {
+        fail(failedBy.size > 0
+          ? new DnsError('failed', `the resolvers could not answer for ${name}`)
+          : new DnsError('timeout', `no resolver answered for ${name} within ${String(Math.round(totalMs / 1000))} s`))
+      }, totalMs))
     })
   }
 
@@ -240,7 +262,7 @@ export function createResolver (options: ResolverOptions): Resolver {
     resolve: async (host) => {
       if (closed) throw new DnsError('closed', 'the tunnel is closed')
       if (isIP(host) !== 0) return host
-      const key = host.toLowerCase()
+      const key = host.toLowerCase().replace(/\.$/, '')
       const kept = cache.get(key)
       if (kept !== undefined && kept.expires > now()) return kept.address
       let running = asking.get(key)
@@ -252,7 +274,7 @@ export function createResolver (options: ResolverOptions): Resolver {
     },
     close: () => {
       closed = true
-      for (const query of [...pending.values()]) pending.delete(query.id)
+      for (const query of [...pending.values()]) query.fail(new DnsError('closed', 'the tunnel is closed'))
       void channel?.then((udp) => { udp.close() }, () => {})
     }
   }

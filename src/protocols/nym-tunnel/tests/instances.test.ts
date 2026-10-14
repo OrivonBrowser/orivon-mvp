@@ -212,6 +212,39 @@ describe('instances', () => {
     expect(log).toContain('disconnect app-a')
   })
 
+  it('does not count a stall of an opening that began before a stream opened, since the tunnel carried something meanwhile', async () => {
+    const { instances, log, pending } = harness()
+    const asked = instances.acquire('app-a')
+    pending[0]?.resolve()
+    const lease = await asked
+    const began = Date.now()
+    await vi.advanceTimersByTimeAsync(10)
+    lease.report('opened')
+    lease.report('stalled', began)
+    lease.report('stalled', began)
+    lease.report('stalled', began)
+    expect(log).not.toContain('disconnect app-a')
+  })
+
+  it('replaces the tunnel of a user name at most once a minute, whatever stalls', async () => {
+    const { instances, log, pending } = harness()
+    const first = instances.acquire('app-a')
+    pending[0]?.resolve()
+    const a = await first
+    a.report('stalled')
+    a.report('stalled')
+    expect(log.filter((line) => line === 'disconnect app-a')).toHaveLength(1)
+    const second = instances.acquire('app-a')
+    pending[1]?.resolve()
+    const b = await second
+    b.report('stalled')
+    b.report('stalled')
+    expect(log.filter((line) => line === 'disconnect app-a'), 'a new tunnel is given time').toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(61_000)
+    b.report('stalled')
+    expect(log.filter((line) => line === 'disconnect app-a')).toHaveLength(2)
+  })
+
   it('does not count a refusal against the tunnel', async () => {
     const { instances, log, pending } = harness()
     const asked = instances.acquire('app-a')

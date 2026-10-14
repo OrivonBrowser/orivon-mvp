@@ -204,10 +204,11 @@ async function openStream (lease: Lease, destination: Destination, ms: number): 
 
 async function connect (socket: Socket, request: Request, lease: Lease, limits: { connectTimeoutMs: number, halfCloseGraceMs: number }): Promise<void> {
   let stream: TcpStream
+  const began = Date.now()
   try {
     stream = await openStream(lease, request.destination, limits.connectTimeoutMs)
   } catch (error) {
-    lease.report(error instanceof StallError ? 'stalled' : 'refused')
+    lease.report(error instanceof StallError ? 'stalled' : 'refused', began)
     lease.release()
     socket.end(reply(REPLY_HOST_UNREACHABLE))
     return

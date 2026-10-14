@@ -93,14 +93,13 @@ export async function loadNymModule (directory: string, files: readonly PinnedFi
         try {
           address = await resolver.resolve(host)
         } catch (error) {
-          // Only the resolver saying a name is not one is about the name; a lookup that got no answer, or a socket that cannot be bound, is about the tunnel.
-          throw error instanceof DnsError && (error.kind === 'no-such-name' || error.kind === 'invalid') ? error : new StallError(describe(error))
+          // A name that does not exist, or that the resolvers could not answer for, is about the name. A lookup that got no answer at all,
+          // or a socket that cannot be bound, is about the tunnel.
+          if (error instanceof DnsError && (error.kind === 'no-such-name' || error.kind === 'failed' || error.kind === 'invalid' || error.kind === 'closed')) throw error
+          throw new StallError(describe(error))
         }
-        try {
-          return await module.connectTcp(address, port)
-        } catch (error) {
-          throw /timed out/i.test(describe(error)) ? new StallError(describe(error)) : error
-        }
+        // The module's own connect timeout says the destination did not answer, which a destination can cause by itself: it is a refusal.
+        return await module.connectTcp(address, port)
       },
       bindUdp: async () => await module.bindUdp(),
       disconnect: async () => {

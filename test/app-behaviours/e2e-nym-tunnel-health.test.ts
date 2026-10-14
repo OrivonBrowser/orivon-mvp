@@ -84,7 +84,7 @@ it('[app:nym-settings-test-answers] the Settings test says it is testing and tha
   expect(await waitFor(() => world.log().some((line) => line.startsWith('down ')), 20_000), `the test's own tunnel was closed: ${world.log().join('|')}`).toBe(true)
 }, 4 * QA_TEST_TIMEOUT_MS)
 
-it('[app:nym-settings-test-answers] a tunnel that cannot come up is said so with the reason in the answer, and the tunnel is tried through another gateway first', async () => {
+it('[app:nym-settings-test-answers] a tunnel that cannot come up is said so, with the reason, in the answer', async () => {
   const failing = await launched({ failStart: true }, false)
   const page = await failing.settings()
   await page.locator('.route-test button').first().click()
@@ -102,6 +102,9 @@ it('[app:nym-tunnel-tries-another-gateway] a tunnel whose first gateway fails co
 
 it('[app:nym-dead-tunnel-is-replaced] with the whole browser on the tunnel, a Nym tunnel that answers no name is closed after a few stalls, and the next load arrives through a new one', async () => {
   const world = await launched({ silentDnsTunnels: 1 }, true)
+  // Two loads of the name in a row: each is a lookup nobody answers, and the second is the stall that closes the tunnel.
+  await clickAddressBarRetrying(world.chrome, world.url)
+  await delay(1_000)
   await clickAddressBarRetrying(world.chrome, world.url)
   expect(await waitFor(() => world.log().filter((line) => line.startsWith('down ')).length >= 1, 60_000), `the tunnel that carried nothing was closed: ${world.log().join('|')}`).toBe(true)
   await delay(500)

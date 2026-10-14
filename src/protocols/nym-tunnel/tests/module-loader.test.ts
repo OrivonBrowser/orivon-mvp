@@ -17,6 +17,8 @@ interface Fake {
   readonly connected: string[]
   readonly udp: { sent: Array<{ host: string, bytes: Buffer }>, closed: boolean, deliver: (datagram: UdpDatagram) => void }
   disconnects: number
+  /** An error `connectTcp` throws, when set. */
+  connectError?: string
   /** What each call of `setupMixTunnel` does, in order; after the list, it succeeds. */
   setups: Array<'fail' | 'hang' | 'ok'>
 }
@@ -35,6 +37,7 @@ function fakeModule (fake: Fake): unknown {
       if (how === 'hang') await new Promise<never>(() => {})
     },
     connectTcp: async (host: string): Promise<TcpStream> => {
+      if (fake.connectError !== undefined) throw new Error(fake.connectError)
       fake.connected.push(host)
       return { read: async () => null, write: async () => {}, close: async () => {} }
     },
@@ -148,6 +151,13 @@ describe('a tunnel the module brought up', () => {
     await vi.advanceTimersByTimeAsync(13_000)
     expect(await failed).toBeInstanceOf(StallError)
     expect(fake.connected).toEqual([])
+  })
+
+  it('calls the module\'s own connect timeout a refusal of the destination, which a destination can cause by itself', async () => {
+    const fake = newFake()
+    fake.connectError = 'TCP connect timed out'
+    const tunnel = await (await load(fake)).start('app-a')
+    await expect(tunnel.connectTcp('203.0.113.9', 443)).rejects.not.toBeInstanceOf(StallError)
   })
 
   it('calls a datagram socket that cannot be bound a stall of the tunnel too', async () => {

@@ -85,7 +85,10 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
   let stopTimer: unknown
   let waiters: Array<{ resolve: () => void, reject: (error: Error) => void }> = []
 
+  /** How many times the state has become `failed`, so a reason can be told from one that was there before a press. */
+  let failures = 0
   const set = (state: NymState): void => {
+    if (state.state === 'failed') failures += 1
     current = state
     for (const listener of [...listeners]) listener()
   }
@@ -202,6 +205,7 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
 
   const test = async (): Promise<NymTestResult> => {
     const started = now()
+    const failuresBefore = failures
     // One bound for the whole press, so the person is never left on "Testing" for the sum of the waits inside it.
     const abort = new AbortController()
     const timer = setTimer(() => { abort.abort() }, TEST_WAIT_MS)
@@ -224,7 +228,7 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
       } catch (error) {
         if (abort.signal.aborted) return silent
         // The host knows why a tunnel did not come up; the connection only says that it was closed.
-        const detail = current.state === 'failed' ? current.reason : error instanceof Error ? error.message : String(error)
+        const detail = current.state === 'failed' && failures > failuresBefore ? current.reason : error instanceof Error ? error.message : String(error)
         return { ok: false, reason: 'failed', detail }
       }
     } finally {

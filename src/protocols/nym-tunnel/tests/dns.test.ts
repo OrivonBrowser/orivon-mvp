@@ -114,6 +114,59 @@ describe('the tunnel resolver', () => {
     resolver.close()
   })
 
+  it('says at once that the name is at fault when both resolvers fail for it, and not that the tunnel is silent', async () => {
+    const udp = fakeChannel()
+    const resolver = createResolver({ bind: async () => udp.channel, attemptMs: 3_000 })
+    const failed = resolver.resolve('broken.example').catch((error: unknown) => error)
+    await vi.advanceTimersByTimeAsync(10)
+    udp.deliver(respond(udp.sent[0]?.bytes as Buffer, '8.8.8.8', [], { rcode: 2 }))
+    await vi.advanceTimersByTimeAsync(3_000)
+    const second = udp.sent.find((entry) => entry.host === '1.1.1.1')
+    udp.deliver(respond(second?.bytes as Buffer, '1.1.1.1', [], { rcode: 5 }))
+    expect((await failed as DnsError).kind).toBe('failed')
+    resolver.close()
+  })
+
+  it('calls a name that one resolver failed for and the other never answered a failure too, not a silence', async () => {
+    const udp = fakeChannel()
+    const resolver = createResolver({ bind: async () => udp.channel, totalMs: 12_000 })
+    const failed = resolver.resolve('half.example').catch((error: unknown) => error)
+    await vi.advanceTimersByTimeAsync(10)
+    udp.deliver(respond(udp.sent[0]?.bytes as Buffer, '8.8.8.8', [], { rcode: 2 }))
+    await vi.advanceTimersByTimeAsync(12_000)
+    expect((await failed as DnsError).kind).toBe('failed')
+    resolver.close()
+  })
+
+  it('looks a name with a trailing dot up as the name without it', async () => {
+    const udp = fakeChannel()
+    const resolver = createResolver({ bind: async () => udp.channel })
+    const found = resolver.resolve('dotted.example.')
+    await vi.advanceTimersByTimeAsync(10)
+    expect(nameOf(udp.sent[0]?.bytes as Buffer)).toBe('dotted.example')
+    udp.deliver(respond(udp.sent[0]?.bytes as Buffer, '8.8.8.8', [[10, 4, 4, 4]]))
+    expect(await found).toBe('10.4.4.4')
+    resolver.close()
+  })
+
+  it('does not take a truncated response, or one that answers another type, for the answer', async () => {
+    const udp = fakeChannel()
+    const resolver = createResolver({ bind: async () => udp.channel, totalMs: 5_000 })
+    const failed = resolver.resolve('picky.example').catch((error: unknown) => error)
+    await vi.advanceTimersByTimeAsync(10)
+    const query = udp.sent[0]?.bytes as Buffer
+    const truncated = respond(query, '8.8.8.8', [[6, 6, 6, 6]])
+    Buffer.from(truncated.data.buffer, truncated.data.byteOffset, truncated.data.length)[2] = 0x83
+    udp.deliver(truncated)
+    const other = respond(query, '8.8.8.8', [[6, 6, 6, 6]])
+    const otherBytes = Buffer.from(other.data.buffer, other.data.byteOffset, other.data.length)
+    otherBytes[otherBytes.indexOf(Buffer.from([0, 0, 1, 0, 1])) + 2] = 28
+    udp.deliver(other)
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect((await failed as DnsError).kind).toBe('timeout')
+    resolver.close()
+  })
+
   it('asks for an IPv6 address when a name has no IPv4 one', async () => {
     const udp = fakeChannel()
     const resolver = createResolver({ bind: async () => udp.channel })

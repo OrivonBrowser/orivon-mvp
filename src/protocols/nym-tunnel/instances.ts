@@ -50,8 +50,8 @@ export class StallError extends Error {}
 export interface Lease {
   readonly tunnel: Tunnel
   release: () => void
-  /** Says how a stream's opening went, so a tunnel that carries nothing is replaced and not kept for every request to fail on. */
-  report: (outcome: StreamOutcome) => void
+  /** Says how a stream's opening went, so a tunnel that carries nothing is replaced and not kept for every request to fail on. `since` is when the opening began. */
+  report: (outcome: StreamOutcome, since?: number) => void
 }
 
 export interface InstancesSnapshot {
@@ -80,11 +80,14 @@ export interface InstancesDeps {
 
 /** The longest `problem` text, so that main accepts the message it is in (protocol.ts's limit is 500). */
 const MAX_PROBLEM = 400
-export const DEFAULT_START_WAIT_MS = 30_000
+/** Long enough for the host's three attempts of 30 s to bring a tunnel up (module-loader.ts), so a request is not given up on while the next attempt is still coming. */
+export const DEFAULT_START_WAIT_MS = 95_000
 export const DEFAULT_IDLE_MS = 10 * 60_000
 /** Stalled openings in a row that end a tunnel: a new one has to prove itself, so it gets fewer; README.md's Design notes say why. */
 export const STALLS_TO_REPLACE_NEW = 2
 export const STALLS_TO_REPLACE = 3
+/** A user name's tunnel is replaced for stalls once in this time: what a page asks for decides what stalls, so it must not be able to renew the tunnel of everyone who shares it as often as it likes. */
+export const MIN_REPLACE_GAP_MS = 60_000
 
 interface Entry {
   readonly id: string
@@ -94,6 +97,8 @@ interface Entry {
   /** Openings in a row that stalled, and whether any stream has ever opened. */
   stalls: number
   proven: boolean
+  /** When a stream last opened: a stall of an opening that began before it says nothing, since the tunnel carried something meanwhile. */
+  lastOpenedAt: number
   idleSince: number
   idleTimer?: ReturnType<typeof setTimeout>
   gone: boolean
@@ -120,6 +125,7 @@ export function createInstances (deps: InstancesDeps): Instances {
   const entries = new Map<string, Entry>()
   let problem: string | undefined
   let started = 0
+  const replacedAt = new Map<string, number>()
 
   const snapshot = (): InstancesSnapshot => {
     let ready = 0
@@ -165,7 +171,7 @@ export function createInstances (deps: InstancesDeps): Instances {
   const begin = (id: string): Entry => {
     started += 1
     const starting = deps.start(id)
-    const entry: Entry = { id, starting, leases: 0, stalls: 0, proven: false, idleSince: Date.now(), gone: false }
+    const entry: Entry = { id, starting, leases: 0, stalls: 0, proven: false, lastOpenedAt: 0, idleSince: Date.now(), gone: false }
     entries.set(id, entry)
     starting.then(
       (tunnel) => {
@@ -209,11 +215,14 @@ export function createInstances (deps: InstancesDeps): Instances {
       let released = false
       return {
         tunnel,
-        report: (outcome) => {
-          if (outcome === 'opened') { waiting.stalls = 0; waiting.proven = true; return }
-          if (outcome === 'refused') return
+        report: (outcome, since) => {
+          if (outcome === 'opened') { waiting.stalls = 0; waiting.proven = true; waiting.lastOpenedAt = Date.now(); return }
+          if (outcome === 'refused' || waiting.gone) return
+          if (since !== undefined && since < waiting.lastOpenedAt) return
           waiting.stalls += 1
-          if (waiting.stalls >= (waiting.proven ? STALLS_TO_REPLACE : STALLS_TO_REPLACE_NEW)) {
+          const last = replacedAt.get(waiting.id)
+          if (waiting.stalls >= (waiting.proven ? STALLS_TO_REPLACE : STALLS_TO_REPLACE_NEW) && (last === undefined || Date.now() - last >= MIN_REPLACE_GAP_MS)) {
+            replacedAt.set(waiting.id, Date.now())
             problem = bounded('a Nym tunnel carried nothing, so it was closed; the next connection starts another')
             retire(waiting)
           }
