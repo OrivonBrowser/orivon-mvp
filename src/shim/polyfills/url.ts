@@ -3,7 +3,7 @@
 // parse/format/resolve API older Node code still calls, which the WHATWG URL
 // does not replace (it rejects a relative URL and has no Url object).
 
-import { resolve as resolvePath } from 'path'
+import { resolve as resolvePath } from 'path/posix'
 import { nodeModule } from './module-proxy.js'
 import { parse as parseQuery, stringify as stringifyQuery, type ParsedUrlQuery } from './querystring.js'
 

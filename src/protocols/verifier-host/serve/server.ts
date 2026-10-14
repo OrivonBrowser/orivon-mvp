@@ -158,6 +158,16 @@ function routeOf (req: IncomingMessage): FetchRoute {
   return req.headers[ROUTE_HEADER] === 'tunnel' ? 'tunnel' : 'direct'
 }
 
+/**
+ * A navigation (typed, a reload, a click on a link or on Try again, a frame's own load), as the browser marks a
+ * document load. A subresource is not one: it keeps a remembered failure, so a failed page's own requests do not
+ * each start the mount again. A mount already running is joined, so a page of frames starts no more than one.
+ */
+function isNavigation (req: IncomingMessage): boolean {
+  const dest = req.headers['sec-fetch-dest']
+  return req.headers['sec-fetch-mode'] === 'navigate' && (dest === 'document' || dest === 'iframe' || dest === 'frame')
+}
+
 /** The path of an origin-form request target. `//x/y` would read as an authority, so it is refused, not reinterpreted. */
 function pathOf (target: string | undefined, host: string): URL | undefined {
   if (target === undefined || !target.startsWith('/') || target.startsWith('//')) return undefined
@@ -381,7 +391,7 @@ async function handle (registry: ProtocolRegistry, sites: SiteSource, req: Incom
   let root: string | undefined
   const partition = partitionOf(req, host)
   try {
-    const { site } = await sites.get(host, partition, routeOf(req))
+    const { site } = await sites.get(host, partition, routeOf(req), isNavigation(req))
     root = site.root.cid
     const etag = `"${root}"`
     // One install reads one root: a request naming another means the name moved on mid-load.

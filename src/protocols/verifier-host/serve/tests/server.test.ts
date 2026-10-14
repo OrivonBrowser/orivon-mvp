@@ -15,7 +15,7 @@ import { createRunCertificate } from '../certificate.js'
 import { DDOC_MISMATCH, EXPECT_LEAF_HEADER, FAILURE_HEADER } from '../../../../loader/fetch/content-root.js'
 import { leafOf } from '../../../../loader/leaf-hash.js'
 import { MAX_BUFFERED_BYTES, createVerifierServer } from '../server.js'
-import { Sites } from '../sites.js'
+import { RoutedSites, Sites } from '../sites.js'
 
 const ROOT = 'bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi'
 const BIG = MAX_BUFFERED_BYTES + 1024
@@ -91,12 +91,18 @@ const site: MountedSite = {
   ddoc: () => ({ status: 'met', refusals: [] })
 }
 const record: NameRecord = { type: 'contenthash', pointer: { kind: 'ipfs', cid: ROOT }, provenance: { via: 'fixture' } }
+const flakyResolves = new Map<string, number>()
 const resolver: NameResolver = {
   id: 'stub',
   namespaces: ['.eth'],
   resolve: async (name) => {
+    if (name.endsWith('flaky.eth')) {
+      const seen = (flakyResolves.get(name) ?? 0) + 1
+      flakyResolves.set(name, seen)
+      if (seen === 1) throw new ResolutionError('unavailable', 'no gateway answered')
+    }
     if (name === 'syncing.eth') throw new ResolutionError('not-synced', 'light client syncing')
-    if (name === 'site.eth' || name === 'part.eth' || name === 'own.eth') return [record]
+    if (name === 'site.eth' || name.endsWith('flaky.eth') || name === 'part.eth' || name === 'own.eth') return [record]
     throw new ResolutionError('not-found', 'no such name')
   }
 }
@@ -111,7 +117,7 @@ let server: Server
 let port: number
 
 beforeAll(async () => {
-  server = createVerifierServer(registry, new Sites(registry), certificate)
+  server = createVerifierServer(registry, new RoutedSites(new Sites(registry), new Sites(registry)), certificate)
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   port = (server.address() as AddressInfo).port
 })
@@ -269,6 +275,36 @@ describe('the .eth loopback server', () => {
     const reply = await get('/', { host: 'syncing.eth' })
     expect(reply.status).toBe(503)
     expect(reply.headers['retry-after']).toBe('10')
+  })
+
+  it('offers Try again on a page about a failure that may pass, and on no other', async () => {
+    const TRY_AGAIN = '<a class="retry" href="">Try again</a>'
+    expect((await get('/', { host: 'syncing.eth' })).body.toString()).toContain(TRY_AGAIN)
+    expect((await get('/', { host: 'nobody.eth' })).body.toString()).not.toContain('Try again')
+    expect((await get('/bad.js')).body.toString()).not.toContain('Try again')
+  })
+
+  const NAV = { 'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'navigate' }
+  const SUBRESOURCE = { 'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'no-cors', 'sec-fetch-dest': 'script' }
+
+  it('answers Try again with a new attempt, though the failed one is remembered for a subresource', async () => {
+    const failed = await get('/', { host: 'flaky.eth', headers: { 'sec-fetch-site': 'none' } })
+    expect(failed.status).toBe(502)
+    expect(failed.body.toString()).toContain('Try again')
+    expect((await get('/app.js', { host: 'flaky.eth', headers: SUBRESOURCE })).status).toBe(502)
+    expect(flakyResolves.get('flaky.eth')).toBe(1)
+    const retried = await get('/', { host: 'flaky.eth', headers: { ...NAV, 'sec-fetch-dest': 'document' } })
+    expect(retried.status).toBe(200)
+    expect(retried.body.toString()).toBe('<h1>home</h1>')
+    expect(flakyResolves.get('flaky.eth')).toBe(2)
+  })
+
+  it('answers Try again inside a frame with a new attempt too', async () => {
+    const host = 'frame.flaky.eth'
+    expect((await get('/', { host, headers: { 'sec-fetch-site': 'none' } })).status).toBe(502)
+    expect((await get('/app.js', { host, headers: SUBRESOURCE })).status).toBe(502)
+    expect((await get('/', { host, headers: { ...NAV, 'sec-fetch-dest': 'iframe' } })).status).toBe(200)
+    expect(flakyResolves.get(host)).toBe(2)
   })
 
   it('sends none of a small file that fails verification part-way: the error page instead', async () => {

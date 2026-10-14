@@ -14,7 +14,7 @@
 // the root needs the broker, which refuses it. README.md's Design notes has
 // the detail.
 
-import { normalize } from 'path'
+import { normalize } from 'path/posix'
 import type { FileHandle, FileStat } from '../../contracts/handles.js'
 import type { SyncFileHandleWire } from './sync-orivon.js'
 import { fsError } from './paths.js'
