@@ -172,4 +172,41 @@ describe('listen -- accepted connections become derived handles', () => {
 
     expect(acceptedDestroy).toHaveBeenCalledWith('revoked')
   })
+
+  it('a connection refused at the socket allowance is destroyed once and the listener accepts the next one', async () => {
+    // Allowance 3: the listener plus two delivered sockets fill it.
+    const peers = Array.from({ length: 4 }, () => okAccepted({ destroy: vi.fn() }))
+    const offered: Array<(peer: DialedSocket) => void> = []
+    const accept = vi.fn(async () => await new Promise<DialedSocket>((resolve) => { offered.push(resolve) }))
+    const offer = async (peer: DialedSocket): Promise<void> => {
+      await vi.waitFor(() => { expect(offered.length).toBeGreaterThan(0) })
+      offered.shift()!(peer)
+    }
+    const broker = createBroker(baseDeps({ listen: async () => okListenedServer({ accept }) }))
+    broker.registerApp(APP, manifestWith({ net: { concurrentSockets: 3, tcp: { listen: { network: ['30000-30010'] } } } }))
+    await broker.grant(APP, 'tcp.listen.network', ['30000-30010'])
+    const server = await broker.net.listen(APP, { port: 30000 })
+    const reader = server.connections.getReader()
+
+    const firstRead = reader.read()
+    await offer(peers[0]!)
+    const first = (await firstRead).value!
+    const secondRead = reader.read()
+    await offer(peers[1]!)
+    await secondRead
+
+    // The third peer finds the allowance full: it is dropped once and the read stays pending.
+    const pending = reader.read()
+    await offer(peers[2]!)
+    await vi.waitFor(() => { expect(peers[2]!.destroy).toHaveBeenCalledTimes(1) })
+    expect(peers[2]!.destroy).toHaveBeenCalledWith('failed')
+
+    // The listener is accepting again: a slot frees and the next peer reaches the waiting read.
+    await first.close()
+    await offer(peers[3]!)
+    const delivered = (await pending).value
+    expect(delivered?.id).toEqual(expect.any(String))
+    expect(peers[3]!.destroy).not.toHaveBeenCalled()
+    expect(accept).toHaveBeenCalledTimes(4)
+  })
 })

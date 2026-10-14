@@ -346,11 +346,12 @@ const nodeFsSync: BrokerFsSync = {
   },
   rm: (path, opts) => { rmSync(path, { recursive: opts?.recursive ?? false }) },
   rename: (from, to) => { renameSync(from, to) },
-  diskUsage: diskUsageSync
+  diskUsage: (path, maxEntries) => diskUsageSync(path, { left: maxEntries ?? Infinity })
 }
 
-/** `diskUsage`, blocking: lstat, never stat, so a symlink is counted as itself and never followed. */
-function diskUsageSync (path: string): number {
+/** `diskUsage`, blocking: lstat, never stat, so a symlink is counted as itself and never followed. `budget.left` entries remain; `null` once the tree needs more. */
+function diskUsageSync (path: string, budget: { left: number }): number | null {
+  if (--budget.left < 0) return null
   let info
   try {
     info = lstatSync(path)
@@ -360,7 +361,13 @@ function diskUsageSync (path: string): number {
   }
   if (info.isFile()) return info.size
   if (!info.isDirectory()) return 0
+  const names = readdirSync(path)
+  if (names.length > budget.left) return null
   let total = 0
-  for (const name of readdirSync(path)) total += diskUsageSync(join(path, name))
+  for (const name of names) {
+    const part = diskUsageSync(join(path, name), budget)
+    if (part === null) return null
+    total += part
+  }
   return total
 }

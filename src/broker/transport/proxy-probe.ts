@@ -39,6 +39,14 @@ const CACHE_TTL_MS = 5_000
  */
 const MAX_CACHE_ENTRIES = 1024
 
+/**
+ * The longest URL the probe will look up or remember. `proxyProbeUrl` already
+ * refuses what no policy would allow; this bounds the cache in bytes as well
+ * as entries for any caller that builds a URL another way. A longer URL
+ * answers "a proxy applies" without being asked or kept.
+ */
+const MAX_PROBE_URL_LENGTH = 320
+
 async function resolveWithTimeout (resolveProxy: (url: string) => Promise<string>, url: string): Promise<string> {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
@@ -78,6 +86,7 @@ export function cachingProxyProbe (resolveProxy: (url: string) => Promise<string
   }
 
   return async (url) => {
+    if (typeof url !== 'string' || url.length > MAX_PROBE_URL_LENGTH) return true
     const cached = cache.get(url)
     if (cached !== undefined && cached.expiresAt > now()) {
       remember(url, cached) // a hit is also a touch: moves url to most-recently-used

@@ -46,6 +46,13 @@ rides `.network` alone. The first grant whose ports cover the port wins and the 
 inside its ranges only, so a wider grant beside it never lends ranges to a port the chosen one
 does not cover.
 
+**[`own-loopback.ts`](own-loopback.ts) is the exclusion a loopback grant never overrides.** The
+loopback listeners Orivon runs (the verifier, held local nodes, route fronts) are kept from pages by
+a webRequest gate that an `orivon.net` socket never passes through, so `connect` and `connectSecure`
+refuse this machine on those ports after the grant check. The held ports come from the caller
+(`CreateBrokerOptions.ownLoopbackPort`), because they live in the main process and change while it
+runs.
+
 **`bind(0)` returns ranges, not a yes.** Port 0 asks the OS to pick, and a bare yes would let it
 pick outside what the person read ("ports 6881-6889"). Returning the granted ranges means the
 caller binds inside them by the shape of the result, as `ConnectAllowed.addresses` does for
