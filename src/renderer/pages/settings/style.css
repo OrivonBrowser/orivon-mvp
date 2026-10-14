@@ -175,6 +175,7 @@ details > summary { cursor: pointer; }
 .perm { display: flex; align-items: center; gap: 10px; }
 .perm .grant-icon { width: 16px; height: 16px; flex: none; color: var(--wink-dim); }
 .perm.warning .perm-text { color: var(--wwarn); }
+.perm.busy .switch { opacity: 0.6; }
 .perm-text { flex: 1; min-width: 0; overflow-wrap: anywhere; display: grid; gap: 2px; }
 .perm-note { font-size: 12.5px; }
 .app-stored { margin: 6px 0 0; font-size: 12.5px; }

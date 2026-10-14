@@ -7,7 +7,7 @@ import type { NetworksView } from '../../networks/networks-view.js'
 
 const handlers = new Map<string, (event: unknown, command: unknown) => unknown>()
 
-const { registerNetworksIpc, REFRESH_MS } = await import('../networks-ipc.js')
+const { registerNetworksIpc, REFRESH_MS, PUSH_GAP_MS } = await import('../networks-ipc.js')
 const { NETWORKS_CHANGED_CHANNEL, NETWORKS_COMMAND_CHANNEL } = await import('../../channels.js')
 
 const PANEL_URL = 'app://orivon/networks/index.html'
@@ -23,7 +23,29 @@ function fakeSource (overrides: Partial<NetworksSource> = {}): NetworksSource {
   return { view: vi.fn(() => VIEW), dot: vi.fn(() => 'none' as const), setSwitch: vi.fn(() => true), onChange: vi.fn(() => () => {}), ...overrides }
 }
 
-const noTimers = { every: () => () => {} }
+const noTimers = { every: () => () => {}, after: () => () => {}, now: () => 0 }
+
+/** A clock and a one-shot timer a test moves by hand. */
+function handClock () {
+  let time = 1_000
+  const waiting: Array<{ at: number, run: () => void, stop: ReturnType<typeof vi.fn> }> = []
+  return {
+    timers: {
+      every: () => () => {},
+      now: () => time,
+      after: (callback: () => void, ms: number) => {
+        const entry = { at: time + ms, run: callback, stop: vi.fn(() => { waiting.splice(waiting.indexOf(entry), 1) }) }
+        waiting.push(entry)
+        return entry.stop
+      }
+    },
+    advance (ms: number): void {
+      time += ms
+      for (const entry of [...waiting]) if (entry.at <= time) { waiting.splice(waiting.indexOf(entry), 1); entry.run() }
+    },
+    waiting: () => waiting.length
+  }
+}
 
 function dispatch (command: unknown, senderFrame: unknown = PANEL_FRAME): unknown {
   const fn = handlers.get(NETWORKS_COMMAND_CHANNEL)
@@ -92,7 +114,7 @@ describe('what is pushed while the popup is open', () => {
     let tick: (() => void) | undefined
     let period = 0
     const stops = { listener: vi.fn(), timer: vi.fn() }
-    const cleanup = registerNetworksIpc(panelContents(send), PANEL_URL, fakeSource({ onChange: (listener) => { change = listener; return stops.listener } }), () => {}, () => {}, { every: (callback, ms) => { tick = callback; period = ms; return stops.timer } })
+    const cleanup = registerNetworksIpc(panelContents(send), PANEL_URL, fakeSource({ onChange: (listener) => { change = listener; return stops.listener } }), () => {}, () => {}, { ...noTimers, every: (callback, ms) => { tick = callback; period = ms; return stops.timer } })
     expect(period).toBe(REFRESH_MS)
     change?.()
     tick?.()
@@ -102,10 +124,41 @@ describe('what is pushed while the popup is open', () => {
     expect(stops.timer).toHaveBeenCalledTimes(1)
   })
 
+  it('coalesces a burst of changes into one push now and one when the gap is over', () => {
+    const send = vi.fn()
+    const clock = handClock()
+    let change: (() => void) | undefined
+    registerNetworksIpc(panelContents(send), PANEL_URL, fakeSource({ onChange: (listener) => { change = listener; return () => {} } }), () => {}, () => {}, clock.timers)
+    for (let index = 0; index < 20; index += 1) change?.()
+    expect(send).toHaveBeenCalledTimes(1)
+    clock.advance(PUSH_GAP_MS - 1)
+    expect(send).toHaveBeenCalledTimes(1)
+    clock.advance(1)
+    expect(send).toHaveBeenCalledTimes(2)
+    expect(clock.waiting()).toBe(0)
+    clock.advance(10 * PUSH_GAP_MS)
+    change?.()
+    expect(send).toHaveBeenCalledTimes(3)
+  })
+
+  it('drops a push still waiting when the popup goes', () => {
+    const send = vi.fn()
+    const clock = handClock()
+    let change: (() => void) | undefined
+    const cleanup = registerNetworksIpc(panelContents(send), PANEL_URL, fakeSource({ onChange: (listener) => { change = listener; return () => {} } }), () => {}, () => {}, clock.timers)
+    change?.()
+    change?.()
+    expect(clock.waiting()).toBe(1)
+    cleanup()
+    expect(clock.waiting()).toBe(0)
+    clock.advance(PUSH_GAP_MS)
+    expect(send).toHaveBeenCalledTimes(1)
+  })
+
   it('sends nothing to a popup that is already destroyed', () => {
     const send = vi.fn()
     let tick: (() => void) | undefined
-    registerNetworksIpc(panelContents(send, true), PANEL_URL, fakeSource(), () => {}, () => {}, { every: (callback) => { tick = callback; return () => {} } })
+    registerNetworksIpc(panelContents(send, true), PANEL_URL, fakeSource(), () => {}, () => {}, { ...noTimers, every: (callback) => { tick = callback; return () => {} } })
     tick?.()
     expect(send).not.toHaveBeenCalled()
   })

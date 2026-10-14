@@ -1,7 +1,7 @@
-// The origins whose first-visit question the person answered with Deny (ADR-0074): each opens as a plain website
+// The origins whose first-visit question the person closed with every switch off (ADR-0085): each opens as a plain website
 // and is not asked about again, until the person asks for the question back (Settings, Sites). A site-level record,
 // kept apart from the broker's per-capability refusals: it authorises nothing and only ever suppresses a question.
-// Written only by a pressed Deny; Escape, a closed tab and a navigation record nothing.
+// Written only by a pressed Close with nothing on; Escape, a closed tab and a navigation record nothing.
 import { mkdirSync, readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'

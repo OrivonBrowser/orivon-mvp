@@ -15,7 +15,7 @@ interface ListReply {
   readonly isPrivate: boolean
   readonly defaults: readonly DefaultRow[]
   readonly sites: readonly SiteSummary[]
-  /** The apps whose first-visit question was answered Deny, as origins. */
+  /** The apps whose first-visit question was closed with every switch off, as origins. */
   readonly declinedApps?: readonly string[]
 }
 

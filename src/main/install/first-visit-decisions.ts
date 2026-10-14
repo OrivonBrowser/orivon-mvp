@@ -11,7 +11,7 @@ export interface VisitState {
   readonly pinned: boolean
   /** `'0.0.0'` for an origin no version was ever registered for. */
   readonly versionFloor: string
-  /** The person pressed Deny on this origin's first-visit question (`./declined-apps.ts`). */
+  /** The person closed this origin's first-visit question with every switch off (`./declined-apps.ts`). */
   readonly declined: boolean
 }
 

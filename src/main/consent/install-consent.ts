@@ -13,6 +13,7 @@ import { patternSetFromCapabilities } from '../../broker/policy/manifest-pattern
 import type { Broker } from '../../broker/broker-contracts.js'
 import type { CapabilityKind, Manifest } from '../../contracts/index.js'
 import { grantChangedCapabilities } from './grant-changed-capabilities.js'
+import { offeredCapabilities } from './install-consent-panel.js'
 import type { DialogCaller } from './request-grant.js'
 
 /**
@@ -39,8 +40,8 @@ export type InstallConsentOutcome = 'granted' | 'declined' | 'not-asked' | 'left
 /**
  * Runs d-0025's whole flow for one freshly-installed origin: work out what is outstanding (declared, neither held nor
  * declined), skip asking when nothing is, show the question, grant what the person allowed and record the rest as
- * declined. A way out of the question counts as a no here, where `askInstallConsent` (./install-consent-ask.ts) leaves
- * it unrecorded.
+ * declined. Only a pressed Close with nothing on is a no: a way out of the question (`null`) records nothing and
+ * answers `left`, as `askInstallConsent` (./install-consent-ask.ts) does.
  *
  * Never throws. A failure anywhere in here -- no prompt wired, the prompt itself rejecting, a grant call rejecting --
  * degrades to "nothing new granted", rather than un-installing an app that already finished installing.
@@ -65,8 +66,11 @@ export async function requestInstallConsent (
 
   // OUTSTANDING = covered by neither a live grant nor a past decline (A145, A172).
   const declined = await broker.declinedCapabilitiesFor(origin)
-  const outstanding = declined === undefined ? notHeld : notHeld.filter((capability) => !declined.includes(capability))
-  if (outstanding.length === 0) return held.length > 0 ? 'not-asked' : 'declined'
+  const undecided = declined === undefined ? notHeld : notHeld.filter((capability) => !declined.includes(capability))
+  if (undecided.length === 0) return held.length > 0 ? 'not-asked' : 'declined'
+  // Only a capability the question can show as a row is asked about, so only one the person saw can be refused.
+  const outstanding = offeredCapabilities(manifest, undecided)
+  if (outstanding.length === 0) return 'not-asked'
 
   if (consent === undefined) return 'not-asked' // no prompt wired -- fail closed, same stance request-grant.ts takes
 
@@ -78,12 +82,13 @@ export async function requestInstallConsent (
     return 'left'
   }
 
-  // The page that asked may have navigated away, or closed, while the question was up: nobody who can still see this
-  // origin answered it, so nothing is granted and, as important, nothing is recorded as declined.
-  if (caller !== undefined && !caller.stillOn(origin)) return 'left'
+  // The page that asked may have navigated away, or closed, while the question was up, and Escape or a withdrawn
+  // question is no answer either: nothing is granted and, as important, nothing is recorded as declined.
+  if (answered === null || (caller !== undefined && !caller.stillOn(origin))) return 'left'
 
   // Filtered back down to `outstanding`, so a broken prompt fails toward asking again, never toward granting something nobody was shown.
-  const accepted = outstanding.filter((capability) => answered?.includes(capability) === true)
+  const chosen = answered
+  const accepted = outstanding.filter((capability) => chosen.includes(capability))
   const refused = outstanding.filter((capability) => !accepted.includes(capability))
 
   // A capability that silently fails to grant (grantChangedCapabilities swallows a per-capability failure) is never

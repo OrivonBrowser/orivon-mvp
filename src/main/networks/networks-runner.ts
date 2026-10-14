@@ -7,6 +7,7 @@ import { swarmNode } from '../verifier/swarm-node-subsystem.js'
 import { lightClientForcedOff, nodeTraffic, onVerifierChange, verifierProcessInfo, verifierView } from '../verifier/verifier-subsystem.js'
 import type { SettingsStore } from '../settings/settings-store.js'
 import type { SubsystemContext } from '../registry.js'
+import { nymSourceFor } from './nym-watch.js'
 import { createNetworksSource } from './networks-source.js'
 import type { NetworksSource, ProcessMetric } from './networks-source.js'
 
@@ -32,13 +33,7 @@ export function createNetworks (settings: SettingsStore, ctx: SubsystemContext):
     ipfs: ipfsNode,
     swarm: swarmNode,
     traffic: nodeTraffic,
-    // The routes are published after the shell's services are made, so Nym is looked for when asked.
-    nym: {
-      state: () => ctx.routes?.nym.state() ?? { state: 'off' },
-      tunnels: () => ctx.routes?.nym.tunnels() ?? { connecting: 0, ready: 0 },
-      processInfo: () => ctx.routes?.nym.processInfo(),
-      onChange: (listener) => ctx.routes?.nym.onChange(listener) ?? (() => {})
-    },
+    nym: nymSourceFor(ctx),
     metrics: readMetrics
   })
 }

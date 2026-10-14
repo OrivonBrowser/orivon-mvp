@@ -1,9 +1,10 @@
 // A published app's first visit (ADR-0075, ADR-0076): the page loads at once as an ordinary website, with no grant. The
 // manifest is read beside it and the person is asked as soon as it is; from that same moment the app is cached (the
-// declared tree read, every file downloaded and checked, kept staged), whatever the answer will be. Allow grants, serves
-// the app checked, pins what was staged and reloads the tab as the app; Deny keeps the plain website and stops the
-// caching. Any file that is not the declared one is bad data: the page is stopped and the origin taken away. No
-// Electron: the tab's screens and its way into the app are the `SetupHost` the caller brings.
+// declared tree read, every file downloaded and checked, kept staged), whatever the answer will be. Grant all, or Close
+// with some switch on, grants what is on, serves the app checked, pins what was staged and reloads the tab as the app;
+// Close with every switch off keeps the plain website and stops the caching. Any file that is not the declared
+// one is bad data: the page is stopped and the origin taken away. No Electron: the
+// tab's screens and its way into the app are the `SetupHost` the caller brings.
 
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { Broker } from '../../broker/broker-contracts.js'
@@ -30,7 +31,7 @@ export interface FirstVisitDeps {
   readonly broker: Broker
   readonly loader: Pick<Loader, 'readManifest' | 'readDeclaration' | 'serveLive' | 'endLive' | 'rememberConsent' | 'pendingConsents' | 'fetchForInstall' | 'installFetched' | 'pinFor'>
   readonly consent?: InstallConsentPrompt | undefined
-  /** The origins whose question was answered Deny: written by a pressed Deny and by nothing else. */
+  /** The origins whose question was closed with every switch off: written by that press of Close and by nothing else. */
   readonly declined: Pick<DeclinedApps, 'has' | 'add' | 'remove'>
   /**
    * Empties every open tab of an origin, and `entered` (the tab this visit let in), closes the other pages of its

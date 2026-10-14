@@ -262,8 +262,7 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     async turnOff (origin, capability) {
       const broker = ctx.broker
       if (broker === undefined) return
-      await turnOffCapability(broker, origin, capability)
-      entry.changed()
+      if (await turnOffCapability(broker, origin, capability) === 'ok') entry.changed()
     },
 
     async revokePickedPath (origin, pickId) {

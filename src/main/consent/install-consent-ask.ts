@@ -10,6 +10,7 @@ import type { Broker } from '../../broker/broker-contracts.js'
 import type { CapabilityKind, Manifest } from '../../contracts/index.js'
 import { grantChangedCapabilities } from './grant-changed-capabilities.js'
 import type { InstallConsentPrompt } from './install-consent.js'
+import { offeredCapabilities } from './install-consent-panel.js'
 import type { DialogCaller } from './request-grant.js'
 
 export type InstallAsk =
@@ -34,7 +35,8 @@ export async function askInstallConsent (
   const held = await broker.app.grants(origin)
   const notHeld = declared.filter((capability) => !held.some((existing) => existing.capability === capability))
   const refusedBefore = await broker.declinedCapabilitiesFor(origin)
-  const outstanding = refusedBefore === undefined ? notHeld : notHeld.filter((capability) => !refusedBefore.includes(capability))
+  const undecided = refusedBefore === undefined ? notHeld : notHeld.filter((capability) => !refusedBefore.includes(capability))
+  const outstanding = offeredCapabilities(manifest, undecided)
   if (outstanding.length === 0) return { outcome: 'not-asked' }
 
   if (consent === undefined) return { outcome: 'not-asked' }

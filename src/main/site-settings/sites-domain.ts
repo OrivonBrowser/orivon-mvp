@@ -22,7 +22,7 @@ const hostOf = (origin: string): string => {
   }
 }
 
-/** The origins whose first-visit question was answered Deny (`../install/declined-apps.ts`): listed here so the person can have it asked again. */
+/** The origins whose first-visit question was closed with every switch off (`../install/declined-apps.ts`): listed here so the person can have it asked again. */
 export interface DeclinedAppRows {
   list: () => string[]
   remove: (origin: string) => boolean
