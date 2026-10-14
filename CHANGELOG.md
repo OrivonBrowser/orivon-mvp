@@ -101,6 +101,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
+- **"Orivon Featured" on the new tab shows Explore, WebTorrent, ASGARDEX, Ledger Wallet and The Lounge**, each with its icon. The Extensions menu and page no longer point people to the Chrome Web Store.
 - **Nym privacy**: Settings > Privacy and data offers Balanced (the default, a fraction of the processor time) or Strongest (Nym's steady decoy traffic, about a third of a core for each open tunnel). Tunnels now start at Balanced unless you choose Strongest.
 - **A website can go through the tunnel too**: the key in the address bar offers "Use the tunnel for this site". The site then gets its own
   storage, kept apart from the rest of your browsing (you are told first, and sign in to it again once), and Settings lists the sites and apps with a setting of their own (ADR-0082).
@@ -443,6 +444,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Fixed
 
+- **A middle-click on a tab no longer pastes into the address bar on Linux.** The release of the middle button pasted the selection into the focused field before the tab closed; it is cancelled everywhere but over a field, so pasting into one still works.
 - **Nym is much faster to load pages and no longer leaves every page failing.** The Nym host looked names up one at a time inside the module, so each new site waited a second behind the one before it and a lost datagram stalled all of them for 30 s; about one tunnel in six came up unable to answer any lookup and was never replaced. The host now looks names up itself, all at once, tries a tunnel that cannot come up again through another gateway, and replaces a tunnel that carries nothing. The Settings test says that it is testing and why it failed, and the tunnel it opens is closed after its answer instead of burning a third of a core for ten minutes.
 - **Web3 through a tunnel waits as long as a mixnet needs.** With a tunnel carrying the verifier, a `.eth` load waits up to 60 s for the light client to sync (8 s before) and a name's proof is given 100 s (25 s), and the light client starts when a `.eth` name needs it or three minutes after the verifier starts, so its two-megabyte sync does not crowd out an `ipfs://` page.
 - **A run from source keeps the sign-ins an installed package made**: its binary encrypts cookies as a package's does

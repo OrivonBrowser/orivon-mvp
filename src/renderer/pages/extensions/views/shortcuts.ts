@@ -10,7 +10,6 @@ import type { ExtensionView, PageContext } from '../types.js'
 import { describeCommand, noticeFor, rowKey } from './shortcuts-model.js'
 import type { CommandRow, ExtensionGroup, Notice, Recorded, ShortcutsReply } from './shortcuts-model.js'
 
-const STORE = 'https://chromewebstore.google.com/category/extensions'
 const EXTENSION_ID = /^[a-p]{32}$/
 
 let data: ShortcutsReply | null = null
@@ -131,10 +130,7 @@ function emptyState (reply: ShortcutsReply): HTMLElement {
   return h('div', { className: 'empty-state' },
     keyboardIcon(),
     h('strong', { textContent: 'No shortcuts yet' }),
-    h('p', { textContent: 'Shortcuts of the extensions you add appear here.' }),
-    reply.installed > 0
-      ? null
-      : h('a', { className: 'link-btn', href: STORE, target: '_blank', rel: 'noopener', textContent: 'Get extensions from the Chrome Web Store' }))
+    h('p', { textContent: 'Shortcuts of the extensions you add appear here.' }))
 }
 
 function skeleton (): HTMLElement {

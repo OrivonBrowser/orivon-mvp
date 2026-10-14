@@ -33,6 +33,10 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - A .eth or ipfs:// site opened through your tunnel is now read entirely through it, name proofs included; Swarm sites are refused.
 - The tunnel now works per site or for the whole browser; tunnelled sites share one profile that keeps their logins and extensions.
 - An app's first-visit question is now a panel of switches, Grant all or Close; the key shows a dot while permissions are off.
+- Swarm and .eth IPFS sites now work on Windows: both local nodes silently failed to start there. Error pages gain Try again.
+- A slow IPFS node no longer leaves pages half loaded: a file it could not give is asked again once its memory clears.
+- Going offline no longer strips a loaded Web3 site's score; a site no provider has judged shows a gray Web? instead of Web2.5.
+- The new tab's Orivon Featured row is now Explore, WebTorrent, ASGARDEX, Ledger Wallet and The Lounge; no more Chrome Web Store advice.
 
 ### In my head
 

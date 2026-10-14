@@ -50,7 +50,7 @@ export const extensionsMenuPage: OverlayPage = {
       return reply
     }
 
-    const control = (key: string, kind: 'main' | 'pin' | 'more' | 'back' | 'manage' | 'store', element: HTMLElement): HTMLElement => {
+    const control = (key: string, kind: 'main' | 'pin' | 'more' | 'back' | 'manage', element: HTMLElement): HTMLElement => {
       element.dataset['key'] = key
       element.dataset['nav'] = kind
       return element
@@ -112,9 +112,7 @@ export const extensionsMenuPage: OverlayPage = {
     function listView (): Node[] {
       const head = h('div', { className: 'em-head' }, h('h2', { className: 'em-title' }, 'Extensions'), h('span', { className: 'item-sub em-site' }, siteLine(payload.site)))
       if (payload.rows.length === 0) {
-        const store = control('store', 'store', h('button', { type: 'button', className: 'link-btn', onclick: () => { void send({ type: 'store' }) } }, 'Get extensions from the Chrome Web Store'))
-        lines.push([store])
-        return [head, h('div', { className: 'empty-state compact' }, puzzleIcon(), h('span', null, 'Extensions you add appear here.'), store), footer()]
+        return [head, h('div', { className: 'empty-state compact' }, puzzleIcon(), h('span', null, 'Extensions you add appear here.')), footer()]
       }
       const list = h('ul', { className: 'listbox em-list', role: 'menu', ariaLabel: 'Extensions' })
       for (const row of payload.rows) {
