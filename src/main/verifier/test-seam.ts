@@ -9,7 +9,7 @@ const SEAM_ENABLED = typeof __ORIVON_DEV_GRANT_ENABLED__ !== 'undefined' && __OR
 
 // `var`, not `let`/`const`: TypeScript requires it for a `declare global` augmentation.
 declare global {
-  var __orivonDevEthFixtures: { readonly fixtures: Readonly<Record<string, string>>, listening: boolean, start?: () => void } | undefined
+  var __orivonDevEthFixtures: { readonly fixtures: Readonly<Record<string, string>>, listening: boolean, start?: () => void, idle?: () => void } | undefined
 }
 
 export interface EthTestSeam {
@@ -47,10 +47,11 @@ export function ethTestSeam (): EthTestSeam | undefined {
   return seam
 }
 
-/** Test builds only: lets a suite start the verifier host before it opens an address, since an ordinary launch starts it only when something needs it. */
-export function exposeVerifierStart (start: () => void): void {
+/** Test builds only: lets a suite start the verifier host before it opens an address, since an ordinary launch starts it only when something needs it, and put it to sleep (`idle`) as ten idle minutes do, so every mount is forgotten. */
+export function exposeVerifierStart (start: () => void, idle: () => void): void {
   if (!SEAM_ENABLED || ethTestSeam() === undefined || globalThis.__orivonDevEthFixtures === undefined) return
   globalThis.__orivonDevEthFixtures.start = start
+  globalThis.__orivonDevEthFixtures.idle = idle
 }
 
 /** Lets a test build's suite see when the verifier can answer, rather than guess with a delay. */
@@ -87,4 +88,11 @@ export function parseBackgroundPinDelayMs (env: Readonly<Record<string, string |
 /** Test builds only: how long after an app's tab is let in its whole bundle waits to download, so a suite can look at the page before the rest arrives; undefined in an ordinary build. */
 export function backgroundPinDelayMs (): number | undefined {
   return SEAM_ENABLED ? parseBackgroundPinDelayMs(process.env) : undefined
+}
+
+/** Test builds only: how long the Web3 Score provider's files are kept before they are asked for again; undefined in an ordinary build. */
+export function scoreAnswerKeptMs (): number | undefined {
+  if (!SEAM_ENABLED) return undefined
+  const kept = Number(process.env['ORIVON_TEST_SCORE_ANSWER_KEPT_MS'])
+  return Number.isFinite(kept) && kept >= 100 ? kept : undefined
 }

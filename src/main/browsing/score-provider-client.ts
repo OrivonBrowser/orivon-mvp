@@ -3,6 +3,7 @@
 // parser, so every protocol Orivon opens is a protocol a provider can live on.
 import { createHash } from 'node:crypto'
 import { MAX_SCORE_FILE_BYTES, SCORE_STANDARD, findEvaluation, parseDescriptor } from '../../trust/score-provider.js'
+import { isSettled, verdictToShow } from '../../trust/score-provider.js'
 import type { ProviderDescriptor, ProviderVerdict } from '../../trust/score-provider.js'
 import { directLookupSession, lookupSessionFor } from '../route/lookup-session.js'
 import { ownFetch } from '../route/own-requests.js'
@@ -22,6 +23,8 @@ export interface ScoreProviderDeps {
   /** `origin` is the app the lookup is made for, when it is one: a routed app's lookup goes through its route. */
   readonly fetchJson: (url: string, origin?: string) => Promise<FetchedJson>
   readonly now?: () => number
+  /** How long a fetched file is kept before it is asked for again; ten minutes unless a test build says otherwise. */
+  readonly answerKeptMs?: number | undefined
 }
 
 export interface ScoreProviderClient {
@@ -31,10 +34,14 @@ export interface ScoreProviderClient {
   readonly verdictFor: (id: string | undefined, waitMs?: number, origin?: string) => Promise<ProviderVerdict>
   /** The chosen provider's own name; its address when its description cannot be read; undefined with none chosen. Never throws. */
   readonly providerName: (origin?: string) => Promise<string | undefined>
+  /** Forgets the verdicts kept for pages, so none is shown when the provider cannot be asked. */
+  readonly forget: () => void
 }
 
 const ANSWER_KEPT_MS = 10 * 60_000
 const FAILURE_KEPT_MS = 60_000
+/** How many pages' last settled verdicts are remembered. */
+const SETTLED_KEPT = 256
 /** Past the verifier's own 25 s for proving a name: an IPFS-served provider's first answer waits on that proof. */
 const FETCH_TIMEOUT_MS = 30_000
 /** The folder a web3-score-manager build puts the provider's files in, under the site that publishes them. */
@@ -56,12 +63,26 @@ export function bucketOf (id: string, hexChars: number): string {
 
 export function createScoreProviderClient (deps: ScoreProviderDeps): ScoreProviderClient {
   const now = deps.now ?? Date.now
+  const answerKeptMs = deps.answerKeptMs ?? ANSWER_KEPT_MS
   const kept = new Map<string, { readonly at: number, readonly answer: Promise<FetchedJson> }>()
+  // The last verdict the provider settled per page, which an ask it cannot answer does not withdraw (verdictToShow).
+  // Unlike `kept` it does not expire: it is replaced by the next answer the provider does give.
+  const settled = new Map<string, ProviderVerdict>()
+  // A lookup begun before `forget` must not write its verdict back afterwards.
+  let generation = 0
+
+  function remember (key: string, verdict: ProviderVerdict, askedIn: number): ProviderVerdict {
+    if (!isSettled(verdict) || askedIn !== generation) return verdict
+    settled.delete(key)
+    settled.set(key, verdict)
+    if (settled.size > SETTLED_KEPT) settled.delete(settled.keys().next().value as string)
+    return verdict
+  }
 
   // One fetch per URL while it is in flight or kept: the shield asks several times a second while a page loads.
   async function cachedFetch (url: string, origin: string | undefined): Promise<FetchedJson> {
     const time = now()
-    for (const [key, entry] of kept) if (time - entry.at >= ANSWER_KEPT_MS) kept.delete(key)
+    for (const [key, entry] of kept) if (time - entry.at >= answerKeptMs) kept.delete(key)
     // A routed app's answer is its own: what its route could reach says nothing about a direct fetch, nor the reverse.
     const key = `${origin ?? ''} ${url}`
     let entry = kept.get(key)
@@ -118,6 +139,7 @@ export function createScoreProviderClient (deps: ScoreProviderDeps): ScoreProvid
   }
 
   return {
+    forget: () => { generation += 1; settled.clear() },
     async providerName (origin) {
       const address = deps.providerAddress().trim()
       if (address === '') return undefined
@@ -132,12 +154,14 @@ export function createScoreProviderClient (deps: ScoreProviderDeps): ScoreProvid
       const address = deps.providerAddress().trim()
       if (address === '') return { status: 'off' }
       if (id === undefined) return { status: 'not-assessable', address }
-      const answer = lookup(address, id, origin)
-      if (waitMs === undefined) return await answer
+      const key = `${origin ?? ''} ${address} ${id}`
+      const askedIn = generation
+      const answer = lookup(address, id, origin).then((verdict) => remember(key, verdict, askedIn))
+      if (waitMs === undefined) return verdictToShow(await answer, settled.get(key))
       let timer: ReturnType<typeof setTimeout> | undefined
       const pending = new Promise<ProviderVerdict>((resolve) => { timer = setTimeout(() => { resolve({ status: 'pending', address }) }, waitMs) })
       try {
-        return await Promise.race([answer, pending])
+        return verdictToShow(await Promise.race([answer, pending]), settled.get(key))
       } finally {
         clearTimeout(timer)
       }

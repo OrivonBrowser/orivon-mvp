@@ -48,6 +48,18 @@ describe('clearing browsing data', () => {
     expect(forgetNameSchemes).toHaveBeenCalledTimes(2)
   })
 
+  it('forgets the Website levels sites earned with site data, the cache and all history, and not with a part of history', async () => {
+    const forgetEarnedLevels = vi.fn()
+    const { deps } = setup()
+    const withLevels = { ...deps, forgetEarnedLevels }
+    await clearBrowsingData({ ...NOTHING, history: 'hour', zoomLevels: true }, withLevels)
+    expect(forgetEarnedLevels).not.toHaveBeenCalled()
+    await clearBrowsingData({ ...NOTHING, siteData: true }, withLevels)
+    await clearBrowsingData({ ...NOTHING, cache: true }, withLevels)
+    await clearBrowsingData({ ...NOTHING, history: 'all' }, withLevels)
+    expect(forgetEarnedLevels).toHaveBeenCalledTimes(3)
+  })
+
   it('stops the IPFS node and deletes what it kept with the cache and with all history, and not with a part of history', async () => {
     const forgetNodeData = vi.fn(async () => {})
     const { deps } = setup()

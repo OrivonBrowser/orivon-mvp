@@ -130,3 +130,12 @@ build. The host chooses the node or the gateways for each mount and says which s
 host: the running host is sent `ipfs-lookup` and asks a name service for an IPNS record only while it is allowed.
 `forgetIpfsNodeData` (clearing cached data or all history) stops the node, deletes its database once the process has
 exited, and replaces the partition salt (`verifier-store.ts`).
+
+**[`kept-provenance.ts`](kept-provenance.ts) keeps what the verifier last proved about a site, so a failure to look is not read as evidence.**
+`verifierNameEvidence` asks the host for the site's mount; the host forgets a mount ten minutes after it was proved,
+whenever it sleeps or restarts (an idle host, a tunnel or IPFS-source change, a crash), and a failed re-proof (offline, a
+tunnel down) does not renew it. Without a mount the evidence has no content and the Website level reads 1, so a site that
+was Level 2 or judged 4 would turn red and Web2 for being offline. The last provenance per site and route is shown instead,
+with the age of that check and a row saying it could not be repeated. Evidence against a site always arrives as a fresh
+provenance (a file that failed its check, another content root), which replaces the kept one. Clearing site data, the
+cache or all history forgets them (`forgetKeptProvenance`).

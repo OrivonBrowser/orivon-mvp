@@ -37,7 +37,7 @@ interface Web3Page {
   /** The toolbar shield's own `data-level` (Website level), read from the
    * CHROME window at the moment the popup is opened. */
   shieldLevel: string | null
-  /** The address pill's Web2/Web2.5/Web3 mark. */
+  /** The address pill's Web2/Web2.5/Web3/Web? mark. */
   shieldMark: string
 }
 
@@ -102,7 +102,7 @@ it('shows Website Level 2 for a .eth name, through a DNSLink too, Level 1 for an
       // A directly-named ipfs:// pointer's one contenthash hop verifies --
       // Delivery Level 2 (a proven name, content checked against its CID).
       check(`level.eth is Delivery level 2 (${level.deliveryHeading}; met ${level.deliveryMet.join(',')})`, level.deliveryHeading === 'Delivery level D2' && level.deliveryMet.join(',') === 'D1,D2')
-      check(`the shield paints level 2, marked "Web2.5" (shield=${String(level.shieldLevel)}/${level.shieldMark})`, level.shieldLevel === '2' && level.shieldMark === 'Web2.5')
+      check(`the shield paints level 2, marked "Web?" because no provider scored it (shield=${String(level.shieldLevel)}/${level.shieldMark})`, level.shieldLevel === '2' && level.shieldMark === 'Web?')
 
       await navigateToFixture(app, 'https://linked.eth/', 'linked fixture')
       const linked = await readWeb3Page(app)
