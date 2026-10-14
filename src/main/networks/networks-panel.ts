@@ -33,6 +33,8 @@ export function createNetworksPanel (
     preloadRelPath: '../preload/networks.js',
     urlArgName: 'orivon-networks-url',
     align: 'right',
+    // Four cards: shown whole, so only the window's own height makes the popup scroll.
+    maxHeight: Number.POSITIVE_INFINITY,
     background: PANEL_POPOVER_BACKGROUND,
     activeContents,
     registerIpc: (webContents, url, onContentHeight) => registerNetworksIpc(webContents, url, networks, onContentHeight, () => { popover.close() })
