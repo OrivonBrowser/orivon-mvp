@@ -139,7 +139,7 @@ const api: OrivonShell = {
   // The toolbar key's own at-a-glance state (a round trip, via `request`
   // above -- see ShellCommand's own doc on 'siteSummaryFor' for why
   // listing/revoking, and the full per-capability list, are NOT here), and
-  // opening the all-sites and site-info popups (fire-and-forget, like
+  // opening the Available networks and site-info popups (fire-and-forget, like
   // every other command above).
   siteSummaryFor: async (url: string) => await request<SiteSummary>({ type: 'siteSummaryFor', url }),
   // The address-bar shield's own displayed Website and Delivery level --

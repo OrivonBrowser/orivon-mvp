@@ -122,7 +122,9 @@ it('shows the light client failed, and why, when no beacon API can be reached', 
       const failed = await waitFor(async () => (await lightClient(opened)).state === 'Not running' && /Failed: /.test((await lightClient(opened)).summary), 45_000)
       const shown = await lightClient(opened)
       check(`the card says Not running with a reason and a retry (${JSON.stringify(shown)})`, failed && /Failed: .+\. Trying again/.test(shown.summary))
-      expect([waiting, failed]).toEqual([true, true])
+      const red = await waitFor(async () => (await findChrome(app).locator('#networks-btn .networks-dot').getAttribute('data-dot')) === 'red', 10_000)
+      check('and the dot on the toolbar button turns red: a node the person switched on failed', red)
+      expect([waiting, failed, red]).toEqual([true, true, true])
     } finally {
       await closeElectronApp(app, APP_CLOSE_RACE_MS)
     }

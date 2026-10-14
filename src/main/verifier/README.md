@@ -130,3 +130,13 @@ build. The host chooses the node or the gateways for each mount and says which s
 host: the running host is sent `ipfs-lookup` and asks a name service for an IPNS record only while it is allowed.
 `forgetIpfsNodeData` (clearing cached data or all history) stops the node, deletes its database once the process has
 exited, and replaces the partition salt (`verifier-store.ts`).
+
+**The light client, the Swarm node and the process facts apply at once or are read live.** `lightClientSettingChanged` puts the
+verifier host to sleep when `web3.lightClient` changes, so its next start builds the config from the new choice; the person's
+setting is read at each start (`configureVerifier`), and the environment's force-off still wins. `swarmSettingChanged` makes the
+Swarm node's controller read its `disabled` hook again (`LocalNodeController.reconsider`): a node that must not run is stopped
+and says why (`SWARM_SWITCHED_OFF`, which also names where to switch it on, and which a bzz:// page repeats), and one that may run
+again is asked for as usual, with no refusal remembered. Every supervisor can say its running process (`processInfo`: the
+process id and when it was forked), which `../networks/` matches to Electron's metrics. The verifier host counts what it reads from
+each node (`node-traffic.ts` in `protocols/verifier-host/`) and posts it at most once a second while the node is read; main keeps
+the last figures and folds a host's bytes into the session's total when the host sleeps (`nodeTraffic`).

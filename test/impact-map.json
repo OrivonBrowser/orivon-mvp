@@ -76,6 +76,7 @@
     { "prefix": "src/main/page-tools", "run": ["page"] },
     { "prefix": "src/main/pages", "run": ["shell-pages"] },
     { "prefix": "src/main/passwords", "run": ["sites"] },
+    { "prefix": "src/main/networks", "run": ["toolbar", "web3"] },
     { "prefix": "src/main/permissions", "run": ["sites"] },
     { "prefix": "src/main/privacy", "run": ["sites"] },
     { "prefix": "src/main/qr", "run": ["page"] },

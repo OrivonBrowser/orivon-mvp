@@ -273,7 +273,7 @@ it('lists each site\'s notification answer under Settings, Sites, and Reset forg
         Array.from(document.querySelectorAll<HTMLElement>('#row-sites-list .site-item')).map((item) => ({
           origin: item.dataset['origin'] ?? '',
           badges: Array.from(item.querySelectorAll('.badge')).map((badge) => badge.textContent ?? '')
-        })))).sort((a, b) => a.origin.localeCompare(b.origin))
+        })))).sort((a: { origin: string }, b: { origin: string }) => a.origin.localeCompare(b.origin))
       const listed = await waitFor(async () => (await badges()).length === 2)
       check('Settings, Sites lists each decided site with what it may do', listed && JSON.stringify(await badges()) === JSON.stringify([
         { origin: 'https://ads.example', badges: ['Notifications blocked'] },

@@ -1,10 +1,9 @@
 // Queue item 4.4's main-process half: the grant list, with revocation
 // (d-0027, owner decision 9 -- a grant lasts until revoked, and is visible
-// in a list the user can revoke from). Two renderer surfaces
-// (src/renderer/permissions-view.ts, the settings panel; the toolbar's
-// address-bar icon) both go through `PermissionsController` below, never
-// the broker directly -- neither is a `broker` import away from the trust
-// boundary this file already crossed once.
+// in a list the user can revoke from). The apps card in Settings
+// goes through `PermissionsController` below, never the broker directly --
+// it is not a `broker` import away from the trust boundary this file already
+// crossed once.
 //
 // REVOKE ONLY. There is no "forget this app entirely" here: that is
 // `GrantLedger.forgetOrigin` (ADR-0009's 2026-09-04 amendment), which has no

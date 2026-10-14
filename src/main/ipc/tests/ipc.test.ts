@@ -7,7 +7,7 @@ import type { SiteInfoController } from '../../permissions/site-info-controller.
 // commands are exercised end-to-end by scripts/smoke.mjs instead) -- this
 // file covers only the commands this lane and the site-info lane added on
 // COMMAND_CHANNEL: the toolbar key's per-tab summary, and opening the
-// all-sites and site-info popups. Listing every app and revoking live on
+// Available networks and site-info popups. The cards and their switches live on
 // the Available networks popup's OWN channel instead (networks-ipc.test.ts); the
 // site-info popup's own get/apply/trust/data commands live on ITS own
 // channel too (site-info-ipc.test.ts) -- see ShellCommand's own doc on why.

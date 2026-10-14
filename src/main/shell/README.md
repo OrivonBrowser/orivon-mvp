@@ -89,7 +89,7 @@ test-hook.ts` is the e2e-only record of what each was actually set to.
 [`../shortcuts/`](../shortcuts/) (the command table and the service the menu reads, and the command bus a window runs a chosen command through), [`../overlays/`](../overlays/) (the question panel is an overlay shown through the tab slots),
 [`../consent/grant-prompt-origin.ts`](../consent/grant-prompt-origin.ts) (the origin line every
 permission dialog shows), [`../sessions/`](../sessions/) (the two questions' types, and
-`permission-gate.ts`'s notification store, handed to the permissions panel; `web-request-owner.ts` and `handler-while-needed.ts`, for `eth-gateway-redirect.ts`),
+`permission-gate.ts`'s notification store; `web-request-owner.ts` and `handler-while-needed.ts`, for `eth-gateway-redirect.ts`),
 [`../dev/`](../dev/) (the developer-mode flag, the score-level override, the local resolvers),
 [`../verifier/`](../verifier/), the stores and services a window reads ([`../settings/`](../settings/),
 [`../history/`](../history/), [`../zoom/`](../zoom/), [`../devtools/`](../devtools/),

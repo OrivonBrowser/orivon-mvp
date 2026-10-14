@@ -2,7 +2,7 @@
 // ./permissions.ts's own `PermissionsController` (its header: "nothing
 // bypasses PermissionsController") for the per-site surface, kept as a
 // sibling rather than folded into that file so neither grows into a
-// single god-object covering both the all-sites list and the per-site
+// single god-object covering both the grant list and the per-site
 // popover (code-guidelines.md Rule 2).
 
 import { isNymTarget } from '../route/nym-provider.js'

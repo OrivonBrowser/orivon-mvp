@@ -93,7 +93,7 @@ it('the same popover opens in two windows one after the other', async () => {
   try {
     const first = await firstChrome(app)
     const second = await openSecondWindow(app, first)
-    const popovers = (): Page[] => app.windows().filter((w) => w.url().endsWith('/permissions/index.html'))
+    const popovers = (): Page[] => app.windows().filter((w) => w.url().endsWith('/networks/index.html'))
 
     await first.click('#networks-btn')
     expect(await waitFor(() => popovers().length === 1)).toBe(true)
@@ -105,7 +105,7 @@ it('the same popover opens in two windows one after the other', async () => {
 
     const [popover] = popovers()
     expect(popover).toBeDefined()
-    expect(await waitFor(async () => await popover?.locator('#empty-state').count() === 1)).toBe(true)
+    expect(await waitFor(async () => await popover?.locator('.card').count() === 4)).toBe(true)
     expect(mainOutput(app)).not.toContain('second handler')
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {

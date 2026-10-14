@@ -1,7 +1,7 @@
 // ADR-0037: an L4 site's grants are shown without warnings, on every
 // consent surface a grant summary ever reaches -- the dialogs
 // (grant-prompt-render.ts, grant-prompt-choice.ts), the site-info popup's
-// switch rows (../permissions/site-info.ts) and the all-sites panel's rows
+// switch rows (../permissions/site-info.ts) and the apps card's rows in Settings
 // (../permissions/permissions.ts). ONE rule, applied at row-building time,
 // rather than each caller re-deriving its own "is this L4" branch --
 // code-guidelines.md Rule 3.

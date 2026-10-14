@@ -67,3 +67,8 @@ the host started (ADR-0030's 2026-09-26 amendment); taking it for a proxied gate
 bypass that proxy, and the check being a snapshot is T40's residual there too.
 
 **The routed fetch speaks to the profile's front, not to the tunnel's SOCKS5 address.** [`routed-fetch.ts`](routed-fetch.ts) sends a `CONNECT` with the front's sign-in and then runs TLS over the stream, with Node's own sockets, because `net.fetch` in a utility process cannot sign in to a front (it ends at the `407`). The front is the one place that already waits for Nym to start, follows a changed tunnel and fails closed with nothing direct, and Nym's port changes at every start, so the host would otherwise have to ask main for an address at each connection. Connections are kept alive and pooled per destination, since a Nym stream is slow to open. It follows no redirect (a 3xx comes back as a response and `allowlisted` refuses it), carries no cookie and no cache, and takes plain HTTP only in a test build's fixture.
+
+**The host counts what it reads from a node.** [`node-traffic.ts`](node-traffic.ts) wraps each read `NodeLink.reading` makes:
+the read is in flight from its start to the end of its body (or its cancel, or its failure), and every byte read is added up.
+The totals go to main as `node-traffic` at most once a second, with a last report when the reads stop, so a popup that shows them
+costs nothing while nobody looks. Nothing here decides anything: the figures are only what the Available networks popup says.
