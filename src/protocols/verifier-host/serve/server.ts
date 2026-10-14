@@ -333,8 +333,8 @@ function redirectToCanonical (registry: ProtocolRegistry, scheme: string, url: U
     // Any page can send one of these, and a protocol's parser may be slow on a long string.
     if (decoded.length > MAX_ADDRESS_NAME) throw new ResolutionError('invalid-name', `${scheme}:// names are at most ${String(MAX_ADDRESS_NAME)} characters`)
     // A top-level-domain name already has its own origin: send it straight there, never through this scheme's own resolution.
-    // Only a spelling that is already a host name: encoded delimiters would otherwise end the host inside the Location.
-    const named = isHostName(decoded) ? registry.addresses.nameOrigin(decoded) : undefined
+    // Only a spelling that is a host name once lowercased (nameOrigin lowercases it): encoded delimiters would otherwise end the host inside the Location.
+    const named = isHostName(decoded.toLowerCase()) ? registry.addresses.nameOrigin(decoded) : undefined
     if (named !== undefined) {
       redirectTo(res, named, path, url.search)
       return
