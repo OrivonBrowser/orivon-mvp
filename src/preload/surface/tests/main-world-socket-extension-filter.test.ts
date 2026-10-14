@@ -455,10 +455,10 @@ describe('installOrivon: real caller attribution', () => {
     `
     const TAMPERS: Record<string, string> = {
       'Array.prototype.constructor species': `${SWALLOWING_SPECIES}\nArray.prototype.constructor = { [Symbol.species]: swallower }`,
-      'Array[Symbol.species] getter': `${SWALLOWING_SPECIES}\nObject.defineProperty(Array, Symbol.species, { get () { return swallower }, configurable: true })`,
+      'Array[Symbol.species] getter': `${SWALLOWING_SPECIES}\nReflect.defineProperty(Array, Symbol.species, { get () { return swallower }, configurable: true })`,
       'an Array.prototype index setter and getter': `
         const lie = { fileName: 'https://forged.example/page.js' }
-        for (const i of [0, 1, 2, 3, 4, 5, 6, 7]) Object.defineProperty(Array.prototype, i, { set () {}, get () { return lie }, configurable: true })
+        for (const i of [0, 1, 2, 3, 4, 5, 6, 7]) Reflect.defineProperty(Array.prototype, i, { set () {}, get () { return lie }, configurable: true })
       `,
       'Array.prototype[Symbol.iterator] and Array.prototype.length-reading helpers': `
         Array.prototype[Symbol.iterator] = function* () { yield { fileName: 'https://forged.example/page.js' } }
@@ -469,7 +469,7 @@ describe('installOrivon: real caller attribution', () => {
       `,
       'Object.prototype accessors a property descriptor would read': `
         for (const key of ['get', 'set', 'value', 'writable', 'enumerable', 'configurable', 'fileName', 'length']) {
-          Object.defineProperty(Object.prototype, key, Object.assign(Object.create(null), { get () { return key === 'fileName' ? 'https://forged.example/page.js' : undefined }, set () {}, configurable: true }))
+          Reflect.defineProperty(Object.prototype, key, Object.assign(Object.create(null), { get () { return key === 'fileName' ? 'https://forged.example/page.js' : undefined }, set () {}, configurable: true }))
         }
       `
     }
