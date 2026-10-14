@@ -2,16 +2,17 @@
 
 **What lives here.** What the toolbar's Available networks button shows and does: a card for each node Orivon runs
 on this computer (the Ethereum light client, the IPFS node, the Swarm node, the Nym tunnel), with a status word, a switch,
-one sentence on what the node does for the person, and the figures known of it. Four files, from the facts to the window:
+one sentence on what the node does for the person, and the figures known of it. Five files, from the facts to the window:
 
 | File | What it is |
 |---|---|
 | `networks-view.ts` | pure: the facts of the four nodes in, the cards and the toolbar dot out (statuses, notes, figures, the colour of the dot) |
 | `networks-source.ts` | gathers the facts from injected sources, builds the view, and moves a card's switch by the setting Settings uses for the same thing; Electron-free |
+| `nym-watch.ts` | Nym as the popup reads it: joins the routes' Nym on the first read or subscription that finds the routes published, so a subscription made earlier is not lost; Electron-free |
 | `networks-runner.ts` | the one file that touches live things: the verifier, the two nodes, Nym and `app.getAppMetrics()` |
 | `networks-panel.ts` | the popup, on `../permissions/popover-view.ts`, with its IPC (`../ipc/networks-ipc.ts`) |
 
-**Tied to Electron.** `networks-runner.ts` and `networks-panel.ts` import `electron`; the other two are pure and run under
+**Tied to Electron.** `networks-runner.ts` and `networks-panel.ts` import `electron`; the other three are pure and run under
 plain vitest.
 
 **What it depends on.** [`../verifier/`](../verifier/) (the light client view, the node subsystems, the traffic the
