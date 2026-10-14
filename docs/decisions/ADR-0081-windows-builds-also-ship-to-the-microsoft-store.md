@@ -55,4 +55,5 @@ either today notices.
   workflow steps; the runtime changes only act when `process.windowsStore` is true.
 - **What would make us revisit:** the Store refusing the listing (a browser that runs third-party apps), Microsoft
   Artifact Signing or a certificate becoming obtainable and reputation-free, or a Chromium-currency duty the project
-  cannot keep.
+  cannot keep. [`d-0636`](decision-log.md) keeps the installer unsigned until the project has an incorporated
+  company, and records what each signing route required and cost on 2026-10-14.
