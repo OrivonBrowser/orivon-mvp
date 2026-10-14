@@ -187,7 +187,7 @@ it('sends neither signal when both are off, and strips a cross-site cookie at bo
   }
 }, TEST_TIMEOUT_MS)
 
-it('shows the ten rows in Settings, saves a choice, applies it on the next request, accepts secure DNS live and offers a restart for the signal', async () => {
+it('shows the eleven rows in Settings, saves a choice, applies it on the next request, accepts secure DNS live and offers a restart for the signal', async () => {
   const { app, chrome } = await launched({})
   try {
     const userData = await userDataOf(app)
