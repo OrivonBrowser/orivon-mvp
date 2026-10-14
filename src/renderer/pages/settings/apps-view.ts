@@ -45,8 +45,6 @@ function routeRow (app: AppRow, state: SettingsState): HTMLElement {
   const input = h('input', { type: 'checkbox', id: `route-${app.origin}`, checked: on, disabled: app.route.unreadable === true || (!on && app.route.blocked !== undefined) })
   input.dataset['focusKey'] = `${app.origin}|route`
   input.addEventListener('change', () => {
-    // A switch whose request is in flight stays enabled, so the keyboard keeps it through the redraw (a disabled input cannot hold focus), and a press is put back.
-    if (options.busy === true) { input.checked = !input.checked; return }
     // A click leaves the switch focused, and a focused input that is not settled holds every redraw (main.ts).
     input.dataset['settled'] = 'true'
     void state.apps.setRoute(app.origin, input.checked)
