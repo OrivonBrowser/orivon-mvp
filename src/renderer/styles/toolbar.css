@@ -323,6 +323,9 @@ browser-action-list::part(badge) {
   opacity: 0.55;
   cursor: not-allowed;
 }
+/* The wallet button waits, hidden, for a wallet; the display above would otherwise show it. */
+#identity[hidden] { display: none; }
+
 /* The dot on the Available networks button: how the nodes are. Green while one runs, amber while one starts or
    syncs, red when one that is switched on failed, and none while nothing runs. */
 .networks-btn { position: relative; }
