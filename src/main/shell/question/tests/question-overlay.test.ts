@@ -123,6 +123,32 @@ describe('the question handler', () => {
       expect(answered(Array.from({ length: 200 }, () => 'fs')).results).toEqual([])
     })
 
+    it('hands the switches back as each row\'s `on` when the same question is shown again, and starts a question over with its own', () => {
+      const r = rig(CHOICES)
+      const first = r.handler.show?.({ id: r.id }) as { choices: Array<{ id: string, on?: boolean }> }
+      expect(first.choices.map((choice) => choice.on)).toEqual([undefined, undefined])
+      draw(r)
+      expect(r.handler.request({ type: 'switched', id: r.id, chosen: ['id'] })).toBe(true)
+      const again = r.handler.show?.({ id: r.id }) as { choices: Array<{ id: string, on?: boolean }> }
+      expect(again.choices.map((choice) => [choice.id, choice.on])).toEqual([['fs', false], ['id', true]])
+      const other = rig(CHOICES)
+      expect((other.handler.show?.({ id: other.id }) as { choices: Array<{ on?: boolean }> }).choices.map((choice) => choice.on)).toEqual([undefined, undefined])
+    })
+
+    it('keeps only offered ids in what the page reports, and refuses a report for another question or one with no switches', () => {
+      const r = rig(CHOICES)
+      r.handler.show?.({ id: r.id })
+      r.handler.request({ type: 'switched', id: r.id, chosen: ['id', 'secrets', '__proto__'] })
+      const view = r.handler.show?.({ id: r.id }) as { choices: Array<{ id: string, on?: boolean }> }
+      expect(view.choices.map((choice) => [choice.id, choice.on])).toEqual([['fs', false], ['id', true]])
+      expect(r.handler.request({ type: 'switched', id: 'made-up', chosen: [] })).toBeUndefined()
+      expect(r.handler.request({ type: 'switched', id: r.id, chosen: [1] })).toBeUndefined()
+      expect(r.handler.request({ type: 'switched', id: r.id, chosen: [], extra: 1 })).toBeUndefined()
+      const plain = rig()
+      plain.handler.show?.({ id: plain.id })
+      expect(plain.handler.request({ type: 'switched', id: plain.id, chosen: ['fs'] })).toBeUndefined()
+    })
+
     it('refuses a list for a question that offers no switches, and answers a way out without one', () => {
       const r = rig()
       r.handler.show?.({ id: r.id })

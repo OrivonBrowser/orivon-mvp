@@ -9,6 +9,7 @@ import { findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from '../support/s
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from '../support/e2e-helpers.js'
 import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 import { answerQuestion, noNativeDialogs, questionGone, readQuestion, readSwitches, stubNativeDialogs, switchRow, waitQuestion } from '../support/question-support.js'
+import { runCommand } from '../support/auth-support.js'
 import { pageAt, savedGrants, watchPages, withDeclaredTree } from './first-visit-support.js'
 
 const files = (name: string, id: string): Record<string, string> => ({
@@ -76,6 +77,14 @@ it('[app:first-visit-asks-with-switches] [app:first-visit-key-dot] [app:first-vi
       check('the origin is named once', [asked.origin, asked.title, asked.message, asked.detail].join('\n').split(asked.origin).length === 2)
       await switchRow(panel, 'id')
       check('switching a row grants nothing by itself', savedGrants(userData, partialOrigin).length === 0)
+      // A tab switch away and back shows the same question again: the switch the person turned on stays on.
+      await runCommand(chrome, 'tab.new')
+      check('another tab in front takes the panel away', await waitFor(() => questionGone(running), 10_000))
+      await runCommand(chrome, 'tab.close')
+      const shownAgain = await waitQuestion(running, 20_000)
+      await shownAgain.waitForSelector('.q:not(.arming)')
+      const afterSwitch = JSON.stringify(await readSwitches(shownAgain))
+      check(`the switch turned on is still on after the question is shown again (${afterSwitch})`, afterSwitch === JSON.stringify([{ capability: 'fs', on: false }, { capability: 'id', on: true }]) || afterSwitch === JSON.stringify([{ capability: 'id', on: true }, { capability: 'fs', on: false }]))
       await answerQuestion(running, 'Close')
       const entered = await waitForTab(chrome, { address: `ipfs://${gateway.roots['partial']!}/`, title: 'Partial app' }, 60_000)
       check(`the app opened (${JSON.stringify(entered.info)})`, entered.ok)

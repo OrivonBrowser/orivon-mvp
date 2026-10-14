@@ -22,6 +22,8 @@ interface Held {
   readonly window: ShellWindow
   readonly spec: QuestionSpec
   readonly settle: (result: QuestionResult) => void
+  /** The ids of the rows the person has switched on so far, when they have moved one: the panel is built afresh at every show, and a tab switch away and back must not lose them. */
+  switched?: ReadonlySet<string>
 }
 
 /** Held in main by a random id: the page is told an id and never a spec it could be made to restate. */
@@ -65,6 +67,16 @@ function drawnId (command: unknown): string | undefined {
   const record = command as Record<string, unknown>
   if (record['type'] !== 'drawn' || Object.keys(record).length !== 2) return undefined
   return typeof record['id'] === 'string' ? record['id'] : undefined
+}
+
+/** The page's report of the rows now switched on: `{ type: 'switched', id, chosen }` and nothing else. */
+function asSwitched (command: unknown): { id: string, chosen: readonly string[] } | undefined {
+  if (typeof command !== 'object' || command === null) return undefined
+  const record = command as Record<string, unknown>
+  const { type, id, chosen } = record
+  if (type !== 'switched' || Object.keys(record).length !== 3 || typeof id !== 'string') return undefined
+  if (!Array.isArray(chosen) || chosen.length > MAX_CHOICES || !chosen.every((entry) => typeof entry === 'string')) return undefined
+  return { id, chosen: chosen as readonly string[] }
 }
 
 interface Arrival { type: 'enter' | 'leave', id: string, button: number }
@@ -118,13 +130,22 @@ export function createQuestionPanel (name: string, now: () => number = Date.now)
         shownAt = null
         keys.reset()
         disarm()
-        return viewOf(entry.id, entry.spec)
+        const view = viewOf(entry.id, entry.spec)
+        const { switched } = entry
+        return switched === undefined || view.choices === undefined ? view : { ...view, choices: view.choices.map((choice) => ({ ...choice, on: switched.has(choice.id) })) }
       },
 
       request: (command) => {
         const drawn = drawnId(command)
         if (drawn !== undefined) {
           if (drawn === shownId && shownAt === null) shownAt = now()
+          return true
+        }
+        const moved = asSwitched(command)
+        if (moved !== undefined) {
+          const entry = moved.id === shownId ? heldQuestion(moved.id) : undefined
+          if (entry?.spec.choices === undefined) return undefined
+          entry.switched = new Set(offeredOnly(entry.spec.choices, moved.chosen))
           return true
         }
         const arrival = asArrival(command)

@@ -124,6 +124,7 @@ export const questionPage: OverlayPage = {
           control.classList.toggle('on', on)
           control.setAttribute('aria-checked', String(on))
           showNote()
+          void overlay.request({ type: 'switched', id: view.id, chosen: [...switchedOn] })
         })
         const icon = isGrantIconKind(choice.icon) ? grantIcon(choice.icon) : undefined
         return h('li', { className: `q-choice${choice.warning === true ? ' warning' : ''}` }, icon, h('span', { className: 'q-choice-text' }, h('span', { className: 'q-choice-message' }, choice.message), choice.detail === undefined ? undefined : h('span', { className: 'q-choice-detail' }, choice.detail)), control)
@@ -133,6 +134,7 @@ export const questionPage: OverlayPage = {
     }
 
     function draw (view: QuestionView): void {
+      // The panel is built afresh at every show, so main holds the switches and hands them back as each row's `on`.
       showing = view
       switchedOn.clear()
       for (const choice of view.choices ?? []) if (choice.on === true) switchedOn.add(choice.id)
