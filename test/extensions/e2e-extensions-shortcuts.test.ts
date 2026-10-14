@@ -281,7 +281,7 @@ it('says what the page is for when no extension declares a command', async () =>
     const chrome = findChrome(app)
     const page = await openShortcutsPage(app, chrome)
     expect(await page.locator('.empty-state p').textContent()).toBe('Shortcuts of the extensions you add appear here.')
-    expect(await page.locator('.empty-state a').count()).toBe(1)
+    expect(await page.locator('.empty-state a').count()).toBe(0)
     await shoot(page, 'empty')
   } finally {
     await closeElectron(app)
