@@ -115,7 +115,7 @@ export function createManifestHintListener (
     if (visit === undefined || event.sender === undefined) { install(); return }
     const sender = event.sender
     // A page reporting its hint is a first visit when Orivon has never held its origin (ADR-0076): the page stays as
-    // it is, an ordinary website, while the person is asked and the app is cached; Allow reloads the tab as the app.
+    // it is, an ordinary website, while the person is asked and the app is cached; granting reloads the tab as the app.
     visit.kindOf(origin)
       .then(async (kind) => {
         if (kind === 'declined') { console.log(`[orivon] ${origin} was refused; it stays a plain website`); return }
