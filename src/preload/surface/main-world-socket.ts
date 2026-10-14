@@ -319,13 +319,13 @@ export function installOrivon (
   // Refuses extension code at every page-callable method below, over every built-in the decision path calls -- decision rule, what it catches and why: README.md's Design notes.
   const RealError = Error
   const nativeCaptureStackTrace = RealError.captureStackTrace
-  const { defineProperty: defineOwn, getOwnPropertyDescriptor: ownDescriptor, apply: applyOwn, getPrototypeOf: getProtoOf } = Reflect
-  const mapOwn = Array.prototype.map
+  const { defineProperty: defineOwn, getOwnPropertyDescriptor: ownDescriptor, apply: applyOwn, getPrototypeOf: getProtoOf, setPrototypeOf: setProtoOf } = Reflect
   const someOwn = Array.prototype.some
   const { indexOf: indexOfOwn, startsWith: startsWithOwn } = String.prototype
   function hasSource (text: unknown, needles: readonly string[]): boolean {
     return typeof text === 'string' && applyOwn(someOwn, needles, [(needle: string) => applyOwn(indexOfOwn, text, [needle]) !== -1])
   }
+  /** A descriptor is read through its prototype chain for any field it lacks, so every one built or replayed here has none. */ function bare (d: PropertyDescriptor | undefined): PropertyDescriptor | undefined { if (d !== undefined) setProtoOf(d, null); return d }
   interface CallerFrame { fileName?: string, scriptNameOrSourceURL?: string, evalOrigin?: string }
   // A document that is itself a local file runs scripts it loaded from `file:`, as a web page does from http(s); a web document has no `file:` frame of its own to count.
   const fileDocument = typeof window !== 'undefined' && window.location.protocol === 'file:'
@@ -340,12 +340,13 @@ export function installOrivon (
     if (applyOwn(someOwn, frames, [isExtension])) return true
     return !applyOwn(someOwn, frames, [isPage])
   }
-  // The four CallSite.prototype methods, saved by mapFrames' own first call (forced synchronously below); a live/saved mismatch is itself tamper. README.md's Design notes.
+  // The four CallSite.prototype methods, saved by mapFrames' own first call (forced synchronously below); a live/saved mismatch is itself tamper. mapFrames reads no built-in a page can redefine after install (Array species, index setters, Object.prototype fields). README.md's Design notes.
   let savedCallSiteMethods: CallSiteMethods | undefined
   function mapFrames (raw: readonly NodeJS.CallSite[]): CallerFrame[] {
-    return applyOwn(mapOwn, raw, [(cs: NodeJS.CallSite) => {
-      const live = getProtoOf(cs) as CallSiteMethods | null
-      if (live === null) throw new RealError('orivon: no CallSite prototype')
+    const frames: CallerFrame[] = []
+    for (let i = 0; i < raw.length; i++) {
+      const cs = raw[i] as NodeJS.CallSite
+      const live = getProtoOf(cs) as CallSiteMethods
       if (savedCallSiteMethods === undefined) {
         savedCallSiteMethods = { getFileName: live.getFileName, getScriptNameOrSourceURL: live.getScriptNameOrSourceURL, isEval: live.isEval, getEvalOrigin: live.getEvalOrigin }
       } else if (live.getFileName !== savedCallSiteMethods.getFileName || live.getScriptNameOrSourceURL !== savedCallSiteMethods.getScriptNameOrSourceURL ||
@@ -354,32 +355,31 @@ export function installOrivon (
       }
       const m = savedCallSiteMethods
       if (m.getFileName === undefined || m.getScriptNameOrSourceURL === undefined || m.isEval === undefined || m.getEvalOrigin === undefined) throw new RealError('orivon: CallSite methods unavailable')
-      return {
-        fileName: applyOwn(m.getFileName, cs, []) ?? undefined,
-        scriptNameOrSourceURL: applyOwn(m.getScriptNameOrSourceURL, cs, []) ?? undefined,
-        evalOrigin: applyOwn(m.isEval, cs, []) ? applyOwn(m.getEvalOrigin, cs, []) : undefined
+      const value = {
+        fileName: applyOwn(m.getFileName, cs, []) ?? undefined, scriptNameOrSourceURL: applyOwn(m.getScriptNameOrSourceURL, cs, []) ?? undefined, evalOrigin: applyOwn(m.isEval, cs, []) ? applyOwn(m.getEvalOrigin, cs, []) : undefined
       }
-    }]) as CallerFrame[]
+      if (!defineOwn(frames, i, { __proto__: null, value, writable: true, enumerable: true, configurable: true } as PropertyDescriptor)) throw new RealError('orivon: frame list unwritable')
+    }
+    return frames
   }
   /** Captures `exclude`'s caller's stack, excluding `exclude`'s own frame. `tampered: true` when the capture machinery was frozen first -- refuse rather than decide from an empty/partial stack. */
   function captureCaller (exclude: (...args: never[]) => unknown): { tampered: boolean, frames: CallerFrame[] } {
-    const savedPrepare = ownDescriptor(RealError, 'prepareStackTrace')
+    const savedPrepare = bare(ownDescriptor(RealError, 'prepareStackTrace'))
     let setPrepare = false
-    try { setPrepare = defineOwn(RealError, 'prepareStackTrace', { value: (_e: Error, s: unknown) => s, writable: true, configurable: true, enumerable: false }) } catch { setPrepare = false }
+    try { setPrepare = defineOwn(RealError, 'prepareStackTrace', { __proto__: null, value: (_e: Error, s: unknown) => s, writable: true, configurable: true, enumerable: false } as PropertyDescriptor) } catch { setPrepare = false }
     if (!setPrepare) return { tampered: true, frames: [] }
-    const savedLimit = ownDescriptor(RealError, 'stackTraceLimit')
+    const savedLimit = bare(ownDescriptor(RealError, 'stackTraceLimit'))
     let setLimit = false
-    try { setLimit = defineOwn(RealError, 'stackTraceLimit', { value: Infinity, writable: true, configurable: true, enumerable: false }) } catch { setLimit = false }
+    try { setLimit = defineOwn(RealError, 'stackTraceLimit', { __proto__: null, value: Infinity, writable: true, configurable: true, enumerable: false } as PropertyDescriptor) } catch { setLimit = false }
     // Any frozen value refuses raising it to Infinity, not just 0 -- README.md's Design notes.
     let tampered = !setLimit
     let frames: CallerFrame[] = []
     if (!tampered) {
       try {
-        const holder: { stack?: unknown } = {}
+        const holder = { __proto__: null } as { stack?: unknown }
         if (typeof nativeCaptureStackTrace === 'function') applyOwn(nativeCaptureStackTrace, RealError, [holder, exclude])
         else holder.stack = new RealError().stack
-        const raw = holder.stack as NodeJS.CallSite[] | undefined
-        frames = raw !== undefined && raw.length > 0 ? mapFrames(raw) : []
+        frames = mapFrames(holder.stack as NodeJS.CallSite[])
         if (frames.length === 0) tampered = true
       } catch { tampered = true }
     }
