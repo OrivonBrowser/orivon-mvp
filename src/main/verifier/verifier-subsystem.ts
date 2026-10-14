@@ -385,6 +385,7 @@ export const verifierSubsystem: Subsystem = {
       config: hostConfig,
       events: {
         starting: () => {
+          ledger.open()
           hostAsleep = false
           listeningGate.starting()
           changed()

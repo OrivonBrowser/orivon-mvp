@@ -395,6 +395,22 @@ describe('the verifier subsystem', () => {
     expect(nodeTraffic('ipfs-node')).toEqual({ active: 0, bytes: 500 })
   })
 
+  it('does not count a report twice that a host sends after it failed and before it exited, and counts the next host', async () => {
+    const { request, nodeTraffic } = await launch()
+    void request()
+    await vi.advanceTimersByTimeAsync(0)
+    forks()[0]?.listens()
+    forks()[0]?.emit('message', { type: 'node-traffic', node: 'ipfs-node', active: 2, bytes: 500 })
+    forks()[0]?.emit('message', { type: 'failed', stage: 'listen', message: 'port taken' })
+    forks()[0]?.emit('message', { type: 'node-traffic', node: 'ipfs-node', active: 2, bytes: 600 })
+    forks()[0]?.emit('exit', 1)
+    expect(nodeTraffic('ipfs-node')).toEqual({ active: 0, bytes: 500 })
+    await vi.advanceTimersByTimeAsync(60_000)
+    forks()[1]?.listens()
+    forks()[1]?.emit('message', { type: 'node-traffic', node: 'ipfs-node', active: 1, bytes: 40 })
+    expect(nodeTraffic('ipfs-node')).toEqual({ active: 1, bytes: 540 })
+  })
+
   it('says the light client is on and waiting before any .eth address was opened', async () => {
     const { verifierView } = await launch()
     expect(verifierView()).toMatchObject({ state: 'waiting', summary: expect.stringMatching(/^On, and waiting/) })
