@@ -1,6 +1,7 @@
 /**
  * Launches a packaged Orivon on a throwaway profile and passes once its shell page has rendered from
- * the shell scheme (served out of app.asar), so a release never carries a package that does not start. The release workflow runs
+ * the shell scheme (served out of app.asar) and uBlock Origin runs in that new profile, so a release never carries a
+ * package that does not start or that lost its bundled extension. The release workflow runs
  * it against the installed deb, the AppImage, the NSIS install and the mounted dmg.
  *
  * Usage: node scripts/run-headless.mjs node scripts/smoke-packaged.mjs <executable>
@@ -18,6 +19,8 @@ import { isInvokedDirectly } from './cli.mjs'
 // A native launch renders in about 10 s; an Intel build under Rosetta, translating Electron cold, can take minutes.
 const STARTUP_TIMEOUT_MS = 300_000
 const PROBE_TIMEOUT_MS = 5_000
+// The bundled extension installs after the shell renders, while the window is already in use.
+const BUNDLED_EXTENSION_MS = 60_000
 const SHELL_PAGE = /^orivon-shell:\/\/renderer\/index\.html(?:[?#].*)?$/
 const RENDERED = "document.readyState === 'complete' && document.body !== null && document.body.childElementCount > 0"
 
@@ -37,6 +40,17 @@ export function devToolsPort (output) {
  */
 export function shellTarget (targets) {
   return targets.find((target) => target.type === 'page' && SHELL_PAGE.test(target.url) && target.webSocketDebuggerUrl !== undefined)
+}
+
+/** uBlock Origin's id, from the key in the `.crx` resources/default-profile/bundled-extensions.json pins. */
+export const BUNDLED_EXTENSION_ID = 'fkgkibajhfbepljeaefdnfnegdcjomkh'
+
+/**
+ * Whether a target of the bundled extension is running: a new profile starts with it installed (ADR-0066).
+ * @param {Array<{ type: string, url: string }>} targets
+ */
+export function bundledExtensionRunning (targets) {
+  return targets.some((target) => target.url.startsWith(`chrome-extension://${BUNDLED_EXTENSION_ID}/`))
 }
 
 /**
@@ -98,6 +112,18 @@ async function waitForShell (child, output, deadline) {
   throw new Error(`no rendered shell page within ${STARTUP_TIMEOUT_MS / 1000} s`)
 }
 
+/** Resolves once the bundled extension runs in the app on `port`; rejects naming what did run if it never does. */
+async function waitForBundledExtension (port, deadline) {
+  let targets = []
+  while (Date.now() < deadline) {
+    targets = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) })
+      .then((r) => r.json()).catch(() => [])
+    if (bundledExtensionRunning(targets)) return
+    await sleep(1000)
+  }
+  throw new Error(`a new profile has no uBlock Origin running after ${BUNDLED_EXTENSION_MS / 1000} s; targets: ${targets.map((t) => t.url).join(', ')}`)
+}
+
 /** Resolves once the shell page of an app already running on `port` has rendered. */
 async function attach (port) {
   // Nothing of ours to watch: the shape `waitForShell` reads, with the line Chromium prints for its DevTools port.
@@ -140,6 +166,8 @@ if (isInvokedDirectly(import.meta.url)) {
   try {
     const url = await waitForShell(child, () => log, Date.now() + STARTUP_TIMEOUT_MS)
     console.log(`[smoke-packaged] ${executable}: shell page rendered (${url})`)
+    await waitForBundledExtension(devToolsPort(log), Date.now() + BUNDLED_EXTENSION_MS)
+    console.log(`[smoke-packaged] ${executable}: uBlock Origin installed in a new profile`)
   } catch (error) {
     failed = true
     console.error(`[smoke-packaged] ${executable}: ${error.message}\n--- app output ---\n${log.split('\n').slice(-80).join('\n')}`)

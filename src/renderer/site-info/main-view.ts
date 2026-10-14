@@ -35,6 +35,7 @@ export interface MainPageCallbacks {
   readonly onOpenSiteSettings: () => void
   readonly onManageExtensions: () => void
   readonly onReload: () => void
+  readonly onReviewPermissions: () => void
   readonly onApplyUpdate: (cid: string) => void
   readonly onOpenHome: () => void
   readonly permissions: PermissionsCallbacks
@@ -74,6 +75,23 @@ function row (kind: Parameters<typeof grantIcon>[0], message: string, warning: b
   text.textContent = message
   li.append(grantIcon(kind), text, control)
   return li
+}
+
+/** An app that asked for permissions and was never let in: what that means for the page, and the way back to the question. */
+function renderReviewCard (onReview: () => void): HTMLElement {
+  const card = document.createElement('div')
+  card.className = 'review-card'
+  const text = document.createElement('p')
+  text.className = 'review-text'
+  text.textContent = 'This site is an app that asked for permissions. They are not granted, so parts of it may not work.'
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.id = 'review-permissions'
+  button.className = 'btn-primary'
+  button.textContent = 'Review permissions'
+  button.addEventListener('click', onReview)
+  card.append(text, button)
+  return card
 }
 
 /** The path a local-file key names, as a person reads it: no scheme, no percent codes, no bidirectional control. */
@@ -146,6 +164,7 @@ export function renderMainPage (
   // and a page opened through the tunnel from a routed app has the line alone as well: its session lasts until its last tab closes.
   if (info.tunnel !== undefined && info.route !== 'temporary') renderTunnelSection(container, info.tunnel, info.route, info.extensionsOnSite, tunnelView, callbacks.tunnel, info.nym)
   else if (info.route !== undefined) container.append(renderRouteLine(info.route, 'app', info.nym))
+  if (info.notLetIn !== undefined) container.append(renderReviewCard(callbacks.onReviewPermissions))
   if (info.update !== undefined) container.append(renderUpdateCard(info.update, updateFailure, { onApply: callbacks.onApplyUpdate }))
 
   if (isFile) {

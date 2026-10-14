@@ -4,6 +4,7 @@
 // names a button. A consent question starts focus on the panel, never a
 // button; a guarded button looks disabled for the guard's length.
 import { h, replaceChildren } from '../../pages/shared/dom.js'
+import { grantIcon, isGrantIconKind } from '../../grant-icons.js'
 import type { Overlay, OverlayPage } from '../kit.js'
 import type { QuestionView } from '../../../main/shell/question/question-spec.js'
 import { createArrival } from './arrival.js'
@@ -45,6 +46,8 @@ export const questionPage: OverlayPage = {
     }
 
     let showing: QuestionView | undefined
+    /** The ids of the rows switched on, in the order main offered them. */
+    const switchedOn = new Set<string>()
     let pressedTimer: ReturnType<typeof setTimeout> | undefined
     const buttonFor = (index: number): HTMLElement | null => root.querySelector<HTMLElement>(`[data-button="${String(index)}"]`)
 
@@ -101,8 +104,40 @@ export const questionPage: OverlayPage = {
       button.addEventListener('blur', arrival.leave)
     }
 
+    /** One row per thing the question asks for: its icon, its words, and a switch. Switching grants nothing by itself; a button does. */
+    function choiceRows (view: QuestionView): HTMLElement | undefined {
+      if (view.choices === undefined) return undefined
+      const note = view.choicesNote === undefined ? undefined : h('p', { className: 'q-note' }, view.choicesNote)
+      const showNote = (): void => { if (note !== undefined) note.hidden = (view.choices ?? []).every((choice) => switchedOn.has(choice.id)) }
+      const items = view.choices.map((choice) => {
+        const control = h('button', { type: 'button', className: `q-switch${switchedOn.has(choice.id) ? ' on' : ''}` }, h('span', { className: 'q-switch-thumb' }))
+        control.setAttribute('role', 'switch')
+        control.setAttribute('aria-checked', String(switchedOn.has(choice.id)))
+        control.setAttribute('aria-label', choice.message)
+        control.dataset['choice'] = choice.id
+        control.addEventListener('click', () => {
+          // A click or key meant for the page, landing as the panel appears, must not decide anything.
+          if (root.classList.contains('arming')) return
+          if (switchedOn.has(choice.id)) switchedOn.delete(choice.id)
+          else switchedOn.add(choice.id)
+          const on = switchedOn.has(choice.id)
+          control.classList.toggle('on', on)
+          control.setAttribute('aria-checked', String(on))
+          showNote()
+          void overlay.request({ type: 'switched', id: view.id, chosen: [...switchedOn] })
+        })
+        const icon = isGrantIconKind(choice.icon) ? grantIcon(choice.icon) : undefined
+        return h('li', { className: `q-choice${choice.warning === true ? ' warning' : ''}` }, icon, h('span', { className: 'q-choice-text' }, h('span', { className: 'q-choice-message' }, choice.message), choice.detail === undefined ? undefined : h('span', { className: 'q-choice-detail' }, choice.detail)), control)
+      })
+      if (note !== undefined) showNote()
+      return h('div', { className: 'q-choices' }, h('ul', { className: 'q-choice-list' }, ...items), note)
+    }
+
     function draw (view: QuestionView): void {
+      // The panel is built afresh at every show, so main holds the switches and hands them back as each row's `on`.
       showing = view
+      switchedOn.clear()
+      for (const choice of view.choices ?? []) if (choice.on === true) switchedOn.add(choice.id)
       arrivals = []
       clearTimeout(pressedTimer)
       const page = isPageQuestion(view.kind)
@@ -114,7 +149,8 @@ export const questionPage: OverlayPage = {
           id: view.id,
           button,
           ...(text === undefined ? {} : { text: text.value }),
-          ...(tick === undefined ? {} : { checkbox: tick.checked })
+          ...(tick === undefined ? {} : { checkbox: tick.checked }),
+          ...(view.choices === undefined ? {} : { chosen: (view.choices ?? []).filter((choice) => switchedOn.has(choice.id)).map((choice) => choice.id) })
         })
       }
       if (view.input !== undefined) {
@@ -138,7 +174,7 @@ export const questionPage: OverlayPage = {
         if (view.doublePress.includes(index)) watchArrival(view.id, index, button)
         return button
       })
-      root.className = `q ${page ? 'q-page' : 'q-browser'}${view.warning ? ' q-warning' : ''}`
+      root.className = `q ${page ? 'q-page' : 'q-browser'}${view.warning ? ' q-warning' : ''}${view.choices === undefined ? '' : ' q-with-choices'}`
       root.dataset['kind'] = view.kind
       root.setAttribute('aria-labelledby', 'q-message')
       root.setAttribute('aria-describedby', 'q-detail')
@@ -146,6 +182,7 @@ export const questionPage: OverlayPage = {
         h('p', { className: 'origin q-origin' }, page ? `${view.origin ?? 'This page'} says` : view.origin ?? ''),
         view.title !== undefined && h('h1', { className: 'sheet-title q-title' }, view.title),
         h('p', { className: 'q-message', id: 'q-message' }, view.message),
+        choiceRows(view),
         view.detail !== undefined && h('p', { className: 'q-detail', id: 'q-detail' }, view.detail),
         text,
         tick !== undefined && h('label', { className: 'check q-check' }, tick, h('span', null, view.checkboxLabel ?? '')),

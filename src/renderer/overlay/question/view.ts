@@ -16,7 +16,13 @@ export function isQuestionView (value: unknown): value is QuestionView {
     Array.isArray(value['doublePress']) && value['doublePress'].every((index) => typeof index === 'number') && typeof value['doublePressMs'] === 'number' &&
     (focus === 'dialog' || typeof focus === 'number') && typeof guardMs === 'number' && typeof value['warning'] === 'boolean' &&
     optionalString(value['title']) && optionalString(value['detail']) && optionalString(value['origin']) && optionalString(value['checkboxLabel']) &&
-    (input === undefined || (isRecord(input) && typeof input['initial'] === 'string' && typeof input['max'] === 'number'))
+    (input === undefined || (isRecord(input) && typeof input['initial'] === 'string' && typeof input['max'] === 'number')) &&
+    optionalString(value['choicesNote']) && isChoiceList(value['choices'])
+}
+
+function isChoiceList (value: unknown): boolean {
+  return value === undefined || (Array.isArray(value) && value.every((entry) => isRecord(entry) && typeof entry['id'] === 'string' && typeof entry['icon'] === 'string' && typeof entry['message'] === 'string' && optionalString(entry['detail']) &&
+    (entry['warning'] === undefined || typeof entry['warning'] === 'boolean') && (entry['on'] === undefined || typeof entry['on'] === 'boolean')))
 }
 
 /** The kinds a page can raise: drawn as the page's own words, never as the browser's. */
