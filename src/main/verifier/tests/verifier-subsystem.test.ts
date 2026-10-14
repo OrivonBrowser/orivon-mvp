@@ -208,6 +208,34 @@ describe('the verifier subsystem', () => {
       expect(next).not.toBe(salt)
     })
 
+    it('never forks the IPFS node for a host that asks for it while IPFS is read from public gateways, and says where to switch it on', async () => {
+      let source: 'node' | 'gateways' = 'gateways'
+      const { request } = await launchWith(() => source)
+      const { ipfsNodeState } = await import('../ipfs-node-subsystem.js')
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      forks()[0]?.listens()
+      forks()[0]?.emit('message', { type: 'node-wanted', node: 'ipfs-node' })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(forks()).toHaveLength(1)
+      expect(ipfsNodeState()).toMatchObject({ state: 'off', reason: expect.stringMatching(/public gateways.*Settings under Web3/) })
+      source = 'node'
+    })
+
+    it('lets the node run again, with the refusal forgotten, once the person reads IPFS from it', async () => {
+      let source: 'node' | 'gateways' = 'gateways'
+      const { request, ipfsSettingsChanged } = await launchWith(() => source)
+      const { ipfsNodeState } = await import('../ipfs-node-subsystem.js')
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      forks()[0]?.listens()
+      forks()[0]?.emit('message', { type: 'node-wanted', node: 'ipfs-node' })
+      await vi.advanceTimersByTimeAsync(0)
+      source = 'node'
+      ipfsSettingsChanged('source')
+      expect(ipfsNodeState()).toEqual({ state: 'off' })
+    })
+
     it('says in the view what the node is doing while IPFS is read from it, and nothing when it is not', async () => {
       let source: 'node' | 'gateways' = 'node'
       const { verifierView } = await launchWith(() => source)

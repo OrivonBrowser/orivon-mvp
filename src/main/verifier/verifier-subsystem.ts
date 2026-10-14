@@ -102,7 +102,7 @@ export function tunnelDefaultChanged (): void {
 export function configureVerifier (options: { lightClientEnabled: () => boolean, windows: () => readonly TabsOfWindow[], servedFromCache: (origin: string) => boolean, ipfsSource?: () => 'node' | 'gateways', ipfsLookupService?: () => boolean, swarmNodeEnabled?: () => boolean }): void {
   if (options.ipfsSource !== undefined) ipfsSourceChoice = options.ipfsSource
   if (options.ipfsLookupService !== undefined) ipfsLookupServiceChoice = options.ipfsLookupService
-  configureIpfsNode({ lookupService: () => ipfsLookupServiceChoice() })
+  configureIpfsNode({ lookupService: () => ipfsLookupServiceChoice(), readFromNode: () => ipfsSourceChoice() === 'node' })
   if (options.swarmNodeEnabled !== undefined) configureSwarmNode({ enabled: options.swarmNodeEnabled })
   enabledByPerson = options.lightClientEnabled
   tabsOnVerifiedOrigin = () => anyTabOnVerifiedOrigin(options.windows(), options.servedFromCache)
@@ -115,6 +115,8 @@ export function configureVerifier (options: { lightClientEnabled: () => boolean,
  * a running host is told whether a name service may be asked for an IPNS record.
  */
 export function ipfsSettingsChanged (setting: 'source' | 'lookupService'): void {
+  // The node's controller reads its switch again: a node that must not run is stopped and says why, as the Swarm node does.
+  if (setting === 'source') ipfsNode.reconsider()
   ipfsNode.verifierIdle()
   if (setting === 'source') idleHost()
   // A running host asks a name service for an IPNS record only while the lookup service is allowed.
