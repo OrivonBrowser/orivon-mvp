@@ -71,7 +71,7 @@ it('[app:first-visit-loads-as-a-website-while-asking] [app:first-visit-enters-at
       check('a file the first page never loads is still undownloaded', filesAsked('allowed', 'later.bin') === 0)
 
       // 2. Allow: the tab reloads as the app, with its grants, and the rest of the bundle is still to come.
-      await answerQuestion(running, 'Allow')
+      await answerQuestion(running, 'Grant all')
       const entered = await waitForTab(chrome, { address: `ipfs://${allowedRoot}/`, title: 'Allowed app' }, 60_000)
       check(`the app opened (${JSON.stringify(entered.info)})`, entered.ok)
       let facts = null as PageFacts | null
@@ -85,7 +85,7 @@ it('[app:first-visit-loads-as-a-website-while-asking] [app:first-visit-enters-at
       const refusedOrigin = `https://${refusedRoot}.ipfs.orivon`
       await clickAddressBarRetrying(chrome, `ipfs://${refusedRoot}`)
       await waitQuestion(running, 60_000)
-      await answerQuestion(running, 'Deny')
+      await answerQuestion(running, 'Close')
       const plain = await waitForTab(chrome, { address: `ipfs://${refusedRoot}/`, title: 'Refused app' }, 60_000)
       check(`the refused site opened (${JSON.stringify(plain.info)})`, plain.ok)
       let refused = null as PageFacts | null
@@ -120,7 +120,7 @@ it('[app:first-visit-loads-as-a-website-while-asking] [app:first-visit-enters-at
       const dismissed = await pageAt(running, `${refusedOrigin}/`)
       check(`the page kept running as the website it is (${JSON.stringify(dismissed)})`, dismissed?.ran === 'ran' && !dismissed.hasProcess)
 
-      expect(asked.buttons).toContain('Allow')
+      expect(asked.buttons).toContain('Grant all')
       expect(filesAsked('allowed', 'app.js')).toBeGreaterThanOrEqual(1)
       expect(await noNativeDialogs(running)).toEqual([])
     } finally {

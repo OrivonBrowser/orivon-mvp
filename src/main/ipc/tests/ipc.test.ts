@@ -30,7 +30,8 @@ const OTHER_FRAME = {}
 
 function fakeSiteInfo (overrides: Partial<SiteInfoController> = {}): SiteInfoController {
   return {
-    siteSummaryFor: vi.fn(async () => ({ asked: false, warning: false })),
+    siteSummaryFor: vi.fn(async () => ({ asked: false, warning: false, missing: false })),
+    reviewPermissions: vi.fn(async () => true),
     siteInfoFor: vi.fn(async () => { throw new Error('not stubbed') }),
     siteTrustFor: vi.fn(async () => null),
     storageDeclarationFor: vi.fn(async () => null),
@@ -78,13 +79,13 @@ function dispatch (command: unknown, senderFrame: unknown = CHROME_FRAME): unkno
 
 describe('registerShellIpc -- siteSummaryFor', () => {
   it('forwards the tab URL to siteInfo.siteSummaryFor()', async () => {
-    const siteInfo = fakeSiteInfo({ siteSummaryFor: vi.fn(async () => ({ asked: true, warning: false })) })
+    const siteInfo = fakeSiteInfo({ siteSummaryFor: vi.fn(async () => ({ asked: true, warning: false, missing: false })) })
     registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, siteInfo, actions())
 
     const result = await dispatch({ type: 'siteSummaryFor', url: 'https://app.example/page' })
 
     expect(siteInfo.siteSummaryFor).toHaveBeenCalledWith('https://app.example/page')
-    expect(result).toEqual({ asked: true, warning: false })
+    expect(result).toEqual({ asked: true, warning: false, missing: false })
   })
 
   it('refuses siteSummaryFor from a frame that is not the chrome view\'s own', async () => {

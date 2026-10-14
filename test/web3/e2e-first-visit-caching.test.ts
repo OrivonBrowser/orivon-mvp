@@ -73,7 +73,7 @@ it('[app:first-visit-caches-beside-the-question] [app:first-visit-deny-stops-cac
       check(`a reload inside the origin left the one question open (${String(questions.length)})`, questions.length === 1)
 
       // 2. Allow: the tab reloads as the app, and what was cached is pinned.
-      await answerQuestion(running, 'Allow')
+      await answerQuestion(running, 'Grant all')
       let facts = null as PageFacts | null
       await waitFor(async () => { facts = await pageAt(running, `${cachedOrigin}/`); return facts?.ran === 'ran' && facts.hasProcess }, 60_000)
       check(`the tab reloaded as an app tab (${JSON.stringify(facts)})`, facts?.ran === 'ran' && facts.hasProcess)
@@ -86,7 +86,7 @@ it('[app:first-visit-caches-beside-the-question] [app:first-visit-deny-stops-cac
       const deniedOrigin = `https://${deniedRoot}.ipfs.orivon`
       await clickAddressBarRetrying(chrome, `ipfs://${deniedRoot}`)
       await waitQuestion(running, 60_000)
-      await answerQuestion(running, 'Deny')
+      await answerQuestion(running, 'Close')
       await delay(CACHING_STARTS_AFTER_MS + ABSENCE_SETTLE_MS)
       check('no file the page never asks for was cached after Deny', asked('denied', 'later.js') === 0)
       check('nothing is pinned or granted', !existsSync(pinPath(userData, deniedOrigin)) && savedGrants(userData, deniedOrigin).length === 0)

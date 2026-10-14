@@ -6,6 +6,7 @@ import { requestInstallConsent } from '../../consent/install-consent.js'
 import { requestGrant } from '../../consent/request-grant.js'
 import { createPermissionsController } from '../permissions.js'
 import type { SubsystemContext } from '../../registry.js'
+import { grantAll } from '../../consent/tests/install-consent.test-helpers.js'
 
 // An app's camera, microphone and screen grants (ADR-0032, ADR-0055) go through the same install consent, the same
 // Settings rows and the same revoke as every other capability.
@@ -19,7 +20,7 @@ function ctxWith (broker: Broker): SubsystemContext {
 async function installedAndAccepted (): Promise<Broker> {
   const broker = createBroker(baseDeps())
   await broker.registerApp(APP, MANIFEST)
-  await requestInstallConsent(broker, async () => true, APP, MANIFEST)
+  await requestInstallConsent(broker, grantAll, APP, MANIFEST)
   return broker
 }
 
@@ -28,7 +29,7 @@ describe('an app declaring media', () => {
     const broker = createBroker(baseDeps())
     await broker.registerApp(APP, MANIFEST)
     const asked: Array<readonly string[]> = []
-    await requestInstallConsent(broker, async (_origin, _manifest, capabilities) => { asked.push(capabilities); return true }, APP, MANIFEST)
+    await requestInstallConsent(broker, async (_origin, _manifest, capabilities) => { asked.push(capabilities); return capabilities }, APP, MANIFEST)
     expect(asked).toEqual([['media.camera', 'media.microphone', 'media.screen']])
     for (const kind of ['media.camera', 'media.microphone', 'media.screen'] as const) expect(broker.app.heldSync(APP, kind)).toBe(true)
   })
@@ -58,7 +59,7 @@ describe('an app declaring media', () => {
   it('does not ask again at the next launch for what the person revoked', async () => {
     const broker = await installedAndAccepted()
     await createPermissionsController(ctxWith(broker)).revokeCapability(APP, 'media.screen')
-    const consent = vi.fn(async () => true)
+    const consent = vi.fn(grantAll)
     await requestInstallConsent(broker, consent, APP, MANIFEST)
     expect(consent).not.toHaveBeenCalled()
   })

@@ -35,7 +35,21 @@ export interface SiteSummary {
    * asked for a capability or picked a file/folder. */
   readonly asked: boolean
   readonly warning: boolean
+  /** An app whose permissions are not all granted: a declared capability is switched off, or the app was never let in. The key wears a dot. */
+  readonly missing: boolean
 }
+
+/** What the controller asks of the first visit (`../install/first-visit.ts`), injected so it never imports it. */
+export interface AppEntry {
+  /** Why `origin` is an app Orivon was never let into, when it is one. */
+  readonly notLetIn: (origin: string) => 'later' | 'declined' | undefined
+  /** Gives the first-visit question back for `origin`. */
+  readonly askAgain: (origin: string) => Promise<boolean>
+  /** Called after a switch of the popup moved, so the key can show or drop its dot. */
+  readonly changed: () => void
+}
+
+const NO_ENTRY: AppEntry = { notLetIn: () => undefined, askAgain: async () => true, changed: () => {} }
 
 const EMPTY_SITE_INFO = (origin: string, extensionsOnSite: readonly string[] = []): SiteInfo => ({
   origin, displayOrigin: origin, claimedName: undefined, homeDomain: undefined, update: undefined, asked: false, capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite
@@ -90,9 +104,11 @@ export interface SiteInfoController {
   revokePickedPath: (origin: string, pickId: string) => Promise<void>
   /** "Delete data" of a local file: its grants, session, saved files and record. False for a key that is not one, or when a step failed. */
   deleteLocalFileData: (key: string) => Promise<boolean>
+  /** Gives the first-visit question back for an app that was never let in; false when the origin is not one. */
+  reviewPermissions: (origin: string) => Promise<boolean>
 }
 
-export function createSiteInfoController (ctx: SubsystemContext, trustSources: SiteTrustSources, deleteLocalFile: (key: string) => Promise<boolean> = async () => false): SiteInfoController {
+export function createSiteInfoController (ctx: SubsystemContext, trustSources: SiteTrustSources, deleteLocalFile: (key: string) => Promise<boolean> = async () => false, entry: AppEntry = NO_ENTRY): SiteInfoController {
   // The extensions disclosure (docs/planning/extensions-exploration.md) -- see
   // README.md's Design notes for why this is computed once, ahead of the
   // registered/unregistered branch `siteInfoFor` makes below.
@@ -111,13 +127,14 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
 
   async function siteInfoFor (url: string): Promise<SiteInfo> {
     const info = await builtSiteInfoFor(url)
+    const notLetIn = entry.notLetIn(info.origin)
     const update = updateFor(info.origin)
     const route = ctx.routes?.hub.state(info.origin)
     const tunnel = tunnelFor(info.origin)
     // What Nym is doing is asked only for an origin whose route is on and leaves through it.
     const proxy = route === undefined || route === 'off' ? undefined : ctx.routes?.proxy()
     const nym = proxy === undefined || !isNymTarget(proxy) ? undefined : ctx.routes?.nym.state()
-    return { ...info, ...(update === undefined ? {} : { update }), ...(route === undefined || route === 'off' ? {} : { route }), ...(tunnel === undefined ? {} : { tunnel }), ...(nym === undefined ? {} : { nym }) }
+    return { ...info, ...(notLetIn === undefined ? {} : { notLetIn }), ...(update === undefined ? {} : { update }), ...(route === undefined || route === 'off' ? {} : { route }), ...(tunnel === undefined ? {} : { tunnel }), ...(nym === undefined ? {} : { nym }) }
   }
 
   /** The profile the website lives in now. */
@@ -174,7 +191,11 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
   return {
     async siteSummaryFor (url) {
       const info = await siteInfoFor(url)
-      return { asked: info.asked || /^https?:\/\//.test(info.origin) || isLocalFileKey(info.origin), warning: info.capabilityRows.some((r) => r.warning) || info.pickedPathRows.some((r) => r.warning) }
+      return {
+        asked: info.asked || /^https?:\/\//.test(info.origin) || isLocalFileKey(info.origin),
+        warning: info.capabilityRows.some((r) => r.warning) || info.pickedPathRows.some((r) => r.warning),
+        missing: info.notLetIn !== undefined || info.capabilityRows.some((r) => !r.on)
+      }
     },
 
     siteInfoFor,
@@ -233,13 +254,16 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     async turnOn (origin, capability, shownPatterns) {
       const broker = ctx.broker
       if (broker === undefined) return 'not-registered'
-      return await turnOnCapability(broker, origin, capability, shownPatterns)
+      const result = await turnOnCapability(broker, origin, capability, shownPatterns)
+      entry.changed()
+      return result
     },
 
     async turnOff (origin, capability) {
       const broker = ctx.broker
       if (broker === undefined) return
       await turnOffCapability(broker, origin, capability)
+      entry.changed()
     },
 
     async revokePickedPath (origin, pickId) {
@@ -250,6 +274,11 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
 
     async deleteLocalFileData (key) {
       return isLocalFileKey(key) ? await deleteLocalFile(key) : false
+    },
+
+    async reviewPermissions (origin) {
+      if (entry.notLetIn(origin) === undefined) return false
+      return await entry.askAgain(origin)
     }
   }
 }

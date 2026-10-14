@@ -32,6 +32,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Nym mixnet ships inside Orivon as the default tunnel for installed apps: one tunnel per app, nothing to install; your own SOCKS5 stays a choice.
 - A .eth or ipfs:// site opened through your tunnel is now read entirely through it, name proofs included; Swarm sites are refused.
 - The tunnel now works per site or for the whole browser; tunnelled sites share one profile that keeps their logins and extensions.
+- An app's first-visit question is now a panel of switches, Grant all or Close; the key shows a dot while permissions are off.
 
 ### In my head
 

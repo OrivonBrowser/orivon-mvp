@@ -97,7 +97,7 @@ it('[app:consent-question-holds-the-page] holds a page where it is while its que
       check('no new tab opened', (await tabIds(chrome)).length === tabsBefore)
       check('the same-document route still worked and the address is the page\'s own', (await tabUrl(running, `${origin}/spa`)) !== undefined, String(await tabUrl(running, origin)))
 
-      await answerQuestion(running, 'Allow')
+      await answerQuestion(running, 'Grant all')
       const becameApp = await waitFor(async () => {
         const shown = findViewShowing(running, chrome, `${origin}/spa`)
         if (shown === undefined) return false
