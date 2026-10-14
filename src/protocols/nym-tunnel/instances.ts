@@ -97,6 +97,8 @@ interface Entry {
   /** Openings in a row that stalled, and whether any stream has ever opened. */
   stalls: number
   proven: boolean
+  /** The `renewals` count when it began: a tunnel begun before a later renewal is replaced once nothing uses it. */
+  readonly renewal: number
   /** When a stream last opened: a stall of an opening that began before it says nothing, since the tunnel carried something meanwhile. */
   lastOpenedAt: number
   idleSince: number
@@ -107,6 +109,8 @@ interface Entry {
 export interface Instances {
   /** Resolves with a lease on the tunnel of `id`, starting it if need be; rejects with an `AcquireError`. */
   acquire: (id: string) => Promise<Lease>
+  /** Replaces every tunnel started so far, as soon as nothing is using it: one that is idle is closed now, one in use when its last stream or association ends. The next request starts a new one. */
+  renewAll: () => void
   /** Closes every tunnel. */
   closeAll: () => Promise<void>
   snapshot: () => InstancesSnapshot
@@ -126,6 +130,7 @@ export function createInstances (deps: InstancesDeps): Instances {
   let problem: string | undefined
   let started = 0
   const replacedAt = new Map<string, number>()
+  let renewals = 0
 
   const snapshot = (): InstancesSnapshot => {
     let ready = 0
@@ -149,6 +154,7 @@ export function createInstances (deps: InstancesDeps): Instances {
   }
 
   const armIdle = (entry: Entry): void => {
+    if (entry.renewal !== renewals) { retire(entry); return }
     clearTimeout(entry.idleTimer)
     entry.idleSince = Date.now()
     entry.idleTimer = setTimeout(() => { retire(entry) }, deps.idleMsOf?.(entry.id) ?? deps.idleMs)
@@ -171,7 +177,7 @@ export function createInstances (deps: InstancesDeps): Instances {
   const begin = (id: string): Entry => {
     started += 1
     const starting = deps.start(id)
-    const entry: Entry = { id, starting, leases: 0, stalls: 0, proven: false, lastOpenedAt: 0, idleSince: Date.now(), gone: false }
+    const entry: Entry = { id, starting, renewal: renewals, leases: 0, stalls: 0, proven: false, lastOpenedAt: 0, idleSince: Date.now(), gone: false }
     entries.set(id, entry)
     starting.then(
       (tunnel) => {
@@ -247,6 +253,10 @@ export function createInstances (deps: InstancesDeps): Instances {
   return {
     acquire,
     snapshot,
+    renewAll: () => {
+      renewals += 1
+      for (const entry of [...entries.values()]) { if (entry.tunnel !== undefined && entry.leases === 0) retire(entry) }
+    },
     closeAll: async () => {
       const all = [...entries.values()]
       for (const entry of all) clearTimeout(entry.idleTimer)
