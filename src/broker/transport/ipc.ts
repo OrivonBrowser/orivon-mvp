@@ -28,6 +28,8 @@ import { bindUdp } from '../adapters/udp-adapter.js'
 import { nodeLedgerStorage } from '../grants/node-ledger-storage.js'
 import { cachingProxyProbe } from './proxy-probe.js'
 import { systemProxyFor } from '../../main/route/system-proxy.js'
+import { heldNodePorts, loopbackPort } from '../../main/verifier/loopback-port.js'
+import { ownLoopbackPortCheck } from './own-loopback-ports.js'
 import { createWebContextHost } from '../../main/sessions/web-context-host.js'
 import { createElectronKeychain } from '../../main/keyring/electron-keychain.js'
 import { SESSION_ONLY_STORAGE } from '../../main/keyring/seed-store.js'
@@ -411,6 +413,12 @@ export const brokerIpcSubsystem: Subsystem = {
       // proxy", refusing every app the person left off the tunnel. It is one
       // question for every net capability, not an app-scoped one.
       proxyConfigured: cachingProxyProbe(async (url) => await systemProxyFor(url)),
+      // The loopback listeners Orivon runs: an app's loopback grant never reaches them, as no page does (T12).
+      ownLoopbackPort: ownLoopbackPortCheck({
+        verifier: loopbackPort,
+        nodes: heldNodePorts,
+        routeFront: (port) => routes.controller.challengeCredentials({ isProxy: true, host: '127.0.0.1', port }) !== undefined
+      }),
       now: realNow,
       fs: nodeFs(ctx.app.getPath('userData')),
       ledgerStorage: nodeLedgerStorage(ctx.app.getPath('userData')),

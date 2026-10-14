@@ -298,6 +298,22 @@ describe('the fs capability works end to end for an origin that has never writte
   })
 })
 
+describe('nodeFs.sync.diskUsage', () => {
+  it('sums like the async walk, and answers null once the tree holds more entries than the bound', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-dus-'))
+    const fs = nodeFs(userData)
+    const root = fs.rootFor('https://app.example')
+    await fs.mkdir(join(root, 'dir'), { recursive: true })
+    for (let i = 0; i < 5; i++) await fs.writeFile(join(root, 'dir', `f${String(i)}`), new Uint8Array(2))
+
+    // dir + five files + the root itself = seven entries.
+    expect(fs.sync?.diskUsage(root, 7)).toBe(10)
+    expect(fs.sync?.diskUsage(root, 6)).toBeNull()
+    expect(fs.sync?.diskUsage(root)).toBe(10)
+    expect(fs.sync?.diskUsage(join(root, 'missing'), 1)).toBe(0)
+  })
+})
+
 describe('nodeFs.diskUsage', () => {
   it('sums every regular file under a directory, and counts a symlink as itself, never its target', async () => {
     const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-du-'))

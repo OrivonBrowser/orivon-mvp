@@ -61,6 +61,10 @@ inside that grant's ranges alone, never the union. The interface is chosen by th
 `scope` (`../policy/bind-scope.ts`), and only `'network'` widens. The listener registry records
 both scopes, because `web.embed`'s local pattern is served from a loopback listener.
 
+A connection the listener accepts while the origin is at its socket allowance is destroyed, and the
+same pending read waits for the next one, so a full allowance never stops the listener from
+accepting once a slot frees.
+
 ### `net.ts`: the accept-queue bound is not the specification's backpressure
 
 `listen`'s (`net-listen.ts`) `LISTEN_ACCEPT_QUEUE_LIMIT` (`../adapters/node-adapters.ts`) resets new connections

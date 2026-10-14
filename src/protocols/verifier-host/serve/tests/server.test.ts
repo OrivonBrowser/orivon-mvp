@@ -400,6 +400,32 @@ describe('the loopback server, for an address scheme', () => {
     expect(reply.status).toBe(301)
     expect(reply.headers.location).toBe('https://vitalik.eth/p?q=1')
   })
+
+  it.each([
+    ['an encoded slash', 'evil.example%2F.eth'],
+    ['an encoded hash', 'evil.example%23.eth'],
+    ['an encoded colon', 'evil.example%3A80.eth'],
+    ['an encoded at sign', 'user%40evil.example.eth'],
+    ['an encoded backslash', 'evil.example%5C.eth'],
+    ['an encoded question mark', 'evil.example%3F.eth'],
+    ['an empty label', 'a..eth'],
+    ['a leading dot', '%2Eeth.eth']
+  ])('never redirects a top-level-domain name that holds %s', async (_what, written) => {
+    const reply = await get(`/${written}/p`, { host: 'ipns.orivon' })
+    expect(reply.headers.location ?? 'none').toMatch(/^(none|https:\/\/[a-z0-9-]+\.ipns\.orivon\/)/)
+  })
+
+  it('sends a name written in capitals to its lowercase origin', async () => {
+    const reply = await get('/Vitalik.ETH/p', { host: 'ipfs.orivon' })
+    expect(reply.status).toBe(301)
+    expect(reply.headers.location).toBe('https://vitalik.eth/p')
+  })
+
+  it('still sends a longer top-level-domain name to its own origin', async () => {
+    const reply = await get('/sub.vitalik.eth/', { host: 'ipfs.orivon' })
+    expect(reply.status).toBe(301)
+    expect(reply.headers.location).toBe('https://sub.vitalik.eth/')
+  })
 })
 
 describe('the loopback server, for a file whose leaf the caller expects', () => {

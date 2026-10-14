@@ -104,4 +104,16 @@ describe('cachingProxyProbe', () => {
     await probe('https://10.0.0.1:1001/')
     expect(resolveProxy).toHaveBeenCalledTimes(1026) // evicted
   })
+
+  it('answers fail-closed for an oversized URL without asking resolveProxy or remembering it', async () => {
+    const resolveProxy = vi.fn(async () => 'DIRECT')
+    const probe = cachingProxyProbe(resolveProxy)
+    const huge = `https://${'a'.repeat(128 * 1024)}:443/`
+
+    expect(await probe(huge)).toBe(true)
+    expect(resolveProxy).not.toHaveBeenCalled()
+    // Not cached: a later, ordinary URL is asked for itself.
+    expect(await probe(URL_A)).toBe(false)
+    expect(resolveProxy).toHaveBeenCalledTimes(1)
+  })
 })
