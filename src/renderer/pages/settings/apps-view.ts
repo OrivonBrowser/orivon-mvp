@@ -5,9 +5,9 @@
 // from the app, and are never markup.
 import { BUILTIN_ADDRESSES } from '../../../protocols/builtin.js'
 import { h } from '../shared/dom.js'
-import { globeIcon } from '../../icons.js'
-import { grantIcon } from '../../grant-icons.js'
-import type { GrantIconKind } from '../../grant-icons.js'
+import { globeIcon } from '../shared/globe-icon.js'
+import { grantIcon } from '../shared/grant-icons.js'
+import type { GrantIconKind } from '../shared/grant-icons.js'
 import type { AppRow, CapabilityRow } from './apps-state.js'
 import type { SettingsState } from './state.js'
 

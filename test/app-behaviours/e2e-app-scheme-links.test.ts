@@ -158,7 +158,7 @@ it('[app:scheme-link-offers-declared-apps] [app:scheme-link-opens-in-chosen-app]
   }
 }, QA_TEST_TIMEOUT_MS * 3)
 
-it('[app:scheme-link-always-skips-the-question] [app:scheme-link-malformed-is-refused] with Always the app takes every later link with no question, a malformed link is refused first, and Settings takes the choice back', async () => {
+it('[app:scheme-link-always-skips-the-question] [app:scheme-link-malformed-is-refused] with Always the app takes every later link with no question, a malformed link is refused first, and Settings takes the choice back with a switch', async () => {
   const { app, chrome, launched } = await launchWithApps()
   try {
     await runPhase('scheme link default app', async (check) => {
@@ -201,14 +201,14 @@ it('[app:scheme-link-always-skips-the-question] [app:scheme-link-malformed-is-re
       await card.waitFor()
       await shoot(app, chrome, settings, 'scheme-link-settings-card')
       check('[app:scheme-link-always-skips-the-question] Settings lists the default on the app\'s card', /Opens magnet links/.test(await card.innerText()), await card.innerText())
-      await card.locator('li', { hasText: 'Opens magnet links' }).locator('button', { hasText: 'Stop' }).click()
-      check('[app:scheme-link-always-skips-the-question] Stop in Settings takes the choice back', await waitFor(async () => !/Opens magnet links/.test(await card.innerText())))
+      await card.locator('li', { hasText: 'Opens magnet links' }).locator('.switch').click()
+      check('[app:scheme-link-always-skips-the-question] switching it off in Settings takes the choice back', await waitFor(async () => !/Opens magnet links/.test(await card.innerText())))
 
       await selectTab(chrome, siteTab)
       await waitFor(async () => (await evaluateRetrying(siteView, () => document.visibilityState)) === 'visible')
       await siteView.click('#third')
       const asked = await readQuestion(await waitQuestion(app))
-      check('[app:scheme-link-always-skips-the-question] after Stop the next link asks again', asked.buttons.includes(SYSTEM) && asked.detail.includes(THIRD) && (await linksOf(view)).length === 3, JSON.stringify(asked))
+      check('[app:scheme-link-always-skips-the-question] after the switch is off the next link asks again', asked.buttons.includes(SYSTEM) && asked.detail.includes(THIRD) && (await linksOf(view)).length === 3, JSON.stringify(asked))
       await answerQuestion(app, 'Cancel')
       check('no native message box was opened', (await noNativeDialogs(app)).length === 0)
     })
