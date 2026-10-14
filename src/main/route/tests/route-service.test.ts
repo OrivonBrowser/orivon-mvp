@@ -6,11 +6,12 @@ import { createRouteService } from '../route-service.js'
 import type { ProxySettings, RouteKind } from '../route-service.js'
 import { NYM_TARGET } from '../nym-provider.js'
 import type { NymSubsystem } from '../nym-subsystem.js'
+import type { NymPrivacy } from '../../../protocols/nym-tunnel/protocol.js'
 import { RouteStore } from '../route-store.js'
 
 const APP = 'https://one.example'
 
-const FAKE_NYM: NymSubsystem = { ensure: async () => ({ port: 1, secret: 's' }), state: () => ({ state: 'off' }), onChange: () => () => {}, test: async () => ({ ok: true, ms: 1 }), tunnels: () => ({ connecting: 0, ready: 0 }), processInfo: () => undefined, setEnabled: () => {}, stop: () => {} }
+const FAKE_NYM: NymSubsystem = { ensure: async () => ({ port: 1, secret: 's' }), state: () => ({ state: 'off' }), onChange: () => () => {}, test: async () => ({ ok: true, ms: 1 }), tunnels: () => ({ connecting: 0, ready: 0 }), processInfo: () => undefined, setEnabled: () => {}, setPrivacy: () => {}, stop: () => {} }
 
 function service (savedProxy: string, savedKind: RouteKind = 'socks5', nym: NymSubsystem = FAKE_NYM) {
   const store = new RouteStore(null)
@@ -30,20 +31,22 @@ function service (savedProxy: string, savedKind: RouteKind = 'socks5', nym: NymS
   })
 }
 
-function settingsWith (initial: string, initialKind: RouteKind = 'socks5', initialEverywhere = false): ProxySettings & { set: (value: string) => void, setKind: (kind: RouteKind) => void, setEverywhere: (value: boolean) => void, setNym: (value: boolean) => void } {
+function settingsWith (initial: string, initialKind: RouteKind = 'socks5', initialEverywhere = false): ProxySettings & { set: (value: string) => void, setKind: (kind: RouteKind) => void, setEverywhere: (value: boolean) => void, setNym: (value: boolean) => void, setPrivacy: (level: NymPrivacy) => void } {
   let nymOn = true
+  let privacy: NymPrivacy = 'balanced'
   let value = initial
   let kind = initialKind
   let everywhere = initialEverywhere
   const listeners = new Set<(change: { readonly key: string }) => void>()
   const tell = (key: string): void => { for (const listener of [...listeners]) listener({ key }) }
   return {
-    get: ((key: string) => key === 'network.route.kind' ? kind : key === 'network.route.proxy' ? value : key === 'network.nym.enabled' ? nymOn : everywhere) as ProxySettings['get'],
+    get: ((key: string) => key === 'network.route.kind' ? kind : key === 'network.route.proxy' ? value : key === 'network.nym.enabled' ? nymOn : key === 'network.nym.privacy' ? privacy : everywhere) as ProxySettings['get'],
     onChange: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     set: (next) => { value = next; tell('network.route.proxy') },
     setKind: (next) => { kind = next; tell('network.route.kind') },
     setEverywhere: (next) => { everywhere = next; tell('network.tunnel.everywhere') },
-    setNym: (next) => { nymOn = next; tell('network.nym.enabled') }
+    setNym: (next) => { nymOn = next; tell('network.nym.enabled') },
+    setPrivacy: (next) => { privacy = next; tell('network.nym.privacy') }
   }
 }
 
@@ -165,6 +168,18 @@ describe('the route service', () => {
     expect(setEnabled).toHaveBeenLastCalledWith(true)
     settings.setNym(false)
     expect(setEnabled).toHaveBeenLastCalledWith(false)
+  })
+
+  it('gives Nym the saved privacy level when the settings are followed, and each change after it', () => {
+    const levels: NymPrivacy[] = []
+    const routes = service('', 'nym', { ...FAKE_NYM, setPrivacy: (level) => { levels.push(level) } })
+    const settings = settingsWith('')
+    settings.setPrivacy('strongest')
+    routes.followSettings(settings)
+    expect(levels).toEqual(['strongest'])
+    settings.setPrivacy('balanced')
+    settings.set('127.0.0.1:9050')
+    expect(levels).toEqual(['strongest', 'balanced'])
   })
 
   it('fails a routed app\'s connection closed when Nym cannot run, and never dials direct', async () => {

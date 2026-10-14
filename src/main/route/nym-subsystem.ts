@@ -7,7 +7,7 @@ import { randomBytes } from 'node:crypto'
 import type { Socket } from 'node:net'
 import { createSocks5Provider } from '../../broker/route/socks5.js'
 import { SHORT_LIVED_USER } from '../../protocols/nym-tunnel/protocol.js'
-import type { NymTunnelConfig, PinnedFile } from '../../protocols/nym-tunnel/protocol.js'
+import type { NymPrivacy, NymTunnelConfig, PinnedFile } from '../../protocols/nym-tunnel/protocol.js'
 import type { ArtifactStatus } from '../verifier/local-node-artifact.js'
 import type { HostProcess, ProcessInfo } from '../verifier/process-supervisor.js'
 import { RefusedToStart } from '../verifier/process-supervisor.js'
@@ -50,6 +50,8 @@ export interface NymDeps {
   /** A quiet loopback port, new at each call. */
   readonly freshPort: () => number
   readonly maxInstances: number
+  /** The level tunnels are made at until `setPrivacy` says otherwise: the saved setting. */
+  readonly privacy: NymPrivacy
   readonly log?: boolean
   readonly stopAfterMs?: number
   readonly listenWaitMs?: number
@@ -71,6 +73,8 @@ export interface NymSubsystem {
   onChange: (listener: () => void) => () => void
   /** Brings Nym up if need be, opens a stream to a name through it, and says how long that took. */
   test: () => Promise<NymTestResult>
+  /** Tunnels started from now on are made at `privacy`; the running ones are replaced as soon as nothing is using them. */
+  setPrivacy: (privacy: NymPrivacy) => void
   stop: () => void
 }
 
@@ -94,6 +98,7 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
   let switchedOff = false
   let tunnelCounts = { connecting: 0, ready: 0 }
   let stopTimer: unknown
+  let privacy = deps.privacy
   let waiters: Array<{ resolve: () => void, reject: (error: Error) => void }> = []
 
   /** How many times the state has become `failed`, so a reason can be told from one that was there before a press. */
@@ -156,7 +161,7 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
         throw new RefusedToStart(verdict.reason)
       }
       endpoint = { port: deps.freshPort(), secret: randomBytes(24).toString('hex') }
-      return { moduleDir: verdict.directory, files: deps.files(), port: endpoint.port, secret: endpoint.secret, maxInstances: deps.maxInstances, ...(deps.log === true ? { log: true } : {}) }
+      return { moduleDir: verdict.directory, files: deps.files(), port: endpoint.port, secret: endpoint.secret, maxInstances: deps.maxInstances, privacy, ...(deps.log === true ? { log: true } : {}) }
     },
     events: {
       starting: () => { running = true; listening = false; set({ state: 'connecting' }) },
@@ -283,6 +288,12 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
     },
     onChange: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     test,
+    setPrivacy: (next) => {
+      if (next === privacy) return
+      privacy = next
+      // A host that is not running reads the level at its next start; one that is has it said.
+      supervisor.send({ type: 'privacy', privacy })
+    },
     stop: () => { cancelStop(); supervisor.stop() }
   }
 }

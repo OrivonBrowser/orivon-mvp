@@ -70,6 +70,8 @@ const SPECS = {
   'privacy.secureDns': { kind: 'enum', options: ['off', 'automatic', 'cloudflare', 'quad9'], default: 'off' },
   // Where a routed app's traffic leaves: Nym, built in, or the SOCKS5 address below. Settings files from before this choice existed keep their address as the choice (settings-file.ts).
   'network.route.kind': { kind: 'enum', options: ['nym', 'socks5'], default: 'nym', labels: { nym: 'Nym (built in)', socks5: 'Your own SOCKS5 address' } },
+  // How much decoy traffic Nym's tunnels send. Balanced is the default: it costs a fraction of the processor time per open tunnel that strongest does (the host's README.md has the figures), and shows an observer of the connection roughly when the person is active (docs/architecture/security-model.md T85). Applied to tunnels started after a change.
+  'network.nym.privacy': { kind: 'enum', options: ['balanced', 'strongest'], default: 'balanced', labels: { balanced: 'Balanced', strongest: 'Strongest' } },
   // Whether the Nym tunnel built into Orivon may run. Off stops it and refuses every app, website and browser-wide route that uses it (they are stopped, never sent direct); it matters only while the tunnel kind above is Nym. Applied at once.
   'network.nym.enabled': { kind: 'bool', default: true },
   // The one SOCKS5 proxy (host:port, such as Tor on 127.0.0.1:9050) an installed app can be routed through when the choice above is a SOCKS5 address; empty is none. Which apps use it is route-store's.

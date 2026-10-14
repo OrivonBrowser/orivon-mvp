@@ -13,6 +13,26 @@ export const NYM_TUNNEL_IDENTITY: NodeIdentity = { name: 'nym-tunnel', noun: 'Ny
 export const MODULE_GLUE = 'smolmix_wasm.js'
 export const MODULE_WASM = 'smolmix_wasm_bg.wasm'
 
+/** How much of Nym's decoy traffic a tunnel sends, which is what an observer of the connection learns about when the person is active (the host's README.md says what each costs). */
+export type NymPrivacy = 'balanced' | 'strongest'
+export const NYM_PRIVACY_LEVELS: readonly NymPrivacy[] = ['balanced', 'strongest']
+export const DEFAULT_NYM_PRIVACY: NymPrivacy = 'balanced'
+
+export function isNymPrivacy (value: unknown): value is NymPrivacy {
+  return NYM_PRIVACY_LEVELS.includes(value as NymPrivacy)
+}
+
+/** The module's `setupMixTunnel` options for each level. */
+export interface MixPrivacyOptions {
+  readonly disablePoissonTraffic: boolean
+  readonly disableCoverTraffic: boolean
+}
+
+/** Balanced drops the steady stream of packets and keeps the loop cover traffic; strongest is Nym's own default. A value that is neither is read as strongest, the one that hides more. */
+export function mixOptionsFor (privacy: NymPrivacy): MixPrivacyOptions {
+  return { disablePoissonTraffic: privacy === 'balanced', disableCoverTraffic: false }
+}
+
 export interface NymTunnelConfig {
   /** The directory holding the module. */
   readonly moduleDir: string
@@ -24,11 +44,16 @@ export interface NymTunnelConfig {
   readonly secret: string
   /** Most tunnels alive at once; past it a new app is refused. */
   readonly maxInstances: number
+  /** The level every tunnel started from now on is made at; `privacy` messages change it. */
+  readonly privacy: NymPrivacy
   /** Prints the module's own log lines in this process's output. */
   readonly log?: boolean
 }
 
-export type ToHost = { readonly type: 'start', readonly config: NymTunnelConfig }
+export type ToHost =
+  | { readonly type: 'start', readonly config: NymTunnelConfig }
+  /** A new level: tunnels started after this are made at it, and the ones running are replaced as soon as nothing is using them. */
+  | { readonly type: 'privacy', readonly privacy: NymPrivacy }
 
 /** `artifact`: the files are not the pinned ones; `load`: the module would not start; `listen`: the port is taken. */
 export type FailureStage = 'artifact' | 'load' | 'listen' | 'run'

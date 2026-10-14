@@ -11,6 +11,7 @@ import { createRouteHub } from './route-hub.js'
 import type { RouteHub } from './route-hub.js'
 import { createNymProvider, isNymTarget, NYM_TARGET } from './nym-provider.js'
 import type { NymSubsystem } from './nym-subsystem.js'
+import type { NymPrivacy } from '../../protocols/nym-tunnel/protocol.js'
 import { createRouteSwitch } from './route-switch.js'
 import type { RouteSwitch, RouteSwitchWorld } from './route-switch.js'
 import type { RouteStore } from './route-store.js'
@@ -19,7 +20,7 @@ export type RouteKind = 'nym' | 'socks5'
 
 /** The part of the settings store the proxy, the choice of tunnel and the browser-wide setting are read from. */
 export interface ProxySettings {
-  get: ((key: 'network.route.proxy') => string) & ((key: 'network.route.kind') => RouteKind) & ((key: 'network.tunnel.everywhere') => boolean) & ((key: 'network.nym.enabled') => boolean)
+  get: ((key: 'network.route.proxy') => string) & ((key: 'network.route.kind') => RouteKind) & ((key: 'network.tunnel.everywhere') => boolean) & ((key: 'network.nym.privacy') => NymPrivacy) & ((key: 'network.nym.enabled') => boolean)
   onChange: (listener: (change: { readonly key: string }) => void) => () => void
 }
 
@@ -46,6 +47,7 @@ export interface RouteService {
 const KEY = 'network.route.proxy'
 const KIND_KEY = 'network.route.kind'
 const EVERYWHERE_KEY = 'network.tunnel.everywhere'
+const PRIVACY_KEY = 'network.nym.privacy'
 const NYM_KEY = 'network.nym.enabled'
 
 export interface RouteServiceOptions {
@@ -119,10 +121,12 @@ export function createRouteService (options: RouteServiceOptions): RouteService 
       read()
       readEverywhere()
       readNym()
+      options.nym.setPrivacy(settings.get(PRIVACY_KEY))
       settings.onChange((change) => {
         if (change.key === KEY || change.key === KIND_KEY) read()
         else if (change.key === EVERYWHERE_KEY) readEverywhere()
         else if (change.key === NYM_KEY) readNym()
+        else if (change.key === PRIVACY_KEY) options.nym.setPrivacy(settings.get(PRIVACY_KEY))
       })
     }
   }
