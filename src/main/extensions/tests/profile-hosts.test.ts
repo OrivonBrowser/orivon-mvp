@@ -74,8 +74,19 @@ describe.each(['persist:tunnel-profile', 'persist:direct-profile'])('the extensi
     demand.closed(2)
     await settle()
     expect([...target.held.keys()]).toEqual([])
-    await attacher.wake(target.session)
     demand.opened(3)
+    await settle()
+    expect([...target.held.keys()], 'a website opening is enough, with no view announced').toEqual(['a', 'b'])
+    await attacher.wake(target.session)
+    expect([...target.held.keys()]).toEqual(['a', 'b'])
+  })
+
+  it('loads nothing for a page that opens before the session was first woken, and everything with the wake', async () => {
+    const { attacher, target, demand } = setup()
+    demand.opened(1)
+    await settle()
+    expect([...target.held.keys()]).toEqual([])
+    await attacher.wake(target.session)
     expect([...target.held.keys()]).toEqual(['a', 'b'])
   })
 

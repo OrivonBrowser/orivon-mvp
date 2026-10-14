@@ -59,16 +59,19 @@ export function mustLeaveSession (url: string, session: LoadingSession, servedFr
   return canTunnel(origin) && !session.tunnelled && routed(origin)
 }
 
-let ensurer: ((partition: string) => void) | undefined
+let ensurer: ((partition: string, wake: boolean) => void) | undefined
 
 /** Called once at start by whoever owns the routes: what makes a profile's session ready before a view is made in it. */
-export function setSiteSessionEnsurer (next: ((partition: string) => void) | undefined): void {
+export function setSiteSessionEnsurer (next: ((partition: string, wake: boolean) => void) | undefined): void {
   ensurer = next
 }
 
-/** Makes the profile session named `partition` ready for a view about to be made in it. A name that is not one does nothing. */
-export function ensureSiteSession (partition: string): void {
-  if (isProfilePartition(partition)) ensurer?.(partition)
+/**
+ * Makes the profile session named `partition` ready for a view about to be made in it, or, with `wake` false, for a request
+ * made in it with no view (a lookup): held on its route, with the person's extensions left as they are. A name that is not one does nothing.
+ */
+export function ensureSiteSession (partition: string, wake = true): void {
+  if (isProfilePartition(partition)) ensurer?.(partition, wake)
 }
 
 /** The profile a session name stands for, or undefined for any other session. */

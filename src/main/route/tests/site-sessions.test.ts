@@ -42,7 +42,7 @@ describe('making a profile session ready', () => {
   it('prepares the tunnel profile under its own identity, with the verifier\'s names, then loads the extensions, and holds its requests until then', async () => {
     const { sites, held, log } = setup()
 
-    sites.ensure(TUNNEL)
+    sites.ensure(TUNNEL, true)
 
     expect(held).toHaveLength(1)
     await held[0]?.ready()
@@ -51,14 +51,14 @@ describe('making a profile session ready', () => {
 
   it('tells the extension step when the profile is kept in memory, where Electron cannot load an extension but the request rules still apply', async () => {
     const { sites, held, log } = setup()
-    sites.ensure('tunnel-profile-memory')
+    sites.ensure('tunnel-profile-memory', true)
     await held[0]?.ready()
     expect(log).toEqual(['fit', 'prepare-extensions false', `prepare ${TUNNEL_PROFILE_ORIGIN} *.eth`, 'wake'])
   })
 
   it('prepares the direct profile under the identity that is never routed', async () => {
     const { sites, held, log } = setup()
-    sites.ensure(DIRECT)
+    sites.ensure(DIRECT, true)
     await held[0]?.ready()
     expect(log).toContain(`prepare ${DIRECT_PROFILE_ORIGIN} *.eth`)
   })
@@ -66,8 +66,8 @@ describe('making a profile session ready', () => {
   it('does it once for a session, however many views are made in it', () => {
     const { sites, held, deps } = setup()
 
-    sites.ensure(TUNNEL)
-    sites.ensure(TUNNEL)
+    sites.ensure(TUNNEL, true)
+    sites.ensure(TUNNEL, true)
 
     expect(held).toHaveLength(1)
     expect(deps.controller.prepareSite).toHaveBeenCalledTimes(1)
@@ -77,7 +77,7 @@ describe('making a profile session ready', () => {
     const { sites, held, log } = setup(async () => { throw new Error('no front') })
     vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    sites.ensure(TUNNEL)
+    sites.ensure(TUNNEL, true)
 
     await expect(held[0]?.ready()).rejects.toThrow(/no front/)
     expect(log).toContain('confine')
@@ -88,7 +88,7 @@ describe('making a profile session ready', () => {
     const { sites, held, deps } = setup()
     vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    sites.ensure('persist:site-abc')
+    sites.ensure('persist:site-abc', true)
 
     expect(deps.controller.prepareSite).not.toHaveBeenCalled()
     await expect(held[0]?.ready()).rejects.toThrow()
@@ -101,17 +101,17 @@ describe('a session that could not be made ready', () => {
     const { sites, held, deps } = setup(async () => { if (failing) throw new Error('no front') })
     vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    sites.ensure(TUNNEL)
+    sites.ensure(TUNNEL, true)
     await expect(held[0]?.ready()).rejects.toThrow(/no front/)
 
     failing = false
-    sites.ensure(TUNNEL)
+    sites.ensure(TUNNEL, true)
     await held[0]?.ready()
     expect(held).toHaveLength(1)
     expect(held[0]?.watched).toBe(1)
     expect(deps.controller.prepareSite).toHaveBeenCalledTimes(2)
 
-    sites.ensure(TUNNEL)
+    sites.ensure(TUNNEL, true)
     expect(deps.controller.prepareSite, 'a session that is ready is left alone').toHaveBeenCalledTimes(2)
   })
 })
@@ -121,16 +121,16 @@ describe('the extensions of a session that is ready', () => {
     let coming: (() => void) | undefined
     let answer: () => Promise<void> | undefined = () => undefined
     const { sites, held, log } = setup(async () => {}, () => answer())
-    sites.ensure(DIRECT)
+    sites.ensure(DIRECT, true)
     await held[0]?.ready()
     expect(held[0]?.watched, 'a session whose extensions are on is not held again').toBe(0)
 
-    sites.ensure(DIRECT)
+    sites.ensure(DIRECT, true)
     expect(log.filter((line) => line === 'wake'), 'asked again for the second view').toHaveLength(2)
     expect(held[0]?.watched).toBe(0)
 
     answer = () => new Promise<void>((resolve) => { coming = resolve })
-    sites.ensure(DIRECT)
+    sites.ensure(DIRECT, true)
     expect(held[0]?.watched, 'the hold looks again while the extensions come back').toBe(1)
     let settled = false
     void held[0]?.ready().then(() => { settled = true })
@@ -162,16 +162,43 @@ describe('a view made in a session whose first attempt has not ended', () => {
     })
     vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    sites.ensure(TUNNEL)
-    sites.ensure(TUNNEL)
+    sites.ensure(TUNNEL, true)
+    sites.ensure(TUNNEL, true)
     expect(log.filter((line) => line === 'wake'), 'no wake before the route is held').toEqual([])
     release()
     await expect(held[0]?.ready()).rejects.toThrow(/no front/)
 
     fail = false
-    sites.ensure(TUNNEL)
+    sites.ensure(TUNNEL, true)
     expect(deps.controller.prepareSite, 'a failed attempt is tried again').toHaveBeenCalledTimes(2)
     release()
     await held[0]?.ready()
+  })
+})
+
+describe('a request made in a session with no view (a lookup)', () => {
+  it('holds the session on its route and loads no extension, before or after it is ready', async () => {
+    const { sites, held, log } = setup()
+
+    sites.ensure(TUNNEL, false)
+    await held[0]?.ready()
+    sites.ensure(TUNNEL, false)
+    await held[0]?.ready()
+
+    expect(log).toEqual(['fit', 'prepare-extensions true', `prepare ${TUNNEL_PROFILE_ORIGIN} *.eth`, 'prepare-extensions true'])
+  })
+
+  it('leaves the extensions to a view that arrives while the session is still being made, and to the next view after', async () => {
+    let release: () => void = () => {}
+    const { sites, held, log } = setup(async () => { await new Promise<void>((resolve) => { release = resolve }) })
+
+    sites.ensure(TUNNEL, false)
+    sites.ensure(TUNNEL, true)
+    release()
+    await held[0]?.ready()
+    expect(log.filter((line) => line === 'wake')).toHaveLength(1)
+
+    sites.ensure(TUNNEL, true)
+    expect(log.filter((line) => line === 'wake')).toHaveLength(2)
   })
 })

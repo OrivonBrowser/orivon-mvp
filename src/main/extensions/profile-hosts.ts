@@ -61,10 +61,14 @@ export function createProfileAttacher (deps: ProfileAttacherDeps): ProfileAttach
     installDnrWebRequestHandlers(target, deps.engine, onRuleMatched, onTabNavigated)
     deps.installApis(host, target)
 
+    // The copies follow the websites open in the session, but never load before the first `wake`: the shell asks for that once the
+    // session is held on its route, and a copy's own requests must not be the first to leave it.
+    let released = false
     // orivon:floating-ok -- `activate` and `deactivate` catch everything they can throw
-    demand.onChange((open) => { void (open ? extensions.activate() : extensions.deactivate()) })
+    demand.onChange((open) => { if (open && !released) return; void (open ? extensions.activate() : extensions.deactivate()) })
     return {
       wake: () => {
+        released = true
         const ready = extensions.isReady()
         demand.wake()
         const done = extensions.activate()

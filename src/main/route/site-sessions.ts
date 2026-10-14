@@ -41,9 +41,10 @@ export interface SiteSessionsDeps {
 export interface SiteSessions {
   /**
    * Makes the session ready for a view about to be made in `partition`; synchronous, and never throws: a session that cannot
-   * be made ready refuses everything, and is tried again the next time a view is made in it.
+   * be made ready refuses everything, and is tried again the next time a view is made in it. `wake` false is for a request made
+   * in the session with no view: it is held on its route like any, and the extensions are neither loaded nor waited for.
    */
-  ensure: (partition: string) => void
+  ensure: (partition: string, wake: boolean) => void
   /** Clears what a website stored in the profile session named `partition` (cookies, storage, cache), and nothing of any other website. */
   removeStorage: (partition: string, origin: string) => Promise<void>
 }
@@ -55,6 +56,8 @@ interface Entry {
   attempt: Promise<void>
   ready: boolean
   failed: boolean
+  /** Whether a view is waiting on this attempt, so that it ends by loading the extensions. */
+  wanted: { wake: boolean }
   watch: () => void
 }
 
@@ -62,14 +65,18 @@ export function createSiteSessions (deps: SiteSessionsDeps): SiteSessions {
   const entries = new Map<string, Entry>()
 
   return {
-    ensure: (partition) => {
+    ensure: (partition, wake) => {
       const entry = entries.get(partition)
       if (entry !== undefined && !entry.failed) {
         const session = deps.sessionFor(partition)
         // Only a session that is ready is woken: one still being made loads its extensions itself, once its route is held.
-        if (!entry.ready) return
+        if (!entry.ready) {
+          if (wake) entry.wanted.wake = true
+          return
+        }
         // Asked again, harmlessly: a session made ready before the extensions subsystem started was not prepared for them then.
         deps.prepare?.(session, partition.startsWith('persist:'), partition)
+        if (!wake) return
         // Ready: its extensions are put back when they were taken away, and its requests wait for that and no longer.
         const waking = deps.wake?.(session)
         if (waking !== undefined) {
@@ -81,6 +88,7 @@ export function createSiteSessions (deps: SiteSessionsDeps): SiteSessions {
       }
       const profile = profileOfPartition(partition)
       const session = deps.sessionFor(partition)
+      const wanted = { wake }
       const attempt = (async () => {
         // A session name that is not a profile's: nothing says whose front it belongs to.
         if (profile === undefined) throw new Error('a view was made in a website session this process did not name')
@@ -88,15 +96,16 @@ export function createSiteSessions (deps: SiteSessionsDeps): SiteSessions {
         deps.prepare?.(session, partition.startsWith('persist:'), partition)
         await deps.controller.prepareSite(profileOrigin(profile), session, deps.bypass())
         // The extensions load after the session is held on its route, never before: they make requests of their own. Electron loads none in a session kept in memory only, which is where a plain-http website lives.
-        await deps.wake?.(session)
+        if (wanted.wake) await deps.wake?.(session)
       })().catch(async (error: unknown) => {
         console.error('[route] could not point a website\'s session at its route:', error)
         await deps.controller.confineSite(session)
         throw error
       })
-      const fresh: Entry = entry ?? { current: attempt, attempt, ready: false, failed: false, watch: () => {} }
+      const fresh: Entry = entry ?? { current: attempt, attempt, ready: false, failed: false, wanted, watch: () => {} }
       fresh.current = attempt
       fresh.attempt = attempt
+      fresh.wanted = wanted
       fresh.ready = false
       fresh.failed = false
       attempt.then(() => { if (fresh.attempt === attempt) fresh.ready = true }, () => { if (fresh.attempt === attempt) fresh.failed = true })
