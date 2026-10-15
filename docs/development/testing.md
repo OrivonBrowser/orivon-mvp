@@ -393,7 +393,9 @@ view's page is visible (a view removed from its window and added back stays hidd
 bug is seen by launching `electron-vite dev` itself under `openbox` (or a private `gnome-shell --headless` on its
 own D-Bus session, with `--ozone-platform=wayland`), driving the button with real pointer events, and reading the
 window's pixels from the compositor; the main process can log `visibilityState` and a `requestAnimationFrame`
-that never fires. A spec pins the cause it can see (the structure of the window's children) instead.
+that never fires. A spec pins the cause it can see (the structure of the window's children) instead, or launches the
+shell with nothing driving the pages and reads them through the main process's own inspector, as
+`test/window/e2e-chrome-shown.test.ts` does for the chrome left hidden by a full-width overlay over a resized window.
 
 `scripts/probe-view-visibility.mjs` is that recipe for every view put into a window, with no Playwright: it launches
 the built shell (build it first) on a throwaway profile with `--inspect` on the main process alone, which does
