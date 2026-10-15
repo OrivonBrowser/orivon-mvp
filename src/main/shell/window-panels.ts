@@ -61,10 +61,10 @@ export function createWindowPanels ({ ctx, win, services, tabs, overlays, dirnam
     win, win.contentView, siteInfoController, app.getPath('userData'),
     () => tabs.activeWebContents(),
     () => { reloadFromCard(siteInfo, tabs) },
-    // The "Site settings" row: the popover gives way to the Settings section.
-    () => {
+    // The "Site settings" row, and the tunnel list's links: the popover gives way to a Settings section.
+    (path = '/sites') => {
       siteInfo.close()
-      tabs.openInternal('settings', '/sites')
+      tabs.openInternal('settings', path)
     },
     // The extensions disclosure's own "Manage" link: the same
     // close-then-navigate shape as the row above, but to a real page

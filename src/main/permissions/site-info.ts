@@ -76,6 +76,12 @@ export interface SiteTunnel {
   readonly unreadable: boolean
   /** The profile the website lives in now, when its entry puts it in one. */
   readonly profile?: 'tunnel' | 'direct'
+  /** Which tunnel the switch would send the website through: Nym, or the person's own SOCKS5 address. */
+  readonly kind: 'nym' | 'socks5'
+  /** Nym is switched off in Settings, so nothing can be sent through it until it is switched on again. */
+  readonly nymOff: boolean
+  /** The whole browser goes through the tunnel unless a site is set to off. */
+  readonly everywhere: boolean
 }
 
 export interface SiteInfo {

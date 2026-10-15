@@ -6,6 +6,7 @@
 // popover (code-guidelines.md Rule 2).
 
 import { isNymTarget } from '../route/nym-provider.js'
+import { NYM_SWITCHED_OFF } from '../route/nym-subsystem.js'
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import { isLocalFileKey, isolationKeyFromUrl, originFromUrl } from '../../broker/policy/origin.js'
 import type { SubsystemContext } from '../registry.js'
@@ -154,13 +155,19 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     const routes = ctx.routes
     if (routes === undefined || trustSources.isOriginServedFromCacheSync(origin) || !canTunnel(origin)) return undefined
     const blocked = routes.routeSwitch.siteBlockedFor(origin)
+    const proxy = routes.proxy()
+    const kind = proxy !== undefined && isNymTarget(proxy) ? 'nym' : 'socks5'
+    const nym = routes.nym.state()
     return {
       on: routes.hub.isRouted(origin),
       ...(blocked === 'no-proxy' ? { blocked } : {}),
       ...noticeFor(origin, routes.hub.isRouted(origin)),
       ...profileOf(origin),
       swarm: BUILTIN_ADDRESSES.servedName(new URL(origin).hostname)?.namespace === 'bzz:',
-      unreadable: routes.hub.unreadable()
+      unreadable: routes.hub.unreadable(),
+      kind,
+      nymOff: kind === 'nym' && nym.state === 'unavailable' && nym.reason === NYM_SWITCHED_OFF,
+      everywhere: routes.everywhere()
     }
   }
 

@@ -29,6 +29,7 @@ import { createTabGroups, decorateTabGroup, placeGroupChips } from './tab-groups
 import { decorateTabSleeping } from './tab-sleeping.js'
 import { createTabSearchButton } from './tab-search-button.js'
 import { createTabStrip } from './tab-strip.js'
+import { createTunnelButton } from './tunnel-button.js'
 
 const panes = createPanes()
 
@@ -53,6 +54,7 @@ export const CHROME_MODULES: readonly ChromeModule[] = [
   createSearchMode(),
   createHomeButton(),
   createSiteBadges(),
+  createTunnelButton(),
   createSiteAccessChip(),
   createSharingChip(),
   createPopupsChip(),

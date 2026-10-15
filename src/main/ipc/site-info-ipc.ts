@@ -84,6 +84,8 @@ export type SiteInfoCommand =
   /** "Review permissions" of an app that was never let in: the question is given back and the tab in front reloads, so the first visit asks again. No argument: main reads the origin. */
   | { type: 'reviewPermissions' }
   | { type: 'openSiteSettings' }
+  /** The tunnel list's links to Settings > Tunnels: `everywhere` lands on the browser-wide switch. */
+  | { type: 'openTunnelSettings'; everywhere: boolean }
   /** The extensions disclosure's own "Manage" link (docs/planning/extensions-
    * exploration.md): opens `orivon://extensions` the same way `openSiteSettings`
    * opens the Site settings page. */
@@ -136,7 +138,7 @@ export function registerSiteInfoIpc (
   userDataPath: string,
   activeWebContents: () => WebContents | undefined,
   reloadActiveTab: () => void,
-  openSiteSettings: () => void,
+  openSettings: (path?: string) => void,
   openExtensions: () => void,
   onContentHeight: (height: number) => void = () => {},
   openCertificate: () => void = () => {},
@@ -228,7 +230,10 @@ export function registerSiteInfoIpc (
       case 'deleteLocalFile':
         return await controller.deleteLocalFileData(origin)
       case 'openSiteSettings':
-        openSiteSettings()
+        openSettings()
+        return
+      case 'openTunnelSettings':
+        openSettings(command.everywhere === true ? '/tunnels#route-everywhere' : '/tunnels')
         return
       case 'openExtensions':
         openExtensions()

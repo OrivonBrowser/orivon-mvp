@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ChromeContext } from '../chrome/context.js'
 import { CHROME_MODULES } from '../chrome/modules.js'
-import { CONTENT_BLOCKED_NOTE, TUNNEL_NOTES, UPDATE_OFFERED_NOTE, createContentDot } from '../chrome/content-dot.js'
+import { CONTENT_BLOCKED_NOTE, UPDATE_OFFERED_NOTE, createContentDot } from '../chrome/content-dot.js'
 
 afterEach(() => { vi.unstubAllGlobals() })
 
@@ -14,7 +14,7 @@ function mount (present = true) {
   vi.stubGlobal('document', { getElementById: (id: string) => present && id === 'site-permissions-btn' ? key : null })
   const module = createContentDot()
   module.init({} as ChromeContext)
-  const render = (contentBlocked: boolean, updateOffered = false, tunnel: string | null = null): void => { module.render?.({ contentBlocked, updateOffered, tunnel } as never, {} as ChromeContext) }
+  const render = (contentBlocked: boolean, updateOffered = false): void => { module.render?.({ contentBlocked, updateOffered } as never, {} as ChromeContext) }
   return { attrs, render }
 }
 
@@ -51,21 +51,9 @@ describe('the content dot', () => {
     expect(attrs.get('aria-description')).toBe(CONTENT_BLOCKED_NOTE)
   })
 
-  it('marks the key for a page on the tunnel, in two ways, and clears it', () => {
-    const { attrs, render } = mount()
-    for (const tunnel of ['on', 'down'] as const) {
-      render(false, false, tunnel)
-      expect(attrs.get('data-tunnel')).toBe(tunnel)
-      expect(attrs.get('aria-description')).toBe(TUNNEL_NOTES[tunnel])
-    }
-    render(false, false, null)
-    expect(attrs.size).toBe(0)
-  })
-
-  it('names the tunnel after the other notes', () => {
-    const { attrs, render } = mount()
-    render(true, false, 'on')
-    expect(attrs.get('aria-description')).toBe(`${CONTENT_BLOCKED_NOTE}. ${TUNNEL_NOTES.on}`)
+  it('says nothing about the tunnel: the tunnel button does', () => {
+    const { attrs } = mount()
+    expect(attrs.has('data-tunnel')).toBe(false)
   })
 
   it('does nothing when the key is not in the page', () => {

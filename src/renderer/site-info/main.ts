@@ -7,12 +7,14 @@ import type { ApplyOutcome } from '../../main/install/app-updates.js'
 import { renderMainPage } from './main-view.js'
 import { renderWeb3Page } from './web3-view.js'
 import { renderDataPage } from './data-view.js'
+import { renderTunnelsPage } from './tunnel-view.js'
+import { tunnelListModel } from './tunnels-model.js'
 import type { SitePermissionsView } from '../../main/site-settings/site-permissions-view.js'
 import type { SiteKind } from '../../main/site-settings/kinds.js'
 import type { DataPageView } from './data-view.js'
 
 // The site-info popup's whole job: fetch this ONE origin's info, render
-// whichever of the three pages is current, and stage capability switches
+// whichever of the four pages is current, and stage capability switches
 // until Confirm. No live push channel (unlike the chrome view's
 // ShellState) -- the popup is built fresh on every open
 // (src/main/permissions/site-info-panel.ts), so there is nothing to keep
@@ -36,11 +38,12 @@ interface OrivonSiteInfo {
   reload: () => Promise<void>
   reviewPermissions: () => Promise<void>
   openSiteSettings: () => Promise<void>
+  openTunnelSettings: (everywhere: boolean) => Promise<void>
   openExtensions: () => Promise<void>
   openCertificate: () => Promise<void>
   reportHeight: (height: number) => void
   close: () => void
-  initialPage: 'main' | 'web3'
+  initialPage: 'main' | 'web3' | 'tunnels'
   origin: string | null
 }
 
@@ -66,8 +69,9 @@ closeOnEscape(document, () => { bridge.close() })
 const mainSection = must(document.querySelector<HTMLElement>('#main-page'), '#main-page missing')
 const web3Section = must(document.querySelector<HTMLElement>('#web3-page'), '#web3-page missing')
 const dataSection = must(document.querySelector<HTMLElement>('#data-page'), '#data-page missing')
+const tunnelsSection = must(document.querySelector<HTMLElement>('#tunnels-page'), '#tunnels-page missing')
 
-type Page = 'main' | 'web3' | 'data'
+type Page = 'main' | 'web3' | 'data' | 'tunnels'
 
 let page: Page = bridge.initialPage
 let info: SiteInfo | null = null
@@ -116,6 +120,7 @@ function renderCurrent (): void {
   mainSection.hidden = page !== 'main'
   web3Section.hidden = page !== 'web3'
   dataSection.hidden = page !== 'data'
+  tunnelsSection.hidden = page !== 'tunnels'
 
   if (page === 'main' && info !== null) {
     const permissions = sitePermissions === null ? null : { view: sitePermissions, touched: touchedKinds, moreOpen: permissionsMoreOpen, changed: permissionsChanged }
@@ -143,21 +148,24 @@ function renderCurrent (): void {
       onReload: () => { void bridge.reload() },
       onReviewPermissions: () => { void bridge.reviewPermissions() },
       onApplyUpdate: (cid) => { void applyUpdate(cid) },
-      onOpenHome: () => { void bridge.openHome() },
-      tunnel: {
-        onToggle: (next) => {
-          tunnelFailed = false
-          // Moving the switch back while the notice is open leaves everything as it was.
-          if (tunnelNotice !== null && next !== tunnelNotice.next) { tunnelNotice = null; renderCurrent(); return }
-          // The first time a website moves into a profile it is told, and nothing changes until Confirm.
-          const profile = info?.tunnel?.notice
-          if (profile !== undefined) { tunnelNotice = { profile, next }; renderCurrent(); return }
-          void setTunnel(next)
-        },
-        onConfirm: () => { void setTunnel(tunnelNotice?.next ?? true) },
-        onCancel: () => { tunnelNotice = null; renderCurrent() }
-      }
-    }, updateFailure, { notice: tunnelNotice?.profile ?? null, next: tunnelNotice?.next ?? null, failed: tunnelFailed })
+      onOpenHome: () => { void bridge.openHome() }
+    }, updateFailure)
+  } else if (page === 'tunnels' && info !== null) {
+    const view = { notice: tunnelNotice?.profile ?? null, next: tunnelNotice?.next ?? null, failed: tunnelFailed }
+    renderTunnelsPage(tunnelsSection, info, tunnelListModel(info, view), view, {
+      onToggle: (next) => {
+        tunnelFailed = false
+        // Moving the switch back while the notice is open leaves everything as it was.
+        if (tunnelNotice !== null && next !== tunnelNotice.next) { tunnelNotice = null; renderCurrent(); return }
+        // The first time a website moves into a profile it is told, and nothing changes until Confirm.
+        const profile = info?.tunnel?.notice
+        if (profile !== undefined) { tunnelNotice = { profile, next }; renderCurrent(); return }
+        void setTunnel(next)
+      },
+      onConfirm: () => { void setTunnel(tunnelNotice?.next ?? true) },
+      onCancel: () => { tunnelNotice = null; renderCurrent() },
+      onOpenSettings: (everywhere) => { void bridge.openTunnelSettings(everywhere) }
+    })
   } else if (page === 'web3') {
     renderWeb3Page(web3Section, trust, () => { page = 'main'; renderCurrent() })
   } else if (page === 'data' && info !== null) {

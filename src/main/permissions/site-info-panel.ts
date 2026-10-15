@@ -16,10 +16,11 @@ import type { SitePermissionsAccess } from '../site-settings/site-permissions-vi
 
 /** Which page the popup opens showing -- the connection row's own switches
  * (`'main'`) or the delivery-evidence page a shield click or the main
- * page's own Web3 Score row leads to (`'web3'`). The Cookies and site data
+ * page's own Web3 Score row leads to (`'web3'`), or the list of tunnels the tunnel button
+ * opens (`'tunnels'`). The Cookies and site data
  * page is reached only from within the popup once open, never as an entry
  * point, so it has no argv flag of its own. */
-export type SiteInfoPage = 'main' | 'web3'
+export type SiteInfoPage = 'main' | 'web3' | 'tunnels'
 
 export interface SiteInfoPanel {
   /** Clicking the icon that opened the popup again closes it, the same
@@ -42,7 +43,7 @@ export function createSiteInfoPanel (
   userDataPath: string,
   activeWebContents: () => WebContents | undefined,
   reloadActiveTab: () => void,
-  openSiteSettings: () => void,
+  openSettings: (path?: string) => void,
   openExtensions: () => void,
   openCertificate: () => void,
   sitePermissions: SitePermissionsAccess,
@@ -65,7 +66,7 @@ export function createSiteInfoPanel (
     background: PANEL_POPOVER_BACKGROUND,
     activeContents: activeWebContents,
     registerIpc: (webContents, url, onContentHeight) => {
-      registerSiteInfoIpc(webContents, url, controller, openOrigin, userDataPath, activeWebContents, reloadActiveTab, openSiteSettings, openExtensions, onContentHeight, openCertificate, sitePermissions, () => { popover.close() }, openHome)
+      registerSiteInfoIpc(webContents, url, controller, openOrigin, userDataPath, activeWebContents, reloadActiveTab, openSettings, openExtensions, onContentHeight, openCertificate, sitePermissions, () => { popover.close() }, openHome)
       return () => {}
     }
   })
