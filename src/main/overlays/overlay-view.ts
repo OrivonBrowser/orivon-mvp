@@ -17,6 +17,8 @@ import type { OverlayPort } from './overlay-ipc.js'
 import type { OverlayDef, OverlayKey } from './overlay-types.js'
 
 const CORNER_RADIUS = 10
+/** A blur this soon after `reshow` is the hide it made, not the person leaving the view. */
+const RESHOW_BLUR_GRACE_MS = 200
 
 /** What a view is asked to give focus back to: a webContents, or nothing the host can reason about. */
 export interface FocusTarget {
@@ -34,6 +36,8 @@ export interface OverlayViewHandle {
   detach: (parent: View) => void
   /** Takes the view off the screen but leaves it a child of its window, so the next `attach` only shows it again. */
   hide: () => void
+  /** Hides and shows the view in one turn, keeping the keyboard where it was: what makes the chrome underneath it show again (README.md's Design notes). */
+  reshow: () => void
   setBounds: (bounds: Rectangle) => void
   /** Focuses the page once it can take it, unless `wanted()` is false by then. */
   focusWhenReady: (wanted: () => boolean) => void
@@ -85,6 +89,7 @@ export function createOverlayView (spec: OverlayViewSpec): OverlayViewHandle {
     }
   })
   const contents = view.webContents
+  let reshownAt = 0
   // Before the view is ever attached, so the first frame composited is the
   // surface's colour and not the opaque white a new view defaults to.
   const color = backgroundFor(spec.def.surface)
@@ -95,7 +100,7 @@ export function createOverlayView (spec: OverlayViewSpec): OverlayViewHandle {
   view.setBorderRadius(spec.square === true ? 0 : CORNER_RADIUS)
   registerOverlayIpc(contents, url, spec.port)
   // Not from inside the native call that raised it: a window shrunk under an open popup blurs the popup while the resize is still running, and taking the view out of the window there kills the process.
-  contents.on('blur', () => { setImmediate(spec.onBlur) })
+  contents.on('blur', () => { setImmediate(() => { if (Date.now() - reshownAt > RESHOW_BLUR_GRACE_MS) spec.onBlur() }) })
   // Deferred too: a view attached before its first page commits takes focus as it commits, and focus given back
   // from inside that change does not hold.
   contents.on('focus', () => { setImmediate(spec.onFocus) })
@@ -119,6 +124,14 @@ export function createOverlayView (spec: OverlayViewSpec): OverlayViewHandle {
     detach: (parent) => { parent.removeChildView(view) },
     // A warm view is hidden in place, never removed: see README.md's Design notes for why.
     hide: () => { view.setVisible(false) },
+    reshow: () => {
+      if (contents.isDestroyed()) return
+      const focused = contents.isFocused()
+      reshownAt = Date.now()
+      view.setVisible(false)
+      view.setVisible(true)
+      if (focused) contents.focus()
+    },
     setBounds: (bounds) => { view.setBounds(bounds) },
     focusWhenReady: (wanted) => {
       // A view that never held focus can never blur, so a blur-closed overlay would stay open forever.

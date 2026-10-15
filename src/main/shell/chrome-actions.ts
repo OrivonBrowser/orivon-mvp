@@ -3,6 +3,7 @@ import { barFolder, barItems, barMenu, barMove, barOpen } from './bookmarks-bar/
 import { omniboxClose, omniboxPick, omniboxQuery, omniboxSelect } from '../omnibox/omnibox-actions.js'
 import { sharingBar } from '../display-capture/indicators/sharing-action.js'
 import { passwordsKey } from '../passwords/passwords-key-action.js'
+import { chromeHidden } from './actions/chrome-hidden.js'
 import { homeOpen } from './actions/home-open.js'
 import { groupMenu, groupMove, groupToggle } from './actions/tab-group.js'
 import { overlayClose, overlayToggle } from './actions/overlay.js'
@@ -30,6 +31,7 @@ export const CHROME_ACTIONS: Readonly<Record<string, ChromeAction>> = {
   'bookmarks.menu': barMenu,
   'bookmarks.move': barMove,
   'bookmarks.open': barOpen,
+  'chrome.hidden': chromeHidden,
   'group.menu': groupMenu,
   'group.move': groupMove,
   'group.toggle': groupToggle,

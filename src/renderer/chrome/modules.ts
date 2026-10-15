@@ -6,6 +6,7 @@ import { createAddressDisplay } from './address-display.js'
 import { createAddressSuggest } from './address-suggest.js'
 import { createBookmarkStar } from './bookmark-star.js'
 import { createBookmarksBar } from './bookmarks-bar.js'
+import { createChromeShown } from './chrome-shown.js'
 import { createCluster } from './cluster.js'
 import { createExtensionsButton } from './extensions-button.js'
 import { createDownloadsButton } from './downloads-button.js'
@@ -63,6 +64,7 @@ export const CHROME_MODULES: readonly ChromeModule[] = [
   createContentDot(),
   createPasswordKey(),
   createPromptAnchor(),
+  createChromeShown(),
   createReaderButton(),
   createCluster(),
   createExtensionsButton(),

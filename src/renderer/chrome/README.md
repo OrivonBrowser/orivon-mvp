@@ -23,6 +23,7 @@ Electron, entirely: it runs in the chrome's `WebContentsView` on `src/preload/sh
 | `home-button.ts` | the Home button, shown while `toolbar.home` is on |
 | `reader-button.ts` | the book in the address pill while the page in front looks like an article; opens reader view |
 | `password-key.ts` | the password button in the address pill: saved logins for this site, or an offer to keep the last sign-in |
+| `chrome-shown.ts` | tells main (`chrome.hidden`) when the page reads hidden, so main can show it again |
 | `prompt-anchor.ts` | reports the address pill's rectangle to main (`prompt.anchor`), so a prompt can open under it |
 | `site-badges.ts` | the Web3 Score shield and mark, the permissions key and its `data-missing` attribute (an app's permissions are not all granted), drawn as a dot by `styles/content-dot.css` |
 | `site-access-chip.ts` | the mark in the address bar for a page that asked for the camera, a location or another permission; it opens the review bubble |
