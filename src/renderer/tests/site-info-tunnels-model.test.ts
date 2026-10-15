@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { SiteInfo, SiteTunnel } from '../../main/permissions/site-info.js'
-import { ENFORCE_LINK, EVERYWHERE_HINT, NO_SWITCH_NOTE, NYM_OFF_LINE, TUNNEL_KINDS, anyTunnelOn, tunnelListModel } from '../site-info/tunnels-model.js'
+import { ENFORCE_LINK, EVERYWHERE_HINT, NO_SWITCH_NOTE, NYM_OFF_LINE, TUNNEL_KINDS, tunnelListModel } from '../site-info/tunnels-model.js'
 
-const tunnel: SiteTunnel = { on: false, swarm: false, unreadable: false, kind: 'nym', nymOff: false, everywhere: false }
+const tunnel: SiteTunnel = { on: false, swarm: false, unreadable: false, nymOff: false }
 const base: SiteInfo = {
   origin: 'https://example.com', displayOrigin: 'example.com', claimedName: undefined, homeDomain: undefined, update: undefined, asked: true,
-  capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite: [], tunnel
+  capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite: [], tunnel, tunnelKind: 'nym', everywhere: false
 }
 const info = (patch: Partial<SiteInfo> = {}): SiteInfo => ({ ...base, ...patch })
 /** A page with no tunnel switch: an installed app, a local file or this computer. */
@@ -29,17 +29,15 @@ describe('the rows of a website', () => {
     const model = tunnelListModel(info(), noView)
     expect(model.rows).toHaveLength(1)
     expect(model.rows[0]).toMatchObject({ kind: { id: 'nym' }, on: false, disabled: false, state: { text: 'This site is not sent through the tunnel.', down: false }, settingsLink: false })
-    expect(anyTunnelOn(model)).toBe(false)
   })
 
   it('names the person\'s own tunnel when that is the choice', () => {
-    expect(tunnelListModel(info({ tunnel: { ...tunnel, kind: 'socks5' } }), noView).rows[0]?.kind.name).toBe('Your SOCKS5 tunnel')
+    expect(tunnelListModel(info({ tunnelKind: 'socks5' }), noView).rows[0]?.kind.name).toBe('Your SOCKS5 tunnel')
   })
 
   it('is on, with what Nym is doing, once the site goes through it', () => {
     const model = tunnelListModel(info({ tunnel: { ...tunnel, on: true }, route: 'ok', nym: { state: 'ready' } }), noView)
     expect(model.rows[0]).toMatchObject({ on: true, state: { text: 'This site\'s traffic goes through Nym. Nym tunnel ready', down: false } })
-    expect(anyTunnelOn(model)).toBe(true)
   })
 
   it('shows the switch where the person moved it while the storage notice is open', () => {
@@ -61,7 +59,7 @@ describe('the rows of a website', () => {
   })
 
   it('keeps the switch\'s hints: no tunnel set, Swarm, unreadable settings', () => {
-    const noProxy = tunnelListModel(info({ tunnel: { ...tunnel, kind: 'socks5', blocked: 'no-proxy' } }), noView).rows[0]
+    const noProxy = tunnelListModel(info({ tunnelKind: 'socks5', tunnel: { ...tunnel, blocked: 'no-proxy' } }), noView).rows[0]
     expect(noProxy).toMatchObject({ disabled: true })
     expect(noProxy?.notes[0]).toEqual({ text: 'Set a tunnel under Tunnels first.', down: true })
     expect(tunnelListModel(info({ tunnel: { ...tunnel, swarm: true } }), noView).rows[0]?.notes[0]?.text).toContain('Swarm')
@@ -79,6 +77,15 @@ describe('an installed app and a page opened from one', () => {
     const model = tunnelListModel(noSwitch({ route: 'ok', nym: { state: 'ready' } }), noView)
     expect(model.rows[0]).toMatchObject({ kind: { id: 'nym' }, on: true, disabled: true })
     expect(model.rows[0]?.state.text).toContain('This app\'s traffic goes through Nym')
+  })
+
+  it('names the tunnel the person chose, not the one a page\'s own route state suggests', () => {
+    expect(tunnelListModel(noSwitch({ route: 'ok', tunnelKind: 'nym' }), noView).rows[0]?.kind.id).toBe('nym')
+    expect(tunnelListModel(info({ route: 'temporary', tunnelKind: 'nym' }), noView).rows[0]?.kind.id).toBe('nym')
+  })
+
+  it('says every site goes through the tunnel also on a page with no switch of its own', () => {
+    expect(tunnelListModel(noSwitch({ everywhere: true }), noView).hint.link).toBe('Open Tunnels settings')
   })
 
   it('does the same for a temporary page, in words about the page', () => {
@@ -99,6 +106,6 @@ describe('the hint under the list', () => {
   })
 
   it('says every site goes through the tunnel while it is on, and links to Tunnels settings', () => {
-    expect(tunnelListModel(info({ tunnel: { ...tunnel, everywhere: true } }), noView).hint).toEqual({ text: EVERYWHERE_HINT, link: 'Open Tunnels settings', everywhere: false })
+    expect(tunnelListModel(info({ everywhere: true }), noView).hint).toEqual({ text: EVERYWHERE_HINT, link: 'Open Tunnels settings', everywhere: false })
   })
 })

@@ -2,7 +2,7 @@ import type { SiteInfo, SiteTunnel } from '../../main/permissions/site-info.js'
 import { routeLineWords } from './route-line.js'
 import { extensionsHint, tunnelHint } from './tunnel-view.js'
 
-// What the tunnel list of the site-info popup shows, as data: one row per tunnel Orivon offers, and the words under it.
+// What the tunnel list of the site-info popup shows, as data: the row of the tunnel in use, and the words under it.
 // Pure, so the rows are tested without a DOM. A tunnel added later is one entry in TUNNEL_KINDS.
 
 export type TunnelKindId = 'nym' | 'socks5'
@@ -51,7 +51,7 @@ export const NYM_OFF_LINE = 'Nym is switched off in Settings.'
 export const NYM_OFF_LINK = 'Switch it on in Tunnels settings'
 export const ENFORCE_LINK = 'Enforce a tunnel browser-wide'
 export const EVERYWHERE_HINT = 'Every site goes through the tunnel unless you switch it off here. Change this in Tunnels settings.'
-export const NO_SWITCH_NOTE = 'This page has no tunnel switch here. An installed app is switched on from its card in Settings, under Apps.'
+export const NO_SWITCH_NOTE = 'This page has no tunnel switch here. An installed app is switched on from its card in Settings, under Apps, and a page from this computer is never sent through a tunnel.'
 
 function kindOf (id: TunnelKindId): TunnelKind {
   return TUNNEL_KINDS.find((kind) => kind.id === id) ?? TUNNEL_KINDS[0] as TunnelKind
@@ -59,7 +59,7 @@ function kindOf (id: TunnelKindId): TunnelKind {
 
 /** A website's row: the switch is the site's own tunnel switch. */
 function siteRow (info: SiteInfo, tunnel: SiteTunnel, extensions: readonly string[], shownOn: boolean): TunnelRowModel {
-  const kind = kindOf(tunnel.kind)
+  const kind = kindOf(info.tunnelKind ?? 'nym')
   const hint = tunnelHint(tunnel)
   const reach = extensionsHint(extensions, tunnel.profile)
   const stopped = tunnel.nymOff
@@ -67,7 +67,7 @@ function siteRow (info: SiteInfo, tunnel: SiteTunnel, extensions: readonly strin
     ? { text: NYM_OFF_LINE, down: true }
     : tunnel.on && info.route !== undefined
       ? { text: routeLineWords(info.route, 'site', info.nym), down: info.route === 'down' || info.route === 'no-proxy' || info.nym?.state === 'failed' || info.nym?.state === 'unavailable' }
-      : { text: tunnel.everywhere ? 'Switched off here: this site goes outside the tunnel.' : 'This site is not sent through the tunnel.', down: false }
+      : { text: info.everywhere === true ? 'Switched off here: this site goes outside the tunnel.' : 'This site is not sent through the tunnel.', down: false }
   return {
     kind,
     on: shownOn,
@@ -85,7 +85,7 @@ function siteRow (info: SiteInfo, tunnel: SiteTunnel, extensions: readonly strin
 function appRow (info: SiteInfo): TunnelRowModel {
   const route = info.route ?? 'idle'
   return {
-    kind: kindOf(info.nym === undefined ? 'socks5' : 'nym'),
+    kind: kindOf(info.tunnelKind ?? (info.nym === undefined ? 'socks5' : 'nym')),
     on: true,
     disabled: true,
     state: { text: routeLineWords(route, 'app', info.nym), down: route === 'down' || route === 'no-proxy' || info.nym?.state === 'failed' || info.nym?.state === 'unavailable' },
@@ -95,7 +95,7 @@ function appRow (info: SiteInfo): TunnelRowModel {
 }
 
 export function tunnelListModel (info: SiteInfo, view: { readonly next: boolean | null }): TunnelListModel {
-  const everywhere = info.tunnel?.everywhere === true
+  const everywhere = info.everywhere === true
   const hint = everywhere
     ? { text: EVERYWHERE_HINT, link: 'Open Tunnels settings', everywhere: false }
     : { text: '', link: ENFORCE_LINK, everywhere: true }
@@ -104,9 +104,4 @@ export function tunnelListModel (info: SiteInfo, view: { readonly next: boolean 
   }
   if (info.route !== undefined) return { rows: [appRow(info)], empty: null, hint }
   return { rows: [], empty: NO_SWITCH_NOTE, hint }
-}
-
-/** Whether any row is on: what the address bar's button says. */
-export function anyTunnelOn (model: TunnelListModel): boolean {
-  return model.rows.some((row) => row.on)
 }

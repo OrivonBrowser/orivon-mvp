@@ -109,6 +109,20 @@ export interface SiteInfoController {
   reviewPermissions: (origin: string) => Promise<boolean>
 }
 
+type Routes = NonNullable<SubsystemContext['routes']>
+
+/** Where the person's tunnel choice leaves from: Nym, or their own address (also while none is set). */
+function tunnelKindOf (routes: Routes): 'nym' | 'socks5' {
+  const proxy = routes.proxy()
+  return proxy !== undefined && isNymTarget(proxy) ? 'nym' : 'socks5'
+}
+
+/** Nym is the tunnel and the person switched it off in Settings. */
+function nymSwitchedOff (routes: Routes): boolean {
+  const nym = routes.nym.state()
+  return tunnelKindOf(routes) === 'nym' && nym.state === 'unavailable' && nym.reason === NYM_SWITCHED_OFF
+}
+
 export function createSiteInfoController (ctx: SubsystemContext, trustSources: SiteTrustSources, deleteLocalFile: (key: string) => Promise<boolean> = async () => false, entry: AppEntry = NO_ENTRY): SiteInfoController {
   // The extensions disclosure (docs/planning/extensions-exploration.md) -- see
   // README.md's Design notes for why this is computed once, ahead of the
@@ -135,7 +149,8 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     // What Nym is doing is asked only for an origin whose route is on and leaves through it.
     const proxy = route === undefined || route === 'off' ? undefined : ctx.routes?.proxy()
     const nym = proxy === undefined || !isNymTarget(proxy) ? undefined : ctx.routes?.nym.state()
-    return { ...info, ...(notLetIn === undefined ? {} : { notLetIn }), ...(update === undefined ? {} : { update }), ...(route === undefined || route === 'off' ? {} : { route }), ...(tunnel === undefined ? {} : { tunnel }), ...(nym === undefined ? {} : { nym }) }
+    const kind = ctx.routes === undefined ? undefined : tunnelKindOf(ctx.routes)
+    return { ...info, ...(kind === undefined || ctx.routes === undefined ? {} : { tunnelKind: kind, everywhere: ctx.routes.hub.isEverywhere() }), ...(notLetIn === undefined ? {} : { notLetIn }), ...(update === undefined ? {} : { update }), ...(route === undefined || route === 'off' ? {} : { route }), ...(tunnel === undefined ? {} : { tunnel }), ...(nym === undefined ? {} : { nym }) }
   }
 
   /** The profile the website lives in now. */
@@ -155,9 +170,6 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     const routes = ctx.routes
     if (routes === undefined || trustSources.isOriginServedFromCacheSync(origin) || !canTunnel(origin)) return undefined
     const blocked = routes.routeSwitch.siteBlockedFor(origin)
-    const proxy = routes.proxy()
-    const kind = proxy !== undefined && isNymTarget(proxy) ? 'nym' : 'socks5'
-    const nym = routes.nym.state()
     return {
       on: routes.hub.isRouted(origin),
       ...(blocked === 'no-proxy' ? { blocked } : {}),
@@ -165,9 +177,7 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
       ...profileOf(origin),
       swarm: BUILTIN_ADDRESSES.servedName(new URL(origin).hostname)?.namespace === 'bzz:',
       unreadable: routes.hub.unreadable(),
-      kind,
-      nymOff: kind === 'nym' && nym.state === 'unavailable' && nym.reason === NYM_SWITCHED_OFF,
-      everywhere: routes.hub.isEverywhere()
+      nymOff: nymSwitchedOff(routes)
     }
   }
 
@@ -248,7 +258,7 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     async setTunnel (origin, on) {
       const routes = ctx.routes
       if (routes === undefined || trustSources.isOriginServedFromCacheSync(origin)) return false
-      if (on && routes.routeSwitch.siteBlockedFor(origin) !== undefined) return false
+      if (on && (routes.routeSwitch.siteBlockedFor(origin) !== undefined || nymSwitchedOff(routes))) return false
       try {
         await routes.routeSwitch.setSite(origin, on)
       } catch (error) {

@@ -2,8 +2,8 @@ import type { SiteRoute } from '../../main/permissions/site-info.js'
 import type { NymState } from '../../main/route/nym-status.js'
 import { nymRouteLine } from '../pages/shared/nym-words.js'
 
-// The one line the popover shows for an origin the person routed through their tunnel, and the line that says so when
-// the tunnel is not answering. Composed here, never from anything an app wrote.
+// The words the tunnels page says for an origin the person routed through their tunnel, and when the tunnel is not
+// answering. Composed here, never from anything an app wrote.
 
 /** Whose traffic the line is about: an installed app or a website. */
 export type RouteSubject = 'app' | 'site'
@@ -19,11 +19,4 @@ export function routeLineWords (route: SiteRoute, subject: RouteSubject = 'app',
     case 'idle':
     case 'ok': return `This ${noun}'s traffic goes through your tunnel.`
   }
-}
-
-export function renderRouteLine (route: SiteRoute, subject: RouteSubject = 'app', nym?: NymState): HTMLElement {
-  const line = document.createElement('p')
-  line.className = route === 'down' || route === 'no-proxy' || nym?.state === 'failed' || nym?.state === 'unavailable' ? 'route-line route-line-down' : 'route-line'
-  line.textContent = routeLineWords(route, subject, nym)
-  return line
 }

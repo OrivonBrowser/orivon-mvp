@@ -166,6 +166,8 @@ function renderCurrent (): void {
       onCancel: () => { tunnelNotice = null; renderCurrent() },
       onOpenSettings: (everywhere) => { void bridge.openTunnelSettings(everywhere) }
     })
+    // The page was drawn again, so the keyboard goes back to the switch, or to Cancel while the storage notice asks.
+    queueMicrotask(() => { tunnelsSection.querySelector<HTMLElement>(view.notice === null ? '#tunnel-switch' : '#tunnel-notice-cancel')?.focus() })
   } else if (page === 'web3') {
     renderWeb3Page(web3Section, trust, () => { page = 'main'; renderCurrent() })
   } else if (page === 'data' && info !== null) {

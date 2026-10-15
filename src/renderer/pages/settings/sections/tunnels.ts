@@ -11,7 +11,7 @@ const OWN = 'Your SOCKS5 tunnel'
 const CHECK = 'Check that it works'
 const SITES = 'Sites and apps'
 
-/** The row ids keep their old names: a deep link (`orivon://settings/tunnels#route-everywhere`) and the specs name them. */
+/** The row ids are stable: a deep link (`orivon://settings/tunnels#route-everywhere`) and the specs name them. */
 const rows: readonly Row[] = [
   {
     id: 'route-kind',

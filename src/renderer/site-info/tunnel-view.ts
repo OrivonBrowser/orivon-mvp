@@ -3,7 +3,7 @@ import { createSwitch } from './switch.js'
 import { tunnelIcon } from './icons.js'
 import type { TunnelListModel, TunnelRowModel } from './tunnels-model.js'
 
-// The tunnels page of the site-info popup: a row for each tunnel with the switch that sends this website through it,
+// The tunnels page of the site-info popup: the row of the tunnel in use with the switch that sends this website through it,
 // the line that says what that does and, the first time a website would move into storage of its own, the notice that
 // comes before it. The rows are `tunnels-model.ts`'s. The words are composed here, never from anything a site wrote.
 
@@ -107,7 +107,7 @@ function renderRow (row: TunnelRowModel, callbacks: TunnelCallbacks): HTMLElemen
   return el
 }
 
-/** The page: the title, a row for each tunnel, what else the person should know, the notice while it is open, and the hint to enforce a tunnel for the whole browser. */
+/** The page: the title, the row of the tunnel in use, what else the person should know, the notice while it is open, and the hint to enforce a tunnel for the whole browser. */
 export function renderTunnelsPage (container: HTMLElement, info: SiteInfo, model: TunnelListModel, view: TunnelViewState, callbacks: TunnelCallbacks): void {
   container.replaceChildren()
   const header = document.createElement('header')

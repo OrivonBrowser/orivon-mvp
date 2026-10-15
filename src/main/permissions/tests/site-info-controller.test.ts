@@ -497,7 +497,7 @@ describe('createSiteInfoController -- the tunnel switch of a website', () => {
 
   it('offers the switch for an ordinary website, with what the popover needs to ask first', async () => {
     const info = await controllerWith(routesFor({ notice: 'tunnel' })).siteInfoFor(SITE)
-    expect(info.tunnel).toEqual({ on: false, notice: 'tunnel', swarm: false, unreadable: false, kind: 'socks5', nymOff: false, everywhere: false })
+    expect(info.tunnel).toEqual({ on: false, notice: 'tunnel', swarm: false, unreadable: false, nymOff: false })
   })
 
   it('says it is on, and that no notice is needed once the site has storage in the profile the next change moves it to', async () => {
@@ -517,13 +517,23 @@ describe('createSiteInfoController -- the tunnel switch of a website', () => {
     expect((await controllerWith(routesFor({ unreadable: true, on: true })).siteInfoFor(SITE)).tunnel?.unreadable).toBe(true)
   })
 
-  it('says which tunnel the switch uses, whether Nym is switched off, and whether the whole browser is on it', async () => {
-    expect((await controllerWith(routesFor()).siteInfoFor(SITE)).tunnel).toMatchObject({ kind: 'socks5', nymOff: false, everywhere: false })
-    expect((await controllerWith(routesFor({ nym: true })).siteInfoFor(SITE)).tunnel).toMatchObject({ kind: 'nym', nymOff: false })
-    expect((await controllerWith(routesFor({ nym: true, nymOff: true })).siteInfoFor(SITE)).tunnel).toMatchObject({ kind: 'nym', nymOff: true })
-    expect((await controllerWith(routesFor({ nym: true, everywhere: true })).siteInfoFor(SITE)).tunnel?.everywhere).toBe(true)
+  it('says which tunnel the person chose and whether the whole browser is on it, for every origin, and whether Nym is switched off', async () => {
+    expect(await controllerWith(routesFor()).siteInfoFor(SITE)).toMatchObject({ tunnelKind: 'socks5', everywhere: false, tunnel: { nymOff: false } })
+    expect(await controllerWith(routesFor({ nym: true })).siteInfoFor(SITE)).toMatchObject({ tunnelKind: 'nym', tunnel: { nymOff: false } })
+    expect((await controllerWith(routesFor({ nym: true, nymOff: true })).siteInfoFor(SITE)).tunnel?.nymOff).toBe(true)
+    const everywhere = await controllerWith(routesFor({ nym: true, everywhere: true })).siteInfoFor('http://127.0.0.1:8080')
+    expect(everywhere).toMatchObject({ tunnelKind: 'nym', everywhere: true })
+    expect(everywhere.tunnel, 'this computer has no switch').toBeUndefined()
     // A switched-off Nym is no reason to lock the switch of a person whose tunnel is their own address.
     expect((await controllerWith(routesFor({ nymOff: true })).siteInfoFor(SITE)).tunnel?.nymOff).toBe(false)
+  })
+
+  it('refuses to turn a site on while Nym is switched off, and still turns one off', async () => {
+    const setSite = vi.fn(async () => {})
+    expect(await controllerWith(routesFor({ nym: true, nymOff: true, setSite })).setTunnel(SITE, true)).toBe(false)
+    expect(setSite).not.toHaveBeenCalled()
+    expect(await controllerWith(routesFor({ nym: true, nymOff: true, setSite })).setTunnel(SITE, false)).toBe(true)
+    expect(setSite).toHaveBeenCalledWith(SITE, false)
   })
 
   it('marks a Swarm address, which cannot go through the tunnel, and no other Web3 name or address', async () => {
