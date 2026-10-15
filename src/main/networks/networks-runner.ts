@@ -28,7 +28,7 @@ function readMetrics (): readonly ProcessMetric[] {
 
 export function createNetworks (settings: SettingsStore, ctx: SubsystemContext): NetworksSource {
   return createNetworksSource({
-    settings: { get: (key) => settings.get(key), set: (key, value) => settings.set(key, value), onChange: (listener) => settings.onChange(listener) },
+    settings: { get: (key) => settings.get(key), set: (key, value) => settings.set(key, value), isHeld: (key) => settings.heldKeys().includes(key), onChange: (listener) => settings.onChange(listener) },
     lightClient: { view: verifierView, forcedOff: lightClientForcedOff, process: verifierProcessInfo, onChange: onVerifierChange },
     ipfs: ipfsNode,
     swarm: swarmNode,
