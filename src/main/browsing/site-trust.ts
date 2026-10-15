@@ -82,6 +82,8 @@ export interface Web3Score {
   readonly noProvider: boolean
   /** The provider was asked and did not answer (and nothing it said earlier is kept): the tooltip says so instead of "no score yet", and the shield asks again later. */
   readonly unreachable: boolean
+  /** When `unreachable`, how soon asking again is worth it: later on a slow route. Absent otherwise. */
+  readonly retryMs?: number
 }
 
 export function web3Score (trust: SiteTrust | null): Web3Score | null {
@@ -97,7 +99,8 @@ export function web3Score (trust: SiteTrust | null): Web3Score | null {
     localDev: trust.ddoc.status === 'local-dev',
     unscored: !overridden && trust.displayedLevel === 2 && trust.judged.status !== 'judged',
     noProvider: trust.judged.status === 'off',
-    unreachable: trust.judged.status === 'unreachable'
+    unreachable: trust.judged.status === 'unreachable',
+    ...(trust.judged.status === 'unreachable' && trust.judged.retryMs !== undefined && { retryMs: trust.judged.retryMs })
   }
 }
 

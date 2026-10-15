@@ -48,10 +48,21 @@ async function launched (fake: object) {
     [`/score/website/${bucketOf(SCORED)}.json`, bucketFile(SCORED, 3)]
   ])
   let directHits = 0
+  // What the provider does to the next requests: `failFirst` answers a 503, and `holdMs` holds each answer back, as a provider behind a slow route does.
+  const behaviour = { failFirst: 0, holdMs: 0 }
   const real = await listen((request, response) => {
+    if (behaviour.failFirst > 0) {
+      behaviour.failFirst -= 1
+      response.writeHead(503).end()
+      return
+    }
     const body = files.get(request.url ?? '')
-    if (body === undefined) response.writeHead(404).end()
-    else response.writeHead(200, { 'content-type': 'application/json' }).end(body)
+    const answer = (): void => {
+      if (body === undefined) response.writeHead(404).end()
+      else response.writeHead(200, { 'content-type': 'application/json' }).end(body)
+    }
+    if (behaviour.holdMs > 0) setTimeout(answer, behaviour.holdMs)
+    else answer()
   })
   // The same name and port on loopback, which only a fetch that skipped the tunnel would reach.
   const decoy = await listen((_request, response) => { directHits += 1; response.writeHead(404).end() })
@@ -67,7 +78,7 @@ async function launched (fake: object) {
     seedProfile: async (userDataDir) => { writeFileSync(join(userDataDir, 'settings.json'), JSON.stringify({ version: 2, values: { 'network.tunnel.everywhere': false, 'web3.scoreProvider': `http://${PROVIDER}:${String(decoy.port)}/score` } })) }
   })
   cleanups.push(async () => { await app.close().catch(() => {}) })
-  return { app, chrome, scoredUrl: `http://127.0.0.1:${String(scored.port)}/`, directHits: () => directHits }
+  return { app, chrome, behaviour, scoredUrl: `http://127.0.0.1:${String(scored.port)}/`, directHits: () => directHits }
 }
 
 /** Switches the whole browser onto the tunnel in Settings, as a person does. */
@@ -102,8 +113,28 @@ it('[app:score-says-when-the-provider-cannot-be-reached] with a Nym that cannot 
   await putBrowserOnTunnel(world)
   await navigateToFixture(world.app, world.scoredUrl, 'scored fixture')
 
-  expect(await waitFor(async () => (await shield(world)).label.includes('could not be reached'), 60_000), (await shield(world)).label).toBe(true)
+  // The lookup asks a few times, a slow route's pause apart, before it gives up: the label comes after that, not at the first failure.
+  expect(await waitFor(async () => (await shield(world)).label.includes('could not be reached'), 420_000), (await shield(world)).label).toBe(true)
   expect((await shield(world)).level).toBe('2')
   expect((await shield(world)).label).not.toContain('no Web3 Score for this site yet')
   expect(world.directHits(), 'nothing was asked around the tunnel').toBe(0)
-}, 6 * QA_TEST_TIMEOUT_MS)
+}, 10 * QA_TEST_TIMEOUT_MS)
+
+it('[app:score-patient-on-slow-route] a provider that fails once and then answers later than a direct connection would wait keeps the shield checking, and the judged level is shown without it ever saying the provider could not be reached', async () => {
+  const world = await launched({})
+  world.behaviour.failFirst = 1
+  world.behaviour.holdMs = 32_000
+  await putBrowserOnTunnel(world)
+  await navigateToFixture(world.app, world.scoredUrl, 'scored fixture')
+
+  let saidUnreachable = false
+  const shown = await waitFor(async () => {
+    const now = await shield(world)
+    if (now.label.includes('could not be reached')) saidUnreachable = true
+    return now.level === '3'
+  }, 240_000)
+  expect(saidUnreachable, 'while the lookup was still progressing the shield never said the provider could not be reached').toBe(false)
+  expect(shown, 'the judged level is shown once the slow provider answers').toBe(true)
+  expect((await shield(world)).label).toContain(`judged by ${PROVIDER_NAME}`)
+  expect(world.directHits(), 'the provider was never asked around the tunnel').toBe(0)
+}, 20 * QA_TEST_TIMEOUT_MS)
