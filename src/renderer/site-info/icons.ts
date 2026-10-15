@@ -21,3 +21,11 @@ export function backIcon (): SVGSVGElement {
   el.append(path('m15 18-6-6 6-6', '2'))
   return el
 }
+
+/** An arch-shaped portal: the tunnel in the address bar's button (`../index.html` draws the same shape) and the logo-less SOCKS5 row. */
+export function tunnelIcon (): SVGSVGElement {
+  const el = svg('0 0 24 24')
+  el.classList.add('icon-tunnel')
+  el.append(path('M4 21V11a8 8 0 0 1 16 0v10', '2'), path('M9 21v-9a3 3 0 0 1 6 0v9', '2'), path('M2 21h20', '2'))
+  return el
+}

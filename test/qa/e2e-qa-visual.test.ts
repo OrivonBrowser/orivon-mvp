@@ -290,17 +290,17 @@ for (const scheme of SCHEMES) {
     }
   }, QA_TEST_TIMEOUT_MS)
 
-  it(`Settings > Privacy and data > Tunnel looks right on Nym and on an address (${scheme})`, async () => {
+  it(`Settings > Tunnels looks right on Nym and on an address (${scheme})`, async () => {
     const { app, chrome } = await launchShell({ scheme, seedProfile: async (dir) => { writeFileSync(join(dir, 'settings.json'), JSON.stringify({ version: 2, values: {} })) } })
     try {
-      await runPhase('visual states of Settings > Privacy and data > Tunnel', async (check) => {
-        const settings = await openInternal(app, chrome, 'settings', '/privacy')
+      await runPhase('visual states of Settings > Tunnels', async (check) => {
+        const settings = await openInternal(app, chrome, 'settings', '/tunnels')
         await settings.waitForSelector('#row-route-nym-status:has-text("Starts when")')
         await scrollToTunnelRow(settings)
         check('the tunnel choice is Nym (built in), the Nym status line is shown and the address row is not', (await settings.locator('#row-route-kind select').inputValue()) === 'nym' && await settings.locator('#row-route-nym-status').isVisible() && await settings.locator('#row-route-nym-privacy select').inputValue() === 'balanced' && !(await settings.locator('#row-route-proxy').isVisible()))
         await state(check, app, `settings-tunnel-nym-${scheme}`, {
-          expected: 'orivon://settings/privacy is open with the "Tunnel" row showing the choice "Nym (built in)", under it a "Nym" row saying "Starts when an app that uses it connects.", a "Nym privacy" row with a choice showing "Balanced" and one sentence for each of Balanced and Strongest, and a "Test the tunnel" row with a Test button. No address field is shown.',
-          action: 'Opened orivon://settings/privacy on a fresh profile and scrolled to the tunnel rows.'
+          expected: 'orivon://settings/tunnels is open under the heading "Tunnels" with the "Tunnel" row showing the choice "Nym (built in)" and the "Send all of Orivon\'s traffic through the tunnel" row, then a "Nym" group with a "Let Nym run" switch and a "Nym" row saying "Starts when an app that uses it connects.", a "Nym privacy" row with a choice showing "Balanced" and one sentence for each of Balanced and Strongest, and a "Test the tunnel" row with a Test button. No address field is shown.',
+          action: 'Opened orivon://settings/tunnels on a fresh profile and scrolled to the tunnel rows.'
         })
         await settings.locator('#row-route-kind select').selectOption('socks5')
         await settings.waitForSelector('#row-route-proxy input')
@@ -623,7 +623,7 @@ window.share = (options) => navigator.mediaDevices.getDisplayMedia(options).then
         const toggle = web3.locator('#row-web3-light-client input[type=checkbox]')
         const stateLine = (await web3.locator('#row-web3-state .value').textContent()) ?? ''
         check('Settings > Web3: the light-client switch is off and disabled while this run forces it off, and its state line is a sentence', await toggle.isDisabled() && !(await toggle.isChecked()) && /^[A-Z]/.test(stateLine) && !/^[a-z]+: /.test(stateLine), stateLine)
-        check('the key and the Web2 pill stay away from a Settings page', !(await chrome.locator('#site-permissions-btn').isVisible()) && !(await chrome.locator('#web3-mark').isVisible()))
+        check('the key, the tunnel button and the Web2 pill stay away from a Settings page', !(await chrome.locator('#site-permissions-btn').isVisible()) && !(await chrome.locator('#tunnel-btn').isVisible()) && !(await chrome.locator('#web3-mark').isVisible()))
         await state(check, app, `settings-web3-${scheme}`, {
           expected: 'orivon://settings/web3 is open with Web3 selected in the navigation. A light-client row shows its switch OFF and greyed out, labelled "Off for this run" because this run forces it off; the state row below it is a full sentence beginning with a capital letter, not a "code: value" pair. No key button sits in the address field.',
           action: 'Opened orivon://settings/web3 in a run that forces the light client off.',

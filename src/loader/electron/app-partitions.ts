@@ -93,7 +93,7 @@ export async function prepareAppSessionOrStop (appSession: Session, origin: stri
   }
 }
 
-const STOPPED_PAGE = '<!doctype html><meta charset="utf-8"><title>This app did not open</title><body style="font-family:system-ui;margin:3rem"><h1>This app did not open</h1><p>The tunnel could not start, so Orivon did not open this app and sent nothing. Check the tunnel under Privacy and data, then open it again.</p></body>'
+const STOPPED_PAGE = '<!doctype html><meta charset="utf-8"><title>This app did not open</title><body style="font-family:system-ui;margin:3rem"><h1>This app did not open</h1><p>The tunnel could not start, so Orivon did not open this app and sent nothing. Check the tunnel under Tunnels, then open it again.</p></body>'
 
 /** The partitions whose handler answers from the origin's pin, a subset of `servedPartitions`: the rest answer from the verifier until the pin lands. */
 const pinnedPartitions = new Set<string>()

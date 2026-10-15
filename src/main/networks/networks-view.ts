@@ -178,7 +178,7 @@ function nodeCard (kind: 'ipfs' | 'swarm', facts: NodeFacts & { readonly enabled
 function nymCard (facts: NetworkFacts['nym'], now: number): NetworkCard {
   const base = { id: 'nym', name: 'Nym tunnel', on: facts.enabled, does: 'Carries the traffic of every app and website you set to use the tunnel through the Nym mixnet.' } as const
   if (!facts.inUse) {
-    return { ...base, disabled: true, status: 'Off', tone: 'idle', note: 'Nym is not in use: your tunnel is your own SOCKS5 address. Choose Nym under Privacy and data to use it.', metrics: [] }
+    return { ...base, disabled: true, status: 'Off', tone: 'idle', note: 'Nym is not in use: your tunnel is your own SOCKS5 address. Choose Nym under Tunnels in Settings to use it.', metrics: [] }
   }
   const movable = { ...base, disabled: false } as const
   if (!facts.enabled) {

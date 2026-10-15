@@ -263,7 +263,7 @@ async function call<K extends keyof Entry> (name: K, ...args: readonly unknown[]
   }, { method: name, values: [...args] }) as Attempt
 }
 
-async function openSettings (section: 'apps' | 'privacy'): Promise<Page> {
+async function openSettings (section: 'apps' | 'tunnels'): Promise<Page> {
   await chrome.evaluate((path) => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', path) }, `/${section}`)
   expect(await waitFor(() => app.windows().some((w) => w.url().startsWith(SETTINGS_URL_PREFIX)))).toBe(true)
   return app.windows().find((w) => w.url().startsWith(SETTINGS_URL_PREFIX)) as Page
@@ -368,7 +368,7 @@ it('[app:routed-app-refuses-what-the-route-cannot-carry] a routed app cannot lis
   // Changing the proxy closes what the app holds and sends the next connection to the new one.
   expect((await call('hold', '127.0.0.1', ports.hold)).ok).toBe(true)
   const closedBefore = holdDecoy.closed()
-  const settings = await openSettings('privacy')
+  const settings = await openSettings('tunnels')
   const proxy = settings.locator('#row-route-proxy input')
   await proxy.fill(`127.0.0.1:${String(secondSocks.port)}`)
   await proxy.press('Tab')

@@ -187,21 +187,28 @@ it('sends neither signal when both are off, and strips a cross-site cookie at bo
   }
 }, TEST_TIMEOUT_MS)
 
-it('shows the twelve rows in Settings, saves a choice, applies it on the next request, accepts secure DNS live and offers a restart for the signal', async () => {
+it('shows the five privacy rows and the seven tunnel rows in Settings, saves a choice, applies it on the next request, accepts secure DNS live and offers a restart for the signal', async () => {
   const { app, chrome } = await launched({})
   try {
     const userData = await userDataOf(app)
     const page = await openSettings(app, chrome)
-    for (const id of ['cookies', 'global-privacy-control', 'do-not-track', 'https-only', 'secure-dns', 'route-kind', 'route-nym-enabled', 'route-nym-status', 'route-nym-privacy', 'route-proxy-test', 'route-everywhere', 'route-sites']) expect(await page.locator(`#row-${id}`).count()).toBe(1)
-    // The address row is shown only for the choice of an address.
-    expect(await page.locator('#row-route-proxy').count()).toBe(0)
+    for (const id of ['cookies', 'global-privacy-control', 'do-not-track', 'https-only', 'secure-dns']) expect(await page.locator(`#row-${id}`).count()).toBe(1)
     expect(await page.locator('#row-cookies').evaluate((row) => row.parentElement?.previousElementSibling?.textContent ?? '')).toBe('Connections and tracking')
-    expect(await page.locator('#row-cookies').evaluate((row) => row.parentElement?.querySelectorAll('.row').length)).toBe(12)
+    expect(await page.locator('#row-cookies').evaluate((row) => row.parentElement?.querySelectorAll('.row').length)).toBe(5)
+    // The tunnel rows are their own section now, and Privacy and data no longer holds them.
+    expect(await page.locator('#row-route-kind').count()).toBe(0)
     expect(await page.locator('#row-cookies option').allTextContents()).toEqual(['Allow all cookies', 'Block third-party cookies'])
     expect(await page.locator('#row-secure-dns option').allTextContents()).toEqual(['Off (use this computer\'s DNS)', 'Automatic (use secure DNS when the provider offers it)', 'Cloudflare (1.1.1.1)', 'Quad9 (9.9.9.9)'])
     await page.evaluate(() => { document.querySelector('.group-label')?.scrollIntoView() })
     await shoot(page, 'settings-privacy-rows')
 
+    await page.locator('a.nav-item[href="/tunnels"]').click()
+    await page.waitForSelector('#row-route-kind')
+    for (const id of ['route-kind', 'route-nym-enabled', 'route-nym-status', 'route-nym-privacy', 'route-proxy-test', 'route-everywhere', 'route-sites']) expect(await page.locator(`#row-${id}`).count()).toBe(1)
+    // The address row is shown only for the choice of an address.
+    expect(await page.locator('#row-route-proxy').count()).toBe(0)
+    await page.locator('a.nav-item[href="/privacy"]').click()
+    await page.waitForSelector('#row-do-not-track')
     await page.locator('#row-do-not-track input[type=checkbox]').click()
     expect(await page.locator('#row-global-privacy-control-restart').count()).toBe(0)
     await page.locator('#row-global-privacy-control input[type=checkbox]').click()

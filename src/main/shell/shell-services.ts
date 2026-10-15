@@ -102,7 +102,7 @@ export interface ShellServices {
     readonly pending: (origin: string) => UpdateOffer | undefined
     readonly onChange: (listener: (origin: string) => void) => () => void
   }
-  /** What the address bar's key says about a page and the tunnel; null while the routes are not running or the page is not on the tunnel. */
+  /** What the address bar's tunnel button says about a page; null while the routes are not running or the page is not on the tunnel. */
   readonly tunnel: {
     readonly markOf: (url: string, partition: string | undefined) => TunnelMark | null
     readonly onChange: (listener: () => void) => () => void

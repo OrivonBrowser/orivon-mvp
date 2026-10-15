@@ -35,7 +35,7 @@ that is tied to the running browser: which origins (apps and websites) the perso
 | `site-partition.ts` | Pure: the profile an entry puts a website in (`on` is the tunnel profile, `off` the direct one), the name of a profile's session (`persist:tunnel-profile`, or `tunnel-profile-memory` for an origin that may not be written to disk) and which origins can be switched |
 | `site-routes.ts` | What the shell reads to put a tab in its profile's session, supplied once by `route-subsystem.ts`, the call that makes the session ready before a view is made in it, whether a session sends an address as its own session would, and the rule every session's main-frame guard applies |
 | `site-sessions.ts` | Says which profile sessions this run has made, so a clear of site data reaches the memory ones without making any, and makes a profile's session ready: fits it with the controls every website session carries, points it at its front (or leaves the direct profile on the system's proxy), loads the person's extensions into it, and holds its requests until then |
-| `tunnel-mark.ts` | Pure: what the address bar's key says about the page in front and the tunnel (`on`, `down`) |
+| `tunnel-mark.ts` | Pure: what the address bar's tunnel button says about the page in front (`on`: purple, `down`: the warning colour) |
 | `leaving-routes.ts` | What the shell asks of all this when a routed app's page opens an address: the decision, the temporary session, the app switch |
 
 **What it depends on.** [`../../broker/route/`](../../broker/route/) (the route, its SOCKS5 provider and the probe), [`../verifier/process-supervisor.ts`](../verifier/process-supervisor.ts), [`../verifier/local-node-artifact.ts`](../verifier/local-node-artifact.ts) and [`../verifier/loopback-port.ts`](../verifier/loopback-port.ts) (the Nym host is supervised, checked and given a port as a local node is), [`../../protocols/nym-tunnel/protocol.ts`](../../protocols/nym-tunnel/protocol.ts) (what the host says),
@@ -127,7 +127,7 @@ in the shared session while the temporary one is alive.
 
 **The bypass rules of a tunnelled session add the names the verifier answers for.** `host-resolver-rules` sends `.eth` and the shared address
 suffix to the verifier on this machine, but a proxy would otherwise be asked for the name first. The verifier's own fetches (gateway blocks, the
-name's Helios RPC and CCIP-Read calls) for a website in the tunnel profile go through that profile's front, with the whole browser on the tunnel or off it: main marks each of the profile session's requests to the verifier (`../verifier/partition.ts`'s `withRoute`) and hands the host the front in its start message (`../verifier/host-proxy.ts`), so the key shows such a site as `on` like any other.
+name's Helios RPC and CCIP-Read calls) for a website in the tunnel profile go through that profile's front, with the whole browser on the tunnel or off it: main marks each of the profile session's requests to the verifier (`../verifier/partition.ts`'s `withRoute`) and hands the host the front in its start message (`../verifier/host-proxy.ts`), so the tunnel button shows such a site as `on` like any other.
 
 **Giving up a website's entry keeps its data in the profile.** The row stays in Settings, with the button that clears that site's data from the profile and nobody else's, until the person removes it
 or the site goes back to the default with nothing stored. Setting the entry again asks nothing, because the site already has data in that profile.

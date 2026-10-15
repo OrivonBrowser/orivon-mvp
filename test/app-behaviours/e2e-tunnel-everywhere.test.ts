@@ -29,7 +29,7 @@ const OFF = 'off.socks.test'
 const CDN = 'cdn.socks.test'
 const WS = 'ws.socks.test'
 const DIRECT_NOTICE = 'This site moves to your direct profile. You\'ll sign in to it again once, and what it stores stays apart from your normal browsing.'
-const SWITCH_LABEL = 'Use the tunnel for this site'
+const TUNNEL_NAME = 'Your SOCKS5 tunnel'
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64')
 
 interface Hosted { port: number, hits: number, paths: string[], close: () => Promise<void> }
@@ -123,7 +123,7 @@ async function open (url: string, title: string): Promise<void> {
 const tabTitle = async (): Promise<string> => (await activeTabInfo(chrome)).title
 
 async function openPopover (): Promise<Page> {
-  await chrome.click('#site-permissions-btn')
+  await chrome.click('#tunnel-btn')
   expect(await waitFor(() => findPopup() !== undefined)).toBe(true)
   const popover = findPopup() as Page
   await popover.waitForSelector('#tunnel-switch')
@@ -131,7 +131,7 @@ async function openPopover (): Promise<Page> {
 }
 
 async function closePopover (): Promise<void> {
-  await chrome.click('#site-permissions-btn')
+  await chrome.click('#tunnel-btn')
   expect(await waitFor(() => findPopup() === undefined)).toBe(true)
   await delay(300)
 }
@@ -150,7 +150,7 @@ const sessionOfTab = async (address: string): Promise<{ isDefault: boolean, webr
 }, address)
 
 async function openSettingsPrivacy (): Promise<Page> {
-  await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/privacy') })
+  await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/tunnels') })
   expect(await waitFor(() => app.windows().some((w) => w.url().startsWith('orivon://settings')))).toBe(true)
   return app.windows().find((w) => w.url().startsWith('orivon://settings')) as Page
 }
@@ -169,12 +169,12 @@ it('[app:tunnel-everywhere-carries-a-plain-website] a website with no setting of
 
   expect(hosts.plainDecoy.hits + hosts.cdnDecoy.hits + hosts.wsDecoy.hits, 'nothing reached a decoy').toBe(0)
   expect(await cookies(undefined, PLAIN), 'its cookie is in the shared session, which the tunnel carries').toEqual(['who=tunnel'])
-  expect(await chrome.getAttribute('#site-permissions-btn', 'data-tunnel'), 'the key says the tab goes through the tunnel').toBe('on')
+  expect(await chrome.getAttribute('#tunnel-btn', 'data-tunnel'), 'the tunnel button is purple: the tab goes through the tunnel').toBe('on')
   await shoot(app, chrome, chrome, 'tunnel-everywhere-key')
 
   const popover = await openPopover()
   expect(await popover.locator('#tunnel-switch').getAttribute('aria-checked'), 'the switch shows the default it follows').toBe('true')
-  expect(await popover.locator('.tunnel-label').textContent()).toBe(SWITCH_LABEL)
+  expect(await popover.locator('.tunnel-label').textContent()).toBe(TUNNEL_NAME)
   await shoot(app, chrome, popover, 'tunnel-everywhere-popover')
   await closePopover()
 }, 4 * QA_TEST_TIMEOUT_MS)
@@ -197,7 +197,7 @@ it('[app:tunnel-everywhere-leaves-a-site-set-to-off-direct] a site set to off mo
   expect(await sessionOfTab(offUrl()), 'in a session of its own, with WebRTC as the browser has it').toMatchObject({ isDefault: false, webrtc: 'default' })
   expect(await cookies('direct-profile-memory', OFF), 'its cookie is in the direct profile').toEqual(['who=direct-profile'])
   expect(await cookies(undefined, OFF), 'the shared session keeps what it had').toEqual(['who=tunnel'])
-  expect(await waitFor(async () => await chrome.getAttribute('#site-permissions-btn', 'data-tunnel') === null), 'the key says nothing').toBe(true)
+  expect(await waitFor(async () => await chrome.getAttribute('#tunnel-btn', 'data-tunnel') === null), 'the tunnel button is not purple').toBe(true)
   await delay(500)
   if (findPopup() !== undefined) await closePopover()
 }, 4 * QA_TEST_TIMEOUT_MS)

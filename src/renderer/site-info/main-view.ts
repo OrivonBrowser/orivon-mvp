@@ -8,9 +8,6 @@ import { grantIcon } from '../grant-icons.js'
 import { renderSitePermissions } from './permissions-view.js'
 import type { PermissionsCallbacks, PermissionsModel } from './permissions-view.js'
 import { homeLine, originHost } from '../../trust/domain-binding.js'
-import { renderRouteLine } from './route-line.js'
-import { renderTunnelSection } from './tunnel-view.js'
-import type { TunnelCallbacks, TunnelViewState } from './tunnel-view.js'
 import { renderUpdateCard } from './update-card.js'
 
 // The site-info popup's main page -- Chrome's own layout (a connection
@@ -39,7 +36,6 @@ export interface MainPageCallbacks {
   readonly onApplyUpdate: (cid: string) => void
   readonly onOpenHome: () => void
   readonly permissions: PermissionsCallbacks
-  readonly tunnel: TunnelCallbacks
 }
 
 function connectionLabel (connection: SiteTrust['connection']): string {
@@ -126,8 +122,7 @@ export function renderMainPage (
   showReloadBanner: boolean,
   permissions: PermissionsModel | null,
   callbacks: MainPageCallbacks,
-  updateFailure: string | null = null,
-  tunnelView: TunnelViewState = { notice: null, next: null, failed: false }
+  updateFailure: string | null = null
 ): void {
   container.replaceChildren()
 
@@ -160,10 +155,6 @@ export function renderMainPage (
     }
   }
   container.append(header)
-  // A website has the tunnel switch, whose own line says what the tunnel does; an installed app has the line alone, its switch is on its card in Settings,
-  // and a page opened through the tunnel from a routed app has the line alone as well: its session lasts until its last tab closes.
-  if (info.tunnel !== undefined && info.route !== 'temporary') renderTunnelSection(container, info.tunnel, info.route, info.extensionsOnSite, tunnelView, callbacks.tunnel, info.nym)
-  else if (info.route !== undefined) container.append(renderRouteLine(info.route, 'app', info.nym))
   if (info.notLetIn !== undefined) container.append(renderReviewCard(callbacks.onReviewPermissions))
   if (info.update !== undefined) container.append(renderUpdateCard(info.update, updateFailure, { onApply: callbacks.onApplyUpdate }))
 

@@ -1,13 +1,13 @@
-import type { SiteRoute, SiteTunnel } from '../../main/permissions/site-info.js'
-import type { NymState } from '../../main/route/nym-status.js'
+import type { SiteInfo, SiteTunnel } from '../../main/permissions/site-info.js'
 import { createSwitch } from './switch.js'
-import { renderRouteLine } from './route-line.js'
+import { tunnelIcon } from './icons.js'
+import type { TunnelListModel, TunnelRowModel } from './tunnels-model.js'
 
-// The switch that sends a website's traffic through the person's tunnel, with the line that says what it does and, the
-// first time a website would move into storage of its own, the notice that comes before it. The words are composed
-// here, never from anything a site wrote.
+// The tunnels page of the site-info popup: the row of the tunnel in use with the switch that sends this website through it,
+// the line that says what that does and, the first time a website would move into storage of its own, the notice that
+// comes before it. The rows are `tunnels-model.ts`'s. The words are composed here, never from anything a site wrote.
 
-export const TUNNEL_SWITCH_LABEL = 'Use the tunnel for this site'
+export const TUNNEL_PAGE_TITLE = 'Tunnels'
 
 export const SWARM_HINT = 'Swarm content loads only from the Swarm node Orivon runs on this computer, which cannot go through your tunnel, so this address does not open while the tunnel is on for it.'
 
@@ -19,7 +19,7 @@ export function storageNotice (profile: 'tunnel' | 'direct'): string {
 /** Why the switch is fixed, or what it leaves outside the tunnel; one sentence, or undefined when there is nothing to add. */
 export function tunnelHint (tunnel: SiteTunnel): string | undefined {
   if (tunnel.unreadable) return 'Orivon could not read your tunnel settings, so while a tunnel is set every site goes through it. Mend or remove routes.json in your profile folder and restart Orivon to choose again.'
-  if (tunnel.blocked === 'no-proxy' && !tunnel.on) return 'Set a tunnel under Privacy and data first.'
+  if (tunnel.blocked === 'no-proxy' && !tunnel.on) return 'Set a tunnel under Tunnels first.'
   if (tunnel.swarm) return SWARM_HINT
   return undefined
 }
@@ -41,6 +41,8 @@ export interface TunnelCallbacks {
   readonly onToggle: (next: boolean) => void
   readonly onConfirm: () => void
   readonly onCancel: () => void
+  /** A link to Settings > Tunnels; `everywhere` lands on the browser-wide switch. */
+  readonly onOpenSettings: (everywhere: boolean) => void
 }
 
 export interface TunnelViewState {
@@ -59,28 +61,74 @@ function paragraph (className: string, text: string): HTMLElement {
   return p
 }
 
-/** The switch row, its explanation, the status line of a site that is on, and the notice while it is open. */
-export function renderTunnelSection (container: HTMLElement, tunnel: SiteTunnel, route: SiteRoute | undefined, extensions: readonly string[], view: TunnelViewState, callbacks: TunnelCallbacks, nym?: NymState): void {
+function link (id: string, text: string, onClick: () => void): HTMLButtonElement {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.id = id
+  button.className = 'link-button'
+  button.textContent = text
+  button.addEventListener('click', onClick)
+  return button
+}
+
+function renderLogo (row: TunnelRowModel): HTMLElement {
+  if (row.kind.logo === null) {
+    const holder = document.createElement('span')
+    holder.className = 'tunnel-logo tunnel-logo-generic'
+    holder.append(tunnelIcon())
+    return holder
+  }
+  const img = document.createElement('img')
+  img.className = 'tunnel-logo'
+  img.src = row.kind.logo
+  img.alt = ''
+  img.width = 20
+  img.height = 20
+  return img
+}
+
+function renderRow (row: TunnelRowModel, callbacks: TunnelCallbacks): HTMLElement {
+  const el = document.createElement('div')
+  el.className = 'tunnel-row'
+  el.dataset['tunnel'] = row.kind.id
+  const text = document.createElement('span')
+  text.className = 'tunnel-text'
+  const name = document.createElement('span')
+  name.className = 'tunnel-label'
+  name.textContent = row.kind.name
+  const state = document.createElement('span')
+  state.className = row.state.down ? 'tunnel-state tunnel-state-down' : 'tunnel-state'
+  state.textContent = row.state.text
+  text.append(name, state)
+  const control = createSwitch(row.on, row.disabled, callbacks.onToggle)
+  control.id = 'tunnel-switch'
+  control.setAttribute('aria-label', `Use ${row.kind.name} for this site`)
+  el.append(renderLogo(row), text, control)
+  return el
+}
+
+/** The page: the title, the row of the tunnel in use, what else the person should know, the notice while it is open, and the hint to enforce a tunnel for the whole browser. */
+export function renderTunnelsPage (container: HTMLElement, info: SiteInfo, model: TunnelListModel, view: TunnelViewState, callbacks: TunnelCallbacks): void {
+  container.replaceChildren()
+  const header = document.createElement('header')
+  header.className = 'site-header'
+  const title = document.createElement('div')
+  title.className = 'site-origin'
+  title.textContent = TUNNEL_PAGE_TITLE
+  const origin = document.createElement('div')
+  origin.className = 'site-claim'
+  origin.textContent = info.displayOrigin
+  header.append(title, origin)
+  container.append(header)
+
   const section = document.createElement('div')
   section.className = 'tunnel-section'
-
-  const row = document.createElement('div')
-  row.className = 'tunnel-row'
-  const label = document.createElement('span')
-  label.className = 'tunnel-label'
-  label.textContent = TUNNEL_SWITCH_LABEL
-  const shownOn = view.next ?? tunnel.on
-  const control = createSwitch(shownOn, tunnel.unreadable || (!tunnel.on && tunnel.blocked !== undefined), callbacks.onToggle)
-  control.id = 'tunnel-switch'
-  control.setAttribute('aria-label', TUNNEL_SWITCH_LABEL)
-  row.append(label, control)
-  section.append(row)
-
-  const hint = tunnelHint(tunnel)
-  if (hint !== undefined) section.append(paragraph(tunnel.unreadable || tunnel.blocked !== undefined ? 'route-line route-line-down' : 'route-line', hint))
-  if (tunnel.on && route !== undefined) section.append(renderRouteLine(route, 'site', nym))
-  const reach = extensionsHint(extensions, tunnel.profile)
-  if (reach !== undefined) section.append(paragraph('route-line', reach))
+  for (const row of model.rows) {
+    section.append(renderRow(row, callbacks))
+    for (const note of row.notes) section.append(paragraph(note.down ? 'route-line route-line-down' : 'route-line', note.text))
+    if (row.settingsLink) section.append(link('tunnel-settings-link', 'Switch it on in Tunnels settings', () => { callbacks.onOpenSettings(false) }))
+  }
+  if (model.empty !== null) section.append(paragraph('route-line', model.empty))
   if (view.failed) section.append(paragraph('route-line route-line-down', TUNNEL_FAILED))
 
   if (view.notice !== null) {
@@ -106,6 +154,12 @@ export function renderTunnelSection (container: HTMLElement, tunnel: SiteTunnel,
     notice.append(buttons)
     section.append(notice)
   }
-
   container.append(section)
+
+  container.append(document.createElement('hr'))
+  const hint = document.createElement('div')
+  hint.className = 'tunnel-hint'
+  if (model.hint.text !== '') hint.append(paragraph('route-line', model.hint.text))
+  hint.append(link('tunnel-enforce', model.hint.link, () => { callbacks.onOpenSettings(model.hint.everywhere) }))
+  container.append(hint)
 }

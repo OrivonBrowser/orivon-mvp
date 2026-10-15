@@ -1,4 +1,4 @@
-// What the address bar's key says about the page in front and the tunnel. Pure.
+// What the address bar's tunnel button says about the page in front. Pure.
 
 import type { RouteState } from './route-hub.js'
 

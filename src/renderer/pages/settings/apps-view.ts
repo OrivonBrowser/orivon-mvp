@@ -31,11 +31,11 @@ export function sizeWords (bytes: number): string {
 export function routeWords (route: AppRow['route']): string {
   if (route.unreadable === true) return 'Orivon could not read which apps you routed, so while a tunnel is set every app goes through it. Mend or remove routes.json in your profile folder and restart Orivon to choose again.'
   if (route.state === 'off') {
-    if (route.blocked === 'no-proxy') return 'Set a tunnel under Privacy and data first.'
+    if (route.blocked === 'no-proxy') return 'Set a tunnel under Tunnels first.'
     if (route.blocked === 'not-cached') return 'Only an app Orivon holds on this computer can be routed.'
     return 'Off: this app connects as you do.'
   }
-  if (route.state === 'no-proxy') return 'No tunnel is set, so this app\'s traffic is stopped, not sent directly. Set one under Privacy and data.'
+  if (route.state === 'no-proxy') return 'No tunnel is set, so this app\'s traffic is stopped, not sent directly. Set one under Tunnels.'
   if (route.state === 'down') return 'Your tunnel is not answering. This app\'s traffic is stopped, not sent directly.'
   return 'Everything this app sends leaves through your tunnel, and what the tunnel cannot carry is refused. Its updates are not checked while this is on.'
 }
@@ -53,7 +53,7 @@ function routeRow (app: AppRow, state: SettingsState): HTMLElement {
     h('div', { className: 'app-route-text' },
       h('label', { htmlFor: `route-${app.origin}`, textContent: 'Send this app\'s traffic through my tunnel' }),
       h('p', { className: app.route.unreadable === true || app.route.state === 'down' || app.route.state === 'no-proxy' ? 'problem' : 'muted', textContent: routeWords(app.route) }),
-      state.apps.routeRefused.has(app.origin) ? h('p', { className: 'problem', role: 'alert', textContent: 'That could not be changed. Check the tunnel under Privacy and data.' }) : null),
+      state.apps.routeRefused.has(app.origin) ? h('p', { className: 'problem', role: 'alert', textContent: 'That could not be changed. Check the tunnel under Tunnels.' }) : null),
     h('span', { className: 'switch' }, input, h('span', { className: 'track' })))
 }
 

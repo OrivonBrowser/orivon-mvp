@@ -1,10 +1,11 @@
-// The site-info popup: what the shield and key toolbar icons open. Shares
+// The site-info popup: what the shield, key and tunnel toolbar icons open. Shares
 // its `WebContentsView` lifecycle with ../networks/networks-panel.ts through
 // ./popover-view.js; this file owns the site-info content on top of it.
 //
-// LEFT-ALIGNED, unlike the Available networks popup: both toolbar icons that open
-// this sit near the LEFT edge of the address pill, so a right-aligned
-// popup would hang off the window's own left edge instead of the icon.
+// LEFT-ALIGNED, unlike the Available networks popup: the shield and the key sit
+// near the LEFT edge of the address pill, so a right-aligned popup would hang off
+// the window's own left edge instead of the icon. The tunnel button at the right
+// end is placed by the same clamping to the window (`popover-view.ts`).
 
 import type { BaseWindow, View, WebContents } from 'electron'
 import type { SiteInfoController } from './site-info-controller.js'
@@ -16,10 +17,11 @@ import type { SitePermissionsAccess } from '../site-settings/site-permissions-vi
 
 /** Which page the popup opens showing -- the connection row's own switches
  * (`'main'`) or the delivery-evidence page a shield click or the main
- * page's own Web3 Score row leads to (`'web3'`). The Cookies and site data
+ * page's own Web3 Score row leads to (`'web3'`), or the list of tunnels the tunnel button
+ * opens (`'tunnels'`). The Cookies and site data
  * page is reached only from within the popup once open, never as an entry
  * point, so it has no argv flag of its own. */
-export type SiteInfoPage = 'main' | 'web3'
+export type SiteInfoPage = 'main' | 'web3' | 'tunnels'
 
 export interface SiteInfoPanel {
   /** Clicking the icon that opened the popup again closes it, the same
@@ -42,7 +44,7 @@ export function createSiteInfoPanel (
   userDataPath: string,
   activeWebContents: () => WebContents | undefined,
   reloadActiveTab: () => void,
-  openSiteSettings: () => void,
+  openSettings: (path?: string) => void,
   openExtensions: () => void,
   openCertificate: () => void,
   sitePermissions: SitePermissionsAccess,
@@ -65,7 +67,7 @@ export function createSiteInfoPanel (
     background: PANEL_POPOVER_BACKGROUND,
     activeContents: activeWebContents,
     registerIpc: (webContents, url, onContentHeight) => {
-      registerSiteInfoIpc(webContents, url, controller, openOrigin, userDataPath, activeWebContents, reloadActiveTab, openSiteSettings, openExtensions, onContentHeight, openCertificate, sitePermissions, () => { popover.close() }, openHome)
+      registerSiteInfoIpc(webContents, url, controller, openOrigin, userDataPath, activeWebContents, reloadActiveTab, openSettings, openExtensions, onContentHeight, openCertificate, sitePermissions, () => { popover.close() }, openHome)
       return () => {}
     }
   })

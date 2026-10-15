@@ -72,7 +72,7 @@ async function launched (fake: object) {
 
 /** Switches the whole browser onto the tunnel in Settings, as a person does. */
 async function putBrowserOnTunnel (world: Awaited<ReturnType<typeof launched>>): Promise<void> {
-  await world.chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/privacy') })
+  await world.chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/tunnels') })
   expect(await waitFor(() => world.app.windows().some((w) => w.url().startsWith('orivon://settings')))).toBe(true)
   const settings = world.app.windows().find((w) => w.url().startsWith('orivon://settings'))!
   await settings.waitForSelector('#row-route-everywhere input[type=checkbox]')

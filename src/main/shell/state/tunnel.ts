@@ -1,6 +1,6 @@
 import type { ShellStatePart } from '../shell-state-parts.js'
 
-/** Whether the page in front goes through the tunnel, for the mark on the address bar's key. */
+/** Whether the page in front goes through the tunnel, for the colour of the address bar's tunnel button. */
 export const tunnelStatePart: ShellStatePart = {
   name: 'tunnel',
   read: ({ window, services }, tabs) => {

@@ -9,7 +9,7 @@ entirely.
 | [`chrome/`](chrome/) | The chrome view's features, one file each, and the three toolbar slots a feature puts a button in |
 | [`newtab/`](newtab/) | The new-tab dashboard: ordinary content in a fresh tab's own view (`src/main/shell/tabs.ts`'s `createTab()`), not part of the chrome |
 | [`networks/`](networks/) | The Available networks popup: a card for each node Orivon runs on this computer, with its status, its switch and its figures |
-| [`site-info/`](site-info/) | The per-site popup: connection row, this site's switches and permission selects, its Web3 Score and site data pages |
+| [`site-info/`](site-info/) | The per-site popup: connection row, this site's switches and permission selects, its Web3 Score and site data pages, and the tunnels page the address bar's tunnel button opens |
 | [`intro/`](intro/) | The welcome screen, a full-window view over the shell (`src/main/shell/intro-view.ts`) |
 | [`overlay/`](overlay/) | The one page every overlay shows: the main menu, and a page per feature that shows Orivon HTML above the page (`src/main/overlays/`) |
 | [`drop-catcher/`](drop-catcher/) | The empty transparent page of the view laid over a window's page while a tab is dragged (`src/main/shell/drop-catcher.ts`); its preload does the listening |

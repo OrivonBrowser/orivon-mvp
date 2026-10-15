@@ -76,6 +76,8 @@ export interface SiteTunnel {
   readonly unreadable: boolean
   /** The profile the website lives in now, when its entry puts it in one. */
   readonly profile?: 'tunnel' | 'direct'
+  /** Nym is the tunnel and is switched off in Settings, so nothing can be sent through it until it is switched on again. */
+  readonly nymOff: boolean
 }
 
 export interface SiteInfo {
@@ -90,6 +92,10 @@ export interface SiteInfo {
   readonly route?: SiteRoute
   /** What Nym is doing, when the app's route leaves through it. */
   readonly nym?: NymState
+  /** Which tunnel the person's choice sends traffic through: Nym, or their own SOCKS5 address. Absent while routes are not running. */
+  readonly tunnelKind?: 'nym' | 'socks5'
+  /** The whole browser goes through the tunnel unless a site is set to off. Absent while routes are not running. */
+  readonly everywhere?: boolean
   /** The tunnel switch of a website; absent for an installed app, a local file and this computer. */
   readonly tunnel?: SiteTunnel
   /** True when the site has asked for at least one Orivon capability or
