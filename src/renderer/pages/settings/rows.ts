@@ -23,7 +23,7 @@ function choiceOptions (control: Extract<Control, { type: 'choice' }>, state: Se
 }
 
 function renderChoice (control: Extract<Control, { type: 'choice' }>, state: SettingsState, id: string): HTMLElement {
-  const select = h('select', { className: 'select', id })
+  const select = h('select', { className: 'select', id, disabled: control.locked?.(state) === true })
   for (const option of choiceOptions(control, state)) select.append(h('option', { value: option.value, textContent: option.label }))
   select.value = String(state.value(control.key))
   select.addEventListener('change', () => {
@@ -165,7 +165,8 @@ export function renderRow (row: Row, state: SettingsState): HTMLElement {
 
   const helpText = row.helpFor?.(state) ?? row.help ?? ''
   // A list is emptied by its own remove buttons, so it carries no Changed pill or Reset of its own.
-  const changed = 'key' in control && control.type !== 'pageList' && state.isChanged(control.key)
+  // A setting this window is held to is not a choice of the person's here, so it carries neither the pill nor a Reset.
+  const changed = 'key' in control && control.type !== 'pageList' && !state.isHeld(control.key) && state.isChanged(control.key)
   const reset = changed
     ? h('button', {
       className: 'link-btn',

@@ -68,9 +68,12 @@ export class RouteStore {
   #unreadable = false
   readonly #listeners = new Set<RouteChange>()
 
-  /** A null path keeps the routes in memory only, for a private session. */
-  constructor (path: string | null) {
+  readonly #neverOff: boolean
+
+  /** A null path keeps the routes in memory only, for a private session. With `neverOff`, an origin can never be given an `off` entry (a private window held to a tunnel). */
+  constructor (path: string | null, options: { readonly neverOff?: boolean } = {}) {
     this.#path = path
+    this.#neverOff = options.neverOff === true
   }
 
   /** Whether the origin has an entry of `on`: the answer for an installed app, whose default is off. */
@@ -158,6 +161,7 @@ export class RouteStore {
    * known, so an entry cannot be taken away or turned off).
    */
   setEntry (origin: string, entry: TunnelEntry | undefined): boolean {
+    if (entry === 'off' && this.#neverOff) throw new RouteStoreError('This private window always goes through the tunnel, so nothing in it can be switched off.')
     const routes = this.#loaded()
     const previous = this.stateOf(origin)
     if (this.#unreadable) {

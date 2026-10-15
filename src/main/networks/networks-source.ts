@@ -31,6 +31,8 @@ export interface NetworksEnv {
   readonly settings: {
     readonly get: (key: NetworkSettingKey) => SettingValue
     readonly set: (key: string, value: unknown) => SetResult
+    /** Whether this process is held to the setting's value (a private window that always goes through Nym). */
+    readonly isHeld?: (key: NetworkSettingKey) => boolean
     readonly onChange: (listener: (change: { readonly key: string }) => void) => () => void
   }
   readonly lightClient: {
@@ -117,7 +119,7 @@ export function createNetworksSource (env: NetworksEnv): NetworksSource {
       lightClient: { view: env.lightClient.view(), enabled: env.settings.get('web3.lightClient') === true, forcedOff: env.lightClient.forcedOff(), ...(lightProcess === undefined ? {} : { process: lightProcess }) },
       ipfs: { ...node(env.ipfs, 'ipfs-node', SERVICE_NAMES.ipfs), enabled: env.settings.get('web3.ipfsSource') !== 'gateways' },
       swarm: { ...node(env.swarm, 'swarm-node', SERVICE_NAMES.swarm), enabled: env.settings.get('web3.swarmNode') === true },
-      nym: { enabled: env.settings.get('network.nym.enabled') === true, inUse: env.settings.get('network.route.kind') !== 'socks5', state: env.nym.state(), tunnels: env.nym.tunnels(), ...(nymProcess === undefined ? {} : { process: nymProcess }) }
+      nym: { enabled: env.settings.get('network.nym.enabled') === true, ...(env.settings.isHeld?.('network.nym.enabled') === true ? { held: true } : {}), inUse: env.settings.get('network.route.kind') !== 'socks5', state: env.nym.state(), tunnels: env.nym.tunnels(), ...(nymProcess === undefined ? {} : { process: nymProcess }) }
     }
   }
 

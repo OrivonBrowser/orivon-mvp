@@ -67,6 +67,9 @@ function absoluteHttpTarget (text: string): { host: string, port: number, author
   return { host, port: url.port === '' ? 80 : Number(url.port), authority: url.host, path: `${url.pathname}${url.search}` }
 }
 
+/** What a page asked for as plain http sees when the route could not carry the request: Chromium draws an empty answer as a blank page. */
+export const NOT_CARRIED_PAGE = '<!doctype html><meta charset="utf-8"><title>The tunnel did not carry this page</title><body style="font:16px system-ui,sans-serif;max-width:32em;margin:4em auto;padding:0 1em"><h1>The tunnel did not carry this page</h1><p>Nothing was sent outside it. Open Settings, then Tunnels, to see why it is not working, and try again.</p></body>'
+
 function refuse (socket: Duplex, status: string, extraHeaders = ''): void {
   socket.end(`HTTP/1.1 ${status}\r\n${extraHeaders}Connection: close\r\nContent-Length: 0\r\n\r\n`)
 }
@@ -152,7 +155,7 @@ export async function startRouteFront (options: RouteFrontOptions): Promise<Rout
     res.once('close', () => { abandoned.abort() })
     const opened = await open(target.host, target.port, abandoned.signal)
     if ('status' in opened) {
-      res.writeHead(Number.parseInt(opened.status, 10), { Connection: 'close', 'Content-Length': 0 }).end()
+      res.writeHead(Number.parseInt(opened.status, 10), { Connection: 'close', 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': Buffer.byteLength(NOT_CARRIED_PAGE) }).end(NOT_CARRIED_PAGE)
       return
     }
     const carrier = opened.socket

@@ -353,3 +353,54 @@ describe('SettingsStore with a settings file that cannot be used', () => {
     expect(missing.fileUnreadable()).toBe(false)
   })
 })
+
+describe('SettingsStore held to a value', () => {
+  const held = new Map<'network.tunnel.everywhere' | 'network.route.kind', boolean | string>([['network.tunnel.everywhere', true], ['network.route.kind', 'nym']])
+
+  it('reads the held value whatever the file says, and lists the settings it is held to', async () => {
+    await mkdir(join(dir, 'nested'), { recursive: true })
+    await writeFile(file, JSON.stringify({ version: 2, values: { 'network.tunnel.everywhere': false, 'network.route.kind': 'socks5', 'network.route.proxy': '127.0.0.1:9050' } }))
+    const store = new SettingsStore(file, held)
+    await store.load()
+    expect(store.get('network.tunnel.everywhere')).toBe(true)
+    expect(store.get('network.route.kind')).toBe('nym')
+    expect(store.get('network.route.proxy')).toBe('127.0.0.1:9050')
+    expect(store.snapshot().values['network.tunnel.everywhere']).toBe(true)
+    expect(store.snapshot().changed).toContain('network.tunnel.everywhere')
+    expect(store.heldKeys()).toEqual(['network.tunnel.everywhere', 'network.route.kind'])
+  })
+
+  it('refuses every change to a held setting, tells nobody and writes nothing, and takes the others', async () => {
+    const store = new SettingsStore(file, held)
+    await store.load()
+    const heard = vi.fn()
+    store.onChange(heard)
+    expect(store.set('network.tunnel.everywhere', false)).toEqual({ ok: false, reason: 'locked' })
+    expect(store.set('network.route.kind', 'socks5')).toEqual({ ok: false, reason: 'locked' })
+    expect(store.reset('network.tunnel.everywhere')).toEqual({ ok: false, reason: 'locked' })
+    store.resetAll()
+    expect(store.get('network.tunnel.everywhere')).toBe(true)
+    expect(heard).not.toHaveBeenCalled()
+    expect(store.set('appearance.theme', 'dark')).toEqual({ ok: true })
+    expect(heard).toHaveBeenCalledTimes(1)
+    await store.flush()
+    expect(store.get('network.tunnel.everywhere')).toBe(true)
+  })
+
+  it('holds a store whose file cannot be read to the same values', async () => {
+    await mkdir(join(dir, 'nested'), { recursive: true })
+    await writeFile(file, '{ nope')
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const store = new SettingsStore(file, held)
+    await store.load()
+    expect(store.get('network.tunnel.everywhere')).toBe(true)
+    expect(store.get('network.route.kind')).toBe('nym')
+  })
+
+  it('is an ordinary store when it is held to nothing', async () => {
+    const store = new SettingsStore(file)
+    await store.load()
+    expect(store.heldKeys()).toEqual([])
+    expect(store.set('network.tunnel.everywhere', true)).toEqual({ ok: true })
+  })
+})

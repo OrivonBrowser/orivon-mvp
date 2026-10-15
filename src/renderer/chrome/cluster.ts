@@ -15,7 +15,11 @@ export function createCluster (): ChromeModule {
     profileChip.hidden = !profile.shown
     profileChip.dataset['color'] = profile.color
     profileChip.textContent = profile.name
-    profileChip.title = profile.isPrivate ? 'A private window: what it keeps, and what it does not' : `Profile: ${profile.name}`
+    if (profile.tunnel === undefined) delete profileChip.dataset['tunnel']
+    else profileChip.dataset['tunnel'] = profile.tunnel
+    profileChip.title = profile.tunnel === 'nym'
+      ? 'A private window that goes through Nym only: what it keeps, and what it does not'
+      : profile.isPrivate ? 'A private window: what it keeps, and what it does not' : `Profile: ${profile.name}`
   }
 
   function wireMenu (menuBtn: HTMLButtonElement, ctx: ChromeContext): void {

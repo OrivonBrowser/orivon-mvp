@@ -1,7 +1,9 @@
 // Reading the settings file: what its text holds, validated against the schema, with no file access in the pure
 // part. The store reads it with the rest of start-up; `readSettingBeforeReady` reads one value ahead of everything,
 // for a setting that Chromium takes as a command-line switch before the first window.
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { dirname } from 'node:path'
+import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 import { SETTINGS, isSettingKey, validateSetting } from './schema.js'
 import type { SettingKey, SettingValue, SettingsValues } from './schema.js'
 
@@ -76,4 +78,36 @@ export function settingsFileProblem (filePath: string): 'unreadable' | undefined
 /** Whether the whole browser goes through the tunnel at start: the saved setting, or on when the file that holds it cannot be used, so that a damaged file never sends anything around the tunnel. */
 export function everywhereBeforeReady (filePath: string): boolean {
   return settingsFileProblem(filePath) !== undefined || readSettingBeforeReady(filePath, 'network.tunnel.everywhere')
+}
+
+/**
+ * What a private window held to Nym is held to: the whole browser through the tunnel, the tunnel Nym, and Nym allowed to
+ * run. The settings copy it starts from is written with these (`forceSettingsFile`), so the first thing the process reads
+ * already says so, and its settings store reads them whatever the file holds and refuses a change to any of them.
+ */
+export const NYM_HELD_SETTINGS: ReadonlyMap<SettingKey, SettingValue> = new Map<SettingKey, SettingValue>([
+  ['network.tunnel.everywhere', true],
+  ['network.route.kind', 'nym'],
+  ['network.nym.enabled', true]
+])
+
+/**
+ * Writes `forced` into the settings file at `filePath`, keeping every other choice it holds (a file that is missing or cannot
+ * be used starts empty). Through the same version and checks the store reads with, never by editing its text. Throws when the
+ * file cannot be written: the caller then does not start the session, because a session that was to be held to a tunnel
+ * must not start without it.
+ */
+export function forceSettingsFile (filePath: string, forced: ReadonlyMap<SettingKey, SettingValue>): void {
+  let values: Record<string, SettingValue> = {}
+  try {
+    values = Object.fromEntries(settingsFromFile(JSON.parse(readFileSync(filePath, 'utf8'))).overrides)
+  } catch {
+    // Missing or unusable: nothing to keep.
+  }
+  for (const [key, value] of forced) {
+    if (validateSetting(SETTINGS[key], value) !== value) throw new Error(`${key} cannot hold that value`)
+    values[key] = value
+  }
+  mkdirSync(dirname(filePath), { recursive: true, mode: 0o700 })
+  writeFileAtomic(filePath, JSON.stringify({ version: SETTINGS_FILE_VERSION, values }, null, 2))
 }

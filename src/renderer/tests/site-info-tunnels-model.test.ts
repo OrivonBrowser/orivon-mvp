@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SiteInfo, SiteTunnel } from '../../main/permissions/site-info.js'
-import { ENFORCE_LINK, EVERYWHERE_HINT, NO_SWITCH_NOTE, NYM_OFF_LINE, TUNNEL_KINDS, tunnelListModel } from '../site-info/tunnels-model.js'
+import { ENFORCE_LINK, EVERYWHERE_HINT, HELD_LINE, NO_SWITCH_NOTE, NYM_OFF_LINE, TUNNEL_KINDS, tunnelListModel } from '../site-info/tunnels-model.js'
 
 const tunnel: SiteTunnel = { on: false, swarm: false, unreadable: false, nymOff: false }
 const base: SiteInfo = {
@@ -21,6 +21,30 @@ describe('the tunnel kinds Orivon offers', () => {
     expect(TUNNEL_KINDS[0]?.name).toBe('Nym')
     expect(TUNNEL_KINDS[0]?.logo).toMatch(/nym.*\.png$/)
     expect(TUNNEL_KINDS[1]).toMatchObject({ name: 'Your SOCKS5 tunnel', logo: null })
+  })
+})
+
+describe('a private window held to Nym', () => {
+  const held = (patch: Partial<SiteInfo> = {}): SiteInfo => info({ tunnelHeld: 'nym', everywhere: true, tunnel: { ...tunnel, on: true }, route: 'ok', nym: { state: 'ready' }, ...patch })
+
+  it('shows the website\'s switch on and fixed, with the line that says why', () => {
+    const row = tunnelListModel(held(), noView).rows[0]
+    expect(row).toMatchObject({ kind: { id: 'nym' }, on: true, disabled: true })
+    expect(row?.notes.map((note) => note.text)).toContain(HELD_LINE)
+  })
+
+  it('cannot be shown off, even for a site the model was told was not routed or while a notice asks to move it', () => {
+    expect(tunnelListModel(held({ tunnel: { ...tunnel, on: false } }), { next: false }).rows[0]).toMatchObject({ on: true, disabled: true })
+  })
+
+  it('says the same for an installed app\'s row, and offers no browser-wide switch to turn on', () => {
+    const model = tunnelListModel(noSwitch({ tunnelHeld: 'nym', everywhere: true, route: 'ok', nym: { state: 'ready' } }), noView)
+    expect(model.rows[0]?.notes.map((note) => note.text)).toContain(HELD_LINE)
+    expect(model.hint).toEqual({ text: '', link: 'Open Tunnels settings', everywhere: false })
+  })
+
+  it('leaves an ordinary window\'s rows as they were', () => {
+    expect(tunnelListModel(info(), noView).rows[0]?.notes.map((note) => note.text)).not.toContain(HELD_LINE)
   })
 })
 

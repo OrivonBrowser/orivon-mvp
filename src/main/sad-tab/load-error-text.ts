@@ -12,6 +12,7 @@ const NOT_SECURE = 'This site can\'t make a secure connection'
 
 const NO_SUCH_NAME: LoadErrorText = { title: UNREACHABLE, body: 'No server answers to this name. Check the address for a typing mistake.' }
 const TOO_SLOW: LoadErrorText = { title: UNREACHABLE, body: 'The server took too long to answer.' }
+const NOT_CARRIED: LoadErrorText = { title: UNREACHABLE, body: 'The tunnel did not carry this page, and nothing was sent outside it. Open Settings, then Tunnels, to see why it is not working.' }
 const CLOSED: LoadErrorText = { title: UNREACHABLE, body: 'The connection was closed before the page arrived.' }
 
 /** Chromium's `net::ERR_*` codes a person meets, by number. Certificate failures are not here: they have their own sheet. */
@@ -29,8 +30,10 @@ const BY_CODE: ReadonlyMap<number, LoadErrorText> = new Map([
   [-106, { title: 'You are offline', body: 'This computer is not connected to the internet.' }],
   [-107, { title: NOT_SECURE, body: 'The server answered in a way a secure connection does not allow.' }],
   [-109, { title: UNREACHABLE, body: 'The server\'s address cannot be reached from this network.' }],
+  [-111, NOT_CARRIED],
   [-113, { title: NOT_SECURE, body: 'The server only offers a secure connection that is no longer safe to use.' }],
   [-118, TOO_SLOW],
+  [-130, NOT_CARRIED],
   [-137, NO_SUCH_NAME],
   [-300, { title: 'This address is not valid', body: 'Check the address for a typing mistake.' }],
   [-310, { title: NOT_WORKING, body: 'It redirected too many times. Deleting this site\'s cookies may help.' }],

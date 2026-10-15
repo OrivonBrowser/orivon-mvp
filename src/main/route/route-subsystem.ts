@@ -57,13 +57,16 @@ export const routeSubsystem: Subsystem = {
     // Had before any session is stopped, so that stopping one takes no waiting: the listener a stopped session is pointed at.
     const deadEnd: DeadEnd = await startDeadEnd()
     const deadEndRule = (): string => `http://127.0.0.1:${String(deadEnd.port)}`
+    // A private window held to Nym starts with everything on it, whatever its settings file says: the sessions are stopped before the first request.
+    const heldToNym = ctx.privateTunnel === 'nym'
     const routes = createRouteService({
-      store: new RouteStore(ctx.privateSession ? null : join(userData, 'routes.json')),
+      // A private window held to a tunnel can give no origin an `off` entry.
+      store: new RouteStore(ctx.privateSession ? null : join(userData, 'routes.json'), { neverOff: ctx.privateTunnel === 'nym' }),
       savedProxy: readSettingBeforeReady(join(userData, 'settings.json'), 'network.route.proxy'),
       // A settings file that cannot be used counts as the whole browser being on the tunnel (Settings says why).
-      savedEverywhere: everywhereBeforeReady(join(userData, 'settings.json')),
-      savedKind: readSettingBeforeReady(join(userData, 'settings.json'), 'network.route.kind'),
-      nym: createNym(readSettingBeforeReady(join(userData, 'settings.json'), 'network.nym.privacy'), readSettingBeforeReady(join(userData, 'settings.json'), 'network.nym.enabled')),
+      savedEverywhere: heldToNym || everywhereBeforeReady(join(userData, 'settings.json')),
+      savedKind: heldToNym ? 'nym' : readSettingBeforeReady(join(userData, 'settings.json'), 'network.route.kind'),
+      nym: createNym(readSettingBeforeReady(join(userData, 'settings.json'), 'network.nym.privacy'), heldToNym || readSettingBeforeReady(join(userData, 'settings.json'), 'network.nym.enabled')),
       // Asked only when the list of tunnel settings cannot be read; the broker exists by then.
       installed: () => [...new Set([...(ctx.broker?.app.registeredOriginsSync() ?? []), ...(ctx.broker?.app.persistedAppsSync().map((installed) => installed.origin) ?? [])])],
       switchWorld: {

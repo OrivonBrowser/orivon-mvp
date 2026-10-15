@@ -11,6 +11,7 @@ import { HidApprovals } from '../devices/hid-approvals.js'
 import { SchemeChoices } from '../scheme-routing/scheme-choices.js'
 import { SearchEngineStore } from '../browsing/search-engine-store.js'
 import { InternalPageRegistry } from '../pages/internal-registry.js'
+import { NYM_HELD_SETTINGS } from '../settings/settings-file.js'
 import { SettingsStore } from '../settings/settings-store.js'
 import { isDevEthName } from '../dev/eth-resolver.js'
 import type { UpdateOffer } from '../install/app-updates.js'
@@ -132,7 +133,7 @@ export interface ShellServices {
 
 export function createShellServices (userDataPath: string, runtime: Runtime, ctx: SubsystemContext, platform: NodeJS.Platform = process.platform): ShellServices {
   const shortcutStore = new ShortcutStore(join(userDataPath, 'shortcuts.json'), platform)
-  const settings = new SettingsStore(join(userDataPath, 'settings.json'))
+  const settings = new SettingsStore(join(userDataPath, 'settings.json'), runtime.launch.kind === 'private' && runtime.launch.tunnel === 'nym' ? NYM_HELD_SETTINGS : undefined)
   const zoomStore = new ZoomStore(join(userDataPath, 'zoom.json'))
   const internalPages = new InternalPageRegistry()
   const windows = new WindowRegistry()

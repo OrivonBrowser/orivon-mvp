@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { EventEmitter } from 'node:events'
@@ -18,10 +18,10 @@ beforeEach(async () => {
 })
 afterEach(async () => { await rm(root, { recursive: true, force: true }) })
 
-function service (options: { isPrivate?: boolean, profileId?: string, inherit?: string[], alive?: boolean } = {}): { service: ProfilesService, spawn: ReturnType<typeof vi.fn>, store: ProfileStore, children: EventEmitter[] } {
+function service (options: { isPrivate?: boolean, tunnel?: 'nym', profileId?: string, inherit?: string[], alive?: boolean } = {}): { service: ProfilesService, spawn: ReturnType<typeof vi.fn>, store: ProfileStore, children: EventEmitter[] } {
   const store = new ProfileStore(home, () => 5, () => options.alive === true)
   const runtime: Runtime = {
-    launch: options.isPrivate === true ? { kind: 'private', home, dir: null } : { kind: 'default', home, dir: home },
+    launch: options.isPrivate === true ? { kind: 'private', home, dir: null, ...(options.tunnel === undefined ? {} : { tunnel: options.tunnel }) } : { kind: 'default', home, dir: home },
     dir: home,
     profiles: store,
     source: { execPath: '/x/orivon', appPath: '/x', packaged: true, appImage: undefined, env: {} },
@@ -50,6 +50,14 @@ describe('the profiles service', () => {
     one.service.create('Work', 'green')
     expect(one.service.look().shown).toBe(true)
     expect(service({ isPrivate: true }).service.look()).toEqual({ name: 'Private', color: 'purple', isPrivate: true, shown: true })
+  })
+
+  it('says in the chrome that a private session is held to Nym', () => {
+    const held = service({ isPrivate: true, tunnel: 'nym' })
+    expect(held.service.look()).toEqual({ name: 'Private with Nym', color: 'purple', isPrivate: true, tunnel: 'nym', shown: true })
+    expect(held.service.tunnel).toBe('nym')
+    expect(service({ isPrivate: true }).service.tunnel).toBeNull()
+    expect(service().service.tunnel).toBeNull()
   })
 
   it('tells the shell when the profiles change, and not when a change was refused', () => {
@@ -119,6 +127,56 @@ describe('the profiles service', () => {
     expect(existsSync(dir)).toBe(true)
     children[0]?.emit('exit')
     expect(existsSync(dir)).toBe(false)
+  })
+
+  describe('a private session held to Nym', () => {
+    const argsOf = (spawn: ReturnType<typeof vi.fn>, call = 0): string[] => (spawn.mock.calls[call] as [unknown, string[]])[1]
+    const dirOf = (args: string[]): string => String(args.find((argument) => argument.startsWith('--orivon-private-dir='))).replace('--orivon-private-dir=', '')
+
+    it('is started with the flag, and a settings copy that holds the tunnel whatever the opening profile has chosen', async () => {
+      await writeFile(join(home, 'settings.json'), JSON.stringify({ version: 2, values: { 'network.tunnel.everywhere': false, 'network.route.kind': 'socks5', 'network.route.proxy': '127.0.0.1:9050', 'network.nym.enabled': false, 'appearance.theme': 'dark' } }))
+      const { service: s, spawn, children } = service()
+      expect(s.openPrivateNym('https://a.example/')).toBe(true)
+      const args = argsOf(spawn)
+      expect(args).toContain('--orivon-private')
+      expect(args).toContain('--orivon-private-tunnel=nym')
+      expect(args.at(-1)).toBe('https://a.example/')
+      const written = JSON.parse(readFileSync(join(dirOf(args), 'settings.json'), 'utf8')) as { version: number, values: Record<string, unknown> }
+      expect(written.version).toBe(2)
+      expect(written.values).toMatchObject({ 'network.tunnel.everywhere': true, 'network.route.kind': 'nym', 'network.nym.enabled': true, 'appearance.theme': 'dark' })
+      expect(JSON.parse(readFileSync(join(home, 'settings.json'), 'utf8')).values['network.tunnel.everywhere'], 'the opening profile\'s own file is untouched').toBe(false)
+      for (const child of children) child.emit('exit')
+    })
+
+    it('writes the settings even when the opening profile has none, or one that cannot be read', async () => {
+      const none = service()
+      none.service.openPrivateNym()
+      expect(JSON.parse(readFileSync(join(dirOf(argsOf(none.spawn)), 'settings.json'), 'utf8')).values).toMatchObject({ 'network.tunnel.everywhere': true })
+      await writeFile(join(home, 'settings.json'), '{ not json')
+      const broken = service()
+      broken.service.openPrivateNym()
+      expect(JSON.parse(readFileSync(join(dirOf(argsOf(broken.spawn)), 'settings.json'), 'utf8')).values).toMatchObject({ 'network.tunnel.everywhere': true, 'network.route.kind': 'nym' })
+      for (const child of [...none.children, ...broken.children]) child.emit('exit')
+    })
+
+    it('starts nothing, and leaves no directory, when the settings cannot be set up', async () => {
+      await mkdir(join(home, 'settings.json'))
+      const { service: s, spawn } = service()
+      const before = readdirSync(tmpdir()).filter(isPrivateDirName)
+      expect(s.openPrivateNym()).toBe(false)
+      expect(spawn).not.toHaveBeenCalled()
+      expect(readdirSync(tmpdir()).filter(isPrivateDirName)).toEqual(before)
+    })
+
+    it('makes every private window opened from it a held one, and a plain session\'s stay plain', () => {
+      const held = service({ isPrivate: true, tunnel: 'nym' })
+      held.service.openPrivate()
+      expect(argsOf(held.spawn)).toContain('--orivon-private-tunnel=nym')
+      const plain = service()
+      plain.service.openPrivate()
+      expect(argsOf(plain.spawn).join(' ')).not.toContain('tunnel')
+      for (const child of [...held.children, ...plain.children]) child.emit('exit')
+    })
   })
 
   it('hands a private session an http or https address, and drops anything else', () => {

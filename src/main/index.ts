@@ -172,7 +172,7 @@ export function boot (runtime: Runtime): void {
   })
 
   void app.whenReady().then(async () => {
-    const ctx = createSubsystemContext(app, runtime.isPrivate)
+    const ctx = createSubsystemContext(app, runtime.isPrivate, runtime.launch.kind === 'private' ? runtime.launch.tunnel ?? null : null)
     const afterReadyFailures = await runAfterReady(subsystems, ctx)
     report(afterReadyFailures)
 

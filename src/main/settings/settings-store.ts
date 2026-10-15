@@ -10,7 +10,7 @@ import { SETTINGS, isSettingKey, validateSetting } from './schema.js'
 import { SETTINGS_FILE_VERSION, isSettingsFile, settingsFromFile } from './settings-file.js'
 import type { SettingKey, SettingValue, SettingsValues } from './schema.js'
 
-export type SetResult = { readonly ok: true } | { readonly ok: false, readonly reason: 'unknown-key' | 'invalid-value' }
+export type SetResult = { readonly ok: true } | { readonly ok: false, readonly reason: 'unknown-key' | 'invalid-value' | 'locked' }
 
 export interface SettingChange {
   readonly key: SettingKey
@@ -31,7 +31,13 @@ export class SettingsStore {
   private unreadable = false
   private readonly writer = new DebouncedWriter(async () => { this.writeNow() })
 
-  constructor (private readonly filePath: string) {}
+  /** `held` is a value this process is held to for its whole life (a private window that must go through Nym): it is read as that value whatever the file says, and no change reaches it. */
+  constructor (private readonly filePath: string, private readonly held: ReadonlyMap<SettingKey, SettingValue> = new Map()) {}
+
+  /** The settings this process is held to, which the Settings page shows as fixed. */
+  heldKeys (): readonly SettingKey[] {
+    return [...this.held.keys()]
+  }
 
   /** Reads the file once, however many callers ask. A missing, unreadable or
    * corrupt file, and any entry the schema would refuse, leaves the default:
@@ -85,17 +91,17 @@ export class SettingsStore {
 
   get<K extends SettingKey>(key: K): SettingsValues[K] {
     // Every value that reaches the map passed validateSetting for this key.
-    return (this.overrides.get(key) ?? SETTINGS[key].default) as SettingsValues[K]
+    return (this.held.get(key) ?? this.overrides.get(key) ?? SETTINGS[key].default) as SettingsValues[K]
   }
 
   isDefault (key: SettingKey): boolean {
-    return !this.overrides.has(key)
+    return this.get(key) === SETTINGS[key].default
   }
 
   snapshot (): SettingsSnapshot {
     const values = {} as Record<SettingKey, SettingValue>
     for (const key of Object.keys(SETTINGS) as SettingKey[]) values[key] = this.get(key)
-    return { values, changed: [...this.overrides.keys()] }
+    return { values, changed: (Object.keys(SETTINGS) as SettingKey[]).filter((key) => this.get(key) !== SETTINGS[key].default) }
   }
 
   /** Every value as the file gave it at start, for a setting that is read once, when the process starts. */
@@ -108,18 +114,20 @@ export class SettingsStore {
     if (!isSettingKey(key)) return { ok: false, reason: 'unknown-key' }
     const accepted = validateSetting(SETTINGS[key], value)
     if (accepted === undefined) return { ok: false, reason: 'invalid-value' }
+    if (this.held.has(key)) return { ok: false, reason: 'locked' }
     this.apply(key, accepted)
     return { ok: true }
   }
 
   reset (key: string): SetResult {
     if (!isSettingKey(key)) return { ok: false, reason: 'unknown-key' }
+    if (this.held.has(key)) return { ok: false, reason: 'locked' }
     this.apply(key, SETTINGS[key].default)
     return { ok: true }
   }
 
   resetAll (): void {
-    for (const key of [...this.overrides.keys()]) this.apply(key, SETTINGS[key].default)
+    for (const key of [...this.overrides.keys()]) if (!this.held.has(key)) this.apply(key, SETTINGS[key].default)
   }
 
   /** Returns the removal: a window that closes must stop listening. */
