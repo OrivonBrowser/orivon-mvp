@@ -1,11 +1,11 @@
 import { createServer } from 'node:net'
 import type { AddressInfo } from 'node:net'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { startSocks5Fixture } from '../../../broker/route/tests/socks5-fixture.test-helpers.js'
 import type { Socks5Fixture } from '../../../broker/route/tests/socks5-fixture.test-helpers.js'
 import type { FromHost, NymTunnelConfig } from '../../../protocols/nym-tunnel/protocol.js'
 import type { HostProcess } from '../../verifier/process-supervisor.js'
-import { createNymSubsystem, LISTEN_WAIT_MS, NymUnavailable, RECYCLE_AFTER_STARTS, STOP_AFTER_LAST_TUNNEL_MS, TEST_WAIT_MS } from '../nym-subsystem.js'
+import { createNymSubsystem, LISTEN_WAIT_MS, NymUnavailable, REASON_WAIT_MS, RECYCLE_AFTER_STARTS, STOP_AFTER_LAST_TUNNEL_MS, TEST_WAIT_MS } from '../nym-subsystem.js'
 import type { NymDeps, NymSubsystem } from '../nym-subsystem.js'
 import { isFromHost } from '../nym-messages.js'
 import { SHORT_LIVED_USER } from '../../../protocols/nym-tunnel/protocol.js'
@@ -294,6 +294,31 @@ describe('the Test of Nym', () => {
     const answer = await result
     expect(answer).toMatchObject({ ok: false, reason: 'failed' })
     expect(answer.ok ? '' : answer.detail).toContain('gateway selection error')
+  })
+
+  it('waits a moment for the host\'s reason when the closed connection arrives first', async () => {
+    fixture = await startSocks5Fixture({ preferAuth: true, names: {} })
+    const { nym, processes, settle, timers } = harness({ freshPort: () => fixture?.port ?? 0 })
+    const result = nym.test()
+    await settle()
+    processes[0]?.say({ type: 'listening' })
+    await vi.waitFor(() => { expect(timers.some((timer) => timer.ms === REASON_WAIT_MS && !timer.cancelled)).toBe(true) })
+    processes[0]?.say({ type: 'instances', connecting: 0, ready: 0, started: 1, problem: 'a Nym tunnel could not come up: the gateway is unreachable' })
+    const answer = await result
+    expect(answer.ok ? '' : answer.detail).toContain('the gateway is unreachable')
+  })
+
+  it('says what the connection said when the host gives no reason in time', async () => {
+    fixture = await startSocks5Fixture({ preferAuth: true, names: {} })
+    const { nym, processes, settle, timers } = harness({ freshPort: () => fixture?.port ?? 0 })
+    const result = nym.test()
+    await settle()
+    processes[0]?.say({ type: 'listening' })
+    await vi.waitFor(() => { expect(timers.some((timer) => timer.ms === REASON_WAIT_MS && !timer.cancelled)).toBe(true) })
+    timers.find((timer) => timer.ms === REASON_WAIT_MS && !timer.cancelled)?.callback()
+    const answer = await result
+    expect(answer).toMatchObject({ ok: false, reason: 'failed' })
+    expect(answer.ok ? 'ok' : answer.detail).not.toBe('')
   })
 
   it('is answered within one minute counted from the press, whatever it waits for', async () => {

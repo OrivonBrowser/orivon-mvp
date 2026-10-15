@@ -36,6 +36,8 @@ const PROXY_CHECK_REUSE_MS = 5_000
 export const REFUSAL_MEMORY_MS = 10_000
 const TEST_DESTINATION = { host: 'example.com', port: 443 }
 export const TEST_WAIT_MS = 60_000
+/** How long a failed Settings test waits for the host to say why: the closed connection can reach main before the host's message does. */
+export const REASON_WAIT_MS = 2_000
 
 export interface NymDeps {
   readonly fork: () => HostProcess
@@ -237,6 +239,17 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
     return endpoint
   }
 
+  /** Resolves once a failure newer than `before` is known, or after `REASON_WAIT_MS`. */
+  const failureSince = async (before: number): Promise<void> => {
+    if (failures > before) return
+    await new Promise<void>((resolve) => {
+      const done = (): void => { clearTimer(timer); listeners.delete(heard); resolve() }
+      const heard = (): void => { if (failures > before) done() }
+      const timer = setTimer(done, REASON_WAIT_MS)
+      listeners.add(heard)
+    })
+  }
+
   const test = async (): Promise<NymTestResult> => {
     const started = now()
     const failuresBefore = failures
@@ -261,7 +274,8 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
         return { ok: true, ms: now() - started }
       } catch (error) {
         if (abort.signal.aborted) return silent
-        // The host knows why a tunnel did not come up; the connection only says that it was closed.
+        // The host knows why a tunnel did not come up; the connection only says that it was closed, and may say so first.
+        await failureSince(failuresBefore)
         const detail = current.state === 'failed' && failures > failuresBefore ? current.reason : error instanceof Error ? error.message : String(error)
         return { ok: false, reason: 'failed', detail }
       }
