@@ -30,7 +30,7 @@ afterAll(async () => {
 })
 
 async function openSettings (): Promise<Page> {
-  await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/privacy') })
+  await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/tunnels') })
   expect(await waitFor(() => app.windows().some((w) => w.url().startsWith('orivon://settings')))).toBe(true)
   const settings = app.windows().find((w) => w.url().startsWith('orivon://settings')) as Page
   await settings.waitForSelector('#row-route-everywhere input[type=checkbox]')

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { privacyNetworkRows } from '../settings/sections/privacy-network.js'
+import { tunnels } from '../settings/sections/tunnels.js'
 import { SettingsState } from '../settings/state.js'
 import type { OrivonInternal } from '../shared/bridge.js'
 import type { Row } from '../settings/model.js'
@@ -14,7 +14,7 @@ async function loaded (kind: string): Promise<SettingsState> {
   return state
 }
 
-const row = privacyNetworkRows.find((candidate) => candidate.id === 'route-nym-privacy') as Row
+const row = tunnels.rows.find((candidate) => candidate.id === 'route-nym-privacy') as Row
 
 describe('the Nym privacy row', () => {
   it('is shown while Nym is the far end of the tunnel, and not for the person\'s own SOCKS5 address', async () => {

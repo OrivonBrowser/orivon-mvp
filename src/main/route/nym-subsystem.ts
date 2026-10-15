@@ -24,7 +24,7 @@ export interface NymEndpoint {
 export class NymUnavailable extends Error {}
 
 /** Why Nym is refused while the person has it switched off, and where to switch it on. */
-export const NYM_SWITCHED_OFF = 'Nym is switched off. Switch it on in Settings under Privacy and data, or from Available networks in the toolbar.'
+export const NYM_SWITCHED_OFF = 'Nym is switched off. Switch it on in Settings under Tunnels, or from Available networks in the toolbar.'
 
 export const STOP_AFTER_LAST_TUNNEL_MS = 10 * 60_000
 export const LISTEN_WAIT_MS = 15_000

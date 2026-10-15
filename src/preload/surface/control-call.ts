@@ -20,12 +20,13 @@ export const TIMEOUT_MS = {
   id: 5_000,
   /**
    * net.connect / net.close / net.setNoDelay / net.setKeepAlive. Must
-   * exceed node-adapters.ts's own DIAL_TIMEOUT_MS (30_000) -- otherwise a
+   * exceed node-adapters.ts's own DIAL_TIMEOUT_MS (30_000) and the dial
+   * budget of a route that declares one (the Nym tunnel's 110_000, main/route/nym-provider.ts) -- otherwise a
    * legitimately slow dial reports THIS timeout instead of the broker's
    * real 'timeout' answer, discarding the more specific error for a less
    * useful one.
    */
-  net: 35_000,
+  net: 115_000,
   /**
    * app.nextOpenUrl: ./open-url.ts's long poll. The shell ends each wait after 25 s (`OPEN_URL_POLL_MS`), so this
    * budget is always the later of the two and the answer is the shell's own, null for "none yet".

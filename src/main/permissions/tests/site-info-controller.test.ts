@@ -1,4 +1,5 @@
 import { NYM_TARGET } from '../../route/nym-provider.js'
+import { NYM_SWITCHED_OFF } from '../../route/nym-subsystem.js'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -479,10 +480,11 @@ describe('createSiteInfoController -- storageDeclarationFor', () => {
 
 describe('createSiteInfoController -- the tunnel switch of a website', () => {
   const SITE = 'https://news.example'
-  function routesFor (options: { on?: boolean, blocked?: 'no-proxy' | 'local', notice?: 'tunnel' | 'direct' | null, unreadable?: boolean, everywhere?: boolean, setSite?: (origin: string, on: boolean) => Promise<void> } = {}): SubsystemContext['routes'] {
+  function routesFor (options: { on?: boolean, blocked?: 'no-proxy' | 'local', notice?: 'tunnel' | 'direct' | null, unreadable?: boolean, everywhere?: boolean, nym?: boolean, nymOff?: boolean, setSite?: (origin: string, on: boolean) => Promise<void> } = {}): SubsystemContext['routes'] {
     return {
       hub: { state: () => options.on === true ? 'ok' : 'off', isRouted: () => options.on === true, unreadable: () => options.unreadable === true, isEverywhere: () => options.everywhere === true, profileFor: () => undefined },
-      proxy: () => ({ host: '127.0.0.1', port: 9050 }),
+      proxy: () => options.nym === true ? NYM_TARGET : ({ host: '127.0.0.1', port: 9050 }),
+      nym: { state: () => options.nymOff === true ? { state: 'unavailable', cause: 'other', reason: NYM_SWITCHED_OFF } : { state: 'off' } },
       routeSwitch: {
         siteBlockedFor: () => options.blocked,
         siteNotice: () => options.notice === null ? undefined : options.notice ?? 'tunnel',
@@ -495,7 +497,7 @@ describe('createSiteInfoController -- the tunnel switch of a website', () => {
 
   it('offers the switch for an ordinary website, with what the popover needs to ask first', async () => {
     const info = await controllerWith(routesFor({ notice: 'tunnel' })).siteInfoFor(SITE)
-    expect(info.tunnel).toEqual({ on: false, notice: 'tunnel', swarm: false, unreadable: false })
+    expect(info.tunnel).toEqual({ on: false, notice: 'tunnel', swarm: false, unreadable: false, nymOff: false })
   })
 
   it('says it is on, and that no notice is needed once the site has storage in the profile the next change moves it to', async () => {
@@ -513,6 +515,25 @@ describe('createSiteInfoController -- the tunnel switch of a website', () => {
   it('says why it cannot be turned on, and when the list of tunnel settings could not be read', async () => {
     expect((await controllerWith(routesFor({ blocked: 'no-proxy' })).siteInfoFor(SITE)).tunnel?.blocked).toBe('no-proxy')
     expect((await controllerWith(routesFor({ unreadable: true, on: true })).siteInfoFor(SITE)).tunnel?.unreadable).toBe(true)
+  })
+
+  it('says which tunnel the person chose and whether the whole browser is on it, for every origin, and whether Nym is switched off', async () => {
+    expect(await controllerWith(routesFor()).siteInfoFor(SITE)).toMatchObject({ tunnelKind: 'socks5', everywhere: false, tunnel: { nymOff: false } })
+    expect(await controllerWith(routesFor({ nym: true })).siteInfoFor(SITE)).toMatchObject({ tunnelKind: 'nym', tunnel: { nymOff: false } })
+    expect((await controllerWith(routesFor({ nym: true, nymOff: true })).siteInfoFor(SITE)).tunnel?.nymOff).toBe(true)
+    const everywhere = await controllerWith(routesFor({ nym: true, everywhere: true })).siteInfoFor('http://127.0.0.1:8080')
+    expect(everywhere).toMatchObject({ tunnelKind: 'nym', everywhere: true })
+    expect(everywhere.tunnel, 'this computer has no switch').toBeUndefined()
+    // A switched-off Nym is no reason to lock the switch of a person whose tunnel is their own address.
+    expect((await controllerWith(routesFor({ nymOff: true })).siteInfoFor(SITE)).tunnel?.nymOff).toBe(false)
+  })
+
+  it('refuses to turn a site on while Nym is switched off, and still turns one off', async () => {
+    const setSite = vi.fn(async () => {})
+    expect(await controllerWith(routesFor({ nym: true, nymOff: true, setSite })).setTunnel(SITE, true)).toBe(false)
+    expect(setSite).not.toHaveBeenCalled()
+    expect(await controllerWith(routesFor({ nym: true, nymOff: true, setSite })).setTunnel(SITE, false)).toBe(true)
+    expect(setSite).toHaveBeenCalledWith(SITE, false)
   })
 
   it('marks a Swarm address, which cannot go through the tunnel, and no other Web3 name or address', async () => {

@@ -24,7 +24,7 @@ import { activeTabInfo, delay, waitFor, waitForTab } from '../support/smoke-help
 const SITE_NAME = 'site.socks.test'
 const CDN_NAME = 'cdn.socks.test'
 const NOTICE = 'This site moves to your tunnel profile. You\'ll sign in to it again once, and what it stores stays apart from your normal browsing.'
-const SWITCH_LABEL = 'Use the tunnel for this site'
+const TUNNEL_NAME = 'Your SOCKS5 tunnel'
 
 interface Hosted { port: number, hits: number, close: () => Promise<void> }
 
@@ -104,7 +104,7 @@ async function tabTitle (): Promise<string> {
 }
 
 async function openPopover (): Promise<Page> {
-  await chrome.click('#site-permissions-btn')
+  await chrome.click('#tunnel-btn')
   expect(await waitFor(() => findPopup() !== undefined)).toBe(true)
   const popover = findPopup() as Page
   await popover.waitForSelector('#tunnel-switch')
@@ -112,7 +112,7 @@ async function openPopover (): Promise<Page> {
 }
 
 async function closePopover (): Promise<void> {
-  await chrome.click('#site-permissions-btn')
+  await chrome.click('#tunnel-btn')
   expect(await waitFor(() => findPopup() === undefined)).toBe(true)
   await delay(300)
 }
@@ -134,10 +134,10 @@ it('[app:tunnelled-website-gets-its-own-storage] a website in the shared session
   await openSite('direct')
   expect(await sessionOfTab(siteUrl())).toMatchObject({ isDefault: true })
   expect(await cookies(undefined)).toEqual(['who=shared'])
-  expect(await chrome.getAttribute('#site-permissions-btn', 'data-tunnel'), 'the key says nothing').toBeNull()
+  expect(await chrome.getAttribute('#tunnel-btn', 'data-tunnel'), 'the tunnel button is not purple').toBeNull()
 
   const popover = await openPopover()
-  expect(await popover.locator('.tunnel-label').textContent()).toBe(SWITCH_LABEL)
+  expect(await popover.locator('.tunnel-label').textContent()).toBe(TUNNEL_NAME)
   expect(await popover.locator('#tunnel-switch').getAttribute('aria-checked')).toBe('false')
   expect(await popover.locator('.tunnel-notice').count()).toBe(0)
   await closePopover()
@@ -176,18 +176,18 @@ it('[app:tunnelled-website-gets-its-own-storage] the notice comes first, Cancel 
   expect(await cookies(undefined), 'the shared session\'s cookie is untouched').toEqual(['who=shared'])
 }, 4 * QA_TEST_TIMEOUT_MS)
 
-it('[app:tunnelled-website-gets-its-own-storage] the key and the popover say the tab goes through the tunnel, and the switch is on', async () => {
-  expect(await waitFor(async () => await chrome.getAttribute('#site-permissions-btn', 'data-tunnel') === 'on')).toBe(true)
+it('[app:tunnelled-website-gets-its-own-storage] the tunnel button and its popover say the tab goes through the tunnel, and the switch is on', async () => {
+  expect(await waitFor(async () => await chrome.getAttribute('#tunnel-btn', 'data-tunnel') === 'on')).toBe(true)
   const popover = await openPopover()
   expect(await popover.locator('#tunnel-switch').getAttribute('aria-checked')).toBe('true')
-  expect(await popover.locator('.route-line').last().textContent()).toBe('This site\'s traffic goes through your tunnel.')
+  expect(await popover.locator('.tunnel-state').textContent()).toBe('This site\'s traffic goes through your tunnel.')
   await shoot(app, chrome, popover, 'website-tunnel-on')
   await closePopover()
   await shoot(app, chrome, chrome, 'website-tunnel-key')
 }, 3 * QA_TEST_TIMEOUT_MS)
 
 it('[app:tunnelled-website-gets-its-own-storage] Settings lists the site, and removing its separate storage clears that site\'s data in the profile and nothing else', async () => {
-  await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/privacy') })
+  await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/tunnels') })
   expect(await waitFor(() => app.windows().some((w) => w.url().startsWith('orivon://settings')))).toBe(true)
   const settings = app.windows().find((w) => w.url().startsWith('orivon://settings')) as Page
   await settings.waitForSelector('#row-route-sites .tunnel-list-row')
@@ -218,7 +218,7 @@ it('[app:tunnelled-website-gets-its-own-storage] turning the tunnel off returns 
   expect(decoy.hits, 'the page came from the site itself again').toBeGreaterThan(0)
   expect(await cookies(undefined), 'the shared session\'s cookie is as it was').toEqual(['who=shared'])
   expect(await cookies(profilePartition), 'the site\'s own storage is kept').toEqual(['kept=1'])
-  expect(await waitFor(async () => await chrome.getAttribute('#site-permissions-btn', 'data-tunnel') === null)).toBe(true)
+  expect(await waitFor(async () => await chrome.getAttribute('#tunnel-btn', 'data-tunnel') === null)).toBe(true)
   await delay(500)
   if (findPopup() !== undefined) await closePopover()
 

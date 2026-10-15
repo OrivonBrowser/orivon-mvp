@@ -1,0 +1,5 @@
+/* The tunnel button at the address pill's right end (chrome/tunnel-button.ts). The plain pill button look comes from
+   .pillbtn; this only colours it by where the page goes: purple through a tunnel, the warning colour when the tunnel is
+   not answering. */
+#tunnel-btn[data-tunnel="on"] { color: var(--wtunnel); }
+#tunnel-btn[data-tunnel="down"] { color: var(--winsecure); }

@@ -27,6 +27,11 @@ export interface RoutedUdp {
 
 export interface RouteProvider {
   /**
+   * How long opening one connection may take before the broker answers `timeout`, where that is not the direct
+   * dial's 30 s: a route that has to bring its own network up first (a mixnet tunnel starting) needs longer.
+   */
+  readonly dialBudgetMs?: number
+  /**
    * Opens a TCP stream to `host`:`port` and resolves once it is established.
    * `host` is passed as the app named it, a name or an address literal: a
    * provider that resolves names does so on its side. `signal` aborts a

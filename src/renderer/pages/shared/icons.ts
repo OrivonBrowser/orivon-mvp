@@ -63,6 +63,11 @@ export function privacyIcon (): SVGSVGElement {
   return icon((el) => { el.append(path('M12 3 5 6v5c0 4.7 3 8.2 7 10 4-1.8 7-5.3 7-10V6z', '2')) })
 }
 
+/** An arch-shaped portal, the same shape as the address bar's tunnel button. */
+export function tunnelIcon (): SVGSVGElement {
+  return icon((el) => { el.append(path('M4 21V11a8 8 0 0 1 16 0v10', '2'), path('M9 21v-9a3 3 0 0 1 6 0v9', '2'), path('M2 21h20', '2')) })
+}
+
 export function appsIcon (): SVGSVGElement {
   return icon((el) => { el.append(rect(4, 4, 7, 7, 2), rect(13, 4, 7, 7, 2), rect(4, 13, 7, 7, 2), rect(13, 13, 7, 7, 2)) })
 }

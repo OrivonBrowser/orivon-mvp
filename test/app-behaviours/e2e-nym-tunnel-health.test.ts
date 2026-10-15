@@ -61,7 +61,7 @@ async function launched (fake: FakeConfig, everywhere: boolean) {
   cleanups.push(async () => { await app.close().catch(() => {}) })
   const log = (): string[] => readFileSync(logFile, 'utf8').split('\n').filter((line) => line !== '')
   const settings = async (): Promise<Page> => {
-    await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/privacy') })
+    await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/tunnels') })
     expect(await waitFor(() => app.windows().some((w) => w.url().startsWith('orivon://settings')))).toBe(true)
     const page = app.windows().find((w) => w.url().startsWith('orivon://settings')) as Page
     await page.waitForSelector('.route-test button')

@@ -117,7 +117,7 @@ export interface ShellState extends TabsSnapshot {
   contentBlocked: boolean
   /** Whether the active page is an installed app whose name points at a version the person has not taken: the dot on the key. */
   updateOffered: boolean
-  /** Whether the active page goes through the tunnel (`../route/tunnel-mark.ts`), for the mark on the address bar's key. */
+  /** Whether the active page goes through the tunnel (`../route/tunnel-mark.ts`), for the colour of the address bar's tunnel button. */
   tunnel: TunnelMark | null
   /** The dot on the Available networks button: green while a node runs, amber while one starts or syncs, red when one the person switched on failed, none when nothing runs. */
   networksDot: 'green' | 'amber' | 'red' | 'none'

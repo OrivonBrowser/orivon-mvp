@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { SiteTunnel } from '../../main/permissions/site-info.js'
 import { extensionsHint, storageNotice, SWARM_HINT, tunnelHint } from '../site-info/tunnel-view.js'
 
-const base: SiteTunnel = { on: false, notice: 'tunnel', swarm: false, unreadable: false }
+const base: SiteTunnel = { on: false, notice: 'tunnel', swarm: false, unreadable: false, nymOff: false }
 
 // The DOM is covered by the end-to-end spec that switches a website on; these are the words.
 
@@ -23,7 +23,7 @@ describe('the hint under the tunnel switch', () => {
   })
 
   it('says to set a tunnel first when there is none and the switch is off', () => {
-    expect(tunnelHint({ ...base, blocked: 'no-proxy' })).toBe('Set a tunnel under Privacy and data first.')
+    expect(tunnelHint({ ...base, blocked: 'no-proxy' })).toBe('Set a tunnel under Tunnels first.')
     expect(tunnelHint({ ...base, blocked: 'no-proxy', on: true })).toBeUndefined()
   })
 

@@ -86,6 +86,9 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
     openSiteSettings: async (): Promise<void> => {
       await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'openSiteSettings' } satisfies SiteInfoCommand)
     },
+    openTunnelSettings: async (everywhere: boolean): Promise<void> => {
+      await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'openTunnelSettings', everywhere } satisfies SiteInfoCommand)
+    },
     openExtensions: async (): Promise<void> => {
       await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'openExtensions' } satisfies SiteInfoCommand)
     },
@@ -105,7 +108,7 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
      * before the first `get()` round trip resolves. Both come from the
      * SAME argv main already fixed the popup's origin from; nothing here
      * is a claim the page itself gets to make. */
-    initialPage: page === 'web3' ? 'web3' : 'main',
+    initialPage: page === 'web3' || page === 'tunnels' ? page : 'main',
     origin: origin ?? null
   })
 }

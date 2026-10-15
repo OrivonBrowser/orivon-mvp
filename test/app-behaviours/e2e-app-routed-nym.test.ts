@@ -59,7 +59,7 @@ interface Scenario {
   readonly ports: { readonly tcp: number, readonly udp: number }
   readonly log: () => string[]
   readonly directHits: () => number
-  readonly settings: (section: 'apps' | 'privacy') => Promise<Page>
+  readonly settings: (section: 'apps' | 'tunnels') => Promise<Page>
   readonly call: (name: 'tcp' | 'datagram', host: string, port: number) => Promise<Attempt>
 }
 
@@ -136,7 +136,7 @@ async function scenario (failStart: boolean): Promise<Scenario> {
   await view.waitForLoadState('load')
   await waitForPageGlobal(view, 'routedNetworkE2e')
 
-  const settings = async (section: 'apps' | 'privacy'): Promise<Page> => {
+  const settings = async (section: 'apps' | 'tunnels'): Promise<Page> => {
     await chrome.evaluate((path) => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', path) }, `/${section}`)
     expect(await waitFor(() => app.windows().some((w) => w.url().startsWith(SETTINGS_URL_PREFIX) && w.url().includes(section)))).toBe(true)
     return app.windows().find((w) => w.url().startsWith(SETTINGS_URL_PREFIX) && w.url().includes(section)) as Page
@@ -188,10 +188,10 @@ it('[app:routed-app-on-nym-sends-nothing-direct] an installed app routed with th
   expect(scene.directHits(), 'no decoy, on the same ports on loopback, was reached').toBe(0)
 
   // Settings says so, in the words of the status line.
-  const privacy = await scene.settings('privacy')
-  await expect.poll(async () => await privacy.locator('#row-route-nym-status').innerText(), { timeout: 10_000 }).toContain('Nym tunnel ready')
-  await privacy.locator('#row-route-proxy-test button').click()
-  await expect.poll(async () => await privacy.locator('#row-route-proxy-test').innerText(), { timeout: 20_000 }).toContain('Nym answered')
+  const tunnels = await scene.settings('tunnels')
+  await expect.poll(async () => await tunnels.locator('#row-route-nym-status').innerText(), { timeout: 10_000 }).toContain('Nym tunnel ready')
+  await tunnels.locator('#row-route-proxy-test button').click()
+  await expect.poll(async () => await tunnels.locator('#row-route-proxy-test').innerText(), { timeout: 20_000 }).toContain('Nym answered')
 }, 3 * QA_TEST_TIMEOUT_MS)
 
 it('[app:nym-privacy-level-applies] tunnels are made at Balanced (no steady stream, loop cover traffic kept) until Settings says Strongest, which closes the idle tunnel and makes the next one with Nym\'s own defaults', async () => {
@@ -204,9 +204,9 @@ it('[app:nym-privacy-level-applies] tunnels are made at Balanced (no steady stre
   expect(await scene.call('tcp', 'tcp.nym.test', scene.ports.tcp), 'connect by name').toMatchObject({ ok: true })
   expect(options(), 'by default the tunnel is Balanced').toEqual([BALANCED])
 
-  const privacy = await scene.settings('privacy')
-  expect(await privacy.locator('#row-route-nym-privacy select').inputValue()).toBe('balanced')
-  await privacy.locator('#row-route-nym-privacy select').selectOption('strongest')
+  const tunnels = await scene.settings('tunnels')
+  expect(await tunnels.locator('#row-route-nym-privacy select').inputValue()).toBe('balanced')
+  await tunnels.locator('#row-route-nym-privacy select').selectOption('strongest')
   expect(await waitFor(() => scene.log().some((line) => line.startsWith('down ')), 20_000), `the idle tunnel was closed: ${scene.log().join('|')}`).toBe(true)
 
   expect(await scene.call('tcp', 'tcp.nym.test', scene.ports.tcp), 'connect again').toMatchObject({ ok: true })
@@ -222,8 +222,8 @@ it('[app:routed-app-on-nym-fails-closed] with a Nym that cannot start, the route
   expect(scene.directHits(), 'nothing went to the decoys').toBe(0)
   expect(scene.log().filter((line) => line.startsWith('tcp ') || line.startsWith('udp ')), 'the module carried nothing').toEqual([])
 
-  const privacy = await scene.settings('privacy')
-  await expect.poll(async () => await privacy.locator('#row-route-nym-status').innerText(), { timeout: 10_000 }).toContain('Nym is not answering')
+  const tunnels = await scene.settings('tunnels')
+  await expect.poll(async () => await tunnels.locator('#row-route-nym-status').innerText(), { timeout: 10_000 }).toContain('Nym is not answering')
 }, 3 * QA_TEST_TIMEOUT_MS)
 
 it('leaves no Electron process behind', async () => {
