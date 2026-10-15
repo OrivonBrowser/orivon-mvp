@@ -33,6 +33,12 @@ export class GatewayConsent {
     return true
   }
 
+  /** Whether the site has a yes that no load has used yet, without using it. */
+  pending (partition: string | undefined): boolean {
+    const at = partition === undefined ? undefined : this.given.get(partition)
+    return at !== undefined && this.now() - at <= CONSENT_LIFE_MS
+  }
+
   /** Uses up the yes for the site (origin) this mount is for, if it has one that is still fresh; true at most once per press. */
   take (partition: string | undefined): boolean {
     if (partition === undefined) return false

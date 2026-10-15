@@ -217,12 +217,11 @@ describe('startHost with the IPFS node', () => {
     expect(href).toMatch(/^\/\.orivon\/load-through-gateways\?token=/)
     const accepted = await get(host.port, 'fixture.eth', href, undefined, { ...PRESS })
     expect(accepted).toMatchObject({ status: 303, location: '/' })
+    // The press asked for the gateways: the load that follows reads them at once, without asking the node again.
     const again = get(host.port, 'fixture.eth', '/', undefined, DOCUMENT)
-    await vi.waitFor(() => { expect(posted.filter((message) => message.type === 'node-wanted').length).toBeGreaterThan(1) })
-    host.node({ type: 'node', node: 'ipfs-node', state: 'off', reason: 'a proxy is configured' })
     expect(await again).toEqual({ status: 200, body: '<h1>fixture</h1>' })
     expect(gw.requests.every((url) => url.startsWith(`${GATEWAY}/`))).toBe(true)
-    expect(await provenanceOf(host)).toMatchObject({ servedFrom: { kind: 'gateways', reason: 'a proxy is configured' } })
+    expect(await provenanceOf(host)).toMatchObject({ servedFrom: { kind: 'gateways', reason: expect.stringContaining('you loaded this page through them') } })
     // The page's own files are read from the site that was loaded, without asking again.
     expect((await get(host.port, 'fixture.eth', '/index.html')).status).toBe(200)
     // The yes was for that load: the next page load of the site asks again.
@@ -233,6 +232,24 @@ describe('startHost with the IPFS node', () => {
     const asked = await next
     expect(asked.status).toBe(502)
     expect(asked.body).toContain('Load through public gateways')
+  })
+
+  it('offers the gateways too when the node served the site\'s root and then could not give its page', async () => {
+    const gw = fakeGateways(dag.blocks)
+    const posted: FromHost[] = []
+    const made = deps({
+      post: (message) => { posted.push(message) },
+      // The node has the root block and nothing under it.
+      fetch: async (url, init) => url.includes(dag.root.toString()) ? await gw.fetch(url, { headers: (init?.headers ?? {}) as Record<string, string>, signal: init?.signal ?? new AbortController().signal }) : new Response('not here', { status: 404 })
+    })
+    const host = await startHost(config({ ipfsNode: { ...NODE_CONFIG, retryWaitMs: 20 } }), made)
+    running.push(host)
+    const page = get(host.port, 'fixture.eth', '/', undefined, DOCUMENT)
+    await vi.waitFor(() => { expect(posted).toContainEqual({ type: 'node-wanted', node: 'ipfs-node' }) })
+    host.node({ type: 'node', node: 'ipfs-node', state: 'ready' })
+    const answer = await page
+    expect(answer.status).toBeGreaterThanOrEqual(404)
+    expect(answer.body).toContain('Load through public gateways')
   })
 
   it('does not take one site\'s yes for another site\'s load, nor a yes without the page\'s own token', async () => {

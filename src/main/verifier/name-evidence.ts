@@ -70,7 +70,7 @@ function stepRow (step: PointerStep, viaFeed: boolean): EvidenceRow {
 export function servedFromLine (served: ServedFrom | undefined): string | undefined {
   if (served === undefined) return undefined
   if (served.kind === 'node') return "Orivon's IPFS node, on this computer"
-  return served.reason === undefined ? 'Public IPFS gateways' : `Public IPFS gateways, as you chose for this site; your node could not serve it: ${served.reason}`
+  return served.reason === undefined ? 'Public IPFS gateways' : `Public IPFS gateways, because ${served.reason}`
 }
 
 /** The name a source goes by in the popover: an address a person would not recognise (a node's own, on loopback) is named by what it is, and any other source by itself. */

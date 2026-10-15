@@ -82,7 +82,7 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
     const served = of.addresses.servedName(host)
     const scheme = of.schemeOfGatherer(gatherer)
     if (served?.namespace.startsWith('.') === true && scheme !== undefined) deps.post({ type: 'name-scheme', host: served.name, scheme })
-  }, usedGatewaysByYes)
+  }, (site, partition) => usedGatewaysByYes(site) || (site.servedFrom?.kind === 'node' && consent.pending(partition)))
   const sites = new RoutedSites(sitesOf(registry, config.front !== undefined), sitesOf(tunnelRegistry, true))
   const certificate = createRunCertificate()
   const server = createVerifierServer(registry, sites, certificate, undefined, consent)

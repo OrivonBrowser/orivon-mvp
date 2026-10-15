@@ -21,15 +21,17 @@ const SITE = 'https://a.eth'
 const never = (): boolean => false
 const always = (): boolean => true
 
+const YES_REASON = 'you loaded this page through them after your node could not serve it'
+
 describe('the node-first gatherer', () => {
   it('mounts from the node once it is ready, and never touches the gateways', async () => {
     const calls: string[] = []
-    const first = createNodeFirstGatherer({ node: gatherer('node', calls), gateways: gatherer('gateways', calls), ready: async () => {}, takeConsent: always })
+    const first = createNodeFirstGatherer({ node: gatherer('node', calls), gateways: gatherer('gateways', calls), ready: async () => {}, takeConsent: never })
     expect((await first.mount('a.eth', RECORDS, undefined, SITE)).servedFrom).toEqual({ kind: 'node' })
     expect(calls).toEqual(['node'])
   })
 
-  it('never reads from the gateways, and offers them, when the node cannot serve and the person has not said so', async () => {
+  it('never reads from the gateways, and offers them with the reason, when the node cannot serve and the person has not said so', async () => {
     const calls: string[] = []
     const first = createNodeFirstGatherer({
       node: gatherer('node', calls),
@@ -43,6 +45,18 @@ describe('the node-first gatherer', () => {
     expect(calls).toEqual([])
   })
 
+  it('reads the gateways at once, and says why, when the person said yes for this load', async () => {
+    const calls: string[] = []
+    const first = createNodeFirstGatherer({
+      node: gatherer('node', calls),
+      gateways: gatherer('gateways', calls),
+      ready: async () => { throw new Error('the node is off') },
+      takeConsent: always
+    })
+    expect((await first.mount('a.eth', RECORDS, undefined, SITE)).servedFrom).toEqual({ kind: 'gateways', reason: YES_REASON })
+    expect(calls).toEqual(['gateways'])
+  })
+
   it('asks the yes of the site the mount is for, and of no other', async () => {
     const asked: Array<string | undefined> = []
     const first = createNodeFirstGatherer({
@@ -53,7 +67,7 @@ describe('the node-first gatherer', () => {
     })
     await expect(first.mount('b.eth', RECORDS, undefined, 'https://other.eth')).rejects.toBeInstanceOf(GatewaysOffered)
     await expect(first.mount('b.eth', RECORDS)).rejects.toBeInstanceOf(GatewaysOffered)
-    expect((await first.mount('a.eth', RECORDS, undefined, SITE)).servedFrom).toMatchObject({ kind: 'gateways', reason: 'off' })
+    expect((await first.mount('a.eth', RECORDS, undefined, SITE)).servedFrom).toMatchObject({ kind: 'gateways' })
     expect(asked).toEqual(['https://other.eth', undefined, SITE])
   })
 
@@ -69,18 +83,6 @@ describe('the node-first gatherer', () => {
     await expect(first.mount('a.eth', RECORDS, undefined, SITE)).rejects.toBeInstanceOf(GatewaysOffered)
   })
 
-  it('mounts from the gateways, with the reason, when the node cannot serve and the person said so', async () => {
-    const calls: string[] = []
-    const first = createNodeFirstGatherer({
-      node: gatherer('node', calls),
-      gateways: gatherer('gateways', calls),
-      ready: async () => { throw new Error('a proxy is configured') },
-      takeConsent: always
-    })
-    expect((await first.mount('a.eth', RECORDS, undefined, SITE)).servedFrom).toEqual({ kind: 'gateways', reason: 'a proxy is configured' })
-    expect(calls).toEqual(['gateways'])
-  })
-
   it('offers the gateways when the node is ready but could not find the content', async () => {
     const first = createNodeFirstGatherer({
       node: { ...gatherer('node', []), mount: async () => { throw new ResolutionError('unavailable', 'no peer has it') } },
@@ -93,41 +95,30 @@ describe('the node-first gatherer', () => {
     expect((failure as Error).message).toContain('no peer has it')
   })
 
-  it('reads the gateways after the node found nothing, once the person said so', async () => {
-    const calls: string[] = []
+  it('offers the gateways when the mount\'s time runs out while the node is still looking', async () => {
+    const controller = new AbortController()
     const first = createNodeFirstGatherer({
-      node: { ...gatherer('node', calls), mount: async () => { calls.push('node'); throw new ResolutionError('unavailable', 'no peer has it') } },
-      gateways: gatherer('gateways', calls),
+      node: { ...gatherer('node', []), mount: async (_name, _records, signal) => await new Promise<never>((_resolve, reject) => { signal?.addEventListener('abort', () => { reject(new Error('aborted')) }) }) },
+      gateways: gatherer('gateways', []),
       ready: async () => {},
-      takeConsent: always
+      takeConsent: never
     })
-    expect((await first.mount('a.eth', RECORDS, undefined, SITE)).servedFrom).toEqual({ kind: 'gateways', reason: 'no peer has it' })
-    expect(calls).toEqual(['node', 'gateways'])
+    const pending = first.mount('a.eth', RECORDS, controller.signal, SITE).catch((error: unknown) => error)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    controller.abort()
+    expect(await pending).toBeInstanceOf(GatewaysOffered)
   })
 
-  it('does not hide a lie or a missing file behind an offer, or behind the gateways', async () => {
+  it('does not hide a lie or a missing file behind an offer', async () => {
     for (const failure of ['unverifiable', 'not-found'] as const) {
       const first = createNodeFirstGatherer({
         node: { ...gatherer('node', []), mount: async () => { throw new ResolutionError(failure, 'bad') } },
         gateways: gatherer('gateways', []),
         ready: async () => {},
-        takeConsent: always
+        takeConsent: never
       })
       await expect(first.mount('a.eth', RECORDS, undefined, SITE)).rejects.toMatchObject({ failure })
     }
-  })
-
-  it('does not fall back for a mount that was abandoned', async () => {
-    const calls: string[] = []
-    const controller = new AbortController()
-    const first = createNodeFirstGatherer({
-      node: gatherer('node', calls),
-      gateways: gatherer('gateways', calls),
-      ready: async () => { controller.abort(); throw new Error('aborted') },
-      takeConsent: always
-    })
-    await expect(first.mount('a.eth', RECORDS, controller.signal, SITE)).rejects.toBeDefined()
-    expect(calls).toEqual([])
   })
 
   it('supports what the node gatherer supports', () => {

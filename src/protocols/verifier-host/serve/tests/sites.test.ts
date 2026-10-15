@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ResolutionError } from '../../../resolution/records.js'
+import { GatewaysOffered, ResolutionError } from '../../../resolution/records.js'
 import type { NameRecord } from '../../../resolution/records.js'
 import type { DataGatherer, MountedSite, NameResolver } from '../../../resolution/providers.js'
 import { ProtocolRegistry } from '../../../registry.js'
@@ -285,5 +285,41 @@ describe('Sites -- stale-while-revalidate', () => {
     resolve.current = async () => { throw new Error('down') }
     await expect(sites.get('a.eth', P)).rejects.toThrow()
     expect(await sites.current('a.eth', P)).toBeUndefined()
+  })
+
+  it('keeps an offer of gateways when the deadline ends a mount, since the gatherer says so the moment it is aborted', async () => {
+    const resolver: NameResolver = { id: 'stub', namespaces: ['.eth'], resolve: async () => [record] }
+    const searching: DataGatherer = { id: 'ipfs', supports: () => true, mount: async (_name, _records, signal) => await new Promise<MountedSite>((_resolve, reject) => { signal?.addEventListener('abort', () => { reject(new GatewaysOffered('the node did not find it in time')) }) }) }
+    const r = new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [searching] })])
+    await expect(new Sites(r, Date.now, 50).get('a.eth', P)).rejects.toBeInstanceOf(GatewaysOffered)
+  })
+
+  describe('a site loaded by the person\'s yes for one load', () => {
+    const byYes: MountedSite = { ...site, servedFrom: { kind: 'gateways', reason: 'the person said yes' } }
+    function world () {
+      const resolver: NameResolver = { id: 'stub', namespaces: ['.eth'], resolve: async () => [record] }
+      const mounts = { n: 0 }
+      const gatherer: DataGatherer = { id: 'stub', supports: () => true, mount: async () => { mounts.n++; return byYes } }
+      const r = new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [gatherer] })])
+      return { sites: new Sites(r, Date.now, 50, () => {}, (mounted) => mounted.servedFrom?.reason !== undefined), mounts }
+    }
+
+    it('serves the page\'s own files without mounting again, and mounts again for a page load the person starts', async () => {
+      const { sites, mounts } = world()
+      await sites.get('a.eth', P, true, true)
+      await sites.get('a.eth', P)
+      await sites.get('a.eth', P, true)
+      expect(mounts.n).toBe(1)
+      await sites.get('a.eth', P, true, true)
+      expect(mounts.n).toBe(2)
+    })
+
+    it('does not mount again for the page load of a site the node served', async () => {
+      const { registry: r, calls } = registry(async () => [record])
+      const sites = new Sites(r, Date.now, 50, () => {}, () => false)
+      await sites.get('a.eth', P, true, true)
+      await sites.get('a.eth', P, true, true)
+      expect(calls.n).toBe(1)
+    })
   })
 })

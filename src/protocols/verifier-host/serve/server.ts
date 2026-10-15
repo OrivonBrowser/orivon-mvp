@@ -170,6 +170,16 @@ function isNavigation (req: IncomingMessage): boolean {
   return req.headers['sec-fetch-mode'] === 'navigate' && (dest === 'document' || dest === 'iframe' || dest === 'frame')
 }
 
+/**
+ * The error page's offer of gateways, for a failure that "could not get it" (the node could not serve the mount, or the site it served could not
+ * be read), and only for a page the person is looking at: a script's fetch or a frame of the same origin could read the token.
+ */
+function gatewayOffer (consent: GatewayConsent, req: IncomingMessage, url: URL, partition: string | undefined, error: unknown, servedByNode: boolean): GatewayOffer | undefined {
+  const couldNotGet = error instanceof GatewaysOffered || (servedByNode && error instanceof ResolutionError && error.failure === 'unavailable')
+  if (!couldNotGet || partition === undefined || req.headers['sec-fetch-dest'] !== 'document') return undefined
+  return { href: `${CONSENT_PATH}?token=${consent.tokenFor(partition)}&to=${encodeURIComponent(`${url.pathname}${url.search}`)}`, tunnelled: routeOf(req) === 'tunnel' }
+}
+
 /** A page load the person started in a tab (its document), not a frame's or a file's. */
 function isDocumentLoad (req: IncomingMessage): boolean {
   return req.headers['sec-fetch-mode'] === 'navigate' && req.headers['sec-fetch-dest'] === 'document'
@@ -192,7 +202,7 @@ function pathOf (target: string | undefined, host: string): URL | undefined {
 function sendError (res: ServerResponse, shown: string, error: unknown, servedRoot?: string, offer?: GatewayOffer): void {
   const failure = error instanceof ResolutionError ? error.failure : 'unavailable'
   const detail = error instanceof Error ? error.message : String(error)
-  const { status, html } = renderErrorPage(failure, shown, detail, error instanceof GatewaysOffered ? offer : undefined)
+  const { status, html } = renderErrorPage(failure, shown, detail, offer)
   const headers: Record<string, string> = {
     'content-type': 'text/html; charset=utf-8',
     'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}; ${FRAME_ANCESTORS_SELF_CSP}`,
@@ -422,10 +432,12 @@ async function handle (registry: ProtocolRegistry, sites: SiteSource, consent: G
   res.once('close', () => { left.abort(new Error('the client went away')) })
   let file: GatheredFile
   let root: string | undefined
+  let servedByNode = false
   const partition = partitionOf(req, host)
   try {
     const { site } = await sites.get(host, partition, routeOf(req), isNavigation(req), isDocumentLoad(req))
     root = site.root.cid
+    servedByNode = site.servedFrom?.kind === 'node'
     const etag = `"${root}"`
     // One install reads one root: a request naming another means the name moved on mid-load.
     const expected = req.headers[CONTENT_ROOT_HEADER]
@@ -473,8 +485,7 @@ async function handle (registry: ProtocolRegistry, sites: SiteSource, consent: G
     await sendBody(res, status, headers, file, length, budget, partition, bufferedResponseDeadlineMs, typeof expected === 'string')
   } catch (error) {
     if (res.headersSent) res.destroy()
-    // Only a page the person is looking at carries the token: a script's fetch or a frame of the same origin could read it.
-    else sendError(res, shown, error, root, partition === undefined || req.headers['sec-fetch-dest'] !== 'document' ? undefined : { href: `${CONSENT_PATH}?token=${consent.tokenFor(partition)}&to=${encodeURIComponent(`${url.pathname}${url.search}`)}`, tunnelled: routeOf(req) === 'tunnel' })
+    else sendError(res, shown, error, root, gatewayOffer(consent, req, url, partition, error, servedByNode))
   }
 }
 

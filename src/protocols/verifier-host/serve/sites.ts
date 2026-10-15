@@ -4,7 +4,7 @@
 // site's pages opened is cold for every other site, so timing a request
 // tells a page nothing about where the person has been (A256).
 
-import { ResolutionError } from '../../resolution/records.js'
+import { GatewaysOffered, ResolutionError } from '../../resolution/records.js'
 import type { MountedSite } from '../../resolution/providers.js'
 import type { ProtocolRegistry } from '../../registry.js'
 import { Slots } from '../../resolution/slots.js'
@@ -26,6 +26,8 @@ export const FAILURE_TTL_MS = 5_000
 export const MOUNT_TIMEOUT_MS = 25_000
 /** Names kept at once, the least recently used dropped first: any page can make the host look up any number of names. */
 export const MAX_SITES = 64
+/** After the deadline aborts a mount, how long the mount has to say why it stopped before the deadline answers for it. */
+const ABORT_GRACE_MS = 200
 /** Names being proven at once. The rest wait, inside their own deadline. */
 export const MAX_CONCURRENT_MOUNTS = 4
 
@@ -79,8 +81,11 @@ export class Sites {
     private readonly timeoutMs = MOUNT_TIMEOUT_MS,
     /** Told which gatherer is about to load a host's records, before any of its content is fetched, whatever partition the mount is for. Not told of a mount the deadline has already failed. */
     private readonly onGatherer: (host: string, gatherer: string) => void = () => {},
-    /** Whether a mounted site was loaded by the person's yes for one load (gateways, because their node could not serve it): the next page load mounts again, and so asks again. */
-    private readonly forOneLoad: (site: MountedSite) => boolean = () => false
+    /**
+     * Whether a mounted site must be mounted again for a page load the person starts: one that a yes loaded for one load (the next load
+     * asks again), and one the node served while the person has just said yes to gateways for this site (the load they asked for).
+     */
+    private readonly remount: (site: MountedSite, partition: string) => boolean = () => false
   ) {}
 
   /**
@@ -88,13 +93,13 @@ export class Sites {
    * `retry` is a person's own request for the page (a reload, a click on Try again): it does not replay a
    * remembered failure, and starts the mount again. A mount still running is joined, never restarted.
    * `fresh` is a page load the person started (a tab's document navigation, not a frame's or a file's): it does not reuse a site
-   * that was loaded by a yes for one load.
+   * that `remount` names.
    */
   async get (host: string, partition: string | undefined, retry = false, fresh = false): Promise<SiteRecord> {
     if (partition === undefined) return await this.mount(host, undefined)
     const key = `${partition} ${host}`
     let current = this.entries.get(key)
-    if (fresh && current?.good !== undefined && this.forOneLoad(current.good.site)) {
+    if (fresh && current?.good !== undefined && this.remount(current.good.site, partition)) {
       this.entries.delete(key)
       current = undefined
     }
@@ -187,26 +192,29 @@ export class Sites {
   private async mount (host: string, partition: string | undefined): Promise<SiteRecord> {
     const controller = new AbortController()
     let timer: ReturnType<typeof setTimeout> | undefined
+    const work = this.mounting.run(async () => {
+      controller.signal.throwIfAborted()
+      const resolved = await this.registry.resolve(host, controller.signal)
+      const site = await this.registry.mount(resolved.name, resolved.records, controller.signal, partition, (gatherer) => {
+        if (controller.signal.aborted) return
+        try {
+          this.onGatherer(host, gatherer)
+        } catch (error) {
+          console.error('[verifier] reporting a gatherer failed:', error)
+        }
+      })
+      return { site, resolver: resolved.resolver, mountedAt: this.now() }
+    })
     const deadline = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => {
         controller.abort()
-        reject(new ResolutionError('unavailable', `${host} could not be verified within ${String(this.timeoutMs / 1000)} s`))
+        // A gatherer that gives the person a way on when its time runs out (an offer of gateways) says so in the instant the abort reaches it.
+        work.then(() => {}, (error: unknown) => { if (error instanceof GatewaysOffered) reject(error) })
+        setTimeout(() => { reject(new ResolutionError('unavailable', `${host} could not be verified within ${String(this.timeoutMs / 1000)} s`)) }, ABORT_GRACE_MS).unref()
       }, this.timeoutMs)
     })
     try {
-      return await Promise.race([deadline, this.mounting.run(async () => {
-        controller.signal.throwIfAborted()
-        const resolved = await this.registry.resolve(host, controller.signal)
-        const site = await this.registry.mount(resolved.name, resolved.records, controller.signal, partition, (gatherer) => {
-          if (controller.signal.aborted) return
-          try {
-            this.onGatherer(host, gatherer)
-          } catch (error) {
-            console.error('[verifier] reporting a gatherer failed:', error)
-          }
-        })
-        return { site, resolver: resolved.resolver, mountedAt: this.now() }
-      })])
+      return await Promise.race([deadline, work])
     } finally {
       clearTimeout(timer)
     }

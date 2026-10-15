@@ -1,10 +1,10 @@
 // An ipfs:// page is never read from a public gateway on the browser's own: when the node Orivon runs cannot give it, the
 // tab shows a page that says so, with a "Load through public gateways" button, and not one request goes to a gateway until
 // the button is pressed. The press loads this site, and only this site, through the gateways; another site is refused again.
-// A fixture that answers nothing stands in for the node (the test seam), and a second fixture for the public gateways.
+// A fixture that cannot give the sites' roots stands in for the node (the test seam), and a second fixture for the public gateways.
 import { afterAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
-import { evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { activeTabInfo, evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from '../support/e2e-helpers.js'
 import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 
@@ -21,10 +21,11 @@ afterAll(async () => {
 
 it('[ipfs-gateway-consent] refuses to read a gateway until the person presses the button, then loads that site through them and no other', async () => {
   await runPhase('ipfs-gateway-consent', async (check) => {
-    // The node: a fixture that answered once and then went away, so every read of it fails.
-    const dead = await startFixtureGateway({})
-    const nodeUrl = dead.url
-    await dead.close()
+    // The node: a fixture that holds both sites and answers 503, as the real node does for a lookup it remembers as empty, for their roots.
+    const node = await startFixtureGateway(SITES)
+    node.failRoot('one', 503, 100_000)
+    node.failRoot('two', 503, 100_000)
+    const nodeUrl = node.url
     const publicGateway = await startFixtureGateway(SITES)
     let app: Awaited<ReturnType<typeof launchElectron>> | undefined
     try {
@@ -54,6 +55,7 @@ it('[ipfs-gateway-consent] refuses to read a gateway until the person presses th
           text = await evaluateRetrying(view, () => document.body.innerText).catch(() => '')
           return text.includes('Load through public gateways')
         }, 90_000)
+        if (!text.includes('Load through public gateways')) throw new Error(`the offer never appeared: windows ${JSON.stringify(running.windows().map((page) => page.url()))}, tab ${JSON.stringify(await activeTabInfo(chrome))}`)
         return text
       }
 
@@ -82,6 +84,7 @@ it('[ipfs-gateway-consent] refuses to read a gateway until the person presses th
     } finally {
       if (app !== undefined) await closeElectronApp(app)
       await publicGateway.close()
+      await node.close()
     }
   })
 }, TEST_TIMEOUT_MS)

@@ -27,7 +27,7 @@ describe('liveNameEvidence, where the bytes came from', () => {
 
   it('names the gateways, and why the node was not used when it was chosen', () => {
     expect(loadedFrom({ servedFrom: { kind: 'gateways' } })).toBe('Public IPFS gateways')
-    expect(loadedFrom({ servedFrom: { kind: 'gateways', reason: 'a proxy is configured' } })).toBe('Public IPFS gateways, as you chose for this site; your node could not serve it: a proxy is configured')
+    expect(loadedFrom({ servedFrom: { kind: 'gateways', reason: 'a proxy is configured' } })).toBe('Public IPFS gateways, because a proxy is configured')
   })
 
   it('says nothing for a protocol that has one kind of source', () => {
