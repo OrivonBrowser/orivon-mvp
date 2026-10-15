@@ -6,7 +6,7 @@ loopback port; the protocol that uses it reads from that endpoint and verifies w
 here is trusted for content. [`entry.ts`](entry.ts) is the one process entry and [`kinds.ts`](kinds.ts)
 finds the kind a start message names; [`service.ts`](service.ts) is the work, [`component.ts`](component.ts)
 loads jco's output from a directory (it reads each file through [`pinned-file.ts`](pinned-file.ts), which the Nym tunnel host uses too), [`node-net.ts`](node-net.ts) and [`node-fs.ts`](node-fs.ts) are the only
-network and files the component reaches ([`node-dns.ts`](node-dns.ts) is how `node-net.ts` finds a name's addresses), and [`protocol.ts`](protocol.ts) is what main and this process say to
+network and files the component reaches ([`node-dns.ts`](node-dns.ts) is how `node-net.ts` finds a name's addresses; [`node-route.ts`](node-route.ts) and [`route-source.ts`](route-source.ts) are the network of a node that runs through a tunnel), and [`protocol.ts`](protocol.ts) is what main and this process say to
 each other. The main process's side (starting on demand, the pinned-file check, the idle stop, the backoff and
 the refusal memory) is [`../../main/verifier/local-node-controller.ts`](../../main/verifier/local-node-controller.ts)
 and its neighbours.
@@ -45,7 +45,7 @@ imports `electron`).
 
 **What it depends on.** [`../../shim/wasi-p2/`](../../shim/wasi-p2/) (the WASI 0.2 host, which is
 durable), [`../../broker/adapters/`](../../broker/adapters/) (the Node socket adapters, which make no
-decision) and [`../../broker/policy/address.ts`](../../broker/policy/address.ts) (the address
+decision), [`../../broker/route/`](../../broker/route/) (the SOCKS5 provider a routed node dials through) and [`../../broker/policy/address.ts`](../../broker/policy/address.ts) (the address
 classifier) and [`../gateways/`](../gateways/) (the DNS-over-HTTPS query and the allowlisted fetch, which the verifier host uses too). `node-net.ts` is where the decisions are made. `kinds.ts` imports each kind's `kind.ts`, and is
 the only file here that names a kind.
 
@@ -87,9 +87,30 @@ no rule was widened. The process's fetch reaches only the configured endpoints a
 and 5 min, for at most 256 names; an answer from one family alone is used once and not kept. The DoH provider learns the names the node resolves (lookup services, peers'
 hostnames, HTTP providers), never the sites a person visits.
 
-A system proxy configured in the shell, or the whole browser on the tunnel: a node does not start, because its sockets would go around
-the proxy (`docs/architecture/security-model.md`, T20, T84); a SOCKS5 tunnel does not carry what a peer-to-peer node needs, which is dialling peers by address and datagram name lookups, and the refusal names the tunnel as the reason. That check is main's, in
+A system proxy configured in the shell: a node does not start, because its sockets would go around the proxy
+(`docs/architecture/security-model.md`, T20). That check is main's, in
 [`../../main/verifier/local-node-controller.ts`](../../main/verifier/local-node-controller.ts).
+
+**With the whole browser on the tunnel, a node runs through it, or does not run.** The start config carries
+`routed: true` and the process builds its network from [`node-route.ts`](node-route.ts) instead of the direct adapters; the
+rules in the table above (which address, which port, how many) are still `node-net.ts`'s and do not change. Every `connect`
+is a SOCKS5 CONNECT to the checked literal address through the tunnel (IPv4 first, the next address tried when one fails,
+at most thirty-two openings in flight so a mixnet tunnel is not handed hundreds together). Every datagram goes through UDP
+ASSOCIATE: the only datagram socket in the process is the SOCKS5 client's own, bound on loopback for a tunnel on this computer, and the node can send nothing through it that the tunnel's relay does not carry. A name is looked up by DNS-over-HTTPS over a TLS connection
+the tunnel carries (a CONNECT to the endpoint's name, its certificate checked for that name; the connection is kept for the
+next query), and there is no system resolver to fall back to: a name the endpoints cannot answer stays unresolved. The API
+listener stays on loopback, as for a direct node. A routed node whose process has no way to ask for a route gets no network.
+[`route-source.ts`](route-source.ts) is how the process learns where the tunnel is: it posts `route-ask` on its parent port and main answers with
+the tunnel's port, the secret the tunnel's host made for its start and the node's own user name (never an argument or a log line); the answer is kept until main says
+`route-reset` (the tunnel's process restarted on another port) or the proxy refuses a connection outright, and a refusal from
+main (the tunnel cannot run) is not kept. The sign-in is a user name of the node's own, so Nym gives the node a mixnet client
+and an exit of its own (ADR-0086). With the person's own SOCKS5 address as the tunnel the same path works, minus what that
+address lacks: Tor's SOCKS5 has no UDP ASSOCIATE, so a routed node there has no datagrams and cannot resolve `/dnsaddr` bootnode names
+by UDP; everything else (streams, names by DNS-over-HTTPS) goes through it.
+
+A website that has its tunnel on by itself, with the browser-wide setting off, reads IPFS through the gateways over its tunnel and
+never through a node: the node is one process for the whole browser, so it cannot be direct for the pages that are not tunnelled
+and tunnelled for this one (*provisional*; a node per tunnel identity would settle it).
 
 **The files are confined by the real path.** `node-fs.ts` rejects `..` as a path segment (a name such as `..cache` is an ordinary name), absolute paths, NUL, and the names Windows reserves for devices (`CON`, `NUL`, `COM1`, `LPT1` and the rest, any extension, any case) on every system, so the policy is the same everywhere; then
 resolves the real path of the file or of its deepest existing ancestor and requires it to stay inside

@@ -11,7 +11,7 @@ import { RouteStore } from '../route-store.js'
 
 const APP = 'https://one.example'
 
-const FAKE_NYM: NymSubsystem = { ensure: async () => ({ port: 1, secret: 's' }), state: () => ({ state: 'off' }), onChange: () => () => {}, test: async () => ({ ok: true, ms: 1 }), tunnels: () => ({ connecting: 0, ready: 0 }), processInfo: () => undefined, setEnabled: () => {}, setPrivacy: () => {}, stop: () => {} }
+const FAKE_NYM: NymSubsystem = { ensure: async () => ({ port: 1, secret: 's' }), endpoint: () => undefined, state: () => ({ state: 'off' }), onChange: () => () => {}, test: async () => ({ ok: true, ms: 1 }), tunnels: () => ({ connecting: 0, ready: 0 }), processInfo: () => undefined, setEnabled: () => {}, setPrivacy: () => {}, stop: () => {} }
 
 function service (savedProxy: string, savedKind: RouteKind = 'socks5', nym: NymSubsystem = FAKE_NYM) {
   const store = new RouteStore(null)

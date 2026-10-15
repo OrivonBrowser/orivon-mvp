@@ -64,6 +64,8 @@ export interface NymSubsystem {
   /** Starts the host if need be and resolves with where it listens. Rejects with `NymUnavailable` when Nym cannot run. */
   ensure: () => Promise<NymEndpoint>
   state: () => NymState
+  /** Where the host listens now, or undefined while it does not run (its port and secret are new at each start). Starts nothing. */
+  endpoint: () => NymEndpoint | undefined
   /** How many tunnels the host has connecting and open, from its last report; none while it does not run. */
   tunnels: () => { readonly connecting: number, readonly ready: number }
   /** The host's process while it runs. */
@@ -271,6 +273,7 @@ export function createNymSubsystem (deps: NymDeps): NymSubsystem {
 
   return {
     ensure,
+    endpoint: () => listening ? endpoint : undefined,
     state: () => current,
     tunnels: () => tunnelCounts,
     processInfo: () => supervisor.processInfo(),

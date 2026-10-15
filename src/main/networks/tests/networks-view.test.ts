@@ -158,3 +158,29 @@ describe('the words for sizes and processes', () => {
     expect(processMetrics({ startedAt: NOW - 3 * 3600_000 - 5 * 60_000 }, NOW)).toEqual([{ label: 'Running for', value: '3 h 5 min' }])
   })
 })
+
+describe('a node while the whole browser is on a tunnel', () => {
+  const through = (over: Partial<NetworkFacts['ipfs']>): NetworkFacts['ipfs'] => ({ enabled: true, state: { state: 'off' }, traffic: { active: 0, bytes: 0 }, through: 'Nym', ...over })
+
+  it('says it runs through Nym and why that is slower, in plain words', () => {
+    const view = buildNetworksView(facts({ ipfs: through({ state: { state: 'ready', peers: 0 } }) }))
+    expect(card(view, 'ipfs')).toMatchObject({ status: 'Running', tone: 'ok', note: expect.stringMatching(/^Connected through Nym: .*not your address\. This is slower than a direct connection\.$/) as string })
+  })
+
+  it('says it starts through Nym and takes a little while, and that a sleeping node will connect through it', () => {
+    expect(card(buildNetworksView(facts({ ipfs: through({ state: { state: 'starting' } }) })), 'ipfs')).toMatchObject({ status: 'Starting', note: 'Starting through Nym: the first connection takes a little while.' })
+    expect(card(buildNetworksView(facts({ swarm: through({}) })), 'swarm')).toMatchObject({ status: 'Asleep', note: 'Asleep: it starts when a page needs it. It then connects through Nym.' })
+  })
+
+  it('names the person\'s own tunnel when that is the one', () => {
+    const view = buildNetworksView(facts({ ipfs: through({ through: 'your tunnel', state: { state: 'ready', peers: 0 } }) }))
+    expect(card(view, 'ipfs')?.note).toMatch(/^Connected through your tunnel: /)
+  })
+
+  it('keeps the reason it is off or failed, and says nothing of a tunnel when the node connects directly', () => {
+    expect(card(buildNetworksView(facts({ ipfs: through({ state: { state: 'off', reason: 'the tunnel cannot carry it' } }) })), 'ipfs')).toMatchObject({ status: 'Off', note: 'the tunnel cannot carry it.' })
+    expect(card(buildNetworksView(facts({ ipfs: through({ state: { state: 'failed', reason: 'it stopped' } }) })), 'ipfs')).toMatchObject({ status: 'Not running', note: 'it stopped.' })
+    const direct = { enabled: true, state: { state: 'ready', peers: 0 } as const, traffic: { active: 0, bytes: 0 } }
+    expect(card(buildNetworksView(facts({ ipfs: direct })), 'ipfs')?.note).toBeUndefined()
+  })
+})

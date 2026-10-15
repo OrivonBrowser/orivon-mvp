@@ -1,11 +1,11 @@
 import { EventEmitter } from 'node:events'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { FromNode, LocalNodeConfig } from '../../../protocols/local-node/protocol.js'
+import type { FromNode, LocalNodeConfig, RouteEndpoint } from '../../../protocols/local-node/protocol.js'
 import { SWARM_NODE_IDENTITY } from '../../../protocols/swarm-node/protocol.js'
 import type { HostProcess } from '../process-supervisor.js'
 import type { ArtifactStatus } from '../local-node-artifact.js'
 import { READY_WAIT_MS, REFUSAL_MEMORY_MS, LocalNodeController, proxyReason } from '../local-node-controller.js'
-import type { ControllerDeps } from '../local-node-controller.js'
+import type { ControllerDeps, NodeRoute } from '../local-node-controller.js'
 
 const PROXY_REASON = proxyReason(SWARM_NODE_IDENTITY)
 
@@ -144,15 +144,6 @@ describe('a node that must not start', () => {
     expect(await h.controller.ensure()).toEqual({ state: 'off', reason: PROXY_REASON })
     h.proxy = 'throws'
     expect(await h.controller.ensure()).toEqual({ state: 'off', reason: PROXY_REASON })
-    expect(h.nodes).toEqual([])
-  })
-
-  it('says the tunnel is the reason when the whole browser is on it, because the node dials its peers itself', async () => {
-    const h = harness(undefined, undefined, { tunnelOn: () => true })
-    h.proxy = true
-    const state = await h.controller.ensure()
-    expect(state).toEqual({ state: 'off', reason: proxyReason(SWARM_NODE_IDENTITY, true) })
-    expect(proxyReason(SWARM_NODE_IDENTITY, true)).toMatch(/goes through the tunnel/)
     expect(h.nodes).toEqual([])
   })
 
@@ -532,3 +523,147 @@ describe('the person switching the node off while it is being asked for', () => 
   })
 })
 
+
+describe('a node while the whole browser is on the tunnel', () => {
+  const ENDPOINT: RouteEndpoint = { host: '127.0.0.1', port: 41_000, userId: 'orivon-node', password: 'secret' }
+
+  function tunnel (): { route: { -readonly [K in keyof NodeRoute]: NodeRoute[K] }, required: { on: boolean }, endpoint: { fail: string | undefined }, asked: { count: number }, moved: () => void } {
+    const required = { on: true }
+    const endpoint = { fail: undefined as string | undefined }
+    const asked = { count: 0 }
+    let listener: (() => void) | undefined
+    const route: NodeRoute = {
+      required: () => required.on,
+      endpoint: async () => { asked.count += 1; if (endpoint.fail !== undefined) throw new Error(endpoint.fail); return ENDPOINT },
+      onMoved: (next) => { listener = next; return () => { listener = undefined } }
+    }
+    return { route, required, endpoint, asked, moved: () => { listener?.() } }
+  }
+
+  it('starts through the tunnel, never asks whether a proxy applies, and says so in the start config', async () => {
+    const t = tunnel()
+    const h = harness(undefined, undefined, { route: t.route })
+    h.proxy = true
+    void h.controller.ensure()
+    await settle()
+    expect(h.calls.proxy).toBe(0)
+    expect(h.nodes[0]?.sent).toEqual([expect.objectContaining({ type: 'start', config: expect.objectContaining({ routed: true }) as unknown })])
+  })
+
+  it('starts directly, and asks about a proxy as before, while the setting is off', async () => {
+    const t = tunnel()
+    t.required.on = false
+    const h = harness(undefined, undefined, { route: t.route })
+    void h.controller.ensure()
+    await settle()
+    expect(h.calls.proxy).toBe(1)
+    expect(t.asked.count).toBe(0)
+    expect((h.nodes[0]?.sent[0] as { config: LocalNodeConfig }).config.routed).toBeUndefined()
+  })
+
+  it('is off with the tunnel\'s own reason when the tunnel cannot carry it, and forks nothing', async () => {
+    const t = tunnel()
+    t.endpoint.fail = 'Nym is switched off. Switch it on in Settings.'
+    const h = harness(undefined, undefined, { route: t.route })
+    const state = await h.controller.ensure()
+    expect(state).toEqual({ state: 'off', reason: expect.stringMatching(/goes through the tunnel.*cannot carry the Swarm node now: Nym is switched off\. Switch it on in Settings$/) as unknown })
+    expect(h.nodes).toEqual([])
+  })
+
+  it('answers the node\'s ask for its route with the tunnel\'s address, and with a refusal when the tunnel stops carrying it', async () => {
+    const t = tunnel()
+    const h = harness(undefined, undefined, { route: t.route })
+    void h.controller.ensure()
+    await settle()
+    h.nodes[0]?.say({ type: 'route-ask', id: 7 })
+    await settle()
+    expect(h.nodes[0]?.sent).toContainEqual({ type: 'route', id: 7, endpoint: ENDPOINT })
+    t.required.on = false
+    h.nodes[0]?.say({ type: 'route-ask', id: 8 })
+    await settle()
+    expect(h.nodes[0]?.sent).toContainEqual({ type: 'route', id: 8, refusal: expect.any(String) as unknown })
+    t.required.on = true
+    t.endpoint.fail = 'Nym did not start in time'
+    h.nodes[0]?.say({ type: 'route-ask', id: 9 })
+    await settle()
+    expect(h.nodes[0]?.sent).toContainEqual({ type: 'route', id: 9, refusal: 'Nym did not start in time' })
+  })
+
+  it('answers a route ask only to the process that asked: a successor whose ids start from the same number never gets the answer', async () => {
+    const t = tunnel()
+    const h = harness(undefined, undefined, { route: t.route })
+    void h.controller.ensure()
+    await settle()
+    let release: () => void = () => {}
+    const quick = t.route.endpoint
+    t.route.endpoint = async () => await new Promise<RouteEndpoint>((resolve) => { release = () => { resolve(ENDPOINT) }; t.route.endpoint = quick })
+    h.nodes[0]?.say({ type: 'route-ask', id: 1 })
+    await settle()
+    h.controller.verifierIdle()
+    h.nodes[0]?.exit(0)
+    void h.controller.ensure()
+    await settle()
+    expect(h.nodes).toHaveLength(2)
+    release()
+    await settle()
+    expect(h.nodes[1]?.sent.filter((message) => (message as { type: string }).type === 'route')).toEqual([])
+  })
+
+  it('asks the tunnel once for any number of asks at the same time', async () => {
+    const t = tunnel()
+    const h = harness(undefined, undefined, { route: t.route })
+    void h.controller.ensure()
+    await settle()
+    const before = t.asked.count
+    for (const id of [1, 2, 3, 4]) h.nodes[0]?.say({ type: 'route-ask', id })
+    await settle()
+    expect(t.asked.count - before).toBe(1)
+    expect(h.nodes[0]?.sent.filter((message) => (message as { type: string }).type === 'route')).toHaveLength(4)
+  })
+
+  it('tells the node when the address it was given stops being the tunnel\'s', async () => {
+    const t = tunnel()
+    const h = harness(undefined, undefined, { route: t.route })
+    void h.controller.ensure()
+    await settle()
+    t.moved()
+    expect(h.nodes[0]?.sent).toContainEqual({ type: 'route-reset' })
+  })
+
+  it('stops the node, with the tunnel\'s reason, when the tunnel moved and can no longer carry it', async () => {
+    const t = tunnel()
+    const h = harness(undefined, undefined, { route: t.route })
+    void h.controller.ensure()
+    await settle()
+    h.nodes[0]?.say({ type: 'ready', peers: 0 })
+    t.endpoint.fail = 'Nym is switched off'
+    t.moved()
+    await settle()
+    expect(h.nodes[0]?.killed).toBe(true)
+    expect(h.controller.state()).toEqual({ state: 'off', reason: expect.stringContaining('cannot carry the Swarm node now: Nym is switched off') as unknown })
+  })
+
+  it('leaves the node running when the tunnel moved and still carries it', async () => {
+    const t = tunnel()
+    const h = harness(undefined, undefined, { route: t.route })
+    void h.controller.ensure()
+    await settle()
+    h.nodes[0]?.say({ type: 'ready', peers: 0 })
+    t.moved()
+    await settle()
+    expect(h.nodes[0]?.killed).toBe(false)
+    expect(h.controller.state()).toEqual({ state: 'ready', peers: 0 })
+  })
+
+  it('checks again when the setting flipped between the check and the start, so a node is never started on the wrong path', async () => {
+    const t = tunnel()
+    t.required.on = false
+    const h = harness(undefined, undefined, { route: t.route })
+    h.artifact = { ok: true, directory: '/artifact' }
+    void h.controller.ensure()
+    t.required.on = true
+    await settle()
+    expect(h.nodes).toHaveLength(1)
+    expect((h.nodes[0]?.sent[0] as { config: LocalNodeConfig }).config.routed).toBe(true)
+  })
+})

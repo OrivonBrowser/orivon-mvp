@@ -39,6 +39,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Going offline no longer strips a loaded Web3 site's score; a site no provider has judged shows a gray Web? instead of Web2.5.
 - The new tab's Orivon Featured row is now Explore, WebTorrent, ASGARDEX, Ledger Wallet and The Lounge; no more Chrome Web Store advice.
 - Deep security audit (Cloudflare's method): no critical or high; all 15 confirmed findings fixed, including extension regex rules now matched in linear time.
+- The IPFS and Swarm nodes now run through Nym while the whole browser is tunnelled; measured live, nothing leaves loopback, and it is slower.
 
 ### In my head
 

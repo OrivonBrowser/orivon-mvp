@@ -47,6 +47,8 @@ export interface ProcessFacts {
 }
 
 export interface NodeFacts {
+  /** Set while the whole browser is on a tunnel, which then carries the node: the tunnel as the person knows it. Absent: the node connects directly. */
+  readonly through?: 'Nym' | 'your tunnel'
   readonly state: LocalNodeState
   readonly process?: ProcessFacts
   /** Reads in flight and bytes read this session, as the verifier host counted them. */
@@ -157,7 +159,8 @@ function nodeCard (kind: 'ipfs' | 'swarm', facts: NodeFacts & { readonly enabled
   if (!facts.enabled) {
     return { ...base, status: 'Off', tone: 'idle', note: ipfs ? 'Switched off: ipfs:// pages load through public gateways, which learn which sites you open.' : 'Switched off: a bzz:// address says Swarm is off.', metrics: [] }
   }
-  const { state } = facts
+  const { state, through } = facts
+  const slower = through === undefined ? undefined : `Connected through ${through}: its peers see ${through === 'Nym' ? "Nym's exit" : 'your tunnel'}, not your address. This is slower than a direct connection.`
   const peers = state.state === 'ready' || state.state === 'starting' ? state.peers : undefined
   const metrics = (): Metric[] => [
     ...(!ipfs && peers !== undefined ? [{ label: 'Peers', value: String(peers) }] : []),
@@ -166,11 +169,11 @@ function nodeCard (kind: 'ipfs' | 'swarm', facts: NodeFacts & { readonly enabled
     ...processMetrics(facts.process, now)
   ]
   switch (state.state) {
-    case 'ready': return { ...base, status: 'Running', tone: 'ok', metrics: metrics() }
-    case 'starting': return { ...base, status: 'Starting', tone: 'busy', metrics: metrics() }
+    case 'ready': return { ...base, status: 'Running', tone: 'ok', ...(slower === undefined ? {} : { note: slower }), metrics: metrics() }
+    case 'starting': return { ...base, status: 'Starting', tone: 'busy', ...(through === undefined ? {} : { note: `Starting through ${through}: the first connection takes a little while.` }), metrics: metrics() }
     case 'failed': return { ...base, status: 'Not running', tone: 'bad', note: `${state.reason}.`, metrics: [] }
     case 'off': return state.reason === undefined
-      ? { ...base, status: 'Asleep', tone: 'idle', note: ASLEEP, metrics: [] }
+      ? { ...base, status: 'Asleep', tone: 'idle', note: through === undefined ? ASLEEP : `${ASLEEP} It then connects through ${through}.`, metrics: [] }
       : { ...base, status: 'Off', tone: 'idle', note: `${state.reason}.`, metrics: [] }
   }
 }

@@ -42,7 +42,10 @@ to count, so there is nothing to wait for beyond that.
 **What it opens.** Outbound TCP only (peers, the lookup services, DNS-over-HTTPS), one TCP listener on its
 loopback address, no UDP in practice (WASI has no QUIC), and in its data directory only `blocks.db` with its
 `-wal` and `-shm` files (SQLite, its cache capped at 256 MB inside the node). The rules in
-[`../local-node/node-net.ts`](../local-node/node-net.ts) suffice as they are.
+[`../local-node/node-net.ts`](../local-node/node-net.ts) suffice as they are. SQLite also locks the database with a directory
+`blocks.db.lock` beside it, and a node killed in the middle of a write leaves that directory, after which every start fails with
+"database is locked"; `prepareDataDir` takes it away at each start, which is safe because the supervisor starts the next
+process only after the last has exited.
 
 **The store is keyed by partition.** The verifier sends `x-orivon-partition` (`PARTITION_HEADER`) on every read:
 `base64url(sha256(salt || partition))`, 43 characters, with a per-profile random salt that only the verifier host

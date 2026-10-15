@@ -25,6 +25,20 @@ export interface LocalNodeConfig {
   readonly dohEndpoints?: readonly string[]
   /** What the person chose that the kind turns into arguments (the IPFS node's routing mode): plain strings, set by main, read by the kind. Absent for a kind with none. */
   readonly options?: Readonly<Record<string, string>>
+  /**
+   * Present when the node must reach the network through a tunnel and nothing else: every connection, datagram and name lookup
+   * goes through the route main hands over on request (`route-ask`), and a node with no route has no network. Absent: the node
+   * dials directly, as before.
+   */
+  readonly routed?: true
+}
+
+/** Where the SOCKS5 server that carries a routed node is, and how to sign in to it. Sent over the parent port only, never in an argument or a log line. */
+export interface RouteEndpoint {
+  readonly host: string
+  readonly port: number
+  readonly userId: string
+  readonly password: string
 }
 
 /** A `failed` message whose text is cut to what main accepts. */
@@ -32,7 +46,12 @@ export function failure (stage: FailureStage, message: string): FromNode {
   return { type: 'failed', stage, message: message.length > MAX_FAILURE_MESSAGE ? `${message.slice(0, MAX_FAILURE_MESSAGE - 1)}…` : message }
 }
 
-export type ToNode = { readonly type: 'start', readonly config: LocalNodeConfig }
+export type ToNode =
+  | { readonly type: 'start', readonly config: LocalNodeConfig }
+  /** The answer to a `route-ask`: where the route is now, or why there is none. */
+  | { readonly type: 'route', readonly id: number, readonly endpoint?: RouteEndpoint, readonly refusal?: string }
+  /** The route the node was given is gone (the tunnel's process restarted): ask again before the next connection. */
+  | { readonly type: 'route-reset' }
 
 /** `port`: the API port was taken, so the next start needs another. */
 export type FailureStage = 'artifact' | 'compile' | 'start' | 'run' | 'port'
@@ -48,6 +67,8 @@ export type FromNode =
   /** Sent once, when the node's own readiness rule is met; `peers` is 0 for a node that does not count them. */
   | { readonly type: 'ready', readonly peers: number }
   | { readonly type: 'failed', readonly stage: FailureStage, readonly message: string }
+  /** A routed node needs the route's address: main answers with a `route` message carrying the same `id`. */
+  | { readonly type: 'route-ask', readonly id: number }
 
 /** What main knows about a node. */
 export type LocalNodeState =

@@ -1,6 +1,6 @@
 # ADR-0084: The tunnel can carry the whole browser, and a website with an entry lives in one of two shared profiles
 
-- **Status:** accepted. Supersedes the storage decision of [`ADR-0082`](ADR-0082-a-websites-tunnel-state-is-kept-per-origin-and-a-website-that-differs-from-the-default-has-storage-of-its-own.md) (one session per website); the rest of ADR-0082 (a tunnel state per origin, the notice, the controls through one seam, the session held shut until it is pointed) stands. *Provisional* on the extension pieces listed under Consequences, settled by the owner's first use.
+- **Status:** accepted. Supersedes the storage decision of [`ADR-0082`](ADR-0082-a-websites-tunnel-state-is-kept-per-origin-and-a-website-that-differs-from-the-default-has-storage-of-its-own.md) (one session per website); the rest of ADR-0082 (a tunnel state per origin, the notice, the controls through one seam, the session held shut until it is pointed) stands. *Provisional* on the extension pieces listed under Consequences, settled by the owner's first use. The paragraph on the local IPFS and Swarm nodes (not run while the setting is on) is superseded by [`ADR-0086`](ADR-0086-the-local-nodes-run-through-the-tunnel-while-the-whole-browser-does.md).
 - **Date:** 2026-10-13
 - **Type:** architecture / security
 - **Decided by:** owner (the whole-browser setting, `d-0619`; the two profiles, in the owner's words: extensions must run for tunnelled sites without "an entire new browser instance for extensions for each tunneled app"); AI recommendation accepted by default for the shape

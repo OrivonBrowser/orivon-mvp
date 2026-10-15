@@ -133,7 +133,7 @@ export const routeSubsystem: Subsystem = {
       const routed = await siteSession(origin)
       return routed === undefined ? undefined : createRequestFetch({ net, session: routed, answer: answerRouteChallenge })
     }
-    setOwnRequests({ everywhere: routes.everywhere, isRouted: routes.hub.isRouted, tunnel: tunnelFetch, direct: directFetch, directSession: systemProxySession, settled: routes.controller.sharedSettled, siteSession, through })
+    setOwnRequests({ everywhere: routes.everywhere, isRouted: routes.hub.isRouted, tunnel: tunnelFetch, direct: directFetch, directSession: systemProxySession, settled: routes.controller.sharedSettled, siteSession, through, nodeEndpoint: routes.nodeEndpoint, onNodeRouteMoved: routes.onNodeRouteMoved })
 
     const siteSessions = createSiteSessions({
       controller: routes.controller,

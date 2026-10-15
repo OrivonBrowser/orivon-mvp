@@ -14,6 +14,8 @@ import { createNodeNet } from './node-net.js'
 import { REAL } from './node-net.js'
 import type { NodeNetDeps } from './node-net.js'
 import { createNodeLookup } from './node-dns.js'
+import { createRoutedNetDeps } from './node-route.js'
+import type { RouteSource } from './node-route.js'
 import type { WebFetch } from '../gateways/allowlisted-fetch.js'
 import { resolveLookup } from '../../broker/adapters/node-adapters.js'
 import { failure } from './protocol.js'
@@ -23,6 +25,8 @@ export interface NodeServiceDeps {
   readonly post: (message: FromNode) => void
   readonly fetcher?: Fetcher
   readonly net?: NodeNetDeps
+  /** Where the tunnel is, for a node started with `routed`: the process asks main (route-source.ts). Such a node with no route has no network. */
+  readonly route?: RouteSource
   /** The fetch behind the node's DNS-over-HTTPS lookups, which only ever reaches `config.dohEndpoints`; the process's own `fetch` by default. */
   readonly dohFetch?: WebFetch
   /** Every log line the node writes, as it writes it. */
@@ -74,7 +78,7 @@ export async function startNode (kind: NodeKind, config: LocalNodeConfig, deps: 
   try {
     imports = componentImports({
       fs: await createConfinedFs(config.dataDir),
-      net: createNodeNet(config.apiPort, deps.net ?? { ...REAL, lookup: createNodeLookup({ endpoints: config.dohEndpoints ?? [], fetch: deps.dohFetch ?? fetch, system: resolveLookup }) }, { apiPortTaken: () => { portTaken = true } }),
+      net: createNodeNet(config.apiPort, deps.net ?? netFor(config, deps, deps.onLog), { apiPortTaken: () => { portTaken = true } }),
       preopens: { [GUEST_DATA_DIR]: '/orivon/app' },
       args: kind.arguments(config),
       env: {},
@@ -122,6 +126,15 @@ export async function startNode (kind: NodeKind, config: LocalNodeConfig, deps: 
       readiness?.stop()
     }
   }
+}
+
+/** The sockets and names a node reaches: this computer's, or only the tunnel's when the config says `routed`. A routed node with no route to ask for gets no network at all, never a direct one. */
+function netFor (config: LocalNodeConfig, deps: NodeServiceDeps, trace: ((line: string) => void) | undefined): NodeNetDeps {
+  if (config.routed === true) {
+    if (deps.route === undefined) throw new Error('the node must run through a tunnel, and this process has no way to reach one')
+    return createRoutedNetDeps(deps.route, config.dohEndpoints ?? [], undefined, trace)
+  }
+  return { ...REAL, lookup: createNodeLookup({ endpoints: config.dohEndpoints ?? [], fetch: deps.dohFetch ?? fetch, system: resolveLookup }) }
 }
 
 /** A node that ended after its own API port was refused to it died of that, whatever it printed. */
