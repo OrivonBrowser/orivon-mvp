@@ -22,7 +22,7 @@ import { mapRouteError } from './provider.js'
 export async function dialThroughRoute (route: Route, host: string, port: number, signal: AbortSignal, deadlineMs?: number): Promise<DialedSocket> {
   let socket: Socket
   try {
-    socket = await withDeadline(signal, async (attempt) => await route.provider.connect(host, port, attempt), deadlineMs)
+    socket = await withDeadline(signal, async (attempt) => await route.provider.connect(host, port, attempt), deadlineMs ?? route.provider.dialBudgetMs)
   } catch (error) {
     throw signal.aborted ? fail('revoked', 'the connection was abandoned') : mapRouteError(error)
   }
