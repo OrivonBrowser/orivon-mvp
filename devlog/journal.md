@@ -40,6 +40,10 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - The new tab's Orivon Featured row is now Explore, WebTorrent, ASGARDEX, Ledger Wallet and The Lounge; no more Chrome Web Store advice.
 - Deep security audit (Cloudflare's method): no critical or high; all 15 confirmed findings fixed, including extension regex rules now matched in linear time.
 - The IPFS and Swarm nodes now run through Nym while the whole browser is tunnelled; measured live, nothing leaves loopback, and it is slower.
+- Nym gets a home: a Tunnels section in Settings, and a tunnel button in the address bar listing each tunnel with its logo and switch.
+- Menu has "Open a private window with Nym": everything in it goes through Nym, locked on, and nothing is kept after closing.
+- Nym's module dropped packets and reordered replies; both fixed, so a 700 KB YouTube script loads three to six times faster.
+- Web3 Scores no longer go missing on the first site after turning Nym on: the lookup now waits for a cold tunnel.
 
 ### In my head
 
@@ -47,5 +51,6 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Letting users pin sites and serve them to others is the next step for the IPFS node; today it only reads.
 - A per-app tunnel belongs at Orivon's socket layer, not the OS: any protocol an app builds rides it, no drivers.
 - Extensions per tunnel profile, never per site: a hundred tunnelled sites should cost one copy of uBlock, not a hundred.
+- Orivon's IPFS node should run through Nym, not pause, when everything is tunnelled: privacy first, speed second.
 
 ### Non-repo
