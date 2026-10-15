@@ -10,6 +10,8 @@ import { ResolutionError } from '../resolution/records.js'
 import type { Refusal } from '../resolution/providers.js'
 import { sleepOrAbort } from '../resolution/timing.js'
 import { GatewayFailure, TooLarge, askGateway, readCapped } from '../gateways/gateways.js'
+import { StallClock } from '../gateways/stall.js'
+import type { RoutePace } from '../route-pace.js'
 import type { Fetch, GatewayPool } from '../gateways/gateways.js'
 import type { IpfsLimits } from './limits.js'
 import { racePass } from '../gateways/race.js'
@@ -38,18 +40,24 @@ export interface VerifiedIpnsRecord {
  * `record` is the signed record in base64. Read with a plain fetch, no
  * pool slot and no health tracking -- there is at most one per mount, and
  * a name service is not one of the gateways cooldowns are scheduled over. */
-async function readNameServiceRecord (origin: string, key: string, fetch: Fetch, timeoutMs: number, signal: AbortSignal): Promise<Uint8Array> {
-  const response = await fetch(`${origin}/name/${key}`, {
-    headers: { accept: 'application/json' },
-    signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
-  })
-  if (!response.ok) {
-    await response.body?.cancel()
-    throw new Error(`${origin} answered ${String(response.status)}`)
+async function readNameServiceRecord (origin: string, key: string, fetch: Fetch, route: RoutePace, timeoutMs: number, signal: AbortSignal): Promise<Uint8Array> {
+  const clock = new StallClock({ firstByteMs: route.firstWait(timeoutMs), stallMs: route.stallMs(), capMs: route.firstWait(timeoutMs) + route.transferMs(MAX_RECORD_BYTES * 2) })
+  try {
+    const response = await fetch(`${origin}/name/${key}`, {
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.any([signal, clock.signal])
+    })
+    clock.progress()
+    if (!response.ok) {
+      await response.body?.cancel()
+      throw new Error(`${origin} answered ${String(response.status)}`)
+    }
+    const body = JSON.parse(new TextDecoder().decode(await readCapped(response, MAX_RECORD_BYTES * 2, () => { clock.progress() }))) as { record?: unknown }
+    if (typeof body.record !== 'string') throw new Error(`${origin}: no record in the answer`)
+    return Uint8Array.from(atob(body.record), (c) => c.charCodeAt(0))
+  } finally {
+    clock.finish()
   }
-  const body = JSON.parse(new TextDecoder().decode(await readCapped(response, MAX_RECORD_BYTES * 2))) as { record?: unknown }
-  if (typeof body.record !== 'string') throw new Error(`${origin}: no record in the answer`)
-  return Uint8Array.from(atob(body.record), (c) => c.charCodeAt(0))
 }
 
 export interface IpnsSources {
@@ -67,12 +75,12 @@ async function readSource (name: string, kind: 'gateway' | 'name-service', sourc
     if (kind === 'gateway') {
       return await askGateway(
         sources.pool, fetch, name,
-        { url: `${name}/ipns/${key}?format=ipns-record`, accept: 'application/vnd.ipfs.ipns-record', timeoutMs },
-        async (response) => await readCapped(response, MAX_RECORD_BYTES),
+        { url: `${name}/ipns/${key}?format=ipns-record`, accept: 'application/vnd.ipfs.ipns-record', timeoutMs, maxBytes: MAX_RECORD_BYTES },
+        async (response, progress) => await readCapped(response, MAX_RECORD_BYTES, progress),
         signal
       )
     }
-    return await readNameServiceRecord(name, key, fetch, timeoutMs, signal)
+    return await readNameServiceRecord(name, key, fetch, sources.pool.route, timeoutMs, signal)
   } catch (error) {
     if (error instanceof GatewayFailure) throw error
     throw new Error(error instanceof TooLarge ? `${name} sent more than a record may be` : `${name}: ${error instanceof Error ? error.message : String(error)}`)
@@ -135,7 +143,7 @@ export async function resolveIpnsKey (
   const gateways = await gatewaysToAsk(sources.pool, recordTimeoutMs, signal)
   let result: PassResult<VerifiedIpnsRecord>
   try {
-    result = await racePass([...gateways, ...sources.nameServices], attempt, limits.hedgeDelayMs, signal)
+    result = await racePass([...gateways, ...sources.nameServices], attempt, sources.pool.route.wait(limits.hedgeDelayMs), signal)
   } catch (error) {
     // racePass rejects only for the caller's own signal.
     throw new ResolutionError('unavailable', `IPNS name ${key}: ${error instanceof Error ? error.message : String(error)}`)

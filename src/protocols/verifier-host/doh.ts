@@ -9,6 +9,8 @@ import type { ResolveTxt } from '../ipfs/dnslink.js'
 import { dohHostAddresses, dohQuery } from '../gateways/doh-query.js'
 import { canonicalAddress, isPublicUnicast } from '../../broker/policy/address.js'
 import type { WebFetch } from './egress.js'
+import { DIRECT_ROUTE } from '../route-pace.js'
+import type { RoutePace } from '../route-pace.js'
 
 const TXT = 16
 
@@ -24,9 +26,9 @@ export function txtStrings (data: string): string[] {
   return strings
 }
 
-export function dohTxtResolver (endpoints: readonly string[], fetch: WebFetch, timeoutMs = 10_000): ResolveTxt {
+export function dohTxtResolver (endpoints: readonly string[], fetch: WebFetch, route: RoutePace = DIRECT_ROUTE, timeoutMs = 10_000): ResolveTxt {
   return async (name, signal) => {
-    const answers = await dohQuery(endpoints, fetch, name, 'TXT', signal, timeoutMs)
+    const answers = await dohQuery(endpoints, fetch, name, 'TXT', signal, route.firstWait(timeoutMs))
     return answers.filter((a) => a.type === TXT && typeof a.data === 'string').map((a) => txtStrings(a.data as string))
   }
 }

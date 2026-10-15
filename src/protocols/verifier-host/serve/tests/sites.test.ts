@@ -77,6 +77,15 @@ describe('Sites', () => {
     await expect(new Sites(r, Date.now, 50).get('slow.eth', P)).rejects.toMatchObject({ failure: 'unavailable', message: expect.stringMatching(/within 0.05 s/) })
   })
 
+  it('reads the wait for a mount when the mount starts, so a route that has grown more patient is waited on for longer', async () => {
+    const { registry: r } = registry(async () => await new Promise<NameRecord[]>(() => {}))
+    let wait = 30
+    const sites = new Sites(r, Date.now, () => wait)
+    await expect(sites.get('slow.eth', P)).rejects.toMatchObject({ message: expect.stringMatching(/within 0.03 s/) })
+    wait = 60
+    await expect(sites.get('slow.eth', 'https://other')).rejects.toMatchObject({ message: expect.stringMatching(/within 0.06 s/) })
+  })
+
   it('has nothing current for a host it never mounted, or one whose mount failed', async () => {
     const { registry: r } = registry(async () => { throw new Error('down') })
     const sites = new Sites(r)
