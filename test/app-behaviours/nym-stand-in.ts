@@ -5,7 +5,8 @@
 //
 // What a spec writes into the file `ORIVON_TEST_NYM_FAKE` names: `log` (the file to append to), `targets` (name:port to
 // a local address), `failStart`, `failFirstSetups` (how many tunnels fail to come up before one does), `startDelayMs`
-// (how long a tunnel takes to come up), `silentDnsTunnels` (how many tunnels that do come up never answer a name
+// (how long a tunnel takes to come up), `hangFirstSetups` (how many tunnels never answer, which the host gives up on after
+// 30 seconds and tries again), `silentDnsTunnels` (how many tunnels that do come up never answer a name
 // lookup) and `hangConnect` (a stream that never opens).
 
 export const EMPTY_WASM = Buffer.from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00])
@@ -26,6 +27,7 @@ export async function setupMixTunnel (options) {
   if (config().failStart) throw new Error('the stand-in gateway is unreachable')
   tunnelNumber = ++names.setups
   if (tunnelNumber <= (config().failFirstSetups ?? 0)) throw new Error('the stand-in gateway closed the connection')
+  if (tunnelNumber <= (config().failFirstSetups ?? 0) + (config().hangFirstSetups ?? 0)) await new Promise(() => {})
   if (config().startDelayMs) await new Promise((resolve) => setTimeout(resolve, config().startDelayMs))
   client = options.clientId.replace(/-[0-9a-f]{12}$/, '')
   log('options ' + client + ' ' + JSON.stringify({ disablePoissonTraffic: options.disablePoissonTraffic, disableCoverTraffic: options.disableCoverTraffic }))

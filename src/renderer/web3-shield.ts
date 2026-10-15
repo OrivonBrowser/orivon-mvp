@@ -53,13 +53,20 @@ export function paintMark (el: HTMLElement, level: ScoreLevel | null, unscored =
   el.textContent = mark
 }
 
+/** Why a Level 2 page reads "Web?": no provider, a provider that could not be asked, or a score not there yet. */
+function unscoredNote (score: Web3Score): string {
+  if (score.noProvider) return ': no Web3 Score provider is chosen'
+  if (score.unreachable) return ': the Web3 Score provider could not be reached, so Orivon will ask again'
+  return ': no Web3 Score for this site yet'
+}
+
 /** The tooltip/`aria-label` text: the Website level, and anything that
  * makes it less than observed, a provider's judgement included (ADR-0006).
  * The popup's own connection row carries the fuller glance. */
 export function shieldLabel (score: Web3Score | null): string {
   if (score === null) return 'Web3 Score'
   const mark = web3Mark(score.level, score.unscored)
-  const base = `Website level ${String(score.level)} (${mark})${mark === 'Web?' ? (score.noProvider ? ': no Web3 Score provider is chosen' : ': no Web3 Score for this site yet') : ''}`
+  const base = `Website level ${String(score.level)} (${mark})${mark === 'Web?' ? unscoredNote(score) : ''}`
   if (score.overridden) return `${base} (developer override)`
   const judged = score.judgedBy === undefined ? base : `${base}, judged by ${score.judgedBy}`
   return score.localDev ? `${judged} (developer mode)` : judged

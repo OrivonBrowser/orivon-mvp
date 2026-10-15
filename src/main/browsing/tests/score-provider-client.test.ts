@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bucketOf, createScoreProviderClient, providerBase } from '../score-provider-client.js'
+import { bucketOf, createScoreProviderClient, lookupTimeoutMs, providerBase } from '../score-provider-client.js'
 import type { FetchedJson } from '../score-provider-client.js'
 import { SCORE_STANDARD } from '../../../trust/score-provider.js'
 
@@ -119,6 +119,37 @@ describe('createScoreProviderClient', () => {
     clock.t += 60_000
     await failing.verdictFor(ASGARDEX)
     expect(failing.asked).toHaveLength(2)
+  })
+
+  it('keeps a failure for a minute from when it arrived, so a fetch that waited long for a tunnel is not asked again at once', async () => {
+    const clock = { t: 0 }
+    const release: Array<() => void> = []
+    let asked = 0
+    const { verdictFor } = createScoreProviderClient({
+      providerAddress: () => BASE,
+      isDevEthName: () => false,
+      now: () => clock.t,
+      fetchJson: async () => { asked += 1; await new Promise<void>((resolve) => { release.push(resolve) }); return { kind: 'failed', reason: 'did not answer' } }
+    })
+    const first = verdictFor(ASGARDEX)
+    clock.t = 100_000
+    release.shift()?.()
+    expect(await first).toMatchObject({ status: 'unreachable' })
+
+    expect(await verdictFor(ASGARDEX)).toMatchObject({ status: 'unreachable' })
+    expect(asked, 'the failure that has just arrived answers the next ask').toBe(1)
+
+    clock.t = 100_000 + 60_000
+    const third = verdictFor(ASGARDEX)
+    await new Promise<void>((resolve) => { setTimeout(resolve, 0) })
+    expect(asked, 'a minute after it arrived it is asked again').toBe(2)
+    release.shift()?.()
+    await third
+  })
+
+  it('lets a lookup through the tunnel wait longer than the tunnel takes to come up, and any other lookup stay short', () => {
+    expect(lookupTimeoutMs(true)).toBeGreaterThan(95_000)
+    expect(lookupTimeoutMs(false)).toBeLessThanOrEqual(30_000)
   })
 
   it('keeps the judged level a provider gave while a later ask cannot reach it, and takes a changed answer at once', async () => {
