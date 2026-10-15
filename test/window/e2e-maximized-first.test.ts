@@ -27,7 +27,9 @@ const DAY_MS = 86_400_000
 const ETH_NAME = 'maximizedfirst.eth'
 const ETH_URL = `http://${ETH_NAME}/`
 const ETH_TITLE = 'Maximized first fixture'
-/** A resize no window manager is needed for: bigger than the default window on every display. */
+/** What the window is made before it is maximized. */
+const SMALL_SIZE = { width: 600, height: 440 }
+/** The resize used where no window manager maximizes: larger than SMALL_SIZE on every display. */
 const FALLBACK_SIZE = { width: 1500, height: 950 }
 
 let ethServer: Server
@@ -146,6 +148,10 @@ async function menuClosed (app: ElectronApplication): Promise<void> {
 
 /** Maximizes the window, or, where no window manager acts on it, resizes it larger; returns the content width before and after. */
 async function maximize (app: ElectronApplication): Promise<{ before: number, after: number }> {
+  // A window smaller than any display, so maximizing it changes its size on every runner.
+  await app.evaluate(({ BaseWindow }, size) => { BaseWindow.getAllWindows()[0]?.setBounds({ x: 20, y: 20, ...size }) }, SMALL_SIZE)
+  expect(await waitFor(async () => (await layoutOf(app)).content.width <= SMALL_SIZE.width)).toBe(true)
+  await delay(500)
   const before = (await layoutOf(app)).content.width
   await app.evaluate(({ BaseWindow }, size) => {
     const win = BaseWindow.getAllWindows()[0]
