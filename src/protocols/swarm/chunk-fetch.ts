@@ -38,8 +38,8 @@ async function attemptEndpoint<T> (endpoint: string, address: string, accept: Ac
   try {
     bytes = await askGateway(
       deps.pool, deps.fetch, endpoint,
-      { url: `${endpoint}/chunks/${address}`, accept: 'application/octet-stream', timeoutMs: deps.limits.chunkTimeoutMs },
-      async (response) => await readCapped(response, accept.maxBytes),
+      { url: `${endpoint}/chunks/${address}`, accept: 'application/octet-stream', timeoutMs: deps.limits.chunkTimeoutMs, maxBytes: accept.maxBytes },
+      async (response, progress) => await readCapped(response, accept.maxBytes, progress),
       signal
     )
   } catch (error) {

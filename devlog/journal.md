@@ -44,6 +44,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Menu has "Open a private window with Nym": everything in it goes through Nym, locked on, and nothing is kept after closing.
 - Nym's module dropped packets and reordered replies; both fixed, so a 700 KB YouTube script loads three to six times faster.
 - Web3 Scores no longer go missing on the first site after turning Nym on: the lookup now waits for a cold tunnel.
+- Slow routes stop failing pages half done: every wait follows the route, a stalled file is read again, and an incomplete page now says so.
 
 ### In my head
 

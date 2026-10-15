@@ -47,13 +47,17 @@ provider gives, lower or higher, replaces it, and a changed provider address fin
 is), and the shield draws that as a gray Web? (`../../renderer/web3-shield.ts`). The Website level itself is kept, where the
 verifier cannot be asked, by `../verifier/kept-provenance.ts`.
 
-**A lookup through the tunnel waits for the tunnel; a provider that cannot be reached says so.** A fetch of a provider's file
-that leaves through a tunnel (a routed app or site, or the whole browser on the tunnel) may wait up to 180 seconds, because
-a cold Nym tunnel takes up to 95 seconds to come up and the answer waits behind it; any other fetch gives up at 30. Until it
-answers the shield reads `pending`, and the chrome asks again every two seconds. A failure is kept for a minute from when it
-arrived, not from when it was asked. When the provider could not be asked, `web3Score` says `unreachable`, the shield's label
-says the provider could not be reached (not that there is no score yet), and the chrome asks again after 30 seconds, four
-times at most per site.
+**A lookup follows the route it travels; a provider that cannot be reached says so.** A fetch of a provider's file is given the
+patience of its route (`../route/main-pace.ts`, `../../protocols/route-pace.ts`, `ADR-0088`): on a direct connection 30 seconds
+to a first byte (90 for a provider the verifier serves, whose answer waits on the proof of its name and the reading of its file), and on a tunnel six times that plus the time a cold tunnel may need to come up (a Nym tunnel takes up to 95
+seconds), including a provider the verifier serves while the whole browser is on the tunnel, since the verifier host leaves
+by it too. Once the answer has begun, the fetch fails only when the body goes quiet for the route's window, never because a clock
+ran out while bytes were arriving. A fetch that failed for want of an answer (nothing arrived, the connection broke, a 5xx) is asked
+again up to four times while the route's patience lasts; a failure on a slow route is not kept at all, since the route may have
+come up since, and elsewhere is kept for a minute from when it arrived, not from when it was asked. Until the lookup answers the
+shield reads `pending` and the chrome asks again every two seconds. When the provider could not be asked, `web3Score` says
+`unreachable` with `retryMs`, the shield's label says the provider could not be reached (not that there is no score yet), and the
+chrome asks again after that long (30 seconds, stretched by the route), eight times at most per site.
 
 **A routed app's lookups leave through its route.** A tab's icon from another host and the Web3 Score provider's answer are
 fetched from main, which would otherwise use the default session. For an app the person routed, `favicon-fetch.ts` and

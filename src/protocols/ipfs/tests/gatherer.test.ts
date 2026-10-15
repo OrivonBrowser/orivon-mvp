@@ -117,6 +117,24 @@ describe('the IPFS gatherer over a node on this computer', () => {
   const nodeGatherer = (gw: ReturnType<typeof fakeGateways>, blockRetry = PATIENT): ReturnType<typeof createIpfsGatherer> =>
     createIpfsGatherer({ fetch: gw.fetch, gateways: [NODE], resolveTxt: async () => [], ipnsSequences: memorySequenceStore(), localNode: true, limits: { blockRetry } })
 
+  it('asks the node for an IPNS record again after its own wait, as it does for a block, when the first answer was a miss', async () => {
+    const key = await generateKeyPair('Ed25519')
+    const name = CID.createV1(0x72, key.publicKey.toMultihash()).toString(base36)
+    const record = marshalIPNSRecord(await createIPNSRecord(key, `/ipfs/${dag.root.toString()}`, 5n, 60 * 60 * 1000))
+    const gw = fakeGateways(dag.blocks)
+    let asked = 0
+    const fetch: typeof gw.fetch = async (url, init) => {
+      if (url.includes('/ipns/')) {
+        asked += 1
+        return asked === 1 ? new Response('not found', { status: 404 }) : new Response(new Uint8Array(record))
+      }
+      return await gw.fetch(url, init)
+    }
+    const site = await nodeGatherer({ ...gw, fetch } as ReturnType<typeof fakeGateways>).mount('k.eth', [onChain({ kind: 'ipns-key', key: name })])
+    expect(site.root.cid).toBe(dag.root.toString())
+    expect(asked).toBe(2)
+  })
+
   it('asks the node again after its own wait, and reports it unavailable only once the retries are spent, when the node keeps answering 504', async () => {
     const gw = fakeGateways(dag.blocks)
     gw.failNext(NODE, 504, 10)
@@ -248,7 +266,8 @@ describe('the IPFS gatherer over a node that keeps what it fetched, one store fo
       if (url.startsWith(`${NAMES}/name/`)) return new Response(JSON.stringify({ record: Buffer.from(record).toString('base64') }))
       return new Response('not found', { status: 404 })
     }
-    const gatherer = make(fetch as never, { ipnsNameServices: () => allowed ? [NAMES] : [] })
+    // No patient retry: the miss is final here, and the test is about which sources are asked, not how long the node is waited on.
+    const gatherer = make(fetch as never, { ipnsNameServices: () => allowed ? [NAMES] : [], limits: { blockRetry: { waitMs: 1, maxRetries: 0, startByMs: 1 } } })
     const keyRecord = [onChain({ kind: 'ipns-key', key: name })]
     await expect(gatherer.mount('k.eth', keyRecord, undefined, 'https://k.eth')).rejects.toMatchObject({ failure: 'unavailable' })
     expect(asked.some((url) => url.startsWith(NAMES))).toBe(false)

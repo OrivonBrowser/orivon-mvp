@@ -39,7 +39,8 @@ vi.mock('../../sessions/web-request-owner.js', () => ({
   RUN_LAST: Number.MAX_SAFE_INTEGER,
   webRequestOwnerFor: () => ({
     onBeforeSendHeaders: (_order: number, _filter: unknown, _matches: unknown, run: (typeof registered.stamps)[number]) => { registered.beforeSendHeaders += 1; registered.stamps.push(run); return { remove } },
-    onBeforeRequest: (_order: number, _filter: unknown, _matches: unknown, run: (details: unknown, current: unknown) => Promise<unknown>) => { registered.beforeRequest.push(run); return { remove } }
+    onBeforeRequest: (_order: number, _filter: unknown, _matches: unknown, run: (details: unknown, current: unknown) => Promise<unknown>) => { registered.beforeRequest.push(run); return { remove } },
+    onCompleted: () => ({ remove })
   })
 }))
 

@@ -39,7 +39,8 @@ export const MAX_FAVICON_REDIRECTS = 3
  */
 export async function readCapped (
   body: ReadableStream<Uint8Array> | null,
-  cap: number
+  cap: number,
+  onChunk: () => void = () => {}
 ): Promise<Uint8Array | null> {
   if (body === null) return null
 
@@ -51,6 +52,7 @@ export async function readCapped (
       const { done, value } = await reader.read()
       if (done) break
       if (value === undefined) continue
+      onChunk()
       total += value.byteLength
       if (total > cap) {
         await reader.cancel()

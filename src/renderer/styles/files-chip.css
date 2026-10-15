@@ -1,0 +1,7 @@
+/* The address bar's mark for a page with files that did not load. The plain pill button look comes from .pillbtn;
+   this only tints it. */
+
+#files-chip { color: var(--wwarn-mark); }
+#files-chip[hidden] { display: none; }
+#files-chip:not(:disabled):hover { color: var(--wwarn-mark); }
+#files-chip:focus-visible { background: var(--whover-soft); }

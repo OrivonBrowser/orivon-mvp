@@ -1,6 +1,6 @@
-// Bounds on what a site's DAG may cost. Hitting one is an error, never a
-// truncated success. Set with margin over what real sites measured: the
-// largest block 318 KB, 289 links in one node, a file DAG six levels deep.
+// Bounds on what a site's DAG may cost. Hitting one is an error, never a truncated success. Set with margin over
+// what real sites measured: the largest block 318 KB, 289 links in one node, a file DAG six levels deep. The waits
+// are written for a direct connection; the route a pool travels (../route-pace.ts) stretches them.
 
 import type { PatientRetry } from '../gateways/fetch-passes.js'
 
