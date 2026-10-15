@@ -41,6 +41,7 @@ import { SHELL_PARTITION } from './shell-session.js'
 import { NATIVE_TAB_DRAG_ARGUMENT } from '../channels.js'
 import { pointerIsLocal } from './local-pointer.js'
 import { showToast } from '../page-tools/toast.js'
+import { relayoutOnSizeChange } from './window-size-settle.js'
 
 /** The new-tab page's own URL: the dev server's nested path, or its address on the shell scheme. */
 export function resolveDashboardUrl (): string {
@@ -284,9 +285,8 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // drag-resize is unaffected either way: it already fires 'resize'
   // repeatedly as the drag continues, so one tick of latency per frame
   // is not observable.
-  win.on('resize', () => {
-    setImmediate(() => { if (!win.isDestroyed()) layoutAll() })
-  })
+  // The same read is repeated for a second after, and lays out again whenever the size has moved since (./window-size-settle.ts).
+  relayoutOnSizeChange(win, layoutAll)
 
   layoutChrome()
   win.on('closed', followActiveTabBacking(win, tabs))
