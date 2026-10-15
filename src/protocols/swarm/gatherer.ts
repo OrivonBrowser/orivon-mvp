@@ -19,6 +19,7 @@ import type { ManifestNode } from './mantaray.js'
 import { DEFAULT_LIMITS } from './limits.js'
 import type { SwarmLimits } from './limits.js'
 import { referenceCid, referenceOfCid } from './reference.js'
+import type { RoutePace } from '../route-pace.js'
 
 export interface SwarmGathererOptions {
   readonly fetch: Fetch
@@ -28,6 +29,8 @@ export interface SwarmGathererOptions {
   /** Held before each mount reads anything: the node the endpoints name may need starting. A rejection fails the mount as it is. */
   readonly beforeMount?: (signal: AbortSignal) => Promise<void>
   readonly limits?: Partial<SwarmLimits>
+  /** The route these requests travel, which stretches every wait the limits were written for. Direct when unset. */
+  readonly route?: RoutePace
 }
 
 const DEFAULT_INDEX_DOCUMENT = 'index.html'
@@ -58,7 +61,7 @@ export function createSwarmGatherer (options: SwarmGathererOptions): DataGathere
   /** No pool without an endpoint: the host starts with none configured, and each mount then says why nothing loads. */
   const deps: ChunkDeps | undefined = options.endpoints.length === 0
     ? undefined
-    : { fetch: options.fetch, pool: new GatewayPool(options.endpoints, limits.perEndpointConcurrency), limits }
+    : { fetch: options.fetch, pool: new GatewayPool(options.endpoints, limits.perEndpointConcurrency, Date.now, options.route === undefined ? {} : { route: options.route }), limits }
   const memory = new BlockCache()
 
   return {

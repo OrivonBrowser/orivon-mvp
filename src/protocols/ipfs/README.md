@@ -55,4 +55,6 @@ retry starting no later than 90 s after the first try began and only while the r
 mean for the worst wait are with `LOCAL_NODE_BLOCK_RETRY` in `gatherer.ts`). Only an `unavailable` failure is
 asked again: a lie or an unsupported block never is, and a block the node lacks is never asked of a public
 gateway. A mount keeps its own budget. The gateways' own passes are the retry for public gateways and set no
-`blockRetry`.
+`blockRetry`. All these figures are for a direct connection: on a slower route (`../route-pace.ts`) the waits are
+stretched by the route, the retries are up to three times as many (`retryOn`) and may start later, and the 32 s pause
+stays, since it is the node's own memory.

@@ -28,7 +28,9 @@ import { partitionStoreKey } from './partition-key.js'
 import { SWARM_NODE_IDENTITY, SWARM_NODE_WORDS } from '../swarm-node/protocol.js'
 import type { Fetch } from '../gateways/gateways.js'
 import type { HostDeps, LightClient } from './service.js'
-import { lightClientPace, paceOf } from './pace.js'
+import { lightClientPace, paceOn, routeFor } from './pace.js'
+import { DIRECT_ROUTE } from '../route-pace.js'
+import type { RoutePace } from '../route-pace.js'
 import { GatewayConsent } from './gateway-consent.js'
 
 export interface RunningProtocols {
@@ -38,6 +40,8 @@ export interface RunningProtocols {
   readonly ens: Protocol
   readonly lightClient: LightClient | undefined
   readonly stores: SharedStores
+  /** The route the host's own requests travel: slower than a direct connection when the whole browser is on a tunnel. */
+  readonly route: RoutePace
 }
 
 /** What both routes keep across the host's life: the newest IPNS record and feed update seen, which must only ever move forward whichever route saw it. */
@@ -95,7 +99,7 @@ export interface HostControls {
   readonly consent: GatewayConsent
 }
 
-function startIpfs (config: HostConfig, deps: HostDeps, node: NodeLink | undefined, controls: HostControls, stores: SharedStores): Protocol {
+function startIpfs (config: HostConfig, deps: HostDeps, node: NodeLink | undefined, controls: HostControls, stores: SharedStores, route: RoutePace): Protocol {
   const dohFetch = allowlisted(config.dnsOverHttps, deps.fetch, 'DNS-over-HTTPS')
   // A251 (docs/open-questions.md): only for a gateway main found to have no
   // proxy in front of it, and only once net.fetch has already failed it
@@ -110,7 +114,7 @@ function startIpfs (config: HostConfig, deps: HostDeps, node: NodeLink | undefin
     log: (line) => { console.error(`[verifier] ${line}`) }
   })
   const gatewayFetch = allowlisted([...config.gateways, ...config.ipnsNameServices], reach, 'the IPFS gatherer')
-  const common = { resolveTxt: dohTxtResolver(config.dnsOverHttps, dohFetch), ipnsSequences: stores.ipnsSequences }
+  const common = { resolveTxt: dohTxtResolver(config.dnsOverHttps, dohFetch, route), ipnsSequences: stores.ipnsSequences, route }
   const viaGateways = {
     fetch: async (url: string, init: Parameters<Fetch>[1]) => await gatewayFetch(url, init),
     gateways: config.gateways,
@@ -119,7 +123,12 @@ function startIpfs (config: HostConfig, deps: HostDeps, node: NodeLink | undefin
   }
   if (config.ipfsNode === undefined || node === undefined) return ipfsProtocol(viaGateways)
   const nameServiceFetch = allowlisted(config.ipnsNameServices, reach, 'the IPFS gatherer')
-  return ipfsFromNode({ config, ipfsNode: config.ipfsNode, node, nodeFetch: allowlisted([config.ipfsNode.endpoint], deps.fetch, 'the IPFS node'), nameServiceFetch, viaGateways, common, controls })
+  return ipfsFromNode({ config, ipfsNode: config.ipfsNode, node, nodeFetch: allowlisted([config.ipfsNode.endpoint], deps.fetch, 'the IPFS node'), nameServiceFetch, viaGateways, common, controls, nodeRoute: nodeRouteOf(config, route) })
+}
+
+/** The route a local node's reads wait for: the host's route when the node runs through the tunnel, a direct connection's otherwise. */
+export function nodeRouteOf (config: HostConfig, route: RoutePace): RoutePace {
+  return config.nodesRouted === true ? route : DIRECT_ROUTE
 }
 
 /** What reading IPFS from the node needs, for the websites that share the direct route and for those in the tunnel profile alike. */
@@ -133,7 +142,9 @@ export interface IpfsFromNode {
   readonly nameServiceFetch: Fetch
   /** The gateways, reached only after the person's yes for the site (`controls.consent`). */
   readonly viaGateways: IpfsGathererOptions
-  readonly common: Pick<IpfsGathererOptions, 'resolveTxt' | 'ipnsSequences'>
+  readonly common: Pick<IpfsGathererOptions, 'resolveTxt' | 'ipnsSequences' | 'route'>
+  /** The route the node's reads wait for: the node's own network, which is direct unless the node runs through the tunnel. */
+  readonly nodeRoute: RoutePace
   readonly controls: HostControls
   /** Why the node must not serve, in words, when something other than the node's own state says so. */
   readonly refusal?: () => string | undefined
@@ -152,7 +163,8 @@ export function ipfsFromNode (parts: IpfsFromNode): Protocol {
     localNode: true,
     ...(ipfsNode.retryWaitMs !== undefined && { limits: { blockRetry: { ...LOCAL_NODE_BLOCK_RETRY, waitMs: ipfsNode.retryWaitMs } } }),
     storeKey: { header: PARTITION_HEADER, key: (partition: string) => partitionStoreKey(ipfsNode.partitionSalt, partition) },
-    ...parts.common
+    ...parts.common,
+    route: parts.nodeRoute
   }
   return ipfsProtocolOf(createNodeFirstGatherer({
     node: createIpfsGatherer(viaNode),
@@ -170,33 +182,37 @@ export function ipfsFromNode (parts: IpfsFromNode): Protocol {
   }))
 }
 
-function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefined, stores: SharedStores): Protocol {
+function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefined, stores: SharedStores, route: RoutePace): Protocol {
   const endpointFetch = allowlisted(config.swarmEndpoints, deps.fetch, 'the Swarm gatherer')
   const read: Fetch = async (url, init) => await endpointFetch(url, init)
   return swarmProtocol({
     fetch: config.swarmNode === true && node !== undefined ? node.reading(read) : read,
     endpoints: config.swarmEndpoints,
+    route: config.swarmNode === true && node !== undefined ? nodeRouteOf(config, route) : route,
     feedIndexes: stores.swarmFeedIndexes,
     ...(config.swarmNode === true && node !== undefined && { beforeMount: node.ensure })
   })
 }
 
-/** Where the light client and CCIP-Read leave: through the tunnel's front while the whole browser is on it, unless the person asked them to run outside the tunnel and this host has the path for it. */
-function ethereumRoute (config: HostConfig, deps: HostDeps): { readonly web: HostDeps['fetch'], readonly ccip: CcipDeps, readonly tunnelled: boolean } {
+/**
+ * Where the light client and CCIP-Read leave: through the tunnel's front while the whole browser is on it, unless the person asked them to run
+ * outside the tunnel and this host has the path for it. `pace` is the route their waits are stretched for.
+ */
+function ethereumRoute (config: HostConfig, deps: HostDeps, tunnel: RoutePace): { readonly web: HostDeps['fetch'], readonly ccip: CcipDeps, readonly pace: RoutePace } {
   const outside = config.ethereumOutside === true && config.front !== undefined ? deps.outside : undefined
-  if (outside !== undefined) return { web: outside.send, ccip: { directFetch: deps.ccipFetch, fetch: outside.send, resolveHost: outside.resolveHost, direct: true }, tunnelled: false }
-  return { web: deps.fetch, ccip: { directFetch: deps.ccipFetch, fetch: deps.fetch, resolveHost: deps.resolveHost, direct: config.ccipDirect, farEnd: config.front !== undefined }, tunnelled: config.front !== undefined }
+  if (outside !== undefined) return { web: outside.send, ccip: { directFetch: deps.ccipFetch, fetch: outside.send, resolveHost: outside.resolveHost, direct: true }, pace: DIRECT_ROUTE }
+  return { web: deps.fetch, ccip: { directFetch: deps.ccipFetch, fetch: deps.fetch, resolveHost: deps.resolveHost, direct: config.ccipDirect, farEnd: config.front !== undefined }, pace: tunnel }
 }
 
-function startEns (config: HostConfig, deps: HostDeps): { protocol: Protocol, lightClient: LightClient | undefined } {
+function startEns (config: HostConfig, deps: HostDeps, tunnel: RoutePace): { protocol: Protocol, lightClient: LightClient | undefined } {
   const resolvers: NameResolver[] = []
   if (config.fixtures !== undefined && deps.fixturesAllowed) resolvers.push(createFixtureResolver(config.fixtures))
   if (config.lightClient === undefined) {
     resolvers.push(offResolver(config.lightClientOff ?? 'the Ethereum light client is not running, so no .eth name can be verified'))
     return { protocol: defineProtocol(ENS, { resolvers }), lightClient: undefined }
   }
-  const route = ethereumRoute(config, deps)
-  const lightClient = deps.startLightClient(config.lightClient, allowlisted([...config.lightClient.executionRpcs, config.lightClient.consensusRpc], route.web, 'the light client'), deps.post, undefined, lightClientPace(paceOf(route.tunnelled)))
+  const route = ethereumRoute(config, deps, tunnel)
+  const lightClient = deps.startLightClient(config.lightClient, allowlisted([...config.lightClient.executionRpcs, config.lightClient.consensusRpc], route.web, 'the light client'), deps.post, undefined, lightClientPace(paceOn(route.pace)))
   resolvers.push(createEnsResolver({
     provider: lightClient.provider,
     ccipRequest: async (parameters, signal) => await guardedCcipRequest(parameters, route.ccip, DEFAULT_CCIP_LIMITS, signal)
@@ -205,14 +221,16 @@ function startEns (config: HostConfig, deps: HostDeps): { protocol: Protocol, li
 }
 
 export function startProtocols (config: HostConfig, deps: HostDeps, nodes?: NodeLinks, controls: HostControls = { lookupService: config.ipfsNode?.lookupService !== false, consent: new GatewayConsent() }): RunningProtocols {
-  const ens = startEns(config, deps)
+  const route = routeFor(config.front !== undefined)
+  const ens = startEns(config, deps, route)
   const ipfsNode = nodes?.to(IPFS_NODE_IDENTITY, IPFS_NODE_WORDS)
   const swarmNode = nodes?.to(SWARM_NODE_IDENTITY, SWARM_NODE_WORDS)
   const stores: SharedStores = { ipnsSequences: sequenceStore(config.ipnsSequences, deps.post), swarmFeedIndexes: feedIndexStore(config.swarmFeedIndexes, deps.post) }
   return {
-    protocols: [ens.protocol, startIpfs(config, deps, ipfsNode, controls, stores), startSwarm(config, deps, swarmNode, stores)],
+    protocols: [ens.protocol, startIpfs(config, deps, ipfsNode, controls, stores, route), startSwarm(config, deps, swarmNode, stores, route)],
     ens: ens.protocol,
     lightClient: ens.lightClient,
-    stores
+    stores,
+    route
   }
 }

@@ -111,6 +111,8 @@ export interface ShellState extends TabsSnapshot {
   siteAccess: ReadonlyArray<{ readonly kind: SiteKind, readonly state: 'allowed' | 'blocked', readonly label: string }>
   /** How many windows the active page tried to open and was refused, for the pop-up chip. */
   popupsBlocked: number
+  /** How many files the active page asked the verifier for and did not get, for the address bar's chip that says the page is not whole. */
+  filesFailed: number
   /** The active page's own screen share, for the address bar's chip; null when it is not sharing. */
   sharing?: { readonly kind: DisplaySurfaceKind, readonly origin: string, readonly count: number } | null
   /** Whether the active page's site has JavaScript, images or sound switched off, for the mark on the address bar's key. */

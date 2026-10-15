@@ -10,6 +10,7 @@ import { groupsStatePart } from './state/groups.js'
 import { downloadsStatePart } from './state/downloads.js'
 import { entryChangesStatePart } from './state/entry-changes.js'
 import { extensionsStatePart } from './state/extensions.js'
+import { filesFailedStatePart } from './state/files-failed.js'
 import { fullScreenStatePart } from './state/full-screen.js'
 import { homeStatePart } from './state/home.js'
 import { loginsStatePart } from '../passwords/logins-state.js'
@@ -40,6 +41,7 @@ export const SHELL_STATE_PARTS: readonly ShellStatePart[] = [
   downloadsStatePart,
   entryChangesStatePart,
   extensionsStatePart,
+  filesFailedStatePart,
   fullScreenStatePart,
   groupsStatePart,
   homeStatePart,

@@ -23,6 +23,9 @@ import { CONSENT_PATH, GatewayConsent } from '../gateway-consent.js'
 import { checkLeaf, expectedLeafOf, sliceChunks } from './leaf-check.js'
 import type { SiteSource } from './sites.js'
 import type { FetchRoute } from '../protocol.js'
+import { FILE_RETRIES, readWithRetries } from './retry.js'
+import { DIRECT_ROUTE } from '../../route-pace.js'
+import type { RoutePace } from '../../route-pace.js'
 
 /** A file up to this size is read and verified whole before its first byte is sent to a page, so a failure is an error page, never half a document. */
 export const MAX_BUFFERED_BYTES = 16 * 1024 * 1024
@@ -62,7 +65,7 @@ const MAX_TOTAL_BUFFERED_BYTES = 16 * MAX_BUFFERED_BYTES
  */
 export const BUFFERED_RESPONSE_DEADLINE_MS = 30_000
 
-/** How long a file whose leaf is checked waits for room in the buffer budget before it is refused: a page loads many files at once, and a refused script breaks the app. */
+/** How long each chunk of a file whose leaf is checked waits for room in the buffer budget before the file is refused: a page loads many files at once, and a refused script breaks the app. The wait is counted per chunk, not from the start of the request, because on a slow route the chunks arrive minutes apart. */
 const LEAF_CHECK_WAIT_MS = 10_000
 const BUDGET_POLL_MS = 25
 
@@ -270,7 +273,7 @@ async function writeBufferedChunks (res: ServerResponse, chunks: Uint8Array[], d
   }
 }
 
-async function sendBody (res: ServerResponse, status: number, headers: Record<string, string>, file: GatheredFile, length: number, budget: BufferBudget, partition: string | undefined, bufferedResponseDeadlineMs: number, forInstall: boolean): Promise<void> {
+async function sendBody (res: ServerResponse, status: number, headers: Record<string, string>, file: GatheredFile, reopen: () => Promise<GatheredFile>, length: number, budget: BufferBudget, partition: string | undefined, bufferedResponseDeadlineMs: number, forInstall: boolean, plan: ReadPlan): Promise<void> {
   // An install is streamed whatever the size: it checks every byte itself and
   // refuses a short body, and it gives up on a response that sends nothing for
   // a while, which a file gathered whole from slow gateways would do.
@@ -283,7 +286,8 @@ async function sendBody (res: ServerResponse, status: number, headers: Record<st
       // Read (and, in doing so, verify) the whole body before anything is
       // written, so a failure past this point is still caught below and
       // turned into an error page rather than left as a half-sent document.
-      const chunks = await collect(file.body)
+      // A read that fails because nothing answered in time is made again, from the blocks already held, before it is an error page.
+      const chunks = await readWithRetries(async (n) => await collect((n === 0 ? file : await reopen()).body), plan.route, plan.left, plan.retries)
       res.writeHead(status, headers)
       await writeBufferedChunks(res, chunks, bufferedResponseDeadlineMs)
     } finally {
@@ -308,21 +312,31 @@ async function sendBody (res: ServerResponse, status: number, headers: Record<st
  * prefix. On a mismatch nothing of it is sent and the answer says it was the declared tree that failed, which the
  * caller treats as bad data.
  */
-async function sendChecked (res: ServerResponse, host: string, target: string, expected: string, status: number, headers: Record<string, string>, file: GatheredFile, range: { readonly start: number, readonly end: number } | undefined, head: boolean, budget: BufferBudget, partition: string | undefined, bufferedResponseDeadlineMs: number): Promise<void> {
+async function sendChecked (res: ServerResponse, host: string, target: string, expected: string, status: number, headers: Record<string, string>, file: GatheredFile, reopen: () => Promise<GatheredFile>, range: { readonly start: number, readonly end: number } | undefined, head: boolean, budget: BufferBudget, partition: string | undefined, bufferedResponseDeadlineMs: number, plan: ReadPlan): Promise<void> {
   // Held against the app's own origin, never the shared key, and taken as the bytes arrive: a large cold file must not
   // keep its whole size from the scripts the page asked for beside it.
   const key = partition ?? `https://${host}`
-  const until = Date.now() + LEAF_CHECK_WAIT_MS
   let held = 0
-  try {
+  /** Every chunk of the file, or undefined once the buffer budget has no room for it. */
+  const gather = async (source: GatheredFile): Promise<Uint8Array[] | undefined> => {
     const chunks: Uint8Array[] = []
-    for await (const chunk of file.body) {
-      if (!await budget.reserveWithin(key, chunk.length, Math.max(0, until - Date.now()))) {
-        res.writeHead(503, { 'content-type': 'text/plain', 'cache-control': 'no-store', 'retry-after': '1' }).end('the verifier is holding too many responses right now')
-        return
-      }
+    for await (const chunk of source.body) {
+      if (!await budget.reserveWithin(key, chunk.length, LEAF_CHECK_WAIT_MS)) return undefined
       held += chunk.length
       chunks.push(chunk)
+    }
+    return chunks
+  }
+  try {
+    const chunks = await readWithRetries(async (n) => {
+      // What an earlier read held is given back before the file is read again.
+      budget.release(key, held)
+      held = 0
+      return await gather(n === 0 ? file : await reopen())
+    }, plan.route, plan.left, plan.retries)
+    if (chunks === undefined) {
+      res.writeHead(503, { 'content-type': 'text/plain', 'cache-control': 'no-store', 'retry-after': '1' }).end('the verifier is holding too many responses right now')
+      return
     }
     const verdict = await checkLeaf(host, target, file.size, chunks, expected)
     if (!verdict.ok) {
@@ -397,7 +411,7 @@ function acceptGateways (consent: GatewayConsent, req: IncomingMessage, res: Ser
   res.writeHead(303, { location: returnPathOf(url.searchParams.get('to')), 'cache-control': 'no-store', 'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}` }).end()
 }
 
-async function handle (registry: ProtocolRegistry, sites: SiteSource, consent: GatewayConsent, req: IncomingMessage, res: ServerResponse, budget: BufferBudget, bufferedResponseDeadlineMs: number): Promise<void> {
+async function handle (registry: ProtocolRegistry, sites: SiteSource, routes: ServeRoutes, consent: GatewayConsent, req: IncomingMessage, res: ServerResponse, budget: BufferBudget, bufferedResponseDeadlineMs: number): Promise<void> {
   const host = hostOf(req, registry.addresses)
   if (host === undefined || (registry.addresses.servedName(host) === undefined && registry.addresses.schemeEndpoint(host) === undefined)) {
     res.writeHead(421, { 'content-type': 'text/plain' }).end("this server answers only the names and addresses Orivon's protocols serve")
@@ -450,7 +464,9 @@ async function handle (registry: ProtocolRegistry, sites: SiteSource, consent: G
       res.writeHead(304, { etag, 'cache-control': 'no-cache', 'content-security-policy': SERVED_CONTENT_CSP }).end()
       return
     }
-    file = await site.open(url.pathname, undefined, left.signal)
+    // A page's file is read again when nothing answered. The page itself is not, since its error page offers Try again and the person's own request starts anew; nor is an install's read, which has its own way to try again.
+    const plan: ReadPlan = { route: routeOf(req) === 'tunnel' ? routes.tunnel : routes.direct, left: left.signal, retries: isNavigation(req) || typeof expected === 'string' ? 0 : FILE_RETRIES }
+    file = await readWithRetries(async () => await site.open(url.pathname, undefined, left.signal), plan.route, plan.left, plan.retries)
     if (!url.pathname.endsWith('/') && file.servedPath.endsWith('/index.html') && !url.pathname.endsWith('/index.html')) {
       res.writeHead(301, { location: `${url.pathname}/${url.search}`, 'cache-control': 'no-cache' }).end()
       return
@@ -469,34 +485,49 @@ async function handle (registry: ProtocolRegistry, sites: SiteSource, consent: G
       res.writeHead(416, { ...common, 'content-range': `bytes */${String(file.size)}` }).end()
       return
     }
-    if (range.kind === 'satisfiable' && expectedLeaf === undefined) file = await site.open(url.pathname, range.range, left.signal)
+    const reopenRange = range.kind === 'satisfiable' && expectedLeaf === undefined ? range.range : undefined
+    if (reopenRange !== undefined) file = await readWithRetries(async () => await site.open(url.pathname, reopenRange, left.signal), plan.route, plan.left, plan.retries)
+    const reopen = async (): Promise<GatheredFile> => await site.open(url.pathname, reopenRange, left.signal)
     const length = range.kind === 'satisfiable' ? range.range.end - range.range.start + 1 : file.size
     const headers: Record<string, string> = { ...common, 'content-length': String(length) }
     if (range.kind === 'satisfiable') headers['content-range'] = `bytes ${String(range.range.start)}-${String(range.range.end)}/${String(file.size)}`
     const status = range.kind === 'satisfiable' ? 206 : 200
     if (expectedLeaf !== undefined) {
-      await sendChecked(res, host, req.url ?? url.pathname, expectedLeaf, status, headers, file, range.kind === 'satisfiable' ? range.range : undefined, req.method === 'HEAD', budget, partition, bufferedResponseDeadlineMs)
+      await sendChecked(res, host, req.url ?? url.pathname, expectedLeaf, status, headers, file, reopen, range.kind === 'satisfiable' ? range.range : undefined, req.method === 'HEAD', budget, partition, bufferedResponseDeadlineMs, plan)
       return
     }
     if (req.method === 'HEAD') {
       res.writeHead(status, headers).end()
       return
     }
-    await sendBody(res, status, headers, file, length, budget, partition, bufferedResponseDeadlineMs, typeof expected === 'string')
+    await sendBody(res, status, headers, file, reopen, length, budget, partition, bufferedResponseDeadlineMs, typeof expected === 'string', plan)
   } catch (error) {
     if (res.headersSent) res.destroy()
     else sendError(res, shown, error, root, gatewayOffer(consent, req, url, partition, error, servedByNode))
   }
 }
 
+/** How a request's file is read again when nothing answered: the route's patience, whether the page that asked is still there, and how many more reads. */
+interface ReadPlan {
+  readonly route: RoutePace
+  readonly left: AbortSignal
+  readonly retries: number
+}
+
+/** The pace of each route a request may travel: how long a failed read waits before it is made again. */
+export interface ServeRoutes {
+  readonly direct: RoutePace
+  readonly tunnel: RoutePace
+}
+
 /** `bufferedResponseDeadlineMs` defaults to `BUFFERED_RESPONSE_DEADLINE_MS`; a test shortens it rather than waiting the real deadline out. */
-export function createVerifierServer (registry: ProtocolRegistry, sites: SiteSource, certificate: RunCertificate, bufferedResponseDeadlineMs: number = BUFFERED_RESPONSE_DEADLINE_MS, consent: GatewayConsent = new GatewayConsent()): Server {
+export function createVerifierServer (registry: ProtocolRegistry, sites: SiteSource, certificate: RunCertificate, bufferedResponseDeadlineMs: number = BUFFERED_RESPONSE_DEADLINE_MS, routes: ServeRoutes = { direct: DIRECT_ROUTE, tunnel: DIRECT_ROUTE }, consent: GatewayConsent = new GatewayConsent()): Server {
   // One budget for every request this server ever handles, not one per
   // request: it is what lets it track every partition's own share, and their combined total.
   const budget = new BufferBudget()
   return createServer({ key: certificate.keyPem, cert: certificate.certPem }, (req, res) => {
     // A rejection left unobserved would end the host process, and with it every protocol's page.
-    handle(registry, sites, consent, req, res, budget, bufferedResponseDeadlineMs).catch((error: unknown) => {
+    handle(registry, sites, routes, consent, req, res, budget, bufferedResponseDeadlineMs).catch((error: unknown) => {
       console.error('[verifier] request failed:', error)
       if (res.headersSent) res.destroy()
       else res.writeHead(500, { 'content-type': 'text/plain' }).end('the verifier failed on this request')

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { bucketOf, createScoreProviderClient, lookupTimeoutMs, providerBase } from '../score-provider-client.js'
+import { bucketOf, createScoreProviderClient, providerBase } from '../score-provider-client.js'
+import { DIRECT_ROUTE, RouteMeter, TUNNEL_PROFILE } from '../../../protocols/route-pace.js'
 import type { FetchedJson } from '../score-provider-client.js'
 import { SCORE_STANDARD } from '../../../trust/score-provider.js'
 
@@ -147,9 +148,72 @@ describe('createScoreProviderClient', () => {
     await third
   })
 
-  it('lets a lookup through the tunnel wait longer than the tunnel takes to come up, and any other lookup stay short', () => {
-    expect(lookupTimeoutMs(true)).toBeGreaterThan(95_000)
-    expect(lookupTimeoutMs(false)).toBeLessThanOrEqual(30_000)
+  describe('on a slow route', () => {
+    const nym = new RouteMeter(TUNNEL_PROFILE)
+    nym.markUp()
+    const late = (reason = 'did not answer'): FetchedJson => ({ kind: 'failed', reason, transient: true, route: nym })
+
+    function slowClient (answers: Array<() => FetchedJson>, clock = { t: 0 }) {
+      const pauses: number[] = []
+      let asked = 0
+      const { verdictFor } = createScoreProviderClient({
+        providerAddress: () => BASE,
+        isDevEthName: () => false,
+        now: () => clock.t,
+        sleep: async (ms) => { pauses.push(ms); clock.t += ms },
+        fetchJson: async (url) => {
+          asked += 1
+          const next = answers[Math.min(asked - 1, answers.length - 1)]!
+          return url.endsWith('provider.json') ? next() : (withAsgardex[url] ?? { kind: 'missing' })
+        }
+      })
+      return { verdictFor, pauses, asked: () => asked }
+    }
+
+    it('asks again, after a pause the route sets, while a file fails for want of an answer, and gives the verdict the later ask brings', async () => {
+      const { verdictFor, pauses, asked } = slowClient([() => late(), () => late(), () => ok(DESCRIPTOR)])
+      expect(await verdictFor(ASGARDEX)).toMatchObject({ status: 'judged' })
+      expect(pauses).toEqual([nym.wait(2_000), nym.wait(2_000) * 2])
+      expect(asked()).toBeGreaterThanOrEqual(3)
+    })
+
+    it('stops asking after a few tries, and says how soon to try again, later than on a direct connection', async () => {
+      const clock = { t: 0 }
+      const { verdictFor } = slowClient([() => late()], clock)
+      const verdict = await verdictFor(ASGARDEX)
+      expect(verdict).toMatchObject({ status: 'unreachable', retryMs: nym.wait(30_000) })
+      expect(nym.wait(30_000)).toBeGreaterThan(DIRECT_ROUTE.wait(30_000))
+    })
+
+    it('keeps the failure only a few seconds, not a minute: an ask just after it gets it, a later one goes to the provider, because the route may have come up', async () => {
+      const clock = { t: 0 }
+      const { verdictFor, asked } = slowClient([() => late(), () => late(), () => late(), () => late(), () => ok(DESCRIPTOR)], clock)
+      expect(await verdictFor(ASGARDEX)).toMatchObject({ status: 'unreachable' })
+      const afterFirst = asked()
+      expect(await verdictFor(ASGARDEX), 'asked again at once, it is told what the lookup ended with').toMatchObject({ status: 'unreachable' })
+      expect(asked()).toBe(afterFirst)
+      clock.t += 11_000
+      expect(await verdictFor(ASGARDEX)).toMatchObject({ status: 'judged' })
+      expect(asked()).toBeGreaterThan(afterFirst)
+    })
+
+    it('never asks again for a file that cannot be read however often it is asked', async () => {
+      const { verdictFor, asked } = slowClient([() => ({ kind: 'failed', reason: 'is not JSON', route: nym })])
+      expect(await verdictFor(ASGARDEX)).toMatchObject({ status: 'unreachable', reason: 'is not JSON' })
+      expect(asked()).toBe(1)
+      expect((await verdictFor(ASGARDEX) as { retryMs?: number }).retryMs).toBeUndefined()
+    })
+
+    it('answers pending while the lookup carries on, instead of a failure', async () => {
+      let release: (() => void) | undefined
+      const held = createScoreProviderClient({
+        providerAddress: () => BASE,
+        isDevEthName: () => false,
+        fetchJson: async () => { await new Promise<void>((resolve) => { release = resolve }); return ok(DESCRIPTOR) }
+      })
+      expect(await held.verdictFor(ASGARDEX, 5)).toEqual({ status: 'pending', address: BASE })
+      release?.()
+    })
   })
 
   it('keeps the judged level a provider gave while a later ask cannot reach it, and takes a changed answer at once', async () => {

@@ -10,10 +10,13 @@ import type { ResolveTxt } from './dnslink.js'
 import { GatewayPool } from '../gateways/gateways.js'
 import type { Fetch } from '../gateways/gateways.js'
 import { resolveIpnsKey } from './ipns.js'
-import type { SequenceStore } from './ipns.js'
+import type { SequenceStore, VerifiedIpnsRecord } from './ipns.js'
+import { retryOn } from './block-fetch.js'
 import { DEFAULT_LIMITS } from './limits.js'
 import type { IpfsLimits } from './limits.js'
+import { retryWhileWanted } from '../gateways/fetch-passes.js'
 import type { PatientRetry } from '../gateways/fetch-passes.js'
+import type { RoutePace } from '../route-pace.js'
 import { followPointer } from './pointers.js'
 import type { PointerResolvers } from './pointers.js'
 import { openPath } from './unixfs.js'
@@ -33,6 +36,8 @@ export interface IpfsGathererOptions {
    * concurrency three gateways would, and its waits are sized for the lookups it makes itself.
    */
   readonly localNode?: boolean
+  /** The route these requests travel, which stretches every wait the limits below were written for. Direct when unset. */
+  readonly route?: RoutePace
   /**
    * For a local node that keeps blocks between runs: the header and the key a mount in a partition sends it, on every
    * request to `gateways` and to no other source, so the node's store holds what each partition fetched apart from
@@ -67,7 +72,7 @@ export const LOCAL_NODE_MISS_MEMORY_MS = 32_000
  * and no file waits longer than about two minutes (77 s + a last 45 s) before it is called missing.
  */
 export const LOCAL_NODE_BLOCK_RETRY: PatientRetry = { waitMs: LOCAL_NODE_MISS_MEMORY_MS, maxRetries: 2, startByMs: 90_000 }
-/** How long an IPNS record may take from a local node (about 10 s measured): short enough that a name service is asked within a mount's 25 s when the node has nothing. */
+/** How long an IPNS record may take from a local node on a direct connection (about 10 s measured): short enough that a name service is asked within a mount's 25 s when the node has nothing. A slower route stretches it, as it does every wait here. */
 export const LOCAL_NODE_RECORD_TIMEOUT_MS = 15_000
 
 const LOADABLE = new Set(['ipfs', 'ipns-key', 'dnslink'])
@@ -79,7 +84,7 @@ function loadable (records: readonly NameRecord[]): NameRecord | undefined {
 export function createIpfsGatherer (options: IpfsGathererOptions): DataGatherer {
   const local = options.localNode === true
   const limits: IpfsLimits = { ...DEFAULT_LIMITS, ...(local && { perGatewayConcurrency: LOCAL_NODE_CONCURRENCY, blockTimeoutMs: LOCAL_NODE_BLOCK_TIMEOUT_MS, recordTimeoutMs: LOCAL_NODE_RECORD_TIMEOUT_MS, blockRetry: LOCAL_NODE_BLOCK_RETRY }), ...options.limits }
-  const pool = new GatewayPool(options.gateways, limits.perGatewayConcurrency, Date.now, local ? { lieQuarantineMs: LOCAL_NODE_QUARANTINE_MS, serverErrorsAreAnswers: true } : {})
+  const pool = new GatewayPool(options.gateways, limits.perGatewayConcurrency, Date.now, { ...(local && { lieQuarantineMs: LOCAL_NODE_QUARANTINE_MS, serverErrorsAreAnswers: true }), ...(options.route !== undefined && { route: options.route }) })
   const cache = new BlockCache()
   const nodeOrigins = new Set(options.gateways.map((gateway) => new URL(gateway).origin))
 
@@ -94,7 +99,9 @@ export function createIpfsGatherer (options: IpfsGathererOptions): DataGatherer 
   const resolversFor = (fetch: Fetch): PointerResolvers => ({
     ipns: async (key: string, signal: AbortSignal, onRefusal: (refusal: Refusal) => void) => {
       const named = options.ipnsNameServices
-      return await resolveIpnsKey(key, fetch, { pool, nameServices: typeof named === 'function' ? named() : named ?? [] }, options.ipnsSequences, limits, signal, onRefusal)
+      const once = async (): Promise<VerifiedIpnsRecord> => await resolveIpnsKey(key, fetch, { pool, nameServices: typeof named === 'function' ? named() : named ?? [] }, options.ipnsSequences, limits, signal, onRefusal)
+      // A node that found no record answers the same for as long as it remembers the miss, as it does for a block.
+      return limits.blockRetry === undefined ? await once() : await retryWhileWanted(once, retryOn(limits.blockRetry, pool.route), () => pool.now(), signal)
     },
     resolveTxt: options.resolveTxt,
     maxHops: limits.maxPointerHops

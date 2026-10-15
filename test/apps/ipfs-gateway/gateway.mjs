@@ -56,6 +56,8 @@ export async function startFixtureGateway (sites, options = {}) {
   const tampered = new Set()
   /** @type {Map<string, { status: number, times: number }>} block -> the next answers it fails with */
   const failures = new Map()
+  /** @type {Map<string, { ms: number, times: number }>} block -> the next answers it holds back, and for how long */
+  const delays = new Map()
 
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', `http://${HOST}`)
@@ -82,7 +84,11 @@ export async function startFixtureGateway (sites, options = {}) {
       const body = Buffer.from(block)
       if (tampered.has(key)) body[body.length - 1] ^= 0x01
       const answer = () => { res.writeHead(200, { 'content-type': 'application/vnd.ipld.raw' }).end(body) }
-      if (options.blockDelayMs === undefined) answer()
+      const held = delays.get(key)
+      if (held !== undefined && held.times > 0) {
+        held.times -= 1
+        setTimeout(answer, held.ms)
+      } else if (options.blockDelayMs === undefined) answer()
       else setTimeout(answer, options.blockDelayMs)
       return
     }
@@ -127,6 +133,12 @@ export async function startFixtureGateway (sites, options = {}) {
       const cid = files.get(`${site}/${path}`)
       if (cid === undefined) throw new Error(`no file ${path} in ${site}`)
       failures.set(cid, { status, times })
+    },
+    /** Hold this site's file back `ms` before answering its next `times` requests, then serve it at once: a file that is slow to arrive over a slow route, whatever the rest of the site does. */
+    delayNext: (site, path, ms, times = 1) => {
+      const cid = files.get(`${site}/${path}`)
+      if (cid === undefined) throw new Error(`no file ${path} in ${site}`)
+      delays.set(cid, { ms, times })
     },
     /** Answer this site's root block with `status` for its next `times` requests (0 stops): the site cannot be mounted while it is unwell. */
     failRoot: (site, status, times = 1) => {

@@ -20,14 +20,15 @@ import { allowlisted, DEFAULT_CCIP_LIMITS, guardedCcipRequest } from './egress.j
 import type { CcipDeps } from './egress.js'
 import { createFixtureResolver } from './fixture-resolver.js'
 import type { HostConfig } from './protocol.js'
-import { ipfsFromNode, offResolver } from './protocols.js'
+import { ipfsFromNode, nodeRouteOf, offResolver } from './protocols.js'
 import type { HostControls, SharedStores } from './protocols.js'
 import type { NodeLink, NodeLinks } from './node-link.js'
 import { IPFS_NODE_IDENTITY, IPFS_NODE_WORDS } from '../ipfs-node/protocol.js'
 import { SWARM_NODE_IDENTITY, SWARM_NODE_WORDS } from '../swarm-node/protocol.js'
 import type { HostDeps, LightClient } from './service.js'
 import type { Fetch } from '../gateways/gateways.js'
-import { TUNNEL_PACE } from './pace.js'
+import { paceOn, routeFor } from './pace.js'
+import type { RoutePace } from '../route-pace.js'
 
 /** What the person is told when a Swarm site is opened with the tunnel on for it, and "Use tunnel to run network nodes" is on. */
 export const SWARM_NOT_TUNNELLED = 'Swarm content loads only from the Swarm node Orivon runs on this computer. "Use tunnel to run network nodes" is on in Settings under Tunnels, and the node cannot send its traffic through the tunnel for one site, so this site is not opened while the tunnel is on for it. Turn the tunnel off for it, or turn that setting off, to open it.'
@@ -37,6 +38,8 @@ export const IPFS_NOT_TUNNELLED = 'the IPFS node runs outside the tunnel, and "U
 
 export interface TunnelProtocols {
   readonly protocols: readonly Protocol[]
+  /** The tunnel route these protocols' requests travel. */
+  readonly route: RoutePace
 }
 
 /** The Swarm gatherer of a tunnel-profile website: it claims Swarm content in order to say why it is not loaded, and reads nothing. */
@@ -66,7 +69,7 @@ export function tunnelCcipDeps (fetch: HostDeps['fetch']): CcipDeps {
   }
 }
 
-function startEns (config: HostConfig, deps: HostDeps, fetch: HostDeps['fetch']): Protocol {
+function startEns (config: HostConfig, deps: HostDeps, fetch: HostDeps['fetch'], route: RoutePace): Protocol {
   const resolvers = []
   if (config.fixtures !== undefined && deps.fixturesAllowed) resolvers.push(createFixtureResolver(config.fixtures))
   const { lightClient } = config
@@ -74,16 +77,16 @@ function startEns (config: HostConfig, deps: HostDeps, fetch: HostDeps['fetch'])
     resolvers.push(offResolver(config.lightClientOff ?? 'the Ethereum light client is not running, so no .eth name can be verified'))
     return defineProtocol(ENS, { resolvers })
   }
-  const provider = lazyProvider(() => deps.startLightClient(lightClient, allowlisted([...lightClient.executionRpcs, lightClient.consensusRpc], fetch, 'the light client'), () => {}, 'tunnel', { syncWaitMs: TUNNEL_PACE.syncWaitMs, startAfterMs: 0 }))
+  const provider = lazyProvider(() => deps.startLightClient(lightClient, allowlisted([...lightClient.executionRpcs, lightClient.consensusRpc], fetch, 'the light client'), () => {}, 'tunnel', { syncWaitMs: paceOn(route).syncWaitMs, startAfterMs: 0 }))
   const ccip = tunnelCcipDeps(fetch)
   resolvers.push(createEnsResolver({ provider, ccipRequest: async (parameters, signal) => await guardedCcipRequest(parameters, ccip, DEFAULT_CCIP_LIMITS, signal) }))
   return defineProtocol(ENS, { resolvers })
 }
 
-function startIpfs (config: HostConfig, deps: HostDeps, fetch: HostDeps['fetch'], stores: SharedStores, node: NodeLink | undefined, controls: HostControls): Protocol {
+function startIpfs (config: HostConfig, deps: HostDeps, fetch: HostDeps['fetch'], stores: SharedStores, node: NodeLink | undefined, controls: HostControls, route: RoutePace): Protocol {
   const dohFetch = allowlisted(config.dnsOverHttps, fetch, 'DNS-over-HTTPS')
   const gatewayFetch = allowlisted([...config.gateways, ...config.ipnsNameServices], fetch, 'the IPFS gatherer')
-  const common = { resolveTxt: dohTxtResolver(config.dnsOverHttps, dohFetch), ipnsSequences: stores.ipnsSequences }
+  const common = { resolveTxt: dohTxtResolver(config.dnsOverHttps, dohFetch, route), ipnsSequences: stores.ipnsSequences, route }
   const viaGateways = {
     fetch: async (url: string, init: Parameters<Fetch>[1]) => await gatewayFetch(url, init),
     gateways: config.gateways,
@@ -102,16 +105,18 @@ function startIpfs (config: HostConfig, deps: HostDeps, fetch: HostDeps['fetch']
     viaGateways,
     common,
     controls,
+    nodeRoute: nodeRouteOf(config, route),
     refusal: () => config.tunnelSitesReadNodes === true ? undefined : IPFS_NOT_TUNNELLED
   })
 }
 
-function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefined, stores: SharedStores): Protocol {
+function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefined, stores: SharedStores, route: RoutePace): Protocol {
   if (config.swarmNode !== true || node === undefined || config.tunnelSitesReadNodes !== true) return refusedSwarm()
   const endpointFetch = allowlisted(config.swarmEndpoints, deps.fetch, 'the Swarm gatherer')
   return swarmProtocol({
     fetch: node.reading(async (url, init) => await endpointFetch(url, init)),
     endpoints: config.swarmEndpoints,
+    route: nodeRouteOf(config, route),
     feedIndexes: stores.swarmFeedIndexes,
     beforeMount: node.ensure
   })
@@ -120,7 +125,8 @@ function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefi
 /** `ens` is the shared `.eth` protocol, which a tunnel-profile website uses when the light client runs outside the tunnel: its name is then proved by the same client every other website's is. */
 export function startTunnelProtocols (config: HostConfig, deps: HostDeps, stores: SharedStores, nodes: NodeLinks, controls: HostControls, ens: Protocol): TunnelProtocols {
   const fetch = deps.routedFetch
+  const route = routeFor(true)
   const ipfsNode = nodes.to(IPFS_NODE_IDENTITY, IPFS_NODE_WORDS)
   const swarmNode = nodes.to(SWARM_NODE_IDENTITY, SWARM_NODE_WORDS)
-  return { protocols: [config.ethereumOutside === true ? ens : startEns(config, deps, fetch), startIpfs(config, deps, fetch, stores, ipfsNode, controls), startSwarm(config, deps, swarmNode, stores)] }
+  return { protocols: [config.ethereumOutside === true ? ens : startEns(config, deps, fetch, route), startIpfs(config, deps, fetch, stores, ipfsNode, controls, route), startSwarm(config, deps, swarmNode, stores, route)], route }
 }

@@ -15,6 +15,7 @@ import { createNavigation } from './navigation.js'
 import { createPanes } from './panes.js'
 import { createPasswordKey } from './password-key.js'
 import { createContentDot } from './content-dot.js'
+import { createFilesChip } from './files-chip.js'
 import { createPopupsChip } from './popups-chip.js'
 import { createPromptAnchor } from './prompt-anchor.js'
 import { createReaderButton } from './reader-button.js'
@@ -57,6 +58,7 @@ export const CHROME_MODULES: readonly ChromeModule[] = [
   createTunnelButton(),
   createSiteAccessChip(),
   createSharingChip(),
+  createFilesChip(),
   createPopupsChip(),
   createContentDot(),
   createPasswordKey(),

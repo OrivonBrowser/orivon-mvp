@@ -16,7 +16,8 @@ import { GatewayConsent } from './gateway-consent.js'
 import type { FromHost, NodeNotice, HostConfig, HostReplies, HostRequest, LightClientConfig, LightClientState, SiteProvenance } from './protocol.js'
 import { createVerifierServer } from './serve/server.js'
 import type { LightClientPace } from './light-client/light-client.js'
-import { paceOf } from './pace.js'
+import { paceOn } from './pace.js'
+import type { RoutePace } from '../route-pace.js'
 import { RoutedSites, Sites } from './serve/sites.js'
 import type { MountedSite } from '../resolution/providers.js'
 import type { SiteRecord } from './serve/sites.js'
@@ -74,18 +75,19 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
   const nodes = new NodeLinks(deps.post)
   const consent = new GatewayConsent()
   const controls = { lookupService: config.ipfsNode?.lookupService !== false, consent }
-  const { protocols, lightClient, stores, ens } = startProtocols(config, deps, nodes, controls)
+  const { protocols, lightClient, stores, route, ens } = startProtocols(config, deps, nodes, controls)
   const registry = new ProtocolRegistry(protocols)
-  const tunnelRegistry = new ProtocolRegistry(startTunnelProtocols(config, deps, stores, nodes, controls, ens).protocols)
+  const tunnelProtocols = startTunnelProtocols(config, deps, stores, nodes, controls, ens)
+  const tunnelRegistry = new ProtocolRegistry(tunnelProtocols.protocols)
   // A top-level-domain name is shown by where its content lives, which is known once a gatherer is chosen for its records.
-  const sitesOf = (of: ProtocolRegistry, tunnelled: boolean): Sites => new Sites(of, Date.now, paceOf(tunnelled).mountTimeoutMs, (host, gatherer) => {
+  const sitesOf = (of: ProtocolRegistry, via: RoutePace): Sites => new Sites(of, Date.now, () => paceOn(via).mountTimeoutMs, (host, gatherer) => {
     const served = of.addresses.servedName(host)
     const scheme = of.schemeOfGatherer(gatherer)
     if (served?.namespace.startsWith('.') === true && scheme !== undefined) deps.post({ type: 'name-scheme', host: served.name, scheme })
   }, (site, partition) => usedGatewaysByYes(site) || (site.servedFrom?.kind === 'node' && consent.pending(partition)))
-  const sites = new RoutedSites(sitesOf(registry, config.front !== undefined), sitesOf(tunnelRegistry, true))
+  const sites = new RoutedSites(sitesOf(registry, route), sitesOf(tunnelRegistry, tunnelProtocols.route))
   const certificate = createRunCertificate()
-  const server = createVerifierServer(registry, sites, certificate, undefined, consent)
+  const server = createVerifierServer(registry, sites, certificate, undefined, { direct: route, tunnel: tunnelProtocols.route }, consent)
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
     server.listen(config.port, '127.0.0.1', () => {

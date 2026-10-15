@@ -47,6 +47,10 @@ describe('shieldLabel', () => {
     expect(shieldLabel(score({ level: 2, unscored: true, unreachable: true }))).toBe('Website level 2 (Web?): the Web3 Score provider could not be reached, so Orivon will ask again')
   })
 
+  it('says the provider is still being asked, not that there is no score, while the lookup goes on', () => {
+    expect(shieldLabel(score({ level: 2, unscored: true, pending: true }))).toBe('Website level 2 (Web?): still checking with the Web3 Score provider')
+  })
+
   it('keeps naming developer mode beside Web?', () => {
     expect(shieldLabel(score({ level: 2, unscored: true, localDev: true }))).toBe('Website level 2 (Web?): no Web3 Score for this site yet (developer mode)')
   })

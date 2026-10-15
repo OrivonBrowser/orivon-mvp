@@ -9,11 +9,15 @@ import { buildSite } from '../../../../test/apps/swarm-gateway/encode.mjs'
 import { EgressRefused, guardedCcipRequest } from '../egress.js'
 import type { FromHost, HostConfig, LightClientConfig } from '../protocol.js'
 import { ResolutionError } from '../../resolution/records.js'
-import { DIRECT_PACE, TUNNEL_PACE } from '../pace.js'
+import { DIRECT_ROUTE, RouteMeter, TUNNEL_PROFILE } from '../../route-pace.js'
+import { paceOn } from '../pace.js'
 import { startHost } from '../service.js'
 import type { HostDeps, LightClient, RunningHost } from '../service.js'
 import { IPFS_NOT_TUNNELLED, SWARM_NOT_TUNNELLED, tunnelCcipDeps } from '../tunnel-protocols.js'
 import { TunnelUnavailable } from '../routed-fetch.js'
+
+const DIRECT_PACE = paceOn(DIRECT_ROUTE)
+const TUNNEL_PACE = paceOn(new RouteMeter(TUNNEL_PROFILE))
 
 const GATEWAY = 'https://a.gateway'
 const dag = await buildDag({ 'index.html': '<h1>fixture</h1>' })
@@ -53,9 +57,10 @@ function deps (overrides: Partial<HostDeps> = {}): Spied {
   }
 }
 
-async function get (port: number, host: string, tunnel: boolean, path = '/'): Promise<{ status: number, body: string }> {
+/** `document`: asked for as a page is, so a failure is not read again before the error page, as a file of a page would be. */
+async function get (port: number, host: string, tunnel: boolean, path = '/', document = false): Promise<{ status: number, body: string }> {
   return await new Promise((resolve, reject) => {
-    request({ host: '127.0.0.1', port, path, servername: host, rejectUnauthorized: false, headers: { host, 'x-orivon-partition': `https://${host}`, ...(tunnel ? { 'x-orivon-route': 'tunnel' } : {}) } }, (res) => {
+    request({ host: '127.0.0.1', port, path, servername: host, rejectUnauthorized: false, headers: { host, 'x-orivon-partition': `https://${host}`, ...(tunnel ? { 'x-orivon-route': 'tunnel' } : {}), ...(document ? { 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document' } : {}) } }, (res) => {
       let body = ''
       res.on('data', (c: Buffer) => { body += c.toString() })
       res.on('end', () => { resolve({ status: res.statusCode ?? 0, body }) })
@@ -96,7 +101,7 @@ describe('the route a request takes', () => {
     const spied = deps({ routedFetch: async () => { throw new TunnelUnavailable('the tunnel is down') } })
     const host = await startHost(config(), spied)
     running.push(host)
-    const answer = await get(host.port, 'fixture.eth', true)
+    const answer = await get(host.port, 'fixture.eth', true, '/', true)
     expect(answer.status).toBeGreaterThanOrEqual(500)
     expect(spied.direct).toEqual([])
   }, 40_000)

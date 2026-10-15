@@ -29,6 +29,7 @@ Electron, entirely: it runs in the chrome's `WebContentsView` on `src/preload/sh
 | `content-dot.ts` | a mark on the address bar's key for a site with JavaScript, images or sound switched off, or an app with an update offered: an attribute on `site-badges`'s button, drawn by `styles/content-dot.css` |
 | `tunnel-button.ts` | the tunnel button, last in the address pill after the Web2 / Web2.5 / Web3 mark: shown for any page with a site, purple while the page is on a tunnel and the warning colour when the tunnel does not answer (`data-tunnel`, drawn by `styles/tunnel-button.css`); it opens the tunnels page of the site-info popup under itself |
 | `sharing-chip.ts` | the mark in the address bar for a page that is sharing a screen, a window or a tab; it brings back the window's sharing bar |
+| `files-chip.ts` | the mark in the address bar for a page that asked the verifier for files it could not give (a stylesheet, a script), which loads a page that looks broken though the browser counts it loaded; pressing it reloads the page |
 | `popups-chip.ts` | the mark in the address bar for a page whose pop-ups were blocked, with a count from two; it opens the `popups-blocked` bubble |
 | `side-panel-button.ts` | the cluster's side panel button: pressed while open, disabled in a window too narrow for a panel |
 | `cluster.ts` | the bookmark star, the zoom chip, the Available networks button and its dot, the profile chip, the menu button |

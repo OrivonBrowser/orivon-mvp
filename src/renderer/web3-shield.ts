@@ -57,6 +57,7 @@ export function paintMark (el: HTMLElement, level: ScoreLevel | null, unscored =
 function unscoredNote (score: Web3Score): string {
   if (score.noProvider) return ': no Web3 Score provider is chosen'
   if (score.unreachable) return ': the Web3 Score provider could not be reached, so Orivon will ask again'
+  if (score.pending) return ': still checking with the Web3 Score provider'
   return ': no Web3 Score for this site yet'
 }
 

@@ -90,6 +90,8 @@ export interface HostConfig {
    * node runs through the tunnel. Absent: false.
    */
   readonly tunnelSitesReadNodes?: boolean
+  /** The local nodes run through the tunnel (the whole browser is on it and "Use tunnel to run network nodes" is on): their reads wait as long as the tunnel does. Absent: they are direct, and wait as a direct connection does. */
+  readonly nodesRouted?: boolean
   /**
    * The Ethereum light client and CCIP-Read run outside the tunnel ("Use tunnel to run network nodes" is off): a website in the tunnel
    * profile is proved by the shared light client and not by a tunnelled one of its own, and while the whole browser is on the tunnel
