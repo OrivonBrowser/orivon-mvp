@@ -1,0 +1,32 @@
+diff --git a/wasm/smolmix/src/bridge.rs b/wasm/smolmix/src/bridge.rs
+index 6b89796..bf47b6e 100644
+--- a/wasm/smolmix/src/bridge.rs
++++ b/wasm/smolmix/src/bridge.rs
+@@ -89,7 +89,7 @@ pub fn start_bridge(
+ 
+                 // Drain outgoing packets (capped to avoid starving incoming).
+                 let packets: Vec<Vec<u8>> =
+-                    stack.with(|s| s.device.drain_tx().take(MAX_OUTGOING_PER_TICK).collect());
++                    stack.with(|s| s.device.drain_tx_up_to(MAX_OUTGOING_PER_TICK));
+ 
+                 if !packets.is_empty() {
+                     crate::util::debug_log!("[bridge] ▲ tx ({} packets)", packets.len());
+diff --git a/wasm/smolmix/src/device.rs b/wasm/smolmix/src/device.rs
+index 268247a..fa36764 100644
+--- a/wasm/smolmix/src/device.rs
++++ b/wasm/smolmix/src/device.rs
+@@ -100,6 +100,14 @@ impl WasmDevice {
+     pub fn drain_tx(&mut self) -> impl Iterator<Item = Vec<u8>> + '_ {
+         self.tx_queue.drain(..)
+     }
++
++    /// Remove at most `max` outgoing IP packets from the front of the transmit queue; the rest
++    /// stay queued for the next call. (`drain_tx().take(max)` would drop the rest: dropping a
++    /// `VecDeque` drain removes the elements it did not yield.)
++    pub fn drain_tx_up_to(&mut self, max: usize) -> Vec<Vec<u8>> {
++        let count = max.min(self.tx_queue.len());
++        self.tx_queue.drain(..count).collect()
++    }
+ }
+ 
+ impl Device for WasmDevice {

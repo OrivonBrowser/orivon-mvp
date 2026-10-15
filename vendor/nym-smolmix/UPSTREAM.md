@@ -9,14 +9,15 @@
   is GPL. The published files carry each crate's licence text and copyright notice as `THIRD_PARTY_LICENSES`, which
   the build makes with `cargo-about` from the lockfile, for the `wasm32-unknown-unknown` target alone, and fails if a
   crate has a licence `about.toml` does not accept.
-- Vendored: only the patch below. Nym's source is cloned at build time into a cache outside this repository and is
+- Vendored: only the patches below. Nym's source is cloned at build time into a cache outside this repository and is
   never committed.
 
 ## What this directory holds
 
 | File | Holds |
 |---|---|
-| `smolmix-raw-tcp-udp.patch` | The one change to Nym's source |
+| `smolmix-raw-tcp-udp.patch` | Raw TCP and UDP sockets |
+| `smolmix-tx-queue.patch` | The send loop keeps the packets it did not send in its tick |
 | `about.toml`, `third-party-licenses.hbs` | The licences `cargo-about` accepts, and the plain-text template of `THIRD_PARTY_LICENSES` |
 | `README.md` | Copied into the published directory as its `README.md` |
 | `UPSTREAM.md` | This page |
@@ -25,7 +26,9 @@
 `resources/nym-tunnel/nym-tunnel.json`, which is what the browser trusts: the build is a way to make the files again,
 never a step of installing or running Orivon.
 
-## Patch
+## Patches
+
+Applied in this order by `scripts/build-nym-tunnel.mjs`.
 
 1. **Raw TCP and UDP.** Adds `wasm/smolmix/src/raw.rs` (177 lines) and its `mod raw;` line in `src/lib.rs`. It
    exports two wasm-bindgen functions:
@@ -36,6 +39,15 @@ never a step of installing or running Orivon.
    Reason: the crate exports `mixFetch`, `mixWebSocket` and `mixDNS`, which carry HTTP, WebSocket and DNS only.
    The tunnel for apps (`docs/planning/per-app-route-plan.md`) carries any TCP stream and UDP datagrams through one
    SOCKS5 server, so the module needs sockets underneath its fetch. Names are never resolved on this computer.
+
+2. **The send loop keeps what it did not send.** Nym's bridge takes at most 8 packets from the device's transmit
+   queue per 5 ms tick with `drain_tx().take(8).collect()`; dropping a `VecDeque` drain removes every element it did
+   not yield, so each packet past the eighth that smoltcp had queued in one tick was thrown away, and TCP sent it again
+   after its retransmit timer (about 4 s). The patch adds `WasmDevice::drain_tx_up_to(max)`, which removes only the
+   packets it returns, and the bridge calls it: the rest wait for the next tick. Measured through a real tunnel, 32
+   connections opened at once took 20 s in waves of 4 s before and 2.5 s after. Nothing about what is sent changes: the
+   same packets leave, none is lost to the queue, in the same order. Send timing is the only difference, and only for
+   bursts; Nym's own pacing and cover traffic are untouched.
 
 ## Build
 
