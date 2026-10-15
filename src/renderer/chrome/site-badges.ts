@@ -18,6 +18,9 @@ const WEB3_SCORE_OVERLAY = 'web3-score'
 
 /** How soon a shield whose provider was still being asked asks again. */
 const PENDING_RETRY_MS = 2_000
+/** How soon, and how many times, a shield whose provider could not be reached asks again (a tunnel that was still coming up may answer by then). */
+const UNREACHABLE_RETRY_MS = 30_000
+const UNREACHABLE_RETRIES = 4
 
 /** What the address pill says about the active site: the Web3 Score shield and its mark, and the key for
  * the permissions this site has asked for. Both answers come from main a moment after the push that asked,
@@ -29,6 +32,7 @@ export function createSiteBadges (): ChromeModule {
   let shieldEl: SVGSVGElement | undefined
   let shieldRequestUrl: string | null = null
   let pendingRetry: ReturnType<typeof setTimeout> | undefined
+  let unreachableRetries = 0
   let shieldOrigin: string | null = null
   let permissionsRequestUrl: string | null = null
   let connectionSecure = false
@@ -61,6 +65,7 @@ export function createSiteBadges (): ChromeModule {
     const origin = originOf(url)
     if (origin !== shieldOrigin) {
       shieldOrigin = origin
+      unreachableRetries = 0
       applyShield(null)
     }
     askShield(url, ctx)
@@ -70,10 +75,15 @@ export function createSiteBadges (): ChromeModule {
     void ctx.shell.web3ScoreFor(url).then((score) => {
       if (shieldRequestUrl !== url) return // the active tab moved on; this answer is stale
       applyShield(score)
-      // A slow provider (a cold ipfs:// fetch) answers after the page has stopped pushing state.
-      if (score?.pending !== true) return
+      // A slow provider (a cold ipfs:// fetch) answers after the page has stopped pushing state; one that could not be reached is tried again a few times.
+      const again = score?.pending === true ? PENDING_RETRY_MS : score?.unreachable === true && unreachableRetries < UNREACHABLE_RETRIES ? UNREACHABLE_RETRY_MS : undefined
+      if (again === undefined) return
       clearTimeout(pendingRetry)
-      pendingRetry = setTimeout(() => { if (shieldRequestUrl === url) askShield(url, ctx) }, PENDING_RETRY_MS)
+      pendingRetry = setTimeout(() => {
+        if (shieldRequestUrl !== url) return
+        if (score?.pending !== true) unreachableRetries += 1
+        askShield(url, ctx)
+      }, again)
     })
   }
 

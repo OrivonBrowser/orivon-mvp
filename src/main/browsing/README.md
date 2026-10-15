@@ -47,6 +47,14 @@ provider gives, lower or higher, replaces it, and a changed provider address fin
 is), and the shield draws that as a gray Web? (`../../renderer/web3-shield.ts`). The Website level itself is kept, where the
 verifier cannot be asked, by `../verifier/kept-provenance.ts`.
 
+**A lookup through the tunnel waits for the tunnel; a provider that cannot be reached says so.** A fetch of a provider's file
+that leaves through a tunnel (a routed app or site, or the whole browser on the tunnel) may wait up to 180 seconds, because
+a cold Nym tunnel takes up to 95 seconds to come up and the answer waits behind it; any other fetch gives up at 30. Until it
+answers the shield reads `pending`, and the chrome asks again every two seconds. A failure is kept for a minute from when it
+arrived, not from when it was asked. When the provider could not be asked, `web3Score` says `unreachable`, the shield's label
+says the provider could not be reached (not that there is no score yet), and the chrome asks again after 30 seconds, four
+times at most per site.
+
 **A routed app's lookups leave through its route.** A tab's icon from another host and the Web3 Score provider's answer are
 fetched from main, which would otherwise use the default session. For an app the person routed, `favicon-fetch.ts` and
 `score-provider-client.ts` ask `../route/lookup-session.ts` for the session of the app's route and use it for those
