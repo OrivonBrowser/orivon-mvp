@@ -261,6 +261,28 @@ describe.skipIf(!LIVE)('the IPFS node through the real Nym tunnel', () => {
     expect(leaving(socketsOf(pid as number)).length, 'the node connects to its peers itself').toBeGreaterThan(0)
   }, 600_000)
 
+  it('[tunnel on, nodes direct, .eth names] times The Lounge and vitalik.eth with the whole browser on Nym and "Use tunnel to run network nodes" off', async () => {
+    await launch({ 'network.tunnel.everywhere': true })
+    const openName = async (name: string): Promise<number> => {
+      const started = Date.now()
+      await clickAddressBarRetrying(chrome, name)
+      const loaded = await waitFor(async () => {
+        const info = await activeTabInfo(chrome)
+        const title = info.title ?? ''
+        return (info.address ?? '') !== '' && title !== '' && !/^(New Tab|Cannot .*|.*\.(ipfs|ipns|eth)(\.orivon)?)$/.test(title)
+      }, 420_000)
+      const ms = Date.now() - started
+      console.log(`[live] ${name}: loaded=${String(loaded)} in ${String(ms)} ms, tab ${JSON.stringify(await activeTabInfo(chrome))}`)
+      return loaded ? ms : -1
+    }
+    const lounge = await openName('thelounge.orivonstack.eth')
+    const vitalik = await openName('vitalik.eth')
+    const pid = await nodePid()
+    console.log(`[live] tunnel on, nodes direct: The Lounge ${String(lounge)} ms, vitalik.eth ${String(vitalik)} ms, IPFS node ${String(pid)}${pid === undefined ? '' : `: ${summary(socketsOf(pid))}`}`)
+    const log = mainOutput(app as ElectronApplication).split('\n').filter((line) => /\[verifier\]|gateway/i.test(line)).slice(-30)
+    console.log(log.join('\n'))
+  }, 1_200_000)
+
   it('[tunnel off, the node] times the same blocks and tab load through the node directly', async () => {
     await launch({})
     const loading = open(SITE)
