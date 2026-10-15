@@ -14,7 +14,7 @@ describe('the fetch that leaves outside the tunnel', () => {
     const { dialled, asked, fetch } = world(['93.184.216.34', '2606:2800:220:1:248:1893:25c8:1946'])
     expect(await (await fetch('https://rpc.example/path?q=1', { method: 'POST', body: '{}' })).text()).toBe('ok')
     expect(asked).toEqual(['rpc.example'])
-    expect(dialled).toEqual([{ url: 'https://rpc.example/path?q=1', addresses: ['93.184.216.34', '2606:2800:220:1:248:1893:25c8:1946'] }])
+    expect(dialled).toEqual([{ url: 'https://rpc.example/path?q=1', addresses: ['93.184.216.34', '2606:2800:220:1:248:1893:25c8:1946'], body: '{}' }])
   })
 
   it('does not resolve an address given as an address', async () => {
