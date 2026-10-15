@@ -8,6 +8,7 @@ import { kindNamed } from './kinds.js'
 import { startNode } from './service.js'
 import { envName, failure } from './protocol.js'
 import type { FromNode, ToNode } from './protocol.js'
+import { createParentRouteSource } from './route-source.js'
 
 function post (message: FromNode): void {
   process.parentPort.postMessage(message)
@@ -18,8 +19,14 @@ function main (): void {
     post(failure('run', reason instanceof Error ? reason.message : String(reason)))
   })
   let started = false
+  const routeListeners: Array<(message: ToNode) => void> = []
+  const route = createParentRouteSource({ post, listen: (listener) => { routeListeners.push(listener) } })
   process.parentPort.on('message', (event) => {
     const message = event.data as ToNode
+    if (message.type === 'route' || message.type === 'route-reset') {
+      for (const listener of routeListeners) listener(message)
+      return
+    }
     if (message.type !== 'start' || started) return
     started = true
     const kind = kindNamed(message.config.kind)
@@ -28,7 +35,7 @@ function main (): void {
       return
     }
     const log = process.env[envName(kind.name, 'LOG')] === '1'
-    startNode(kind, message.config, { post, ...(log ? { onLog: (line: string) => { console.log(`[${kind.name}] ${line}`) } } : {}) }).catch(() => {
+    startNode(kind, message.config, { post, route, ...(log ? { onLog: (line: string) => { console.log(`[${kind.name}] ${line}`) } } : {}) }).catch(() => {
       // startNode posts the reason of every setup failure before it rethrows.
     })
   })

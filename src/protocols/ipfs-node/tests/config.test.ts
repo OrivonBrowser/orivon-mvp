@@ -1,8 +1,8 @@
-import { mkdtemp, rm, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { nodeArguments, prepareDataDir, routingModeOf } from '../config.js'
+import { DATABASE_FILE, LOCK_DIRECTORY, nodeArguments, prepareDataDir, routingModeOf } from '../config.js'
 import { IPFS_NODE } from '../kind.js'
 import { routingOptions } from '../protocol.js'
 
@@ -51,6 +51,15 @@ describe('prepareDataDir', () => {
     await prepareDataDir(data)
     await prepareDataDir(data)
     expect((await stat(data)).isDirectory()).toBe(true)
+  })
+
+  it('takes away the lock a killed node left beside its database, and keeps the database', async () => {
+    const data = join(directory, 'profile', 'ipfs-node')
+    await mkdir(join(data, LOCK_DIRECTORY), { recursive: true })
+    await writeFile(join(data, DATABASE_FILE), 'blocks')
+    await prepareDataDir(data)
+    await expect(stat(join(data, LOCK_DIRECTORY))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await readFile(join(data, DATABASE_FILE), 'utf8')).toBe('blocks')
   })
 })
 

@@ -132,6 +132,21 @@ describe('moving a card\'s switch', () => {
     expect(r.sets).toEqual([])
   })
 
+  it('tells the nodes\' cards which tunnel carries them while the whole browser is on it, and redraws when that setting moves', () => {
+    const r = rig()
+    r.ipfsState = { state: 'ready', peers: 0 }
+    const source = createNetworksSource(r.env)
+    expect(source.view().cards[1]?.note).toBeUndefined()
+    r.values['network.tunnel.everywhere'] = true
+    expect(source.view().cards[1]?.note).toMatch(/^Connected through Nym/)
+    r.values['network.route.kind'] = 'socks5'
+    expect(source.view().cards[1]?.note).toMatch(/^Connected through your tunnel/)
+    const redraw = vi.fn()
+    source.onChange(redraw)
+    r.emit.setting('network.tunnel.everywhere')
+    expect(redraw).toHaveBeenCalled()
+  })
+
   it('reports a setting that refused the value', () => {
     const r = rig()
     const source = createNetworksSource({ ...r.env, settings: { ...r.env.settings, set: () => ({ ok: false, reason: 'invalid-value' }) } })

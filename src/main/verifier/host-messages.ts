@@ -167,6 +167,7 @@ export function isFromNode (message: unknown): message is FromNode {
     case 'peers': return Number.isInteger(message['count']) && (message['count'] as number) >= 0
     case 'ready': return Number.isInteger(message['peers']) && (message['peers'] as number) >= 0
     case 'failed': return FAILURE_STAGES.has(message['stage']) && typeof message['message'] === 'string' && message['message'].length <= MAX_FAILURE_MESSAGE
+    case 'route-ask': return isCount(message['id'])
     default: return false
   }
 }

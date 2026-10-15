@@ -113,7 +113,11 @@ otherwise; [`local-node-launch.ts`](local-node-launch.ts) holds what every node 
 imports `electron`), waits at most twenty seconds for the node to be ready (the Swarm node: eight peers; the IPFS node: its health answers), and answers `ready`, `starting`,
 `failed` or `off` with the reason in words. It sleeps when the verifier host does and after ten
 minutes with no call, so a call must be made for every mount, not only one that finds no node ready. It does
-not start when a system proxy is configured (the node's sockets would go around it, T20), when its files are
+not start when a system proxy is configured (the node's sockets would go around it, T20); with the whole browser on the tunnel it
+starts through the tunnel instead (`NodeRoute`: the controller asks the tunnel for the node's address before it forks, hands it
+over on the node's `route-ask`, and tells the node when the address stops being right), is switched to the other path by
+`tunnelDefaultChanged` the moment the setting flips, and is off with the tunnel's reason when the tunnel cannot carry it
+([`ADR-0086`](../../../docs/decisions/ADR-0086-the-local-nodes-run-through-the-tunnel-while-the-whole-browser-does.md)). It does not start either when its files are
 missing or are not the ones the build pins ([`local-node-artifact.ts`](local-node-artifact.ts), checked once for
 each start, a restart included, with the proxy looked at first so nothing is read while one is set; the process
 then hashes the bytes it runs itself), or in a build that serves its content from its own endpoints. Both processes are

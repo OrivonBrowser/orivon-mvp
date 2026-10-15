@@ -2,7 +2,8 @@
 // person's routing choice. It keeps one SQLite database (with its journal)
 // in the data directory, which is all it writes.
 
-import { mkdir } from 'node:fs/promises'
+import { mkdir, rm } from 'node:fs/promises'
+import { join } from 'node:path'
 import { GUEST_DATA_DIR } from '../local-node/kind.js'
 import type { LocalNodeConfig } from '../local-node/protocol.js'
 import { ROUTING_OPTION } from './protocol.js'
@@ -10,6 +11,8 @@ import type { RoutingMode } from './protocol.js'
 
 export const PROGRAM_NAME = 'ipfs-node'
 export const DATABASE_FILE = 'blocks.db'
+/** The directory SQLite takes beside the database as its lock. */
+export const LOCK_DIRECTORY = `${DATABASE_FILE}.lock`
 
 /**
  * The lookup services the node asks in `auto` mode, as the one comma list its `--delegated-router` takes, which it
@@ -38,7 +41,13 @@ export function nodeArguments (config: Pick<LocalNodeConfig, 'apiPort' | 'option
   ]
 }
 
-/** Makes the data directory. The node needs nothing else on disk before it starts. */
+/**
+ * Makes the data directory, and takes away a lock a process left behind. SQLite locks the database with a directory beside it,
+ * and a node killed in the middle of a write (the tunnel setting changing under it, a quit) leaves that directory, after which
+ * every start fails with "database is locked". One process at a time uses this directory (the supervisor starts the next only
+ * after the last has exited), so a lock found here is stale.
+ */
 export async function prepareDataDir (dataDir: string): Promise<void> {
   await mkdir(dataDir, { recursive: true })
+  await rm(join(dataDir, LOCK_DIRECTORY), { recursive: true, force: true })
 }

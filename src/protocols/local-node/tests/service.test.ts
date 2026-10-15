@@ -82,6 +82,14 @@ describe('startNode, for a second kind of node', () => {
     expect(record.watched).toEqual([])
   })
 
+  it('gives a node told to run through a tunnel no network at all when its process has no way to reach one', async () => {
+    const { kind, record } = secondKind()
+    const config = { ...configOf([{ name: 'second-node.js', bytes: 1, sha256: 'a'.repeat(64) }]), routed: true as const, dohEndpoints: ['https://doh.test/dns-query'] }
+    await expect(startNode(kind, config, { post })).rejects.toThrow(/through a tunnel/)
+    expect(posted).toEqual([{ type: 'failed', stage: 'start', message: expect.stringMatching(/must run through a tunnel/) as string }])
+    expect(record.watched).toEqual([])
+  })
+
   it('refuses a file that is not the pinned one, whatever the kind', async () => {
     const { kind } = secondKind()
     const files = await install()

@@ -10,7 +10,8 @@ import type { RouteController, RouteControllerDeps } from './route-controller.js
 import { createRouteHub } from './route-hub.js'
 import type { RouteHub } from './route-hub.js'
 import { createNymProvider, isNymTarget, NYM_TARGET } from './nym-provider.js'
-import type { NymSubsystem } from './nym-subsystem.js'
+import type { NymEndpoint, NymSubsystem } from './nym-subsystem.js'
+import type { RouteEndpoint } from '../../protocols/local-node/protocol.js'
 import type { NymPrivacy } from '../../protocols/nym-tunnel/protocol.js'
 import { createRouteSwitch } from './route-switch.js'
 import type { RouteSwitch, RouteSwitchWorld } from './route-switch.js'
@@ -36,6 +37,10 @@ export interface RouteService {
   everywhere: () => boolean
   /** The provider for a target that is not a SOCKS5 address (Nym), or undefined for one that is. */
   providerFor: (key: string, target: RouteTarget) => RouteProvider | undefined
+  /** Where the local node named `key` leaves while the whole browser is on the tunnel: the tunnel's SOCKS5 address with a sign-in of its own. Rejects, in words, when the tunnel cannot carry it. */
+  nodeEndpoint: (key: string) => Promise<RouteEndpoint>
+  /** Called when an address `nodeEndpoint` handed out stops being the tunnel's. Returns the unsubscribe. */
+  onNodeRouteMoved: (listener: () => void) => () => void
   /** The Nym tunnel: asked for by every route that leaves through it. */
   readonly nym: NymSubsystem
   /** An app was taken away: its route is cleared, and its front and sessions are let go. A route that cannot be cleared stays. */
@@ -77,6 +82,24 @@ export function createRouteService (options: RouteServiceOptions): RouteService 
   // The user name is the same hash of the key the SOCKS5 provider sends, so Nym isolates by app as a SOCKS5 proxy would.
   const isolation = isolationCredentials()
   const providerFor = (key: string, target: RouteTarget): RouteProvider | undefined => isNymTarget(target) ? createNymProvider(options.nym, isolation(key).userId) : undefined
+  let handedOut: NymEndpoint | undefined
+  const nodeEndpoint = async (key: string): Promise<RouteEndpoint> => {
+    const target = proxy()
+    if (target === undefined) throw new Error('the tunnel has no address set')
+    const credentials = isolation(`local-node:${key}`)
+    if (!isNymTarget(target)) return { host: target.host, port: target.port, userId: credentials.userId, password: credentials.password }
+    try {
+      handedOut = await options.nym.ensure()
+    } catch (error) {
+      throw new Error(error instanceof Error ? error.message : 'Nym is not available')
+    }
+    return { host: '127.0.0.1', port: handedOut.port, userId: credentials.userId, password: handedOut.secret }
+  }
+  const onNodeRouteMoved = (listener: () => void): (() => void) => options.nym.onChange(() => {
+    if (handedOut === undefined || options.nym.endpoint() === handedOut) return
+    handedOut = undefined
+    listener()
+  })
   const hub = createRouteHub({ store: options.store, proxy, providerFor, everywhere, ...(options.electron.isApp === undefined ? {} : { isApp: options.electron.isApp }), ...(options.installed === undefined ? {} : { installed: options.installed }) })
   const controller = createRouteController({ ...options.electron, hub })
   const routeSwitch = createRouteSwitch({ proxy, store: options.store, controller, hub }, options.switchWorld ?? { isPinned: () => false, isPersistable: () => false })
@@ -88,6 +111,8 @@ export function createRouteService (options: RouteServiceOptions): RouteService 
     proxy,
     everywhere,
     providerFor,
+    nodeEndpoint,
+    onNodeRouteMoved,
     nym: options.nym,
     forget: (origin) => {
       try {

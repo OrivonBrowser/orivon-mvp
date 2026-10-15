@@ -307,3 +307,25 @@ describe('a node dialling through the DoH lookup', () => {
     await expect(net.connect({ host: 'gone.example', port: 443 })).rejects.toMatchObject({ code: 'unreachable' })
   })
 })
+
+describe('a node with no system resolver (it runs through a tunnel)', () => {
+  const answering = (down: boolean): ReturnType<typeof createNodeLookup> => createNodeLookup({
+    endpoints: [CLOUDFLARE],
+    fetch: async (url) => {
+      if (down) throw new Error('connect ECONNREFUSED')
+      const parsed = new URL(url)
+      return dnsJson(parsed.searchParams.get('name') ?? '', parsed.searchParams.get('type') as 'A' | 'AAAA', { 'peer.test': { A: [['93.184.216.34', 60]] } })
+    }
+  })
+
+  it('resolves from the endpoints, and stays unresolved when none answers, with no pause that would send the next name anywhere else', async () => {
+    expect((await answering(false)('peer.test')).map((answer) => answer.address)).toEqual(['93.184.216.34'])
+    const lookup = answering(true)
+    await expect(lookup('peer.test')).rejects.toThrow(/no DNS-over-HTTPS resolver answered/)
+    await expect(lookup('other.test')).rejects.toThrow(/no DNS-over-HTTPS resolver answered/)
+  })
+
+  it('cannot be made with no endpoint at all', () => {
+    expect(() => createNodeLookup({ endpoints: [], fetch: async () => await Promise.reject(new Error('never')) })).toThrow(/needs DNS-over-HTTPS endpoints/)
+  })
+})

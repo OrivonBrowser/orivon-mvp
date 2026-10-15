@@ -9,7 +9,7 @@
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { NodeIdentity } from '../../protocols/local-node/kind.js'
-import type { LocalNodeConfig, LocalNodeState, PinnedFile } from '../../protocols/local-node/protocol.js'
+import type { LocalNodeConfig, LocalNodeState, PinnedFile, RouteEndpoint } from '../../protocols/local-node/protocol.js'
 import { HostLifecycle } from './host-lifecycle.js'
 import { RefusedToStart } from './process-supervisor.js'
 import type { HostProcess, ProcessInfo } from './process-supervisor.js'
@@ -21,10 +21,23 @@ export const READY_WAIT_MS = 20_000
 /** A refusal is answered from memory for this long before the files and the proxy are looked at again. */
 export const REFUSAL_MEMORY_MS = 10_000
 
-export function proxyReason (identity: NodeIdentity, tunnelOn = false): string {
-  return tunnelOn
-    ? `all of Orivon's traffic goes through the tunnel, and the ${identity.noun} dials its peers by address and looks names up itself, which the tunnel does not carry`
-    : `a proxy is configured, and the ${identity.noun}'s connections would go around it`
+export function proxyReason (identity: NodeIdentity): string {
+  return `a proxy is configured, and the ${identity.noun}'s connections would go around it`
+}
+
+/** The tunnel that carries a node while the whole browser is on the tunnel. */
+export interface NodeRoute {
+  /** Whether the node must run through the tunnel now. Asked at each start and again before anything is trusted, so a node never starts direct while this is true. */
+  readonly required: () => boolean
+  /** Where the tunnel is now, starting it if need be; rejects, in words, when it cannot carry the node. */
+  readonly endpoint: () => Promise<RouteEndpoint>
+  /** Called when an address `endpoint` handed out stops being the tunnel's. Returns the unsubscribe. */
+  readonly onMoved: (listener: () => void) => () => void
+}
+
+function tunnelReason (identity: NodeIdentity, error: unknown): string {
+  const why = (error instanceof Error ? error.message : 'it is not available').replace(/\.$/, '')
+  return `all of Orivon's traffic goes through the tunnel, and it cannot carry the ${identity.noun} now: ${why}`
 }
 
 export interface ControllerDeps {
@@ -35,10 +48,10 @@ export interface ControllerDeps {
   readonly artifact: () => Promise<ArtifactStatus>
   /** The files the node is made of, as pinned: handed to the process, which checks the bytes it runs. */
   readonly files: readonly PinnedFile[]
-  /** Whether the default session has a proxy in front of it. */
+  /** Whether a proxy applies that would not carry the node's connections. Not asked while the node runs through the tunnel: the tunnel is then its only way out. */
   readonly proxyConfigured: () => Promise<boolean>
-  /** Whether the proxy is the tunnel for the whole browser, which the refusal says in its own words. */
-  readonly tunnelOn?: () => boolean
+  /** The tunnel the node runs through while the whole browser is on it. Absent: the node always runs directly. */
+  readonly route?: NodeRoute
   /** Why the node must not start, in words (a hermetic test run), or undefined. */
   readonly disabled?: () => string | undefined
   readonly apiPort: () => number
@@ -59,7 +72,8 @@ export interface ControllerDeps {
   readonly now?: () => number
 }
 
-type Verdict = { readonly directory: string } | { readonly reason: string }
+/** `routed`: the check was made for a node that runs through the tunnel, which skips the question of a proxy. */
+type Verdict = { readonly directory: string, readonly routed: boolean } | { readonly reason: string }
 
 function sleepFor (ms: number): Promise<void> {
   return new Promise((resolve) => { setTimeout(resolve, ms).unref() })
@@ -75,11 +89,16 @@ export class LocalNodeController {
   private refusedUntil = 0
   /** The one check in flight: asks that arrive meanwhile share it. */
   private checking: Promise<Verdict> | undefined
-  /** The directory a check just approved, for the start it was made for: one check per start. */
-  private approved: string | undefined
+  /** What a check just approved, for the start it was made for: one check per start. */
+  private approved: Extract<Verdict, { directory: string }> | undefined
   /** A refusal made by `configure`, which `down` then need not turn into a failure. */
   private refusal: string | undefined
   private portWasTaken = false
+  private readonly stopWatchingRoute: (() => void) | undefined
+  /** Counts the starts of the process, so an answer to a route ask goes only to the process that asked. */
+  private starts = 0
+  /** The one ask of the tunnel in flight: every ask that arrives meanwhile is answered from it. */
+  private endpointAsk: Promise<RouteEndpoint> | undefined
 
   constructor (private readonly deps: ControllerDeps) {
     this.now = deps.now ?? Date.now
@@ -87,7 +106,7 @@ export class LocalNodeController {
       fork: deps.fork,
       config: async () => await this.configure(),
       events: {
-        starting: () => { this.set({ state: 'starting' }) },
+        starting: () => { this.starts += 1; this.set({ state: 'starting' }) },
         idle: () => { this.set({ state: 'off' }) },
         failed: (stage) => {
           this.portWasTaken = stage === 'port'
@@ -96,6 +115,7 @@ export class LocalNodeController {
         listening: () => {},
         peers: (count) => { this.set(this.current.state === 'ready' ? { state: 'ready', peers: count } : { state: 'starting', peers: count }) },
         ready: (peers) => { this.set({ state: 'ready', peers }) },
+        routeAsk: (id) => { this.answerRoute(id).catch((error: unknown) => { console.error(`[${deps.kind.name}] answering the node's ask for its route failed:`, error) }) },
         down: (reason, restarting) => {
           if (this.refusal !== undefined) { this.refusal = undefined; return }
           console.error(`[${deps.kind.name}] ${reason}`)
@@ -108,6 +128,11 @@ export class LocalNodeController {
       ...(deps.setTimer === undefined ? {} : { setTimer: deps.setTimer }),
       ...(deps.now === undefined ? {} : { now: deps.now })
     }, deps.kind)
+    // The tunnel's process restarted or stopped: the address the node holds is no longer right, and its next connection asks again.
+    this.stopWatchingRoute = deps.route?.onMoved(() => {
+      this.supervisor.send({ type: 'route-reset' })
+      this.recheckRoute().catch((error: unknown) => { console.error(`[${deps.kind.name}] checking the tunnel after it moved failed:`, error) })
+    })
     this.lifecycle = new HostLifecycle({
       start: () => { this.supervisor.start() },
       idle: () => { this.supervisor.idle() },
@@ -155,7 +180,7 @@ export class LocalNodeController {
       this.refuse(verdict.reason)
       return this.current
     }
-    this.approved = verdict.directory
+    this.approved = verdict
     this.lifecycle.request()
     return await this.settled()
   }
@@ -194,6 +219,7 @@ export class LocalNodeController {
   }
 
   stop (): void {
+    this.stopWatchingRoute?.()
     this.lifecycle.dispose()
     this.supervisor.stop()
   }
@@ -203,7 +229,7 @@ export class LocalNodeController {
     this.set({ state: 'off', reason })
   }
 
-  /** Whether the node may start now: the directory its files are in, or why not. Asked once at a time. The proxy comes first, so nothing is read from disk while one is set. */
+  /** Whether the node may start now: the directory its files are in, or why not. Asked once at a time. The proxy, or the tunnel that replaces the question, comes first, so nothing is read from disk while one is set. */
   private async check (): Promise<Verdict> {
     if (this.checking === undefined) {
       // Only its own entry is cleared: a check that `reconsider` dropped must not clear the one that replaced it.
@@ -216,16 +242,28 @@ export class LocalNodeController {
   private async look (): Promise<Verdict> {
     const disabled = this.deps.disabled?.()
     if (disabled !== undefined) return { reason: disabled }
-    if (await this.deps.proxyConfigured().catch(() => true)) return { reason: proxyReason(this.deps.kind, this.deps.tunnelOn?.() === true) }
+    const routed = this.deps.route?.required() === true
+    if (routed) {
+      // The tunnel is the node's only way out, so the question of a proxy does not arise; whether the tunnel can carry it does.
+      try {
+        await this.deps.route?.endpoint()
+      } catch (error) {
+        return { reason: tunnelReason(this.deps.kind, error) }
+      }
+    } else if (await this.deps.proxyConfigured().catch(() => true)) {
+      return { reason: proxyReason(this.deps.kind) }
+    }
     const artifact = await this.deps.artifact()
-    return artifact.ok ? { directory: artifact.directory } : { reason: artifact.reason }
+    return artifact.ok ? { directory: artifact.directory, routed } : { reason: artifact.reason }
   }
 
   /** The config of a start: the check an ask just made, or, at a restart on the backoff, a new one: the files may have changed and a proxy may have been set. */
   private async configure (): Promise<LocalNodeConfig> {
-    const approved = this.approved
+    const taken = this.approved
     this.approved = undefined
-    const verdict: Verdict = approved === undefined ? await this.check() : { directory: approved }
+    // A check made for the other path (the tunnel was switched on or off since) says nothing about this one.
+    const approved = taken !== undefined && taken.routed === (this.deps.route?.required() === true) ? taken : undefined
+    const verdict: Verdict = approved ?? await this.check()
     const disabled = this.deps.disabled?.()
     if (disabled !== undefined) {
       this.refusal = disabled
@@ -238,7 +276,46 @@ export class LocalNodeController {
       throw new RefusedToStart(verdict.reason)
     }
     const options = this.deps.options?.()
-    return { kind: this.deps.kind.name, apiPort: this.deps.apiPort(), dataDir: this.deps.dataDir(), componentDir: verdict.directory, componentName: this.deps.componentName, files: this.deps.files, ...(this.deps.dohEndpoints === undefined ? {} : { dohEndpoints: this.deps.dohEndpoints }), ...(options === undefined ? {} : { options }) }
+    // Read again after every wait above: the setting can have moved, and a node started direct while the tunnel should carry it is the one thing this must not do.
+    const routed = this.deps.route?.required() === true
+    // The setting moved during the waits above: what was approved is for the other path, so the check is made again.
+    if (routed !== verdict.routed) return await this.configure()
+    return { ...(routed ? { routed: true as const } : {}), kind: this.deps.kind.name, apiPort: this.deps.apiPort(), dataDir: this.deps.dataDir(), componentDir: verdict.directory, componentName: this.deps.componentName, files: this.deps.files, ...(this.deps.dohEndpoints === undefined ? {} : { dohEndpoints: this.deps.dohEndpoints }), ...(options === undefined ? {} : { options }) }
+  }
+
+  /** A node that runs while its tunnel cannot carry it is stopped and says why, so its card never reads as running with nothing to run on. */
+  private async recheckRoute (): Promise<void> {
+    const route = this.deps.route
+    if (route === undefined || !route.required() || (this.current.state !== 'starting' && this.current.state !== 'ready')) return
+    try {
+      await route.endpoint()
+    } catch (error) {
+      if (!route.required()) return
+      this.supervisor.idle()
+      this.refuse(tunnelReason(this.deps.kind, error))
+    }
+  }
+
+  /** A routed node asks where its tunnel is; it is answered with the address, or with why there is none, and only if it is still the process that asked and the tunnel still carries it. */
+  private async answerRoute (id: number): Promise<void> {
+    const route = this.deps.route
+    const asker = this.starts
+    const answer = (message: { readonly endpoint: RouteEndpoint } | { readonly refusal: string }): void => {
+      // The process that asked may have been replaced while Nym was starting, and its successor's ids start from the same number.
+      if (asker === this.starts) this.supervisor.send({ type: 'route', id, ...message })
+    }
+    if (route === undefined || !route.required()) {
+      answer({ refusal: 'the tunnel is not carrying this node now' })
+      return
+    }
+    try {
+      this.endpointAsk ??= route.endpoint().finally(() => { this.endpointAsk = undefined })
+      const endpoint = await this.endpointAsk
+      if (!route.required()) answer({ refusal: 'the tunnel is not carrying this node now' })
+      else answer({ endpoint })
+    } catch (error) {
+      answer({ refusal: error instanceof Error ? error.message : 'the tunnel is not available' })
+    }
   }
 
   private async settled (): Promise<LocalNodeState> {
