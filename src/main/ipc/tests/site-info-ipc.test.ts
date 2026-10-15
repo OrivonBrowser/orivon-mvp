@@ -323,6 +323,15 @@ describe('registerSiteInfoIpc -- revokePickedPath / reload / openSiteSettings', 
     expect(openSiteSettings).toHaveBeenCalledOnce()
   })
 
+  it('openSiteSettings opens Settings at its default section, openTunnelSettings at Tunnels, and at the browser-wide switch when asked', async () => {
+    const { openSiteSettings } = register(fakeController())
+    await dispatch({ type: 'openSiteSettings' })
+    await dispatch({ type: 'openTunnelSettings', everywhere: false })
+    await dispatch({ type: 'openTunnelSettings', everywhere: true })
+    await dispatch({ type: 'openTunnelSettings', everywhere: '/privacy' })
+    expect(openSiteSettings.mock.calls).toEqual([[], ['/tunnels'], ['/tunnels#route-everywhere'], ['/tunnels']])
+  })
+
   it('certificate calls the injected callback, from the popup only', async () => {
     const openCertificate = vi.fn()
     registerSiteInfoIpc(siteInfoWebContents, POPUP_URL, fakeController(), ORIGIN, '/tmp/orivon-test-userdata', () => undefined, () => undefined, () => undefined, () => undefined, undefined, openCertificate)

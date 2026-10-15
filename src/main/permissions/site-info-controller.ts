@@ -167,7 +167,7 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
       unreadable: routes.hub.unreadable(),
       kind,
       nymOff: kind === 'nym' && nym.state === 'unavailable' && nym.reason === NYM_SWITCHED_OFF,
-      everywhere: routes.everywhere()
+      everywhere: routes.hub.isEverywhere()
     }
   }
 
