@@ -17,7 +17,7 @@ Private and Settings pages may ask of it.
 **What it depends on.** `node:fs`, `node:os`, `node:child_process`;
 [`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts) (`profile-store.ts`'s
 own writes); [`../browsing/local-file-input.ts`](../browsing/local-file-input.ts) (which text names a local file:
-`launch-request.ts` and `local-operand.ts`); `electron` only as a type (`start-launch.ts` is handed the `app`).
+`launch-request.ts` and `local-operand.ts`); [`../settings/settings-file.ts`](../settings/settings-file.ts) (the settings a private session held to a tunnel is written with: `private-session.ts` and `start-launch.ts`); `electron` only as a type (`start-launch.ts` is handed the `app`).
 [`../shell/`](../shell/) is never imported.
 
 **What it must never import.** [`../shell/tabs.ts`](../shell/tabs.ts) or any store that reads the data
@@ -29,6 +29,15 @@ directory: the launch has to run before one exists.
 engine beneath it; `start-launch.ts` calls Electron's `app.setPath` and single-instance lock and is tied to it.
 
 ## Design notes
+
+**A private session can be held to a tunnel from its first instant.** `--orivon-private-tunnel=nym` (parsed in `launch-context.ts`, only
+with `--orivon-private`; any other value, or two, is a launch that cannot start, never "no tunnel") makes `ProfilesService.openPrivateNym` and the
+"Open a private window with Nym" command. The opener writes the session's settings copy with the browser-wide tunnel on, Nym as the tunnel and
+Nym allowed to run (`createPrivateDir`, through `settings-file.ts`'s `forceSettingsFile`: the file's version and checks, never edited text), and
+the session writes the same again before anything reads the file (`start-launch.ts`), so what the route subsystem reads first, ahead of any
+session or window, already holds the tunnel. A directory that cannot be set up is removed and nothing is started. From then on the process is held:
+its settings store reads those three whatever a file says and refuses a change, its route store refuses an `off` entry, and a private window opened
+from it is held too. The launcher menus (`../os/`) offer only the ordinary private window.
 
 **It runs before the data directory is read.** A store that had read the default directory could not be moved,
 so `start-launch.ts` is called before the subsystems' `beforeReady`. No module reads the directory when it is
