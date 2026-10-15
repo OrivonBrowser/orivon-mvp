@@ -12,6 +12,7 @@
 import { net } from 'electron'
 import { createRequestFetch } from '../../loader/electron/request-fetch.js'
 import { createDirectFetch } from './direct-fetch.js'
+import { lookup } from 'node:dns/promises'
 import { createOutsideFetch } from './outside-fetch.js'
 import { createRoutedFetch } from './routed-fetch.js'
 import { answerForFront } from './front-login.js'
@@ -31,7 +32,8 @@ function describe (error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-const resolveOutside = async (name: string): Promise<readonly string[]> => (await net.resolveHost(name)).endpoints.map((endpoint) => endpoint.address)
+/** The names the person asked to resolve outside the tunnel: the system's own resolver, which neither the front nor the proxy setting of this process reaches. */
+const resolveOutside = async (name: string): Promise<readonly string[]> => (await lookup(name, { all: true })).map((entry) => entry.address)
 
 function main (): void {
   // A rejection nothing observed would end this process, and every `.eth` page with it; each request's own handler catches what it expects.
