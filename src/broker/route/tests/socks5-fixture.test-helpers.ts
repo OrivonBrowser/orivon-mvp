@@ -25,7 +25,7 @@ export interface Socks5Request {
 }
 
 export interface Socks5FixtureOptions {
-  /** `"name:port"` to the local server a CONNECT or UDP datagram for that name reaches. */
+  /** `"name:port"` (or `"address:port"`, for a test that must not reach the real address) to the local server a CONNECT or UDP datagram for it reaches. */
   readonly names?: Readonly<Record<string, Target>>
   /** Refuse a greeting that does not offer username/password. */
   readonly requireAuth?: boolean
@@ -35,6 +35,8 @@ export interface Socks5FixtureOptions {
   readonly noUdp?: boolean
   /** Answer UDP ASSOCIATE with the unspecified address, meaning "where you reached me". */
   readonly unspecifiedRelay?: boolean
+  /** Answer a CONNECT or drop a datagram that no entry of `names` maps with "host unreachable", instead of reaching the real address; the request is still recorded. */
+  readonly refuseUnmapped?: boolean
   /** Send the target's first bytes in the same write as the CONNECT reply, as a proxy relaying a server that speaks first can. */
   readonly coalesceFirstBytes?: boolean
 }
@@ -191,7 +193,7 @@ export async function startSocks5Fixture (options: Socks5FixtureOptions = {}): P
 
     if (head[1] === 0x01) {
       record('connect')
-      const target = destination.type === 'domain' ? names[`${destination.host}:${String(destination.port)}`] : { host: destination.host, port: destination.port }
+      const target = names[`${destination.host}:${String(destination.port)}`] ?? (destination.type === 'domain' || options.refuseUnmapped === true ? undefined : { host: destination.host, port: destination.port })
       if (target === undefined) { socket.write(reply(0x04)); socket.end(); return }
       const upstream = netConnect(target)
       sockets.add(upstream)
@@ -230,7 +232,7 @@ export async function startSocks5Fixture (options: Socks5FixtureOptions = {}): P
       const frame = parseFrame(data)
       if (frame === undefined) return
       const key = `${frame.destination.host}:${String(frame.destination.port)}`
-      const target = frame.destination.type === 'domain' ? names[key] : { host: frame.destination.host, port: frame.destination.port }
+      const target = names[key] ?? (frame.destination.type === 'domain' || options.refuseUnmapped === true ? undefined : { host: frame.destination.host, port: frame.destination.port })
       if (target === undefined) return
       datagrams.push(key)
       origins.set(`${target.host}:${String(target.port)}`, frame.destination)

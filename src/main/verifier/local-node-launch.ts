@@ -11,7 +11,7 @@ import { locateArtifact } from './local-node-artifact.js'
 import type { LocalNodeManifest } from './local-node-artifact.js'
 import { unproxiedGateways } from './proxy-check.js'
 import { DEFAULT_ENDPOINTS } from './endpoints.js'
-import { ownRequestsTunnelled } from '../route/own-requests.js'
+import { onOwnNodeRouteMoved, ownNodeEndpoint, ownRequestsTunnelled } from '../route/own-requests.js'
 
 export interface LocalNodeSpec {
   readonly kind: NodeIdentity
@@ -33,10 +33,11 @@ export function createLocalNodeController (spec: LocalNodeSpec): LocalNodeContro
     fork: () => utilityProcess.fork(join(__dirname, 'local-node-host.js'), [], { serviceName: `Orivon ${spec.kind.noun}` }),
     artifact: async () => await locateArtifact({ env: process.env, packaged: app.isPackaged, resourcesPath: process.resourcesPath, sourceRoot: app.getAppPath() }, spec.manifest, spec.kind),
     // A node that dials around a proxy would show a person's address to its peers that the proxy was set to hide (T20).
-    // `app.resolveProxy` follows `app.setProxy`, which the whole-browser tunnel sets: the node is then refused, with the tunnel named as the reason.
+    // `app.resolveProxy` follows `app.setProxy`, which the whole-browser tunnel sets, so while that setting is on the controller does
+    // not ask: the node then runs through the tunnel and has no other way out (`route`), and it is that or no node.
     // The setting counts before the proxy it sets is seen: a node asked for in the moment between the two must not start around the tunnel.
-    proxyConfigured: async () => ownRequestsTunnelled() || (await unproxiedGateways(['https://example.com/'], async (url) => await app.resolveProxy(url))).length === 0,
-    tunnelOn: ownRequestsTunnelled,
+    proxyConfigured: async () => (await unproxiedGateways(['https://example.com/'], async (url) => await app.resolveProxy(url))).length === 0,
+    route: { required: ownRequestsTunnelled, endpoint: async () => await ownNodeEndpoint(spec.kind.name), onMoved: onOwnNodeRouteMoved },
     ...(spec.disabled === undefined ? {} : { disabled: spec.disabled }),
     ...(spec.options === undefined ? {} : { options: spec.options }),
     apiPort: spec.apiPort,

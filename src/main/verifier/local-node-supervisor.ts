@@ -16,6 +16,8 @@ export interface LocalNodeEvents extends ProcessEvents {
   listening: () => void
   peers: (count: number) => void
   ready: (peers: number) => void
+  /** A routed node wants to know where its tunnel is; the answer goes back with the same id. */
+  routeAsk?: (id: number) => void
 }
 
 export type LocalNodeSupervisorDeps = ProcessDeps<LocalNodeConfig, LocalNodeEvents>
@@ -38,6 +40,7 @@ export class LocalNodeSupervisor extends ProcessSupervisor<LocalNodeConfig, From
       case 'listening': events.listening(); break
       case 'peers': events.peers(message.count); break
       case 'ready': events.ready(message.peers); break
+      case 'route-ask': events.routeAsk?.(message.id); break
       case 'failed':
         // A node that cannot run would otherwise live on, doing nothing.
         events.failed?.(message.stage)

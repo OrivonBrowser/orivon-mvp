@@ -5,6 +5,8 @@
 // instead, as that website does. Main supplies the pieces once; with the browser-wide setting off, or before they are
 // supplied, the caller's own `fetch` is used as it always was.
 
+import type { RouteEndpoint } from '../../protocols/local-node/protocol.js'
+
 export type OwnFetch = (url: string, init?: RequestInit) => Promise<Response>
 
 export interface OwnRequests {
@@ -26,6 +28,13 @@ export interface OwnRequests {
   readonly siteSession?: (origin: string) => Promise<object | undefined>
   /** `siteSession` as a `fetch`, for a caller that makes its request with one. */
   readonly through?: (origin: string) => Promise<OwnFetch | undefined>
+  /**
+   * Where a local node's traffic leaves while the whole browser is on the tunnel: the tunnel's SOCKS5 address and the sign-in for the
+   * node named `key`, starting the tunnel if need be. Rejects, in words, when the tunnel cannot carry it. Absent before routes run.
+   */
+  readonly nodeEndpoint?: (key: string) => Promise<RouteEndpoint>
+  /** Called when an address `nodeEndpoint` handed out is no longer the tunnel's (its process restarted on another port, or stopped). Returns the unsubscribe. */
+  readonly onNodeRouteMoved?: (listener: () => void) => () => void
   /** Resolves when every session follows the browser-wide setting as it stands now. */
   readonly settled?: () => Promise<void>
   /** How long a request waits for that before it is refused; for a test. */
@@ -51,9 +60,14 @@ async function sessionsFollowSetting (current: OwnRequests): Promise<void> {
   }
 }
 
+const movedListeners = new Set<() => void>()
+let stopWatchingMoves: (() => void) | undefined
+
 /** Called once at start by whoever owns the routes. */
 export function setOwnRequests (next: OwnRequests | undefined): void {
   source = next
+  stopWatchingMoves?.()
+  stopWatchingMoves = next?.onNodeRouteMoved?.(() => { for (const listener of [...movedListeners]) listener() })
 }
 
 /** For a caller that decides how to leave itself: resolves once every session follows the browser-wide setting as it stands, and rejects when that takes too long. Nothing to wait for before routes run. */
@@ -64,6 +78,18 @@ export async function ownRequestsSettled (): Promise<void> {
 /** Whether Orivon's own requests must go through the tunnel now. */
 export function ownRequestsTunnelled (): boolean {
   return source?.everywhere() === true
+}
+
+/** Where the local node `key` reaches the network while the whole browser is on the tunnel; rejects when it cannot, and when no routes run. */
+export async function ownNodeEndpoint (key: string): Promise<RouteEndpoint> {
+  if (source?.nodeEndpoint === undefined) throw new Error('the tunnel is not available yet')
+  return await source.nodeEndpoint(key)
+}
+
+/** A listener for the moment the tunnel's address a node was given stops being right; it hears nothing until routes run. */
+export function onOwnNodeRouteMoved (listener: () => void): () => void {
+  movedListeners.add(listener)
+  return () => { movedListeners.delete(listener) }
 }
 
 /**

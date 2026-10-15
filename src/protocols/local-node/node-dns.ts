@@ -1,7 +1,9 @@
 // How a local node turns a host name into addresses: over DNS-over-HTTPS
 // first, so a resolver that hijacks a name cannot steer the node's TLS at a
 // server that is not the one named, and through the system resolver only when
-// no DoH endpoint answered, so a network that blocks DoH still works. This
+// no DoH endpoint answered, so a network that blocks DoH still works. A node
+// that runs through a tunnel has no system resolver (`system` absent): a name
+// DoH could not answer is unresolved, never asked of this computer. This
 // file only fetches addresses; node-net.ts decides which of them may be
 // dialled, exactly as for the system resolver's answers.
 
@@ -26,7 +28,8 @@ export interface NodeLookupOptions {
   readonly endpoints: readonly string[]
   /** The process's own fetch: the only requests it makes are to `endpoints`. */
   readonly fetch: WebFetch
-  readonly system: (hostname: string) => Promise<readonly LookupAddress[]>
+  /** The system resolver, asked when no endpoint answered; absent for a node routed through a tunnel, which then has no other way to look a name up. */
+  readonly system?: (hostname: string) => Promise<readonly LookupAddress[]>
   readonly now?: () => number
   readonly queryTimeoutMs?: number
 }
@@ -37,7 +40,11 @@ interface Cached {
 }
 
 export function createNodeLookup (options: NodeLookupOptions): (hostname: string) => Promise<readonly LookupAddress[]> {
-  if (options.endpoints.length === 0) return options.system
+  if (options.endpoints.length === 0) {
+    if (options.system === undefined) throw new Error('a node with no system resolver needs DNS-over-HTTPS endpoints')
+    return options.system
+  }
+  const system = options.system
   const now = options.now ?? Date.now
   const doh = allowlisted(options.endpoints, options.fetch, 'a local node')
   const cache = new Map<string, Cached>()
@@ -68,8 +75,9 @@ export function createNodeLookup (options: NodeLookupOptions): (hostname: string
       return await ask(hostname)
     } catch (error) {
       // A name the providers cannot answer says nothing about the providers: only they failing pauses DoH for every name.
+      if (system === undefined) throw error
       if (!(error instanceof DnsStatusFailure)) pausedUntil = now() + DOH_PAUSE_MS
-      return await options.system(hostname)
+      return await system(hostname)
     }
   }
 
@@ -77,7 +85,7 @@ export function createNodeLookup (options: NodeLookupOptions): (hostname: string
     const key = hostname.toLowerCase()
     const cached = cache.get(key)
     if (cached !== undefined && cached.until > now()) return cached.answers
-    if (now() < pausedUntil) return await options.system(hostname)
+    if (system !== undefined && now() < pausedUntil) return await system(hostname)
     let pending = inFlight.get(key)
     if (pending === undefined) {
       pending = resolve(key).finally(() => { inFlight.delete(key) })
