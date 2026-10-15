@@ -527,7 +527,7 @@ describe('the person switching the node off while it is being asked for', () => 
 describe('a node while the whole browser is on the tunnel', () => {
   const ENDPOINT: RouteEndpoint = { host: '127.0.0.1', port: 41_000, userId: 'orivon-node', password: 'secret' }
 
-  function tunnel (): { route: NodeRoute, required: { on: boolean }, endpoint: { fail: string | undefined }, asked: { count: number }, moved: () => void } {
+  function tunnel (): { route: { -readonly [K in keyof NodeRoute]: NodeRoute[K] }, required: { on: boolean }, endpoint: { fail: string | undefined }, asked: { count: number }, moved: () => void } {
     const required = { on: true }
     const endpoint = { fail: undefined as string | undefined }
     const asked = { count: 0 }
@@ -589,6 +589,38 @@ describe('a node while the whole browser is on the tunnel', () => {
     expect(h.nodes[0]?.sent).toContainEqual({ type: 'route', id: 9, refusal: 'Nym did not start in time' })
   })
 
+  it('answers a route ask only to the process that asked: a successor whose ids start from the same number never gets the answer', async () => {
+    const t = tunnel()
+    const h = harness(undefined, undefined, { route: t.route })
+    void h.controller.ensure()
+    await settle()
+    let release: () => void = () => {}
+    const quick = t.route.endpoint
+    t.route.endpoint = async () => await new Promise<RouteEndpoint>((resolve) => { release = () => { resolve(ENDPOINT) }; t.route.endpoint = quick })
+    h.nodes[0]?.say({ type: 'route-ask', id: 1 })
+    await settle()
+    h.controller.verifierIdle()
+    h.nodes[0]?.exit(0)
+    void h.controller.ensure()
+    await settle()
+    expect(h.nodes).toHaveLength(2)
+    release()
+    await settle()
+    expect(h.nodes[1]?.sent.filter((message) => (message as { type: string }).type === 'route')).toEqual([])
+  })
+
+  it('asks the tunnel once for any number of asks at the same time', async () => {
+    const t = tunnel()
+    const h = harness(undefined, undefined, { route: t.route })
+    void h.controller.ensure()
+    await settle()
+    const before = t.asked.count
+    for (const id of [1, 2, 3, 4]) h.nodes[0]?.say({ type: 'route-ask', id })
+    await settle()
+    expect(t.asked.count - before).toBe(1)
+    expect(h.nodes[0]?.sent.filter((message) => (message as { type: string }).type === 'route')).toHaveLength(4)
+  })
+
   it('tells the node when the address it was given stops being the tunnel\'s', async () => {
     const t = tunnel()
     const h = harness(undefined, undefined, { route: t.route })
@@ -596,6 +628,31 @@ describe('a node while the whole browser is on the tunnel', () => {
     await settle()
     t.moved()
     expect(h.nodes[0]?.sent).toContainEqual({ type: 'route-reset' })
+  })
+
+  it('stops the node, with the tunnel\'s reason, when the tunnel moved and can no longer carry it', async () => {
+    const t = tunnel()
+    const h = harness(undefined, undefined, { route: t.route })
+    void h.controller.ensure()
+    await settle()
+    h.nodes[0]?.say({ type: 'ready', peers: 0 })
+    t.endpoint.fail = 'Nym is switched off'
+    t.moved()
+    await settle()
+    expect(h.nodes[0]?.killed).toBe(true)
+    expect(h.controller.state()).toEqual({ state: 'off', reason: expect.stringContaining('cannot carry the Swarm node now: Nym is switched off') as unknown })
+  })
+
+  it('leaves the node running when the tunnel moved and still carries it', async () => {
+    const t = tunnel()
+    const h = harness(undefined, undefined, { route: t.route })
+    void h.controller.ensure()
+    await settle()
+    h.nodes[0]?.say({ type: 'ready', peers: 0 })
+    t.moved()
+    await settle()
+    expect(h.nodes[0]?.killed).toBe(false)
+    expect(h.controller.state()).toEqual({ state: 'ready', peers: 0 })
   })
 
   it('checks again when the setting flipped between the check and the start, so a node is never started on the wrong path', async () => {

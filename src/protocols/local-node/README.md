@@ -96,17 +96,21 @@ A system proxy configured in the shell: a node does not start, because its socke
 rules in the table above (which address, which port, how many) are still `node-net.ts`'s and do not change. Every `connect`
 is a SOCKS5 CONNECT to the checked literal address through the tunnel (IPv4 first, the next address tried when one fails,
 at most thirty-two openings in flight so a mixnet tunnel is not handed hundreds together). Every datagram goes through UDP
-ASSOCIATE, and no datagram socket of this computer is bound at all. A name is looked up by DNS-over-HTTPS over a TLS connection
+ASSOCIATE: the only datagram socket in the process is the SOCKS5 client's own, bound on loopback for a tunnel on this computer, and the node can send nothing through it that the tunnel's relay does not carry. A name is looked up by DNS-over-HTTPS over a TLS connection
 the tunnel carries (a CONNECT to the endpoint's name, its certificate checked for that name; the connection is kept for the
 next query), and there is no system resolver to fall back to: a name the endpoints cannot answer stays unresolved. The API
 listener stays on loopback, as for a direct node. A routed node whose process has no way to ask for a route gets no network.
 [`route-source.ts`](route-source.ts) is how the process learns where the tunnel is: it posts `route-ask` on its parent port and main answers with
-the tunnel's port and a sign-in made for this start (never an argument or a log line); the answer is kept until main says
+the tunnel's port, the secret the tunnel's host made for its start and the node's own user name (never an argument or a log line); the answer is kept until main says
 `route-reset` (the tunnel's process restarted on another port) or the proxy refuses a connection outright, and a refusal from
 main (the tunnel cannot run) is not kept. The sign-in is a user name of the node's own, so Nym gives the node a mixnet client
 and an exit of its own (ADR-0086). With the person's own SOCKS5 address as the tunnel the same path works, minus what that
 address lacks: Tor's SOCKS5 has no UDP ASSOCIATE, so a routed node there has no datagrams and cannot resolve `/dnsaddr` bootnode names
 by UDP; everything else (streams, names by DNS-over-HTTPS) goes through it.
+
+A website that has its tunnel on by itself, with the browser-wide setting off, reads IPFS through the gateways over its tunnel and
+never through a node: the node is one process for the whole browser, so it cannot be direct for the pages that are not tunnelled
+and tunnelled for this one (*provisional*; a node per tunnel identity would settle it).
 
 **The files are confined by the real path.** `node-fs.ts` rejects `..` as a path segment (a name such as `..cache` is an ordinary name), absolute paths, NUL, and the names Windows reserves for devices (`CON`, `NUL`, `COM1`, `LPT1` and the rest, any extension, any case) on every system, so the policy is the same everywhere; then
 resolves the real path of the file or of its deepest existing ancestor and requires it to stay inside

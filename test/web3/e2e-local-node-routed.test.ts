@@ -58,7 +58,12 @@ describe.skipIf(!fetched)('the IPFS node while the whole browser is on the tunne
     const pid = await app.evaluate(({ app: electronApp }) => electronApp.getAppMetrics().find((entry) => entry.name === 'Orivon IPFS node' || entry.serviceName === 'Orivon IPFS node')?.pid)
     expect(pid, 'the node runs').toBeDefined()
     const lines = execFileSync('ss', ['-tunapH'], { encoding: 'utf8' }).split('\n').filter((line) => line.includes(`pid=${String(pid)},`))
-    const stray = lines.map((line) => line.trim().split(/\s+/)).filter((parts) => parts[1] !== 'LISTEN' && !['*:*', '0.0.0.0:*', '[::]:*'].includes(parts[5] ?? '') && !LOOPBACK.test((parts[5] ?? '').slice(0, (parts[5] ?? '').lastIndexOf(':'))))
+    const hostOf = (address: string): string => address.slice(0, address.lastIndexOf(':'))
+    const stray = lines.map((line) => line.trim().split(/\s+/)).filter((parts) => {
+      // A datagram socket bound to an address that is not loopback can reach the network whether or not it is connected.
+      if (parts[0] === 'udp' && !LOOPBACK.test(hostOf(parts[4] ?? ''))) return true
+      return parts[1] !== 'LISTEN' && !['*:*', '0.0.0.0:*', '[::]:*'].includes(parts[5] ?? '') && !LOOPBACK.test(hostOf(parts[5] ?? ''))
+    })
     expect(stray, 'no socket that leaves this computer').toEqual([])
   }, 60_000)
 })

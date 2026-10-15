@@ -26,6 +26,11 @@ export type RouteSource = () => Promise<RouteProvider>
 export const MAX_PENDING_DIALS = 32
 /** One dial through a tunnel that is still coming up can take most of a minute. */
 export const DIAL_DEADLINE_MS = 60_000
+/** The addresses of one name that are tried, and the time all of them together may take: a name with dozens of dead addresses must not hold an opening slot for an hour. */
+export const MAX_ADDRESSES = 4
+export const TOTAL_DIAL_MS = 90_000
+/** A TLS handshake to a DNS-over-HTTPS endpoint through the tunnel. */
+export const HANDSHAKE_MS = 40_000
 /** A DNS-over-HTTPS query through a mixnet: a TLS handshake takes several round trips of about a second each. */
 export const ROUTED_QUERY_TIMEOUT_MS = 40_000
 /** Datagrams the node has not read yet, per socket; past it they are dropped like any lost datagram. */
@@ -78,16 +83,17 @@ export function routedDial (source: RouteSource, trace?: Trace): Dial {
     try {
       const provider = await source().catch((error: unknown) => { throw mapRouteError(error) })
       let last: unknown
-      for (const address of inOrder(addresses)) {
+      const overall = AbortSignal.any([signal, AbortSignal.timeout(TOTAL_DIAL_MS)])
+      for (const address of inOrder(addresses).slice(0, MAX_ADDRESSES)) {
         const began = Date.now()
         try {
-          const dialed = await dialThroughRoute({ provider }, address, port, signal, DIAL_DEADLINE_MS)
+          const dialed = await dialThroughRoute({ provider }, address, port, overall, DIAL_DEADLINE_MS)
           trace?.(`route dial ${address}:${String(port)} ok in ${String(Date.now() - began)} ms (waited ${String(began - queued)} ms)`)
           return dialed
         } catch (error) {
           last = error
           trace?.(`route dial ${address}:${String(port)} failed after ${String(Date.now() - began)} ms: ${(error as { code?: string }).code ?? 'error'}`)
-          if (signal.aborted) break
+          if (overall.aborted) break
         }
       }
       throw last ?? fail('unreachable', 'no address to dial')
@@ -152,7 +158,7 @@ export function routedBind (source: RouteSource, trace?: Trace): Bind {
  * endpoint's name (the tunnel's side resolves it), and the certificate is checked for that name. Connections are kept, so the
  * handshake's round trips are paid once.
  */
-export function routedFetch (source: RouteSource, tls: ConnectionOptions = {}): WebFetch {
+export function routedFetch (source: RouteSource, tls: ConnectionOptions = {}, handshakeMs = HANDSHAKE_MS): WebFetch {
   const agent = new Agent({
     connections: 2,
     keepAliveTimeout: 60_000,
@@ -161,8 +167,10 @@ export function routedFetch (source: RouteSource, tls: ConnectionOptions = {}): 
       const port = Number((options as { port?: string | number }).port) || 443
       source().then(async (provider) => await provider.connect(host, port, AbortSignal.timeout(DIAL_DEADLINE_MS))).then((carrier) => {
         const secure = tlsConnect({ ...tls, socket: carrier, servername: host, ALPNProtocols: ['http/1.1'] })
-        secure.once('secureConnect', () => { callback(null, secure) })
-        secure.once('error', (error) => { carrier.destroy(); callback(error, null) })
+        // A tunnel that stalls in the middle of the handshake would otherwise leave the connection pending for ever, and with it every lookup.
+        const late = setTimeout(() => { secure.destroy(new Error('the TLS handshake through the tunnel took too long')) }, handshakeMs)
+        secure.once('secureConnect', () => { clearTimeout(late); callback(null, secure) })
+        secure.once('error', (error) => { clearTimeout(late); secure.destroy(); carrier.destroy(); callback(error, null) })
       }, (error: unknown) => { callback(error instanceof Error ? error : new Error(String(error)), null) })
     }
   })

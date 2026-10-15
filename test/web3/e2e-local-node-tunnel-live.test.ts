@@ -46,7 +46,11 @@ const hostOf = (address: string): string => address.slice(0, address.lastIndexOf
 const isUnbound = (peer: string): boolean => peer === '*:*' || peer === '0.0.0.0:*' || peer === '[::]:*'
 
 /** The sockets that connect to something other than this computer. */
-const leaving = (sockets: readonly Socket[]): Socket[] => sockets.filter((entry) => entry.state !== 'LISTEN' && !isUnbound(entry.peer) && !LOOPBACK.test(hostOf(entry.peer)))
+const leaving = (sockets: readonly Socket[]): Socket[] => sockets.filter((entry) => {
+  // A datagram socket bound to an address that is not loopback can reach the network whether or not it is connected.
+  if (entry.proto === 'udp' && !LOOPBACK.test(hostOf(entry.local))) return true
+  return entry.state !== 'LISTEN' && !isUnbound(entry.peer) && !LOOPBACK.test(hostOf(entry.peer))
+})
 
 const summary = (sockets: readonly Socket[]): string => {
   const count = (test: (entry: Socket) => boolean): number => sockets.filter(test).length

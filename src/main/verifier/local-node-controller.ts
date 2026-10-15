@@ -95,6 +95,10 @@ export class LocalNodeController {
   private refusal: string | undefined
   private portWasTaken = false
   private readonly stopWatchingRoute: (() => void) | undefined
+  /** Counts the starts of the process, so an answer to a route ask goes only to the process that asked. */
+  private starts = 0
+  /** The one ask of the tunnel in flight: every ask that arrives meanwhile is answered from it. */
+  private endpointAsk: Promise<RouteEndpoint> | undefined
 
   constructor (private readonly deps: ControllerDeps) {
     this.now = deps.now ?? Date.now
@@ -102,7 +106,7 @@ export class LocalNodeController {
       fork: deps.fork,
       config: async () => await this.configure(),
       events: {
-        starting: () => { this.set({ state: 'starting' }) },
+        starting: () => { this.starts += 1; this.set({ state: 'starting' }) },
         idle: () => { this.set({ state: 'off' }) },
         failed: (stage) => {
           this.portWasTaken = stage === 'port'
@@ -124,8 +128,11 @@ export class LocalNodeController {
       ...(deps.setTimer === undefined ? {} : { setTimer: deps.setTimer }),
       ...(deps.now === undefined ? {} : { now: deps.now })
     }, deps.kind)
-    // The tunnel's process restarted: the address the node holds is no longer right, and its next connection asks again.
-    this.stopWatchingRoute = deps.route?.onMoved(() => { this.supervisor.send({ type: 'route-reset' }) })
+    // The tunnel's process restarted or stopped: the address the node holds is no longer right, and its next connection asks again.
+    this.stopWatchingRoute = deps.route?.onMoved(() => {
+      this.supervisor.send({ type: 'route-reset' })
+      this.recheckRoute().catch((error: unknown) => { console.error(`[${deps.kind.name}] checking the tunnel after it moved failed:`, error) })
+    })
     this.lifecycle = new HostLifecycle({
       start: () => { this.supervisor.start() },
       idle: () => { this.supervisor.idle() },
@@ -271,21 +278,43 @@ export class LocalNodeController {
     const options = this.deps.options?.()
     // Read again after every wait above: the setting can have moved, and a node started direct while the tunnel should carry it is the one thing this must not do.
     const routed = this.deps.route?.required() === true
-    if (routed !== verdict.routed) throw new RefusedToStart('the tunnel setting changed while the node was starting')
+    // The setting moved during the waits above: what was approved is for the other path, so the check is made again.
+    if (routed !== verdict.routed) return await this.configure()
     return { ...(routed ? { routed: true as const } : {}), kind: this.deps.kind.name, apiPort: this.deps.apiPort(), dataDir: this.deps.dataDir(), componentDir: verdict.directory, componentName: this.deps.componentName, files: this.deps.files, ...(this.deps.dohEndpoints === undefined ? {} : { dohEndpoints: this.deps.dohEndpoints }), ...(options === undefined ? {} : { options }) }
   }
 
-  /** A routed node asks where its tunnel is; it is answered with the address, or with why there is none. Never with anything else. */
+  /** A node that runs while its tunnel cannot carry it is stopped and says why, so its card never reads as running with nothing to run on. */
+  private async recheckRoute (): Promise<void> {
+    const route = this.deps.route
+    if (route === undefined || !route.required() || (this.current.state !== 'starting' && this.current.state !== 'ready')) return
+    try {
+      await route.endpoint()
+    } catch (error) {
+      if (!route.required()) return
+      this.supervisor.idle()
+      this.refuse(tunnelReason(this.deps.kind, error))
+    }
+  }
+
+  /** A routed node asks where its tunnel is; it is answered with the address, or with why there is none, and only if it is still the process that asked and the tunnel still carries it. */
   private async answerRoute (id: number): Promise<void> {
     const route = this.deps.route
+    const asker = this.starts
+    const answer = (message: { readonly endpoint: RouteEndpoint } | { readonly refusal: string }): void => {
+      // The process that asked may have been replaced while Nym was starting, and its successor's ids start from the same number.
+      if (asker === this.starts) this.supervisor.send({ type: 'route', id, ...message })
+    }
     if (route === undefined || !route.required()) {
-      this.supervisor.send({ type: 'route', id, refusal: 'the tunnel is not carrying this node now' })
+      answer({ refusal: 'the tunnel is not carrying this node now' })
       return
     }
     try {
-      this.supervisor.send({ type: 'route', id, endpoint: await route.endpoint() })
+      this.endpointAsk ??= route.endpoint().finally(() => { this.endpointAsk = undefined })
+      const endpoint = await this.endpointAsk
+      if (!route.required()) answer({ refusal: 'the tunnel is not carrying this node now' })
+      else answer({ endpoint })
     } catch (error) {
-      this.supervisor.send({ type: 'route', id, refusal: error instanceof Error ? error.message : 'the tunnel is not available' })
+      answer({ refusal: error instanceof Error ? error.message : 'the tunnel is not available' })
     }
   }
 

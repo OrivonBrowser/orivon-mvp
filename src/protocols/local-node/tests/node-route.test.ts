@@ -2,7 +2,8 @@
 // route that is gone ends them all instead of falling back to this computer.
 
 import { createSocket } from 'node:dgram'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { createServer as createTcpServer } from 'node:net'
 import type { AddressInfo, Server, Socket } from 'node:net'
 import { createServer as createTlsServer } from 'node:tls'
@@ -13,11 +14,17 @@ import { createSocks5Provider } from '../../../broker/route/socks5.js'
 import type { RouteProvider } from '../../../broker/route/provider.js'
 import { startSocks5Fixture } from '../../../broker/route/tests/socks5-fixture.test-helpers.js'
 import type { Socks5Fixture, Socks5FixtureOptions } from '../../../broker/route/tests/socks5-fixture.test-helpers.js'
-import { selfSigned } from '../../../../test/support/self-signed.js'
-import { MAX_PENDING_DIALS, createRoutedNetDeps, routedDial } from '../node-route.js'
+import { MAX_ADDRESSES, MAX_PENDING_DIALS, createRoutedNetDeps, routedDial, routedFetch } from '../node-route.js'
 import { REAL, createNodeNet } from '../node-net.js'
 import type { RouteSource } from '../node-route.js'
 
+/** A certificate for one host name, which `tls` is told to trust for the test (the fixture needs `openssl`, as the end-to-end suite does). */
+function selfSigned (dir: string, name: string): { cert: string, key: string } {
+  execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-subj', `/CN=${name}`, '-addext', `subjectAltName=DNS:${name}`, '-keyout', join(dir, 'key.pem'), '-out', join(dir, 'cert.pem'), '-days', '1'], { stdio: 'pipe' })
+  return { cert: readFileSync(join(dir, 'cert.pem'), 'utf8'), key: readFileSync(join(dir, 'key.pem'), 'utf8') }
+}
+
+const HAS_OPENSSL = (() => { try { execFileSync('openssl', ['version'], { stdio: 'pipe' }); return true } catch { return false } })()
 const API_PORT = 24_243
 const ENDPOINTS = ['https://doh.test/dns-query']
 const cleanups: Array<() => Promise<void> | void> = []
@@ -174,6 +181,14 @@ describe('a node routed through a tunnel', () => {
     expect(most).toBe(MAX_PENDING_DIALS)
   })
 
+  it('tries only a few of a name\'s addresses, so a name with dozens of dead ones does not hold a slot', async () => {
+    const tried: string[] = []
+    const provider: RouteProvider = { connect: async (host) => { tried.push(host); throw new Error('dead') } }
+    const dial = routedDial(async () => provider)
+    await expect(dial(Array.from({ length: 20 }, (_, i) => `1.2.3.${String(i + 1)}`), 1, new AbortController().signal)).rejects.toBeDefined()
+    expect(tried).toHaveLength(MAX_ADDRESSES)
+  })
+
   it('lets a waiting dial go when its caller gives up', async () => {
     const provider: RouteProvider = { connect: async () => await new Promise(() => {}) }
     const dial = routedDial(async () => provider)
@@ -186,10 +201,18 @@ describe('a node routed through a tunnel', () => {
 })
 
 describe('a name looked up through the tunnel', () => {
-  it('is asked of a DNS-over-HTTPS endpoint over a TLS connection the tunnel carries, then dialled as the address that came back', async () => {
+  it('gives up on a tunnel that stalls in the middle of the TLS handshake, instead of waiting for ever', async () => {
+    const silent = await echoServer()
+    const proxy = await fixture({ names: { 'doh.test:443': { host: '127.0.0.1', port: silent } } })
+    // The server it reaches accepts and echoes bytes that are not a TLS answer; either way the fetch must end.
+    const fetchOver = routedFetch(sourceOf(proxy), {}, 150)
+    await expect(fetchOver('https://doh.test/dns-query')).rejects.toBeDefined()
+  })
+
+  it.skipIf(!HAS_OPENSSL)('is asked of a DNS-over-HTTPS endpoint over a TLS connection the tunnel carries, then dialled as the address that came back', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'orivon-node-route-'))
     cleanups.push(() => { rmSync(dir, { recursive: true, force: true }) })
-    const pem = selfSigned(dir, ['doh.test'])
+    const pem = selfSigned(dir, 'doh.test')
     const questions: string[] = []
     const doh = createTlsServer({ key: pem.key, cert: pem.cert }, (socket) => {
       let request = ''

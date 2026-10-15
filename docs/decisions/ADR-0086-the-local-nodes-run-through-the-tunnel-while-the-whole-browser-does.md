@@ -1,6 +1,6 @@
 # ADR-0086: The local nodes run through the tunnel while the whole browser does
 
-- **Status:** accepted. *Provisional* on the Swarm node (below) and on a website that has its tunnel on by itself.
+- **Status:** accepted. *Provisional* on a website that has its tunnel on by itself (below).
 - **Date:** 2026-10-15
 - **Type:** architecture / security
 - **Decided by:** owner (the nodes run through Nym while the whole browser is on the tunnel, so that nothing leaks and the node keeps working, slower; "pause it and say so" and "keep it outside Nym" were offered and both rejected); AI recommendation accepted by default for the shape
@@ -17,7 +17,7 @@ its four calls, in `src/protocols/local-node/node-route.ts`:
 
 - `dial`: a SOCKS5 CONNECT through the tunnel to the literal address `node-net.ts` checked, IPv4 first, the next address
   when one fails, at most thirty-two openings in flight so a mixnet tunnel is not handed hundreds together;
-- `bind` (datagrams): a UDP ASSOCIATE channel, and no datagram socket of this computer bound at all;
+- `bind` (datagrams): a UDP ASSOCIATE channel; the node is given no socket of its own, and the only datagram socket in the process is the SOCKS5 client's, on loopback for a tunnel on this computer;
 - `lookup`: DNS-over-HTTPS over a TLS connection the tunnel carries (a CONNECT to the endpoint's name; the certificate is
   checked for that name; the connection is kept), and **no system resolver**: a name the endpoints cannot answer stays
   unresolved, never asked of this computer;
@@ -26,7 +26,7 @@ its four calls, in `src/protocols/local-node/node-route.ts`:
 A node started with `routed` in its config and no way to ask for a route gets no network at all.
 
 **How the process learns where the tunnel is.** It asks main over its parent port (`route-ask`), and main answers with
-the tunnel's loopback port and the sign-in made for this start (`route`). The answer is kept until main says the route
+the tunnel's loopback port and the secret the Nym host made for its start, with the node's own user name (`route`). The answer is kept until main says the route
 moved (`route-reset`, sent when the Nym host's endpoint changes or goes) or the proxy refuses a connection outright. A
 refusal from main (Nym is switched off, or cannot start) is never kept. The address and the secret travel over the parent
 port only, never in an argument, a start config or a log line, and a restarted Nym host (new port, new secret) cannot leave
@@ -59,7 +59,7 @@ as before.
 the node: the node is one process for the whole browser and cannot be both. *Provisional*; what would settle it is a node
 per tunnel identity.
 
-**The Swarm node.** *Provisional*; see Consequences for what was measured.
+**The Swarm node** runs through the tunnel like the IPFS node (Consequences has the measure); where a start does not reach its readiness rule in the time a mount can spare, the Swarm page says so and the person tries again, as on a direct start.
 
 ## Context
 
@@ -91,11 +91,15 @@ in the shared host means a new kind of node gets the behaviour with no code of i
 
 ## Consequences
 
-- A node is slower through Nym. Measured with Nym as it stands: see the pull request for the figures; the speed work of the
-  Nym host will help it.
-- The Swarm node is the same code path, so it runs through the tunnel too once it works; what was measured is in the pull
-  request, and where it did not reach its readiness rule in the time a mount can spare, the Swarm page says so and the
-  person tries again, as on a direct start.
+- A node is slower through Nym. Measured on 2026-10-15 from a home connection, with Nym as the host then had it (Balanced
+  level), cold launches: a small block the public network holds widely reaches the IPFS node in 14 to 18 s through Nym (14 s
+  of that is the node's own tunnel coming up) and in 1 to 1.3 s directly; the DNSLink site `docs.ipfs.tech` shows its page in
+  29 to 38 s through the node and Nym, and in 11.5 s from the gateways through Nym. A direct node never loaded that site in 420 s
+  on that connection, so there is no direct figure for it. The host's own speed work will help the node.
+- The Swarm node runs through the tunnel as well: a `bzz://` site loaded in 87 to 110 s from a cold start, with 110 sockets
+  open, every one on loopback, and 116 dials opened and 14 failed. So it stays on while the tunnel carries everything.
+- The operating system, listing the node's process every ten seconds while it worked, showed no socket to anything but
+  loopback (TCP to the Nym host's port and UDP to its relay); with the setting off the same node held sockets to peers.
 - `ORIVON_<NAME>_LOG=1` now also prints each dial, lookup and datagram channel the routed node makes, with their times.
 
 ## Reversibility
