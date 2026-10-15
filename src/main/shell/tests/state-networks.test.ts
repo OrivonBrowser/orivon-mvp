@@ -3,10 +3,14 @@ import { SHELL_STATE_PARTS } from '../shell-state-parts.js'
 import { networksStatePart } from '../state/networks.js'
 import type { WindowContext } from '../window-context.js'
 
-function rig (dot: 'green' | 'amber' | 'red' | 'none') {
+type DotName = 'green' | 'amber' | 'red' | 'none'
+
+function rig (initial: DotName) {
+  let dot = initial
   const listeners = new Set<() => void>()
   const networks = { dot: vi.fn(() => dot), onChange: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } } }
-  return { ctx: { services: { networks } } as unknown as WindowContext, listeners, networks }
+  const change = (next?: DotName): void => { if (next !== undefined) dot = next; for (const listener of [...listeners]) listener() }
+  return { ctx: { services: { networks } } as unknown as WindowContext, listeners, networks, change }
 }
 
 describe('the networks state part', () => {
@@ -21,13 +25,25 @@ describe('the networks state part', () => {
     }
   })
 
-  it('pushes when a node or a switch changes, and stops when the window does', () => {
-    const { ctx, listeners } = rig('none')
+  it('pushes when a node or a switch changes the dot, and stops when the window does', () => {
+    const { ctx, listeners, change } = rig('none')
     const push = vi.fn()
     const stop = networksStatePart.watch?.(ctx, push)
-    for (const listener of listeners) listener()
+    change('amber')
     expect(push).toHaveBeenCalledTimes(1)
     stop?.()
     expect(listeners.size).toBe(0)
+  })
+
+  it('pushes nothing for a change that leaves the dot where it was, such as every step of a tunnel coming up', () => {
+    const { ctx, change } = rig('none')
+    const push = vi.fn()
+    networksStatePart.watch?.(ctx, push)
+    for (let step = 0; step < 6; step++) change()
+    expect(push).not.toHaveBeenCalled()
+    change('green')
+    change()
+    change('none')
+    expect(push).toHaveBeenCalledTimes(2)
   })
 })
