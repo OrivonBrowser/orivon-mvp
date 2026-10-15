@@ -23,7 +23,7 @@ import type { NodeNetDeps } from './node-net.js'
 export type RouteSource = () => Promise<RouteProvider>
 
 /** Connections being opened through the route at once; the rest wait. A mixnet tunnel that is handed hundreds of opens together stalls all of them. */
-export const MAX_PENDING_DIALS = 16
+export const MAX_PENDING_DIALS = 32
 /** One dial through a tunnel that is still coming up can take most of a minute. */
 export const DIAL_DEADLINE_MS = 60_000
 /** A DNS-over-HTTPS query through a mixnet: a TLS handshake takes several round trips of about a second each. */

@@ -95,7 +95,7 @@ A system proxy configured in the shell: a node does not start, because its socke
 `routed: true` and the process builds its network from [`node-route.ts`](node-route.ts) instead of the direct adapters; the
 rules in the table above (which address, which port, how many) are still `node-net.ts`'s and do not change. Every `connect`
 is a SOCKS5 CONNECT to the checked literal address through the tunnel (IPv4 first, the next address tried when one fails,
-at most sixteen openings in flight so a mixnet tunnel is not handed hundreds together). Every datagram goes through UDP
+at most thirty-two openings in flight so a mixnet tunnel is not handed hundreds together). Every datagram goes through UDP
 ASSOCIATE, and no datagram socket of this computer is bound at all. A name is looked up by DNS-over-HTTPS over a TLS connection
 the tunnel carries (a CONNECT to the endpoint's name, its certificate checked for that name; the connection is kept for the
 next query), and there is no system resolver to fall back to: a name the endpoints cannot answer stays unresolved. The API

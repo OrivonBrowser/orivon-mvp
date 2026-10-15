@@ -16,7 +16,7 @@ addresses only, port 53 for datagrams, loopback listeners, the budgets) are unch
 its four calls, in `src/protocols/local-node/node-route.ts`:
 
 - `dial`: a SOCKS5 CONNECT through the tunnel to the literal address `node-net.ts` checked, IPv4 first, the next address
-  when one fails, at most sixteen openings in flight so a mixnet tunnel is not handed hundreds together;
+  when one fails, at most thirty-two openings in flight so a mixnet tunnel is not handed hundreds together;
 - `bind` (datagrams): a UDP ASSOCIATE channel, and no datagram socket of this computer bound at all;
 - `lookup`: DNS-over-HTTPS over a TLS connection the tunnel carries (a CONNECT to the endpoint's name; the certificate is
   checked for that name; the connection is kept), and **no system resolver**: a name the endpoints cannot answer stays
