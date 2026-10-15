@@ -8,7 +8,7 @@
 // the chrome through the main process's own inspector, as test/tabs/e2e-undriven-capture.test.ts does. The window is
 // resized with setBounds, which is the resize a maximize or a fullscreen makes; under the headless display no window
 // manager is needed for it.
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -130,9 +130,15 @@ it('keeps the chrome shown while a full-width overlay is up over a resized windo
     for (const sample of samples) expect((sample as { frames: number }).frames).toBeGreaterThan(5)
   } finally {
     inspector?.close()
-    try { if (child.pid !== undefined) process.kill(-child.pid, 'SIGKILL') } catch { /* already gone */ }
+    // The whole tree: the shell's other processes hold files of the profile open until they are gone.
+    try {
+      if (child.pid !== undefined) {
+        if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
+        else process.kill(-child.pid, 'SIGKILL')
+      }
+    } catch { /* already gone */ }
     await sleep(500)
-    await rm(dir, { recursive: true, force: true })
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 })
     await gateway.close()
   }
 }, 180_000)
