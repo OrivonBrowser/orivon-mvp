@@ -86,7 +86,7 @@ async function layoutOf (app: ElectronApplication): Promise<Layout> {
   })
 }
 
-/** What a window of this size must look like: the chrome across the top, the tab below it, every shown page laid out at its view's size. */
+/** What a window of this size must look like: the chrome across the top, the tab below it, every shown chrome or tab page laid out at its view's size. */
 function expectFilled (layout: Layout, label: string): void {
   const { content, views } = layout
   const chrome = views.find((view) => view.url.endsWith('/renderer/index.html'))
@@ -95,7 +95,8 @@ function expectFilled (layout: Layout, label: string): void {
     .toEqual({ label, chrome: { visible: true, x: 0, y: 0, width: content.width } })
   expect({ label, tab: tab === undefined ? 'missing' : { visible: tab.visible, x: tab.bounds.x, width: tab.bounds.width, bottom: tab.bounds.y + tab.bounds.height } })
     .toEqual({ label, tab: { visible: true, x: 0, width: content.width, bottom: content.height } })
-  for (const view of views.filter((entry) => entry.visible)) {
+  // A popup sizes itself to its content, a moment after it is shown: only the chrome and the tabs follow the window.
+  for (const view of views.filter((entry) => entry.visible && !entry.url.includes('/overlay/'))) {
     const [innerWidth, innerHeight] = view.inner ?? [-1, -1]
     expect({ label, url: view.url, laidOutAtItsSize: Math.abs(innerWidth - view.bounds.width) <= 1 && Math.abs(innerHeight - view.bounds.height) <= 1 })
       .toEqual({ label, url: view.url, laidOutAtItsSize: true })
