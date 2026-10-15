@@ -22,6 +22,13 @@ export function isNymTarget (target: RouteTarget): boolean {
 /** A tunnel comes up in a few seconds and a first connection through it takes a few more; the host gives up on a tunnel that cannot come up after three attempts, 95 s at most. */
 export const NYM_CONNECT_TIMEOUT_MS = 100_000
 
+/**
+ * How long the broker lets one connection of a routed app take, in place of the direct dial's 30 s: the host waits up to 95 s for a
+ * tunnel to come up and 45 s for a stream to open, and the SOCKS5 provider's own limit is the 100 s above; this is the one that
+ * lets them finish. The preload's budget for `net` calls (`TIMEOUT_MS.net`) is longer than this.
+ */
+export const NYM_DIAL_BUDGET_MS = 110_000
+
 export function createNymProvider (nym: { ensure: () => Promise<NymEndpoint> }, userId: string): RouteProvider {
   const through = async (): Promise<RouteProvider> => {
     let where: NymEndpoint
@@ -33,6 +40,7 @@ export function createNymProvider (nym: { ensure: () => Promise<NymEndpoint> }, 
     return createSocks5Provider({ host: '127.0.0.1', port: where.port, credentials: { userId, password: where.secret }, timeoutMs: NYM_CONNECT_TIMEOUT_MS })
   }
   return {
+    dialBudgetMs: NYM_DIAL_BUDGET_MS,
     connect: async (host, port, signal) => await (await through()).connect(host, port, signal),
     udp: async (signal) => {
       const provider = await through()

@@ -18,6 +18,7 @@
 |---|---|
 | `smolmix-raw-tcp-udp.patch` | Raw TCP and UDP sockets |
 | `smolmix-tx-queue.patch` | The send loop keeps the packets it did not send in its tick |
+| `smolmix-rx-order.patch` | The reply frames reach TCP in the order the exit numbered them |
 | `about.toml`, `third-party-licenses.hbs` | The licences `cargo-about` accepts, and the plain-text template of `THIRD_PARTY_LICENSES` |
 | `README.md` | Copied into the published directory as its `README.md` |
 | `UPSTREAM.md` | This page |
@@ -48,6 +49,17 @@ Applied in this order by `scripts/build-nym-tunnel.mjs`.
    connections opened at once took 20 s in waves of 4 s before and 2.5 s after. Nothing about what is sent changes: the
    same packets leave, none is lost to the queue, in the same order. Send timing is the only difference, and only for
    bursts; Nym's own pacing and cover traffic are untouched.
+
+3. **The reply frames reach TCP in the order the exit numbered them.** The exit numbers every reply frame (1, 2, 3, ...) and
+   each frame takes a route of its own through the mixnet, so they arrive out of order: measured through a real tunnel, about
+   four frames in ten arrived after one numbered higher, up to 300 places late. TCP reads that as loss (the receiver repeats
+   its acknowledgement, the sender sends the segments again and slows down). `resequence.rs` holds a frame that is ahead of the
+   one expected until the ones before it have come, for 1.5 s at most (or 512 frames), then goes on without them; a frame
+   that comes after its turn was given up is passed on at once. Control replies numbered 0 are never held. The bridge's
+   5 ms tick gives up an expired wait. The unit tests are in the file (`rustc --test resequence.rs`). Only what arrives is
+   reordered before TCP reads it: nothing is sent, so what a network observer sees is unchanged. Measured: a 700 KB file
+   from a Google server took 25 s where it took 85 to 143 s, and a plain HTTP file about 25% faster at a third less
+   processor time (`src/protocols/nym-tunnel/README.md`).
 
 ## Build
 

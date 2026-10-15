@@ -24,7 +24,7 @@ import { isOrivonErrorLike } from '../../broker/errors.js'
 import { MAX_MANIFEST_BYTES, describeValue, parseManifest } from '../manifest/manifest.js'
 import { BUNDLE_TIMEOUT_MS, ByteBudget, NOT_MODIFIED, fetchWithBudget, joinChunks, raceAbort, rejected, tooLargeRejected } from './budget.js'
 import type { Fetch, FetchBundleRejected } from './budget.js'
-import { RETRY_BACKOFF_MS, retryTransient } from './retry.js'
+import { retryBackoffFor, retryTransient } from './retry.js'
 import { FETCH_CONCURRENCY, fetchAssetToStaging, forEachBounded, resolveUrl, stageBytes } from './asset.js'
 import type { StagedAsset } from './asset.js'
 import { fetchDdocDeclaration } from '../ddoc-declaration.js'
@@ -68,7 +68,7 @@ export type FetchBundleResult = FetchBundleOk | FetchBundleRejected | FetchBundl
 export interface FetchLimits {
   readonly assetBytes: number
   readonly bundleBytes: number
-  /** Pauses between attempts at a file that met a transient fault; RETRY_BACKOFF_MS when absent. */
+  /** Pauses between attempts at a file that met a transient fault; `retryBackoffFor`'s when absent. */
   readonly retryBackoffMs?: readonly number[]
   /** The caller must judge the site's declared tree, so one that could not be downloaded fails the fetch instead of reading as "not published" (ADR-0074). */
   readonly strictDeclaration?: boolean
@@ -227,7 +227,7 @@ async function fetchStaged (
   // SAME validated literals, never a fresh, unguarded re-resolution.
   const pinnedAddresses = originResult.addresses
   const budget = new ByteBudget(limits.bundleBytes)
-  const fetchedManifest = await fetchManifest(fetchFn, canonicalOrigin, pinnedAddresses, storage, budget, bundleController.signal, validators, limits.retryBackoffMs ?? RETRY_BACKOFF_MS)
+  const fetchedManifest = await fetchManifest(fetchFn, canonicalOrigin, pinnedAddresses, storage, budget, bundleController.signal, validators, retryBackoffFor(canonicalOrigin, limits.retryBackoffMs))
   if ('ok' in fetchedManifest) return fetchedManifest
   const { manifest } = fetchedManifest
 
@@ -240,11 +240,11 @@ async function fetchStaged (
   }
 
   // Before any file: a declaration that cannot be read, once a caller must judge it, ends the fetch before the bundle comes down.
-  const fetchedDeclaration = await retryTransient(async () => await fetchDdocDeclaration(fetchFn, canonicalOrigin, pinnedAddresses, budget, bundleController.signal, limits.strictDeclaration === true), limits.retryBackoffMs ?? RETRY_BACKOFF_MS, bundleController.signal)
+  const fetchedDeclaration = await retryTransient(async () => await fetchDdocDeclaration(fetchFn, canonicalOrigin, pinnedAddresses, budget, bundleController.signal, limits.strictDeclaration === true), retryBackoffFor(canonicalOrigin, limits.retryBackoffMs), bundleController.signal)
   if (fetchedDeclaration !== undefined && 'ok' in fetchedDeclaration) return fetchedDeclaration
   const declaration = fetchedDeclaration
 
-  const context = { fetchFn, canonicalOrigin, pinnedAddresses, storage, budget, assetCap: limits.assetBytes, bundleSignal: bundleController.signal, retryBackoffMs: limits.retryBackoffMs ?? RETRY_BACKOFF_MS }
+  const context = { fetchFn, canonicalOrigin, pinnedAddresses, storage, budget, assetCap: limits.assetBytes, bundleSignal: bundleController.signal, retryBackoffMs: retryBackoffFor(canonicalOrigin, limits.retryBackoffMs) }
   const assets = await forEachBounded(assetPaths, FETCH_CONCURRENCY, async (path) => await fetchAssetToStaging(context, path), () => { bundleController.abort() })
   if (!Array.isArray(assets)) return assets
   const entries = [fetchedManifest.staged, ...assets]

@@ -15,6 +15,19 @@ afterEach(async () => { while (cleanups.length > 0) await cleanups.pop()?.() })
 const silentRoute = (): Route => ({ provider: { connect: async (_host, _port, signal) => await new Promise<Socket>((_resolve, reject) => { signal.addEventListener('abort', () => { reject(new Error('aborted')) }) }) } })
 
 describe('the dial deadline over a route', () => {
+  it('gives a route the budget its provider declares in place of the direct dial\'s', async () => {
+    const slow = (budget: number): Route => ({ provider: { dialBudgetMs: budget, connect: silentRoute().provider.connect } })
+    const started = Date.now()
+    await expect(dialThroughRoute(slow(40), 'a.example', 443, new AbortController().signal)).rejects.toMatchObject({ code: 'timeout' })
+    expect(Date.now() - started).toBeLessThan(2_000)
+    await expect(dialSecureThroughRoute(slow(40), { host: 'a.example', port: 443 }, {}, new AbortController().signal)).rejects.toMatchObject({ code: 'timeout' })
+  })
+
+  it('keeps a call\'s own deadline over the provider\'s budget', async () => {
+    const route: Route = { provider: { dialBudgetMs: 60_000, connect: silentRoute().provider.connect } }
+    await expect(dialThroughRoute(route, 'a.example', 443, new AbortController().signal, 30)).rejects.toMatchObject({ code: 'timeout' })
+  })
+
   it('times out a route that never connects', async () => {
     await expect(dialThroughRoute(silentRoute(), 'a.example', 443, new AbortController().signal, 30)).rejects.toMatchObject({ code: 'timeout' })
   })

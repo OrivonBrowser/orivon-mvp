@@ -35,7 +35,7 @@ export const NYM = {
 export const RUSTC_VERSION = '1.99.0'
 const CRATE = join('wasm', 'smolmix')
 /** Applied in this order; each is made against the source with the ones before it applied. */
-const PATCHES = ['smolmix-raw-tcp-udp.patch', 'smolmix-tx-queue.patch']
+const PATCHES = ['smolmix-raw-tcp-udp.patch', 'smolmix-tx-queue.patch', 'smolmix-rx-order.patch']
 const FILES = ['smolmix_wasm.js', 'smolmix_wasm_bg.wasm', 'smolmix_wasm.d.ts']
 /** The notices of every crate compiled into the module, made by `cargo-about` from the lockfile (about.toml says which licences are accepted). */
 const NOTICES = 'THIRD_PARTY_LICENSES'
