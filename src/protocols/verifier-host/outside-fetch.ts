@@ -11,6 +11,14 @@ import type { WebFetch } from './egress.js'
 
 export type ResolveHost = (host: string) => Promise<readonly string[]>
 
+/** A request body as the text `direct-fetch.ts` sends: the light client's JSON-RPC bodies arrive as bytes, and are UTF-8. */
+function textBody (body: RequestInit['body']): string | undefined {
+  if (body === undefined || body === null || typeof body === 'string') return body ?? undefined
+  if (body instanceof ArrayBuffer) return new TextDecoder('utf-8', { fatal: true }).decode(body)
+  if (ArrayBuffer.isView(body)) return new TextDecoder('utf-8', { fatal: true }).decode(body)
+  throw new TypeError('a request sent outside the tunnel carries a string or bytes as its body')
+}
+
 export function createOutsideFetch (direct: DirectFetch, resolveHost: ResolveHost): WebFetch {
   return async (url, init) => {
     const parsed = new URL(url)
@@ -18,6 +26,7 @@ export function createOutsideFetch (direct: DirectFetch, resolveHost: ResolveHos
     const answers = isIP(host) === 0 ? await resolveHost(host) : [host]
     const addresses = answers.flatMap((answer) => canonicalAddress(answer) ?? [])
     if (addresses.length === 0) throw new Error(`${host} has no address this computer can dial`)
-    return await direct(url, init, addresses)
+    const body = textBody(init?.body)
+    return await direct(url, init === undefined || body === init.body ? init : { ...init, body }, addresses)
   }
 }

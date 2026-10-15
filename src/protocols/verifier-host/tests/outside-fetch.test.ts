@@ -3,8 +3,8 @@ import type { DirectFetch } from '../direct-fetch.js'
 import { createOutsideFetch } from '../outside-fetch.js'
 
 function world (answers: readonly string[]) {
-  const dialled: Array<{ url: string, addresses: readonly string[] }> = []
-  const direct: DirectFetch = async (url, _init, addresses) => { dialled.push({ url, addresses }); return new Response('ok') }
+  const dialled: Array<{ url: string, addresses: readonly string[], body?: unknown }> = []
+  const direct: DirectFetch = async (url, init, addresses) => { dialled.push({ url, addresses, body: init?.body }); return new Response('ok') }
   const asked: string[] = []
   return { dialled, asked, fetch: createOutsideFetch(direct, async (host) => { asked.push(host); return answers }) }
 }
@@ -22,6 +22,14 @@ describe('the fetch that leaves outside the tunnel', () => {
     await fetch('https://93.184.216.34/')
     expect(asked).toEqual([])
     expect(dialled[0]?.addresses).toEqual(['93.184.216.34'])
+  })
+
+  it('sends a body given as bytes as the text it is, which is what the light client\'s JSON-RPC calls are', async () => {
+    const { dialled, fetch } = world(['93.184.216.34'])
+    await fetch('https://rpc.example/', { method: 'POST', body: new TextEncoder().encode('{"id":1}') })
+    await fetch('https://rpc.example/', { method: 'POST', body: new TextEncoder().encode('{"id":2}').buffer as ArrayBuffer })
+    expect(dialled.map((entry) => entry.body)).toEqual(['{"id":1}', '{"id":2}'])
+    await expect(fetch('https://rpc.example/', { method: 'POST', body: new URLSearchParams({ a: '1' }) })).rejects.toThrow(/string or bytes/)
   })
 
   it('refuses a name that has no address it can dial', async () => {
