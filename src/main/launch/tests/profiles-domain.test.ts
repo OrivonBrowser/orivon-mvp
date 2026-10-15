@@ -5,9 +5,10 @@ import type { ProfilesService } from '../profiles-service.js'
 
 const CALLER = {} as InternalCaller
 
-function setup (isPrivate = false): { call: (command: unknown) => unknown, service: Record<string, ReturnType<typeof vi.fn>> } {
+function setup (isPrivate = false, tunnel: 'nym' | null = null): { call: (command: unknown) => unknown, service: Record<string, ReturnType<typeof vi.fn>> } {
   const service = {
     isPrivate,
+    tunnel,
     list: vi.fn(() => [{ id: 'default', name: 'Default' }]),
     create: vi.fn(() => ({ ok: true })),
     rename: vi.fn(() => ({ ok: true })),
@@ -43,6 +44,12 @@ describe('the profiles domain', () => {
     expect(service['rename']).toHaveBeenNthCalledWith(2, '', 'x')
     expect(service['setColor']).toHaveBeenCalledWith('a1', 'red')
     expect(service['remove']).toHaveBeenCalledWith('a1')
+  })
+
+  it('says which tunnel a private window is held to, and nothing about one that is not', () => {
+    expect(setup(true, 'nym').call({ type: 'list' })).toMatchObject({ isPrivate: true, tunnel: 'nym' })
+    expect(setup(true).call({ type: 'list' })).not.toHaveProperty('tunnel')
+    expect(setup(false).call({ type: 'list' })).not.toHaveProperty('tunnel')
   })
 
   it('opens a profile and starts a private window', () => {

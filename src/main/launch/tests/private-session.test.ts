@@ -1,9 +1,10 @@
-import { mkdir, mkdtemp, readFile, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { everywhereBeforeReady, readSettingBeforeReady, settingsFileProblem } from '../../settings/settings-file.js'
 import { GRACE_MS, createPrivateDir, isPrivateDirName, markPrivate, removeAfterExit, removePrivateDir, sweepPrivateDirs } from '../private-session.js'
 
 let root: string
@@ -59,6 +60,37 @@ describe('a private session\'s directory', () => {
     const dir = createPrivateDir(opener, home, tmp)
     expect(await readFile(join(dir, 'settings.json'), 'utf8')).toBe('from the opener')
     expect(existsSync(join(dir, 'verifier', 'checkpoint.json'))).toBe(true)
+  })
+
+  it('held to Nym, begins with a settings file that holds the tunnel, through the store\'s own version and checks, and keeps the other choices', async () => {
+    await writeFile(join(home, 'settings.json'), JSON.stringify({ version: 1, values: { 'appearance.theme': 'dark', 'network.route.proxy': '127.0.0.1:9050', 'network.tunnel.everywhere': false, 'privacy.doNotTrack': 'not a boolean' } }))
+    const dir = createPrivateDir(home, home, tmp, 'nym')
+    const written = JSON.parse(await readFile(join(dir, 'settings.json'), 'utf8')) as { version: number, values: Record<string, unknown> }
+    expect(written.version).toBe(2)
+    expect(written.values).toEqual({ 'appearance.theme': 'dark', 'network.route.proxy': '127.0.0.1:9050', 'network.route.kind': 'nym', 'network.tunnel.everywhere': true, 'network.nym.enabled': true })
+    expect(everywhereBeforeReady(join(dir, 'settings.json'))).toBe(true)
+    expect(readSettingBeforeReady(join(dir, 'settings.json'), 'network.route.kind')).toBe('nym')
+    expect(readSettingBeforeReady(join(dir, 'settings.json'), 'network.nym.enabled')).toBe(true)
+  })
+
+  it('held to Nym, is made from nothing when the opener has no settings or only a file that cannot be used', async () => {
+    const none = createPrivateDir(join(root, 'nowhere'), join(root, 'nowhere-either'), tmp, 'nym')
+    expect(everywhereBeforeReady(join(none, 'settings.json'))).toBe(true)
+    await writeFile(join(home, 'settings.json'), '{ broken')
+    const broken = createPrivateDir(home, home, tmp, 'nym')
+    expect(settingsFileProblem(join(broken, 'settings.json'))).toBeUndefined()
+    expect(readSettingBeforeReady(join(broken, 'settings.json'), 'network.tunnel.everywhere')).toBe(true)
+  })
+
+  it('without a tunnel, leaves the settings as they were copied', async () => {
+    await writeFile(join(home, 'settings.json'), 'as it is')
+    expect(await readFile(join(createPrivateDir(home, home, tmp), 'settings.json'), 'utf8')).toBe('as it is')
+  })
+
+  it('is removed again, and the failure raised, when it cannot be set up', async () => {
+    await mkdir(join(home, 'settings.json'))
+    expect(() => createPrivateDir(home, home, tmp, 'nym')).toThrow()
+    expect(await readdir(tmp)).toEqual([])
   })
 
   it('is made when there is nothing to copy', () => {

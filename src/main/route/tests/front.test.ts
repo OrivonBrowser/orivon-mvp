@@ -6,7 +6,7 @@ import { connect as netConnect, createServer as createTcpServer } from 'node:net
 import type { AddressInfo, Server, Socket } from 'node:net'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { RouteProvider } from '../../../broker/route/provider.js'
-import { startRouteFront } from '../front.js'
+import { NOT_CARRIED_PAGE, startRouteFront } from '../front.js'
 import type { RouteFront } from '../front.js'
 
 const cleanups: Array<() => Promise<void> | void> = []
@@ -244,6 +244,15 @@ describe('absolute-form requests', () => {
     expect((await getThrough(down, 'http://nowhere.test/', { 'proxy-authorization': basic(down) })).status).toBe(502)
     const none = await front(undefined)
     expect((await getThrough(none, 'http://nowhere.test/', { 'proxy-authorization': basic(none) })).status).toBe(503)
+  })
+
+  it('says in the answer that the tunnel did not carry the page, so a plain http page is not blank', async () => {
+    const down = await front(providerFor({}))
+    const answer = await getThrough(down, 'http://nowhere.test/', { 'proxy-authorization': basic(down) })
+    expect(answer.headers['content-type']).toBe('text/html; charset=utf-8')
+    expect(answer.body).toBe(NOT_CARRIED_PAGE)
+    expect(answer.body).toContain('The tunnel did not carry this page')
+    expect(Number(answer.headers['content-length'])).toBe(Buffer.byteLength(answer.body))
   })
 })
 

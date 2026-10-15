@@ -9,7 +9,9 @@ import { spawn as nodeSpawn } from 'node:child_process'
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir, uptime } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
+import { NYM_HELD_SETTINGS, forceSettingsFile } from '../settings/settings-file.js'
 import { copyPublicSeed } from './public-seed.js'
+import type { PrivateTunnel } from './launch-context.js'
 import { bootTimeMs, isPidRecordAlive, processIsAlive } from './pid-liveness.js'
 import type { PidRecord } from './pid-liveness.js'
 
@@ -26,14 +28,24 @@ export const GRACE_MS = 10 * 60 * 1000
  * not a preference. */
 export const SNAPSHOT_FILES = ['settings.json', 'shortcuts.json', 'search-engines.json'] as const
 
-/** Makes the directory. `from` is the opening profile's directory, `home` the default profile's. */
-export function createPrivateDir (from: string, home: string, tmp = tmpdir()): string {
+/**
+ * Makes the directory. `from` is the opening profile's directory, `home` the default profile's. With a `tunnel`, the copy of
+ * the settings is written holding it before anything can read it, whatever the opening profile has chosen; when that cannot
+ * be written the directory is removed and this throws, because a session held to a tunnel must not start without it.
+ */
+export function createPrivateDir (from: string, home: string, tmp = tmpdir(), tunnel?: PrivateTunnel): string {
   const dir = mkdtempSync(join(tmp, PRIVATE_PREFIX))
-  chmodSync(dir, 0o700)
-  for (const file of SNAPSHOT_FILES) {
-    if (existsSync(join(from, file))) cpSync(join(from, file), join(dir, file))
+  try {
+    chmodSync(dir, 0o700)
+    for (const file of SNAPSHOT_FILES) {
+      if (existsSync(join(from, file))) cpSync(join(from, file), join(dir, file))
+    }
+    copyPublicSeed(home, dir)
+    if (tunnel === 'nym') forceSettingsFile(join(dir, 'settings.json'), NYM_HELD_SETTINGS)
+  } catch (error) {
+    removePrivateDir(dir, tmp)
+    throw error
   }
-  copyPublicSeed(home, dir)
   return dir
 }
 

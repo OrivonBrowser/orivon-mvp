@@ -81,6 +81,8 @@
 .switch:has(input:disabled) { opacity: 0.5; }
 .switch input:disabled { cursor: default; }
 .switch input:disabled + .track { background: var(--wsurface); border-color: var(--wink-off); }
+/* A switch held on (a private window that always goes through Nym) is dimmed but still reads as on. */
+.switch input:disabled:checked + .track { background: var(--waccent); border-color: var(--waccent); }
 .switch input:focus-visible + .track { outline: 2px solid var(--waccent-text); outline-offset: 2px; }
 
 /* A named colour for a mark someone chose (a profile) or one a page picked for

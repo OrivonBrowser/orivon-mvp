@@ -123,6 +123,17 @@ describe('the Nym card', () => {
   })
 })
 
+describe('the Nym card of a private window that always goes through Nym', () => {
+  it('has its switch on and fixed, and says why', () => {
+    const held = card(buildNetworksView(facts({ nym: { enabled: true, held: true, inUse: true, state: { state: 'ready' }, tunnels: { connecting: 0, ready: 1 } } })), 'nym')
+    expect(held).toMatchObject({ on: true, disabled: true, status: 'Running' })
+    expect(held?.does).toContain('This private window always goes through Nym, so this switch cannot be changed.')
+    const other = card(buildNetworksView(facts()), 'nym')
+    expect(other?.disabled).toBe(false)
+    expect(other?.does).not.toContain('private window')
+  })
+})
+
 describe('the dot on the toolbar button', () => {
   const card = (on: boolean, tone: 'ok' | 'busy' | 'bad' | 'idle'): { on: boolean, tone: 'ok' | 'busy' | 'bad' | 'idle' } => ({ on, tone })
 

@@ -48,6 +48,13 @@ describe('the main menu layout', () => {
     for (const id of commandsIn(MENU_LAYOUT)) expect(commandById(id), id).toBeDefined()
   })
 
+  it('lists the private window with Nym right after the private window, with its label and its key', async () => {
+    const order = commandsIn(MENU_LAYOUT)
+    expect(order.indexOf('window.newPrivateNym')).toBe(order.indexOf('window.newPrivate') + 1)
+    const { ctx } = await setup()
+    expect(find(menuItems(ctx), 'window.newPrivateNym')).toMatchObject({ label: 'Open a private window with Nym', keys: ['Alt', 'Shift', 'N'] })
+  })
+
   it('never starts, ends or doubles a separator, at any depth', async () => {
     const { ctx } = await setup()
     const check = (items: readonly MenuItemView[]): void => {

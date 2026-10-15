@@ -138,6 +138,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'tab.sleep': if (active !== undefined) void sleepFrontTab(target, active.id).catch((error: unknown) => { console.error('[shortcuts] sleep front tab failed:', error) }); return
     case 'tab.search': target.overlays.toggle(TAB_SEARCH_OVERLAY); return
     case 'window.newPrivate': services.profiles.openPrivate(); return
+    case 'window.newPrivateNym': services.profiles.openPrivateNym(); return
     case 'profiles.open': tabs.openInternal('profiles'); return
     case 'downloads.open': tabs.openInternal('downloads'); return
     case 'window.close': window.close(); return

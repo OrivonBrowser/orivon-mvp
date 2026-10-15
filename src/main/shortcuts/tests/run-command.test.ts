@@ -20,7 +20,7 @@ vi.mock('../../os/share-runner.js', () => ({ realShareDeps: { realShare: true } 
 interface Tab { id: string, url: string, displayUrl: string, title: string, isNewTab: boolean, isInternal: boolean, splitWith: string | null, pinned: boolean, muted: boolean }
 const tab = (id: string, extra: Partial<Tab> = {}): Tab => ({ id, url: `https://${id}.example/`, displayUrl: `https://${id}.example/`, title: id, isNewTab: false, isInternal: false, splitWith: null, pinned: false, muted: false, ...extra })
 
-function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: boolean, homeUrl?: string } = {}): { target: ShellWindow, zoom: Record<'step' | 'reset', ReturnType<typeof vi.fn>>, devtools: Record<'toggle' | 'openConsole', ReturnType<typeof vi.fn>>, profiles: Record<'openPrivate', ReturnType<typeof vi.fn>>, calls: Record<string, ReturnType<typeof vi.fn>>, bookmarks: Record<string, ReturnType<typeof vi.fn>>, deps: CommandDeps & { openWindow: ReturnType<typeof vi.fn<() => void>>, quit: ReturnType<typeof vi.fn<() => void>> }, send: ReturnType<typeof vi.fn> } {
+function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: boolean, homeUrl?: string } = {}): { target: ShellWindow, zoom: Record<'step' | 'reset', ReturnType<typeof vi.fn>>, devtools: Record<'toggle' | 'openConsole', ReturnType<typeof vi.fn>>, profiles: Record<'openPrivate' | 'openPrivateNym', ReturnType<typeof vi.fn>>, calls: Record<string, ReturnType<typeof vi.fn>>, bookmarks: Record<string, ReturnType<typeof vi.fn>>, deps: CommandDeps & { openWindow: ReturnType<typeof vi.fn<() => void>>, quit: ReturnType<typeof vi.fn<() => void>> }, send: ReturnType<typeof vi.fn> } {
   const calls = Object.fromEntries(['createTab', 'navigate', 'closeTab', 'activateTab', 'back', 'forward', 'reload', 'openInternal', 'reloadIgnoringCache', 'stop', 'overlayShow', 'overlayToggle', 'moveTab', 'toggle', 'changed', 'setAudioMuted', 'focusOther', 'swap', 'rotate'].map((name) => [name, vi.fn()]))
   const send = vi.fn()
   const window = { close: vi.fn(), setFullScreen: vi.fn(), isFullScreen: vi.fn(() => false), isAlwaysOnTop: vi.fn(() => false), setAlwaysOnTop: vi.fn(), getBounds: vi.fn(() => ({ x: 10, y: 20, width: 800, height: 600 })) }
@@ -46,7 +46,7 @@ function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: bo
   const bookmarks = { has: vi.fn(() => false), add: vi.fn(), remove: vi.fn(), children: vi.fn(() => []), findByUrl: vi.fn((): Array<{ id: string, added: number }> => []), addUrl: vi.fn(() => ({ id: 'made', added: 1 })) }
   const zoom = { step: vi.fn(), reset: vi.fn() }
   const devtools = { toggle: vi.fn(async () => {}), openConsole: vi.fn(async () => {}) }
-  const profiles = { openPrivate: vi.fn() }
+  const profiles = { openPrivate: vi.fn(), openPrivateNym: vi.fn() }
   return { target, zoom, devtools, profiles, calls: { ...calls, close: window.close as never, setFullScreen: window.setFullScreen as never, setAlwaysOnTop: window.setAlwaysOnTop as never }, bookmarks, deps: { services: { bookmarks, zoom, devtools, profiles, closedTabs: new ClosedStack(), kiosk: options.kiosk === true, settings: { get: () => options.homeUrl ?? '', set: vi.fn() } } as unknown as ShellServices, openWindow: vi.fn<() => void>(), displays: () => [], quit: vi.fn<() => void>() }, send }
 }
 
@@ -429,6 +429,13 @@ describe('runCommand', () => {
     runCommand('profiles.open', target, deps)
     expect(profiles.openPrivate).toHaveBeenCalledTimes(1)
     expect(calls['openInternal']).toHaveBeenCalledWith('profiles')
+  })
+
+  it('starts a private session held to Nym, and not an ordinary one', () => {
+    const { target, deps, profiles } = harness([tab('a')], 'a')
+    runCommand('window.newPrivateNym', target, deps)
+    expect(profiles.openPrivateNym).toHaveBeenCalledTimes(1)
+    expect(profiles.openPrivate).not.toHaveBeenCalled()
   })
 
   it('opens the Downloads page', () => {

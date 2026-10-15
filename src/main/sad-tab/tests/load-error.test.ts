@@ -14,6 +14,7 @@ describe('what the load-error sheet says', () => {
     expect(loadErrorText(-102).body).toBe('The server refused the connection.')
     expect(loadErrorText(-106).title).toBe('You are offline')
     expect(loadErrorText(-20).title).toBe('This page was blocked')
+    for (const code of [-111, -130]) expect(loadErrorText(code).body, String(code)).toContain('The tunnel did not carry this page, and nothing was sent outside it.')
     expect(loadErrorText(-999)).toEqual({ title: 'This page couldn\'t be loaded', body: 'Something went wrong while loading it. Trying again may help.' })
   })
 

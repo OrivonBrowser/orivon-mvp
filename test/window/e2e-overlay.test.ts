@@ -163,7 +163,7 @@ it('a submenu replaces the list under a back row, and Escape goes back before it
 
     // Keyboard: Right drills in, Escape backs out, a second Escape closes.
     await menu.keyboard.press('ArrowDown')
-    for (let step = 0; step < 20 && await focusedKey(menu) !== 'sub:More tools'; step += 1) await menu.keyboard.press('ArrowDown')
+    for (let step = 0; step < 30 && await focusedKey(menu) !== 'sub:More tools'; step += 1) await menu.keyboard.press('ArrowDown')
     expect(await focusedKey(menu)).toBe('sub:More tools')
     await menu.keyboard.press('ArrowRight')
     await menu.waitForSelector('.menu-back')

@@ -72,6 +72,8 @@ export interface NetworkFacts {
     readonly enabled: boolean
     /** Whether the tunnel the person chose is Nym, and not their own SOCKS5 address. */
     readonly inUse: boolean
+    /** This is a private window that always goes through Nym: the switch is on and cannot be moved. */
+    readonly held?: boolean
     readonly state: NymState
     readonly tunnels: { readonly connecting: number, readonly ready: number }
     readonly process?: ProcessFacts
@@ -179,11 +181,12 @@ function nodeCard (kind: 'ipfs' | 'swarm', facts: NodeFacts & { readonly enabled
 }
 
 function nymCard (facts: NetworkFacts['nym'], now: number): NetworkCard {
-  const base = { id: 'nym', name: 'Nym tunnel', on: facts.enabled, does: 'Carries the traffic of every app and website you set to use the tunnel through the Nym mixnet.' } as const
+  const does = 'Carries the traffic of every app and website you set to use the tunnel through the Nym mixnet.'
+  const base = { id: 'nym', name: 'Nym tunnel', on: facts.enabled, does: facts.held === true ? `${does} This private window always goes through Nym, so this switch cannot be changed.` : does } as const
   if (!facts.inUse) {
     return { ...base, disabled: true, status: 'Off', tone: 'idle', note: 'Nym is not in use: your tunnel is your own SOCKS5 address. Choose Nym under Tunnels in Settings to use it.', metrics: [] }
   }
-  const movable = { ...base, disabled: false } as const
+  const movable = { ...base, disabled: facts.held === true } as const
   if (!facts.enabled) {
     return { ...movable, status: 'Off', tone: 'idle', note: 'Switched off: every app and website set to use the tunnel is stopped, not sent directly.', metrics: [] }
   }

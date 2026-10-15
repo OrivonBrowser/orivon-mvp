@@ -150,7 +150,7 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     const proxy = route === undefined || route === 'off' ? undefined : ctx.routes?.proxy()
     const nym = proxy === undefined || !isNymTarget(proxy) ? undefined : ctx.routes?.nym.state()
     const kind = ctx.routes === undefined ? undefined : tunnelKindOf(ctx.routes)
-    return { ...info, ...(kind === undefined || ctx.routes === undefined ? {} : { tunnelKind: kind, everywhere: ctx.routes.hub.isEverywhere() }), ...(notLetIn === undefined ? {} : { notLetIn }), ...(update === undefined ? {} : { update }), ...(route === undefined || route === 'off' ? {} : { route }), ...(tunnel === undefined ? {} : { tunnel }), ...(nym === undefined ? {} : { nym }) }
+    return { ...info, ...(kind === undefined || ctx.routes === undefined ? {} : { tunnelKind: kind, everywhere: ctx.routes.hub.isEverywhere() }), ...(ctx.privateTunnel === 'nym' ? { tunnelHeld: 'nym' as const } : {}), ...(notLetIn === undefined ? {} : { notLetIn }), ...(update === undefined ? {} : { update }), ...(route === undefined || route === 'off' ? {} : { route }), ...(tunnel === undefined ? {} : { tunnel }), ...(nym === undefined ? {} : { nym }) }
   }
 
   /** The profile the website lives in now. */
@@ -258,6 +258,8 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     async setTunnel (origin, on) {
       const routes = ctx.routes
       if (routes === undefined || trustSources.isOriginServedFromCacheSync(origin)) return false
+      // A window held to a tunnel never has a switch turned off (the store refuses it too).
+      if (!on && ctx.privateTunnel === 'nym') return false
       if (on && (routes.routeSwitch.siteBlockedFor(origin) !== undefined || nymSwitchedOff(routes))) return false
       try {
         await routes.routeSwitch.setSite(origin, on)

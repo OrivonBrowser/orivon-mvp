@@ -20,6 +20,11 @@ custom search template's check), [`../storage/`](../storage/) (the debounced wri
 
 ## Design notes
 
+**A process can be held to values.** `SettingsStore` takes an optional map of settings the process is held to (`NYM_HELD_SETTINGS`, for a private
+window opened with Nym): `get` answers them whatever the file says, `set`, `reset` and `resetAll` leave them alone (`set` and `reset` answer
+`locked`), and the Settings page asks which they are (`held`) to show them as they are, fixed. `forceSettingsFile` writes such values into a
+settings file through the version and checks the store reads with, keeping the other choices.
+
 **A file's version carries a choice it could not hold.** `network.route.kind` (Nym, or the SOCKS5 address) did not exist when
 version 1 settings files were written, and a choice left at its default is never written. So a version 1 file with an address
 and no choice is a person who set up their own server: it reads as `socks5`, and the store writes version 2, where an

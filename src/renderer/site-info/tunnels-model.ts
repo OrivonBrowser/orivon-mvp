@@ -51,6 +51,7 @@ export const NYM_OFF_LINE = 'Nym is switched off in Settings.'
 export const NYM_OFF_LINK = 'Switch it on in Tunnels settings'
 export const ENFORCE_LINK = 'Enforce a tunnel browser-wide'
 export const EVERYWHERE_HINT = 'Every site goes through the tunnel unless you switch it off here. Change this in Tunnels settings.'
+export const HELD_LINE = 'This private window always goes through Nym, so this switch is on and cannot be changed.'
 export const NO_SWITCH_NOTE = 'This page has no tunnel switch here. An installed app is switched on from its card in Settings, under Apps, and a page from this computer is never sent through a tunnel.'
 
 function kindOf (id: TunnelKindId): TunnelKind {
@@ -59,6 +60,7 @@ function kindOf (id: TunnelKindId): TunnelKind {
 
 /** A website's row: the switch is the site's own tunnel switch. */
 function siteRow (info: SiteInfo, tunnel: SiteTunnel, extensions: readonly string[], shownOn: boolean): TunnelRowModel {
+  const held = info.tunnelHeld !== undefined
   const kind = kindOf(info.tunnelKind ?? 'nym')
   const hint = tunnelHint(tunnel)
   const reach = extensionsHint(extensions, tunnel.profile)
@@ -70,10 +72,11 @@ function siteRow (info: SiteInfo, tunnel: SiteTunnel, extensions: readonly strin
       : { text: info.everywhere === true ? 'Switched off here: this site goes outside the tunnel.' : 'This site is not sent through the tunnel.', down: false }
   return {
     kind,
-    on: shownOn,
-    disabled: tunnel.unreadable || (!tunnel.on && (tunnel.blocked !== undefined || stopped)),
+    on: held || shownOn,
+    disabled: held || tunnel.unreadable || (!tunnel.on && (tunnel.blocked !== undefined || stopped)),
     state: line,
     notes: [
+      ...(held ? [{ text: HELD_LINE, down: false }] : []),
       ...(hint === undefined ? [] : [{ text: hint, down: tunnel.unreadable || tunnel.blocked !== undefined }]),
       ...(reach === undefined ? [] : [{ text: reach, down: false }])
     ],
@@ -89,15 +92,16 @@ function appRow (info: SiteInfo): TunnelRowModel {
     on: true,
     disabled: true,
     state: { text: routeLineWords(route, 'app', info.nym), down: route === 'down' || route === 'no-proxy' || info.nym?.state === 'failed' || info.nym?.state === 'unavailable' },
-    notes: [],
+    notes: info.tunnelHeld === undefined ? [] : [{ text: HELD_LINE, down: false }],
     settingsLink: false
   }
 }
 
 export function tunnelListModel (info: SiteInfo, view: { readonly next: boolean | null }): TunnelListModel {
   const everywhere = info.everywhere === true
-  const hint = everywhere
-    ? { text: EVERYWHERE_HINT, link: 'Open Tunnels settings', everywhere: false }
+  // A window held to a tunnel says so on the row; under the list it only leads to Settings, where the same is shown fixed.
+  const hint = info.tunnelHeld !== undefined || everywhere
+    ? { text: info.tunnelHeld === undefined ? EVERYWHERE_HINT : '', link: 'Open Tunnels settings', everywhere: false }
     : { text: '', link: ENFORCE_LINK, everywhere: true }
   if (info.tunnel !== undefined && info.route !== 'temporary') {
     return { rows: [siteRow(info, info.tunnel, info.extensionsOnSite, view.next ?? info.tunnel.on)], empty: null, hint }
