@@ -27,6 +27,6 @@ export function createOutsideFetch (direct: DirectFetch, resolveHost: ResolveHos
     const addresses = answers.flatMap((answer) => canonicalAddress(answer) ?? [])
     if (addresses.length === 0) throw new Error(`${host} has no address this computer can dial`)
     const body = textBody(init?.body)
-    return await direct(url, init === undefined || body === init.body ? init : { ...init, body }, addresses)
+    return await direct(url, init === undefined || body === init.body ? init : { ...init, ...(body === undefined ? { body: null } : { body }) }, addresses)
   }
 }

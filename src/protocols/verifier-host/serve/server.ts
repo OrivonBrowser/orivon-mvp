@@ -8,7 +8,7 @@ import type { Server } from 'node:https'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { TLSSocket } from 'node:tls'
 import { isDnsLabel } from '../../resolution/dns-name.js'
-import { GatewaysOffered, ResolutionError } from '../../resolution/records.js'
+import { ResolutionError } from '../../resolution/records.js'
 import type { GatheredFile } from '../../resolution/providers.js'
 import { MAX_ADDRESS_NAME } from '../../address.js'
 import type { ProtocolAddresses } from '../../address.js'
@@ -20,6 +20,7 @@ import type { RunCertificate } from './certificate.js'
 import { ERROR_PAGE_CSP, renderErrorPage } from './error-pages.js'
 import type { GatewayOffer } from './error-pages.js'
 import { CONSENT_PATH, GatewayConsent } from '../gateway-consent.js'
+import { answerConsent, gatewayOffer, isDocumentLoad } from './gateway-offer.js'
 import { checkLeaf, expectedLeafOf, sliceChunks } from './leaf-check.js'
 import type { SiteSource } from './sites.js'
 import type { FetchRoute } from '../protocol.js'
@@ -171,21 +172,6 @@ function routeOf (req: IncomingMessage): FetchRoute {
 function isNavigation (req: IncomingMessage): boolean {
   const dest = req.headers['sec-fetch-dest']
   return req.headers['sec-fetch-mode'] === 'navigate' && (dest === 'document' || dest === 'iframe' || dest === 'frame')
-}
-
-/**
- * The error page's offer of gateways, for a failure that "could not get it" (the node could not serve the mount, or the site it served could not
- * be read), and only for a page the person is looking at: a script's fetch or a frame of the same origin could read the token.
- */
-function gatewayOffer (consent: GatewayConsent, req: IncomingMessage, url: URL, partition: string | undefined, error: unknown, servedByNode: boolean): GatewayOffer | undefined {
-  const couldNotGet = error instanceof GatewaysOffered || (servedByNode && error instanceof ResolutionError && error.failure === 'unavailable')
-  if (!couldNotGet || partition === undefined || req.headers['sec-fetch-dest'] !== 'document') return undefined
-  return { href: `${CONSENT_PATH}?token=${consent.tokenFor(partition)}&to=${encodeURIComponent(`${url.pathname}${url.search}`)}`, tunnelled: routeOf(req) === 'tunnel' }
-}
-
-/** A page load the person started in a tab (its document), not a frame's or a file's. */
-function isDocumentLoad (req: IncomingMessage): boolean {
-  return req.headers['sec-fetch-mode'] === 'navigate' && req.headers['sec-fetch-dest'] === 'document'
 }
 
 /** The path of an origin-form request target. `//x/y` would read as an authority, so it is refused, not reinterpreted. */
@@ -389,29 +375,6 @@ function redirectToCanonical (registry: ProtocolRegistry, scheme: string, url: U
   }
 }
 
-/** The only paths of a served name that are the host's own, not the site's. */
-const OWN_PREFIX = '/.orivon/'
-
-/** A path on the same name, as the consent link carries it back: never another host, never the host's own paths. */
-function returnPathOf (target: string | null): string {
-  // A backslash reads as a slash in a Location, so `/\evil` would name another host.
-  if (target === null || !/^\/[^\\\x00-\x1f]*$/.test(target) || target.startsWith('//') || target.startsWith(OWN_PREFIX)) return '/'
-  return target
-}
-
-/**
- * The person followed the error page's button: the site this request is for may be loaded through public gateways from now on,
- * until the host stops. Only the token the error page was given says yes, and only a navigation the person started (a click or a key
- * on the link: the browser marks it `Sec-Fetch-User`) can follow it, so a script on any page cannot follow it for them.
- */
-function acceptGateways (consent: GatewayConsent, req: IncomingMessage, res: ServerResponse, url: URL, partition: string | undefined): void {
-  if (req.headers['sec-fetch-mode'] !== 'navigate' || req.headers['sec-fetch-user'] !== '?1' || !consent.grant(partition, url.searchParams.get('token'))) {
-    res.writeHead(403, { 'content-type': 'text/plain', 'cache-control': 'no-store' }).end('this is not the page that asks')
-    return
-  }
-  res.writeHead(303, { location: returnPathOf(url.searchParams.get('to')), 'cache-control': 'no-store', 'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}` }).end()
-}
-
 async function handle (registry: ProtocolRegistry, sites: SiteSource, routes: ServeRoutes, consent: GatewayConsent, req: IncomingMessage, res: ServerResponse, budget: BufferBudget, bufferedResponseDeadlineMs: number): Promise<void> {
   const host = hostOf(req, registry.addresses)
   if (host === undefined || (registry.addresses.servedName(host) === undefined && registry.addresses.schemeEndpoint(host) === undefined)) {
@@ -433,7 +396,7 @@ async function handle (registry: ProtocolRegistry, sites: SiteSource, routes: Se
     return
   }
   if (url.pathname === CONSENT_PATH) {
-    acceptGateways(consent, req, res, url, partitionOf(req, host))
+    answerConsent(consent, req.headers, url, partitionOf(req, host), res, `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}`)
     return
   }
   const expectedLeaf = expectedLeafOf(req.headers)
@@ -504,7 +467,7 @@ async function handle (registry: ProtocolRegistry, sites: SiteSource, routes: Se
     await sendBody(res, status, headers, file, reopen, length, budget, partition, bufferedResponseDeadlineMs, typeof expected === 'string', plan)
   } catch (error) {
     if (res.headersSent) res.destroy()
-    else sendError(res, shown, error, root, gatewayOffer(consent, req, url, partition, error, servedByNode))
+    else sendError(res, shown, error, root, gatewayOffer(consent, req.headers, url, partition, error, servedByNode, routeOf(req) === 'tunnel'))
   }
 }
 
