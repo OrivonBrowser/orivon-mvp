@@ -3,10 +3,16 @@ import type { SiteInfo, SiteTunnel } from '../../main/permissions/site-info.js'
 import { ENFORCE_LINK, EVERYWHERE_HINT, NO_SWITCH_NOTE, NYM_OFF_LINE, TUNNEL_KINDS, anyTunnelOn, tunnelListModel } from '../site-info/tunnels-model.js'
 
 const tunnel: SiteTunnel = { on: false, swarm: false, unreadable: false, kind: 'nym', nymOff: false, everywhere: false }
-const info = (patch: Partial<SiteInfo> = {}): SiteInfo => ({
+const base: SiteInfo = {
   origin: 'https://example.com', displayOrigin: 'example.com', claimedName: undefined, homeDomain: undefined, update: undefined, asked: true,
-  capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite: [], tunnel, ...patch
-})
+  capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite: [], tunnel
+}
+const info = (patch: Partial<SiteInfo> = {}): SiteInfo => ({ ...base, ...patch })
+/** A page with no tunnel switch: an installed app, a local file or this computer. */
+const noSwitch = (patch: Partial<SiteInfo> = {}): SiteInfo => {
+  const { tunnel: _omitted, ...rest } = { ...base, ...patch }
+  return rest
+}
 const noView = { next: null }
 
 describe('the tunnel kinds Orivon offers', () => {
@@ -70,7 +76,7 @@ describe('the rows of a website', () => {
 
 describe('an installed app and a page opened from one', () => {
   it('shows the app\'s route with a fixed switch, because its switch is on its card in Settings', () => {
-    const model = tunnelListModel(info({ tunnel: undefined, route: 'ok', nym: { state: 'ready' } }), noView)
+    const model = tunnelListModel(noSwitch({ route: 'ok', nym: { state: 'ready' } }), noView)
     expect(model.rows[0]).toMatchObject({ kind: { id: 'nym' }, on: true, disabled: true })
     expect(model.rows[0]?.state.text).toContain('This app\'s traffic goes through Nym')
   })
@@ -82,7 +88,7 @@ describe('an installed app and a page opened from one', () => {
   })
 
   it('has no row for a page with no tunnel switch, and says so', () => {
-    expect(tunnelListModel(info({ tunnel: undefined }), noView)).toMatchObject({ rows: [], empty: NO_SWITCH_NOTE })
+    expect(tunnelListModel(noSwitch(), noView)).toMatchObject({ rows: [], empty: NO_SWITCH_NOTE })
   })
 })
 

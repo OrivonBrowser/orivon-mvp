@@ -77,7 +77,7 @@ afterAll(async () => {
 })
 
 async function openPopover (): Promise<Page> {
-  await chrome.click('#site-permissions-btn')
+  await chrome.click('#tunnel-btn')
   expect(await waitFor(() => findPopup() !== undefined)).toBe(true)
   const popover = findPopup() as Page
   await popover.waitForSelector('#tunnel-switch')
@@ -108,9 +108,9 @@ it('[app:tunnelled-website-sends-nothing-direct] a .eth name with the tunnel on 
   await delay(1000)
   expect(blocksAsked(decoy), 'and nothing further went to the gateway directly').toBe(directBlocks)
 
-  expect(await waitFor(async () => await chrome.getAttribute('#site-permissions-btn', 'data-tunnel') === 'on'), 'the key shows the full mark, not the dashed one').toBe(true)
+  expect(await waitFor(async () => await chrome.getAttribute('#tunnel-btn', 'data-tunnel') === 'on'), 'the tunnel button is purple').toBe(true)
   const after = await openPopover()
-  expect(await after.locator('.tunnel-section .route-line').last().textContent(), 'the popover says nothing stays outside').toBe('This site\'s traffic goes through your tunnel.')
+  expect(await after.locator('.tunnel-section .tunnel-state').textContent(), 'the popover says nothing stays outside').toBe('This site\'s traffic goes through your tunnel.')
   await shoot(app, chrome, after, 'website-tunnel-web3')
 }, 4 * QA_TEST_TIMEOUT_MS)
 
@@ -119,7 +119,7 @@ it('[app:tunnelled-website-sends-nothing-direct] an ipns:// DNSLink name with th
   expect((await waitForTab(chrome, { address: 'ipns://docs.example/', title: 'eth fixture' })).ok, 'the DNSLink site loaded').toBe(true)
   expect(lookupsAsked(real), 'the DNSLink lookup arrived through the tunnel').toBeGreaterThan(0)
   expect(lookupsAsked(decoy), 'and never directly').toBe(0)
-  expect(await waitFor(async () => await chrome.getAttribute('#site-permissions-btn', 'data-tunnel') === 'on'), 'the key shows the full mark').toBe(true)
+  expect(await waitFor(async () => await chrome.getAttribute('#tunnel-btn', 'data-tunnel') === 'on'), 'the tunnel button is purple').toBe(true)
 }, 4 * QA_TEST_TIMEOUT_MS)
 
 it('[app:tunnelled-website-sends-nothing-direct] with the tunnel stopped the site\'s files do not load, and nothing falls back to the gateway directly', async () => {

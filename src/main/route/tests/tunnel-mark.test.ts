@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { tunnelMarkFor } from '../tunnel-mark.js'
 
-describe('what the key says about the page and the tunnel', () => {
+describe('what the tunnel button says about the page', () => {
   it('says nothing for a page that is not on the tunnel', () => {
     expect(tunnelMarkFor({ state: 'off', temporary: false })).toBeNull()
   })

@@ -224,12 +224,12 @@ it('[app:routed-app-asks-before-opening-a-website] "Through my tunnel" opens the
   expect(session, 'WebRTC cannot leave the proxy, and the session is in memory').toEqual({ inMemory: true, webrtc: 'disable_non_proxied_udp' })
 
   // Its site-info popover says so.
-  await chrome.click('#site-permissions-btn')
+  await chrome.click('#tunnel-btn')
   expect(await waitFor(() => findPopup() !== undefined)).toBe(true)
   const popover = findPopup() as Page
-  await popover.waitForSelector('.route-line')
-  expect(await popover.locator('.route-line').textContent()).toBe('This page goes through your tunnel, and nothing it stores is kept once its last tab is closed.')
-  await chrome.click('#site-permissions-btn')
+  await popover.waitForSelector('.tunnel-state')
+  expect(await popover.locator('.tunnel-state').textContent()).toBe('This page goes through your tunnel, and nothing it stores is kept once its last tab is closed.')
+  await chrome.click('#tunnel-btn')
   expect(await waitFor(() => findPopup() === undefined)).toBe(true)
   await delay(400)
 

@@ -122,18 +122,18 @@ it('[app:tunnel-everywhere-carries-orivons-own-requests] the verifier host fetch
   expect(socks.requests.find((request) => request.destination === GATEWAY)?.userId, 'it signed in to the tunnel').toBeDefined()
   expect(socks.requests.map((request) => request.destination).filter((name) => name.endsWith('.eth')), 'the name itself never went to the tunnel').toEqual([])
 
-  expect(await waitFor(async () => await chrome.getAttribute('#site-permissions-btn', 'data-tunnel') === 'on'), 'the key shows the full mark, not the dashed one').toBe(true)
-  await chrome.click('#site-permissions-btn')
+  expect(await waitFor(async () => await chrome.getAttribute('#tunnel-btn', 'data-tunnel') === 'on'), 'the tunnel button is purple').toBe(true)
+  await chrome.click('#tunnel-btn')
   expect(await waitFor(() => findPopup() !== undefined)).toBe(true)
   const popover = findPopup() as Page
   await popover.waitForSelector('#tunnel-switch')
   expect(await popover.locator('#tunnel-switch').getAttribute('aria-checked')).toBe('true')
-  expect(await popover.locator('.tunnel-section .route-line').last().textContent(), 'the popover does not say any part stays outside').toBe('This site\'s traffic goes through your tunnel.')
+  expect(await popover.locator('.tunnel-section .tunnel-state').textContent(), 'the popover does not say any part stays outside').toBe('This site\'s traffic goes through your tunnel.')
   await shoot(app, chrome, popover, 'tunnel-everywhere-web3')
 }, 4 * QA_TEST_TIMEOUT_MS)
 
 it('[app:tunnel-everywhere-carries-orivons-own-requests] a Web3 Score lookup about a page goes to the provider through the tunnel', async () => {
-  await chrome.click('#site-permissions-btn').catch(() => {})
+  await chrome.click('#tunnel-btn').catch(() => {})
   await navigateToFixture(app, `http://127.0.0.1:${String(scored.port)}/`, 'scored fixture')
 
   const judged = await readScore(app, '3')
