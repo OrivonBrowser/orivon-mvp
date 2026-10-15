@@ -6,7 +6,7 @@ import { MAX_SCORE_FILE_BYTES, SCORE_STANDARD, findEvaluation, parseDescriptor }
 import { isSettled, verdictToShow } from '../../trust/score-provider.js'
 import type { ProviderDescriptor, ProviderVerdict } from '../../trust/score-provider.js'
 import { directLookupSession, lookupSessionFor } from '../route/lookup-session.js'
-import { ownFetch } from '../route/own-requests.js'
+import { ownFetch, ownRequestsTunnelled } from '../route/own-requests.js'
 import { fetchThroughRoute } from '../route/routed-fetch.js'
 import { readCapped } from './favicon-fetch.js'
 import { parseOmniboxInput } from './omnibox.js'
@@ -44,6 +44,13 @@ const FAILURE_KEPT_MS = 60_000
 const SETTLED_KEPT = 256
 /** Past the verifier's own 25 s for proving a name: an IPFS-served provider's first answer waits on that proof. */
 const FETCH_TIMEOUT_MS = 30_000
+/** For a lookup that leaves through the tunnel: a cold Nym tunnel takes up to 95 s to come up (three tries), and the answer waits on that. */
+const TUNNELLED_FETCH_TIMEOUT_MS = 180_000
+
+/** How long one fetch of a provider's file may take before it counts as failed. */
+export function lookupTimeoutMs (tunnelled: boolean): number {
+  return tunnelled ? TUNNELLED_FETCH_TIMEOUT_MS : FETCH_TIMEOUT_MS
+}
 /** The folder a web3-score-manager build puts the provider's files in, under the site that publishes them. */
 const PUBLISHED_FOLDER = 'score'
 
@@ -64,7 +71,7 @@ export function bucketOf (id: string, hexChars: number): string {
 export function createScoreProviderClient (deps: ScoreProviderDeps): ScoreProviderClient {
   const now = deps.now ?? Date.now
   const answerKeptMs = deps.answerKeptMs ?? ANSWER_KEPT_MS
-  const kept = new Map<string, { readonly at: number, readonly answer: Promise<FetchedJson> }>()
+  const kept = new Map<string, { readonly at: number, readonly answer: Promise<FetchedJson>, settledAt?: number }>()
   // The last verdict the provider settled per page, which an ask it cannot answer does not withdraw (verdictToShow).
   // Unlike `kept` it does not expire: it is replaced by the next answer the provider does give.
   const settled = new Map<string, ProviderVerdict>()
@@ -82,16 +89,18 @@ export function createScoreProviderClient (deps: ScoreProviderDeps): ScoreProvid
   // One fetch per URL while it is in flight or kept: the shield asks several times a second while a page loads.
   async function cachedFetch (url: string, origin: string | undefined): Promise<FetchedJson> {
     const time = now()
-    for (const [key, entry] of kept) if (time - entry.at >= answerKeptMs) kept.delete(key)
+    for (const [key, entry] of kept) if (time - (entry.settledAt ?? entry.at) >= answerKeptMs) kept.delete(key)
     // A routed app's answer is its own: what its route could reach says nothing about a direct fetch, nor the reverse.
     const key = `${origin ?? ''} ${url}`
     let entry = kept.get(key)
     if (entry === undefined) {
-      entry = { at: time, answer: deps.fetchJson(url, origin) }
+      // An answer is kept from when it arrived, not from when it was asked: a fetch that waited a minute for a tunnel is not stale on arrival.
+      const made: { at: number, answer: Promise<FetchedJson>, settledAt?: number } = { at: time, answer: deps.fetchJson(url, origin).then((answered) => { made.settledAt = now(); return answered }) }
+      entry = made
       kept.set(key, entry)
     }
     const answer = await entry.answer
-    if (answer.kind === 'failed' && now() - entry.at >= FAILURE_KEPT_MS && kept.get(key) === entry) {
+    if (answer.kind === 'failed' && now() - (entry.settledAt ?? entry.at) >= FAILURE_KEPT_MS && kept.get(key) === entry) {
       kept.delete(key)
       return await cachedFetch(url, origin)
     }
@@ -181,8 +190,10 @@ export async function netFetchJson (url: string, origin?: string): Promise<Fetch
   } catch {
     return { kind: 'failed', reason: `${url} could not be reached through this app's route.` }
   }
+  // A lookup through the tunnel waits for it to come up; one that leaves the ordinary way does not.
+  const timeoutMs = lookupTimeoutMs(routed !== undefined || (origin === undefined && ownRequestsTunnelled()))
   try {
-    const init = { credentials: 'omit', redirect: 'follow', cache: 'no-store', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) } as const
+    const init = { credentials: 'omit', redirect: 'follow', cache: 'no-store', signal: AbortSignal.timeout(timeoutMs) } as const
     // With no route and the whole browser on the tunnel, the default session is the tunnel's: a site set to off is asked about on the system's proxy.
     // A lookup about no origin (an install, an update check) follows the default, as Orivon's own requests do: through the tunnel while it is on.
     const direct = routed === undefined && origin !== undefined ? directLookupSession() : undefined
@@ -194,7 +205,7 @@ export async function netFetchJson (url: string, origin?: string): Promise<Fetch
     if (bytes === null) return { kind: 'failed', reason: `${url} is larger than 1 MiB.` }
     return { kind: 'ok', body: JSON.parse(new TextDecoder().decode(bytes)) }
   } catch (error) {
-    const reason = error instanceof SyntaxError ? 'is not JSON' : error instanceof Error && error.name === 'TimeoutError' ? `did not answer within ${String(FETCH_TIMEOUT_MS / 1000)} seconds` : 'could not be reached'
+    const reason = error instanceof SyntaxError ? 'is not JSON' : error instanceof Error && error.name === 'TimeoutError' ? `did not answer within ${String(timeoutMs / 1000)} seconds` : 'could not be reached'
     return { kind: 'failed', reason: `${url} ${reason}.` }
   }
 }
