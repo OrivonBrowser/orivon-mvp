@@ -33,7 +33,7 @@ and an outer cap sized from the route's rate and the largest the body may be, so
 A body that keeps arriving is never cut by the wait a direct connection would have given it.
 
 **A file of a page that failed for want of an answer is read again before the page is told it is missing.** On the serve path
-(`verifier-host/serve/retry.ts`; not the page's own document, whose error page offers Try again) a read that fails `unavailable` is made again twice, after a short pause, from the
+(`verifier-host/serve/retry.ts`; not the page's own document, whose error page offers Try again, nor an install's read, which has its own) a read that fails `unavailable` is made again twice, after a short pause, from the
 blocks already held, unless the reads so far already took the route's patience (30 s on a direct connection, stretched); a missing path, a failed check and an unsupported format are not read again (they would fail the same way).
 
 **A page that is not whole says so.** The shell notes every file (not a document or a frame) the verifier answered with a 5xx,

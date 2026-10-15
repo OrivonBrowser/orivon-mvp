@@ -419,8 +419,8 @@ async function handle (registry: ProtocolRegistry, sites: SiteSource, routes: Se
       res.writeHead(304, { etag, 'cache-control': 'no-cache', 'content-security-policy': SERVED_CONTENT_CSP }).end()
       return
     }
-    // A page's file is read again when nothing answered; the page itself is not, since its error page offers Try again and the person's own request starts anew.
-    const plan: ReadPlan = { route: routeOf(req) === 'tunnel' ? routes.tunnel : routes.direct, left: left.signal, retries: isNavigation(req) ? 0 : FILE_RETRIES }
+    // A page's file is read again when nothing answered. The page itself is not, since its error page offers Try again and the person's own request starts anew; nor is an install's read, which has its own way to try again.
+    const plan: ReadPlan = { route: routeOf(req) === 'tunnel' ? routes.tunnel : routes.direct, left: left.signal, retries: isNavigation(req) || typeof expected === 'string' ? 0 : FILE_RETRIES }
     file = await readWithRetries(async () => await site.open(url.pathname, undefined, left.signal), plan.route, plan.left, plan.retries)
     if (!url.pathname.endsWith('/') && file.servedPath.endsWith('/index.html') && !url.pathname.endsWith('/index.html')) {
       res.writeHead(301, { location: `${url.pathname}/${url.search}`, 'cache-control': 'no-cache' }).end()
