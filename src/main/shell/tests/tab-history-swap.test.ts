@@ -32,6 +32,7 @@ interface FakeWebContents extends EventEmitter {
   setWindowOpenHandler: ReturnType<typeof vi.fn>
   ipc: { on: ReturnType<typeof vi.fn> }
   close: ReturnType<typeof vi.fn>
+  setAudioMuted: ReturnType<typeof vi.fn>
 }
 
 interface RecordedView {
@@ -74,6 +75,7 @@ function makeFakeWebContents (): FakeWebContents {
   emitter.setWindowOpenHandler = vi.fn()
   emitter.ipc = { on: vi.fn() }
   emitter.close = vi.fn(() => { destroyed = true; emitter.emit('destroyed') })
+  emitter.setAudioMuted = vi.fn()
   return emitter
 }
 
