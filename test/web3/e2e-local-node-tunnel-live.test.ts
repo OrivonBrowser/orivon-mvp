@@ -269,7 +269,7 @@ describe.skipIf(!LIVE)('the IPFS node through the real Nym tunnel', () => {
       const loaded = await waitFor(async () => {
         const info = await activeTabInfo(chrome)
         const title = info.title ?? ''
-        return (info.address ?? '') !== '' && title !== '' && !/^(New Tab|Cannot .*|.*\.(ipfs|ipns|eth)(\.orivon)?)$/.test(title)
+        return (info.address ?? '').includes(name) && title !== '' && !/^(New Tab|Cannot .*|.*\.(ipfs|ipns|eth)(\.orivon)?)$/.test(title)
       }, Number(process.env['ORIVON_LIVE_NAME_WAIT_MS'] ?? 420_000))
       const ms = Date.now() - started
       console.log(`[live] ${name}: loaded=${String(loaded)} in ${String(ms)} ms, tab ${JSON.stringify(await activeTabInfo(chrome))}`)
