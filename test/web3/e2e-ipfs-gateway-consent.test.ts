@@ -7,6 +7,8 @@ import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } 
 import { activeTabInfo, evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from '../support/e2e-helpers.js'
 import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
+import { shoot } from '../support/auth-support.js'
+import type { Page } from 'playwright'
 
 const RETRY_WAIT_MS = 1_000
 const TEST_TIMEOUT_MS = ADDRESS_BAR_STABLE_TIMEOUT_MS * 2 + DEFAULT_ACTION_TIMEOUT_MS * 10 + APP_CLOSE_RACE_MS + 120_000
@@ -61,12 +63,13 @@ it('[ipfs-gateway-consent] refuses to read a gateway until the person presses th
 
       await clickAddressBarRetrying(chrome, `ipfs://${rootOne}`)
       const refused = await shown(rootOne)
-      check(`the page says why and offers the gateways (${refused.slice(0, 160).replaceAll('\n', ' | ')})`, refused.includes('Orivon\'s IPFS node'))
+      check(`the page offers the gateways, says nothing was sent to them, and points to Settings (${refused.slice(0, 160).replaceAll('\n', ' | ')})`, /Nothing has been sent to any gateway/.test(refused) && /Settings under Web3/.test(refused))
       check(`no gateway was asked before the press (${JSON.stringify(publicGateway.requests)})`, publicGateway.requests.length === 0)
       expect(publicGateway.requests).toEqual([])
 
       const view = findViewShowing(running, chrome, `https://${rootOne}.ipfs.orivon/`)
       if (view === undefined) throw new Error('no view shows the refused site')
+      await shoot(running, chrome, view, 'ipfs-gateway-offer')
       // A real press: the browser marks a navigation the person started, and the host follows no other.
       await view.locator('#load-through-gateways').click()
       const loaded = await waitForTab(chrome, { title: 'consent one' }, 60_000)
@@ -81,6 +84,19 @@ it('[ipfs-gateway-consent] refuses to read a gateway until the person presses th
       check('another site is refused again', second.includes('Load through public gateways'))
       check('and no gateway was asked for it', publicGateway.requests.length === before)
       expect(publicGateway.requests.length).toBe(before)
+
+      // The switch for the nodes is in Settings under Tunnels, off by default, in the words the person reads.
+      await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/tunnels') })
+      let settings: Page | undefined
+      await waitFor(() => { settings = running.windows().find((w) => w.url().startsWith('orivon://settings')); return settings !== undefined })
+      if (settings === undefined) throw new Error('Settings did not open')
+      const row = settings.locator('#row-route-nodes')
+      await row.waitFor()
+      const label = (await row.textContent()) ?? ''
+      check(`the switch says what it does (${label.slice(0, 120)})`, label.includes('Use tunnel to run network nodes (such as IPFS and Swarm)') && label.includes('connect directly'))
+      check('it is off by default', !(await row.locator('input[type=checkbox]').isChecked()))
+      await shoot(running, chrome, settings, 'settings-tunnels-nodes')
+      expect(await row.locator('input[type=checkbox]').isChecked()).toBe(false)
     } finally {
       if (app !== undefined) await closeElectronApp(app)
       await publicGateway.close()
