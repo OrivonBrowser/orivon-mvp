@@ -7,7 +7,7 @@ import type { SettingsState } from './state.js'
 
 export type Control =
   /** A choice among a setting's options. Options default to the schema's own, with its labels. */
-  | { readonly type: 'choice', readonly key: SettingKey, readonly options?: ReadonlyArray<{ readonly value: string, readonly label: string }> }
+  | { readonly type: 'choice', readonly key: SettingKey, readonly options?: ReadonlyArray<{ readonly value: string, readonly label: string }>, readonly locked?: (state: SettingsState) => boolean }
   /** `problem` is what the row says when main refuses the value; without it, the search address's own message. */
   | { readonly type: 'text', readonly key: SettingKey, readonly placeholder: string, readonly problem?: string }
   /** `disabled` greys the switch out and shows it off when the setting cannot take effect, and the row's help says why.

@@ -9,7 +9,10 @@ export type Launch =
   | { readonly kind: 'default', readonly home: string, readonly dir: string }
   | { readonly kind: 'profile', readonly id: string, readonly home: string, readonly dir: string }
   /** `dir` is a fresh directory the session owns, made by the browser that opened it (with a copy of its settings in it); null when nothing made one. */
-  | { readonly kind: 'private', readonly home: string, readonly dir: string | null }
+  | { readonly kind: 'private', readonly home: string, readonly dir: string | null, readonly tunnel?: PrivateTunnel }
+
+/** What a private session is forced to send everything through, from its first instant to its end. Absent: the session follows the settings it began with. */
+export type PrivateTunnel = 'nym'
 
 export const DEFAULT_PROFILE_ID = 'default'
 /** The shape of an id this browser made: twelve random lowercase hexadecimal characters, never a path. Checked before any path is built from one. */
@@ -18,6 +21,7 @@ export const PROFILE_ID = /^[0-9a-f]{12}$/
 const PROFILE_FLAG = '--orivon-profile='
 const PRIVATE_FLAG = '--orivon-private'
 const PRIVATE_DIR_FLAG = '--orivon-private-dir='
+const PRIVATE_TUNNEL_FLAG = '--orivon-private-tunnel='
 /** What a launcher action passes (a dock or taskbar menu entry, a desktop-entry action). */
 export const NEW_WINDOW_FLAG = '--new-window'
 export const NEW_PRIVATE_WINDOW_FLAG = '--new-private-window'
@@ -37,9 +41,15 @@ export function parseLaunch (command: readonly string[], home: string): LaunchPa
   const isPrivate = argv.includes(PRIVATE_FLAG)
   if (isPrivate && profiles.length > 0) return { ok: false, problem: 'a private session cannot also be a profile' }
   if (profiles.length > 1) return { ok: false, problem: 'more than one profile was named' }
+  const tunnels = argv.filter((argument) => argument.startsWith(PRIVATE_TUNNEL_FLAG))
+  if (tunnels.length > 0 && !isPrivate) return { ok: false, problem: 'a tunnel for the whole session is only for a private session' }
   if (isPrivate) {
     const dir = argv.find((argument) => argument.startsWith(PRIVATE_DIR_FLAG))?.slice(PRIVATE_DIR_FLAG.length)
-    return { ok: true, launch: { kind: 'private', home, dir: dir === undefined || dir === '' ? null : dir } }
+    if (tunnels.length > 1) return { ok: false, problem: 'more than one tunnel was named' }
+    const named = tunnels[0]?.slice(PRIVATE_TUNNEL_FLAG.length)
+    // A tunnel this build does not know is refused, never read as none: the session was asked to stay inside one.
+    if (named !== undefined && named !== 'nym') return { ok: false, problem: `"${named}" is not a tunnel a private session can be held to` }
+    return { ok: true, launch: { kind: 'private', home, dir: dir === undefined || dir === '' ? null : dir, ...(named === undefined ? {} : { tunnel: 'nym' as const }) } }
   }
   const named = profiles[0]?.slice(PROFILE_FLAG.length)
   if (named === undefined || named === DEFAULT_PROFILE_ID) return { ok: true, launch: { kind: 'default', home, dir: home } }
@@ -48,8 +58,9 @@ export function parseLaunch (command: readonly string[], home: string): LaunchPa
 }
 
 /** The flags that start another process as `launch`, for the peer spawn. */
-export function flagsFor (launch: { kind: 'profile', id: string } | { kind: 'private', dir: string }): string[] {
-  return launch.kind === 'profile' ? [`${PROFILE_FLAG}${launch.id}`] : [PRIVATE_FLAG, `${PRIVATE_DIR_FLAG}${launch.dir}`]
+export function flagsFor (launch: { kind: 'profile', id: string } | { kind: 'private', dir: string, tunnel?: PrivateTunnel }): string[] {
+  if (launch.kind === 'profile') return [`${PROFILE_FLAG}${launch.id}`]
+  return [PRIVATE_FLAG, `${PRIVATE_DIR_FLAG}${launch.dir}`, ...(launch.tunnel === undefined ? [] : [`${PRIVATE_TUNNEL_FLAG}${launch.tunnel}`])]
 }
 
 const ADDRESS_ARGUMENT = /^https?:\/\//i

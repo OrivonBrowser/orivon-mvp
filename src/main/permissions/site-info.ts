@@ -96,6 +96,8 @@ export interface SiteInfo {
   readonly tunnelKind?: 'nym' | 'socks5'
   /** The whole browser goes through the tunnel unless a site is set to off. Absent while routes are not running. */
   readonly everywhere?: boolean
+  /** This is a private window held to a tunnel for its whole life: every switch is on and fixed. Absent otherwise. */
+  readonly tunnelHeld?: 'nym'
   /** The tunnel switch of a website; absent for an installed app, a local file and this computer. */
   readonly tunnel?: SiteTunnel
   /** True when the site has asked for at least one Orivon capability or

@@ -40,6 +40,7 @@ export const MENU_LAYOUT: readonly MenuEntry[] = [
   'tab.new',
   'window.new',
   'window.newPrivate',
+  'window.newPrivateNym',
   'file.open',
   '-',
   'history.open',

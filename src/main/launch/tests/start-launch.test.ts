@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PACKAGE_PROGRAM, SOURCE_PROGRAM } from '../program-names.js'
+import { everywhereBeforeReady } from '../../settings/settings-file.js'
 import { startLaunch, takeSourceIdentity } from '../start-launch.js'
 
 let home = ''
@@ -93,6 +94,36 @@ describe('a first start of a profile', () => {
     expect(named?.dir).toBe(given)
     expect(named?.madeDir).toBeUndefined()
     expect(run(fakeApp(true).app)?.madeDir).toBeUndefined()
+  })
+
+  it('held to Nym, knows it in its runtime and reads settings that already hold the tunnel, whether it made its directory or was given one', () => {
+    const made = run(fakeApp(false).app, '--orivon-private', '--orivon-private-tunnel=nym')
+    expect(made?.launch).toMatchObject({ kind: 'private', tunnel: 'nym' })
+    expect(everywhereBeforeReady(join(made?.dir ?? '', 'settings.json'))).toBe(true)
+
+    // A directory the opener made with a settings file that does not hold it: this process writes it again before anything reads it.
+    const given = join(tmp, 'orivon-private-abc123')
+    mkdirSync(given)
+    writeFileSync(join(given, 'settings.json'), JSON.stringify({ version: 2, values: { 'network.tunnel.everywhere': false } }))
+    const named = run(fakeApp(false).app, '--orivon-private', `--orivon-private-dir=${given}`, '--orivon-private-tunnel=nym')
+    expect(named?.dir).toBe(given)
+    expect(everywhereBeforeReady(join(given, 'settings.json'))).toBe(true)
+    // Without the flag it is an ordinary private session, which reads its file as it is.
+    const plain = join(tmp, 'orivon-private-abc124')
+    mkdirSync(plain)
+    writeFileSync(join(plain, 'settings.json'), JSON.stringify({ version: 2, values: { 'network.tunnel.everywhere': false } }))
+    expect(run(fakeApp(false).app, '--orivon-private', `--orivon-private-dir=${plain}`)?.launch).not.toHaveProperty('tunnel')
+    expect(everywhereBeforeReady(join(plain, 'settings.json'))).toBe(false)
+  })
+
+  it('held to Nym, does not start when its settings cannot be set up', () => {
+    const given = join(tmp, 'orivon-private-abc125')
+    mkdirSync(given)
+    mkdirSync(join(given, 'settings.json'))
+    const { app, exit } = fakeApp(false)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(run(app, '--orivon-private', `--orivon-private-dir=${given}`, '--orivon-private-tunnel=nym')).toBeNull()
+    expect(exit).toHaveBeenCalledWith(2)
   })
 
   it('named a private session on the command line takes no lock at all', () => {

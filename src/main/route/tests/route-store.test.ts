@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { parseRoutes, RouteStore } from '../route-store.js'
+import { parseRoutes, RouteStore, RouteStoreError } from '../route-store.js'
 
 const APP = 'https://torrent.example'
 const dirs: string[] = []
@@ -67,6 +67,25 @@ describe('RouteStore', () => {
     const store = new RouteStore(fileIn())
     expect(store.origins()).toEqual([])
     expect(store.unreadable()).toBe(false)
+  })
+})
+
+describe('a store that can never give an origin an off entry', () => {
+  it('refuses an off entry and changes nothing, and still takes an on entry and its removal', () => {
+    const store = new RouteStore(null, { neverOff: true })
+    const heard = vi.fn()
+    store.onChange(heard)
+    expect(() => store.setEntry(APP, 'off')).toThrow(RouteStoreError)
+    expect(store.stateOf(APP)).toBeUndefined()
+    expect(store.entries()).toEqual([])
+    expect(heard).not.toHaveBeenCalled()
+    expect(store.setEntry(APP, 'on')).toBe(true)
+    expect(store.setEntry(APP, undefined)).toBe(true)
+    expect(store.stateOf(APP)).toBeUndefined()
+  })
+
+  it('is an ordinary store without the option', () => {
+    expect(new RouteStore(null).setEntry(APP, 'off')).toBe(true)
   })
 })
 

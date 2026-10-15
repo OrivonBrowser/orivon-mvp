@@ -93,6 +93,18 @@ describe('createSiteInfoController -- the route of a routed app', () => {
     expect('nym' in await createSiteInfoController(onAddress, NO_TRUST).siteInfoFor(OTHER)).toBe(false)
   })
 
+  it('says a private window is held to Nym, and refuses to switch a website off in it', async () => {
+    const setSite = vi.fn(async () => {})
+    const held = { ...ctxWith(createBroker(baseDeps())), privateTunnel: 'nym', routes: { ...routesWith('ok', NYM_TARGET), routeSwitch: { siteBlockedFor: () => undefined, siteNotice: () => undefined, setSite } } } as unknown as SubsystemContext
+    const controller = createSiteInfoController(held, NO_TRUST)
+    expect((await controller.siteInfoFor(OTHER)).tunnelHeld).toBe('nym')
+    expect(await controller.setTunnel(OTHER, false)).toBe(false)
+    expect(setSite).not.toHaveBeenCalled()
+    expect(await controller.setTunnel(OTHER, true)).toBe(true)
+    const plain = { ...ctxWith(createBroker(baseDeps())), privateTunnel: null, routes: routesWith('ok', NYM_TARGET) } as unknown as SubsystemContext
+    expect('tunnelHeld' in await createSiteInfoController(plain, NO_TRUST).siteInfoFor(OTHER)).toBe(false)
+  })
+
   it('carries nothing for an app that is not routed', async () => {
     const ctx = { ...ctxWith(createBroker(baseDeps())), routes: routesWith('off') } as unknown as SubsystemContext
     expect('route' in await createSiteInfoController(ctx, NO_TRUST).siteInfoFor(OTHER)).toBe(false)

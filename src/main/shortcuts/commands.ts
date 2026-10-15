@@ -100,6 +100,7 @@ export const COMMANDS = [
   { id: 'page.pip', label: 'Picture in picture', category: 'tools' },
   { id: 'window.new', label: 'New window', category: 'window', default: 'Mod+N' },
   { id: 'window.newPrivate', label: 'New private window', category: 'window', default: 'Mod+Shift+N' },
+  { id: 'window.newPrivateNym', label: 'Open a private window with Nym', category: 'window', default: 'Alt+Shift+N' },
   { id: 'profiles.open', label: 'Profiles', category: 'window' },
   { id: 'window.close', label: 'Close window', category: 'window', default: 'Mod+Shift+W' },
   { id: 'window.fullscreen', label: 'Full screen', category: 'window', default: 'F11', macDefault: 'Ctrl+Meta+F' },

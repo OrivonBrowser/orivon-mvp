@@ -30,6 +30,7 @@ import type { CapabilityRequest, WebsiteScore } from '../contracts/index.js'
 import type { ExtensionsApi } from './extensions/extensions-subsystem.js'
 import type { AppUpdates } from './install/app-updates.js'
 import type { ProviderVerdict } from '../trust/score-provider.js'
+import type { PrivateTunnel } from './launch/launch-context.js'
 import type { RouteService } from './route/route-service.js'
 import { createPublishedSlot } from './published-slot.js'
 
@@ -40,6 +41,11 @@ export interface SubsystemContext {
    * persist something about the person, or report it, must not. Fixed for the life of the process.
    */
   readonly privateSession: boolean
+  /**
+   * The tunnel this private session is held to: the whole browser goes through it from the first request, and nothing in the
+   * process may turn that off. Null when it is not held to one. Fixed for the life of the process.
+   */
+  readonly privateTunnel: PrivateTunnel | null
   /**
    * The running app's one `Broker`. Nothing else in the process may
    * construct a second one: two independently-constructed brokers mean two
@@ -219,10 +225,12 @@ const showNoticeSlot = createPublishedSlot<(notice: { readonly title: string, re
 class SubsystemContextImpl implements SubsystemContext {
   readonly app: App
   readonly privateSession: boolean
+  readonly privateTunnel: PrivateTunnel | null
 
-  constructor (app: App, privateSession: boolean) {
+  constructor (app: App, privateSession: boolean, privateTunnel: PrivateTunnel | null) {
     this.app = app
     this.privateSession = privateSession
+    this.privateTunnel = privateSession ? privateTunnel : null
   }
 
   get broker (): Broker | undefined {
@@ -286,8 +294,8 @@ class SubsystemContextImpl implements SubsystemContext {
  * The one way to build a `SubsystemContext`. `main/index.ts` calls this
  * once, at startup, and threads the result through `runAfterReady`.
  */
-export function createSubsystemContext (app: App, privateSession = false): SubsystemContext {
-  return new SubsystemContextImpl(app, privateSession)
+export function createSubsystemContext (app: App, privateSession = false, privateTunnel: PrivateTunnel | null = null): SubsystemContext {
+  return new SubsystemContextImpl(app, privateSession, privateTunnel)
 }
 
 /**
