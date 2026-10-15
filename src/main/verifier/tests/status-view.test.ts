@@ -97,7 +97,7 @@ describe('the IPFS node in the view', () => {
   it('lists the node, and the gateways only as what is used while the node cannot run, while IPFS is read from the node', () => {
     const view = lightClientView(facts({ ipfsNode: { state: { state: 'off' }, lookupService: true }, endpoints: { ...ENDPOINTS, ipfsNodeEndpoints: ['http://127.0.0.1:20123'] } }), NOW)
     expect(view.endpoints).toContainEqual({ label: 'IPFS node, on this computer', urls: ['http://127.0.0.1:20123'] })
-    expect(view.endpoints).toContainEqual({ label: 'IPFS gateways, only while the node cannot run', urls: ['https://gw'] })
+    expect(view.endpoints).toContainEqual({ label: 'IPFS gateways, only for a site you load through them', urls: ['https://gw'] })
     expect(view.endpoints.map((group) => group.label)).not.toContain('IPFS gateways')
     expect(view.ipfsNode?.state).toBe('off')
   })
@@ -111,8 +111,9 @@ describe('ipfsNodeView', () => {
     expect(ipfsNodeView({ state: 'ready', peers: 0 }, false).summary).toBe('Running, and IPFS content loads from it. It asks the IPFS network only.')
   })
 
-  it('says why the node is not in use, and that IPFS loads from public gateways instead', () => {
-    expect(ipfsNodeView({ state: 'off', reason: 'a proxy is configured' }, true).summary).toBe('Not in use: a proxy is configured. IPFS content loads from public gateways instead.')
-    expect(ipfsNodeView({ state: 'failed', reason: 'it trapped' }, true).summary).toBe('Not running: it trapped. IPFS content loads from public gateways instead meanwhile, and the node tries again shortly.')
+  it('says why the node is not in use, and that no gateway is used unless the person chooses one', () => {
+    const none = 'IPFS pages do not load meanwhile, unless you press "Load through public gateways" on a page\'s error or choose gateways under "Load IPFS sites from"'
+    expect(ipfsNodeView({ state: 'off', reason: 'a proxy is configured' }, true).summary).toBe(`Not in use: a proxy is configured. ${none}.`)
+    expect(ipfsNodeView({ state: 'failed', reason: 'it trapped' }, true).summary).toBe(`Not running: it trapped. ${none}. The node tries again shortly.`)
   })
 })

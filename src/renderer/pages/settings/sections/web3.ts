@@ -42,7 +42,7 @@ export const web3: Section = {
     {
       id: 'web3-ipfs-source',
       label: 'Load IPFS sites from',
-      help: 'Your own IPFS node runs on this computer: it starts when an IPFS address is opened and finds the content on the IPFS network. Public gateways are servers that fetch it for you, so they learn which sites you open. Either way, every block is checked before it is shown. A change applies at once.',
+      help: 'Your own IPFS node runs on this computer: it starts when an IPFS address is opened and finds the content on the IPFS network. Public gateways are servers that fetch it for you, so they learn which sites you open. Either way, every block is checked before it is shown. With your own node, a page that the node cannot load says so and offers to load that site through gateways, once; nothing goes to a gateway unless you choose it here or press that button. A change applies at once.',
       keywords: ['ipfs', 'node', 'gateway', 'gateways', 'source', 'privacy', 'ipns'],
       control: { type: 'choice', key: 'web3.ipfsSource' }
     },

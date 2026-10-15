@@ -1,7 +1,8 @@
 // The protocols a tunnel-profile website is served from. They share no network path with the ones every other website
-// uses (`protocols.ts`): each fetch they make is the routed fetch (`routed-fetch.ts`), the name is proved by a light
-// client of their own whose requests ride it too, and no local node is asked. A tunnel that is down fails every one of
-// them; nothing here has another way out to fall back to.
+// uses (`protocols.ts`): each fetch they make is the routed fetch (`routed-fetch.ts`), and the name is proved by a light
+// client of their own whose requests ride it too. A local node is asked only when `tunnelSitesReadNodes` says its
+// traffic does not betray the site; otherwise the site's IPFS is read from gateways, through the tunnel, only after the
+// person's yes. A tunnel that is down fails every fetch; nothing here has another way out to fall back to.
 
 import { defineProtocol } from '../protocol.js'
 import type { Protocol } from '../protocol.js'
@@ -11,6 +12,7 @@ import { ENS } from '../ens/descriptor.js'
 import { createEnsResolver } from '../ens/resolver.js'
 import type { Eip1193Provider } from '../ens/resolver.js'
 import { ipfsProtocol } from '../ipfs/protocol.js'
+import { swarmProtocol } from '../swarm/protocol.js'
 import { createSwarmAddressResolvers } from '../swarm/address-resolver.js'
 import { SWARM } from '../swarm/descriptor.js'
 import { dohTxtResolver } from './doh.js'
@@ -18,14 +20,20 @@ import { allowlisted, DEFAULT_CCIP_LIMITS, guardedCcipRequest } from './egress.j
 import type { CcipDeps } from './egress.js'
 import { createFixtureResolver } from './fixture-resolver.js'
 import type { HostConfig } from './protocol.js'
-import { offResolver } from './protocols.js'
-import type { SharedStores } from './protocols.js'
+import { ipfsFromNode, offResolver } from './protocols.js'
+import type { HostControls, SharedStores } from './protocols.js'
+import type { NodeLink, NodeLinks } from './node-link.js'
+import { IPFS_NODE_IDENTITY, IPFS_NODE_WORDS } from '../ipfs-node/protocol.js'
+import { SWARM_NODE_IDENTITY, SWARM_NODE_WORDS } from '../swarm-node/protocol.js'
 import type { HostDeps, LightClient } from './service.js'
 import type { Fetch } from '../gateways/gateways.js'
 import { TUNNEL_PACE } from './pace.js'
 
-/** What the person is told when a Swarm site is opened with the tunnel on for it. */
-export const SWARM_NOT_TUNNELLED = 'Swarm content loads only from the Swarm node Orivon runs on this computer, and that node cannot send its traffic through your tunnel for one site. This site is not opened while the tunnel is on for it; turn the tunnel off for it to open it.'
+/** What the person is told when a Swarm site is opened with the tunnel on for it, and "Use tunnel to run network nodes" is on. */
+export const SWARM_NOT_TUNNELLED = 'Swarm content loads only from the Swarm node Orivon runs on this computer. "Use tunnel to run network nodes" is on in Settings under Tunnels, and the node cannot send its traffic through the tunnel for one site, so this site is not opened while the tunnel is on for it. Turn the tunnel off for it, or turn that setting off, to open it.'
+
+/** Why the IPFS node does not serve a website that has its own tunnel, when "Use tunnel to run network nodes" is on. */
+export const IPFS_NOT_TUNNELLED = 'the IPFS node runs outside the tunnel, and "Use tunnel to run network nodes" in Settings under Tunnels is on, so it does not serve a site that has the tunnel on by itself'
 
 export interface TunnelProtocols {
   readonly protocols: readonly Protocol[]
@@ -72,19 +80,47 @@ function startEns (config: HostConfig, deps: HostDeps, fetch: HostDeps['fetch'])
   return defineProtocol(ENS, { resolvers })
 }
 
-function startIpfs (config: HostConfig, fetch: HostDeps['fetch'], stores: SharedStores): Protocol {
+function startIpfs (config: HostConfig, deps: HostDeps, fetch: HostDeps['fetch'], stores: SharedStores, node: NodeLink | undefined, controls: HostControls): Protocol {
   const dohFetch = allowlisted(config.dnsOverHttps, fetch, 'DNS-over-HTTPS')
   const gatewayFetch = allowlisted([...config.gateways, ...config.ipnsNameServices], fetch, 'the IPFS gatherer')
-  return ipfsProtocol({
+  const common = { resolveTxt: dohTxtResolver(config.dnsOverHttps, dohFetch), ipnsSequences: stores.ipnsSequences }
+  const viaGateways = {
     fetch: async (url: string, init: Parameters<Fetch>[1]) => await gatewayFetch(url, init),
     gateways: config.gateways,
     ipnsNameServices: config.ipnsNameServices,
-    resolveTxt: dohTxtResolver(config.dnsOverHttps, dohFetch),
-    ipnsSequences: stores.ipnsSequences
+    ...common
+  }
+  // The person reads IPFS from gateways (no node chosen), or there is no node to ask: gateways, through the tunnel.
+  if (config.ipfsNode === undefined || node === undefined) return ipfsProtocol(viaGateways)
+  return ipfsFromNode({
+    config,
+    ipfsNode: config.ipfsNode,
+    node,
+    // The node is on loopback: the tunnel never carries a read from it.
+    nodeFetch: allowlisted([config.ipfsNode.endpoint], deps.fetch, 'the IPFS node'),
+    nameServiceFetch: allowlisted(config.ipnsNameServices, fetch, 'the IPFS gatherer'),
+    viaGateways,
+    common,
+    controls,
+    refusal: () => config.tunnelSitesReadNodes === true ? undefined : IPFS_NOT_TUNNELLED
   })
 }
 
-export function startTunnelProtocols (config: HostConfig, deps: HostDeps, stores: SharedStores): TunnelProtocols {
+function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefined, stores: SharedStores): Protocol {
+  if (config.swarmNode !== true || node === undefined || config.tunnelSitesReadNodes !== true) return refusedSwarm()
+  const endpointFetch = allowlisted(config.swarmEndpoints, deps.fetch, 'the Swarm gatherer')
+  return swarmProtocol({
+    fetch: node.reading(async (url, init) => await endpointFetch(url, init)),
+    endpoints: config.swarmEndpoints,
+    feedIndexes: stores.swarmFeedIndexes,
+    beforeMount: node.ensure
+  })
+}
+
+/** `ens` is the shared `.eth` protocol, which a tunnel-profile website uses when the light client runs outside the tunnel: its name is then proved by the same client every other website's is. */
+export function startTunnelProtocols (config: HostConfig, deps: HostDeps, stores: SharedStores, nodes: NodeLinks, controls: HostControls, ens: Protocol): TunnelProtocols {
   const fetch = deps.routedFetch
-  return { protocols: [startEns(config, deps, fetch), startIpfs(config, fetch, stores), refusedSwarm()] }
+  const ipfsNode = nodes.to(IPFS_NODE_IDENTITY, IPFS_NODE_WORDS)
+  const swarmNode = nodes.to(SWARM_NODE_IDENTITY, SWARM_NODE_WORDS)
+  return { protocols: [config.ethereumOutside === true ? ens : startEns(config, deps, fetch), startIpfs(config, deps, fetch, stores, ipfsNode, controls), startSwarm(config, deps, swarmNode, stores)] }
 }

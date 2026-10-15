@@ -12,6 +12,8 @@ import type { LocalNodeManifest } from './local-node-artifact.js'
 import { unproxiedGateways } from './proxy-check.js'
 import { DEFAULT_ENDPOINTS } from './endpoints.js'
 import { onOwnNodeRouteMoved, ownNodeEndpoint, ownRequestsTunnelled } from '../route/own-requests.js'
+import { systemProxyFor } from '../route/system-proxy.js'
+import { nodesRunThroughTunnel } from './node-route.js'
 
 export interface LocalNodeSpec {
   readonly kind: NodeIdentity
@@ -33,11 +35,12 @@ export function createLocalNodeController (spec: LocalNodeSpec): LocalNodeContro
     fork: () => utilityProcess.fork(join(__dirname, 'local-node-host.js'), [], { serviceName: `Orivon ${spec.kind.noun}` }),
     artifact: async () => await locateArtifact({ env: process.env, packaged: app.isPackaged, resourcesPath: process.resourcesPath, sourceRoot: app.getAppPath() }, spec.manifest, spec.kind),
     // A node that dials around a proxy would show a person's address to its peers that the proxy was set to hide (T20).
-    // `app.resolveProxy` follows `app.setProxy`, which the whole-browser tunnel sets, so while that setting is on the controller does
-    // not ask: the node then runs through the tunnel and has no other way out (`route`), and it is that or no node.
+    // While the whole browser is on the tunnel the default session answers with the tunnel's own front, so the question goes to the
+    // session that follows the system alone: a node that runs through the tunnel is not asked (`route`), and one that runs direct
+    // beside the tunnel ("Use tunnel to run network nodes" off) is refused only by a proxy the system itself sets.
     // The setting counts before the proxy it sets is seen: a node asked for in the moment between the two must not start around the tunnel.
-    proxyConfigured: async () => (await unproxiedGateways(['https://example.com/'], async (url) => await app.resolveProxy(url))).length === 0,
-    route: { required: ownRequestsTunnelled, endpoint: async () => await ownNodeEndpoint(spec.kind.name), onMoved: onOwnNodeRouteMoved },
+    proxyConfigured: async () => (await unproxiedGateways(['https://example.com/'], async (url) => ownRequestsTunnelled() ? await systemProxyFor(url) : await app.resolveProxy(url))).length === 0,
+    route: { required: nodesRunThroughTunnel, endpoint: async () => await ownNodeEndpoint(spec.kind.name), onMoved: onOwnNodeRouteMoved },
     ...(spec.disabled === undefined ? {} : { disabled: spec.disabled }),
     ...(spec.options === undefined ? {} : { options: spec.options }),
     apiPort: spec.apiPort,

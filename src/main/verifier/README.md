@@ -113,11 +113,19 @@ otherwise; [`local-node-launch.ts`](local-node-launch.ts) holds what every node 
 imports `electron`), waits at most twenty seconds for the node to be ready (the Swarm node: eight peers; the IPFS node: its health answers), and answers `ready`, `starting`,
 `failed` or `off` with the reason in words. It sleeps when the verifier host does and after ten
 minutes with no call, so a call must be made for every mount, not only one that finds no node ready. It does
-not start when a system proxy is configured (the node's sockets would go around it, T20); with the whole browser on the tunnel it
+not start when a proxy the system itself sets is configured (the node's sockets would go around it, T20); with the whole
+browser on the tunnel AND "Use tunnel to run network nodes" (`network.tunnel.nodes`, default off) on it
 starts through the tunnel instead (`NodeRoute`: the controller asks the tunnel for the node's address before it forks, hands it
 over on the node's `route-ask`, and tells the node when the address stops being right), is switched to the other path by
-`tunnelDefaultChanged` the moment the setting flips, and is off with the tunnel's reason when the tunnel cannot carry it
-([`ADR-0086`](../../../docs/decisions/ADR-0086-the-local-nodes-run-through-the-tunnel-while-the-whole-browser-does.md)). It does not start either when its files are
+`tunnelDefaultChanged` the moment either setting flips, and is off with the tunnel's reason when the
+tunnel cannot carry it
+([`ADR-0086`](../../../docs/decisions/ADR-0086-the-local-nodes-run-through-the-tunnel-while-the-whole-browser-does.md),
+[`ADR-0087`](../../../docs/decisions/ADR-0087-the-nodes-follow-the-tunnel-only-when-the-person-asks-and-no-gateway-is-read-without-the-persons-yes.md)).
+With the setting off a node runs direct beside the whole-browser tunnel, and the proxy question goes to the session that follows the system
+alone (`systemProxyFor`), because the default session answers with the tunnel's own front. [`node-route.ts`](node-route.ts) holds the
+three answers the rest asks (`nodesRunThroughTunnel`, `nodesMayServeTunnelSites`, `nodesFollowTunnel`); `hostConfig` hands the host
+`tunnelSitesReadNodes` and `ethereumOutside` from them. The Ethereum light client follows the same setting: outside the tunnel when it
+is off, unless the system sets a proxy of its own. It does not start either when its files are
 missing or are not the ones the build pins ([`local-node-artifact.ts`](local-node-artifact.ts), checked once for
 each start, a restart included, with the proxy looked at first so nothing is read while one is set; the process
 then hashes the bytes it runs itself), or in a build that serves its content from its own endpoints. Both processes are
@@ -130,8 +138,10 @@ kept by [`process-supervisor.ts`](process-supervisor.ts): forking, the config ha
 Only a change of the source also puts the verifier host to sleep, whose next wake builds `HostConfig` from it (the
 lookup service touches only the node's arguments, so the light client, the mounted sites and the Swarm node are
 left alone): `ipfsNode` (the node's endpoint) is present only when the person chose the node, and never in a test
-build. The host chooses the node or the gateways for each mount and says which served it; Settings'
-`ipfsNode` view and the site-info popover's "Loaded from" row repeat it. The lookup service does not restart the
+build. The host reads from the node; when the node cannot serve a page it fails with the reason and an offer of public gateways, which
+the person accepts for one load, and the page then says which served it; Settings'
+`ipfsNode` view and the site-info popover's "Loaded from" row repeat it. With the person's standing choice of gateways, no node
+is built at all. The lookup service does not restart the
 host: the running host is sent `ipfs-lookup` and asks a name service for an IPNS record only while it is allowed.
 `forgetIpfsNodeData` (clearing cached data or all history) stops the node, deletes its database once the process has
 exited, and replaces the partition salt (`verifier-store.ts`).

@@ -4,7 +4,7 @@
 
 import { ProtocolAddresses } from './address.js'
 import type { Protocol } from './protocol.js'
-import { ResolutionError, mostSpecificFailure } from './resolution/records.js'
+import { GatewaysOffered, ResolutionError, mostSpecificFailure } from './resolution/records.js'
 import type { NameRecord, ResolutionFailure } from './resolution/records.js'
 import type { DataGatherer, MountedSite, NameResolver, Namespace } from './resolution/providers.js'
 
@@ -18,17 +18,22 @@ interface Attempt {
   readonly provider: string
   readonly failure: ResolutionFailure
   readonly message: string
+  /** The provider could not serve, and public gateways could, if the person says so. */
+  readonly offersGateways?: boolean
 }
 
 function attemptOf (provider: string, error: unknown): Attempt {
-  if (error instanceof ResolutionError) return { provider, failure: error.failure, message: error.message }
+  if (error instanceof ResolutionError) return { provider, failure: error.failure, message: error.message, ...(error instanceof GatewaysOffered && { offersGateways: true }) }
   // A bug is not an answer: it must never look like one, nor like a proven absence.
   return { provider, failure: 'unavailable', message: error instanceof Error ? error.message : String(error) }
 }
 
 function exhausted (what: string, attempts: readonly Attempt[]): ResolutionError {
   const reasons = attempts.map((a) => `${a.provider}: ${a.message}`).join('; ')
-  return new ResolutionError(mostSpecificFailure(attempts.map((a) => a.failure)), `${what} (${reasons})`)
+  const failure = mostSpecificFailure(attempts.map((a) => a.failure))
+  // The offer survives only while nothing worse than "could not get it" was found: a lie or a missing name is not cured by asking a gateway.
+  if (failure === 'unavailable' && attempts.some((a) => a.offersGateways === true)) return new GatewaysOffered(`${what} (${reasons})`)
+  return new ResolutionError(failure, `${what} (${reasons})`)
 }
 
 export class ProtocolRegistry {

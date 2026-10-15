@@ -12,7 +12,7 @@ import { ResolutionError } from '../../resolution/records.js'
 import { DIRECT_PACE, TUNNEL_PACE } from '../pace.js'
 import { startHost } from '../service.js'
 import type { HostDeps, LightClient, RunningHost } from '../service.js'
-import { SWARM_NOT_TUNNELLED, tunnelCcipDeps } from '../tunnel-protocols.js'
+import { IPFS_NOT_TUNNELLED, SWARM_NOT_TUNNELLED, tunnelCcipDeps } from '../tunnel-protocols.js'
 import { TunnelUnavailable } from '../routed-fetch.js'
 
 const GATEWAY = 'https://a.gateway'
@@ -112,6 +112,76 @@ describe('the route a request takes', () => {
   })
 })
 
+const DOCUMENT = { 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document' }
+
+describe('the IPFS node for a tunnel-profile website', () => {
+  const NODE = 'http://127.0.0.1:20123'
+  const NODE_CONFIG = { endpoint: NODE, partitionSalt: 'ab'.repeat(32), lookupService: true }
+
+  async function started (overrides: Partial<HostConfig>) {
+    const spied = deps({
+      // The node is on loopback and answers like a gateway; the routed fetch answers the gateways only.
+      fetch: async (url, init) => { spied.direct.push(url); return await fakeGateways(dag.blocks).fetch(url, { headers: (init?.headers ?? {}) as Record<string, string>, signal: init?.signal ?? new AbortController().signal }) }
+    })
+    const host = await startHost(config({ ipfsNode: NODE_CONFIG, ...overrides }), spied)
+    running.push(host)
+    return { host, spied }
+  }
+
+  async function tunnelGet (port: number, headers: Record<string, string> = {}): Promise<{ status: number, body: string }> {
+    return await new Promise((resolve, reject) => {
+      request({ host: '127.0.0.1', port, path: '/', servername: 'fixture.eth', rejectUnauthorized: false, headers: { host: 'fixture.eth', 'x-orivon-partition': 'https://fixture.eth', 'x-orivon-route': 'tunnel', ...headers } }, (res) => {
+        let body = ''
+        res.on('data', (c: Buffer) => { body += c.toString() })
+        res.on('end', () => { resolve({ status: res.statusCode ?? 0, body }) })
+      }).on('error', reject).end()
+    })
+  }
+
+  it('serves the website from the node when the nodes may serve such a website, reading the node on loopback and nothing through the tunnel', async () => {
+    const { host, spied } = await started({ tunnelSitesReadNodes: true })
+    const page = tunnelGet(host.port)
+    await vi.waitFor(() => { expect(spied.posted).toContainEqual({ type: 'node-wanted', node: 'ipfs-node' }) })
+    host.node({ type: 'node', node: 'ipfs-node', state: 'ready' })
+    expect(await page).toEqual({ status: 200, body: '<h1>fixture</h1>' })
+    expect(spied.direct.length).toBeGreaterThan(0)
+    expect(spied.direct.every((url) => url.startsWith(`${NODE}/`))).toBe(true)
+    expect(spied.routed).toEqual([])
+  })
+
+  it('never asks the node, and reads no gateway, when the nodes run outside a tunnel they were asked to follow; it offers the gateways instead', async () => {
+    const { host, spied } = await started({})
+    const answer = await tunnelGet(host.port, DOCUMENT)
+    expect(answer.status).toBe(502)
+    expect(answer.body).toContain(IPFS_NOT_TUNNELLED.replaceAll('"', '&#34;'))
+    expect(answer.body).toContain('the tunnel&#39;s exit address')
+    expect(spied.posted).not.toContainEqual({ type: 'node-wanted', node: 'ipfs-node' })
+    expect(spied.routed).toEqual([])
+    expect(spied.direct).toEqual([])
+  })
+
+  it('reads the gateways through the tunnel, and only those, after the person\'s yes for this site', async () => {
+    const { host, spied } = await started({})
+    const refused = await tunnelGet(host.port, DOCUMENT)
+    const href = /id="load-through-gateways" href="([^"]+)"/.exec(refused.body)?.[1]?.replaceAll('&#38;', '&') ?? ''
+    const accepted = await new Promise<number>((resolve, reject) => {
+      request({ host: '127.0.0.1', port: host.port, path: href, servername: 'fixture.eth', rejectUnauthorized: false, headers: { host: 'fixture.eth', 'x-orivon-partition': 'https://fixture.eth', 'x-orivon-route': 'tunnel', 'sec-fetch-mode': 'navigate', 'sec-fetch-user': '?1' } }, (res) => { res.resume(); res.on('end', () => { resolve(res.statusCode ?? 0) }) }).on('error', reject).end()
+    })
+    expect(accepted).toBe(303)
+    expect(await tunnelGet(host.port, DOCUMENT)).toEqual({ status: 200, body: '<h1>fixture</h1>' })
+    expect(spied.routed.length).toBeGreaterThan(0)
+    expect(spied.direct).toEqual([])
+  })
+
+  it('reads the gateways through the tunnel, as the person chose, when the source is gateways and no node is configured', async () => {
+    const spied = deps()
+    const host = await startHost(config(), spied)
+    running.push(host)
+    expect(await get(host.port, 'fixture.eth', true)).toEqual({ status: 200, body: '<h1>fixture</h1>' })
+    expect(spied.direct).toEqual([])
+  })
+})
+
 describe('Swarm for a tunnel-profile website', () => {
   async function swarmHost () {
     const chunks = new Map<string, Uint8Array>()
@@ -127,7 +197,7 @@ describe('Swarm for a tunnel-profile website', () => {
     for (const name of [`${cid}.bzz.orivon`, 'swarm.eth']) {
       const answer = await get(host.port, name, true)
       expect(answer.status).toBeGreaterThanOrEqual(400)
-      expect(answer.body).toContain('cannot send its traffic through your tunnel')
+      expect(answer.body).toContain('cannot send its traffic through the tunnel')
     }
     expect(spied.direct).toEqual([])
     expect(spied.routed).toEqual([])
@@ -174,6 +244,48 @@ describe('the light client of a tunnel-profile website', () => {
     const through = await startHost(config({ lightClient: CONFIG, front: { port: 1, username: 'u', password: 'p' } }), deps({ startLightClient: record }))
     running.push(through)
     expect(waits).toEqual([{ route: undefined, wait: TUNNEL_PACE.syncWaitMs, startAfter: TUNNEL_PACE.lightClientStartAfterMs }])
+  })
+
+  describe('when the light client runs outside the tunnel', () => {
+    const FRONT = { port: 1, username: 'u', password: 'p' }
+    const quiet = (): LightClient => ({ status: () => ({ state: 'off' }), provider: { request: async () => { throw new ResolutionError('not-synced', 'x') } } })
+
+    it('leaves through the outside fetch while the whole browser is on the tunnel, never the front, and syncs at the direct pace', async () => {
+      const starts: Array<{ fetch: HostDeps['fetch'], pace: { syncWaitMs: number, startAfterMs: number } | undefined }> = []
+      const outside: string[] = []
+      const spied = deps({
+        startLightClient: (_config, fetch, _report, _route, pace) => { starts.push({ fetch, pace }); return quiet() },
+        outside: { send: async (url) => { outside.push(url); return new Response('{}') }, resolveHost: async () => ['93.184.216.34'] }
+      })
+      const host = await startHost(config({ lightClient: CONFIG, front: FRONT, ethereumOutside: true }), spied)
+      running.push(host)
+      expect(starts).toHaveLength(1)
+      expect(starts[0]?.pace).toEqual({ syncWaitMs: DIRECT_PACE.syncWaitMs, startAfterMs: 0 })
+      await starts[0]?.fetch('https://rpc.example/', { method: 'POST', body: '{}' })
+      expect(outside).toEqual(['https://rpc.example/'])
+      expect(spied.direct).toEqual([])
+      expect(spied.routed).toEqual([])
+    })
+
+    it('proves a tunnel-profile website\'s name with the shared client, and starts no client of its own', async () => {
+      const routes: Array<'tunnel' | undefined> = []
+      const spied = deps({ startLightClient: (_config, _fetch, _report, route) => { routes.push(route); return quiet() } })
+      const host = await startHost(config({ lightClient: CONFIG, ethereumOutside: true }), spied)
+      running.push(host)
+      await get(host.port, 'unknown.eth', true)
+      await get(host.port, 'other.eth', true)
+      expect(routes).toEqual([undefined])
+    })
+
+    it('follows the front when the host has no way outside the tunnel', async () => {
+      const fetched: string[] = []
+      const starts: Array<HostDeps['fetch']> = []
+      const spied = deps({ fetch: async (url) => { fetched.push(url); return new Response('{}') }, startLightClient: (_config, fetch) => { starts.push(fetch); return quiet() } })
+      const host = await startHost(config({ lightClient: CONFIG, front: FRONT, ethereumOutside: true }), spied)
+      running.push(host)
+      await starts[0]?.('https://rpc.example/', { method: 'POST', body: '{}' })
+      expect(fetched).toEqual(['https://rpc.example/'])
+    })
   })
 
   it('never starts for a website that is not in the tunnel profile', async () => {

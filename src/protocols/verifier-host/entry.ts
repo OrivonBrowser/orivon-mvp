@@ -12,6 +12,7 @@
 import { net } from 'electron'
 import { createRequestFetch } from '../../loader/electron/request-fetch.js'
 import { createDirectFetch } from './direct-fetch.js'
+import { createOutsideFetch } from './outside-fetch.js'
 import { createRoutedFetch } from './routed-fetch.js'
 import { answerForFront } from './front-login.js'
 import { startHeliosLightClient } from './light-client/light-client.js'
@@ -29,6 +30,8 @@ function post (message: FromHost): void {
 function describe (error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
+
+const resolveOutside = async (name: string): Promise<readonly string[]> => (await net.resolveHost(name)).endpoints.map((endpoint) => endpoint.address)
 
 function main (): void {
   // A rejection nothing observed would end this process, and every `.eth` page with it; each request's own handler catches what it expects.
@@ -57,7 +60,9 @@ function main (): void {
         directFetch: createDirectFetch(),
         ccipFetch: createDirectFetch({ allowPost: true, allowRedirect: true }),
         // A tunnel-profile website's only way to the network: Node sockets to the profile's front, never `net`. A test build's fixture gateways are plain HTTP.
-        routedFetch: createRoutedFetch({ front: () => message.config.profileFront, allowHttp: FIXTURES_ALLOWED })
+        routedFetch: createRoutedFetch({ front: () => message.config.profileFront, allowHttp: FIXTURES_ALLOWED }),
+        // What the person asked to run outside the tunnel leaves on Node's own sockets, to addresses this process resolves and checks.
+        outside: { send: createOutsideFetch(createDirectFetch({ allowPost: true }), resolveOutside), resolveHost: resolveOutside }
       })
       host.then(
         (running) => { post({ type: 'listening', fingerprint: running.fingerprint }) },

@@ -72,6 +72,17 @@ export class ResolutionError extends Error {
 }
 
 /**
+ * A source the person chose (their own node) could not serve, and public gateways could: the error page offers to load the site through
+ * them once, and nothing is sent to a gateway until the person says so. Always an `unavailable` failure.
+ */
+export class GatewaysOffered extends ResolutionError {
+  readonly offersGateways = true
+  constructor (message: string) {
+    super('unavailable', message)
+  }
+}
+
+/**
  * When every provider failed, the failure worth showing. A detected lie
  * outranks everything, because hiding it behind "unavailable" would hide an
  * attack; nobody answering is the least specific.

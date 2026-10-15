@@ -1,7 +1,8 @@
 // Orivon's IPFS node on this computer, as the rest of the shell reaches it
 // (local-node-subsystem.ts is the shared part). IPFS is read from it unless
-// the person chose public gateways; when it cannot run, the verifier host
-// loads IPFS from the gateways and Settings shows the node's reason.
+// the person chose public gateways; when it cannot run, the page that asked
+// fails with the node's reason and offers a load through gateways, and Settings
+// shows the same reason.
 
 import { DATABASE_FILE } from '../../protocols/ipfs-node/config.js'
 import { IPFS_NODE_IDENTITY, routingOptions } from '../../protocols/ipfs-node/protocol.js'

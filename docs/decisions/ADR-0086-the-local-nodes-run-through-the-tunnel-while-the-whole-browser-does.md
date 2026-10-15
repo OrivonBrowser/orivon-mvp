@@ -1,6 +1,6 @@
 # ADR-0086: The local nodes run through the tunnel while the whole browser does
 
-- **Status:** accepted. *Provisional* on a website that has its tunnel on by itself (below).
+- **Status:** accepted. Amended by [`ADR-0087`](ADR-0087-the-nodes-follow-the-tunnel-only-when-the-person-asks-and-no-gateway-is-read-without-the-persons-yes.md): the nodes follow the tunnel only when the person turns on "Use tunnel to run network nodes", and gateways are no longer the fallback. *Provisional* on a website that has its tunnel on by itself (below).
 - **Date:** 2026-10-15
 - **Type:** architecture / security
 - **Decided by:** owner (the nodes run through Nym while the whole browser is on the tunnel, so that nothing leaks and the node keeps working, slower; "pause it and say so" and "keep it outside Nym" were offered and both rejected); AI recommendation accepted by default for the shape

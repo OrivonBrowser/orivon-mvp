@@ -51,6 +51,7 @@ import type { LocalNodeSubsystem } from './local-node-subsystem.js'
 import { IPFS_NODE_IDENTITY } from '../../protocols/ipfs-node/protocol.js'
 import { SWARM_NODE_IDENTITY } from '../../protocols/swarm-node/protocol.js'
 import type { RouteService } from '../route/route-service.js'
+import { configureNodeRoute, ethereumOutsideTunnel, nodesMayServeTunnelSites } from './node-route.js'
 
 /** A mount may wait for the light client to sync, resolve a name and follow its pointers: the host's own bound (verifier-host/pace.ts) and this much beyond it, so the host's answer is the one that comes. */
 const MOUNT_GRACE_MS = 5_000
@@ -89,7 +90,7 @@ let routesOf: () => RouteService | undefined = () => undefined
 /**
  * The browser-wide tunnel setting changed: the host's direct routes and its fetch are decided when it starts (whether a proxy
  * applies is read once, and the front it signs in to is part of its config), so it sleeps and its next request rebuilds them.
- * The local nodes stop with it.
+ * The local nodes stop with it. Also called when "Use tunnel to run network nodes" flips: they start on the other path.
  */
 export function tunnelDefaultChanged (): void {
   idleHost()
@@ -99,7 +100,8 @@ export function tunnelDefaultChanged (): void {
 }
 
 /** Lets the person's setting, and not only the environment, switch the light client off. Read each time the host builds its config and each time a view is drawn, so a change reaches the next start; `lightClientSettingChanged` makes that next start now. */
-export function configureVerifier (options: { lightClientEnabled: () => boolean, windows: () => readonly TabsOfWindow[], servedFromCache: (origin: string) => boolean, ipfsSource?: () => 'node' | 'gateways', ipfsLookupService?: () => boolean, swarmNodeEnabled?: () => boolean }): void {
+export function configureVerifier (options: { lightClientEnabled: () => boolean, windows: () => readonly TabsOfWindow[], servedFromCache: (origin: string) => boolean, ipfsSource?: () => 'node' | 'gateways', ipfsLookupService?: () => boolean, swarmNodeEnabled?: () => boolean, nodesFollowTunnel?: () => boolean }): void {
+  if (options.nodesFollowTunnel !== undefined) configureNodeRoute({ followTunnel: options.nodesFollowTunnel })
   if (options.ipfsSource !== undefined) ipfsSourceChoice = options.ipfsSource
   if (options.ipfsLookupService !== undefined) ipfsLookupServiceChoice = options.ipfsLookupService
   configureIpfsNode({ lookupService: () => ipfsLookupServiceChoice(), readFromNode: () => ipfsSourceChoice() === 'node' })
@@ -249,6 +251,7 @@ async function hostConfig (): Promise<HostConfig> {
     ipnsSequences: stored.ipnsSequences(),
     swarmEndpoints: swarmEndpoints(seam),
     ...(seam === undefined && { swarmNode: true }),
+    ...(nodesMayServeTunnelSites() && { tunnelSitesReadNodes: true }), ...(await ethereumOutsideTunnel(front !== undefined) && { ethereumOutside: true }),
     ...(ipfsFromNode(seam) && { ipfsNode: { endpoint: ipfsNodeEndpoint(), partitionSalt: stored.partitionSalt(), lookupService: ipfsLookupServiceChoice(), ...(seam?.ipfsNode?.retryWaitMs !== undefined && { retryWaitMs: seam.ipfsNode.retryWaitMs }) } }),
     swarmFeedIndexes: stored.swarmFeedIndexes(),
     ...(seam === undefined ? {} : { fixtures: seam.fixtures })

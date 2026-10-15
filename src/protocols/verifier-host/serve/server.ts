@@ -8,7 +8,7 @@ import type { Server } from 'node:https'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { TLSSocket } from 'node:tls'
 import { isDnsLabel } from '../../resolution/dns-name.js'
-import { ResolutionError } from '../../resolution/records.js'
+import { GatewaysOffered, ResolutionError } from '../../resolution/records.js'
 import type { GatheredFile } from '../../resolution/providers.js'
 import { MAX_ADDRESS_NAME } from '../../address.js'
 import type { ProtocolAddresses } from '../../address.js'
@@ -18,6 +18,8 @@ import { parseRange } from '../../../loader/serve/range.js'
 import { CONTENT_ROOT_HEADER, DDOC_MISMATCH, FAILURE_HEADER, PARTITION_HEADER, ROUTE_HEADER } from '../../../loader/fetch/content-root.js'
 import type { RunCertificate } from './certificate.js'
 import { ERROR_PAGE_CSP, renderErrorPage } from './error-pages.js'
+import type { GatewayOffer } from './error-pages.js'
+import { CONSENT_PATH, GatewayConsent } from '../gateway-consent.js'
 import { checkLeaf, expectedLeafOf, sliceChunks } from './leaf-check.js'
 import type { SiteSource } from './sites.js'
 import type { FetchRoute } from '../protocol.js'
@@ -168,6 +170,11 @@ function isNavigation (req: IncomingMessage): boolean {
   return req.headers['sec-fetch-mode'] === 'navigate' && (dest === 'document' || dest === 'iframe' || dest === 'frame')
 }
 
+/** A page load the person started in a tab (its document), not a frame's or a file's. */
+function isDocumentLoad (req: IncomingMessage): boolean {
+  return req.headers['sec-fetch-mode'] === 'navigate' && req.headers['sec-fetch-dest'] === 'document'
+}
+
 /** The path of an origin-form request target. `//x/y` would read as an authority, so it is refused, not reinterpreted. */
 function pathOf (target: string | undefined, host: string): URL | undefined {
   if (target === undefined || !target.startsWith('/') || target.startsWith('//')) return undefined
@@ -182,10 +189,10 @@ function pathOf (target: string | undefined, host: string): URL | undefined {
  * `servedRoot` is set only for a failure reached after the name resolved to a root: a 404 that
  * carries it says that root has no such path, where one without it may say the name has no content.
  */
-function sendError (res: ServerResponse, shown: string, error: unknown, servedRoot?: string): void {
+function sendError (res: ServerResponse, shown: string, error: unknown, servedRoot?: string, offer?: GatewayOffer): void {
   const failure = error instanceof ResolutionError ? error.failure : 'unavailable'
   const detail = error instanceof Error ? error.message : String(error)
-  const { status, html } = renderErrorPage(failure, shown, detail)
+  const { status, html } = renderErrorPage(failure, shown, detail, error instanceof GatewaysOffered ? offer : undefined)
   const headers: Record<string, string> = {
     'content-type': 'text/html; charset=utf-8',
     'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}; ${FRAME_ANCESTORS_SELF_CSP}`,
@@ -358,7 +365,29 @@ function redirectToCanonical (registry: ProtocolRegistry, scheme: string, url: U
   }
 }
 
-async function handle (registry: ProtocolRegistry, sites: SiteSource, req: IncomingMessage, res: ServerResponse, budget: BufferBudget, bufferedResponseDeadlineMs: number): Promise<void> {
+/** The only paths of a served name that are the host's own, not the site's. */
+const OWN_PREFIX = '/.orivon/'
+
+/** A path on the same name, as the consent link carries it back: never another host, never the host's own paths. */
+function returnPathOf (target: string | null): string {
+  if (target === null || !target.startsWith('/') || target.startsWith('//') || target.startsWith(OWN_PREFIX)) return '/'
+  return target
+}
+
+/**
+ * The person followed the error page's button: the site this request is for may be loaded through public gateways from now on,
+ * until the host stops. Only the token the error page was given says yes, and only a navigation the person started (a click or a key
+ * on the link: the browser marks it `Sec-Fetch-User`) can follow it, so a script on any page cannot follow it for them.
+ */
+function acceptGateways (consent: GatewayConsent, req: IncomingMessage, res: ServerResponse, url: URL, partition: string | undefined): void {
+  if (req.headers['sec-fetch-mode'] !== 'navigate' || req.headers['sec-fetch-user'] !== '?1' || !consent.grant(partition, url.searchParams.get('token'))) {
+    res.writeHead(403, { 'content-type': 'text/plain', 'cache-control': 'no-store' }).end('this is not the page that asks')
+    return
+  }
+  res.writeHead(303, { location: returnPathOf(url.searchParams.get('to')), 'cache-control': 'no-store', 'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}` }).end()
+}
+
+async function handle (registry: ProtocolRegistry, sites: SiteSource, consent: GatewayConsent, req: IncomingMessage, res: ServerResponse, budget: BufferBudget, bufferedResponseDeadlineMs: number): Promise<void> {
   const host = hostOf(req, registry.addresses)
   if (host === undefined || (registry.addresses.servedName(host) === undefined && registry.addresses.schemeEndpoint(host) === undefined)) {
     res.writeHead(421, { 'content-type': 'text/plain' }).end("this server answers only the names and addresses Orivon's protocols serve")
@@ -378,6 +407,10 @@ async function handle (registry: ProtocolRegistry, sites: SiteSource, req: Incom
     redirectToCanonical(registry, scheme, url, res)
     return
   }
+  if (url.pathname === CONSENT_PATH) {
+    acceptGateways(consent, req, res, url, partitionOf(req, host))
+    return
+  }
   const expectedLeaf = expectedLeafOf(req.headers)
   if (expectedLeaf === 'invalid') {
     res.writeHead(400, { 'content-type': 'text/plain' }).end('the expected leaf is not a leaf')
@@ -391,7 +424,7 @@ async function handle (registry: ProtocolRegistry, sites: SiteSource, req: Incom
   let root: string | undefined
   const partition = partitionOf(req, host)
   try {
-    const { site } = await sites.get(host, partition, routeOf(req), isNavigation(req))
+    const { site } = await sites.get(host, partition, routeOf(req), isNavigation(req), isDocumentLoad(req))
     root = site.root.cid
     const etag = `"${root}"`
     // One install reads one root: a request naming another means the name moved on mid-load.
@@ -440,18 +473,19 @@ async function handle (registry: ProtocolRegistry, sites: SiteSource, req: Incom
     await sendBody(res, status, headers, file, length, budget, partition, bufferedResponseDeadlineMs, typeof expected === 'string')
   } catch (error) {
     if (res.headersSent) res.destroy()
-    else sendError(res, shown, error, root)
+    // Only a page the person is looking at carries the token: a script's fetch or a frame of the same origin could read it.
+    else sendError(res, shown, error, root, partition === undefined || req.headers['sec-fetch-dest'] !== 'document' ? undefined : { href: `${CONSENT_PATH}?token=${consent.tokenFor(partition)}&to=${encodeURIComponent(`${url.pathname}${url.search}`)}`, tunnelled: routeOf(req) === 'tunnel' })
   }
 }
 
 /** `bufferedResponseDeadlineMs` defaults to `BUFFERED_RESPONSE_DEADLINE_MS`; a test shortens it rather than waiting the real deadline out. */
-export function createVerifierServer (registry: ProtocolRegistry, sites: SiteSource, certificate: RunCertificate, bufferedResponseDeadlineMs: number = BUFFERED_RESPONSE_DEADLINE_MS): Server {
+export function createVerifierServer (registry: ProtocolRegistry, sites: SiteSource, certificate: RunCertificate, bufferedResponseDeadlineMs: number = BUFFERED_RESPONSE_DEADLINE_MS, consent: GatewayConsent = new GatewayConsent()): Server {
   // One budget for every request this server ever handles, not one per
   // request: it is what lets it track every partition's own share, and their combined total.
   const budget = new BufferBudget()
   return createServer({ key: certificate.keyPem, cert: certificate.certPem }, (req, res) => {
     // A rejection left unobserved would end the host process, and with it every protocol's page.
-    handle(registry, sites, req, res, budget, bufferedResponseDeadlineMs).catch((error: unknown) => {
+    handle(registry, sites, consent, req, res, budget, bufferedResponseDeadlineMs).catch((error: unknown) => {
       console.error('[verifier] request failed:', error)
       if (res.headersSent) res.destroy()
       else res.writeHead(500, { 'content-type': 'text/plain' }).end('the verifier failed on this request')

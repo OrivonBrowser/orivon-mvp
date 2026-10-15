@@ -61,7 +61,7 @@ export interface Refusal {
   readonly resource: string
 }
 
-/** Where a mount's bytes came from, for the surfaces that tell the person: `reason` says why a source other than the one chosen served them. */
+/** Where a mount's bytes came from, for the surfaces that tell the person: `reason` says why a source other than the one chosen served them (for IPFS: the person's node could not, and they said yes to public gateways for this one load). */
 export interface ServedFrom {
   readonly kind: 'node' | 'gateways'
   readonly reason?: string

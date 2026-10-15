@@ -1,6 +1,6 @@
 // The local nodes through the real Nym tunnel, live and opt-in (ORIVON_NYM_LIVE=1; CI never sets it). Cold launches time the
 // same two blocks asked of the IPFS node's own API (a small block the public network holds widely, and the directory of an
-// app the project pins on its VPS) and the tab load of that app: the node through the tunnel (the browser-wide setting on),
+// app the project pins on its VPS) and the tab load of that app: the node through the tunnel (the browser-wide setting and "Use tunnel to run network nodes" on),
 // the gateways through the tunnel (the node switched off, which is what the browser did before the nodes could run through it)
 // and the node directly (the setting off). In the first, the operating system lists the node's sockets at ten-second
 // samples: none may leave this computer, and turning the setting off and on restarts the node on the right path. A last
@@ -162,7 +162,7 @@ describe.skipIf(!LIVE)('the IPFS node through the real Nym tunnel', () => {
   }
 
   it('[tunnel on, the node] times two blocks and the tab load through the node, holds no socket that leaves this computer, and is restarted on the right path when the setting flips', async () => {
-    await launch({ 'network.tunnel.everywhere': true })
+    await launch({ 'network.tunnel.everywhere': true, 'network.tunnel.nodes': true })
     const started = Date.now()
     const loading = open(SITE, true)
     expect(await waitFor(async () => await nodePid() !== undefined, 120_000), 'the node was started by the address').toBe(true)
@@ -211,7 +211,7 @@ describe.skipIf(!LIVE)('the IPFS node through the real Nym tunnel', () => {
   }, 1_500_000)
 
   it('[tunnel on, the Swarm node] opens a bzz:// site through the Swarm node, or reports how far it got', async () => {
-    await launch({ 'network.tunnel.everywhere': true }, { ORIVON_SWARM_NODE_LOG: '1' })
+    await launch({ 'network.tunnel.everywhere': true, 'network.tunnel.nodes': true }, { ORIVON_SWARM_NODE_LOG: '1' })
     const started = Date.now()
     await clickAddressBarRetrying(chrome, `bzz://${SWARM_CHUNK}`)
     const cid = referenceCid(SWARM_CHUNK)
@@ -247,6 +247,18 @@ describe.skipIf(!LIVE)('the IPFS node through the real Nym tunnel', () => {
     await launch({ 'network.tunnel.everywhere': true, 'web3.ipfsSource': 'gateways' })
     console.log(`[live] tunnel on, gateways: tab load ${String(await open(SITE))} ms`)
     expect(await nodePid(), 'no node runs').toBeUndefined()
+  }, 600_000)
+
+  it('[tunnel on, the node direct] times the same tab load with the nodes outside the tunnel, which is the default, and asks no gateway', async () => {
+    await launch({ 'network.tunnel.everywhere': true })
+    const loading = open(SITE)
+    expect(await waitFor(() => /\[ipfs-node\] gateway listening/.test(mainOutput(app as ElectronApplication)), 120_000), 'the node started although the whole browser is on the tunnel').toBe(true)
+    console.log(`[live] tunnel on, nodes direct: wide block ${String(await blockMs(WIDE_CID))} ms, project block ${String(await blockMs(PROJECT_CID, 60_000))} ms`)
+    console.log(`[live] tunnel on, nodes direct: tab load ${String(await loading)} ms`)
+    const pid = await nodePid()
+    expect(pid, 'the node runs').toBeDefined()
+    console.log(`[live] direct node beside the tunnel ${String(pid)}: ${summary(socketsOf(pid as number))}`)
+    expect(leaving(socketsOf(pid as number)).length, 'the node connects to its peers itself').toBeGreaterThan(0)
   }, 600_000)
 
   it('[tunnel off, the node] times the same blocks and tab load through the node directly', async () => {

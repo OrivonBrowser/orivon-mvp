@@ -38,7 +38,7 @@ const rows: readonly Row[] = [
   {
     id: 'route-everywhere',
     label: 'Send all of Orivon\'s traffic through the tunnel',
-    help: 'Every website and app follows this unless you set it to off from its own switch, and so does what Orivon sends for itself: update checks, usage statistics you agreed to, search suggestions and the Web3 names Orivon reads. Left outside the tunnel: this computer, the connection to the tunnel itself, and the sites and apps you set to off. The IPFS and Swarm nodes Orivon can run are off meanwhile, because they connect to their peers themselves; IPFS is read through gateways instead.',
+    help: 'Every website and app follows this unless you set it to off from its own switch, and so does what Orivon sends for itself: update checks, usage statistics you agreed to, search suggestions and the Web3 names Orivon reads. Left outside the tunnel: this computer, the connection to the tunnel itself, and the sites and apps you set to off. The IPFS and Swarm nodes Orivon can run connect to their peers themselves, so the switch under this one says whether they go through the tunnel too.',
     keywords: ['tunnel', 'proxy', 'tor', 'everything', 'all traffic', 'whole browser', 'everywhere', 'vpn', 'anonymous', 'default', 'enforce', 'browser-wide', 'browser wide'],
     group: TUNNEL,
     control: { type: 'toggle', key: 'network.tunnel.everywhere', locked: held('network.tunnel.everywhere'), // With your own address as the tunnel and no address set it cannot be turned on, but it can always be turned off.
@@ -46,6 +46,14 @@ const rows: readonly Row[] = [
     below: (state) => heldLine(state) ?? (state.part<RoutePart>('route').heldOn && state.value('network.tunnel.everywhere') === true
       ? h('p', { className: 'problem', role: 'status', textContent: 'This is on because your settings file could not be read, so Orivon does not guess that you wanted your traffic outside the tunnel; turn it off here if you did.' })
       : null)
+  },
+  {
+    id: 'route-nodes',
+    label: 'Use tunnel to run network nodes (such as IPFS and Swarm)',
+    help: 'Off: the IPFS and Swarm nodes, and the Ethereum service that checks .eth names, connect directly, so pages load faster, but the networks they ask can see this computer\'s address and what is asked for: the content, and the .eth names you open; the connections of the sites themselves still go through the tunnel. On: they go through the tunnel too, which is more private and much slower. This applies while Orivon\'s traffic goes through the tunnel; a website you tunnel by itself is then served from the nodes only while this is off. A change applies at once.',
+    keywords: ['tunnel', 'nodes', 'node', 'ipfs', 'swarm', 'ethereum', 'light client', 'ens', 'network nodes', 'nym', 'tor', 'direct', 'private', 'faster', 'slower', 'peers'],
+    group: TUNNEL,
+    control: { type: 'toggle', key: 'network.tunnel.nodes' }
   },
   {
     id: 'route-nym-enabled',

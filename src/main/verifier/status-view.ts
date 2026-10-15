@@ -117,7 +117,7 @@ export function lightClientView (facts: VerifierFacts, now: number): LightClient
       { label: 'Beacon API', urls: [facts.endpoints.consensusRpc] },
       ...(facts.ipfsNode === undefined
         ? [{ label: 'IPFS gateways', urls: facts.endpoints.gateways }]
-        : [{ label: 'IPFS node, on this computer', urls: facts.endpoints.ipfsNodeEndpoints ?? [] }, { label: 'IPFS gateways, only while the node cannot run', urls: facts.endpoints.gateways }]),
+        : [{ label: 'IPFS node, on this computer', urls: facts.endpoints.ipfsNodeEndpoints ?? [] }, { label: 'IPFS gateways, only for a site you load through them', urls: facts.endpoints.gateways }]),
       { label: 'Swarm node, on this computer', urls: facts.endpoints.swarmEndpoints },
       { label: 'IPNS name services', urls: facts.endpoints.ipnsNameServices },
       { label: 'DNS-over-HTTPS, for DNSLink', urls: facts.endpoints.dnsOverHttps }
@@ -157,7 +157,7 @@ export interface IpfsNodeView {
   readonly summary: string
 }
 
-const GATEWAYS_INSTEAD = 'IPFS content loads from public gateways instead'
+const NO_GATEWAYS = 'IPFS pages do not load meanwhile, unless you press "Load through public gateways" on a page\'s error or choose gateways under "Load IPFS sites from"'
 
 /** What Settings says about the IPFS node Orivon runs on this computer, while the person reads IPFS from it. */
 export function ipfsNodeView (node: IpfsNodeState, lookupService: boolean): IpfsNodeView {
@@ -166,10 +166,10 @@ export function ipfsNodeView (node: IpfsNodeState, lookupService: boolean): Ipfs
       state: 'off',
       summary: node.reason === undefined
         ? 'Off. It starts when an IPFS address is opened, and stops again after ten minutes without one.'
-        : `Not in use: ${node.reason}. ${GATEWAYS_INSTEAD}.`
+        : `Not in use: ${node.reason}. ${NO_GATEWAYS}.`
     }
     case 'starting': return { state: 'starting', summary: 'Starting.' }
     case 'ready': return { state: 'ready', summary: `Running, and IPFS content loads from it. It asks ${lookupService ? 'its lookup services and the IPFS network' : 'the IPFS network only'}.` }
-    case 'failed': return { state: 'failed', summary: `Not running: ${node.reason}. ${GATEWAYS_INSTEAD} meanwhile, and the node tries again shortly.` }
+    case 'failed': return { state: 'failed', summary: `Not running: ${node.reason}. ${NO_GATEWAYS}. The node tries again shortly.` }
   }
 }

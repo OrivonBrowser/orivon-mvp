@@ -78,18 +78,26 @@ export class Sites {
     private readonly now: () => number = Date.now,
     private readonly timeoutMs = MOUNT_TIMEOUT_MS,
     /** Told which gatherer is about to load a host's records, before any of its content is fetched, whatever partition the mount is for. Not told of a mount the deadline has already failed. */
-    private readonly onGatherer: (host: string, gatherer: string) => void = () => {}
+    private readonly onGatherer: (host: string, gatherer: string) => void = () => {},
+    /** Whether a mounted site was loaded by the person's yes for one load (gateways, because their node could not serve it): the next page load mounts again, and so asks again. */
+    private readonly forOneLoad: (site: MountedSite) => boolean = () => false
   ) {}
 
   /**
    * Throws a ResolutionError. With no partition the mount is served once and never kept, nor are its blocks.
    * `retry` is a person's own request for the page (a reload, a click on Try again): it does not replay a
    * remembered failure, and starts the mount again. A mount still running is joined, never restarted.
+   * `fresh` is a page load the person started (a tab's document navigation, not a frame's or a file's): it does not reuse a site
+   * that was loaded by a yes for one load.
    */
-  async get (host: string, partition: string | undefined, retry = false): Promise<SiteRecord> {
+  async get (host: string, partition: string | undefined, retry = false, fresh = false): Promise<SiteRecord> {
     if (partition === undefined) return await this.mount(host, undefined)
     const key = `${partition} ${host}`
-    const current = this.entries.get(key)
+    let current = this.entries.get(key)
+    if (fresh && current?.good !== undefined && this.forOneLoad(current.good.site)) {
+      this.entries.delete(key)
+      current = undefined
+    }
     const now = this.now()
 
     if (current !== undefined && current.expires > now && !(retry && current.failed)) {
@@ -207,7 +215,7 @@ export class Sites {
 
 /** What the server asks to mount a site: by the route its fetches take. */
 export interface SiteSource {
-  get: (host: string, partition: string | undefined, route?: FetchRoute, retry?: boolean) => Promise<SiteRecord>
+  get: (host: string, partition: string | undefined, route?: FetchRoute, retry?: boolean, fresh?: boolean) => Promise<SiteRecord>
 }
 
 /**
@@ -221,8 +229,8 @@ export class RoutedSites implements SiteSource {
     return route === 'tunnel' ? this.tunnel : this.direct
   }
 
-  async get (host: string, partition: string | undefined, route?: FetchRoute, retry = false): Promise<SiteRecord> {
-    return await this.for(route).get(host, partition, retry)
+  async get (host: string, partition: string | undefined, route?: FetchRoute, retry = false, fresh = false): Promise<SiteRecord> {
+    return await this.for(route).get(host, partition, retry, fresh)
   }
 
   async current (host: string, partition: string, route?: FetchRoute): Promise<SiteRecord | undefined> {
