@@ -126,6 +126,15 @@ describe('a first start of a profile', () => {
     expect(exit).toHaveBeenCalledWith(2)
   })
 
+  it('held to Nym, does not start when the directory it would make cannot be set up', () => {
+    mkdirSync(join(home, 'settings.json'))
+    const { app, exit } = fakeApp(false)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(run(app, '--orivon-private', '--orivon-private-tunnel=nym')).toBeNull()
+    expect(exit).toHaveBeenCalledWith(2)
+    expect(readdirSync(tmp)).toEqual([])
+  })
+
   it('named a private session on the command line takes no lock at all', () => {
     const { app, calls } = fakeApp(false)
     const runtime = run(app, '--orivon-private')

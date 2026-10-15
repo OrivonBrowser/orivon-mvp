@@ -41,7 +41,8 @@ export function parseLaunch (command: readonly string[], home: string): LaunchPa
   const isPrivate = argv.includes(PRIVATE_FLAG)
   if (isPrivate && profiles.length > 0) return { ok: false, problem: 'a private session cannot also be a profile' }
   if (profiles.length > 1) return { ok: false, problem: 'more than one profile was named' }
-  const tunnels = argv.filter((argument) => argument.startsWith(PRIVATE_TUNNEL_FLAG))
+  // The bare switch and a value given as a separate argument are tunnel requests that name none, and are refused with the rest.
+  const tunnels = argv.filter((argument) => argument === PRIVATE_TUNNEL_FLAG.slice(0, -1) || argument.startsWith(PRIVATE_TUNNEL_FLAG))
   if (tunnels.length > 0 && !isPrivate) return { ok: false, problem: 'a tunnel for the whole session is only for a private session' }
   if (isPrivate) {
     const dir = argv.find((argument) => argument.startsWith(PRIVATE_DIR_FLAG))?.slice(PRIVATE_DIR_FLAG.length)

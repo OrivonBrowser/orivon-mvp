@@ -83,8 +83,13 @@ export function startLaunch (app: LaunchApp, argv: readonly string[], env: NodeJ
     if (launch.dir !== null && (dirname(resolve(launch.dir)) !== resolve(tmp) || !isPrivateDirName(basename(launch.dir)) || !existsSync(launch.dir))) {
       return fail('that is not the directory of a private session')
     }
-    if (launch.dir === null) madeDir = createPrivateDir(home, home, tmp, launch.tunnel)
-    else if (launch.tunnel === 'nym') {
+    if (launch.dir === null) {
+      try {
+        madeDir = createPrivateDir(home, home, tmp, launch.tunnel)
+      } catch (error) {
+        return fail(`the private session could not be set up: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    } else if (launch.tunnel === 'nym') {
       // The opener wrote this already; written again so that what this process reads first holds whatever the flag says.
       try {
         forceSettingsFile(join(launch.dir, 'settings.json'), NYM_HELD_SETTINGS)

@@ -45,6 +45,8 @@ describe('a private session held to a tunnel', () => {
   it('refuses a tunnel it does not know, or two, rather than reading either as none', () => {
     expect(parse('--orivon-private', '--orivon-private-tunnel=tor').ok).toBe(false)
     expect(parse('--orivon-private', '--orivon-private-tunnel=').ok).toBe(false)
+    expect(parse('--orivon-private', '--orivon-private-tunnel').ok).toBe(false)
+    expect(parse('--orivon-private', '--orivon-private-tunnel', 'nym').ok).toBe(false)
     expect(parse('--orivon-private', '--orivon-private-tunnel=nym', '--orivon-private-tunnel=nym').ok).toBe(false)
   })
 
