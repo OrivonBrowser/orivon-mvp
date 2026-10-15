@@ -2,10 +2,13 @@
 // stamp that tells it which partition (and which route) a request belongs to. Electron-bound (a session's web request
 // owner), and holds no state of its own.
 
+import { webContents } from 'electron'
 import type { Session, WebFrameMain, WebRequestFilter } from 'electron'
 import { PARTITION_HEADER, ROUTE_HEADER } from '../../loader/fetch/content-root.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
+import { failedFiles } from './failed-files-store.js'
+import { noteCompletedFile } from './failed-files.js'
 import { requestPartition, withPartition, withRoute } from './partition.js'
 
 /** Only a request whose host a protocol actually routes to the verifier --
@@ -52,5 +55,11 @@ export function installPartitionStamp (target: Session, tunnelProfile: boolean):
     }
     const partition = requestPartition({ url: details.url, resourceType: details.resourceType, topUrl: frame?.top?.url })
     return { ...current, requestHeaders: withRoute(withPartition(current.requestHeaders, PARTITION_HEADER, partition), ROUTE_HEADER, tunnelProfile) }
+  })
+}
+
+export function installFileFailureWatch (target: Session): void {
+  webRequestOwnerFor(target).onCompleted(verifiedHostFilter(), targetsVerifiedHost, (details) => {
+    noteCompletedFile(failedFiles, details, (id) => { const found = webContents.fromId(id); return found === undefined || found.isDestroyed() ? undefined : found })
   })
 }

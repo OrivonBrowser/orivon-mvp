@@ -7,6 +7,10 @@ import { Slots } from '../resolution/slots.js'
 import { Outrun } from './race.js'
 import { GatewayHealth, retryAfterMs } from './gateway-health.js'
 import type { GatewayOutcome } from './gateway-health.js'
+import { DIRECT_ROUTE } from '../route-pace.js'
+import type { RoutePace } from '../route-pace.js'
+import { StallClock } from './stall.js'
+import type { StallReason } from './stall.js'
 
 export type Fetch = (url: string, init: { readonly headers: Readonly<Record<string, string>>, readonly signal: AbortSignal }) => Promise<Response>
 
@@ -20,6 +24,8 @@ export interface PoolOptions {
   readonly lieQuarantineMs?: number
   /** A 5xx is the source's final answer, not a sign it is unwell: for a local node, which answers 502 or 504 once its own lookup has found nothing, and which asking again would only make search again. */
   readonly serverErrorsAreAnswers?: boolean
+  /** The route this pool's requests travel: how long a request may take to its first byte, and a body go without one. Direct when unset. */
+  readonly route?: RoutePace
 }
 
 export class GatewayPool {
@@ -42,6 +48,10 @@ export class GatewayPool {
 
   now (): number {
     return this.clock()
+  }
+
+  get route (): RoutePace {
+    return this.options.route ?? DIRECT_ROUTE
   }
 
   /** Gateways still in use, in order of preference -- cooling or not. */
@@ -82,8 +92,9 @@ export class GatewayPool {
   hedgeDelay (gateway: string, maxMs: number): number {
     const known = this.usable().map((g) => this.health.get(g)!.typicalLatencyMs()).filter((ms): ms is number => ms !== undefined)
     const typical = this.health.get(gateway)?.typicalLatencyMs() ?? (known.length === 0 ? undefined : Math.min(...known))
-    if (typical === undefined) return maxMs
-    return Math.min(maxMs, Math.max(MIN_HEDGE_DELAY_MS, HEDGE_LATENCY_FACTOR * typical))
+    const patience = this.route.wait(maxMs)
+    if (typical === undefined) return patience
+    return Math.min(patience, Math.max(MIN_HEDGE_DELAY_MS, HEDGE_LATENCY_FACTOR * typical))
   }
 
   /** For the rest of this session: a gateway that sent one bad block is not asked again. */
@@ -135,7 +146,7 @@ export class RedirectRefused extends Error {
 }
 
 /** The whole body, or TooLarge as soon as it passes `max` bytes, without reading further. */
-export async function readCapped (response: Response, max: number): Promise<Uint8Array> {
+export async function readCapped (response: Response, max: number, onProgress: () => void = () => {}): Promise<Uint8Array> {
   const declared = Number(response.headers.get('content-length'))
   if (Number.isFinite(declared) && declared > max) {
     await response.body?.cancel()
@@ -148,6 +159,7 @@ export async function readCapped (response: Response, max: number): Promise<Uint
   for (;;) {
     const { done, value } = await reader.read()
     if (done) break
+    onProgress()
     total += value.length
     if (total > max) {
       await reader.cancel()
@@ -185,6 +197,11 @@ const SERVER_ERRORS: ReadonlySet<number> = new Set([500, 502, 503, 504])
 
 const CANCELLED = 'the caller no longer needs this attempt'
 
+/** What a stopped transfer says of why: which of its three clocks ran out. */
+function stalled (reason: StallReason): string {
+  return reason === 'first-byte' ? 'sent nothing in time' : reason === 'stall' ? 'stopped sending' : 'took too long overall'
+}
+
 function message (error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
@@ -192,7 +209,10 @@ function message (error: unknown): string {
 export interface GatewayRequest {
   readonly url: string
   readonly accept: string
+  /** How long the answer's first byte may take on a direct connection; the pool's route stretches it. */
   readonly timeoutMs: number
+  /** The most the body may hold: with the route's pace it bounds the whole transfer, so a source that trickles for ever still ends. */
+  readonly maxBytes: number
 }
 
 /**
@@ -213,52 +233,61 @@ export async function askGateway<T> (
   fetch: Fetch,
   gateway: string,
   req: GatewayRequest,
-  read: (response: Response) => Promise<T>,
+  read: (response: Response, progress: () => void) => Promise<T>,
   signal: AbortSignal
 ): Promise<T> {
   return await pool.withSlot(gateway, async () => {
     const startedAt = pool.now()
-    const timeout = AbortSignal.timeout(req.timeoutMs)
-    let response: Response
+    // A request fails when it stops moving (no first byte in the route's time, or a body that goes quiet), never
+    // because a clock written for a fast connection ran out while bytes were still arriving.
+    const { route } = pool
+    const clock = new StallClock({ firstByteMs: route.firstWait(req.timeoutMs), stallMs: route.stallMs(), capMs: route.firstWait(req.timeoutMs) + route.transferMs(req.maxBytes) })
     try {
-      response = await fetch(req.url, { headers: { accept: req.accept }, signal: AbortSignal.any([signal, timeout]) })
-    } catch (error) {
-      if (signal.aborted) {
-        if (signal.reason instanceof Outrun) pool.note(gateway, { kind: 'timeout' })
-        throw new GatewayFailure({ kind: 'cancelled' }, CANCELLED)
+      let response: Response
+      try {
+        response = await fetch(req.url, { headers: { accept: req.accept }, signal: AbortSignal.any([signal, clock.signal]) })
+      } catch (error) {
+        if (signal.aborted) {
+          if (signal.reason instanceof Outrun) pool.note(gateway, { kind: 'timeout' })
+          throw new GatewayFailure({ kind: 'cancelled' }, CANCELLED)
+        }
+        // A redirect is how some gateways refuse a single item (a content filter): it says nothing about
+        // the gateway being up, so it must not cool it for the next item.
+        const outcome: RecordedFailure = error instanceof RedirectRefused ? { kind: 'miss' } : { kind: clock.signal.aborted ? 'timeout' : 'unreachable' }
+        pool.note(gateway, outcome)
+        throw new GatewayFailure(outcome, `${gateway}: ${clock.reason === undefined ? message(error) : `${stalled(clock.reason)} (${message(error)})`}`)
       }
-      // A redirect is how some gateways refuse a single item (a content filter): it says nothing about
-      // the gateway being up, so it must not cool it for the next item.
-      const outcome: RecordedFailure = error instanceof RedirectRefused ? { kind: 'miss' } : { kind: timeout.aborted ? 'timeout' : 'unreachable' }
-      pool.note(gateway, outcome)
-      throw new GatewayFailure(outcome, `${gateway}: ${message(error)}`)
-    }
-    const retryAfter = response.headers.get('retry-after')
-    if (response.status === 429 || (response.status === 503 && retryAfter !== null)) {
-      await response.body?.cancel()
-      const outcome: RecordedFailure = { kind: 'rate-limited', retryAfterMs: retryAfterMs(retryAfter, pool.now()) }
-      pool.note(gateway, outcome)
-      throw new GatewayFailure(outcome, `${gateway} answered ${String(response.status)}`)
-    }
-    if (!response.ok) {
-      await response.body?.cancel()
-      const outcome: RecordedFailure = SERVER_ERRORS.has(response.status) && !pool.serverErrorsAreAnswers ? { kind: 'server-error' } : { kind: 'miss' }
-      pool.note(gateway, outcome)
-      throw new GatewayFailure(outcome, `${gateway} answered ${String(response.status)}`, response.status)
-    }
-    try {
-      const value = await read(response)
-      pool.note(gateway, { kind: 'ok', latencyMs: pool.now() - startedAt })
-      return value
-    } catch (error) {
-      // A hedge loser abandoned mid-body lands here as an abort too, and
-      // must not cool down an honest gateway for losing a race.
-      if (signal.aborted) throw new GatewayFailure({ kind: 'cancelled' }, CANCELLED)
-      // TooLarge is the gateway sending something outside the block/record
-      // spec, not an outage; anything else is a body that broke mid-read.
-      const outcome: RecordedFailure = error instanceof TooLarge ? { kind: 'miss' } : { kind: timeout.aborted ? 'timeout' : 'unreachable' }
-      pool.note(gateway, outcome)
-      throw new GatewayFailure(outcome, `${gateway}: ${message(error)}`)
+      clock.progress()
+      const retryAfter = response.headers.get('retry-after')
+      if (response.status === 429 || (response.status === 503 && retryAfter !== null)) {
+        await response.body?.cancel()
+        const outcome: RecordedFailure = { kind: 'rate-limited', retryAfterMs: retryAfterMs(retryAfter, pool.now()) }
+        pool.note(gateway, outcome)
+        throw new GatewayFailure(outcome, `${gateway} answered ${String(response.status)}`)
+      }
+      if (!response.ok) {
+        await response.body?.cancel()
+        const outcome: RecordedFailure = SERVER_ERRORS.has(response.status) && !pool.serverErrorsAreAnswers ? { kind: 'server-error' } : { kind: 'miss' }
+        pool.note(gateway, outcome)
+        throw new GatewayFailure(outcome, `${gateway} answered ${String(response.status)}`, response.status)
+      }
+      route.observeFirstByte(pool.now() - startedAt)
+      try {
+        const value = await read(response, () => { clock.progress() })
+        pool.note(gateway, { kind: 'ok', latencyMs: pool.now() - startedAt })
+        return value
+      } catch (error) {
+        // A hedge loser abandoned mid-body lands here as an abort too, and
+        // must not cool down an honest gateway for losing a race.
+        if (signal.aborted) throw new GatewayFailure({ kind: 'cancelled' }, CANCELLED)
+        // TooLarge is the gateway sending something outside the block/record
+        // spec, not an outage; anything else is a body that broke mid-read.
+        const outcome: RecordedFailure = error instanceof TooLarge ? { kind: 'miss' } : { kind: clock.signal.aborted ? 'timeout' : 'unreachable' }
+        pool.note(gateway, outcome)
+        throw new GatewayFailure(outcome, `${gateway}: ${clock.reason === undefined ? message(error) : `${stalled(clock.reason)} (${message(error)})`}`)
+      }
+    } finally {
+      clock.finish()
     }
   }, signal)
 }

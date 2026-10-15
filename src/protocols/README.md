@@ -14,7 +14,7 @@ process that runs Nym's mixnet client and offers it to the tunnel for apps as a 
 
 **Durable**, except `verifier-host/`, `local-node/` and `nym-tunnel/`, which are tied to Electron.
 
-**What it depends on.** The top-level files depend only on [`resolution/`](resolution/) and on
+**What it depends on.** The top-level files (`route-pace.ts`, the wait every step of the load path derives from its route, among them) depend only on [`resolution/`](resolution/) and on
 each built-in protocol's `descriptor.ts`. Each folder's own `README.md` says what it depends on.
 
 **What it must never import.** The top-level files and every `descriptor.ts`: `electron`,

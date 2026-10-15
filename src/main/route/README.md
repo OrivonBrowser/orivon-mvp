@@ -19,6 +19,7 @@ that is tied to the running browser: which origins (apps and websites) the perso
 | `nym-launch.ts` | The one file of Nym that imports `electron`: the utility process, where the module's files are, the proxy check |
 | `nym-supervisor.ts`, `nym-messages.ts` | Keeps the host's process running, and checks every message it posts |
 | `nym-provider.ts` | The route provider of an app on Nym: the SOCKS5 provider at the host's current port, with the app's isolation user name and the host's secret, asking `nym-subsystem.ts` for the address at each use. A Nym that cannot run is an `unreachable` refusal, never a direct dial. It declares `dialBudgetMs` (110 s), the time the broker lets one connection of the app take where a direct dial gets 30 s: a tunnel coming up takes up to 95 s and a stream up to 45 s. `NYM_TARGET` is the route target that stands for it |
+| `main-pace.ts` | The patience of the requests main itself makes (a Web3 Score lookup): the direct route, or the one meter of the tunnel, so what one lookup learned of how slow the tunnel is the next is patient for (`../../protocols/route-pace.ts`) |
 | `nym-status.ts`, `nym-test-seam.ts` | What Nym is doing, as plain data; and, in a test build only, a stand-in module run in place of the pinned one |
 | `forget-watch.ts` | Clears the route of an app the broker no longer knows, and lets go of its front and sessions |
 | `route-domain.ts` | What the Settings page may ask: whether the proxy answers |

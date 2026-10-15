@@ -18,9 +18,9 @@ const WEB3_SCORE_OVERLAY = 'web3-score'
 
 /** How soon a shield whose provider was still being asked asks again. */
 const PENDING_RETRY_MS = 2_000
-/** How soon, and how many times, a shield whose provider could not be reached asks again (a tunnel that was still coming up may answer by then). */
+/** How soon, and how many times, a shield whose provider could not be reached asks again (a tunnel that was still coming up may answer by then); main says how soon when the route is a slow one. */
 const UNREACHABLE_RETRY_MS = 30_000
-const UNREACHABLE_RETRIES = 4
+const UNREACHABLE_RETRIES = 8
 
 /** What the address pill says about the active site: the Web3 Score shield and its mark, and the key for
  * the permissions this site has asked for. Both answers come from main a moment after the push that asked,
@@ -75,7 +75,7 @@ export function createSiteBadges (): ChromeModule {
       if (shieldRequestUrl !== url) return // the active tab moved on; this answer is stale
       applyShield(score)
       // A slow provider (a cold ipfs:// fetch) answers after the page has stopped pushing state; one that could not be reached is tried again a few times.
-      const again = score?.pending === true ? PENDING_RETRY_MS : score?.unreachable === true && unreachableRetries < UNREACHABLE_RETRIES ? UNREACHABLE_RETRY_MS : undefined
+      const again = score?.pending === true ? PENDING_RETRY_MS : score?.unreachable === true && unreachableRetries < UNREACHABLE_RETRIES ? score.retryMs ?? UNREACHABLE_RETRY_MS : undefined
       if (again === undefined) return
       clearTimeout(pendingRetry)
       pendingRetry = setTimeout(() => {

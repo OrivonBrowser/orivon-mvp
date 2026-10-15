@@ -46,7 +46,8 @@ export type ProviderVerdict =
   /** A provider is set, but this page's files were not checked (DDOC), so there is nothing to ask about. */
   | { readonly status: 'not-assessable', readonly address: string }
   | { readonly status: 'pending', readonly address: string }
-  | { readonly status: 'unreachable', readonly address: string, readonly reason: string }
+  /** `retryMs`: how soon asking again is worth it, longer on a slow route; absent when asking again would not help. */
+  | { readonly status: 'unreachable', readonly address: string, readonly reason: string, readonly retryMs?: number }
   | { readonly status: 'no-score', readonly provider: ProviderName }
   | { readonly status: 'judged', readonly provider: ProviderName, readonly evaluation: Evaluation }
 

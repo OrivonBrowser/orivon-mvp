@@ -76,7 +76,8 @@ export class Sites {
   constructor (
     private readonly registry: ProtocolRegistry,
     private readonly now: () => number = Date.now,
-    private readonly timeoutMs = MOUNT_TIMEOUT_MS,
+    /** The wait for one mount, read when the mount starts: a route's patience follows what it has measured. */
+    private readonly timeoutMs: number | (() => number) = MOUNT_TIMEOUT_MS,
     /** Told which gatherer is about to load a host's records, before any of its content is fetched, whatever partition the mount is for. Not told of a mount the deadline has already failed. */
     private readonly onGatherer: (host: string, gatherer: string) => void = () => {}
   ) {}
@@ -178,12 +179,13 @@ export class Sites {
 
   private async mount (host: string, partition: string | undefined): Promise<SiteRecord> {
     const controller = new AbortController()
+    const timeoutMs = typeof this.timeoutMs === 'function' ? this.timeoutMs() : this.timeoutMs
     let timer: ReturnType<typeof setTimeout> | undefined
     const deadline = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => {
         controller.abort()
-        reject(new ResolutionError('unavailable', `${host} could not be verified within ${String(this.timeoutMs / 1000)} s`))
-      }, this.timeoutMs)
+        reject(new ResolutionError('unavailable', `${host} could not be verified within ${String(timeoutMs / 1000)} s`))
+      }, timeoutMs)
     })
     try {
       return await Promise.race([deadline, this.mounting.run(async () => {
