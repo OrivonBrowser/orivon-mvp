@@ -15,7 +15,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, afterEach, expect, it } from 'vitest'
 import { EMPTY_WASM, FAKE_NYM_MODULE } from '../app-behaviours/nym-stand-in.js'
 import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
-import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
+import { bindingOf, clickAddressBarRetrying, shownBinding } from '../support/e2e-helpers.js'
 import { shoot } from '../support/auth-support.js'
 import { launchShell, QA_TEST_TIMEOUT_MS } from '../support/qa-helpers.js'
 import { activeTabInfo, delay, evaluateRetrying, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
@@ -98,6 +98,8 @@ it('the held window has the tunnel on before its first request, whatever the pro
   const chip = await evaluateRetrying(world.chrome, () => { const el = document.querySelector<HTMLElement>('#profile-chip'); return { hidden: el?.hidden ?? true, text: el?.textContent ?? null, title: el?.title ?? null } })
   expect(chip).toMatchObject({ hidden: false, text: 'Private with Nym' })
   expect(chip.title).toContain('Nym')
+
+  await shoot(world.app, world.chrome, world.chrome, 'private-window-nym-chrome')
 
   // The settings file this process read is the ordinary one with the three choices written over.
   const written = JSON.parse(readFileSync(join(world.userData, 'settings.json'), 'utf8')) as { version: number, values: Record<string, unknown> }
@@ -202,7 +204,18 @@ it.skipIf(process.platform !== 'linux')('the command starts a process that knows
   cleanups.push(async () => { await closeElectron(app) })
   const userData = await app.evaluate(({ app: electron }) => electron.getPath('userData'))
   const before = readFileSync(join(userData, 'settings.json'), 'utf8')
-  await chrome.evaluate(() => { (window as unknown as { orivonShell: { runCommand: (id: string) => void } }).orivonShell.runCommand('window.newPrivateNym') })
+  // The row of the main menu, right after the ordinary private window, with its key; pressing it is the command.
+  await chrome.click('#menu')
+  const menuPage = (): Page | undefined => app.windows().find((w) => w.url().includes('overlay=menu') && !w.isClosed())
+  expect(await waitFor(() => menuPage() !== undefined)).toBe(true)
+  const menu = menuPage() as Page
+  await menu.waitForSelector('.menu-row')
+  const labels = await menu.locator('.menu-row .menu-label').allTextContents()
+  expect(labels.indexOf('Open a private window with Nym')).toBe(labels.indexOf('New private window') + 1)
+  const row = menu.locator('.menu-row', { hasText: 'Open a private window with Nym' })
+  expect(await row.locator('.menu-keys').textContent()).toBe(shownBinding(bindingOf('window.newPrivateNym')))
+  await shoot(app, chrome, menu, 'private-window-nym-menu')
+  await row.click()
 
   let peer: ReturnType<typeof privatePeer>
   expect(await waitFor(() => { peer = privatePeer(userData); return peer !== undefined })).toBe(true)
