@@ -408,6 +408,9 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
       for (const panel of adopted) panel.close()
     },
     restack,
+    reshow () {
+      for (const slot of openSlots()) if (!slot.attachWhenReady) slot.view?.reshow()
+    },
     dispose () {
       if (disposed) return
       disposed = true
