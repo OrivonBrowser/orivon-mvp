@@ -1,7 +1,7 @@
 // An ipfs:// address when the person reads IPFS from the node Orivon runs and the node's files are not there:
-// IPFS is not blocked on the node. The mount reads from the public gateways (none is reachable in this hermetic
-// run, so the page ends in the ordinary unavailable page, which never says the content loads only from the node),
-// and Settings says in plain words why the node is not in use. ORIVON_IPFS_NODE_DIR names an empty directory so
+// IPFS is not blocked on the node. The page ends at once in the unavailable page, which offers to load the site
+// through public gateways and never says the content loads only from the node, no gateway is asked, and Settings
+// says in plain words why the node is not in use. ORIVON_IPFS_NODE_DIR names an empty directory so
 // the answer does not depend on whether this checkout has fetched the node.
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -20,7 +20,7 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-it('reads from the gateways, never blocking on the node, and tells Settings why the node is not in use', async () => {
+it('answers at once with an offer of the gateways, never blocking on the node, and tells Settings why the node is not in use', async () => {
   await runPhase('ipfs-node-unavailable', async (check) => {
     const empty = await mkdtemp(join(tmpdir(), 'orivon-no-ipfs-node-'))
     let app: Awaited<ReturnType<typeof launchElectron>> | undefined
@@ -39,6 +39,7 @@ it('reads from the gateways, never blocking on the node, and tells Settings why 
       if (view === undefined) throw new Error('no view shows the served origin')
       const words = await evaluateRetrying(view, () => document.body.innerText)
       check(`the page does not say the content loads only from the node (${JSON.stringify(words.slice(0, 300))})`, !words.includes('loads only from the IPFS node'))
+      check('the page offers the gateways and has asked none', words.includes('Load through public gateways'))
 
       await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/web3') })
       let settings: Page | undefined
@@ -47,7 +48,7 @@ it('reads from the gateways, never blocking on the node, and tells Settings why 
       const row = settings.locator('#row-web3-ipfs-node .value')
       let text = ''
       const said = await waitFor(async () => { text = (await row.textContent().catch(() => '')) ?? ''; return text.startsWith('Not in use:') }, 15_000)
-      check(`Settings says why the node is not in use, and that gateways serve instead (${JSON.stringify(text)})`, said && text.includes('ipfs-node.js is missing') && text.includes('IPFS content loads from public gateways instead'))
+      check(`Settings says why the node is not in use, and that no gateway is used unless chosen (${JSON.stringify(text)})`, said && text.includes('ipfs-node.js is missing') && text.includes('IPFS pages do not load meanwhile'))
       expect(shown.ok && said && !words.includes('loads only from the IPFS node')).toBe(true)
     } finally {
       if (app !== undefined) await closeElectronApp(app)

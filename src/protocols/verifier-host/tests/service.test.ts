@@ -37,9 +37,9 @@ function deps (overrides: Partial<HostDeps> = {}): HostDeps & { posted: FromHost
   }
 }
 
-async function get (port: number, host: string, path = '/', partition = `https://${host}`): Promise<{ status: number, body: string, location?: string | undefined }> {
+async function get (port: number, host: string, path = '/', partition = `https://${host}`, extra: Record<string, string> = {}): Promise<{ status: number, body: string, location?: string | undefined }> {
   return await new Promise((resolve, reject) => {
-    request({ host: '127.0.0.1', port, path, servername: host, rejectUnauthorized: false, headers: { host, 'x-orivon-partition': partition } }, (res) => {
+    request({ host: '127.0.0.1', port, path, servername: host, rejectUnauthorized: false, headers: { host, 'x-orivon-partition': partition, ...extra } }, (res) => {
       let body = ''
       res.on('data', (c: Buffer) => { body += c.toString() })
       res.on('end', () => { resolve({ status: res.statusCode ?? 0, body, ...(res.headers.location === undefined ? {} : { location: res.headers.location }) }) })
@@ -170,6 +170,10 @@ describe('startHost with Swarm', () => {
   })
 })
 
+/** A page the person is looking at, and a link on it that the person pressed. */
+const DOCUMENT = { 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document' }
+const PRESS = { 'sec-fetch-mode': 'navigate', 'sec-fetch-user': '?1' }
+
 describe('startHost with the IPFS node', () => {
   const NODE = 'http://127.0.0.1:20123'
   const SALT = 'ab'.repeat(32)
@@ -197,16 +201,83 @@ describe('startHost with the IPFS node', () => {
     expect(await provenanceOf(host)).toMatchObject({ servedFrom: { kind: 'node' } })
   })
 
-  it('reads from the gateways, and says why, when the node cannot run, never waiting on it', async () => {
+  it('reads no gateway, and offers one, when the node cannot run; the person\'s yes loads this site through them and says why', async () => {
     const { gw, made, posted } = world()
     const host = await startHost(config({ ipfsNode: NODE_CONFIG }), made)
     running.push(host)
-    const page = get(host.port, 'fixture.eth')
+    const page = get(host.port, 'fixture.eth', '/', undefined, DOCUMENT)
     await vi.waitFor(() => { expect(posted).toContainEqual({ type: 'node-wanted', node: 'ipfs-node' }) })
     host.node({ type: 'node', node: 'ipfs-node', state: 'off', reason: 'a proxy is configured' })
-    expect(await page).toEqual({ status: 200, body: '<h1>fixture</h1>' })
+    const refused = await page
+    expect(refused.status).toBe(502)
+    expect(refused.body).toContain('a proxy is configured')
+    expect(refused.body).toContain('Load through public gateways')
+    expect(gw.requests).toEqual([])
+    const href = /id="load-through-gateways" href="([^"]+)"/.exec(refused.body)?.[1]?.replaceAll('&#38;', '&')
+    expect(href).toMatch(/^\/\.orivon\/load-through-gateways\?token=/)
+    const accepted = await get(host.port, 'fixture.eth', href, undefined, { ...PRESS })
+    expect(accepted).toMatchObject({ status: 303, location: '/' })
+    // The way back is a path on this site and nothing else: another host, a backslash and the host's own paths all come back to the root.
+    const token = /token=([^&]+)/.exec(href ?? '')?.[1] ?? ''
+    for (const to of ['//evil.example/', '/\\evil.example', '/.orivon/load-through-gateways', 'https://evil.example/']) {
+      const back = await get(host.port, 'fixture.eth', `/.orivon/load-through-gateways?token=${token}&to=${encodeURIComponent(to)}`, undefined, { ...PRESS })
+      expect(back).toMatchObject({ status: 303, location: '/' })
+    }
+    // The press asked for the gateways: the load that follows reads them at once, without asking the node again.
+    const again = get(host.port, 'fixture.eth', '/', undefined, DOCUMENT)
+    expect(await again).toEqual({ status: 200, body: '<h1>fixture</h1>' })
     expect(gw.requests.every((url) => url.startsWith(`${GATEWAY}/`))).toBe(true)
-    expect(await provenanceOf(host)).toMatchObject({ servedFrom: { kind: 'gateways', reason: 'a proxy is configured' } })
+    expect(await provenanceOf(host)).toMatchObject({ servedFrom: { kind: 'gateways', reason: expect.stringContaining('you loaded this page through them') } })
+    // The page's own files are read from the site that was loaded, without asking again.
+    expect((await get(host.port, 'fixture.eth', '/index.html')).status).toBe(200)
+    // The yes was for that load: the next page load of the site asks again.
+    const asks = posted.filter((message) => message.type === 'node-wanted').length
+    const next = get(host.port, 'fixture.eth', '/', undefined, DOCUMENT)
+    await vi.waitFor(() => { expect(posted.filter((message) => message.type === 'node-wanted').length).toBeGreaterThan(asks) })
+    host.node({ type: 'node', node: 'ipfs-node', state: 'off', reason: 'a proxy is configured' })
+    const asked = await next
+    expect(asked.status).toBe(502)
+    expect(asked.body).toContain('Load through public gateways')
+  })
+
+  it('offers the gateways too when the node served the site\'s root and then could not give its page', async () => {
+    const gw = fakeGateways(dag.blocks)
+    const posted: FromHost[] = []
+    const made = deps({
+      post: (message) => { posted.push(message) },
+      // The node has the root block and nothing under it.
+      fetch: async (url, init) => url.includes(dag.root.toString()) ? await gw.fetch(url, { headers: (init?.headers ?? {}) as Record<string, string>, signal: init?.signal ?? new AbortController().signal }) : new Response('not here', { status: 404 })
+    })
+    const host = await startHost(config({ ipfsNode: { ...NODE_CONFIG, retryWaitMs: 20 } }), made)
+    running.push(host)
+    const page = get(host.port, 'fixture.eth', '/', undefined, DOCUMENT)
+    await vi.waitFor(() => { expect(posted).toContainEqual({ type: 'node-wanted', node: 'ipfs-node' }) })
+    host.node({ type: 'node', node: 'ipfs-node', state: 'ready' })
+    const answer = await page
+    expect(answer.status).toBeGreaterThanOrEqual(404)
+    expect(answer.body).toContain('Load through public gateways')
+  })
+
+  it('does not take one site\'s yes for another site\'s load, nor a yes without the page\'s own token', async () => {
+    const { gw, made, posted } = world()
+    const host = await startHost(config({ ipfsNode: NODE_CONFIG }), made)
+    running.push(host)
+    const first = get(host.port, 'fixture.eth', '/', undefined, DOCUMENT)
+    await vi.waitFor(() => { expect(posted).toContainEqual({ type: 'node-wanted', node: 'ipfs-node' }) })
+    host.node({ type: 'node', node: 'ipfs-node', state: 'off', reason: 'off' })
+    const href = /id="load-through-gateways" href="([^"]+)"/.exec((await first).body)?.[1]?.replaceAll('&#38;', '&') ?? ''
+    // The token is for this site's page: another page cannot use it, and a request that is not a navigation cannot follow it.
+    expect((await get(host.port, 'fixture.eth', href, 'https://other.eth', { ...PRESS })).status).toBe(403)
+    expect((await get(host.port, 'fixture.eth', href)).status).toBe(403)
+    // A navigation the person did not start (a script's) is refused even with the page's own token.
+    expect((await get(host.port, 'fixture.eth', href, undefined, { 'sec-fetch-mode': 'navigate' })).status).toBe(403)
+    expect((await get(host.port, 'fixture.eth', '/.orivon/load-through-gateways?token=forged', undefined, { ...PRESS })).status).toBe(403)
+    const asks = posted.filter((message) => message.type === 'node-wanted').length
+    const other = get(host.port, 'fixture.eth', '/', 'https://other.eth', DOCUMENT)
+    await vi.waitFor(() => { expect(posted.filter((message) => message.type === 'node-wanted').length).toBeGreaterThan(asks) })
+    host.node({ type: 'node', node: 'ipfs-node', state: 'off', reason: 'off' })
+    expect((await other).status).toBe(502)
+    expect(gw.requests).toEqual([])
   })
 
   it('reads from the gateways, as before, when no node is chosen, and never asks for one', async () => {

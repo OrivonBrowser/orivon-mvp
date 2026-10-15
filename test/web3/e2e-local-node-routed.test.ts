@@ -22,7 +22,7 @@ const fetched = existsSync(resolve('resources', 'ipfs-node', 'ipfs-node.js')) &&
 const CID = 'bafybeifx7yeb55armcsxwwitkymga5xf53dxiarykms3ygqic223w5sk3m'
 const LOOPBACK = /^(127\.|\[?::1\]?$|\[?::ffff:127\.)/
 
-describe.skipIf(!fetched)('the IPFS node while the whole browser is on the tunnel', () => {
+describe.skipIf(!fetched)('the IPFS node while the whole browser and the nodes are on the tunnel', () => {
   let socks: Socks5Fixture
   let app: ElectronApplication
   let chrome: Page
@@ -32,7 +32,7 @@ describe.skipIf(!fetched)('the IPFS node while the whole browser is on the tunne
     const launched = await launchShell({
       env: { ORIVON_IPFS_NODE_LOG: '1' },
       seedProfile: async (userDataDir) => {
-        writeFileSync(join(userDataDir, 'settings.json'), JSON.stringify({ version: 1, values: { 'network.tunnel.everywhere': true, 'network.route.kind': 'socks5', 'network.route.proxy': `127.0.0.1:${String(socks.port)}` } }))
+        writeFileSync(join(userDataDir, 'settings.json'), JSON.stringify({ version: 1, values: { 'network.tunnel.everywhere': true, 'network.tunnel.nodes': true, 'network.route.kind': 'socks5', 'network.route.proxy': `127.0.0.1:${String(socks.port)}` } }))
       }
     })
     app = launched.app

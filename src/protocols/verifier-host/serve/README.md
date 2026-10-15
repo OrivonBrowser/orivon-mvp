@@ -3,7 +3,7 @@
 **What lives here.** [`server.ts`](server.ts), the loopback TLS server that answers every host a
 protocol serves (a `.eth` name, `<name>.<scheme>.orivon`, and each scheme's endpoint
 `<scheme>.orivon`); its per-run self-signed certificate ([`certificate.ts`](certificate.ts)); the
-per-host mount cache ([`sites.ts`](sites.ts)); [`retry.ts`](retry.ts), which reads a file again before the page is told it is missing; and [`error-pages.ts`](error-pages.ts).
+per-host mount cache ([`sites.ts`](sites.ts)); [`retry.ts`](retry.ts), which reads a file again before the page is told it is missing; [`error-pages.ts`](error-pages.ts); and [`gateway-offer.ts`](gateway-offer.ts), which decides when an error page offers "Load through public gateways" and what following that link does (`../gateway-consent.ts` holds the yes, for one load).
 
 **What it depends on.** [`../../registry.ts`](../../registry.ts) and
 [`../../address.ts`](../../address.ts), [`../protocol.ts`](../protocol.ts),

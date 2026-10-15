@@ -36,8 +36,10 @@ Why raw blocks and not CARs, and the limits' real-site figures:
 [`spike-results/ens-ipfs.md`](../../../docs/planning/spike-results/ens-ipfs.md) section EI-1c.
 
 **The node is one endpoint, read as a gateway is.** [`node-first.ts`](node-first.ts) mounts from the node when
-the host says it is ready and from the gateways otherwise, labelling the mounted site (`servedFrom`) so the
-person can be told. The node's gatherer is the same one, built with `localNode`, with limits from what the real
+the host says it is ready. When the node cannot serve (not ready, or ready but unable to find the content: an `unavailable` failure only) it mounts from
+the gateways only if the person said yes for this load (`takeConsent`, which uses the yes up), labelling the mounted site (`servedFrom`) so the
+person can be told, and otherwise throws `GatewaysOffered` (`../resolution/records.ts`), which the registry keeps through its aggregate
+failure and the host's error page turns into the offer. The node's gatherer is the same one, built with `localNode`, with limits from what the real
 node measured (`gatherer.ts` has the figures: blocks with a provider in 0.3 to 2.3 s, a lookup that finds
 nothing in 25 to 93 s): 12 concurrent block reads, a 45 s block timeout, a 15 s IPNS record timeout so a name
 service is asked inside a mount, a 5xx taken as the node's answer that it found nothing (so no retry passes and no

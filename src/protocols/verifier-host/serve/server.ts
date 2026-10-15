@@ -18,6 +18,9 @@ import { parseRange } from '../../../loader/serve/range.js'
 import { CONTENT_ROOT_HEADER, DDOC_MISMATCH, FAILURE_HEADER, PARTITION_HEADER, ROUTE_HEADER } from '../../../loader/fetch/content-root.js'
 import type { RunCertificate } from './certificate.js'
 import { ERROR_PAGE_CSP, renderErrorPage } from './error-pages.js'
+import type { GatewayOffer } from './error-pages.js'
+import { CONSENT_PATH, GatewayConsent } from '../gateway-consent.js'
+import { answerConsent, gatewayOffer, isDocumentLoad } from './gateway-offer.js'
 import { checkLeaf, expectedLeafOf, sliceChunks } from './leaf-check.js'
 import type { SiteSource } from './sites.js'
 import type { FetchRoute } from '../protocol.js'
@@ -185,10 +188,10 @@ function pathOf (target: string | undefined, host: string): URL | undefined {
  * `servedRoot` is set only for a failure reached after the name resolved to a root: a 404 that
  * carries it says that root has no such path, where one without it may say the name has no content.
  */
-function sendError (res: ServerResponse, shown: string, error: unknown, servedRoot?: string): void {
+function sendError (res: ServerResponse, shown: string, error: unknown, servedRoot?: string, offer?: GatewayOffer): void {
   const failure = error instanceof ResolutionError ? error.failure : 'unavailable'
   const detail = error instanceof Error ? error.message : String(error)
-  const { status, html } = renderErrorPage(failure, shown, detail)
+  const { status, html } = renderErrorPage(failure, shown, detail, offer)
   const headers: Record<string, string> = {
     'content-type': 'text/html; charset=utf-8',
     'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}; ${FRAME_ANCESTORS_SELF_CSP}`,
@@ -372,7 +375,7 @@ function redirectToCanonical (registry: ProtocolRegistry, scheme: string, url: U
   }
 }
 
-async function handle (registry: ProtocolRegistry, sites: SiteSource, routes: ServeRoutes, req: IncomingMessage, res: ServerResponse, budget: BufferBudget, bufferedResponseDeadlineMs: number): Promise<void> {
+async function handle (registry: ProtocolRegistry, sites: SiteSource, routes: ServeRoutes, consent: GatewayConsent, req: IncomingMessage, res: ServerResponse, budget: BufferBudget, bufferedResponseDeadlineMs: number): Promise<void> {
   const host = hostOf(req, registry.addresses)
   if (host === undefined || (registry.addresses.servedName(host) === undefined && registry.addresses.schemeEndpoint(host) === undefined)) {
     res.writeHead(421, { 'content-type': 'text/plain' }).end("this server answers only the names and addresses Orivon's protocols serve")
@@ -392,6 +395,10 @@ async function handle (registry: ProtocolRegistry, sites: SiteSource, routes: Se
     redirectToCanonical(registry, scheme, url, res)
     return
   }
+  if (url.pathname === CONSENT_PATH) {
+    answerConsent(consent, req.headers, url, partitionOf(req, host), res, `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}`)
+    return
+  }
   const expectedLeaf = expectedLeafOf(req.headers)
   if (expectedLeaf === 'invalid') {
     res.writeHead(400, { 'content-type': 'text/plain' }).end('the expected leaf is not a leaf')
@@ -403,10 +410,12 @@ async function handle (registry: ProtocolRegistry, sites: SiteSource, routes: Se
   res.once('close', () => { left.abort(new Error('the client went away')) })
   let file: GatheredFile
   let root: string | undefined
+  let servedByNode = false
   const partition = partitionOf(req, host)
   try {
-    const { site } = await sites.get(host, partition, routeOf(req), isNavigation(req))
+    const { site } = await sites.get(host, partition, routeOf(req), isNavigation(req), isDocumentLoad(req))
     root = site.root.cid
+    servedByNode = site.servedFrom?.kind === 'node'
     const etag = `"${root}"`
     // One install reads one root: a request naming another means the name moved on mid-load.
     const expected = req.headers[CONTENT_ROOT_HEADER]
@@ -458,7 +467,7 @@ async function handle (registry: ProtocolRegistry, sites: SiteSource, routes: Se
     await sendBody(res, status, headers, file, reopen, length, budget, partition, bufferedResponseDeadlineMs, typeof expected === 'string', plan)
   } catch (error) {
     if (res.headersSent) res.destroy()
-    else sendError(res, shown, error, root)
+    else sendError(res, shown, error, root, gatewayOffer(consent, req.headers, url, partition, error, servedByNode, routeOf(req) === 'tunnel'))
   }
 }
 
@@ -476,13 +485,13 @@ export interface ServeRoutes {
 }
 
 /** `bufferedResponseDeadlineMs` defaults to `BUFFERED_RESPONSE_DEADLINE_MS`; a test shortens it rather than waiting the real deadline out. */
-export function createVerifierServer (registry: ProtocolRegistry, sites: SiteSource, certificate: RunCertificate, bufferedResponseDeadlineMs: number = BUFFERED_RESPONSE_DEADLINE_MS, routes: ServeRoutes = { direct: DIRECT_ROUTE, tunnel: DIRECT_ROUTE }): Server {
+export function createVerifierServer (registry: ProtocolRegistry, sites: SiteSource, certificate: RunCertificate, bufferedResponseDeadlineMs: number = BUFFERED_RESPONSE_DEADLINE_MS, routes: ServeRoutes = { direct: DIRECT_ROUTE, tunnel: DIRECT_ROUTE }, consent: GatewayConsent = new GatewayConsent()): Server {
   // One budget for every request this server ever handles, not one per
   // request: it is what lets it track every partition's own share, and their combined total.
   const budget = new BufferBudget()
   return createServer({ key: certificate.keyPem, cert: certificate.certPem }, (req, res) => {
     // A rejection left unobserved would end the host process, and with it every protocol's page.
-    handle(registry, sites, routes, req, res, budget, bufferedResponseDeadlineMs).catch((error: unknown) => {
+    handle(registry, sites, routes, consent, req, res, budget, bufferedResponseDeadlineMs).catch((error: unknown) => {
       console.error('[verifier] request failed:', error)
       if (res.headersSent) res.destroy()
       else res.writeHead(500, { 'content-type': 'text/plain' }).end('the verifier failed on this request')

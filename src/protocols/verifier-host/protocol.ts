@@ -84,6 +84,20 @@ export interface HostConfig {
     /** Test builds only: the wait before a block the node could not give is asked for again, in place of the node's own memory. */
     readonly retryWaitMs?: number
   }
+  /**
+   * Whether the local nodes may serve a website that has the tunnel on by itself. They run outside the tunnel unless the whole
+   * browser is on it, so this is true when "Use tunnel to run network nodes" is off (the person accepted direct nodes), or when the
+   * node runs through the tunnel. Absent: false.
+   */
+  readonly tunnelSitesReadNodes?: boolean
+  /** The local nodes run through the tunnel (the whole browser is on it and "Use tunnel to run network nodes" is on): their reads wait as long as the tunnel does. Absent: they are direct, and wait as a direct connection does. */
+  readonly nodesRouted?: boolean
+  /**
+   * The Ethereum light client and CCIP-Read run outside the tunnel ("Use tunnel to run network nodes" is off): a website in the tunnel
+   * profile is proved by the shared light client and not by a tunnelled one of its own, and while the whole browser is on the tunnel
+   * (`front`) the shared client's requests leave through `HostDeps.outside`. Absent: they follow the tunnel as before.
+   */
+  readonly ethereumOutside?: boolean
   /** Test builds only: `.eth` names mapped to content with no light client. */
   readonly fixtures?: Readonly<Record<string, string>>
 }

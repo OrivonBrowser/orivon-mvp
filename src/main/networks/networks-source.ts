@@ -55,9 +55,9 @@ export interface NetworksEnv {
   readonly metrics: () => readonly ProcessMetric[]
 }
 
-export type NetworkSettingKey = 'web3.lightClient' | 'web3.ipfsSource' | 'web3.swarmNode' | 'network.nym.enabled' | 'network.route.kind' | 'network.tunnel.everywhere'
+export type NetworkSettingKey = 'web3.lightClient' | 'web3.ipfsSource' | 'web3.swarmNode' | 'network.nym.enabled' | 'network.route.kind' | 'network.tunnel.everywhere' | 'network.tunnel.nodes'
 
-const WATCHED: ReadonlySet<string> = new Set<NetworkSettingKey>(['web3.lightClient', 'web3.ipfsSource', 'web3.swarmNode', 'network.nym.enabled', 'network.route.kind', 'network.tunnel.everywhere'])
+const WATCHED: ReadonlySet<string> = new Set<NetworkSettingKey>(['web3.lightClient', 'web3.ipfsSource', 'web3.swarmNode', 'network.nym.enabled', 'network.route.kind', 'network.tunnel.everywhere', 'network.tunnel.nodes'])
 
 /** What each process is called to Electron's metrics, for a process whose pid the supervisor could not give. */
 const SERVICE_NAMES: Readonly<Record<'verifier' | 'ipfs' | 'swarm' | 'nym', string>> = {
@@ -106,8 +106,8 @@ export function createNetworksSource (env: NetworksEnv): NetworksSource {
   const now = env.now ?? Date.now
 
   function facts (metrics: readonly ProcessMetric[]): NetworkFacts {
-    // The nodes run through the tunnel while the whole browser is on it (ADR-0086); the card says which.
-    const through = env.settings.get('network.tunnel.everywhere') === true ? (env.settings.get('network.route.kind') === 'socks5' ? 'your tunnel' as const : 'Nym' as const) : undefined
+    // The nodes run through the tunnel while the whole browser is on it and the person asked them to follow (ADR-0087); the card says which.
+    const through = env.settings.get('network.tunnel.everywhere') === true && env.settings.get('network.tunnel.nodes') === true ? (env.settings.get('network.route.kind') === 'socks5' ? 'your tunnel' as const : 'Nym' as const) : undefined
     const node = (source: LocalNodeSource, traffic: 'ipfs-node' | 'swarm-node', serviceName: string): NodeFacts => {
       const process = processFactsOf(source.processInfo(), serviceName, metrics)
       return { state: source.state(), traffic: env.traffic(traffic), ...(through === undefined ? {} : { through }), ...(process === undefined ? {} : { process }) }
