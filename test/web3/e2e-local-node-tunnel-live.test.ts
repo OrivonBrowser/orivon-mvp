@@ -262,7 +262,7 @@ describe.skipIf(!LIVE)('the IPFS node through the real Nym tunnel', () => {
   }, 600_000)
 
   it('[tunnel on, nodes direct, .eth names] times The Lounge and vitalik.eth with the whole browser on Nym and "Use tunnel to run network nodes" off', async () => {
-    await launch({ 'network.tunnel.everywhere': true })
+    await launch({ 'network.tunnel.everywhere': true }, { ORIVON_ETH_LIGHT_CLIENT: 'on' })
     const openName = async (name: string): Promise<number> => {
       const started = Date.now()
       await clickAddressBarRetrying(chrome, name)
@@ -270,16 +270,20 @@ describe.skipIf(!LIVE)('the IPFS node through the real Nym tunnel', () => {
         const info = await activeTabInfo(chrome)
         const title = info.title ?? ''
         return (info.address ?? '') !== '' && title !== '' && !/^(New Tab|Cannot .*|.*\.(ipfs|ipns|eth)(\.orivon)?)$/.test(title)
-      }, 420_000)
+      }, Number(process.env['ORIVON_LIVE_NAME_WAIT_MS'] ?? 420_000))
       const ms = Date.now() - started
       console.log(`[live] ${name}: loaded=${String(loaded)} in ${String(ms)} ms, tab ${JSON.stringify(await activeTabInfo(chrome))}`)
+      if (!loaded) {
+        const view = findViewShowing(app as ElectronApplication, chrome, `https://${name}/`)
+        console.log(`[live] ${name} page: ${view === undefined ? 'no view' : (await evaluateRetrying(view, () => document.body.innerText).catch(() => 'unreadable')).slice(0, 600)}`)
+      }
       return loaded ? ms : -1
     }
     const lounge = await openName('thelounge.orivonstack.eth')
     const vitalik = await openName('vitalik.eth')
     const pid = await nodePid()
     console.log(`[live] tunnel on, nodes direct: The Lounge ${String(lounge)} ms, vitalik.eth ${String(vitalik)} ms, IPFS node ${String(pid)}${pid === undefined ? '' : `: ${summary(socketsOf(pid))}`}`)
-    const log = mainOutput(app as ElectronApplication).split('\n').filter((line) => /\[verifier\]|gateway/i.test(line)).slice(-30)
+    const log = mainOutput(app as ElectronApplication).split('\n').filter((line) => /\[verifier\]|gateway|light|helios|outside|refus/i.test(line)).slice(-40)
     console.log(log.join('\n'))
   }, 1_200_000)
 

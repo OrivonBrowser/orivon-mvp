@@ -36,6 +36,12 @@ export function nodesMayServeTunnelSites (): boolean {
  * the light client then follows the tunnel, as it does with the setting on).
  */
 export async function ethereumOutsideTunnel (tunnelled: boolean): Promise<boolean> {
+  const outside = await lightClientOutside(tunnelled)
+  console.error(`[verifier] routes: whole browser ${tunnelled ? 'on' : 'off'} the tunnel, light client ${tunnelled ? (outside ? 'outside it' : 'through it') : 'direct'}, nodes ${nodesRunThroughTunnel() ? 'through it' : 'direct'}`)
+  return outside
+}
+
+async function lightClientOutside (tunnelled: boolean): Promise<boolean> {
   if (followTunnel()) return false
   if (!tunnelled) return true
   try {

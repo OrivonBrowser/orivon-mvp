@@ -394,7 +394,8 @@ const OWN_PREFIX = '/.orivon/'
 
 /** A path on the same name, as the consent link carries it back: never another host, never the host's own paths. */
 function returnPathOf (target: string | null): string {
-  if (target === null || !target.startsWith('/') || target.startsWith('//') || target.startsWith(OWN_PREFIX)) return '/'
+  // A backslash reads as a slash in a Location, so `/\evil` would name another host.
+  if (target === null || !/^\/[^\\\x00-\x1f]*$/.test(target) || target.startsWith('//') || target.startsWith(OWN_PREFIX)) return '/'
   return target
 }
 

@@ -217,6 +217,12 @@ describe('startHost with the IPFS node', () => {
     expect(href).toMatch(/^\/\.orivon\/load-through-gateways\?token=/)
     const accepted = await get(host.port, 'fixture.eth', href, undefined, { ...PRESS })
     expect(accepted).toMatchObject({ status: 303, location: '/' })
+    // The way back is a path on this site and nothing else: another host, a backslash and the host's own paths all come back to the root.
+    const token = /token=([^&]+)/.exec(href ?? '')?.[1] ?? ''
+    for (const to of ['//evil.example/', '/\\evil.example', '/.orivon/load-through-gateways', 'https://evil.example/']) {
+      const back = await get(host.port, 'fixture.eth', `/.orivon/load-through-gateways?token=${token}&to=${encodeURIComponent(to)}`, undefined, { ...PRESS })
+      expect(back).toMatchObject({ status: 303, location: '/' })
+    }
     // The press asked for the gateways: the load that follows reads them at once, without asking the node again.
     const again = get(host.port, 'fixture.eth', '/', undefined, DOCUMENT)
     expect(await again).toEqual({ status: 200, body: '<h1>fixture</h1>' })
