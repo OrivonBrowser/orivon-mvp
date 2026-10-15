@@ -5,7 +5,7 @@ active tab's `WebContentsView` below, or the two panes of a split. A process hol
 windows: `shell-services.ts` is what they share, and `window-registry.ts` is how a page's IPC finds the
 window holding it. `window-frame.ts` is the native window itself and `window-options.ts` says how a new one
 opens. `window.ts` is the composition; its parts are `window-layout.ts` (where the chrome and the page
-area sit: the one place a page area is computed), `window-state.ts` (the `ShellState` push, and which
+area sit: the one place a page area is computed), `window-size-settle.ts` (lays the views out again after every size event, and again for a second after while the window's size keeps changing), `window-state.ts` (the `ShellState` push, and which
 overlays a tab switch or a navigation dismisses), `window-panels.ts` (the permissions and site-info
 popovers, and the extension popup's panel for the overlay host) and `shell-state-parts.ts` (the `ShellState` fields a feature adds; `state/update-offered.ts` is the one that lights the key icon's dot while the page in front has an update offer, and `pre-partition.ts` stops a link or redirect into a cache-served address before it commits so the pinned files answer, `ADR-0056`, and stops a move to the shared session before it commits when the tab's session would send the address differently from it). `window-context.ts` is
 the `{ window, services }` pair a hook or an overlay handler receives.
