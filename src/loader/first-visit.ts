@@ -16,7 +16,7 @@ import { fetchBundle } from './fetch/bundle.js'
 import { BUNDLE_TIMEOUT_MS, ByteBudget } from './fetch/budget.js'
 import type { FetchBundleRejected } from './fetch/budget.js'
 import { ensurePublicUnicastOrigin } from './fetch/install-origin.js'
-import { RETRY_BACKOFF_MS, retryTransient } from './fetch/retry.js'
+import { retryBackoffFor, retryTransient } from './fetch/retry.js'
 import type { StagedAsset } from './fetch/bundle.js'
 import { pinnedToRoot } from './fetch/content-root.js'
 import { fetchManifestAtRoot } from './fetch/manifest-at-root.js'
@@ -174,7 +174,7 @@ export function createFirstVisit (
     const timer = setTimeout(() => { controller.abort() }, BUNDLE_TIMEOUT_MS)
     try {
       const fetchFn = pinnedToRoot(options.fetch, read.content?.cid)
-      const fetched = await retryTransient(async () => await fetchDdocDeclaration(fetchFn, origin, guard.addresses, new ByteBudget(MAX_DDOC_BYTES), controller.signal, true), RETRY_BACKOFF_MS, controller.signal)
+      const fetched = await retryTransient(async () => await fetchDdocDeclaration(fetchFn, origin, guard.addresses, new ByteBudget(MAX_DDOC_BYTES), controller.signal, true), retryBackoffFor(origin), controller.signal)
       if (fetched !== undefined && 'ok' in fetched) return { kind: 'failed', reason: fetched.reason, ...(fetched.integrity === true ? { integrity: true as const } : {}) }
       if (fetched === undefined) return { kind: 'none' }
       const shown = await leafOf(MANIFEST_PATH, read.bytes.length, [read.bytes])

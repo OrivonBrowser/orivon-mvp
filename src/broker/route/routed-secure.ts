@@ -33,5 +33,5 @@ export async function dialSecureThroughRoute (
       carrier.destroy()
       throw error
     }
-  }, deadlineMs)
+  }, deadlineMs ?? route.provider.dialBudgetMs)
 }

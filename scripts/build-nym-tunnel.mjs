@@ -2,7 +2,7 @@
  * Builds the Nym tunnel module from Nym's own source: `vendor/nym-smolmix/UPSTREAM.md` says what it is and why.
  *
  * A developer step, never part of `npm install` (Rule 8: it needs rustup). It clones the pinned tag into a cache
- * directory outside this repository, checks the commit, applies `vendor/nym-smolmix/smolmix-raw-tcp-udp.patch`,
+ * directory outside this repository, checks the commit, applies the patches in `vendor/nym-smolmix/`,
  * fetches the pinned `wasm-bindgen`, `wasm-pack` and `cargo-about` binaries (each checked against its sha256), runs the
  * crate's own `wasm-pack build` and makes the notices of every crate in it (`THIRD_PARTY_LICENSES`). The cache is
  * `~/.cache/orivon-nym-build`; the files to publish are left in its `artifact` folder, and the `files` array for
@@ -34,7 +34,8 @@ export const NYM = {
 }
 export const RUSTC_VERSION = '1.99.0'
 const CRATE = join('wasm', 'smolmix')
-const PATCH = 'smolmix-raw-tcp-udp.patch'
+/** Applied in this order; each is made against the source with the ones before it applied. */
+const PATCHES = ['smolmix-raw-tcp-udp.patch', 'smolmix-tx-queue.patch', 'smolmix-rx-order.patch']
 const FILES = ['smolmix_wasm.js', 'smolmix_wasm_bg.wasm', 'smolmix_wasm.d.ts']
 /** The notices of every crate compiled into the module, made by `cargo-about` from the lockfile (about.toml says which licences are accepted). */
 const NOTICES = 'THIRD_PARTY_LICENSES'
@@ -87,7 +88,7 @@ function output(command, args, options = {}) {
   return result.stdout.trim()
 }
 
-/** The clone of the pinned tag in `source`, at the pinned commit, with only the patch applied. */
+/** The clone of the pinned tag in `source`, at the pinned commit, with only the patches applied. */
 async function prepareSource(source) {
   if (!existsSync(join(source, '.git'))) {
     await rm(source, { recursive: true, force: true })
@@ -99,8 +100,10 @@ async function prepareSource(source) {
   }
   const commit = output('git', ['rev-parse', 'HEAD'], { cwd: source })
   if (commit !== NYM.commit) throw new Error(`${NYM.tag} is at ${commit}, not the pinned ${NYM.commit}; remove ${source} and run again`)
-  run('git', ['apply', '--check', join(VENDOR, PATCH)], { cwd: source })
-  run('git', ['apply', join(VENDOR, PATCH)], { cwd: source })
+  for (const patch of PATCHES) {
+    run('git', ['apply', '--check', join(VENDOR, patch)], { cwd: source })
+    run('git', ['apply', join(VENDOR, patch)], { cwd: source })
+  }
 }
 
 /** The folders holding `wasm-bindgen` and `wasm-pack`, fetched into `tools` and checked against their pins. */
