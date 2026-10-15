@@ -45,6 +45,9 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Nym's module dropped packets and reordered replies; both fixed, so a 700 KB YouTube script loads three to six times faster.
 - Web3 Scores no longer go missing on the first site after turning Nym on: the lookup now waits for a cold tunnel.
 - Slow routes stop failing pages half done: every wait follows the route, a stalled file is read again, and an incomplete page now says so.
+- New Tunnels switch, off by default: IPFS, Swarm and .eth name checks skip the tunnel; The Lounge through Nym loads in 6 s, not minutes.
+- Public IPFS gateways are never used silently: a failed page offers a one-load "Load through public gateways" button instead.
+- The frozen tab spinner in maximized windows is fixed: a loading screen made Chromium think the toolbar was hidden.
 
 ### In my head
 
@@ -53,5 +56,6 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - A per-app tunnel belongs at Orivon's socket layer, not the OS: any protocol an app builds rides it, no drivers.
 - Extensions per tunnel profile, never per site: a hundred tunnelled sites should cost one copy of uBlock, not a hundred.
 - Orivon's IPFS node should run through Nym, not pause, when everything is tunnelled: privacy first, speed second.
+- Second thought on Nym: tunnel the person's own traffic, let IPFS and Swarm run direct for speed, and never touch gateways without a yes.
 
 ### Non-repo
