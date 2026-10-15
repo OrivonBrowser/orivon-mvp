@@ -8,7 +8,7 @@ bytes. It logs every request, so a test can count what the verifier asked for; i
 in any file's block, so a test can watch the verifier refuse it; `failNext` makes a file's block answer
 a status (a 502, say) for its next few requests and then serve it, as a gateway that is briefly
 unwell does; `blockDelayMs` holds every block
-answer that long, as a slow public gateway does; and `hang` answers nothing at all, as a dead one
+answer that long, as a slow public gateway does, and `delayNext` holds one file's block back for its next requests only; and `hang` answers nothing at all, as a dead one
 behind a proxy does.
 
 A test build of the shell reaches it through the verifier's test seam: fixture `.eth` names mapped
