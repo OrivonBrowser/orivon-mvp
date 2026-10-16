@@ -134,6 +134,11 @@ hr {
 .tunnel-section .route-line { margin: 0; }
 .tunnel-notice { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; border-radius: 6px; background: color-mix(in srgb, var(--waccent) 12%, transparent); font-size: 12px; line-height: 1.5; }
 .tunnel-notice-text { margin: 0; }
+.tunnel-address { display: flex; flex-direction: column; gap: 4px; padding: 0 2px; }
+.tunnel-address-line { display: flex; align-items: center; gap: 6px; }
+.tunnel-address-label { flex: none; font-size: 12px; color: var(--wink-dim); }
+.tunnel-address-field { flex: 1; min-width: 0; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--wborder); background: var(--wsurface); color: inherit; font: inherit; font-size: 12px; }
+.tunnel-address-field:focus-visible { outline: 2px solid var(--waccent); outline-offset: 1px; }
 
 .connection-row {
   display: flex;

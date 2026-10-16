@@ -24,6 +24,16 @@ export interface RouteDomainDeps {
 
 export type ProxyTestReply = Socks5Probe | { readonly ok: false, readonly reason: 'no-proxy' } | ({ readonly nym: true } & NymTestResult)
 
+/**
+ * Whether a tunnel answers: Nym is brought up, and the person's proxy is sent a SOCKS5 greeting at the address saved in the settings.
+ * No caller names an address, so a page cannot make main connect anywhere it chooses. Shared by the Settings page and the tunnel menu.
+ */
+export async function testTunnel (kind: 'nym' | 'socks5', deps: Pick<RouteDomainDeps, 'proxy' | 'probe' | 'nym'>): Promise<ProxyTestReply> {
+  if (kind === 'nym') return { nym: true, ...await deps.nym.test() }
+  const target = parseProxyAddress(deps.proxy())
+  return target === undefined ? { ok: false, reason: 'no-proxy' } : await deps.probe(target)
+}
+
 /** What the page is sent about Nym, on request and whenever it changes. */
 export interface NymView {
   readonly nym: NymState
@@ -35,15 +45,12 @@ export function routeDomain (deps: RouteDomainDeps): InternalDomain {
   return {
     pages: ['settings'],
     handle: async (command): Promise<ProxyTestReply | NymView | { rows: ReturnType<RouteSwitch['rows']> } | { ok: boolean } | undefined> => {
-      const request = (typeof command === 'object' && command !== null ? command : {}) as { type?: unknown, origin?: unknown }
+      const request = (typeof command === 'object' && command !== null ? command : {}) as { type?: unknown, origin?: unknown, kind?: unknown }
       switch (request.type) {
         case 'status':
           return { nym: deps.nym.state(), unreadable: deps.settingsUnreadable?.() === true }
-        case 'test': {
-          if (deps.kind() === 'nym') return { nym: true, ...await deps.nym.test() }
-          const target = parseProxyAddress(deps.proxy())
-          return target === undefined ? { ok: false, reason: 'no-proxy' } : await deps.probe(target)
-        }
+        // The tunnel asked about, or the one chosen for everything when the page names none.
+        case 'test': return await testTunnel(request.kind === 'nym' || request.kind === 'socks5' ? request.kind : deps.kind(), deps)
         case 'list':
           return { rows: deps.routeSwitch.rows() }
         case 'removeStorage': {

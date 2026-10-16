@@ -1,7 +1,8 @@
 import type { SiteInfo, SiteTunnel, SiteTunnelKind } from '../../main/permissions/site-info.js'
 import { createSwitch } from './switch.js'
 import { tunnelIcon } from './icons.js'
-import type { TunnelListModel, TunnelRowModel } from './tunnels-model.js'
+import { ADDRESS_PROBLEM } from './tunnels-model.js'
+import type { AddressModel, TunnelListModel, TunnelRowModel } from './tunnels-model.js'
 
 // The tunnels page of the site-info popup: a row for each tunnel with the switch that sends this website or app through it
 // (turning one on turns the other off, turning the lit one off sends the page through none), the line that says what that does
@@ -40,6 +41,17 @@ export const TUNNEL_FAILED = 'The tunnel could not be changed for this site.'
 export interface TunnelCallbacks {
   /** A switch was moved: `next` is the position of the switch of `kind`. */
   readonly onToggle: (kind: SiteTunnelKind, next: boolean) => void
+  /** The address field changed: the page keeps the text so a redraw puts it back. */
+  readonly onAddressInput: (text: string) => void
+  /** Save was pressed with this text. */
+  readonly onSaveAddress: (text: string) => void
+  /** Change was pressed: the field opens with the saved address. */
+  readonly onChangeAddress: () => void
+  /** The question before an address others use is changed was answered. */
+  readonly onConfirmAddress: () => void
+  readonly onCancelAddress: () => void
+  /** Test was pressed on the row of this tunnel. */
+  readonly onTest: (kind: SiteTunnelKind) => void
   readonly onConfirm: () => void
   readonly onCancel: () => void
   /** A link to Settings > Tunnels; `everywhere` lands on the browser-wide switch. */
@@ -88,6 +100,64 @@ function renderLogo (row: TunnelRowModel): HTMLElement {
   return img
 }
 
+function button (id: string, className: string, text: string, onClick: () => void): HTMLButtonElement {
+  const el = document.createElement('button')
+  el.type = 'button'
+  el.id = id
+  el.className = className
+  el.textContent = text
+  el.addEventListener('click', onClick)
+  return el
+}
+
+/** The proxy row's address: the field and Save while none is saved or Change was pressed, else the address and Change; and the question before a change others feel. */
+function renderAddress (address: AddressModel, callbacks: TunnelCallbacks): HTMLElement {
+  const box = document.createElement('div')
+  box.className = 'tunnel-address'
+  if (address.confirm !== null) {
+    const asking = document.createElement('div')
+    asking.className = 'tunnel-notice'
+    asking.setAttribute('role', 'alertdialog')
+    asking.append(paragraph('tunnel-notice-text', address.confirm))
+    const buttons = document.createElement('div')
+    buttons.className = 'staged-buttons'
+    buttons.append(button('tunnel-proxy-cancel', 'btn-secondary', 'Cancel', callbacks.onCancelAddress), button('tunnel-proxy-confirm', 'btn-primary', 'Confirm', callbacks.onConfirmAddress))
+    asking.append(buttons)
+    box.append(asking)
+    return box
+  }
+  if (!address.editing) {
+    box.append(paragraph('route-line', `Address: ${address.saved}`), link('tunnel-proxy-change', 'Change', callbacks.onChangeAddress))
+    return box
+  }
+  const field = document.createElement('input')
+  field.type = 'text'
+  field.id = 'tunnel-proxy-address'
+  field.className = 'tunnel-address-field'
+  field.placeholder = '127.0.0.1:9050'
+  field.value = address.text
+  field.setAttribute('aria-label', 'Address of your proxy')
+  field.setAttribute('autocomplete', 'off')
+  field.spellcheck = false
+  field.addEventListener('input', () => { callbacks.onAddressInput(field.value) })
+  field.addEventListener('keydown', (event) => { if (event.key === 'Enter') callbacks.onSaveAddress(field.value) })
+  const save = button('tunnel-proxy-save', 'btn-secondary', 'Save', () => { callbacks.onSaveAddress(field.value) })
+  const line = document.createElement('div')
+  line.className = 'tunnel-address-line'
+  const label = document.createElement('label')
+  label.htmlFor = field.id
+  label.className = 'tunnel-address-label'
+  label.textContent = 'Address'
+  line.append(label, field, save)
+  box.append(line)
+  if (address.error !== null) {
+    const problem = paragraph('route-line route-line-down', address.error === ADDRESS_PROBLEM ? ADDRESS_PROBLEM : address.error)
+    problem.setAttribute('role', 'alert')
+    box.append(problem)
+  }
+  return box
+}
+
 function renderRow (row: TunnelRowModel, noun: 'site' | 'app', callbacks: TunnelCallbacks): HTMLElement {
   const el = document.createElement('div')
   el.className = 'tunnel-row'
@@ -127,6 +197,14 @@ export function renderTunnelsPage (container: HTMLElement, info: SiteInfo, model
   const noun = info.tunnel?.subject === 'app' ? 'app' : 'site'
   for (const row of model.rows) {
     section.append(renderRow(row, noun, callbacks))
+    if (row.address !== null) section.append(renderAddress(row.address, callbacks))
+    if (row.canTest) section.append(button(`tunnel-test-${row.kind.id}`, 'link-button', row.testLine?.busy === true ? 'Testing…' : 'Test', () => { callbacks.onTest(row.kind.id) }))
+    if (row.testLine !== null) {
+      const answer = paragraph(row.testLine.down ? 'route-line route-line-down' : 'route-line', row.testLine.text)
+      answer.id = `tunnel-test-result-${row.kind.id}`
+      answer.setAttribute('role', row.testLine.down ? 'alert' : 'status')
+      section.append(answer)
+    }
     if (row.settingsLink !== null) section.append(link(`tunnel-settings-link-${row.kind.id}`, row.settingsLink, () => { callbacks.onOpenSettings(false) }))
   }
   for (const note of model.notes) section.append(paragraph(note.down ? 'route-line route-line-down' : 'route-line', note.text))

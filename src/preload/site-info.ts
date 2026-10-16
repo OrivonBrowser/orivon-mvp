@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { SITE_INFO_COMMAND_CHANNEL } from '../main/channels.js'
-import type { ApplyResult, SiteDataSnapshot, SiteInfoCommand, TunnelResult } from '../main/ipc/site-info-ipc.js'
+import type { ApplyResult, ProxyAddressResult, SiteDataSnapshot, SiteInfoCommand, TunnelResult } from '../main/ipc/site-info-ipc.js'
 import type { SiteInfo } from '../main/permissions/site-info.js'
 import type { SitePermissionsView } from '../main/site-settings/site-permissions-view.js'
 import type { SiteTrust } from '../main/browsing/site-trust.js'
@@ -61,6 +61,13 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
       const result: unknown = await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'setTunnel', kind } satisfies SiteInfoCommand)
       return (result ?? null) as TunnelResult | null
     },
+    /** Saves the address of the person's proxy. Main checks it as Settings does and answers why not, with the info after. */
+    setProxyAddress: async (text: string): Promise<ProxyAddressResult | null> => {
+      const result: unknown = await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'setProxyAddress', text } satisfies SiteInfoCommand)
+      return (result ?? null) as ProxyAddressResult | null
+    },
+    /** Whether a tunnel answers. The answer is main's, read by the page with `resultOf`. */
+    testTunnel: async (kind: 'nym' | 'socks5'): Promise<unknown> => await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'testTunnel', kind } satisfies SiteInfoCommand),
     openHome: async (): Promise<void> => {
       await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'openHome' } satisfies SiteInfoCommand)
     },

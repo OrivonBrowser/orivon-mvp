@@ -10,7 +10,7 @@ import type { Broker } from '../../../broker/broker-contracts.js'
 import type { Loader, LoadResult } from '../../../loader/index.js'
 import type { SubsystemContext } from '../../registry.js'
 import { createSiteInfoController } from '../site-info-controller.js'
-import type { SiteTrustSources } from '../site-info-controller.js'
+import type { ProxySetup, SiteTrustSources } from '../site-info-controller.js'
 import type { ExtensionsApi } from '../../extensions/extensions-subsystem.js'
 import type { InstalledExtension } from '../../extensions/registry.js'
 
@@ -79,7 +79,7 @@ function fakeLoader (overrides: Partial<Loader> = {}): Loader {
 describe('createSiteInfoController -- the route of a routed app', () => {
   const routesWith = (state: string, proxy: unknown = { host: '127.0.0.1', port: 9050 }): SubsystemContext['routes'] => {
     const kind = proxy === NYM_TARGET ? 'nym' : 'socks5'
-    return ({ hub: { state: () => state, isRouted: () => state !== 'off', kindOf: () => state === 'off' ? undefined : kind, unreadable: () => false, isEverywhere: () => false, profileFor: () => undefined }, routeSwitch: { blockedFor: () => undefined, noticeFor: () => 'nym' }, store: { stateOf: () => undefined }, defaultKind: () => kind, proxy: () => proxy, nym: { state: () => ({ state: 'connecting' }) } }) as unknown as SubsystemContext['routes']
+    return ({ hub: { state: () => state, isRouted: () => state !== 'off', kindOf: () => state === 'off' ? undefined : kind, unreadable: () => false, isEverywhere: () => false, profileFor: () => undefined }, routeSwitch: { blockedFor: () => undefined, noticeFor: () => 'nym' }, store: { stateOf: () => undefined, entries: () => [] }, defaultKind: () => kind, proxy: () => proxy, nym: { state: () => ({ state: 'connecting' }) } }) as unknown as SubsystemContext['routes']
   }
 
   it('carries the state of the app\'s route, so the popover can say where its traffic goes and when the tunnel is not answering', async () => {
@@ -506,12 +506,13 @@ describe('createSiteInfoController -- the tunnel of a website or an installed ap
     own?: boolean
     nymOff?: boolean
     sessionKind?: 'nym' | 'socks5' | 'held' | undefined
+    entries?: Array<readonly [string, 'nym' | 'socks5' | 'off']>
     choose?: (origin: string, kind: string | null) => Promise<void>
   }
   function routesFor (options: Options = {}): SubsystemContext['routes'] {
     return {
       hub: { state: () => options.via === undefined ? 'off' : 'ok', isRouted: () => options.via !== undefined, kindOf: () => options.via, unreadable: () => options.unreadable === true, isEverywhere: () => options.everywhere === true, profileFor: () => undefined },
-      store: { stateOf: () => options.own === true ? options.via ?? 'off' : undefined },
+      store: { stateOf: () => options.own === true ? options.via ?? 'off' : undefined, entries: () => options.entries ?? [] },
       defaultKind: () => options.defaultKind ?? 'socks5',
       controller: { tunnelOf: () => options.sessionKind },
       nym: { state: () => options.nymOff === true ? { state: 'unavailable', cause: 'other', reason: NYM_SWITCHED_OFF } : { state: 'off' } },
@@ -522,13 +523,13 @@ describe('createSiteInfoController -- the tunnel of a website or an installed ap
       }
     } as unknown as SubsystemContext['routes']
   }
-  const controllerWith = (routes: SubsystemContext['routes'], trust: SiteTrustSources = NO_TRUST) =>
-    createSiteInfoController({ ...ctxWith(createBroker(baseDeps())), routes } as unknown as SubsystemContext, trust)
+  const controllerWith = (routes: SubsystemContext['routes'], trust: SiteTrustSources = NO_TRUST, proxy?: ProxySetup, privateTunnel: 'nym' | null = null) =>
+    createSiteInfoController({ ...ctxWith(createBroker(baseDeps())), routes, privateTunnel } as unknown as SubsystemContext, trust, undefined, undefined, proxy)
   const AS_APP: SiteTrustSources = { ...NO_TRUST, isOriginServedFromCacheSync: () => true }
 
   it('offers both tunnels for an ordinary website, with nothing chosen and what the popover needs to ask first', async () => {
     const info = await controllerWith(routesFor({ notices: { nym: 'nym', socks5: 'socks5' } })).siteInfoFor(SITE)
-    expect(info.tunnel).toEqual({ via: null, following: true, subject: 'site', blocked: {}, notices: { nym: 'tunnel', socks5: 'tunnel' }, swarm: false, unreadable: false, defaultKind: 'socks5' })
+    expect(info.tunnel).toEqual({ via: null, following: true, subject: 'site', blocked: {}, notices: { nym: 'tunnel', socks5: 'tunnel' }, swarm: false, unreadable: false, defaultKind: 'socks5', proxy: { address: '', users: { sites: 0, apps: 0, everything: false } } })
   })
 
   it('says which tunnel the site goes through, whether that is its own choice or the default, and names the direct profile when giving the tunnel up would move it there', async () => {
@@ -637,3 +638,59 @@ describe('createSiteInfoController -- the tunnel of a website or an installed ap
     expect(controller.inSession(info, undefined), 'no tab').toBe(info)
   })
 })
+
+describe('createSiteInfoController -- the proxy set from the menu', () => {
+  const SITE = 'https://news.example'
+  const routes = (extra: Record<string, unknown> = {}): SubsystemContext['routes'] => ({
+    hub: { state: () => 'off', isRouted: () => false, kindOf: () => undefined, unreadable: () => false, isEverywhere: () => extra['everywhere'] === true, profileFor: () => undefined },
+    store: { stateOf: () => undefined, entries: () => extra['entries'] ?? [] },
+    defaultKind: () => extra['defaultKind'] ?? 'nym',
+    controller: { tunnelOf: () => undefined },
+    nym: { state: () => ({ state: 'off' }) },
+    routeSwitch: { blockedFor: () => undefined, noticeFor: () => undefined, choose: async () => {} }
+  }) as unknown as SubsystemContext['routes']
+  const setup = (over: Partial<ProxySetup> = {}): ProxySetup => ({ address: () => '127.0.0.1:9050', save: vi.fn(() => 'ok' as const), test: vi.fn(async () => ({ ok: true as const, authentication: 'none' as const })), ...over })
+  const controller = (rt: SubsystemContext['routes'], proxy: ProxySetup, privateTunnel: 'nym' | null = null, trust: SiteTrustSources = NO_TRUST) =>
+    createSiteInfoController({ ...ctxWith(createBroker(baseDeps())), routes: rt, privateTunnel } as unknown as SubsystemContext, trust, undefined, undefined, proxy)
+
+  it('carries the saved address and how many sites and apps go through the proxy now', async () => {
+    const entries = [['https://a.example', 'socks5'], ['https://b.example', 'socks5'], ['https://c.example', 'nym'], ['https://d.example', 'off'], ['https://e.example', 'socks5']] as const
+    const trust: SiteTrustSources = { ...NO_TRUST, isOriginServedFromCacheSync: (origin) => origin === 'https://e.example' }
+    const info = await controller(routes({ entries }), setup(), null, trust).siteInfoFor(SITE)
+    expect(info.tunnel?.proxy).toEqual({ address: '127.0.0.1:9050', users: { sites: 2, apps: 1, everything: false } })
+  })
+
+  it('counts the whole browser as using the proxy when it is on the proxy', async () => {
+    expect((await controller(routes({ everywhere: true, defaultKind: 'socks5' }), setup()).siteInfoFor(SITE)).tunnel?.proxy.users.everything).toBe(true)
+    expect((await controller(routes({ everywhere: true, defaultKind: 'nym' }), setup()).siteInfoFor(SITE)).tunnel?.proxy.users.everything).toBe(false)
+    expect((await controller(routes({ everywhere: false, defaultKind: 'socks5' }), setup()).siteInfoFor(SITE)).tunnel?.proxy.users.everything).toBe(false)
+  })
+
+  it('checks the address as Settings does before it reaches the settings, and saves it trimmed', () => {
+    const proxy = setup()
+    const c = controller(routes(), proxy)
+    for (const bad of ['', 'nonsense', '127.0.0.1', '127.0.0.1:0', '127.0.0.1:99999', 'a b:80', 'x'.repeat(400)]) expect(c.setProxyAddress(bad), bad).toBe('invalid')
+    expect(proxy.save).not.toHaveBeenCalled()
+    expect(c.setProxyAddress('  127.0.0.1:9150 ')).toBe('ok')
+    expect(proxy.save).toHaveBeenCalledWith('127.0.0.1:9150')
+    expect(c.setProxyAddress('socks5://127.0.0.1:9150')).toBe('ok')
+  })
+
+  it('passes on the settings\' answer, and is refused in a window held to Nym and while routes are not running', () => {
+    expect(controller(routes(), setup({ save: () => 'invalid' })).setProxyAddress('127.0.0.1:9150')).toBe('invalid')
+    expect(controller(routes(), setup({ save: () => 'refused' })).setProxyAddress('127.0.0.1:9150')).toBe('refused')
+    const proxy = setup()
+    expect(controller(routes(), proxy, 'nym').setProxyAddress('127.0.0.1:9150')).toBe('refused')
+    expect(controller(undefined, proxy).setProxyAddress('127.0.0.1:9150')).toBe('refused')
+    expect(proxy.save).not.toHaveBeenCalled()
+  })
+
+  it('tests the tunnel asked for, and answers nothing in a window held to Nym', async () => {
+    const proxy = setup()
+    expect(await controller(routes(), proxy).testTunnel('socks5')).toEqual({ ok: true, authentication: 'none' })
+    expect(proxy.test).toHaveBeenCalledWith('socks5')
+    expect(await controller(routes(), proxy, 'nym').testTunnel('socks5')).toBeNull()
+    expect(await controller(undefined, proxy).testTunnel('nym')).toBeNull()
+  })
+})
+

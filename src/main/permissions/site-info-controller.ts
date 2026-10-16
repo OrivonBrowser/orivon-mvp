@@ -26,6 +26,8 @@ import type { PinRecord } from '../../broker/policy/pin.js'
 import type { NameEvidence } from '../verifier/name-evidence.js'
 import { canTunnel } from '../route/site-partition.js'
 import { isTemporaryRouteSession } from '../route/leaving-routes.js'
+import { parseProxyAddress } from '../settings/proxy-checks.js'
+import type { ProxyTestReply } from '../route/route-domain.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { extensionNamesForOrigin } from '../extensions/site-reach-runner.js'
 import type { ExtensionLister } from '../extensions/site-reach-runner.js'
@@ -87,6 +89,18 @@ export interface StorageDeclaration {
   readonly codeVersion: string | undefined
 }
 
+/** What the tunnel menu needs of the settings to set the proxy in place; injected so the controller never imports the settings store. */
+export interface ProxySetup {
+  /** The address saved, '' when none. */
+  readonly address: () => string
+  /** Saves `text`, as Settings does: refused when the settings hold the choice fixed, invalid when the settings do not take it. */
+  readonly save: (text: string) => 'ok' | 'invalid' | 'refused'
+  /** Whether the tunnel answers, as Settings' Test asks it. */
+  readonly test: (kind: SiteTunnelKind) => Promise<ProxyTestReply>
+}
+
+const NO_PROXY_SETUP: ProxySetup = { address: () => '', save: () => 'refused', test: async () => ({ ok: false, reason: 'no-proxy' }) }
+
 export interface SiteInfoController {
   siteSummaryFor: (url: string) => Promise<SiteSummary>
   siteInfoFor: (url: string) => Promise<SiteInfo>
@@ -102,6 +116,10 @@ export interface SiteInfoController {
   applyUpdate: (origin: string, cid: string, caller?: DialogCaller) => Promise<ApplyOutcome>
   /** Sends a website or an installed app through the tunnel `kind`, or through none (null): false when it could not be done (no address for that tunnel, Nym switched off, this computer, or the choice could not be kept). */
   setTunnel: (origin: string, kind: SiteTunnelKind | null) => Promise<boolean>
+  /** Saves the address of the person's proxy from the menu: refused in a window held to Nym, invalid when it is not host:port. */
+  setProxyAddress: (text: string) => 'ok' | 'invalid' | 'refused'
+  /** Whether a tunnel answers, as Settings' Test asks it; null in a window held to Nym, which never tests the person's own proxy. */
+  testTunnel: (kind: SiteTunnelKind) => Promise<ProxyTestReply | null>
   turnOn: (origin: string, capability: CapabilityKind, shownPatterns: readonly Pattern[]) => Promise<TurnOnResult>
   turnOff: (origin: string, capability: CapabilityKind) => Promise<void>
   revokePickedPath: (origin: string, pickId: string) => Promise<void>
@@ -126,7 +144,7 @@ function nymSwitchedOff (routes: Routes): boolean {
 
 const TUNNELS: readonly SiteTunnelKind[] = ['nym', 'socks5']
 
-export function createSiteInfoController (ctx: SubsystemContext, trustSources: SiteTrustSources, deleteLocalFile: (key: string) => Promise<boolean> = async () => false, entry: AppEntry = NO_ENTRY): SiteInfoController {
+export function createSiteInfoController (ctx: SubsystemContext, trustSources: SiteTrustSources, deleteLocalFile: (key: string) => Promise<boolean> = async () => false, entry: AppEntry = NO_ENTRY, proxySetup: ProxySetup = NO_PROXY_SETUP): SiteInfoController {
   // The extensions disclosure (docs/planning/extensions-exploration.md) -- see
   // README.md's Design notes for why this is computed once, ahead of the
   // registered/unregistered branch `siteInfoFor` makes below.
@@ -162,6 +180,18 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     return profile === undefined ? {} : { profile: profile === 'direct' ? 'direct' : 'tunnel' }
   }
 
+  /** What goes through the person's proxy now: the sites and apps that picked it, and the whole browser when it is on the proxy. */
+  function proxyUsers (routes: Routes): SiteTunnel['proxy']['users'] {
+    let sites = 0
+    let apps = 0
+    for (const [origin, entry] of routes.store.entries()) {
+      if (entry !== 'socks5') continue
+      if (trustSources.isOriginServedFromCacheSync(origin)) apps += 1
+      else sites += 1
+    }
+    return { sites, apps, everything: routes.hub.isEverywhere() && routes.defaultKind() === 'socks5' }
+  }
+
   /** The tunnel switches of a website or an installed app; not for a local file or this computer. */
   function tunnelFor (origin: string): SiteTunnel | undefined {
     const routes = ctx.routes
@@ -192,7 +222,8 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
       ...profileOf(origin),
       swarm: BUILTIN_ADDRESSES.servedName(new URL(origin).hostname)?.namespace === 'bzz:',
       unreadable: routes.hub.unreadable(),
-      defaultKind: routes.defaultKind()
+      defaultKind: routes.defaultKind(),
+      proxy: { address: proxySetup.address(), users: proxyUsers(routes) }
     }
   }
 
@@ -285,6 +316,16 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     async applyUpdate (origin, cid, caller) {
       const updates = ctx.appUpdates
       return updates === undefined ? { ok: false, reason: 'no such offer' } : await updates.apply(origin, cid, caller)
+    },
+
+    setProxyAddress (text) {
+      if (ctx.routes === undefined || ctx.privateTunnel === 'nym') return 'refused'
+      const address = text.trim()
+      return address.length > 300 || parseProxyAddress(address) === undefined ? 'invalid' : proxySetup.save(address)
+    },
+
+    async testTunnel (kind) {
+      return ctx.routes === undefined || ctx.privateTunnel === 'nym' ? null : await proxySetup.test(kind)
     },
 
     async setTunnel (origin, kind) {

@@ -151,6 +151,8 @@ it('shows the site\'s tunnel switch on and fixed in the popover, and never makes
   await popover.waitForSelector('#tunnel-switch-nym')
   expect(await popover.locator('#tunnel-switch-nym').getAttribute('aria-checked')).toBe('true')
   expect(await popover.locator('#tunnel-switch-nym').isDisabled(), 'the switch is fixed').toBe(true)
+  expect(await popover.locator('#tunnel-switch-socks5').isDisabled(), 'the proxy\'s switch is fixed too').toBe(true)
+  expect(await popover.locator('#tunnel-proxy-address, #tunnel-test-socks5, #tunnel-test-nym').count(), 'a held window sets and tests no proxy').toBe(0)
   expect(await popover.locator('.tunnel-section').textContent()).toContain('This private window always goes through Nym')
   await shoot(world.app, world.chrome, popover, 'private-window-nym-popover')
   // Even forced, the switch makes no entry: the page stays on the tunnel.

@@ -2,7 +2,7 @@
 // rather than a setting.
 import { h } from '../../shared/dom.js'
 import { nymTestingWords, nymTestWords } from '../../shared/nym-words.js'
-import { proxyTestWords } from '../route-part.js'
+import { proxyTestWords } from '../../shared/proxy-words.js'
 import type { RoutePart } from '../route-part.js'
 import type { SettingsState } from '../state.js'
 
