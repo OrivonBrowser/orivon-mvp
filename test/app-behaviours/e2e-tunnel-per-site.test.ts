@@ -18,7 +18,7 @@ import { EMPTY_WASM, FAKE_NYM_MODULE } from './nym-stand-in.js'
 import { assertNoElectronSurvivors } from '../support/launch-electron.mjs'
 import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
 import { launchShell, QA_TEST_TIMEOUT_MS } from '../support/qa-helpers.js'
-import { waitForTab } from '../support/smoke-helpers.mjs'
+import { delay, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 const NYM_SITE = 'site.nym.test'
 const PROXY_SITE = 'site.proxy.test'
@@ -59,7 +59,7 @@ beforeAll(async () => {
   logFile = join(dir, 'fake.log')
   writeFileSync(logFile, '')
   const configFile = join(dir, 'fake.json')
-  writeFileSync(configFile, JSON.stringify({ log: logFile, targets: { [`${NYM_SITE}:${String(decoyNym.port)}`]: { host: '127.0.0.1', port: realNym.port } } }))
+  writeFileSync(configFile, JSON.stringify({ log: logFile, targets: { [`${NYM_SITE}:${String(decoyNym.port)}`]: { host: '127.0.0.1', port: realNym.port }, [`${PROXY_SITE}:${String(decoyProxy.port)}`]: { host: '127.0.0.1', port: realProxy.port } } }))
   socks = await startSocks5Fixture({ preferAuth: true, names: { [`${PROXY_SITE}:${String(decoyProxy.port)}`]: { host: '127.0.0.1', port: realProxy.port } } })
   cleanups.push(async () => { await decoyNym.close(); await decoyProxy.close(); await realNym.close(); await realProxy.close(); await socks.close() }, () => { rmSync(dir, { recursive: true, force: true }) })
 
@@ -109,4 +109,44 @@ it('[app:tunnel-per-site] a site on Nym and a site on the proxy each arrive thro
   expect(decoyNym.hits() + decoyProxy.hits(), 'neither went direct').toBe(0)
   expect(nymSession, 'the Nym site lives in Nym\'s profile').toBe('tunnel-profile-memory')
   expect(proxySession, 'the proxy site lives in the proxy\'s profile').toBe('proxy-profile-memory')
+}, 4 * QA_TEST_TIMEOUT_MS)
+
+const findPopup = (): Page | undefined => app.windows().find((w) => w.url().includes('/site-info/') && !w.isClosed())
+
+async function openPopover (): Promise<Page> {
+  await chrome.click('#tunnel-btn')
+  expect(await waitFor(() => findPopup() !== undefined)).toBe(true)
+  const popover = findPopup() as Page
+  await popover.waitForSelector('#tunnel-switch-nym')
+  return popover
+}
+
+it('[app:tunnel-per-site] moving a site to the other tunnel from the menu asks the storage question once, moves the tab, and the site is then reached only through the new tunnel', async () => {
+  const proxyUrl = urlOf(PROXY_SITE, decoyProxy.port)
+  const popover = await openPopover()
+  expect(await popover.locator('#tunnel-switch-socks5').getAttribute('aria-checked'), 'the proxy site is on the proxy').toBe('true')
+  expect(await popover.locator('#tunnel-switch-nym').getAttribute('aria-checked')).toBe('false')
+  await popover.click('#tunnel-switch-nym')
+  await popover.waitForSelector('.tunnel-notice')
+  expect(await popover.locator('#tunnel-switch-nym').getAttribute('aria-checked'), 'the switches show the move while the question is open').toBe('true')
+  expect(await popover.locator('#tunnel-switch-socks5').getAttribute('aria-checked')).toBe('false')
+  await popover.click('#tunnel-notice-confirm')
+
+  expect(await waitFor(async () => await sessionName(proxyUrl) === 'tunnel-profile-memory', 30_000), 'the tab moved to Nym\'s profile').toBe(true)
+  expect((await waitForTab(chrome, { address: proxyUrl, title: 'through-proxy' }, 60_000)).ok, 'and the page loaded again').toBe(true)
+  expect(nymLog().some((line) => line.startsWith('tcp ') && line.endsWith(`${PROXY_SITE}:${String(decoyProxy.port)}`)), 'it now arrives through Nym').toBe(true)
+  expect(decoyProxy.hits(), 'it never went direct while it moved').toBe(0)
+}, 4 * QA_TEST_TIMEOUT_MS)
+
+it('[app:tunnel-per-site] turning the lit switch off sends the site through no tunnel, and the other site keeps its own', async () => {
+  const proxyUrl = urlOf(PROXY_SITE, decoyProxy.port)
+  if (findPopup() !== undefined) await chrome.click('#tunnel-btn')
+  expect(await waitFor(() => findPopup() === undefined)).toBe(true)
+  await delay(300)
+  const popover = await openPopover()
+  expect(await popover.locator('#tunnel-switch-nym').getAttribute('aria-checked')).toBe('true')
+  await popover.click('#tunnel-switch-nym')
+  expect(await waitFor(async () => await sessionName(proxyUrl) === 'default', 30_000), 'the tab is in the shared session again').toBe(true)
+  expect(await waitFor(() => decoyProxy.hits() > 0, 30_000), 'and reaches the site itself, as the person chose').toBe(true)
+  expect(await waitFor(async () => await chrome.getAttribute('#tunnel-btn', 'data-tunnel') === null), 'the button is grey').toBe(true)
 }, 4 * QA_TEST_TIMEOUT_MS)

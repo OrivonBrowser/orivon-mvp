@@ -79,7 +79,7 @@ function fakeLoader (overrides: Partial<Loader> = {}): Loader {
 describe('createSiteInfoController -- the route of a routed app', () => {
   const routesWith = (state: string, proxy: unknown = { host: '127.0.0.1', port: 9050 }): SubsystemContext['routes'] => {
     const kind = proxy === NYM_TARGET ? 'nym' : 'socks5'
-    return ({ hub: { state: () => state, isRouted: () => state !== 'off', kindOf: () => state === 'off' ? undefined : kind, unreadable: () => false, isEverywhere: () => false, profileFor: () => undefined }, routeSwitch: { blockedFor: () => undefined, noticeFor: () => 'nym' }, defaultKind: () => kind, proxy: () => proxy, nym: { state: () => ({ state: 'connecting' }) } }) as unknown as SubsystemContext['routes']
+    return ({ hub: { state: () => state, isRouted: () => state !== 'off', kindOf: () => state === 'off' ? undefined : kind, unreadable: () => false, isEverywhere: () => false, profileFor: () => undefined }, routeSwitch: { blockedFor: () => undefined, noticeFor: () => 'nym' }, store: { stateOf: () => undefined }, defaultKind: () => kind, proxy: () => proxy, nym: { state: () => ({ state: 'connecting' }) } }) as unknown as SubsystemContext['routes']
   }
 
   it('carries the state of the app\'s route, so the popover can say where its traffic goes and when the tunnel is not answering', async () => {
@@ -96,14 +96,15 @@ describe('createSiteInfoController -- the route of a routed app', () => {
     expect('nym' in await createSiteInfoController(onAddress, NO_TRUST).siteInfoFor(OTHER)).toBe(false)
   })
 
-  it('says a private window is held to Nym, and refuses to switch a website off in it', async () => {
+  it('says a private window is held to Nym, and refuses to switch a website off or to the other tunnel in it', async () => {
     const choose = vi.fn(async () => {})
     const held = { ...ctxWith(createBroker(baseDeps())), privateTunnel: 'nym', routes: { ...routesWith('ok', NYM_TARGET), routeSwitch: { blockedFor: () => undefined, noticeFor: () => undefined, choose } } } as unknown as SubsystemContext
     const controller = createSiteInfoController(held, NO_TRUST)
     expect((await controller.siteInfoFor(OTHER)).tunnelHeld).toBe('nym')
-    expect(await controller.setTunnel(OTHER, false)).toBe(false)
+    expect(await controller.setTunnel(OTHER, null)).toBe(false)
+    expect(await controller.setTunnel(OTHER, 'socks5'), 'nor the other tunnel').toBe(false)
     expect(choose).not.toHaveBeenCalled()
-    expect(await controller.setTunnel(OTHER, true)).toBe(true)
+    expect(await controller.setTunnel(OTHER, 'nym')).toBe(true)
     const plain = { ...ctxWith(createBroker(baseDeps())), privateTunnel: null, routes: routesWith('ok', NYM_TARGET) } as unknown as SubsystemContext
     expect('tunnelHeld' in await createSiteInfoController(plain, NO_TRUST).siteInfoFor(OTHER)).toBe(false)
   })
@@ -493,107 +494,146 @@ describe('createSiteInfoController -- storageDeclarationFor', () => {
   })
 })
 
-describe('createSiteInfoController -- the tunnel switch of a website', () => {
+describe('createSiteInfoController -- the tunnel of a website or an installed app', () => {
   const SITE = 'https://news.example'
-  function routesFor (options: { on?: boolean, blocked?: 'no-proxy' | 'local', notice?: 'tunnel' | 'direct' | null, unreadable?: boolean, everywhere?: boolean, nym?: boolean, nymOff?: boolean, routedKind?: 'nym' | 'socks5', choose?: (origin: string, kind: string | null) => Promise<void> } = {}): SubsystemContext['routes'] {
+  interface Options {
+    via?: 'nym' | 'socks5'
+    blocked?: Partial<Record<'nym' | 'socks5', 'no-proxy' | 'not-cached'>>
+    notices?: Partial<Record<'nym' | 'socks5' | 'none', 'nym' | 'socks5' | 'direct'>>
+    unreadable?: boolean
+    everywhere?: boolean
+    defaultKind?: 'nym' | 'socks5'
+    own?: boolean
+    nymOff?: boolean
+    sessionKind?: 'nym' | 'socks5' | 'held' | undefined
+    choose?: (origin: string, kind: string | null) => Promise<void>
+  }
+  function routesFor (options: Options = {}): SubsystemContext['routes'] {
     return {
-      hub: { state: () => options.on === true ? 'ok' : 'off', isRouted: () => options.on === true, kindOf: () => options.on === true ? options.routedKind ?? (options.nym === true ? 'nym' : 'socks5') : undefined, unreadable: () => options.unreadable === true, isEverywhere: () => options.everywhere === true, profileFor: () => undefined },
-      defaultKind: () => options.nym === true ? 'nym' : 'socks5',
-      proxy: () => options.nym === true ? NYM_TARGET : ({ host: '127.0.0.1', port: 9050 }),
+      hub: { state: () => options.via === undefined ? 'off' : 'ok', isRouted: () => options.via !== undefined, kindOf: () => options.via, unreadable: () => options.unreadable === true, isEverywhere: () => options.everywhere === true, profileFor: () => undefined },
+      store: { stateOf: () => options.own === true ? options.via ?? 'off' : undefined },
+      defaultKind: () => options.defaultKind ?? 'socks5',
+      controller: { tunnelOf: () => options.sessionKind },
       nym: { state: () => options.nymOff === true ? { state: 'unavailable', cause: 'other', reason: NYM_SWITCHED_OFF } : { state: 'off' } },
       routeSwitch: {
-        blockedFor: () => options.blocked,
-        noticeFor: () => options.notice === null ? undefined : options.notice === 'direct' ? 'direct' : 'nym',
+        blockedFor: (_origin: string, kind: 'nym' | 'socks5') => options.blocked?.[kind],
+        noticeFor: (_origin: string, kind: 'nym' | 'socks5' | null) => options.notices?.[kind ?? 'none'],
         choose: options.choose ?? (async () => {})
       }
     } as unknown as SubsystemContext['routes']
   }
   const controllerWith = (routes: SubsystemContext['routes'], trust: SiteTrustSources = NO_TRUST) =>
     createSiteInfoController({ ...ctxWith(createBroker(baseDeps())), routes } as unknown as SubsystemContext, trust)
+  const AS_APP: SiteTrustSources = { ...NO_TRUST, isOriginServedFromCacheSync: () => true }
 
-  it('offers the switch for an ordinary website, with what the popover needs to ask first', async () => {
-    const info = await controllerWith(routesFor({ notice: 'tunnel' })).siteInfoFor(SITE)
-    expect(info.tunnel).toEqual({ on: false, notice: 'tunnel', swarm: false, unreadable: false, nymOff: false })
+  it('offers both tunnels for an ordinary website, with nothing chosen and what the popover needs to ask first', async () => {
+    const info = await controllerWith(routesFor({ notices: { nym: 'nym', socks5: 'socks5' } })).siteInfoFor(SITE)
+    expect(info.tunnel).toEqual({ via: null, following: true, subject: 'site', blocked: {}, notices: { nym: 'tunnel', socks5: 'tunnel' }, swarm: false, unreadable: false, defaultKind: 'socks5' })
   })
 
-  it('says it is on, and that no notice is needed once the site has storage in the profile the next change moves it to', async () => {
-    const info = await controllerWith(routesFor({ on: true, notice: null })).siteInfoFor(SITE)
-    expect(info.tunnel).toMatchObject({ on: true })
-    expect(info.tunnel?.notice).toBeUndefined()
-    expect(info.route).toBe('ok')
+  it('says which tunnel the site goes through, whether that is its own choice or the default, and names the direct profile when giving the tunnel up would move it there', async () => {
+    const followed = await controllerWith(routesFor({ via: 'nym', everywhere: true, defaultKind: 'nym', notices: { none: 'direct' } })).siteInfoFor(SITE)
+    expect(followed.tunnel).toMatchObject({ via: 'nym', following: true, notices: { off: 'direct' } })
+    const chosen = await controllerWith(routesFor({ via: 'socks5', own: true })).siteInfoFor(SITE)
+    expect(chosen.tunnel).toMatchObject({ via: 'socks5', following: false })
+    expect(chosen.route).toBe('ok')
   })
 
-  it('names the direct profile when turning a site off would move it there', async () => {
-    const info = await controllerWith(routesFor({ on: true, notice: 'direct', everywhere: true })).siteInfoFor(SITE)
-    expect(info.tunnel?.notice).toBe('direct')
+  it('asks for no notice about the tunnel the site is on already', async () => {
+    const info = await controllerWith(routesFor({ via: 'nym', own: true, notices: { nym: 'nym', socks5: 'socks5' } })).siteInfoFor(SITE)
+    expect(info.tunnel?.notices).toEqual({ socks5: 'tunnel' })
   })
 
-  it('says why it cannot be turned on, and when the list of tunnel settings could not be read', async () => {
-    expect((await controllerWith(routesFor({ blocked: 'no-proxy' })).siteInfoFor(SITE)).tunnel?.blocked).toBe('no-proxy')
-    expect((await controllerWith(routesFor({ unreadable: true, on: true })).siteInfoFor(SITE)).tunnel?.unreadable).toBe(true)
+  it('says why a tunnel cannot be chosen: the proxy has no address, Nym is switched off, an app\'s files are not held here', async () => {
+    expect((await controllerWith(routesFor({ blocked: { socks5: 'no-proxy' } })).siteInfoFor(SITE)).tunnel?.blocked).toEqual({ socks5: 'no-proxy' })
+    expect((await controllerWith(routesFor({ nymOff: true })).siteInfoFor(SITE)).tunnel?.blocked).toEqual({ nym: 'nym-off' })
+    expect((await controllerWith(routesFor({ blocked: { nym: 'not-cached', socks5: 'not-cached' } }), AS_APP).siteInfoFor(SITE)).tunnel?.blocked).toEqual({ nym: 'not-kept', socks5: 'not-kept' })
+    expect((await controllerWith(routesFor({ unreadable: true, via: 'nym' })).siteInfoFor(SITE)).tunnel?.unreadable).toBe(true)
   })
 
-  it('says which tunnel the person chose and whether the whole browser is on it, for every origin, and whether Nym is switched off', async () => {
-    expect(await controllerWith(routesFor()).siteInfoFor(SITE)).toMatchObject({ tunnelKind: 'socks5', everywhere: false, tunnel: { nymOff: false } })
-    expect(await controllerWith(routesFor({ nym: true })).siteInfoFor(SITE)).toMatchObject({ tunnelKind: 'nym', tunnel: { nymOff: false } })
-    expect((await controllerWith(routesFor({ nym: true, nymOff: true })).siteInfoFor(SITE)).tunnel?.nymOff).toBe(true)
-    const everywhere = await controllerWith(routesFor({ nym: true, everywhere: true })).siteInfoFor('http://127.0.0.1:8080')
+  it('says which tunnel the person chose and whether the whole browser is on it, for every origin', async () => {
+    expect(await controllerWith(routesFor()).siteInfoFor(SITE)).toMatchObject({ tunnelKind: 'socks5', everywhere: false })
+    expect(await controllerWith(routesFor({ defaultKind: 'nym' })).siteInfoFor(SITE)).toMatchObject({ tunnelKind: 'nym', tunnel: { defaultKind: 'nym' } })
+    const everywhere = await controllerWith(routesFor({ defaultKind: 'nym', everywhere: true })).siteInfoFor('http://127.0.0.1:8080')
     expect(everywhere).toMatchObject({ tunnelKind: 'nym', everywhere: true })
     expect(everywhere.tunnel, 'this computer has no switch').toBeUndefined()
-    // A switched-off Nym is no reason to lock the switch of a person whose tunnel is their own address.
-    expect((await controllerWith(routesFor({ nymOff: true })).siteInfoFor(SITE)).tunnel?.nymOff).toBe(false)
+  })
+
+  it('gives an installed app the same switches, with no word about a profile', async () => {
+    const info = await controllerWith(routesFor({ via: 'nym', own: true }), AS_APP).siteInfoFor(SITE)
+    expect(info.tunnel).toMatchObject({ subject: 'app', via: 'nym', following: false })
+    expect(info.tunnel?.profile).toBeUndefined()
   })
 
   it('names the tunnel the site goes through when it is not the one chosen for the browser, and asks what Nym is doing for it', async () => {
-    const info = await controllerWith(routesFor({ on: true, routedKind: 'nym' })).siteInfoFor(SITE)
+    const info = await controllerWith(routesFor({ via: 'nym', own: true, defaultKind: 'socks5' })).siteInfoFor(SITE)
     expect(info).toMatchObject({ tunnelKind: 'nym', nym: { state: 'off' } })
-    const proxied = await controllerWith(routesFor({ on: true, nym: true, routedKind: 'socks5' })).siteInfoFor(SITE)
+    const proxied = await controllerWith(routesFor({ via: 'socks5', own: true, defaultKind: 'nym' })).siteInfoFor(SITE)
     expect(proxied.tunnelKind).toBe('socks5')
     expect('nym' in proxied).toBe(false)
   })
 
-  it('refuses to turn a site on while Nym is switched off, and still turns one off', async () => {
-    const choose = vi.fn(async () => {})
-    expect(await controllerWith(routesFor({ nym: true, nymOff: true, choose })).setTunnel(SITE, true)).toBe(false)
-    expect(choose).not.toHaveBeenCalled()
-    expect(await controllerWith(routesFor({ nym: true, nymOff: true, choose })).setTunnel(SITE, false)).toBe(true)
-    expect(choose).toHaveBeenCalledWith(SITE, null)
-  })
-
-  it('marks a Swarm address, which cannot go through the tunnel, and no other Web3 name or address', async () => {
+  it('marks a Swarm address, which cannot go through a tunnel, and no other Web3 name or address', async () => {
     expect((await controllerWith(routesFor()).siteInfoFor('https://abc.bzz.orivon')).tunnel?.swarm).toBe(true)
     expect((await controllerWith(routesFor()).siteInfoFor('https://vitalik.eth')).tunnel?.swarm).toBe(false)
     expect((await controllerWith(routesFor()).siteInfoFor('https://abc.ipfs.orivon')).tunnel?.swarm).toBe(false)
   })
 
-  it('has no switch for this computer, an installed app, a local file or when routes are not running', async () => {
+  it('has no switch for this computer, a local file or when routes are not running', async () => {
     expect((await controllerWith(routesFor()).siteInfoFor('http://127.0.0.1:8080')).tunnel).toBeUndefined()
     expect((await controllerWith(routesFor()).siteInfoFor('http://localhost:3000')).tunnel).toBeUndefined()
-    expect((await controllerWith(routesFor(), { ...NO_TRUST, isOriginServedFromCacheSync: () => true }).siteInfoFor(SITE)).tunnel).toBeUndefined()
     expect((await controllerWith(undefined).siteInfoFor(SITE)).tunnel).toBeUndefined()
   })
 
-  it('turns the tunnel on or back to the default through the one switch path, and says whether it did', async () => {
+  it('sends a website or an app through the tunnel asked for, or through none, by the one switch path, and says whether it did', async () => {
     const choose = vi.fn(async () => {})
     const controller = controllerWith(routesFor({ choose }))
-    expect(await controller.setTunnel(SITE, true)).toBe(true)
-    expect(await controller.setTunnel(SITE, false)).toBe(true)
-    expect(choose.mock.calls).toEqual([[SITE, 'socks5'], [SITE, null]])
+    expect(await controller.setTunnel(SITE, 'nym')).toBe(true)
+    expect(await controller.setTunnel(SITE, 'socks5')).toBe(true)
+    expect(await controller.setTunnel(SITE, null)).toBe(true)
+    expect(choose.mock.calls).toEqual([[SITE, 'nym'], [SITE, 'socks5'], [SITE, null]])
+    expect(await controllerWith(routesFor({ choose }), AS_APP).setTunnel(SITE, 'nym'), 'an app takes the same call').toBe(true)
+    expect(choose).toHaveBeenLastCalledWith(SITE, 'nym')
   })
 
-  it('refuses to turn it on when it is blocked, but always turns it off', async () => {
+  it('refuses a tunnel that is blocked, or Nym while it is switched off, but always lets one go', async () => {
     const choose = vi.fn(async () => {})
-    const controller = controllerWith(routesFor({ blocked: 'no-proxy', choose }))
-    expect(await controller.setTunnel(SITE, true)).toBe(false)
-    expect(await controller.setTunnel(SITE, false)).toBe(true)
-    expect(choose.mock.calls).toEqual([[SITE, null]])
+    const blocked = controllerWith(routesFor({ blocked: { socks5: 'no-proxy' }, choose }))
+    expect(await blocked.setTunnel(SITE, 'socks5')).toBe(false)
+    expect(await blocked.setTunnel(SITE, 'nym')).toBe(true)
+    expect(await blocked.setTunnel(SITE, null)).toBe(true)
+    expect(choose.mock.calls).toEqual([[SITE, 'nym'], [SITE, null]])
+    choose.mockClear()
+    const off = controllerWith(routesFor({ nymOff: true, choose }))
+    expect(await off.setTunnel(SITE, 'nym')).toBe(false)
+    expect(await off.setTunnel(SITE, 'socks5')).toBe(true)
+    expect(await off.setTunnel(SITE, null)).toBe(true)
   })
 
-  it('refuses an installed app, whose card has its own switch, and reports a choice that could not be kept', async () => {
+  it('refuses this computer, and reports a choice that could not be kept', async () => {
     const choose = vi.fn(async () => { throw new Error('disk full') })
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    expect(await controllerWith(routesFor({ choose }), { ...NO_TRUST, isOriginServedFromCacheSync: () => true }).setTunnel(SITE, true)).toBe(false)
+    expect(await controllerWith(routesFor({ choose })).setTunnel('http://127.0.0.1:8080', 'nym')).toBe(false)
     expect(choose).not.toHaveBeenCalled()
-    expect(await controllerWith(routesFor({ choose })).setTunnel(SITE, true)).toBe(false)
+    expect(await controllerWith(routesFor({ choose })).setTunnel(SITE, 'nym')).toBe(false)
+  })
+
+  it('shows a page that runs in a session of another tunnel as going through that tunnel, with its switches fixed', async () => {
+    const controller = controllerWith(routesFor({ sessionKind: 'nym', defaultKind: 'socks5' }))
+    const info = await controller.siteInfoFor(SITE)
+    const adopted = controller.inSession(info, {})
+    expect(adopted.tunnel).toMatchObject({ via: 'nym', following: false, fixed: 'opened', notices: {} })
+    expect(adopted).toMatchObject({ tunnelKind: 'nym', route: 'idle', nym: { state: 'off' } })
+  })
+
+  it('leaves a page alone that runs in the session of its own tunnel, or in one that is stopped or follows the system', async () => {
+    for (const sessionKind of ['socks5', 'held', undefined] as const) {
+      const controller = controllerWith(routesFor({ via: 'socks5', sessionKind }))
+      const info = await controller.siteInfoFor(SITE)
+      expect(controller.inSession(info, {}), String(sessionKind)).toBe(info)
+    }
+    const controller = controllerWith(routesFor({ sessionKind: 'nym' }))
+    const info = await controller.siteInfoFor(SITE)
+    expect(controller.inSession(info, undefined), 'no tab').toBe(info)
   })
 })

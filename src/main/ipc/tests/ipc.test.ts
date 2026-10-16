@@ -33,6 +33,7 @@ function fakeSiteInfo (overrides: Partial<SiteInfoController> = {}): SiteInfoCon
     siteSummaryFor: vi.fn(async () => ({ asked: false, warning: false, missing: false })),
     reviewPermissions: vi.fn(async () => true),
     siteInfoFor: vi.fn(async () => { throw new Error('not stubbed') }),
+    inSession: vi.fn((info) => info),
     siteTrustFor: vi.fn(async () => null),
     storageDeclarationFor: vi.fn(async () => null),
     setTunnel: vi.fn(async () => true),

@@ -23,6 +23,14 @@ describe('the tunnel button look', () => {
     expect(tunnelButtonLook(site, 'on')).toEqual({ hidden: false, state: 'on', label: `Tunnels. ${TUNNEL_NOTES.on}` })
     expect(tunnelButtonLook(site, 'down')).toEqual({ hidden: false, state: 'down', label: `Tunnels. ${TUNNEL_NOTES.down}` })
   })
+
+  it('names the tunnel the page goes through, and the one that is not answering', () => {
+    expect(tunnelButtonLook(site, 'on', 'nym').label).toBe('Tunnels. This page goes through Nym')
+    expect(tunnelButtonLook(site, 'on', 'socks5').label).toBe('Tunnels. This page goes through your proxy')
+    expect(tunnelButtonLook(site, 'down', 'nym').label).toBe('Tunnels. Nym is not answering, so this page\'s traffic is stopped')
+    expect(tunnelButtonLook(site, 'down', 'socks5').label).toBe('Tunnels. Your proxy is not answering, so this page\'s traffic is stopped')
+    expect(tunnelButtonLook(site, null, 'nym').label, 'a direct page names no tunnel').toBe(TUNNEL_BUTTON_LABEL)
+  })
 })
 
 function mount (active: TabState | undefined) {
@@ -40,7 +48,7 @@ function mount (active: TabState | undefined) {
   const ctx = { shell, activeTab: () => active, anchorFor: () => ({ x: 1, y: 2, width: 3, height: 4 }) } as unknown as ChromeContext
   const module = createTunnelButton()
   module.init(ctx)
-  return { button, attrs, shell, ctx, render: (tunnel: 'on' | 'down' | null) => { module.render?.({ tunnel } as never, ctx) }, listeners }
+  return { button, attrs, shell, ctx, render: (tunnel: 'on' | 'down' | null, tunnelVia: 'nym' | 'socks5' | null = null) => { module.render?.({ tunnel, tunnelVia } as never, ctx) }, listeners }
 }
 
 describe('the tunnel button module', () => {
@@ -54,6 +62,8 @@ describe('the tunnel button module', () => {
     expect(button.hidden).toBe(false)
     expect(attrs.get('data-tunnel')).toBe('on')
     expect(attrs.get('aria-label')).toBe(`Tunnels. ${TUNNEL_NOTES.on}`)
+    render('on', 'nym')
+    expect(attrs.get('aria-label')).toBe('Tunnels. This page goes through Nym')
     render(null)
     expect(attrs.has('data-tunnel')).toBe(false)
     expect(button.title).toBe(TUNNEL_BUTTON_LABEL)

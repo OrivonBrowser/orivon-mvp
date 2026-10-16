@@ -227,8 +227,9 @@ it('[app:routed-app-asks-before-opening-a-website] "Through my tunnel" opens the
   await chrome.click('#tunnel-btn')
   expect(await waitFor(() => findPopup() !== undefined)).toBe(true)
   const popover = findPopup() as Page
-  await popover.waitForSelector('.tunnel-state')
-  expect(await popover.locator('.tunnel-state').textContent()).toBe('This page goes through your tunnel, and nothing it stores is kept once its last tab is closed.')
+  await popover.waitForSelector('#tunnel-switch-socks5')
+  expect(await popover.locator('.tunnel-row[data-tunnel="socks5"] .tunnel-state').textContent()).toBe('This page goes through your tunnel, and nothing it stores is kept once its last tab is closed.')
+  expect(await popover.locator('#tunnel-switch-socks5').isDisabled(), 'the page does not choose its tunnel here').toBe(true)
   await chrome.click('#tunnel-btn')
   expect(await waitFor(() => findPopup() === undefined)).toBe(true)
   await delay(400)

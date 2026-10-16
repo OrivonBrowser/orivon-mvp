@@ -29,7 +29,7 @@ const OFF = 'off.socks.test'
 const CDN = 'cdn.socks.test'
 const WS = 'ws.socks.test'
 const DIRECT_NOTICE = 'This site moves to your direct profile. You\'ll sign in to it again once, and what it stores stays apart from your normal browsing.'
-const TUNNEL_NAME = 'Your SOCKS5 tunnel'
+const TUNNEL_NAME = 'Your proxy'
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64')
 
 interface Hosted { port: number, hits: number, paths: string[], close: () => Promise<void> }
@@ -126,7 +126,7 @@ async function openPopover (): Promise<Page> {
   await chrome.click('#tunnel-btn')
   expect(await waitFor(() => findPopup() !== undefined)).toBe(true)
   const popover = findPopup() as Page
-  await popover.waitForSelector('#tunnel-switch')
+  await popover.waitForSelector('#tunnel-switch-socks5')
   return popover
 }
 
@@ -173,8 +173,8 @@ it('[app:tunnel-everywhere-carries-a-plain-website] a website with no setting of
   await shoot(app, chrome, chrome, 'tunnel-everywhere-key')
 
   const popover = await openPopover()
-  expect(await popover.locator('#tunnel-switch').getAttribute('aria-checked'), 'the switch shows the default it follows').toBe('true')
-  expect(await popover.locator('.tunnel-label').textContent()).toBe(TUNNEL_NAME)
+  expect(await popover.locator('#tunnel-switch-socks5').getAttribute('aria-checked'), 'the switch shows the default it follows').toBe('true')
+  expect(await popover.locator('.tunnel-row[data-tunnel="socks5"] .tunnel-label').textContent()).toBe(TUNNEL_NAME)
   await shoot(app, chrome, popover, 'tunnel-everywhere-popover')
   await closePopover()
 }, 4 * QA_TEST_TIMEOUT_MS)
@@ -185,7 +185,7 @@ it('[app:tunnel-everywhere-leaves-a-site-set-to-off-direct] a site set to off mo
   const tunnelled = asked(OFF, hosts.offDecoy.port)
 
   const popover = await openPopover()
-  await popover.click('#tunnel-switch')
+  await popover.click('#tunnel-switch-socks5')
   await popover.waitForSelector('.tunnel-notice')
   expect(await popover.locator('.tunnel-notice-text').textContent()).toBe(DIRECT_NOTICE)
   await shoot(app, chrome, popover, 'tunnel-everywhere-direct-notice')

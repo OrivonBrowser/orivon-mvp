@@ -49,6 +49,7 @@ function fakeController (overrides: Partial<SiteInfoController> = {}): SiteInfoC
   return {
     siteSummaryFor: vi.fn(async () => ({ asked: false, warning: false, missing: false })),
     siteInfoFor: vi.fn(async () => EMPTY_INFO),
+    inSession: vi.fn((info: SiteInfo) => info),
     siteTrustFor: vi.fn(async () => null),
     storageDeclarationFor: vi.fn(async () => null),
     setTunnel: vi.fn(async () => true),
@@ -127,32 +128,42 @@ describe('registerSiteInfoIpc -- applyUpdate', () => {
 })
 
 describe('registerSiteInfoIpc -- setTunnel', () => {
-  it('turns the tunnel of the popup\'s fixed origin on or off, whatever origin the command names, and returns the info after', async () => {
+  it('sends the popup\'s fixed origin through the tunnel asked for, or through none, whatever origin the command names, and returns the info after', async () => {
     const controller = fakeController()
     register(controller)
 
-    const on = await dispatch({ type: 'setTunnel', on: true, origin: 'https://evil.example' })
-    const off = await dispatch({ type: 'setTunnel', on: false })
+    const nym = await dispatch({ type: 'setTunnel', kind: 'nym', origin: 'https://evil.example' })
+    const proxy = await dispatch({ type: 'setTunnel', kind: 'socks5' })
+    const none = await dispatch({ type: 'setTunnel', kind: null })
 
-    expect(controller.setTunnel).toHaveBeenNthCalledWith(1, ORIGIN, true)
-    expect(controller.setTunnel).toHaveBeenNthCalledWith(2, ORIGIN, false)
-    expect(on).toEqual({ ok: true, info: EMPTY_INFO })
-    expect(off).toEqual({ ok: true, info: EMPTY_INFO })
+    expect(controller.setTunnel).toHaveBeenNthCalledWith(1, ORIGIN, 'nym')
+    expect(controller.setTunnel).toHaveBeenNthCalledWith(2, ORIGIN, 'socks5')
+    expect(controller.setTunnel).toHaveBeenNthCalledWith(3, ORIGIN, null)
+    for (const answer of [nym, proxy, none]) expect(answer).toEqual({ ok: true, info: EMPTY_INFO })
+  })
+
+  it('gives the info as the tab\'s session makes it, so a page opened through an app\'s tunnel is drawn as that tunnel\'s', async () => {
+    const session = {}
+    const inSession = vi.fn((info: SiteInfo) => ({ ...info, tunnelKind: 'nym' as const }))
+    const controller = fakeController({ inSession })
+    register(controller, { activeWebContents: () => ({ getURL: () => ORIGIN, session }) as unknown as import('electron').WebContents })
+    expect(await dispatch({ type: 'setTunnel', kind: 'nym' })).toEqual({ ok: true, info: { ...EMPTY_INFO, tunnelKind: 'nym' } })
+    expect(inSession).toHaveBeenCalledWith(EMPTY_INFO, session)
   })
 
   it('says it was not done when the controller could not', async () => {
     const controller = fakeController({ setTunnel: vi.fn(async () => false) })
     register(controller)
-    expect(await dispatch({ type: 'setTunnel', on: true })).toEqual({ ok: false, info: EMPTY_INFO })
+    expect(await dispatch({ type: 'setTunnel', kind: 'nym' })).toEqual({ ok: false, info: EMPTY_INFO })
   })
 
-  it('refuses a value that is not a boolean, without reaching the controller, and answers nothing from another frame', async () => {
+  it('refuses a value that is not a tunnel, without reaching the controller, and answers nothing from another frame', async () => {
     const controller = fakeController()
     register(controller)
-    for (const on of [undefined, 1, 'true', null]) {
-      expect(await dispatch({ type: 'setTunnel', on })).toEqual({ ok: false, info: EMPTY_INFO })
+    for (const kind of [undefined, 1, 'true', true, false, 'tor', 'off']) {
+      expect(await dispatch({ type: 'setTunnel', kind })).toEqual({ ok: false, info: EMPTY_INFO })
     }
-    expect(await dispatch({ type: 'setTunnel', on: true }, OTHER_FRAME_URL)).toBeUndefined()
+    expect(await dispatch({ type: 'setTunnel', kind: 'nym' }, OTHER_FRAME_URL)).toBeUndefined()
     expect(controller.setTunnel).not.toHaveBeenCalled()
   })
 })

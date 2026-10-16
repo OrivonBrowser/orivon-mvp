@@ -148,13 +148,13 @@ it('shows the site\'s tunnel switch on and fixed in the popover, and never makes
   const findPopup = (): Page | undefined => world.app.windows().find((w) => w.url().includes('/site-info/') && !w.isClosed())
   expect(await waitFor(() => findPopup() !== undefined)).toBe(true)
   const popover = findPopup() as Page
-  await popover.waitForSelector('#tunnel-switch')
-  expect(await popover.locator('#tunnel-switch').getAttribute('aria-checked')).toBe('true')
-  expect(await popover.locator('#tunnel-switch').isDisabled(), 'the switch is fixed').toBe(true)
+  await popover.waitForSelector('#tunnel-switch-nym')
+  expect(await popover.locator('#tunnel-switch-nym').getAttribute('aria-checked')).toBe('true')
+  expect(await popover.locator('#tunnel-switch-nym').isDisabled(), 'the switch is fixed').toBe(true)
   expect(await popover.locator('.tunnel-section').textContent()).toContain('This private window always goes through Nym')
   await shoot(world.app, world.chrome, popover, 'private-window-nym-popover')
   // Even forced, the switch makes no entry: the page stays on the tunnel.
-  await popover.locator('#tunnel-switch').evaluate((el) => { (el as HTMLButtonElement).disabled = false; (el as HTMLButtonElement).click() })
+  await popover.locator('#tunnel-switch-nym').evaluate((el) => { (el as HTMLButtonElement).disabled = false; (el as HTMLButtonElement).click() })
   await delay(1500)
   expect((await activeTabInfo(world.chrome)).title).toBe('tunnelled')
   expect(world.decoy.hits()).toBe(0)

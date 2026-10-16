@@ -24,7 +24,7 @@ import { activeTabInfo, delay, waitFor, waitForTab } from '../support/smoke-help
 const SITE_NAME = 'site.socks.test'
 const CDN_NAME = 'cdn.socks.test'
 const NOTICE = 'This site moves to your tunnel profile. You\'ll sign in to it again once, and what it stores stays apart from your normal browsing.'
-const TUNNEL_NAME = 'Your SOCKS5 tunnel'
+const TUNNEL_NAME = 'Your proxy'
 
 interface Hosted { port: number, hits: number, close: () => Promise<void> }
 
@@ -107,7 +107,7 @@ async function openPopover (): Promise<Page> {
   await chrome.click('#tunnel-btn')
   expect(await waitFor(() => findPopup() !== undefined)).toBe(true)
   const popover = findPopup() as Page
-  await popover.waitForSelector('#tunnel-switch')
+  await popover.waitForSelector('#tunnel-switch-socks5')
   return popover
 }
 
@@ -137,15 +137,15 @@ it('[app:tunnelled-website-gets-its-own-storage] a website in the shared session
   expect(await chrome.getAttribute('#tunnel-btn', 'data-tunnel'), 'the tunnel button is not purple').toBeNull()
 
   const popover = await openPopover()
-  expect(await popover.locator('.tunnel-label').textContent()).toBe(TUNNEL_NAME)
-  expect(await popover.locator('#tunnel-switch').getAttribute('aria-checked')).toBe('false')
+  expect(await popover.locator('.tunnel-row[data-tunnel="socks5"] .tunnel-label').textContent()).toBe(TUNNEL_NAME)
+  expect(await popover.locator('#tunnel-switch-socks5').getAttribute('aria-checked')).toBe('false')
   expect(await popover.locator('.tunnel-notice').count()).toBe(0)
   await closePopover()
 }, 3 * QA_TEST_TIMEOUT_MS)
 
 it('[app:tunnelled-website-gets-its-own-storage] the notice comes first, Cancel changes nothing, and Confirm moves the site into the tunnel profile', async () => {
   const popover = await openPopover()
-  await popover.click('#tunnel-switch')
+  await popover.click('#tunnel-switch-socks5')
   await popover.waitForSelector('.tunnel-notice')
   expect(await popover.locator('.tunnel-notice-text').textContent()).toBe(NOTICE)
   expect(await popover.locator('#tunnel-notice-confirm').textContent()).toBe('Confirm')
@@ -153,14 +153,14 @@ it('[app:tunnelled-website-gets-its-own-storage] the notice comes first, Cancel 
 
   await popover.click('#tunnel-notice-cancel')
   await popover.waitForSelector('.tunnel-notice', { state: 'detached' })
-  expect(await popover.locator('#tunnel-switch').getAttribute('aria-checked')).toBe('false')
+  expect(await popover.locator('#tunnel-switch-socks5').getAttribute('aria-checked')).toBe('false')
   await delay(500)
   expect(await tabTitle(), 'Cancel leaves the tab as it was').toBe('direct')
   expect(socks.requests.length, 'and the tunnel saw nothing').toBe(0)
 
   const before = decoy.hits
   const cdnBefore = cdnDecoy.hits
-  await popover.click('#tunnel-switch')
+  await popover.click('#tunnel-switch-socks5')
   await popover.waitForSelector('.tunnel-notice')
   await popover.click('#tunnel-notice-confirm')
   expect(await waitFor(async () => await tabTitle() === 'tunnelled', 20_000)).toBe(true)
@@ -179,8 +179,8 @@ it('[app:tunnelled-website-gets-its-own-storage] the notice comes first, Cancel 
 it('[app:tunnelled-website-gets-its-own-storage] the tunnel button and its popover say the tab goes through the tunnel, and the switch is on', async () => {
   expect(await waitFor(async () => await chrome.getAttribute('#tunnel-btn', 'data-tunnel') === 'on')).toBe(true)
   const popover = await openPopover()
-  expect(await popover.locator('#tunnel-switch').getAttribute('aria-checked')).toBe('true')
-  expect(await popover.locator('.tunnel-state').textContent()).toBe('This site\'s traffic goes through your tunnel.')
+  expect(await popover.locator('#tunnel-switch-socks5').getAttribute('aria-checked')).toBe('true')
+  expect(await popover.locator('.tunnel-row[data-tunnel="socks5"] .tunnel-state').textContent()).toBe('This site\'s traffic goes through your tunnel.')
   await shoot(app, chrome, popover, 'website-tunnel-on')
   await closePopover()
   await shoot(app, chrome, chrome, 'website-tunnel-key')
@@ -212,7 +212,7 @@ it('[app:tunnelled-website-gets-its-own-storage] turning the tunnel off returns 
 
   // The tab moves to another view, which closes the popover: it is opened again for each press.
   const off = await openPopover()
-  await off.click('#tunnel-switch')
+  await off.click('#tunnel-switch-socks5')
   expect(await waitFor(async () => await tabTitle() === 'direct', 20_000)).toBe(true)
   expect(await sessionOfTab(siteUrl())).toMatchObject({ isDefault: true })
   expect(decoy.hits, 'the page came from the site itself again').toBeGreaterThan(0)
@@ -224,7 +224,7 @@ it('[app:tunnelled-website-gets-its-own-storage] turning the tunnel off returns 
 
   // Turned on again, the site is already apart: the switch takes at once, with no notice, and the storage it kept is there.
   const on = await openPopover()
-  await on.click('#tunnel-switch')
+  await on.click('#tunnel-switch-socks5')
   expect(await waitFor(async () => await tabTitle() === 'tunnelled', 20_000), 'no notice stood in the way').toBe(true)
   expect(await sessionOfTab(siteUrl())).toMatchObject({ isDefault: false })
   expect((await cookies(profilePartition)).sort()).toEqual(['kept=1', 'who=site'])

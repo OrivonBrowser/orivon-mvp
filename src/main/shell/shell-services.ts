@@ -53,8 +53,8 @@ import { imageToDataUrl, previewSizeFor, TearDragController } from './tear-drag.
 import { captureTabPage } from './tab-view.js'
 import { WindowRegistry } from './window-registry.js'
 import { isTemporaryRoutePartition } from '../route/temporary-routes.js'
-import { tunnelMarkFor } from '../route/tunnel-mark.js'
-import type { TunnelMark } from '../route/tunnel-mark.js'
+import { tunnelLookFor } from '../route/tunnel-mark.js'
+import type { TunnelLook } from '../route/tunnel-mark.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import type { SubsystemContext } from '../registry.js'
 import { scoreAnswerKeptMs } from '../verifier/test-seam.js'
@@ -105,7 +105,7 @@ export interface ShellServices {
   }
   /** What the address bar's tunnel button says about a page; null while the routes are not running or the page is not on the tunnel. */
   readonly tunnel: {
-    readonly markOf: (url: string, partition: string | undefined) => TunnelMark | null
+    readonly lookOf: (url: string, partition: string | undefined) => TunnelLook
     readonly onChange: (listener: () => void) => () => void
   }
   /** The nodes Orivon runs on this computer, for the Available networks popup and the dot on its button. */
@@ -184,11 +184,13 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
       onChange: (listener) => ctx.appUpdates?.onChange(listener) ?? (() => {})
     },
     tunnel: {
-      markOf: (url, partition) => {
+      lookOf: (url, partition) => {
         const origin = originFromUrl(url)
         const routes = ctx.routes
-        if (origin === null || routes === undefined) return null
-        return tunnelMarkFor({ state: routes.hub.state(origin), temporary: isTemporaryRoutePartition(partition) })
+        if (origin === null || routes === undefined) return { mark: null, via: null }
+        // The session a page runs in decides how it leaves, not only its own origin: a popup adopted into an app's session goes where the app does.
+        const holder = partition === undefined ? session.defaultSession : session.fromPartition(partition)
+        return tunnelLookFor({ state: routes.hub.state(origin), temporary: isTemporaryRoutePartition(partition), own: routes.hub.kindOf(origin), session: routes.controller.tunnelOf(holder) })
       },
       onChange: (listener) => ctx.routes?.hub.onChange(() => { listener() }) ?? (() => {})
     },

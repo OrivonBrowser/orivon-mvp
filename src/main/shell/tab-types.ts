@@ -18,6 +18,7 @@ import type { CommandId } from '../shortcuts/commands.js'
 import type { DisplaySurfaceKind } from '../display-capture/types.js'
 import type { SiteKind } from '../site-settings/kinds.js'
 import type { TunnelMark } from '../route/tunnel-mark.js'
+import type { TunnelKind } from '../route/route-state.js'
 import type { SleepingTab, TabGroupState } from './tab-extra-types.js'
 
 export interface TabState {
@@ -121,6 +122,8 @@ export interface ShellState extends TabsSnapshot {
   updateOffered: boolean
   /** Whether the active page goes through the tunnel (`../route/tunnel-mark.ts`), for the colour of the address bar's tunnel button. */
   tunnel: TunnelMark | null
+  /** The tunnel the active page goes through, when it is on one: what the tunnel button names. */
+  tunnelVia: TunnelKind | null
   /** The dot on the Available networks button: green while a node runs, amber while one starts or syncs, red when one the person switched on failed, none when nothing runs. */
   networksDot: 'green' | 'amber' | 'red' | 'none'
   /** Which profile this window is, for the chip beside the menu. */
