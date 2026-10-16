@@ -36,7 +36,7 @@ describe('describeCapabilityGrant -- a wildcard host is unlimited whatever its p
     const summary = describeCapabilityGrant('https.connect', ['*:*'])
 
     expect(summary.warning).toBe(true)
-    expect(summary.message).toBe('⚠ Unlimited network access')
+    expect(summary.message).toBe("⚠ Unlimited network access: load anything from any website, without the browser's usual limits")
   })
 
   it('never renders the wildcard host as if it were a literal hostname when mixed with a named one', () => {
@@ -282,7 +282,7 @@ describe('describeCapabilityGrant -- a wildcard pattern that names a reserved po
     const summary = describeCapabilityGrant('tcp.connect', ['*:*', '*:6667', '*:6697'])
 
     expect(summary.warning).toBe(true)
-    expect(summary.message).toBe('⚠ Unlimited network access')
+    expect(summary.message).toBe('⚠ Unlimited network access: open direct connections to any computer on the internet')
     expect(summary.explanation).toBe(
       `${ANY_COMPUTER} It can also reach ports Orivon keeps closed to broad grants: IRC chat (6667 and 6697).`
     )
@@ -379,13 +379,15 @@ describe('describeCapabilityGrant -- named patterns beside a wildcard host', () 
 describe('a dialog listing several wildcard rows', () => {
   const ORIGIN = 'https://app.example'
 
-  it('a merged row keeps each limit tied to the capability it limits', () => {
+  it('each row keeps its limit under its own headline', () => {
     const manifest = manifestWith({ net: { tcp: { connect: ['*:*'] }, https: { connect: ['*:6697'] } } })
     const content = describeInstallConsent(ORIGIN, manifest, ['tcp.connect', 'https.connect'])
 
-    expect(content.detail).toContain('This app can connect to any computer on the internet, not just specific ones. ')
-    expect(content.detail).toContain('Its reach to any site is limited to port 6697.')
-    expect(content.detail).not.toContain('any computer is limited')
+    const [tcp, https] = content.detail.split('\n- ').slice(1)
+    expect(tcp).toContain('open direct connections to any computer')
+    expect(tcp).not.toContain('limited to port 6697')
+    expect(https).toContain('load anything from any website')
+    expect(https).toContain('Its reach to any site is limited to port 6697.')
   })
 
   it('keeps the reach beyond the wildcard visible at level 4, where the warning is gone', () => {

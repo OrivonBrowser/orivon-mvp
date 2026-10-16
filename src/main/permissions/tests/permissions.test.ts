@@ -61,7 +61,7 @@ describe('buildAppPermissions', () => {
     const result = buildAppPermissions(APP, manifest, grants, [], 4)
 
     expect(result.rows).toEqual([
-      { capability: 'tcp.connect', grantId: 'g1', warning: false, message: 'Unlimited network access' }
+      { capability: 'tcp.connect', grantId: 'g1', warning: false, message: 'Unlimited network access: open direct connections to any computer on the internet' }
     ])
   })
 })
@@ -299,7 +299,7 @@ describe('buildPersistedAppPermissions -- a saved name is re-checked before it i
   it('ADR-0037: at level 4, an unlimited persisted grant\'s row carries no warning either', () => {
     const unlimited = { 'tcp.connect': { patterns: ['*:*'], grantedAt: 0 } }
     const app = buildPersistedAppPermissions({ origin: 'https://app.example', appName: 'X', grants: unlimited, pickedPaths: {} }, 4)
-    expect(app.rows).toEqual([{ capability: 'tcp.connect', grantId: null, warning: false, message: 'Unlimited network access' }])
+    expect(app.rows).toEqual([{ capability: 'tcp.connect', grantId: null, warning: false, message: 'Unlimited network access: open direct connections to any computer on the internet' }])
   })
 })
 
