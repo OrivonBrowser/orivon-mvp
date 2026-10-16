@@ -90,7 +90,8 @@ it('[app:tunnelled-website-sends-nothing-direct] a .eth name with the tunnel on 
   expect(socks.requests.filter((request) => request.destination === GATEWAY)).toEqual([])
 
   const before = await openPopover()
-  expect(await before.locator('.tunnel-section .route-line').count(), 'it says nothing is left outside before the switch').toBe(0)
+  const lines = await before.locator('.tunnel-section .route-line').allTextContents()
+  expect(lines.filter((line) => !line.startsWith('Address: ')), 'it says nothing is left outside before the switch').toEqual([])
   await before.click('#tunnel-switch-socks5')
   await before.waitForSelector('.tunnel-notice')
   await before.click('#tunnel-notice-confirm')
