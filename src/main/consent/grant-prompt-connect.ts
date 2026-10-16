@@ -87,7 +87,11 @@ export function joinCapped (items: readonly string[]): string {
   return `${shown.join(', ')} and ${String(more)} more`
 }
 
-const WARNING_HEADLINE = `${WARNING_MARK}Unlimited network access`
+/** The words every unlimited-reach row opens with. A row never stands on
+ * these alone: `describeConnectCapability` appends what THIS kind of grant is
+ * for, because a manifest can hold several unlimited kinds at once and each
+ * would otherwise read as the same row. */
+const WARNING_HEADLINE = 'Unlimited network access'
 
 /** `port 443`, or `ports 22, 443, 5432` for more than one -- shared by
  * `tcp.listen`/`udp.bind`'s own rendering (grant-prompt-render.ts) and
@@ -407,11 +411,16 @@ function extraReachSentence (wildcard: readonly ConnectPatternInfo[], named: rea
  * closed ports the grant names, and every named pattern the wildcard does
  * not already cover. A named pattern the wildcard covers adds nothing to say
  * (D-0004 rejects an expander for the detail that would take).
+ *
+ * `unlimitedPurpose` finishes the unlimited headline ("Unlimited network
+ * access: <purpose>") with what this kind of grant lets the app do, in words
+ * of its own, so the rows of one app never read alike.
  */
 export function describeConnectCapability (
   verb: string,
   singular: string,
   plural: string,
+  unlimitedPurpose: string,
   unlimitedExplanation: string,
   patterns: readonly Pattern[]
 ): CapabilityGrantSummary {
@@ -426,7 +435,7 @@ export function describeConnectCapability (
     const onlyNamed = wildcard.every((info) => closed.some((port) => patternNamesPortExactly(info, port)))
     const reach = [closedPortsSentence(closed, onlyNamed), extraReachSentence(wildcard, named)].filter((sentence) => sentence !== '').join(' ')
     const explanation = `${unlimitedExplanation}${limit}${reach === '' ? '' : ` ${reach}`}`
-    return { warning: true, message: WARNING_HEADLINE, explanation, ...(reach === '' ? {} : { reach }) }
+    return { warning: true, message: `${WARNING_MARK}${WARNING_HEADLINE}: ${unlimitedPurpose}`, explanation, ...(reach === '' ? {} : { reach }) }
   }
 
   if (named.some((info) => info.nonPublicAddressClass !== null)) {

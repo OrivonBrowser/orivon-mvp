@@ -121,6 +121,15 @@ the `.network` listen and bind pair merges into one row; each alone still render
 the permissions list ([`../permissions/permissions.ts`](../permissions/permissions.ts)) relies on
 for one revocable row per grant.
 
+**[`grant-prompt-connect.ts`](grant-prompt-connect.ts): every "Unlimited network access" row says
+what its kind of grant is for.** A manifest can hold `tcp.connect`, `udp.send` and `https.connect`
+at `*:*` together (a torrent client does), and one shared headline made three rows read alike in
+the site-info popup and Settings, where each grant is its own row. The headline now ends with a
+purpose of its own per kind ("open direct connections to any computer on the internet", "send data
+directly to any computer", "load anything from any website, without the browser's usual limits"),
+so the rows no longer merge in the install dialog either, and the dialog's three explanation
+sentences stay apart under their own headlines. The mark and its level rules are unchanged.
+
 **[`grant-prompt-connect.ts`](grant-prompt-connect.ts): "and N other sites" warns from
 `MAX_PATTERNS / 2` declared hosts (A133).** A digit-count threshold ("past 10") tripped on a
 twelve-feed reader, a narrow declaration by any reading. Anchoring on half the enforced ceiling

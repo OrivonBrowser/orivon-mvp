@@ -107,18 +107,21 @@ export function describeCapabilityGrant (capability: CapabilityKind, patterns: r
     case 'tcp.connect':
       return describeConnectCapability(
         'Connect to', 'computer', 'computers',
+        'open direct connections to any computer on the internet',
         'This app can connect to any computer on the internet, not just specific ones.',
         patterns
       )
     case 'https.connect':
       return describeConnectCapability(
         'Connect to', 'site', 'sites',
+        'load anything from any website, without the browser\'s usual limits',
         'This app can connect to any website, not just specific ones.',
         patterns
       )
     case 'udp.send':
       return describeConnectCapability(
         'Send data to', 'computer', 'computers',
+        'send data directly to any computer (used for peer-to-peer transfers and calls)',
         'This app can send data to any computer on the internet, not just specific ones.',
         patterns
       )
@@ -283,15 +286,13 @@ function describeInboundAccess (listenPatterns: readonly Pattern[], bindPatterns
 
 /**
  * Collapses rows that render the IDENTICAL headline into one, unioning
- * their explanations -- the fix for the other half of the same redundancy
- * `describeInboundAccess` targets. `tcp.connect: ["*:*"]` and
- * `udp.send: ["*:*"]` both produce the literal string `WARNING_HEADLINE`
- * with DIFFERENT explanations; shown as two rows, an identical headline
- * repeated reads as a rendering bug, not as two facts. Order-preserving --
+ * their explanations. The unlimited-network rows no longer collide (each
+ * kind ends its headline with its own purpose), so this now catches only
+ * two capabilities that genuinely say the same thing. Order-preserving --
  * the merged row appears where its first contributor did, so `fs`/`id`
  * rows are never reordered around it -- and general on purpose: it fires
- * for any two capabilities that happen to share a headline, not only this
- * pair, without either capability needing to know about the other.
+ * for any two capabilities that happen to share a headline, without either
+ * needing to know about the other.
  */
 function mergeRowsWithIdenticalMessage (rows: readonly CapabilityGrantSummary[]): readonly CapabilityGrantSummary[] {
   const merged: CapabilityGrantSummary[] = []
@@ -325,20 +326,16 @@ function mergeRowsWithIdenticalMessage (rows: readonly CapabilityGrantSummary[])
  * own line, not only through an icon a person may not consciously register.
  *
  * TWO MERGES RUN BEFORE RENDERING, both fixing REDUNDANT rows rather than
- * TRUE ones -- found against the torrent example manifest (capability-api.md:
- * `connect: ["*:*"]` + `listen` + `bind` + `send: ["*:*"]` + `fs`), which
- * rendered 4 of 5 rows warned and one headline twice. Neither merge
- * silences a real warning: `tcp.listen.network`+`udp.bind.network` become
- * one row (`describeInboundAccess`) because they are one fact stated
- * twice, and any two rows that render the identical headline collapse into
- * one (`mergeRowsWithIdenticalMessage`) for the same reason. What is left
- * after both is exactly as many warned rows as there are DISTINCT kinds of
- * breadth the manifest actually declares -- for that manifest, two: it can
- * reach anywhere outbound, and it can be reached from anywhere on the
- * network inbound. Considered and rejected: a second, lower-severity
- * marker for `tcp.listen.network`/`udp.bind.network` (README, Design
- * notes) -- the two facts are not degrees of the same risk, so grading one
- * below the other would misstate it rather than declutter it.
+ * TRUE ones. Neither silences a real warning: `tcp.listen.network` +
+ * `udp.bind.network` become one row (`describeInboundAccess`) because they
+ * are one fact stated twice, and any two rows that render the identical
+ * headline collapse into one (`mergeRowsWithIdenticalMessage`) for the same
+ * reason. The outbound kinds (`tcp.connect`, `udp.send`, `https.connect`)
+ * each carry a headline of their own, so a torrent-style manifest shows each
+ * kind on its own row, saying what it is for. Considered and rejected: a
+ * second, lower-severity marker for `tcp.listen.network`/`udp.bind.network`
+ * (README, Design notes) -- the two facts are not degrees of the same risk,
+ * so grading one below the other would misstate it rather than declutter it.
  */
 function describeCapabilitySet (
   origin: string,
