@@ -46,6 +46,8 @@ export interface RouteControllerDeps {
   readonly setAppProxy?: (config: RouteProxyConfig) => Promise<void>
   /** Whether the session set its own proxy and answers for what it lets through, so the shared identity leaves it alone. */
   readonly ownProxy?: (session: RouteSession) => boolean
+  /** The session that follows the system's proxy (one of the sessions `ownProxy` names): it is not held, it sends as the system does. */
+  readonly followsSystem?: (session: RouteSession) => boolean
   /** The proxy rule that reaches nothing: a listener on this computer that Orivon holds and that accepts and closes. A port nothing is expected to answer on when left out. */
   readonly deadEnd?: () => string
 }
@@ -388,7 +390,8 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     },
     prepareSite: async (origin, session, bypass) => { await prepare(origin, session, { bypass }) },
     confineSite: confine,
-    tunnelOf: (session) => pointedVia.get(session as RouteSession) ?? (deps.ownProxy?.(session as RouteSession) === true ? 'held' : undefined),
+    // The session that follows the system is stopped for an instant when it is made (before its maker has marked it), but it sends as the system does, so it is never reported as held.
+    tunnelOf: (session) => deps.followsSystem?.(session as RouteSession) === true ? undefined : pointedVia.get(session as RouteSession) ?? (deps.ownProxy?.(session as RouteSession) === true ? 'held' : undefined),
     startShared: () => {
       if (!hub.isRouted(SHARED_ORIGIN)) return
       stopFirst(SHARED_ORIGIN)

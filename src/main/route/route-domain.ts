@@ -20,6 +20,8 @@ export interface RouteDomainDeps {
   readonly routeSwitch: Pick<RouteSwitch, 'rows' | 'removeSiteStorage'>
   /** Whether the settings file could not be used, so the whole browser was put on the tunnel until the person says otherwise. */
   readonly settingsUnreadable?: () => boolean
+  /** Whether this window is held to Nym (a private window that always goes through it): the person's own proxy is not tested from it. */
+  readonly heldToNym?: () => boolean
 }
 
 export type ProxyTestReply = Socks5Probe | { readonly ok: false, readonly reason: 'no-proxy' } | ({ readonly nym: true } & NymTestResult)
@@ -28,8 +30,9 @@ export type ProxyTestReply = Socks5Probe | { readonly ok: false, readonly reason
  * Whether a tunnel answers: Nym is brought up, and the person's proxy is sent a SOCKS5 greeting at the address saved in the settings.
  * No caller names an address, so a page cannot make main connect anywhere it chooses. Shared by the Settings page and the tunnel menu.
  */
-export async function testTunnel (kind: 'nym' | 'socks5', deps: Pick<RouteDomainDeps, 'proxy' | 'probe' | 'nym'>): Promise<ProxyTestReply> {
+export async function testTunnel (kind: 'nym' | 'socks5', deps: Pick<RouteDomainDeps, 'proxy' | 'probe' | 'nym' | 'heldToNym'>): Promise<ProxyTestReply> {
   if (kind === 'nym') return { nym: true, ...await deps.nym.test() }
+  if (deps.heldToNym?.() === true) return { ok: false, reason: 'no-proxy' }
   const target = parseProxyAddress(deps.proxy())
   return target === undefined ? { ok: false, reason: 'no-proxy' } : await deps.probe(target)
 }

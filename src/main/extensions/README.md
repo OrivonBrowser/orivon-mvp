@@ -129,8 +129,8 @@ same exception, reached only through the virtual specifiers above).
 
 ## Design notes
 
-**The person's extensions run in the two profile sessions through a library instance of each.** A website with an entry of
-its own lives in `persist:tunnel-profile` or `persist:direct-profile` (`../route/README.md`), one session for every such
+**The person's extensions run in the profile sessions through a library instance of each.** A website with an entry of
+its own lives in `persist:tunnel-profile` (Nym), `persist:proxy-profile` (the person's proxy) or `persist:direct-profile` (`../route/README.md`), one session for every such
 website. The vendored library keeps one instance per session, so each profile session gets its own
 (`extension-host.ts`'s `createProfileExtensionHost`), built synchronously when the session is made ready and before any view
 is made in it (`profile-hosts.ts`'s `prepare`), and given what the default session's has but the side panel: the same API

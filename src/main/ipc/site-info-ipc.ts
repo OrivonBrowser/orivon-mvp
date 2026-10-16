@@ -232,8 +232,10 @@ export function registerSiteInfoIpc (
       }
       case 'setTunnel': {
         if (command.kind !== null && command.kind !== 'nym' && command.kind !== 'socks5') return { ok: false, info: withRoute(await controller.siteInfoFor(origin)) } satisfies TunnelResult
-        const ok = await controller.setTunnel(origin, command.kind)
-        return { ok, info: withRoute(await controller.siteInfoFor(origin)) } satisfies TunnelResult
+        // A page whose tunnel is its session's (opened through an app's tunnel, or adopted into its session) does not choose here, whatever a popup asks.
+        const before = withRoute(await controller.siteInfoFor(origin))
+        const ok = before.tunnel?.fixed === undefined && await controller.setTunnel(origin, command.kind)
+        return { ok, info: ok ? withRoute(await controller.siteInfoFor(origin)) : before } satisfies TunnelResult
       }
       case 'setProxyAddress': {
         if (typeof command.text !== 'string') return { ok: false, reason: 'invalid', info: withRoute(await controller.siteInfoFor(origin)) } satisfies ProxyAddressResult

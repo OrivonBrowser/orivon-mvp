@@ -662,6 +662,7 @@ describe('a website\'s session of its own', () => {
 
 describe('the shared identity, while the whole browser is on the tunnel', () => {
   const ownProxy = new WeakSet<object>()
+  const systemSessions = new WeakSet<object>()
   const appProxies: string[] = []
   function shared (everywhere = false) {
     appProxies.length = 0
@@ -672,6 +673,7 @@ describe('the shared identity, while the whole browser is on the tunnel', () => 
       extra: {
         setAppProxy: async (config) => { appProxies.push(`${config.mode ?? ''}:${config.proxyRules ?? ''}:${config.proxyBypassRules ?? ''}`) },
         ownProxy: (session) => ownProxy.has(session),
+        followsSystem: (session) => systemSessions.has(session),
         sharedBypass: () => '*.eth',
         defaultSession: () => defaultRef as FakeSession
       }
@@ -745,6 +747,19 @@ describe('the shared identity, while the whole browser is on the tunnel', () => 
     controller.adopt(confined)
     await controller.settled()
     expect(confined.proxies).toEqual(['fixed_servers:http://127.0.0.1:9'])
+  })
+
+  it('says how a session leaves: held when it answers for a proxy of its own, and not at all for the session that follows the system, even though it was stopped for an instant when made', async () => {
+    const { controller, sessionFor } = shared(true)
+    const confined = sessionFor('web-context')
+    ownProxy.add(confined)
+    const system = sessionFor('orivon-system-proxy')
+    ownProxy.add(system)
+    systemSessions.add(system)
+    controller.adopt(confined)
+    controller.adopt(system)
+    expect(controller.tunnelOf(confined)).toBe('held')
+    expect(controller.tunnelOf(system)).toBeUndefined()
   })
 
   it('remembers a session made while the setting was off, and points it when the setting flips on', async () => {

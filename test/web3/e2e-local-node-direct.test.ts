@@ -8,11 +8,10 @@ import { existsSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { ElectronApplication, Page } from 'playwright'
-import { isolationCredentials } from '../../src/broker/route/socks5.js'
 import { startSocks5Fixture } from '../../src/broker/route/tests/socks5-fixture.test-helpers.js'
 import type { Socks5Fixture } from '../../src/broker/route/tests/socks5-fixture.test-helpers.js'
 import { assertNoElectronSurvivors } from '../support/launch-electron.mjs'
-import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
+import { clickAddressBarRetrying, signInOf } from '../support/e2e-helpers.js'
 import { launchShell } from '../support/qa-helpers.js'
 import { delay, waitFor } from '../support/smoke-helpers.mjs'
 
@@ -47,7 +46,7 @@ describe.skipIf(!fetched)('the IPFS node while the whole browser is on the tunne
     expect(await waitFor(async () => await nodePid() !== undefined, 120_000), 'the node started although the whole browser is on the tunnel').toBe(true)
     // Long enough for a node that was going to dial through the tunnel to have done so.
     await delay(20_000)
-    const own = isolationCredentials()('local-node:ipfs-node').userId
+    const own = signInOf(app, 'local-node:ipfs-node').userId
     expect(socks.requests.filter((request) => request.userId === own), 'the node did not use the tunnel').toEqual([])
   }, 240_000)
 })

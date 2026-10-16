@@ -65,6 +65,8 @@ export interface RouteServiceOptions {
   /** The saved choice of where routed traffic leaves, read the same way. */
   readonly savedKind: TunnelKind
   readonly nym: NymSubsystem
+  /** The secret of the profile the SOCKS5 user names are made under, kept across runs. */
+  readonly isolationSecret?: Uint8Array
   /** The apps installed here, asked only while the store cannot say what was set. */
   readonly installed?: () => readonly string[]
   /** The saved browser-wide setting, read before the settings store is: what applies until `followSettings`. */
@@ -84,7 +86,7 @@ export function createRouteService (options: RouteServiceOptions): RouteService 
   const targetOf = (which: TunnelKind): RouteTarget | undefined => which === 'nym' ? NYM_TARGET : parseProxyAddress(current)
   const proxy = (): RouteTarget | undefined => targetOf(kind)
   // The user name is the same hash of the key the SOCKS5 provider sends, so Nym isolates by app as a SOCKS5 proxy would.
-  const isolation = isolationCredentials()
+  const isolation = isolationCredentials(undefined, options.isolationSecret)
   const providerFor = (key: string, target: RouteTarget): RouteProvider | undefined => isNymTarget(target) ? createNymProvider(options.nym, isolation(key).userId) : undefined
   let handedOut: NymEndpoint | undefined
   const nodeEndpoint = async (key: string): Promise<RouteEndpoint> => {
@@ -105,7 +107,7 @@ export function createRouteService (options: RouteServiceOptions): RouteService 
     listener()
   })
   const defaultKind = (): TunnelKind => kind
-  const hub = createRouteHub({ store: options.store, targetOf, defaultKind, providerFor, everywhere, ...(options.electron.isApp === undefined ? {} : { isApp: options.electron.isApp }), ...(options.installed === undefined ? {} : { installed: options.installed }) })
+  const hub = createRouteHub({ store: options.store, targetOf, defaultKind, providerFor, everywhere, ...(options.isolationSecret === undefined ? {} : { isolationSecret: options.isolationSecret }), ...(options.electron.isApp === undefined ? {} : { isApp: options.electron.isApp }), ...(options.installed === undefined ? {} : { installed: options.installed }) })
   const controller = createRouteController({ ...options.electron, hub })
   const routeSwitch = createRouteSwitch({ targetOf, defaultKind, store: options.store, controller, hub }, options.switchWorld ?? { isPinned: () => false, isPersistable: () => false })
   return {

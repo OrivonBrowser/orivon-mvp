@@ -50,16 +50,17 @@ describe('turning a website\'s tunnel on', () => {
     expect(store.isApart(SITE, 'nym')).toBe(true)
   })
 
-  it('with the whole browser on the tunnel, turning a website off writes an off entry and moves it to the direct profile, and turning it on again follows the default', async () => {
+  it('with the whole browser on the tunnel, turning a website off writes an off entry and moves it to the direct profile, and turning it on again is a pick of its own that lives in its tunnel\'s profile', async () => {
     const { routeSwitch, store } = setup({ everywhere: true })
     expect(routeSwitch.noticeFor(SITE, null)).toBe('direct')
-    expect(routeSwitch.noticeFor(SITE, 'nym')).toBeUndefined()
+    expect(routeSwitch.noticeFor(SITE, 'nym'), 'its pick moves it into Nym\'s profile, which asks once').toBe('nym')
     await routeSwitch.choose(SITE, null)
     expect(store.stateOf(SITE)).toBe('off')
     expect(store.isApart(SITE, 'direct')).toBe(true)
     await routeSwitch.choose(SITE, 'nym')
-    expect(store.stateOf(SITE)).toBeUndefined()
+    expect(store.stateOf(SITE)).toBe('nym')
     expect(store.isApart(SITE, 'direct')).toBe(true)
+    expect(store.isApart(SITE, 'nym')).toBe(true)
   })
 
   it('with the whole browser on the tunnel, a website that was on keeps its entry, and turning it off makes it off', async () => {
@@ -100,12 +101,12 @@ describe('the app card\'s switch', () => {
 })
 
 describe('the app card\'s switch, with the whole browser on the tunnel', () => {
-  it('writes an off entry when the app is switched off, and takes it away when it is switched on again', async () => {
+  it('writes an off entry when the app is switched off, and a tunnel entry of its own when it is switched on again, so a later change of the default never moves it', async () => {
     const { routeSwitch, store } = setup({ everywhere: true })
     await routeSwitch.choose(APP, null)
     expect(store.stateOf(APP)).toBe('off')
     await routeSwitch.choose(APP, 'nym')
-    expect(store.stateOf(APP)).toBeUndefined()
+    expect(store.stateOf(APP)).toBe('nym')
   })
 })
 
@@ -127,10 +128,24 @@ describe('the tunnel a switch uses', () => {
     expect(store.isApartAnywhere(APP)).toBe(false)
   })
 
-  it('writes no entry for a website while everything goes through the chosen tunnel, and an entry for the tunnel that is not', async () => {
-    const { routeSwitch, store } = setup({ kind: 'socks5', everywhere: true })
+  it('writes an entry for a website that picks the tunnel everything already goes through, and it lives in that tunnel\'s profile', async () => {
+    const { routeSwitch, store, hub } = setup({ kind: 'socks5', everywhere: true })
+    expect(routeSwitch.noticeFor(SITE, 'socks5')).toBe('socks5')
     await routeSwitch.choose(SITE, 'socks5')
-    expect(store.stateOf(SITE)).toBeUndefined()
+    expect(store.stateOf(SITE)).toBe('socks5')
+    expect(hub.profileFor(SITE)).toBe('socks5')
+    expect(store.isApart(SITE, 'socks5')).toBe(true)
+  })
+
+  it('keeps a website that picked the default tunnel where it is when the default changes or the browser-wide setting goes off', async () => {
+    const { routeSwitch, store, hub } = setup({ kind: 'nym', everywhere: true })
+    await routeSwitch.choose(SITE, 'nym')
+    expect(hub.profileFor(SITE)).toBe('nym')
+    expect(hub.kindOf(SITE)).toBe('nym')
+    const off = setup({ kind: 'nym', everywhere: false })
+    off.store.setEntry(SITE, 'nym')
+    expect(off.hub.kindOf(SITE)).toBe('nym')
+    expect(store.stateOf(SITE)).toBe('nym')
   })
 
   it('lists a website in the proxy profile by the tunnel and the profile it uses', async () => {

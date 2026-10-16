@@ -352,6 +352,30 @@ describe('a website in the hub', () => {
     expect(hub.routeFor(SITE)).toBeDefined()
   })
 
+  it('tells listeners when a website picks the tunnel the whole browser already uses, because it moves from the shared session to that tunnel\'s profile', () => {
+    const { hub, store } = website({ everywhere: () => true })
+    const heard = vi.fn()
+    hub.onChange(heard)
+    expect(hub.profileFor(SITE)).toBeUndefined()
+
+    store.setEntry(SITE, 'socks5')
+
+    expect(hub.profileFor(SITE)).toBe('socks5')
+    expect(hub.kindOf(SITE)).toBe('socks5')
+    expect(heard.mock.calls).toEqual([[SITE, true, 'switch']])
+    heard.mockClear()
+    store.setEntry(SITE, undefined)
+    expect(heard.mock.calls).toEqual([[SITE, true, 'switch']])
+  })
+
+  it('tells listeners nothing for an app that picks the tunnel it already follows: its session and identity stay its own', () => {
+    const { hub, store } = website({ everywhere: () => true })
+    const heard = vi.fn()
+    hub.onChange(heard)
+    store.setEntry(APP, 'socks5')
+    expect(heard).not.toHaveBeenCalled()
+  })
+
   it('lives in the direct profile with an off entry, whatever the default says', () => {
     for (const everywhere of [false, true]) {
       const { hub, store } = website({ everywhere: () => everywhere })
@@ -361,7 +385,7 @@ describe('a website in the hub', () => {
     }
   })
 
-  it('changes nothing for the site when an off entry is stored while the default is off, except where it lives', () => {
+  it('keeps the site unrouted when an off entry is stored while the default is off, and tells listeners it moved to the direct profile', () => {
     const { hub, store } = website()
     const heard = vi.fn()
     hub.onChange(heard)
@@ -369,7 +393,8 @@ describe('a website in the hub', () => {
     store.setEntry(SITE, 'off')
 
     expect(hub.isRouted(SITE)).toBe(false)
-    expect(heard).not.toHaveBeenCalled()
+    expect(hub.profileFor(SITE)).toBe('direct')
+    expect(heard.mock.calls).toEqual([[SITE, false, 'switch']])
   })
 
   it('shares one front and one set of tunnel credentials among every website with an on entry, and gives an app its own', async () => {

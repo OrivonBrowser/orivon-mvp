@@ -1,6 +1,6 @@
 // The protocols a website in a tunnel's profile is served from, one set for each tunnel. They share no network path with the
 // ones every other website uses (`protocols.ts`), nor with the other tunnel's: each fetch they make is the routed fetch of
-// their tunnel (`routed-fetch.ts`), and the name is proved by a light client of their own whose requests ride it too. A local node is asked only when `tunnelSitesReadNodes` says its
+// their tunnel (`routed-fetch.ts`), and the name is proved by a light client of their own whose requests ride it too. A local node is asked only when `tunnelSitesReadNodes` says, for this tunnel, its
 // traffic does not betray the site; otherwise the site's IPFS is read from gateways, through the tunnel, only after the
 // person's yes. A tunnel that is down fails every fetch; nothing here has another way out to fall back to.
 
@@ -83,7 +83,7 @@ function startEns (config: HostConfig, deps: HostDeps, fetch: HostDeps['fetch'],
   return defineProtocol(ENS, { resolvers })
 }
 
-function startIpfs (config: HostConfig, deps: HostDeps, fetch: HostDeps['fetch'], stores: SharedStores, node: NodeLink | undefined, controls: HostControls, route: RoutePace): Protocol {
+function startIpfs (config: HostConfig, deps: HostDeps, fetch: HostDeps['fetch'], stores: SharedStores, node: NodeLink | undefined, controls: HostControls, route: RoutePace, readsNodes: boolean): Protocol {
   const dohFetch = allowlisted(config.dnsOverHttps, fetch, 'DNS-over-HTTPS')
   const gatewayFetch = allowlisted([...config.gateways, ...config.ipnsNameServices], fetch, 'the IPFS gatherer')
   const common = { resolveTxt: dohTxtResolver(config.dnsOverHttps, dohFetch, route), ipnsSequences: stores.ipnsSequences, route }
@@ -106,12 +106,12 @@ function startIpfs (config: HostConfig, deps: HostDeps, fetch: HostDeps['fetch']
     common,
     controls,
     nodeRoute: nodeRouteOf(config, route),
-    refusal: () => config.tunnelSitesReadNodes === true ? undefined : IPFS_NOT_TUNNELLED
+    refusal: () => readsNodes ? undefined : IPFS_NOT_TUNNELLED
   })
 }
 
-function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefined, stores: SharedStores, route: RoutePace): Protocol {
-  if (config.swarmNode !== true || node === undefined || config.tunnelSitesReadNodes !== true) return refusedSwarm()
+function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefined, stores: SharedStores, route: RoutePace, readsNodes: boolean): Protocol {
+  if (config.swarmNode !== true || node === undefined || !readsNodes) return refusedSwarm()
   const endpointFetch = allowlisted(config.swarmEndpoints, deps.fetch, 'the Swarm gatherer')
   return swarmProtocol({
     fetch: node.reading(async (url, init) => await endpointFetch(url, init)),
@@ -128,5 +128,6 @@ export function startTunnelProtocols (config: HostConfig, deps: HostDeps, stores
   const route = routeFor(true)
   const ipfsNode = nodes.to(IPFS_NODE_IDENTITY, IPFS_NODE_WORDS)
   const swarmNode = nodes.to(SWARM_NODE_IDENTITY, SWARM_NODE_WORDS)
-  return { protocols: [config.ethereumOutside === true ? ens : startEns(config, deps, fetch, route, tunnel), startIpfs(config, deps, fetch, stores, ipfsNode, controls, route), startSwarm(config, deps, swarmNode, stores, route)], route }
+  const readsNodes = config.tunnelSitesReadNodes?.[tunnel] === true
+  return { protocols: [config.ethereumOutside === true ? ens : startEns(config, deps, fetch, route, tunnel), startIpfs(config, deps, fetch, stores, ipfsNode, controls, route, readsNodes), startSwarm(config, deps, swarmNode, stores, route, readsNodes)], route }
 }

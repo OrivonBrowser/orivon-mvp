@@ -20,7 +20,7 @@ export function renderTunnelTest (kind: 'nym' | 'socks5'): (state: SettingsState
       className: 'btn',
       type: 'button',
       textContent: busy ? 'Testing…' : 'Test',
-      disabled: part.busy || (kind === 'socks5' && address === ''),
+      disabled: part.busy || (kind === 'socks5' && (address === '' || state.isHeld('network.route.proxy'))),
       onclick: () => { void part.test(subject, kind) }
     })
     // An answer is about what it was asked of: once the setting holds another address, it says nothing.

@@ -529,7 +529,7 @@ describe('createSiteInfoController -- the tunnel of a website or an installed ap
 
   it('offers both tunnels for an ordinary website, with nothing chosen and what the popover needs to ask first', async () => {
     const info = await controllerWith(routesFor({ notices: { nym: 'nym', socks5: 'socks5' } })).siteInfoFor(SITE)
-    expect(info.tunnel).toEqual({ via: null, following: true, subject: 'site', blocked: {}, notices: { nym: 'tunnel', socks5: 'tunnel' }, swarm: false, unreadable: false, defaultKind: 'socks5', proxy: { address: '', users: { sites: 0, apps: 0, everything: false } } })
+    expect(info.tunnel).toEqual({ via: null, following: true, subject: 'site', blocked: {}, notices: { nym: 'nym', socks5: 'socks5' }, swarm: false, unreadable: false, defaultKind: 'socks5', proxy: { address: '', users: { sites: 0, apps: 0, everything: false } } })
   })
 
   it('says which tunnel the site goes through, whether that is its own choice or the default, and names the direct profile when giving the tunnel up would move it there', async () => {
@@ -542,7 +542,7 @@ describe('createSiteInfoController -- the tunnel of a website or an installed ap
 
   it('asks for no notice about the tunnel the site is on already', async () => {
     const info = await controllerWith(routesFor({ via: 'nym', own: true, notices: { nym: 'nym', socks5: 'socks5' } })).siteInfoFor(SITE)
-    expect(info.tunnel?.notices).toEqual({ socks5: 'tunnel' })
+    expect(info.tunnel?.notices).toEqual({ socks5: 'socks5' })
   })
 
   it('says why a tunnel cannot be chosen: the proxy has no address, Nym is switched off, an app\'s files are not held here', async () => {
@@ -627,8 +627,19 @@ describe('createSiteInfoController -- the tunnel of a website or an installed ap
     expect(adopted).toMatchObject({ tunnelKind: 'nym', route: 'idle', nym: { state: 'off' } })
   })
 
-  it('leaves a page alone that runs in the session of its own tunnel, or in one that is stopped or follows the system', async () => {
-    for (const sessionKind of ['socks5', 'held', undefined] as const) {
+  it('says a page is not on its tunnel yet when its session is not pointed at one, instead of showing the tunnel it will have', async () => {
+    const controller = controllerWith(routesFor({ via: 'socks5', sessionKind: undefined }))
+    const info = await controller.siteInfoFor(SITE)
+    const moving = controller.inSession(info, {})
+    expect(moving).toMatchObject({ route: 'moving', tunnelKind: 'socks5' })
+    expect(moving.tunnel).toMatchObject({ via: 'socks5' })
+    const own = controllerWith(routesFor({ sessionKind: undefined }))
+    const plain = await own.siteInfoFor(SITE)
+    expect(own.inSession(plain, {}), 'a page with no tunnel of its own has nothing to wait for').toBe(plain)
+  })
+
+  it('leaves a page alone that runs in the session of its own tunnel, or in one that is stopped', async () => {
+    for (const sessionKind of ['socks5', 'held'] as const) {
       const controller = controllerWith(routesFor({ via: 'socks5', sessionKind }))
       const info = await controller.siteInfoFor(SITE)
       expect(controller.inSession(info, {}), String(sessionKind)).toBe(info)

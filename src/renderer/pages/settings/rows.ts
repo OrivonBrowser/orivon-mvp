@@ -52,7 +52,7 @@ function renderToggle (control: Extract<Control, { type: 'toggle' }>, state: Set
 
 function renderText (control: Extract<Control, { type: 'text' }>, state: SettingsState, id: string): HTMLElement {
   const maxLength = state.description(control.key)?.kind === 'text' ? (state.description(control.key) as { maxLength: number }).maxLength : 2048
-  const input = h('input', { className: 'text', type: 'text', id, placeholder: control.placeholder, maxLength, value: String(state.value(control.key) ?? '') })
+  const input = h('input', { className: 'text', type: 'text', id, placeholder: control.placeholder, maxLength, value: String(state.value(control.key) ?? ''), disabled: control.locked?.(state) === true })
   const problem = h('p', { className: 'problem', role: 'alert' })
   // Saved when the person is done (Enter or leaving the box), not on every key:
   // a half-typed address is not a value.

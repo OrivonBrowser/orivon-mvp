@@ -104,7 +104,7 @@ it('the held window has the tunnel on before its first request, whatever the pro
   // The settings file this process read is the ordinary one with the three choices written over.
   const written = JSON.parse(readFileSync(join(world.userData, 'settings.json'), 'utf8')) as { version: number, values: Record<string, unknown> }
   expect(written.version).toBe(2)
-  expect(written.values).toMatchObject({ 'network.tunnel.everywhere': true, 'network.route.kind': 'nym', 'network.nym.enabled': true, 'appearance.theme': 'dark' })
+  expect(written.values).toMatchObject({ 'network.tunnel.everywhere': true, 'network.route.kind': 'nym', 'network.nym.enabled': true, 'network.route.proxy': '', 'appearance.theme': 'dark' })
 }, 4 * QA_TEST_TIMEOUT_MS)
 
 it('says what it is on the Private page, shows the Tunnels switches on and fixed with a line that says why, and refuses a change from the page', async () => {
@@ -135,6 +135,9 @@ it('says what it is on the Private page, shows the Tunnels switches on and fixed
   expect(await ask(settings, 'settings', { type: 'set', key: 'network.tunnel.everywhere', value: false })).toEqual({ ok: false, reason: 'locked' })
   expect(await ask(settings, 'settings', { type: 'set', key: 'network.route.kind', value: 'socks5' })).toEqual({ ok: false, reason: 'locked' })
   expect(await ask(settings, 'settings', { type: 'set', key: 'network.nym.enabled', value: false })).toEqual({ ok: false, reason: 'locked' })
+  expect(await ask(settings, 'settings', { type: 'set', key: 'network.route.proxy', value: '127.0.0.1:9050' })).toEqual({ ok: false, reason: 'locked' })
+  expect(await settings.locator('#row-route-proxy input').isDisabled(), 'the person\'s proxy address is fixed too').toBe(true)
+  expect(await ask(settings, 'route', { type: 'test', kind: 'socks5' }), 'and its test is refused').toEqual({ ok: false, reason: 'no-proxy' })
   expect(await ask(settings, 'settings', { type: 'reset', key: 'network.tunnel.everywhere' })).toEqual({ ok: false, reason: 'locked' })
   expect(await world.app.evaluate(({ session }) => session.defaultSession.resolveProxy('http://example.com/'))).not.toBe('DIRECT')
 }, 4 * QA_TEST_TIMEOUT_MS)
@@ -225,7 +228,7 @@ it.skipIf(process.platform !== 'linux')('the command starts a process that knows
   peerPids.push(...found.pids)
   expect(found.command, 'the process is told on its command line').toContain(FLAG)
   const copy = JSON.parse(readFileSync(join(found.dir, 'settings.json'), 'utf8')) as { version: number, values: Record<string, unknown> }
-  expect(copy.values).toMatchObject({ 'network.tunnel.everywhere': true, 'network.route.kind': 'nym', 'network.nym.enabled': true, 'appearance.theme': 'dark' })
+  expect(copy.values).toMatchObject({ 'network.tunnel.everywhere': true, 'network.route.kind': 'nym', 'network.nym.enabled': true, 'network.route.proxy': '', 'appearance.theme': 'dark' })
   expect(existsSync(join(found.dir, 'bookmarks.json'))).toBe(false)
   expect(await waitFor(() => existsSync(join(found.dir, '.orivon-private.json')), 30_000), 'it started').toBe(true)
   // The window that opened it is as it was.

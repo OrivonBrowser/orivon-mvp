@@ -3,6 +3,7 @@
 // each failure surfaces. The fixture knows names the machine's resolver does
 // not, so a client that resolved a name itself would fail these.
 
+import { createHash } from 'node:crypto'
 import { createSocket, Socket as DatagramSocket } from 'node:dgram'
 import { createServer as createTcpServer } from 'node:net'
 import type { AddressInfo, Server, Socket } from 'node:net'
@@ -193,14 +194,25 @@ describe('authentication', () => {
   })
 
   it('derives credentials that differ per key and per run and repeat within a run', () => {
-    const run = isolationCredentials(new Uint8Array(32).fill(1))
-    const other = isolationCredentials(new Uint8Array(32).fill(2))
+    const profile = new Uint8Array(32).fill(9)
+    const run = isolationCredentials(new Uint8Array(32).fill(1), profile)
+    const other = isolationCredentials(new Uint8Array(32).fill(2), profile)
 
     expect(run('https://one.example')).toEqual(run('https://one.example'))
     expect(run('https://one.example').userId).not.toBe(run('https://two.example').userId)
     expect(run('https://one.example').password).not.toBe(run('https://two.example').password)
     expect(run('https://one.example').password).not.toBe(other('https://one.example').password)
     expect(run('https://one.example').userId).toBe(other('https://one.example').userId)
+  })
+
+  it('makes a user name nobody can reverse against a list of origins: a keyed hash of the key under a secret of the profile, not the key\'s own hash', () => {
+    const run = new Uint8Array(32).fill(1)
+    const credentials = isolationCredentials(run, new Uint8Array(32).fill(9))
+    const userId = credentials('https://one.example').userId
+    expect(userId).toMatch(/^[0-9a-f]{32}$/)
+    expect(userId, 'not the unsalted hash of the origin').not.toBe(createHash('sha256').update('https://one.example').digest('hex').slice(0, 32))
+    expect(isolationCredentials(run, new Uint8Array(32).fill(8))('https://one.example').userId, 'another profile\'s secret gives another name').not.toBe(userId)
+    expect(isolationCredentials(run, new Uint8Array(32).fill(9))('https://one.example').userId, 'the same secret gives the same name, across runs').toBe(userId)
   })
 })
 

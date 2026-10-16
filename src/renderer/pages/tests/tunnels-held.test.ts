@@ -17,7 +17,7 @@ async function loaded (held: readonly string[], tunnel?: 'nym'): Promise<Setting
 }
 
 const row = (id: string): Row => tunnels.rows.find((candidate) => candidate.id === id) as Row
-const HELD = ['network.tunnel.everywhere', 'network.route.kind', 'network.nym.enabled']
+const HELD = ['network.tunnel.everywhere', 'network.route.kind', 'network.nym.enabled', 'network.route.proxy']
 
 describe('the Tunnels section of a private window that always goes through Nym', () => {
   it('shows the browser-wide switch on and fixed, the tunnel choice fixed, and "Let Nym run" on and fixed', async () => {
@@ -28,6 +28,16 @@ describe('the Tunnels section of a private window that always goes through Nym',
     expect(toggleState(nym, state)).toEqual({ checked: true, disabled: true })
     const kind = row('route-kind').control as Extract<Control, { type: 'choice' }>
     expect(kind.locked?.(state)).toBe(true)
+  })
+
+  it('fixes the proxy address, which a window that always goes through Nym neither edits nor tests', async () => {
+    const state = await loaded(HELD, 'nym')
+    expect((row('route-proxy').control as Extract<Control, { type: 'text' }>).locked?.(state)).toBe(true)
+    expect(state.isHeld('network.route.proxy')).toBe(true)
+    expect(row('route-proxy').below).toBeDefined()
+    expect(row('route-proxy-test').below).toBeDefined()
+    const free = await loaded([])
+    expect((row('route-proxy').control as Extract<Control, { type: 'text' }>).locked?.(free)).toBe(false)
   })
 
   it('says why, in one line, under each of the three', async () => {

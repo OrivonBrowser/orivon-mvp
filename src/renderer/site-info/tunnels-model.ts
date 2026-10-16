@@ -122,7 +122,7 @@ export function addressChangeWords (users: SiteTunnel['proxy']['users']): string
 /** What the tunnel in use is doing for the page, as one line. */
 function inUseLine (info: SiteInfo, subject: 'app' | 'site'): TunnelLine {
   const route = info.route ?? 'idle'
-  return { text: routeLineWords(route, subject, info.nym), down: route === 'down' || route === 'no-proxy' || info.nym?.state === 'failed' || info.nym?.state === 'unavailable' }
+  return { text: routeLineWords(route, subject, info.nym), down: route === 'down' || route === 'no-proxy' || route === 'moving' || info.nym?.state === 'failed' || info.nym?.state === 'unavailable' }
 }
 
 /**

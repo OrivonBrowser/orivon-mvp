@@ -10,11 +10,10 @@ import { existsSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { ElectronApplication, Page } from 'playwright'
-import { isolationCredentials } from '../../src/broker/route/socks5.js'
 import { startSocks5Fixture } from '../../src/broker/route/tests/socks5-fixture.test-helpers.js'
 import type { Socks5Fixture } from '../../src/broker/route/tests/socks5-fixture.test-helpers.js'
 import { assertNoElectronSurvivors } from '../support/launch-electron.mjs'
-import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
+import { clickAddressBarRetrying, signInOf } from '../support/e2e-helpers.js'
 import { launchShell } from '../support/qa-helpers.js'
 import { waitFor } from '../support/smoke-helpers.mjs'
 
@@ -47,7 +46,7 @@ describe.skipIf(!fetched)('the IPFS node while the whole browser and the nodes a
 
   it('[local-node-through-the-tunnel] starts when an ipfs:// address asks for it, and every connection it makes goes to the tunnel, signed in with a name of its own', async () => {
     await clickAddressBarRetrying(chrome, `ipfs://${CID}/`)
-    const own = isolationCredentials()('local-node:ipfs-node').userId
+    const own = signInOf(app, 'local-node:ipfs-node').userId
     const nodeRequests = (): typeof socks.requests => socks.requests.filter((request) => request.userId === own)
     expect(await waitFor(() => nodeRequests().length >= 2, 120_000), `the node reached the tunnel under its own name: ${JSON.stringify(socks.requests.slice(0, 6))}`).toBe(true)
     expect(nodeRequests().every((request) => request.password !== undefined), 'every request signed in').toBe(true)

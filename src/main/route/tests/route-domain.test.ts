@@ -59,6 +59,14 @@ describe('routeDomain', () => {
     expect(await domain('127.0.0.1:9050', probe, {}, 'socks5').handle({ type: 'test', kind: 'tor' }, CALLER), 'a tunnel it does not know is the default one').toEqual({ ok: true, authentication: 'none' })
   })
 
+  it('refuses to test the person\'s own proxy from a window held to Nym, and probes nothing', async () => {
+    const probe = vi.fn(async () => ({ ok: true, authentication: 'none' }) as const)
+    const held = routeDomain({ proxy: () => '127.0.0.1:9050', kind: () => 'nym', probe, nym: NYM_OFF, routeSwitch: { rows: () => [], removeSiteStorage: async () => true }, heldToNym: () => true })
+    expect(await held.handle({ type: 'test', kind: 'socks5' }, CALLER)).toEqual({ ok: false, reason: 'no-proxy' })
+    expect(probe).not.toHaveBeenCalled()
+    expect(await held.handle({ type: 'test', kind: 'nym' }, CALLER)).toEqual({ nym: true, ok: true, ms: 1234 })
+  })
+
   it('passes on why Nym could not be tested', async () => {
     const nym: RouteDomainDeps['nym'] = { ...NYM_OFF, test: async () => ({ ok: false, reason: 'unavailable', detail: 'the Nym tunnel is not in this build' }) }
     expect(await domain('', async () => ({ ok: true, authentication: 'none' }), {}, 'nym', nym).handle({ type: 'test' }, CALLER)).toEqual({ nym: true, ok: false, reason: 'unavailable', detail: 'the Nym tunnel is not in this build' })

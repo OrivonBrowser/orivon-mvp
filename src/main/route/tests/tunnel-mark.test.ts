@@ -37,6 +37,12 @@ describe('what the tunnel button says about the tunnel the page goes through', (
     expect(tunnelLookFor({ state: 'off', temporary: true, own: undefined, session: 'socks5' })).toEqual({ mark: 'on', via: 'socks5' })
   })
 
+  it('says down, not on, for a page of a tunnelled origin whose session is not pointed at any tunnel: it is not on the tunnel yet', () => {
+    expect(tunnelLookFor({ state: 'idle', temporary: false, own: 'nym', session: undefined })).toEqual({ mark: 'down', via: 'nym' })
+    expect(tunnelLookFor({ state: 'ok', temporary: false, own: 'socks5', session: undefined })).toEqual({ mark: 'down', via: 'socks5' })
+    expect(tunnelLookFor({ state: 'off', temporary: false, own: undefined, session: undefined }), 'an origin with no tunnel has nothing to wait for').toEqual({ mark: null, via: null })
+  })
+
   it('leaves a session held shut out of it: the origin\'s own tunnel and state are what is said', () => {
     expect(tunnelLookFor({ state: 'ok', temporary: false, own: 'nym', session: 'held' })).toEqual({ mark: 'on', via: 'nym' })
   })

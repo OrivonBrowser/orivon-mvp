@@ -34,7 +34,7 @@ export const installContentSettings: ShellInstaller = {
     const rules = createContentRules({
       store: siteSettings,
       defaultFor: (kind: ContentKind) => settings.get(`sites.${kind}`) === 'block' ? 'block' : 'allow',
-      // The same test the permission gate makes: an app holding grants, or one served from the cache.
+      // The same test the permission gate makes: an origin holding grants.
       isApp: (origin) => isAppOrigin(ctx, origin)
     })
 

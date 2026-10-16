@@ -52,7 +52,7 @@ export interface RouteSwitch {
 
 export function createRouteSwitch (routes: Pick<RouteService, 'targetOf' | 'defaultKind' | 'store' | 'controller' | 'hub'>, world: RouteSwitchWorld): RouteSwitch {
   const { store } = routes
-  const entryOf = (kind: TunnelKind | null): TunnelEntry | undefined => entryFor(kind ?? 'off', routes.hub.isEverywhere(), routes.defaultKind())
+  const entryOf = (kind: TunnelKind | null): TunnelEntry | undefined => entryFor(kind ?? 'off', routes.hub.isEverywhere())
   return {
     // An app whose files are not held here has a first visit to pause; an origin not written to disk would be routed until the next start and then go direct.
     blockedFor: (origin, kind) => {
