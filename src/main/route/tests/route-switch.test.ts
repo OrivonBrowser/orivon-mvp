@@ -130,10 +130,10 @@ describe('the tunnel a switch uses', () => {
     expect(store.stateOf(SITE)).toBeUndefined()
   })
 
-  it('lists a website in the proxy profile as in the tunnel profile, as the list groups both', async () => {
+  it('lists a website in the proxy profile by the tunnel and the profile it uses', async () => {
     const { routeSwitch } = setup({ kind: 'socks5' })
     await routeSwitch.choose(SITE, 'socks5')
-    expect(routeSwitch.rows()).toEqual([{ origin: SITE, kind: 'site', entry: 'on', state: 'idle', profile: 'tunnel', apart: true, apartIn: ['tunnel'] }])
+    expect(routeSwitch.rows()).toEqual([{ origin: SITE, kind: 'site', entry: 'socks5', state: 'idle', profile: 'socks5', apart: true, apartIn: ['socks5'] }])
   })
 
   it('clears the storage of a website from the profile it is kept in', async () => {
@@ -157,9 +157,9 @@ describe('the list of origins with a setting or storage of their own', () => {
     const rows = routeSwitch.rows().sort((a, b) => a.origin.localeCompare(b.origin))
 
     expect(rows).toEqual([
-      { origin: APP, kind: 'app', entry: 'on', state: 'idle', profile: 'tunnel', apart: false, apartIn: [] },
-      { origin: SITE, kind: 'site', entry: 'on', state: 'idle', profile: 'tunnel', apart: true, apartIn: ['tunnel'] },
-      { origin: 'https://old.example', kind: 'site', entry: undefined, state: 'off', profile: undefined, apart: true, apartIn: ['tunnel'] }
+      { origin: APP, kind: 'app', entry: 'nym', state: 'idle', profile: 'nym', apart: false, apartIn: [] },
+      { origin: SITE, kind: 'site', entry: 'nym', state: 'idle', profile: 'nym', apart: true, apartIn: ['nym'] },
+      { origin: 'https://old.example', kind: 'site', entry: undefined, state: 'off', profile: undefined, apart: true, apartIn: ['nym'] }
     ])
   })
 })

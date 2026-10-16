@@ -193,7 +193,7 @@ it('[app:tunnelled-website-gets-its-own-storage] Settings lists the site, and re
   await settings.waitForSelector('#row-route-sites .tunnel-list-row')
   const row = settings.locator('#row-route-sites .tunnel-list-row')
   expect(await row.locator('.tunnel-list-origin').textContent()).toBe(siteOrigin())
-  expect(await row.locator('.muted').textContent()).toBe('On: this site\'s traffic goes through your tunnel. It lives in your tunnel profile.')
+  expect(await row.locator('.muted').textContent()).toBe('Through your proxy: this site\'s traffic goes through it. It lives in your proxy profile.')
   await row.scrollIntoViewIfNeeded()
   await shoot(app, chrome, settings, 'website-tunnel-settings')
 

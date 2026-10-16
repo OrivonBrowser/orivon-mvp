@@ -27,30 +27,36 @@ export function nymStateOf (value: unknown): NymState {
 export interface TunnelRowView {
   readonly origin: string
   readonly kind: 'app' | 'site'
-  readonly entry: 'on' | 'off' | undefined
+  /** The tunnel the person chose for it, `off`, or none (kept only for its storage). */
+  readonly entry: 'nym' | 'socks5' | 'off' | undefined
   readonly state: 'off' | 'no-proxy' | 'idle' | 'ok' | 'down'
   /** The profile its entry puts a website in. */
-  readonly profile: 'tunnel' | 'direct' | undefined
+  readonly profile: 'nym' | 'socks5' | 'direct' | undefined
   readonly apart: boolean
   /** The profiles it has storage in. */
-  readonly apartIn: readonly ('tunnel' | 'direct')[]
+  readonly apartIn: readonly ('nym' | 'socks5' | 'direct')[]
 }
 
-/** What a row says about the origin's tunnel, in words. */
+/** How a sentence names a tunnel's profile and the tunnel itself. */
+export const PROFILE_NAMES = { nym: 'Nym', socks5: 'proxy', direct: 'direct' } as const
+const TUNNEL_NAMES = { nym: 'Nym', socks5: 'your proxy' } as const
+
+/** What a row says about the origin's tunnel, in words that name the tunnel. */
 export function tunnelRowWords (row: TunnelRowView): string {
   const subject = row.kind === 'app' ? 'app' : 'site'
   if (row.entry === undefined) {
-    const kept = row.apartIn.length === 0 ? '' : ` What it stored in your ${row.apartIn.join(' and ')} profile is kept.`
+    const kept = row.apartIn.length === 0 ? '' : ` What it stored in your ${row.apartIn.map((profile) => PROFILE_NAMES[profile]).join(' and ')} profile is kept.`
     return `This ${subject} follows your browser's tunnel setting.${kept}`
   }
   if (row.entry === 'off') return `The tunnel is off for this ${subject}.${row.kind === 'site' ? ' It lives in your direct profile.' : ''}`
-  const where = row.kind === 'site' ? ' It lives in your tunnel profile.' : ''
+  const tunnel = TUNNEL_NAMES[row.entry]
+  const where = row.kind === 'site' ? ` It lives in your ${PROFILE_NAMES[row.entry]} profile.` : ''
   switch (row.state) {
-    case 'no-proxy': return `On, but no tunnel is set, so this ${subject}'s traffic is stopped.${where}`
-    case 'down': return `On, but your tunnel is not answering, so this ${subject}'s traffic is stopped.${where}`
+    case 'no-proxy': return `Through ${tunnel}, but no address is set for it, so this ${subject}'s traffic is stopped.${where}`
+    case 'down': return `Through ${tunnel}, but it is not answering, so this ${subject}'s traffic is stopped.${where}`
     case 'off':
     case 'idle':
-    case 'ok': return `On: this ${subject}'s traffic goes through your tunnel.${where}`
+    case 'ok': return `Through ${tunnel}: this ${subject}'s traffic goes through it.${where}`
   }
 }
 
@@ -66,12 +72,14 @@ export class RoutePart implements SettingsPart {
 
   /** The test was pressed and main has not answered. */
   busy = false
+  /** Which tunnel the test under way is of. */
+  testing: 'nym' | 'socks5' | null = null
   /** What Nym is doing, kept in step with main. */
   nym: NymState = { state: 'off' }
   /** The settings file could not be used, so the whole browser is on the tunnel until the person turns that off. */
   heldOn = false
-  /** The last answer and what it was for (Nym, or the address it asked): it is shown only while the setting still holds that. */
-  last: { readonly subject: string, readonly result: ProxyTestResult } | null = null
+  /** The last answer, the tunnel it was for and what that tunnel was then (Nym, or the address it asked): it is shown only while the setting still holds that. */
+  last: { readonly kind: 'nym' | 'socks5', readonly subject: string, readonly result: ProxyTestResult } | null = null
 
   constructor (private readonly bridge: OrivonInternal, private readonly notify: () => void) {}
 
@@ -127,17 +135,19 @@ export class RoutePart implements SettingsPart {
     await this.load()
   }
 
-  /** Tests the tunnel the settings hold now: `subject` is Nym, or the address saved. */
-  async test (subject: string): Promise<void> {
+  /** Tests a tunnel: `subject` is Nym, or the address saved for the proxy, which the answer is shown against; main tests what is saved, whatever the page says. */
+  async test (subject: string, kind: 'nym' | 'socks5'): Promise<void> {
     if (this.busy) return
     this.busy = true
+    this.testing = kind
     this.notify()
     try {
-      this.last = { subject, result: resultOf(await this.bridge.request('route', { type: 'test' })) }
+      this.last = { kind, subject, result: resultOf(await this.bridge.request('route', { type: 'test', kind })) }
     } catch {
-      this.last = { subject, result: { ok: false, reason: 'unreachable' } }
+      this.last = { kind, subject, result: { ok: false, reason: 'unreachable' } }
     } finally {
       this.busy = false
+      this.testing = null
     }
     this.notify()
   }

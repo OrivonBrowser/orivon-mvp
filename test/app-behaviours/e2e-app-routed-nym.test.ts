@@ -27,7 +27,7 @@ import type { Attempt } from './routed-network-entry.js'
 
 const ORIGIN = 'https://routed-nym-e2e.orivon.test'
 const SETTINGS_URL_PREFIX = 'orivon://settings'
-const ROUTE_SWITCH = '.app-card:has-text("routed-nym-e2e") .app-route .switch'
+const ROUTE_CHOICE = '.app-card:has-text("routed-nym-e2e") .app-route select'
 
 interface Counting { readonly port: number, readonly connections: () => number, readonly close: () => Promise<void> }
 
@@ -158,10 +158,10 @@ async function scenario (failStart: boolean): Promise<Scenario> {
 
 async function switchRouteOn (scene: Scenario): Promise<void> {
   const apps = await scene.settings('apps')
-  await apps.waitForSelector(ROUTE_SWITCH)
+  await apps.waitForSelector(ROUTE_CHOICE)
   // The switch reloads the app's page; a marker on the page that is there now shows when that happened, which a slow system may do after a wait for the page's global would have returned.
   await scene.view.evaluate(() => { (window as unknown as { routeSwitchMarker: boolean }).routeSwitchMarker = true })
-  await apps.locator(ROUTE_SWITCH).click()
+  await apps.locator(ROUTE_CHOICE).selectOption('nym')
   expect(await waitFor(async () => await scene.view.evaluate(() => (window as unknown as { routeSwitchMarker?: boolean }).routeSwitchMarker === undefined).catch(() => false)), 'the app\'s page was reloaded by the switch').toBe(true)
   await scene.view.waitForLoadState('load')
   await waitForPageGlobal(scene.view, 'routedNetworkE2e')
@@ -190,8 +190,8 @@ it('[app:routed-app-on-nym-sends-nothing-direct] an installed app routed with th
   // Settings says so, in the words of the status line.
   const tunnels = await scene.settings('tunnels')
   await expect.poll(async () => await tunnels.locator('#row-route-nym-status').innerText(), { timeout: 10_000 }).toContain('Nym tunnel ready')
-  await tunnels.locator('#row-route-proxy-test button').click()
-  await expect.poll(async () => await tunnels.locator('#row-route-proxy-test').innerText(), { timeout: 20_000 }).toContain('Nym answered')
+  await tunnels.locator('#row-route-nym-test button').click()
+  await expect.poll(async () => await tunnels.locator('#row-route-nym-test').innerText(), { timeout: 20_000 }).toContain('Nym answered')
 }, 3 * QA_TEST_TIMEOUT_MS)
 
 it('[app:nym-privacy-level-applies] tunnels are made at Balanced (no steady stream, loop cover traffic kept) until Settings says Strongest, which closes the idle tunnel and makes the next one with Nym\'s own defaults', async () => {

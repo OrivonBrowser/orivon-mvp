@@ -27,7 +27,7 @@ const ORIGIN = 'https://routed-leaving-e2e.orivon.test'
 const OTHER = 'https://routed-leaving-other-e2e.orivon.test'
 const SITE_NAME = 'site.socks.test'
 const SETTINGS_URL_PREFIX = 'orivon://settings'
-const switchOf = (name: string): string => `.app-card:has-text("${name}") .app-route .switch`
+const choiceOf = (name: string): string => `.app-card:has-text("${name}") .app-route select`
 
 const APP_HTML = `<!doctype html><title>routed leaving</title><body>
 <a id="same" href="/other.html">same origin</a>
@@ -147,10 +147,12 @@ async function openSettings (): Promise<Page> {
 
 async function switchRoute (name: string, on: boolean): Promise<void> {
   const settings = await openSettings()
-  await settings.waitForSelector(switchOf(name))
-  const checked = async (): Promise<boolean> => await settings.locator(`${switchOf(name)} input`).isChecked()
-  if ((await checked()) !== on) await settings.locator(switchOf(name)).click()
-  expect(await waitFor(async () => (await checked()) === on)).toBe(true)
+  await settings.waitForSelector(choiceOf(name))
+  // The app is on the proxy (the tunnel of this spec) or on none.
+  const chosen = async (): Promise<string> => await settings.locator(choiceOf(name)).inputValue()
+  const wanted = on ? 'socks5' : ''
+  if ((await chosen()) !== wanted) await settings.locator(choiceOf(name)).selectOption(wanted)
+  expect(await waitFor(async () => (await chosen()) === wanted)).toBe(true)
   await delay(500)
 }
 
@@ -297,8 +299,8 @@ it('[app:routed-app-asks-before-opening-a-website] another installed app whose r
   await expectTab(`${OTHER}/`, 'routed leaving')
 
   const settings = await openSettings()
-  await settings.waitForSelector(switchOf('routed-leaving-other-e2e'))
-  expect(await settings.locator(`${switchOf('routed-leaving-other-e2e')} input`).isChecked(), 'the other app\'s switch is on').toBe(true)
+  await settings.waitForSelector(choiceOf('routed-leaving-other-e2e'))
+  expect(await settings.locator(choiceOf('routed-leaving-other-e2e')).inputValue(), 'the other app is on the proxy of the app that opened it').toBe('socks5')
 
   // With its route on, opening it from the routed app asks nothing.
   appPage = await openApp()

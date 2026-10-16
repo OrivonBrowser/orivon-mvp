@@ -17,9 +17,10 @@ async function loaded (kind: string): Promise<SettingsState> {
 const row = tunnels.rows.find((candidate) => candidate.id === 'route-nym-privacy') as Row
 
 describe('the Nym privacy row', () => {
-  it('is shown while Nym is the far end of the tunnel, and not for the person\'s own SOCKS5 address', async () => {
-    expect(row.visible?.(await loaded('nym'))).toBe(true)
-    expect(row.visible?.(await loaded('socks5'))).toBe(false)
+  it('is always shown: a site or app can be sent through Nym whichever tunnel is the default', async () => {
+    expect(row.visible).toBeUndefined()
+    expect(await loaded('nym')).toBeDefined()
+    expect(await loaded('socks5')).toBeDefined()
   })
 
   it('chooses between the two levels, and says in a sentence each what it does', () => {

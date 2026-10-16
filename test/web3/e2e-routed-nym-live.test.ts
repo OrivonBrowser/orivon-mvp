@@ -15,7 +15,7 @@ import { bundleForApp, serveApp } from '../node-runtime/pinned-app.js'
 
 const LIVE = process.env['ORIVON_NYM_LIVE'] === '1'
 const ORIGIN = 'https://routed-nym-live.orivon.test'
-const ROUTE_SWITCH = '.app-card:has-text("routed-nym-live") .app-route .switch'
+const ROUTE_CHOICE = '.app-card:has-text("routed-nym-live") .app-route select'
 const READY_BY_MS = 150_000
 
 describe.skipIf(!LIVE)('the real Nym module', () => {
@@ -59,8 +59,8 @@ describe.skipIf(!LIVE)('the real Nym module', () => {
     await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/apps') })
     expect(await waitFor(() => app.windows().some((w) => w.url().startsWith('orivon://settings')))).toBe(true)
     const settings = app.windows().find((w) => w.url().startsWith('orivon://settings')) as Page
-    await settings.waitForSelector(ROUTE_SWITCH)
-    await settings.locator(ROUTE_SWITCH).click()
+    await settings.waitForSelector(ROUTE_CHOICE)
+    await settings.locator(ROUTE_CHOICE).selectOption('nym')
     await view.waitForLoadState('load')
     await waitForPageGlobal(view, 'routedNymLive')
 

@@ -6,7 +6,7 @@ import type { RouteDomainDeps } from '../route-domain.js'
 
 const CALLER = {} as never
 
-const ROWS = [{ origin: 'https://news.example', kind: 'site', entry: 'on', state: 'idle', profile: 'tunnel', apart: true, apartIn: ['tunnel'] }] as const
+const ROWS = [{ origin: 'https://news.example', kind: 'site', entry: 'nym', state: 'idle', profile: 'nym', apart: true, apartIn: ['nym'] }] as const
 
 const NYM_OFF: RouteDomainDeps['nym'] = { state: () => ({ state: 'off' }), test: async () => ({ ok: true, ms: 1234 }) }
 

@@ -204,9 +204,8 @@ it('shows the five privacy rows and the seven tunnel rows in Settings, saves a c
 
     await page.locator('a.nav-item[href="/tunnels"]').click()
     await page.waitForSelector('#row-route-kind')
-    for (const id of ['route-kind', 'route-nym-enabled', 'route-nym-status', 'route-nym-privacy', 'route-proxy-test', 'route-everywhere', 'route-sites']) expect(await page.locator(`#row-${id}`).count()).toBe(1)
-    // The address row is shown only for the choice of an address.
-    expect(await page.locator('#row-route-proxy').count()).toBe(0)
+    for (const id of ['route-kind', 'route-nym-enabled', 'route-nym-status', 'route-nym-privacy', 'route-nym-test', 'route-proxy', 'route-proxy-test', 'route-everywhere', 'route-sites']) expect(await page.locator(`#row-${id}`).count()).toBe(1)
+    // Both tunnels have their rows whichever is the default: a site or app can use either.
     await page.locator('a.nav-item[href="/privacy"]').click()
     await page.waitForSelector('#row-do-not-track')
     await page.locator('#row-do-not-track input[type=checkbox]').click()
