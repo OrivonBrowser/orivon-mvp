@@ -1,10 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
-import { applySecureDns, needsResolverCall, secureDnsOptions } from '../secure-dns.js'
+import { applySecureDns, effectiveSecureDns, needsResolverCall, secureDnsForcedOff, secureDnsOptions } from '../secure-dns.js'
+import { SETTINGS } from '../../settings/schema.js'
 
 describe('secureDnsOptions', () => {
   it('turns the provider choices into secure mode with that provider\'s template', () => {
     expect(secureDnsOptions('cloudflare', 'linux')).toEqual({ secureDnsMode: 'secure', secureDnsServers: ['https://cloudflare-dns.com/dns-query'], enableBuiltInResolver: true })
     expect(secureDnsOptions('quad9', 'win32')).toEqual({ secureDnsMode: 'secure', secureDnsServers: ['https://dns.quad9.net/dns-query'], enableBuiltInResolver: true })
+  })
+
+  it('asks Quad9 first and falls back to the computer\'s own DNS for the default', () => {
+    expect(SETTINGS['privacy.secureDns'].default).toBe('quad9Fallback')
+    expect(secureDnsOptions('quad9Fallback', 'linux')).toEqual({ secureDnsMode: 'automatic', secureDnsServers: ['https://dns.quad9.net/dns-query'], enableBuiltInResolver: true })
   })
 
   it('leaves the provider to the resolver in automatic mode', () => {
@@ -40,5 +46,15 @@ describe('applySecureDns', () => {
     expect(() => { applySecureDns({ configureHostResolver: () => { throw new Error('before ready') } }, 'quad9') }).not.toThrow()
     expect(error).toHaveBeenCalled()
     error.mockRestore()
+  })
+})
+
+describe('the forced-off switch', () => {
+  it('stands in for the default only, and only when set to off', () => {
+    expect(secureDnsForcedOff({ ORIVON_SECURE_DNS: 'off' })).toBe(true)
+    expect(secureDnsForcedOff({})).toBe(false)
+    expect(effectiveSecureDns('quad9Fallback', true, true)).toBe('off')
+    expect(effectiveSecureDns('cloudflare', false, true)).toBe('cloudflare')
+    expect(effectiveSecureDns('quad9Fallback', true, false)).toBe('quad9Fallback')
   })
 })

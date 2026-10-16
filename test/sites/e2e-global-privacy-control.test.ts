@@ -133,6 +133,32 @@ describe('Global Privacy Control', () => {
     }
   }, TEST_TIMEOUT_MS)
 
+  it('reaches every kind of session a profile that never chose runs a page in: an installed app\'s, a temporary in-memory one and one behind a tunnel\'s proxy', async () => {
+    const { app } = await launchedAndVisited({ setting: undefined, expected: true })
+    try {
+      const proxyAddress = origin.replace('http://', '')
+      const kinds = await app.evaluate(async ({ BrowserWindow }, { url, proxy }) => {
+        const out: Record<string, unknown> = {}
+        const load = async (name: string, partition: string, proxied: boolean): Promise<void> => {
+          const win = new BrowserWindow({ show: false, webPreferences: { partition, sandbox: true } })
+          try {
+            if (proxied) await win.webContents.session.setProxy({ proxyRules: `http=${proxy}`, proxyBypassRules: '<-loopback>' })
+            await win.loadURL(`${url}/${name}`)
+            out[name] = await win.webContents.executeJavaScript('navigator.globalPrivacyControl')
+          } finally { win.destroy() }
+        }
+        await load('app-session', 'persist:gpc-app', false)
+        await load('temporary-session', 'gpc-temporary', false)
+        await load('proxied-session', 'persist:gpc-proxied', true)
+        return out
+      }, { url: origin, proxy: proxyAddress })
+      expect(kinds).toEqual({ 'app-session': true, 'temporary-session': true, 'proxied-session': true })
+      expect(Object.fromEntries(['/app-session', '/temporary-session', '/proxied-session'].map((path) => [path, headerOf(path)]))).toEqual({ '/app-session': '1', '/temporary-session': '1', '/proxied-session': '1' })
+    } finally {
+      await closeElectron(app)
+    }
+  }, TEST_TIMEOUT_MS)
+
   it('is off, as false and with no header, in every one of those contexts when it was chosen off', async () => {
     const { app } = await launchedAndVisited({ setting: false, expected: false })
     try {

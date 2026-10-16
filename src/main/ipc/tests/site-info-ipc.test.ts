@@ -341,6 +341,15 @@ describe('registerSiteInfoIpc -- revokePickedPath / reload / openSiteSettings', 
     expect(openCertificate).toHaveBeenCalledOnce()
   })
 
+  it('openScoreHelp calls the injected callback with no argument, from the popup only', async () => {
+    const openScoreHelp = vi.fn()
+    registerSiteInfoIpc(siteInfoWebContents, POPUP_URL, fakeController(), ORIGIN, '/tmp/orivon-test-userdata', () => undefined, () => undefined, () => undefined, () => undefined, undefined, undefined, undefined, undefined, undefined, openScoreHelp)
+    await dispatch({ type: 'openScoreHelp', url: 'https://evil.test/' })
+    expect(openScoreHelp).toHaveBeenCalledExactlyOnceWith()
+    await dispatch({ type: 'openScoreHelp' }, { url: 'https://evil.test/' })
+    expect(openScoreHelp).toHaveBeenCalledOnce()
+  })
+
   it('openExtensions calls the injected callback', async () => {
     const { openExtensions } = register(fakeController())
     await dispatch({ type: 'openExtensions' })

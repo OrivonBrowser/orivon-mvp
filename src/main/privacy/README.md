@@ -100,9 +100,9 @@ tab; the sheet carries no address.
 address changes to the failed one, which would dismiss the sheet as it opens. `https-fallback-runner.ts` ends it
 when the tab starts loading another page, and the error page's own navigation does not count.
 
-**Secure DNS leaves the resolver alone while it is off.** Electron's built-in resolver is on by default only on
-macOS, so `off` is applied at launch there and nowhere else; any other choice turns the built-in resolver on
-and sets the mode (and the provider, for the two named ones). Names that `--host-resolver-rules` maps (the
+**Secure DNS is on by default, as Quad9 with a fallback.** The default asks Quad9 first (resolver mode `automatic` with Quad9's address) and lets this computer's own DNS answer when Quad9 cannot be reached; Cloudflare and Quad9 alone are `secure` mode, with no fallback. Electron's built-in resolver is on by default only on
+macOS, so `off` is applied at launch there and nowhere else (on Linux and Windows `off` leaves the resolver alone); any other choice turns the built-in resolver on
+and sets the mode and the provider. `ORIVON_SECURE_DNS=off` replaces the default with `off` for one run (every test and smoke launch), and a profile that names a choice keeps it. A tunnelled request carries its host name to the tunnel's far end, so no name of a tunnelled site reaches the provider. Names that `--host-resolver-rules` maps (the
 `.eth` names, a test's fixtures) are answered by those rules first and never reach the provider.
 
 **Storage access follows the cookie choice and never prompts.** The two permissions are answered only for a tab:

@@ -15,8 +15,8 @@ comparator (its header says why).
 browser update and an app grant are different questions, asked in different dialogs, under
 different rules.
 
-**Owner stream.** `shell`. Maintenance only. Nothing looks unless the person turned `updates.check` on in
-Settings (it is off by default): `update-schedule.ts` then runs `runUpdateCheck` at start, every hour while the
+**Owner stream.** `shell`. Maintenance only. Nothing looks once the person turned `updates.check` off in
+Settings (it is on by default; `ORIVON_UPDATE_CHECK=off` forces it off for a run, as every test launch does): `update-schedule.ts` runs `runUpdateCheck` at start, every hour while the
 browser is open and as soon as the setting is switched on, and the stored time of the last check that reached GitHub
 keeps it to once a day. "Check now"
 (`updates-domain.ts`, through `checkUpdateNow`) asks at once and only reports. A private session looks at nothing,

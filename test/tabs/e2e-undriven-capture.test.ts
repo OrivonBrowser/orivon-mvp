@@ -47,7 +47,7 @@ async function evaluate (url: string, expression: string): Promise<string> {
 
 it('reports no page of an undriven shell as captured', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'orivon-undriven-'))
-  const env = { ...process.env, PULSE_SERVER: 'unix:/nonexistent', ORIVON_WINDOW_NO_FOCUS: '1', ORIVON_ETH_LIGHT_CLIENT: 'off', ORIVON_INTRO: 'off' } as Record<string, string | undefined>
+  const env = { ...process.env, PULSE_SERVER: 'unix:/nonexistent', ORIVON_WINDOW_NO_FOCUS: '1', ORIVON_ETH_LIGHT_CLIENT: 'off', ORIVON_INTRO: 'off', ORIVON_UPDATE_CHECK: 'off', ORIVON_SECURE_DNS: 'off' } as Record<string, string | undefined>
   delete env['ELECTRON_RUN_AS_NODE']
   const child = spawn(electronPath, ['.', `--user-data-dir=${dir}`, '--inspect=0', '--no-sandbox', '--alsa-output-device=null', HERMETIC_RESOLVER], { env, stdio: ['ignore', 'ignore', 'pipe'] })
   try {

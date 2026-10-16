@@ -92,6 +92,9 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
     openExtensions: async (): Promise<void> => {
       await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'openExtensions' } satisfies SiteInfoCommand)
     },
+    openScoreHelp: async (): Promise<void> => {
+      await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'openScoreHelp' } satisfies SiteInfoCommand)
+    },
     openCertificate: async (): Promise<void> => {
       await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'certificate' } satisfies SiteInfoCommand)
     },

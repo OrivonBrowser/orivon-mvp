@@ -23,7 +23,7 @@ export const about: Section = {
     {
       id: 'updates-check',
       label: 'Look for updates',
-      help: 'Once a day Orivon asks GitHub whether a newer release exists, and tells you if one does. It never downloads or installs anything, and sends nothing about you but the request itself. It is off until you turn it on.',
+      help: 'Once a day Orivon asks GitHub whether a newer release exists, and tells you if one does. It never downloads or installs anything, and sends nothing about you but the request itself. It is on by default; turn it off here and Orivon never asks.',
       keywords: ['update', 'upgrade', 'release', 'version', 'new', 'automatic'],
       control: { type: 'toggle', key: 'updates.check' },
       visible: (state) => !fromStore(state)
