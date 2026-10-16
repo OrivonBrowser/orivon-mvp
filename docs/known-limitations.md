@@ -5,9 +5,25 @@ boundary of Orivon today, written down so you meet it here rather than in use. N
 
 ## Network privacy
 
-- **Peers see your IP address.** Orivon has no Tor or proxy routing today, so a peer-to-peer app
-  connects from your real address. When a system proxy is set, `orivon.net` refuses to open
-  sockets or resolve names rather than go around the proxy.
+- **Peers see your IP address unless you route the app.** An app, a website or the whole browser can
+  go through a tunnel: Nym, built in and the default, or your own SOCKS5 address, such as a Tor
+  client's (Settings > Tunnels; an app's card in Apps; "Use the tunnel for this site" in a site's
+  popup). Anything with no tunnel of its own, while the whole browser is not on one, connects from
+  your real address, so a peer-to-peer app you have not routed shows it. A routed app resolves no
+  name on this computer, cannot listen on your network and cannot look up an address by name. A
+  Nym tunnel carries about 30 to 45 KB a second for each connection, with about a second of delay
+  per round trip, so it suits what is private more than what is fast. Orivon's own requests (the update check,
+  usage statistics you chose, search suggestions) and the local IPFS and Swarm nodes follow the
+  tunnel only while "Send all of Orivon's traffic through the tunnel" is on. When a system proxy is set,
+  an app that is not routed gets no `orivon.net` sockets and no name lookups, rather than going
+  around it. [`architecture/egress.md`](architecture/egress.md) lists every path to the network
+  and how each takes the tunnel.
+- **The default secure DNS tells Quad9 the names you open.** Orivon looks site names up at Quad9
+  over HTTPS, so the network you are on no longer sees them, and Quad9 does. When Quad9 cannot be
+  reached the lookup goes to this computer's own DNS, so a network that blocks Quad9 still loads
+  pages, and its owner sees the names again. Settings > Privacy picks another provider or turns it
+  off. Sites you send through a tunnel are never looked up here, and `.eth` names are resolved
+  apart from it.
 - **No automatic port forwarding.** There is no UPnP, so behind NAT an app listening for peers is
   reachable only through a port you forward yourself.
 - **No local peer discovery.** The manifest grammar has no multicast bind.

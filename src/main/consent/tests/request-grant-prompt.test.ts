@@ -102,7 +102,7 @@ describe('createGrantPrompt', () => {
 
     await consent(ORIGIN, 'https.connect', ['*:*'])
 
-    expect(specOf()).toMatchObject({ warning: false, message: 'Unlimited network access' })
+    expect(specOf()).toMatchObject({ warning: false, message: "Unlimited network access: load anything from any website, without the browser's usual limits" })
   })
 
   it('extensions disclosure: defaults to naming no extensions, so every pre-existing call above is unaffected', async () => {

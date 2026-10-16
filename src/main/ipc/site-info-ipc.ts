@@ -94,6 +94,8 @@ export type SiteInfoCommand =
   | { type: 'certificate' }
   /** Same contract as ./networks-ipc.ts's own `contentHeight`. */
   | { type: 'contentHeight'; height: number }
+  /** A "?" on the Web3 Score page: closes this popup and opens the page that says what the levels mean. No argument: main knows the page. */
+  | { type: 'openScoreHelp' }
   /** Escape in the popup's page: closes the popup. No argument. */
   | { type: 'close' }
 
@@ -144,7 +146,8 @@ export function registerSiteInfoIpc (
   openCertificate: () => void = () => {},
   sitePermissions: SitePermissionsAccess = { view: () => null, set: () => null },
   closePopup: () => void = () => {},
-  openHome: (domain: string) => void = () => {}
+  openHome: (domain: string) => void = () => {},
+  openScoreHelp: () => void = () => {}
 ): void {
   // A website the person opened through their proxy from a routed app says so, in the tab the popover is about.
   const withRoute = (info: SiteInfo): SiteInfo => isTemporaryRouteSession(activeWebContents()?.session) ? { ...info, route: 'temporary' } : info
@@ -237,6 +240,9 @@ export function registerSiteInfoIpc (
         return
       case 'openExtensions':
         openExtensions()
+        return
+      case 'openScoreHelp':
+        openScoreHelp()
         return
       case 'close':
         // After the reply: this popup's close destroys the webContents, which would drop an invoke still waiting.

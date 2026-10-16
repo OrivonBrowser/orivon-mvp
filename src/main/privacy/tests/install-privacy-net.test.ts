@@ -30,7 +30,7 @@ function rig (values: Record<string, string | boolean>, tab?: object) {
   const app = { configureHostResolver } as unknown as App
   const subscribe = vi.fn()
   const services = {
-    settings: { get: (key: string) => current[key], onChange: (l: (change: { key: string }) => void) => { listeners.push(l); return () => {} } },
+    settings: { get: (key: string) => current[key], isDefault: (key: string) => !(key in values), onChange: (l: (change: { key: string }) => void) => { listeners.push(l); return () => {} } },
     windows: { findTab: (contents: unknown) => contents === tab && tab !== undefined ? { window: {}, tabId: 't1' } : null },
     tabLifecycle: { subscribe }
   } as unknown as ShellServices

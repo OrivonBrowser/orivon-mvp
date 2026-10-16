@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { SETTINGS } from '../schema.js'
 import { everywhereBeforeReady, readSettingBeforeReady, settingsFileProblem, settingsFromFile } from '../settings-file.js'
 
 let dir: string
@@ -18,6 +19,15 @@ describe('settingsFromFile', () => {
     const { overrides, dropped } = settingsFromFile({ version: 1, values: { 'privacy.globalPrivacyControl': false, 'privacy.doNotTrack': false, 'appearance.theme': 'neon', 'nope': 1 } })
     expect([...overrides]).toEqual([['privacy.globalPrivacyControl', false]])
     expect(dropped).toBe(2)
+  })
+
+  it('lets a file that never named the update check follow the default, which is on, and keeps an explicit off', () => {
+    expect(SETTINGS['updates.check']).toMatchObject({ default: true })
+    for (const version of [1, 2]) {
+      expect(settingsFromFile({ version, values: { 'appearance.theme': 'dark' } }).overrides.has('updates.check')).toBe(false)
+      expect([...settingsFromFile({ version, values: { 'updates.check': true } }).overrides]).not.toContainEqual(['updates.check', true])
+      expect(settingsFromFile({ version, values: { 'updates.check': false } }).overrides.get('updates.check')).toBe(false)
+    }
   })
 
   it('holds nothing for text that is not a settings file of this version', () => {

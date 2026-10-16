@@ -309,6 +309,13 @@ hr {
 .rung.unknown .rung-badge { background: var(--wborder); color: var(--wink-dim); }
 .rung.unknown .rung-label { color: var(--wink-dim); }
 .rung-mark { margin-left: auto; color: var(--wink-dim); font-weight: 700; }
+/* Padding and a matching negative margin keep the "?" where the plain mark sat and the row as tall as before. */
+button.rung-help {
+  padding: 0 5px;
+  margin-right: -5px;
+  border-radius: 6px;
+}
+button.rung-help:hover { color: var(--wink); background: color-mix(in srgb, var(--wink) 8%, transparent); }
 .level-because { margin: 0; font-size: 12px; }
 .dev-note {
   margin: 0;

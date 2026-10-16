@@ -227,7 +227,7 @@ ad altri server, che non gestiamo e da cui non riceviamo nulla. Ciascuna è in
 
 | Che cosa | A chi | Perché, e base giuridica | Puoi |
 |---|---|---|---|
-| Controllare se c'è una nuova versione | `api.github.com` | Per dirti che esiste un aggiornamento. Il tuo consenso: è spento finché non lo attivi in Impostazioni > Informazioni | Spegnerlo |
+| Controllare se c'è una nuova versione | `api.github.com` | Per dirti che esiste un aggiornamento. Nostro legittimo interesse, art. 6(1)(f), a tenere il browser aggiornato e sicuro; è attivo in modo predefinito e non invia nulla su di te oltre alla richiesta stessa | Spegnerlo |
 | Seguire Ethereum e dimostrare i nomi `.eth` | `eth.drpc.org`, `rpc.mevblocker.io`, `ethereum-rpc.publicnode.com`, `ethereum-beacon-api.publicnode.com` | Per verificare un nome invece di fidarsi di un server. Serve alla funzione che hai chiesto aprendo un indirizzo `.eth` o `ipfs://`; due minuti dopo l'avvio rinnova anche un checkpoint più vecchio di una settimana (nostro legittimo interesse, art. 6(1)(f), che la funzione lavori). L'RPC vede quale nome `.eth` apri | Spegnere il light client in Impostazioni > Web3 (poi nessun nome `.eth` si carica) |
 | Scaricare il contenuto di un indirizzo `ipfs://` o di un sito `.eth`, e cercare chiavi `ipns://` e nomi DNSLink | `ipfs.orbitor.dev`, `ipfs.filebase.io`, `trustless-gateway.link`, `name.web3.storage`, `cloudflare-dns.com`, `dns.google`, e per alcuni nomi un server scelto dal record del nome stesso | Per aprire l'indirizzo che hai chiesto. Esecuzione di ciò che hai chiesto, art. 6(1)(b). Il server vede quale contenuto apri. Ogni blocco è verificato contro il suo hash | Non aprire tali indirizzi |
 | Controllare se un'app installata ha una nuova versione mentre la sua scheda è aperta | Gli stessi server, ogni 30 minuti | Per dirti quando un'app che hai installato ha una nuova versione. Nostro legittimo interesse, art. 6(1)(f), a tenere le app aggiornate e sicure; ripete le richieste della riga precedente | Chiudere la scheda dell'app |
@@ -235,12 +235,13 @@ ad altri server, che non gestiamo e da cui non riceviamo nulla. Ciascuna è in
 | Scaricare l'icona di una pagina | L'host del sito stesso, o un host che il sito indica | Per disegnare l'icona della scheda. Esecuzione di ciò che hai chiesto, art. 6(1)(b); lo stesso host che ha servito la pagina | Non è possibile |
 | Controllare gli aggiornamenti delle estensioni del Web Store | `update.googleapis.com` | Per tenere aggiornate e sicure le estensioni che hai installato. Legittimo interesse, art. 6(1)(f), e solo se ne hai installata una. Invia i loro identificativi, la versione di Chromium, il tuo sistema operativo e due identificativi casuali. Mai in una finestra privata | Rimuovere l'estensione |
 | I download propri di un'estensione, come le liste di filtri | Gli host che l'estensione indica | Deciso dall'estensione che hai installato | Le impostazioni dell'estensione, o rimuoverla |
+| Cercare l'indirizzo di ogni sito che apri | Quad9 (`dns.quad9.net`) in modo predefinito, o il fornitore che scegli in Impostazioni > Privacy | Perché la rete in cui sei non veda né modifichi le ricerche. Legittimo interesse, art. 6(1)(f), a che la connessione sia privata e integra; attivo in modo predefinito. Quad9 apprende il nome di ogni sito che apri, mai la pagina, e ha una propria informativa. Se Quad9 non è raggiungibile, la ricerca va al DNS di questo computer. Un sito che invii attraverso un tunnel viene cercato all'altra estremità del tunnel | Scegliere Spento o un altro fornitore in Impostazioni > Privacy |
 | Scaricare un dizionario del correttore ortografico, una volta per lingua | L'host dei dizionari di Chromium | Per correggere la tua ortografia. Esecuzione di ciò che hai chiesto, art. 6(1)(b), e le Impostazioni lo dicono | Spegnere il correttore ortografico |
 
-Altre tre cose non inviano nulla finché non le attivi nelle Impostazioni: i suggerimenti di
-ricerca mentre digiti (il testo digitato va al tuo motore di ricerca; mai in una finestra
-privata), il DNS sicuro (ogni nome di sito va al risolutore che scegli), e i segnali Do Not Track
-e Global Privacy Control, che non inviano dati propri.
+I suggerimenti di ricerca mentre digiti non inviano nulla finché non li attivi nelle Impostazioni
+(il testo digitato va al tuo motore di ricerca; mai in una finestra privata). I segnali Do Not
+Track e Global Privacy Control non inviano dati propri; Global Privacy Control è attivo in modo
+predefinito.
 
 Non controlliamo che cosa facciano quei server con la connessione. Vedono il tuo indirizzo IP,
 come ogni server a cui ti colleghi, e hanno proprie informative sulla privacy.
