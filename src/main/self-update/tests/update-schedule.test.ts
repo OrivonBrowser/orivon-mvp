@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { scheduleUpdateChecks, UPDATE_POLL_MS, updateChecksEnabled } from '../update-schedule.js'
+import { scheduleUpdateChecks, UPDATE_POLL_MS, updateChecksEnabled, updateChecksForcedOff } from '../update-schedule.js'
 
 function setup (enabled: boolean) {
   const state = { enabled, listener: undefined as (() => void) | undefined, finish: undefined as (() => void) | undefined }
@@ -64,5 +64,14 @@ describe('updateChecksEnabled', () => {
   it('never looks in a Store install, whatever the setting says: the Store delivers updates', () => {
     expect(updateChecksEnabled(true, true)).toBe(false)
     expect(updateChecksEnabled(false, true)).toBe(false)
+  })
+})
+
+describe('updateChecksForcedOff', () => {
+  it('is set only by ORIVON_UPDATE_CHECK=off, and it beats a setting that is on', () => {
+    expect(updateChecksForcedOff({ ORIVON_UPDATE_CHECK: 'off' })).toBe(true)
+    expect(updateChecksForcedOff({})).toBe(false)
+    expect(updateChecksForcedOff({ ORIVON_UPDATE_CHECK: 'on' })).toBe(false)
+    expect(updateChecksEnabled(true, false, true)).toBe(false)
   })
 })
