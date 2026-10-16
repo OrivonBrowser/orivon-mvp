@@ -42,7 +42,7 @@ engine, `electron-names.ts`, `page-access.ts` and the prompt text import no `ele
 
 ## Design notes
 
-**One answer per site and kind, asked once.** A main frame on an `http(s)` site that is not a registered app is asked
+**One answer per site and kind, asked once.** A main frame on an `http(s)` site that does not hold grants is asked
 the first time; Allow and Block are both remembered, and closing the prompt decides nothing (the site may ask again
 after the next page load, not before). A frame never asks. A `block` default for a kind refuses without asking.
 
@@ -69,8 +69,8 @@ either store reaches the Settings page as `sites.changed`.
 setting for the kind decides again. The choice that says what the default already says is offered only while it is what is
 stored, so a select never lists two ways to say the same thing.
 
-**An app's origin has no row.** A registered app or one served from the cache is bounded by its grants; the controller lists
-no row for it and refuses to write one, so a stored answer for an origin that later became an app is never shown as if it counted.
+**An app's origin has no row.** An origin that holds grants is bounded by them; an installed app that holds none is a website here, asked and listed as any site is. The controller lists
+no row for an origin that holds grants and refuses to write one, so a stored answer for an origin that later became an app is never shown as if it counted.
 
 **A pop-up is blocked unless the person's own input opened it.** `HandlerDetails` reports no user gesture, so
 `popup-policy.ts` uses the person's input instead: a mouse press, touch or key press in the opener's tab within five

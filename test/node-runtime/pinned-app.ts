@@ -37,8 +37,8 @@ export async function bundleForApp (entry: string, format: 'iife' | 'esm' = 'iif
 /** A further grant `serveApp` issues, beside its first. */
 export interface ExtraGrant { readonly capability: CapabilityKind, readonly patterns: readonly string[] }
 
-/** Pins `files` (paths from the origin's root) with the manifest, grants `capability` over `patterns` and each of `extra`, and registers the origin. */
-export async function serveApp (app: ElectronApplication, origin: string, manifest: Manifest, capability: CapabilityKind, files: Record<string, Uint8Array>, patterns: readonly string[] = [], extra: readonly ExtraGrant[] = []): Promise<{ granted: boolean, registered: boolean }> {
+/** Pins `files` (paths from the origin's root) with the manifest, grants `capability` over `patterns` and each of `extra` (a `null` capability grants nothing: an installed app that holds no grant), and registers the origin. */
+export async function serveApp (app: ElectronApplication, origin: string, manifest: Manifest, capability: CapabilityKind | null, files: Record<string, Uint8Array>, patterns: readonly string[] = [], extra: readonly ExtraGrant[] = []): Promise<{ granted: boolean, registered: boolean }> {
   const userDataDir = await app.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))
   const storage = nodeLoaderStorage(userDataDir)
   const entries: BundleEntry[] = [
@@ -49,7 +49,7 @@ export async function serveApp (app: ElectronApplication, origin: string, manife
   for (const entry of entries) await storage.writeAsset(origin, entry.path, entry.content)
   await storage.writePin(origin, fromBundleTree(origin, tree.root, tree.assets, manifest.version, 0))
   let granted = true
-  for (const grant of [{ capability, patterns }, ...extra]) {
+  for (const grant of [...(capability === null ? [] : [{ capability, patterns }]), ...extra]) {
     granted &&= await app.evaluate(async (_electron, request: DevGrantRequest) => {
       const hook = (globalThis as unknown as { __orivonDevGrant?: (r: DevGrantRequest) => Promise<Grant> }).__orivonDevGrant
       if (typeof hook !== 'function') return false
