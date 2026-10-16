@@ -164,6 +164,10 @@ you disagree with one, the ADR is where the objections are already answered.
 - **A cached bundle keeps its real origin.** Serving it from a synthetic origin would break the
   web's own security model
   ([`ADR-0007`](docs/decisions/ADR-0007-cached-bundles-served-at-their-own-origin.md)).
+- **A kept app behaves as a website does.** Keeping an app only stores it on this computer; its
+  tunnel switch, popup and permissions are a website's. A difference needs a reason in the copy
+  being local (its own session, update offers) or in a security boundary
+  ([`ADR-0089`](docs/decisions/ADR-0089-each-website-and-app-picks-its-own-tunnel-and-an-installed-apps-tunnel-is-set-as-a-websites-is.md)).
 
 **What you are told, and what is kept**
 
