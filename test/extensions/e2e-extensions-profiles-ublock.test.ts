@@ -26,7 +26,7 @@ type Site = keyof typeof SITES
 /** Two hosts the filter lists name, and one they do not. */
 const ADS = ['ad.doubleclick.net', 'pagead2.googlesyndication.com'] as const
 const CLEAN = 'static.socks.test'
-const TUNNEL = 'persist:tunnel-profile'
+const TUNNEL = 'persist:proxy-profile'
 const DIRECT = 'persist:direct-profile'
 
 let socks: Socks5Fixture
@@ -114,7 +114,7 @@ const sessionNameOf = async (address: string): Promise<string> => await app.eval
   const contents = webContents.getAllWebContents().find((wc) => wc.getURL() === target)
   if (contents === undefined) return 'none'
   if (contents.session === session.defaultSession) return 'default'
-  for (const name of ['persist:tunnel-profile', 'persist:direct-profile']) if (contents.session === session.fromPartition(name)) return name
+  for (const name of ['persist:proxy-profile', 'persist:direct-profile']) if (contents.session === session.fromPartition(name)) return name
   return 'other'
 }, address)
 

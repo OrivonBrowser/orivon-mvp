@@ -26,7 +26,7 @@ import { evaluateRetrying, findViewShowing, waitFor, waitForTab } from '../suppo
 
 const NAMES = { tunnelled: 'tunnelled.socks.test', direct: 'direct.socks.test', plain: 'plain.socks.test' } as const
 type Name = keyof typeof NAMES
-const TUNNEL = 'persist:tunnel-profile'
+const TUNNEL = 'persist:proxy-profile'
 const DIRECT = 'persist:direct-profile'
 const DEFAULT_LIST = 'orivon-extensions-default'
 
@@ -103,7 +103,7 @@ const popupPage = (): Page | undefined => app.windows().find((w) => w.url().star
 
 /** The name of the session the popup's page, and each page of the extension, runs in. */
 const sessionOfPages = async (): Promise<string[]> => await app.evaluate(({ webContents, session }, id) => {
-  const names = new Map([[session.defaultSession, 'default'], [session.fromPartition('persist:tunnel-profile'), 'persist:tunnel-profile'], [session.fromPartition('persist:direct-profile'), 'persist:direct-profile']])
+  const names = new Map([[session.defaultSession, 'default'], [session.fromPartition('persist:proxy-profile'), 'persist:proxy-profile'], [session.fromPartition('persist:direct-profile'), 'persist:direct-profile']])
   return webContents.getAllWebContents().filter((wc) => !wc.isDestroyed() && wc.getURL().startsWith(`chrome-extension://${id}/`)).map((wc) => `${wc.getURL().slice(`chrome-extension://${id}/`.length)} in ${names.get(wc.session) ?? 'other'}`)
 }, extensionId)
 
