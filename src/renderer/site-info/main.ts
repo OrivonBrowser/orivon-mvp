@@ -29,7 +29,7 @@ interface OrivonSiteInfo {
   setSitePermission: (kind: string, value: string) => Promise<SitePermissionsView | null>
   revokePickedPath: (pickId: string) => Promise<SiteInfo | null>
   applyUpdate: (cid: string) => Promise<ApplyOutcome>
-  setTunnel: (on: boolean) => Promise<TunnelResult | null>
+  setTunnel: (kind: 'nym' | 'socks5' | null) => Promise<TunnelResult | null>
   openHome: () => Promise<void>
   clearBrowserData: () => Promise<void>
   deleteLocalFile: () => Promise<boolean>
@@ -85,9 +85,8 @@ let data: SiteDataSnapshot | null = null
 const staged = new Map<CapabilityKind, boolean>()
 let pendingStaleCapabilities = new Set<CapabilityKind>()
 let showReloadBanner = false
-/** The storage notice is open: the tunnel switch was moved on and Confirm has not been pressed. */
-/** The notice before a website first moves into a profile is open: which profile, and the state the switch was moved to. */
-let tunnelNotice: { readonly profile: 'tunnel' | 'direct', readonly next: boolean } | null = null
+/** The notice before a website first moves into a profile is open: which profile, and the tunnel (or none) the switches were moved to. */
+let tunnelNotice: { readonly profile: 'tunnel' | 'direct', readonly choice: 'nym' | 'socks5' | null } | null = null
 let tunnelFailed = false
 /** Why the last try at the offered update did not install, shown on its card. */
 let updateFailure: string | null = null
@@ -152,23 +151,25 @@ function renderCurrent (): void {
       onOpenHome: () => { void bridge.openHome() }
     }, updateFailure)
   } else if (page === 'tunnels' && info !== null) {
-    const view = { notice: tunnelNotice?.profile ?? null, next: tunnelNotice?.next ?? null, failed: tunnelFailed }
+    const view = { notice: tunnelNotice?.profile ?? null, pending: tunnelNotice === null ? undefined : tunnelNotice.choice, failed: tunnelFailed }
     renderTunnelsPage(tunnelsSection, info, tunnelListModel(info, view), view, {
-      onToggle: (next) => {
+      onToggle: (kind, next) => {
         tunnelFailed = false
-        // Moving the switch back while the notice is open leaves everything as it was.
-        if (tunnelNotice !== null && next !== tunnelNotice.next) { tunnelNotice = null; renderCurrent(); return }
+        // The switch of a tunnel turned on picks it; the lit one turned off picks none.
+        const choice = next ? kind : null
+        // Moving the switches back to where they were while the notice is open leaves everything as it was.
+        if (choice === (info?.tunnel?.via ?? null)) { tunnelNotice = null; renderCurrent(); return }
         // The first time a website moves into a profile it is told, and nothing changes until Confirm.
-        const profile = info?.tunnel?.notice
-        if (profile !== undefined) { tunnelNotice = { profile, next }; renderCurrent(); return }
-        void setTunnel(next)
+        const profile = info?.tunnel?.notices[choice ?? 'off']
+        if (profile !== undefined) { tunnelNotice = { profile, choice }; renderCurrent(); return }
+        void setTunnel(choice)
       },
-      onConfirm: () => { void setTunnel(tunnelNotice?.next ?? true) },
+      onConfirm: () => { void setTunnel(tunnelNotice === null ? null : tunnelNotice.choice) },
       onCancel: () => { tunnelNotice = null; renderCurrent() },
       onOpenSettings: (everywhere) => { void bridge.openTunnelSettings(everywhere) }
     })
     // The page was drawn again, so the keyboard goes back to the switch, or to Cancel while the storage notice asks.
-    queueMicrotask(() => { tunnelsSection.querySelector<HTMLElement>(view.notice === null ? '#tunnel-switch' : '#tunnel-notice-cancel')?.focus() })
+    queueMicrotask(() => { tunnelsSection.querySelector<HTMLElement>(view.notice === null ? `#tunnel-switch-${info?.tunnel?.via ?? 'nym'}` : '#tunnel-notice-cancel')?.focus() })
   } else if (page === 'web3') {
     renderWeb3Page(web3Section, trust, () => { page = 'main'; renderCurrent() }, () => { void bridge.openScoreHelp() })
   } else if (page === 'data' && info !== null) {
@@ -186,10 +187,10 @@ function renderCurrent (): void {
   reportContentHeight()
 }
 
-/** Turns the website's tunnel on or off; main moves the tab, and the popup draws what it says is now true. */
-async function setTunnel (on: boolean): Promise<void> {
+/** Sends the website or app through a tunnel, or through none; main moves the tab, and the popup draws what it says is now true. */
+async function setTunnel (kind: 'nym' | 'socks5' | null): Promise<void> {
   tunnelNotice = null
-  const result = await bridge.setTunnel(on)
+  const result = await bridge.setTunnel(kind)
   tunnelFailed = result === null || !result.ok
   if (result !== null) info = result.info
   renderCurrent()

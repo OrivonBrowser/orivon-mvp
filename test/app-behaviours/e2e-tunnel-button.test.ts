@@ -82,7 +82,7 @@ async function openPopover (): Promise<Page> {
   await chrome.click('#tunnel-btn')
   expect(await waitFor(() => findPopup() !== undefined)).toBe(true)
   const popover = findPopup() as Page
-  await popover.waitForSelector('#tunnel-switch')
+  await popover.waitForSelector('#tunnel-switch-nym')
   return popover
 }
 
@@ -98,14 +98,16 @@ it('is absent on the new tab and grey on a page that goes direct, and the key sa
   await shoot(app, chrome, chrome, 'tunnel-button-direct')
 }, 3 * QA_TEST_TIMEOUT_MS)
 
-it('opens a list with Nym, its logo, a switch that is off and the hint to enforce a tunnel browser-wide', async () => {
+it('opens a list with Nym and the person\'s proxy, the logo of Nym, both switches off and the hint to enforce a tunnel browser-wide', async () => {
   const popover = await openPopover()
   expect(await popover.locator('.site-origin').textContent()).toBe('Tunnels')
-  expect(await popover.locator('.tunnel-row').count(), 'one tunnel today').toBe(1)
-  expect(await popover.locator('.tunnel-label').textContent()).toBe('Nym')
+  expect(await popover.locator('.tunnel-row').count(), 'a row for each tunnel').toBe(2)
+  expect(await popover.locator('.tunnel-row[data-tunnel="nym"] .tunnel-label').textContent()).toBe('Nym')
+  expect(await popover.locator('.tunnel-row[data-tunnel="socks5"] .tunnel-label').textContent()).toBe('Your proxy')
+  expect(await popover.locator('#tunnel-switch-socks5').getAttribute('aria-checked')).toBe('false')
   const logoWidth = await popover.locator('img.tunnel-logo').evaluate((img) => (img as HTMLImageElement).complete ? (img as HTMLImageElement).naturalWidth : 0)
   expect(logoWidth, 'the logo is loaded').toBeGreaterThan(0)
-  expect(await popover.locator('#tunnel-switch').getAttribute('aria-checked')).toBe('false')
+  expect(await popover.locator('#tunnel-switch-nym').getAttribute('aria-checked')).toBe('false')
   expect(await popover.locator('#tunnel-enforce').textContent()).toBe('Enforce a tunnel browser-wide')
   expect(await popover.locator('#tunnel-notice-confirm').count()).toBe(0)
   await shoot(app, chrome, popover, 'tunnel-button-popover')
@@ -116,21 +118,21 @@ it('opens a list with Nym, its logo, a switch that is off and the hint to enforc
 
 it('turns purple once the switch is on and the notice is confirmed, and the page comes through Nym', async () => {
   const popover = await openPopover()
-  await popover.click('#tunnel-switch')
+  await popover.click('#tunnel-switch-nym')
   await popover.waitForSelector('.tunnel-notice')
   await popover.click('#tunnel-notice-confirm')
   expect(await waitFor(async () => (await activeTabInfo(chrome)).title === 'tunnelled', 60_000), 'the page came through Nym').toBe(true)
   expect(await waitFor(async () => await chrome.getAttribute('#tunnel-btn', 'data-tunnel') === 'on')).toBe(true)
   expect(await buttonColour()).toBe(await tokenColour('--wtunnel'))
-  expect(await chrome.getAttribute('#tunnel-btn', 'aria-label')).toContain('This page goes through your tunnel')
+  expect(await chrome.getAttribute('#tunnel-btn', 'aria-label')).toContain('This page goes through Nym')
   // The popover closes when the tab moves to its session: opened again it shows the switch on.
   if (findPopup() !== undefined) await chrome.click('#tunnel-btn')
   expect(await waitFor(() => findPopup() === undefined)).toBe(true)
   await delay(300)
   await shoot(app, chrome, chrome, 'tunnel-button-on')
   const again = await openPopover()
-  expect(await again.locator('#tunnel-switch').getAttribute('aria-checked')).toBe('true')
-  expect(await again.locator('.tunnel-state').textContent()).toContain('This site\'s traffic goes through Nym')
+  expect(await again.locator('#tunnel-switch-nym').getAttribute('aria-checked')).toBe('true')
+  expect(await again.locator('.tunnel-row[data-tunnel="nym"] .tunnel-state').textContent()).toContain('This site\'s traffic goes through Nym')
   await shoot(app, chrome, again, 'tunnel-button-popover-on')
   await chrome.click('#tunnel-btn')
   expect(await waitFor(() => findPopup() === undefined)).toBe(true)

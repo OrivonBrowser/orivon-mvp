@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { SiteTunnel } from '../../main/permissions/site-info.js'
 import { extensionsHint, storageNotice, SWARM_HINT, tunnelHint } from '../site-info/tunnel-view.js'
 
-const base: SiteTunnel = { on: false, notice: 'tunnel', swarm: false, unreadable: false, nymOff: false }
+const base: SiteTunnel = { via: null, following: true, subject: 'site', blocked: {}, notices: { nym: 'tunnel' }, swarm: false, unreadable: false, defaultKind: 'nym' }
 
 // The DOM is covered by the end-to-end spec that switches a website on; these are the words.
 
@@ -19,21 +19,20 @@ describe('the notice before a website moves into a profile', () => {
 describe('the hint under the tunnel switch', () => {
   it('has nothing to add for an ordinary website', () => {
     expect(tunnelHint(base)).toBeUndefined()
-    expect(tunnelHint({ ...base, on: true })).toBeUndefined()
+    expect(tunnelHint({ ...base, via: 'nym' })).toBeUndefined()
   })
 
-  it('says to set a tunnel first when there is none and the switch is off', () => {
-    expect(tunnelHint({ ...base, blocked: 'no-proxy' })).toBe('Set a tunnel under Tunnels first.')
-    expect(tunnelHint({ ...base, blocked: 'no-proxy', on: true })).toBeUndefined()
+  it('has nothing to say about a tunnel that cannot be chosen: its row does', () => {
+    expect(tunnelHint({ ...base, blocked: { socks5: 'no-proxy', nym: 'nym-off' } })).toBeUndefined()
   })
 
   it('says a Swarm address does not open while the tunnel is on for it, before and after the switch is turned on', () => {
     expect(tunnelHint({ ...base, swarm: true })).toBe(SWARM_HINT)
-    expect(tunnelHint({ ...base, swarm: true, on: true })).toBe(SWARM_HINT)
+    expect(tunnelHint({ ...base, swarm: true, via: 'nym' })).toBe(SWARM_HINT)
   })
 
   it('says why the switch is fixed when the list of tunnel settings cannot be read', () => {
-    expect(tunnelHint({ ...base, unreadable: true, on: true })).toContain('could not read your tunnel settings')
+    expect(tunnelHint({ ...base, unreadable: true, via: 'nym' })).toContain('could not read your tunnel settings')
   })
 })
 

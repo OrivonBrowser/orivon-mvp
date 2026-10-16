@@ -80,7 +80,7 @@ async function openPopover (): Promise<Page> {
   await chrome.click('#tunnel-btn')
   expect(await waitFor(() => findPopup() !== undefined)).toBe(true)
   const popover = findPopup() as Page
-  await popover.waitForSelector('#tunnel-switch')
+  await popover.waitForSelector('#tunnel-switch-socks5')
   return popover
 }
 
@@ -91,7 +91,7 @@ it('[app:tunnelled-website-sends-nothing-direct] a .eth name with the tunnel on 
 
   const before = await openPopover()
   expect(await before.locator('.tunnel-section .route-line').count(), 'it says nothing is left outside before the switch').toBe(0)
-  await before.click('#tunnel-switch')
+  await before.click('#tunnel-switch-socks5')
   await before.waitForSelector('.tunnel-notice')
   await before.click('#tunnel-notice-confirm')
 
@@ -110,7 +110,7 @@ it('[app:tunnelled-website-sends-nothing-direct] a .eth name with the tunnel on 
 
   expect(await waitFor(async () => await chrome.getAttribute('#tunnel-btn', 'data-tunnel') === 'on'), 'the tunnel button is purple').toBe(true)
   const after = await openPopover()
-  expect(await after.locator('.tunnel-section .tunnel-state').textContent(), 'the popover says nothing stays outside').toBe('This site\'s traffic goes through your tunnel.')
+  expect(await after.locator('.tunnel-row[data-tunnel="socks5"] .tunnel-state').textContent(), 'the popover says nothing stays outside').toBe('This site\'s traffic goes through your tunnel.')
   await shoot(app, chrome, after, 'website-tunnel-web3')
 }, 4 * QA_TEST_TIMEOUT_MS)
 

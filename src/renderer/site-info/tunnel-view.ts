@@ -1,11 +1,12 @@
-import type { SiteInfo, SiteTunnel } from '../../main/permissions/site-info.js'
+import type { SiteInfo, SiteTunnel, SiteTunnelKind } from '../../main/permissions/site-info.js'
 import { createSwitch } from './switch.js'
 import { tunnelIcon } from './icons.js'
 import type { TunnelListModel, TunnelRowModel } from './tunnels-model.js'
 
-// The tunnels page of the site-info popup: the row of the tunnel in use with the switch that sends this website through it,
-// the line that says what that does and, the first time a website would move into storage of its own, the notice that
-// comes before it. The rows are `tunnels-model.ts`'s. The words are composed here, never from anything a site wrote.
+// The tunnels page of the site-info popup: a row for each tunnel with the switch that sends this website or app through it
+// (turning one on turns the other off, turning the lit one off sends the page through none), the line that says what that does
+// and, the first time a website would move into storage of its own, the notice that comes before it. The rows are
+// `tunnels-model.ts`'s. The words are composed here, never from anything a site wrote.
 
 export const TUNNEL_PAGE_TITLE = 'Tunnels'
 
@@ -19,7 +20,6 @@ export function storageNotice (profile: 'tunnel' | 'direct'): string {
 /** Why the switch is fixed, or what it leaves outside the tunnel; one sentence, or undefined when there is nothing to add. */
 export function tunnelHint (tunnel: SiteTunnel): string | undefined {
   if (tunnel.unreadable) return 'Orivon could not read your tunnel settings, so while a tunnel is set every site goes through it. Mend or remove routes.json in your profile folder and restart Orivon to choose again.'
-  if (tunnel.blocked === 'no-proxy' && !tunnel.on) return 'Set a tunnel under Tunnels first.'
   if (tunnel.swarm) return SWARM_HINT
   return undefined
 }
@@ -38,7 +38,8 @@ export function extensionsHint (names: readonly string[], profile: 'tunnel' | 'd
 export const TUNNEL_FAILED = 'The tunnel could not be changed for this site.'
 
 export interface TunnelCallbacks {
-  readonly onToggle: (next: boolean) => void
+  /** A switch was moved: `next` is the position of the switch of `kind`. */
+  readonly onToggle: (kind: SiteTunnelKind, next: boolean) => void
   readonly onConfirm: () => void
   readonly onCancel: () => void
   /** A link to Settings > Tunnels; `everywhere` lands on the browser-wide switch. */
@@ -46,10 +47,10 @@ export interface TunnelCallbacks {
 }
 
 export interface TunnelViewState {
-  /** The notice is open, about this profile: the person moved the switch and has not yet confirmed. */
+  /** The notice is open, about this profile: the person moved a switch and has not yet confirmed. */
   readonly notice: 'tunnel' | 'direct' | null
-  /** The state the switch was moved to while the notice is open. */
-  readonly next: boolean | null
+  /** The tunnel the switches were moved to while the notice is open (null: none), undefined while it is not. */
+  readonly pending: SiteTunnelKind | null | undefined
   /** The last change did not take. */
   readonly failed: boolean
 }
@@ -87,7 +88,7 @@ function renderLogo (row: TunnelRowModel): HTMLElement {
   return img
 }
 
-function renderRow (row: TunnelRowModel, callbacks: TunnelCallbacks): HTMLElement {
+function renderRow (row: TunnelRowModel, noun: 'site' | 'app', callbacks: TunnelCallbacks): HTMLElement {
   const el = document.createElement('div')
   el.className = 'tunnel-row'
   el.dataset['tunnel'] = row.kind.id
@@ -100,9 +101,9 @@ function renderRow (row: TunnelRowModel, callbacks: TunnelCallbacks): HTMLElemen
   state.className = row.state.down ? 'tunnel-state tunnel-state-down' : 'tunnel-state'
   state.textContent = row.state.text
   text.append(name, state)
-  const control = createSwitch(row.on, row.disabled, callbacks.onToggle)
-  control.id = 'tunnel-switch'
-  control.setAttribute('aria-label', `Use ${row.kind.name} for this site`)
+  const control = createSwitch(row.on, row.disabled, (next) => { callbacks.onToggle(row.kind.id, next) })
+  control.id = `tunnel-switch-${row.kind.id}`
+  control.setAttribute('aria-label', `Use ${row.kind.who} for this ${noun}`)
   el.append(renderLogo(row), text, control)
   return el
 }
@@ -123,11 +124,12 @@ export function renderTunnelsPage (container: HTMLElement, info: SiteInfo, model
 
   const section = document.createElement('div')
   section.className = 'tunnel-section'
+  const noun = info.tunnel?.subject === 'app' ? 'app' : 'site'
   for (const row of model.rows) {
-    section.append(renderRow(row, callbacks))
-    for (const note of row.notes) section.append(paragraph(note.down ? 'route-line route-line-down' : 'route-line', note.text))
-    if (row.settingsLink) section.append(link('tunnel-settings-link', 'Switch it on in Tunnels settings', () => { callbacks.onOpenSettings(false) }))
+    section.append(renderRow(row, noun, callbacks))
+    if (row.settingsLink !== null) section.append(link(`tunnel-settings-link-${row.kind.id}`, row.settingsLink, () => { callbacks.onOpenSettings(false) }))
   }
+  for (const note of model.notes) section.append(paragraph(note.down ? 'route-line route-line-down' : 'route-line', note.text))
   if (model.empty !== null) section.append(paragraph('route-line', model.empty))
   if (view.failed) section.append(paragraph('route-line route-line-down', TUNNEL_FAILED))
 

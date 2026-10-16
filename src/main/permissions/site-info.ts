@@ -62,22 +62,32 @@ export interface SiteUpdate {
 /** What a routed app's route is doing, as the popover says it. An app that is not routed has none. `temporary` is a website opened through the proxy from a routed app: its session holds nothing past its last tab. */
 export type SiteRoute = 'idle' | 'ok' | 'down' | 'no-proxy' | 'temporary'
 
+/** A tunnel a website or an installed app can be sent through. */
+export type SiteTunnelKind = 'nym' | 'socks5'
+
 /**
- * What the popover shows for a website's tunnel switch. `swarm` marks an address read from the Swarm node Orivon runs, which
- * cannot be sent through the tunnel, so the address does not open while the tunnel is on for it; `unreadable` that the list of tunnel settings could not be read, so every site is on and the switch is fixed.
+ * What the popover shows for the tunnel of a website or an installed app, which is chosen the same way for both. `via` is the
+ * tunnel it goes through now; `following` says it has no choice of its own and goes where the browser's default sends it.
+ * `swarm` marks an address read from the Swarm node Orivon runs, which cannot be sent through a tunnel, so the address does not
+ * open while a tunnel is on for it; `unreadable` that the list of tunnel settings could not be read, so every site is on and the
+ * choice is fixed.
  */
 export interface SiteTunnel {
-  readonly on: boolean
-  /** Why the switch cannot be turned on now (it can always be turned off). */
-  readonly blocked?: 'no-proxy'
-  /** The change the switch makes next moves the website into this profile for the first time, so the person is told first. */
-  readonly notice?: 'tunnel' | 'direct'
+  readonly via: SiteTunnelKind | null
+  readonly following: boolean
+  readonly subject: 'app' | 'site'
+  /** Why each tunnel cannot be chosen now (a tunnel can always be given up). */
+  readonly blocked: Readonly<Partial<Record<SiteTunnelKind, 'no-proxy' | 'nym-off' | 'not-kept'>>>
+  /** The profile each choice would move a website into for the first time, so the person is told first. `off` is the choice of no tunnel. Never set for an app. */
+  readonly notices: Readonly<Partial<Record<SiteTunnelKind | 'off', 'tunnel' | 'direct'>>>
   readonly swarm: boolean
   readonly unreadable: boolean
   /** The profile the website lives in now, when its entry puts it in one. */
   readonly profile?: 'tunnel' | 'direct'
-  /** Nym is the tunnel and is switched off in Settings, so nothing can be sent through it until it is switched on again. */
-  readonly nymOff: boolean
+  /** The tunnel everything without a choice of its own goes through. */
+  readonly defaultKind: SiteTunnelKind
+  /** The page does not choose its tunnel here: it runs in a temporary session opened through an app's tunnel, or in the session of the app that opened it. */
+  readonly fixed?: 'temporary' | 'opened'
 }
 
 export interface SiteInfo {

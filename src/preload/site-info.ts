@@ -56,9 +56,9 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
       const result: unknown = await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'applyUpdate', cid } satisfies SiteInfoCommand)
       return (result ?? { ok: false, reason: 'no answer' }) as ApplyOutcome
     },
-    /** The website's tunnel: on, or back to following the default. Main decides what it can do and answers the info after. */
-    setTunnel: async (on: boolean): Promise<TunnelResult | null> => {
-      const result: unknown = await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'setTunnel', on } satisfies SiteInfoCommand)
+    /** The tunnel of the website or app: Nym, the person's proxy, or none. Main decides what it can do and answers the info after. */
+    setTunnel: async (kind: 'nym' | 'socks5' | null): Promise<TunnelResult | null> => {
+      const result: unknown = await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'setTunnel', kind } satisfies SiteInfoCommand)
       return (result ?? null) as TunnelResult | null
     },
     openHome: async (): Promise<void> => {

@@ -24,7 +24,6 @@ import type { CookieView } from '../privacy/cookie-list.js'
 import { cookieViewsFor, removeSiteCookie, removeSiteCookies } from '../privacy/cookie-runner.js'
 import type { BrowserStorageEstimate } from '../permissions/site-data-runner.js'
 import type { SitePermissionsAccess, SitePermissionsView } from '../site-settings/site-permissions-view.js'
-import { isTemporaryRouteSession } from '../route/leaving-routes.js'
 
 export interface SiteDataSnapshot {
   readonly cookieCount: number
@@ -77,8 +76,8 @@ export type SiteInfoCommand =
   | { type: 'removeCookie'; key: string }
   | { type: 'clearCookies' }
   | { type: 'reload' }
-  /** The website's tunnel switch: on, or back to following the default. Answers whether it was done, with the popup's info as it is after. */
-  | { type: 'setTunnel'; on: boolean }
+  /** The tunnel of a website or an installed app: Nym, the person's proxy, or none (null). Answers whether it was done, with the popup's info as it is after. */
+  | { type: 'setTunnel'; kind: 'nym' | 'socks5' | null }
   /** "Delete data" of the local file this popup was opened for: no argument, main reads the key. Answers whether every step succeeded. */
   | { type: 'deleteLocalFile' }
   /** "Review permissions" of an app that was never let in: the question is given back and the tab in front reloads, so the first visit asks again. No argument: main reads the origin. */
@@ -150,7 +149,7 @@ export function registerSiteInfoIpc (
   openScoreHelp: () => void = () => {}
 ): void {
   // A website the person opened through their proxy from a routed app says so, in the tab the popover is about.
-  const withRoute = (info: SiteInfo): SiteInfo => isTemporaryRouteSession(activeWebContents()?.session) ? { ...info, route: 'temporary' } : info
+  const withRoute = (info: SiteInfo): SiteInfo => controller.inSession(info, activeWebContents()?.session)
   // On the popup's own webContents: the handler goes with it, and two windows
   // can each have one open.
   siteInfoWebContents.ipc.handle(SITE_INFO_COMMAND_CHANNEL, async (
@@ -220,8 +219,8 @@ export function registerSiteInfoIpc (
         return
       }
       case 'setTunnel': {
-        if (typeof command.on !== 'boolean') return { ok: false, info: withRoute(await controller.siteInfoFor(origin)) } satisfies TunnelResult
-        const ok = await controller.setTunnel(origin, command.on)
+        if (command.kind !== null && command.kind !== 'nym' && command.kind !== 'socks5') return { ok: false, info: withRoute(await controller.siteInfoFor(origin)) } satisfies TunnelResult
+        const ok = await controller.setTunnel(origin, command.kind)
         return { ok, info: withRoute(await controller.siteInfoFor(origin)) } satisfies TunnelResult
       }
       case 'reload':
