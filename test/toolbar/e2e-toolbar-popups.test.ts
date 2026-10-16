@@ -311,6 +311,8 @@ it('the question marks of the shield popup are buttons that open the Web3 Score 
   const { app, chrome } = await launchShell()
   try {
     await ready(app, chrome)
+    // The pill's mark is a control only while it reads "Web?"; on a plain page it reads Web2 and does nothing.
+    expect(await chrome.evaluate(() => { const mark = document.querySelector<HTMLButtonElement>('#web3-mark'); return { tag: mark?.tagName, text: mark?.textContent, disabled: mark?.disabled } })).toEqual({ tag: 'BUTTON', text: 'Web2', disabled: true })
     await chrome.locator('#web3-score-btn').click()
     expect(await waitFor(async () => await shownPage(app) === 'web3')).toBe(true)
     const popup = app.windows().find((w) => w.url().includes('/site-info/')) as Page
