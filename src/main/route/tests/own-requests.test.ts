@@ -68,22 +68,53 @@ describe('a request about an origin that is routed on its own, with the whole br
     expect(ordinary).not.toHaveBeenCalled()
   })
 
-  it('gives a caller that makes its own requests the session of the website, and none for any other origin or while the whole browser is on the tunnel', async () => {
+  it('gives a caller that makes its own requests the session of the website, and none for any other origin', async () => {
     const PROFILE = { name: 'tunnel-profile' }
     const siteSession = async (origin: string): Promise<object | undefined> => origin === 'https://routed.eth' ? PROFILE : undefined
     setOwnRequests({ everywhere: () => false, isRouted: () => true, tunnel, direct, directSession: () => SESSION, siteSession })
     expect(await ownSiteSession('https://routed.eth')).toBe(PROFILE)
     expect(await ownSiteSession('https://plain.example')).toBeUndefined()
-    setOwnRequests({ everywhere: () => true, isRouted: () => true, tunnel, direct, directSession: () => SESSION, siteSession })
-    expect(await ownSiteSession('https://routed.eth')).toBeUndefined()
     setOwnRequests(undefined)
     expect(await ownSiteSession('https://routed.eth')).toBeUndefined()
   })
+})
 
-  it('is left to the browser-wide tunnel while that is on', async () => {
-    setOwnRequests({ everywhere: () => true, isRouted: () => true, tunnel, direct, directSession: () => SESSION, through: async () => profile })
-    expect(await (await ownFetch(ordinary, 'https://routed.eth')('https://routed.eth/x')).text()).toBe('tunnel')
-    expect(profile).not.toHaveBeenCalled()
+describe('a request about a website with a tunnel of its own, with the whole browser on a tunnel', () => {
+  const profile = vi.fn(async () => new Response('through its own tunnel'))
+  const PROFILE = { name: 'proxy-profile' }
+
+  it('goes through the website\'s own tunnel, not the default one that may be another', async () => {
+    setOwnRequests({ everywhere: () => true, isRouted: () => true, tunnel, direct, directSession: () => SESSION, through: async (origin) => origin === 'https://picked.example' ? profile : undefined })
+    expect(await (await ownFetch(ordinary, 'https://picked.example')('https://picked.example/.well-known/orivon.json')).text()).toBe('through its own tunnel')
+    expect(tunnel).not.toHaveBeenCalled()
+    expect(await (await ownFetch(ordinary, 'https://follows.example')('https://follows.example/x')).text()).toBe('tunnel')
+    expect(await (await ownFetch(ordinary)('https://api.example/x')).text()).toBe('tunnel')
+  })
+
+  it('is not made at all when its tunnel cannot be had, and never falls back to the default one', async () => {
+    setOwnRequests({ everywhere: () => true, isRouted: () => true, tunnel, direct, directSession: () => SESSION, through: async () => { throw new Error('the tunnel profile could not be made ready') } })
+    await expect(ownFetch(ordinary, 'https://picked.example')('https://picked.example/x')).rejects.toThrow(/could not be made ready/)
+    expect(tunnel).not.toHaveBeenCalled()
+  })
+
+  it('gives a caller that makes its own requests the session of the website', async () => {
+    setOwnRequests({ everywhere: () => true, isRouted: () => true, tunnel, direct, directSession: () => SESSION, siteSession: async (origin) => origin === 'https://picked.example' ? PROFILE : undefined })
+    expect(await ownSiteSession('https://picked.example')).toBe(PROFILE)
+    expect(await ownSiteSession('https://follows.example')).toBeUndefined()
+  })
+})
+
+describe('where the name of a website with a tunnel of its own is looked up', () => {
+  const tunnelled = (everywhere: boolean): void => {
+    setOwnRequests({ everywhere: () => everywhere, isRouted: () => true, tunnel, direct, directSession: () => SESSION, siteTunnelled: (origin) => origin === 'https://picked.example' })
+  }
+
+  it('at the far end of its tunnel, with the whole browser off the tunnel too', () => {
+    tunnelled(false)
+    expect(ownRouteFor('https://picked.example')).toBe('tunnel')
+    expect(ownRouteFor('https://plain.example')).toBe('ordinary')
+    tunnelled(true)
+    expect(ownRouteFor('https://picked.example')).toBe('tunnel')
   })
 })
 

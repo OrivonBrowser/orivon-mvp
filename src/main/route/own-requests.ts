@@ -21,9 +21,15 @@ export interface OwnRequests {
   /** That session, for a caller that makes its own requests with `net.request`. */
   readonly directSession: () => object
   /**
-   * With the browser-wide setting off, the session a request about the website at `origin` is made in when the website has its
-   * tunnel on: the tunnel profile's, which signs in to its front. Undefined for any other origin, whose request is the caller's own.
-   * Rejects when the website is routed and its route cannot be had, and the request is then not made.
+   * Whether the website at `origin` has a tunnel of its own, so that a request about it is made in that tunnel's profile session
+   * (`siteSession`) whatever the browser-wide setting says, and the far end of that tunnel resolves its name.
+   */
+  readonly siteTunnelled?: (origin: string) => boolean
+  /**
+   * The session a request about the website at `origin` is made in when the website has a tunnel of its own, whatever the
+   * browser-wide setting says: that tunnel's profile session, which signs in to its front. Undefined for any other origin, whose
+   * request is the caller's own or the default tunnel's. Rejects when the website is routed and its route cannot be had, and the
+   * request is then not made.
    */
   readonly siteSession?: (origin: string) => Promise<object | undefined>
   /** `siteSession` as a `fetch`, for a caller that makes its request with one. */
@@ -99,6 +105,8 @@ export function onOwnNodeRouteMoved (listener: () => void): () => void {
  */
 export function ownRouteFor (origin?: string): 'ordinary' | 'tunnel' | 'direct' {
   const current = source
+  // A website with a tunnel of its own is asked about in that tunnel, with the browser-wide setting off too: its name is resolved at the far end.
+  if (current !== undefined && origin !== undefined && current.siteTunnelled?.(origin) === true) return 'tunnel'
   if (current === undefined || !current.everywhere()) return 'ordinary'
   return origin !== undefined && !current.isRouted(origin) ? 'direct' : 'tunnel'
 }
@@ -108,28 +116,26 @@ export function ownDirectSession (): object | undefined {
   return source?.everywhere() === true ? source.directSession() : undefined
 }
 
-/** The session a request of Orivon's own about the website at `origin` is made in while the browser-wide setting is off, if the website has its tunnel on. */
+/** The session a request of Orivon's own about the website at `origin` is made in, if the website has a tunnel of its own: whatever the browser-wide setting says, so that it never leaves through the default tunnel when it picked another. */
 export async function ownSiteSession (origin: string): Promise<object | undefined> {
-  const current = source
-  if (current === undefined || current.everywhere()) return undefined
-  return await current.siteSession?.(origin)
+  return await source?.siteSession?.(origin)
 }
 
 /**
  * `ordinary`, unless the whole browser is on the tunnel, when the request goes through it. `origin` is the website or app
- * the request is about, if any: one the person set to off is asked for directly, and one that is routed on its own (a tunnel
- * profile's website) is asked for through its route even while the browser-wide setting is off, since the
- * request would otherwise show the person's address to a site they only open through the tunnel.
+ * the request is about, if any: one the person set to off is asked for directly, and a website with a tunnel of its own is asked
+ * about through that tunnel's profile whatever the browser-wide setting says, since the request would otherwise show the
+ * person's address (or another tunnel's exit) to a site they only open through that tunnel.
  */
 export function ownFetch (ordinary: OwnFetch, origin?: string): OwnFetch {
   return async (url, init) => {
     if (source !== undefined) await sessionsFollowSetting(source)
     const current = source
     if (current === undefined) return await ordinary(url, init)
-    if (!current.everywhere()) {
-      const routed = origin === undefined ? undefined : await current.through?.(origin)
-      return await (routed ?? ordinary)(url, init)
-    }
+    // A website with a tunnel of its own is asked about in that tunnel, whichever tunnel the browser-wide setting names.
+    const routed = origin === undefined ? undefined : await current.through?.(origin)
+    if (routed !== undefined) return await routed(url, init)
+    if (!current.everywhere()) return await ordinary(url, init)
     if (origin !== undefined && !current.isRouted(origin)) return await current.direct(url, init)
     return await current.tunnel(url, init)
   }

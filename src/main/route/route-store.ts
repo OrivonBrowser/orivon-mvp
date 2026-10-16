@@ -30,7 +30,14 @@ export interface ParsedRoutes {
   readonly profiles: boolean
   /** False for a file written before each origin named its own tunnel: every origin it lists then goes through the tunnel that was the choice. */
   readonly kinds: boolean
+  /** How many starts have tried to move the proxy-era storage out of Nym's profile folder and failed; the file stays unmarked until one succeeds or `MOVE_ATTEMPTS` is reached. */
+  readonly moveAttempts: number
+  /** The websites whose storage in Nym's profile is the proxy's (a move that could not be made), so Nym is never handed those cookies: moving one to Nym clears it first. */
+  readonly foreign: ReadonlySet<string>
 }
+
+/** Starts that try to move the proxy-era storage before it is given up as foreign to Nym's profile. */
+export const MOVE_ATTEMPTS = 3
 
 /** The file's key for the websites that have storage in each profile. */
 const APART_KEY: Readonly<Record<Profile, string>> = { nym: 'apart', socks5: 'apartProxy', direct: 'apartDirect' }
@@ -73,8 +80,13 @@ export function parseRoutes (raw: string, legacyKind: TunnelKind = 'nym'): Parse
   const via = typeof file.via === 'object' && file.via !== null && !Array.isArray(file.via) ? file.via as Record<string, unknown> : {}
   const entries = new Map<string, TunnelEntry>()
   for (const origin of off) entries.set(origin, 'off')
-  for (const origin of on) entries.set(origin, kinds ? (Object.hasOwn(via, origin) && isTunnelKind(via[origin]) ? via[origin] : 'nym') : legacyKind)
-  return { entries, apart: kept, profiles: file.profiles === PROFILES_VERSION, kinds }
+  // A file still waiting for its migration names, in `pendingVia`, the tunnel of each origin a switch made since; every other origin took the legacy choice.
+  const pending = typeof file.pendingVia === 'object' && file.pendingVia !== null && !Array.isArray(file.pendingVia) ? file.pendingVia as Record<string, unknown> : {}
+  const named = kinds ? via : pending
+  for (const origin of on) entries.set(origin, Object.hasOwn(named, origin) && isTunnelKind(named[origin]) ? named[origin] : kinds ? 'nym' : legacyKind)
+  const foreign = originsOf(file.apartForeign) ?? new Set<string>()
+  const attempts = typeof file.moveAttempts === 'number' && Number.isInteger(file.moveAttempts) && file.moveAttempts > 0 ? Math.min(file.moveAttempts, MOVE_ATTEMPTS) : 0
+  return { entries, apart: kept, profiles: file.profiles === PROFILES_VERSION, kinds, moveAttempts: attempts, foreign }
 }
 
 /** What a switch reports when it could not be kept. */
@@ -168,7 +180,7 @@ export class RouteStore {
       const profile = profileOf(routes.entries.get(origin))
       if (profile !== undefined) apart[profile].add(origin)
     }
-    const next: ParsedRoutes = { entries: routes.entries, apart, profiles: true, kinds: routes.kinds }
+    const next: ParsedRoutes = { ...routes, apart, profiles: true }
     this.#save(next)
     this.#routes = next
   }
@@ -187,19 +199,62 @@ export class RouteStore {
   /**
    * Records that every origin the file lists goes through `legacyKind`, and marks the file. With `storageMoved`, the storage
    * the websites had in Nym's profile was moved to the proxy's profile (the profile of the tunnel that carried them), so the
-   * list of websites that have storage there moves with it. Throws `RouteStoreError` when it cannot be saved, and then the
-   * migration runs again next start.
+   * list of websites that have storage there moves with it; without it, when the proxy carried them, that storage stays in
+   * Nym's profile and is recorded as the proxy's, so Nym is never handed it unannounced. Throws `RouteStoreError` when it cannot
+   * be saved, and then the migration runs again next start.
    */
   migrateToKinds (storageMoved: boolean): void {
     const routes = this.#loaded()
     if (routes.kinds || this.#unreadable) return
     const apart = emptyApart()
     for (const profile of PROFILES) for (const origin of routes.apart[profile]) apart[profile].add(origin)
-    if (storageMoved && this.#legacyKind === 'socks5' && routes.profiles) {
-      for (const origin of routes.apart.nym) apart.socks5.add(origin)
-      apart.nym.clear()
+    const foreign = new Set<string>()
+    if (this.#legacyKind === 'socks5' && routes.profiles) {
+      if (storageMoved) {
+        for (const origin of routes.apart.nym) apart.socks5.add(origin)
+        apart.nym.clear()
+      } else {
+        for (const origin of routes.apart.nym) foreign.add(origin)
+      }
     }
-    const next: ParsedRoutes = { entries: routes.entries, apart, profiles: routes.profiles, kinds: true }
+    const next: ParsedRoutes = { ...routes, apart, kinds: true, moveAttempts: 0, foreign }
+    this.#save(next)
+    this.#routes = next
+  }
+
+  /**
+   * Records a start whose move of the proxy-era storage failed (a handle held on the folder), leaving the file unmarked so the
+   * next start tries again. Returns whether it will: false once `MOVE_ATTEMPTS` starts have failed, and the caller then marks the
+   * file without the move. Throws `RouteStoreError` when it cannot be saved.
+   */
+  deferKindsMove (): boolean {
+    const routes = this.#loaded()
+    if (routes.kinds || this.#unreadable) return false
+    const attempts = routes.moveAttempts + 1
+    if (attempts >= MOVE_ATTEMPTS) return false
+    const next: ParsedRoutes = { ...routes, moveAttempts: attempts }
+    this.#save(next)
+    this.#routes = next
+    return true
+  }
+
+  /**
+   * Whether the storage the website has in Nym's profile is the proxy's: from a move that could not be made, or one still to be
+   * made. Moving the website to Nym must clear it first, and tell the person.
+   */
+  isForeignToNym (origin: string): boolean {
+    const routes = this.#loaded()
+    if (this.#unreadable) return false
+    return routes.foreign.has(origin) || (!routes.kinds && this.#legacyKind === 'socks5' && routes.profiles && routes.apart.nym.has(origin))
+  }
+
+  /** The storage the website has in Nym's profile was cleared, so it is Nym's own again. */
+  dropForeign (origin: string): void {
+    const routes = this.#loaded()
+    if (!routes.foreign.has(origin) || this.#unreadable) return
+    const foreign = new Set(routes.foreign)
+    foreign.delete(origin)
+    const next: ParsedRoutes = { ...routes, foreign }
     this.#save(next)
     this.#routes = next
   }
@@ -263,7 +318,9 @@ export class RouteStore {
     for (const each of PROFILES) for (const listed of routes.apart[each]) kept[each].add(listed)
     if (apart) kept[profile].add(origin)
     else kept[profile].delete(origin)
-    const next: ParsedRoutes = { ...routes, apart: kept }
+    const foreign = new Set(routes.foreign)
+    if (!apart && profile === 'nym') foreign.delete(origin)
+    const next: ParsedRoutes = { ...routes, apart: kept, foreign }
     // What the person set is not known while the file is unreadable, so nothing is written over it.
     if (!this.#unreadable) this.#save(next)
     this.#routes = next
@@ -277,7 +334,7 @@ export class RouteStore {
   /** A file that is not there is nothing set; a file that is there and cannot be used is kept aside and reported. */
   #read (): ParsedRoutes {
     // Nothing stored is nothing to migrate.
-    const none = (): ParsedRoutes => ({ entries: new Map(), apart: emptyApart(), profiles: true, kinds: true })
+    const none = (): ParsedRoutes => ({ entries: new Map(), apart: emptyApart(), profiles: true, kinds: true, moveAttempts: 0, foreign: new Set() })
     if (this.#path === null) return none()
     let raw: string
     try {
@@ -310,6 +367,9 @@ export class RouteStore {
     const entries = [...routes.entries]
     const via: Record<string, TunnelKind> = {}
     for (const [origin, entry] of entries) if (entry === 'socks5' && isPersistableOrigin(origin)) via[origin] = entry
+    // A file still waiting for its migration would read every origin as the legacy choice, so it says outright which tunnel each picked.
+    const pendingVia: Record<string, TunnelKind> = {}
+    if (!routes.kinds) for (const [origin, entry] of entries) if (entry !== 'off' && isPersistableOrigin(origin)) pendingVia[origin] = entry
     try {
       writeFileAtomic(this.#path, JSON.stringify({
         version: FILE_VERSION,
@@ -317,10 +377,13 @@ export class RouteStore {
         kinds: routes.kinds ? KINDS_VERSION : undefined,
         origins: written(entries.filter(([, entry]) => entry !== 'off').map(([origin]) => origin)),
         via,
+        pendingVia: routes.kinds ? undefined : pendingVia,
         off: written(entries.filter(([, entry]) => entry === 'off').map(([origin]) => origin)),
         apart: written(routes.apart.nym),
         apartProxy: written(routes.apart.socks5),
-        apartDirect: written(routes.apart.direct)
+        apartDirect: written(routes.apart.direct),
+        apartForeign: routes.foreign.size === 0 ? undefined : written(routes.foreign),
+        moveAttempts: routes.moveAttempts === 0 ? undefined : routes.moveAttempts
       }, null, 2))
     } catch (error) {
       console.error('[route] could not save the tunnel settings:', error)

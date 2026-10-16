@@ -127,10 +127,13 @@ export const routeSubsystem: Subsystem = {
     setDirectLookupSource(() => routes.everywhere() ? systemProxySession() : undefined)
     const tunnelFetch = createRequestFetch({ net, session: session.defaultSession, answer: answerRouteChallenge })
     const directFetch = createRequestFetch({ net, session: systemProxySession(), answer: (_info, callback) => { callback() } })
-    // A website with its tunnel on is asked about (its app manifest, its files by the loader) in its tunnel profile's session, not the default one, which is direct while the whole browser is off the tunnel.
-    const siteSession = async (origin: string): Promise<Session | undefined> => {
+    // A website with a tunnel of its own is asked about (its app manifest, its files by the loader) in that tunnel's profile session, never the default one, which is direct while the whole browser is off the tunnel and may be the other tunnel when it is on.
+    const siteTunnelled = (origin: string): boolean => {
       const profile = routes.hub.profileFor(origin)
-      if (profile === undefined || profile === 'direct') return undefined
+      return profile !== undefined && profile !== 'direct'
+    }
+    const siteSession = async (origin: string): Promise<Session | undefined> => {
+      if (!siteTunnelled(origin)) return undefined
       const routed = await lookupSessionFor(origin)
       // A website that belongs in a tunnel profile is never asked about from the default session instead.
       if (routed === undefined) throw new Error('the tunnel profile is not available, so this website is not asked about')
@@ -140,7 +143,7 @@ export const routeSubsystem: Subsystem = {
       const routed = await siteSession(origin)
       return routed === undefined ? undefined : createRequestFetch({ net, session: routed, answer: answerRouteChallenge })
     }
-    setOwnRequests({ everywhere: routes.everywhere, isRouted: routes.hub.isRouted, tunnel: tunnelFetch, direct: directFetch, directSession: systemProxySession, settled: routes.controller.sharedSettled, siteSession, through, nodeEndpoint: routes.nodeEndpoint, onNodeRouteMoved: routes.onNodeRouteMoved })
+    setOwnRequests({ everywhere: routes.everywhere, isRouted: routes.hub.isRouted, tunnel: tunnelFetch, direct: directFetch, directSession: systemProxySession, settled: routes.controller.sharedSettled, siteTunnelled, siteSession, through, nodeEndpoint: routes.nodeEndpoint, onNodeRouteMoved: routes.onNodeRouteMoved })
 
     const siteSessions = createSiteSessions({
       controller: routes.controller,

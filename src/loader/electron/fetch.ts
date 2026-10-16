@@ -142,7 +142,7 @@ export async function netFetch (url: string, signal: AbortSignal, headers?: Requ
   const { net } = await import('electron')
   // While the setting is being applied the default session may still be direct or still on the front: the request waits, or is refused.
   await ownRequestsSettled()
-  // A website with its tunnel on is fetched in the tunnel profile's session while the whole browser is off the tunnel; a rejection means its route cannot be had, and nothing is fetched.
+  // A website with a tunnel of its own is fetched in that tunnel's profile session whatever the browser-wide setting says; a rejection means its route cannot be had, and nothing is fetched.
   const profile = await ownSiteSession(new URL(url).origin)
   return await new Promise<FetchResponse>((resolve, reject) => {
     // An origin set to off while the whole browser is on the tunnel is fetched on the system's proxy; otherwise the default session, which then is the tunnel's, whose front this request signs in to.

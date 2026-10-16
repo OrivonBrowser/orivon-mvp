@@ -39,7 +39,7 @@ const BLOCKED_WORDS = {
 
 /** What the choice of an app's tunnel says under its label, about the person's situation rather than the program's. */
 export function routeWords (route: AppRow['route']): string {
-  if (route.unreadable === true) return 'Orivon could not read which apps you sent through a tunnel, so while a tunnel is set every app goes through it. Mend or remove routes.json in your profile folder and restart Orivon to choose again.'
+  if (route.unreadable === true) return 'Orivon could not read which apps you sent through a tunnel, so every app goes through your default tunnel, or through Nym when that has no address. Mend or remove routes.json in your profile folder and restart Orivon to choose again.'
   if (route.state === 'off' || route.via === null) {
     const why = [...new Set(Object.values(route.blocked))].map((reason) => BLOCKED_WORDS[reason])
     return ['Off: this app connects as you do.', ...why].join(' ')

@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { createRouteSwitch } from '../route-switch.js'
 import type { RouteSwitchWorld } from '../route-switch.js'
@@ -213,5 +216,32 @@ describe('a website that moves into a profile', () => {
     const { routeSwitch, store } = setup({ world: { dropServiceWorkers: async () => { throw new Error('busy') } } })
     await routeSwitch.choose(SITE, 'nym')
     expect(store.stateOf(SITE)).toBe('nym')
+  })
+})
+
+describe('a website whose storage in Nym\'s profile is the proxy\'s', () => {
+  it('is told first, and has that storage cleared before it moves to Nym', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orivon-switch-'))
+    try {
+      const path = join(dir, 'routes.json')
+      writeFileSync(path, JSON.stringify({ version: 1, profiles: 1, kinds: 1, origins: [SITE], via: { [SITE]: 'socks5' }, apart: [SITE], apartForeign: [SITE] }))
+      const store = new RouteStore(path)
+      const removed: string[] = []
+      const hub = createRouteHub({ store, defaultKind: () => 'nym', isApp: () => false, targetOf: () => ({ host: '127.0.0.1', port: 9050 }), providerFor: () => ({ connect: async () => { throw new Error('unused') } }) })
+      const routeSwitch = createRouteSwitch({ targetOf: () => ({ host: '127.0.0.1', port: 9050 }), defaultKind: () => 'nym', store, hub, controller: { settled: async () => {} } as never }, {
+        isPinned: () => false,
+        isPersistable: () => true,
+        removeSiteStorage: async (partition, origin) => { removed.push(`${partition} ${origin}`) }
+      })
+      expect(store.isApart(SITE, 'nym')).toBe(true)
+      expect(routeSwitch.noticeFor(SITE, 'nym')).toBe('nym')
+      await routeSwitch.choose(SITE, 'nym')
+      expect(removed).toEqual([`${profilePartitionFor('nym', SITE)} ${SITE}`])
+      expect(store.stateOf(SITE)).toBe('nym')
+      expect(store.isForeignToNym(SITE)).toBe(false)
+      expect(routeSwitch.noticeFor(SITE, 'nym')).toBeUndefined()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

@@ -33,6 +33,7 @@ describe('the hint under the tunnel switch', () => {
 
   it('says why the switch is fixed when the list of tunnel settings cannot be read', () => {
     expect(tunnelHint({ ...base, unreadable: true, via: 'nym' })).toContain('could not read your tunnel settings')
+    expect(tunnelHint({ ...base, unreadable: true, via: 'nym' })).toContain('through Nym when that has no address')
   })
 })
 
