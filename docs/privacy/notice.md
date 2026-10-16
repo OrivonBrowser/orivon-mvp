@@ -208,20 +208,20 @@ from which we receive nothing. Each one below is in [`outbound-requests.md`](out
 
 | What | To whom | Why, and the basis | You can |
 |---|---|---|---|
-| Check for a new release | `api.github.com` | To tell you an update exists. Your consent: it is off until you switch it on in Settings > About | Switch it off |
+| Check for a new release | `api.github.com` | To tell you an update exists. Our legitimate interest, Article 6(1)(f), in keeping the browser current and safe; on by default, and it sends nothing about you but the request itself | Switch it off |
 | Follow Ethereum and prove `.eth` names | `eth.drpc.org`, `rpc.mevblocker.io`, `ethereum-rpc.publicnode.com`, `ethereum-beacon-api.publicnode.com` | To verify a name instead of trusting a server. Needed for the feature you asked for when you open a `.eth` or `ipfs://` address; two minutes after launch it also renews a checkpoint more than a week old (our legitimate interest, Article 6(1)(f), in the feature working). The RPC sees which `.eth` name you open | Switch the light client off in Settings > Web3 (then no `.eth` name loads) |
 | Fetch the content of an `ipfs://` address or a `.eth` site, and look up `ipns://` keys and DNSLink names | `ipfs.orbitor.dev`, `ipfs.filebase.io`, `trustless-gateway.link`, `name.web3.storage`, `cloudflare-dns.com`, `dns.google`, and for some names a server that the name's own record chooses | To open the address you asked for. Performing what you asked, Article 6(1)(b). The server sees which content you open. Every block is checked against its hash | Not opening such addresses |
 | Check an installed app for a new version while its tab is open | The same servers, every 30 minutes | To tell you when an app you installed has a new version. Our legitimate interest, Article 6(1)(f), in keeping apps current and safe; it repeats the lookups of the row above | Close the app's tab |
 | Ask the Web3 Score provider about the page you are on | The provider set in Settings > Web3 (by default one chosen by Orivon, at an ENS name) | To show a trust level in the site shield. Legitimate interest, Article 6(1)(f); on by default. The provider learns a bucket, 1 of 16 or 256, that the page's content identifier falls in, never the identifier or the address. A provider that knows few sites can guess which one a bucket means | Clear the provider address in Settings > Web3 |
+| Look up the address of each site you open | Quad9 (`dns.quad9.net`) by default, or the provider you pick in Settings > Privacy | So the network you are on cannot see or change the lookups. Legitimate interest, Article 6(1)(f), in the connection being private and intact; on by default. Quad9 learns the name of every site you open, never the page, and has its own privacy policy. If Quad9 cannot be reached, the lookup goes to this computer's own DNS. A site you send through a tunnel is looked up at the tunnel's far end instead | Choose Off or another provider in Settings > Privacy |
 | Fetch a page's icon | The site's own host, or a host the site names | To draw the tab icon. Performing what you asked, Article 6(1)(b); the same host that served the page | Not possible |
 | Check Web Store extensions for updates | `update.googleapis.com` | To keep extensions you installed current and safe. Legitimate interest, Article 6(1)(f), and only if you installed one. It sends their identifiers, the Chromium version, your operating system, and two random identifiers. Never in a private window | Remove the extension |
 | An extension's own downloads, such as filter lists | The hosts that extension names | Decided by the extension you installed | Settings of the extension, or remove it |
 | Download a spell-check dictionary, once per language | Chromium's dictionary host | To check your spelling. Performing what you asked, Article 6(1)(b), and Settings says so | Switch spell checking off |
 
-Three more send nothing until you switch them on in Settings: search suggestions as you type
-(your typed text goes to your search engine; never in a private window), secure DNS (every
-site name goes to the resolver you pick), and the Do Not Track and Global Privacy Control
-signals, which send no data of their own.
+Search suggestions as you type send nothing until you switch them on in Settings (your typed
+text goes to your search engine; never in a private window). The Do Not Track and Global Privacy
+Control signals send no data of their own; Global Privacy Control is on by default.
 
 We do not control what those servers do with the connection. They see your IP address, as any
 server you connect to does, and they have their own privacy policies.

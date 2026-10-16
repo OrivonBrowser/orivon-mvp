@@ -80,10 +80,10 @@ describe('buildSiteInfo -- capability rows', () => {
     const grants: Grant[] = [grant({ patterns: ['*:*'] })]
 
     const held = buildSiteInfo(APP, manifest, grants, [], true, 4)
-    expect(held.capabilityRows[0]).toMatchObject({ warning: false, message: 'Unlimited network access' })
+    expect(held.capabilityRows[0]).toMatchObject({ warning: false, message: 'Unlimited network access: open direct connections to any computer on the internet' })
 
     const notHeld = buildSiteInfo(APP, manifest, [], [], true, 4)
-    expect(notHeld.capabilityRows[0]).toMatchObject({ warning: false, message: 'Unlimited network access' })
+    expect(notHeld.capabilityRows[0]).toMatchObject({ warning: false, message: 'Unlimited network access: open direct connections to any computer on the internet' })
   })
 
   it('a grant for a capability the current manifest no longer declares is left out -- nothing left to switch', () => {

@@ -217,6 +217,8 @@ Settings shows what it is doing.
 | Variable | What it does |
 |---|---|
 | `ORIVON_ETH_LIGHT_CLIENT=off` | Keeps the light client from starting, so the run contacts no Ethereum server and every real `.eth` name fails closed. `test/support/launch-electron.mjs` sets it for every smoke and e2e launch unless a test asks otherwise |
+| `ORIVON_UPDATE_CHECK=off` | Stops the daily look for a newer release (on by default), so the run asks GitHub nothing. `test/support/launch-electron.mjs` sets it for every smoke and e2e launch unless a test asks otherwise |
+| `ORIVON_SECURE_DNS=off` | Replaces the default secure DNS (Quad9, with this computer's DNS as the fallback) with off, so the run asks no DNS provider; a profile that names its own choice keeps it. Set for every smoke and e2e launch like the one above |
 | `ORIVON_LIVE_ETH=1` | Runs `src/protocols/verifier-host/light-client/tests/live-ens.test.ts`, which resolves real names through the light client against mainnet. Skipped otherwise |
 | `ORIVON_TEST_ETH_FIXTURES`, `ORIVON_TEST_IPFS_GATEWAYS`, `ORIVON_TEST_DOH` | Test builds only (`npm run test:e2e` builds one): `.eth` names mapped to content with no light client, and the gateway and DNS-over-HTTPS endpoints to fetch it from. An ordinary build contains none of this (`npm run check:dev-grant-absent`) |
 | `ORIVON_TEST_IPFS_NODE`, `ORIVON_TEST_IPFS_NODE_RETRY_WAIT_MS` | Test builds only: an endpoint the host reads IPFS from as it does from Orivon's own node (always ready, no process started), and the wait before a block it could not give is asked for again, in place of the real node's 32 s. Needs `ORIVON_TEST_ETH_FIXTURES` too |

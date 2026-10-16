@@ -39,7 +39,7 @@ import { removeAfterExit, removePrivateDir, sweepPrivateDirs } from './launch/pr
 import { loadFetchStack } from './startup/fetch-stack.js'
 import { installFocusedContentsGuard } from './focus/focused-contents-guard.js'
 import { runUpdateCheck } from './self-update/update-check-runner.js'
-import { scheduleUpdateChecks, updateChecksEnabled } from './self-update/update-schedule.js'
+import { scheduleUpdateChecks, updateChecksEnabled, updateChecksForcedOff } from './self-update/update-schedule.js'
 import { isStoreInstall } from './os/windows-store.js'
 import { configureVerifier, ipfsSettingsChanged, lightClientSettingChanged, swarmSettingChanged, tunnelDefaultChanged, verifierEthContentCid } from './verifier/verifier-subsystem.js'
 import { createPageScoreLookup } from './browsing/page-score-lookup.js'
@@ -270,7 +270,7 @@ export function boot (runtime: Runtime): void {
     // Looks for a newer release once a day when the person has said it may, from the moment they say so; installs nothing.
     if (!runtime.isPrivate) {
       const stopUpdateChecks = scheduleUpdateChecks({
-        enabled: () => updateChecksEnabled(shell.settings.get('updates.check'), isStoreInstall()),
+        enabled: () => updateChecksEnabled(shell.settings.get('updates.check'), isStoreInstall(), updateChecksForcedOff()),
         onEnabledChange: (listener) => shell.settings.onChange((change) => { if (change.key === 'updates.check') listener() }),
         run: async () => { await runUpdateCheck(app).catch((error: unknown) => { console.error('[orivon] the update check failed:', error) }) }
       })

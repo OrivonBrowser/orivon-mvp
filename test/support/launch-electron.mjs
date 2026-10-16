@@ -257,6 +257,10 @@ export async function launchElectron ({
   // sends anything. A spec that needs it sets ORIVON_TELEMETRY=on; its state then lives in the profile's
   // own temporary folder (below), never the real ~/.config/orivon-telemetry.
   if (env['ORIVON_TELEMETRY'] === undefined) env['ORIVON_TELEMETRY'] = 'off'
+  // And the update check, which is on by default: off here so no run asks GitHub for the latest release.
+  if (env['ORIVON_UPDATE_CHECK'] === undefined) env['ORIVON_UPDATE_CHECK'] = 'off'
+  // And secure DNS, which is on by default: off here unless a spec names a choice, so no run asks a DNS provider.
+  if (env['ORIVON_SECURE_DNS'] === undefined) env['ORIVON_SECURE_DNS'] = 'off'
   // A spec that turns it on sends to a loopback address of its own, or to this closed port: never the real server.
   if (env['ORIVON_TELEMETRY_URL'] === undefined) env['ORIVON_TELEMETRY_URL'] = 'http://127.0.0.1:9/'
 

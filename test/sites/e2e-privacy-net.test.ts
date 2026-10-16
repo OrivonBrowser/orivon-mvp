@@ -198,7 +198,7 @@ it('shows the five privacy rows and the seven tunnel rows in Settings, saves a c
     // The tunnel rows are their own section now, and Privacy and data no longer holds them.
     expect(await page.locator('#row-route-kind').count()).toBe(0)
     expect(await page.locator('#row-cookies option').allTextContents()).toEqual(['Allow all cookies', 'Block third-party cookies'])
-    expect(await page.locator('#row-secure-dns option').allTextContents()).toEqual(['Off (use this computer\'s DNS)', 'Automatic (use secure DNS when the provider offers it)', 'Cloudflare (1.1.1.1)', 'Quad9 (9.9.9.9)'])
+    expect(await page.locator('#row-secure-dns option').allTextContents()).toEqual(['Quad9, or this computer\'s DNS if Quad9 cannot be reached', 'Off (use this computer\'s DNS)', 'Automatic (use secure DNS when the provider offers it)', 'Cloudflare only (1.1.1.1)', 'Quad9 only (9.9.9.9)'])
     await page.evaluate(() => { document.querySelector('.group-label')?.scrollIntoView() })
     await shoot(page, 'settings-privacy-rows')
 

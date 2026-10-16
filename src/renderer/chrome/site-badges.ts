@@ -27,7 +27,7 @@ const UNREACHABLE_RETRIES = 8
  * so each remembers what it asked to drop a stale response. */
 export function createSiteBadges (): ChromeModule {
   let web3ScoreBtn: HTMLButtonElement | undefined
-  let web3MarkEl: HTMLSpanElement | undefined
+  let web3MarkEl: HTMLButtonElement | undefined
   let sitePermissionsBtn: HTMLButtonElement | undefined
   let shieldEl: SVGSVGElement | undefined
   let shieldRequestUrl: string | null = null
@@ -44,7 +44,13 @@ export function createSiteBadges (): ChromeModule {
     const label = shieldLabel(score)
     web3ScoreBtn.title = label
     web3ScoreBtn.setAttribute('aria-label', label)
-    web3MarkEl.title = label
+    // Only "Web?" asks a question, so only it is a control: it opens the page that says what the levels mean.
+    const asks = web3MarkEl.dataset['mark'] === 'Web?'
+    const markLabel = asks ? `${label}. What the Web3 Score levels mean` : label
+    web3MarkEl.disabled = !asks
+    web3MarkEl.title = markLabel
+    if (asks) web3MarkEl.setAttribute('aria-label', markLabel)
+    else web3MarkEl.removeAttribute('aria-label')
   }
 
   /** The shield's displayed-level query, resolved the same lagging, per-active-tab way the permissions key
@@ -120,7 +126,8 @@ export function createSiteBadges (): ChromeModule {
       shieldEl = web3Shield()
       scoreBtn.append(shieldEl)
       web3ScoreBtn = scoreBtn
-      web3MarkEl = must(document.querySelector<HTMLSpanElement>('#web3-mark'), '#web3-mark missing')
+      web3MarkEl = must(document.querySelector<HTMLButtonElement>('#web3-mark'), '#web3-mark missing')
+      web3MarkEl.addEventListener('click', () => { void ctx.shell.act('web3-score.help', {}) })
       const permissionsBtn = must(document.querySelector<HTMLButtonElement>('#site-permissions-btn'), '#site-permissions-btn missing')
       sitePermissionsBtn = permissionsBtn
 
