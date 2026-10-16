@@ -252,7 +252,7 @@ describe('startHeliosLightClient -- a second client for the tunnel', () => {
     const first = startHeliosLightClient(CONFIG, direct as never, () => {})
     // The module is imported once before the second client asks for it: two imports of a mocked module at the same moment can give the second the real one.
     await synced(first)
-    const second = startHeliosLightClient(CONFIG, tunnel as never, () => {}, 'tunnel')
+    const second = startHeliosLightClient(CONFIG, tunnel as never, () => {}, 'nym')
     await synced(second)
     const [one, two] = (vi.mocked(createHeliosProvider).mock.calls as unknown as Array<[{ executionRpc: string, consensusRpc: string }]>).map(([config]) => config)
     return { direct, tunnel, one: one as { executionRpc: string, consensusRpc: string }, two: two as { executionRpc: string, consensusRpc: string } }

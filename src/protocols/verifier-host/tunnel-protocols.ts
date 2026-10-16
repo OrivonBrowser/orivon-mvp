@@ -1,6 +1,6 @@
-// The protocols a tunnel-profile website is served from. They share no network path with the ones every other website
-// uses (`protocols.ts`): each fetch they make is the routed fetch (`routed-fetch.ts`), and the name is proved by a light
-// client of their own whose requests ride it too. A local node is asked only when `tunnelSitesReadNodes` says its
+// The protocols a website in a tunnel's profile is served from, one set for each tunnel. They share no network path with the
+// ones every other website uses (`protocols.ts`), nor with the other tunnel's: each fetch they make is the routed fetch of
+// their tunnel (`routed-fetch.ts`), and the name is proved by a light client of their own whose requests ride it too. A local node is asked only when `tunnelSitesReadNodes` says its
 // traffic does not betray the site; otherwise the site's IPFS is read from gateways, through the tunnel, only after the
 // person's yes. A tunnel that is down fails every fetch; nothing here has another way out to fall back to.
 
@@ -19,7 +19,7 @@ import { dohTxtResolver } from './doh.js'
 import { allowlisted, DEFAULT_CCIP_LIMITS, guardedCcipRequest } from './egress.js'
 import type { CcipDeps } from './egress.js'
 import { createFixtureResolver } from './fixture-resolver.js'
-import type { HostConfig } from './protocol.js'
+import type { HostConfig, TunnelRoute } from './protocol.js'
 import { ipfsFromNode, nodeRouteOf, offResolver } from './protocols.js'
 import type { HostControls, SharedStores } from './protocols.js'
 import type { NodeLink, NodeLinks } from './node-link.js'
@@ -38,7 +38,7 @@ export const IPFS_NOT_TUNNELLED = 'the IPFS node runs outside the tunnel, and "U
 
 export interface TunnelProtocols {
   readonly protocols: readonly Protocol[]
-  /** The tunnel route these protocols' requests travel. */
+  /** The tunnel route these protocols' requests travel, with what it has measured. */
   readonly route: RoutePace
 }
 
@@ -69,7 +69,7 @@ export function tunnelCcipDeps (fetch: HostDeps['fetch']): CcipDeps {
   }
 }
 
-function startEns (config: HostConfig, deps: HostDeps, fetch: HostDeps['fetch'], route: RoutePace): Protocol {
+function startEns (config: HostConfig, deps: HostDeps, fetch: HostDeps['fetch'], route: RoutePace, tunnel: TunnelRoute): Protocol {
   const resolvers = []
   if (config.fixtures !== undefined && deps.fixturesAllowed) resolvers.push(createFixtureResolver(config.fixtures))
   const { lightClient } = config
@@ -77,7 +77,7 @@ function startEns (config: HostConfig, deps: HostDeps, fetch: HostDeps['fetch'],
     resolvers.push(offResolver(config.lightClientOff ?? 'the Ethereum light client is not running, so no .eth name can be verified'))
     return defineProtocol(ENS, { resolvers })
   }
-  const provider = lazyProvider(() => deps.startLightClient(lightClient, allowlisted([...lightClient.executionRpcs, lightClient.consensusRpc], fetch, 'the light client'), () => {}, 'tunnel', { syncWaitMs: paceOn(route).syncWaitMs, startAfterMs: 0 }))
+  const provider = lazyProvider(() => deps.startLightClient(lightClient, allowlisted([...lightClient.executionRpcs, lightClient.consensusRpc], fetch, 'the light client'), () => {}, tunnel, { syncWaitMs: paceOn(route).syncWaitMs, startAfterMs: 0 }))
   const ccip = tunnelCcipDeps(fetch)
   resolvers.push(createEnsResolver({ provider, ccipRequest: async (parameters, signal) => await guardedCcipRequest(parameters, ccip, DEFAULT_CCIP_LIMITS, signal) }))
   return defineProtocol(ENS, { resolvers })
@@ -122,11 +122,11 @@ function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefi
   })
 }
 
-/** `ens` is the shared `.eth` protocol, which a tunnel-profile website uses when the light client runs outside the tunnel: its name is then proved by the same client every other website's is. */
-export function startTunnelProtocols (config: HostConfig, deps: HostDeps, stores: SharedStores, nodes: NodeLinks, controls: HostControls, ens: Protocol): TunnelProtocols {
-  const fetch = deps.routedFetch
+/** `ens` is the shared `.eth` protocol, which a website in a tunnel's profile uses when the light client runs outside the tunnel: its name is then proved by the same client every other website's is. `tunnel` is the tunnel these protocols are for. */
+export function startTunnelProtocols (config: HostConfig, deps: HostDeps, stores: SharedStores, nodes: NodeLinks, controls: HostControls, ens: Protocol, tunnel: TunnelRoute): TunnelProtocols {
+  const fetch = deps.routedFetch(tunnel)
   const route = routeFor(true)
   const ipfsNode = nodes.to(IPFS_NODE_IDENTITY, IPFS_NODE_WORDS)
   const swarmNode = nodes.to(SWARM_NODE_IDENTITY, SWARM_NODE_WORDS)
-  return { protocols: [config.ethereumOutside === true ? ens : startEns(config, deps, fetch, route), startIpfs(config, deps, fetch, stores, ipfsNode, controls, route), startSwarm(config, deps, swarmNode, stores, route)], route }
+  return { protocols: [config.ethereumOutside === true ? ens : startEns(config, deps, fetch, route, tunnel), startIpfs(config, deps, fetch, stores, ipfsNode, controls, route), startSwarm(config, deps, swarmNode, stores, route)], route }
 }

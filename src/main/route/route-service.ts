@@ -42,8 +42,6 @@ export interface RouteService {
   providerFor: (key: string, target: RouteTarget) => RouteProvider | undefined
   /** Where the local node named `key` leaves while the whole browser is on the tunnel: the tunnel's SOCKS5 address with a sign-in of its own. Rejects, in words, when the tunnel cannot carry it. */
   nodeEndpoint: (key: string) => Promise<RouteEndpoint>
-  /** Called when the person chooses the other tunnel as the default. Returns the unsubscribe. */
-  onDefaultKindChange: (listener: () => void) => () => void
   /** Called when an address `nodeEndpoint` handed out stops being the tunnel's. Returns the unsubscribe. */
   onNodeRouteMoved: (listener: () => void) => () => void
   /** The Nym tunnel: asked for by every route that leaves through it. */
@@ -107,7 +105,6 @@ export function createRouteService (options: RouteServiceOptions): RouteService 
     listener()
   })
   const defaultKind = (): TunnelKind => kind
-  const kindListeners = new Set<() => void>()
   const hub = createRouteHub({ store: options.store, targetOf, defaultKind, providerFor, everywhere, ...(options.electron.isApp === undefined ? {} : { isApp: options.electron.isApp }), ...(options.installed === undefined ? {} : { installed: options.installed }) })
   const controller = createRouteController({ ...options.electron, hub })
   const routeSwitch = createRouteSwitch({ targetOf, defaultKind, store: options.store, controller, hub }, options.switchWorld ?? { isPinned: () => false, isPersistable: () => false })
@@ -123,7 +120,6 @@ export function createRouteService (options: RouteServiceOptions): RouteService 
     providerFor,
     nodeEndpoint,
     onNodeRouteMoved,
-    onDefaultKindChange: (listener) => { kindListeners.add(listener); return () => { kindListeners.delete(listener) } },
     nym: options.nym,
     forget: (origin) => {
       try {
@@ -144,10 +140,7 @@ export function createRouteService (options: RouteServiceOptions): RouteService 
         const addressMoved = address !== current
         current = address
         kind = chosen
-        if (chosen !== previous) {
-          hub.defaultKindChanged(previous)
-          for (const listener of [...kindListeners]) listener()
-        }
+        if (chosen !== previous) hub.defaultKindChanged(previous)
         // Only what goes through the proxy hears of its address; an address typed while Nym is the only choice in use changes no route.
         if (addressMoved) hub.addressChanged()
       }

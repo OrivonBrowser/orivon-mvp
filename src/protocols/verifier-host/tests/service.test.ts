@@ -32,7 +32,7 @@ function deps (overrides: Partial<HostDeps> = {}): HostDeps & { posted: FromHost
     fixturesAllowed: true,
     directFetch: async () => { throw new Error('no direct fetch in this test -- config().unproxiedGateways is empty') },
     ccipFetch: async () => { throw new Error('no CCIP fetch in this test') },
-    routedFetch: async () => { throw new Error('no routed fetch in this test') },
+    routedFetch: () => async () => { throw new Error('no routed fetch in this test') },
     ...overrides
   }
 }

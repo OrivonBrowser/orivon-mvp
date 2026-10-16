@@ -8,7 +8,7 @@ import { GatewaysOffered, ResolutionError } from '../../resolution/records.js'
 import type { MountedSite } from '../../resolution/providers.js'
 import type { ProtocolRegistry } from '../../registry.js'
 import { Slots } from '../../resolution/slots.js'
-import type { FetchRoute } from '../protocol.js'
+import type { FetchRoute, TunnelRoute } from '../protocol.js'
 
 /** How long a proven name stays fresh -- served with no re-check at all. */
 export const SITE_TTL_MS = 2 * 60_000
@@ -229,14 +229,23 @@ export interface SiteSource {
 }
 
 /**
- * One `Sites` for each route, so a name a tunnel-profile website mounted is proved and read through the tunnel and is never
- * the record a direct website is served from, nor the other way round.
+ * One `Sites` for each route, so a name a website in a tunnel's profile mounted is proved and read through that tunnel and is
+ * never the record a direct website is served from, nor one the other tunnel's websites are served from. A tunnel's `Sites` is
+ * made at the first request that names it.
  */
 export class RoutedSites implements SiteSource {
-  constructor (private readonly direct: Sites, private readonly tunnel: Sites) {}
+  private readonly tunnels = new Map<TunnelRoute, Sites>()
+
+  constructor (private readonly direct: Sites, private readonly tunnel: (route: TunnelRoute) => Sites) {}
 
   private for (route: FetchRoute | undefined): Sites {
-    return route === 'tunnel' ? this.tunnel : this.direct
+    if (route === undefined || route === 'direct') return this.direct
+    let sites = this.tunnels.get(route)
+    if (sites === undefined) {
+      sites = this.tunnel(route)
+      this.tunnels.set(route, sites)
+    }
+    return sites
   }
 
   async get (host: string, partition: string | undefined, route?: FetchRoute, retry = false, fresh = false): Promise<SiteRecord> {

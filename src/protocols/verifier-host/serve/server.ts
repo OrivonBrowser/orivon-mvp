@@ -23,7 +23,7 @@ import { CONSENT_PATH, GatewayConsent } from '../gateway-consent.js'
 import { answerConsent, gatewayOffer, isDocumentLoad } from './gateway-offer.js'
 import { checkLeaf, expectedLeafOf, sliceChunks } from './leaf-check.js'
 import type { SiteSource } from './sites.js'
-import type { FetchRoute } from '../protocol.js'
+import type { FetchRoute, TunnelRoute } from '../protocol.js'
 import { FILE_RETRIES, readWithRetries } from './retry.js'
 import { DIRECT_ROUTE } from '../../route-pace.js'
 import type { RoutePace } from '../../route-pace.js'
@@ -156,12 +156,13 @@ function partitionOf (req: IncomingMessage, host: string): string | undefined {
 }
 
 /**
- * How this request's fetches must leave: through the tunnel when the shell marked it as a tunnel-profile website's. The shell
- * sets or strips the mark on every request of a website session, so a page cannot name its own; and a request with no mark
- * is a direct website's, never a tunnel-profile one's.
+ * How this request's fetches must leave: through the tunnel the shell marked it with, when it is a website in a tunnel's
+ * profile. The shell sets or strips the mark on every request of a website session, so a page cannot name its own; and a
+ * request with no mark is a direct website's, never a tunnel profile's.
  */
 function routeOf (req: IncomingMessage): FetchRoute {
-  return req.headers[ROUTE_HEADER] === 'tunnel' ? 'tunnel' : 'direct'
+  const marked = req.headers[ROUTE_HEADER]
+  return marked === 'nym' || marked === 'socks5' ? marked : 'direct'
 }
 
 /**
@@ -429,7 +430,7 @@ async function handle (registry: ProtocolRegistry, sites: SiteSource, routes: Se
       return
     }
     // A page's file is read again when nothing answered. The page itself is not, since its error page offers Try again and the person's own request starts anew; nor is an install's read, which has its own way to try again.
-    const plan: ReadPlan = { route: routeOf(req) === 'tunnel' ? routes.tunnel : routes.direct, left: left.signal, retries: isNavigation(req) || typeof expected === 'string' ? 0 : FILE_RETRIES }
+    const plan: ReadPlan = { route: paceOf(routeOf(req), routes), left: left.signal, retries: isNavigation(req) || typeof expected === 'string' ? 0 : FILE_RETRIES }
     file = await readWithRetries(async () => await site.open(url.pathname, undefined, left.signal), plan.route, plan.left, plan.retries)
     if (!url.pathname.endsWith('/') && file.servedPath.endsWith('/index.html') && !url.pathname.endsWith('/index.html')) {
       res.writeHead(301, { location: `${url.pathname}/${url.search}`, 'cache-control': 'no-cache' }).end()
@@ -467,7 +468,7 @@ async function handle (registry: ProtocolRegistry, sites: SiteSource, routes: Se
     await sendBody(res, status, headers, file, reopen, length, budget, partition, bufferedResponseDeadlineMs, typeof expected === 'string', plan)
   } catch (error) {
     if (res.headersSent) res.destroy()
-    else sendError(res, shown, error, root, gatewayOffer(consent, req.headers, url, partition, error, servedByNode, routeOf(req) === 'tunnel'))
+    else sendError(res, shown, error, root, gatewayOffer(consent, req.headers, url, partition, error, servedByNode, routeOf(req) !== 'direct'))
   }
 }
 
@@ -481,11 +482,16 @@ interface ReadPlan {
 /** The pace of each route a request may travel: how long a failed read waits before it is made again. */
 export interface ServeRoutes {
   readonly direct: RoutePace
-  readonly tunnel: RoutePace
+  /** The pace of a tunnel's websites: asked at each read, since a tunnel's is made when its first website is. */
+  readonly tunnel: (route: TunnelRoute) => RoutePace
+}
+
+function paceOf (route: FetchRoute, routes: ServeRoutes): RoutePace {
+  return route === 'direct' ? routes.direct : routes.tunnel(route)
 }
 
 /** `bufferedResponseDeadlineMs` defaults to `BUFFERED_RESPONSE_DEADLINE_MS`; a test shortens it rather than waiting the real deadline out. */
-export function createVerifierServer (registry: ProtocolRegistry, sites: SiteSource, certificate: RunCertificate, bufferedResponseDeadlineMs: number = BUFFERED_RESPONSE_DEADLINE_MS, routes: ServeRoutes = { direct: DIRECT_ROUTE, tunnel: DIRECT_ROUTE }, consent: GatewayConsent = new GatewayConsent()): Server {
+export function createVerifierServer (registry: ProtocolRegistry, sites: SiteSource, certificate: RunCertificate, bufferedResponseDeadlineMs: number = BUFFERED_RESPONSE_DEADLINE_MS, routes: ServeRoutes = { direct: DIRECT_ROUTE, tunnel: () => DIRECT_ROUTE }, consent: GatewayConsent = new GatewayConsent()): Server {
   // One budget for every request this server ever handles, not one per
   // request: it is what lets it track every partition's own share, and their combined total.
   const budget = new BufferBudget()

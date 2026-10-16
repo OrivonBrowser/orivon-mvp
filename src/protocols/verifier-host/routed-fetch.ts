@@ -15,7 +15,7 @@ import type { Duplex } from 'node:stream'
 import { collectHeaders, sendNodeRequest } from './direct-fetch.js'
 import type { WebFetch } from './egress.js'
 
-/** The tunnel profile's front, as main hands it over (`HostConfig.profileFront`). */
+/** A tunnel profile's front, as main hands it over (`HostConfig.profileFronts`). */
 export interface ProfileFront {
   readonly port: number
   readonly username: string

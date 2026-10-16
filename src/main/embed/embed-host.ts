@@ -127,8 +127,8 @@ function configureEmbedSession (embedSession: Session, appOrigin: string, broker
       frame = undefined
     }
     const partition = requestPartition({ url: details.url, resourceType: details.resourceType, topUrl: frame?.top?.url })
-    // An embed is never the tunnel profile: a route mark a page set is stripped.
-    callback({ requestHeaders: withRoute(withPartition(details.requestHeaders, PARTITION_HEADER, partition), ROUTE_HEADER, false) })
+    // An embed is never in a tunnel profile: a route mark a page set is stripped.
+    callback({ requestHeaders: withRoute(withPartition(details.requestHeaders, PARTITION_HEADER, partition), ROUTE_HEADER, undefined) })
   })
 }
 

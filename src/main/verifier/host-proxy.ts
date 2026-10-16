@@ -3,9 +3,8 @@
 // the front it fetches through. Read once per start, so the host restarts when any of it changes.
 import { app } from 'electron'
 import type { RouteService } from '../route/route-service.js'
-import { profileOrigin, SHARED_ORIGIN } from '../route/route-hub.js'
-import { profileOf } from '../route/site-partition.js'
-import type { HostConfig } from '../../protocols/verifier-host/protocol.js'
+import { NYM_PROFILE_ORIGIN, PROXY_PROFILE_ORIGIN, SHARED_ORIGIN } from '../route/route-hub.js'
+import type { HostConfig, TunnelRoute } from '../../protocols/verifier-host/protocol.js'
 import { answersFront, unproxiedGateways } from './proxy-check.js'
 import { RefusedToStart } from './process-supervisor.js'
 
@@ -50,16 +49,20 @@ export async function tunnelFront (routes: RouteService | undefined): Promise<No
 }
 
 /**
- * The front of the default tunnel's profile, which every fetch for a website with a tunnel on goes through (the host's routed fetch),
- * whatever the whole-browser setting says. Undefined when it cannot be had: such a website's fetches then fail, and are never made another way.
+ * The front of each tunnel's profile, which every fetch for a website in that profile goes through (the host's routed fetch), whatever
+ * the whole-browser setting says. A tunnel whose front cannot be had is left out: the fetches for its websites then fail, and are never
+ * made another way.
  */
-export async function tunnelProfileFront (routes: RouteService | undefined): Promise<NonNullable<HostConfig['profileFront']> | undefined> {
-  if (routes === undefined) return undefined
-  try {
-    const front = await routes.hub.front(profileOrigin(profileOf(routes.defaultKind()) ?? 'nym'))
-    return { port: front.port, username: front.username, password: front.secret }
-  } catch (error) {
-    console.error('[verifier] the tunnel profile has no front, so its websites\' names cannot be read:', error)
-    return undefined
+export async function tunnelProfileFronts (routes: RouteService | undefined): Promise<NonNullable<HostConfig['profileFronts']>> {
+  const fronts: Partial<Record<TunnelRoute, { port: number, username: string, password: string }>> = {}
+  if (routes === undefined) return fronts
+  for (const [tunnel, origin] of [['nym', NYM_PROFILE_ORIGIN], ['socks5', PROXY_PROFILE_ORIGIN]] as const) {
+    try {
+      const front = await routes.hub.front(origin)
+      fronts[tunnel] = { port: front.port, username: front.username, password: front.secret }
+    } catch (error) {
+      console.error(`[verifier] the ${tunnel} profile has no front, so its websites' names cannot be read:`, error)
+    }
   }
+  return fronts
 }

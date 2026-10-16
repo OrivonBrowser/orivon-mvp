@@ -15,7 +15,7 @@ describe('the sessions a website runs in', () => {
   it('installs on the default session at once', () => {
     const install = vi.fn()
     sessions.forEachWebsiteSession(install)
-    expect(install.mock.calls).toEqual([[defaultSession, false]])
+    expect(install.mock.calls).toEqual([[defaultSession, undefined]])
   })
 
   it('installs on a website session announced afterwards, and on one announced before', () => {
@@ -28,14 +28,14 @@ describe('the sessions a website runs in', () => {
     expect(install.mock.calls.map(([target]) => (target as { name: string }).name)).toEqual(['default', 'early', 'late'])
   })
 
-  it('tells an installer which session is the tunnel profile\'s, whether it was announced before the installer or after', () => {
+  it('tells an installer which tunnel a session is the profile of, whether it was announced before the installer or after', () => {
     const profile = site('tunnel-profile')
-    sessions.announceWebsiteSession(profile, true)
+    sessions.announceWebsiteSession(profile, 'nym')
     const install = vi.fn()
     sessions.forEachWebsiteSession(install)
     sessions.announceWebsiteSession(site('other'))
-    sessions.announceWebsiteSession(site('another-profile-session'), true)
-    expect(install.mock.calls.map(([target, tunnelProfile]) => [(target as { name: string }).name, tunnelProfile])).toEqual([['default', false], ['tunnel-profile', true], ['other', false], ['another-profile-session', true]])
+    sessions.announceWebsiteSession(site('another-profile-session'), 'socks5')
+    expect(install.mock.calls.map(([target, tunnel]) => [(target as { name: string }).name, tunnel])).toEqual([['default', undefined], ['tunnel-profile', 'nym'], ['other', undefined], ['another-profile-session', 'socks5']])
   })
 
   it('installs once on a session however many times it is announced', () => {

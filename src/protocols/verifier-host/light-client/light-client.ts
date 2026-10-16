@@ -10,7 +10,7 @@ import type { WebFetch } from '../egress.js'
 import { heliosError } from './helios-errors.js'
 import { failoverRpc } from './rpc-failover.js'
 import { BLOCK_ROOT_PATTERN } from '../protocol.js'
-import type { FromHost, LightClientConfig, LightClientState } from '../protocol.js'
+import type { FromHost, LightClientConfig, LightClientState, TunnelRoute } from '../protocol.js'
 import type { LightClient } from '../service.js'
 
 /** How long a `.eth` load waits for the first sync before "cannot verify yet", with no tunnel (pace.ts holds the tunnel's). */
@@ -79,11 +79,11 @@ interface Dispatcher {
 }
 
 /**
- * The names a client that runs for tunnel-profile websites gives Helios for its two servers. They resolve nowhere: the
- * dispatcher below maps them back to the real servers and sends the request on that client's own fetch, so one process
- * can run two clients, each with a route of its own, though Helios reaches the network only through a global.
+ * The names a client that runs for the websites of a tunnel's profile gives Helios for its two servers. They resolve nowhere:
+ * the dispatcher below maps them back to the real servers and sends the request on that client's own fetch, so one process
+ * can run a client for each route, though Helios reaches the network only through a global.
  */
-const TUNNEL_NAMES = { execution: 'https://tunnel-execution.orivon.invalid', consensus: 'https://tunnel-consensus.orivon.invalid' } as const
+const tunnelNames = (route: TunnelRoute): { readonly execution: string, readonly consensus: string } => ({ execution: `https://${route}-execution.orivon.invalid`, consensus: `https://${route}-consensus.orivon.invalid` })
 
 function dispatcher (): Dispatcher {
   const existing = globalThis.fetch as Partial<Dispatcher>
@@ -119,12 +119,12 @@ export interface LightClientPace {
   readonly startAfterMs: number
 }
 
-export function startHeliosLightClient (config: LightClientConfig, fetch: WebFetch, report: (message: FromHost) => void, route: 'direct' | 'tunnel' = 'direct', pace: LightClientPace = { syncWaitMs: SYNC_WAIT_MS, startAfterMs: 0 }): LightClient {
+export function startHeliosLightClient (config: LightClientConfig, fetch: WebFetch, report: (message: FromHost) => void, route: 'direct' | TunnelRoute = 'direct', pace: LightClientPace = { syncWaitMs: SYNC_WAIT_MS, startAfterMs: 0 }): LightClient {
   if (!BLOCK_ROOT_PATTERN.test(config.checkpoint)) throw new Error(`not a checkpoint: ${config.checkpoint}`)
   const primary = config.executionRpcs[0]
   if (primary === undefined) throw new Error('no execution RPC configured')
   installTimerScope()
-  const names = route === 'tunnel' ? TUNNEL_NAMES : { execution: primary, consensus: config.consensusRpc }
+  const names = route === 'direct' ? { execution: primary, consensus: config.consensusRpc } : tunnelNames(route)
   dispatcher().lanes.push({ ...names, realConsensus: config.consensusRpc, viaExecution: failoverRpc(config.executionRpcs, fetch), fetch })
   Object.defineProperty(globalThis, 'WebSocket', { value: undefined, configurable: true, writable: true })
 
