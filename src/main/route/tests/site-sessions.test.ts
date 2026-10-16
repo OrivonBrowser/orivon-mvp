@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { DIRECT_PROFILE_ORIGIN, TUNNEL_PROFILE_ORIGIN } from '../route-hub.js'
+import { DIRECT_PROFILE_ORIGIN, NYM_PROFILE_ORIGIN, PROXY_PROFILE_ORIGIN } from '../route-hub.js'
 import { createSiteSessions } from '../site-sessions.js'
 import type { SiteSession, SiteSessionsDeps } from '../site-sessions.js'
 
@@ -57,14 +57,22 @@ describe('making a profile session ready', () => {
 
     expect(held).toHaveLength(1)
     await held[0]?.ready()
-    expect(log).toEqual(['fit', 'prepare-extensions true', `prepare ${TUNNEL_PROFILE_ORIGIN} *.eth`, 'wake'])
+    expect(log).toEqual(['fit', 'prepare-extensions true', `prepare ${NYM_PROFILE_ORIGIN} *.eth`, 'wake'])
   })
 
   it('tells the extension step when the profile is kept in memory, where Electron cannot load an extension but the request rules still apply', async () => {
     const { sites, held, log } = setup()
     sites.ensure('tunnel-profile-memory', true)
     await held[0]?.ready()
-    expect(log).toEqual(['fit', 'prepare-extensions false', `prepare ${TUNNEL_PROFILE_ORIGIN} *.eth`, 'wake'])
+    expect(log).toEqual(['fit', 'prepare-extensions false', `prepare ${NYM_PROFILE_ORIGIN} *.eth`, 'wake'])
+  })
+
+  it('prepares the proxy profile under its own identity', async () => {
+    const { sites, held, log } = setup()
+    sites.ensure('persist:proxy-profile', true)
+    await held[0]?.ready()
+    expect(log).toContain(`prepare ${PROXY_PROFILE_ORIGIN} *.eth`)
+    expect(sites.made()).toEqual(['persist:proxy-profile'])
   })
 
   it('prepares the direct profile under the identity that is never routed', async () => {
@@ -196,7 +204,7 @@ describe('a request made in a session with no view (a lookup)', () => {
     sites.ensure(TUNNEL, false)
     await held[0]?.ready()
 
-    expect(log).toEqual(['fit', 'prepare-extensions true', `prepare ${TUNNEL_PROFILE_ORIGIN} *.eth`, 'prepare-extensions true'])
+    expect(log).toEqual(['fit', 'prepare-extensions true', `prepare ${NYM_PROFILE_ORIGIN} *.eth`, 'prepare-extensions true'])
   })
 
   it('leaves the extensions to a view that arrives while the session is still being made, and to the next view after', async () => {

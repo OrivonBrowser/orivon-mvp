@@ -156,13 +156,13 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
   /** The profile the website lives in now. */
   function profileOf (origin: string): { readonly profile?: 'tunnel' | 'direct' } {
     const profile = ctx.routes?.hub.profileFor(origin)
-    return profile === undefined ? {} : { profile }
+    return profile === undefined ? {} : { profile: profile === 'direct' ? 'direct' : 'tunnel' }
   }
 
   /** The profile the next change of the switch moves the website into for the first time, when the person is to be told. */
   function noticeFor (origin: string, on: boolean): { readonly notice?: 'tunnel' | 'direct' } {
     const profile = ctx.routes?.routeSwitch.siteNotice(origin, !on)
-    return profile === undefined ? {} : { notice: profile }
+    return profile === undefined ? {} : { notice: profile === 'direct' ? 'direct' : 'tunnel' }
   }
 
   /** The switch a website has: not for an installed app (its card has one), a local file or this computer. */

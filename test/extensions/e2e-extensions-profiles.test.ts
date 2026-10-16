@@ -99,7 +99,7 @@ const sessionNameOf = async (address: string): Promise<string> => await app.eval
   const contents = webContents.getAllWebContents().find((wc) => wc.getURL() === target)
   if (contents === undefined) return 'none'
   if (contents.session === session.defaultSession) return 'default'
-  for (const name of ['persist:tunnel-profile', 'persist:direct-profile']) if (contents.session === session.fromPartition(name)) return name
+  for (const name of ['persist:proxy-profile', 'persist:direct-profile']) if (contents.session === session.fromPartition(name)) return name
   return 'other'
 }, address)
 
@@ -108,14 +108,14 @@ const extensionCount = async (partition: string | undefined): Promise<number> =>
 
 it('[app:extensions-run-in-the-profiles] a website with an on entry lives in the tunnel profile with the person\'s extensions, and so does a second one, in the same session', async () => {
   const first = await visit('tunnelled')
-  expect(await sessionNameOf(url('tunnelled'))).toBe('persist:tunnel-profile')
+  expect(await sessionNameOf(url('tunnelled'))).toBe('persist:proxy-profile')
   expect(await marked(first), 'the content script ran in the tunnel profile').toBe(true)
   expect(socks.requests.some((request) => request.destination === NAMES.tunnelled), 'through the tunnel').toBe(true)
 
   const second = await visit('also')
-  expect(await sessionNameOf(url('also')), 'one session for every tunnelled website').toBe('persist:tunnel-profile')
+  expect(await sessionNameOf(url('also')), 'one session for every tunnelled website').toBe('persist:proxy-profile')
   expect(await marked(second)).toBe(true)
-  expect(await extensionCount('persist:tunnel-profile'), 'the extensions were loaded once, not once per website').toBe(2)
+  expect(await extensionCount('persist:proxy-profile'), 'the extensions were loaded once, not once per website').toBe(2)
 }, 4 * QA_TEST_TIMEOUT_MS)
 
 it('[app:extensions-run-in-the-profiles] a website with an off entry lives in the direct profile with the extensions, and a plain website in the default session', async () => {

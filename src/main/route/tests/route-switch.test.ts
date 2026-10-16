@@ -8,11 +8,11 @@ import { profilePartitionFor } from '../site-partition.js'
 const APP = 'https://app.example'
 const SITE = 'https://news.example'
 
-function setup (options: { proxy?: boolean, everywhere?: boolean, world?: Partial<RouteSwitchWorld> } = {}) {
+function setup (options: { proxy?: boolean, everywhere?: boolean, kind?: 'nym' | 'socks5', world?: Partial<RouteSwitchWorld> } = {}) {
   const store = new RouteStore(null)
-  const hub = createRouteHub({ store, everywhere: () => options.everywhere === true, isApp: (origin) => origin === APP, proxy: () => options.proxy === false ? undefined : { host: '127.0.0.1', port: 9050 }, providerFor: () => ({ connect: async () => { throw new Error('unused') } }) })
+  const hub = createRouteHub({ store, defaultKind: () => options.kind ?? 'nym', everywhere: () => options.everywhere === true, isApp: (origin) => origin === APP, proxy: () => options.proxy === false ? undefined : { host: '127.0.0.1', port: 9050 }, providerFor: () => ({ connect: async () => { throw new Error('unused') } }) })
   const settled = vi.fn(async () => {})
-  const routes = { proxy: () => options.proxy === false ? undefined : { host: '127.0.0.1', port: 9050 }, store, hub, controller: { settled } as never }
+  const routes = { proxy: () => options.proxy === false ? undefined : { host: '127.0.0.1', port: 9050 }, defaultKind: () => options.kind ?? 'nym', store, hub, controller: { settled } as never }
   const world: RouteSwitchWorld = { isPinned: (origin) => origin === APP, isPersistable: () => true, ...options.world }
   return { store, hub, settled, routeSwitch: createRouteSwitch(routes, world) }
 }
@@ -21,15 +21,15 @@ describe('turning a website\'s tunnel on', () => {
   it('writes an on entry and records that the website has storage in the tunnel profile, once the sessions follow', async () => {
     const { routeSwitch, store, settled } = setup()
     await routeSwitch.setSite(SITE, true)
-    expect(store.stateOf(SITE)).toBe('on')
-    expect(store.isApart(SITE, 'tunnel')).toBe(true)
+    expect(store.stateOf(SITE)).toBe('nym')
+    expect(store.isApart(SITE, 'nym')).toBe(true)
     expect(store.isApart(SITE, 'direct')).toBe(false)
     expect(settled).toHaveBeenCalled()
   })
 
   it('tells the person first, naming the profile, only until the website has storage in it', async () => {
     const { routeSwitch } = setup()
-    expect(routeSwitch.siteNotice(SITE, true)).toBe('tunnel')
+    expect(routeSwitch.siteNotice(SITE, true)).toBe('nym')
     expect(routeSwitch.siteNotice(SITE, false)).toBeUndefined()
     await routeSwitch.setSite(SITE, true)
     expect(routeSwitch.siteNotice(SITE, true)).toBeUndefined()
@@ -42,7 +42,7 @@ describe('turning a website\'s tunnel on', () => {
     await routeSwitch.setSite(SITE, true)
     await routeSwitch.setSite(SITE, false)
     expect(store.stateOf(SITE)).toBeUndefined()
-    expect(store.isApart(SITE, 'tunnel')).toBe(true)
+    expect(store.isApart(SITE, 'nym')).toBe(true)
   })
 
   it('with the whole browser on the tunnel, turning a website off writes an off entry and moves it to the direct profile, and turning it on again follows the default', async () => {
@@ -61,10 +61,10 @@ describe('turning a website\'s tunnel on', () => {
     const off = setup({ everywhere: false })
     await off.routeSwitch.setSite(SITE, true)
     const { routeSwitch, store } = setup({ everywhere: true })
-    store.setEntry(SITE, 'on')
+    store.setEntry(SITE, 'nym')
     await routeSwitch.setSite(SITE, false)
     expect(store.stateOf(SITE)).toBe('off')
-    expect(off.store.stateOf(SITE)).toBe('on')
+    expect(off.store.stateOf(SITE)).toBe('nym')
   })
 
   it('is blocked with no tunnel set, and for this computer, but can always be turned off', async () => {
@@ -83,7 +83,7 @@ describe('the app card\'s switch', () => {
     expect(routeSwitch.blockedFor(APP)).toBeUndefined()
     expect(routeSwitch.blockedFor(SITE)).toBe('not-cached')
     await routeSwitch.set(APP, true)
-    expect(store.stateOf(APP)).toBe('on')
+    expect(store.stateOf(APP)).toBe('nym')
     expect(store.isApartAnywhere(APP)).toBe(false)
     await routeSwitch.set(APP, false)
     expect(store.stateOf(APP)).toBeUndefined()
@@ -98,6 +98,46 @@ describe('the app card\'s switch, with the whole browser on the tunnel', () => {
     expect(store.stateOf(APP)).toBe('off')
     await routeSwitch.set(APP, true)
     expect(store.stateOf(APP)).toBeUndefined()
+  })
+})
+
+describe('the tunnel a switch uses', () => {
+  it('is the tunnel chosen for the browser, for a website: its entry, its storage notice and its profile', async () => {
+    const { routeSwitch, store, hub } = setup({ kind: 'socks5' })
+    expect(routeSwitch.siteNotice(SITE, true)).toBe('socks5')
+    await routeSwitch.setSite(SITE, true)
+    expect(store.stateOf(SITE)).toBe('socks5')
+    expect(store.isApart(SITE, 'socks5')).toBe(true)
+    expect(store.isApart(SITE, 'nym')).toBe(false)
+    expect(hub.profileFor(SITE)).toBe('socks5')
+  })
+
+  it('is the same for an app, which has no storage notice and no record of storage', async () => {
+    const { routeSwitch, store } = setup({ kind: 'socks5' })
+    await routeSwitch.set(APP, true)
+    expect(store.stateOf(APP)).toBe('socks5')
+    expect(store.isApartAnywhere(APP)).toBe(false)
+  })
+
+  it('writes no entry for a website while everything goes through the chosen tunnel, and an entry for the tunnel that is not', async () => {
+    const { routeSwitch, store } = setup({ kind: 'socks5', everywhere: true })
+    await routeSwitch.setSite(SITE, true)
+    expect(store.stateOf(SITE)).toBeUndefined()
+  })
+
+  it('lists a website in the proxy profile as in the tunnel profile, as the list groups both', async () => {
+    const { routeSwitch } = setup({ kind: 'socks5' })
+    await routeSwitch.setSite(SITE, true)
+    expect(routeSwitch.rows()).toEqual([{ origin: SITE, kind: 'site', entry: 'on', state: 'idle', profile: 'tunnel', apart: true, apartIn: ['tunnel'] }])
+  })
+
+  it('clears the storage of a website from the profile it is kept in', async () => {
+    const removeSiteStorage = vi.fn(async () => {})
+    const { routeSwitch, store } = setup({ kind: 'socks5', world: { removeSiteStorage } })
+    await routeSwitch.setSite(SITE, true)
+    await expect(routeSwitch.removeSiteStorage(SITE)).resolves.toBe(true)
+    expect(removeSiteStorage).toHaveBeenCalledWith('persist:proxy-profile', SITE)
+    expect(store.isApart(SITE, 'socks5')).toBe(true)
   })
 })
 
@@ -126,14 +166,14 @@ describe('removing a website\'s separate storage', () => {
     await routeSwitch.setSite(SITE, true)
 
     expect(await routeSwitch.removeSiteStorage(SITE)).toBe(true)
-    expect(removeSiteStorage).toHaveBeenCalledWith(profilePartitionFor('tunnel', SITE), SITE)
-    expect(store.stateOf(SITE)).toBe('on')
-    expect(store.isApart(SITE, 'tunnel')).toBe(true)
+    expect(removeSiteStorage).toHaveBeenCalledWith(profilePartitionFor('nym', SITE), SITE)
+    expect(store.stateOf(SITE)).toBe('nym')
+    expect(store.isApart(SITE, 'nym')).toBe(true)
 
     await routeSwitch.setSite(SITE, false)
     expect(await routeSwitch.removeSiteStorage(SITE)).toBe(true)
-    expect(store.isApart(SITE, 'tunnel')).toBe(false)
-    expect(routeSwitch.siteNotice(SITE, true)).toBe('tunnel')
+    expect(store.isApart(SITE, 'nym')).toBe(false)
+    expect(routeSwitch.siteNotice(SITE, true)).toBe('nym')
   })
 
   it('refuses an origin that has no storage of its own, an installed app among them', async () => {
@@ -167,6 +207,6 @@ describe('a website that moves into a profile', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const { routeSwitch, store } = setup({ world: { dropServiceWorkers: async () => { throw new Error('busy') } } })
     await routeSwitch.setSite(SITE, true)
-    expect(store.stateOf(SITE)).toBe('on')
+    expect(store.stateOf(SITE)).toBe('nym')
   })
 })

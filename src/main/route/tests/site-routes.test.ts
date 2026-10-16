@@ -14,26 +14,30 @@ describe('the session a website must run in', () => {
     let profile: Profile | undefined
     setSiteRoutes({ profileFor: () => profile })
     expect(sitePartitionForOrigin(SITE)).toBeUndefined()
-    profile = 'tunnel'
+    profile = 'nym'
     expect(sitePartitionForOrigin(SITE)).toBe('persist:tunnel-profile')
+    profile = 'socks5'
+    expect(sitePartitionForOrigin(SITE)).toBe('persist:proxy-profile')
+    expect(sitePartitionForOrigin('http://news.example')).toBe('proxy-profile-memory')
     profile = 'direct'
     expect(sitePartitionForOrigin(SITE)).toBe('persist:direct-profile')
     expect(sitePartitionForOrigin('http://news.example')).toBe('direct-profile-memory')
   })
 
   it('is the same session for every website with that entry', () => {
-    setSiteRoutes({ profileFor: () => 'tunnel' })
+    setSiteRoutes({ profileFor: () => 'nym' })
     expect(sitePartitionForOrigin(SITE)).toBe(sitePartitionForOrigin('https://other.example'))
   })
 
   it('is never a profile for this computer, whatever the entry says', () => {
-    setSiteRoutes({ profileFor: () => 'tunnel' })
+    setSiteRoutes({ profileFor: () => 'nym' })
     expect(sitePartitionForOrigin('http://localhost:3000')).toBeUndefined()
     expect(sitePartitionForOrigin('http://127.0.0.1:8080')).toBeUndefined()
   })
 
   it('says which profile a session name stands for, and none for any other', () => {
-    expect(siteProfileOf('persist:tunnel-profile')).toBe('tunnel')
+    expect(siteProfileOf('persist:tunnel-profile')).toBe('nym')
+    expect(siteProfileOf('persist:proxy-profile')).toBe('socks5')
     expect(siteProfileOf('direct-profile-memory')).toBe('direct')
     expect(siteProfileOf('persist:app-abc')).toBeUndefined()
     expect(siteProfileOf(undefined)).toBeUndefined()
@@ -61,7 +65,7 @@ describe('a load the shell\'s own move missed', () => {
   const routed = (origin: string): boolean => origin === SITE
 
   it('is refused in the shared session for a website that has a profile, whatever the page of the address', () => {
-    setSiteRoutes({ profileFor: (origin) => origin === SITE ? 'tunnel' : undefined })
+    setSiteRoutes({ profileFor: (origin) => origin === SITE ? 'nym' : undefined })
     expect(mustLeaveSession(`${SITE}/a?b=1#c`, shared, cached, routed)).toBe(true)
     expect(mustLeaveSession('https://other.example/', shared, cached, routed)).toBe(false)
   })

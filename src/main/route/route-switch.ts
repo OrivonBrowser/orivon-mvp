@@ -23,15 +23,21 @@ export interface TunnelRow {
   readonly origin: string
   /** An installed app, or a website. */
   readonly kind: 'app' | 'site'
-  readonly entry: TunnelEntry | undefined
+  /** `on`: a tunnel of either kind; the list does not tell the two apart. */
+  readonly entry: 'on' | 'off' | undefined
   readonly state: RouteState
   /** The profile the origin's entry puts it in, for a website. */
-  readonly profile: Profile | undefined
+  readonly profile: ListedProfile | undefined
   /** A website with storage in a profile that "Remove its separate storage" clears. */
   readonly apart: boolean
   /** The profiles it has storage in. */
-  readonly apartIn: readonly Profile[]
+  readonly apartIn: readonly ListedProfile[]
 }
+
+/** The list groups the two tunnel profiles as one. */
+export type ListedProfile = 'tunnel' | 'direct'
+
+const listed = (profile: Profile): ListedProfile => profile === 'direct' ? 'direct' : 'tunnel'
 
 export interface RouteSwitch {
   /** Why an app's switch cannot be turned on now (it can always be turned off), or undefined when it can. */
@@ -40,7 +46,7 @@ export interface RouteSwitch {
   set: (origin: string, routed: boolean) => Promise<void>
   /** Why a website's switch cannot be turned on now (it can always be turned off), or undefined when it can. */
   siteBlockedFor: (origin: string) => 'no-proxy' | 'local' | undefined
-  /** The profile setting the website's tunnel to `on` moves it into when it has no storage there yet, so the person is told first; undefined when nothing moves for the first time. */
+  /** The profile setting the website's tunnel to `on` (the default tunnel) moves it into when it has no storage there yet, so the person is told first; undefined when nothing moves for the first time. */
   siteNotice: (origin: string, on: boolean) => Profile | undefined
   /** Sets a website's tunnel to `on` or off: an entry when that differs from the browser's default, else the website follows the default. Resolves once its sessions follow it. */
   setSite: (origin: string, on: boolean) => Promise<void>
@@ -50,24 +56,24 @@ export interface RouteSwitch {
   removeSiteStorage: (origin: string) => Promise<boolean>
 }
 
-export function createRouteSwitch (routes: Pick<RouteService, 'proxy' | 'store' | 'controller' | 'hub'>, world: RouteSwitchWorld): RouteSwitch {
+export function createRouteSwitch (routes: Pick<RouteService, 'proxy' | 'defaultKind' | 'store' | 'controller' | 'hub'>, world: RouteSwitchWorld): RouteSwitch {
   const { store } = routes
   return {
     // An app whose files are not held here has a first visit to pause; an origin not written to disk would be routed until the next start and then go direct.
     blockedFor: (origin) => routes.proxy() === undefined ? 'no-proxy' : world.isPinned(origin) && world.isPersistable(origin) ? undefined : 'not-cached',
     set: async (origin, routed) => {
       // With the whole browser on the tunnel, switching an app off is an entry of its own; switching it on again follows the default.
-      store.setEntry(origin, entryFor(routed ? 'on' : 'off', routes.hub.isEverywhere()))
+      store.setEntry(origin, entryFor(routed ? routes.defaultKind() : 'off', routes.hub.isEverywhere(), routes.defaultKind()))
       await routes.controller.settled()
     },
     siteBlockedFor: (origin) => routes.proxy() === undefined ? 'no-proxy' : canTunnel(origin) ? undefined : 'local',
     siteNotice: (origin, on) => {
-      const profile = profileOf(entryFor(on ? 'on' : 'off', routes.hub.isEverywhere()))
+      const profile = profileOf(entryFor(on ? routes.defaultKind() : 'off', routes.hub.isEverywhere(), routes.defaultKind()))
       return profile !== undefined && !store.isApart(origin, profile) ? profile : undefined
     },
     setSite: async (origin, on) => {
       if (!canTunnel(origin)) return
-      const entry = entryFor(on ? 'on' : 'off', routes.hub.isEverywhere())
+      const entry = entryFor(on ? routes.defaultKind() : 'off', routes.hub.isEverywhere(), routes.defaultKind())
       const before = profileOf(store.stateOf(origin))
       store.setEntry(origin, entry)
       // The record that its storage is kept follows the entry: a failure to save it must not undo a switch already made.
@@ -91,16 +97,20 @@ export function createRouteSwitch (routes: Pick<RouteService, 'proxy' | 'store' 
     },
     rows: () => {
       const entries = new Map(store.entries())
-      const origins = new Set([...entries.keys(), ...store.apart('tunnel'), ...store.apart('direct')])
-      return [...origins].map((origin) => ({
-        origin,
-        kind: store.isApartAnywhere(origin) || !world.isPinned(origin) ? 'site' : 'app',
-        entry: entries.get(origin),
-        state: routes.hub.state(origin),
-        profile: profileOf(entries.get(origin)),
-        apart: store.isApartAnywhere(origin),
-        apartIn: PROFILES.filter((profile) => store.isApart(origin, profile))
-      }))
+      const origins = new Set([...entries.keys(), ...PROFILES.flatMap((profile) => store.apart(profile))])
+      return [...origins].map((origin) => {
+        const entry = entries.get(origin)
+        const profile = profileOf(entry)
+        return {
+          origin,
+          kind: store.isApartAnywhere(origin) || !world.isPinned(origin) ? 'site' : 'app',
+          entry: entry === undefined ? undefined : entry === 'off' ? 'off' : 'on',
+          state: routes.hub.state(origin),
+          profile: profile === undefined ? undefined : listed(profile),
+          apart: store.isApartAnywhere(origin),
+          apartIn: [...new Set(PROFILES.filter((each) => store.isApart(origin, each)).map(listed))]
+        }
+      })
     },
     removeSiteStorage: async (origin) => {
       if (!store.isApartAnywhere(origin) || world.removeSiteStorage === undefined) return false

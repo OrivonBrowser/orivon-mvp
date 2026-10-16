@@ -3,7 +3,7 @@
 // the front it fetches through. Read once per start, so the host restarts when any of it changes.
 import { app } from 'electron'
 import type { RouteService } from '../route/route-service.js'
-import { SHARED_ORIGIN, TUNNEL_PROFILE_ORIGIN } from '../route/route-hub.js'
+import { NYM_PROFILE_ORIGIN, SHARED_ORIGIN } from '../route/route-hub.js'
 import type { HostConfig } from '../../protocols/verifier-host/protocol.js'
 import { answersFront, unproxiedGateways } from './proxy-check.js'
 import { RefusedToStart } from './process-supervisor.js'
@@ -49,13 +49,13 @@ export async function tunnelFront (routes: RouteService | undefined): Promise<No
 }
 
 /**
- * The tunnel profile's front, which every fetch for a website with the tunnel on goes through (the host's routed fetch), whatever the
+ * The front of Nym's profile, which every fetch for a website with a tunnel on goes through (the host's routed fetch), whatever the
  * whole-browser setting says. Undefined when it cannot be had: such a website's fetches then fail, and are never made another way.
  */
 export async function tunnelProfileFront (routes: RouteService | undefined): Promise<NonNullable<HostConfig['profileFront']> | undefined> {
   if (routes === undefined) return undefined
   try {
-    const front = await routes.hub.front(TUNNEL_PROFILE_ORIGIN)
+    const front = await routes.hub.front(NYM_PROFILE_ORIGIN)
     return { port: front.port, username: front.username, password: front.secret }
   } catch (error) {
     console.error('[verifier] the tunnel profile has no front, so its websites\' names cannot be read:', error)

@@ -8,7 +8,8 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { RouteProvider } from '../../../broker/route/provider.js'
 import type { RouteTarget } from '../../../broker/route/table.js'
-import { createRouteHub, DIRECT_PROFILE_ORIGIN, SHARED_ORIGIN, TUNNEL_PROFILE_ORIGIN } from '../route-hub.js'
+import { createRouteHub, DIRECT_PROFILE_ORIGIN, NYM_PROFILE_ORIGIN, PROXY_PROFILE_ORIGIN, profileOrigin, SHARED_ORIGIN } from '../route-hub.js'
+import type { TunnelKind } from '../route-state.js'
 import type { RouteHub } from '../route-hub.js'
 import { RouteStore } from '../route-store.js'
 
@@ -42,8 +43,8 @@ describe('routeFor', () => {
 
   it('has a route through the proxy for a routed app, one provider per app', () => {
     const { hub, store, built } = setup()
-    store.set(APP, true)
-    store.set(OTHER, true)
+    store.setEntry(APP, 'nym')
+    store.setEntry(OTHER, 'nym')
 
     const route = hub.routeFor(APP)
 
@@ -56,7 +57,7 @@ describe('routeFor', () => {
 
   it('refuses, never goes direct, for a routed app when no proxy is set', async () => {
     const { hub, store } = setup(undefined)
-    store.set(APP, true)
+    store.setEntry(APP, 'nym')
 
     const route = hub.routeFor(APP)
 
@@ -68,7 +69,7 @@ describe('routeFor', () => {
 
   it('follows the proxy as it changes, and the switch as it flips', () => {
     const { hub, store, built, setProxy } = setup()
-    store.set(APP, true)
+    store.setEntry(APP, 'nym')
     const first = hub.routeFor(APP)
 
     setProxy({ host: '127.0.0.1', port: 9150 })
@@ -76,7 +77,7 @@ describe('routeFor', () => {
     expect(second).not.toBe(first)
     expect(built.at(-1)?.target).toEqual({ host: '127.0.0.1', port: 9150 })
 
-    store.set(APP, false)
+    store.setEntry(APP, undefined)
     expect(hub.routeFor(APP)).toBeUndefined()
   })
 })
@@ -85,7 +86,7 @@ describe('state', () => {
   it('says off, no proxy, or idle before the route has carried anything', () => {
     const { hub, store, setProxy } = setup()
     expect(hub.state(APP)).toBe('off')
-    store.set(APP, true)
+    store.setEntry(APP, 'nym')
     expect(hub.state(APP)).toBe('idle')
     setProxy(undefined)
     expect(hub.state(APP)).toBe('no-proxy')
@@ -93,7 +94,7 @@ describe('state', () => {
 
   it('says down once the route failed to carry something', async () => {
     const { hub, store } = setup()
-    store.set(APP, true)
+    store.setEntry(APP, 'nym')
     const front = await hub.front(APP)
     expect(hub.state(APP)).toBe('idle')
 
@@ -114,7 +115,7 @@ describe('state after a refusal by the proxy', () => {
     let failure = new Error('Socks5 proxy rejected connection - HostUnreachable')
     const hub = createRouteHub({ store, proxy: () => ({ host: '127.0.0.1', port: 9050 }), providerFor: () => ({ connect: async () => { throw failure } }) })
     hubs.push(hub)
-    store.set(APP, true)
+    store.setEntry(APP, 'nym')
     const route = hub.routeFor(APP)
 
     await expect(route?.provider.connect('nowhere.test', 443, new AbortController().signal)).rejects.toThrow('HostUnreachable')
@@ -132,13 +133,13 @@ describe('onChange', () => {
     const heard = vi.fn()
     hub.onChange(heard)
 
-    store.set(APP, true)
+    store.setEntry(APP, 'nym')
     expect(heard.mock.calls).toEqual([[APP, true, 'switch']])
 
     setProxy({ host: '127.0.0.1', port: 9150 })
     expect(heard.mock.calls).toEqual([[APP, true, 'switch'], [APP, true, 'proxy']])
 
-    store.set(APP, false)
+    store.setEntry(APP, undefined)
     expect(heard.mock.calls.at(-1)).toEqual([APP, false, 'switch'])
     heard.mockClear()
     setProxy({ host: '127.0.0.1', port: 9250 })
@@ -149,8 +150,8 @@ describe('onChange', () => {
 describe('front', () => {
   it('starts one front per routed app and reuses it', async () => {
     const { hub, store } = setup()
-    store.set(APP, true)
-    store.set(OTHER, true)
+    store.setEntry(APP, 'nym')
+    store.setEntry(OTHER, 'nym')
 
     const one = await hub.front(APP)
     expect(await hub.front(APP)).toBe(one)
@@ -165,12 +166,12 @@ describe('front', () => {
 
   it('stops the front when the route is switched off, and starts a new one when it is switched on again', async () => {
     const { hub, store } = setup()
-    store.set(APP, true)
+    store.setEntry(APP, 'nym')
     const first = await hub.front(APP)
 
-    store.set(APP, false)
+    store.setEntry(APP, undefined)
     await hub.settled()
-    store.set(APP, true)
+    store.setEntry(APP, 'nym')
     const second = await hub.front(APP)
 
     expect(second).not.toBe(first)
@@ -179,7 +180,7 @@ describe('front', () => {
 
   it('knows which front an authentication challenge came from, by its port', async () => {
     const { hub, store } = setup()
-    store.set(APP, true)
+    store.setEntry(APP, 'nym')
     const front = await hub.front(APP)
 
     expect(hub.credentialsForPort(front.port)).toEqual({ username: front.username, password: front.secret })
@@ -188,10 +189,10 @@ describe('front', () => {
 
   it('hands the secret of a port to nobody once its front is closing, so a later program on that port is not answered', async () => {
     const { hub, store } = setup()
-    store.set(APP, true)
+    store.setEntry(APP, 'nym')
     const front = await hub.front(APP)
 
-    store.set(APP, false)
+    store.setEntry(APP, undefined)
 
     expect(hub.credentialsForPort(front.port)).toBeUndefined()
     await hub.settled()
@@ -200,7 +201,7 @@ describe('front', () => {
 
   it('hands the secret of a port to nobody once the app\'s front was closed by anything else', async () => {
     const { hub, store } = setup()
-    store.set(APP, true)
+    store.setEntry(APP, 'nym')
     const front = await hub.front(APP)
 
     await front.close()
@@ -213,7 +214,7 @@ describe('front', () => {
 
   it('hands no secret out after the hub is disposed', async () => {
     const { hub, store } = setup()
-    store.set(APP, true)
+    store.setEntry(APP, 'nym')
     const front = await hub.front(APP)
 
     await hub.dispose()
@@ -244,7 +245,7 @@ describe('a list of routed apps that cannot be read', () => {
     expect(hub.isRouted(APP)).toBe(true)
     expect(hub.isRouted('https://a-website.example')).toBe(true)
     expect(hub.routeFor('https://a-website.example')).toBeDefined()
-    expect(hub.profileFor('https://a-website.example')).toBe('tunnel')
+    expect(hub.profileFor('https://a-website.example')).toBe('nym')
     expect(hub.routeFor(OTHER)).toBeDefined()
     expect(hub.unreadable()).toBe(true)
   })
@@ -329,9 +330,9 @@ describe('a website in the hub', () => {
     expect(hub.isRouted(SITE)).toBe(false)
     expect(hub.profileFor(SITE)).toBeUndefined()
 
-    store.setEntry(SITE, 'on')
+    store.setEntry(SITE, 'nym')
     expect(hub.isRouted(SITE)).toBe(true)
-    expect(hub.profileFor(SITE)).toBe('tunnel')
+    expect(hub.profileFor(SITE)).toBe('nym')
     expect(hub.routeFor(SITE)).toBeDefined()
   })
 
@@ -357,13 +358,13 @@ describe('a website in the hub', () => {
 
   it('shares one front and one set of tunnel credentials among every website with an on entry, and gives an app its own', async () => {
     const { hub, store, built } = website()
-    store.setEntry(SITE, 'on')
-    store.setEntry(SITE_TWO, 'on')
-    store.set(APP, true)
+    store.setEntry(SITE, 'nym')
+    store.setEntry(SITE_TWO, 'nym')
+    store.setEntry(APP, 'nym')
     hub.routeFor(SITE)
     hub.routeFor(SITE_TWO)
     hub.routeFor(APP)
-    expect(built.map((one) => one.key).sort()).toEqual([TUNNEL_PROFILE_ORIGIN, APP].sort())
+    expect(built.map((one) => one.key).sort()).toEqual([NYM_PROFILE_ORIGIN, APP].sort())
     const one = await hub.front(SITE)
     const two = await hub.front(SITE_TWO)
     expect(two.port).toBe(one.port)
@@ -372,7 +373,7 @@ describe('a website in the hub', () => {
 
   it('answers for the tunnel profile as a route that is always on, and for the direct profile as one that never is', () => {
     const { hub } = website()
-    expect(hub.isRouted(TUNNEL_PROFILE_ORIGIN)).toBe(true)
+    expect(hub.isRouted(NYM_PROFILE_ORIGIN)).toBe(true)
     expect(hub.isRouted(DIRECT_PROFILE_ORIGIN)).toBe(false)
   })
 
@@ -380,7 +381,7 @@ describe('a website in the hub', () => {
     const { hub, store } = website()
     const heard = vi.fn()
     hub.onChange(heard)
-    store.setEntry(SITE, 'on')
+    store.setEntry(SITE, 'nym')
     expect((await hub.front(SITE)).port).toBeGreaterThan(0)
     store.setEntry(SITE, undefined)
     await hub.settled()
@@ -390,12 +391,12 @@ describe('a website in the hub', () => {
 
   it('has the proxy changing affect the tunnel profile and the shared identity too', async () => {
     const { hub, store, setProxy } = website()
-    store.setEntry(SITE, 'on')
+    store.setEntry(SITE, 'nym')
     await hub.front(SITE)
     const heard = vi.fn()
     hub.onChange(heard)
     setProxy(undefined)
-    expect(heard.mock.calls).toContainEqual([TUNNEL_PROFILE_ORIGIN, true, 'proxy'])
+    expect(heard.mock.calls).toContainEqual([NYM_PROFILE_ORIGIN, true, 'proxy'])
     expect(heard.mock.calls).toContainEqual([SITE, true, 'proxy'])
     expect(heard.mock.calls.map(([origin]) => origin), 'the shared identity is not told while the browser-wide setting is off').not.toContain(SHARED_ORIGIN)
   })
@@ -451,7 +452,7 @@ describe('the browser-wide default', () => {
   it('tells listeners about the shared identity and every app that follows the default when it flips, and about nothing that has an entry of its own', () => {
     const { hub, store, flip } = browser()
     store.setEntry(OTHER, 'off')
-    store.setEntry(SITE, 'on')
+    store.setEntry(SITE, 'nym')
     const heard = vi.fn()
     hub.onChange(heard)
 
@@ -465,14 +466,14 @@ describe('the browser-wide default', () => {
 
   it('moves no website between sessions: a website\'s profile follows its own entry alone', () => {
     const { hub, store, flip } = browser()
-    store.setEntry(SITE, 'on')
+    store.setEntry(SITE, 'nym')
     store.setEntry('https://off.example', 'off')
     flip(true)
-    expect(hub.profileFor(SITE)).toBe('tunnel')
+    expect(hub.profileFor(SITE)).toBe('nym')
     expect(hub.profileFor('https://off.example')).toBe('direct')
     expect(hub.profileFor('https://none.example')).toBeUndefined()
     flip(false)
-    expect(hub.profileFor(SITE)).toBe('tunnel')
+    expect(hub.profileFor(SITE)).toBe('nym')
     expect(hub.profileFor('https://off.example')).toBe('direct')
   })
 
@@ -483,5 +484,98 @@ describe('the browser-wide default', () => {
     flip(false)
     await hub.settled()
     await expect(hub.front(SHARED_ORIGIN)).rejects.toThrow(/not routed/)
+  })
+})
+
+describe('websites that go through different tunnels', () => {
+  const SITE = 'https://news.example'
+  const SITE_TWO = 'https://other.example'
+
+  function kinds (options: { everywhere?: boolean, defaultKind?: TunnelKind, unreadable?: boolean } = {}) {
+    const dir = mkdtempSync(join(tmpdir(), 'orivon-hub-kinds-'))
+    cleanup.push(dir)
+    const path = join(dir, 'routes.json')
+    if (options.unreadable === true) writeFileSync(path, '{ not json')
+    const store = new RouteStore(options.unreadable === true ? path : null)
+    let kind: TunnelKind = options.defaultKind ?? 'nym'
+    const built: string[] = []
+    const hub = createRouteHub({
+      store,
+      proxy: () => ({ host: '127.0.0.1', port: 9050 }),
+      defaultKind: () => kind,
+      everywhere: () => options.everywhere === true,
+      isApp: (origin) => origin === APP,
+      providerFor: (key) => { built.push(key); return { connect: async () => { throw new Error(`fake provider for ${key}`) } } }
+    })
+    hubs.push(hub)
+    return { store, hub, built, setKind: (next: TunnelKind) => { kind = next; hub.proxyChanged() } }
+  }
+  const cleanup: string[] = []
+  afterEach(() => { for (const dir of cleanup.splice(0)) rmSync(dir, { recursive: true, force: true }) })
+
+  it('puts a website whose entry is the proxy in the proxy profile and one whose entry is Nym in Nym\'s, each with its own front', async () => {
+    const { hub, store, built } = kinds()
+    store.setEntry(SITE, 'nym')
+    store.setEntry(SITE_TWO, 'socks5')
+    expect([hub.profileFor(SITE), hub.profileFor(SITE_TWO)]).toEqual(['nym', 'socks5'])
+    expect([hub.isRouted(SITE), hub.isRouted(SITE_TWO)]).toEqual([true, true])
+    hub.routeFor(SITE)
+    hub.routeFor(SITE_TWO)
+    expect(built.sort()).toEqual([NYM_PROFILE_ORIGIN, PROXY_PROFILE_ORIGIN].sort())
+    expect((await hub.front(SITE)).port).not.toBe((await hub.front(SITE_TWO)).port)
+  })
+
+  it('shares the proxy profile\'s front among the websites whose entry is the proxy', async () => {
+    const { hub, store } = kinds()
+    store.setEntry(SITE, 'socks5')
+    store.setEntry(SITE_TWO, 'socks5')
+    expect((await hub.front(SITE)).port).toBe((await hub.front(SITE_TWO)).port)
+    expect((await hub.front(PROXY_PROFILE_ORIGIN)).port).toBe((await hub.front(SITE)).port)
+  })
+
+  it('answers for each tunnel profile as a route that is always on, and gives each profile its identity', () => {
+    const { hub } = kinds()
+    expect(hub.isRouted(PROXY_PROFILE_ORIGIN)).toBe(true)
+    expect(hub.isRouted(NYM_PROFILE_ORIGIN)).toBe(true)
+    expect([profileOrigin('nym'), profileOrigin('socks5'), profileOrigin('direct')]).toEqual([NYM_PROFILE_ORIGIN, PROXY_PROFILE_ORIGIN, DIRECT_PROFILE_ORIGIN])
+  })
+
+  it('tells listeners when a website moves from one tunnel to the other, and stops nothing it is still routed by', async () => {
+    const { hub, store } = kinds()
+    store.setEntry(SITE, 'nym')
+    const heard = vi.fn()
+    hub.onChange(heard)
+    store.setEntry(SITE, 'socks5')
+    expect(heard.mock.calls).toEqual([[SITE, true, 'switch']])
+    expect(hub.profileFor(SITE)).toBe('socks5')
+    store.setEntry(SITE, undefined)
+    expect(heard.mock.calls.at(-1)).toEqual([SITE, false, 'switch'])
+  })
+
+  it('keeps a website where its entry puts it when the default tunnel is changed, and puts one with no entry in no profile', () => {
+    const { hub, store, setKind } = kinds({ defaultKind: 'socks5' })
+    store.setEntry(SITE, 'socks5')
+    store.setEntry(SITE_TWO, 'nym')
+    setKind('nym')
+    expect([hub.profileFor(SITE), hub.profileFor(SITE_TWO), hub.profileFor('https://none.example')]).toEqual(['socks5', 'nym', undefined])
+  })
+
+  it('follows the default tunnel for the shared identity and for the profile of an unreadable list', () => {
+    const { hub, setKind } = kinds({ everywhere: true, defaultKind: 'socks5', unreadable: true })
+    expect(hub.unreadable()).toBe(true)
+    expect(hub.profileFor(SITE)).toBe('socks5')
+    setKind('nym')
+    expect(hub.profileFor(SITE)).toBe('nym')
+    expect(hub.isRouted(SHARED_ORIGIN)).toBe(true)
+  })
+
+  it('treats an entry equal to the default tunnel while everything goes through it as the default, and a different tunnel as a choice of its own', () => {
+    const { hub, store } = kinds({ everywhere: true, defaultKind: 'nym' })
+    expect(hub.isRouted(SITE)).toBe(true)
+    expect(hub.profileFor(SITE)).toBeUndefined()
+    store.setEntry(SITE, 'socks5')
+    expect(hub.profileFor(SITE)).toBe('socks5')
+    store.setEntry(SITE_TWO, 'off')
+    expect(hub.isRouted(SITE_TWO)).toBe(false)
   })
 })

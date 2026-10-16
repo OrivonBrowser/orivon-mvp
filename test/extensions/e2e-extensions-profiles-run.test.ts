@@ -30,7 +30,7 @@ import { delay, findViewShowing, waitFor, waitForTab } from '../support/smoke-he
 
 const NAMES = { tunnelled: 'tunnelled.socks.test', direct: 'direct.socks.test', plain: 'plain.socks.test' } as const
 type Name = keyof typeof NAMES
-const TUNNEL = 'persist:tunnel-profile'
+const TUNNEL = 'persist:proxy-profile'
 const DIRECT = 'persist:direct-profile'
 /** The extensions the profile holds: two with a background page, one with a service worker. */
 const COPIES = 3
@@ -170,7 +170,7 @@ const sessionNameOf = async (address: string): Promise<string> => await app.eval
   const contents = webContents.getAllWebContents().find((wc) => wc.getURL() === target)
   if (contents === undefined) return 'none'
   if (contents.session === session.defaultSession) return 'default'
-  for (const name of ['persist:tunnel-profile', 'persist:direct-profile']) if (contents.session === session.fromPartition(name)) return name
+  for (const name of ['persist:proxy-profile', 'persist:direct-profile']) if (contents.session === session.fromPartition(name)) return name
   return 'other'
 }, address)
 

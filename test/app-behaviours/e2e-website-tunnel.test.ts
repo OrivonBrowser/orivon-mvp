@@ -59,7 +59,7 @@ const cleanups: Array<() => Promise<void> | void> = []
 const siteUrl = (): string => `http://${SITE_NAME}:${String(decoy.port)}/`
 const siteOrigin = (): string => `http://${SITE_NAME}:${String(decoy.port)}`
 // The fixture site is plain http, which may not be written to disk, so its profile is the in-memory one.
-const profilePartition = 'tunnel-profile-memory'
+const profilePartition = 'proxy-profile-memory'
 const asked = (name: string, port: number): number => socks.requests.filter((request) => request.destination === name && request.port === port).length
 const findPopup = (): Page | undefined => app.windows().find((w) => w.url().includes('/site-info/') && !w.isClosed())
 

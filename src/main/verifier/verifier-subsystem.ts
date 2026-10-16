@@ -258,9 +258,9 @@ async function hostConfig (): Promise<HostConfig> {
   }
 }
 
-/** `tunnel` when the website at `origin` lives in the tunnel profile: its name is then proved, and its files read, only through the tunnel. */
+/** `tunnel` when the website at `origin` lives in a tunnel's profile: its name is then proved, and its files read, only through the tunnel. */
 function routeOf (origin: string): { readonly route?: 'tunnel' } {
-  return routesOf()?.hub.profileFor(origin) === 'tunnel' ? { route: 'tunnel' } : {}
+  return (routesOf()?.hub.profileFor(origin) ?? 'direct') !== 'direct' ? { route: 'tunnel' } : {}
 }
 
 /** The age of the newest checkpoint the light client could start from; undefined while it is off or none can start it. */
