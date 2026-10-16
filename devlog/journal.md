@@ -48,6 +48,11 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - New Tunnels switch, off by default: IPFS, Swarm and .eth name checks skip the tunnel; The Lounge through Nym loads in 6 s, not minutes.
 - Public IPFS gateways are never used silently: a failed page offers a one-load "Load through public gateways" button instead.
 - The frozen tab spinner in maximized windows is fixed: a loading screen made Chromium think the toolbar was hidden.
+- Any site, Web3 site or installed app picks its own tunnel from the tunnel menu: Nym for one, your own proxy for another, at once.
+- A proxy such as Tor is set and tested right in the tunnel menu; proxy users keep their logins when updating.
+- Installed apps now behave like websites: same tunnel switch, same popup, and without grants they get a website's permissions.
+- On by default: update checks, and secure DNS via Quad9 that falls back to normal DNS when blocked.
+- An app asking for three kinds of unlimited network access now says what each one is for, instead of three identical rows.
 
 ### In my head
 
@@ -57,5 +62,6 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Extensions per tunnel profile, never per site: a hundred tunnelled sites should cost one copy of uBlock, not a hundred.
 - Orivon's IPFS node should run through Nym, not pause, when everything is tunnelled: privacy first, speed second.
 - Second thought on Nym: tunnel the person's own traffic, let IPFS and Swarm run direct for speed, and never touch gateways without a yes.
+- Installed is only where an app is kept, never how it behaves: one switch, one popup, one set of rules for every origin.
 
 ### Non-repo
