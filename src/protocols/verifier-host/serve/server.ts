@@ -15,7 +15,7 @@ import type { ProtocolAddresses } from '../../address.js'
 import type { ProtocolRegistry } from '../../registry.js'
 import { contentTypeFor } from '../../../loader/serve/content-type.js'
 import { parseRange } from '../../../loader/serve/range.js'
-import { CONTENT_ROOT_HEADER, DDOC_MISMATCH, FAILURE_HEADER, PARTITION_HEADER, ROUTE_HEADER } from '../../../loader/fetch/content-root.js'
+import { CONTENT_ROOT_HEADER, DDOC_MISMATCH, FAILURE_HEADER, PARTITION_HEADER } from '../../../loader/fetch/content-root.js'
 import type { RunCertificate } from './certificate.js'
 import { ERROR_PAGE_CSP, renderErrorPage } from './error-pages.js'
 import type { GatewayOffer } from './error-pages.js'
@@ -23,7 +23,8 @@ import { CONSENT_PATH, GatewayConsent } from '../gateway-consent.js'
 import { answerConsent, gatewayOffer, isDocumentLoad } from './gateway-offer.js'
 import { checkLeaf, expectedLeafOf, sliceChunks } from './leaf-check.js'
 import type { SiteSource } from './sites.js'
-import type { FetchRoute, TunnelRoute } from '../protocol.js'
+import { paceOf, routeOf } from './route-of.js'
+import type { ServeRoutes } from './route-of.js'
 import { FILE_RETRIES, readWithRetries } from './retry.js'
 import { DIRECT_ROUTE } from '../../route-pace.js'
 import type { RoutePace } from '../../route-pace.js'
@@ -153,16 +154,6 @@ function partitionOf (req: IncomingMessage, host: string): string | undefined {
   if (typeof named === 'string' && PARTITION.test(named)) return named
   const site = req.headers['sec-fetch-site']
   return site === 'none' || site === 'same-origin' ? `https://${host}` : undefined
-}
-
-/**
- * How this request's fetches must leave: through the tunnel the shell marked it with, when it is a website in a tunnel's
- * profile. The shell sets or strips the mark on every request of a website session, so a page cannot name its own; and a
- * request with no mark is a direct website's, never a tunnel profile's.
- */
-function routeOf (req: IncomingMessage): FetchRoute {
-  const marked = req.headers[ROUTE_HEADER]
-  return marked === 'nym' || marked === 'socks5' ? marked : 'direct'
 }
 
 /**
@@ -477,17 +468,6 @@ interface ReadPlan {
   readonly route: RoutePace
   readonly left: AbortSignal
   readonly retries: number
-}
-
-/** The pace of each route a request may travel: how long a failed read waits before it is made again. */
-export interface ServeRoutes {
-  readonly direct: RoutePace
-  /** The pace of a tunnel's websites: asked at each read, since a tunnel's is made when its first website is. */
-  readonly tunnel: (route: TunnelRoute) => RoutePace
-}
-
-function paceOf (route: FetchRoute, routes: ServeRoutes): RoutePace {
-  return route === 'direct' ? routes.direct : routes.tunnel(route)
 }
 
 /** `bufferedResponseDeadlineMs` defaults to `BUFFERED_RESPONSE_DEADLINE_MS`; a test shortens it rather than waiting the real deadline out. */
