@@ -17,6 +17,8 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+- **`installed-app-without-grants-is-asked-as-a-website`**: an installed app that holds no grant is now asked for a location, a notification or a clipboard read as a website is, and the person's answer and site rules apply to it. An app that needs such a feature declares the capability instead; recheck apps that call these web APIs with no grant.
+
 ### Added
 
 - **Look for updates is on by default**: Orivon asks GitHub once a day whether a newer release exists, and installs nothing; Settings > About turns it off. A profile made before this follows the new default.
