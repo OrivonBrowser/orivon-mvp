@@ -20,7 +20,7 @@ export function storageNotice (profile: 'tunnel' | 'direct'): string {
 
 /** Why the switch is fixed, or what it leaves outside the tunnel; one sentence, or undefined when there is nothing to add. */
 export function tunnelHint (tunnel: SiteTunnel): string | undefined {
-  if (tunnel.unreadable) return 'Orivon could not read your tunnel settings, so while a tunnel is set every site goes through it. Mend or remove routes.json in your profile folder and restart Orivon to choose again.'
+  if (tunnel.unreadable) return 'Orivon could not read your tunnel settings, so every site goes through your default tunnel, or through Nym when that has no address. Mend or remove routes.json in your profile folder and restart Orivon to choose again.'
   if (tunnel.swarm) return SWARM_HINT
   return undefined
 }

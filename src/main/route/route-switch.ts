@@ -63,7 +63,8 @@ export function createRouteSwitch (routes: Pick<RouteService, 'targetOf' | 'defa
     noticeFor: (origin, kind) => {
       if (routes.hub.isApp(origin)) return undefined
       const profile = profileOf(entryOf(kind))
-      return profile !== undefined && !store.isApart(origin, profile) ? profile : undefined
+      // Storage in Nym's profile that is really the proxy's is not the website's own there: the person is told as for a first move.
+      return profile !== undefined && (!store.isApart(origin, profile) || (profile === 'nym' && store.isForeignToNym(origin))) ? profile : undefined
     },
     choose: async (origin, kind) => {
       if (routes.hub.isApp(origin)) {
@@ -75,6 +76,11 @@ export function createRouteSwitch (routes: Pick<RouteService, 'targetOf' | 'defa
       if (!canTunnel(origin)) return
       const entry = entryOf(kind)
       const before = profileOf(store.stateOf(origin))
+      // Cookies the proxy's sites left in Nym's profile (a move that could not be made) are cleared before the website arrives, never reused there; a failure to clear stops the switch.
+      if (profileOf(entry) === 'nym' && store.isForeignToNym(origin) && world.removeSiteStorage !== undefined) {
+        await world.removeSiteStorage(profilePartitionFor('nym', origin), origin)
+        store.dropApart(origin, 'nym')
+      }
       store.setEntry(origin, entry)
       // The record that its storage is kept follows the entry: a failure to save it must not undo a switch already made.
       const profile = profileOf(entry)

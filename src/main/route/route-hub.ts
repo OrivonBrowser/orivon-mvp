@@ -1,7 +1,7 @@
 // Which origins (installed apps and websites alike) go through the proxy, and what each needs running for it: its
 // route (read by the broker and the loader), its loopback front (read by Chromium) and its health (read by the Settings
 // page and the site-info popover). Electron-free. A routed origin with no proxy set gets a route that refuses: it never
-// falls back to a direct one. When the store cannot say what the person set, every origin is routed while a tunnel is set.
+// falls back to a direct one. When the store cannot say what the person set, every origin goes through the default tunnel, or through Nym when that has no address.
 
 import type { Route, RouteFor, RouteProvider } from '../../broker/route/provider.js'
 import { createSocks5Provider, isolationCredentials, routeAnswered } from '../../broker/route/socks5.js'
@@ -129,8 +129,11 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
   })
   const isApp = options.isApp ?? (() => true)
   const build = (key: string, target: RouteTarget): RouteProvider => options.providerFor?.(key, target) ?? createSocks5Provider({ host: target.host, port: target.port, credentials: credentials(key) })
-  /** An unreadable list is not "nothing routed": with a tunnel to go through, every origin is. */
-  const unreadableWithTarget = (kind: TunnelKind): boolean => store.unreadable() && options.targetOf(kind) !== undefined
+  /**
+   * An unreadable list is not "nothing routed", and does not say which tunnel an origin picked: every origin goes through the default
+   * tunnel when it has an address, else through Nym, which refuses when it is switched off. Never undefined, never direct.
+   */
+  const unreadableKind = (fallback: TunnelKind): TunnelKind => options.targetOf(fallback) !== undefined ? fallback : 'nym'
   /** The tunnel `origin` goes through when the default tunnel is `fallback` and the whole browser is `onEverywhere`, or undefined when it is not routed. */
   const kindWith = (origin: string, fallback: TunnelKind, onEverywhere: boolean): TunnelKind | undefined => {
     if (origin === NYM_PROFILE_ORIGIN) return 'nym'
@@ -138,7 +141,7 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
     if (origin === DIRECT_PROFILE_ORIGIN) return undefined
     // The shared identity follows the browser-wide setting alone: an unreadable list puts every website in a tunnel profile, but Orivon's own requests do not change with it.
     if (origin === SHARED_ORIGIN) return onEverywhere ? fallback : undefined
-    if (unreadableWithTarget(fallback)) return fallback
+    if (store.unreadable()) return unreadableKind(fallback)
     const state = tunnelStateOf(store.stateOf(origin), onEverywhere, fallback)
     return state === 'off' ? undefined : state
   }
@@ -152,7 +155,7 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
   /** Whose front and credentials carry `origin`'s traffic: an app its own; a website whose entry is a tunnel that tunnel's profile's, which every such website shares; any other website the shared one. */
   const identityOf = (origin: string): string => {
     if (origin === SHARED_ORIGIN || origin === NYM_PROFILE_ORIGIN || origin === PROXY_PROFILE_ORIGIN || origin === DIRECT_PROFILE_ORIGIN || isApp(origin)) return origin
-    if (unreadableWithTarget(defaultKind())) return profileOrigin(defaultKind())
+    if (store.unreadable()) return profileOrigin(unreadableKind(defaultKind()))
     const entry = store.stateOf(origin)
     if (entry !== undefined && entry !== 'off') return profileOrigin(entry)
     return entry === undefined && everywhere() ? SHARED_ORIGIN : origin
@@ -191,11 +194,12 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
     kindOf,
     kindsInUse: () => {
       const kinds = new Set<TunnelKind>()
-      if (everywhere() || (store.unreadable() && unreadableWithTarget(defaultKind()))) kinds.add(defaultKind())
+      if (everywhere()) kinds.add(defaultKind())
+      if (store.unreadable()) kinds.add(unreadableKind(defaultKind()))
       for (const [, entry] of store.entries()) if (entry !== 'off') kinds.add(entry)
       return [...kinds]
     },
-    profileFor: (origin) => isApp(origin) ? undefined : unreadableWithTarget(defaultKind()) ? profileOf(defaultKind()) : profileOf(store.stateOf(origin)),
+    profileFor: (origin) => isApp(origin) ? undefined : store.unreadable() ? profileOf(unreadableKind(defaultKind())) : profileOf(store.stateOf(origin)),
     unreadable: () => store.unreadable(),
     state: (origin) => {
       const kind = kindOf(origin)
@@ -229,7 +233,7 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
       // With the list unreadable, setting or clearing the address changes which origins are routed at all.
       const candidates = new Set([...(routed(SHARED_ORIGIN) || fronts.has(SHARED_ORIGIN) ? [SHARED_ORIGIN] : []), ...store.origins(), ...fronts.keys(), ...(store.unreadable() || everywhere() ? options.installed?.() ?? [] : [])])
       for (const origin of candidates) {
-        // An unreadable list sends every origin by the default tunnel while it has an address, so the address appearing or going changes whether they are routed at all.
+        // An unreadable list sends every origin by the default tunnel while it has an address and by Nym while it has none, so the address appearing or going changes the tunnel they go through.
         const bound = kindOf(origin) === 'socks5' || (store.unreadable() && origin !== SHARED_ORIGIN && defaultKind() === 'socks5')
         if (!bound) continue
         void fronts.get(origin)?.then((front) => { front.closeTunnels() }, () => {})

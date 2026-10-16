@@ -24,7 +24,7 @@ describe('routeWords', () => {
     for (const state of ['off', 'idle', 'down'] as const) {
       const words = routeWords({ state, via: null, blocked: {}, unreadable: true })
       expect(words).toContain('could not read which apps you sent through a tunnel')
-      expect(words).toContain('every app goes through it')
+      expect(words).toContain('every app goes through your default tunnel')
       expect(words).toContain('restart')
     }
   })

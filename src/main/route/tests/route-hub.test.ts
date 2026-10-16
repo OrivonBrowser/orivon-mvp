@@ -13,6 +13,7 @@ import type { TunnelKind } from '../route-state.js'
 import type { RouteHub } from '../route-hub.js'
 import { RouteStore } from '../route-store.js'
 
+const NYM_TARGET: RouteTarget = { host: 'nym.invalid', port: 0 }
 const APP = 'https://one.example'
 const OTHER = 'https://two.example'
 const hubs: RouteHub[] = []
@@ -234,7 +235,7 @@ describe('a list of routed apps that cannot be read', () => {
     writeFileSync(path, '{ not json')
     const store = new RouteStore(path)
     let proxy: RouteTarget | undefined = initial ?? undefined
-    const hub = createRouteHub({ store, targetOf: () => proxy, defaultKind: () => 'socks5', installed: () => installed, isApp: (origin) => installed.includes(origin), providerFor: () => ({ connect: async () => { throw new Error('unused') } }) })
+    const hub = createRouteHub({ store, targetOf: (kind) => kind === 'nym' ? NYM_TARGET : proxy, defaultKind: () => 'socks5', installed: () => installed, isApp: (origin) => installed.includes(origin), providerFor: () => ({ connect: async () => { throw new Error('unused') } }) })
     hubs.push(hub)
     return { store, hub, setProxy: (next: RouteTarget | undefined) => { proxy = next; hub.addressChanged() } }
   }
@@ -255,11 +256,26 @@ describe('a list of routed apps that cannot be read', () => {
     expect(hub.isRouted(SHARED_ORIGIN)).toBe(false)
   })
 
-  it('routes nothing while no proxy is set', () => {
+  it('sends every origin through Nym while the default tunnel has no address, never direct', () => {
     const { hub } = unreadable(null)
 
-    expect(hub.isRouted(APP)).toBe(false)
-    expect(hub.routeFor(APP)).toBeUndefined()
+    for (const origin of [APP, 'https://a-website.example']) {
+      expect(hub.isRouted(origin), origin).toBe(true)
+      expect(hub.kindOf(origin), origin).toBe('nym')
+      expect(hub.routeFor(origin), origin).toBeDefined()
+    }
+    expect(hub.profileFor('https://a-website.example')).toBe('nym')
+    expect(hub.kindsInUse()).toEqual(['nym'])
+  })
+
+  it('moves every origin from Nym to the proxy when its address is set, and back when it is cleared', () => {
+    const { hub, setProxy } = unreadable(null)
+    expect(hub.kindOf(APP)).toBe('nym')
+    setProxy({ host: '127.0.0.1', port: 9050 })
+    expect(hub.kindOf(APP)).toBe('socks5')
+    expect(hub.profileFor('https://a-website.example')).toBe('socks5')
+    setProxy(undefined)
+    expect(hub.kindOf(APP)).toBe('nym')
   })
 
   it('starts a front for any app', async () => {
@@ -267,7 +283,7 @@ describe('a list of routed apps that cannot be read', () => {
     expect((await hub.front(APP)).port).toBeGreaterThan(0)
   })
 
-  it('tells listeners about every installed app when the proxy is set or cleared, because that changes what is routed', () => {
+  it('tells listeners about every installed app when the proxy is set or cleared, because that changes the tunnel they go through', () => {
     const { hub, setProxy } = unreadable(null)
     const heard = vi.fn()
     hub.onChange(heard)
@@ -277,7 +293,7 @@ describe('a list of routed apps that cannot be read', () => {
 
     heard.mockClear()
     setProxy(undefined)
-    expect(heard.mock.calls).toEqual([[APP, false, 'proxy'], [OTHER, false, 'proxy']])
+    expect(heard.mock.calls).toEqual([[APP, true, 'proxy'], [OTHER, true, 'proxy']])
   })
 
   it('tells listeners the shared identity changed when the browser-wide setting flips, even with an unreadable list and a proxy set', () => {
