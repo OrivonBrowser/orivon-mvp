@@ -7,6 +7,7 @@ import type { Session, WebFrameMain, WebRequestFilter } from 'electron'
 import { PARTITION_HEADER, ROUTE_HEADER } from '../../loader/fetch/content-root.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
+import type { TunnelRoute } from '../../protocols/verifier-host/protocol.js'
 import { failedFiles } from './failed-files-store.js'
 import { noteCompletedFile } from './failed-files.js'
 import { requestPartition, withPartition, withRoute } from './partition.js'
@@ -41,11 +42,11 @@ export function verifiedHostFilter (): WebRequestFilter {
  * session and on each website's session of its own (see README.md's Design notes for why no other), LAST among
  * `onBeforeSendHeaders` handlers there, so nothing that runs before it --
  * including a future extension rule -- can set or remove this header.
- * The same handler marks every request of the tunnel profile's session as a tunnel-profile website's, whatever frame it
+ * The same handler marks every request of a tunnel profile's session with that tunnel, whatever frame it
  * came from or whether it has one, and strips the mark from every other session's: the verifier fetches for it only
- * through the tunnel.
+ * through that tunnel.
  */
-export function installPartitionStamp (target: Session, tunnelProfile: boolean): void {
+export function installPartitionStamp (target: Session, tunnel: TunnelRoute | undefined): void {
   webRequestOwnerFor(target).onBeforeSendHeaders(RUN_LAST, verifiedHostFilter(), targetsVerifiedHost, (details, current) => {
     let frame: WebFrameMain | null | undefined
     try {
@@ -54,7 +55,7 @@ export function installPartitionStamp (target: Session, tunnelProfile: boolean):
       frame = undefined
     }
     const partition = requestPartition({ url: details.url, resourceType: details.resourceType, topUrl: frame?.top?.url })
-    return { ...current, requestHeaders: withRoute(withPartition(current.requestHeaders, PARTITION_HEADER, partition), ROUTE_HEADER, tunnelProfile) }
+    return { ...current, requestHeaders: withRoute(withPartition(current.requestHeaders, PARTITION_HEADER, partition), ROUTE_HEADER, tunnel) }
   })
 }
 

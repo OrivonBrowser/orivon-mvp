@@ -436,12 +436,13 @@ describe('the verifier subsystem', () => {
   it('marks the requests of the tunnel profile\'s session as a tunnel-profile website\'s and strips the mark from every other session\'s', async () => {
     await launch()
     const { announceWebsiteSession } = await import('../../sessions/website-sessions.js')
-    announceWebsiteSession({} as never, true)
-    announceWebsiteSession({} as never, false)
-    expect(registered.stamps).toHaveLength(3)
-    const stamped = registered.stamps.map((stamp) => stamp({ url: 'https://a.eth/', resourceType: 'mainFrame', frame: undefined }, { requestHeaders: { 'X-Orivon-Route': 'tunnel', accept: '*/*' } }).requestHeaders)
-    expect(stamped.map((headers) => headers['x-orivon-route'])).toEqual([undefined, 'tunnel', undefined])
-    expect(stamped.map((headers) => Object.keys(headers).filter((name) => name.toLowerCase() === 'x-orivon-route').length)).toEqual([0, 1, 0])
+    announceWebsiteSession({} as never, 'nym')
+    announceWebsiteSession({} as never, undefined)
+    announceWebsiteSession({} as never, 'socks5')
+    expect(registered.stamps).toHaveLength(4)
+    const stamped = registered.stamps.map((stamp) => stamp({ url: 'https://a.eth/', resourceType: 'mainFrame', frame: undefined }, { requestHeaders: { 'X-Orivon-Route': 'nym', accept: '*/*' } }).requestHeaders)
+    expect(stamped.map((headers) => headers['x-orivon-route'])).toEqual([undefined, 'nym', undefined, 'socks5'])
+    expect(stamped.map((headers) => Object.keys(headers).filter((name) => name.toLowerCase() === 'x-orivon-route').length)).toEqual([0, 1, 0, 1])
   })
 
   describe('with the tunnel profile', () => {
@@ -452,7 +453,7 @@ describe('the verifier subsystem', () => {
       hub: { isRouted: () => false, front: async (origin: string) => { frontsAsked.push(origin); return FRONT }, profileFor: () => profile },
       defaultKind: () => kind
     })
-    type Sent = { type: string, config?: { profileFront?: unknown }, request?: { kind: string, route?: string, partition: string } }
+    type Sent = { type: string, config?: { profileFronts?: unknown }, request?: { kind: string, route?: string, partition: string } }
     const sent = (): Sent[] => forks()[0]?.sent as Sent[]
 
     async function launchWithRoutes (profile: 'nym' | 'socks5' | 'direct' | undefined, kind: 'nym' | 'socks5' = 'nym') {
@@ -469,33 +470,29 @@ describe('the verifier subsystem', () => {
       return subsystem
     }
 
-    it('gives the host the profile\'s front to fetch through for its websites, whatever the whole-browser setting is', async () => {
-      await launchWithRoutes('nym')
-      expect(sent().find((message) => message.type === 'start')?.config?.profileFront).toEqual({ port: 4242, username: 'orivon', password: 'profile-secret' })
-    })
-
-    it('hands the host the front of the default tunnel\'s profile', async () => {
-      frontsAsked.length = 0
-      await launchWithRoutes('nym', 'socks5')
-      expect(frontsAsked).toEqual(['orivon-proxy-profile'])
-      frontsAsked.length = 0
-      forks().length = 0
-      registered.beforeRequest.length = 0
-      await launchWithRoutes('nym', 'nym')
-      expect(frontsAsked).toEqual(['orivon-tunnel-profile'])
+    it('gives the host the front of each tunnel\'s profile to fetch through for its websites, whatever the whole-browser setting is and whichever tunnel is the default', async () => {
+      for (const kind of ['nym', 'socks5'] as const) {
+        frontsAsked.length = 0
+        forks().length = 0
+        registered.beforeRequest.length = 0
+        await launchWithRoutes('nym', kind)
+        const front = { port: 4242, username: 'orivon', password: 'profile-secret' }
+        expect(sent().find((message) => message.type === 'start')?.config?.profileFronts, kind).toEqual({ nym: front, socks5: front })
+        expect(frontsAsked.sort(), kind).toEqual(['orivon-proxy-profile', 'orivon-tunnel-profile'])
+      }
     })
 
     it('asks the host about a tunnel-profile website through the tunnel, and about any other website the ordinary way', async () => {
       const tunnelled = await launchWithRoutes('nym')
       void tunnelled.siteProvenance('https://a.eth')
       await vi.advanceTimersByTimeAsync(0)
-      expect(sent().filter((message) => message.type === 'request').map((message) => message.request)).toEqual([{ kind: 'provenance', host: 'a.eth', partition: 'https://a.eth', route: 'tunnel' }])
+      expect(sent().filter((message) => message.type === 'request').map((message) => message.request)).toEqual([{ kind: 'provenance', host: 'a.eth', partition: 'https://a.eth', route: 'nym' }])
       forks().length = 0
       registered.beforeRequest.length = 0
       const proxied = await launchWithRoutes('socks5')
       void proxied.siteProvenance('https://a.eth')
       await vi.advanceTimersByTimeAsync(0)
-      expect(sent().filter((message) => message.type === 'request').map((message) => message.request)).toEqual([{ kind: 'provenance', host: 'a.eth', partition: 'https://a.eth', route: 'tunnel' }])
+      expect(sent().filter((message) => message.type === 'request').map((message) => message.request)).toEqual([{ kind: 'provenance', host: 'a.eth', partition: 'https://a.eth', route: 'socks5' }])
       forks().length = 0
       registered.beforeRequest.length = 0
       const direct = await launchWithRoutes('direct')

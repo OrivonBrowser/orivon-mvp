@@ -7,7 +7,7 @@ import { buildDag, fakeGateways } from '../../ipfs/tests/dag.test-helpers.js'
 import { referenceCid } from '../../swarm/reference.js'
 import { buildSite } from '../../../../test/apps/swarm-gateway/encode.mjs'
 import { EgressRefused, guardedCcipRequest } from '../egress.js'
-import type { FromHost, HostConfig, LightClientConfig } from '../protocol.js'
+import type { FromHost, HostConfig, LightClientConfig, TunnelRoute } from '../protocol.js'
 import { ResolutionError } from '../../resolution/records.js'
 import { DIRECT_ROUTE, RouteMeter, TUNNEL_PROFILE } from '../../route-pace.js'
 import { paceOn } from '../pace.js'
@@ -46,7 +46,7 @@ function deps (overrides: Partial<HostDeps> = {}): Spied {
     routed,
     posted,
     fetch: async (url, init) => { direct.push(url); return await serve(url, init) },
-    routedFetch: async (url, init) => { routed.push(url); return await serve(url, init) },
+    routedFetch: () => async (url, init) => { routed.push(url); return await serve(url, init) },
     resolveHost: async () => { throw new Error('no name is resolved in this test') },
     post: (message) => { posted.push(message) },
     startLightClient: () => { throw new Error('no light client in this test') },
@@ -58,9 +58,9 @@ function deps (overrides: Partial<HostDeps> = {}): Spied {
 }
 
 /** `document`: asked for as a page is, so a failure is not read again before the error page, as a file of a page would be. */
-async function get (port: number, host: string, tunnel: boolean, path = '/', document = false): Promise<{ status: number, body: string }> {
+async function get (port: number, host: string, tunnel: boolean | TunnelRoute, path = '/', document = false): Promise<{ status: number, body: string }> {
   return await new Promise((resolve, reject) => {
-    request({ host: '127.0.0.1', port, path, servername: host, rejectUnauthorized: false, headers: { host, 'x-orivon-partition': `https://${host}`, ...(tunnel ? { 'x-orivon-route': 'tunnel' } : {}), ...(document ? { 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document' } : {}) } }, (res) => {
+    request({ host: '127.0.0.1', port, path, servername: host, rejectUnauthorized: false, headers: { host, 'x-orivon-partition': `https://${host}`, ...(tunnel === false ? {} : { 'x-orivon-route': tunnel === true ? 'nym' : tunnel }), ...(document ? { 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document' } : {}) } }, (res) => {
       let body = ''
       res.on('data', (c: Buffer) => { body += c.toString() })
       res.on('end', () => { resolve({ status: res.statusCode ?? 0, body }) })
@@ -92,13 +92,13 @@ describe('the route a request takes', () => {
     const host = await startHost(config(), spied)
     running.push(host)
     await get(host.port, 'fixture.eth', true)
-    expect(await host.answer({ kind: 'provenance', host: 'fixture.eth', partition: 'https://fixture.eth', route: 'tunnel' })).not.toBeNull()
+    expect(await host.answer({ kind: 'provenance', host: 'fixture.eth', partition: 'https://fixture.eth', route: 'nym' })).not.toBeNull()
     expect(await host.answer({ kind: 'provenance', host: 'fixture.eth', partition: 'https://fixture.eth' })).toBeNull()
-    expect(await host.answer({ kind: 'mount', host: 'fixture.eth', partition: 'https://fixture.eth', route: 'tunnel' })).toMatchObject({ host: 'fixture.eth' })
+    expect(await host.answer({ kind: 'mount', host: 'fixture.eth', partition: 'https://fixture.eth', route: 'nym' })).toMatchObject({ host: 'fixture.eth' })
   })
 
   it('fails when the tunnel does, and reads nothing around it', async () => {
-    const spied = deps({ routedFetch: async () => { throw new TunnelUnavailable('the tunnel is down') } })
+    const spied = deps({ routedFetch: () => async () => { throw new TunnelUnavailable('the tunnel is down') } })
     const host = await startHost(config(), spied)
     running.push(host)
     const answer = await get(host.port, 'fixture.eth', true, '/', true)
@@ -106,14 +106,88 @@ describe('the route a request takes', () => {
     expect(spied.direct).toEqual([])
   }, 40_000)
 
-  it('treats a mark a page could have forged as no mark at all when it is not exactly tunnel', async () => {
+  it('treats a mark a page could have forged as no mark at all when it is not exactly a tunnel', async () => {
     const spied = deps()
     const host = await startHost(config(), spied)
     running.push(host)
     await new Promise<void>((resolve, reject) => {
-      request({ host: '127.0.0.1', port: host.port, path: '/', servername: 'fixture.eth', rejectUnauthorized: false, headers: { host: 'fixture.eth', 'x-orivon-partition': 'https://fixture.eth', 'x-orivon-route': 'Tunnel' } }, (res) => { res.resume(); res.on('end', resolve) }).on('error', reject).end()
+      request({ host: '127.0.0.1', port: host.port, path: '/', servername: 'fixture.eth', rejectUnauthorized: false, headers: { host: 'fixture.eth', 'x-orivon-partition': 'https://fixture.eth', 'x-orivon-route': 'Nym' } }, (res) => { res.resume(); res.on('end', resolve) }).on('error', reject).end()
     })
     expect(spied.routed).toEqual([])
+  })
+})
+
+describe('two tunnels at once', () => {
+  /** A host whose routed fetch is told apart by the tunnel it was made for, so each says what went through it. */
+  function perTunnel () {
+    const made: TunnelRoute[] = []
+    const through: Record<TunnelRoute, string[]> = { nym: [], socks5: [] }
+    const gw = fakeGateways(dag.blocks)
+    const spied = deps({
+      routedFetch: (tunnel) => {
+        made.push(tunnel)
+        return async (url, init) => { through[tunnel].push(url); return await gw.fetch(url, { headers: (init?.headers ?? {}) as Record<string, string>, signal: init?.signal ?? new AbortController().signal }) }
+      }
+    })
+    return { spied, made, through }
+  }
+
+  it('reads a website of each tunnel through that tunnel\'s fetch alone', async () => {
+    const { spied, through } = perTunnel()
+    const host = await startHost(config(), spied)
+    running.push(host)
+    expect(await get(host.port, 'fixture.eth', 'nym')).toEqual({ status: 200, body: '<h1>fixture</h1>' })
+    expect(through.nym.length).toBeGreaterThan(0)
+    expect(through.socks5, 'Nym\'s website never used the proxy\'s fetch').toEqual([])
+    const before = through.nym.length
+    expect(await get(host.port, 'fixture.eth', 'socks5')).toEqual({ status: 200, body: '<h1>fixture</h1>' })
+    expect(through.socks5.length).toBeGreaterThan(0)
+    expect(through.nym.length, 'and the proxy\'s website never used Nym\'s').toBe(before)
+    expect(spied.direct).toEqual([])
+  })
+
+  it('starts the protocols of a tunnel at the first request that names it, and no more than once', async () => {
+    const { spied, made } = perTunnel()
+    const host = await startHost(config(), spied)
+    running.push(host)
+    expect(made, 'nothing for a tunnel nobody uses').toEqual([])
+    await get(host.port, 'fixture.eth', 'socks5')
+    await get(host.port, 'fixture.eth', 'socks5')
+    expect(made).toEqual(['socks5'])
+  })
+
+  it('keeps what each tunnel mounted apart from the other\'s and from the direct route\'s', async () => {
+    const { spied } = perTunnel()
+    const host = await startHost(config(), spied)
+    running.push(host)
+    await get(host.port, 'fixture.eth', 'nym')
+    const asked = (route?: TunnelRoute) => host.answer({ kind: 'provenance', host: 'fixture.eth', partition: 'https://fixture.eth', ...(route === undefined ? {} : { route }) })
+    expect(await asked('nym')).not.toBeNull()
+    expect(await asked('socks5')).toBeNull()
+    expect(await asked()).toBeNull()
+  })
+
+  it('fails the website of a tunnel that is down without trying the other tunnel or the direct fetch', async () => {
+    const { spied, through } = perTunnel()
+    const down = deps({ routedFetch: (tunnel) => tunnel === 'socks5' ? async () => { throw new TunnelUnavailable('the proxy is down') } : spied.routedFetch(tunnel) })
+    const host = await startHost(config(), down)
+    running.push(host)
+    const answer = await get(host.port, 'fixture.eth', 'socks5', '/', true)
+    expect(answer.status).toBeGreaterThanOrEqual(500)
+    expect(through.nym).toEqual([])
+    expect(down.direct).toEqual([])
+  }, 40_000)
+
+  it('proves the names of each tunnel\'s websites with a light client of its own', async () => {
+    const CONFIG: LightClientConfig = { executionRpcs: ['https://rpc.example'], consensusRpc: 'https://beacon.example', checkpoint: `0x${'ab'.repeat(32)}` }
+    const starts: Array<TunnelRoute | undefined> = []
+    const quiet = (): LightClient => ({ status: () => ({ state: 'off' }), provider: { request: async () => { throw new ResolutionError('not-synced', 'x') } } })
+    const host = await startHost(config({ lightClient: CONFIG }), deps({ startLightClient: (_config, _fetch, _report, route) => { starts.push(route); return quiet() } }))
+    running.push(host)
+    await get(host.port, 'unknown.eth', 'nym')
+    await get(host.port, 'unknown.eth', 'socks5')
+    await get(host.port, 'other.eth', 'socks5')
+    expect(starts).toEqual([undefined, 'nym', 'socks5'])
   })
 })
 
@@ -135,7 +209,7 @@ describe('the IPFS node for a tunnel-profile website', () => {
 
   async function tunnelGet (port: number, headers: Record<string, string> = {}): Promise<{ status: number, body: string }> {
     return await new Promise((resolve, reject) => {
-      request({ host: '127.0.0.1', port, path: '/', servername: 'fixture.eth', rejectUnauthorized: false, headers: { host: 'fixture.eth', 'x-orivon-partition': 'https://fixture.eth', 'x-orivon-route': 'tunnel', ...headers } }, (res) => {
+      request({ host: '127.0.0.1', port, path: '/', servername: 'fixture.eth', rejectUnauthorized: false, headers: { host: 'fixture.eth', 'x-orivon-partition': 'https://fixture.eth', 'x-orivon-route': 'nym', ...headers } }, (res) => {
         let body = ''
         res.on('data', (c: Buffer) => { body += c.toString() })
         res.on('end', () => { resolve({ status: res.statusCode ?? 0, body }) })
@@ -170,7 +244,7 @@ describe('the IPFS node for a tunnel-profile website', () => {
     const refused = await tunnelGet(host.port, DOCUMENT)
     const href = /id="load-through-gateways" href="([^"]+)"/.exec(refused.body)?.[1]?.replaceAll('&#38;', '&') ?? ''
     const accepted = await new Promise<number>((resolve, reject) => {
-      request({ host: '127.0.0.1', port: host.port, path: href, servername: 'fixture.eth', rejectUnauthorized: false, headers: { host: 'fixture.eth', 'x-orivon-partition': 'https://fixture.eth', 'x-orivon-route': 'tunnel', 'sec-fetch-mode': 'navigate', 'sec-fetch-user': '?1' } }, (res) => { res.resume(); res.on('end', () => { resolve(res.statusCode ?? 0) }) }).on('error', reject).end()
+      request({ host: '127.0.0.1', port: host.port, path: href, servername: 'fixture.eth', rejectUnauthorized: false, headers: { host: 'fixture.eth', 'x-orivon-partition': 'https://fixture.eth', 'x-orivon-route': 'nym', 'sec-fetch-mode': 'navigate', 'sec-fetch-user': '?1' } }, (res) => { res.resume(); res.on('end', () => { resolve(res.statusCode ?? 0) }) }).on('error', reject).end()
     })
     expect(accepted).toBe(303)
     expect(await tunnelGet(host.port, DOCUMENT)).toEqual({ status: 200, body: '<h1>fixture</h1>' })
@@ -217,7 +291,7 @@ describe('the light client of a tunnel-profile website', () => {
   const CONFIG: LightClientConfig = { executionRpcs: ['https://rpc.example'], consensusRpc: 'https://beacon.example', checkpoint: `0x${'ab'.repeat(32)}` }
 
   it('starts at the first tunnel-profile name that needs it, never before, and fetches through the routed fetch only', async () => {
-    const starts: Array<{ route: 'tunnel' | undefined, fetch: HostDeps['fetch'] }> = []
+    const starts: Array<{ route: TunnelRoute | undefined, fetch: HostDeps['fetch'] }> = []
     const lightClient = (): LightClient => ({ status: () => ({ state: 'off' }), provider: { request: async () => { throw new ResolutionError('not-synced', 'the light client is still syncing') } } })
     const spied = deps({ startLightClient: (_config, fetch, _report, route) => { starts.push({ route, fetch }); return lightClient() } })
     const host = await startHost(config({ lightClient: CONFIG }), spied)
@@ -225,7 +299,7 @@ describe('the light client of a tunnel-profile website', () => {
     expect(starts.map((start) => start.route)).toEqual([undefined])
 
     await get(host.port, 'unknown.eth', true)
-    expect(starts.map((start) => start.route)).toEqual([undefined, 'tunnel'])
+    expect(starts.map((start) => start.route)).toEqual([undefined, 'nym'])
     await get(host.port, 'other.eth', true)
     expect(starts).toHaveLength(2)
 
@@ -238,13 +312,13 @@ describe('the light client of a tunnel-profile website', () => {
   })
 
   it('is told to wait the tunnel\'s time for a first sync, and the shared client is told the same, and to start late, only while the whole browser is on the tunnel', async () => {
-    const waits: Array<{ route: 'tunnel' | undefined, wait: number | undefined, startAfter: number | undefined }> = []
+    const waits: Array<{ route: TunnelRoute | undefined, wait: number | undefined, startAfter: number | undefined }> = []
     const lightClient = (): LightClient => ({ status: () => ({ state: 'off' }), provider: { request: async () => { throw new ResolutionError('not-synced', 'x') } } })
-    const record = (_config: LightClientConfig, _fetch: HostDeps['fetch'], _report: unknown, route?: 'tunnel', pace?: { syncWaitMs: number, startAfterMs: number }): LightClient => { waits.push({ route, wait: pace?.syncWaitMs, startAfter: pace?.startAfterMs }); return lightClient() }
+    const record = (_config: LightClientConfig, _fetch: HostDeps['fetch'], _report: unknown, route?: TunnelRoute, pace?: { syncWaitMs: number, startAfterMs: number }): LightClient => { waits.push({ route, wait: pace?.syncWaitMs, startAfter: pace?.startAfterMs }); return lightClient() }
     const direct = await startHost(config({ lightClient: CONFIG }), deps({ startLightClient: record }))
     running.push(direct)
     await get(direct.port, 'unknown.eth', true)
-    expect(waits).toEqual([{ route: undefined, wait: DIRECT_PACE.syncWaitMs, startAfter: 0 }, { route: 'tunnel', wait: TUNNEL_PACE.syncWaitMs, startAfter: 0 }])
+    expect(waits).toEqual([{ route: undefined, wait: DIRECT_PACE.syncWaitMs, startAfter: 0 }, { route: 'nym', wait: TUNNEL_PACE.syncWaitMs, startAfter: 0 }])
     waits.length = 0
     const through = await startHost(config({ lightClient: CONFIG, front: { port: 1, username: 'u', password: 'p' } }), deps({ startLightClient: record }))
     running.push(through)
@@ -273,7 +347,7 @@ describe('the light client of a tunnel-profile website', () => {
     })
 
     it('proves a tunnel-profile website\'s name with the shared client, and starts no client of its own', async () => {
-      const routes: Array<'tunnel' | undefined> = []
+      const routes: Array<TunnelRoute | undefined> = []
       const spied = deps({ startLightClient: (_config, _fetch, _report, route) => { routes.push(route); return quiet() } })
       const host = await startHost(config({ lightClient: CONFIG, ethereumOutside: true }), spied)
       running.push(host)

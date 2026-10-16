@@ -61,8 +61,8 @@ function main (): void {
         fixturesAllowed: FIXTURES_ALLOWED,
         directFetch: createDirectFetch(),
         ccipFetch: createDirectFetch({ allowPost: true, allowRedirect: true }),
-        // A tunnel-profile website's only way to the network: Node sockets to the profile's front, never `net`. A test build's fixture gateways are plain HTTP.
-        routedFetch: createRoutedFetch({ front: () => message.config.profileFront, allowHttp: FIXTURES_ALLOWED }),
+        // A tunnel profile's website's only way to the network: Node sockets to that profile's front, never `net`. A test build's fixture gateways are plain HTTP.
+        routedFetch: (tunnel) => createRoutedFetch({ front: () => message.config.profileFronts?.[tunnel], allowHttp: FIXTURES_ALLOWED }),
         // What the person asked to run outside the tunnel leaves on Node's own sockets, to addresses this process resolves and checks.
         outside: { send: createOutsideFetch(createDirectFetch({ allowPost: true }), resolveOutside), resolveHost: resolveOutside }
       })

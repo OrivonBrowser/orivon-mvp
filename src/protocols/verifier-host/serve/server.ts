@@ -15,7 +15,7 @@ import type { ProtocolAddresses } from '../../address.js'
 import type { ProtocolRegistry } from '../../registry.js'
 import { contentTypeFor } from '../../../loader/serve/content-type.js'
 import { parseRange } from '../../../loader/serve/range.js'
-import { CONTENT_ROOT_HEADER, DDOC_MISMATCH, FAILURE_HEADER, PARTITION_HEADER, ROUTE_HEADER } from '../../../loader/fetch/content-root.js'
+import { CONTENT_ROOT_HEADER, DDOC_MISMATCH, FAILURE_HEADER, PARTITION_HEADER } from '../../../loader/fetch/content-root.js'
 import type { RunCertificate } from './certificate.js'
 import { ERROR_PAGE_CSP, renderErrorPage } from './error-pages.js'
 import type { GatewayOffer } from './error-pages.js'
@@ -23,7 +23,8 @@ import { CONSENT_PATH, GatewayConsent } from '../gateway-consent.js'
 import { answerConsent, gatewayOffer, isDocumentLoad } from './gateway-offer.js'
 import { checkLeaf, expectedLeafOf, sliceChunks } from './leaf-check.js'
 import type { SiteSource } from './sites.js'
-import type { FetchRoute } from '../protocol.js'
+import { paceOf, routeOf } from './route-of.js'
+import type { ServeRoutes } from './route-of.js'
 import { FILE_RETRIES, readWithRetries } from './retry.js'
 import { DIRECT_ROUTE } from '../../route-pace.js'
 import type { RoutePace } from '../../route-pace.js'
@@ -153,15 +154,6 @@ function partitionOf (req: IncomingMessage, host: string): string | undefined {
   if (typeof named === 'string' && PARTITION.test(named)) return named
   const site = req.headers['sec-fetch-site']
   return site === 'none' || site === 'same-origin' ? `https://${host}` : undefined
-}
-
-/**
- * How this request's fetches must leave: through the tunnel when the shell marked it as a tunnel-profile website's. The shell
- * sets or strips the mark on every request of a website session, so a page cannot name its own; and a request with no mark
- * is a direct website's, never a tunnel-profile one's.
- */
-function routeOf (req: IncomingMessage): FetchRoute {
-  return req.headers[ROUTE_HEADER] === 'tunnel' ? 'tunnel' : 'direct'
 }
 
 /**
@@ -429,7 +421,7 @@ async function handle (registry: ProtocolRegistry, sites: SiteSource, routes: Se
       return
     }
     // A page's file is read again when nothing answered. The page itself is not, since its error page offers Try again and the person's own request starts anew; nor is an install's read, which has its own way to try again.
-    const plan: ReadPlan = { route: routeOf(req) === 'tunnel' ? routes.tunnel : routes.direct, left: left.signal, retries: isNavigation(req) || typeof expected === 'string' ? 0 : FILE_RETRIES }
+    const plan: ReadPlan = { route: paceOf(routeOf(req), routes), left: left.signal, retries: isNavigation(req) || typeof expected === 'string' ? 0 : FILE_RETRIES }
     file = await readWithRetries(async () => await site.open(url.pathname, undefined, left.signal), plan.route, plan.left, plan.retries)
     if (!url.pathname.endsWith('/') && file.servedPath.endsWith('/index.html') && !url.pathname.endsWith('/index.html')) {
       res.writeHead(301, { location: `${url.pathname}/${url.search}`, 'cache-control': 'no-cache' }).end()
@@ -467,7 +459,7 @@ async function handle (registry: ProtocolRegistry, sites: SiteSource, routes: Se
     await sendBody(res, status, headers, file, reopen, length, budget, partition, bufferedResponseDeadlineMs, typeof expected === 'string', plan)
   } catch (error) {
     if (res.headersSent) res.destroy()
-    else sendError(res, shown, error, root, gatewayOffer(consent, req.headers, url, partition, error, servedByNode, routeOf(req) === 'tunnel'))
+    else sendError(res, shown, error, root, gatewayOffer(consent, req.headers, url, partition, error, servedByNode, routeOf(req) !== 'direct'))
   }
 }
 
@@ -478,14 +470,8 @@ interface ReadPlan {
   readonly retries: number
 }
 
-/** The pace of each route a request may travel: how long a failed read waits before it is made again. */
-export interface ServeRoutes {
-  readonly direct: RoutePace
-  readonly tunnel: RoutePace
-}
-
 /** `bufferedResponseDeadlineMs` defaults to `BUFFERED_RESPONSE_DEADLINE_MS`; a test shortens it rather than waiting the real deadline out. */
-export function createVerifierServer (registry: ProtocolRegistry, sites: SiteSource, certificate: RunCertificate, bufferedResponseDeadlineMs: number = BUFFERED_RESPONSE_DEADLINE_MS, routes: ServeRoutes = { direct: DIRECT_ROUTE, tunnel: DIRECT_ROUTE }, consent: GatewayConsent = new GatewayConsent()): Server {
+export function createVerifierServer (registry: ProtocolRegistry, sites: SiteSource, certificate: RunCertificate, bufferedResponseDeadlineMs: number = BUFFERED_RESPONSE_DEADLINE_MS, routes: ServeRoutes = { direct: DIRECT_ROUTE, tunnel: () => DIRECT_ROUTE }, consent: GatewayConsent = new GatewayConsent()): Server {
   // One budget for every request this server ever handles, not one per
   // request: it is what lets it track every partition's own share, and their combined total.
   const budget = new BufferBudget()

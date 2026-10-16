@@ -31,11 +31,12 @@ describe('withPartition', () => {
 })
 
 describe('withRoute', () => {
-  it('marks a tunnel-profile website\'s request, replacing whatever the page sent', () => {
-    expect(withRoute({ Accept: '*/*', 'X-Orivon-Route': 'direct' }, 'x-orivon-route', true)).toEqual({ Accept: '*/*', 'x-orivon-route': 'tunnel' })
+  it('marks the request of a website in a tunnel\'s profile with that tunnel, replacing whatever the page sent', () => {
+    expect(withRoute({ Accept: '*/*', 'X-Orivon-Route': 'direct' }, 'x-orivon-route', 'nym')).toEqual({ Accept: '*/*', 'x-orivon-route': 'nym' })
+    expect(withRoute({ Accept: '*/*', 'X-Orivon-Route': 'nym' }, 'x-orivon-route', 'socks5')).toEqual({ Accept: '*/*', 'x-orivon-route': 'socks5' })
   })
 
   it('strips the mark from every other request, so a page cannot name a route for itself', () => {
-    expect(withRoute({ Accept: '*/*', 'x-orivon-route': 'tunnel' }, 'x-orivon-route', false)).toEqual({ Accept: '*/*' })
+    expect(withRoute({ Accept: '*/*', 'x-orivon-route': 'nym' }, 'x-orivon-route', undefined)).toEqual({ Accept: '*/*' })
   })
 })

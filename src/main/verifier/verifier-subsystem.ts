@@ -10,7 +10,7 @@ import { app, session, utilityProcess } from 'electron'
 import type { Session, WebFrameMain, WebRequestFilter } from 'electron'
 import type { Subsystem } from '../registry.js'
 import { devEthNames, isDevEthName } from '../dev/eth-resolver.js'
-import type { HostConfig, LightClientState, NodeNotice, SiteProvenance } from '../../protocols/verifier-host/protocol.js'
+import type { HostConfig, LightClientState, NodeNotice, SiteProvenance, TunnelRoute } from '../../protocols/verifier-host/protocol.js'
 import type { ContentAddress, PinRecord } from '../../broker/policy/pin.js'
 import { servedByVerifier } from '../../loader/fetch/verifier-origin.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
@@ -39,7 +39,7 @@ import { lastProvenance } from './kept-provenance.js'
 import type { NameEvidence } from './name-evidence.js'
 import { checkpointProblem, lightClientView } from './status-view.js'
 import type { LightClientView } from './status-view.js'
-import { ccipDirectFor, tunnelFront, tunnelProfileFront, unproxiedGatewaysFor } from './host-proxy.js'
+import { ccipDirectFor, tunnelFront, tunnelProfileFronts, unproxiedGatewaysFor } from './host-proxy.js'
 import { HostLifecycle } from './host-lifecycle.js'
 import { mountCeilingMs } from '../../protocols/verifier-host/pace.js'
 import { anyTabOnVerifiedOrigin } from './tab-on-verified-origin.js'
@@ -224,7 +224,6 @@ function ipfsFromNode (seam: EthTestSeam | undefined): boolean {
 async function hostConfig (): Promise<HostConfig> {
   const seam = ethTestSeam()
   const front = await tunnelFront(routesOf())
-  const profileFront = await tunnelProfileFront(routesOf())
   hostThroughTunnel = front !== undefined
   const stored = verifierStore()
   let lightClient: Pick<HostConfig, 'lightClient' | 'lightClientOff'>
@@ -245,7 +244,7 @@ async function hostConfig (): Promise<HostConfig> {
     unproxiedGateways: front === undefined ? await unproxiedGatewaysFor(gateways, seam !== undefined) : [],
     ccipDirect: front === undefined && await ccipDirectFor(seam !== undefined),
     ...(front === undefined ? {} : { front }),
-    ...(profileFront === undefined ? {} : { profileFront }),
+    profileFronts: await tunnelProfileFronts(routesOf()),
     ipnsNameServices: seam === undefined ? DEFAULT_ENDPOINTS.ipnsNameServices : [],
     dnsOverHttps: seam?.dnsOverHttps ?? DEFAULT_ENDPOINTS.dnsOverHttps,
     ipnsSequences: stored.ipnsSequences(),
@@ -258,9 +257,10 @@ async function hostConfig (): Promise<HostConfig> {
   }
 }
 
-/** `tunnel` when the website at `origin` lives in a tunnel's profile: its name is then proved, and its files read, only through the tunnel. */
-function routeOf (origin: string): { readonly route?: 'tunnel' } {
-  return (routesOf()?.hub.profileFor(origin) ?? 'direct') !== 'direct' ? { route: 'tunnel' } : {}
+/** The tunnel of the profile the website at `origin` lives in, if any: its name is then proved, and its files read, only through that tunnel. */
+function routeOf (origin: string): { readonly route?: TunnelRoute } {
+  const profile = routesOf()?.hub.profileFor(origin) ?? 'direct'
+  return profile === 'direct' ? {} : { route: profile }
 }
 
 /** The age of the newest checkpoint the light client could start from; undefined while it is off or none can start it. */
@@ -317,7 +317,7 @@ export async function verifierContentAddress (origin: string, partition?: string
   startHost()
   await listeningGate.whenSettled()
   if (supervisor === undefined) throw new Error('the verifier has not started')
-  return contentAddressOf(await supervisor.request({ kind: 'mount', host: new URL(origin).hostname, partition: partition ?? new URL(origin).origin, ...routeOf(origin) }, mountCeilingMs(hostThroughTunnel || routeOf(origin).route === 'tunnel') + MOUNT_GRACE_MS))
+  return contentAddressOf(await supervisor.request({ kind: 'mount', host: new URL(origin).hostname, partition: partition ?? new URL(origin).origin, ...routeOf(origin) }, mountCeilingMs(hostThroughTunnel || routeOf(origin).route !== undefined) + MOUNT_GRACE_MS))
 }
 
 /** The content CID a `.eth` host names, proven now in `partition`; undefined when it does not resolve. Never throws. */
@@ -382,7 +382,7 @@ export const verifierSubsystem: Subsystem = {
     BUILTIN_ADDRESSES.learnSchemes((name) => verifierStore().nameScheme(name))
     installCertificateCheck(session.defaultSession)
     // The shared session and each session of its own a website gets: any of them can load a `.eth` page.
-    forEachWebsiteSession((target, tunnelProfile) => { installPartitionStamp(target, tunnelProfile); installFileFailureWatch(target); installListeningGate(target) })
+    forEachWebsiteSession((target, tunnel) => { installPartitionStamp(target, tunnel); installFileFailureWatch(target); installListeningGate(target) })
     const host = new HostSupervisor({
       fork: () => utilityProcess.fork(join(__dirname, 'verifier-host.js'), [], { serviceName: 'Orivon verifier' }),
       config: hostConfig,

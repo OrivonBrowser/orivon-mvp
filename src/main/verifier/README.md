@@ -66,7 +66,7 @@ document over Chromium's ordinary networking, so it reaches the verifier exactly
 and `src/main/embed/embed-host.ts`'s `configureEmbedSession` installs the identical stamp there,
 reusing `partition.ts` rather than copying it.
 
-**The same handler marks a tunnel-profile website's requests.** `installPartitionStamp` is told by `website-sessions.ts` whether a session is the tunnel profile's, and sets `x-orivon-route: tunnel` on every request that session makes to the verifier, or strips the header on every other session (the embed's included), so a page cannot choose a route. The host serves a marked request from protocols that fetch only through the tunnel profile's front (`protocols/verifier-host/README.md`). Main asks the host about a website in that profile with the same mark in its mount and provenance requests (`routeOf`).
+**The same handler marks the requests of a website in a tunnel's profile.** `installPartitionStamp` is told by `website-sessions.ts` which tunnel a session is the profile of, if any, and sets `x-orivon-route: nym` or `socks5` on every request that session makes to the verifier, or strips the header on every other session (the embed's included), so a page cannot choose a route. The host serves a marked request from protocols that fetch only through that tunnel's profile front (`protocols/verifier-host/README.md`). Main asks the host about a website in a profile with the same mark in its mount and provenance requests (`routeOf`), and hands it the front of each tunnel's profile when it starts (`host-proxy.ts`).
 
 **The host runs only while `.eth` or an address is in use.** [`host-lifecycle.ts`](host-lifecycle.ts) starts it on the
 first request to a host the verifier serves, or when the address bar's text names one

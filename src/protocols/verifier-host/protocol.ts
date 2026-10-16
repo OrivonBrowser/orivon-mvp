@@ -10,11 +10,15 @@ import type { LocalNodeState } from '../local-node/protocol.js'
 /** A beacon block root, as a checkpoint must be: Helios, handed anything else, silently uses one compiled into it, about a year old. */
 export const BLOCK_ROOT_PATTERN = /^0x[0-9a-f]{64}$/
 
+/** The tunnels a website can have: Nym, or the person's own SOCKS5 proxy. */
+export type TunnelRoute = 'nym' | 'socks5'
+
 /**
  * How a request's fetches leave this process. `direct`: Electron's `net`, outside the tunnel unless the whole browser is on
- * it. `tunnel`: a tunnel-profile website's, which only the tunnel profile's front carries (`HostConfig.profileFront`).
+ * it. `nym` and `socks5`: a website in that tunnel's profile, which only that profile's front carries
+ * (`HostConfig.profileFronts`).
  */
-export type FetchRoute = 'direct' | 'tunnel'
+export type FetchRoute = 'direct' | TunnelRoute
 
 export interface LightClientConfig {
   /** Asked in order: a request that fails or errors goes to the next. */
@@ -59,10 +63,10 @@ export interface HostConfig {
    */
   readonly front?: { readonly port: number, readonly username: string, readonly password: string }
   /**
-   * The tunnel profile's front, which every fetch for a tunnel-profile website goes through (`routed-fetch.ts`) and nothing
-   * else carries. Absent, such a website's fetches fail: they are never made another way.
+   * The front of each tunnel's profile, which every fetch for a website in that profile goes through (`routed-fetch.ts`) and
+   * nothing else carries. A tunnel with none here fails such a website's fetches: they are never made another way.
    */
-  readonly profileFront?: { readonly port: number, readonly username: string, readonly password: string }
+  readonly profileFronts?: Readonly<Partial<Record<TunnelRoute, { readonly port: number, readonly username: string, readonly password: string }>>>
   /** w3name-style services asked for an IPNS record after the gateways. */
   readonly ipnsNameServices: readonly string[]
   readonly dnsOverHttps: readonly string[]
@@ -123,9 +127,9 @@ export interface SiteProvenance {
 
 export type HostRequest =
   /** What is mounted for a host in a partition now, or null; never resolves anything. */
-  | { readonly kind: 'provenance', readonly host: string, readonly partition: string, readonly route?: 'tunnel' }
+  | { readonly kind: 'provenance', readonly host: string, readonly partition: string, readonly route?: TunnelRoute }
   /** Resolves and mounts the host in the partition if it is not mounted there, then answers as `provenance` does. */
-  | { readonly kind: 'mount', readonly host: string, readonly partition: string, readonly route?: 'tunnel' }
+  | { readonly kind: 'mount', readonly host: string, readonly partition: string, readonly route?: TunnelRoute }
   | { readonly kind: 'status' }
 
 export interface HostReplies {

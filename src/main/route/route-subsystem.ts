@@ -26,6 +26,7 @@ import { prepareProfileSession, wakeProfileSession } from '../extensions/extensi
 import { servedOrigin } from './served-origin.js'
 import { mustLeaveSession, setSiteRoutes, setMadeSiteSessions, setSiteSessionEnsurer, siteProfileOf } from './site-routes.js'
 import { createSiteSessions } from './site-sessions.js'
+import { kindOfProfile } from './site-partition.js'
 import type { SiteSession } from './site-sessions.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { announceWebsiteSession } from '../sessions/website-sessions.js'
@@ -174,14 +175,12 @@ export const routeSubsystem: Subsystem = {
         watch()
         return watch
       },
-      fit: (target, profile) => { announceWebsiteSession(target as Session, profile !== 'direct') }
+      fit: (target, profile) => { announceWebsiteSession(target as Session, kindOfProfile(profile)) }
     })
     // The verifier host reads whether a proxy applies once, when it starts, and fetches through the shared front when the whole browser is on the tunnel: it stops at once, with the local nodes, and starts again with the new setting when something asks for it, once the sessions follow.
     routes.hub.onChange((origin) => {
       if (origin === SHARED_ORIGIN) tunnelDefaultChanged()
     })
-    // The host's fetches for websites in a tunnel profile go through the default tunnel's profile front until each website's own is used (`../verifier/host-proxy.ts`).
-    routes.onDefaultKindChange(tunnelDefaultChanged)
     setSiteRoutes({
       profileFor: routes.hub.profileFor,
       sentLikeItsOwn: (partition, origin) => {

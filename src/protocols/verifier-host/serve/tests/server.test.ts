@@ -117,7 +117,7 @@ let server: Server
 let port: number
 
 beforeAll(async () => {
-  server = createVerifierServer(registry, new RoutedSites(new Sites(registry), new Sites(registry)), certificate)
+  server = createVerifierServer(registry, new RoutedSites(new Sites(registry), () => new Sites(registry)), certificate)
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   port = (server.address() as AddressInfo).port
 })

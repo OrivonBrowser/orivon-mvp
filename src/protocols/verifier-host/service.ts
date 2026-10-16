@@ -13,7 +13,7 @@ import { startProtocols } from './protocols.js'
 import { startTunnelProtocols } from './tunnel-protocols.js'
 import { NodeLinks } from './node-link.js'
 import { GatewayConsent } from './gateway-consent.js'
-import type { FromHost, NodeNotice, HostConfig, HostReplies, HostRequest, LightClientConfig, LightClientState, SiteProvenance } from './protocol.js'
+import type { FromHost, NodeNotice, HostConfig, HostReplies, HostRequest, LightClientConfig, LightClientState, SiteProvenance, TunnelRoute } from './protocol.js'
 import { createVerifierServer } from './serve/server.js'
 import type { LightClientPace } from './light-client/light-client.js'
 import { paceOn } from './pace.js'
@@ -32,8 +32,8 @@ export interface HostDeps {
   readonly fetch: WebFetch
   readonly resolveHost: (host: string) => Promise<readonly string[]>
   readonly post: (message: FromHost) => void
-  /** `route` tunnel: the client that proves the names of tunnel-profile websites, which reports nothing and has requests of its own. */
-  readonly startLightClient: (config: LightClientConfig, fetch: WebFetch, report: (message: FromHost) => void, route?: 'tunnel', pace?: LightClientPace) => LightClient
+  /** `route` a tunnel: the client that proves the names of the websites in that tunnel's profile, which reports nothing and has requests of its own. */
+  readonly startLightClient: (config: LightClientConfig, fetch: WebFetch, report: (message: FromHost) => void, route?: TunnelRoute, pace?: LightClientPace) => LightClient
   /** True only in a test build; fixture names are refused otherwise, whatever the config says. */
   readonly fixturesAllowed: boolean
   /** The DNS-tamper fallback's own egress (dns-fallback.ts), reached only
@@ -47,8 +47,8 @@ export interface HostDeps {
    * above, allows the POST form and follows a redirect (the caller decides
    * whether to, per hop). */
   readonly ccipFetch: DirectFetch
-  /** Everything a tunnel-profile website needs from the network goes through this and nothing else: the tunnel profile's front (`routed-fetch.ts`). */
-  readonly routedFetch: WebFetch
+  /** Everything a website in a tunnel's profile needs from the network goes through this and nothing else: that profile's front (`routed-fetch.ts`). */
+  readonly routedFetch: (route: TunnelRoute) => WebFetch
   /**
    * What leaves outside the tunnel while the whole browser is on it (`outside-fetch.ts`), for the Ethereum light client when the person
    * asked the nodes to run outside the tunnel (`HostConfig.ethereumOutside`). Absent in a host with no such path: the light client then
@@ -77,17 +77,26 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
   const controls = { lookupService: config.ipfsNode?.lookupService !== false, consent }
   const { protocols, lightClient, stores, route, ens } = startProtocols(config, deps, nodes, controls)
   const registry = new ProtocolRegistry(protocols)
-  const tunnelProtocols = startTunnelProtocols(config, deps, stores, nodes, controls, ens)
-  const tunnelRegistry = new ProtocolRegistry(tunnelProtocols.protocols)
+  // The protocols of a tunnel are started at the first request of a website in its profile: a person who uses one tunnel never pays for the other's.
+  const tunnelSets = new Map<TunnelRoute, { readonly sites: Sites, readonly route: RoutePace }>()
   // A top-level-domain name is shown by where its content lives, which is known once a gatherer is chosen for its records.
   const sitesOf = (of: ProtocolRegistry, via: RoutePace): Sites => new Sites(of, Date.now, () => paceOn(via).mountTimeoutMs, (host, gatherer) => {
     const served = of.addresses.servedName(host)
     const scheme = of.schemeOfGatherer(gatherer)
     if (served?.namespace.startsWith('.') === true && scheme !== undefined) deps.post({ type: 'name-scheme', host: served.name, scheme })
   }, (site, partition) => usedGatewaysByYes(site) || (site.servedFrom?.kind === 'node' && consent.pending(partition)))
-  const sites = new RoutedSites(sitesOf(registry, route), sitesOf(tunnelRegistry, tunnelProtocols.route))
+  const tunnelSet = (tunnel: TunnelRoute): { readonly sites: Sites, readonly route: RoutePace } => {
+    let set = tunnelSets.get(tunnel)
+    if (set === undefined) {
+      const protocolsOf = startTunnelProtocols(config, deps, stores, nodes, controls, ens, tunnel)
+      set = { sites: sitesOf(new ProtocolRegistry(protocolsOf.protocols), protocolsOf.route), route: protocolsOf.route }
+      tunnelSets.set(tunnel, set)
+    }
+    return set
+  }
+  const sites = new RoutedSites(sitesOf(registry, route), (tunnel) => tunnelSet(tunnel).sites)
   const certificate = createRunCertificate()
-  const server = createVerifierServer(registry, sites, certificate, undefined, { direct: route, tunnel: tunnelProtocols.route }, consent)
+  const server = createVerifierServer(registry, sites, certificate, undefined, { direct: route, tunnel: (tunnel) => tunnelSet(tunnel).route }, consent)
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
     server.listen(config.port, '127.0.0.1', () => {
