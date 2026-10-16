@@ -104,7 +104,7 @@ export const routeSubsystem: Subsystem = {
       if (guarded.has(target)) return
       guarded.add(target)
       webRequestOwnerFor(target).onBeforeRequest(-2, { urls: ['http://*/*', 'https://*/*'], types: ['mainFrame'] }, () => true, (details, current) =>
-        details.resourceType === 'mainFrame' && mustLeaveSession(details.url, { shared: target === session.defaultSession, tunnelled: routes.controller.isTunnelled(target), temporary: isTemporary(target) }, isOriginServedFromCacheSync, routes.hub.isRouted) ? { cancel: true } : current)
+        details.resourceType === 'mainFrame' && mustLeaveSession(details.url, { shared: target === session.defaultSession, via: routes.controller.tunnelOf(target), temporary: isTemporary(target) }, isOriginServedFromCacheSync, routes.hub.kindOf) ? { cancel: true } : current)
     }
     adopt = (made) => { routes.controller.adopt(made); guardLoads(made) }
     for (const earlier of created.splice(0)) adopt(earlier as Session)
@@ -180,14 +180,16 @@ export const routeSubsystem: Subsystem = {
     routes.hub.onChange((origin) => {
       if (origin === SHARED_ORIGIN) tunnelDefaultChanged()
     })
+    // The host's fetches for websites in a tunnel profile go through the default tunnel's profile front until each website's own is used (`../verifier/host-proxy.ts`).
+    routes.onDefaultKindChange(tunnelDefaultChanged)
     setSiteRoutes({
       profileFor: routes.hub.profileFor,
       sentLikeItsOwn: (partition, origin) => {
         const holder = partition === undefined ? session.defaultSession : session.fromPartition(partition)
-        const here = routes.controller.isTunnelled(holder)
-        const there = routes.hub.isRouted(origin)
-        // A session that is tunnelled keeps an address that needs no tunnel (a sign-in popup of a tunnelled site, a routed app's window); one that is not never keeps an address that does.
-        return here || !there
+        const here = routes.controller.tunnelOf(holder)
+        const there = routes.hub.kindOf(origin)
+        // A session keeps an address that needs no tunnel (a sign-in popup of a tunnelled site, a routed app's window) and one that needs its own; one that is not tunnelled, or goes through the other tunnel, never keeps an address that needs another.
+        return there === undefined || here === 'held' || here === there
       }
     })
     // Sessions websites had of their own before the two profiles are cleared once; the person signs in again once.
@@ -199,7 +201,7 @@ export const routeSubsystem: Subsystem = {
     beforeAppSessionServes(async (appSession, origin) => { await routes.controller.appSessionRegistered(origin, appSession) })
     const temporary = createTemporaryRoutes({
       controller: routes.controller,
-      proxy: routes.proxy,
+      targetOf: routes.targetOf,
       providerFor: routes.providerFor,
       sessionFor: (partition) => session.fromPartition(partition),
       announce: (target) => { announceWebsiteSession(target as unknown as Session) },
@@ -229,7 +231,9 @@ export const routeSubsystem: Subsystem = {
         servedOrigin
       },
       temporary,
-      routeSwitch: routes.routeSwitch
+      routeSwitch: routes.routeSwitch,
+      kindOf: routes.hub.kindOf,
+      defaultKind: routes.defaultKind
     })
     publishRoutes(ctx, routes)
     // Whatever loads next (the person's extensions, the first window) finds the sessions already following the setting.

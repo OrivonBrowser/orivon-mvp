@@ -6,6 +6,7 @@ import type { Session, WebContents } from 'electron'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { originHash } from '../../broker/grants/origin-hash.js'
 import { SHARED_ORIGIN } from './route-hub.js'
+import type { TunnelKind } from './route-state.js'
 import { profilePartitionFor } from './site-partition.js'
 import { ensureSiteSession } from './site-routes.js'
 import type { RouteChangeCause, RouteHub } from './route-hub.js'
@@ -72,7 +73,7 @@ export interface RouteController {
   /** The app is gone (forgotten): its sessions are no longer followed, and its lookup session is made anew if it is routed again. Call after its route was switched off. */
   forget: (origin: string) => void
   /** Points a session that belongs to no app at a front of its own, and puts the WebRTC policy on every web contents that opens in it. */
-  prepareTemporary: (session: RouteSession, front: TemporaryFront) => Promise<void>
+  prepareTemporary: (session: RouteSession, front: TemporaryFront, kind: TunnelKind) => Promise<void>
   /** The session is gone: its front's challenge is no longer answered. */
   releaseTemporary: (session: RouteSession, front: TemporaryFront) => void
   /**
@@ -81,8 +82,12 @@ export interface RouteController {
    * While the setting is off it is only remembered, so that turning the setting on reaches it.
    */
   adopt: (session: RouteSession) => void
-  /** Whether the session is pointed at a front, held on the rule that reaches nothing, or answers for a proxy of its own: a request in it cannot leave this computer unproxied. */
-  isTunnelled: (session: object) => boolean
+  /**
+   * How a request in the session leaves: the tunnel of the front it is pointed at; `held` when it is stopped on the rule that
+   * reaches nothing or answers for a proxy of its own (it cannot leave this computer unproxied, and carries nothing to a tunnel
+   * either); undefined for a session that is not pointed at anything, whose requests follow the system.
+   */
+  tunnelOf: (session: object) => TunnelKind | 'held' | undefined
   /** Points the shared identity once at start: its sessions, and the requests made with no session. Nothing while the browser-wide setting is off. */
   startShared: () => void
   /** Resolves when the switches heard so far have been applied. */
@@ -131,6 +136,8 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
   const known = new Map<string, Map<RouteSession, boolean>>()
   /** The front each session points at now. */
   const pointedAt = new Map<RouteSession, number>()
+  /** The tunnel that front leaves by, or `held` for a session stopped on the rule that reaches nothing. */
+  const pointedVia = new Map<RouteSession, TunnelKind | 'held'>()
   /** Web contents given the policy here, which are the only ones restored. */
   const confined = new WeakSet<RouteContents>()
   const fetchSessions = new Map<string, RouteSession>()
@@ -189,20 +196,27 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     return turn
   }
 
-  async function pointAt (session: RouteSession, port: number): Promise<void> {
-    if (pointedAt.get(session) === port) return
+  async function pointAt (session: RouteSession, port: number, kind: TunnelKind): Promise<void> {
+    if (pointedAt.get(session) === port) {
+      // The same front, now leaving by another tunnel: the session is where it was, and only what it is said to be changes.
+      pointedVia.set(session, kind)
+      return
+    }
     const extra = bypasses.get(session)
     await within(session.setProxy({ mode: 'fixed_servers', proxyRules: `http://127.0.0.1:${String(port)}`, proxyBypassRules: extra === undefined ? ROUTED_BYPASS : `${ROUTED_BYPASS};${extra}` }), callMs)
     pointedAt.set(session, port)
+    pointedVia.set(session, kind)
   }
 
   async function point (origin: string, session: RouteSession): Promise<void> {
-    if (hub.isRouted(origin)) {
-      await pointAt(session, (await hub.front(origin)).port)
+    const kind = hub.kindOf(origin)
+    if (kind !== undefined) {
+      await pointAt(session, (await hub.front(origin)).port, kind)
     } else if (pointedAt.has(session)) {
       // Forgotten only once it is done: a session that could not be put back stays marked, so a later pass tries again.
       await within(session.setProxy({ mode: 'system' }), callMs)
       pointedAt.delete(session)
+      pointedVia.delete(session)
     }
   }
 
@@ -214,6 +228,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
   async function confine (session: RouteSession): Promise<void> {
     // Recorded, so that switching the route off puts the session back on the system's proxy.
     pointedAt.set(session, CONFINED_FRONT)
+    pointedVia.set(session, 'held')
     const stop = async (): Promise<void> => {
       try {
         await within(session.setProxy({ mode: 'fixed_servers', proxyRules: unreachable(), proxyBypassRules: CONFINED_BYPASS }), callMs)
@@ -222,6 +237,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
       }
       // A pointing that ran ahead of this one in the turn recorded its front; the session is on the dead end now.
       pointedAt.set(session, CONFINED_FRONT)
+      pointedVia.set(session, 'held')
     }
     await inTurn(session, stop)
   }
@@ -372,7 +388,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     },
     prepareSite: async (origin, session, bypass) => { await prepare(origin, session, { bypass }) },
     confineSite: confine,
-    isTunnelled: (session) => pointedAt.has(session as RouteSession) || deps.ownProxy?.(session as RouteSession) === true,
+    tunnelOf: (session) => pointedVia.get(session as RouteSession) ?? (deps.ownProxy?.(session as RouteSession) === true ? 'held' : undefined),
     startShared: () => {
       if (!hub.isRouted(SHARED_ORIGIN)) return
       stopFirst(SHARED_ORIGIN)
@@ -418,24 +434,25 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
         // A session still marked as pointed at a front is put back once more, and let go only when it is.
         for (const session of [...sessions.keys()]) {
           if (pointedAt.has(session)) await prepare(origin, session).catch((error: unknown) => { console.error('[route] a forgotten app\'s session is still on its front:', error) })
-          if (!pointedAt.has(session)) { sessions.delete(session); bypasses.delete(session) }
+          if (!pointedAt.has(session)) { sessions.delete(session); bypasses.delete(session); pointedVia.delete(session) }
         }
         if (sessions.size === 0) known.delete(origin)
         fetchSessions.delete(origin)
       })
     },
-    prepareTemporary: async (session, front) => {
+    prepareTemporary: async (session, front, kind) => {
       // Registered before the session is pointed, so a web contents made in it meanwhile already has the policy.
       known.get(SHARED_ORIGIN)?.delete(session)
       claimed.add(session)
       temporarySessions.add(session)
       temporaryFronts.set(front.port, front)
-      await pointAt(session, front.port)
+      await pointAt(session, front.port, kind)
     },
     releaseTemporary: (session, front) => {
       temporarySessions.delete(session)
       temporaryFronts.delete(front.port)
       pointedAt.delete(session)
+      pointedVia.delete(session)
     },
     sharedSettled: async () => {
       await hub.settled()

@@ -5,7 +5,6 @@
 // single god-object covering both the grant list and the per-site
 // popover (code-guidelines.md Rule 2).
 
-import { isNymTarget } from '../route/nym-provider.js'
 import { NYM_SWITCHED_OFF } from '../route/nym-subsystem.js'
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import { isLocalFileKey, isolationKeyFromUrl, originFromUrl } from '../../broker/policy/origin.js'
@@ -111,10 +110,9 @@ export interface SiteInfoController {
 
 type Routes = NonNullable<SubsystemContext['routes']>
 
-/** Where the person's tunnel choice leaves from: Nym, or their own address (also while none is set). */
+/** The tunnel the person chose for everything that has no choice of its own: Nym, or their own address (also while none is set). */
 function tunnelKindOf (routes: Routes): 'nym' | 'socks5' {
-  const proxy = routes.proxy()
-  return proxy !== undefined && isNymTarget(proxy) ? 'nym' : 'socks5'
+  return routes.defaultKind()
 }
 
 /** Nym is the tunnel and the person switched it off in Settings. */
@@ -147,9 +145,9 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     const route = ctx.routes?.hub.state(info.origin)
     const tunnel = tunnelFor(info.origin)
     // What Nym is doing is asked only for an origin whose route is on and leaves through it.
-    const proxy = route === undefined || route === 'off' ? undefined : ctx.routes?.proxy()
-    const nym = proxy === undefined || !isNymTarget(proxy) ? undefined : ctx.routes?.nym.state()
-    const kind = ctx.routes === undefined ? undefined : tunnelKindOf(ctx.routes)
+    const routedKind = route === undefined || route === 'off' ? undefined : ctx.routes?.hub.kindOf(info.origin)
+    const nym = routedKind === 'nym' ? ctx.routes?.nym.state() : undefined
+    const kind = ctx.routes === undefined ? undefined : routedKind ?? tunnelKindOf(ctx.routes)
     return { ...info, ...(kind === undefined || ctx.routes === undefined ? {} : { tunnelKind: kind, everywhere: ctx.routes.hub.isEverywhere() }), ...(ctx.privateTunnel === 'nym' ? { tunnelHeld: 'nym' as const } : {}), ...(notLetIn === undefined ? {} : { notLetIn }), ...(update === undefined ? {} : { update }), ...(route === undefined || route === 'off' ? {} : { route }), ...(tunnel === undefined ? {} : { tunnel }), ...(nym === undefined ? {} : { nym }) }
   }
 
@@ -161,7 +159,7 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
 
   /** The profile the next change of the switch moves the website into for the first time, when the person is to be told. */
   function noticeFor (origin: string, on: boolean): { readonly notice?: 'tunnel' | 'direct' } {
-    const profile = ctx.routes?.routeSwitch.siteNotice(origin, !on)
+    const profile = ctx.routes?.routeSwitch.noticeFor(origin, on ? null : ctx.routes.defaultKind())
     return profile === undefined ? {} : { notice: profile === 'direct' ? 'direct' : 'tunnel' }
   }
 
@@ -169,7 +167,7 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
   function tunnelFor (origin: string): SiteTunnel | undefined {
     const routes = ctx.routes
     if (routes === undefined || trustSources.isOriginServedFromCacheSync(origin) || !canTunnel(origin)) return undefined
-    const blocked = routes.routeSwitch.siteBlockedFor(origin)
+    const blocked = routes.routeSwitch.blockedFor(origin, routes.defaultKind())
     return {
       on: routes.hub.isRouted(origin),
       ...(blocked === 'no-proxy' ? { blocked } : {}),
@@ -260,9 +258,9 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
       if (routes === undefined || trustSources.isOriginServedFromCacheSync(origin)) return false
       // A window held to a tunnel never has a switch turned off (the store refuses it too).
       if (!on && ctx.privateTunnel === 'nym') return false
-      if (on && (routes.routeSwitch.siteBlockedFor(origin) !== undefined || nymSwitchedOff(routes))) return false
+      if (on && (routes.routeSwitch.blockedFor(origin, routes.defaultKind()) !== undefined || nymSwitchedOff(routes))) return false
       try {
-        await routes.routeSwitch.setSite(origin, on)
+        await routes.routeSwitch.choose(origin, on ? routes.defaultKind() : null)
       } catch (error) {
         console.error('[site-info] the tunnel of a website could not be switched:', error)
         return false

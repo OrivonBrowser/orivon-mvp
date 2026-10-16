@@ -446,18 +446,20 @@ describe('the verifier subsystem', () => {
 
   describe('with the tunnel profile', () => {
     const FRONT = { port: 4242, username: 'orivon', secret: 'profile-secret' }
-    const routes = (profile: 'nym' | 'socks5' | 'direct' | undefined) => ({
+    const frontsAsked: string[] = []
+    const routes = (profile: 'nym' | 'socks5' | 'direct' | undefined, kind: 'nym' | 'socks5' = 'nym') => ({
       controller: { settled: async () => {} },
-      hub: { isRouted: () => false, front: async () => FRONT, profileFor: () => profile }
+      hub: { isRouted: () => false, front: async (origin: string) => { frontsAsked.push(origin); return FRONT }, profileFor: () => profile },
+      defaultKind: () => kind
     })
     type Sent = { type: string, config?: { profileFront?: unknown }, request?: { kind: string, route?: string, partition: string } }
     const sent = (): Sent[] => forks()[0]?.sent as Sent[]
 
-    async function launchWithRoutes (profile: 'nym' | 'socks5' | 'direct' | undefined) {
+    async function launchWithRoutes (profile: 'nym' | 'socks5' | 'direct' | undefined, kind: 'nym' | 'socks5' = 'nym') {
       vi.resetModules()
       vi.setSystemTime(SHIPPED_AT_MS + DAY_MS)
       const subsystem = await import('../verifier-subsystem.js')
-      await subsystem.verifierSubsystem.afterReady?.({ routes: routes(profile) } as never)
+      await subsystem.verifierSubsystem.afterReady?.({ routes: routes(profile, kind) } as never)
       subsystem.configureVerifier({ lightClientEnabled: () => true, windows: () => tabs.open, servedFromCache: () => false })
       const gate = registered.beforeRequest[0]
       void gate?.({ url: 'https://vitalik.eth/' }, {})
@@ -470,6 +472,17 @@ describe('the verifier subsystem', () => {
     it('gives the host the profile\'s front to fetch through for its websites, whatever the whole-browser setting is', async () => {
       await launchWithRoutes('nym')
       expect(sent().find((message) => message.type === 'start')?.config?.profileFront).toEqual({ port: 4242, username: 'orivon', password: 'profile-secret' })
+    })
+
+    it('hands the host the front of the default tunnel\'s profile', async () => {
+      frontsAsked.length = 0
+      await launchWithRoutes('nym', 'socks5')
+      expect(frontsAsked).toEqual(['orivon-proxy-profile'])
+      frontsAsked.length = 0
+      forks().length = 0
+      registered.beforeRequest.length = 0
+      await launchWithRoutes('nym', 'nym')
+      expect(frontsAsked).toEqual(['orivon-tunnel-profile'])
     })
 
     it('asks the host about a tunnel-profile website through the tunnel, and about any other website the ordinary way', async () => {

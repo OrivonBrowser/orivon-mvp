@@ -59,10 +59,11 @@ describe('making a profile session ready before a view is made in it', () => {
 
 describe('a load the shell\'s own move missed', () => {
   const cached = (): boolean => false
-  const shared = { shared: true, tunnelled: true, temporary: false }
-  const direct = { shared: false, tunnelled: false, temporary: false }
-  const tunnel = { shared: false, tunnelled: true, temporary: false }
-  const routed = (origin: string): boolean => origin === SITE
+  const shared = { shared: true, via: 'nym' as const, temporary: false }
+  const direct = { shared: false, via: undefined, temporary: false }
+  const tunnel = { shared: false, via: 'nym' as const, temporary: false }
+  const held = { shared: false, via: 'held' as const, temporary: false }
+  const routed = (origin: string): 'nym' | undefined => origin === SITE ? 'nym' : undefined
 
   it('is refused in the shared session for a website that has a profile, whatever the page of the address', () => {
     setSiteRoutes({ profileFor: (origin) => origin === SITE ? 'nym' : undefined })
@@ -73,8 +74,8 @@ describe('a load the shell\'s own move missed', () => {
   it('is let through while no website has one, for this computer, for an address with no origin and for an app served from the cache', () => {
     expect(mustLeaveSession(`${SITE}/`, shared, cached, routed)).toBe(false)
     setSiteRoutes({ profileFor: () => 'direct' })
-    expect(mustLeaveSession('http://localhost:3000/', shared, cached, () => true)).toBe(false)
-    expect(mustLeaveSession('about:blank', shared, cached, () => true)).toBe(false)
+    expect(mustLeaveSession('http://localhost:3000/', shared, cached, () => 'nym')).toBe(false)
+    expect(mustLeaveSession('about:blank', shared, cached, () => 'nym')).toBe(false)
     expect(mustLeaveSession(`${SITE}/`, shared, () => true, routed)).toBe(false)
   })
 
@@ -84,12 +85,18 @@ describe('a load the shell\'s own move missed', () => {
     expect(mustLeaveSession(`${SITE}/`, tunnel, cached, routed)).toBe(false)
   })
 
+  it('is refused in a session that goes through the other tunnel, and let through in one that is stopped', () => {
+    expect(mustLeaveSession(`${SITE}/`, { shared: false, via: 'socks5', temporary: false }, cached, routed)).toBe(true)
+    expect(mustLeaveSession(`${SITE}/`, held, cached, routed)).toBe(false)
+    expect(mustLeaveSession(`${SITE}/`, tunnel, cached, (origin) => origin === SITE ? 'socks5' : undefined)).toBe(true)
+  })
+
   it('is let through in a temporary session, where any website is opened on purpose', () => {
     expect(mustLeaveSession(`${SITE}/`, { ...direct, temporary: true }, cached, routed)).toBe(false)
   })
 
   it('never judges this computer by the tunnel', () => {
-    expect(mustLeaveSession('http://127.0.0.1:8080/', direct, cached, () => true)).toBe(false)
+    expect(mustLeaveSession('http://127.0.0.1:8080/', direct, cached, () => 'nym')).toBe(false)
   })
 })
 

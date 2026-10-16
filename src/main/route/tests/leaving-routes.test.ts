@@ -4,14 +4,17 @@ import { isRoutedPage, isTemporaryRoutePartitionLive, isTemporaryRouteSession, l
 afterEach(() => { setLeavingRoutes(undefined) })
 
 function running (blocked: 'no-proxy' | 'not-cached' | undefined = undefined) {
-  const set = vi.fn(async () => {})
+  const choose = vi.fn(async () => {})
+  const open = vi.fn(async (_kind: string) => 'orivon-route-tab-1')
   const session = {}
   setLeavingRoutes({
     world: { isRouted: (origin) => origin === 'https://routed.example', isInstalledApp: (origin) => origin.endsWith('.example'), routedOriginOf: (partition) => partition === 'persist:app-routed' ? 'https://routed.example' : undefined, servedOrigin: () => undefined },
-    temporary: { open: async () => 'orivon-route-tab-1', owns: (one) => one === session, isLive: (partition) => partition === 'orivon-route-tab-1' },
-    routeSwitch: { blockedFor: () => blocked, set }
+    temporary: { open, owns: (one) => one === session, isLive: (partition) => partition === 'orivon-route-tab-1' },
+    routeSwitch: { blockedFor: () => blocked, choose },
+    kindOf: (origin) => origin === 'https://routed.example' ? 'socks5' : undefined,
+    defaultKind: () => 'nym'
   })
-  return { set, session }
+  return { choose, open, session }
 }
 
 describe('what the shell asks of the routes', () => {
@@ -20,14 +23,15 @@ describe('what the shell asks of the routes', () => {
     expect(isTemporaryRouteSession({})).toBe(false)
     expect(isRoutedPage('https://routed.example/', undefined)).toBe(false)
     expect(isTemporaryRoutePartitionLive('orivon-route-tab-1')).toBe(false)
-    expect(await routeAppToo('https://other.example')).toBe(false)
-    await expect(openTemporaryRoute()).rejects.toThrow('no routes are running')
+    expect(await routeAppToo('https://other.example', 'https://routed.example')).toBe(false)
+    await expect(openTemporaryRoute('https://routed.example')).rejects.toThrow('no routes are running')
   })
 
   it('decides over the world it was given, and hands out the temporary session', async () => {
-    const { session } = running()
+    const { session, open } = running()
     expect(leaveFor('https://routed.example/a', 'https://news.org/')).toEqual({ kind: 'website', origin: 'https://news.org', app: 'https://routed.example' })
-    expect(await openTemporaryRoute()).toBe('orivon-route-tab-1')
+    expect(await openTemporaryRoute('https://routed.example')).toBe('orivon-route-tab-1')
+    expect(open).toHaveBeenCalledWith('socks5')
     expect(isTemporaryRouteSession(session)).toBe(true)
     expect(isTemporaryRouteSession(undefined)).toBe(false)
     expect(isRoutedPage('https://routed.example/page', undefined)).toBe(true)
@@ -39,13 +43,20 @@ describe('what the shell asks of the routes', () => {
     expect(isTemporaryRoutePartitionLive('orivon-route-tab-2')).toBe(false)
   })
 
-  it('turns the other app\'s route on through the switch the app card uses, and not when it cannot be turned on', async () => {
+  it('opens the page through the tunnel of the page that opens it, and the default one for an origin with none', async () => {
+    const { open } = running()
+    await openTemporaryRoute('https://routed.example')
+    await openTemporaryRoute('https://unrouted.example')
+    expect(open.mock.calls).toEqual([['socks5'], ['nym']])
+  })
+
+  it('sends the other app through the opening page\'s tunnel by the switch the menu uses, and not when it cannot be', async () => {
     const open = running()
-    expect(await routeAppToo('https://other.example')).toBe(true)
-    expect(open.set).toHaveBeenCalledWith('https://other.example', true)
+    expect(await routeAppToo('https://other.example', 'https://routed.example')).toBe(true)
+    expect(open.choose).toHaveBeenCalledWith('https://other.example', 'socks5')
 
     const blocked = running('no-proxy')
-    expect(await routeAppToo('https://other.example')).toBe(false)
-    expect(blocked.set).not.toHaveBeenCalled()
+    expect(await routeAppToo('https://other.example', 'https://routed.example')).toBe(false)
+    expect(blocked.choose).not.toHaveBeenCalled()
   })
 })

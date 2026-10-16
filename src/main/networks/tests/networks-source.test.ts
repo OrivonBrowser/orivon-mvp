@@ -132,6 +132,23 @@ describe('moving a card\'s switch', () => {
     expect(r.sets).toEqual([])
   })
 
+  it('takes Nym as in use while the tunnel is the person\'s own address, when a site or app goes through Nym, and redraws when that changes', () => {
+    const r = rig()
+    r.values['network.route.kind'] = 'socks5'
+    let used = false
+    const routeListeners = new Set<() => void>()
+    const env: NetworksEnv = { ...r.env, nym: { ...r.env.nym, usedByRoutes: () => used, onRoutesChange: (listener) => { routeListeners.add(listener); return () => { routeListeners.delete(listener) } } } }
+    const source = createNetworksSource(env)
+    const card = (): { note?: string, disabled?: boolean } | undefined => source.view().cards.find((one) => one.id === 'nym')
+    expect(card()?.disabled).toBe(true)
+    const redraw = vi.fn()
+    source.onChange(redraw)
+    used = true
+    for (const listener of routeListeners) listener()
+    expect(redraw).toHaveBeenCalled()
+    expect(card()?.disabled).toBe(false)
+  })
+
   it('tells the nodes\' cards which tunnel carries them while the whole browser and the nodes are on it, and redraws when that setting moves', () => {
     const r = rig()
     r.ipfsState = { state: 'ready', peers: 0 }

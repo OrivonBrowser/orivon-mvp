@@ -383,7 +383,7 @@ describe('captureFaviconInto -- a page in a temporary routed session', () => {
     setLeavingRoutes({
       world: { isRouted: () => false, isInstalledApp: () => false, routedOriginOf: () => undefined, servedOrigin: () => undefined },
       temporary: { open: async () => 'orivon-route-tab-1', owns: (one) => one === temporary, isLive: () => true },
-      routeSwitch: { blockedFor: () => undefined, set: async () => {} }
+      routeSwitch: { blockedFor: () => undefined, choose: async () => {} }, kindOf: () => undefined, defaultKind: () => 'nym'
     })
     try {
       mockRequestOnce((request) => { request.emit('response', respondOk(200, [PNG_BYTES])) })

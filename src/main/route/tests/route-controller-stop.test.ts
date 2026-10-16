@@ -19,7 +19,7 @@ const fake = (): Fake => {
 
 function world (extra: Partial<RouteControllerDeps> = {}) {
   let everywhere = false
-  const hub = createRouteHub({ store: new RouteStore(null), proxy: () => ({ host: '127.0.0.1', port: 9050 }), everywhere: () => everywhere, providerFor: () => ({ connect: async () => { throw new Error('unused') } }) })
+  const hub = createRouteHub({ store: new RouteStore(null), targetOf: () => ({ host: '127.0.0.1', port: 9050 }), defaultKind: () => 'socks5', everywhere: () => everywhere, providerFor: () => ({ connect: async () => { throw new Error('unused') } }) })
   hubs.push(hub)
   const appProxies: string[] = []
   const controller = createRouteController({
@@ -46,7 +46,7 @@ describe('switching the whole browser on', () => {
     flip(true)
     expect(session.proxies, 'stopped before anything is awaited').toEqual(['fixed_servers:http://127.0.0.1:9'])
     expect(appProxies).toEqual(['fixed_servers:http://127.0.0.1:9'])
-    expect(controller.isTunnelled(session)).toBe(true)
+    expect(controller.tunnelOf(session)).not.toBeUndefined()
     await controller.settled()
     expect(session.proxies).toHaveLength(2)
     expect(session.proxies[1]).toMatch(/^fixed_servers:http:\/\/127\.0\.0\.1:\d+$/)
@@ -64,23 +64,23 @@ describe('switching the whole browser on', () => {
     expect(later.proxies[0]).toBe('fixed_servers:http://127.0.0.1:41999')
   })
 
-  it('says a session is tunnelled while it is pointed at a front or held shut, and not otherwise', async () => {
+  it('says how a session leaves while it is pointed at a front or held shut, and nothing otherwise', async () => {
     const { controller, flip } = world()
     const session = fake()
     controller.adopt(session)
-    expect(controller.isTunnelled(session)).toBe(false)
+    expect(controller.tunnelOf(session)).toBeUndefined()
     flip(true)
     await controller.settled()
-    expect(controller.isTunnelled(session)).toBe(true)
+    expect(controller.tunnelOf(session)).toBe('socks5')
     flip(false)
     await controller.settled()
-    expect(controller.isTunnelled(session)).toBe(false)
+    expect(controller.tunnelOf(session)).toBeUndefined()
   })
 
-  it('says a session that answers for a proxy of its own is tunnelled', () => {
+  it('says a session that answers for a proxy of its own is held', () => {
     const own = fake()
     const { controller } = world({ ownProxy: (session) => session === own })
-    expect(controller.isTunnelled(own)).toBe(true)
+    expect(controller.tunnelOf(own)).toBe('held')
   })
 
   it('is not undone by an off that is still waiting when the setting is flipped back on', async () => {

@@ -4,13 +4,14 @@
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { canTunnel, isProfilePartition, profileOfPartition, profilePartitionFor } from './site-partition.js'
 import type { Profile } from './site-partition.js'
+import type { TunnelKind } from './route-state.js'
 
 export interface SiteRoutes {
   /** The profile the website at `origin` runs in (`RouteHub.profileFor`), or undefined for a website that follows the default session. */
   readonly profileFor: (origin: string) => Profile | undefined
   /**
-   * Whether the website at `origin`, loaded in the session named `partition`, is sent no less tunnelled than in its own session:
-   * a session that is not tunnelled for an address that is gives no.
+   * Whether the website at `origin`, loaded in the session named `partition`, is sent as it would be in its own session:
+   * a session that is not tunnelled, or goes through the other tunnel, for an address that has a tunnel gives no.
    */
   readonly sentLikeItsOwn?: (partition: string | undefined, origin: string) => boolean
 }
@@ -40,8 +41,8 @@ export function sessionRoutesLike (partition: string | undefined, url: string): 
 export interface LoadingSession {
   /** The default session, which a website that has a profile must never load in. */
   readonly shared: boolean
-  /** Whether the session is pointed at a front (or held shut), or sets a proxy of its own that reaches nothing. */
-  readonly tunnelled: boolean
+  /** How the session sends: through the tunnel of the front it is pointed at, `held` when it is stopped or sets a proxy of its own that reaches nothing, undefined when it follows the system. */
+  readonly via: TunnelKind | 'held' | undefined
   /** A session a routed app's page opened a website in "through my tunnel": any website may load there. */
   readonly temporary: boolean
 }
@@ -49,14 +50,17 @@ export interface LoadingSession {
 /**
  * Whether a main-frame load of `url` in `session` must be cancelled because it belongs to another session and the shell did not
  * move it there first: a website with a profile in the shared session, and a website that is routed in a session that is not
- * (a direct profile, an app set to off, a session not yet pointed), which would reach it without the tunnel. A load the shell
- * moves is stopped before it starts (`../shell/pre-partition.ts`), so this only ever stops what that move missed.
+ * (a direct profile, an app set to off, a session not yet pointed) or that goes through the other tunnel, which would reach it
+ * without its tunnel. A load the shell moves is stopped before it starts (`../shell/pre-partition.ts`), so this only ever stops
+ * what that move missed. `kindOf` is the tunnel an origin goes through, undefined when it is not routed.
  */
-export function mustLeaveSession (url: string, session: LoadingSession, servedFromCache: (origin: string) => boolean, routed: (origin: string) => boolean): boolean {
+export function mustLeaveSession (url: string, session: LoadingSession, servedFromCache: (origin: string) => boolean, kindOf: (origin: string) => TunnelKind | undefined): boolean {
   const origin = originFromUrl(url)
   if (origin === null || session.temporary || servedFromCache(origin)) return false
   if (session.shared && sitePartitionForOrigin(origin) !== undefined) return true
-  return canTunnel(origin) && !session.tunnelled && routed(origin)
+  if (!canTunnel(origin)) return false
+  const wanted = kindOf(origin)
+  return wanted !== undefined && session.via !== 'held' && session.via !== wanted
 }
 
 let ensurer: ((partition: string, wake: boolean) => void) | undefined

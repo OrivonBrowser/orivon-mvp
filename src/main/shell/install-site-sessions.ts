@@ -26,9 +26,9 @@ export const installSiteSessions: ShellInstaller = {
         }
       }
     }
-    // While the list of tunnel settings cannot be read, setting or clearing the proxy changes which websites are routed without any of them changing.
+    // While the list of tunnel settings cannot be read, setting or clearing the proxy, or choosing the other tunnel, changes which websites are routed and in which profile without any of them changing.
     services.settings.onChange((change) => {
-      if (change.key !== 'network.route.proxy' || !routes.hub.unreadable()) return
+      if ((change.key !== 'network.route.proxy' && change.key !== 'network.route.kind') || !routes.hub.unreadable()) return
       routes.controller.settled().then(() => { for (const origin of services.windows.liveTabOrigins()) move(origin) }, (error: unknown) => { console.error('[route] moving tabs after the tunnel changed failed:', error) })
     })
     routes.hub.onChange((origin) => {
