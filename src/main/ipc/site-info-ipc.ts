@@ -14,6 +14,7 @@ import type { IpcMainInvokeEvent, WebContents } from 'electron'
 import { SITE_INFO_COMMAND_CHANNEL } from '../channels.js'
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import type { SiteInfo } from '../permissions/site-info.js'
+import type { ProxyTestReply } from '../route/route-domain.js'
 import type { SiteInfoController } from '../permissions/site-info-controller.js'
 import type { SiteTrust } from '../browsing/site-trust.js'
 import type { ApplyOutcome } from '../install/app-updates.js'
@@ -39,6 +40,13 @@ export interface SiteDataSnapshot {
 /** The answer to the tunnel switch: whether it was done, and the info the popup then draws. */
 export interface TunnelResult {
   readonly ok: boolean
+  readonly info: SiteInfo
+}
+
+/** The answer to saving the proxy's address from the menu: whether it was saved and, if not, why, with the info the popup then draws. */
+export interface ProxyAddressResult {
+  readonly ok: boolean
+  readonly reason?: 'invalid' | 'refused'
   readonly info: SiteInfo
 }
 
@@ -78,6 +86,10 @@ export type SiteInfoCommand =
   | { type: 'reload' }
   /** The tunnel of a website or an installed app: Nym, the person's proxy, or none (null). Answers whether it was done, with the popup's info as it is after. */
   | { type: 'setTunnel'; kind: 'nym' | 'socks5' | null }
+  /** The address of the person's proxy, typed in the menu: main checks it as Settings does and saves it. Refused in a window held to Nym. */
+  | { type: 'setProxyAddress'; text: string }
+  /** Whether a tunnel answers, as Settings' Test asks it: it names no address, main tests the one saved. Answers nothing in a window held to Nym. */
+  | { type: 'testTunnel'; kind: 'nym' | 'socks5' }
   /** "Delete data" of the local file this popup was opened for: no argument, main reads the key. Answers whether every step succeeded. */
   | { type: 'deleteLocalFile' }
   /** "Review permissions" of an app that was never let in: the question is given back and the tab in front reloads, so the first visit asks again. No argument: main reads the origin. */
@@ -155,7 +167,7 @@ export function registerSiteInfoIpc (
   siteInfoWebContents.ipc.handle(SITE_INFO_COMMAND_CHANNEL, async (
     event: IpcMainInvokeEvent,
     command: SiteInfoCommand
-  ): Promise<void | boolean | SiteInfo | SiteTrust | null | SiteDataSnapshot | ApplyResult | TunnelResult | SitePermissionsView | ApplyOutcome> => {
+  ): Promise<void | boolean | SiteInfo | SiteTrust | null | SiteDataSnapshot | ApplyResult | TunnelResult | ProxyAddressResult | ProxyTestReply | SitePermissionsView | ApplyOutcome> => {
     if (!isFromSiteInfoWindow(event, siteInfoWebContents, popupUrl)) return
 
     switch (command.type) {
@@ -223,6 +235,13 @@ export function registerSiteInfoIpc (
         const ok = await controller.setTunnel(origin, command.kind)
         return { ok, info: withRoute(await controller.siteInfoFor(origin)) } satisfies TunnelResult
       }
+      case 'setProxyAddress': {
+        if (typeof command.text !== 'string') return { ok: false, reason: 'invalid', info: withRoute(await controller.siteInfoFor(origin)) } satisfies ProxyAddressResult
+        const saved = controller.setProxyAddress(command.text)
+        return { ok: saved === 'ok', ...(saved === 'ok' ? {} : { reason: saved }), info: withRoute(await controller.siteInfoFor(origin)) } satisfies ProxyAddressResult
+      }
+      case 'testTunnel':
+        return command.kind === 'nym' || command.kind === 'socks5' ? await controller.testTunnel(command.kind) : null
       case 'reload':
         reloadActiveTab()
         return

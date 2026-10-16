@@ -53,6 +53,8 @@ function fakeController (overrides: Partial<SiteInfoController> = {}): SiteInfoC
     siteTrustFor: vi.fn(async () => null),
     storageDeclarationFor: vi.fn(async () => null),
     setTunnel: vi.fn(async () => true),
+    setProxyAddress: vi.fn(() => 'ok' as const),
+    testTunnel: vi.fn(async () => null),
     turnOn: vi.fn(async () => 'ok' as const),
     turnOff: vi.fn(async () => {}),
     revokePickedPath: vi.fn(async () => {}),
@@ -165,6 +167,42 @@ describe('registerSiteInfoIpc -- setTunnel', () => {
     }
     expect(await dispatch({ type: 'setTunnel', kind: 'nym' }, OTHER_FRAME_URL)).toBeUndefined()
     expect(controller.setTunnel).not.toHaveBeenCalled()
+  })
+})
+
+describe('registerSiteInfoIpc -- the proxy set from the menu', () => {
+  it('saves the address the popup typed, whatever origin the command names, and returns the info after', async () => {
+    const controller = fakeController({ setProxyAddress: vi.fn(() => 'ok' as const) })
+    register(controller)
+    expect(await dispatch({ type: 'setProxyAddress', text: '127.0.0.1:9150', origin: 'https://evil.example' })).toEqual({ ok: true, info: EMPTY_INFO })
+    expect(controller.setProxyAddress).toHaveBeenCalledWith('127.0.0.1:9150')
+  })
+
+  it('says why it was not saved: the address is not one, or the settings hold it fixed', async () => {
+    const controller = fakeController({ setProxyAddress: vi.fn(() => 'invalid' as const) })
+    register(controller)
+    expect(await dispatch({ type: 'setProxyAddress', text: 'nonsense' })).toEqual({ ok: false, reason: 'invalid', info: EMPTY_INFO })
+    const fixed = fakeController({ setProxyAddress: vi.fn(() => 'refused' as const) })
+    register(fixed)
+    expect(await dispatch({ type: 'setProxyAddress', text: '127.0.0.1:9150' })).toEqual({ ok: false, reason: 'refused', info: EMPTY_INFO })
+  })
+
+  it('refuses a value that is not text without reaching the controller, and answers nothing from another frame', async () => {
+    const controller = fakeController()
+    register(controller)
+    for (const text of [undefined, 1, null, {}, ['127.0.0.1:9050']]) expect(await dispatch({ type: 'setProxyAddress', text })).toEqual({ ok: false, reason: 'invalid', info: EMPTY_INFO })
+    expect(await dispatch({ type: 'setProxyAddress', text: '127.0.0.1:9050' }, OTHER_FRAME_URL)).toBeUndefined()
+    expect(controller.setProxyAddress).not.toHaveBeenCalled()
+  })
+
+  it('tests the tunnel the popup names, naming no address of its own, and nothing else', async () => {
+    const controller = fakeController({ testTunnel: vi.fn(async () => ({ ok: true as const, authentication: 'none' as const })) })
+    register(controller)
+    expect(await dispatch({ type: 'testTunnel', kind: 'socks5', address: '10.0.0.1:1' })).toEqual({ ok: true, authentication: 'none' })
+    expect(controller.testTunnel).toHaveBeenCalledWith('socks5')
+    for (const kind of [undefined, 'tor', null, true]) expect(await dispatch({ type: 'testTunnel', kind }), String(kind)).toBeNull()
+    expect(controller.testTunnel).toHaveBeenCalledTimes(1)
+    expect(await dispatch({ type: 'testTunnel', kind: 'nym' }, OTHER_FRAME_URL)).toBeUndefined()
   })
 })
 

@@ -11,6 +11,7 @@ import { deliveryLevelOverrideFor, scoreLevelOverrideFor } from '../dev/score-le
 import { localDdocHashFor } from '../dev/local-ddoc.js'
 import { createNetworksPanel } from '../networks/networks-panel.js'
 import { createSiteInfoPanel } from '../permissions/site-info-panel.js'
+import { proxySetup } from '../permissions/proxy-setup.js'
 import { openWeb3ScoreHelp } from '../web3-score/web3-score-help.js'
 import { openCertificate } from '../auth/certificate-open.js'
 import { pageAccess } from '../site-settings/page-access.js'
@@ -53,7 +54,9 @@ export function createWindowPanels ({ ctx, win, services, tabs, overlays, dirnam
   const siteInfoController = createSiteInfoController(ctx, { isOriginServedFromCacheSync, isOriginPinnedSync, pinCoverageFor, nameEvidenceFor: verifierNameEvidence, levelOverrideFor: scoreLevelOverrideFor, deliveryOverrideFor: deliveryLevelOverrideFor, localDdocHashFor, providerVerdictFor: services.scoreProvider.verdictFor },
     async (key) => await deleteLocalFileData({ broker: ctx.broker, userDataPath: app.getPath('userData'), clearPartition: async (partition) => { await session.fromPartition(partition).clearData() } }, key),
     // The first visit is built after the windows, so it is read at the moment of use.
-    { notLetIn: (origin) => firstVisitNow()?.notLetIn(origin), askAgain: async (origin) => await firstVisitNow()?.askAgain(origin) ?? false, changed: announceEntryChange })
+    { notLetIn: (origin) => firstVisitNow()?.notLetIn(origin), askAgain: async (origin) => await firstVisitNow()?.askAgain(origin) ?? false, changed: announceEntryChange },
+    // The proxy's address is set from the tunnel menu as Settings sets it: through the same store, so it is checked, saved and followed the same way.
+    proxySetup(ctx, services.settings))
 
   // The networks list is a panel inside this window rather than a second one -- ../networks/networks-panel.ts.
   const networks = createNetworksPanel(win, win.contentView, services.networks, dirname, () => tabs.activeWebContents())

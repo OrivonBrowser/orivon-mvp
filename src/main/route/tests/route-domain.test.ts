@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Socks5Probe } from '../../../broker/route/socks5-probe.js'
-import { routeDomain } from '../route-domain.js'
+import { routeDomain, testTunnel } from '../route-domain.js'
 import type { RouteSwitch } from '../route-switch.js'
 import type { RouteDomainDeps } from '../route-domain.js'
 
@@ -51,6 +51,14 @@ describe('routeDomain', () => {
     expect(probe).not.toHaveBeenCalled()
   })
 
+  it('tests the tunnel the page names, whichever the settings choose, and still takes no address from it', async () => {
+    const probe = vi.fn(async () => ({ ok: true, authentication: 'none' }) as const)
+    expect(await domain('127.0.0.1:9050', probe, {}, 'nym').handle({ type: 'test', kind: 'socks5', address: '10.0.0.1:1' }, CALLER)).toEqual({ ok: true, authentication: 'none' })
+    expect(probe).toHaveBeenCalledWith({ host: '127.0.0.1', port: 9050 })
+    expect(await domain('127.0.0.1:9050', probe, {}, 'socks5').handle({ type: 'test', kind: 'nym' }, CALLER)).toEqual({ nym: true, ok: true, ms: 1234 })
+    expect(await domain('127.0.0.1:9050', probe, {}, 'socks5').handle({ type: 'test', kind: 'tor' }, CALLER), 'a tunnel it does not know is the default one').toEqual({ ok: true, authentication: 'none' })
+  })
+
   it('passes on why Nym could not be tested', async () => {
     const nym: RouteDomainDeps['nym'] = { ...NYM_OFF, test: async () => ({ ok: false, reason: 'unavailable', detail: 'the Nym tunnel is not in this build' }) }
     expect(await domain('', async () => ({ ok: true, authentication: 'none' }), {}, 'nym', nym).handle({ type: 'test' }, CALLER)).toEqual({ nym: true, ok: false, reason: 'unavailable', detail: 'the Nym tunnel is not in this build' })
@@ -90,5 +98,15 @@ describe('routeDomain', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const answer = await domain('', async () => ({ ok: true, authentication: 'none' }), { removeSiteStorage: async () => { throw new Error('disk') } }).handle({ type: 'removeStorage', origin: 'https://news.example' }, CALLER)
     expect(answer).toEqual({ ok: false })
+  })
+})
+
+describe('testTunnel', () => {
+  it('asks the saved address of the proxy and Nym of Nym, for the menu as for Settings', async () => {
+    const probe = vi.fn(async () => ({ ok: true, authentication: 'none' }) as const)
+    expect(await testTunnel('socks5', { proxy: () => '127.0.0.1:9150', probe, nym: NYM_OFF })).toEqual({ ok: true, authentication: 'none' })
+    expect(probe).toHaveBeenCalledWith({ host: '127.0.0.1', port: 9150 })
+    expect(await testTunnel('nym', { proxy: () => '', probe, nym: NYM_OFF })).toEqual({ nym: true, ok: true, ms: 1234 })
+    expect(await testTunnel('socks5', { proxy: () => '', probe, nym: NYM_OFF })).toEqual({ ok: false, reason: 'no-proxy' })
   })
 })

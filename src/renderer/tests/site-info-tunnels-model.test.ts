@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { SiteInfo, SiteTunnel } from '../../main/permissions/site-info.js'
-import { APP_UPDATES_NOTE, ENFORCE_LINK, HELD_LINE, NO_SWITCH_NOTE, NYM_OFF_LINE, NYM_OFF_LINK, PROXY_UNSET_LINE, PROXY_UNSET_LINK, TUNNEL_KINDS, everywhereHint, openedLine, tunnelListModel } from '../site-info/tunnels-model.js'
+import { ADDRESS_PROBLEM, APP_UPDATES_NOTE, ENFORCE_LINK, HELD_LINE, NO_SWITCH_NOTE, NYM_OFF_LINE, NYM_OFF_LINK, PROXY_UNSET_LINE, TUNNEL_KINDS, addressChangeWords, everywhereHint, openedLine, tunnelListModel } from '../site-info/tunnels-model.js'
 
-const tunnel: SiteTunnel = { via: null, following: true, subject: 'site', blocked: {}, notices: {}, swarm: false, unreadable: false, defaultKind: 'nym' }
+const tunnel: SiteTunnel = { via: null, following: true, subject: 'site', blocked: {}, notices: {}, swarm: false, unreadable: false, defaultKind: 'nym', proxy: { address: '127.0.0.1:9050', users: { sites: 0, apps: 0, everything: false } } }
 const base: SiteInfo = {
   origin: 'https://example.com', displayOrigin: 'example.com', claimedName: undefined, homeDomain: undefined, update: undefined, asked: true,
   capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite: [], tunnel, tunnelKind: 'nym', everywhere: false
@@ -15,6 +15,7 @@ const noSwitch = (patch: Partial<SiteInfo> = {}): SiteInfo => {
   return rest
 }
 const noView = { pending: undefined }
+const USERS = { sites: 2, apps: 1, everything: false }
 const row = (model: ReturnType<typeof tunnelListModel>, id: 'nym' | 'socks5') => model.rows.find((one) => one.kind.id === id)
 
 describe('the tunnels Orivon offers', () => {
@@ -91,10 +92,11 @@ describe('the rows of a website', () => {
     expect(row(model, 'socks5')).toMatchObject({ disabled: false, settingsLink: null })
   })
 
-  it('says the proxy has no address, and links to Settings, without holding Nym up', () => {
-    const model = tunnelListModel(withTunnel({ blocked: { socks5: 'no-proxy' } }), noView)
-    expect(row(model, 'socks5')).toMatchObject({ disabled: true, settingsLink: PROXY_UNSET_LINK, state: { text: PROXY_UNSET_LINE, down: true } })
-    expect(row(model, 'nym')?.disabled).toBe(false)
+  it('lets the proxy\'s switch ask for an address when none is saved, without holding Nym up', () => {
+    const model = tunnelListModel(withTunnel({ blocked: { socks5: 'no-proxy' }, proxy: { ...tunnel.proxy, address: '' } }), noView)
+    expect(row(model, 'socks5')).toMatchObject({ disabled: false, pressOpensEditor: true, settingsLink: null, address: { saved: '', editing: true, text: '', error: null, confirm: null } })
+    expect(row(model, 'nym')).toMatchObject({ disabled: false, pressOpensEditor: false })
+    expect(PROXY_UNSET_LINE).toBe('No proxy address is set.')
   })
 
   it('still lets a site that is on a tunnel that cannot take a site now be switched off', () => {
@@ -169,5 +171,61 @@ describe('the hint under the list', () => {
 
   it('says it also on a page with no choice of its own', () => {
     expect(tunnelListModel(noSwitch({ everywhere: true }), noView).hint.link).toBe('Open Tunnels settings')
+  })
+})
+
+describe('the address of the proxy', () => {
+  const saved = { address: '127.0.0.1:9050', users: { sites: 0, apps: 0, everything: false } }
+
+  it('is shown with a Change link, and no field, while one is saved', () => {
+    expect(row(tunnelListModel(info(), noView), 'socks5')?.address).toEqual({ saved: '127.0.0.1:9050', editing: false, text: '127.0.0.1:9050', error: null, confirm: null })
+  })
+
+  it('opens the field with what the person typed, and the reason a Save did not take', () => {
+    const model = tunnelListModel(info(), { pending: undefined, editor: { text: 'nonsense', error: ADDRESS_PROBLEM, confirm: false } })
+    expect(row(model, 'socks5')?.address).toEqual({ saved: '127.0.0.1:9050', editing: true, text: 'nonsense', error: 'Enter an address as host:port, like 127.0.0.1:9050', confirm: null })
+    expect(row(model, 'nym')?.address, 'only the proxy has an address').toBeNull()
+  })
+
+  it('asks before an address that sites and apps use is changed, naming how many', () => {
+    const model = tunnelListModel(withTunnel({ proxy: { ...saved, users: USERS } }), { pending: undefined, editor: { text: '127.0.0.1:9150', error: null, confirm: true } })
+    expect(row(model, 'socks5')?.address?.confirm).toBe('2 sites and 1 app go through your proxy now. They will use the new address, and what they have open is closed.')
+  })
+
+  it('words the question for one, for apps only, and for the whole browser', () => {
+    expect(addressChangeWords({ sites: 1, apps: 0, everything: false })).toBe('1 site goes through your proxy now. It will use the new address, and what it has open is closed.')
+    expect(addressChangeWords({ sites: 0, apps: 3, everything: false })).toBe('3 apps go through your proxy now. They will use the new address, and what they have open is closed.')
+    expect(addressChangeWords({ sites: 1, apps: 0, everything: true })).toBe('Everything you browse and 1 site go through your proxy now. They will use the new address, and what they have open is closed.')
+    expect(addressChangeWords({ sites: 0, apps: 0, everything: false })).toBe('')
+  })
+
+  it('has no address and no Test where the choice is fixed', () => {
+    const model = tunnelListModel(withTunnel({ fixed: 'opened', via: 'nym' }), noView)
+    for (const one of model.rows) expect(one).toMatchObject({ address: null, canTest: false, pressOpensEditor: false })
+    expect(tunnelListModel(info({ tunnelHeld: 'nym' }), noView).rows.every((one) => one.address === null && !one.canTest)).toBe(true)
+  })
+})
+
+describe('the Test of a tunnel', () => {
+  it('is offered for Nym unless it is switched off, and for the proxy once an address is saved', () => {
+    const model = tunnelListModel(info(), noView)
+    expect(model.rows.map((one) => one.canTest)).toEqual([true, true])
+    expect(row(tunnelListModel(withTunnel({ blocked: { nym: 'nym-off' } }), noView), 'nym')?.canTest).toBe(false)
+    expect(row(tunnelListModel(withTunnel({ proxy: { ...tunnel.proxy, address: '' } }), noView), 'socks5')?.canTest).toBe(false)
+  })
+
+  it('says it is under way, and then what it found, on the row it was pressed on only', () => {
+    const busy = tunnelListModel(info(), { pending: undefined, test: { kind: 'socks5', busy: true, result: null } })
+    expect(row(busy, 'socks5')?.testLine).toEqual({ text: 'Testing…', down: false, busy: true })
+    expect(row(busy, 'nym')?.testLine).toBeNull()
+    const answered = tunnelListModel(info(), { pending: undefined, test: { kind: 'socks5', busy: false, result: { ok: true, authentication: 'none' } } })
+    expect(row(answered, 'socks5')?.testLine).toEqual({ text: 'The tunnel answered.', down: false, busy: false })
+    const failed = tunnelListModel(info(), { pending: undefined, test: { kind: 'socks5', busy: false, result: { ok: false, reason: 'unreachable' } } })
+    expect(row(failed, 'socks5')?.testLine).toEqual({ text: 'Nothing answered at that address.', down: true, busy: false })
+  })
+
+  it('says what Nym did in the words of Nym', () => {
+    const answered = tunnelListModel(info(), { pending: undefined, test: { kind: 'nym', busy: false, result: { nym: true, ok: true, ms: 4250 } } })
+    expect(row(answered, 'nym')?.testLine?.text).toContain('4.3 s')
   })
 })

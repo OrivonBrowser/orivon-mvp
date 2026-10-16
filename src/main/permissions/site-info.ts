@@ -86,6 +86,8 @@ export interface SiteTunnel {
   readonly profile?: 'tunnel' | 'direct'
   /** The tunnel everything without a choice of its own goes through. */
   readonly defaultKind: SiteTunnelKind
+  /** The person's own proxy: the address saved ('' when none), and what goes through it now, so a change of address can say who it moves. */
+  readonly proxy: { readonly address: string, readonly users: { readonly sites: number, readonly apps: number, readonly everything: boolean } }
   /** The page does not choose its tunnel here: it runs in a temporary session opened through an app's tunnel, or in the session of the app that opened it. */
   readonly fixed?: 'temporary' | 'opened'
 }

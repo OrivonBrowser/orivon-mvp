@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { OrivonInternal } from '../shared/bridge.js'
-import { nymStateOf, proxyTestWords, resultOf, RoutePart } from '../settings/route-part.js'
+import { nymStateOf, RoutePart } from '../settings/route-part.js'
+import { proxyTestWords, resultOf } from '../shared/proxy-words.js'
 
 function part (reply: unknown | (() => Promise<unknown>)): { part: RoutePart, request: ReturnType<typeof vi.fn>, notify: ReturnType<typeof vi.fn> } {
   const request = vi.fn(async () => typeof reply === 'function' ? await (reply as () => Promise<unknown>)() : reply)

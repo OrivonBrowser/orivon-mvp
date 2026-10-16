@@ -1,14 +1,13 @@
 import type { SiteInfo } from '../../main/permissions/site-info.js'
 import type { SiteTrust } from '../../main/browsing/site-trust.js'
-import type { ApplyResult, SiteDataSnapshot, TunnelResult } from '../../main/ipc/site-info-ipc.js'
+import type { ApplyResult, ProxyAddressResult, SiteDataSnapshot, TunnelResult } from '../../main/ipc/site-info-ipc.js'
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import { closeOnEscape } from '../pages/shared/escape-closes.js'
 import type { ApplyOutcome } from '../../main/install/app-updates.js'
 import { renderMainPage } from './main-view.js'
 import { renderWeb3Page } from './web3-view.js'
 import { renderDataPage } from './data-view.js'
-import { renderTunnelsPage } from './tunnel-view.js'
-import { tunnelListModel } from './tunnels-model.js'
+import { createTunnelsPage } from './tunnels-page.js'
 import type { SitePermissionsView } from '../../main/site-settings/site-permissions-view.js'
 import type { SiteKind } from '../../main/site-settings/kinds.js'
 import type { DataPageView } from './data-view.js'
@@ -30,6 +29,8 @@ interface OrivonSiteInfo {
   revokePickedPath: (pickId: string) => Promise<SiteInfo | null>
   applyUpdate: (cid: string) => Promise<ApplyOutcome>
   setTunnel: (kind: 'nym' | 'socks5' | null) => Promise<TunnelResult | null>
+  setProxyAddress: (text: string) => Promise<ProxyAddressResult | null>
+  testTunnel: (kind: 'nym' | 'socks5') => Promise<unknown>
   openHome: () => Promise<void>
   clearBrowserData: () => Promise<void>
   deleteLocalFile: () => Promise<boolean>
@@ -85,9 +86,6 @@ let data: SiteDataSnapshot | null = null
 const staged = new Map<CapabilityKind, boolean>()
 let pendingStaleCapabilities = new Set<CapabilityKind>()
 let showReloadBanner = false
-/** The notice before a website first moves into a profile is open: which profile, and the tunnel (or none) the switches were moved to. */
-let tunnelNotice: { readonly profile: 'tunnel' | 'direct', readonly choice: 'nym' | 'socks5' | null } | null = null
-let tunnelFailed = false
 /** Why the last try at the offered update did not install, shown on its card. */
 let updateFailure: string | null = null
 /** Null for a site with no per-site settings: an app, which its capability rows already cover. */
@@ -100,6 +98,13 @@ let dataView: DataPageView = { cookiesOpen: false, armed: null, deleted: false }
 let disarmTimer: ReturnType<typeof setTimeout> | undefined
 /** A second press within this long confirms a delete. */
 const ARM_MS = 4000
+
+const tunnelsPage = createTunnelsPage({
+  bridge,
+  getInfo: () => info,
+  setInfo: (next) => { info = next },
+  redraw: () => { renderCurrent() }
+})
 
 /** Measured from where the content actually ENDS, matching
  * ../settings/main.ts's own reportContentHeight exactly -- see that
@@ -151,25 +156,7 @@ function renderCurrent (): void {
       onOpenHome: () => { void bridge.openHome() }
     }, updateFailure)
   } else if (page === 'tunnels' && info !== null) {
-    const view = { notice: tunnelNotice?.profile ?? null, pending: tunnelNotice === null ? undefined : tunnelNotice.choice, failed: tunnelFailed }
-    renderTunnelsPage(tunnelsSection, info, tunnelListModel(info, view), view, {
-      onToggle: (kind, next) => {
-        tunnelFailed = false
-        // The switch of a tunnel turned on picks it; the lit one turned off picks none.
-        const choice = next ? kind : null
-        // Moving the switches back to where they were while the notice is open leaves everything as it was.
-        if (choice === (info?.tunnel?.via ?? null)) { tunnelNotice = null; renderCurrent(); return }
-        // The first time a website moves into a profile it is told, and nothing changes until Confirm.
-        const profile = info?.tunnel?.notices[choice ?? 'off']
-        if (profile !== undefined) { tunnelNotice = { profile, choice }; renderCurrent(); return }
-        void setTunnel(choice)
-      },
-      onConfirm: () => { void setTunnel(tunnelNotice === null ? null : tunnelNotice.choice) },
-      onCancel: () => { tunnelNotice = null; renderCurrent() },
-      onOpenSettings: (everywhere) => { void bridge.openTunnelSettings(everywhere) }
-    })
-    // The page was drawn again, so the keyboard goes back to the switch, or to Cancel while the storage notice asks.
-    queueMicrotask(() => { tunnelsSection.querySelector<HTMLElement>(view.notice === null ? `#tunnel-switch-${info?.tunnel?.via ?? 'nym'}` : '#tunnel-notice-cancel')?.focus() })
+    tunnelsPage.render(tunnelsSection, info)
   } else if (page === 'web3') {
     renderWeb3Page(web3Section, trust, () => { page = 'main'; renderCurrent() }, () => { void bridge.openScoreHelp() })
   } else if (page === 'data' && info !== null) {
@@ -185,15 +172,6 @@ function renderCurrent (): void {
     })
   }
   reportContentHeight()
-}
-
-/** Sends the website or app through a tunnel, or through none; main moves the tab, and the popup draws what it says is now true. */
-async function setTunnel (kind: 'nym' | 'socks5' | null): Promise<void> {
-  tunnelNotice = null
-  const result = await bridge.setTunnel(kind)
-  tunnelFailed = result === null || !result.ok
-  if (result !== null) info = result.info
-  renderCurrent()
 }
 
 /** Takes the offered update. Main asks the confirmation Trust & Force needs; the tabs reload when it installs, and this popup is done. */
