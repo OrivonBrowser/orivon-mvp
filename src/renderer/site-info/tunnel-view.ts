@@ -13,8 +13,8 @@ export const TUNNEL_PAGE_TITLE = 'Tunnels'
 
 export const SWARM_HINT = 'Swarm content loads only from the Swarm node Orivon runs on this computer, which cannot go through your tunnel, so this address does not open while the tunnel is on for it.'
 
-/** What a profile is called to the person: Nym's keeps the name it has always had. */
-const PROFILE_WORDS: Readonly<Record<SiteTunnelProfile, string>> = { nym: 'tunnel', socks5: 'proxy', direct: 'direct' }
+/** What a profile is called to the person: both tunnels' profiles are "the tunnel profile", whichever tunnel it is. */
+const PROFILE_WORDS: Readonly<Record<SiteTunnelProfile, string>> = { nym: 'tunnel', socks5: 'tunnel', direct: 'direct' }
 
 /** Shown before a website first moves into a profile: Confirm makes the change, Cancel leaves everything as it was. */
 export function storageNotice (profile: SiteTunnelProfile): string {

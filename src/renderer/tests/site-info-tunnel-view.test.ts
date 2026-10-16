@@ -7,12 +7,12 @@ const base: SiteTunnel = { via: null, following: true, subject: 'site', blocked:
 // The DOM is covered by the end-to-end spec that switches a website on; these are the words.
 
 describe('the notice before a website moves into a profile', () => {
-  it('names Nym\'s profile as the tunnel profile, in these words', () => {
+  it('names Nym\'s profile the tunnel profile, in these words', () => {
     expect(storageNotice('nym')).toBe('This site moves to your tunnel profile. You\'ll sign in to it again once, and what it stores stays apart from your normal browsing.')
   })
 
-  it('names the proxy\'s profile as the proxy profile', () => {
-    expect(storageNotice('socks5')).toBe('This site moves to your proxy profile. You\'ll sign in to it again once, and what it stores stays apart from your normal browsing.')
+  it('names the proxy\'s profile as the tunnel profile too', () => {
+    expect(storageNotice('socks5')).toBe('This site moves to your tunnel profile. You\'ll sign in to it again once, and what it stores stays apart from your normal browsing.')
   })
 
   it('names the direct profile the same way', () => {
