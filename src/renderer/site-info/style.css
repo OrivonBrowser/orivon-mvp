@@ -309,6 +309,13 @@ hr {
 .rung.unknown .rung-badge { background: var(--wborder); color: var(--wink-dim); }
 .rung.unknown .rung-label { color: var(--wink-dim); }
 .rung-mark { margin-left: auto; color: var(--wink-dim); font-weight: 700; }
+button.rung-help {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+}
+button.rung-help:hover { color: var(--wink); background: color-mix(in srgb, var(--wink) 8%, transparent); }
 .level-because { margin: 0; font-size: 12px; }
 .dev-note {
   margin: 0;

@@ -41,6 +41,7 @@ interface OrivonSiteInfo {
   openTunnelSettings: (everywhere: boolean) => Promise<void>
   openExtensions: () => Promise<void>
   openCertificate: () => Promise<void>
+  openScoreHelp: () => Promise<void>
   reportHeight: (height: number) => void
   close: () => void
   initialPage: 'main' | 'web3' | 'tunnels'
@@ -169,7 +170,7 @@ function renderCurrent (): void {
     // The page was drawn again, so the keyboard goes back to the switch, or to Cancel while the storage notice asks.
     queueMicrotask(() => { tunnelsSection.querySelector<HTMLElement>(view.notice === null ? '#tunnel-switch' : '#tunnel-notice-cancel')?.focus() })
   } else if (page === 'web3') {
-    renderWeb3Page(web3Section, trust, () => { page = 'main'; renderCurrent() })
+    renderWeb3Page(web3Section, trust, () => { page = 'main'; renderCurrent() }, () => { void bridge.openScoreHelp() })
   } else if (page === 'data' && info !== null) {
     renderDataPage(dataSection, data, info.pickedPathRows, dataView, {
       onBack: () => { page = 'main'; renderCurrent() },

@@ -307,6 +307,29 @@ it('the Available networks popup reopens on screen after its renderer crashed or
   }
 }, 120_000)
 
+it('the question marks of the shield popup are buttons that open the Web3 Score guide in a new tab in front, and the popup gives way', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    await ready(app, chrome)
+    await chrome.locator('#web3-score-btn').click()
+    expect(await waitFor(async () => await shownPage(app) === 'web3')).toBe(true)
+    const popup = app.windows().find((w) => w.url().includes('/site-info/')) as Page
+    await popup.waitForSelector('.level-list .rung.unknown .rung-help')
+    const marks = await popup.evaluate(() => [...document.querySelectorAll<HTMLButtonElement>('.rung.unknown .rung-help')].map((el) => ({ tag: el.tagName, text: el.textContent, title: el.title, name: el.getAttribute('aria-label') ?? '', tabbable: el.tabIndex >= 0 })))
+    expect(marks.length).toBeGreaterThanOrEqual(3)
+    for (const mark of marks) expect(mark).toMatchObject({ tag: 'BUTTON', text: '?', title: 'What the Web3 Score levels mean', tabbable: true })
+    expect(marks.every((mark) => mark.name.endsWith('What the Web3 Score levels mean'))).toBe(true)
+
+    await popup.locator('.level-list .rung-help').first().click()
+    const guide = 'https://docs.orivonstack.eth/docs/using/web3-score'
+    expect(await waitFor(async () => await app.evaluate(({ webContents }, address) => webContents.getAllWebContents().some((wc) => wc.getURL() === address), guide))).toBe(true)
+    expect(await waitFor(async () => !(await siteInfoShown(app)))).toBe(true)
+    expect(await waitFor(async () => (await chrome.locator('#address').inputValue()).includes('docs.orivonstack.eth'))).toBe(true)
+  } finally {
+    await closeElectron(app)
+  }
+}, 120_000)
+
 it('on a new tab the shield opens the card that explains the Web3 Score, closes it on a second click, and leads to the provider setting', async () => {
   const { app, chrome } = await launchShell()
   const cardShown = async (): Promise<boolean> => await popoverShown(app, 'overlay=web3-score')

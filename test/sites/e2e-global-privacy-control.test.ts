@@ -133,6 +133,35 @@ describe('Global Privacy Control', () => {
     }
   }, TEST_TIMEOUT_MS)
 
+  it('reaches every kind of session a profile that never chose runs: an installed app\'s, a temporary in-memory one, one behind a tunnel\'s proxy, and the main process\'s own fetch', async () => {
+    const { app } = await launchedAndVisited({ setting: undefined, expected: true })
+    try {
+      const proxyAddress = origin.replace('http://', '')
+      const kinds = await app.evaluate(async ({ BrowserWindow, session, net }, { url, proxy }) => {
+        const out: Record<string, unknown> = {}
+        const load = async (name: string, partition: string, proxied: boolean): Promise<void> => {
+          const win = new BrowserWindow({ show: false, webPreferences: { partition, sandbox: true } })
+          try {
+            if (proxied) await win.webContents.session.setProxy({ proxyRules: `http=${proxy}`, proxyBypassRules: '<-loopback>' })
+            await win.loadURL(`${url}/${name}`)
+            out[name] = await win.webContents.executeJavaScript('navigator.globalPrivacyControl')
+          } finally { win.destroy() }
+        }
+        await load('app-session', 'persist:gpc-app', false)
+        await load('temporary-session', 'gpc-temporary', false)
+        await load('proxied-session', 'persist:gpc-proxied', true)
+        await net.fetch(`${url}/main-default`)
+        await session.fromPartition('persist:gpc-app').fetch(`${url}/main-partition`)
+        return out
+      }, { url: origin, proxy: proxyAddress })
+      expect(kinds).toEqual({ 'app-session': true, 'temporary-session': true, 'proxied-session': true })
+      for (const path of ['/app-session', '/temporary-session', '/main-default', '/main-partition']) expect([path, headerOf(path)]).toEqual([path, '1'])
+      expect(headerOf('/proxied-session')).toBe('1')
+    } finally {
+      await closeElectron(app)
+    }
+  }, TEST_TIMEOUT_MS)
+
   it('is off, as false and with no header, in every one of those contexts when it was chosen off', async () => {
     const { app } = await launchedAndVisited({ setting: false, expected: false })
     try {

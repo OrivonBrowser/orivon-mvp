@@ -10,6 +10,7 @@ import { overlayClose, overlayToggle } from './actions/overlay.js'
 import { paneLeave } from './actions/pane-leave.js'
 import { promptAnchorReport } from './actions/prompt-anchor.js'
 import { tabMute } from './actions/tab-mute.js'
+import { web3ScoreHelp } from '../web3-score/web3-score-help-action.js'
 import type { PressButton } from './press-stamps.js'
 import type { WindowContext } from './window-context.js'
 
@@ -46,7 +47,8 @@ export const CHROME_ACTIONS: Readonly<Record<string, ChromeAction>> = {
   'passwords.key': passwordsKey,
   'prompt.anchor': promptAnchorReport,
   'sharing.bar': sharingBar,
-  'tab.mute': tabMute
+  'tab.mute': tabMute,
+  'web3-score.help': web3ScoreHelp
 }
 
 /** Runs the action called `name`. Own keys only: `constructor` or `__proto__` from a renderer must not
