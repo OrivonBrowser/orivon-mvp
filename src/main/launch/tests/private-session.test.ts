@@ -67,7 +67,7 @@ describe('a private session\'s directory', () => {
     const dir = createPrivateDir(home, home, tmp, 'nym')
     const written = JSON.parse(await readFile(join(dir, 'settings.json'), 'utf8')) as { version: number, values: Record<string, unknown> }
     expect(written.version).toBe(2)
-    expect(written.values).toEqual({ 'appearance.theme': 'dark', 'network.route.proxy': '127.0.0.1:9050', 'network.route.kind': 'nym', 'network.tunnel.everywhere': true, 'network.nym.enabled': true })
+    expect(written.values).toEqual({ 'appearance.theme': 'dark', 'network.route.proxy': '', 'network.route.kind': 'nym', 'network.tunnel.everywhere': true, 'network.nym.enabled': true })
     expect(everywhereBeforeReady(join(dir, 'settings.json'))).toBe(true)
     expect(readSettingBeforeReady(join(dir, 'settings.json'), 'network.route.kind')).toBe('nym')
     expect(readSettingBeforeReady(join(dir, 'settings.json'), 'network.nym.enabled')).toBe(true)
