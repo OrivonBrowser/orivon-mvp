@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { createRouteService } from '../route-service.js'
-import type { ProxySettings, RouteKind } from '../route-service.js'
+import type { ProxySettings } from '../route-service.js'
+import type { TunnelKind } from '../route-state.js'
 import { NYM_TARGET } from '../nym-provider.js'
 import type { NymSubsystem } from '../nym-subsystem.js'
 import type { NymPrivacy } from '../../../protocols/nym-tunnel/protocol.js'
@@ -13,7 +14,7 @@ const APP = 'https://one.example'
 
 const FAKE_NYM: NymSubsystem = { ensure: async () => ({ port: 1, secret: 's' }), endpoint: () => undefined, state: () => ({ state: 'off' }), onChange: () => () => {}, test: async () => ({ ok: true, ms: 1 }), tunnels: () => ({ connecting: 0, ready: 0 }), processInfo: () => undefined, setEnabled: () => {}, setPrivacy: () => {}, stop: () => {} }
 
-function service (savedProxy: string, savedKind: RouteKind = 'socks5', nym: NymSubsystem = FAKE_NYM) {
+function service (savedProxy: string, savedKind: TunnelKind = 'socks5', nym: NymSubsystem = FAKE_NYM) {
   const store = new RouteStore(null)
   return createRouteService({
     store,
@@ -31,7 +32,7 @@ function service (savedProxy: string, savedKind: RouteKind = 'socks5', nym: NymS
   })
 }
 
-function settingsWith (initial: string, initialKind: RouteKind = 'socks5', initialEverywhere = false): ProxySettings & { set: (value: string) => void, setKind: (kind: RouteKind) => void, setEverywhere: (value: boolean) => void, setNym: (value: boolean) => void, setPrivacy: (level: NymPrivacy) => void } {
+function settingsWith (initial: string, initialKind: TunnelKind = 'socks5', initialEverywhere = false): ProxySettings & { set: (value: string) => void, setKind: (kind: TunnelKind) => void, setEverywhere: (value: boolean) => void, setNym: (value: boolean) => void, setPrivacy: (level: NymPrivacy) => void } {
   let nymOn = true
   let privacy: NymPrivacy = 'balanced'
   let value = initial
@@ -59,7 +60,7 @@ describe('the route service', () => {
 
   it('follows the settings, and tells a routed app\'s listeners when the proxy changes', () => {
     const routes = service('127.0.0.1:9050')
-    routes.store.set(APP, true)
+    routes.store.setEntry(APP, 'nym')
     const settings = settingsWith('127.0.0.1:9050')
     const heard = vi.fn()
     routes.hub.onChange(heard)
@@ -89,6 +90,15 @@ describe('the route service', () => {
     expect(heard.mock.calls).toEqual([['orivon-shared-tunnel', true, 'switch'], [APP, true, 'switch']])
   })
 
+  it('says which tunnel is the choice, from the saved one and then from the settings, and hands it to the hub and the switch', () => {
+    const routes = service('127.0.0.1:9050', 'socks5')
+    expect(routes.defaultKind()).toBe('socks5')
+    const settings = settingsWith('127.0.0.1:9050', 'socks5')
+    routes.followSettings(settings)
+    settings.setKind('nym')
+    expect(routes.defaultKind()).toBe('nym')
+  })
+
   it('applies a setting that differs from the saved one the moment it is followed', () => {
     const routes = service('')
     routes.followSettings(settingsWith('127.0.0.1:9050'))
@@ -97,7 +107,7 @@ describe('the route service', () => {
 
   it('clears the route of an app that is forgotten, and tells the listeners the app is no longer routed', async () => {
     const routes = service('127.0.0.1:9050')
-    routes.store.set(APP, true)
+    routes.store.setEntry(APP, 'nym')
     const heard = vi.fn()
     routes.hub.onChange(heard)
 
@@ -114,7 +124,7 @@ describe('the route service', () => {
     try {
       const path = join(dir, 'routes.json')
       const store = new RouteStore(path)
-      store.set(APP, true)
+      store.setEntry(APP, 'nym')
       rmSync(path)
       mkdirSync(path)
       const routes = createRouteService({ store, savedProxy: '127.0.0.1:9050', savedKind: 'socks5', nym: FAKE_NYM, electron: { broker: () => undefined, sessionFor: () => ({ setProxy: async () => {}, closeAllConnections: async () => {} }), embedPartition: (origin) => `embed:${origin}`, allContents: () => [], onContentsCreated: () => {}, onLogin: () => {} } })
@@ -141,7 +151,7 @@ describe('the route service', () => {
 
   it('tells a routed app\'s listeners when the choice moves between Nym and the address, and not when an address is typed under Nym', () => {
     const routes = service('127.0.0.1:9050', 'socks5')
-    routes.store.set(APP, true)
+    routes.store.setEntry(APP, 'nym')
     const settings = settingsWith('127.0.0.1:9050', 'socks5')
     const heard = vi.fn()
     routes.hub.onChange(heard)
@@ -185,7 +195,7 @@ describe('the route service', () => {
   it('fails a routed app\'s connection closed when Nym cannot run, and never dials direct', async () => {
     const unavailable: NymSubsystem = { ...FAKE_NYM, ensure: async () => { throw new Error('the Nym tunnel is not in this build') } }
     const routes = service('', 'nym', unavailable)
-    routes.store.set(APP, true)
+    routes.store.setEntry(APP, 'nym')
     const route = routes.hub.routeFor(APP)
     await expect(route?.provider.connect('service.example', 443, new AbortController().signal)).rejects.toThrow(/not in this build/)
   })

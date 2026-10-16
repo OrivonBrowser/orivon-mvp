@@ -9,9 +9,9 @@ import type { Session } from 'electron'
 const announced = new Set<Session>()
 /** A session an installer failed on stays refused: running the installers again would put some of them on it twice. */
 const failed = new Map<Session, AggregateError>()
-/** The sessions that belong to the tunnel profile: what the verifier is told of the requests made in them. */
+/** The sessions that belong to a tunnel profile (Nym's or the proxy's): what the verifier is told of the requests made in them. */
 const tunnelProfiles = new WeakSet<Session>()
-/** `tunnelProfile` is true for the one session every website with an `on` entry shares. */
+/** `tunnelProfile` is true for the session every website whose entry is a tunnel shares: one for each tunnel. */
 type Installer = (target: Session, tunnelProfile: boolean) => void
 const listeners = new Set<Installer>()
 

@@ -16,12 +16,11 @@ import type { NymPrivacy } from '../../protocols/nym-tunnel/protocol.js'
 import { createRouteSwitch } from './route-switch.js'
 import type { RouteSwitch, RouteSwitchWorld } from './route-switch.js'
 import type { RouteStore } from './route-store.js'
-
-export type RouteKind = 'nym' | 'socks5'
+import type { TunnelKind } from './route-state.js'
 
 /** The part of the settings store the proxy, the choice of tunnel and the browser-wide setting are read from. */
 export interface ProxySettings {
-  get: ((key: 'network.route.proxy') => string) & ((key: 'network.route.kind') => RouteKind) & ((key: 'network.tunnel.everywhere') => boolean) & ((key: 'network.nym.privacy') => NymPrivacy) & ((key: 'network.nym.enabled') => boolean)
+  get: ((key: 'network.route.proxy') => string) & ((key: 'network.route.kind') => TunnelKind) & ((key: 'network.tunnel.everywhere') => boolean) & ((key: 'network.nym.privacy') => NymPrivacy) & ((key: 'network.nym.enabled') => boolean)
   onChange: (listener: (change: { readonly key: string }) => void) => () => void
 }
 
@@ -35,6 +34,8 @@ export interface RouteService {
   proxy: () => RouteTarget | undefined
   /** Whether the whole browser goes through the tunnel unless an origin is set to off: the setting as it stands now. */
   everywhere: () => boolean
+  /** The tunnel the person chose for everything that has no choice of its own: the setting as it stands now. */
+  defaultKind: () => TunnelKind
   /** The provider for a target that is not a SOCKS5 address (Nym), or undefined for one that is. */
   providerFor: (key: string, target: RouteTarget) => RouteProvider | undefined
   /** Where the local node named `key` leaves while the whole browser is on the tunnel: the tunnel's SOCKS5 address with a sign-in of its own. Rejects, in words, when the tunnel cannot carry it. */
@@ -60,7 +61,7 @@ export interface RouteServiceOptions {
   /** The saved proxy setting, read before the settings store is: what applies until `followSettings`. */
   readonly savedProxy: string
   /** The saved choice of where routed traffic leaves, read the same way. */
-  readonly savedKind: RouteKind
+  readonly savedKind: TunnelKind
   readonly nym: NymSubsystem
   /** The apps installed here, asked only while the store cannot say what was set. */
   readonly installed?: () => readonly string[]
@@ -100,9 +101,10 @@ export function createRouteService (options: RouteServiceOptions): RouteService 
     handedOut = undefined
     listener()
   })
-  const hub = createRouteHub({ store: options.store, proxy, providerFor, everywhere, ...(options.electron.isApp === undefined ? {} : { isApp: options.electron.isApp }), ...(options.installed === undefined ? {} : { installed: options.installed }) })
+  const defaultKind = (): TunnelKind => kind
+  const hub = createRouteHub({ store: options.store, proxy, defaultKind, providerFor, everywhere, ...(options.electron.isApp === undefined ? {} : { isApp: options.electron.isApp }), ...(options.installed === undefined ? {} : { installed: options.installed }) })
   const controller = createRouteController({ ...options.electron, hub })
-  const routeSwitch = createRouteSwitch({ proxy, store: options.store, controller, hub }, options.switchWorld ?? { isPinned: () => false, isPersistable: () => false })
+  const routeSwitch = createRouteSwitch({ proxy, defaultKind, store: options.store, controller, hub }, options.switchWorld ?? { isPinned: () => false, isPersistable: () => false })
   return {
     hub,
     controller,
@@ -110,6 +112,7 @@ export function createRouteService (options: RouteServiceOptions): RouteService 
     routeSwitch,
     proxy,
     everywhere,
+    defaultKind,
     providerFor,
     nodeEndpoint,
     onNodeRouteMoved,
@@ -117,7 +120,7 @@ export function createRouteService (options: RouteServiceOptions): RouteService 
     forget: (origin) => {
       try {
         // An unreadable list holds no entry to clear, and cannot be written to.
-        if (!options.store.unreadable()) options.store.set(origin, false)
+        if (!options.store.unreadable()) options.store.setEntry(origin, undefined)
       } catch (error) {
         console.error('[route] could not clear the route of a forgotten app:', error)
         return

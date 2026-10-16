@@ -395,9 +395,9 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
       if (!isApp(origin)) {
         // A website is looked up about through the session it runs in, which is already prepared with the identity it shares: the tunnel profile's, or the default session when the whole browser is on the tunnel.
         const profile = hub.profileFor(origin)
-        if (profile === 'tunnel') {
+        if (profile !== undefined && profile !== 'direct') {
           // Made ready as a tab's view would: held shut until it is pointed at its front, never left on the system's proxy. No view is coming, so the extensions are not woken.
-          const partition = profilePartitionFor('tunnel', origin)
+          const partition = profilePartitionFor(profile, origin)
           ensureSiteSession(partition, false)
           return deps.sessionFor(partition)
         }

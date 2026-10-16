@@ -1,29 +1,39 @@
 // What the person set for the tunnel, per origin, kept across restarts in `routes.json` under the profile (memory only in
-// a private session): the origins that are `on`, the ones that are `off`, and the websites that have storage in the tunnel
-// profile or the direct profile.
+// a private session): the origins that go through a tunnel (Nym, or the person's proxy), the ones that are `off`, and the
+// websites that have storage in each of the three profiles.
 // The proxy itself lives in the settings. Disposable: plain JSON, tied to nothing but Node. A file that is there but
 // cannot be trusted is not "nothing set": see `unreadable`.
+//
+// The file stays at version 1 so that an older build still reads it: `origins` lists every origin that goes through either
+// tunnel (an older build routes them all, never direct), and `via` names the ones that use the proxy (absent: Nym).
 import { copyFileSync, readFileSync } from 'node:fs'
 import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 import { isPersistableOrigin, originFromUrl } from '../../broker/policy/origin.js'
-import type { TunnelEntry } from './route-state.js'
+import { isTunnelKind } from './route-state.js'
+import type { TunnelEntry, TunnelKind } from './route-state.js'
+import { PROFILES, profileOf } from './site-partition.js'
 import type { Profile } from './site-partition.js'
 
 const FILE_VERSION = 1
 /** The `profiles` marker a file written since the profiles existed carries. */
 const PROFILES_VERSION = 1
+/** The `kinds` marker a file written since each origin names its own tunnel carries. */
+const KINDS_VERSION = 1
 
 /** What the file holds, each set of origins checked. */
 export interface ParsedRoutes {
-  readonly on: Set<string>
-  readonly off: Set<string>
-  /** The websites that have storage in the tunnel profile, whether or not they have an entry now: it is kept until the person removes it. */
-  readonly apart: Set<string>
-  /** The same for the direct profile. */
-  readonly apartDirect: Set<string>
+  /** Every origin that has an entry of its own: a tunnel, or `off`. */
+  readonly entries: ReadonlyMap<string, TunnelEntry>
+  /** The websites that have storage in each profile, whether or not they have an entry now: it is kept until the person removes it. */
+  readonly apart: Readonly<Record<Profile, ReadonlySet<string>>>
   /** False for a file written before the profiles existed, whose `apart` names a session of each website's own. */
   readonly profiles: boolean
+  /** False for a file written before each origin named its own tunnel: every origin it lists then goes through the tunnel that was the choice. */
+  readonly kinds: boolean
 }
+
+/** The file's key for the websites that have storage in each profile. */
+const APART_KEY: Readonly<Record<Profile, string>> = { nym: 'apart', socks5: 'apartProxy', direct: 'apartDirect' }
 
 /** The origins of `listed` that are exactly the origin the broker would derive; undefined when `listed` is present but not a list. */
 function originsOf (listed: unknown): Set<string> | undefined {
@@ -36,9 +46,11 @@ function originsOf (listed: unknown): Set<string> | undefined {
 
 /**
  * The file is user-writable, so every entry is untrusted: kept only under the exact origin the broker would derive. An
- * origin listed both ways is `on`. Undefined when the file is not a routes file at all.
+ * origin listed both ways is on a tunnel. A file without the `kinds` marker names no tunnel for its origins: they take
+ * `legacyKind`, the tunnel that was the choice when it was written. With the marker, an origin goes through the proxy only
+ * when `via` says so, and through Nym otherwise. Undefined when the file is not a routes file at all.
  */
-export function parseRoutes (raw: string): ParsedRoutes | undefined {
+export function parseRoutes (raw: string, legacyKind: TunnelKind = 'nym'): ParsedRoutes | undefined {
   let data: unknown
   try {
     data = JSON.parse(raw)
@@ -46,15 +58,23 @@ export function parseRoutes (raw: string): ParsedRoutes | undefined {
     return undefined
   }
   if (typeof data !== 'object' || data === null) return undefined
-  const { version, origins: listed, off: listedOff, apart: listedApart, apartDirect: listedDirect, profiles } = data as { version?: unknown, origins?: unknown, off?: unknown, apart?: unknown, apartDirect?: unknown, profiles?: unknown }
-  if (version !== FILE_VERSION || !Array.isArray(listed)) return undefined
-  const on = originsOf(listed)
-  const off = originsOf(listedOff)
-  const apart = originsOf(listedApart)
-  const apartDirect = originsOf(listedDirect)
-  if (on === undefined || off === undefined || apart === undefined || apartDirect === undefined) return undefined
-  for (const origin of on) off.delete(origin)
-  return { on, off, apart, apartDirect, profiles: profiles === PROFILES_VERSION }
+  const file = data as Record<string, unknown>
+  if (file.version !== FILE_VERSION || !Array.isArray(file.origins)) return undefined
+  const on = originsOf(file.origins)
+  const off = originsOf(file.off)
+  const kept = {} as Record<Profile, Set<string>>
+  for (const profile of PROFILES) {
+    const listed = originsOf(file[APART_KEY[profile]])
+    if (listed === undefined) return undefined
+    kept[profile] = listed
+  }
+  if (on === undefined || off === undefined) return undefined
+  const kinds = file.kinds === KINDS_VERSION
+  const via = typeof file.via === 'object' && file.via !== null && !Array.isArray(file.via) ? file.via as Record<string, unknown> : {}
+  const entries = new Map<string, TunnelEntry>()
+  for (const origin of off) entries.set(origin, 'off')
+  for (const origin of on) entries.set(origin, kinds ? (Object.hasOwn(via, origin) && isTunnelKind(via[origin]) ? via[origin] : 'nym') : legacyKind)
+  return { entries, apart: kept, profiles: file.profiles === PROFILES_VERSION, kinds }
 }
 
 /** What a switch reports when it could not be kept. */
@@ -62,54 +82,62 @@ export class RouteStoreError extends Error {}
 
 export type RouteChange = (origin: string, entry: TunnelEntry | undefined, previous: TunnelEntry | undefined) => void
 
+export interface RouteStoreOptions {
+  /** A private window held to one tunnel: an origin can be given no other entry than this one, and never `off`. */
+  readonly onlyKind?: TunnelKind
+  /** The tunnel that was the choice when the file was read, which a file written before each origin named its own is taken to have used. */
+  readonly legacyKind?: TunnelKind
+}
+
 export class RouteStore {
   readonly #path: string | null
   #routes: ParsedRoutes | undefined
   #unreadable = false
   readonly #listeners = new Set<RouteChange>()
 
-  readonly #neverOff: boolean
+  readonly #onlyKind: TunnelKind | undefined
+  readonly #legacyKind: TunnelKind
 
-  /** A null path keeps the routes in memory only, for a private session. With `neverOff`, an origin can never be given an `off` entry (a private window held to a tunnel). */
-  constructor (path: string | null, options: { readonly neverOff?: boolean } = {}) {
+  /** A null path keeps the routes in memory only, for a private session. */
+  constructor (path: string | null, options: RouteStoreOptions = {}) {
     this.#path = path
-    this.#neverOff = options.neverOff === true
+    this.#onlyKind = options.onlyKind
+    this.#legacyKind = options.legacyKind ?? 'nym'
   }
 
-  /** Whether the origin has an entry of `on`: the answer for an installed app, whose default is off. */
+  /** Whether the origin goes through a tunnel by an entry of its own: the answer for an installed app, whose default is off. */
   has (origin: string): boolean {
-    return this.#loaded().on.has(origin)
+    const entry = this.#loaded().entries.get(origin)
+    return entry !== undefined && entry !== 'off'
   }
 
-  /** What the person set for the origin, or undefined when it follows the default. */
+  /** What the person set for the origin (a tunnel, or `off`), or undefined when it follows the default. */
   stateOf (origin: string): TunnelEntry | undefined {
-    const { on, off } = this.#loaded()
-    return on.has(origin) ? 'on' : off.has(origin) ? 'off' : undefined
+    return this.#loaded().entries.get(origin)
   }
 
-  /** The origins that are `on`. */
+  /** The origins that go through a tunnel by an entry of their own. */
   origins (): string[] {
-    return [...this.#loaded().on]
+    return this.entries().filter(([, entry]) => entry !== 'off').map(([origin]) => origin)
   }
 
   /** Every origin that has an entry. */
   entries (): Array<readonly [string, TunnelEntry]> {
-    const { on, off } = this.#loaded()
-    return [...[...on].map((origin) => [origin, 'on'] as const), ...[...off].map((origin) => [origin, 'off'] as const)]
+    return [...this.#loaded().entries]
   }
 
   /** The websites that have storage in `profile`, whether or not they have an entry now. */
   apart (profile: Profile): string[] {
-    return [...this.#apartSet(this.#loaded(), profile)]
+    return [...this.#loaded().apart[profile]]
   }
 
   isApart (origin: string, profile: Profile): boolean {
-    return this.#apartSet(this.#loaded(), profile).has(origin)
+    return this.#loaded().apart[profile].has(origin)
   }
 
-  /** Whether the website has storage in either profile. */
+  /** Whether the website has storage in any profile. */
   isApartAnywhere (origin: string): boolean {
-    return this.isApart(origin, 'tunnel') || this.isApart(origin, 'direct')
+    return PROFILES.some((profile) => this.isApart(origin, profile))
   }
 
   /**
@@ -124,7 +152,7 @@ export class RouteStore {
   /** The websites whose old sessions of their own hold data: every one the old file listed as having storage. */
   legacySites (): string[] {
     const routes = this.#loaded()
-    return routes.profiles ? [] : [...routes.apart]
+    return routes.profiles ? [] : [...routes.apart.nym]
   }
 
   /**
@@ -135,7 +163,43 @@ export class RouteStore {
     const routes = this.#loaded()
     if (routes.profiles || this.#unreadable) return
     // A website that had an entry now lives in the profile the entry names, so the notice about its storage is not asked again; one with no entry left has nothing.
-    const next: ParsedRoutes = { on: routes.on, off: routes.off, apart: new Set([...routes.apart].filter((origin) => routes.on.has(origin))), apartDirect: new Set([...routes.apart].filter((origin) => routes.off.has(origin))), profiles: true }
+    const apart = emptyApart()
+    for (const origin of routes.apart.nym) {
+      const profile = profileOf(routes.entries.get(origin))
+      if (profile !== undefined) apart[profile].add(origin)
+    }
+    const next: ParsedRoutes = { entries: routes.entries, apart, profiles: true, kinds: routes.kinds }
+    this.#save(next)
+    this.#routes = next
+  }
+
+  /** Whether the file was written before each origin named its own tunnel, so `migrateToKinds` has the file to rewrite. False for a new profile and for a private session. */
+  needsKinds (): boolean {
+    const routes = this.#loaded()
+    return !routes.kinds && !this.#unreadable
+  }
+
+  /** The tunnel that was the choice when this file was read, which an unmarked file's origins are taken to have used. */
+  get legacyKind (): TunnelKind {
+    return this.#legacyKind
+  }
+
+  /**
+   * Records that every origin the file lists goes through `legacyKind`, and marks the file. With `storageMoved`, the storage
+   * the websites had in Nym's profile was moved to the proxy's profile (the profile of the tunnel that carried them), so the
+   * list of websites that have storage there moves with it. Throws `RouteStoreError` when it cannot be saved, and then the
+   * migration runs again next start.
+   */
+  migrateToKinds (storageMoved: boolean): void {
+    const routes = this.#loaded()
+    if (routes.kinds || this.#unreadable) return
+    const apart = emptyApart()
+    for (const profile of PROFILES) for (const origin of routes.apart[profile]) apart[profile].add(origin)
+    if (storageMoved && this.#legacyKind === 'socks5' && routes.profiles) {
+      for (const origin of routes.apart.nym) apart.socks5.add(origin)
+      apart.nym.clear()
+    }
+    const next: ParsedRoutes = { entries: routes.entries, apart, profiles: routes.profiles, kinds: true }
     this.#save(next)
     this.#routes = next
   }
@@ -150,30 +214,26 @@ export class RouteStore {
     return this.#unreadable
   }
 
-  /** `set(origin, true)` is an `on` entry and `set(origin, false)` takes the entry away: what the app card's switch does. */
-  set (origin: string, routed: boolean): boolean {
-    return this.setEntry(origin, routed ? 'on' : undefined)
-  }
-
   /**
    * Whether anything changed: false for a repeat and for an origin that is not canonical. Throws `RouteStoreError`,
-   * having changed nothing, when the choice could not be saved or while the file is unreadable (what was set is not
-   * known, so an entry cannot be taken away or turned off).
+   * having changed nothing, when the choice could not be saved, when a private window held to one tunnel is given another
+   * entry, or while the file is unreadable (what was set is not known, so an entry cannot be taken away or turned off).
    */
   setEntry (origin: string, entry: TunnelEntry | undefined): boolean {
-    if (entry === 'off' && this.#neverOff) throw new RouteStoreError('This private window always goes through the tunnel, so nothing in it can be switched off.')
+    if (this.#onlyKind !== undefined && entry !== undefined && entry !== this.#onlyKind) {
+      throw new RouteStoreError(entry === 'off' ? 'This private window always goes through the tunnel, so nothing in it can be switched off.' : 'This private window always goes through Nym, so nothing in it can use another tunnel.')
+    }
     const routes = this.#loaded()
     const previous = this.stateOf(origin)
     if (this.#unreadable) {
-      if (entry === 'on') return false
+      if (entry !== undefined && entry !== 'off') return false
       throw new RouteStoreError('The list of tunnel settings could not be read, so every site and app stays on the tunnel until it is mended.')
     }
     if (previous === entry || (entry !== undefined && originFromUrl(origin) !== origin)) return false
-    const next: ParsedRoutes = { on: new Set(routes.on), off: new Set(routes.off), apart: new Set(routes.apart), apartDirect: new Set(routes.apartDirect), profiles: routes.profiles }
-    next.on.delete(origin)
-    next.off.delete(origin)
-    if (entry === 'on') next.on.add(origin)
-    if (entry === 'off') next.off.add(origin)
+    const entries = new Map(routes.entries)
+    if (entry === undefined) entries.delete(origin)
+    else entries.set(origin, entry)
+    const next: ParsedRoutes = { ...routes, entries }
     this.#save(next)
     this.#routes = next
     for (const listener of [...this.#listeners]) listener(origin, entry, previous)
@@ -196,17 +256,14 @@ export class RouteStore {
     return () => { this.#listeners.delete(listener) }
   }
 
-  #apartSet (routes: ParsedRoutes, profile: Profile): Set<string> {
-    return profile === 'tunnel' ? routes.apart : routes.apartDirect
-  }
-
   #changeApart (origin: string, profile: Profile, apart: boolean): void {
     const routes = this.#loaded()
-    if (this.#apartSet(routes, profile).has(origin) === apart || originFromUrl(origin) !== origin) return
-    const next: ParsedRoutes = { on: routes.on, off: routes.off, apart: new Set(routes.apart), apartDirect: new Set(routes.apartDirect), profiles: routes.profiles }
-    const set = this.#apartSet(next, profile)
-    if (apart) set.add(origin)
-    else set.delete(origin)
+    if (routes.apart[profile].has(origin) === apart || originFromUrl(origin) !== origin) return
+    const kept = emptyApart()
+    for (const each of PROFILES) for (const listed of routes.apart[each]) kept[each].add(listed)
+    if (apart) kept[profile].add(origin)
+    else kept[profile].delete(origin)
+    const next: ParsedRoutes = { ...routes, apart: kept }
     // What the person set is not known while the file is unreadable, so nothing is written over it.
     if (!this.#unreadable) this.#save(next)
     this.#routes = next
@@ -220,7 +277,7 @@ export class RouteStore {
   /** A file that is not there is nothing set; a file that is there and cannot be used is kept aside and reported. */
   #read (): ParsedRoutes {
     // Nothing stored is nothing to migrate.
-    const none = (): ParsedRoutes => ({ on: new Set(), off: new Set(), apart: new Set(), apartDirect: new Set(), profiles: true })
+    const none = (): ParsedRoutes => ({ entries: new Map(), apart: emptyApart(), profiles: true, kinds: true })
     if (this.#path === null) return none()
     let raw: string
     try {
@@ -230,7 +287,7 @@ export class RouteStore {
       this.#setAside(error)
       return none()
     }
-    const parsed = parseRoutes(raw)
+    const parsed = parseRoutes(raw, this.#legacyKind)
     if (parsed !== undefined) return parsed
     this.#setAside(new Error('not a routes file'))
     return none()
@@ -249,12 +306,29 @@ export class RouteStore {
   /** A loopback or plain-http origin is not written (T13c): its setting holds until the next start. */
   #save (routes: ParsedRoutes): void {
     if (this.#path === null) return
-    const written = (origins: ReadonlySet<string>): string[] => [...origins].filter(isPersistableOrigin)
+    const written = (origins: Iterable<string>): string[] => [...origins].filter(isPersistableOrigin)
+    const entries = [...routes.entries]
+    const via: Record<string, TunnelKind> = {}
+    for (const [origin, entry] of entries) if (entry === 'socks5' && isPersistableOrigin(origin)) via[origin] = entry
     try {
-      writeFileAtomic(this.#path, JSON.stringify({ version: FILE_VERSION, profiles: routes.profiles ? PROFILES_VERSION : undefined, origins: written(routes.on), off: written(routes.off), apart: written(routes.apart), apartDirect: written(routes.apartDirect) }, null, 2))
+      writeFileAtomic(this.#path, JSON.stringify({
+        version: FILE_VERSION,
+        profiles: routes.profiles ? PROFILES_VERSION : undefined,
+        kinds: routes.kinds ? KINDS_VERSION : undefined,
+        origins: written(entries.filter(([, entry]) => entry !== 'off').map(([origin]) => origin)),
+        via,
+        off: written(entries.filter(([, entry]) => entry === 'off').map(([origin]) => origin)),
+        apart: written(routes.apart.nym),
+        apartProxy: written(routes.apart.socks5),
+        apartDirect: written(routes.apart.direct)
+      }, null, 2))
     } catch (error) {
       console.error('[route] could not save the tunnel settings:', error)
       throw new RouteStoreError('The choice could not be saved.')
     }
   }
+}
+
+function emptyApart (): Record<Profile, Set<string>> {
+  return { nym: new Set(), socks5: new Set(), direct: new Set() }
 }

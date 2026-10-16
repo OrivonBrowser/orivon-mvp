@@ -10,13 +10,14 @@ import { setReachRoute } from '../../loader/electron/reach-route.js'
 import { embedPartitionFor } from '../embed/embed-guard.js'
 import { publishRoutes } from '../registry.js'
 import type { Subsystem, SubsystemContext } from '../registry.js'
-import { everywhereBeforeReady, readSettingBeforeReady } from '../settings/settings-file.js'
+import { everywhereBeforeReady, readSettingBeforeReady, settingsFileProblem } from '../settings/settings-file.js'
 import { isOriginPinnedSync, isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isPersistableOrigin } from '../../broker/policy/origin.js'
 import { setLeavingRoutes } from './leaving-routes.js'
 import { answerRouteChallenge, lookupSessionFor, setDirectLookupSource, setLookupSessionSource, setRouteChallengeSource } from './lookup-session.js'
 import { hasOwnProxy, markOwnProxy } from './own-proxy.js'
+import { migrateRouteKinds, moveNymProfileToProxy } from './kinds-migration.js'
 import { migrateLegacySites } from './legacy-sites.js'
 import { setOwnRequests } from './own-requests.js'
 import { setSystemProxyProbe } from './system-proxy.js'
@@ -59,13 +60,17 @@ export const routeSubsystem: Subsystem = {
     const deadEndRule = (): string => `http://127.0.0.1:${String(deadEnd.port)}`
     // A private window held to Nym starts with everything on it, whatever its settings file says: the sessions are stopped before the first request.
     const heldToNym = ctx.privateTunnel === 'nym'
+    const savedKind = heldToNym ? 'nym' : readSettingBeforeReady(join(userData, 'settings.json'), 'network.route.kind')
+    // A private window held to a tunnel can give no origin an `off` entry or another tunnel. A file written before each origin named its own took the tunnel that was the choice.
+    const store = new RouteStore(ctx.privateSession ? null : join(userData, 'routes.json'), { ...(heldToNym ? { onlyKind: 'nym' as const } : {}), legacyKind: savedKind })
+    // Before any session is made: the folder a session opens is moved first, and the choice is not guessed when the settings cannot be read.
+    migrateRouteKinds(store, () => moveNymProfileToProxy(userData), settingsFileProblem(join(userData, 'settings.json')) === undefined)
     const routes = createRouteService({
-      // A private window held to a tunnel can give no origin an `off` entry.
-      store: new RouteStore(ctx.privateSession ? null : join(userData, 'routes.json'), { neverOff: ctx.privateTunnel === 'nym' }),
+      store,
       savedProxy: readSettingBeforeReady(join(userData, 'settings.json'), 'network.route.proxy'),
       // A settings file that cannot be used counts as the whole browser being on the tunnel (Settings says why).
       savedEverywhere: heldToNym || everywhereBeforeReady(join(userData, 'settings.json')),
-      savedKind: heldToNym ? 'nym' : readSettingBeforeReady(join(userData, 'settings.json'), 'network.route.kind'),
+      savedKind,
       nym: createNym(readSettingBeforeReady(join(userData, 'settings.json'), 'network.nym.privacy'), heldToNym || readSettingBeforeReady(join(userData, 'settings.json'), 'network.nym.enabled')),
       // Asked only when the list of tunnel settings cannot be read; the broker exists by then.
       installed: () => [...new Set([...(ctx.broker?.app.registeredOriginsSync() ?? []), ...(ctx.broker?.app.persistedAppsSync().map((installed) => installed.origin) ?? [])])],
@@ -121,11 +126,12 @@ export const routeSubsystem: Subsystem = {
     setDirectLookupSource(() => routes.everywhere() ? systemProxySession() : undefined)
     const tunnelFetch = createRequestFetch({ net, session: session.defaultSession, answer: answerRouteChallenge })
     const directFetch = createRequestFetch({ net, session: systemProxySession(), answer: (_info, callback) => { callback() } })
-    // A website with its tunnel on is asked about (its app manifest, its files by the loader) in the tunnel profile's session, not the default one, which is direct while the whole browser is off the tunnel.
+    // A website with its tunnel on is asked about (its app manifest, its files by the loader) in its tunnel profile's session, not the default one, which is direct while the whole browser is off the tunnel.
     const siteSession = async (origin: string): Promise<Session | undefined> => {
-      if (routes.hub.profileFor(origin) !== 'tunnel') return undefined
+      const profile = routes.hub.profileFor(origin)
+      if (profile === undefined || profile === 'direct') return undefined
       const routed = await lookupSessionFor(origin)
-      // A website that belongs in the tunnel profile is never asked about from the default session instead.
+      // A website that belongs in a tunnel profile is never asked about from the default session instead.
       if (routed === undefined) throw new Error('the tunnel profile is not available, so this website is not asked about')
       return routed
     }
@@ -168,7 +174,7 @@ export const routeSubsystem: Subsystem = {
         watch()
         return watch
       },
-      fit: (target, profile) => { announceWebsiteSession(target as Session, profile === 'tunnel') }
+      fit: (target, profile) => { announceWebsiteSession(target as Session, profile !== 'direct') }
     })
     // The verifier host reads whether a proxy applies once, when it starts, and fetches through the shared front when the whole browser is on the tunnel: it stops at once, with the local nodes, and starts again with the new setting when something asks for it, once the sessions follow.
     routes.hub.onChange((origin) => {

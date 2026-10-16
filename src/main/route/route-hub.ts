@@ -12,6 +12,7 @@ import { startRouteFront } from './front.js'
 import type { RouteFront } from './front.js'
 import type { RouteStore } from './route-store.js'
 import { tunnelStateOf } from './route-state.js'
+import type { TunnelKind } from './route-state.js'
 import { profileOf } from './site-partition.js'
 import type { Profile } from './site-partition.js'
 
@@ -24,14 +25,18 @@ export type RouteChangeCause = 'switch' | 'proxy'
  * a page can have, so no website or app can be mistaken for it.
  */
 export const SHARED_ORIGIN = 'orivon-shared-tunnel'
-/** The identity of the tunnel profile: one front and one set of tunnel credentials for every website with an `on` entry. Always on. */
-export const TUNNEL_PROFILE_ORIGIN = 'orivon-tunnel-profile'
+/** The identity of Nym's profile: one front and one set of tunnel credentials for every website whose entry is Nym. Always on. */
+export const NYM_PROFILE_ORIGIN = 'orivon-tunnel-profile'
+/** The identity of the proxy's profile: the same for every website whose entry is the person's proxy. Always on. */
+export const PROXY_PROFILE_ORIGIN = 'orivon-proxy-profile'
 /** The identity of the direct profile: never routed, so its session is never pointed at a front. */
 export const DIRECT_PROFILE_ORIGIN = 'orivon-direct-profile'
 
+const PROFILE_ORIGINS: Readonly<Record<Profile, string>> = { nym: NYM_PROFILE_ORIGIN, socks5: PROXY_PROFILE_ORIGIN, direct: DIRECT_PROFILE_ORIGIN }
+
 /** The identity a profile's session is prepared under. */
 export function profileOrigin (profile: Profile): string {
-  return profile === 'tunnel' ? TUNNEL_PROFILE_ORIGIN : DIRECT_PROFILE_ORIGIN
+  return PROFILE_ORIGINS[profile]
 }
 
 /** What the Settings page and the popover say about an app's route: `idle` is a route nothing has used yet. */
@@ -41,6 +46,8 @@ export interface RouteHubOptions {
   readonly store: RouteStore
   /** The proxy the person set, read on every use. */
   readonly proxy: () => RouteTarget | undefined
+  /** The tunnel the proxy above stands for, which every routed origin goes through. Nym when left out. */
+  readonly defaultKind?: () => TunnelKind
   /** Whether the whole browser goes through the tunnel unless an origin says otherwise: the default an origin with no entry follows. */
   readonly everywhere?: () => boolean
   /** Whether `origin` is an installed app, which has an identity of its own; any other origin is a website, which shares one (the tunnel profile's, or the shared one). Every origin is an app when this is left out. */
@@ -55,7 +62,7 @@ export interface RouteHub {
   /** For `CreateBrokerOptions.routeFor` and the loader's reach path. */
   readonly routeFor: RouteFor
   isRouted: (origin: string) => boolean
-  /** The profile a website at `origin` runs in: the one its entry names, or the tunnel profile while the store cannot be read. Undefined for a website that follows the default session, and for an app. */
+  /** The profile a website at `origin` runs in: the one its entry names, or the default tunnel's profile while the store cannot be read. Undefined for a website that follows the default session, and for an app. */
   profileFor: (origin: string) => Profile | undefined
   /** Whether the list of tunnel settings could not be read, so that every origin counts as routed while a tunnel is set. */
   unreadable: () => boolean
@@ -87,6 +94,7 @@ const REFUSING_ROUTE: Route = { provider: REFUSING_PROVIDER }
 export function createRouteHub (options: RouteHubOptions): RouteHub {
   const { store } = options
   const everywhere = options.everywhere ?? (() => false)
+  const defaultKind = options.defaultKind ?? ((): TunnelKind => 'nym')
   const credentials = isolationCredentials()
   const health = new Map<string, 'ok' | 'down'>()
   const fronts = new Map<string, Promise<RouteFront>>()
@@ -116,17 +124,19 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
   /** An unreadable list is not "nothing routed": with a proxy set, every origin is. */
   const unreadableWithProxy = (): boolean => store.unreadable() && options.proxy() !== undefined
   const routed = (origin: string): boolean => {
-    if (origin === TUNNEL_PROFILE_ORIGIN) return true
+    if (origin === NYM_PROFILE_ORIGIN || origin === PROXY_PROFILE_ORIGIN) return true
     if (origin === DIRECT_PROFILE_ORIGIN) return false
     // The shared identity follows the browser-wide setting alone: an unreadable list puts every website in the tunnel profile, but Orivon's own requests do not change with it.
     if (origin === SHARED_ORIGIN) return everywhere()
-    return unreadableWithProxy() || tunnelStateOf(store.stateOf(origin), everywhere()) === 'on'
+    return unreadableWithProxy() || tunnelStateOf(store.stateOf(origin), everywhere(), defaultKind()) !== 'off'
   }
-  /** Whose front and credentials carry `origin`'s traffic: an app its own; a website with an `on` entry the tunnel profile's, which every such website shares; any other website the shared one. */
+  /** Whose front and credentials carry `origin`'s traffic: an app its own; a website whose entry is a tunnel that tunnel's profile's, which every such website shares; any other website the shared one. */
   const identityOf = (origin: string): string => {
-    if (origin === SHARED_ORIGIN || origin === TUNNEL_PROFILE_ORIGIN || origin === DIRECT_PROFILE_ORIGIN || isApp(origin)) return origin
-    if (unreadableWithProxy() || store.stateOf(origin) === 'on') return TUNNEL_PROFILE_ORIGIN
-    return store.stateOf(origin) === undefined && everywhere() ? SHARED_ORIGIN : origin
+    if (origin === SHARED_ORIGIN || origin === NYM_PROFILE_ORIGIN || origin === PROXY_PROFILE_ORIGIN || origin === DIRECT_PROFILE_ORIGIN || isApp(origin)) return origin
+    if (unreadableWithProxy()) return profileOrigin(defaultKind())
+    const entry = store.stateOf(origin)
+    if (entry !== undefined && entry !== 'off') return profileOrigin(entry)
+    return entry === undefined && everywhere() ? SHARED_ORIGIN : origin
   }
   const table = createRouteFor({
     targetFor: (key) => routed(key) ? options.proxy() : undefined,
@@ -145,9 +155,10 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
 
   store.onChange((origin, entry, previous) => {
     health.delete(origin)
-    const now = tunnelStateOf(entry, everywhere()) === 'on'
+    const state = tunnelStateOf(entry, everywhere(), defaultKind())
     // An entry that says what the default already says changes nothing for the origin.
-    if (now === (tunnelStateOf(previous, everywhere()) === 'on')) return
+    if (state === tunnelStateOf(previous, everywhere(), defaultKind())) return
+    const now = state !== 'off'
     if (!now) stopFront(origin)
     emit(origin, now, 'switch')
   })
@@ -155,7 +166,7 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
   return {
     routeFor,
     isRouted: routed,
-    profileFor: (origin) => isApp(origin) ? undefined : unreadableWithProxy() ? 'tunnel' : profileOf(store.stateOf(origin)),
+    profileFor: (origin) => isApp(origin) ? undefined : unreadableWithProxy() ? profileOf(defaultKind()) : profileOf(store.stateOf(origin)),
     unreadable: () => store.unreadable(),
     state: (origin) => {
       if (!routed(origin)) return 'off'
@@ -204,7 +215,7 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
       for (const origin of affected) {
         if (origin !== SHARED_ORIGIN && store.stateOf(origin) !== undefined) continue
         // Read the way `routed` reads it: the shared identity follows the setting alone, an app also the unreadable list.
-        const was = origin === SHARED_ORIGIN ? previous : unreadableWithProxy() || tunnelStateOf(undefined, previous) === 'on'
+        const was = origin === SHARED_ORIGIN ? previous : unreadableWithProxy() || tunnelStateOf(undefined, previous, defaultKind()) !== 'off'
         const is = routed(origin)
         if (!is) stopFront(origin)
         if (is !== was) emit(origin, is, 'switch')

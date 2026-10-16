@@ -10,7 +10,7 @@ function setup (state: { routed: boolean, registered: boolean, persisted: boolea
   const stop = forgetRoutesOfGoneApps({
     onGrantsChanged: (next) => { listener = next; return off },
     app: { isRegisteredSync: () => state.registered, persistedAppsSync: () => state.persisted ? [{ origin: APP }] as never : [] }
-  }, { forget, hub: { unreadable: () => state.unreadable === true } as never, store: { stateOf: () => state.routed ? 'on' : undefined, isApartAnywhere: () => state.apart === true } as never })
+  }, { forget, hub: { unreadable: () => state.unreadable === true } as never, store: { stateOf: () => state.routed ? 'nym' : undefined, isApartAnywhere: () => state.apart === true } as never })
   return { change: (origin: string) => { listener?.(origin) }, forget, stop, off }
 }
 

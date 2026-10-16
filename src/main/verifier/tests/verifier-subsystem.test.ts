@@ -446,14 +446,14 @@ describe('the verifier subsystem', () => {
 
   describe('with the tunnel profile', () => {
     const FRONT = { port: 4242, username: 'orivon', secret: 'profile-secret' }
-    const routes = (profile: 'tunnel' | 'direct' | undefined) => ({
+    const routes = (profile: 'nym' | 'socks5' | 'direct' | undefined) => ({
       controller: { settled: async () => {} },
       hub: { isRouted: () => false, front: async () => FRONT, profileFor: () => profile }
     })
     type Sent = { type: string, config?: { profileFront?: unknown }, request?: { kind: string, route?: string, partition: string } }
     const sent = (): Sent[] => forks()[0]?.sent as Sent[]
 
-    async function launchWithRoutes (profile: 'tunnel' | 'direct' | undefined) {
+    async function launchWithRoutes (profile: 'nym' | 'socks5' | 'direct' | undefined) {
       vi.resetModules()
       vi.setSystemTime(SHIPPED_AT_MS + DAY_MS)
       const subsystem = await import('../verifier-subsystem.js')
@@ -468,13 +468,19 @@ describe('the verifier subsystem', () => {
     }
 
     it('gives the host the profile\'s front to fetch through for its websites, whatever the whole-browser setting is', async () => {
-      await launchWithRoutes('tunnel')
+      await launchWithRoutes('nym')
       expect(sent().find((message) => message.type === 'start')?.config?.profileFront).toEqual({ port: 4242, username: 'orivon', password: 'profile-secret' })
     })
 
     it('asks the host about a tunnel-profile website through the tunnel, and about any other website the ordinary way', async () => {
-      const tunnelled = await launchWithRoutes('tunnel')
+      const tunnelled = await launchWithRoutes('nym')
       void tunnelled.siteProvenance('https://a.eth')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(sent().filter((message) => message.type === 'request').map((message) => message.request)).toEqual([{ kind: 'provenance', host: 'a.eth', partition: 'https://a.eth', route: 'tunnel' }])
+      forks().length = 0
+      registered.beforeRequest.length = 0
+      const proxied = await launchWithRoutes('socks5')
+      void proxied.siteProvenance('https://a.eth')
       await vi.advanceTimersByTimeAsync(0)
       expect(sent().filter((message) => message.type === 'request').map((message) => message.request)).toEqual([{ kind: 'provenance', host: 'a.eth', partition: 'https://a.eth', route: 'tunnel' }])
       forks().length = 0

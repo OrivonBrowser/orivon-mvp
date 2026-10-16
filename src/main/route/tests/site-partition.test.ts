@@ -1,31 +1,44 @@
 import { describe, expect, it } from 'vitest'
-import { canTunnel, isProfilePartition, profileOf, profileOfPartition, profilePartition, profilePartitionFor, profilePartitionsToClear } from '../site-partition.js'
+import { canTunnel, isProfilePartition, kindOfProfile, profileOf, profileOfPartition, profilePartition, profilePartitionFor, profilePartitionsToClear } from '../site-partition.js'
 
 describe('the profile an entry puts a website in', () => {
-  it('is the tunnel profile for an on entry, the direct profile for an off one, and none for a website with no entry', () => {
-    expect(profileOf('on')).toBe('tunnel')
+  it('is the profile of its tunnel for a tunnel entry, the direct profile for an off one, and none for a website with no entry', () => {
+    expect(profileOf('nym')).toBe('nym')
+    expect(profileOf('socks5')).toBe('socks5')
     expect(profileOf('off')).toBe('direct')
     expect(profileOf(undefined)).toBeUndefined()
+  })
+
+  it('says which tunnel a profile sends through, none for the direct one', () => {
+    expect(kindOfProfile('nym')).toBe('nym')
+    expect(kindOfProfile('socks5')).toBe('socks5')
+    expect(kindOfProfile('direct')).toBeUndefined()
   })
 })
 
 describe('the session of a profile', () => {
   it('is one persistent session per profile, shared by every website that has that entry', () => {
-    expect(profilePartitionFor('tunnel', 'https://news.example')).toBe('persist:tunnel-profile')
-    expect(profilePartitionFor('tunnel', 'https://other.example')).toBe('persist:tunnel-profile')
+    expect(profilePartitionFor('nym', 'https://news.example')).toBe('persist:tunnel-profile')
+    expect(profilePartitionFor('nym', 'https://other.example')).toBe('persist:tunnel-profile')
+    expect(profilePartitionFor('socks5', 'https://news.example')).toBe('persist:proxy-profile')
     expect(profilePartitionFor('direct', 'https://news.example')).toBe('persist:direct-profile')
   })
 
   it('is kept in memory for an origin that may not be written to disk, which a name with no persist: prefix is', () => {
-    expect(profilePartitionFor('tunnel', 'http://news.example')).toBe('tunnel-profile-memory')
+    expect(profilePartitionFor('nym', 'http://news.example')).toBe('tunnel-profile-memory')
+    expect(profilePartitionFor('socks5', 'http://news.example')).toBe('proxy-profile-memory')
     expect(profilePartitionFor('direct', 'http://news.example')).toBe('direct-profile-memory')
-    expect(profilePartition('tunnel', false)).toBe('tunnel-profile-memory')
+    expect(profilePartition('nym', false)).toBe('tunnel-profile-memory')
   })
 
   it('is told apart from the other partitions by its name, and says which profile it is', () => {
     for (const name of ['persist:tunnel-profile', 'tunnel-profile-memory']) {
       expect(isProfilePartition(name), name).toBe(true)
-      expect(profileOfPartition(name), name).toBe('tunnel')
+      expect(profileOfPartition(name), name).toBe('nym')
+    }
+    for (const name of ['persist:proxy-profile', 'proxy-profile-memory']) {
+      expect(isProfilePartition(name), name).toBe(true)
+      expect(profileOfPartition(name), name).toBe('socks5')
     }
     for (const name of ['persist:direct-profile', 'direct-profile-memory']) expect(profileOfPartition(name), name).toBe('direct')
     for (const other of [undefined, 'persist:app-abc', 'persist:embed-abc', 'orivon-route-tab-abc', 'persist:orivon-local-files', 'persist:site-abc', 'site-abc']) expect(isProfilePartition(other), String(other)).toBe(false)
@@ -44,9 +57,10 @@ describe('which origins can go through the tunnel', () => {
 
 describe('the profile sessions a clear of site data reaches', () => {
   it('is the kept session of a profile some website has an entry in, and the memory session of a profile only when it was made in this run', () => {
-    const apart = (profile: 'tunnel' | 'direct'): boolean => profile === 'tunnel'
+    const apart = (profile: string): boolean => profile === 'nym'
     expect(profilePartitionsToClear(apart, [])).toEqual(['persist:tunnel-profile'])
     expect(profilePartitionsToClear(apart, ['tunnel-profile-memory'])).toEqual(['persist:tunnel-profile', 'tunnel-profile-memory'])
+    expect(profilePartitionsToClear((profile) => profile === 'socks5', ['proxy-profile-memory'])).toEqual(['persist:proxy-profile', 'proxy-profile-memory'])
   })
 
   it('includes the memory session of a profile with no entry left, since it still holds what a plain-http website stored', () => {
