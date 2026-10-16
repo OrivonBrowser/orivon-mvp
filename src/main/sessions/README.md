@@ -129,7 +129,7 @@ to check either signal against.
 `clipboard-read` and `deprecated-sync-clipboard-read`, `geolocation`, `midi` and `midiSysex`,
 `idle-detection` and `window-management` are answered first by the asker
 [`../site-settings/`](../site-settings/) registers, and only for an ordinary tab on an `http(s)`
-site that is not a registered app. A main frame asks once per site and the answer is remembered; a
+site that holds no grants. A main frame asks once per site and the answer is remembered; a
 frame never asks and gets only its own page's stored allow; the check handler reads the stored
 answers and never asks. Anything the asker does not own, or any contents that is not a tab (an
 extension's page, a shell view, an embed), falls through to this table, where none of these names
