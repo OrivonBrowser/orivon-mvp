@@ -90,7 +90,7 @@ it('keeps the chrome shown while a full-width overlay is up over a resized windo
   }, { blockDelayMs: BLOCK_DELAY_MS })
   const dir = await mkdtemp(join(tmpdir(), 'orivon-chrome-shown-'))
   const env = {
-    ...process.env, PULSE_SERVER: 'unix:/nonexistent', ORIVON_WINDOW_NO_FOCUS: '1', ORIVON_ETH_LIGHT_CLIENT: 'off', ORIVON_INTRO: 'off',
+    ...process.env, PULSE_SERVER: 'unix:/nonexistent', ORIVON_WINDOW_NO_FOCUS: '1', ORIVON_ETH_LIGHT_CLIENT: 'off', ORIVON_INTRO: 'off', ORIVON_UPDATE_CHECK: 'off', ORIVON_SECURE_DNS: 'off',
     ORIVON_TEST_ETH_FIXTURES: '{}', ORIVON_TEST_IPFS_GATEWAYS: gateway.url, ORIVON_TEST_DOH: `${gateway.url}/dns-query`
   } as Record<string, string | undefined>
   delete env['ELECTRON_RUN_AS_NODE']

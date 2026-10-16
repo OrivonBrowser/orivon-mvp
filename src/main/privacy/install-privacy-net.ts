@@ -16,7 +16,7 @@ import { upgradeTracker } from './https-fallback.js'
 import { createFallbackSheets } from './https-fallback-runner.js'
 import { httpsState } from './https-state.js'
 import { createNetHandlers } from './net-handlers.js'
-import { applySecureDns, needsResolverCall } from './secure-dns.js'
+import { applySecureDns, effectiveSecureDns, needsResolverCall, secureDnsForcedOff } from './secure-dns.js'
 import type { SecureDnsValue } from './secure-dns.js'
 import { createStorageAccessAsker } from './storage-access.js'
 
@@ -75,7 +75,7 @@ export const installPrivacyNet: ShellInstaller = {
       isTab: (contents) => services.windows.findTab(contents) !== null
     }))
 
-    const dns = (): SecureDnsValue => services.settings.get('privacy.secureDns')
+    const dns = (): SecureDnsValue => effectiveSecureDns(services.settings.get('privacy.secureDns'), services.settings.isDefault('privacy.secureDns'), secureDnsForcedOff())
     if (needsResolverCall(dns())) applySecureDns(app, dns())
     services.settings.onChange(({ key }) => { if (key === 'privacy.secureDns') applySecureDns(app, dns()) })
   }

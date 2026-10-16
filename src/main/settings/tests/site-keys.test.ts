@@ -4,7 +4,7 @@ import { SETTINGS, validateSetting } from '../schema.js'
 // The keys declared ahead of the controls that edit them: a value outside the choices is refused and the default is what a fresh profile has.
 const ENUMS: ReadonlyArray<[key: keyof typeof SETTINGS, options: string[], fallback: string]> = [
   ['privacy.cookies', ['all', 'blockThirdParty'], 'all'],
-  ['privacy.secureDns', ['off', 'automatic', 'cloudflare', 'quad9'], 'off'],
+  ['privacy.secureDns', ['quad9Fallback', 'off', 'automatic', 'cloudflare', 'quad9'], 'quad9Fallback'],
   ['sites.camera', ['ask', 'block'], 'ask'],
   ['sites.popups', ['block', 'allow'], 'block'],
   ['sites.javascript', ['allow', 'block'], 'allow']

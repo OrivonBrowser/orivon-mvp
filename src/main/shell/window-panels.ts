@@ -11,6 +11,7 @@ import { deliveryLevelOverrideFor, scoreLevelOverrideFor } from '../dev/score-le
 import { localDdocHashFor } from '../dev/local-ddoc.js'
 import { createNetworksPanel } from '../networks/networks-panel.js'
 import { createSiteInfoPanel } from '../permissions/site-info-panel.js'
+import { openWeb3ScoreHelp } from '../web3-score/web3-score-help.js'
 import { openCertificate } from '../auth/certificate-open.js'
 import { pageAccess } from '../site-settings/page-access.js'
 import { sitePermissions } from '../site-settings/site-permissions-view.js'
@@ -91,6 +92,11 @@ export function createWindowPanels ({ ctx, win, services, tabs, overlays, dirnam
     (domain) => {
       siteInfo.close()
       tabs.createTab(`https://${domain}/`)
+    },
+    // A "?" on the Web3 Score page: the page that says what the levels mean, in a new tab.
+    () => {
+      siteInfo.close()
+      openWeb3ScoreHelp(tabs)
     },
     dirname
   )

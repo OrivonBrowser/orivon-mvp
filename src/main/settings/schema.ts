@@ -67,7 +67,8 @@ const SPECS = {
   'privacy.globalPrivacyControl': { kind: 'bool', default: true },
   'privacy.doNotTrack': { kind: 'bool', default: false },
   'privacy.httpsOnly': { kind: 'bool', default: false },
-  'privacy.secureDns': { kind: 'enum', options: ['off', 'automatic', 'cloudflare', 'quad9'], default: 'off' },
+  // Quad9 with this computer's own DNS as the fallback is the default: names are looked up over HTTPS, and a network that blocks Quad9 (a captive portal, say) still works. Cloudflare and Quad9 alone have no fallback.
+  'privacy.secureDns': { kind: 'enum', options: ['quad9Fallback', 'off', 'automatic', 'cloudflare', 'quad9'], default: 'quad9Fallback' },
   // Where a routed app's traffic leaves: Nym, built in, or the SOCKS5 address below. Settings files from before this choice existed keep their address as the choice (settings-file.ts).
   'network.route.kind': { kind: 'enum', options: ['nym', 'socks5'], default: 'nym', labels: { nym: 'Nym (built in)', socks5: 'Your own SOCKS5 address' } },
   // How much decoy traffic Nym's tunnels send. Balanced is the default: it costs a fraction of the processor time per open tunnel that strongest does (the host's README.md has the figures), and shows an observer of the connection roughly when the person is active (docs/architecture/security-model.md T85). Applied to tunnels started after a change.
@@ -100,8 +101,8 @@ const SPECS = {
   'passwords.offerToSave': { kind: 'bool', default: true },
   'passwords.autofill': { kind: 'bool', default: true },
   'autofill.addresses': { kind: 'bool', default: true },
-  // Whether Orivon asks GitHub, once a day, if a newer release exists. It never installs anything. Off until the owner decides.
-  'updates.check': { kind: 'bool', default: false },
+  // Whether Orivon asks GitHub, once a day, if a newer release exists. It never installs anything. On by default; a person can turn it off.
+  'updates.check': { kind: 'bool', default: true },
   // Whether `.eth` names are proven by a light client that runs on this computer. Applied at once.
   'web3.lightClient': { kind: 'bool', default: true },
   // Where IPFS content is read from: the node Orivon runs on this computer, or public gateways. Applied at once.
