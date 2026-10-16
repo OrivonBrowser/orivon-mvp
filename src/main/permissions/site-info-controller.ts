@@ -10,7 +10,7 @@ import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import { isLocalFileKey, isolationKeyFromUrl, originFromUrl } from '../../broker/policy/origin.js'
 import type { SubsystemContext } from '../registry.js'
 import { buildSiteInfo } from './site-info.js'
-import type { SiteInfo, SiteTunnel, SiteTunnelKind, SiteUpdate } from './site-info.js'
+import type { SiteInfo, SiteTunnel, SiteTunnelKind, SiteTunnelProfile, SiteUpdate } from './site-info.js'
 import { turnOffCapability, turnOnCapability } from './site-switches.js'
 import type { TurnOnResult } from './site-switches.js'
 import { buildSiteTrust, providerIdFor, withProviderVerdict } from '../browsing/site-trust.js'
@@ -175,9 +175,9 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
   }
 
   /** The profile the website lives in now. */
-  function profileOf (origin: string): { readonly profile?: 'tunnel' | 'direct' } {
+  function profileOf (origin: string): { readonly profile?: SiteTunnelProfile } {
     const profile = ctx.routes?.hub.profileFor(origin)
-    return profile === undefined ? {} : { profile: profile === 'direct' ? 'direct' : 'tunnel' }
+    return profile === undefined ? {} : { profile }
   }
 
   /** What goes through the person's proxy now: the sites and apps that picked it, and the whole browser when it is on the proxy. */
@@ -199,18 +199,18 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     if (routes === undefined || (subject === 'site' && !canTunnel(origin))) return undefined
     const via = routes.hub.kindOf(origin) ?? null
     const blocked: { -readonly [kind in SiteTunnelKind]?: 'no-proxy' | 'nym-off' | 'not-kept' } = {}
-    const notices: { -readonly [choice in SiteTunnelKind | 'off']?: 'tunnel' | 'direct' } = {}
+    const notices: { -readonly [choice in SiteTunnelKind | 'off']?: SiteTunnelProfile } = {}
     for (const kind of TUNNELS) {
       const why = routes.routeSwitch.blockedFor(origin, kind)
       if (why === 'no-proxy' || why === 'not-cached') blocked[kind] = why === 'no-proxy' ? 'no-proxy' : 'not-kept'
       if (kind !== via) {
         const moves = routes.routeSwitch.noticeFor(origin, kind)
-        if (moves !== undefined) notices[kind] = moves === 'direct' ? 'direct' : 'tunnel'
+        if (moves !== undefined) notices[kind] = moves
       }
     }
     if (via !== null) {
       const leaves = routes.routeSwitch.noticeFor(origin, null)
-      if (leaves !== undefined) notices.off = leaves === 'direct' ? 'direct' : 'tunnel'
+      if (leaves !== undefined) notices.off = leaves
     }
     if (nymSwitchedOff(routes)) blocked.nym = 'nym-off'
     return {
@@ -236,7 +236,9 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     const routes = ctx.routes
     if (routes === undefined || session === undefined || info.tunnel === undefined) return info
     const sessionKind = routes.controller.tunnelOf(session)
-    if (sessionKind === undefined || sessionKind === 'held') return info
+    if (sessionKind === 'held') return info
+    // A page of a tunnelled origin in a session that is not pointed at a tunnel yet (the tab is still moving, or the move failed) is not on its tunnel: it is not shown as if it were.
+    if (sessionKind === undefined) return info.tunnel.via === null ? info : { ...info, route: 'moving' }
     const temporary = isTemporaryRouteSession(session)
     if (!temporary && sessionKind === info.tunnel.via) return info
     return { ...info, tunnelKind: sessionKind, route: temporary ? 'temporary' : 'idle', tunnel: { ...info.tunnel, via: sessionKind, following: false, fixed: temporary ? 'temporary' : 'opened', notices: {} }, ...(sessionKind === 'nym' ? { nym: routes.nym.state() } : {}) }

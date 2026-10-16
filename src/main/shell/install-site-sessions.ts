@@ -1,6 +1,7 @@
 // Registered in `./shell-installers.ts`: when a website's tunnel is turned on or off, its open tabs move to the session
 // that state calls for (`./site-session-move.ts`), once the sessions follow the switch so that nothing loads in one that
 // is not yet pointed. The moving itself is `repartitionView`, the same cross-session move Back across sessions uses.
+import { originFromUrl } from '../../broker/policy/origin.js'
 import type { ShellInstaller } from './shell-installers.js'
 import { tabMovesFor } from './site-session-move.js'
 import { repartitionView } from './tab-parking.js'
@@ -22,7 +23,23 @@ export const installSiteSessions: ShellInstaller = {
         })
         for (const { id, url, to } of tabMovesFor(origin, inWindow, partitionForTarget)) {
           const record = tabs.record(id)
-          if (record !== undefined) repartitionView(id, record, url, to)
+          if (record === undefined) continue
+          try {
+            repartitionView(id, record, url, to)
+          } catch (error) {
+            // A page left in the session it was in would keep sending as that session does: it is stopped, and the tunnel button says it is not on its tunnel.
+            console.error('[route] a tab could not move to the session its tunnel calls for; its loads are stopped:', error)
+            tabs.liveWebContents(id)?.stop()
+          }
+        }
+      }
+    }
+    // The sessions could not be made to follow a switch: what is open on the website is stopped rather than left sending as the session it is in does.
+    const stopLoads = (origin: string): void => {
+      for (const window of services.windows.all()) {
+        for (const id of window.tabs.ids()) {
+          const contents = window.tabs.liveWebContents(id)
+          if (contents !== undefined && originFromUrl(contents.getURL()) === origin) contents.stop()
         }
       }
     }
@@ -32,7 +49,10 @@ export const installSiteSessions: ShellInstaller = {
       routes.controller.settled().then(() => { for (const origin of services.windows.liveTabOrigins()) move(origin) }, (error: unknown) => { console.error('[route] moving tabs after the tunnel changed failed:', error) })
     })
     routes.hub.onChange((origin) => {
-      routes.controller.settled().then(() => { move(origin) }, (error: unknown) => { console.error('[route] moving tabs to the session their tunnel calls for failed:', error) })
+      routes.controller.settled().then(() => { move(origin) }, (error: unknown) => {
+        console.error('[route] moving tabs to the session their tunnel calls for failed:', error)
+        stopLoads(origin)
+      })
     })
   }
 }

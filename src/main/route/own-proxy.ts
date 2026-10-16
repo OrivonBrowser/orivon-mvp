@@ -13,3 +13,15 @@ export function markOwnProxy (session: object): void {
 export function hasOwnProxy (session: object): boolean {
   return own.has(session)
 }
+
+const system = new WeakSet<object>()
+
+/** Marks `session` as the one that follows the system's proxy, whose requests are neither stopped nor tunnelled. */
+export function markFollowsSystem (session: object): void {
+  system.add(session)
+}
+
+/** Whether `session` is the one that follows the system's proxy. Such a session is not pointed at any tunnel, and a page loaded in it goes out as the system sends it. */
+export function followsSystem (session: object): boolean {
+  return system.has(session)
+}

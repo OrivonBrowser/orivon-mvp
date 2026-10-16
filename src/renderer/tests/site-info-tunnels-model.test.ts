@@ -111,7 +111,7 @@ describe('the rows of a website', () => {
   })
 
   it('says what the profile gives the extensions', () => {
-    const model = tunnelListModel(withTunnel({ via: 'nym', profile: 'tunnel' }, { extensionsOnSite: ['uBlock Origin'], route: 'ok', nym: { state: 'ready' } }), noView)
+    const model = tunnelListModel(withTunnel({ via: 'nym', profile: 'nym' }, { extensionsOnSite: ['uBlock Origin'], route: 'ok', nym: { state: 'ready' } }), noView)
     expect(model.notes.at(-1)?.text).toContain('Your extensions run in the tunnel profile too: uBlock Origin')
   })
 })
@@ -132,7 +132,7 @@ describe('an installed app', () => {
   })
 
   it('has no word about a profile or the extensions in one', () => {
-    expect(tunnelListModel(app({ via: 'nym', profile: 'tunnel' }, { extensionsOnSite: ['uBlock Origin'], route: 'ok' }), noView).notes.map((note) => note.text).join(' ')).not.toContain('extensions run')
+    expect(tunnelListModel(app({ via: 'nym', profile: 'nym' }, { extensionsOnSite: ['uBlock Origin'], route: 'ok' }), noView).notes.map((note) => note.text).join(' ')).not.toContain('extensions run')
   })
 })
 

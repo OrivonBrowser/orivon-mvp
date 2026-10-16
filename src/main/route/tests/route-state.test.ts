@@ -18,18 +18,19 @@ describe('the tunnel state of an origin', () => {
 })
 
 describe('the entry that makes a website go through a tunnel or off', () => {
-  it('is none when the default already says so, so the website goes back to the default session', () => {
-    expect(entryFor('off', false, 'nym')).toBeUndefined()
-    expect(entryFor('nym', true, 'nym')).toBeUndefined()
-    expect(entryFor('socks5', true, 'socks5')).toBeUndefined()
+  it('is the tunnel itself whatever the default says, so a pick lives in its tunnel\'s profile and never follows a later default', () => {
+    for (const everywhere of [false, true]) {
+      expect(entryFor('nym', everywhere), `nym ${String(everywhere)}`).toBe('nym')
+      expect(entryFor('socks5', everywhere), `socks5 ${String(everywhere)}`).toBe('socks5')
+    }
   })
 
-  it('is the state itself when it differs from the default, the other tunnel included', () => {
-    expect(entryFor('nym', false, 'nym')).toBe('nym')
-    expect(entryFor('socks5', false, 'nym')).toBe('socks5')
-    expect(entryFor('off', true, 'nym')).toBe('off')
-    expect(entryFor('socks5', true, 'nym')).toBe('socks5')
-    expect(entryFor('nym', true, 'socks5')).toBe('nym')
+  it('is none for going through no tunnel while the whole browser is not on one, so the website goes back to the default session', () => {
+    expect(entryFor('off', false)).toBeUndefined()
+  })
+
+  it('is off for going through no tunnel while the whole browser is on one', () => {
+    expect(entryFor('off', true)).toBe('off')
   })
 })
 

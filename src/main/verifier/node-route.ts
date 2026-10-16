@@ -4,12 +4,16 @@
 // The setting is supplied once the settings are read; until then the nodes run direct, the setting's default.
 
 import { ownRequestsTunnelled } from '../route/own-requests.js'
+import type { TunnelKind } from '../route/route-state.js'
 import { systemProxyFor } from '../route/system-proxy.js'
 
 let followTunnel: () => boolean = () => false
+let nodesTunnel: () => TunnelKind = () => 'nym'
 
-export function configureNodeRoute (options: { followTunnel: () => boolean }): void {
+/** `nodesTunnel` is the tunnel the nodes run through when they do: the default one. */
+export function configureNodeRoute (options: { followTunnel: () => boolean, nodesTunnel?: () => TunnelKind }): void {
   followTunnel = options.followTunnel
+  nodesTunnel = options.nodesTunnel ?? (() => 'nym')
 }
 
 /** Whether the person asked the nodes to go through the tunnel when the browser does. */
@@ -23,11 +27,13 @@ export function nodesRunThroughTunnel (): boolean {
 }
 
 /**
- * Whether the nodes may serve a website that has the tunnel on by itself: not when they run outside the tunnel and the person asked
- * them to follow it, since the networks they ask would then see the address the tunnel hides for that website.
+ * Whether the nodes may serve a website whose profile is the tunnel `tunnel`: not when they run outside the tunnel and the person
+ * asked them to follow it, since the networks they ask would then see the address the tunnel hides for that website; and, when they
+ * do run through a tunnel, only a website on that same tunnel, since one on the other would be read from the exit the nodes use.
  */
-export function nodesMayServeTunnelSites (): boolean {
-  return !followTunnel() || ownRequestsTunnelled()
+export function nodesMayServeTunnelSites (tunnel: TunnelKind): boolean {
+  if (!followTunnel()) return true
+  return ownRequestsTunnelled() && nodesTunnel() === tunnel
 }
 
 /**

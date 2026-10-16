@@ -153,6 +153,15 @@ describe('registerSiteInfoIpc -- setTunnel', () => {
     expect(inSession).toHaveBeenCalledWith(EMPTY_INFO, session)
   })
 
+  it('refuses a page whose tunnel is fixed (opened through an app\'s tunnel, or adopted into its session) without reaching the controller', async () => {
+    const fixed = { ...EMPTY_INFO, tunnel: { fixed: 'opened' } } as unknown as SiteInfo
+    const controller = fakeController({ inSession: vi.fn(() => fixed) })
+    register(controller, { activeWebContents: () => ({ getURL: () => ORIGIN, session: {} }) as unknown as import('electron').WebContents })
+    expect(await dispatch({ type: 'setTunnel', kind: 'nym' })).toEqual({ ok: false, info: fixed })
+    expect(await dispatch({ type: 'setTunnel', kind: null })).toEqual({ ok: false, info: fixed })
+    expect(controller.setTunnel).not.toHaveBeenCalled()
+  })
+
   it('says it was not done when the controller could not', async () => {
     const controller = fakeController({ setTunnel: vi.fn(async () => false) })
     register(controller)

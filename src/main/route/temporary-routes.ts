@@ -43,6 +43,8 @@ export type TemporarySession = RouteSession & {
 }
 
 export interface TemporaryRoutesDeps {
+  /** The secret of the profile the SOCKS5 user names are made under, kept across runs. */
+  readonly isolationSecret?: Uint8Array
   readonly controller: Pick<RouteController, 'prepareTemporary' | 'releaseTemporary'>
   /** Where traffic of the tunnel `kind` leaves now, read on every connection. */
   readonly targetOf: (kind: TunnelKind) => RouteTarget | undefined
@@ -76,7 +78,7 @@ const UNUSED_MS = 30_000
 interface Held { readonly session: TemporarySession, readonly front: RouteFront }
 
 export function createTemporaryRoutes (deps: TemporaryRoutesDeps): TemporaryRoutes {
-  const credentials = isolationCredentials()
+  const credentials = isolationCredentials(undefined, deps.isolationSecret)
   const held = new Map<string, Held>()
   const bySession = new Map<object, string>()
 

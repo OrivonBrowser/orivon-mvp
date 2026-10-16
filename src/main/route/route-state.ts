@@ -3,7 +3,7 @@
 // Every origin is `nym`, `socks5` (the person's own proxy) or `off`. The browser's default says which when the origin has
 // no entry of its own: `off` while the whole browser is not on a tunnel, else the default tunnel. An entry overrides it.
 // Where a website lives follows its entry alone (`site-partition.ts`'s `profileOf`), never the default, so that turning the
-// default over moves no website's storage.
+// default over moves no website's storage; a tunnel picked is always an entry, even when it is the default's.
 
 /** The tunnels an origin can be sent through. */
 export type TunnelKind = 'nym' | 'socks5'
@@ -24,9 +24,11 @@ export function tunnelStateOf (entry: TunnelEntry | undefined, everywhere: boole
 }
 
 /**
- * The entry that makes a website `wanted`: none when the default already says so, else `wanted` itself. An entry the
- * default already says is not kept, so the website goes back to the default session, where its storage was.
+ * The entry that makes an origin `wanted`: the tunnel itself, whatever the default says, so that a pick lives in its tunnel's
+ * profile and never follows a later change of the default. Going through no tunnel is none while the whole browser is not on one
+ * (the origin goes back to the default session), and `off` while it is.
  */
-export function entryFor (wanted: TunnelEntry, everywhere: boolean, defaultKind: TunnelKind): TunnelEntry | undefined {
-  return wanted === tunnelStateOf(undefined, everywhere, defaultKind) ? undefined : wanted
+export function entryFor (wanted: TunnelEntry, everywhere: boolean): TunnelEntry | undefined {
+  if (wanted !== 'off') return wanted
+  return everywhere ? 'off' : undefined
 }

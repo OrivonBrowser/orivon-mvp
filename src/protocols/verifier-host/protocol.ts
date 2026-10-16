@@ -89,11 +89,12 @@ export interface HostConfig {
     readonly retryWaitMs?: number
   }
   /**
-   * Whether the local nodes may serve a website that has the tunnel on by itself. They run outside the tunnel unless the whole
-   * browser is on it, so this is true when "Use tunnel to run network nodes" is off (the person accepted direct nodes), or when the
-   * node runs through the tunnel. Absent: false.
+   * For each tunnel, whether the local nodes may serve a website whose profile is that tunnel's. They run outside the tunnel unless
+   * the whole browser is on it, so a tunnel is true when "Use tunnel to run network nodes" is off (the person accepted direct nodes),
+   * or when it is the tunnel the nodes themselves run through, so that a website on the other tunnel never reads through the exit
+   * the nodes use. Absent: false for both.
    */
-  readonly tunnelSitesReadNodes?: boolean
+  readonly tunnelSitesReadNodes?: Readonly<Partial<Record<TunnelRoute, boolean>>>
   /** The local nodes run through the tunnel (the whole browser is on it and "Use tunnel to run network nodes" is on): their reads wait as long as the tunnel does. Absent: they are direct, and wait as a direct connection does. */
   readonly nodesRouted?: boolean
   /**

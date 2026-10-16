@@ -10,6 +10,7 @@ export type RouteSubject = 'app' | 'site'
 
 export function routeLineWords (route: SiteRoute, subject: RouteSubject = 'app', nym?: NymState): string {
   const noun = subject === 'app' ? 'app' : 'site'
+  if (route === 'moving') return `This ${noun} is not on your tunnel yet, so its traffic is stopped. If this stays, reload the page.`
   // Through Nym the line also says what Nym is doing.
   if (nym !== undefined && route !== 'no-proxy') return nymRouteLine(route, nym, noun)
   switch (route) {

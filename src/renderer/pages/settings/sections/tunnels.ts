@@ -104,7 +104,8 @@ const rows: readonly Row[] = [
     help: 'Your own SOCKS5 server, such as Tor\'s 127.0.0.1:9050. Each app signs in with a user name of its own, so a server that separates circuits by it keeps the apps apart. A site or app uses it when you choose Your proxy for it, or when it is the default tunnel.',
     keywords: ['tunnel', 'proxy', 'socks', 'socks5', 'tor', 'onion', 'route', 'anonymous', 'network', 'apps', 'host', 'port', 'address'],
     group: OWN,
-    control: { type: 'text', key: 'network.route.proxy', placeholder: '127.0.0.1:9050', problem: 'Enter an address as host:port, like 127.0.0.1:9050' }
+    below: heldLine,
+    control: { type: 'text', key: 'network.route.proxy', placeholder: '127.0.0.1:9050', problem: 'Enter an address as host:port, like 127.0.0.1:9050', locked: held('network.route.proxy') }
   },
   {
     id: 'route-proxy-test',
@@ -112,6 +113,7 @@ const rows: readonly Row[] = [
     help: 'Checks that a SOCKS5 server answers at that address. It opens no connection through it.',
     keywords: ['tunnel', 'proxy', 'socks', 'tor', 'test', 'check', 'route'],
     group: OWN,
+    below: heldLine,
     control: { type: 'custom', render: renderTunnelTest('socks5') }
   },
   {

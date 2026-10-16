@@ -4,7 +4,7 @@
 // and, when credentials are given, username/password, so a proxy that takes
 // none still works and one that isolates by credentials gets them.
 
-import { createHash, createHmac, randomBytes } from 'node:crypto'
+import { createHmac, randomBytes } from 'node:crypto'
 import { createSocket } from 'node:dgram'
 import type { Socket as DgramSocket } from 'node:dgram'
 import { connect as netConnect, isIP } from 'node:net'
@@ -31,14 +31,14 @@ export interface Socks5ProviderOptions {
 const DEFAULT_TIMEOUT_MS = 30_000
 
 /**
- * Credentials that differ per app and per run: the user name is a hash of the
- * key, the password an HMAC of it under a secret made for this run. A proxy
- * that isolates streams by credentials (Tor's default) then gives each app its
- * own circuits, and none of them can be linked across runs.
+ * Credentials that differ per app: the user name is an HMAC of the key under a secret of the profile, kept across runs (so an app
+ * keeps its name, and a proxy that isolates streams by credentials, as Tor does by default, gives it its own circuits), the
+ * password an HMAC of it under a secret made for this run. Neither can be reversed against a list of origins by whoever runs the
+ * proxy, and the name is not the same for another person's profile. Without a profile secret the name is as short-lived as the run.
  */
-export function isolationCredentials (runSecret: Uint8Array = randomBytes(32)): (key: string) => Socks5Credentials {
+export function isolationCredentials (runSecret: Uint8Array = randomBytes(32), profileSecret: Uint8Array = randomBytes(32)): (key: string) => Socks5Credentials {
   return (key) => ({
-    userId: createHash('sha256').update(key).digest('hex').slice(0, 32),
+    userId: createHmac('sha256', profileSecret).update(`socks5 user name\n${key}`).digest('hex').slice(0, 32),
     password: createHmac('sha256', runSecret).update(key).digest('hex').slice(0, 32)
   })
 }

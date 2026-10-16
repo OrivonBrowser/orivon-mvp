@@ -81,14 +81,15 @@ export function everywhereBeforeReady (filePath: string): boolean {
 }
 
 /**
- * What a private window held to Nym is held to: the whole browser through the tunnel, the tunnel Nym, and Nym allowed to
- * run. The settings copy it starts from is written with these (`forceSettingsFile`), so the first thing the process reads
+ * What a private window held to Nym is held to: the whole browser through the tunnel, the tunnel Nym, Nym allowed to
+ * run, and no proxy address (the person's own proxy is not for this window to edit, show or test). The settings copy it starts from is written with these (`forceSettingsFile`), so the first thing the process reads
  * already says so, and its settings store reads them whatever the file holds and refuses a change to any of them.
  */
 export const NYM_HELD_SETTINGS: ReadonlyMap<SettingKey, SettingValue> = new Map<SettingKey, SettingValue>([
   ['network.tunnel.everywhere', true],
   ['network.route.kind', 'nym'],
-  ['network.nym.enabled', true]
+  ['network.nym.enabled', true],
+  ['network.route.proxy', '']
 ])
 
 /**

@@ -54,6 +54,8 @@ export interface RouteHubOptions {
   readonly isApp?: (origin: string) => boolean
   /** The apps installed on this computer, asked when the proxy changes while the store cannot say what was set or the browser-wide setting is on, and when that setting changes, so their sessions are pointed again. */
   readonly installed?: () => readonly string[]
+  /** The secret of the profile the SOCKS5 user names are made under, kept across runs. Without it the names last as long as the run. */
+  readonly isolationSecret?: Uint8Array
   /** Builds the provider for one app and proxy where the proxy is not a SOCKS5 address (Nym); undefined falls back to SOCKS5 with a distinct username and password per app. */
   readonly providerFor?: (key: string, target: RouteTarget) => RouteProvider | undefined
 }
@@ -103,7 +105,7 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
   const { store } = options
   const everywhere = options.everywhere ?? (() => false)
   const defaultKind = options.defaultKind ?? ((): TunnelKind => 'nym')
-  const credentials = isolationCredentials()
+  const credentials = isolationCredentials(undefined, options.isolationSecret)
   const health = new Map<string, 'ok' | 'down'>()
   const fronts = new Map<string, Promise<RouteFront>>()
   /** The fronts that are listening, which is what a challenge's port can name. */
@@ -179,8 +181,8 @@ export function createRouteHub (options: RouteHubOptions): RouteHub {
     health.delete(origin)
     const state = tunnelStateOf(entry, everywhere(), defaultKind())
     const before = tunnelStateOf(previous, everywhere(), defaultKind())
-    // An entry that says what the default already says changes nothing for the origin.
-    if (state === before) return
+    // An entry that says what the default already says changes nothing for an app, whose session and identity are its own; a website still moves, from the shared session to its tunnel's profile or back.
+    if (state === before && (isApp(origin) || profileOf(entry) === profileOf(previous))) return
     const now = state !== 'off'
     // Off, or the other tunnel: the front it had is let go, so the new one signs in afresh.
     stopFront(origin)

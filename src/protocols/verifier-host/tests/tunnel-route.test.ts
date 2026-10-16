@@ -218,7 +218,7 @@ describe('the IPFS node for a tunnel-profile website', () => {
   }
 
   it('serves the website from the node when the nodes may serve such a website, reading the node on loopback and nothing through the tunnel', async () => {
-    const { host, spied } = await started({ tunnelSitesReadNodes: true })
+    const { host, spied } = await started({ tunnelSitesReadNodes: { nym: true } })
     const page = tunnelGet(host.port)
     await vi.waitFor(() => { expect(spied.posted).toContainEqual({ type: 'node-wanted', node: 'ipfs-node' }) })
     host.node({ type: 'node', node: 'ipfs-node', state: 'ready' })
@@ -226,6 +226,15 @@ describe('the IPFS node for a tunnel-profile website', () => {
     expect(spied.direct.length).toBeGreaterThan(0)
     expect(spied.direct.every((url) => url.startsWith(`${NODE}/`))).toBe(true)
     expect(spied.routed).toEqual([])
+  })
+
+  it('never asks the node for a website on a tunnel the nodes do not use, though they serve the other tunnel\'s', async () => {
+    const { host, spied } = await started({ tunnelSitesReadNodes: { socks5: true } })
+    const answer = await tunnelGet(host.port, DOCUMENT)
+    expect(answer.status).toBe(502)
+    expect(answer.body).toContain(IPFS_NOT_TUNNELLED.replaceAll('"', '&#34;'))
+    expect(spied.posted).not.toContainEqual({ type: 'node-wanted', node: 'ipfs-node' })
+    expect(spied.direct).toEqual([])
   })
 
   it('never asks the node, and reads no gateway, when the nodes run outside a tunnel they were asked to follow; it offers the gateways instead', async () => {

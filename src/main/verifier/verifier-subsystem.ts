@@ -101,7 +101,7 @@ export function tunnelDefaultChanged (): void {
 
 /** Lets the person's setting, and not only the environment, switch the light client off. Read each time the host builds its config and each time a view is drawn, so a change reaches the next start; `lightClientSettingChanged` makes that next start now. */
 export function configureVerifier (options: { lightClientEnabled: () => boolean, windows: () => readonly TabsOfWindow[], servedFromCache: (origin: string) => boolean, ipfsSource?: () => 'node' | 'gateways', ipfsLookupService?: () => boolean, swarmNodeEnabled?: () => boolean, nodesFollowTunnel?: () => boolean }): void {
-  if (options.nodesFollowTunnel !== undefined) configureNodeRoute({ followTunnel: options.nodesFollowTunnel })
+  if (options.nodesFollowTunnel !== undefined) configureNodeRoute({ followTunnel: options.nodesFollowTunnel, nodesTunnel: () => routesOf()?.defaultKind() ?? 'nym' })
   if (options.ipfsSource !== undefined) ipfsSourceChoice = options.ipfsSource
   if (options.ipfsLookupService !== undefined) ipfsLookupServiceChoice = options.ipfsLookupService
   configureIpfsNode({ lookupService: () => ipfsLookupServiceChoice(), readFromNode: () => ipfsSourceChoice() === 'node' })
@@ -250,7 +250,7 @@ async function hostConfig (): Promise<HostConfig> {
     ipnsSequences: stored.ipnsSequences(),
     swarmEndpoints: swarmEndpoints(seam),
     ...(seam === undefined && { swarmNode: true }),
-    ...(nodesMayServeTunnelSites() && { tunnelSitesReadNodes: true }), ...(nodesRunThroughTunnel() && { nodesRouted: true }), ...(await ethereumOutsideTunnel(front !== undefined) && { ethereumOutside: true }),
+    tunnelSitesReadNodes: { nym: nodesMayServeTunnelSites('nym'), socks5: nodesMayServeTunnelSites('socks5') }, ...(nodesRunThroughTunnel() && { nodesRouted: true }), ...(await ethereumOutsideTunnel(front !== undefined) && { ethereumOutside: true }),
     ...(ipfsFromNode(seam) && { ipfsNode: { endpoint: ipfsNodeEndpoint(), partitionSalt: stored.partitionSalt(), lookupService: ipfsLookupServiceChoice(), ...(seam?.ipfsNode?.retryWaitMs !== undefined && { retryWaitMs: seam.ipfsNode.retryWaitMs }) } }),
     swarmFeedIndexes: stored.swarmFeedIndexes(),
     ...(seam === undefined ? {} : { fixtures: seam.fixtures })

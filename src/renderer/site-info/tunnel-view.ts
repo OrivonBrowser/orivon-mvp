@@ -1,4 +1,4 @@
-import type { SiteInfo, SiteTunnel, SiteTunnelKind } from '../../main/permissions/site-info.js'
+import type { SiteInfo, SiteTunnel, SiteTunnelKind, SiteTunnelProfile } from '../../main/permissions/site-info.js'
 import { createSwitch } from './switch.js'
 import { tunnelIcon } from './icons.js'
 import { ADDRESS_PROBLEM } from './tunnels-model.js'
@@ -13,9 +13,12 @@ export const TUNNEL_PAGE_TITLE = 'Tunnels'
 
 export const SWARM_HINT = 'Swarm content loads only from the Swarm node Orivon runs on this computer, which cannot go through your tunnel, so this address does not open while the tunnel is on for it.'
 
+/** What a profile is called to the person: Nym's keeps the name it has always had. */
+const PROFILE_WORDS: Readonly<Record<SiteTunnelProfile, string>> = { nym: 'tunnel', socks5: 'proxy', direct: 'direct' }
+
 /** Shown before a website first moves into a profile: Confirm makes the change, Cancel leaves everything as it was. */
-export function storageNotice (profile: 'tunnel' | 'direct'): string {
-  return `This site moves to your ${profile} profile. You'll sign in to it again once, and what it stores stays apart from your normal browsing.`
+export function storageNotice (profile: SiteTunnelProfile): string {
+  return `This site moves to your ${PROFILE_WORDS[profile]} profile. You'll sign in to it again once, and what it stores stays apart from your normal browsing.`
 }
 
 /** Why the switch is fixed, or what it leaves outside the tunnel; one sentence, or undefined when there is nothing to add. */
@@ -30,10 +33,10 @@ export function tunnelHint (tunnel: SiteTunnel): string | undefined {
  * give them is said here: a side panel and a keyboard shortcut work in the normal browsing only, each profile keeps the settings
  * of its own copy, and the direct profile's copies run only while one of its sites is open.
  */
-export function extensionsHint (names: readonly string[], profile: 'tunnel' | 'direct' | undefined): string | undefined {
+export function extensionsHint (names: readonly string[], profile: SiteTunnelProfile | undefined): string | undefined {
   if (profile === undefined || names.length === 0) return undefined
   const when = profile === 'direct' ? ' They run only while a site of this profile is open.' : ''
-  return `Your extensions run in the ${profile} profile too: ${names.join(', ')}.${when} Each profile keeps its own settings for them, and their side panels and keyboard shortcuts work only in your normal browsing.`
+  return `Your extensions run in the ${PROFILE_WORDS[profile]} profile too: ${names.join(', ')}.${when} Each profile keeps its own settings for them, and their side panels and keyboard shortcuts work only in your normal browsing.`
 }
 
 export const TUNNEL_FAILED = 'The tunnel could not be changed for this site.'
@@ -60,7 +63,7 @@ export interface TunnelCallbacks {
 
 export interface TunnelViewState {
   /** The notice is open, about this profile: the person moved a switch and has not yet confirmed. */
-  readonly notice: 'tunnel' | 'direct' | null
+  readonly notice: SiteTunnelProfile | null
   /** The tunnel the switches were moved to while the notice is open (null: none), undefined while it is not. */
   readonly pending: SiteTunnelKind | null | undefined
   /** The last change did not take. */

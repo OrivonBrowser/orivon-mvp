@@ -47,7 +47,7 @@ describe('the switches', () => {
   })
 
   it('asks the storage question first for a first move into a profile, applies nothing until Confirm, and nothing at all on Cancel', async () => {
-    const { bridge, flush } = setup(infoWith({ notices: { socks5: 'tunnel' } }))
+    const { bridge, flush } = setup(infoWith({ notices: { socks5: 'socks5' } }))
     callbacks.onToggle('socks5', true)
     await flush()
     expect(bridge.setTunnel).not.toHaveBeenCalled()
@@ -63,7 +63,7 @@ describe('the switches', () => {
   })
 
   it('does nothing to a site when the switches are moved back to where they were while the question is open', async () => {
-    const { bridge, flush } = setup(infoWith({ notices: { socks5: 'tunnel' } }))
+    const { bridge, flush } = setup(infoWith({ notices: { socks5: 'socks5' } }))
     callbacks.onToggle('socks5', true)
     callbacks.onToggle('socks5', false)
     await flush()

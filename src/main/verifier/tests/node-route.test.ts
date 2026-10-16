@@ -27,9 +27,19 @@ describe('where the local nodes leave', () => {
       setOwnRequests(routes(everywhere))
       configureNodeRoute({ followTunnel: () => follow })
       expect(nodesRunThroughTunnel()).toBe(through)
-      expect(nodesMayServeTunnelSites()).toBe(tunnelSites)
+      expect(nodesMayServeTunnelSites('nym')).toBe(tunnelSites)
     })
   }
+
+  it('serves only the websites of the tunnel the nodes run through, when they run through one', () => {
+    setOwnRequests(routes(true))
+    configureNodeRoute({ followTunnel: () => true, nodesTunnel: () => 'socks5' })
+    expect(nodesMayServeTunnelSites('socks5')).toBe(true)
+    expect(nodesMayServeTunnelSites('nym')).toBe(false)
+    configureNodeRoute({ followTunnel: () => false, nodesTunnel: () => 'socks5' })
+    expect(nodesMayServeTunnelSites('nym'), 'direct nodes the person accepted serve both').toBe(true)
+    expect(nodesMayServeTunnelSites('socks5')).toBe(true)
+  })
 
   it('runs direct until the setting is read, whatever the tunnel does', () => {
     setOwnRequests(routes(true))

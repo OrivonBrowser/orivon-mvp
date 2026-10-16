@@ -2,13 +2,17 @@ import { describe, expect, it } from 'vitest'
 import type { SiteTunnel } from '../../main/permissions/site-info.js'
 import { extensionsHint, storageNotice, SWARM_HINT, tunnelHint } from '../site-info/tunnel-view.js'
 
-const base: SiteTunnel = { via: null, following: true, subject: 'site', blocked: {}, notices: { nym: 'tunnel' }, swarm: false, unreadable: false, defaultKind: 'nym', proxy: { address: '', users: { sites: 0, apps: 0, everything: false } } }
+const base: SiteTunnel = { via: null, following: true, subject: 'site', blocked: {}, notices: { nym: 'nym' }, swarm: false, unreadable: false, defaultKind: 'nym', proxy: { address: '', users: { sites: 0, apps: 0, everything: false } } }
 
 // The DOM is covered by the end-to-end spec that switches a website on; these are the words.
 
 describe('the notice before a website moves into a profile', () => {
-  it('names the tunnel profile, in these words', () => {
-    expect(storageNotice('tunnel')).toBe('This site moves to your tunnel profile. You\'ll sign in to it again once, and what it stores stays apart from your normal browsing.')
+  it('names Nym\'s profile as the tunnel profile, in these words', () => {
+    expect(storageNotice('nym')).toBe('This site moves to your tunnel profile. You\'ll sign in to it again once, and what it stores stays apart from your normal browsing.')
+  })
+
+  it('names the proxy\'s profile as the proxy profile', () => {
+    expect(storageNotice('socks5')).toBe('This site moves to your proxy profile. You\'ll sign in to it again once, and what it stores stays apart from your normal browsing.')
   })
 
   it('names the direct profile the same way', () => {
@@ -39,13 +43,13 @@ describe('the hint under the tunnel switch', () => {
 
 describe('the extensions a website in a profile keeps', () => {
   it('names them and says what stays with normal browsing', () => {
-    expect(extensionsHint(['uBlock Origin', 'Dark Reader'], 'tunnel')).toBe('Your extensions run in the tunnel profile too: uBlock Origin, Dark Reader. Each profile keeps its own settings for them, and their side panels and keyboard shortcuts work only in your normal browsing.')
+    expect(extensionsHint(['uBlock Origin', 'Dark Reader'], 'nym')).toBe('Your extensions run in the tunnel profile too: uBlock Origin, Dark Reader. Each profile keeps its own settings for them, and their side panels and keyboard shortcuts work only in your normal browsing.')
     expect(extensionsHint(['uBlock Origin'], 'direct')).toBe('Your extensions run in the direct profile too: uBlock Origin. They run only while a site of this profile is open. Each profile keeps its own settings for them, and their side panels and keyboard shortcuts work only in your normal browsing.')
     expect(extensionsHint(['Dark Reader'], 'direct')).toContain('direct profile')
   })
 
   it('says nothing when no extension reaches the site or the website is not in a profile', () => {
-    expect(extensionsHint([], 'tunnel')).toBeUndefined()
+    expect(extensionsHint([], 'nym')).toBeUndefined()
     expect(extensionsHint(['Dark Reader'], undefined)).toBeUndefined()
   })
 })

@@ -1,5 +1,5 @@
 import type { ProxyAddressResult, TunnelResult } from '../../main/ipc/site-info-ipc.js'
-import type { SiteInfo, SiteTunnelKind } from '../../main/permissions/site-info.js'
+import type { SiteInfo, SiteTunnelKind, SiteTunnelProfile } from '../../main/permissions/site-info.js'
 import { resultOf } from '../pages/shared/proxy-words.js'
 import type { ProxyTestResult } from '../pages/shared/proxy-words.js'
 import { renderTunnelsPage } from './tunnel-view.js'
@@ -32,7 +32,7 @@ interface Editor { text: string, error: string | null, confirm: boolean, /** Sav
 
 export function createTunnelsPage (deps: TunnelsPageDeps): TunnelsPage {
   /** The notice before a website first moves into a profile is open: which profile, and the tunnel (or none) the switches were moved to. */
-  let notice: { readonly profile: 'tunnel' | 'direct', readonly choice: SiteTunnelKind | null } | null = null
+  let notice: { readonly profile: SiteTunnelProfile, readonly choice: SiteTunnelKind | null } | null = null
   let failed = false
   let editor: Editor | null = null
   let test: { kind: SiteTunnelKind, busy: boolean, result: ProxyTestResult | null } | null = null

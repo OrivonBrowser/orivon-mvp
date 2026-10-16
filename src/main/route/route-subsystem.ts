@@ -16,7 +16,7 @@ import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isPersistableOrigin } from '../../broker/policy/origin.js'
 import { setLeavingRoutes } from './leaving-routes.js'
 import { answerRouteChallenge, lookupSessionFor, setDirectLookupSource, setLookupSessionSource, setRouteChallengeSource } from './lookup-session.js'
-import { hasOwnProxy, markOwnProxy } from './own-proxy.js'
+import { followsSystem, hasOwnProxy, markFollowsSystem, markOwnProxy } from './own-proxy.js'
 import { migrateRouteKinds, moveNymProfileToProxy } from './kinds-migration.js'
 import { migrateLegacySites } from './legacy-sites.js'
 import { setOwnRequests } from './own-requests.js'
@@ -37,6 +37,7 @@ import { createRouteService } from './route-service.js'
 import { SHARED_ORIGIN } from './route-hub.js'
 import { tunnelDefaultChanged } from '../verifier/verifier-subsystem.js'
 import { RouteStore } from './route-store.js'
+import { profileIsolationSecret } from './isolation-secret.js'
 import { startDeadEnd } from './dead-end.js'
 import type { DeadEnd } from './dead-end.js'
 
@@ -66,8 +67,10 @@ export const routeSubsystem: Subsystem = {
     const store = new RouteStore(ctx.privateSession ? null : join(userData, 'routes.json'), { ...(heldToNym ? { onlyKind: 'nym' as const } : {}), legacyKind: savedKind })
     // Before any session is made: the folder a session opens is moved first, and the choice is not guessed when the settings cannot be read.
     migrateRouteKinds(store, () => moveNymProfileToProxy(userData), settingsFileProblem(join(userData, 'settings.json')) === undefined)
+    const isolationSecret = profileIsolationSecret(userData)
     const routes = createRouteService({
       store,
+      isolationSecret,
       savedProxy: readSettingBeforeReady(join(userData, 'settings.json'), 'network.route.proxy'),
       // A settings file that cannot be used counts as the whole browser being on the tunnel (Settings says why).
       savedEverywhere: heldToNym || everywhereBeforeReady(join(userData, 'settings.json')),
@@ -90,6 +93,7 @@ export const routeSubsystem: Subsystem = {
         sharedBypass: () => BUILTIN_ADDRESSES.routedSuffixes().map((suffix) => `*.${suffix}`).join(';'),
         setAppProxy: async (config) => { await app.setProxy(config) },
         ownProxy: hasOwnProxy,
+        followsSystem,
         deadEnd: deadEndRule,
         embedPartition: embedPartitionFor,
         allContents: () => webContents.getAllWebContents(),
@@ -119,6 +123,7 @@ export const routeSubsystem: Subsystem = {
       if (systemSession === undefined) {
         systemSession = session.fromPartition('orivon-system-proxy')
         markOwnProxy(systemSession)
+        markFollowsSystem(systemSession)
         systemSession.setProxy({ mode: 'system' }).catch((error: unknown) => { console.error('[route] could not put the system-proxy session on the system\'s proxy:', error) })
       }
       return systemSession
@@ -202,6 +207,7 @@ export const routeSubsystem: Subsystem = {
     setRouteChallengeSource(routes.controller.challengeCredentials)
     beforeAppSessionServes(async (appSession, origin) => { await routes.controller.appSessionRegistered(origin, appSession) })
     const temporary = createTemporaryRoutes({
+      isolationSecret,
       controller: routes.controller,
       targetOf: routes.targetOf,
       providerFor: routes.providerFor,

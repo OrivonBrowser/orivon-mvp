@@ -46,6 +46,8 @@ export interface TunnelLookFacts extends TunnelFacts {
  * its own origin says nothing about it.
  */
 export function tunnelLookFor ({ state, temporary, own, session }: TunnelLookFacts): TunnelLook {
+  // A tunnelled origin whose page runs in a session pointed at no tunnel is sent direct whatever the origin picked: it is not on its tunnel (yet).
+  if (!temporary && own !== undefined && session === undefined) return { mark: 'down', via: own }
   const inSession = session === undefined || session === 'held' ? undefined : session
   const opened = inSession !== undefined && inSession !== own
   const mark = tunnelMarkFor({ state: opened && !temporary ? 'idle' : state, temporary })

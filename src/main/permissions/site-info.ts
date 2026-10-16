@@ -60,7 +60,7 @@ export interface SiteUpdate {
 }
 
 /** What a routed app's route is doing, as the popover says it. An app that is not routed has none. `temporary` is a website opened through the proxy from a routed app: its session holds nothing past its last tab. */
-export type SiteRoute = 'idle' | 'ok' | 'down' | 'no-proxy' | 'temporary'
+export type SiteRoute = 'idle' | 'ok' | 'down' | 'no-proxy' | 'temporary' | 'moving'
 
 /** A tunnel a website or an installed app can be sent through. */
 export type SiteTunnelKind = 'nym' | 'socks5'
@@ -72,6 +72,9 @@ export type SiteTunnelKind = 'nym' | 'socks5'
  * open while a tunnel is on for it; `unreadable` that the list of tunnel settings could not be read, so every site is on and the
  * choice is fixed.
  */
+/** A profile a website lives in: Nym's, the person's proxy's, or the direct one. */
+export type SiteTunnelProfile = SiteTunnelKind | 'direct'
+
 export interface SiteTunnel {
   readonly via: SiteTunnelKind | null
   readonly following: boolean
@@ -79,11 +82,11 @@ export interface SiteTunnel {
   /** Why each tunnel cannot be chosen now (a tunnel can always be given up). */
   readonly blocked: Readonly<Partial<Record<SiteTunnelKind, 'no-proxy' | 'nym-off' | 'not-kept'>>>
   /** The profile each choice would move a website into for the first time, so the person is told first. `off` is the choice of no tunnel. Never set for an app. */
-  readonly notices: Readonly<Partial<Record<SiteTunnelKind | 'off', 'tunnel' | 'direct'>>>
+  readonly notices: Readonly<Partial<Record<SiteTunnelKind | 'off', SiteTunnelProfile>>>
   readonly swarm: boolean
   readonly unreadable: boolean
   /** The profile the website lives in now, when its entry puts it in one. */
-  readonly profile?: 'tunnel' | 'direct'
+  readonly profile?: SiteTunnelProfile
   /** The tunnel everything without a choice of its own goes through. */
   readonly defaultKind: SiteTunnelKind
   /** The person's own proxy: the address saved ('' when none), and what goes through it now, so a change of address can say who it moves. */
