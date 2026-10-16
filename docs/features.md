@@ -61,7 +61,7 @@ rely on, row by row. A new feature adds its line here when it lands.
 - **Downloads**: a list, pause, resume and retry, and a hold on files that run code.
 - **Import** of bookmarks and history from Chrome, Chromium, Edge, Brave and Firefox.
 - **Passwords**: a local store encrypted by the system keyring, with save, fill, a generator and CSV import and export.
-- **Privacy controls**: third-party cookie blocking, Do Not Track, Global Privacy Control, HTTPS-only, secure DNS, a certificate viewer and Clear browsing data.
+- **Privacy controls**: third-party cookie blocking, Do Not Track, Global Privacy Control, HTTPS-only, secure DNS (on by default: Quad9, with this computer's DNS as the fallback), a certificate viewer and Clear browsing data.
 - **Per-site permissions**: prompts for camera, microphone, location, clipboard and more; a popover, a Settings page, a pop-up blocker, and per-site JavaScript, images, sound and downloads.
 - **A switch for everything an app may do**: under Settings, Apps, each installed app has a card with one row per capability it declares, the same rows and words as the key popup, each with a switch that applies at once. Switching one off is remembered, so the app stays on the list to be switched on again; picked files, approved devices and chosen link kinds are switches that are on, and switching one off takes it away. Extra access given to an extension is a switch the same way.
 - **Available networks**: the toolbar button opens a card for each node Orivon runs on this computer (the Ethereum light client, the IPFS node, the Swarm node and the Nym tunnel), each with its status, a switch that applies at once, what it does for you, and its figures: memory, CPU and uptime, the latest verified block, requests in flight and data read. A dot on the button says how they are. Switch the IPFS node off and ipfs:// pages load through public gateways; switch Swarm or Nym off and what needs them is refused, never sent another way.
@@ -80,5 +80,5 @@ rely on, row by row. A new feature adds its line here when it lands.
 - **Packages for Linux, Windows and macOS** on every GitHub release (deb, AppImage, NSIS installer, dmg for Apple silicon and Intel), also published on IPFS. On macOS a one-line Terminal command installs or updates Orivon with no Gatekeeper warning.
 - **A Microsoft Store package** built with every Windows build and kept for upload to Partner Center (not on the release); a Store install is updated by the Store and looks for no update itself.
 - **winget**: every release's Windows installer is offered to winget-pkgs by the release workflow (`Orivon.Browser`, and `Orivon.Browser.Preview` for a pre-release), once the owner has stored the token and submitted the first version of each.
-- **Update check**: a check for a new release that links to its page.
+- **Update check**: once a day, on by default (Settings > About turns it off), Orivon asks GitHub whether a newer release exists and links to its page; it installs nothing.
 - **Run from source** on Linux, Windows and macOS with `npm install && npm start`.
