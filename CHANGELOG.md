@@ -24,11 +24,15 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 - **Look for updates is on by default**: Orivon asks GitHub once a day whether a newer release exists, and installs nothing; Settings > About turns it off. A profile made before this follows the new default.
 - **Secure DNS is on by default, with a fallback**: site names are looked up at Quad9 over HTTPS, and this computer's own DNS answers when Quad9 cannot be reached. Settings > Privacy offers Quad9 or Cloudflare alone, Automatic and Off as before. Sites sent through a tunnel are never looked up here.
 - **The "?" marks of the Web3 Score shield are links**: each one, in the site popup's Web3 Score page and in the "Web?" mark of the address bar, opens the Web3 Score guide at `docs.orivonstack.eth` in a new tab.
+- **Each site and app picks its own tunnel**: the tunnel menu lists Nym and your own proxy for any website, Web3 site or installed app, so one can go through Nym while another goes through the proxy. A website asks first before it moves into a tunnel's profile, where you sign in to it once; people who already used their own proxy keep their logins on updating.
+- **Set and test your proxy from the tunnel menu**: an address field, a Test, and a question first when sites or apps already use the address you change.
 
 ### Changed
 
 - **The Nym logo in the tunnel list is Nym's own mark** (the NymVPN app icon: a dark N on a green square).
 - **The welcome screen no longer promises Bitcoin nodes.**
+- **Installed apps choose their tunnel as websites do**: from the tunnel menu, or from the same three choices (Off, Nym, Your proxy) on the app's card in Settings > Apps. Settings > Tunnels gains a default tunnel and a Test for each tunnel.
+- **Each "Unlimited network access" row says what it is for**: connecting to any computer, sending data to any computer (peer-to-peer and calls), or loading anything from any website, so an app that asks for several shows rows that differ.
 
 ## [0.0.6] - 2026-10-15
 
