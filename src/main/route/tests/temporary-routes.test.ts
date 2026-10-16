@@ -18,7 +18,7 @@ function setup (options: { unusedMs?: number, prepare?: () => Promise<void>, ann
       prepareTemporary: async (session, front) => { await options.prepare?.(); prepared.push({ session, port: front.port, username: front.username }) },
       releaseTemporary: (session) => { released.push(session) }
     },
-    proxy: () => ({ host: '127.0.0.1', port: 9050 }),
+    targetOf: () => ({ host: '127.0.0.1', port: 9050 }),
     sessionFor: (partition) => {
       let session = sessions.get(partition)
       if (session === undefined) {
@@ -47,7 +47,7 @@ function setup (options: { unusedMs?: number, prepare?: () => Promise<void>, ann
 describe('a temporary routed session', () => {
   it('is in memory, pointed at a front of its own, and recognised as one of these', async () => {
     const { routes, sessions, prepared } = setup()
-    const partition = await routes.open()
+    const partition = await routes.open('socks5')
     expect(partition.startsWith('persist:')).toBe(false)
     expect(isTemporaryRoutePartition(partition)).toBe(true)
     expect(isTemporaryRoutePartition('persist:app-abc')).toBe(false)
@@ -61,15 +61,15 @@ describe('a temporary routed session', () => {
 
   it('gets a front, and so credentials, that no other temporary session shares', async () => {
     const { routes, prepared } = setup()
-    await routes.open()
-    await routes.open()
+    await routes.open('socks5')
+    await routes.open('socks5')
     expect(prepared).toHaveLength(2)
     expect(prepared[0]?.port).not.toBe(prepared[1]?.port)
   })
 
   it('keeps its storage while a tab uses it and clears all of it when the last tab closes', async () => {
     const { routes, sessions, live, released, closeTab } = setup()
-    const partition = await routes.open()
+    const partition = await routes.open('socks5')
     const session = sessions.get(partition) as TemporarySession & { cleared: string[] }
     live.set(session, 2)
 
@@ -86,14 +86,14 @@ describe('a temporary routed session', () => {
 
   it('is released when no tab ever opens in it', async () => {
     const { routes } = setup({ unusedMs: 20 })
-    await routes.open()
+    await routes.open('socks5')
     expect(routes.count()).toBe(1)
     await vi.waitFor(() => { expect(routes.count()).toBe(0) })
   })
 
   it('is released, and the failure passed on, when it cannot be pointed at its front', async () => {
     const { routes } = setup({ prepare: async () => { throw new Error('no session') } })
-    await expect(routes.open()).rejects.toThrow('no session')
+    await expect(routes.open('socks5')).rejects.toThrow('no session')
     expect(routes.count()).toBe(0)
   })
 })
@@ -102,7 +102,7 @@ describe('the website controls on a temporary session', () => {
   it('announces the session as a website session before it is pointed at its front', async () => {
     const order: string[] = []
     const { routes, sessions, announced } = setup({ announce: () => { order.push('announce') }, prepare: async () => { order.push('prepare') } })
-    const partition = await routes.open()
+    const partition = await routes.open('socks5')
     expect(announced).toEqual([sessions.get(partition)])
     expect(order).toEqual(['announce', 'prepare'])
   })
@@ -110,7 +110,7 @@ describe('the website controls on a temporary session', () => {
   it('refuses the tab, and releases the session unpointed, when a website control could not be installed', async () => {
     const prepared = vi.fn(async () => {})
     const { routes, sessions, announced } = setup({ announce: () => { throw new Error('a guard is missing') }, prepare: prepared })
-    await expect(routes.open()).rejects.toThrow('a guard is missing')
+    await expect(routes.open('socks5')).rejects.toThrow('a guard is missing')
     expect(prepared).not.toHaveBeenCalled()
     expect(announced).toEqual([])
     expect(routes.count()).toBe(0)

@@ -41,8 +41,8 @@ export async function chooseLeave (contents: WebContents, leave: Leave): Promise
     if (answer === 'direct') return { kind: 'direct' }
     // A page Orivon loads itself has no proxy button, so nothing else can come back for it.
     if (leave.kind === 'served') return { kind: 'cancel' }
-    if (leave.kind === 'app') return await routeAppToo(leave.origin) ? { kind: 'app' } : { kind: 'cancel' }
-    return { kind: 'website', partition: await openTemporaryRoute() }
+    if (leave.kind === 'app') return await routeAppToo(leave.origin, leave.app) ? { kind: 'app' } : { kind: 'cancel' }
+    return { kind: 'website', partition: await openTemporaryRoute(leave.app) }
   } catch (error) {
     console.error('[route] could not make ready what the person chose:', error)
     return { kind: 'cancel' }

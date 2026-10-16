@@ -49,7 +49,7 @@ describe('repartitionForTarget onto a page the person opened through their proxy
     setLeavingRoutes({
       world: { isRouted: () => true, isInstalledApp: () => false, routedOriginOf: () => undefined, servedOrigin: () => undefined },
       temporary: { open: async () => partition, owns: () => true, isLive: (name) => name === partition },
-      routeSwitch: { blockedFor: () => undefined, set: async () => {} }
+      routeSwitch: { blockedFor: () => undefined, choose: async () => {} }, kindOf: () => undefined, defaultKind: () => 'nym'
     })
   }
   afterEach(() => { setLeavingRoutes(undefined) })

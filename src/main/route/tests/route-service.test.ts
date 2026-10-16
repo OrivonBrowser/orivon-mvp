@@ -10,6 +10,7 @@ import type { NymSubsystem } from '../nym-subsystem.js'
 import type { NymPrivacy } from '../../../protocols/nym-tunnel/protocol.js'
 import { RouteStore } from '../route-store.js'
 
+const OTHER_APP = 'https://other-app.example'
 const APP = 'https://one.example'
 
 const FAKE_NYM: NymSubsystem = { ensure: async () => ({ port: 1, secret: 's' }), endpoint: () => undefined, state: () => ({ state: 'off' }), onChange: () => () => {}, test: async () => ({ ok: true, ms: 1 }), tunnels: () => ({ connecting: 0, ready: 0 }), processInfo: () => undefined, setEnabled: () => {}, setPrivacy: () => {}, stop: () => {} }
@@ -60,7 +61,7 @@ describe('the route service', () => {
 
   it('follows the settings, and tells a routed app\'s listeners when the proxy changes', () => {
     const routes = service('127.0.0.1:9050')
-    routes.store.setEntry(APP, 'nym')
+    routes.store.setEntry(APP, 'socks5')
     const settings = settingsWith('127.0.0.1:9050')
     const heard = vi.fn()
     routes.hub.onChange(heard)
@@ -149,9 +150,10 @@ describe('the route service', () => {
     expect(routes.providerFor('https://one.example', { host: '127.0.0.1', port: 9050 })).toBeUndefined()
   })
 
-  it('tells a routed app\'s listeners when the choice moves between Nym and the address, and not when an address is typed under Nym', () => {
+  it('leaves an origin with a tunnel of its own where it is when the default moves, and tells only the origins on the proxy when its address changes', () => {
     const routes = service('127.0.0.1:9050', 'socks5')
-    routes.store.setEntry(APP, 'nym')
+    routes.store.setEntry(APP, 'socks5')
+    routes.store.setEntry(OTHER_APP, 'nym')
     const settings = settingsWith('127.0.0.1:9050', 'socks5')
     const heard = vi.fn()
     routes.hub.onChange(heard)
@@ -159,15 +161,17 @@ describe('the route service', () => {
 
     settings.setKind('nym')
     expect(routes.proxy()).toBe(NYM_TARGET)
-    expect(heard).toHaveBeenCalledTimes(1)
-    expect(heard).toHaveBeenLastCalledWith(APP, true, 'proxy')
+    expect(routes.defaultKind()).toBe('nym')
+    expect(heard, 'each origin keeps the tunnel it picked').not.toHaveBeenCalled()
+    expect(routes.hub.kindOf(APP)).toBe('socks5')
+    expect(routes.hub.kindOf(OTHER_APP)).toBe('nym')
 
     settings.set('127.0.0.1:9150')
-    expect(heard).toHaveBeenCalledTimes(1)
+    expect(routes.targetOf('socks5')).toEqual({ host: '127.0.0.1', port: 9150 })
+    expect(heard.mock.calls, 'only the origin on the proxy hears of its address').toEqual([[APP, true, 'proxy']])
 
     settings.setKind('socks5')
     expect(routes.proxy()).toEqual({ host: '127.0.0.1', port: 9150 })
-    expect(heard).toHaveBeenCalledTimes(2)
   })
 
   it('hands the person\'s Nym switch to Nym when the settings are followed, and again when it changes', () => {

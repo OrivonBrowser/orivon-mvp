@@ -1,5 +1,5 @@
-// A website a routed app's page opens "through my tunnel" runs in a session made for it: in memory, behind a front of its
-// own that signs in to the proxy with credentials of its own (so Tor gives it circuits apart from the app's), and gone
+// A website a routed app's page opens "through my tunnel" runs in a session made for it, behind the tunnel the page's own origin
+// goes through: in memory, behind a front of its own that signs in to the tunnel with credentials of its own (so Tor gives it circuits apart from the app's), and gone
 // with the last tab that used it. Electron-free over the parts it drives.
 
 import { randomBytes } from 'node:crypto'
@@ -11,6 +11,7 @@ import { originFromUrl } from '../../broker/policy/origin.js'
 import { startRouteFront } from './front.js'
 import type { RouteFront } from './front.js'
 import type { RouteController, RouteSession } from './route-controller.js'
+import type { TunnelKind } from './route-state.js'
 
 /** A name no `persist:` prefix is on, so Electron keeps the session in memory. */
 const PREFIX = 'orivon-route-tab-'
@@ -43,8 +44,8 @@ export type TemporarySession = RouteSession & {
 
 export interface TemporaryRoutesDeps {
   readonly controller: Pick<RouteController, 'prepareTemporary' | 'releaseTemporary'>
-  /** The proxy now, read on every connection. */
-  readonly proxy: () => RouteTarget | undefined
+  /** Where traffic of the tunnel `kind` leaves now, read on every connection. */
+  readonly targetOf: (kind: TunnelKind) => RouteTarget | undefined
   /** The provider for a proxy that is not a SOCKS5 address (Nym), or undefined for the SOCKS5 one. */
   readonly providerFor?: (key: string, target: RouteTarget) => RouteProvider | undefined
   readonly sessionFor: (partition: string) => TemporarySession
@@ -59,8 +60,8 @@ export interface TemporaryRoutesDeps {
 }
 
 export interface TemporaryRoutes {
-  /** A new session pointed at a front of its own: the partition name a tab is made in. */
-  open: () => Promise<string>
+  /** A new session pointed at a front of its own that leaves by the tunnel `kind`: the partition name a tab is made in. */
+  open: (kind: TunnelKind) => Promise<string>
   /** Whether `session` is one of these. */
   owns: (session: object | undefined) => boolean
   /** Whether the session named `partition` is alive: a tab made in a released one would get a bare session, which is not routed. */
@@ -102,11 +103,11 @@ export function createTemporaryRoutes (deps: TemporaryRoutesDeps): TemporaryRout
   })
 
   return {
-    open: async () => {
+    open: async (kind) => {
       const partition = `${PREFIX}${randomBytes(9).toString('hex')}`
       const key = `temporary-tab:${partition}`
       const routeFor = createRouteFor({
-        targetFor: () => deps.proxy(),
+        targetFor: () => deps.targetOf(kind),
         providerFor: (_key, target) => deps.providerFor?.(key, target) ?? createSocks5Provider({ host: target.host, port: target.port, credentials: credentials(key) })
       })
       const session = deps.sessionFor(partition)
@@ -116,7 +117,7 @@ export function createTemporaryRoutes (deps: TemporaryRoutesDeps): TemporaryRout
       try {
         // Before the session is pointed at its front: a request made in it never runs without the website controls.
         deps.announce(session)
-        await deps.controller.prepareTemporary(session, front)
+        await deps.controller.prepareTemporary(session, front, kind)
       } catch (error) {
         await release(partition)
         throw error

@@ -40,9 +40,9 @@ interface SetupOptions { routed?: readonly string[], callTimeoutMs?: number, isA
 function setup (options: SetupOptions | readonly string[] = {}) {
   const { routed = [], callTimeoutMs, isApp, everywhere: startEverywhere = false, extra = {} } = Array.isArray(options) ? { routed: options as readonly string[] } as SetupOptions : options as SetupOptions
   const store = new RouteStore(null)
-  for (const origin of routed) store.setEntry(origin, 'nym')
+  for (const origin of routed) store.setEntry(origin, 'socks5')
   let everywhere = startEverywhere
-  const hub = createRouteHub({ store, proxy: () => ({ host: '127.0.0.1', port: 9050 }), everywhere: () => everywhere, ...(isApp === undefined ? {} : { isApp }), providerFor: () => ({ connect: async () => { throw new Error('unused') } }) })
+  const hub = createRouteHub({ store, targetOf: () => ({ host: '127.0.0.1', port: 9050 }), defaultKind: () => 'socks5', everywhere: () => everywhere, ...(isApp === undefined ? {} : { isApp }), providerFor: () => ({ connect: async () => { throw new Error('unused') } }) })
   hubs.push(hub)
   const log: string[] = []
   const sessions = new Map<string, FakeSession>()
@@ -169,7 +169,7 @@ describe('switching a route on', () => {
     page(sessionFor(`embed:${APP}`))
     log.length = 0
 
-    store.setEntry(APP, 'nym')
+    store.setEntry(APP, 'socks5')
     await controller.settled()
 
     expect([...new Set(log.filter((entry) => entry.endsWith('.setProxy')))].sort()).toEqual(['app.setProxy', `embed:${APP}.setProxy`])
@@ -191,7 +191,7 @@ describe('switching a route on', () => {
     page(sessionFor(`embed:${APP}`))
     page(sessionFor('somewhere else'))
 
-    store.setEntry(APP, 'nym')
+    store.setEntry(APP, 'socks5')
     await controller.settled()
 
     expect(reloaded.sort()).toEqual(['app', 'app', 'child-host', `embed:${APP}`])
@@ -204,7 +204,7 @@ describe('switching a route on', () => {
     ;(tools as { getType: () => string }).getType = () => 'remote'
     contents.push(tools)
 
-    store.setEntry(APP, 'nym')
+    store.setEntry(APP, 'socks5')
     await controller.settled()
 
     expect(reloaded).toEqual([])
@@ -218,7 +218,7 @@ describe('switching a route on', () => {
     const elsewhere = fakeContents(sessionFor('somewhere else'))
     contents.push(inApp, inEmbed, elsewhere)
 
-    store.setEntry(APP, 'nym')
+    store.setEntry(APP, 'socks5')
     await controller.settled()
 
     expect(inApp.policy).toEqual(['disable_non_proxied_udp'])
@@ -243,11 +243,11 @@ describe('switching a route on', () => {
 describe('switching a route off', () => {
   it('returns the sessions to the system\'s proxy, closes connections and handles, reloads, and restores the policy it set', async () => {
     const { store, controller, sessionFor, page: pageIn, dropped, reloaded } = setup()
-    store.setEntry(APP, 'nym')
+    store.setEntry(APP, 'socks5')
     await controller.appSessionRegistered(APP, sessionFor('app'))
     const page = pageIn(sessionFor('app'))
     store.setEntry(APP, undefined)
-    store.setEntry(APP, 'nym')
+    store.setEntry(APP, 'socks5')
     await controller.settled()
     dropped.length = 0
     reloaded.length = 0
@@ -267,7 +267,7 @@ describe('switching a route off', () => {
     contents.push(host)
     await controller.prepare(APP, hostSession, { webrtc: false })
 
-    store.setEntry(APP, 'nym')
+    store.setEntry(APP, 'socks5')
     await controller.settled()
     store.setEntry(APP, undefined)
     await controller.settled()
@@ -286,7 +286,7 @@ describe('a session that cannot be pointed at the front', () => {
     broken.setProxy = async (config) => { if (!refused && config.proxyRules !== 'http://127.0.0.1:9') { refused = true; throw new Error('no proxy for you') } await original(config) }
     await controller.appSessionRegistered(APP, broken)
 
-    store.setEntry(APP, 'nym')
+    store.setEntry(APP, 'socks5')
     await controller.settled()
 
     expect(broken.proxies.at(-1)).toBe('fixed_servers:http://127.0.0.1:9')
@@ -302,7 +302,7 @@ describe('a session that cannot be pointed at the front', () => {
     let refused = false
     broken.setProxy = async (config) => { if (!refused && config.proxyRules !== 'http://127.0.0.1:9') { refused = true; throw new Error('no proxy for you') } await original(config) }
     await controller.appSessionRegistered(APP, broken)
-    store.setEntry(APP, 'nym')
+    store.setEntry(APP, 'socks5')
     await controller.settled()
 
     store.setEntry(APP, undefined)
@@ -315,7 +315,7 @@ describe('a session that cannot be pointed at the front', () => {
 describe('changing the proxy under a routed app', () => {
   it('closes connections and handles but does not reload the tabs', async () => {
     const { store, hub, controller, sessionFor, page, dropped, reloaded } = setup()
-    store.setEntry(APP, 'nym')
+    store.setEntry(APP, 'socks5')
     await controller.appSessionRegistered(APP, sessionFor('app'))
     page(sessionFor('app'))
     await controller.settled()
@@ -323,7 +323,7 @@ describe('changing the proxy under a routed app', () => {
     reloaded.length = 0
     const closesBefore = sessionFor('app').calls.filter((call) => call === 'close').length
 
-    hub.proxyChanged()
+    hub.addressChanged()
     await controller.settled()
 
     expect(dropped).toEqual([APP])
@@ -350,7 +350,7 @@ describe('what stays off the proxy', () => {
     broken.setProxy = async (config) => { if (!refused && config.proxyRules !== 'http://127.0.0.1:9') { refused = true; throw new Error('no proxy for you') } await original(config) }
     await controller.appSessionRegistered(APP, broken)
 
-    store.setEntry(APP, 'nym')
+    store.setEntry(APP, 'socks5')
     await controller.settled()
 
     expect(broken.proxies.at(-1)).toBe('fixed_servers:http://127.0.0.1:9')
@@ -374,8 +374,8 @@ describe('an app whose handles will not close', () => {
     hangOn.add(APP)
     log.length = 0
 
-    store.setEntry(APP, 'nym')
-    store.setEntry(OTHER, 'nym')
+    store.setEntry(APP, 'socks5')
+    store.setEntry(OTHER, 'socks5')
     await until(() => reloaded.includes('other'))
 
     expect(log.indexOf('app.setProxy')).toBeLessThan(log.indexOf('app.close'))
@@ -395,7 +395,7 @@ describe('a switch-off that could not put a session back', () => {
     const original = session.setProxy
     let refused = 0
     session.setProxy = async (config) => { if (config.mode === 'system' && refused < 1) { refused += 1; throw new Error('not now') } await original(config) }
-    store.setEntry(APP, 'nym')
+    store.setEntry(APP, 'socks5')
     await controller.appSessionRegistered(APP, session)
 
     store.setEntry(APP, undefined)
@@ -410,7 +410,7 @@ describe('a switch-off that could not put a session back', () => {
     const original = session.setProxy
     let broken = true
     session.setProxy = async (config) => { if (config.mode === 'system' && broken) throw new Error('not now'); await original(config) }
-    store.setEntry(APP, 'nym')
+    store.setEntry(APP, 'socks5')
     await controller.appSessionRegistered(APP, session)
     store.setEntry(APP, undefined)
     await controller.settled()
@@ -430,7 +430,7 @@ describe('an app that was forgotten while a session could not be put back', () =
     const original = session.setProxy
     let broken = true
     session.setProxy = async (config) => { if (config.mode === 'system' && broken) throw new Error('not now'); await original(config) }
-    store.setEntry(APP, 'nym')
+    store.setEntry(APP, 'socks5')
     await controller.appSessionRegistered(APP, session)
     store.setEntry(APP, undefined)
     await controller.settled()
@@ -450,7 +450,7 @@ describe('an app that was forgotten while a session could not be put back', () =
     const original = session.setProxy
     let failures = 2
     session.setProxy = async (config) => { if (config.mode === 'system' && failures > 0) { failures -= 1; throw new Error('not now') } await original(config) }
-    store.setEntry(APP, 'nym')
+    store.setEntry(APP, 'socks5')
     await controller.appSessionRegistered(APP, session)
     store.setEntry(APP, undefined)
     await controller.settled()
@@ -464,7 +464,7 @@ describe('an app that was forgotten while a session could not be put back', () =
 describe('an app that was forgotten', () => {
   it('drops the sessions it knew, so switching it on again points only the ones registered anew', async () => {
     const { store, hub, controller, sessionFor } = setup()
-    store.setEntry(APP, 'nym')
+    store.setEntry(APP, 'socks5')
     await controller.appSessionRegistered(APP, sessionFor('app'))
     await controller.settled()
 
@@ -472,7 +472,7 @@ describe('an app that was forgotten', () => {
     controller.forget(APP)
     await controller.settled()
     const before = sessionFor('app').calls.length
-    store.setEntry(APP, 'nym')
+    store.setEntry(APP, 'socks5')
     await controller.settled()
 
     expect(hub.isRouted(APP)).toBe(true)
@@ -542,9 +542,9 @@ describe('a temporary routed session', () => {
     await controller.appSessionRegistered(APP, sessionFor('app'))
     const session = sessionFor('temporary')
 
-    await controller.prepareTemporary(session, front)
+    await controller.prepareTemporary(session, front, 'socks5')
     store.setEntry(APP, undefined)
-    store.setEntry(APP, 'nym')
+    store.setEntry(APP, 'socks5')
     await controller.settled()
 
     expect(session.proxies).toEqual(['fixed_servers:http://127.0.0.1:41001'])
@@ -554,7 +554,7 @@ describe('a temporary routed session', () => {
   it('puts the WebRTC policy on the web contents opened in it, and on no others', async () => {
     const { controller, sessionFor, created } = setup()
     const session = sessionFor('temporary')
-    await controller.prepareTemporary(session, front)
+    await controller.prepareTemporary(session, front, 'socks5')
 
     const inside = fakeContents(session)
     const outside = fakeContents(sessionFor('other'))
@@ -568,7 +568,7 @@ describe('a temporary routed session', () => {
   it('has its front\'s challenge answered until it is released', async () => {
     const { controller, sessionFor, login } = setup()
     const session = sessionFor('temporary')
-    await controller.prepareTemporary(session, front)
+    await controller.prepareTemporary(session, front, 'socks5')
 
     const answered = vi.fn()
     login({ preventDefault: () => {} }, { isProxy: true, host: '127.0.0.1', port: front.port }, answered)
@@ -587,7 +587,7 @@ describe('a website\'s session of its own', () => {
 
   it('is pointed at the website\'s front, with this machine and the verifier\'s names reaching it without the proxy, and no direct fallback', async () => {
     const { hub, controller, sessionFor, store } = setup({ isApp: () => false })
-    store.setEntry(SITE, 'nym')
+    store.setEntry(SITE, 'socks5')
     const session = sessionFor('site')
 
     await controller.prepareSite(SITE, session, VERIFIED)
@@ -600,7 +600,7 @@ describe('a website\'s session of its own', () => {
 
   it('gives web contents in it the WebRTC policy that keeps UDP off the network, while the website is routed', async () => {
     const { controller, sessionFor, store, created, page } = setup({ isApp: () => false })
-    store.setEntry(SITE, 'nym')
+    store.setEntry(SITE, 'socks5')
     const session = sessionFor('site')
     await controller.prepareSite(SITE, session, VERIFIED)
 
@@ -616,7 +616,7 @@ describe('a website\'s session of its own', () => {
     await controller.prepareSite(SITE, session, VERIFIED)
     page(session)
 
-    store.setEntry(SITE, 'nym')
+    store.setEntry(SITE, 'socks5')
     await controller.settled()
 
     expect(requested()).not.toContain(`embed:${SITE}`)
@@ -627,7 +627,7 @@ describe('a website\'s session of its own', () => {
 
   it('goes back to the system\'s proxy when the website\'s tunnel is turned off, keeping the session', async () => {
     const { controller, sessionFor, store } = setup({ isApp: () => false })
-    store.setEntry(SITE, 'nym')
+    store.setEntry(SITE, 'socks5')
     const session = sessionFor('site')
     await controller.prepareSite(SITE, session, VERIFIED)
 
@@ -643,7 +643,7 @@ describe('a website\'s session of its own', () => {
     await controller.prepare(APP, session)
     page(session)
 
-    store.setEntry(APP, 'nym')
+    store.setEntry(APP, 'socks5')
     await controller.settled()
 
     expect(requested()).toContain(`embed:${APP}`)
@@ -769,11 +769,11 @@ describe('the shared identity, while the whole browser is on the tunnel', () => 
 
   it('looks up a website that follows the default through the default session, a tunnel-profile website through its profile, and an app through its own', async () => {
     const { controller, defaultSession, store, sessionFor } = shared(true)
-    store.setEntry('https://profile.example', 'nym')
+    store.setEntry('https://profile.example', 'socks5')
     store.setEntry('https://direct.example', 'off')
 
     expect(await controller.fetchSessionFor('https://plain.example')).toBe(defaultSession)
-    expect(await controller.fetchSessionFor('https://profile.example')).toBe(sessionFor('persist:tunnel-profile'))
+    expect(await controller.fetchSessionFor('https://profile.example')).toBe(sessionFor('persist:proxy-profile'))
     expect(await controller.fetchSessionFor('https://direct.example'), 'an origin set to off is not looked up through the tunnel').toBeUndefined()
     const app = await controller.fetchSessionFor(APP)
     expect(app).not.toBe(defaultSession)

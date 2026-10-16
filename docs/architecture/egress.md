@@ -33,9 +33,10 @@ session. A row may not name a file that is gone or that the scan no longer match
 - **Not routed.** Goes direct, or through whatever proxy the system gives the default session. An unrouted app
   or a website keeps this too.
 
-A routed origin is an installed app the person switched on in its card, a website with an `on` entry (it lives in the
-tunnel profile), or, while the whole browser is on the tunnel, any app or website with no entry of its own
-([`ADR-0082`](../decisions/ADR-0082-a-websites-tunnel-state-is-kept-per-origin-and-a-website-that-differs-from-the-default-has-storage-of-its-own.md),
+A routed origin is an installed app or a website whose entry is a tunnel (Nym, or the person's proxy; a website lives in
+that tunnel's profile), or, while the whole browser is on a tunnel, any app or website with no entry of its own, which goes
+through the tunnel chosen in Settings ([`ADR-0089`](../decisions/ADR-0089-each-website-and-app-picks-its-own-tunnel-and-an-installed-apps-tunnel-is-set-as-a-websites-is.md),
+[`ADR-0082`](../decisions/ADR-0082-a-websites-tunnel-state-is-kept-per-origin-and-a-website-that-differs-from-the-default-has-storage-of-its-own.md),
 [`ADR-0084`](../decisions/ADR-0084-the-tunnel-can-carry-the-whole-browser-and-a-website-with-an-entry-lives-in-one-of-two-shared-profiles.md));
 every other app and website is *not routed*.
 

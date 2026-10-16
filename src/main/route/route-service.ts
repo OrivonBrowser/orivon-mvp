@@ -30,8 +30,10 @@ export interface RouteService {
   readonly store: RouteStore
   /** The one path that turns an app's or a website's tunnel on or off. */
   readonly routeSwitch: RouteSwitch
-  /** Where routed traffic leaves now: Nym's target, the SOCKS5 address, or undefined when the choice is an address and none is set or it is not one. */
+  /** Where traffic of the default tunnel leaves now: Nym's target, the SOCKS5 address, or undefined when the choice is an address and none is set or it is not one. Orivon's own requests and the local nodes leave here. */
   proxy: () => RouteTarget | undefined
+  /** Where traffic of the tunnel `kind` leaves now: Nym's target, or the SOCKS5 address saved (undefined when none is set or it is not one). */
+  targetOf: (kind: TunnelKind) => RouteTarget | undefined
   /** Whether the whole browser goes through the tunnel unless an origin is set to off: the setting as it stands now. */
   everywhere: () => boolean
   /** The tunnel the person chose for everything that has no choice of its own: the setting as it stands now. */
@@ -40,6 +42,8 @@ export interface RouteService {
   providerFor: (key: string, target: RouteTarget) => RouteProvider | undefined
   /** Where the local node named `key` leaves while the whole browser is on the tunnel: the tunnel's SOCKS5 address with a sign-in of its own. Rejects, in words, when the tunnel cannot carry it. */
   nodeEndpoint: (key: string) => Promise<RouteEndpoint>
+  /** Called when the person chooses the other tunnel as the default. Returns the unsubscribe. */
+  onDefaultKindChange: (listener: () => void) => () => void
   /** Called when an address `nodeEndpoint` handed out stops being the tunnel's. Returns the unsubscribe. */
   onNodeRouteMoved: (listener: () => void) => () => void
   /** The Nym tunnel: asked for by every route that leaves through it. */
@@ -79,7 +83,8 @@ export function createRouteService (options: RouteServiceOptions): RouteService 
   let kind = options.savedKind
   let everywhereNow = options.savedEverywhere ?? false
   const everywhere = options.everywhere ?? (() => everywhereNow)
-  const proxy = (): RouteTarget | undefined => kind === 'nym' ? NYM_TARGET : parseProxyAddress(current)
+  const targetOf = (which: TunnelKind): RouteTarget | undefined => which === 'nym' ? NYM_TARGET : parseProxyAddress(current)
+  const proxy = (): RouteTarget | undefined => targetOf(kind)
   // The user name is the same hash of the key the SOCKS5 provider sends, so Nym isolates by app as a SOCKS5 proxy would.
   const isolation = isolationCredentials()
   const providerFor = (key: string, target: RouteTarget): RouteProvider | undefined => isNymTarget(target) ? createNymProvider(options.nym, isolation(key).userId) : undefined
@@ -102,20 +107,23 @@ export function createRouteService (options: RouteServiceOptions): RouteService 
     listener()
   })
   const defaultKind = (): TunnelKind => kind
-  const hub = createRouteHub({ store: options.store, proxy, defaultKind, providerFor, everywhere, ...(options.electron.isApp === undefined ? {} : { isApp: options.electron.isApp }), ...(options.installed === undefined ? {} : { installed: options.installed }) })
+  const kindListeners = new Set<() => void>()
+  const hub = createRouteHub({ store: options.store, targetOf, defaultKind, providerFor, everywhere, ...(options.electron.isApp === undefined ? {} : { isApp: options.electron.isApp }), ...(options.installed === undefined ? {} : { installed: options.installed }) })
   const controller = createRouteController({ ...options.electron, hub })
-  const routeSwitch = createRouteSwitch({ proxy, defaultKind, store: options.store, controller, hub }, options.switchWorld ?? { isPinned: () => false, isPersistable: () => false })
+  const routeSwitch = createRouteSwitch({ targetOf, defaultKind, store: options.store, controller, hub }, options.switchWorld ?? { isPinned: () => false, isPersistable: () => false })
   return {
     hub,
     controller,
     store: options.store,
     routeSwitch,
     proxy,
+    targetOf,
     everywhere,
     defaultKind,
     providerFor,
     nodeEndpoint,
     onNodeRouteMoved,
+    onDefaultKindChange: (listener) => { kindListeners.add(listener); return () => { kindListeners.delete(listener) } },
     nym: options.nym,
     forget: (origin) => {
       try {
@@ -132,11 +140,16 @@ export function createRouteService (options: RouteServiceOptions): RouteService 
         const address = settings.get(KEY)
         const chosen = settings.get(KIND_KEY)
         if (address === current && chosen === kind) return
-        // An address typed while Nym is the choice changes no route.
-        const moved = chosen !== kind || (kind === 'socks5' && address !== current)
+        const previous = kind
+        const addressMoved = address !== current
         current = address
         kind = chosen
-        if (moved) hub.proxyChanged()
+        if (chosen !== previous) {
+          hub.defaultKindChanged(previous)
+          for (const listener of [...kindListeners]) listener()
+        }
+        // Only what goes through the proxy hears of its address; an address typed while Nym is the only choice in use changes no route.
+        if (addressMoved) hub.addressChanged()
       }
       const readEverywhere = (): void => {
         const next = settings.get(EVERYWHERE_KEY)

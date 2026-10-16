@@ -50,6 +50,10 @@ export interface NetworksEnv {
     readonly tunnels: () => { readonly connecting: number, readonly ready: number }
     readonly processInfo: () => ProcessInfo | undefined
     readonly onChange: (listener: () => void) => () => void
+    /** Whether any site, app or the whole browser goes through Nym; the tunnel chosen in Settings counts when this is left out. */
+    readonly usedByRoutes?: () => boolean
+    /** Called when what goes through Nym may have changed. Returns the removal. */
+    readonly onRoutesChange?: (listener: () => void) => () => void
   }
   /** Reads `app.getAppMetrics()`; asked only when a popup is drawn. */
   readonly metrics: () => readonly ProcessMetric[]
@@ -119,7 +123,7 @@ export function createNetworksSource (env: NetworksEnv): NetworksSource {
       lightClient: { view: env.lightClient.view(), enabled: env.settings.get('web3.lightClient') === true, forcedOff: env.lightClient.forcedOff(), ...(lightProcess === undefined ? {} : { process: lightProcess }) },
       ipfs: { ...node(env.ipfs, 'ipfs-node', SERVICE_NAMES.ipfs), enabled: env.settings.get('web3.ipfsSource') !== 'gateways' },
       swarm: { ...node(env.swarm, 'swarm-node', SERVICE_NAMES.swarm), enabled: env.settings.get('web3.swarmNode') === true },
-      nym: { enabled: env.settings.get('network.nym.enabled') === true, ...(env.settings.isHeld?.('network.nym.enabled') === true ? { held: true } : {}), inUse: env.settings.get('network.route.kind') !== 'socks5', state: env.nym.state(), tunnels: env.nym.tunnels(), ...(nymProcess === undefined ? {} : { process: nymProcess }) }
+      nym: { enabled: env.settings.get('network.nym.enabled') === true, ...(env.settings.isHeld?.('network.nym.enabled') === true ? { held: true } : {}), inUse: env.settings.get('network.route.kind') !== 'socks5' || env.nym.usedByRoutes?.() === true, state: env.nym.state(), tunnels: env.nym.tunnels(), ...(nymProcess === undefined ? {} : { process: nymProcess }) }
     }
   }
 
@@ -132,6 +136,7 @@ export function createNetworksSource (env: NetworksEnv): NetworksSource {
       env.ipfs.onChange(listener),
       env.swarm.onChange(listener),
       env.nym.onChange(listener),
+      ...(env.nym.onRoutesChange === undefined ? [] : [env.nym.onRoutesChange(listener)]),
       env.settings.onChange(({ key }) => { if (WATCHED.has(key)) listener() })
     ]
     return () => { for (const stop of stops) stop() }

@@ -24,6 +24,8 @@ export function nymSourceFor (ctx: Pick<SubsystemContext, 'routes'>): NetworksEn
     state: () => nym(true)?.state() ?? { state: 'off' },
     tunnels: () => nym(true)?.tunnels() ?? { connecting: 0, ready: 0 },
     processInfo: () => nym(true)?.processInfo(),
+    usedByRoutes: () => ctx.routes?.hub.kindsInUse().includes('nym') === true,
+    onRoutesChange: (listener) => ctx.routes?.hub.onChange(listener) ?? (() => {}),
     onChange: (listener) => {
       listeners.add(listener)
       nym(false)

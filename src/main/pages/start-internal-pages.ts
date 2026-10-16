@@ -112,7 +112,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   if (routes === undefined) throw new Error('startInternalPages requires ctx.routes -- check routeSubsystem\'s position in subsystems.ts')
   // An app can be routed once there is a proxy and its files are held here: its updates are not checked while routed, which a first visit has no pin to skip.
   const routeSwitch = routes.routeSwitch
-  const appRoutes: AppRoutes = { stateOf: (origin) => routes.hub.state(origin), unreadable: () => routes.hub.unreadable(), blockedFor: routeSwitch.blockedFor, set: routeSwitch.set }
+  const appRoutes: AppRoutes = { stateOf: (origin) => routes.hub.state(origin), unreadable: () => routes.hub.unreadable(), blockedFor: (origin) => { const blocked = routeSwitch.blockedFor(origin, routes.defaultKind()); return blocked === 'local' ? 'not-cached' : blocked }, set: (origin, routed) => routeSwitch.choose(origin, routed ? routes.defaultKind() : null) }
   const tasksEnv: TasksEnv = {
     windows: services.windows,
     extensionName: (id) => extensions.list().find((entry) => entry.id === id)?.name

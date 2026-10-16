@@ -34,7 +34,7 @@ The owner's words: installed apps behave exactly as normal websites do, the diff
 - A website through Nym and another through the proxy cost two fronts, two profile sessions and, while both are open, two sets of the person's extension copies. Moving a site from one tunnel to the other signs the person in again once, as moving into any profile does.
 - Threat T84 (an app's route) and T85 (the tunnel profile's shared identity) now read per tunnel; `docs/architecture/egress.md` says "routed origin" for an origin on either tunnel.
 - A build older than this one that rewrites `routes.json` drops the tunnel of each origin and the proxy profile's list. The next start of this build reads that file as unmarked and gives every origin the tunnel chosen at that start; the storage of a website that was on the other tunnel stays in its profile folder, listed under no website.
-- The Web3 sites path (the verifier host reading names through the profile's front) and the menu follow in later steps; until then every front leaves by the chosen tunnel, so a website whose entry names the other tunnel is still sent through a tunnel, never direct.
+- Each identity's front leaves by the tunnel its origin picked, and a session that goes through a different tunnel from the one its origin picked is refused a main-frame load. The verifier host's fetches for a website in a tunnel profile, and the menu, follow in later steps; until then those fetches go through the front of the default tunnel's profile, so they are still sent through a tunnel, never direct.
 
 ## Reversibility
 

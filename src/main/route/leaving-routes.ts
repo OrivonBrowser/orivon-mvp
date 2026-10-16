@@ -4,13 +4,18 @@
 
 import { leavesRoute, routedPageOrigin } from './leave-decision.js'
 import type { Leave, LeaveWorld } from './leave-decision.js'
+import type { TunnelKind } from './route-state.js'
 import type { RouteSwitch } from './route-switch.js'
 import type { TemporaryRoutes } from './temporary-routes.js'
 
 export interface LeavingRoutes {
   readonly world: LeaveWorld
   readonly temporary: Pick<TemporaryRoutes, 'open' | 'owns' | 'isLive'>
-  readonly routeSwitch: Pick<RouteSwitch, 'blockedFor' | 'set'>
+  readonly routeSwitch: Pick<RouteSwitch, 'blockedFor' | 'choose'>
+  /** The tunnel an origin goes through now, undefined when it is not routed. */
+  readonly kindOf: (origin: string) => TunnelKind | undefined
+  /** The tunnel everything with no choice of its own goes through. */
+  readonly defaultKind: () => TunnelKind
 }
 
 let source: LeavingRoutes | undefined
@@ -30,10 +35,10 @@ export function leaveFor (fromUrl: string, toUrl: string, partition?: string): L
   return source === undefined ? undefined : leavesRoute(fromUrl, toUrl, source.world, partition)
 }
 
-/** A new in-memory session behind a front of its own, as the partition a tab is made in. */
-export async function openTemporaryRoute (): Promise<string> {
+/** A new in-memory session behind a front of its own, leaving by the tunnel the opening page's origin `from` goes through, as the partition a tab is made in. */
+export async function openTemporaryRoute (from: string): Promise<string> {
   if (source === undefined) throw new Error('no routes are running')
-  return await source.temporary.open()
+  return await source.temporary.open(source.kindOf(from) ?? source.defaultKind())
 }
 
 /** Whether `session` is a temporary routed one. */
@@ -46,9 +51,11 @@ export function isTemporaryRoutePartitionLive (partition: string | undefined): b
   return partition !== undefined && source?.temporary.isLive(partition) === true
 }
 
-/** Turns the app's route on, as its card does. False when it cannot be turned on (no proxy, or its files are not held here). */
-export async function routeAppToo (origin: string): Promise<boolean> {
-  if (source === undefined || source.routeSwitch.blockedFor(origin) !== undefined) return false
-  await source.routeSwitch.set(origin, true)
+/** Sends the app `origin` through the tunnel the opening page's origin `from` goes through, as its menu does. False when it cannot be (no address for that tunnel, or its files are not held here). */
+export async function routeAppToo (origin: string, from: string): Promise<boolean> {
+  if (source === undefined) return false
+  const kind = source.kindOf(from) ?? source.defaultKind()
+  if (source.routeSwitch.blockedFor(origin, kind) !== undefined) return false
+  await source.routeSwitch.choose(origin, kind)
   return true
 }
