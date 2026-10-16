@@ -26,7 +26,7 @@ import { bundleForApp, serveApp } from '../node-runtime/pinned-app.js'
 import type { Attempt } from './routed-network-entry.js'
 
 const ORIGIN = 'https://tunnel-everywhere-app-e2e.orivon.test'
-const ROUTE_SWITCH = '.app-card:has-text("tunnel-everywhere-app") .app-route .switch'
+const ROUTE_CHOICE = '.app-card:has-text("tunnel-everywhere-app") .app-route select'
 const NAME = 'tcp.socks.test'
 
 interface Counting { readonly port: number, readonly connections: () => number, readonly close: () => Promise<void> }
@@ -123,7 +123,7 @@ async function openApps (): Promise<Page> {
   await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/apps') })
   expect(await waitFor(() => app.windows().some((w) => w.url().startsWith('orivon://settings')))).toBe(true)
   const settings = app.windows().find((w) => w.url().startsWith('orivon://settings')) as Page
-  await settings.waitForSelector(ROUTE_SWITCH)
+  await settings.waitForSelector(ROUTE_CHOICE)
   return settings
 }
 
@@ -137,7 +137,7 @@ it('[app:tunnel-everywhere-app-follows-the-default] an app with no setting dials
   expect(decoy.connections()).toBe(0)
 
   const settings = await openApps()
-  expect(await settings.locator(`${ROUTE_SWITCH} input`).isChecked(), 'its card shows it on, as the default').toBe(true)
+  expect(await settings.locator(ROUTE_CHOICE).inputValue(), 'its card shows the default tunnel, the proxy').toBe('socks5')
   await shoot(app, chrome, settings, 'tunnel-everywhere-app-card')
   await settings.close()
 }, 3 * QA_TEST_TIMEOUT_MS)
@@ -145,7 +145,7 @@ it('[app:tunnel-everywhere-app-follows-the-default] an app with no setting dials
 it('[app:tunnel-everywhere-app-set-to-off-asks-the-system] an app switched off is asked about the system\'s proxy, not the tunnel\'s front: it reaches this computer, resolves nothing at the far end, and the tunnel sees nothing', async () => {
   const seen = socks.requests.length
   const settings = await openApps()
-  await settings.locator(ROUTE_SWITCH).click()
+  await settings.locator(ROUTE_CHOICE).selectOption('')
   await settings.close()
   // The app's pages are reloaded when its route is switched.
   expect(await waitFor(async () => (await tcp(NAME, decoy.port).catch((): Attempt => ({ ok: true, detail: '' }))).code !== undefined), 'the app\'s call no longer goes through the tunnel').toBe(true)
@@ -164,7 +164,7 @@ it('[app:tunnel-everywhere-app-set-to-off-asks-the-system] an app switched off i
 
 it('[app:tunnel-everywhere-app-follows-the-default] switched on again, the app follows the default and dials through the tunnel once more', async () => {
   const settings = await openApps()
-  await settings.locator(ROUTE_SWITCH).click()
+  await settings.locator(ROUTE_CHOICE).selectOption('socks5')
   await settings.close()
   expect(await waitFor(async () => (await tcp(NAME, decoy.port).catch((): Attempt => ({ ok: false, detail: '' }))).ok), 'it reaches the real server through the tunnel again').toBe(true)
   expect(decoy.connections()).toBe(0)

@@ -297,18 +297,18 @@ for (const scheme of SCHEMES) {
         const settings = await openInternal(app, chrome, 'settings', '/tunnels')
         await settings.waitForSelector('#row-route-nym-status:has-text("Starts when")')
         await scrollToTunnelRow(settings)
-        check('the tunnel choice is Nym (built in), the Nym status line is shown and the address row is not', (await settings.locator('#row-route-kind select').inputValue()) === 'nym' && await settings.locator('#row-route-nym-status').isVisible() && await settings.locator('#row-route-nym-privacy select').inputValue() === 'balanced' && !(await settings.locator('#row-route-proxy').isVisible()))
+        check('the default tunnel is Nym (built in); the Nym rows, the address row and a Test for each tunnel are all shown', (await settings.locator('#row-route-kind select').inputValue()) === 'nym' && await settings.locator('#row-route-nym-status').isVisible() && await settings.locator('#row-route-nym-privacy select').inputValue() === 'balanced' && await settings.locator('#row-route-proxy').isVisible() && await settings.locator('#row-route-nym-test button').isVisible() && await settings.locator('#row-route-proxy-test button').isVisible())
         await state(check, app, `settings-tunnel-nym-${scheme}`, {
-          expected: 'orivon://settings/tunnels is open under the heading "Tunnels" with the "Tunnel" row showing the choice "Nym (built in)" and the "Send all of Orivon\'s traffic through the tunnel" row, then a "Nym" group with a "Let Nym run" switch and a "Nym" row saying "Starts when an app that uses it connects.", a "Nym privacy" row with a choice showing "Balanced" and one sentence for each of Balanced and Strongest, and a "Test the tunnel" row with a Test button. No address field is shown.',
+          expected: 'orivon://settings/tunnels is open under the heading "Tunnels" with the "Default tunnel" row showing the choice "Nym (built in)" and the "Send all of Orivon\'s traffic through the default tunnel" row, then a "Nym" group with a "Let Nym run" switch, a "Nym" row saying "Starts when an app that uses it connects.", a "Nym privacy" row with a choice showing "Balanced" and one sentence for each of Balanced and Strongest, and a "Test Nym" row with a Test button; then a "Your proxy" group with a "SOCKS5 address" row holding an empty text field whose placeholder is 127.0.0.1:9050 and a "Test your proxy" row whose Test button is greyed out.',
           action: 'Opened orivon://settings/tunnels on a fresh profile and scrolled to the tunnel rows.'
         })
         await settings.locator('#row-route-kind select').selectOption('socks5')
-        await settings.waitForSelector('#row-route-proxy input')
+        await settings.waitForFunction(() => (document.querySelector('#row-route-kind select') as HTMLSelectElement | null)?.value === 'socks5')
         await scrollToTunnelRow(settings)
-        check('choosing the address shows its field and hides the Nym status and the Nym privacy choice', await settings.locator('#row-route-proxy input').isVisible() && !(await settings.locator('#row-route-nym-status').isVisible()) && !(await settings.locator('#row-route-nym-privacy').isVisible()))
+        check('choosing the address as the default hides nothing: Nym\'s rows and the address row are all still shown', await settings.locator('#row-route-proxy input').isVisible() && await settings.locator('#row-route-nym-status').isVisible() && await settings.locator('#row-route-nym-privacy').isVisible())
         await state(check, app, `settings-tunnel-address-${scheme}`, {
-          expected: 'The "Tunnel" row shows "Your own SOCKS5 address"; under it a "SOCKS5 address" row with an empty text field whose placeholder is 127.0.0.1:9050, and the "Test the tunnel" row with a Test button that is greyed out. The Nym and Nym privacy rows are gone.',
-          action: 'Chose "Your own SOCKS5 address" in the tunnel row.'
+          expected: 'The "Default tunnel" row shows "Your own SOCKS5 address"; every other row is still there, Nym\'s and the proxy\'s, because a site or app can use either whichever is the default; the "Test your proxy" Test button is greyed out while the address is empty.',
+          action: 'Chose "Your own SOCKS5 address" in the default tunnel row.'
         })
       })
     } finally {

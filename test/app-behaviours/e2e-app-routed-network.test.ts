@@ -40,7 +40,7 @@ import type { Attempt } from './routed-network-entry.js'
 
 const ORIGIN = 'https://routed-network-e2e.orivon.test'
 const SETTINGS_URL_PREFIX = 'orivon://settings'
-const ROUTE_SWITCH = '.app-card:has-text("routed-network-e2e") .app-route .switch'
+const ROUTE_CHOICE = '.app-card:has-text("routed-network-e2e") .app-route select'
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
 
 /** A TCP server that counts what reaches it and remembers when each connection ended. */
@@ -283,10 +283,10 @@ it('[app:routed-app-sends-nothing-direct] an installed app switched on in Settin
   expect(held.ok, JSON.stringify(held)).toBe(true)
   expect(await waitFor(() => holdDecoy.connections() === 1)).toBe(true)
 
-  // The switch on the app's card in Settings, as a person turns it on.
+  // The choice of tunnel on the app's card in Settings, as a person makes it.
   const settings = await openSettings('apps')
-  await settings.waitForSelector(ROUTE_SWITCH)
-  await settings.locator(ROUTE_SWITCH).click()
+  await settings.waitForSelector(ROUTE_CHOICE)
+  await settings.locator(ROUTE_CHOICE).selectOption('socks5')
   // The app's tab is reloaded when the switch flips, and what it held open is closed.
   expect(await waitFor(() => holdDecoy.closed() === 1), 'the connection the app held open before the switch is closed').toBe(true)
   await view.waitForLoadState('load')

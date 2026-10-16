@@ -8,7 +8,7 @@ import { h } from '../shared/dom.js'
 import { globeIcon } from '../shared/globe-icon.js'
 import { grantIcon } from '../shared/grant-icons.js'
 import type { GrantIconKind } from '../shared/grant-icons.js'
-import type { AppRow, CapabilityRow } from './apps-state.js'
+import type { AppRow, AppTunnel, CapabilityRow } from './apps-state.js'
 import type { SettingsState } from './state.js'
 
 const KIB = 1024
@@ -27,34 +27,54 @@ export function sizeWords (bytes: number): string {
   return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unit] ?? 'GB'}`
 }
 
-/** What the switch that routes an app says under its label, about the person's situation rather than the program's. */
+/** How a sentence names the tunnel an app goes through. */
+const TUNNEL_NAME = { nym: 'Nym', socks5: 'your proxy' } as const
+
+/** Why a tunnel cannot be chosen for an app now, in words about the person's situation. */
+const BLOCKED_WORDS = {
+  'no-proxy': 'Your proxy has no address yet: set one under Tunnels.',
+  'not-cached': 'Only an app Orivon holds on this computer can be sent through a tunnel.',
+  'nym-off': 'Nym is switched off: switch it on under Tunnels.'
+} as const
+
+/** What the choice of an app's tunnel says under its label, about the person's situation rather than the program's. */
 export function routeWords (route: AppRow['route']): string {
-  if (route.unreadable === true) return 'Orivon could not read which apps you routed, so while a tunnel is set every app goes through it. Mend or remove routes.json in your profile folder and restart Orivon to choose again.'
-  if (route.state === 'off') {
-    if (route.blocked === 'no-proxy') return 'Set a tunnel under Tunnels first.'
-    if (route.blocked === 'not-cached') return 'Only an app Orivon holds on this computer can be routed.'
-    return 'Off: this app connects as you do.'
+  if (route.unreadable === true) return 'Orivon could not read which apps you sent through a tunnel, so while a tunnel is set every app goes through it. Mend or remove routes.json in your profile folder and restart Orivon to choose again.'
+  if (route.state === 'off' || route.via === null) {
+    const why = [...new Set(Object.values(route.blocked))].map((reason) => BLOCKED_WORDS[reason])
+    return ['Off: this app connects as you do.', ...why].join(' ')
   }
-  if (route.state === 'no-proxy') return 'No tunnel is set, so this app\'s traffic is stopped, not sent directly. Set one under Tunnels.'
-  if (route.state === 'down') return 'Your tunnel is not answering. This app\'s traffic is stopped, not sent directly.'
-  return 'Everything this app sends leaves through your tunnel, and what the tunnel cannot carry is refused. Its updates are not checked while this is on.'
+  const tunnel = TUNNEL_NAME[route.via]
+  const name = route.via === 'nym' ? 'Nym' : 'Your proxy'
+  if (route.state === 'no-proxy') return `${name} has no address, so this app's traffic is stopped, not sent directly. Set one under Tunnels.`
+  if (route.state === 'down') return `${name} is not answering. This app's traffic is stopped, not sent directly.`
+  return `Everything this app sends leaves through ${tunnel}, and what the tunnel cannot carry is refused. Its updates are not checked while this is on.`
+}
+
+/** The options of the choice: what each says, and why it cannot be picked now. */
+export function routeOptions (route: AppRow['route']): ReadonlyArray<{ readonly value: '' | AppTunnel, readonly label: string, readonly disabled: boolean }> {
+  return [
+    { value: '', label: 'Off', disabled: false },
+    { value: 'nym', label: 'Nym', disabled: route.via !== 'nym' && route.blocked.nym !== undefined },
+    { value: 'socks5', label: 'Your proxy', disabled: route.via !== 'socks5' && route.blocked.socks5 !== undefined }
+  ]
 }
 
 function routeRow (app: AppRow, state: SettingsState): HTMLElement {
-  const on = app.route.state !== 'off'
-  const input = h('input', { type: 'checkbox', id: `route-${app.origin}`, checked: on, disabled: app.route.unreadable === true || (!on && app.route.blocked !== undefined) })
-  input.dataset['focusKey'] = `${app.origin}|route`
-  input.addEventListener('change', () => {
-    // A click leaves the switch focused, and a focused input that is not settled holds every redraw (main.ts).
-    input.dataset['settled'] = 'true'
-    void state.apps.setRoute(app.origin, input.checked)
+  const select = h('select', { id: `route-${app.origin}`, disabled: app.route.unreadable === true },
+    ...routeOptions(app.route).map((option) => h('option', { value: option.value, textContent: option.label, disabled: option.disabled, selected: option.value === (app.route.via ?? '') })))
+  select.dataset['focusKey'] = `${app.origin}|route`
+  select.addEventListener('change', () => {
+    // A choice leaves the control focused, and a focused control that is not settled holds every redraw (main.ts).
+    select.dataset['settled'] = 'true'
+    void state.apps.setRoute(app.origin, select.value === 'nym' || select.value === 'socks5' ? select.value : null)
   })
   return h('div', { className: 'app-route' },
     h('div', { className: 'app-route-text' },
-      h('label', { htmlFor: `route-${app.origin}`, textContent: 'Send this app\'s traffic through my tunnel' }),
+      h('label', { htmlFor: `route-${app.origin}`, textContent: 'Tunnel for this app' }),
       h('p', { className: app.route.unreadable === true || app.route.state === 'down' || app.route.state === 'no-proxy' ? 'problem' : 'muted', textContent: routeWords(app.route) }),
-      state.apps.routeRefused.has(app.origin) ? h('p', { className: 'problem', role: 'alert', textContent: 'That could not be changed. Check the tunnel under Tunnels.' }) : null),
-    h('span', { className: 'switch' }, input, h('span', { className: 'track' })))
+      state.apps.routeRefused.has(app.origin) ? h('p', { className: 'problem', role: 'alert', textContent: 'That could not be changed. Check the tunnels under Tunnels.' }) : null),
+    select)
 }
 
 /** Why an off switch cannot be turned on from this page. */

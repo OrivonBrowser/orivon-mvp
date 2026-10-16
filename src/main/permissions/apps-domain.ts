@@ -22,19 +22,24 @@ interface AppsRequest {
   readonly pickId?: unknown
   readonly key?: unknown
   readonly scheme?: unknown
-  readonly routed?: unknown
+  readonly kind?: unknown
 }
 
-/** What an app's card needs to show and move the switch that sends its traffic through the person's proxy. */
+/** A tunnel an app can be sent through: Nym, or the person's proxy. */
+export type AppTunnel = 'nym' | 'socks5'
+
+/** What an app's card needs to show and move the choice of the tunnel its traffic goes through: the same choice the tunnel menu has. */
 export interface AppRoutes {
   /** What the app's route is doing: `off` for an app that is not routed. */
   readonly stateOf: (origin: string) => RouteState
+  /** The tunnel the app goes through now, or null when it goes through none. */
+  readonly kindOf: (origin: string) => AppTunnel | null
   /** Whether the list of routed apps could not be read, so every app is routed (or stopped) until it is mended. */
   readonly unreadable: () => boolean
-  /** Why the switch cannot be turned on now (it can always be turned off), or undefined when it can. */
-  readonly blockedFor: (origin: string) => 'no-proxy' | 'not-cached' | undefined
-  /** Resolves once the app's sessions follow the switch, so the card is not told it is on while they are still direct. */
-  readonly set: (origin: string, routed: boolean) => Promise<void> | void
+  /** Why the app cannot be sent through `kind` now (it can always be given up), or undefined when it can. */
+  readonly blockedFor: (origin: string, kind: AppTunnel) => 'no-proxy' | 'not-cached' | 'nym-off' | undefined
+  /** Resolves once the app's sessions follow the choice, so the card is not told it is made while they are still direct. */
+  readonly set: (origin: string, kind: AppTunnel | null) => Promise<void> | void
 }
 
 export interface AppsDeps {
@@ -66,6 +71,16 @@ function patternsOf (value: unknown): readonly string[] | null {
 /** The most patterns a manifest may declare for one capability (`manifest.ts`), so a longer list is not a row Orivon drew. */
 const MAX_PATTERNS = 256
 
+/** Why each tunnel cannot be chosen for the app now, for the options of its card. */
+function blockedKinds (routes: AppRoutes, origin: string): Partial<Record<AppTunnel, 'no-proxy' | 'not-cached' | 'nym-off'>> {
+  const blocked: Partial<Record<AppTunnel, 'no-proxy' | 'not-cached' | 'nym-off'>> = {}
+  for (const kind of ['nym', 'socks5'] as const) {
+    const why = routes.blockedFor(origin, kind)
+    if (why !== undefined) blocked[kind] = why
+  }
+  return blocked
+}
+
 export function appsDomain (deps: AppsDeps): InternalDomain {
   return {
     pages: ['settings'],
@@ -77,7 +92,7 @@ export function appsDomain (deps: AppsDeps): InternalDomain {
           // An app that holds nothing and remembers a refusal is on the card list too, though the grant list leaves it out.
           const idle = await deps.switches.idleApps(new Set(listed.map((app) => app.origin)))
           const apps = [...listed, ...idle.map(({ origin, appName }) => ({ origin, appName, rows: [], pickedPathRows: [] }))]
-          const withStorage = await Promise.all(apps.map(async ({ rows: _held, ...app }) => ({ ...app, capabilityRows: await deps.switches.rowsFor(app.origin), deviceRows: deps.devices.rows(app.origin), linkSchemes: deps.links.schemesOf(app.origin), route: { state: deps.routes.stateOf(app.origin), blocked: deps.routes.blockedFor(app.origin), unreadable: deps.routes.unreadable() }, storage: await orivonStorageFor(deps.userDataPath, app.origin, undefined, undefined) })))
+          const withStorage = await Promise.all(apps.map(async ({ rows: _held, ...app }) => ({ ...app, capabilityRows: await deps.switches.rowsFor(app.origin), deviceRows: deps.devices.rows(app.origin), linkSchemes: deps.links.schemesOf(app.origin), route: { state: deps.routes.stateOf(app.origin), via: deps.routes.kindOf(app.origin), blocked: blockedKinds(deps.routes, app.origin), unreadable: deps.routes.unreadable() }, storage: await orivonStorageFor(deps.userDataPath, app.origin, undefined, undefined) })))
           return { apps: withStorage, identity: await deps.identity() }
         }
         case 'setCapability': {
@@ -108,12 +123,13 @@ export function appsDomain (deps: AppsDeps): InternalDomain {
         }
         case 'setRoute': {
           const origin = originOf(request.origin)
-          if (origin === null || typeof request.routed !== 'boolean') return { ok: false }
-          // Turning a route on needs a proxy and an app held in the cache; turning it off never waits on either.
-          if (request.routed && deps.routes.blockedFor(origin) !== undefined) return { ok: false }
+          const kind = request.kind
+          if (origin === null || (kind !== null && kind !== 'nym' && kind !== 'socks5')) return { ok: false }
+          // A tunnel needs an address (the proxy) or to be switched on (Nym), and an app held in the cache; giving one up never waits on either.
+          if (kind !== null && deps.routes.blockedFor(origin, kind) !== undefined) return { ok: false }
           // A choice that could not be kept is reported, never shown as made.
           try {
-            await deps.routes.set(origin, request.routed)
+            await deps.routes.set(origin, kind)
           } catch (error) {
             console.error('[apps] a route could not be switched:', error)
             return { ok: false }

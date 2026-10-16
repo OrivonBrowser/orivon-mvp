@@ -18,7 +18,7 @@ const APP = { origin: 'https://app.example', appName: 'App', rows: [], pickedPat
 const NO_DEVICES = { rows: () => [], forget: () => false }
 const DEVICE = { key: 'k1', label: 'Nano X (USB 2c97:4011)' }
 
-const NO_ROUTES = { stateOf: () => 'off' as const, unreadable: () => false, blockedFor: () => undefined, set: () => {} }
+const NO_ROUTES: Parameters<typeof appsDomain>[0]['routes'] = { stateOf: () => 'off' as const, kindOf: () => null, unreadable: () => false, blockedFor: () => undefined, set: () => {} }
 
 const FS_ROW = { capability: 'fs' as const, on: true, canTurnOn: true, warning: false, message: 'Store files in a private folder for this app on this device', patterns: [] }
 
@@ -41,7 +41,7 @@ describe('the apps domain', () => {
     await writeFile(join(root, 'files', 'a.txt'), 'x'.repeat(100))
     await writeFile(join(root, 'code', 'index.js'), 'y'.repeat(30))
     const { call } = setup()
-    expect(await call({ type: 'list' })).toEqual({ apps: [{ origin: APP.origin, appName: APP.appName, pickedPathRows: [], capabilityRows: [FS_ROW], deviceRows: [], linkSchemes: [], route: { state: 'off', blocked: undefined, unreadable: false }, storage: { filesBytes: 100, filesQuotaBytes: undefined, codeBytes: 30, codeVersion: undefined } }], identity: 'session-only' })
+    expect(await call({ type: 'list' })).toEqual({ apps: [{ origin: APP.origin, appName: APP.appName, pickedPathRows: [], capabilityRows: [FS_ROW], deviceRows: [], linkSchemes: [], route: { state: 'off', via: null, blocked: {}, unreadable: false }, storage: { filesBytes: 100, filesQuotaBytes: undefined, codeBytes: 30, codeVersion: undefined } }], identity: 'session-only' })
   })
 
   it('takes back a picked path for an origin and a name that are what they should be', async () => {
@@ -144,9 +144,10 @@ describe('the apps domain', () => {
 })
 
 describe('the per-app route', () => {
-  it('lists what each app\'s route is doing and why it cannot be turned on', async () => {
-    const { call } = setup(NO_DEVICES, new SchemeChoices(null), { ...NO_ROUTES, stateOf: () => 'down', blockedFor: () => 'no-proxy' })
-    expect(await call({ type: 'list' })).toMatchObject({ apps: [{ origin: 'https://app.example', route: { state: 'down', blocked: 'no-proxy', unreadable: false } }] })
+  it('lists what each app\'s route is doing, the tunnel it uses and why each tunnel cannot be chosen', async () => {
+    const blockedFor = (_origin: string, kind: 'nym' | 'socks5') => kind === 'socks5' ? 'no-proxy' as const : undefined
+    const { call } = setup(NO_DEVICES, new SchemeChoices(null), { ...NO_ROUTES, stateOf: () => 'down', kindOf: () => 'nym', blockedFor })
+    expect(await call({ type: 'list' })).toMatchObject({ apps: [{ origin: 'https://app.example', route: { state: 'down', via: 'nym', blocked: { socks5: 'no-proxy' }, unreadable: false } }] })
   })
 
   it('says so when the list of routed apps could not be read', async () => {
@@ -154,33 +155,35 @@ describe('the per-app route', () => {
     expect(await call({ type: 'list' })).toMatchObject({ apps: [{ route: { unreadable: true } }] })
   })
 
-  it('reports a switch that could not be kept, instead of saying it was made', async () => {
+  it('reports a choice that could not be kept, instead of saying it was made', async () => {
     const { call } = setup(NO_DEVICES, new SchemeChoices(null), { ...NO_ROUTES, set: async () => { throw new Error('disk full') } })
-    expect(await call({ type: 'setRoute', origin: 'https://app.example', routed: true })).toEqual({ ok: false })
+    expect(await call({ type: 'setRoute', origin: 'https://app.example', kind: 'nym' })).toEqual({ ok: false })
   })
 
-  it('turns a route on or off for an origin and a switch that are what they should be', async () => {
+  it('sends an app through the tunnel asked for, or through none, for an origin and a choice that are what they should be', async () => {
     const set = vi.fn()
     const { call } = setup(NO_DEVICES, new SchemeChoices(null), { ...NO_ROUTES, set })
-    expect(await call({ type: 'setRoute', origin: 'https://app.example', routed: true })).toEqual({ ok: true })
-    expect(await call({ type: 'setRoute', origin: 'https://app.example', routed: false })).toEqual({ ok: true })
-    expect(set.mock.calls).toEqual([['https://app.example', true], ['https://app.example', false]])
+    expect(await call({ type: 'setRoute', origin: 'https://app.example', kind: 'nym' })).toEqual({ ok: true })
+    expect(await call({ type: 'setRoute', origin: 'https://app.example', kind: 'socks5' })).toEqual({ ok: true })
+    expect(await call({ type: 'setRoute', origin: 'https://app.example', kind: null })).toEqual({ ok: true })
+    expect(set.mock.calls).toEqual([['https://app.example', 'nym'], ['https://app.example', 'socks5'], ['https://app.example', null]])
   })
 
-  it('refuses a request that is not for a canonical origin or does not say on or off', async () => {
+  it('refuses a request that is not for a canonical origin or does not name a tunnel or none', async () => {
     const set = vi.fn()
     const { call } = setup(NO_DEVICES, new SchemeChoices(null), { ...NO_ROUTES, set })
-    for (const request of [{ origin: 'https://app.example/path', routed: true }, { origin: 5, routed: true }, { origin: 'https://app.example', routed: 'yes' }, { origin: 'https://app.example' }]) {
+    for (const request of [{ origin: 'https://app.example/path', kind: 'nym' }, { origin: 5, kind: 'nym' }, { origin: 'https://app.example', kind: 'tor' }, { origin: 'https://app.example', kind: true }, { origin: 'https://app.example' }]) {
       expect(await call({ type: 'setRoute', ...request })).toEqual({ ok: false })
     }
     expect(set).not.toHaveBeenCalled()
   })
 
-  it('will not turn a route on that is blocked, but always turns one off', async () => {
+  it('will not send an app through a tunnel that is blocked for it, but always gives one up', async () => {
     const set = vi.fn()
-    const { call } = setup(NO_DEVICES, new SchemeChoices(null), { ...NO_ROUTES, blockedFor: () => 'not-cached', set })
-    expect(await call({ type: 'setRoute', origin: 'https://app.example', routed: true })).toEqual({ ok: false })
-    expect(await call({ type: 'setRoute', origin: 'https://app.example', routed: false })).toEqual({ ok: true })
-    expect(set.mock.calls).toEqual([['https://app.example', false]])
+    const { call } = setup(NO_DEVICES, new SchemeChoices(null), { ...NO_ROUTES, blockedFor: (_origin, kind) => kind === 'nym' ? 'nym-off' : 'not-cached', set })
+    expect(await call({ type: 'setRoute', origin: 'https://app.example', kind: 'nym' })).toEqual({ ok: false })
+    expect(await call({ type: 'setRoute', origin: 'https://app.example', kind: 'socks5' })).toEqual({ ok: false })
+    expect(await call({ type: 'setRoute', origin: 'https://app.example', kind: null })).toEqual({ ok: true })
+    expect(set.mock.calls).toEqual([['https://app.example', null]])
   })
 })

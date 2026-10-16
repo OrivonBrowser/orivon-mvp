@@ -25,7 +25,7 @@ import { serveApp } from '../node-runtime/pinned-app.js'
 const PLAIN = 'plain.socks.test'
 const OFF = 'off.socks.test'
 const APP_ORIGIN = 'https://tunnel-hardening-e2e.orivon.test'
-const ROUTE_SWITCH = '.app-card:has-text("tunnel-hardening") .app-route .switch'
+const ROUTE_CHOICE = '.app-card:has-text("tunnel-hardening") .app-route select'
 
 interface Hosted { port: number, hits: number, close: () => Promise<void> }
 
@@ -129,15 +129,15 @@ async function openApps (): Promise<Page> {
   await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/apps') })
   expect(await waitFor(() => app.windows().some((w) => w.url().startsWith('orivon://settings')))).toBe(true)
   const settings = app.windows().find((w) => w.url().startsWith('orivon://settings')) as Page
-  await settings.waitForSelector(ROUTE_SWITCH)
+  await settings.waitForSelector(ROUTE_CHOICE)
   return settings
 }
 
 it('[app:tunnel-hardening-app-set-to-off-leaves-through-the-tunnel] the same three from an installed app set to off reach an ordinary website through the tunnel, never direct', async () => {
   const settings = await openApps()
-  expect(await settings.locator(`${ROUTE_SWITCH} input`).isChecked(), 'the app follows the default, which is on').toBe(true)
-  await settings.locator(ROUTE_SWITCH).click()
-  expect(await waitFor(async () => !(await settings.locator(`${ROUTE_SWITCH} input`).isChecked()))).toBe(true)
+  expect(await settings.locator(ROUTE_CHOICE).inputValue(), 'the app follows the default, which is the proxy').toBe('socks5')
+  await settings.locator(ROUTE_CHOICE).selectOption('')
+  expect(await waitFor(async () => await settings.locator(ROUTE_CHOICE).inputValue() === '')).toBe(true)
   await settings.close()
 
   let page = await open(`${APP_ORIGIN}/`, 'app page')

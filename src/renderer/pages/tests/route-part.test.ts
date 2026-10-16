@@ -13,10 +13,10 @@ describe('RoutePart', () => {
   it('asks main to test the saved proxy, naming no address of its own, and keeps the answer with the address it was for', async () => {
     const { part: route, request, notify } = part({ ok: true, authentication: 'none' })
 
-    await route.test('127.0.0.1:9050')
+    await route.test('127.0.0.1:9050', 'socks5')
 
-    expect(request).toHaveBeenCalledWith('route', { type: 'test' })
-    expect(route.last).toEqual({ subject: '127.0.0.1:9050', result: { ok: true, authentication: 'none' } })
+    expect(request).toHaveBeenCalledWith('route', { type: 'test', kind: 'socks5' })
+    expect(route.last).toEqual({ kind: 'socks5', subject: '127.0.0.1:9050', result: { ok: true, authentication: 'none' } })
     expect(route.busy).toBe(false)
     expect(notify).toHaveBeenCalledTimes(2)
   })
@@ -25,20 +25,29 @@ describe('RoutePart', () => {
     let answer: (value: unknown) => void = () => {}
     const { part: route, request } = part(async () => await new Promise((resolve) => { answer = resolve }))
 
-    const first = route.test('127.0.0.1:9050')
+    const first = route.test('127.0.0.1:9050', 'socks5')
     expect(route.busy).toBe(true)
-    await route.test('127.0.0.1:9050')
+    expect(route.testing).toBe('socks5')
+    await route.test('127.0.0.1:9050', 'socks5')
     expect(request).toHaveBeenCalledTimes(1)
     answer({ ok: false, reason: 'silent' })
     await first
 
     expect(route.busy).toBe(false)
+    expect(route.testing).toBeNull()
     expect(route.last?.result).toEqual({ ok: false, reason: 'silent' })
+  })
+
+  it('asks Nym to be tested by name, and keeps its answer apart from the proxy\'s', async () => {
+    const { part: route, request } = part({ nym: true, ok: true, ms: 1200 })
+    await route.test('nym', 'nym')
+    expect(request).toHaveBeenCalledWith('route', { type: 'test', kind: 'nym' })
+    expect(route.last).toEqual({ kind: 'nym', subject: 'nym', result: { nym: true, ok: true, ms: 1200 } })
   })
 
   it('reads a failed request, or an answer it does not know, as nothing answering', async () => {
     const failing = part(async () => { throw new Error('closed') })
-    await failing.part.test('x:1')
+    await failing.part.test('x:1', 'socks5')
     expect(failing.part.last?.result).toEqual({ ok: false, reason: 'unreachable' })
     expect(resultOf(undefined)).toEqual({ ok: false, reason: 'unreachable' })
     expect(resultOf({ ok: true })).toEqual({ ok: false, reason: 'unreachable' })

@@ -172,3 +172,30 @@ it('[app:app-tunnel-from-the-menu] the menu shows the proxy on for the app, says
   expect(socks.requests.length, 'and the proxy is asked nothing more').toBe(seen)
   expect(decoy.connections()).toBe(0)
 }, 4 * QA_TEST_TIMEOUT_MS)
+
+const CARD_CHOICE = '.app-card:has-text("app-tunnel-menu") .app-route select'
+
+async function openApps (): Promise<Page> {
+  await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/apps') })
+  expect(await waitFor(() => app.windows().some((w) => w.url().startsWith('orivon://settings')))).toBe(true)
+  const settings = app.windows().find((w) => w.url().startsWith('orivon://settings')) as Page
+  await settings.waitForSelector(CARD_CHOICE)
+  return settings
+}
+
+it('[app:app-tunnel-from-the-menu] the app\'s card in Settings has the same three choices, and a choice made in one is the one the other shows', async () => {
+  if (findPopup() !== undefined) await chrome.click('#tunnel-btn')
+  await delay(300)
+  // The menu left the app on no tunnel; the card says so and offers Off, Nym and Your proxy.
+  const settings = await openApps()
+  expect(await settings.locator(CARD_CHOICE).inputValue()).toBe('')
+  expect(await settings.locator(`${CARD_CHOICE} option`).allTextContents()).toEqual(['Off', 'Nym', 'Your proxy'])
+  await shoot(app, chrome, settings, 'app-tunnel-card')
+  await settings.locator(CARD_CHOICE).selectOption('socks5')
+  expect(await waitFor(async () => await settings.locator(CARD_CHOICE).inputValue() === 'socks5')).toBe(true)
+  expect(await waitFor(async () => (await tcp().catch((): Attempt => ({ ok: false, detail: '' }))).ok, 60_000), 'the app dials through the proxy again').toBe(true)
+  await settings.close()
+  expect(await waitFor(async () => await chrome.getAttribute('#tunnel-btn', 'data-tunnel') === 'on'), 'the button shows it').toBe(true)
+  const popover = await openPopover()
+  expect(await popover.locator('#tunnel-switch-socks5').getAttribute('aria-checked'), 'and so does the menu').toBe('true')
+}, 4 * QA_TEST_TIMEOUT_MS)

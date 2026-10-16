@@ -23,21 +23,16 @@ export interface TunnelRow {
   readonly origin: string
   /** An installed app, or a website. */
   readonly kind: 'app' | 'site'
-  /** `on`: a tunnel of either kind; the list does not tell the two apart. */
-  readonly entry: 'on' | 'off' | undefined
+  /** What the person set: a tunnel, or off; none for an origin kept only for its storage. */
+  readonly entry: TunnelEntry | undefined
   readonly state: RouteState
   /** The profile the origin's entry puts it in, for a website. */
-  readonly profile: ListedProfile | undefined
+  readonly profile: Profile | undefined
   /** A website with storage in a profile that "Remove its separate storage" clears. */
   readonly apart: boolean
   /** The profiles it has storage in. */
-  readonly apartIn: readonly ListedProfile[]
+  readonly apartIn: readonly Profile[]
 }
-
-/** The list groups the two tunnel profiles as one. */
-export type ListedProfile = 'tunnel' | 'direct'
-
-const listed = (profile: Profile): ListedProfile => profile === 'direct' ? 'direct' : 'tunnel'
 
 export interface RouteSwitch {
   /** Why `origin` cannot be sent through the tunnel `kind` now (it can always be turned off), or undefined when it can: the tunnel has no address, a website is this computer, an app's files are not held here. */
@@ -103,19 +98,15 @@ export function createRouteSwitch (routes: Pick<RouteService, 'targetOf' | 'defa
     rows: () => {
       const entries = new Map(store.entries())
       const origins = new Set([...entries.keys(), ...PROFILES.flatMap((profile) => store.apart(profile))])
-      return [...origins].map((origin) => {
-        const entry = entries.get(origin)
-        const profile = profileOf(entry)
-        return {
-          origin,
-          kind: store.isApartAnywhere(origin) || !world.isPinned(origin) ? 'site' : 'app',
-          entry: entry === undefined ? undefined : entry === 'off' ? 'off' : 'on',
-          state: routes.hub.state(origin),
-          profile: profile === undefined ? undefined : listed(profile),
-          apart: store.isApartAnywhere(origin),
-          apartIn: [...new Set(PROFILES.filter((each) => store.isApart(origin, each)).map(listed))]
-        }
-      })
+      return [...origins].map((origin) => ({
+        origin,
+        kind: store.isApartAnywhere(origin) || !world.isPinned(origin) ? 'site' : 'app',
+        entry: entries.get(origin),
+        state: routes.hub.state(origin),
+        profile: profileOf(entries.get(origin)),
+        apart: store.isApartAnywhere(origin),
+        apartIn: PROFILES.filter((profile) => store.isApart(origin, profile))
+      }))
     },
     removeSiteStorage: async (origin) => {
       if (!store.isApartAnywhere(origin) || world.removeSiteStorage === undefined) return false

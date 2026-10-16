@@ -7,8 +7,8 @@ boundary of Orivon today, written down so you meet it here rather than in use. N
 
 - **Peers see your IP address unless you route the app.** An app, a website or the whole browser can
   go through a tunnel: Nym, built in and the default, or your own SOCKS5 address, such as a Tor
-  client's (Settings > Tunnels; an app's card in Apps; "Use the tunnel for this site" in a site's
-  popup). Anything with no tunnel of its own, while the whole browser is not on one, connects from
+  client's (Settings > Tunnels; an app's card in Apps; the tunnel button of a site or app in the
+  address bar). Anything with no tunnel of its own, while the whole browser is not on one, connects from
   your real address, so a peer-to-peer app you have not routed shows it. A routed app resolves no
   name on this computer, cannot listen on your network and cannot look up an address by name. A
   Nym tunnel carries about 30 to 45 KB a second for each connection, with about a second of delay
