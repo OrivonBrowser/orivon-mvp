@@ -53,6 +53,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Installed apps now behave like websites: same tunnel switch, same popup, and without grants they get a website's permissions.
 - On by default: update checks, and secure DNS via Quad9 that falls back to normal DNS when blocked.
 - An app asking for three kinds of unlimited network access now says what each one is for, instead of three identical rows.
+- Porting tool now lists what an app uses that Orivon lacks, read live from Orivon's own compatibility tables, before any port code.
 
 ### In my head
 
@@ -63,5 +64,6 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Orivon's IPFS node should run through Nym, not pause, when everything is tunnelled: privacy first, speed second.
 - Second thought on Nym: tunnel the person's own traffic, let IPFS and Swarm run direct for speed, and never touch gateways without a yes.
 - Installed is only where an app is kept, never how it behaves: one switch, one popup, one set of rules for every origin.
+- Ports should be doable by any capable AI, not one vendor's: tools must say where Orivon ends, so nobody patches around it.
 
 ### Non-repo
