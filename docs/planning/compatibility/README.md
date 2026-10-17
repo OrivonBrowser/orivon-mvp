@@ -13,6 +13,15 @@ page.
 What a working app relies on, behaviour by behaviour and each tied to the end-to-end spec that
 proves it, is [`../../../test/app-behaviours/catalogue.md`](../../../test/app-behaviours/catalogue.md).
 
+Tables 2a, 2b, 2c and 5 are also read by a program: the orivon-ports repository's
+`orivon-port recon` matches what an app uses against them and prints each row's verdict, so a
+porter learns which gaps are Orivon's before writing a port. Their rows therefore keep one shape:
+the item names in backticks in the first cell, and the status mark first in the status cell
+(`Status` in 2a, `This package` in 2b, `On Orivon` in 2c, `Verdict` in 5). A row of another shape
+is skipped there, and a drift test in that repository fails when a table yields too few rows. The
+generated refusal lists under `src/shim/**/generated/` are read the same way, for the members a
+module refuses.
+
 | File | Table |
 |---|---|
 | [`table-1-capabilities.md`](table-1-capabilities.md) | 1a, what `orivon.*` offers; 1b, authority no capability covers |
