@@ -73,6 +73,17 @@ describe('resolveFeed, over /chunks alone', () => {
     expect((await resolveFeed(FEED, deps, memoryStore(), signal, noteRefusal)).root).toBe(target)
   })
 
+  it('refuses a legacy update with a non-zero byte past its 40 bytes', async () => {
+    const chunks = new Map<string, Uint8Array>()
+    const plain = legacyUpdate(buildFile(bytes('dirty'), chunks).ref)
+    const wrapped = concat([plain, new Uint8Array(4096 - (plain.length - 8))])
+    wrapped[8 + 100] = 1
+    const update = await signFeedUpdate({ privateKey: TEST_KEY, topic: TOPIC, index: 0, wrapped })
+    chunks.set(update.address, update.chunk)
+    const deps: ChunkDeps = { fetch: fakeSwarm(chunks).fetch, pool: new GatewayPool([A], 6), limits: DEFAULT_LIMITS }
+    await expect(resolveFeed(FEED, deps, memoryStore(), signal, noteRefusal)).rejects.toMatchObject({ failure: 'unverifiable' })
+  })
+
   it('starts at the highest index seen before, never below it', async () => {
     const { deps, targets, probesMade } = await feedWith(20)
     const store = memoryStore({ [`${OWNER}/${TOPIC}`]: 12n })

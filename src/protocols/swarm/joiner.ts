@@ -65,7 +65,8 @@ async function childrenOf (chunk: Uint8Array, size: number, level: number, at: n
   if (unit === 0) throw malformed('a child with no content under a parent that has some')
   const data = Math.ceil(size / unit)
   // BMT pads a payload with zeros, so zero bytes after the last reference are the same chunk.
-  const padded = level === 0 && data < refs && isZeroPadding(payload.subarray(data * REFERENCE_BYTES))
+  const lastNeeded = payload.subarray((data - 1) * REFERENCE_BYTES, data * REFERENCE_BYTES)
+  const padded = level === 0 && data < refs && !isZeroPadding(lastNeeded) && isZeroPadding(payload.subarray(data * REFERENCE_BYTES))
   if (data > refs || (level === 0 && data !== refs && !padded)) throw malformed(`${String(refs)} references for ${String(data)} children`)
   const children: Child[] = []
   for (let i = 0; i < data; i++) {

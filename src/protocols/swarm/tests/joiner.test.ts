@@ -8,6 +8,7 @@ import { cacAddress, verifyCac } from '../chunk.js'
 
 const LIMITS: JoinLimits = { maxBytes: 1024 * 1024 * 1024, maxTreeDepth: 8 }
 const LEAF = 4096
+const MAX_CHUNK = 8 + LEAF
 
 const content = (size: number): Uint8Array => Uint8Array.from({ length: size }, (_, i) => (i * 31 + (i >> 8) * 7 + 1) & 255)
 
@@ -226,16 +227,42 @@ describe('openFile, over zero-padded chunks', () => {
     expect(await readWhole(await openFile(chunksOf(store).get, hex(root), LIMITS), bytes.length)).toEqual(bytes)
   })
 
-  it('refuses an intermediate chunk with a non-zero byte after its references, and one short of references', async () => {
+  it('refuses an intermediate chunk with a non-zero byte after its references', async () => {
     const store = new Map<string, Uint8Array>()
     const a = buildFile(content(LEAF), store)
     const b = buildFile(content(100), store)
-    const list = concat([a, b].map((x) => hexToBytes(`0x${x.ref}`)))
-    const dirty = padTo4096(list)
+    const dirty = padTo4096(concat([a, b].map((x) => hexToBytes(`0x${x.ref}`))))
     dirty[LEAF - 1] = 1
     store.set('dirty', makeChunk(spanBytes(LEAF + 100), dirty))
     await expect(collect((await openFile(chunksOf(store).get, 'dirty', LIMITS)).read())).rejects.toMatchObject({ failure: 'unverifiable' })
+  })
+
+  it('refuses a padded intermediate chunk that lists fewer references than it has children, without fetching the empty one', async () => {
+    const store = new Map<string, Uint8Array>()
+    const a = buildFile(content(LEAF), store)
+    const b = buildFile(content(LEAF).map((byte) => byte ^ 1), store)
+    const list = concat([a, b].map((x) => hexToBytes(`0x${x.ref}`)))
     store.set('short', makeChunk(spanBytes(3 * LEAF), padTo4096(list)))
-    await expect(collect((await openFile(chunksOf(store).get, 'short', LIMITS)).read())).rejects.toMatchObject({ failure: 'unverifiable' })
+    const { get, fetched } = chunksOf(store)
+    await expect(collect((await openFile(get, 'short', LIMITS)).read())).rejects.toMatchObject({ failure: 'unverifiable', message: expect.stringMatching(/128 references for 3 children/) })
+    expect(fetched).not.toContain('00'.repeat(32))
+  })
+
+  it('refuses a padded intermediate chunk whose references are all zero', async () => {
+    const store = new Map<string, Uint8Array>()
+    store.set('00'.repeat(32), makeChunk(spanBytes(LEAF), content(LEAF)))
+    store.set('empty', makeChunk(spanBytes(2 * LEAF), new Uint8Array(LEAF)))
+    await expect(collect((await openFile(chunksOf(store).get, 'empty', LIMITS)).read())).rejects.toMatchObject({ failure: 'unverifiable', message: expect.stringMatching(/128 references for 2 children/) })
+  })
+
+  it('still reads an erasure-coded file whose intermediate chunks are padded to 4096 bytes', async () => {
+    const store = new Map<string, Uint8Array>()
+    const bytes = content(20 * LEAF + 30)
+    const { ref } = buildFile(bytes, store, { level: 1, parity: 5 })
+    for (const [address, chunk] of store) {
+      if (chunk[7]! > 128) store.set(address, concat([chunk, new Uint8Array(MAX_CHUNK - chunk.length)]))
+    }
+    expect([...store.values()].some((chunk) => chunk[7]! > 128 && chunk.length === MAX_CHUNK)).toBe(true)
+    expect(await readWhole(await openFile(chunksOf(store).get, ref, LIMITS), bytes.length)).toEqual(bytes)
   })
 })
