@@ -54,6 +54,9 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - On by default: update checks, and secure DNS via Quad9 that falls back to normal DNS when blocked.
 - An app asking for three kinds of unlimited network access now says what each one is for, instead of three identical rows.
 - Porting tool now lists what an app uses that Orivon lacks, read live from Orivon's own compatibility tables, before any port code.
+- Explore now lists 247 sites: 146 new .eth, IPFS and Swarm sites, each confirmed loading in a real Orivon, opening on Start here.
+- Orivon Attila judged all 146 new sites; Web3 sites rank higher, and a newcomer's first view holds no Web2 site at all.
+- Loading 204 sites in a real Orivon found a Swarm bug (zero-padded chunks, fixed) and IPFS sites whose files never arrive.
 
 ### In my head
 
