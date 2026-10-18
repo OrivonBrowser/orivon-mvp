@@ -4,6 +4,7 @@ import { openFile, readWhole } from '../joiner.js'
 import type { GetChunk, JoinLimits } from '../joiner.js'
 import { buildFile, makeChunk, spanBytes } from '../../../../test/apps/swarm-gateway/encode.mjs'
 import { ResolutionError } from '../../resolution/records.js'
+import { cacAddress, verifyCac } from '../chunk.js'
 
 const LIMITS: JoinLimits = { maxBytes: 1024 * 1024 * 1024, maxTreeDepth: 8 }
 const LEAF = 4096
@@ -182,5 +183,59 @@ describe('openFile', () => {
     const file = await openFile(chunksOf(store).get, ref, LIMITS)
     expect(await readWhole(file, 3 * LEAF)).toEqual(bytes)
     await expect(readWhole(file, 3 * LEAF - 1)).rejects.toMatchObject({ failure: 'unverifiable' })
+  })
+})
+
+describe('openFile, over zero-padded chunks', () => {
+  const padTo4096 = (payload: Uint8Array): Uint8Array => concat([payload, new Uint8Array(LEAF - payload.length)])
+  const hex = (chunk: Uint8Array): string => Buffer.from(cacAddress(chunk)).toString('hex')
+
+  it('gives a payload and the same payload followed by zeros one address', () => {
+    const plain = makeChunk(spanBytes(960), content(960))
+    const padded = makeChunk(spanBytes(960), padTo4096(content(960)))
+    expect(hex(padded)).toBe(hex(plain))
+    expect(verifyCac(hex(plain), padded)).toBe(true)
+  })
+
+  it('reads a leaf stored padded to 4096 bytes as the bytes its span declares', async () => {
+    const bytes = content(960)
+    const chunk = makeChunk(spanBytes(960), padTo4096(bytes))
+    const store = new Map([[hex(chunk), chunk]])
+    const file = await openFile(chunksOf(store).get, hex(chunk), LIMITS)
+    expect(file.size).toBe(960)
+    expect(await readWhole(file, 960)).toEqual(bytes)
+    expect(await collect(file.read({ start: 100, end: 2000 }))).toEqual(bytes.subarray(100))
+  })
+
+  it('refuses a leaf with a non-zero byte past its span', async () => {
+    const padded = padTo4096(content(960))
+    padded[4000] = 1
+    const store = new Map([['leaf', makeChunk(spanBytes(960), padded)]])
+    await expect(collect((await openFile(chunksOf(store).get, 'leaf', LIMITS)).read())).rejects.toMatchObject({ failure: 'unverifiable', message: expect.stringMatching(/4096 bytes where 960/) })
+  })
+
+  it('reads an intermediate chunk whose reference list is followed by zeros', async () => {
+    const store = new Map<string, Uint8Array>()
+    const bytes = content(LEAF + 512)
+    const a = buildFile(bytes.subarray(0, LEAF), store)
+    const b = buildFile(bytes.subarray(LEAF), store)
+    const list = concat([a, b].map((x) => hexToBytes(`0x${x.ref}`)))
+    const root = makeChunk(spanBytes(bytes.length), padTo4096(list))
+    store.set(hex(root), root)
+    expect(hex(root)).toBe(hex(makeChunk(spanBytes(bytes.length), list)))
+    expect(await readWhole(await openFile(chunksOf(store).get, hex(root), LIMITS), bytes.length)).toEqual(bytes)
+  })
+
+  it('refuses an intermediate chunk with a non-zero byte after its references, and one short of references', async () => {
+    const store = new Map<string, Uint8Array>()
+    const a = buildFile(content(LEAF), store)
+    const b = buildFile(content(100), store)
+    const list = concat([a, b].map((x) => hexToBytes(`0x${x.ref}`)))
+    const dirty = padTo4096(list)
+    dirty[LEAF - 1] = 1
+    store.set('dirty', makeChunk(spanBytes(LEAF + 100), dirty))
+    await expect(collect((await openFile(chunksOf(store).get, 'dirty', LIMITS)).read())).rejects.toMatchObject({ failure: 'unverifiable' })
+    store.set('short', makeChunk(spanBytes(3 * LEAF), padTo4096(list)))
+    await expect(collect((await openFile(chunksOf(store).get, 'short', LIMITS)).read())).rejects.toMatchObject({ failure: 'unverifiable' })
   })
 })

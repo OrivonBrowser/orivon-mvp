@@ -10,7 +10,7 @@ import type { PointerStep } from '../resolution/records.js'
 import type { Refusal } from '../resolution/providers.js'
 import { lookUpSoc } from './chunk-fetch.js'
 import type { ChunkDeps } from './chunk-fetch.js'
-import { cacAddress, feedUpdateAddress, readSpan, SPAN_BYTES } from './chunk.js'
+import { cacAddress, feedUpdateAddress, isZeroPadding, readSpan, SPAN_BYTES } from './chunk.js'
 import { referenceCid } from './reference.js'
 
 /** The highest update index seen for each feed, kept across runs: a feed is never read as older than it has been. */
@@ -122,8 +122,9 @@ function targetOf (wrapped: Uint8Array): string {
   const payload = wrapped.subarray(SPAN_BYTES)
   if (size === ENCRYPTED_UPDATE_SPAN) throw new ResolutionError('unsupported', 'a Swarm feed update holding an encrypted reference, which this version of Orivon does not read')
   if (size !== LEGACY_UPDATE_SPAN) return bytesToHex(cacAddress(wrapped)).slice(2)
-  if (payload.length !== LEGACY_UPDATE_SPAN) throw new ResolutionError('unverifiable', 'a feed update whose payload is not a timestamp and a reference')
-  return bytesToHex(payload.subarray(TIMESTAMP_BYTES)).slice(2)
+  // BMT pads a payload with zeros, so zero bytes past the span are the same chunk.
+  if (payload.length < LEGACY_UPDATE_SPAN || !isZeroPadding(payload.subarray(LEGACY_UPDATE_SPAN))) throw new ResolutionError('unverifiable', 'a feed update whose payload is not a timestamp and a reference')
+  return bytesToHex(payload.subarray(TIMESTAMP_BYTES, LEGACY_UPDATE_SPAN)).slice(2)
 }
 
 export interface ResolvedFeed {
