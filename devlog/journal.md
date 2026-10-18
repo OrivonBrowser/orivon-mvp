@@ -56,6 +56,9 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Porting tool now lists what an app uses that Orivon lacks, read live from Orivon's own compatibility tables, before any port code.
 - New releases were pinned but unreachable: the IPFS node's leaking connection count refused every dial. A watchdog now restarts it before that.
 - The newest release always has one ipns:// address, ready for latest.orivonstack.eth; each release's own CID stays in its text.
+- Explore now lists 247 sites: 146 new .eth, IPFS and Swarm sites, each confirmed loading in a real Orivon, opening on Start here.
+- Orivon Attila judged all 146 new sites; Web3 sites rank higher, and a newcomer's first view holds no Web2 site at all.
+- Loading 204 sites in a real Orivon found a Swarm bug (zero-padded chunks, fixed) and IPFS sites whose files never arrive.
 
 ### In my head
 
