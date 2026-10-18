@@ -137,6 +137,86 @@ WantedBy=timers.target
 `journalctl -u orivon-release-pinner` shows each run: a line per release pinned, refused or
 unpinned. A refused release is not downloaded again until its `ipfs.json` names another CID.
 
+#### Keeping the node reachable
+
+Kubo's resource manager never releases a connection whose handshake failed, so its count of inbound
+connections climbs above the connections that are really open until it reaches the system limit. From
+then on every new dial is refused, and content only this node holds (a new release) cannot be fetched
+although it is pinned. A restart resets the count. [`scripts/ipfs-node-watchdog.sh`](../../scripts/ipfs-node-watchdog.sh)
+`check` restarts Kubo when the count is at least `LEAK_PCT` percent of the limit and exceeds the real
+connections by `GAP_PCT` percent of it, or when the API has not answered `API_FAILS` runs in a row. It
+waits while the release pinner is running and keeps `MIN_INTERVAL` seconds between restarts. A crash
+is left to systemd. `status` prints the numbers and never acts; `DRY_RUN=1` says what `check` would do.
+
+```ini
+# orivon-ipfs-watchdog.service
+[Service]
+Type=oneshot
+User=root
+Environment=IPFS_API=/ip4/127.0.0.1/tcp/5001 STATE_FILE=/var/lib/orivon-ipfs-watchdog/watchdog.json
+# SUMMARY_LOG=/path/to/summary.md also gets a line for each restart
+ExecStart=/path/to/ipfs-node-watchdog.sh check
+
+# orivon-ipfs-watchdog.timer
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target
+```
+
+It runs as root because it restarts the Kubo service. The state file records each check and the last
+ten restarts.
+
+#### The status page
+
+[`scripts/ipfs-status.sh`](../../scripts/ipfs-status.sh) answers "is everything served?" on one page. It
+lists every IPNS key of the node with its `ipns://` address, the build it points at, whether that build
+is pinned, whether the IPNS record and the node as a provider are on the network, and whether public
+gateways can fetch it. It lists the newest releases with their `ipfs://` CID, which are kept and pinned
+here, and the gateways' answers. For each IPNS key it reads the `.eth` names that should point at it from
+`NAMES_FILE` and checks their contenthash on Ethereum (and, unless `ETH_LIMO=0`, that `<name>.limo`
+loads). Below them it shows the node's version, uptime, inbound connection budget, storage and the last
+runs of the pinner and the watchdog. A banner at the top is green when nothing is wrong and otherwise
+lists each problem in plain words. `status.json` holds the same data for agents; `STATUS.md` is the page
+as Markdown.
+
+`NAMES_FILE` has one line per IPNS key, the key name first and then the names, with `#` starting a comment:
+
+```
+# IPNS key   .eth names whose contenthash should be ipns://<that key>
+website      example.eth www.example.eth
+docs         docs.example.eth
+```
+
+A key without a line is shown as "none expected"; a line whose key is not in the node's keystore is an error.
+With `PUBLISH_KEY` set (an IPNS key created beforehand with `ipfs key gen`), `run` writes `index.html` and
+`status.json` into the node's MFS under `MFS_DIR` and publishes that folder under the key, so the page is at
+`ipns://<key>` and a `.eth` name whose contenthash is that key opens it. MFS keeps it out of garbage
+collection; nothing else is pinned or unpinned.
+
+```ini
+# orivon-ipfs-status.service
+[Service]
+Type=oneshot
+User=<the user that runs the release pinner>
+Environment=IPFS_API=/ip4/127.0.0.1/tcp/5001 OUT_DIR=/path/to/status NAMES_FILE=/path/to/names.conf
+Environment=WATCHDOG_STATE=/var/lib/orivon-ipfs-watchdog/watchdog.json PUBLISH_KEY=status
+ExecStart=/path/to/ipfs-status.sh run
+
+# orivon-ipfs-status.timer
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+
+[Install]
+WantedBy=timers.target
+```
+
+A run takes one to three minutes, most of it waiting on gateways; `TIMEOUT` caps each network check.
+If the job stops, the page shows "This page is stale" once it is three intervals old.
+
 ## winget
 
 Every GitHub release also offers its Windows installer to [winget-pkgs](https://github.com/microsoft/winget-pkgs), the
