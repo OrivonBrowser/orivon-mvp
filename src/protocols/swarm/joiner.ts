@@ -6,7 +6,7 @@
 import { bytesToHex } from 'viem'
 import { ResolutionError } from '../resolution/records.js'
 import type { GatherRange } from '../resolution/providers.js'
-import { CHUNK_PAYLOAD_BYTES, REFERENCE_BYTES, SPAN_BYTES, readSpan } from './chunk.js'
+import { CHUNK_PAYLOAD_BYTES, REFERENCE_BYTES, SPAN_BYTES, isZeroPadding, readSpan } from './chunk.js'
 
 /** Children fetched ahead of the one being read, in each intermediate chunk. */
 const WINDOW = 16
@@ -64,7 +64,10 @@ async function childrenOf (chunk: Uint8Array, size: number, level: number, at: n
   const unit = readSpan(first).size
   if (unit === 0) throw malformed('a child with no content under a parent that has some')
   const data = Math.ceil(size / unit)
-  if (data > refs || (level === 0 && data !== refs)) throw malformed(`${String(refs)} references for ${String(data)} children`)
+  // BMT pads a payload with zeros, so zero bytes after the last reference are the same chunk.
+  const lastNeeded = payload.subarray((data - 1) * REFERENCE_BYTES, data * REFERENCE_BYTES)
+  const padded = level === 0 && data < refs && !isZeroPadding(lastNeeded) && isZeroPadding(payload.subarray(data * REFERENCE_BYTES))
+  if (data > refs || (level === 0 && data !== refs && !padded)) throw malformed(`${String(refs)} references for ${String(data)} children`)
   const children: Child[] = []
   for (let i = 0; i < data; i++) {
     const childAt = at + i * unit
@@ -80,8 +83,9 @@ async function * readChunk (chunk: Uint8Array, expected: number, at: number, sta
   if (size !== expected) throw malformed(`a subtree of ${String(size)} bytes where ${String(expected)} were declared`)
   const payload = chunk.subarray(SPAN_BYTES)
   if (size <= CHUNK_PAYLOAD_BYTES) {
-    if (payload.length !== size) throw malformed(`a leaf of ${String(payload.length)} bytes where ${String(size)} were declared`)
-    const part = slice(payload, at, start, end)
+    // BMT pads a payload with zeros, so zero bytes past the span are the same chunk; only `size` are content.
+    if (payload.length < size || !isZeroPadding(payload.subarray(size))) throw malformed(`a leaf of ${String(payload.length)} bytes where ${String(size)} were declared`)
+    const part = slice(payload.subarray(0, size), at, start, end)
     if (part !== undefined) yield part
     return
   }

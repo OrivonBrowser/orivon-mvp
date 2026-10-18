@@ -51,5 +51,11 @@ stops a rollback.
 redundancy level; the data references are the leading ones whose spans sum to the parent's span, so
 parity references are recognised by arithmetic and never fetched.
 
+**Zero bytes after a payload are accepted.** The address hashes every payload as if padded with zeros
+to 4096 bytes, so a chunk stored padded and the same chunk unpadded are one address. The joiner reads
+`span` bytes of a leaf and the references an intermediate chunk needs; a feed update reads its 40
+bytes. A non-zero byte after any of them is refused, because that is content, not padding, and so is an
+intermediate payload that is not a whole number of references.
+
 **Named limits**, each refused in words: encrypted references, Mantaray 0.1, epoch feeds, and a
 manifest's `website-error-document`.

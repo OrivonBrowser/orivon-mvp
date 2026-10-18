@@ -50,6 +50,11 @@ export function bmtRoot (payload: Uint8Array): Uint8Array {
   return nodes[0]!
 }
 
+/** Whether `bytes` are all zero: the only thing that may follow a payload without changing its chunk's address. */
+export function isZeroPadding (bytes: Uint8Array): boolean {
+  return bytes.every((byte) => byte === 0)
+}
+
 /** The address a CAC (span, then payload) must be served under, as 32 bytes. */
 export function cacAddress (chunk: Uint8Array): Uint8Array {
   return keccak(concatBytes([chunk.subarray(0, SPAN_BYTES), bmtRoot(chunk.subarray(SPAN_BYTES))]))

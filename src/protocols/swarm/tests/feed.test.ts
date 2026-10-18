@@ -10,7 +10,7 @@ import { referenceCid } from '../reference.js'
 import { cacAddress } from '../chunk.js'
 import { buildFile, feedSocAddress, legacyUpdate, makeChunk, ownerOf, signFeedUpdate, spanBytes } from '../../../../test/apps/swarm-gateway/encode.mjs'
 import { A, B, TEST_KEY, TOPIC, bytes, fakeSwarm } from './swarm.test-helpers.js'
-import { bytesToHex } from 'viem'
+import { bytesToHex, concat } from 'viem'
 
 const signal = new AbortController().signal
 const OWNER = ownerOf(TEST_KEY)
@@ -60,6 +60,29 @@ describe('resolveFeed, over /chunks alone', () => {
       expect(swarm.requests.some((url) => url.includes('/feeds/'))).toBe(true)
     })
   }
+
+  it('reads a legacy update whose payload is padded with zeros to 4096 bytes', async () => {
+    const chunks = new Map<string, Uint8Array>()
+    const target = buildFile(bytes('padded'), chunks).ref
+    const plain = legacyUpdate(target)
+    const wrapped = concat([plain, new Uint8Array(4096 - (plain.length - 8))])
+    const update = await signFeedUpdate({ privateKey: TEST_KEY, topic: TOPIC, index: 0, wrapped })
+    chunks.set(update.address, update.chunk)
+    const swarm = fakeSwarm(chunks)
+    const deps: ChunkDeps = { fetch: swarm.fetch, pool: new GatewayPool([A], 6), limits: DEFAULT_LIMITS }
+    expect((await resolveFeed(FEED, deps, memoryStore(), signal, noteRefusal)).root).toBe(target)
+  })
+
+  it('refuses a legacy update with a non-zero byte past its 40 bytes', async () => {
+    const chunks = new Map<string, Uint8Array>()
+    const plain = legacyUpdate(buildFile(bytes('dirty'), chunks).ref)
+    const wrapped = concat([plain, new Uint8Array(4096 - (plain.length - 8))])
+    wrapped[8 + 100] = 1
+    const update = await signFeedUpdate({ privateKey: TEST_KEY, topic: TOPIC, index: 0, wrapped })
+    chunks.set(update.address, update.chunk)
+    const deps: ChunkDeps = { fetch: fakeSwarm(chunks).fetch, pool: new GatewayPool([A], 6), limits: DEFAULT_LIMITS }
+    await expect(resolveFeed(FEED, deps, memoryStore(), signal, noteRefusal)).rejects.toMatchObject({ failure: 'unverifiable' })
+  })
 
   it('starts at the highest index seen before, never below it', async () => {
     const { deps, targets, probesMade } = await feedWith(20)
