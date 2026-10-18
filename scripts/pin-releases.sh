@@ -5,7 +5,8 @@
 #                                    <dir> and each file's name and SHA-256. Hashes only; stores nothing.
 #   pin-releases.sh sync             run by a pinning node on a timer: adds the files of the newest KEEP
 #                                    releases, refuses one whose CID differs from its ipfs.json, pins it as
-#                                    orivon-release-<tag>, and unpins the older releases it pinned.
+#                                    orivon-release-<tag>, and unpins the older releases it pinned. With
+#                                    LATEST_KEY set, points that IPNS key at the newest release it keeps.
 #
 # Needs bash, curl, jq, sha256sum and Kubo's `ipfs`. Settings come from the environment, below.
 set -euo pipefail
@@ -99,6 +100,21 @@ sync () {
       log "release ${name#"$PIN_PREFIX"} unpinned (ipfs://$cid): only the newest $KEEP stay pinned"
     fi
   done < <(ipfs pin ls --type=recursive --names)
+
+  if [ -n "${LATEST_KEY:-}" ] && [ -n "$kept" ]; then point_latest "$(head -n 1 <<<"$kept")"; fi
+}
+
+# One ipns:// address (and the .eth name set to it) that always opens the newest release this node keeps.
+point_latest () {
+  local cid=$1 id
+  id=$(ipfs key list -l --ipns-base=base36 | awk -v k="$LATEST_KEY" '$2 == k { print $1 }') || true
+  if [ -z "$id" ]; then echo "[pin-releases] no IPNS key named $LATEST_KEY; create it with ipfs key gen" >&2; return 0; fi
+  if [ "$(ipfs name resolve --offline "/ipns/$id" 2>/dev/null || true)" = "/ipfs/$cid" ]; then return 0; fi
+  if ipfs --timeout=5m name publish --key="$LATEST_KEY" "/ipfs/$cid" >/dev/null; then
+    log "ipns://$id ($LATEST_KEY) now opens ipfs://$cid, the newest release kept"
+  else
+    log "could not point $LATEST_KEY at ipfs://$cid; retried on the next run"
+  fi
 }
 
 case "${1:-}" in

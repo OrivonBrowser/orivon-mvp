@@ -6,11 +6,13 @@
 #                                  exist, or when its API stops answering. Otherwise does nothing.
 #   ipfs-node-watchdog.sh status   prints the numbers `check` decides on, and changes nothing.
 #
-# Kubo's resource manager never releases a connection whose handshake failed, so its inbound count climbs
-# above the connections that are really open until the system limit is reached; from then on every new
-# dial is refused and the node cannot serve what only it holds. A restart resets the count.
+# Kubo's resource manager keeps counting some inbound connections after they close (measured on Kubo
+# 0.43.1: about one a minute, while the swarm's own opened and closed totals stay level), so its count
+# climbs until it reaches the system limit; from then on every new dial is refused and the node cannot
+# serve what only it holds. A restart resets the count.
 #
-# Needs bash, curl, jq, systemctl and Kubo's `ipfs`. Settings come from the environment, below.
+# Needs bash, curl, jq and systemctl; it talks to Kubo's RPC API directly, so the `ipfs` command (which
+# wants a HOME a root service lacks) is not used. Settings come from the environment, below.
 set -euo pipefail
 
 IPFS_API=${IPFS_API:-/ip4/127.0.0.1/tcp/5001}
@@ -23,7 +25,6 @@ API_FAILS=${API_FAILS:-3}      # runs in a row without an answer before a restar
 STATE_FILE=${STATE_FILE:-${WORK:-${TMPDIR:-/tmp}/orivon-ipfs-watchdog}/watchdog.json}
 DRY_RUN=${DRY_RUN:-0}
 
-ipfs () { command ipfs ${IPFS_API:+--api "$IPFS_API"} "$@"; }
 log () {
   echo "[ipfs-node-watchdog] $*"
 }
@@ -33,7 +34,7 @@ note () {
 }
 now () { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
-# host:port of the RPC API, from its multiaddr; the metrics answer a GET there.
+# host:port of the RPC API, from its multiaddr; the metrics answer a GET there, the RPC commands a POST.
 api_http () {
   awk -F/ '{ h = $3; if ($2 == "ip6") h = "[" h "]"; if (h == "0.0.0.0") h = "127.0.0.1"; if (h == "[::]") h = "[::1]"; print h ":" $5 }' <<<"$IPFS_API"
 }
@@ -53,7 +54,7 @@ sample_metrics () {
 # The system ConnsInbound limit: a number, or empty when there is none (unlimited, blockAll) or unknown.
 inbound_limit () {
   local v
-  v=$(ipfs --timeout=30s swarm resources 2>/dev/null | awk -F'\t+' '$1 == "system" && $2 == "ConnsInbound" { print $3; exit }') || true
+  v=$(curl -fsS -m 30 -X POST "http://$(api_http)/api/v0/swarm/resources" 2>/dev/null | jq -r '.System.ConnsInbound // empty') || true
   if [[ $v =~ ^[0-9]+$ ]]; then echo "$v"; fi
 }
 
