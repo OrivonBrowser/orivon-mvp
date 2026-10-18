@@ -54,6 +54,8 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - On by default: update checks, and secure DNS via Quad9 that falls back to normal DNS when blocked.
 - An app asking for three kinds of unlimited network access now says what each one is for, instead of three identical rows.
 - Porting tool now lists what an app uses that Orivon lacks, read live from Orivon's own compatibility tables, before any port code.
+- New releases were pinned but unreachable: the IPFS node's leaking connection count refused every dial. A watchdog now restarts it before that.
+- The newest release always has one ipns:// address, ready for latest.orivonstack.eth; each release's own CID stays in its text.
 
 ### In my head
 

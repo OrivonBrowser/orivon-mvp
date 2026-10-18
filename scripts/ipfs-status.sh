@@ -9,7 +9,7 @@
 #   ipfs-status.sh run       collect, then render. The page is meant to be served privately (it names
 #                            every key and the node's health); nothing here publishes it.
 #
-# Needs bash, curl, jq, openssl, xxd and Kubo's `ipfs`. Settings come from the environment, below.
+# Needs bash, curl, jq, openssl 3.2 or later (for keccak-256), xxd and Kubo's `ipfs`. Settings come from the environment, below.
 # NAMES_FILE has one line per IPNS key: `<key> <name.eth> [<name.eth> ...]`, `#` starts a comment. A key
 # without a line has no expected .eth name; a line whose key is not in the keystore is an error.
 # LATEST_KEY names the key pin-releases.sh points at the newest release it pinned, when it does.
@@ -164,6 +164,7 @@ decode_contenthash () {
 ens_check () {
   local node r c resolver
   ENS_STATE=unknown; ENS_ACTUAL=''
+  [ "$KECCAK" = 1 ] || return 0
   node=$(namehash "$1")
   r=$(eth_call "$ENS_REGISTRY" "0x0178b8bf$node") || return 0
   resolver=${r: -40}
@@ -200,14 +201,19 @@ check_gateways () {
   GW_JSON=$(printf '%s\n' "${json[@]}" | jq -sc . 2>/dev/null || echo '[]')
 }
 # Sets PROVIDED: 1 when this node is among the providers the routing server lists for <cid>, 0 when not, "" unknown.
+# The server sometimes answers before it has heard from every provider, so a "not listed" is asked once more.
 check_provided () {
-  local out
+  local out try
   PROVIDED=''
-  out=$(curl -s -m "$TIMEOUT" -w '\n%{http_code}' "$ROUTING/routing/v1/providers/$1") || return 0
-  case ${out##*$'\n'} in
-    200) if jq -e --arg p "$PEER_ID" 'any(.Providers[]?; .ID == $p)' <<<"${out%$'\n'*}" >/dev/null 2>&1; then PROVIDED=1; else PROVIDED=0; fi ;;
-    404) PROVIDED=0 ;;
-  esac
+  [ -n "$PEER_ID" ] || return 0
+  for try in 1 2; do
+    out=$(curl -s -m "$TIMEOUT" -w '\n%{http_code}' "$ROUTING/routing/v1/providers/$1") || continue
+    case ${out##*$'\n'} in
+      200) if jq -e --arg p "$PEER_ID" 'any(.Providers[]?; .ID == $p)' <<<"${out%$'\n'*}" >/dev/null 2>&1; then PROVIDED=1; return 0; fi
+           PROVIDED=0 ;;
+      404) PROVIDED=0 ;;
+    esac
+  done
 }
 # Sets REC_FOUND (1, 0 or ""), REC_VALUE and REC_EXPIRES from the IPNS record the routing server holds for <id>.
 fetch_record() {
@@ -271,7 +277,7 @@ collect_site () {
       wrong) flag error "$name points at ${ENS_ACTUAL}, not at its key $ipns: set its contenthash to $ipns" ;;
       none) flag error "$name has no contenthash: set it to $ipns" ;;
       no-resolver) flag error "$name has no resolver: set one, then set its contenthash to $ipns" ;;
-      unknown) flag warn "Could not read the ENS record of $name (no Ethereum RPC answered)" ;;
+      unknown) [ "$KECCAK" = 1 ] && flag warn "Could not read the ENS record of $name (no Ethereum RPC answered)" ;;
     esac
     if [ "$ETH_LIMO" = 1 ]; then
       local code secs
@@ -380,6 +386,11 @@ collect () {
   mkdir -p "$OUT_DIR"
   : > "$T/problems"; : > "$T/sites"; : > "$T/releases"
   started=$(date +%s)
+  KECCAK=1
+  if ! printf '' | openssl dgst -keccak-256 >/dev/null 2>&1; then
+    KECCAK=0
+    problem warn "This server's openssl has no keccak-256 (it needs 3.2 or later), so no .eth name is checked"
+  fi
   log "node"
   collect_node
   collect_sites
@@ -388,8 +399,8 @@ collect () {
   jq -n --arg at "$(now)" --argjson interval "$INTERVAL_MINUTES" --argjson node "$NODE" --argjson latest "$LATEST" \
     --slurpfile sites "$T/sites" --slurpfile releases "$T/releases" --slurpfile problems "$T/problems" '{
       generated_at: $at, interval_minutes: $interval, node: $node, sites: $sites, releases: $releases, latest: $latest,
-      problems: ($problems | sort_by(if .severity == "error" then 0 else 1 end))}' > "$T/status.json" \
-    && mv "$T/status.json" "$OUT_DIR/status.json"
+      problems: ($problems | sort_by(if .severity == "error" then 0 else 1 end))}' > "$OUT_DIR/status.json.tmp" \
+    && mv "$OUT_DIR/status.json.tmp" "$OUT_DIR/status.json"
   log "collected in $(( $(date +%s) - started )) s"
 }
 

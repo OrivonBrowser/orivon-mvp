@@ -22,7 +22,8 @@ LEAK_PCT=${LEAK_PCT:-75}       # restart when the count is at least this share o
 GAP_PCT=${GAP_PCT:-50}         # ... and exceeds the real connections by at least this share of it
 MIN_INTERVAL=${MIN_INTERVAL:-3600}
 API_FAILS=${API_FAILS:-3}      # runs in a row without an answer before a restart
-STATE_FILE=${STATE_FILE:-${WORK:-${TMPDIR:-/tmp}/orivon-ipfs-watchdog}/watchdog.json}
+# Never under /tmp: another local user could forge the state of a root-run script there.
+STATE_FILE=${STATE_FILE:-/var/lib/orivon-ipfs-watchdog/watchdog.json}
 DRY_RUN=${DRY_RUN:-0}
 
 log () {
@@ -33,6 +34,8 @@ note () {
   if [ -n "${SUMMARY_LOG:-}" ]; then echo "- $(date -u +%F): $*" >> "$SUMMARY_LOG"; fi
 }
 now () { date -u +%Y-%m-%dT%H:%M:%SZ; }
+# A oneshot unit such as the pinner reports "activating" while it runs, never "active".
+pinner_running () { case $(systemctl is-active "$PINNER_UNIT" 2>/dev/null) in active|activating|reloading) return 0 ;; esac; return 1; }
 
 # host:port of the RPC API, from its multiaddr; the metrics answer a GET there, the RPC commands a POST.
 api_http () {
@@ -55,7 +58,7 @@ sample_metrics () {
 inbound_limit () {
   local v
   v=$(curl -fsS -m 30 -X POST "http://$(api_http)/api/v0/swarm/resources" 2>/dev/null | jq -r '.System.ConnsInbound // empty') || true
-  if [[ $v =~ ^[0-9]+$ ]]; then echo "$v"; fi
+  if [[ $v =~ ^[0-9]+$ ]] && [ "$v" -gt 0 ]; then echo "$v"; fi
 }
 
 STATE=$(jq -c . "$STATE_FILE" 2>/dev/null || true)
@@ -76,7 +79,7 @@ save_state () {
 # pinner cannot be working against it.
 restart_blocker () {
   local leak=$1 last
-  if [ "$leak" = 1 ] && systemctl is-active --quiet "$PINNER_UNIT"; then
+  if [ "$leak" = 1 ] && pinner_running; then
     echo "the release pinner is running"
     return
   fi
@@ -151,7 +154,7 @@ status () {
   echo "failed API checks in a row: $(jq -r '.api_fails // 0' <<<"$STATE")"
   echo "last check: $(jq -r '.checked_at // "never"' <<<"$STATE")"
   echo "last restart: $(jq -r '(.last_restart_at // "never") + (if .last_restart_reason then " (" + .last_restart_reason + ")" else "" end)' <<<"$STATE")"
-  if systemctl is-active --quiet "$PINNER_UNIT" 2>/dev/null; then echo "release pinner: running"; else echo "release pinner: idle"; fi
+  if pinner_running; then echo "release pinner: running"; else echo "release pinner: idle"; fi
 }
 
 case "${1:-check}" in
