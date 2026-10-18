@@ -110,7 +110,9 @@ under "On IPFS", which the workflow writes, and in the `ipfs.json` attached to i
   downloads the files of the newest three releases, checks each against its SHA-256, adds them
   with the same flags, and refuses a release whose files add up to any other CID. It pins what
   it keeps as `orivon-release-<tag>` and unpins the older releases it pinned; a pin without that
-  name is never touched. There is no IPNS name: a release's description is where its CID lives.
+  name is never touched. With `LATEST_KEY` set it also points that IPNS key at the newest release
+  it keeps, so one `ipns://` address, and a `.eth` name whose contenthash is that address, always
+  opens the newest release; each release's own CID stays in its description.
 - **Anyone can pin a release too.** The CID depends only on the files and the flags in
   `pin-releases.sh`, so `pin-releases.sh sync` (or `ipfs add` with those flags) on any Kubo node
   reproduces it. Changing the flags changes every CID from the next release on.
@@ -122,7 +124,7 @@ The Orivon node runs it from a systemd timer every 15 minutes:
 [Service]
 Type=oneshot
 User=<a user that can reach the Kubo API>
-Environment=IPFS_API=/ip4/127.0.0.1/tcp/5001 KEEP=3
+Environment=IPFS_API=/ip4/127.0.0.1/tcp/5001 KEEP=3 LATEST_KEY=latest-release
 ExecStart=/path/to/pin-releases.sh sync
 
 # orivon-release-pinner.timer
@@ -135,7 +137,88 @@ WantedBy=timers.target
 ```
 
 `journalctl -u orivon-release-pinner` shows each run: a line per release pinned, refused or
-unpinned. A refused release is not downloaded again until its `ipfs.json` names another CID.
+unpinned, and each move of the latest key. `ipfs key gen --type=ed25519 latest-release` creates the key
+once. A refused release is not downloaded again until its `ipfs.json` names another CID.
+
+#### Keeping the node reachable
+
+Kubo's resource manager keeps counting some inbound connections after they close (on Kubo 0.43.1, about
+one a minute, while the swarm's own opened and closed totals stay level), so its count climbs until it
+reaches the system limit. From then on every new dial is refused, and content only this node holds (a new release) cannot be fetched
+although it is pinned. A restart resets the count. [`scripts/ipfs-node-watchdog.sh`](../../scripts/ipfs-node-watchdog.sh)
+`check` restarts Kubo when the count is at least `LEAK_PCT` percent of the limit and exceeds the real
+connections by `GAP_PCT` percent of it, or when the API has not answered `API_FAILS` runs in a row. It
+waits while the release pinner is running and keeps `MIN_INTERVAL` seconds between restarts. A crash
+is left to systemd. `status` prints the numbers and never acts; `DRY_RUN=1` says what `check` would do.
+
+```ini
+# orivon-ipfs-watchdog.service
+[Service]
+Type=oneshot
+User=root
+Environment=IPFS_API=/ip4/127.0.0.1/tcp/5001 STATE_FILE=/var/lib/orivon-ipfs-watchdog/watchdog.json
+# SUMMARY_LOG=/path/to/summary.md also gets a line for each restart
+ExecStart=/path/to/ipfs-node-watchdog.sh check
+
+# orivon-ipfs-watchdog.timer
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target
+```
+
+It runs as root because it restarts the Kubo service. The state file records each check and the last
+ten restarts.
+
+#### The status page
+
+[`scripts/ipfs-status.sh`](../../scripts/ipfs-status.sh) answers "is everything served?" on one page. It
+lists every IPNS key of the node with its `ipns://` address, the build it points at, whether that build
+is pinned, whether the IPNS record and the node as a provider are on the network, and whether public
+gateways can fetch it. It lists the newest releases with their `ipfs://` CID, which are kept and pinned
+here, and the gateways' answers. For each IPNS key it reads the `.eth` names that should point at it from
+`NAMES_FILE` and checks their contenthash on Ethereum (and, unless `ETH_LIMO=0`, that `<name>.limo`
+loads). Below them it shows the node's version, uptime, inbound connection budget, storage and the last
+runs of the pinner and the watchdog. A banner at the top is green when nothing is wrong and otherwise
+lists each problem in plain words; one gateway failing while another serves shows in the table but is not
+a problem. With `LATEST_KEY` set it also says which release that key opens. `status.json` holds the same
+data for agents; `STATUS.md` is the page as Markdown.
+
+`NAMES_FILE` has one line per IPNS key, the key name first and then the names, with `#` starting a comment:
+
+```
+# IPNS key   .eth names whose contenthash should be ipns://<that key>
+website      example.eth www.example.eth
+docs         docs.example.eth
+```
+
+A key without a line is shown as "none expected"; a line whose key is not in the node's keystore is an error.
+The page names every key and the node's health, so it is served privately: the Orivon node's web server
+serves `OUT_DIR` over HTTPS behind a password. The script itself publishes nothing.
+
+```ini
+# orivon-ipfs-status.service
+[Service]
+Type=oneshot
+User=<the user that runs the release pinner>
+Environment=IPFS_API=/ip4/127.0.0.1/tcp/5001 OUT_DIR=/path/to/status NAMES_FILE=/path/to/names.conf
+Environment=WATCHDOG_STATE=/var/lib/orivon-ipfs-watchdog/watchdog.json LATEST_KEY=latest-release
+ExecStart=/path/to/ipfs-status.sh run
+
+# orivon-ipfs-status.timer
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+
+[Install]
+WantedBy=timers.target
+```
+
+A run takes one to three minutes, most of it waiting on gateways; `TIMEOUT` caps each network check.
+The page reloads itself every five minutes; if the job stops, it shows "This page is stale" once it is
+three intervals old.
 
 ## winget
 
