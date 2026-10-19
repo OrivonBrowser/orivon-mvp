@@ -196,6 +196,7 @@ export interface FileStat {
   mtimeMs: number
 }
 export interface FileHandle extends Handle {
+  readonly name?: string
   read(opts: { position: number, length: number }): Promise<Uint8Array>
   write(opts: { position: number, data: Uint8Array }): Promise<number>
   readable(opts?: { start?: number, end?: number }): ReadableStream<Uint8Array>

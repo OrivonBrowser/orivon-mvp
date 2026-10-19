@@ -448,6 +448,7 @@ interface FileStat {
 }
 
 interface FileHandle extends Handle {
+  readonly name?: string                                                  // the file's basename, never a path
   read(opts: { position: number; length: number }): Promise<Uint8Array>   // short read at EOF
   write(opts: { position: number; data: Uint8Array }): Promise<number>    // returns bytes written
   readable(opts?: { start?: number; end?: number }): ReadableStream<Uint8Array>
@@ -458,6 +459,12 @@ interface FileHandle extends Handle {
 }
 ```
 
+- **`name` is the file's basename and nothing else**: the last segment of the path the handle is
+  open on, with no folder and no separator. For a picked file it is the name the person's file
+  has (`movie.mkv`), so an app can tell what was chosen and read its extension; it never reveals
+  where the file lives (`security-model.md` T1/T10). It is optional on the type, provisionally:
+  it becomes required once every implementation sets it, and until then an app treats an absent
+  name as unknown.
 - Positional `read`/`write` mirror `fs.promises.FileHandle` and match what a torrent writer
   actually does: piece *N* is written at offset `N × pieceLength`, not appended sequentially.
   The stream factories (`readable`/`writable`) serve the bulk-transfer paths, such as feeding
