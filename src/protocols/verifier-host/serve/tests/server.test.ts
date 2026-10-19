@@ -16,6 +16,11 @@ import { DDOC_MISMATCH, EXPECT_LEAF_HEADER, FAILURE_HEADER } from '../../../../l
 import { leafOf } from '../../../../loader/leaf-hash.js'
 import { MAX_BUFFERED_BYTES, createVerifierServer } from '../server.js'
 import { RoutedSites, Sites } from '../sites.js'
+import { BlockSource } from '../../../ipfs/blockstore.js'
+import { DEFAULT_LIMITS } from '../../../ipfs/limits.js'
+import { openPath } from '../../../ipfs/unixfs.js'
+import { GatewayPool } from '../../../gateways/gateways.js'
+import { buildDag, fakeGateways } from '../../../ipfs/tests/dag.test-helpers.js'
 
 const ROOT = 'bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi'
 const BIG = MAX_BUFFERED_BYTES + 1024
@@ -77,6 +82,10 @@ function fileRoot (range: { start: number, end: number } | undefined): GatheredF
   return { servedPath: '/', size: FILE_ROOT.length, contentType: 'text/html; charset=utf-8', body: (async function * () { yield bytes })() }
 }
 
+/** A folder with no index.html, opened through the real UnixFS reader over an in-memory gateway. */
+const folder = await buildDag({ 'a.txt': 'first', 'sub/b.txt': 'second' })
+const folderSource = new BlockSource(fakeGateways(folder.blocks).fetch, new GatewayPool(['https://a.gateway'], 4), DEFAULT_LIMITS)
+
 const opened: string[] = []
 const partitions: string[] = []
 const site: MountedSite = {
@@ -86,6 +95,7 @@ const site: MountedSite = {
   open: async (p, r, signal) => {
     opened.push(p)
     if (p === '/file-root') return fileRoot(r)
+    if (p === '/sub' || p === '/sub/') return await openPath(folderSource, folder.root, p, r, signal ?? new AbortController().signal, () => {})
     return p === '/stream.bin' ? streamed(signal) : open(p, r)
   },
   ddoc: () => ({ status: 'met', refusals: [] })
@@ -185,6 +195,34 @@ describe('the .eth loopback server', () => {
     expect(reply.status).toBe(301)
     expect(reply.headers.location).toBe('/docs/?x=1')
     expect((await get('/docs/')).body.toString()).toBe('<h1>docs</h1>')
+  })
+
+  it('redirects a folder shown as a listing to its slash form, and serves the listing there as verified HTML', async () => {
+    const reply = await get('/sub?x=1')
+    expect(reply.status).toBe(301)
+    expect(reply.headers.location).toBe('/sub/?x=1')
+    const page = await get('/sub/')
+    expect(page.status).toBe(200)
+    expect(page.body.toString()).toContain('Index of /sub/')
+    expect(page.headers['content-type']).toBe('text/html; charset=utf-8')
+    expect(page.headers['x-content-type-options']).toBe('nosniff')
+    expect(page.headers['content-security-policy']).toBe("default-src 'none'; style-src 'unsafe-inline'; treat-as-public-address; frame-ancestors 'self'")
+    expect(page.headers.etag).toBe(`"${ROOT}"`)
+  })
+
+  it('answers a listing whole and without ranges, whatever range or method asks', async () => {
+    const whole = await get('/sub/')
+    expect(whole.headers['accept-ranges']).toBeUndefined()
+    const ranged = await get('/sub/', { headers: { range: 'bytes=2-9' } })
+    expect(ranged.status).toBe(200)
+    expect(ranged.headers['content-range']).toBeUndefined()
+    expect(ranged.body.equals(whole.body)).toBe(true)
+    expect((await get('/sub/', { headers: { range: 'bytes=999999-9999999' } })).status).toBe(200)
+    const head = await get('/sub/', { method: 'HEAD' })
+    expect(head.status).toBe(200)
+    expect(head.body.length).toBe(0)
+    expect(Number(head.headers['content-length'])).toBe(whole.body.length)
+    expect(Number(whole.headers['content-length'])).toBe(whole.body.length)
   })
 
   it('serves a byte range, and refuses an unsatisfiable one', async () => {
