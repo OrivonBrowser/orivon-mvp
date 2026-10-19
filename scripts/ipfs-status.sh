@@ -184,19 +184,61 @@ timed_get () {
   out=$(curl -s -o /dev/null -m "$TIMEOUT" ${2:+-H "$2"} -w '%{http_code} %{time_total}' "$1" 2>/dev/null) || true
   awk -v o="${out:-000 0}" 'BEGIN { split(o, a, " "); printf "%d %.2f\n", a[1], a[2] }'
 }
-# Sets GW_JSON: how each gateway answers for <cid>. A gateway that did not answer three times in a row
-# is skipped for the rest of the run, so a dead one cannot stretch it.
+# The bytes a gateway must hand back for <cid>, as "<path>\t<offset>\t<length>" lines: a site's whole index.html
+# and 1 KiB at a random offset of its largest other top-level file, or, in a folder with no page (a release),
+# 1 KiB of every top-level file. A random offset deep in a big file is rarely in a gateway's cache, so the gateway
+# has to fetch it from the network, which is what this check is for.
+samples_of () {
+  local files page size name
+  # `ipfs ls --size` prints "<cid> <size> <name>", a folder with "-" and a trailing slash; its JSON flag is ignored.
+  files=$(ipfs --timeout="${TIMEOUT}s" ls --size "$1" 2>/dev/null | awk '$2 ~ /^[0-9]+$/ { n = $3; for (i = 4; i <= NF; i++) n = n " " $i; print $2 "\t" n }') || return 0
+  [ -n "$files" ] || return 0
+  page=$(awk -F'\t' '$2 == "index.html" { print $1 }' <<<"$files")
+  if [ -n "$page" ]; then
+    printf 'index.html\t0\t%s\n' "$page"
+    awk -F'\t' '$2 != "index.html"' <<<"$files" | sort -n | tail -n 1
+  else
+    printf '%s\n' "$files"
+  fi | while IFS=$'\t' read -r size name rest; do
+    if [ "$size" = index.html ]; then [ "$rest" -gt 0 ] && printf '%s\t%s\t%s\n' "$size" "$name" "$rest"
+    elif [ "$size" = 0 ]; then continue
+    elif [ "$size" -le 1024 ]; then printf '%s\t0\t%s\n' "$name" "$size"
+    else printf '%s\t%s\t1024\n' "$name" "$(( ((RANDOM << 15) | RANDOM) % (size - 1024) ))"; fi
+  done
+}
+# Whether <gateway> returns, byte for byte, what this node holds at <cid>/<path> from <offset> for <length> bytes.
+sample_matches () {
+  local gw=$1 cid=$2 path=$3 off=$4 len=$5 url code
+  url="$gw/ipfs/$cid/$(jq -rn --arg p "$path" '$p | @uri')"
+  # Always a range, even for a whole page: a gateway behind a CDN can rewrite a full HTML answer (one injects a
+  # bot-challenge script), while it hands a range back as stored. A gateway may still answer with the whole file.
+  code=$(curl -s -m "$TIMEOUT" -o "$T/got" -w '%{http_code}' -H "Range: bytes=$off-$(( off + len - 1 ))" "$url") || code=000
+  if [ "$code" = 200 ]; then tail -c +"$(( off + 1 ))" "$T/got" | head -c "$len" > "$T/got.part" && mv "$T/got.part" "$T/got"; fi
+  LAST_CODE=${code:-000}
+  case $LAST_CODE in 200|206) ;; *) return 1 ;; esac
+  ipfs --timeout="${TIMEOUT}s" cat --offset "$off" --length "$len" "/ipfs/$cid/$path" > "$T/want" 2>/dev/null || return 1
+  cmp -s "$T/got" "$T/want"
+}
+# Sets GW_JSON: for each gateway, how many of the samples it returned byte for byte, its last HTTP code and the
+# seconds it took. A gateway that answered nothing three times in a row is skipped for the rest of the run.
 check_gateways () {
-  local gw code secs json=() n dead
+  local gw samples total matched start secs json=() n dead path off len
+  samples=$(samples_of "$1")
+  total=$(grep -c . <<<"$samples" || true)
   for gw in $GATEWAYS; do
     dead="$T/dead.$(printf '%s' "$gw" | tr -c 'A-Za-z0-9' _)"
     n=$(cat "$dead" 2>/dev/null || echo 0)
-    if [ "$n" -ge 3 ]; then code=0; secs=0.00
-    else
-      read -r code secs < <(timed_get "$gw/ipfs/$1?format=raw" 'Accept: application/vnd.ipld.raw')
-      if [ "$code" = 0 ]; then echo $(( n + 1 )) > "$dead"; else echo 0 > "$dead"; fi
+    matched=0; LAST_CODE=0; secs=0
+    if [ "$n" -lt 3 ] && [ "$total" -gt 0 ]; then
+      start=$(date +%s%N)
+      while IFS=$'\t' read -r path off len; do
+        if sample_matches "$gw" "$1" "$path" "$off" "$len"; then matched=$(( matched + 1 )); fi
+      done <<<"$samples"
+      secs=$(awk -v n="$(( $(date +%s%N) - start ))" 'BEGIN { printf "%.2f", n / 1e9 }')
+      if [ "$LAST_CODE" = 000 ] && [ "$matched" = 0 ]; then echo $(( n + 1 )) > "$dead"; else echo 0 > "$dead"; fi
     fi
-    json+=("$(jq -nc --arg u "$gw" --argjson c "$code" --argjson s "$secs" '{url: $u, code: $c, seconds: $s}')")
+    json+=("$(jq -nc --arg u "$gw" --argjson c "$((10#${LAST_CODE:-0}))" --argjson s "$secs" --argjson m "$matched" --argjson t "$total" \
+      '{url: $u, code: $c, seconds: $s, matched: $m, samples: $t}')")
   done
   GW_JSON=$(printf '%s\n' "${json[@]}" | jq -sc . 2>/dev/null || echo '[]')
 }
@@ -236,9 +278,9 @@ check_build () {
   local label=$1 cid=$2 ok n
   check_provided "$cid"; PROV_J=$(tf "$PROVIDED")
   check_gateways "$cid"
-  ok=$(jq '[.[] | select(.code == 200)] | length' <<<"$GW_JSON"); n=$(jq length <<<"$GW_JSON")
+  ok=$(jq '[.[] | select(.samples > 0 and .matched == .samples)] | length' <<<"$GW_JSON"); n=$(jq '[.[] | select(.samples > 0)] | length' <<<"$GW_JSON")
   # One gateway failing while another serves is common and shows in the table; only none serving is a problem.
-  if [ "$n" -gt 0 ] && [ "$ok" = 0 ]; then flag error "No gateway could fetch $label"; fi
+  if [ "$n" -gt 0 ] && [ "$ok" = 0 ]; then flag error "No gateway could deliver $label byte for byte (the page, or samples of its files)"; fi
   if [ "$PROVIDED" = 0 ]; then flag warn "The node does not announce $label to the network yet, so other nodes cannot find it; it announces on its own"; fi
 }
 
@@ -412,9 +454,13 @@ def tm: if . == null or . == "" then "never" else (.[0:16] | sub("T"; " ")) + " 
 def mark: if . == true then "<span class='ok' title='yes'>✓</span>" elif . == false then "<span class='bad' title='no'>✗</span>" else "<span class='unk' title='could not check'>?</span>" end;
 def short: if . == null or . == "" then "<span class='muted'>none</span>" else "<a class='mono' href='ipfs://" + (. | h) + "' title='ipfs://" + (. | h) + "'>ipfs://" + ((if length > 24 then .[0:14] + "…" + .[-6:] else . end) | h) + "</a>" end;
 def host: sub("^https?://"; "");
+def gwok: .samples > 0 and .matched == .samples;
 def gws: (.gateways // []) | if length == 0 then "<span class='muted'>not checked</span>" else map(
-    "<div class='" + (if .code == 200 then "ok" else "bad" end) + "'>" + (.url | host | h) + " "
-    + (if .code == 200 then "✓ " + (.seconds | tostring) + " s" elif .code == 0 then "✗ no answer" else "✗ HTTP " + (.code | tostring) end) + "</div>") | join("") end;
+    "<div class='" + (if gwok then "ok" elif .samples == 0 then "muted" else "bad" end) + "'>" + (.url | host | h) + " "
+    + (if gwok then "✓ " + (.matched | tostring) + "/" + (.samples | tostring) + " · " + (.seconds | tostring) + " s"
+       elif .samples == 0 then "– nothing to sample"
+       elif .code == 0 and .matched == 0 then "✗ no answer"
+       else "✗ " + (.matched | tostring) + "/" + (.samples | tostring) + " matched" + (if .code != 200 and .code != 206 then " (HTTP " + (.code | tostring) + ")" else "" end) end) + "</div>") | join("") end;
 def badge: "<span class='badge " + (.state | h) + "'>" + ({ok: "OK", warn: "Check", error: "Broken"}[.state] // .state | h) + "</span>";
 def bytes: if . == null then "unknown" else (. / 1e9 * 100 | round / 100 | tostring) + " GB" end;
 def dur: if . == null then "unknown" else
@@ -481,7 +527,7 @@ td code { display: inline-block; min-width: 24ch; } .narrow { display: none; }
    else "<div class='banner " + (if any($p[]; .severity == "error") then "bad" else "warn" end) + "'>"
      + (if any($p[]; .severity == "error") then "Something is not being served" else "Needs a look, nothing is broken yet" end)
      + "<ul>" + ($p | map("<li>" + (.text | h) + "</li>") | join("")) + "</ul></div>" end)
-+ "<p class='muted'>Generated " + ($gen | tm | h) + " · refreshed every " + ($iv | h) + " minutes</p>"
++ "<p class='muted'>Generated " + ($gen | tm | h) + " · refreshed every " + ($iv | h) + " minutes. Checked from the pinning server: what it pins and announces, the names and records, and whether public gateways hand back each page and random samples of each file byte for byte. Whether a site opens in your own browser is what Orivon Status checks, from your browser.</p>"
 + (([.sites[] | .names[]?]) as $names | ([.releases[] | select(.should_be_pinned == true)]) as $kept | (.node.inbound // {}) as $i
    | "<div class='tiles'>"
    + tile(([.sites[] | select(.state != "error")] | length | tostring) + " / " + (.sites | length | tostring); "sites and apps served")
@@ -491,7 +537,7 @@ td code { display: inline-block; min-width: 24ch; } .narrow { display: none; }
    + tile(if $i.counted != null and $i.limit != null then ((($i.counted * 100 / $i.limit) | floor | tostring) + "%") else "?" end; "inbound budget used")
    + "</div>")
 + "<h2>Sites and apps (IPNS)</h2>
-<div class='wrap'><table class='sites'><thead><tr><th>Name</th><th>.eth name</th><th>ipns://</th><th>Current build</th><th>Pinned</th><th>On the network</th><th>Gateways</th><th>State</th></tr></thead><tbody>"
+<div class='wrap'><table class='sites'><thead><tr><th>Name</th><th>.eth name</th><th>ipns://</th><th>Current build</th><th>Pinned</th><th>On the network</th><th>Gateways (bytes match)</th><th>State</th></tr></thead><tbody>"
 + (.sites | map("<tr>" + ("<b>" + (.key | h) + "</b> <span class='narrow'>" + badge + "</span>" | td("Name")) + (namecell | td(".eth name"))
     + ((if .ipns then "<code>" + (.ipns | h) + "</code>" else "<span class='bad'>key missing</span>" end) | td("ipns://"))
     + (.target | short | td("Current build")) + (.pinned | mark | td("Pinned")) + ((if .id then net else "" end) | td("On the network"))
@@ -502,7 +548,7 @@ td code { display: inline-block; min-width: 24ch; } .narrow { display: none; }
     + (if $l.ipns then "<code>" + ($l.ipns | h) + "</code>" else "<span class='bad'>key " + ($l.key | h) + " missing</span>" end)
     + " → " + (if $l.tag then "<b>" + ($l.tag | h) + "</b>" elif $l.target then ($l.target | short) else "<span class='muted'>nothing yet</span>" end)
     + (if $l.newest != null and $l.tag != $l.newest then " <span class='bad'>(newest pinned is " + ($l.newest | h) + ")</span>" else "" end) + "</p>") end)
-+ "<div class='wrap'><table><thead><tr><th>Tag</th><th>Published</th><th>ipfs://</th><th>Kept here</th><th>Pinned</th><th>Gateways</th><th>State</th></tr></thead><tbody>"
++ "<div class='wrap'><table><thead><tr><th>Tag</th><th>Published</th><th>ipfs://</th><th>Kept here</th><th>Pinned</th><th>Gateways (bytes match)</th><th>State</th></tr></thead><tbody>"
 + (.releases | map("<tr>" + ("<a href='" + (.url | h) + "'>" + (.tag | h) + "</a>" | td("Tag")) + (.published_at | tm | h | td("Published")) + (.cid | short | td("ipfs://"))
     + ((if .note == "no packages" then "<span class='muted'>no packages</span>" elif .should_be_pinned == true then "yes" elif .should_be_pinned == false then "<span class='muted'>not kept</span>" else "?" end) | td("Kept here"))
     + ((if .cid == null or .note == "not kept" then "<span class='muted'>–</span>" else (.pinned | mark) end) | td("Pinned")) + (gws | td("Gateways")) + (badge | td("State")) + "</tr>") | join(""))
@@ -533,7 +579,7 @@ def tm: if . == null or . == "" then "never" else (.[0:16] | sub("T"; " ")) + " 
 def yn: if . == true then "yes" elif . == false then "NO" else "?" end;
 def short: if . == null then "none" elif length > 24 then "ipfs://" + .[0:14] + "..." + .[-6:] else "ipfs://" + . end;
 def host: sub("^https?://"; "");
-def gws: (.gateways // []) | map((.url | host) + " " + (if .code == 200 then "ok" elif .code == 0 then "no answer" else "HTTP " + (.code | tostring) end)) | join(", ");
+def gws: (.gateways // []) | map((.url | host) + " " + (if .samples > 0 and .matched == .samples then "ok " elif .samples == 0 then "nothing to sample " else "FAILED " end) + (.matched | tostring) + "/" + (.samples | tostring)) | join(", ");
 def names: (.names // []) | if length == 0 then "none expected" else map(.name + " " + (if .state == "ok" then "ok" elif .state == "wrong" then "POINTS AT " + .actual elif .state == "none" then "NO CONTENTHASH" elif .state == "no-resolver" then "NO RESOLVER" else "unknown" end)) | join("<br>") end;
 (.problems // []) as $p |
 "# Orivon IPFS status\n\nGenerated " + (.generated_at | tm) + ", refreshed every " + (.interval_minutes | tostring) + " minutes.\n\n"
