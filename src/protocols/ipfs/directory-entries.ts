@@ -5,6 +5,7 @@
 
 import { exporter } from 'ipfs-unixfs-exporter'
 import type { UnixFSDirectory, UnixFSDirectoryEntry } from 'ipfs-unixfs-exporter'
+import type { blockstoreFor } from './blockstore.js'
 import type { DirectoryListing, ListedEntry } from './directory-page.js'
 
 const RAW = 0x55
@@ -16,10 +17,12 @@ export const LISTING_ROWS = 1000
 export const TYPED_ENTRIES = 100
 /** Entries typed at the same time. */
 const TYPING_CONCURRENCY = 6
-/** How long typing may take in all before the page is sent with what it has. */
-export const TYPING_BUDGET_MS = 20_000
+/** Blocks a listing may read to walk a folder, its path and its shards together; past it the folder is too large to list in full. */
+export const LISTING_SHARD_BLOCKS = 200
+/** How long reading the folder and typing its entries may take in all before the page is sent with what it has. */
+export const LISTING_BUDGET_MS = 20_000
 
-type Store = Parameters<typeof exporter>[1]
+type Store = ReturnType<typeof blockstoreFor>
 
 /** Typed from the entry's own node, or undefined when that node could not be read in time. */
 async function typed (entry: UnixFSDirectoryEntry, store: Store, signal: AbortSignal): Promise<ListedEntry | undefined> {
@@ -52,25 +55,49 @@ async function inParallel<T, R> (items: readonly T[], limit: number, work: (item
   return results
 }
 
+class TooLargeToList extends Error {}
+
+/** A view of `store` that fails the read past `max` blocks. */
+function limited (store: Store, max: number): Store {
+  let blocks = 0
+  return {
+    async * get (cid) {
+      if (++blocks > max) throw new TooLargeToList('more blocks than a listing may read')
+      yield * store.get(cid)
+    }
+  }
+}
+
 /**
  * Throws what the walk throws (a ResolutionError) when the directory itself cannot be read.
- * `typingStore` reads under a deadline of its own, so a slow or missing entry never holds the page back.
+ * `deadline` bounds the walk and the typing together and is aborted by the time budget alone; `requested` is the
+ * request's own signal, whose abort is the client leaving and ends the listing with an error. When the walk runs
+ * out of time or shard blocks, the entries gathered so far are listed and the page says the folder is too large.
  */
-export async function listDirectory (dir: UnixFSDirectory, segments: readonly string[], typingStore: Store, typingSignal: AbortSignal): Promise<DirectoryListing> {
+export async function listDirectory (resolveDir: (store: Store) => Promise<UnixFSDirectory>, segments: readonly string[], store: Store, deadline: AbortSignal, requested: AbortSignal): Promise<DirectoryListing> {
   const found: UnixFSDirectoryEntry[] = []
-  for await (const entry of dir.entries({ length: LISTING_ROWS + 1 })) found.push(entry)
+  let incomplete = false
+  let dir: UnixFSDirectory | undefined
+  try {
+    dir = await resolveDir(limited(store, LISTING_SHARD_BLOCKS))
+    // The walk of a sharded directory reads its shards through this view, so the cap bounds them with the path.
+    for await (const entry of dir.entries({ length: LISTING_ROWS + 1 })) found.push(entry)
+  } catch (error) {
+    if (requested.aborted || !(error instanceof TooLargeToList || deadline.aborted)) throw error
+    incomplete = true
+  }
   const truncated = found.length > LISTING_ROWS
   const shown = found.slice(0, LISTING_ROWS)
-  const sharded = dir.unixfs.type === 'hamt-sharded-directory'
+  const sharded = dir?.unixfs.type === 'hamt-sharded-directory'
   // Typing can ask for as many as TYPED_ENTRIES blocks; those entries are typed first-come, in the directory's own order.
   const toType = shown.filter((e) => e.cid.code === DAG_PB).slice(0, TYPED_ENTRIES)
   const results = new Map<UnixFSDirectoryEntry, ListedEntry | undefined>()
-  await inParallel(toType, TYPING_CONCURRENCY, async (entry) => { results.set(entry, await typed(entry, typingStore, typingSignal)) })
-  const entries = shown.map((e) => results.get(e) ?? untyped(e))
+  await inParallel(toType, TYPING_CONCURRENCY, async (entry) => { results.set(entry, await typed(entry, store, deadline)) })
   return {
     segments,
-    entries,
+    entries: shown.map((e) => results.get(e) ?? untyped(e)),
     truncated,
-    more: truncated && !sharded ? dir.node.Links.length - LISTING_ROWS : undefined
+    incomplete,
+    more: truncated && dir !== undefined && !sharded ? dir.node.Links.length - LISTING_ROWS : undefined
   }
 }

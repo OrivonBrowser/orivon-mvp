@@ -38,6 +38,8 @@ export interface GatheredFile {
   readonly size: number
   /** Set when the path carries no extension to derive a type from: the site's root is itself a file. */
   readonly contentType?: string
+  /** The body is a listing the protocol made of a directory's entries, not bytes of a file: served whole, in full or not at all, under a policy that forbids script and loads. With `servedPath` ending in `/`, a request for the form without the slash is only redirected, and `body` may be empty. */
+  readonly listing?: true
   /** Only bytes that were checked against their hash before being yielded. */
   readonly body: AsyncIterable<Uint8Array>
 }

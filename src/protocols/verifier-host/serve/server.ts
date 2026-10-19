@@ -431,13 +431,14 @@ async function handle (registry: ProtocolRegistry, sites: SiteSource, routes: Se
     const common: Record<string, string> = {
       'content-type': file.contentType ?? contentTypeFor(file.servedPath),
       'x-content-type-options': 'nosniff',
-      'accept-ranges': 'bytes',
+      // A listing is made whole each time it is asked for, so two reads of it need not agree and no range of it is honoured.
+      ...(file.listing === true ? {} : { 'accept-ranges': 'bytes' }),
       // Revalidated every time: a name can point elsewhere tomorrow, and the root CID says whether it has.
       'cache-control': 'no-cache',
-      'content-security-policy': SERVED_CONTENT_CSP,
+      'content-security-policy': file.listing === true ? `${ERROR_PAGE_CSP}; ${SERVED_CONTENT_CSP}` : SERVED_CONTENT_CSP,
       etag
     }
-    const range = parseRange(req.headers.range ?? null, file.size)
+    const range = file.listing === true ? { kind: 'none' as const } : parseRange(req.headers.range ?? null, file.size)
     if (range.kind === 'unsatisfiable') {
       res.writeHead(416, { ...common, 'content-range': `bytes */${String(file.size)}` }).end()
       return

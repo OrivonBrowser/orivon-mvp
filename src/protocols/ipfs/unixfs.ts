@@ -5,14 +5,14 @@
 // file is served at `/`, typed as HTML when its first bytes say so.
 
 import { exporter } from 'ipfs-unixfs-exporter'
-import type { UnixFSEntry } from 'ipfs-unixfs-exporter'
+import type { UnixFSDirectory, UnixFSEntry } from 'ipfs-unixfs-exporter'
 import type { CID } from 'multiformats/cid'
 import { ResolutionError } from '../resolution/records.js'
 import { pathSegments } from '../resolution/path-segments.js'
 import type { GatherRange, GatheredFile, Refusal } from '../resolution/providers.js'
 import { blockstoreFor } from './blockstore.js'
 import type { BlockSource } from './blockstore.js'
-import { TYPING_BUDGET_MS, listDirectory } from './directory-entries.js'
+import { LISTING_BUDGET_MS, listDirectory } from './directory-entries.js'
 import { renderDirectoryPage } from './directory-page.js'
 import { readFileRange } from './file-reader.js'
 import { SNIFF_BYTES, looksLikeHtml } from './sniff.js'
@@ -40,13 +40,13 @@ async function readPrefix (chunks: AsyncIterable<Uint8Array>, path: string): Pro
   return Buffer.concat(parts)
 }
 
-function listingOf (page: Uint8Array, segments: readonly string[], range: GatherRange | undefined): GatheredFile {
-  const slice = page.subarray(range?.start ?? 0, (range?.end ?? page.length - 1) + 1)
+function listingOf (page: Uint8Array, segments: readonly string[]): GatheredFile {
   return {
     servedPath: `/${segments.map((s) => `${s}/`).join('')}`,
     size: page.length,
     contentType: 'text/html; charset=utf-8',
-    body: (async function * () { yield slice })()
+    listing: true,
+    body: (async function * () { yield page })()
   }
 }
 
@@ -61,15 +61,16 @@ export async function openPath (source: BlockSource, root: CID, pathname: string
   try {
     entry = await entryAt(root, segments, store, signal)
     if (entry.type === 'directory') {
-      const directory = entry
       served = [...segments, INDEX]
       try {
         entry = await entryAt(root, served, store, signal)
       } catch (error) {
         if ((error as { code?: unknown }).code !== 'ERR_NOT_FOUND') throw error
-        const typing = AbortSignal.any([signal, AbortSignal.timeout(TYPING_BUDGET_MS)])
-        const listing = await listDirectory(directory, segments, blockstoreFor(source, budget, typing, onRefusal), typing)
-        return listingOf(renderDirectoryPage(listing), segments, range)
+        // The slash form is the folder's address; the form without it only redirects, before any listing work.
+        if (!pathname.endsWith('/')) return listingOf(new Uint8Array(0), segments)
+        const deadline = AbortSignal.any([signal, AbortSignal.timeout(source.limits.listingBudgetMs ?? LISTING_BUDGET_MS)])
+        const listing = await listDirectory(async (walk) => await entryAt(root, segments, walk, deadline) as UnixFSDirectory, segments, blockstoreFor(source, budget, deadline, onRefusal), deadline, signal)
+        return listingOf(renderDirectoryPage(listing), segments)
       }
     }
   } catch (error) {
