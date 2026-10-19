@@ -32,7 +32,7 @@ export interface GatherRange {
 }
 
 export interface GatheredFile {
-  /** The file actually served, decoded: `/docs/index.html` for a request of `/docs`. */
+  /** The file actually served, decoded: `/docs/index.html` for a request of `/docs`, or `/docs/` when the directory has no index and the body is a listing of its entries. */
   readonly servedPath: string
   /** The whole file's size, whatever range was asked for. */
   readonly size: number
@@ -74,7 +74,7 @@ export interface MountedSite {
   readonly servedFrom?: ServedFrom
   readonly root: ContentRoot
   readonly pointers: readonly PointerStep[]
-  /** `/` and a directory serve its `index.html`. Throws a ResolutionError; `not-found` for a missing path. */
+  /** `/` and a directory serve its `index.html` (a protocol may list a directory that has none). Throws a ResolutionError; `not-found` for a missing path. */
   open: (path: string, range?: GatherRange, signal?: AbortSignal) => Promise<GatheredFile>
   ddoc: () => DdocReport
 }

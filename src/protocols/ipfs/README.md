@@ -35,6 +35,20 @@ host on one bad block from a hostile gateway. The exporter resolves paths only.
 Why raw blocks and not CARs, and the limits' real-site figures:
 [`spike-results/ens-ipfs.md`](../../../docs/planning/spike-results/ens-ipfs.md) section EI-1c.
 
+**A folder without an `index.html` is listed, as a public gateway lists it.** [`unixfs.ts`](unixfs.ts) answers a
+request for such a directory (the root or any sub-directory) with an HTML page built in [`directory-page.ts`](directory-page.ts),
+served at the folder's slash form (the verifier redirects the form without it). A directory block names its children
+and their link sizes but not whether a child is a file or a folder, so [`directory-entries.ts`](directory-entries.ts)
+reads the node of each dag-pb child (a verified block read like any other, six at a time, for the first 100 children and
+for at most 20 s in all) to type it and take a file's exact size; a raw-leaf child is a file by its codec, and any child
+not read is listed as "file or folder" with its link's size marked approximate (`~`), because a link's size is the
+publisher's claim. A child that cannot be read does not fail the folder. The page lists the first 1000 entries and says
+how many it left out (a sharded directory is read as far as that, in its own order, and not counted). Every name is
+attacker-controlled: it is escaped in the text, percent-encoded in the link (so `javascript:x` cannot be a scheme),
+shown with control and bidirectional characters spelled as code points, and the page carries no script, no external
+resource and a `default-src 'none'` policy of its own. A file in a folder downloads under the last segment of its link, which is
+how the browser names it: the verifier sends no `Content-Disposition`.
+
 **The node is one endpoint, read as a gateway is.** [`node-first.ts`](node-first.ts) mounts from the node when
 the host says it is ready. When the node cannot serve (not ready, or ready but unable to find the content: an `unavailable` failure only) it mounts from
 the gateways only if the person said yes for this load (`takeConsent`, which uses the yes up), labelling the mounted site (`servedFrom`) so the

@@ -77,6 +77,12 @@ function fileRoot (range: { start: number, end: number } | undefined): GatheredF
   return { servedPath: '/', size: FILE_ROOT.length, contentType: 'text/html; charset=utf-8', body: (async function * () { yield bytes })() }
 }
 
+/** A folder with no index.html: its path in slash form is served as a listing. */
+function listing (): GatheredFile {
+  const page = Buffer.from('<!doctype html><h1>Index of /files/</h1>')
+  return { servedPath: '/files/', size: page.length, contentType: 'text/html; charset=utf-8', body: (async function * () { yield page })() }
+}
+
 const opened: string[] = []
 const partitions: string[] = []
 const site: MountedSite = {
@@ -86,6 +92,7 @@ const site: MountedSite = {
   open: async (p, r, signal) => {
     opened.push(p)
     if (p === '/file-root') return fileRoot(r)
+    if (p === '/files' || p === '/files/') return listing()
     return p === '/stream.bin' ? streamed(signal) : open(p, r)
   },
   ddoc: () => ({ status: 'met', refusals: [] })
@@ -185,6 +192,20 @@ describe('the .eth loopback server', () => {
     expect(reply.status).toBe(301)
     expect(reply.headers.location).toBe('/docs/?x=1')
     expect((await get('/docs/')).body.toString()).toBe('<h1>docs</h1>')
+  })
+
+  it('redirects a folder shown as a listing to its slash form, and serves the listing there as verified HTML', async () => {
+    const reply = await get('/files?x=1')
+    expect(reply.status).toBe(301)
+    expect(reply.headers.location).toBe('/files/?x=1')
+    const page = await get('/files/')
+    expect(page.status).toBe(200)
+    expect(page.body.toString()).toContain('Index of /files/')
+    expect(page.headers['content-type']).toBe('text/html; charset=utf-8')
+    expect(page.headers['x-content-type-options']).toBe('nosniff')
+    expect(page.headers['content-security-policy']).toContain('treat-as-public-address')
+    expect(page.headers['content-security-policy']).toContain("frame-ancestors 'self'")
+    expect(page.headers.etag).toBe(`"${ROOT}"`)
   })
 
   it('serves a byte range, and refuses an unsatisfiable one', async () => {

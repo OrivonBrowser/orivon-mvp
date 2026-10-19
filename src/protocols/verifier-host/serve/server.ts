@@ -423,7 +423,8 @@ async function handle (registry: ProtocolRegistry, sites: SiteSource, routes: Se
     // A page's file is read again when nothing answered. The page itself is not, since its error page offers Try again and the person's own request starts anew; nor is an install's read, which has its own way to try again.
     const plan: ReadPlan = { route: paceOf(routeOf(req), routes), left: left.signal, retries: isNavigation(req) || typeof expected === 'string' ? 0 : FILE_RETRIES }
     file = await readWithRetries(async () => await site.open(url.pathname, undefined, left.signal), plan.route, plan.left, plan.retries)
-    if (!url.pathname.endsWith('/') && file.servedPath.endsWith('/index.html') && !url.pathname.endsWith('/index.html')) {
+    // A directory is served at its slash form, whether as its index.html or as a listing of its entries.
+    if (!url.pathname.endsWith('/') && ((file.servedPath.length > 1 && file.servedPath.endsWith('/')) || (file.servedPath.endsWith('/index.html') && !url.pathname.endsWith('/index.html')))) {
       res.writeHead(301, { location: `${url.pathname}/${url.search}`, 'cache-control': 'no-cache' }).end()
       return
     }

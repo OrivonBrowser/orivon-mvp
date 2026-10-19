@@ -1,7 +1,8 @@
 // A path under a verified root, read through the exporter over the verifying
-// blockstore. `/` and a directory serve its `index.html`; there are no
-// directory listings. A root that is itself one file is served at `/`, typed
-// as HTML when its first bytes say so.
+// blockstore. `/` and a directory serve its `index.html`; a directory without
+// one is answered with a listing of its entries (directory-page.ts), typed as
+// HTML and served at the slash form of its path. A root that is itself one
+// file is served at `/`, typed as HTML when its first bytes say so.
 
 import { exporter } from 'ipfs-unixfs-exporter'
 import type { UnixFSEntry } from 'ipfs-unixfs-exporter'
@@ -11,6 +12,8 @@ import { pathSegments } from '../resolution/path-segments.js'
 import type { GatherRange, GatheredFile, Refusal } from '../resolution/providers.js'
 import { blockstoreFor } from './blockstore.js'
 import type { BlockSource } from './blockstore.js'
+import { TYPING_BUDGET_MS, listDirectory } from './directory-entries.js'
+import { renderDirectoryPage } from './directory-page.js'
 import { readFileRange } from './file-reader.js'
 import { SNIFF_BYTES, looksLikeHtml } from './sniff.js'
 
@@ -37,18 +40,37 @@ async function readPrefix (chunks: AsyncIterable<Uint8Array>, path: string): Pro
   return Buffer.concat(parts)
 }
 
+function listingOf (page: Uint8Array, segments: readonly string[], range: GatherRange | undefined): GatheredFile {
+  const slice = page.subarray(range?.start ?? 0, (range?.end ?? page.length - 1) + 1)
+  return {
+    servedPath: `/${segments.map((s) => `${s}/`).join('')}`,
+    size: page.length,
+    contentType: 'text/html; charset=utf-8',
+    body: (async function * () { yield slice })()
+  }
+}
+
 /** Throws a ResolutionError. Every byte of the returned body was verified before it is yielded. */
 export async function openPath (source: BlockSource, root: CID, pathname: string, range: GatherRange | undefined, signal: AbortSignal, onRefusal: (refusal: Refusal) => void): Promise<GatheredFile> {
   const segments = pathSegments(pathname)
   if (segments === undefined) throw new ResolutionError('not-found', `${pathname} is not a path this site can hold`)
-  const store = blockstoreFor(source, { blocks: 0, bytes: 0 }, signal, onRefusal)
+  const budget = { blocks: 0, bytes: 0 }
+  const store = blockstoreFor(source, budget, signal, onRefusal)
   let entry: UnixFSEntry
   let served = segments
   try {
     entry = await entryAt(root, segments, store, signal)
     if (entry.type === 'directory') {
+      const directory = entry
       served = [...segments, INDEX]
-      entry = await entryAt(root, served, store, signal)
+      try {
+        entry = await entryAt(root, served, store, signal)
+      } catch (error) {
+        if ((error as { code?: unknown }).code !== 'ERR_NOT_FOUND') throw error
+        const typing = AbortSignal.any([signal, AbortSignal.timeout(TYPING_BUDGET_MS)])
+        const listing = await listDirectory(directory, segments, blockstoreFor(source, budget, typing, onRefusal), typing)
+        return listingOf(renderDirectoryPage(listing), segments, range)
+      }
     }
   } catch (error) {
     throw failureOf(error, pathname)
