@@ -175,6 +175,7 @@ this file existed is in `git show bd19bc4:docs/open-questions.md`.
 | A236 | Is "bump `version` every release" a publisher requirement for the update check at a plain host? | Yes: the requirement is stated in the publisher documentation. | `d-0585`, `docs/planning/realignment-followups.md` |
 | A237 | Should an all-or-nothing re-prompt re-grant what the person revoked? | Accepted: the full set is shown, and a yes grants it. | `d-0586` |
 | A243 | Should `Notification.permission` read `default` for an undecided site? | No: it keeps reading `denied`, a documented divergence; `requestPermission()` still reaches the prompt. | `d-0586`, [ADR-0028](ADR-0028-a-site-shows-notifications-only-after-the-person-allows-it.md) |
+| A244 | Do e2e runs reach the person's real session bus? | No: every run off CI gets a private bus that starts no service, inside the virtual display; a watched run opts out with `ORIVON_PRIVATE_BUS=0`. | `d-0692`, `scripts/run-headless.mjs` |
 | A245 | Should `*:443` reach the LAN through a public name with a trusted certificate? | Accepted as a residual and documented in the threat model (T12). | `d-0583` |
 | A248 | Is d-0098's address check on an unbound TLS handshake confirmed? | Confirmed as built. | `d-0586`, `d-0098` |
 | A249 | What carries daily use and distribution, or is the success metric restated? | The success metric stands and is kept in the owner's private notes. The daily driver is the browser itself, one of the two equal pillars; no single port carries it. | `d-0566`, `d-0581` |

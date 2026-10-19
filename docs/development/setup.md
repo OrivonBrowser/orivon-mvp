@@ -139,10 +139,17 @@ real screen at all, not even briefly. **On macOS, on Windows, or a Linux box tha
 virtual display. Either way, typing a plain `npm run smoke` or `npm run test:e2e` with no wrapper
 is safe to do while you are working.
 
-With `ORIVON_PRIVATE_BUS=1`, `run-headless.mjs` also gives the command a D-Bus session bus of its
-own (`dbus-run-session`, started inside `xvfb-run`) and refuses to run if it cannot; the
-notification phase of `test/sites/e2e-site-permissions.test.ts` runs only under it. It is not the
-default, because a whole suite on a private bus would lose the keyring that `safeStorage` reads.
+Under the virtual display, `run-headless.mjs` also gives the command a D-Bus session bus of its own
+(`dbus-run-session`, started inside `xvfb-run`, with
+[`scripts/private-session-bus.conf`](../../scripts/private-session-bus.conf), which starts no service
+on demand). A window on a virtual display can still reach the real screen over the desktop's bus: a
+file picker through the desktop portal, a notification, a media control in the top bar. On a machine
+someone may be at, which is anywhere but CI, that bus is the default; without `dbus-run-session` the
+command gets a bus address nothing listens on instead, never the desktop's. `ORIVON_PRIVATE_BUS=0`
+keeps the desktop bus for a run someone means to watch, and `ORIVON_PRIVATE_BUS=1` asks for the
+private bus on CI too, refusing to run if it cannot have one. The launches pass
+`--password-store=basic`, so no suite needs the desktop keyring, as on CI. The notification phase
+of `test/sites/e2e-site-permissions.test.ts` runs only on a private bus.
 
 ### `npm run dev` deliberately does not pass `--watch`
 

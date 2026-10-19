@@ -18,9 +18,9 @@
 // NOTIFICATIONS RUN ONLY ON A PRIVATE SESSION BUS. A notification this page
 // never shows would still reach the desktop over D-Bus if one were shown, so
 // that phase is skipped unless the runner says the bus is private
-// (ORIVON_E2E_PRIVATE_BUS=1 with a session bus that is not this user's own):
-//   ORIVON_PRIVATE_BUS=1 node scripts/run-headless.mjs npx vitest run \
-//     --config test/vitest.e2e.config.ts test/sites/e2e-site-permissions.test.ts
+// (ORIVON_E2E_PRIVATE_BUS=1 with a session bus that is not this user's own),
+// which scripts/run-headless.mjs gives every run off CI, and CI with
+// ORIVON_PRIVATE_BUS=1.
 // It never constructs a Notification: it reads permission state only.
 //
 // THE CLICKS ARE THE POINT: pointer lock and the second external link each
