@@ -35,6 +35,22 @@ host on one bad block from a hostile gateway. The exporter resolves paths only.
 Why raw blocks and not CARs, and the limits' real-site figures:
 [`spike-results/ens-ipfs.md`](../../../docs/planning/spike-results/ens-ipfs.md) section EI-1c.
 
+**A folder without an `index.html` is listed, as a public gateway lists it.** [`unixfs.ts`](unixfs.ts) answers a
+request for such a directory (the root or any sub-directory) with an HTML page built in [`directory-page.ts`](directory-page.ts),
+flagged `listing` and served at the folder's slash form: the form without it is answered with a bodyless redirect before any
+entry is read. A directory block names its children and their link sizes but not whether a child is a file or a folder, so
+[`directory-entries.ts`](directory-entries.ts) reads the node of each dag-pb child (a verified block read like any other, six
+at a time, for the first 100 children) to type it and take the size the file declares; a raw-leaf child is a file by its codec,
+and any child not read is listed as "file or folder" with its link's size marked approximate (`~`), because a link's size is the
+publisher's claim. A child that cannot be read does not fail the folder. Reading is bounded: 20 s for the walk and the typing
+together, 200 blocks for the path and a sharded folder's shards, 1000 rows, and a page of about a mebibyte; past a limit the
+page lists what it has and says what is not shown, or that the folder is too large to list in full. Every name is
+attacker-controlled: it is escaped in the text, shortened to 255 characters, percent-encoded in the link (so `javascript:x`
+cannot be a scheme; a link over 8 KiB is not made), and shown with control, zero-width and bidirectional characters spelled as
+code points. The page carries no script and no external resource, and the verifier serves it under `default-src 'none'`, whole
+and without ranges, since two reads of a listing need not agree. A file in a folder downloads under the last segment of its
+link, which is how the browser names it: the verifier sends no `Content-Disposition`.
+
 **The node is one endpoint, read as a gateway is.** [`node-first.ts`](node-first.ts) mounts from the node when
 the host says it is ready. When the node cannot serve (not ready, or ready but unable to find the content: an `unavailable` failure only) it mounts from
 the gateways only if the person said yes for this load (`takeConsent`, which uses the yes up), labelling the mounted site (`servedFrom`) so the

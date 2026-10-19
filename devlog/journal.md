@@ -59,6 +59,9 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Explore now lists 247 sites: 146 new .eth, IPFS and Swarm sites, each confirmed loading in a real Orivon, opening on Start here.
 - Orivon Attila judged all 146 new sites; Web3 sites rank higher, and a newcomer's first view holds no Web2 site at all.
 - Loading 204 sites in a real Orivon found a Swarm bug (zero-padded chunks, fixed) and IPFS sites whose files never arrive.
+- Release folders and any IPFS folder without a page now open in Orivon as a file list; v0.0.8's packages download by name.
+- Orivon Status: a public page checking every Orivon site, name and release from your own browser, every block hash-checked; status.orivonstack.eth pending.
+- The node status page counted cached first blocks as served; it now requires gateways to return pages and random file samples byte for byte.
 
 ### In my head
 

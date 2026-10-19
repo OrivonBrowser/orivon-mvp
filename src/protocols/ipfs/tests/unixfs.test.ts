@@ -75,12 +75,9 @@ describe('openPath', () => {
     expect(same(await bytes(source().s, '/big.bin', range), BIG.slice(range.start, range.end + 1))).toBe(true)
   })
 
-  it('is not found for a missing path, and for a directory without index.html', async () => {
+  it('is not found for a missing path', async () => {
     await expect(openPath(source().s, dag.root, '/missing.js', undefined, signal, () => {})).rejects.toMatchObject({ failure: 'not-found' })
-    const bare = await buildDag({ 'sub/file.txt': 'x' })
-    const gw = fakeGateways(bare.blocks)
-    const s = new BlockSource(gw.fetch, new GatewayPool(['https://a.gateway'], 4), DEFAULT_LIMITS)
-    await expect(openPath(s, bare.root, '/sub/', undefined, signal, () => {})).rejects.toMatchObject({ failure: 'not-found' })
+    await expect(openPath(source().s, dag.root, '/docs/missing/', undefined, signal, () => {})).rejects.toMatchObject({ failure: 'not-found' })
   })
 
   it('fails a file whose block was tampered on every gateway, and serves none of that block', async () => {
