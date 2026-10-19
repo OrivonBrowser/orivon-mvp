@@ -9,10 +9,10 @@
  * makes, is what keeps THAT run from stealing focus instead. See
  * docs/development/setup.md, "The no-focus switch".
  *
- * ORIVON_PRIVATE_BUS=1 also gives the command a D-Bus session bus of its
- * own, so nothing it runs can reach the desktop's notification daemon; the
- * child sees ORIVON_E2E_PRIVATE_BUS=1. Opt-in, and refused where it cannot
- * be had rather than run on the desktop bus.
+ * Off CI the command also gets a private D-Bus session bus, so nothing it runs
+ * reaches the desktop's (a portal file picker, a notification); the child sees
+ * ORIVON_E2E_PRIVATE_BUS=1. ORIVON_PRIVATE_BUS=0 keeps the desktop bus, =1 asks
+ * for the private one on CI. docs/development/setup.md has the rest.
  *
  * If xvfb-run IS available but fails to run the wrapped command (not the
  * wrapped command's own non-zero exit -- a spawn-level failure, e.g. the
@@ -23,6 +23,7 @@
  */
 import { accessSync, constants } from 'node:fs'
 import { delimiter, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { isInvokedDirectly, spawnCommandSync } from './cli.mjs'
 
 /**
@@ -43,6 +44,12 @@ function commandExists (name) {
   })
 }
 
+/** A session bus address nothing listens on. */
+export const NO_BUS = 'unix:path=/nonexistent/orivon-no-session-bus'
+
+/** The private bus's configuration: a session bus with nothing to activate. */
+export const PRIVATE_BUS_CONFIG = fileURLToPath(new URL('./private-session-bus.conf', import.meta.url))
+
 /**
  * What to spawn, decided without spawning anything.
  * @param {{ platform: string, env: Record<string, string | undefined>, has: (name: string) => boolean, command: string, args: string[] }} input
@@ -50,10 +57,13 @@ function commandExists (name) {
  */
 export function headlessLaunch ({ platform, env, has, command, args }) {
   const virtualDisplay = platform === 'linux' && has('xvfb-run')
-  const privateBus = env.ORIVON_PRIVATE_BUS === '1'
-  if (privateBus && !(virtualDisplay && has('dbus-run-session'))) {
+  const asked = env.ORIVON_PRIVATE_BUS === '1'
+  if (asked && !(virtualDisplay && has('dbus-run-session'))) {
     return { refused: 'ORIVON_PRIVATE_BUS=1 needs xvfb-run and dbus-run-session on PATH; not running on the desktop session bus' }
   }
+  // A CI runner has no desktop to protect, and its specs are written against the bus it has.
+  const shielded = asked || (env.ORIVON_PRIVATE_BUS !== '0' && env.CI !== 'true')
+  const privateBus = shielded && virtualDisplay && has('dbus-run-session')
   // ORIVON_RUN_HEADLESS marks the child as launched here: test/support/launch-electron.mjs refuses a
   // Linux desktop launch without it, so a driver that skips this file fails instead of showing a window.
   if (!virtualDisplay) return { file: command, args, env: { ...env, ORIVON_RUN_HEADLESS: 'direct' }, virtualDisplay, privateBus }
@@ -75,14 +85,19 @@ export function headlessLaunch ({ platform, env, has, command, args }) {
   const childEnv = { ...env, ORIVON_RUN_HEADLESS: 'virtual' }
   delete childEnv.WAYLAND_DISPLAY
   if (childEnv.XDG_SESSION_TYPE === 'wayland') childEnv.XDG_SESSION_TYPE = 'x11'
-  if (!privateBus) return { file: 'xvfb-run', args: ['-a', command, ...args], env: childEnv, virtualDisplay, privateBus }
+  if (!privateBus) {
+    // Unset, the address falls back to $XDG_RUNTIME_DIR/bus, which is the desktop's: so a dead one instead.
+    if (shielded) childEnv.DBUS_SESSION_BUS_ADDRESS = NO_BUS
+    return { file: 'xvfb-run', args: ['-a', command, ...args], env: childEnv, virtualDisplay, privateBus }
+  }
 
-  // Inside xvfb-run, so the bus daemon, and any service it starts, inherits
-  // the virtual display rather than the desktop's. The desktop bus's address
-  // is dropped too: dbus-run-session replaces it, and nothing may fall back.
+  // Inside xvfb-run, so the bus daemon inherits the virtual display rather
+  // than the desktop's. The desktop bus's address is dropped too:
+  // dbus-run-session replaces it, and nothing may fall back. Its config starts
+  // no service on demand (private-session-bus.conf says why).
   delete childEnv.DBUS_SESSION_BUS_ADDRESS
   childEnv.ORIVON_E2E_PRIVATE_BUS = '1'
-  return { file: 'xvfb-run', args: ['-a', 'dbus-run-session', '--', command, ...args], env: childEnv, virtualDisplay, privateBus }
+  return { file: 'xvfb-run', args: ['-a', 'dbus-run-session', `--config-file=${PRIVATE_BUS_CONFIG}`, '--', command, ...args], env: childEnv, virtualDisplay, privateBus }
 }
 
 if (isInvokedDirectly(import.meta.url)) {
@@ -96,8 +111,9 @@ if (isInvokedDirectly(import.meta.url)) {
     console.error(`[run-headless] ${launch.refused}`)
     process.exit(1)
   }
+  const bus = launch.privateBus ? ' and a private session bus' : launch.env.DBUS_SESSION_BUS_ADDRESS === NO_BUS ? ' and no session bus' : ''
   console.error(launch.virtualDisplay
-    ? `[run-headless] using a virtual display (xvfb-run, Wayland stripped from the child env)${launch.privateBus ? ' and a private session bus' : ''}`
+    ? `[run-headless] using a virtual display (xvfb-run, Wayland stripped from the child env)${bus}`
     : '[run-headless] no virtual display available -- running directly, relying on ORIVON_WINDOW_NO_FOCUS')
   const result = spawnCommandSync(launch.file, launch.args, { env: launch.env })
   process.exit(result.error === undefined ? result.status ?? 1 : 1)

@@ -147,9 +147,9 @@ follow from it:
   the gate notes a grant before answering it (`ADR-0026`).
 
 The notification measurement is the last phase of `test/sites/e2e-site-permissions.test.ts`, which
-runs only on a private session bus
+runs only on a private session bus, which `scripts/run-headless.mjs` gives every run off CI
 ([`setup.md`](../../../docs/development/setup.md)):
-`ORIVON_PRIVATE_BUS=1 node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/sites/e2e-site-permissions.test.ts`.
+`node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/sites/e2e-site-permissions.test.ts`.
 
 **`web-context-host.ts` reinstalls deny-everything handlers on isolated-context sessions.** They
 are the only thing keeping every name above away from a document running another site's script;
