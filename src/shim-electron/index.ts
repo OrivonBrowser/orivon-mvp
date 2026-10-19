@@ -18,6 +18,7 @@ import { createDialog } from './dialog.js'
 import { installFileUrlRewrite } from './file-urls.js'
 import type { FileUrlScope } from './file-urls.js'
 import { createIpc } from './ipc.js'
+import { createPowerSaveBlocker } from './power-save-blocker.js'
 import { createSafeStorage } from './safe-storage.js'
 import { createShell } from './shell.js'
 import { BrowserWindow, Menu, Tray } from './desktop-shell.js'
@@ -32,6 +33,7 @@ export type { ElectronShell, ShellDeps } from './shell.js'
 export type { DesktopCapturerSource, ElectronDesktopCapturer, ShimNativeImage, SourcesOptions } from './desktop-capturer.js'
 export type { ElectronDialog, OpenDialogOptions, OpenDialogReturnValue } from './dialog.js'
 export type { ElectronIpcMain, ElectronIpcRenderer, IpcEvent, IpcHandler, IpcListener } from './ipc.js'
+export type { ElectronPowerSaveBlocker, PowerSaveBlockerType } from './power-save-blocker.js'
 export type { DecryptStringAsyncReturnValue, ElectronSafeStorage } from './safe-storage.js'
 export { BrowserWindow, Menu, Tray } from './desktop-shell.js'
 
@@ -70,6 +72,13 @@ export const clipboard = createClipboard({
 })
 export const shell = createShell({
   open: (url, target, features) => (globalThis as unknown as { open: (...args: string[]) => unknown }).open(url, target, features)
+})
+
+// A worker has no document or wake lock: the blocker then warns once and answers as if nothing were held.
+export const powerSaveBlocker = createPowerSaveBlocker({
+  navigator: (globalThis as { navigator?: Navigator }).navigator ?? {},
+  document: (globalThis as { document?: Document }).document ?? Object.assign(new EventTarget(), { visibilityState: 'hidden' }),
+  warn: (message, error) => { console.warn(message, error) }
 })
 
 const bus = createIpc()
@@ -112,6 +121,6 @@ export const webFrame = unimplementedMember('webFrame')
 export default withUnimplementedFallback({
   app, dialog, safeStorage, ipcRenderer, ipcMain, BrowserWindow, Menu, Tray,
   shell, clipboard, session, protocol, webContents, nativeImage, screen,
-  contextBridge, crashReporter, powerMonitor, systemPreferences,
+  contextBridge, crashReporter, powerMonitor, powerSaveBlocker, systemPreferences,
   globalShortcut, nativeTheme, webFrame, desktopCapturer
 })
