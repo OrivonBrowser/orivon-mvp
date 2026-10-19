@@ -25,6 +25,8 @@ export interface IpfsLimits {
    * the first attempt keeps running, and whichever verifies first wins.
    * A block fetch waits less once gateways have answered (`GatewayPool.hedgeDelay`). */
   readonly hedgeDelayMs: number
+  /** How long a folder listing may spend reading the folder and typing its entries before it is sent with what it has; `LISTING_BUDGET_MS` when unset. */
+  readonly listingBudgetMs?: number
   /** IPNS and DNSLink hops from a name to its root. */
   readonly maxPointerHops: number
 }

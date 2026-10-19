@@ -149,6 +149,7 @@ export function createIpfsGatherer (options: IpfsGathererOptions): DataGatherer 
             servedPath: file.servedPath,
             size: file.size,
             ...(file.contentType !== undefined && { contentType: file.contentType }),
+            ...(file.listing === true && { listing: true as const }),
             body: (async function * () {
               try {
                 yield * body
