@@ -17,7 +17,7 @@ export interface Pace {
 
 /** The waits below, written for a direct connection. */
 const SYNC_WAIT_MS = 8_000
-const MOUNT_TIMEOUT_MS = 25_000
+const MOUNT_TIMEOUT_MS = 45_000
 
 /**
  * The light client's first sync fetches about two megabytes from the beacon API, which a mixnet carries at some 15 to 20
