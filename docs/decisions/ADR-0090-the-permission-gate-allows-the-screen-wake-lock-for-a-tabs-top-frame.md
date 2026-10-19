@@ -96,9 +96,8 @@ owns it, and a name an asker owns falls through to deny for contents it does not
   frame is another realm with the browser's own `request`, which it can call on the page's
   `navigator.wakeLock`. The lock it takes is then not released when the tab goes behind another, and the
   screen stays on until the tab closes. Nothing leaves the machine and nothing is read; the cost is the
-  screen and battery. A video playing in a tab behind another already keeps the screen on in the same
-  way, because Chromium is never told the tab is hidden. Closing it needs either Electron reporting a
-  hidden tab as hidden or a release from the main process.
+  screen and battery. Closing it needs either Electron reporting a hidden tab as hidden or a release
+  from the main process, neither measured to be possible here.
 - The lock keeps the screen on and nothing in the shell says so. The tab strip draws no indicator,
   and Chromium shows none either.
 - The argument rests on upstream behaviour: the secure-context attribute of the API, the release on a
