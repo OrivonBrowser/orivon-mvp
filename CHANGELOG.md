@@ -17,6 +17,7 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+- **`contracts/handles.ts`**: `FileHandle` gains an optional `name`, the basename of the file the handle is open on (for a picked file, the name the person's file has; never a path). Apps that need a picked file's name or extension read it there once an implementation fills it, and treat an absent name as unknown. Recheck: nothing yet.
 - **`electron-ipc-send-sync-answers-from-the-listener`** and **`electron-power-save-blocker-holds-a-wake-lock`**: new rows. The `electron` shim now has `ipcRenderer.sendSync` (answered by an `ipcMain.on` listener's `event.returnValue`, else a named error), `addListener`, `off` and chainable `on`/`once`, and `powerSaveBlocker` over `navigator.wakeLock`. A port can drop its hand-written `sendSync` and wake-lock code: recheck WebTorrent, whose build bundles this shim, and Ledger Wallet and Element, which answer `electron` with their own objects.
 - **`installed-app-without-grants-is-asked-as-a-website`**: an installed app that holds no grant is now asked for a location, a notification or a clipboard read as a website is, and the person's answer and site rules apply to it. An app that needs such a feature declares the capability instead; recheck apps that call these web APIs with no grant.
 
