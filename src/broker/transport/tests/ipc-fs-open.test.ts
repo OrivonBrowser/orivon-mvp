@@ -22,6 +22,7 @@ import { APP, OTHER, type BrokerCall, envelope, frameFor, stubBroker } from './i
 function fakeFile (overrides: Partial<FailableFileHandle> = {}): FailableFileHandle {
   return {
     id: 'file-1',
+    name: 'file.bin',
     closed: new Promise(() => {}),
     close: vi.fn(async () => {}),
     fail: vi.fn(),
@@ -38,7 +39,7 @@ function fakeFile (overrides: Partial<FailableFileHandle> = {}): FailableFileHan
 }
 
 describe('fs.open registers the returned handle for this origin', () => {
-  it('resolves a bare { id } descriptor and registers it in fsTransport.registry', async () => {
+  it('resolves an { id, name } descriptor and registers it in fsTransport.registry', async () => {
     const calls: BrokerCall[] = []
     const file = fakeFile({ id: 'abc123' })
     const broker = stubBroker(calls, { open: async () => file })
@@ -49,7 +50,7 @@ describe('fs.open registers the returned handle for this origin', () => {
       undefined, undefined, undefined, fsTransport
     )
 
-    expect(response).toEqual({ id: 'req-1', ok: true, result: { id: 'abc123' } })
+    expect(response).toEqual({ id: 'req-1', ok: true, result: { id: 'abc123', name: 'file.bin' } })
     expect(fsTransport.registry.get(APP, 'abc123')).toBe(file)
     expect(calls).toEqual([{ method: 'fs.open', origin: APP, args: { path: 'piece.bin', flags: 'w+' } }])
   })

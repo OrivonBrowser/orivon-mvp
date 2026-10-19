@@ -30,12 +30,22 @@ describe('orivon.fs.open', () => {
     expect(file.id).toBe('xyz')
   })
 
+  it('carries the broker\'s basename through to the wrapped handle', async () => {
+    const target: Record<string, unknown> = {}
+    const bridge = fakeBridge(fakeSocketBridgeResult())
+    bridge.fsOpen = async () => fakeFileBridgeResult({ id: 'n1', name: 'movie.mkv' })
+    installOrivon(bridge, LIMITS, target)
+    const file = await fsOrivon(target).open('a', 'r')
+    expect((file as { name?: string }).name).toBe('movie.mkv')
+  })
+
   it('read/write/stat/truncate/sync/close all forward their arguments to the matching bridge closure', async () => {
     const target: Record<string, unknown> = {}
     const seen: Record<string, unknown> = {}
     const bridge = fakeBridge(fakeSocketBridgeResult())
     bridge.fsOpen = async () => ({
       id: 'h1',
+      name: 'h1.bin',
       read: async (opts) => { seen.read = opts; return new Uint8Array([1, 2]) },
       write: async (opts) => { seen.write = opts; return 2 },
       stat: async () => { seen.stat = true; return { size: 2, isFile: true, isDirectory: false, mtimeMs: 5 } },
@@ -155,8 +165,8 @@ describe('orivon.fs.userSelected', () => {
     const bridge = fakeBridge(fakeSocketBridgeResult())
     const seen: Array<{ id: string, op: string }> = []
     bridge.fsUserSelected = async () => [
-      { id: 'p1', read: async () => { seen.push({ id: 'p1', op: 'read' }); return new Uint8Array([1]) }, write: async () => 0, stat: async () => ({ size: 0, isFile: true, isDirectory: false, mtimeMs: 0 }), truncate: async () => {}, sync: async () => {}, close: async () => { seen.push({ id: 'p1', op: 'close' }) } },
-      { id: 'p2', read: async () => { seen.push({ id: 'p2', op: 'read' }); return new Uint8Array([2]) }, write: async () => 0, stat: async () => ({ size: 0, isFile: true, isDirectory: false, mtimeMs: 0 }), truncate: async () => {}, sync: async () => {}, close: async () => { seen.push({ id: 'p2', op: 'close' }) } }
+      { id: 'p1', name: 'p1.bin', read: async () => { seen.push({ id: 'p1', op: 'read' }); return new Uint8Array([1]) }, write: async () => 0, stat: async () => ({ size: 0, isFile: true, isDirectory: false, mtimeMs: 0 }), truncate: async () => {}, sync: async () => {}, close: async () => { seen.push({ id: 'p1', op: 'close' }) } },
+      { id: 'p2', name: 'p2.bin', read: async () => { seen.push({ id: 'p2', op: 'read' }); return new Uint8Array([2]) }, write: async () => 0, stat: async () => ({ size: 0, isFile: true, isDirectory: false, mtimeMs: 0 }), truncate: async () => {}, sync: async () => {}, close: async () => { seen.push({ id: 'p2', op: 'close' }) } }
     ]
     installOrivon(bridge, LIMITS, target)
 

@@ -22,7 +22,7 @@
 
 import { fail, isOrivonErrorLike } from '../errors.js'
 import { mapIoError } from '../io-errors.js'
-import { CONFINEMENT_ERROR_CODE, confinePath } from '../policy/paths.js'
+import { CONFINEMENT_ERROR_CODE, confinePath, fileNameOf } from '../policy/paths.js'
 import { createFileHandleWrapper, VALID_OPEN_FLAGS } from './fs-handle-wrapper.js'
 import type { HandleTable } from '../handles/handles.js'
 import type { FailableFileHandle, OperationScope } from '../handles/handle-contracts.js'
@@ -439,7 +439,7 @@ export function createFsCapability ({ deps, handleTable, ledger, canonical }: Fs
         destroy
       })
 
-      return toFailableFileHandle(key, entry, fields)
+      return toFailableFileHandle(key, entry, fields, fileNameOf(resolved))
     })
   }
 

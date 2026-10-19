@@ -56,7 +56,7 @@ it('[app:electron-dialog-paths-read-and-write-the-pick] [app:user-picked-file-an
   const { app, chrome } = await launchShell()
   try {
     await runPhase('electron dialog picked paths', async (check) => {
-      const chosen = join(scratch, 'chosen.txt')
+      const chosen = join(scratch, 'My notes (final).v2.txt')
       const folder = join(scratch, 'folder')
       writeFileSync(chosen, 'picked file contents')
       mkdirSync(folder)
@@ -75,6 +75,7 @@ it('[app:electron-dialog-paths-read-and-write-the-pick] [app:user-picked-file-an
       await clickScenario(view, 'openFile')
       const file = await results(view, 'openFile')
       check('[app:electron-dialog-paths-read-and-write-the-pick] showOpenDialog answers a stand-in path under /orivon/picked, never the host path', typeof file['path'] === 'string' && /^\/orivon\/picked\/[0-9a-f]+\/[^/]+$/.test(file['path']) && !String(file['path']).includes(scratch), JSON.stringify(file))
+      check('[app:electron-dialog-paths-read-and-write-the-pick] the stand-in path ends in the picked file\'s real name, so path.basename and path.extname work on it, and nothing of the folder above it appears', String(file['path']).endsWith('/My notes (final).v2.txt') && file['base'] === 'My notes (final).v2.txt' && file['ext'] === '.txt' && !String(file['path']).includes('orivon-picked-'), JSON.stringify(file))
       check('[app:electron-dialog-paths-read-and-write-the-pick] stat, readFile and createReadStream on it give the picked file itself', file['size'] === 20 && file['isFile'] === true && file['read'] === 'picked file contents' && file['streamed'] === 'picked file contents', JSON.stringify(file))
       check('[app:electron-dialog-paths-read-and-write-the-pick] writeFile on it rewrites the file on disk, and nothing was copied into the app\'s files', file['again'] === 'rewritten by the app' && readFileSync(chosen, 'utf8') === 'rewritten by the app' && file['plain'] === 'in the app files', JSON.stringify(file))
 

@@ -70,7 +70,7 @@ export type {
   ControlEvent, PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor, TcpServerDescriptor,
   UdpSocketDescriptor
 } from './relay/port-transport.js'
-export type { FsControlMethod, FsHandleDescriptor, FsTransport } from './dispatch/fs.js'
+export type { FsControlMethod, FsFileDescriptor, FsHandleDescriptor, FsTransport } from './dispatch/fs.js'
 export type { WebControlMethod } from './dispatch/web.js'
 
 /**

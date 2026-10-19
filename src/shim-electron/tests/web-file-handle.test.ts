@@ -27,6 +27,10 @@ function fakeWebFile (initial = '') {
 }
 
 describe('a saved-to file as a FileHandle', () => {
+  it('carries the browser\'s name for the file', () => {
+    expect(fileHandleFromWeb(fakeWebFile('x').handle).name).toBe('saved.txt')
+  })
+
   it('writes through one writer and commits only when synced or closed', async () => {
     const web = fakeWebFile('old content here')
     const file = fileHandleFromWeb(web.handle)

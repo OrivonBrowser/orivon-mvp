@@ -4,6 +4,7 @@
 // is called from a click as a real app's is. Results land in `window.__r`.
 
 import * as fs from 'fs'
+import * as nodePath from 'path'
 import { dialog } from 'electron'
 
 type Scenario = 'openFile' | 'openFolder' | 'save'
@@ -38,7 +39,7 @@ async function openFile (): Promise<void> {
   await fs.promises.writeFile(path, 'rewritten by the app')
   const again = await fs.promises.readFile(path, 'utf8')
   await fs.promises.writeFile('plain.txt', 'in the app files')
-  page.__r['openFile'] = { canceled, path, size: stat.size, isFile: stat.isFile(), read, streamed, again, plain: await fs.promises.readFile('plain.txt', 'utf8') }
+  page.__r['openFile'] = { canceled, path, base: nodePath.basename(path), ext: nodePath.extname(path), size: stat.size, isFile: stat.isFile(), read, streamed, again, plain: await fs.promises.readFile('plain.txt', 'utf8') }
 }
 
 async function openFolder (): Promise<void> {

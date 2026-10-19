@@ -6,7 +6,7 @@ import type { WebFileHandle, WebWritable } from '../web-file-handle.js'
 import type { Orivon } from '../../contracts/capability-api.js'
 import type { DirectoryHandle, FileHandle } from '../../contracts/handles.js'
 
-const fileHandle = (): FileHandle => ({ id: 'f', closed: new Promise(() => {}) }) as unknown as FileHandle
+const fileHandle = (name?: string): FileHandle => ({ id: 'f', ...(name === undefined ? {} : { name }), closed: new Promise(() => {}) }) as unknown as FileHandle
 const directoryHandle = (): DirectoryHandle => ({ id: 'd', closed: new Promise(() => {}) }) as unknown as DirectoryHandle
 
 function setup (userSelected: (opts?: unknown) => Promise<unknown>, picker?: DialogDeps['saveFilePicker']) {
@@ -27,6 +27,22 @@ describe('dialog.showOpenDialog', () => {
     expect(result.filePaths[0]?.startsWith(`${PICKED_ROOT}/`)).toBe(true)
     expect(result.filePaths[0]?.endsWith(`/${PICKED_FILE_NAME}`)).toBe(true)
     expect(resolvePickedPath(result.filePaths[0] as string)?.status).toBe('pick')
+  })
+
+  it('a handle that reports its name gives the stand-in path that name, so its extension survives', async () => {
+    const { dialog } = setup(vi.fn(async () => [fileHandle('movie.mkv'), fileHandle('notes')]))
+    const result = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] })
+    expect(result.filePaths[0]?.endsWith('/movie.mkv')).toBe(true)
+    expect(result.filePaths[1]?.endsWith('/notes')).toBe(true)
+    expect(result.filePaths[0]?.endsWith(`/${PICKED_FILE_NAME}`)).toBe(false)
+  })
+
+  it('a name that is not safe as one path segment is made safe, never splitting the path', async () => {
+    const { dialog } = setup(vi.fn(async () => [fileHandle('..'), fileHandle('a/b\\c.txt')]))
+    const result = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] })
+    const parts = result.filePaths.map((path) => path.slice(PICKED_ROOT.length + 1).split('/'))
+    expect(parts.map((segments) => segments.length)).toEqual([2, 2])
+    expect(parts[1]?.[1]).toBe('a_b_c.txt')
   })
 
   it('multiSelections asks for several and answers a path per file, each its own pick', async () => {
