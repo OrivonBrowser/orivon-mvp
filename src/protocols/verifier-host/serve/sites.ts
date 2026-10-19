@@ -23,7 +23,7 @@ export const STALE_SERVE_MS = 10 * 60_000
  * burst of requests past the TTL would otherwise each trigger. */
 export const FAILURE_TTL_MS = 5_000
 /** A light client fed a lie it keeps rejecting retries for over a minute; a tab gets its answer sooner. */
-export const MOUNT_TIMEOUT_MS = 25_000
+export const MOUNT_TIMEOUT_MS = 45_000
 /** Names kept at once, the least recently used dropped first: any page can make the host look up any number of names. */
 export const MAX_SITES = 64
 /** After the deadline aborts a mount, how long the mount has to say why it stopped before the deadline answers for it. */
