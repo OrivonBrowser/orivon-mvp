@@ -11,7 +11,8 @@ import type { ExclusiveAccess } from '../shell/exclusive-access-notice.js'
  * ./README.md says which clause of that rule each name meets. ADR-0022
  * argues clipboard write, ADR-0024 one file, ADR-0025 fullscreen, ADR-0026
  * pointer and keyboard lock; ADR-0027 and ADR-0028 the two names the person
- * is asked about, external links and notifications.
+ * is asked about, external links and notifications. ADR-0090's
+ * `screen-wake-lock` is answered by `wake-lock-asker.ts`, not listed here.
  *
  * `clipboard-sanitized-write` lets a page call
  * `navigator.clipboard.writeText()`. Chromium still requires transient

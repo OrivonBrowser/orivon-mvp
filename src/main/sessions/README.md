@@ -11,7 +11,8 @@ only for a tab, and answers `undefined` otherwise, so the gate's rules decide. A
 it must see a request before the general askers do, and may hear every grant once the gate has told
 Electron (`afterGrant`). `device-permission-handler.ts` is the slot `setDevicePermissionHandler` points at: it answers no for every device until [`../devices/`](../devices/) binds the handler for a HID device, and no for USB and serial always. `display-media-handler.ts` is the slot `setDisplayMediaRequestHandler`
 points at on every session: it answers no stream (the page's call fails) until
-[`../display-capture/`](../display-capture/) binds the handler that gives the source the person picked. `external-links.ts` and
+[`../display-capture/`](../display-capture/) binds the handler that gives the source the person picked. `wake-lock-asker.ts` is the asker that owns `screen-wake-lock` (`ADR-0090`): yes for a tab's top frame, no for any other contents or frame, never a question.
+`external-links.ts` and
 `site-notifications.ts` decide the two that ask the person; `notification-decisions.ts` remembers
 each site's notification answer; `tab-prompts.ts` is what each tab remembers between questions.
 `web-context-host.ts` is `ADR-0019`'s Electron half of the isolated `WebContext`: the real
@@ -122,8 +123,14 @@ to check either signal against.
 | `fullscreen` | 1(b) | A click; Escape in the browser process; "Press Esc to exit full screen" | `ADR-0025` |
 | `pointerLock` | 1(b) | A click; Escape in the browser process; "Press Esc to show your cursor" | `ADR-0026` |
 | `keyboardLock` | 1(b) | Acts only in fullscreen, which a click enters; holding Escape leaves; "Press and hold Esc to exit full screen" | `ADR-0026` |
+| `screen-wake-lock` | 1(b) | Chromium offers it to a secure context only; the tab's preload releases a lock when the shell hides the tab, which Chromium never does for a tab behind another (`../../preload/page-visibility.ts`); owned by `wake-lock-asker.ts`, so only a tab's top frame passes; `system-wake-lock` stays denied | `ADR-0090` |
 | `openExternal` | 2 | "Open *scheme* link with your system's default app?", every time; never asked for a page an app shows in a `<webview>`, which is refused (`ADR-0047`) | `ADR-0027` |
 | `notifications` | 2 | "*site* wants to show notifications", once per site, remembered; asked in the per-site prompt under the address bar | `ADR-0028` |
+
+**`screen-wake-lock` is in the table but not in `allowed-permissions.ts`.** Its answer depends on the contents (an ordinary
+tab) and the frame (the top one), which a name and its details cannot say, so `wake-lock-asker.ts` owns it and the
+gate's own rules deny it for whatever the asker does not answer. The grant is only as safe as the release in the
+tab's preload: remove that and a tab behind another keeps the screen on.
 
 **Names a per-site asker owns.** `media` (camera and microphone, one question for both),
 `clipboard-read` and `deprecated-sync-clipboard-read`, `geolocation`, `midi` and `midiSysex`,
