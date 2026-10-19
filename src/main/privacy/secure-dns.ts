@@ -1,6 +1,8 @@
 // "Secure DNS": looking site names up over HTTPS, so the network cannot see or
-// change the answers. The setting's four values become one
-// `app.configureHostResolver` call. Names a `--host-resolver-rules` clause maps
+// change the answers. The setting's values become one
+// `app.configureHostResolver` call; the default, `quad9Fallback`, is Quad9 first and the platform's DNS
+// when Quad9 cannot be reached, and which of the two applies is decided over time by `secure-dns-fallback.ts`
+// (Chromium's `automatic` mode alone answers from the platform's DNS until its own probe succeeds). Names a `--host-resolver-rules` clause maps
 // (the `.eth` names, a test's fixtures) are answered by those rules before any
 // resolver is asked, so they never reach a DNS provider. Tied to Electron
 // only through the `configureHostResolver` it is given.
@@ -50,11 +52,16 @@ export function needsResolverCall (value: SecureDnsValue, platform: string = pro
   return value !== 'off' || platform === 'darwin'
 }
 
-/** Applies `value`; a rejected call is logged and leaves the resolver as it was. */
-export function applySecureDns (target: ResolverTarget, value: SecureDnsValue): void {
+/** Applies `options`; a rejected call is logged and leaves the resolver as it was. */
+export function configureResolver (target: ResolverTarget, options: ConfigureHostResolverOptions): void {
   try {
-    target.configureHostResolver(secureDnsOptions(value))
+    target.configureHostResolver(options)
   } catch (error) {
     console.error('[privacy] could not configure secure DNS:', error)
   }
+}
+
+/** Applies `value`; for `quad9Fallback` this is only the platform fallback half, `secure-dns-fallback.ts` decides when it applies. */
+export function applySecureDns (target: ResolverTarget, value: SecureDnsValue): void {
+  configureResolver(target, secureDnsOptions(value))
 }
