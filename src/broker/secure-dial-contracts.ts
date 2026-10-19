@@ -18,12 +18,14 @@ export type SecureDialOptions = Omit<SecureConnectOptions, 'host' | 'port'>
  * `servername`.
  *
  * `addresses`, WHEN PRESENT, ARE WHAT GETS DIALLED, and `host` is then never
- * resolved again. The broker supplies them whenever the handshake the app
- * asked for would not bind `host` to the peer by itself (../net-connect-
- * secure.ts's `bindsGrantedName`): each is a literal `checkConnect`
- * (policy/connect.ts) already approved, so connecting to the name a second
- * time would be the second resolution T12 forbids. Absent, the dial resolves
- * `host` itself, and the default verification is what binds the answer.
+ * resolved again; the certificate is still verified against `host`. The broker
+ * supplies them for a direct dial. When the handshake the app asked for would
+ * not bind `host` to the peer by itself (../capabilities/net-connect-secure.ts's
+ * `bindsGrantedName`), each is a literal `checkConnect` (policy/connect.ts)
+ * already approved, so connecting to the name a second time would be the second
+ * resolution T12 forbids. When it does bind, they are the injected resolver's
+ * answers, unchecked: the name and the certificate are the authorisation.
+ * Absent, `host` is an address literal and is dialled as it is.
  */
 export interface SecureDialTarget {
   readonly host: string

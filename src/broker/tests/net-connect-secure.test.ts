@@ -14,7 +14,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { rejection } from '../handles/tests/handles.test-helpers.js'
-import { APP, baseDeps, brokerWithConnectSecureGrant, manifestWith, okSecureSocket } from './index.test-helpers.js'
+import { APP, baseDeps, brokerWithConnectSecureGrant, manifestWith, okSecureSocket, resolvesPublic } from './index.test-helpers.js'
 import { createBroker } from '../index.js'
 import type { DialSecure } from '../broker-contracts.js'
 
@@ -58,7 +58,7 @@ describe('https.connect is a grant separate from tcp.connect', () => {
 describe('the hostname the app asked for authorises the call, never a resolved address', () => {
   it('denies a host the granted https.connect pattern does not name, without ever calling dialSecure', async () => {
     const dialSecure = vi.fn(async () => okSecureSocket())
-    const broker = createBroker(baseDeps({ dialSecure }))
+    const broker = createBroker(baseDeps({ dialSecure, resolve: resolvesPublic }))
     broker.registerApp(APP, manifestWith({ net: { https: { connect: ['api.example.com:443'] } } }))
     await broker.grant(APP, 'https.connect', ['api.example.com:443'])
 
@@ -74,7 +74,7 @@ describe('the hostname the app asked for authorises the call, never a resolved a
       calls.push({ host, port })
       return okSecureSocket()
     }
-    const broker = createBroker(baseDeps({ dialSecure }))
+    const broker = createBroker(baseDeps({ dialSecure, resolve: resolvesPublic }))
     broker.registerApp(APP, manifestWith({ net: { https: { connect: ['API.example.com:443'] } } }))
     await broker.grant(APP, 'https.connect', ['API.example.com:443'])
 
@@ -102,7 +102,7 @@ describe('a failed handshake is \'unreachable\' with a real platformCode, never 
 
 describe('revocation tears down a secure socket exactly as it does a plain one', () => {
   it('closes an open secure socket the moment its grant is revoked', async () => {
-    const broker = createBroker(baseDeps())
+    const broker = createBroker(baseDeps({ resolve: resolvesPublic }))
     broker.registerApp(APP, manifestWith({ net: { https: { connect: ['api.example.com:443'] } } }))
     const g = await broker.grant(APP, 'https.connect', ['api.example.com:443'])
     const socket = await broker.net.connectSecure(APP, { host: 'api.example.com', port: 443 })
@@ -118,7 +118,7 @@ describe('revocation tears down a secure socket exactly as it does a plain one',
     const dialed = new Promise<Awaited<ReturnType<DialSecure>>>((resolve) => { resolveDial = resolve })
     const destroySpy = vi.fn()
     const dialSecure: DialSecure = async () => await dialed
-    const broker = createBroker(baseDeps({ dialSecure }))
+    const broker = createBroker(baseDeps({ dialSecure, resolve: resolvesPublic }))
     broker.registerApp(APP, manifestWith({ net: { https: { connect: ['api.example.com:443'] } } }))
     const g = await broker.grant(APP, 'https.connect', ['api.example.com:443'])
 

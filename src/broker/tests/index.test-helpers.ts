@@ -343,8 +343,11 @@ export async function brokerWithConnectGrant (deps: Partial<CreateBrokerOptions>
 }
 
 /** `brokerWithConnectGrant`'s https.connect sibling -- a SEPARATE grant, matched by hostname (ADR-0017). */
+/** A resolver for a name-bound `connectSecure`, which resolves the name before it dials. */
+export const resolvesPublic: CreateBrokerOptions['resolve'] = async () => ['93.184.216.34']
+
 export async function brokerWithConnectSecureGrant (deps: Partial<CreateBrokerOptions> = {}): Promise<Broker> {
-  const broker = createBroker(baseDeps(deps))
+  const broker = createBroker(baseDeps({ resolve: resolvesPublic, ...deps }))
   broker.registerApp(APP, manifestWith({ net: { https: { connect: ['api.example.com:443'] } } }))
   await broker.grant(APP, 'https.connect', ['api.example.com:443'])
   return broker
