@@ -62,6 +62,11 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Release folders and any IPFS folder without a page now open in Orivon as a file list; v0.0.8's packages download by name.
 - Orivon Status: a public page checking every Orivon site, name and release from your own browser, every block hash-checked; status.orivonstack.eth pending.
 - The node status page counted cached first blocks as served; it now requires gateways to return pages and random file samples byte for byte.
+- Recon suggests each ported app's bridge answers from the Electron calls behind them: FreeTube got 18 of 34 right, none wrong.
+- Port kit: a recipe icon setting replaced four ports' icon code; The Lounge and WebTorrent now share one build kit.
+- Pages can finally keep the screen on: Orivon refused every wake lock; now granted to a visible tab, released when hidden.
+- Desktop apps' open and save dialogs now hand back stand-in paths that read the picked file directly: no copy, no real path.
+- Agent test runs get a private, empty D-Bus, so no file picker or notification reaches the owner's desktop again.
 
 ### In my head
 
@@ -73,5 +78,6 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Second thought on Nym: tunnel the person's own traffic, let IPFS and Swarm run direct for speed, and never touch gateways without a yes.
 - Installed is only where an app is kept, never how it behaves: one switch, one popup, one set of rules for every origin.
 - Ports should be doable by any capable AI, not one vendor's: tools must say where Orivon ends, so nobody patches around it.
+- Porting rules belong to Electron's API, not each app's names: answer every Electron call once in Orivon, and every port inherits it.
 
 ### Non-repo
