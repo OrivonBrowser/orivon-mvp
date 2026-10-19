@@ -10,6 +10,7 @@ import { getOrivon } from '../orivon-global.js'
 import { codedError, toNodeError } from '../node-errors.js'
 import { fsQueue, retryLimited } from '../limit-retry.js'
 import { VIRTUAL_ROOT, VIRTUAL_TMPDIR } from '../virtual-root.js'
+import { resolvePickedPath } from '../../shim-electron/picked-paths.js'
 import { syncFs } from './sync-orivon.js'
 
 export type PathLike = string | Uint8Array | URL
@@ -23,7 +24,7 @@ export interface NodeFsError extends Error {
 
 /** Linux values, as Node reports them on the platform the broker runs on. */
 const ERRNO: Readonly<Record<string, number>> = {
-  ENOENT: -2, EBADF: -9, EACCES: -13, EEXIST: -17, ENOTDIR: -20, EISDIR: -21, EINVAL: -22, ENOTEMPTY: -39
+  ENOENT: -2, EBADF: -9, EACCES: -13, EEXIST: -17, EXDEV: -18, ENOTDIR: -20, EISDIR: -21, EINVAL: -22, ENOSYS: -38, ENOTEMPTY: -39
 }
 
 /** A Node-shaped fs error: `EISDIR: illegal operation on a directory, read`, with `code`, `errno`, `syscall` and, when there is one, `path`. */
@@ -46,6 +47,13 @@ export async function guarded<T> (run: () => Promise<T>, pause?: (ms: number) =>
   }
 }
 
+/** A picked path (shim-electron/picked-paths.ts) reaches the asynchronous fs calls through fs/picked.ts; every other route meets this. */
+export function pickedSyncError (syscall: string, path: string): NodeFsError {
+  return fsError('ENOSYS',
+    'function not implemented (a picked path is served by the asynchronous fs calls only: a pick has no synchronous wire)',
+    syscall, path)
+}
+
 function invalidPath (path: unknown): TypeError & { code: string } {
   return Object.assign(
     new TypeError(`The "path" argument must be of type string or an instance of Buffer or URL. Received ${typeof path}`),
@@ -53,7 +61,7 @@ function invalidPath (path: unknown): TypeError & { code: string } {
   )
 }
 
-function pathText (path: PathLike): string {
+export function pathText (path: PathLike): string {
   if (typeof path === 'string') return path
   if (path instanceof Uint8Array) return new TextDecoder().decode(path)
   if (path instanceof URL) {
@@ -68,9 +76,10 @@ function normalized (text: string): string {
   return normalize(text).replace(/(.)\/+$/, '$1')
 }
 
-/** The path orivon.fs takes for `path`: `.` for the root itself. Throws EACCES, naming `syscall`, for one outside the root. */
+/** The path orivon.fs takes for `path`: `.` for the root itself. Throws EACCES, naming `syscall`, for one outside the root, and ENOSYS for a picked path, which has no synchronous wire. */
 export function toConfinedPath (path: PathLike, syscall: string): string {
   const text = pathText(path)
+  if (resolvePickedPath(text) !== undefined) throw pickedSyncError(syscall, text)
   const resolved = normalized(text)
   if (isAbsolute(resolved)) {
     if (resolved === VIRTUAL_ROOT) return '.'
