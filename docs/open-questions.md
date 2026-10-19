@@ -686,16 +686,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** nothing
 
-### A244: E2e tests run on the user's real session bus **[AI-REC]**
-
-- **Question:** `scripts/run-headless.mjs` starts a private D-Bus only with `ORIVON_PRIVATE_BUS=1`,
-  which has no keyring. How to stop a test notification reaching the desktop?
-- **Why it matters:** Nothing an agent runs may appear on the owner's screen.
-- **Options:** a guard failing any e2e file that constructs a notification outside the private-bus
-  runner (rec.); a private bus for every launch, with a stand-in keyring for `safeStorage` suites.
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** nothing
-
 ### A246: TLS credentials are parsed on the main thread per connection **[AI-REC]**
 
 - **Question:** The secure context is built synchronously from the app's `ca`/`cert`/`key`/`pfx`,

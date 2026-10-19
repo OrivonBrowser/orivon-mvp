@@ -1,5 +1,6 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { headlessLaunch } from '../run-headless.mjs'
+import { headlessLaunch, NO_BUS, PRIVATE_BUS_CONFIG } from '../run-headless.mjs'
 import { visibleDesktopRefusal } from '../../test/support/launch-electron.mjs'
 
 const DESKTOP = {
@@ -18,28 +19,49 @@ describe('headlessLaunch', () => {
     expect(launch).toMatchObject({ file: 'xvfb-run', args: ['-a', 'npx', 'vitest', 'run'], virtualDisplay: true, privateBus: false })
     if (!('file' in launch)) throw new Error('refused')
     expect(launch.env['WAYLAND_DISPLAY']).toBeUndefined()
+    expect(launch.env['DBUS_SESSION_BUS_ADDRESS']).toBe(NO_BUS)
     expect(launch.env['XDG_SESSION_TYPE']).toBe('x11')
     expect(launch.env['ORIVON_RUN_HEADLESS']).toBe('virtual')
   })
 
-  // Not the default: the whole suite on a private bus would lose the
-  // desktop keyring that safeStorage reads.
-  it('keeps the desktop session bus unless a private one is asked for', () => {
-    const launch = headlessLaunch({ platform: 'linux', env: DESKTOP, has: having('xvfb-run', 'dbus-run-session'), command: 'node', args: ['x.mjs'] })
-    if (!('file' in launch)) throw new Error('refused')
-    expect(launch.args).toEqual(['-a', 'node', 'x.mjs'])
-    expect(launch.env['DBUS_SESSION_BUS_ADDRESS']).toBe(DESKTOP.DBUS_SESSION_BUS_ADDRESS)
-    expect(launch.env['ORIVON_E2E_PRIVATE_BUS']).toBeUndefined()
-  })
-
-  // Inside xvfb-run, so the bus daemon and anything it starts inherit the
-  // virtual display rather than the desktop's.
-  it('gives the command a session bus of its own when ORIVON_PRIVATE_BUS=1, inside the virtual display, and says so', () => {
-    const launch = headlessLaunch({ platform: 'linux', env: { ...DESKTOP, ORIVON_PRIVATE_BUS: '1' }, has: having('xvfb-run', 'dbus-run-session'), command: 'npx', args: ['vitest'] })
-    expect(launch).toMatchObject({ file: 'xvfb-run', args: ['-a', 'dbus-run-session', '--', 'npx', 'vitest'], privateBus: true })
+  // The desktop bus is how a file picker, a keyring prompt or a notification
+  // reaches the real screen, whatever display the window is on.
+  it('gives the command a bare session bus of its own by default, inside the virtual display', () => {
+    const launch = headlessLaunch({ platform: 'linux', env: DESKTOP, has: having('xvfb-run', 'dbus-run-session'), command: 'npx', args: ['vitest'] })
+    expect(launch).toMatchObject({ file: 'xvfb-run', args: ['-a', 'dbus-run-session', `--config-file=${PRIVATE_BUS_CONFIG}`, '--', 'npx', 'vitest'], privateBus: true })
     if (!('file' in launch)) throw new Error('refused')
     expect(launch.env['ORIVON_E2E_PRIVATE_BUS']).toBe('1')
     expect(launch.env['DBUS_SESSION_BUS_ADDRESS']).toBeUndefined()
+    expect(launch.env['WAYLAND_DISPLAY']).toBeUndefined()
+  })
+
+  it('activates nothing on the private bus: its config names no service directory', () => {
+    const config = readFileSync(PRIVATE_BUS_CONFIG, 'utf8')
+    expect(config).toContain('<type>session</type>')
+    expect(config).not.toMatch(/servicedir|standard_session_servicedirs|<include/)
+  })
+
+  it('points the command at a bus that does not exist when no private one can be started', () => {
+    const launch = headlessLaunch({ platform: 'linux', env: DESKTOP, has: having('xvfb-run'), command: 'node', args: ['x.mjs'] })
+    if (!('file' in launch)) throw new Error('refused')
+    expect(launch.args).toEqual(['-a', 'node', 'x.mjs'])
+    expect(launch.env['DBUS_SESSION_BUS_ADDRESS']).toBe(NO_BUS)
+    expect(launch.env['ORIVON_E2E_PRIVATE_BUS']).toBeUndefined()
+  })
+
+  it('keeps the bus it has on CI, and the desktop bus for a run someone means to watch', () => {
+    for (const env of [{ ...DESKTOP, CI: 'true' }, { ...DESKTOP, ORIVON_PRIVATE_BUS: '0' }]) {
+      const launch = headlessLaunch({ platform: 'linux', env, has: having('xvfb-run', 'dbus-run-session'), command: 'node', args: ['x.mjs'] })
+      if (!('file' in launch)) throw new Error('refused')
+      expect(launch.args).toEqual(['-a', 'node', 'x.mjs'])
+      expect(launch.env['DBUS_SESSION_BUS_ADDRESS']).toBe(DESKTOP.DBUS_SESSION_BUS_ADDRESS)
+      expect(launch.env['ORIVON_E2E_PRIVATE_BUS']).toBeUndefined()
+    }
+  })
+
+  it('gives CI the private bus too when ORIVON_PRIVATE_BUS=1 asks for it', () => {
+    const launch = headlessLaunch({ platform: 'linux', env: { ...DESKTOP, CI: 'true', ORIVON_PRIVATE_BUS: '1' }, has: having('xvfb-run', 'dbus-run-session'), command: 'npx', args: ['vitest'] })
+    expect(launch).toMatchObject({ args: ['-a', 'dbus-run-session', `--config-file=${PRIVATE_BUS_CONFIG}`, '--', 'npx', 'vitest'], privateBus: true })
   })
 
   it('refuses rather than run on the desktop bus when a private one is asked for and cannot be had', () => {
