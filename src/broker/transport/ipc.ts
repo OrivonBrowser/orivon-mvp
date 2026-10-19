@@ -15,19 +15,20 @@
 // why. Only `brokerIpcSubsystem`, which nothing in ipc.test.ts calls,
 // touches the real `ipcMain`/`MessageChannelMain` value imports below.
 
-import { ipcMain, MessageChannelMain } from 'electron'
+import { ipcMain, MessageChannelMain, net } from 'electron'
 import type { MessagePortMain, WebContents } from 'electron'
 import { CONTROL_CHANNEL, PORT_CHANNEL, SYNC_CONTROL_CHANNEL } from '../../main/channels.js'
 import { publishBroker } from '../../main/registry.js'
 import type { Subsystem, SubsystemContext } from '../../main/registry.js'
 import { createBroker } from '../index.js'
 import type { Broker, CreateBrokerOptions } from '../broker-contracts.js'
-import { dialTcp, listenTcp, nodeFs, resolveHost, resolveLookup } from '../adapters/node-adapters.js'
+import { dialTcp, listenTcp, nodeFs } from '../adapters/node-adapters.js'
 import { dialTls } from '../adapters/tls-adapter.js'
 import { bindUdp } from '../adapters/udp-adapter.js'
 import { nodeLedgerStorage } from '../grants/node-ledger-storage.js'
 import { cachingProxyProbe } from './proxy-probe.js'
 import { systemProxyFor } from '../../main/route/system-proxy.js'
+import { chromiumResolvers } from '../../main/privacy/chromium-resolver.js'
 import { heldNodePorts, loopbackPort } from '../../main/verifier/loopback-port.js'
 import { ownLoopbackPortCheck } from './own-loopback-ports.js'
 import { createWebContextHost } from '../../main/sessions/web-context-host.js'
@@ -392,6 +393,10 @@ export const brokerIpcSubsystem: Subsystem = {
     // Thrown rather than skipped: without the route store an app the person routed would go direct.
     const routes = ctx.routes
     if (routes === undefined) throw fail('internal', 'ctx.routes is not published -- the route subsystem is missing or misordered')
+    // The names an app dials directly are resolved by Chromium's resolver, the one Secure DNS configures; node-adapters.ts's
+    // `resolveHost` and `resolveLookup` use the system's, which never hears of that setting. A routed app resolves nothing
+    // here: the name goes to its route.
+    const resolvers = chromiumResolvers(async (host) => await net.resolveHost(host))
     const deps: CreateBrokerOptions = {
       dial: dialTcp,
       // `dialTls` -- ADR-0017's real node:tls stack, no override, no new
@@ -401,8 +406,8 @@ export const brokerIpcSubsystem: Subsystem = {
       dialSecure: dialTls,
       bind: bindUdp,
       listen: listenTcp,
-      resolve: resolveHost,
-      resolveLookup,
+      resolve: resolvers.resolveHost,
+      resolveLookup: resolvers.resolveLookup,
       // An app the person routed is carried by its route and by nothing else; the others keep the direct path and T20.
       routeFor: routes.hub.routeFor,
       // T20's fail-closed check (security-model.md, docs/open-questions.md

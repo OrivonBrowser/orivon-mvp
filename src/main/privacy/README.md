@@ -11,7 +11,7 @@ for the whole process at start, and `dns-prefetch-switch.ts` turns DNS prefetchi
 is followed by `https-fallback.ts` (the per-tab record), `https-fallback-runner.ts` (the tab's events) and
 `https-state.ts` (this run's exemptions), and ends in the sheet `https-warning-overlay.ts`
 ([`../../renderer/overlay/https-warning/`](../../renderer/overlay/https-warning/)). `secure-dns.ts` maps the
-Secure DNS choice to the resolver's options, and `storage-access.ts` answers the two storage-access permissions
+Secure DNS choice to the resolver's options, `chromium-resolver.ts` hands the broker's direct dials and `orivon.net.lookup` the answers of that same resolver (`net.resolveHost`), and `storage-access.ts` answers the two storage-access permissions
 from the cookie choice. `install-privacy-net.ts` is the installer `../shell/shell-installers.ts` runs at start.
 
 Showing what sites keep: `cookie-list.ts` is the pure side (which cookies belong to a site, a cookie's view without
@@ -26,6 +26,7 @@ page may ask about it. The site-info popover uses the first two through
 (this run's developer names);
 [`../history/`](../history/) and [`../zoom/`](../zoom/) (what is forgotten through them);
 [`../../broker/grants/origin-hash.ts`](../../broker/grants/origin-hash.ts) (`local-files-domain.ts` names a file by its hash);
+[`../../broker/errors.ts`](../../broker/errors.ts) and the `Resolver` type of [`../../broker/policy/connect.ts`](../../broker/policy/connect.ts) (`chromium-resolver.ts`);
 [`../pages/internal-ipc.ts`](../pages/internal-ipc.ts) (the shape of a page's domain).
 
 **What it must never import.** [`../shell/`](../shell/), except `install-privacy-net.ts`, which takes
