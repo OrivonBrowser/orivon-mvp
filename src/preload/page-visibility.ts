@@ -36,11 +36,40 @@ function installInMainWorld (channel: string): void {
   if (hiddenFlag !== undefined) Object.defineProperty(proto, 'hidden', hiddenFlag)
   if (webkitVisibilityState !== undefined) Object.defineProperty(proto, 'webkitVisibilityState', webkitVisibilityState)
   if (webkitHidden !== undefined) Object.defineProperty(proto, 'webkitHidden', webkitHidden)
+  // A screen wake lock ends when its page is hidden, but Chromium decides that from its own visibility, which a tab
+  // behind another never has. So the shell's "hidden" releases the sentinels the page holds, and a request made
+  // while hidden is refused as the platform refuses it. See ./README.md's Design notes.
+  const held = new Set<WeakRef<WakeLockSentinel>>()
+  const nativeRequest = typeof WakeLock === 'function' ? Object.getOwnPropertyDescriptor(WakeLock.prototype, 'request') : undefined
+  const nativeRelease = typeof WakeLockSentinel === 'function' ? WakeLockSentinel.prototype.release : undefined
+  const requestFn = nativeRequest?.value as ((this: WakeLock, type: string) => Promise<WakeLockSentinel>) | undefined
+  if (nativeRequest !== undefined && requestFn !== undefined && nativeRelease !== undefined) {
+    const named = {
+      async request (this: WakeLock, type: string): Promise<WakeLockSentinel> {
+        if (hidden) throw new DOMException('The document is not visible.', 'NotAllowedError')
+        const sentinel = await Reflect.apply(requestFn, this, [type]) as WakeLockSentinel
+        for (const ref of held) if (ref.deref()?.released !== false) held.delete(ref)
+        held.add(new WeakRef(sentinel))
+        return sentinel
+      }
+    }
+    const replacement: PropertyDescriptor = { ...nativeRequest, value: named.request }
+    const wakeLockProto = WakeLock.prototype
+    Object.defineProperty(wakeLockProto, 'request', replacement)
+  }
+  const releaseWakeLocks = (): void => {
+    for (const ref of held) {
+      held.delete(ref)
+      const sentinel = ref.deref()
+      if (sentinel !== undefined && !sentinel.released && nativeRelease !== undefined) nativeRelease.call(sentinel).catch(() => {})
+    }
+  }
   if (visibilityState === undefined && hiddenFlag === undefined && webkitVisibilityState === undefined && webkitHidden === undefined) return
   document.addEventListener(channel, (event) => {
     const next = (event as CustomEvent).detail === true
     if (next === hidden) return
     hidden = next
+    if (hidden) releaseWakeLocks()
     document.dispatchEvent(new Event('visibilitychange', { bubbles: true }))
   })
 }

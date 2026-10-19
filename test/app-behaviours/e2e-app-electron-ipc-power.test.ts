@@ -1,8 +1,8 @@
 // What a page that bundles the `electron` shim can count on from `ipcRenderer.sendSync` and `powerSaveBlocker`
 // (catalogue: Page platform and storage): a synchronous call answers with the `returnValue` a listener set, and
 // refuses by name when nothing answered; a started blocker asks the page's own `navigator.wakeLock` for a screen
-// lock, holds it while any blocker is started, releases it with the last stop, and never throws when the browser
-// refuses the request. Everything happens inside the page: no system power call and no file is involved.
+// lock, which the browser grants, holds it while any blocker is started, and releases it with the last stop.
+// Everything happens inside the page: no system power call and no file is involved.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/app-behaviours/e2e-app-electron-ipc-power.test.ts
 import { fileURLToPath } from 'node:url'
@@ -106,11 +106,11 @@ it('[app:electron-power-save-blocker-holds-a-wake-lock] powerSaveBlocker asks th
       const [first, second] = await shimCall(view, 'startBoth') as [number, number]
       check('[app:electron-power-save-blocker-holds-a-wake-lock] start returns an id for each blocker and does not throw', Number.isInteger(first) && Number.isInteger(second) && second > first, JSON.stringify({ first, second }))
       check('[app:electron-power-save-blocker-holds-a-wake-lock] the page was asked for exactly one screen wake lock, whichever types were started', await waitFor(async () => (await wakeState(view)).outcomes.length === 1) && JSON.stringify((await wakeState(view)).requests) === '["screen"]', JSON.stringify(await wakeState(view)))
-      check('[app:electron-power-save-blocker-holds-a-wake-lock] isStarted reflects the app\'s ids whether the browser granted the lock or refused it', await shimCall(view, 'isStarted', first) === true && await shimCall(view, 'isStarted', second) === true && await shimCall(view, 'isStarted', 9999) === false)
+      check('[app:electron-power-save-blocker-holds-a-wake-lock] isStarted reflects the app\'s ids', await shimCall(view, 'isStarted', first) === true && await shimCall(view, 'isStarted', second) === true && await shimCall(view, 'isStarted', 9999) === false)
 
-      const granted = (await wakeState(view)).outcomes[0] === 'granted'
-      check('[app:electron-power-save-blocker-holds-a-wake-lock] stopping one of two blockers keeps the lock', await shimCall(view, 'stop', first) === true && (!granted || (await wakeState(view)).released[0] === false))
-      check('[app:electron-power-save-blocker-holds-a-wake-lock] stopping the last releases it', await shimCall(view, 'stop', second) === true && (!granted || await waitFor(async () => (await wakeState(view)).released[0] === true)))
+      check('[app:electron-power-save-blocker-holds-a-wake-lock] the browser granted the lock the shim asked for', (await wakeState(view)).outcomes[0] === 'granted', JSON.stringify(await wakeState(view)))
+      check('[app:electron-power-save-blocker-holds-a-wake-lock] stopping one of two blockers keeps the lock', await shimCall(view, 'stop', first) === true && (await wakeState(view)).released[0] === false)
+      check('[app:electron-power-save-blocker-holds-a-wake-lock] stopping the last releases it', await shimCall(view, 'stop', second) === true && await waitFor(async () => (await wakeState(view)).released[0] === true))
       check('[app:electron-power-save-blocker-holds-a-wake-lock] a stopped id is no longer started, and stopping it again answers false', await shimCall(view, 'isStarted', first) === false && await shimCall(view, 'stop', first) === false)
       check('[app:electron-power-save-blocker-holds-a-wake-lock] a type Electron does not know refuses with invalid-usage', await shimCall(view, 'start', 'prevent-everything') === 'ERR:ElectronShimError:invalid-usage')
     })

@@ -71,7 +71,7 @@ const { bindDisplayMediaHandler } = await import('../display-media-handler.js')
 const ALL_PERMISSIONS = [
   'clipboard-read', 'clipboard-sanitized-write', 'display-capture', 'fullscreen',
   'geolocation', 'idle-detection', 'media', 'mediaKeySystem', 'midi', 'midiSysex',
-  'notifications', 'pointerLock', 'keyboardLock', 'openExternal', 'speaker-selection',
+  'notifications', 'pointerLock', 'keyboardLock', 'screen-wake-lock', 'system-wake-lock', 'openExternal', 'speaker-selection',
   'storage-access', 'top-level-storage-access', 'window-management', 'unknown',
   'fileSystem', 'hid', 'serial', 'usb', 'deprecated-sync-clipboard-read',
   // Check-only names measured against a real page: Chromium asks for these
