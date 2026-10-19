@@ -16,68 +16,10 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 
 ---
 
-## Week of 2026-10-12
+## Week of 2026-10-19
 
 ### Done / results
 
-- Slow IPFS loads traced to public gateways (one throttling, one dead), not code; Orivon now asks the next gateway sooner when one stalls.
-- Swarm sites (bzz:// and .eth on Swarm) now load with every chunk checked against its hash; it stays off until Orivon's own Swarm node ships.
-- IPFS sites load from Orivon's own IPFS node on your computer, every block still checked; it switches on once the node is published.
-- A page can no longer tell which IPFS sites you opened: the node keeps a separate store per site, and tabs cannot reach it.
-- Orivon's own IPFS and Swarm nodes are published on IPFS: new builds fetch them, so IPFS reads from your computer and Swarm switches on.
-- Installed apps can send all their traffic through a SOCKS5 proxy like Tor, per app; what it cannot carry is refused, never sent direct.
-- A routed app opening a website now asks first: through the proxy in a throwaway tab, directly, or not at all.
-- Pre-release security review: scanners triaged, four code reviews; fixed proxy bypass on app loads, download retry session, extension pattern freeze.
-- Orivon also ships as a Microsoft Store package, signed by Microsoft, so Store installs show no SmartScreen warning; no certificate bought.
-- Nym mixnet ships inside Orivon as the default tunnel for installed apps: one tunnel per app, nothing to install; your own SOCKS5 stays a choice.
-- A .eth or ipfs:// site opened through your tunnel is now read entirely through it, name proofs included; Swarm sites are refused.
-- The tunnel now works per site or for the whole browser; tunnelled sites share one profile that keeps their logins and extensions.
-- A toolbar button lists the nodes Orivon runs on your machine, with memory, a switch each and a status dot; permissions are Settings switches.
-- An app's first-visit question is now a panel of switches, Grant all or Close; the key shows a dot while permissions are off.
-- Swarm and .eth IPFS sites now work on Windows: both local nodes silently failed to start there. Error pages gain Try again.
-- A slow IPFS node no longer leaves pages half loaded: a file it could not give is asked again once its memory clears.
-- Going offline no longer strips a loaded Web3 site's score; a site no provider has judged shows a gray Web? instead of Web2.5.
-- The new tab's Orivon Featured row is now Explore, WebTorrent, ASGARDEX, Ledger Wallet and The Lounge; no more Chrome Web Store advice.
-- Deep security audit (Cloudflare's method): no critical or high; all 15 confirmed findings fixed, including extension regex rules now matched in linear time.
-- The IPFS and Swarm nodes now run through Nym while the whole browser is tunnelled; measured live, nothing leaves loopback, and it is slower.
-- Nym gets a home: a Tunnels section in Settings, and a tunnel button in the address bar listing each tunnel with its logo and switch.
-- Menu has "Open a private window with Nym": everything in it goes through Nym, locked on, and nothing is kept after closing.
-- Nym's module dropped packets and reordered replies; both fixed, so a 700 KB YouTube script loads three to six times faster.
-- Web3 Scores no longer go missing on the first site after turning Nym on: the lookup now waits for a cold tunnel.
-- Slow routes stop failing pages half done: every wait follows the route, a stalled file is read again, and an incomplete page now says so.
-- New Tunnels switch, off by default: IPFS, Swarm and .eth name checks skip the tunnel; The Lounge through Nym loads in 6 s, not minutes.
-- Public IPFS gateways are never used silently: a failed page offers a one-load "Load through public gateways" button instead.
-- The frozen tab spinner in maximized windows is fixed: a loading screen made Chromium think the toolbar was hidden.
-- Any site, Web3 site or installed app picks its own tunnel from the tunnel menu: Nym for one, your own proxy for another, at once.
-- A proxy such as Tor is set and tested right in the tunnel menu; proxy users keep their logins when updating.
-- Installed apps now behave like websites: same tunnel switch, same popup, and without grants they get a website's permissions.
-- On by default: update checks, and secure DNS via Quad9 that falls back to normal DNS when blocked.
-- An app asking for three kinds of unlimited network access now says what each one is for, instead of three identical rows.
-- Porting tool now lists what an app uses that Orivon lacks, read live from Orivon's own compatibility tables, before any port code.
-- New releases were pinned but unreachable: the IPFS node's leaking connection count refused every dial. A watchdog now restarts it before that.
-- The newest release always has one ipns:// address, ready for latest.orivonstack.eth; each release's own CID stays in its text.
-- Explore now lists 247 sites: 146 new .eth, IPFS and Swarm sites, each confirmed loading in a real Orivon, opening on Start here.
-- Orivon Attila judged all 146 new sites; Web3 sites rank higher, and a newcomer's first view holds no Web2 site at all.
-- Loading 204 sites in a real Orivon found a Swarm bug (zero-padded chunks, fixed) and IPFS sites whose files never arrive.
-- Release folders and any IPFS folder without a page now open in Orivon as a file list; v0.0.8's packages download by name.
-- Orivon Status: a public page checking every Orivon site, name and release from your own browser, every block hash-checked; status.orivonstack.eth pending.
-- The node status page counted cached first blocks as served; it now requires gateways to return pages and random file samples byte for byte.
-- Recon suggests each ported app's bridge answers from the Electron calls behind them: FreeTube got 18 of 34 right, none wrong.
-- Port kit: a recipe icon setting replaced four ports' icon code; The Lounge and WebTorrent now share one build kit.
-- Pages can finally keep the screen on: Orivon refused every wake lock; now granted to a visible tab, released when hidden.
-- Desktop apps' open and save dialogs now hand back stand-in paths that read the picked file directly: no copy, no real path.
-- Agent test runs get a private, empty D-Bus, so no file picker or notification reaches the owner's desktop again.
-
 ### In my head
-
-- Swarm should come from a node on the user's own machine, never public gateways: trustless and permissionless, or not at all.
-- Letting users pin sites and serve them to others is the next step for the IPFS node; today it only reads.
-- A per-app tunnel belongs at Orivon's socket layer, not the OS: any protocol an app builds rides it, no drivers.
-- Extensions per tunnel profile, never per site: a hundred tunnelled sites should cost one copy of uBlock, not a hundred.
-- Orivon's IPFS node should run through Nym, not pause, when everything is tunnelled: privacy first, speed second.
-- Second thought on Nym: tunnel the person's own traffic, let IPFS and Swarm run direct for speed, and never touch gateways without a yes.
-- Installed is only where an app is kept, never how it behaves: one switch, one popup, one set of rules for every origin.
-- Ports should be doable by any capable AI, not one vendor's: tools must say where Orivon ends, so nobody patches around it.
-- Porting rules belong to Electron's API, not each app's names: answer every Electron call once in Orivon, and every port inherits it.
 
 ### Non-repo
