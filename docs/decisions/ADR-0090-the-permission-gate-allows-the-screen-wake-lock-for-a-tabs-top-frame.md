@@ -92,6 +92,13 @@ owns it, and a name an asker owns falls through to deny for contents it does not
 - An embedded frame, an extension's page and a shell view cannot take the lock. A call widget in an
   iframe cannot keep the screen on; it can ask its host page to. Widening this is cheap once the
   release reaches frames.
+- **Residual:** the release is the page's own wrapper, so a hostile page can step round it: a same-origin
+  frame is another realm with the browser's own `request`, which it can call on the page's
+  `navigator.wakeLock`. The lock it takes is then not released when the tab goes behind another, and the
+  screen stays on until the tab closes. Nothing leaves the machine and nothing is read; the cost is the
+  screen and battery. A video playing in a tab behind another already keeps the screen on in the same
+  way, because Chromium is never told the tab is hidden. Closing it needs either Electron reporting a
+  hidden tab as hidden or a release from the main process.
 - The lock keeps the screen on and nothing in the shell says so. The tab strip draws no indicator,
   and Chromium shows none either.
 - The argument rests on upstream behaviour: the secure-context attribute of the API, the release on a
