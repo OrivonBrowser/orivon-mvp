@@ -110,6 +110,19 @@ describe('electron exports this package has not yet considered', () => {
   })
 })
 
+describe('powerSaveBlocker and ipcRenderer.sendSync', () => {
+  it('are named exports and sit on the default export; start works without a wake lock and sendSync answers', async () => {
+    vi.stubGlobal('orivon', fakeOrivon())
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const mod = await import('../index.js')
+    expect(mod.default.powerSaveBlocker).toBe(mod.powerSaveBlocker)
+    const id = mod.powerSaveBlocker.start('prevent-display-sleep')
+    expect(mod.powerSaveBlocker.isStarted(id)).toBe(true)
+    mod.ipcMain.on('probe', (event) => { event.returnValue = 'yes' })
+    expect(mod.ipcRenderer.sendSync('probe')).toBe('yes')
+  })
+})
+
 describe('clipboard and shell', () => {
   it('are built, not whole-module refusals: writeText and openExternal exist and the rest refuse by name', async () => {
     vi.stubGlobal('orivon', fakeOrivon())

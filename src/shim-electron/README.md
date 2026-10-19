@@ -1,7 +1,7 @@
 # `src/shim-electron/`: the `electron` module compatibility package
 
-**What lives here.** Electron's `app`, `dialog`, `safeStorage`, `desktopCapturer`, `clipboard`, `shell`, `ipcRenderer`/`ipcMain`,
-`BrowserWindow`, `Menu` and `Tray`, rebuilt (or refused by name) on `orivon.*`, so a ported app's
+**What lives here.** Electron's `app`, `dialog`, `safeStorage`, `desktopCapturer`, `clipboard`, `shell`, `powerSaveBlocker`,
+`ipcRenderer`/`ipcMain`, `BrowserWindow`, `Menu` and `Tray`, rebuilt (or refused by name) on `orivon.*`, so a ported app's
 `require('electron')` resolves instead of failing to load. What each API maps to, and which
 refuse, is [`compatibility-matrix.md`](../../docs/planning/compatibility-matrix.md) Table 2's
 `electron` table; any other top-level name refuses as `'unimplemented'` (`index.ts`).
@@ -103,3 +103,29 @@ exactly as a clicked link does. `noopener` makes `window.open` return `null` whe
 declined, so the returned window says nothing and the promise resolves once the call returns; a string that is not an
 absolute URL rejects with `invalid-usage` before any window is asked for. Electron's `options` are ignored. `openPath`,
 `showItemInFolder`, `trashItem` and `beep` refuse as `desktop-shell`; every other member as `unimplemented`.
+
+**`ipcRenderer.sendSync` runs the channel's listeners on the spot and answers with the `returnValue` one set.** Main and
+renderer share one realm, so there is no process to block on: `sendSync` calls every `ipcMain.on` (and `ipcRenderer.on`)
+listener of the channel in order, each with a fresh event whose `returnValue` is an accessor, and returns what was set.
+An accessor and not a field because `undefined` is a legitimate answer, and `event.returnValue = undefined` has to
+count. Electron's documentation recommends always setting `returnValue` and gives an unanswered call no meaning, so that
+case throws an `ElectronShimError` (`invalid-usage`) naming the channel: a port's bridge that forgot to register the
+listener would otherwise let an `undefined` run into app code, far from its cause. Three cases are told apart in the message: no listener at all, a
+listener that never set `returnValue`, and a listener that returned a promise without setting it. The last one cannot
+work by construction: the answer has to be set before the listener's first `await`, and an app that needs a late answer
+calls `invoke`. The event is `{ senderId: null, returnValue }`; the rest of `IpcMainEvent` does not exist. `on`, `once`,
+`addListener`, `off`, `removeListener` and `removeAllListeners` return the emitter as Electron's do, and
+`removeAllListeners()` with no channel clears every channel.
+
+**`powerSaveBlocker` is a counter over one `navigator.wakeLock` screen lock (`power-save-blocker.ts`).** The web offers
+only a `'screen'` lock, so both types map to it: `prevent-display-sleep` is exactly that, and `prevent-app-suspension`
+(system awake, screen allowed off) is answered by the stronger lock because the app's stated need is to keep running and
+a screen that stays on costs less than an app that is suspended. Electron likewise lets the stronger type win while
+both are started. The lock is requested for the first started id and released with the last `stop`; a request that
+resolves after the last id stopped is released at once. The platform drops the lock whenever the page is hidden, so the
+shim asks again on `visibilitychange` to visible while an id is started, and does not ask while hidden. A refused
+request, a page with no `navigator.wakeLock` and a synchronous throw from the request each leave a console warning and
+nothing else, since Electron's `start` cannot fail and the web says only that a request settles, granted or refused.
+`isStarted(id)` answers whether the app started that id and has not stopped it, never whether the platform holds the
+lock right now, since Electron's answer is about the blocker the app created. `stop` answers `false` for an id that is
+not started. A type other than the two Electron names throws `invalid-usage`.
