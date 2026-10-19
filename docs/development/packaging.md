@@ -177,8 +177,12 @@ ten restarts.
 [`scripts/ipfs-status.sh`](../../scripts/ipfs-status.sh) answers "is everything served?" on one page. It
 lists every IPNS key of the node with its `ipns://` address, the build it points at, whether that build
 is pinned, whether the IPNS record and the node as a provider are on the network, and whether public
-gateways can fetch it. It lists the newest releases with their `ipfs://` CID, which are kept and pinned
-here, and the gateways' answers. For each IPNS key it reads the `.eth` names that should point at it from
+gateways hand back what the node holds, byte for byte: a site's whole `index.html` and 1 KiB at a random
+offset of its largest other file, or 1 KiB of every file of a folder with no page (a release). A random
+offset deep in a large file is rarely in a gateway's cache, so the gateway has to fetch it from the network;
+every sample is a range request, because a gateway behind a CDN can rewrite a whole HTML answer. It lists
+the newest releases with their `ipfs://` CID, which are kept and pinned here, and the same samples. It runs
+on the pinning node, so it cannot say whether a page opens in a person's own browser. For each IPNS key it reads the `.eth` names that should point at it from
 `NAMES_FILE` and checks their contenthash on Ethereum (and, unless `ETH_LIMO=0`, that `<name>.limo`
 loads). Below them it shows the node's version, uptime, inbound connection budget, storage and the last
 runs of the pinner and the watchdog. A banner at the top is green when nothing is wrong and otherwise
