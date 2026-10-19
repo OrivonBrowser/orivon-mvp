@@ -13,6 +13,7 @@ rely on, row by row. A new feature adds its line here when it lands.
 - **`orivon-node-shim`**: Node's `net`, `tls`, `dgram`, `fs`, `http`, `child_process`, `worker_threads` and `node:sqlite` mapped onto the same capabilities, enough to run a Node web server (Express, Socket.IO) in a tab. An app's `process` and `os` present as Node on Linux (a Node version, no `browser` flag, `linux`, `x64`), so a library takes the path it takes under Node.
 - **UDP sockets** (`net.udpBind`) for peer-to-peer protocols a web page cannot open.
 - **Ported desktop apps**: FreeTube, Element, The Lounge, AirGap Vault and ASGARDEX run from a name, unmodified, with a bridge file kept in `orivon-ports`.
+- **File dialogs for ported Electron apps**: `dialog.showOpenDialog` and `showSaveDialog` answer a path that the app's `fs` calls read and write straight through the file or folder the person picked, with no copy and no real path in the page; the path lasts until the page reloads.
 - **WASI and native modules as WebAssembly**: a WASI host over `orivon.fs`, native addons loaded as their WebAssembly build, and `spawn` and `fork` as WebAssembly programs and workers.
 - **USB HID devices** (`devices.hid`): an app uses `navigator.hid` for the vendors its manifest names, and the person approves each device; a website picks one in a chooser under Site settings.
 - **Embedded sites** (`web.embed`): an app shows another site inside its own page, in an isolated view.

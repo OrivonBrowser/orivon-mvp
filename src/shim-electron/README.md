@@ -7,8 +7,9 @@ refuse, is [`compatibility-matrix.md`](../../docs/planning/compatibility-matrix.
 `electron` table; any other top-level name refuses as `'unimplemented'` (`index.ts`).
 
 It is the second of the matrix's adapter families, a sibling of [`src/shim/`](../shim/README.md)
-(the Node stdlib family), not part of it. One exception: `src/shim/` imports this package's
-`unimplemented.ts` (`refusingProxy`) directly (A135, A160). The reverse must not happen.
+(the Node stdlib family), not part of it. Two exceptions: `src/shim/` imports this package's
+`unimplemented.ts` (`refusingProxy`, A135, A160) and `picked-paths.ts` (the table of stand-in paths
+`dialog` fills and `src/shim/fs/` reads) directly. The reverse must not happen.
 
 **What it depends on.** [`src/contracts/`](../contracts/) (types only) and the `window.orivon`
 global the preload installs before app code runs.
@@ -129,3 +130,26 @@ nothing else, since Electron's `start` cannot fail and the web says only that a 
 `isStarted(id)` answers whether the app started that id and has not stopped it, never whether the platform holds the
 lock right now, since Electron's answer is about the blocker the app created. `stop` answers `false` for an id that is
 not started. A type other than the two Electron names throws `invalid-usage`.
+
+**`dialog` returns stand-in paths, and `picked-paths.ts` is where they are answered (ADR-0091).** `showOpenDialog` is Orivon's own picker
+(`orivon.fs.userSelected`) and `showSaveDialog` is the web's `showSaveFilePicker`; each registers what the person picked in a table
+and returns `/orivon/picked/<id>/<name>` (a folder: `/orivon/picked/<id>`), which `src/shim/fs/` routes to the pick's handle. The table is a
+module here and not a global: the dialog fills it, `src/shim/` reads it, and one app bundle holds one instance of each module. A
+Worker or a forked child has a table of its own, so a path made in the page is stale there. The id is random, never a counter, so a path from before
+a reload cannot name another pick. A path is normalised before it is matched. **What each Electron option becomes:** `openFile`,
+`openDirectory` (wins when both are given, as on Windows and Linux) and `multiSelections` choose the picker's shape, and `multiSelections` on a folder is
+ignored; the other `properties`, `filters`, `defaultPath`, `title`, `buttonLabel` and `message` are not applied, since the picker is worded to name the
+app that asks and does not filter, and each is named once in the console. A save dialog takes `defaultPath`'s last segment as `suggestedName`
+and turns `filters` with real extensions into `types`; its other options are named once and not applied. The window argument is accepted and
+ignored. A call with no click or key press a moment before rejects (`invalid-usage`) naming the click, never resolves as a cancel, because
+a cancel would tell the app the person declined; a dismissed save dialog is `{ canceled: true, filePath: '' }`. Every picked file is called
+`picked-file`, because the handle carries no name (A414); a saved-to file keeps the browser's name. `showOpenDialogSync` and
+`showSaveDialogSync` refuse as `desktop-shell`: a page cannot block on a person. Every other `dialog` member refuses as `unimplemented`.
+
+**A saved-to file is a `FileHandle` over a web writer that commits on close (`web-file-handle.ts`).** A `FileSystemFileHandle`'s writer shows
+nothing in the file until it closes, so the adapter keeps one writer open, serialises every call so two writes never open two writers, and commits (closes it)
+on `sync`, on `close`, and before any `read` or `stat` so those see what was written. `src/shim/fs/` closes the handle at the end of each call that
+wrote, so `writeFile`, `appendFile` and a finished write stream are on disk when they report done. The writer is opened with `keepExistingData`, so a
+write at an offset keeps the rest; `writeFile` empties the file first. A failed web call is turned into an error with the closed code the Node shim maps
+(`NotAllowedError` to `denied`, `NotFoundError` to `notFound`, `QuotaExceededError` to `limit`). The browser's picker creates the file empty as soon as the
+person chooses it, which Electron's does not.

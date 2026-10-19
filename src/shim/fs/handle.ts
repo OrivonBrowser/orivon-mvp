@@ -14,10 +14,8 @@
 // snapshot -- real Node's own documented hazard for concurrent fs.read/
 // fs.write on one fd, not a bug introduced here.
 //
-// SCOPE LIMIT: FileHandle.readable()/writable() are built in the broker but
-// not page-reachable yet (A184, docs/open-questions.md) -- createReadStream/
-// createWriteStream below refuse loudly by name rather than faking a stream
-// this shim cannot actually get bytes through yet.
+// SCOPE LIMIT: FileHandle.readable()/writable() are built in the broker but not page-reachable yet (A184,
+// docs/open-questions.md), so FileHandle#createReadStream/createWriteStream below refuse by name.
 
 import type { FileHandle } from '../../contracts/handles.js'
 import { getOrivon } from '../orivon-global.js'
@@ -31,6 +29,7 @@ import {
   assertRootOpenAllowed, isRootPath, rootDirectoryHandle, rootDirectoryHandleSync, rootReadError, rootTruncateError, rootWriteError
 } from './root.js'
 import { guardedSync, syncFsWithOpen, tryStatSync, type SyncFileHandleWire } from './sync-orivon.js'
+import { pickedOpen, pickedTarget } from './picked.js'
 
 export type NodeCallback<T> = (error: Error | null, result?: T) => void
 
@@ -139,6 +138,14 @@ export class NodeFileHandle {
   // `path` is mapped by fs/paths.ts's `confine`, the same as every other
   // fs call; the root ITSELF never reaches orivon.fs (fs/root.ts).
   static async open (path: PathLike, flags: string): Promise<NodeFileHandle> {
+    const picked = pickedTarget(path, 'open')
+    if (picked !== undefined) {
+      const handle = await pickedOpen(picked, flags)
+      const fd = nextFd++
+      const wrapped = new NodeFileHandle(fd, handle, new LocalCursor(await guarded(async () => await initialCursor(handle, flags))), picked.path, picked.rel === '')
+      openByFd.set(fd, wrapped)
+      return wrapped
+    }
     const confined = await confine(path, 'open')
     if (isRootPath(confined)) {
       assertRootOpenAllowed(flags)
