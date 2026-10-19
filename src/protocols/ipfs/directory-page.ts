@@ -37,8 +37,9 @@ function escapeHtml (text: string): string {
   return text.replace(/[&<>"']/g, (c) => `&#${String(c.charCodeAt(0))};`)
 }
 
-/** Control characters and bidirectional overrides can make a name read as another, so they are shown as code points. */
-const UNSAFE_TO_SHOW = /[\u0000-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/g
+/** Control characters, bidirectional marks and overrides, and invisible joiners or spaces can make a name read as
+ * another, so they are shown as code points. */
+const UNSAFE_TO_SHOW = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g
 
 function visible (name: string): string {
   const chars = Array.from(name)

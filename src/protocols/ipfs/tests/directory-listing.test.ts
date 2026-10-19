@@ -149,12 +149,16 @@ describe('names are attacker-controlled bytes', () => {
     expect(html).not.toMatch(/<(script|link|img|iframe|object|embed|form|base|meta http-equiv)|<[^>]*\son\w+\s*=|url\(|@import/i)
   })
 
-  it('shows a bidi override and a control character as code points, never raw', async () => {
-    const d = await buildDag({ 'invoice‮gpj.exe': 'x', 'tab\tname': 'y' })
+  it('shows bidi overrides, control characters and invisible characters as code points, never raw', async () => {
+    const d = await buildDag({ 'invoice\u202egpj.exe': 'x', 'tab\tname': 'y', 'zero\u200bwidth': 'z', 'bom\ufeffname': 'b', 'arabic\u061cmark': 'a', 'word\u2060joiner': 'w' })
     const { html } = await listing(d, '/')
-    expect(html).not.toContain('‮')
+    expect(html).not.toMatch(/[\u202e\u200b\ufeff\u061c\u2060]/)
     expect(html).toContain('invoice[U+202E]gpj.exe')
     expect(html).toContain('tab[U+0009]name')
+    expect(html).toContain('zero[U+200B]width')
+    expect(html).toContain('bom[U+FEFF]name')
+    expect(html).toContain('arabic[U+061C]mark')
+    expect(html).toContain('word[U+2060]joiner')
   })
 })
 
