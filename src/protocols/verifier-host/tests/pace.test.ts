@@ -18,8 +18,8 @@ describe('the pace of the verifier host', () => {
     }
   })
 
-  it('keeps the direct pace at a sync wait of 8 s, a proof of 25 s and a light client that starts at once', () => {
-    expect(paceOn(DIRECT_ROUTE)).toEqual({ syncWaitMs: 8_000, mountTimeoutMs: 25_000, lightClientStartAfterMs: 0 })
+  it('keeps the direct pace at a sync wait of 8 s, a proof of 45 s and a light client that starts at once', () => {
+    expect(paceOn(DIRECT_ROUTE)).toEqual({ syncWaitMs: 8_000, mountTimeoutMs: 45_000, lightClientStartAfterMs: 0 })
   })
 
   it('holds the light client back on a slow route, which would otherwise share it with a person\'s page', () => {
@@ -39,6 +39,6 @@ describe('the pace of the verifier host', () => {
     expect(mountCeilingMs(true)).toBeGreaterThanOrEqual(paceOn(new RouteMeter(TUNNEL_PROFILE)).mountTimeoutMs)
     route.markUp()
     expect(mountCeilingMs(true)).toBeGreaterThanOrEqual(paceOn(route).mountTimeoutMs)
-    expect(mountCeilingMs(false)).toBe(25_000)
+    expect(mountCeilingMs(false)).toBe(45_000)
   })
 })
