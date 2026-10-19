@@ -14,6 +14,8 @@ interface PageGlobals {
 }
 const page = window as unknown as PageGlobals
 page.__r = {}
+// No path in this page may open a native save window: the real picker is replaced before anything runs, and the save scenario installs its own stand-in.
+page.showSaveFilePicker = async () => { throw Object.assign(new Error('the native save picker is never opened by this spec'), { name: 'SecurityError' }) }
 
 const fail = (error: unknown): string => `${(error as { code?: string }).code ?? (error as Error).name}: ${(error as Error).message}`
 
@@ -91,8 +93,7 @@ document.getElementById('go')?.addEventListener('click', () => {
       void (async () => {
         const open = await dialog.showOpenDialog({ properties: ['openFile'] }).then(() => 'resolved', rejection)
         const saveFilePicker = typeof (window as unknown as { showSaveFilePicker?: unknown }).showSaveFilePicker
-        // The real picker is only ever asked with no gesture alive, where the browser refuses it before any window; with one alive it would open a native dialog.
-        const save = navigator.userActivation.isActive ? 'skipped: a user gesture was still active' : await dialog.showSaveDialog({}).then(() => 'resolved', rejection)
+        const save = await dialog.showSaveDialog({}).then(() => 'resolved', rejection)
         page.__r['withoutClick'] = { open, save, saveFilePicker }
       })()
     }, pauseMs)

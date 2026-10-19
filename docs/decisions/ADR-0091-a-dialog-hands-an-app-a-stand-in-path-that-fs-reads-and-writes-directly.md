@@ -1,6 +1,6 @@
 # ADR-0091: A dialog hands an app a stand-in path that `fs` reads and writes directly
 
-- **Status:** accepted. *Provisional* on the picked file's name (below), which waits on a contract field.
+- **Status:** accepted. The picked file's name (below) changes when the contract's `FileHandle` carries one.
 - **Date:** 2026-10-19
 - **Type:** architecture
 - **Decided by:** owner for the stand-in path; AI recommendation accepted by default for the details below
@@ -22,7 +22,7 @@ shim and neither to the contracts:
   `lstat`, `access`, `realpath`, `open` (and so `FileHandle` reads, writes, `truncate`, `sync`, the callback `read`/`write`
   family), `createReadStream`, `createWriteStream`, and, for a folder, `readdir`, `mkdir`, `rm`, `rmdir`, `unlink` and
   `rename` are answered by the pick's `FileHandle` or `DirectoryHandle`. The synchronous family fails
-  `ENOSYS`, saying a pick has no synchronous wire; `existsSync` answers `false`, as Node's never throws; `fs.watch` is
+  `ENOSYS`, saying a pick has no synchronous wire; `existsSync` answers `true` for a live pick's own path (a picked file, its stand-in folder, a picked folder's root) and `false` for anything deeper or stale, since only the table can be asked synchronously; `fs.watch` is
   refused the same way and a write to a pick announces nothing.
 
 **The open dialog is Orivon's own picker** (`orivon.fs.userSelected`): `openFile`, `openDirectory` and `multiSelections`
@@ -79,14 +79,16 @@ the pick ends the access. Nothing is copied, and the person's file is the file t
 ## Consequences
 
 - The picked file's real name and extension are not available to the app. Where it matters (a torrent's name, a media player's guess from
-  the extension) the app sees `picked-file`. A real name needs a field on the contract's `FileHandle` (A414).
+  the extension) the app sees `picked-file`. A real name needs a field on the contract's `FileHandle`, which the owner has decided to add (basename only) in a contracts PR that follows this one.
 - Nothing synchronous reaches a pick. An app that calls `statSync` or `readFileSync` on a pick fails at that line.
 - A pick does not survive a reload or a restart; the app asks again, and the person sees the picker again.
 - A page's handle has no `closed` yet (A184), so a revoked pick is not noticed ahead of time: its calls fail with the broker's `revoked`.
 - A picked file's folder holds only that file: it can be stat-ed, listed and `mkdir -p`-ed, and nothing else can be created, removed or renamed
   there, so a save that writes a temporary file and renames it over the target fails with `EACCES` or `EXDEV`.
-- A write to a save target is committed when the call that wrote it closes the file, so a program that holds a file open and never closes it
-  leaves nothing on disk.
+- A write to a save target is committed when the call that wrote it closes the file, or on `sync`, `read` or `stat` of it; a program that
+  holds a file open, writes with `fs.write` or a `FileHandle`, and never closes it loses those writes. A commit that fails keeps the pending writes for the next one.
+- A library that saves atomically (writes `<name>.tmp` beside the target and renames it over) fails with `EACCES` on a picked file, whose folder
+  holds only that file; it works in a picked folder.
 
 ## Reversibility
 

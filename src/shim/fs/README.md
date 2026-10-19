@@ -32,7 +32,7 @@ the app's files, is `EXDEV`. An `fs.open` of a picked file shares the pick's one
 opened to write and leaves the pick open, so the next call works; `'w'` empties the file first and `'wx'` is `EEXIST`. `readFile` reads in
 megabyte chunks and `writeFile` writes in them, since the page's handle has no stream (A184). The synchronous family has no wire to a
 pick: `toConfinedPath` throws `ENOSYS` for a picked path, so every `*Sync` export, `fs.watch` and a sandbox preopen meet it, and
-`existsSync` answers `false`. A write to a pick is not announced to `fs.watch` (`notices.ts`). An id no pick answers (the page reloaded,
+`existsSync` answers `true` for a live pick's own path (the table is in memory) and `false` for anything deeper or stale. A write to a pick is not announced to `fs.watch` (`notices.ts`). An id no pick answers (the page reloaded,
 or it is a Worker whose shim holds a table of its own) is `ENOENT` and says to pick again, not another pick's file.
 
 **An asynchronous call the limiter refuses is asked again** (`../limit-retry.ts`, used by `paths.ts`'s `guarded`: pauses from 10 ms to 800 ms, thirteen retries, about five seconds)

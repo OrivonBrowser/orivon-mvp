@@ -1,8 +1,8 @@
 // What a page that bundles the `electron` and `fs` shims can count on from `dialog`: the paths it returns are
 // stand-ins that `fs` reads and writes directly (catalogue: Files and storage). The OS picker cannot be clicked
 // headless, so main's `dialog.showOpenDialog` is replaced and answers a temp path, which is exactly where the
-// broker's picker asks; the save picker is the page's own `showSaveFilePicker`, replaced here by a handle into
-// the page's private storage (a real one opens a native dialog, which is never driven). Everything after
+// broker's picker asks; the save picker is the page's own `showSaveFilePicker`, replaced here (a refusal until the save scenario, then
+// a handle into the page's private storage), because a real one opens a native dialog, which is never driven. Everything after
 // the picker is the real shell, preload, broker and disk.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/app-behaviours/e2e-app-picked-paths.test.ts
@@ -70,7 +70,7 @@ it('[app:electron-dialog-paths-read-and-write-the-pick] [app:user-picked-file-an
       await probe(view, 'withoutClickLater', 6_000)
       const noClick = await results(view, 'withoutClick')
       check('[app:electron-dialog-paths-read-and-write-the-pick] without a click the open dialog rejects naming the click, and no picker was shown', /^ElectronShimError:invalid-usage:.*click or key press/.test(String(noClick['open'])) && (await nativeDialogsAsked(app)).length === 0, `${String(noClick['open'])} ${JSON.stringify(await nativeDialogsAsked(app))}`)
-      check('[app:electron-dialog-paths-read-and-write-the-pick] and so does the save dialog, whose picker is the page\'s own showSaveFilePicker', noClick['saveFilePicker'] === 'function' && /^ElectronShimError:invalid-usage:.*click or key press/.test(String(noClick['save'])), JSON.stringify(noClick))
+      check('[app:electron-dialog-paths-read-and-write-the-pick] and so does the save dialog when the page\'s showSaveFilePicker refuses with a SecurityError, as the browser\'s does without a gesture (the spec\'s stub, so no native window can open)',  /^ElectronShimError:invalid-usage:.*click or key press/.test(String(noClick['save'])), JSON.stringify(noClick))
 
       await clickScenario(view, 'openFile')
       const file = await results(view, 'openFile')

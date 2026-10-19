@@ -239,3 +239,22 @@ export async function pickedRmdir (target: PickedTarget, opts: { recursive?: boo
   if ((await target.ops.readdir(target.rel)).length > 0) throw fsError('ENOTEMPTY', 'directory not empty', 'rmdir', target.text)
   await target.ops.rm(target.rel, { recursive: true })
 }
+
+/**
+ * `existsSync` of a picked path: the table is in memory, so a live pick's own path (a file, its stand-in folder, a
+ * picked folder's root) is known to exist without a wire. Anything deeper would need a stat, which a pick cannot
+ * answer synchronously, and a path no pick answers does not exist.
+ */
+export function pickedExistsSync (path: PathLike): boolean | undefined {
+  let text: string
+  try {
+    text = pathText(path)
+  } catch {
+    return undefined
+  }
+  const resolved = resolvePickedPath(text)
+  if (resolved === undefined) return undefined
+  if (resolved.status !== 'pick') return false
+  const { entry, relative } = resolved
+  return relative === '' || (entry.kind === 'file' && relative === entry.name)
+}

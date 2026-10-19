@@ -143,7 +143,7 @@ app that asks and does not filter, and each is named once in the console. A save
 and turns `filters` with real extensions into `types`; its other options are named once and not applied. The window argument is accepted and
 ignored. A call with no click or key press a moment before rejects (`invalid-usage`) naming the click, never resolves as a cancel, because
 a cancel would tell the app the person declined; a dismissed save dialog is `{ canceled: true, filePath: '' }`. Every picked file is called
-`picked-file`, because the handle carries no name (A414); a saved-to file keeps the browser's name. `showOpenDialogSync` and
+`picked-file`, because the handle carries no name; a saved-to file keeps the browser's name. `showOpenDialogSync` and
 `showSaveDialogSync` refuse as `desktop-shell`: a page cannot block on a person. Every other `dialog` member refuses as `unimplemented`.
 
 **A saved-to file is a `FileHandle` over a web writer that commits on close (`web-file-handle.ts`).** A `FileSystemFileHandle`'s writer shows

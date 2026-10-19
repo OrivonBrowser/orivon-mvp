@@ -74,4 +74,24 @@ describe('a saved-to file as a FileHandle', () => {
     await file.close()
     await expect(file.closed).resolves.toBeUndefined()
   })
+
+  it('a commit that throws keeps the pending writes, and the next commit tries them again', async () => {
+    let failures = 1
+    let committed = ''
+    let pending = ''
+    const handle: WebFileHandle = {
+      name: 'x', getFile: async () => new File([committed], 'x'),
+      createWritable: async () => ({
+        write: async ({ data }) => { pending += new TextDecoder().decode(data) },
+        truncate: async () => {},
+        close: async () => { if (failures-- > 0) throw Object.assign(new Error('disk full'), { name: 'QuotaExceededError' }); committed = pending }
+      })
+    }
+    const file = fileHandleFromWeb(handle)
+    await file.write({ position: 0, data: new TextEncoder().encode('kept') })
+    await expect(file.sync()).rejects.toMatchObject({ code: 'limit' })
+    expect(committed).toBe('')
+    await file.sync()
+    expect(committed).toBe('kept')
+  })
 })

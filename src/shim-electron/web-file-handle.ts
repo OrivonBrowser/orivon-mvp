@@ -55,9 +55,10 @@ export function fileHandleFromWeb (web: WebFileHandle): FileHandle {
   }
   /** Commits what the writer holds: a web writer shows nothing on disk until it closes. */
   const commit = async (): Promise<void> => {
-    const open = writable
+    if (writable === undefined) return
+    await writable.close()
+    // Only after the close succeeded: a failed close keeps the writer, so its pending writes are tried again by the next commit.
     writable = undefined
-    await open?.close()
   }
   const writer = async (): Promise<WebWritable> => {
     writable ??= await web.createWritable({ keepExistingData: true })

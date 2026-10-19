@@ -364,8 +364,17 @@ describe('the synchronous family on a picked path', () => {
     expect(() => fs.copyFileSync(file, `${file}2`)).toThrow()
   })
 
-  it('existsSync answers false, since Node\'s never throws and a pick cannot be looked at synchronously', async () => {
-    const { registerPickedFile, fs } = await load()
-    expect(fs.existsSync(registerPickedFile(pickedFile('x').handle, 'a.txt'))).toBe(false)
+  it('existsSync answers true for a live pick\'s own path, and false for anything deeper or stale', async () => {
+    const { registerPickedFile, registerPickedDirectory, fs } = await load()
+    const file = registerPickedFile(pickedFile('x').handle, 'a.txt')
+    const folder = registerPickedDirectory(createFakeDirectoryHandle().handle)
+    expect(fs.existsSync(file)).toBe(true)
+    expect(fs.existsSync(file.slice(0, file.lastIndexOf('/')))).toBe(true)
+    expect(fs.existsSync(`${file.slice(0, file.lastIndexOf('/'))}/other.txt`)).toBe(false)
+    expect(fs.existsSync(folder)).toBe(true)
+    expect(fs.existsSync(`${folder}/inside.txt`)).toBe(false)
+    expect(fs.existsSync(`${folder}/sub/../`)).toBe(true)
+    expect(fs.existsSync('/orivon/picked/aaaaaaaaaaaaaaaaaaaaaaaa/a.txt')).toBe(false)
+    expect(fs.existsSync('/orivon/picked')).toBe(false)
   })
 })
