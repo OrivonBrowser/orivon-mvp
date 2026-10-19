@@ -18,6 +18,7 @@ now do and which ports to recheck. CI requires a line here for a row of that pag
 public surface of `src/contracts/` (named `contracts/<file>`).
 
 - **`electron-ipc-send-sync-answers-from-the-listener`** and **`electron-power-save-blocker-holds-a-wake-lock`**: new rows. The `electron` shim now has `ipcRenderer.sendSync` (answered by an `ipcMain.on` listener's `event.returnValue`, else a named error), `addListener`, `off` and chainable `on`/`once`, and `powerSaveBlocker` over `navigator.wakeLock`. A port can drop its hand-written `sendSync` and wake-lock code: recheck WebTorrent, whose build bundles this shim, and Ledger Wallet and Element, which answer `electron` with their own objects.
+- **`wake-lock-held-on-a-visible-page`**, **`wake-lock-absent-outside-a-secure-context`** and **`wake-lock-released-when-the-tab-goes-behind`**: new rows. `navigator.wakeLock.request('screen')` is now granted to a tab's top frame (it was always refused), and is released when the tab goes behind another or its window is hidden; ask again on `visibilitychange`. FreeTube, Element, Ledger Wallet and WebTorrent need no rebuild.
 - **`installed-app-without-grants-is-asked-as-a-website`**: an installed app that holds no grant is now asked for a location, a notification or a clipboard read as a website is, and the person's answer and site rules apply to it. An app that needs such a feature declares the capability instead; recheck apps that call these web APIs with no grant.
 
 ### Added

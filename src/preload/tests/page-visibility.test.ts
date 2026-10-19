@@ -135,4 +135,52 @@ describe('installPageVisibility', () => {
     read('document.dispatchEvent(new CustomEvent("orivon-visibility", { detail: true }))')
     expect(read('document.hidden')).toBe(false)
   })
+
+  describe('the screen wake lock', () => {
+    const WAKE_LOCK = `
+      globalThis.DOMException = class DOMException extends Error { constructor (message, name) { super(message); this.name = name } }
+      globalThis.WakeLockSentinel = class WakeLockSentinel { released = false; async release () { this.released = true } }
+      globalThis.WakeLock = class WakeLock { async request (type) { if (type !== 'screen') throw new TypeError('type'); return new WakeLockSentinel() } }
+      globalThis.wakeLock = new WakeLock()
+    `
+    const ready = (): void => { runInContext(WAKE_LOCK, page); installPageVisibility() }
+
+    it('releases every sentinel the page holds when the tab is hidden, and only then', async () => {
+      ready()
+      const [first, second] = await read('Promise.all([wakeLock.request("screen"), wakeLock.request("screen")])') as Array<{ released: boolean }>
+      expect([first?.released, second?.released]).toEqual([false, false])
+      send(true)
+      expect([first?.released, second?.released]).toEqual([true, true])
+    })
+
+    it('leaves a sentinel the page released itself alone, and does not take one back when the tab is shown', async () => {
+      ready()
+      const held = await read('wakeLock.request("screen")') as { released: boolean }
+      send(true)
+      send(false)
+      expect(held.released).toBe(true)
+      const again = await read('wakeLock.request("screen")') as { released: boolean }
+      send(false)
+      expect(again.released).toBe(false)
+    })
+
+    it('refuses a request made while the tab is hidden, as the platform refuses one, and answers again once it is shown', async () => {
+      ready()
+      send(true)
+      await expect(read('wakeLock.request("screen")')).rejects.toMatchObject({ name: 'NotAllowedError' })
+      send(false)
+      expect(((await read('wakeLock.request("screen")')) as { released: boolean }).released).toBe(false)
+    })
+
+    it('keeps the browser\'s own errors, the method\'s name and its descriptor shape', async () => {
+      ready()
+      await expect(read('wakeLock.request("system")')).rejects.toMatchObject({ name: 'TypeError' })
+      expect(read(`(() => { const d = Object.getOwnPropertyDescriptor(WakeLock.prototype, 'request'); return [d.enumerable, d.configurable, d.writable, d.value.name, d.value.length] })()`)).toEqual([false, true, true, 'request', 1])
+    })
+
+    it('does nothing in a page that has no wake lock', () => {
+      installPageVisibility()
+      expect(() => { send(true) }).not.toThrow()
+    })
+  })
 })
