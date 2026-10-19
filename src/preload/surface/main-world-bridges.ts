@@ -39,6 +39,8 @@ import type { WebsiteScore } from '../../contracts/trust.js'
  */
 export interface MainWorldFileBridge {
   readonly id: string
+  /** The file's basename (`FileHandle.name`). */
+  readonly name: string
   read: (opts: { position: number, length: number }) => Promise<Uint8Array>
   write: (opts: { position: number, data: Uint8Array }) => Promise<number>
   stat: () => Promise<FileStat>

@@ -38,9 +38,10 @@ answers `canceled: true, filePath: ''`.
 fails `ENOENT` with a message saying the pick did not survive and must be made again. The id is random for that reason: a counter
 would let a path from before a reload name a different pick afterwards.
 
-**Every picked file is called `picked-file`.** The handle `userSelected` returns carries no name and the stand-in must not reveal the
-host path, so the picked file's basename and extension are not the real ones. A saved-to file keeps the name the
-browser's picker reports.
+**A picked file keeps its own name.** The handle `userSelected` returns carries the file's basename (`FileHandle.name`), and the stand-in
+ends in it, so `path.basename` and `path.extname` give the picked file's real name and extension. Only the basename is carried, never a
+folder above it, so the stand-in reveals no part of the host path. The name is made safe as one path segment (a separator or control
+character becomes `_`), and a handle that reports no name is called `picked-file`. A saved-to file keeps the name the browser's picker reports.
 
 ## Context
 
@@ -78,8 +79,9 @@ the pick ends the access. Nothing is copied, and the person's file is the file t
 
 ## Consequences
 
-- The picked file's real name and extension are not available to the app. Where it matters (a torrent's name, a media player's guess from
-  the extension) the app sees `picked-file`. A real name needs a field on the contract's `FileHandle`, which the owner has decided to add (basename only) in a contracts PR that follows this one.
+- The app sees the picked file's real name and extension and nothing else about where it lives: a torrent's name, a media player's guess
+  from the extension and a file-type check all work on the stand-in path. A name that holds something private is the person's own file
+  name, shown only to the app they picked it for.
 - Nothing synchronous reaches a pick. An app that calls `statSync` or `readFileSync` on a pick fails at that line.
 - A pick does not survive a reload or a restart; the app asks again, and the person sees the picker again.
 - A page's handle has no `closed` yet (A184), so a revoked pick is not noticed ahead of time: its calls fail with the broker's `revoked`.

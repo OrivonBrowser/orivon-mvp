@@ -37,7 +37,7 @@ export interface FileHandleWrapperOptions {
 
 export interface FileHandleWrapper {
   /** Wraps an already-registered handle entry into the app-facing `FailableFileHandle`. */
-  toFailableFileHandle: (key: string, entry: HandleEntry, fields: Omit<OpenedFile, 'destroy'>) => FailableFileHandle
+  toFailableFileHandle: (key: string, entry: HandleEntry, fields: Omit<OpenedFile, 'destroy'>, name: string) => FailableFileHandle
 }
 
 /** One instance per broker (`../index.ts` constructs it once, alongside `HandleTable`/`GrantLedger` themselves), shared by ./fs.ts and ./user-selected.ts. */
@@ -121,9 +121,10 @@ export function createFileHandleWrapper ({ handleTable, ledger }: FileHandleWrap
     return run
   }
 
-  function toFailableFileHandle (key: string, entry: HandleEntry, fields: Omit<OpenedFile, 'destroy'>): FailableFileHandle {
+  function toFailableFileHandle (key: string, entry: HandleEntry, fields: Omit<OpenedFile, 'destroy'>, name: string): FailableFileHandle {
     return {
       id: entry.id,
+      name,
       closed: entry.closed,
       close: async (): Promise<void> => { await handleTable.release(key, entry.id) },
       fail: (code, platformCode) => { handleTable.fail(key, entry.id, code, platformCode) },

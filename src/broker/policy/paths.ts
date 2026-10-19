@@ -268,3 +268,12 @@ export function confinePath (
   // to stay inside, so the two reach the same file.
   return { ok: true, resolved }
 }
+
+/**
+ * The last segment of an absolute host path: the name `FileHandle.name` carries, and nothing of the folders
+ * above it. The flavour comes from the path's shape, as `confinePath`'s does, so a Windows path is split on
+ * both of its separators wherever it is read. A path that ends in a separator, or has no name, answers `''`.
+ */
+export function fileNameOf (absolutePath: string): string {
+  return flavourFor(absolutePath).basename(absolutePath)
+}

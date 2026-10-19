@@ -71,6 +71,7 @@ export function fileHandleFromWeb (web: WebFileHandle): FileHandle {
 
   return {
     id: `saved-${String(++serial)}`,
+    name: web.name,
     closed,
     close: async () => { await inOrder(commit); finish() },
     read: async ({ position, length }) => await inOrder(async () => new Uint8Array(await (await file()).slice(position, position + length).arrayBuffer())),

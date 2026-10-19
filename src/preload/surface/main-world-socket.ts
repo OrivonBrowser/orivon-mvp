@@ -281,7 +281,7 @@ export function installOrivon (
   /** `fsOpen`'s counterpart to `buildSocket`/`buildUdpSocket` -- a plain request/reply round trip, no port or stream; each nested closure needs its own `callRevived` since any one can reject independently. */
   function buildFile (f: Awaited<ReturnType<typeof bridge.fsOpen>>): MainWorldFileBridge {
     return Object.freeze({
-      id: f.id,
+      id: f.id, name: f.name,
       read: async (opts: { position: number, length: number }) => await callRevived(f.read(opts)),
       write: async (opts: { position: number, data: Uint8Array }) => await callRevived(f.write(opts)),
       stat: async () => await callRevived(f.stat()),

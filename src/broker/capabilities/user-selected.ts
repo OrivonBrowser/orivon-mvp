@@ -20,7 +20,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { fail } from '../errors.js'
 import { mapIoError } from '../io-errors.js'
-import { CONFINEMENT_ERROR_CODE, confinePath } from '../policy/paths.js'
+import { CONFINEMENT_ERROR_CODE, confinePath, fileNameOf } from '../policy/paths.js'
 import { pickerBlockReason } from '../policy/picker-blocklist.js'
 import type { PickerGuardRoots } from '../policy/picker-blocklist.js'
 import { createFileHandleWrapper, VALID_OPEN_FLAGS } from './fs-handle-wrapper.js'
@@ -204,7 +204,7 @@ export function createUserSelectedCapability (
           // is what makes revoking the FOLDER pick also close a file opened
           // from inside it: both live in the same `byPickedPath` bucket.
           const fileEntry = handleTable.acquire({ origin: key, kind: 'file', authorisedBy: entry.authorisedBy, destroy })
-          return toFailableFileHandle(key, fileEntry, fields)
+          return toFailableFileHandle(key, fileEntry, fields, fileNameOf(resolved))
         })
       }
     }
@@ -280,7 +280,7 @@ export function createUserSelectedCapability (
 
     const handles: FailableFileHandle[] = []
     try {
-      for (const realPath of realPaths) {
+      for (const [index, realPath] of realPaths.entries()) {
         const pick = pickedPaths.record(key, 'file', realPath, deps.now(), appName)
         notifyGrantsChanged(key)
         let opened: OpenedFile
@@ -295,7 +295,7 @@ export function createUserSelectedCapability (
         }
         const { destroy, ...fields } = opened
         const entry = handleTable.acquire({ origin: key, kind: 'file', authorisedBy: { by: 'userSelected', pickId: pick.id }, destroy })
-        handles.push(toFailableFileHandle(key, entry, fields))
+        handles.push(toFailableFileHandle(key, entry, fields, fileNameOf(result.paths[index] ?? realPath)))
       }
     } catch (error) {
       // One failed pick tears down whatever this call already opened,

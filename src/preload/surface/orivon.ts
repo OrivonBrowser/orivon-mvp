@@ -78,6 +78,9 @@ async function fsRename (from: string, to: string): Promise<void> { await call('
 /** `fs.open`'s CONTROL_CHANNEL reply -- deliberately just an id, matching surface/net.ts's own SocketDescriptor: `read`/`write`/... are built below as plain proxied closures, not carried across this call. */
 interface FsHandleDescriptor { readonly id: string }
 
+/** A file handle's reply: its id and its basename (`FileHandle.name`). */
+interface FsFileDescriptor extends FsHandleDescriptor { readonly name: string }
+
 /**
  * `orivon.fs.open` (A184). No main-world stream wrapping needed -- exactly
  * fs.readFile/writeFile's own reasoning above -- because THIS handle has
@@ -94,9 +97,10 @@ interface FsHandleDescriptor { readonly id: string }
  * same fs.read/write/fstat/truncate/sync/close cases serve both (Rule 3:
  * one implementation, not two copies of this object literal).
  */
-function buildFileBridge (id: string): MainWorldFileBridge {
+function buildFileBridge ({ id, name }: FsFileDescriptor): MainWorldFileBridge {
   return {
     id,
+    name,
     read: async (opts) => await call('fs.read', { id, position: opts.position, length: opts.length }, TIMEOUT_MS.fs),
     write: async (opts) => await call('fs.write', { id, position: opts.position, data: opts.data }, TIMEOUT_MS.fs),
     stat: async () => await call('fs.fstat', { id }, TIMEOUT_MS.fs),
@@ -107,8 +111,7 @@ function buildFileBridge (id: string): MainWorldFileBridge {
 }
 
 async function fsOpen (path: string, flags: string): Promise<MainWorldFileBridge> {
-  const descriptor = await call<FsHandleDescriptor>('fs.open', { path, flags }, TIMEOUT_MS.fs)
-  return buildFileBridge(descriptor.id)
+  return buildFileBridge(await call<FsFileDescriptor>('fs.open', { path, flags }, TIMEOUT_MS.fs))
 }
 
 /**
@@ -139,8 +142,8 @@ function requireUserActivation (): void {
 /** `orivon.fs.userSelected`'s FILE shape (A194, d-0032). `exposeOrivon`'s own `bridge.fsUserSelected` reaches here; `fsUserSelectedDirectory` below is its `{ directory: true }` counterpart (A195). */
 async function fsUserSelected (opts?: { multiple?: boolean }): Promise<readonly MainWorldFileBridge[]> {
   requireUserActivation()
-  const descriptors = await call<readonly FsHandleDescriptor[]>('fs.userSelected', opts ?? {}, PICKER_TIMEOUT_MS)
-  return descriptors.map((descriptor) => buildFileBridge(descriptor.id))
+  const descriptors = await call<readonly FsFileDescriptor[]>('fs.userSelected', opts ?? {}, PICKER_TIMEOUT_MS)
+  return descriptors.map(buildFileBridge)
 }
 
 /**
@@ -167,8 +170,7 @@ function buildDirectoryBridge (id: string): MainWorldDirectoryBridge {
     readFile: async (path) => await call('fs.dirReadFile', { id, path }, TIMEOUT_MS.fs),
     writeFile: async (path, data) => { await call('fs.dirWriteFile', { id, path, data }, TIMEOUT_MS.fs) },
     open: async (path, flags) => {
-      const descriptor = await call<FsHandleDescriptor>('fs.dirOpen', { id, path, flags }, TIMEOUT_MS.fs)
-      return buildFileBridge(descriptor.id)
+      return buildFileBridge(await call<FsFileDescriptor>('fs.dirOpen', { id, path, flags }, TIMEOUT_MS.fs))
     },
     close: async () => { await call('fs.close', { id }, TIMEOUT_MS.fs) }
   }

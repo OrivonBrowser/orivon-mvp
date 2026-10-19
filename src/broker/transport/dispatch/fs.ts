@@ -39,6 +39,11 @@ export interface FsHandleDescriptor {
   readonly id: string
 }
 
+/** What a file handle's reply carries beyond its id: the basename (`FileHandle.name`), never a path. */
+export interface FsFileDescriptor extends FsHandleDescriptor {
+  readonly name: string
+}
+
 /**
  * The per-origin lookup `fs.read`/`fs.write`/`fs.fstat`/`fs.truncate`/
  * `fs.sync`/`fs.close` need to turn an `id` back into the live
@@ -95,10 +100,10 @@ function requireDirectory (broker: Broker, transport: FsTransport | undefined, o
  * file mechanism rather than invent a second one. No change to this
  * function was needed to make that true.
  */
-function registerFileHandle (transport: FsTransport, origin: string, file: FailableFileHandle): FsHandleDescriptor {
+function registerFileHandle (transport: FsTransport, origin: string, file: FailableFileHandle): FsFileDescriptor {
   transport.registry.register(origin, file.id, file)
   file.onUnlink(() => { transport.registry.remove(origin, file.id) })
-  return { id: file.id }
+  return { id: file.id, name: file.name }
 }
 
 /** `registerFileHandle`'s own DirectoryHandle counterpart (A195) -- same shape, over `dirRegistry` instead. */

@@ -344,6 +344,8 @@ export interface FailableTcpServer extends Handle {
  * with no single stream to mean.
  */
 export interface FailableFileHandle extends FileHandle {
+  /** Broker-made handles always carry the basename, so the dispatch can answer it without a fallback. */
+  readonly name: string
   fail: (code: OrivonErrorCode, platformCode?: string) => void
   onUnlink: (listener: (reason: CloseReason, code?: OrivonErrorCode) => void) => void
 }
