@@ -12,6 +12,7 @@
 // without saying so is forgotten.
 
 import { CREATE_IN_PLACE } from './flags.js'
+import { PICKED_ROOT } from '../../shim-electron/picked-paths.js'
 
 export type WatchKind = 'rename' | 'change'
 export type NoticeListener = (path: string, kind: WatchKind) => void
@@ -107,6 +108,7 @@ export function watchersExist (): boolean {
 }
 
 export function announce (path: string, kind: WatchKind): void {
+  if (path.startsWith(`${PICKED_ROOT}/`)) return // fs.watch refuses a picked path, so nobody can be told of a change to one
   const normalized = normalizeNoticePath(path)
   dispatch(normalized, kind)
   const opened = open()

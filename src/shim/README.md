@@ -48,10 +48,11 @@ chosen: [`shim-dependency-review.md`](../../docs/planning/shim-dependency-review
 change here that breaks one fails a test that names it. A new or changed capability needs its rows and specs
 ([README](../../test/app-behaviours/README.md)); CI fails a capability kind that has no line in the catalogue's coverage table.
 
-**What it depends on.** [`src/contracts/`](../contracts/), and
-[`src/shim-electron/unimplemented.ts`](../shim-electron/unimplemented.ts)'s `refusingProxy`, the
-one import across the two sibling packages (`unimplemented.ts` says why not `src/shared/`;
-provisional until the owner confirms it, A160). Its npm dependencies are the polyfill packages,
+**What it depends on.** [`src/contracts/`](../contracts/), and two files of
+[`src/shim-electron/`](../shim-electron/), the only imports across the two sibling packages:
+`unimplemented.ts`'s `refusingProxy` (`unimplemented.ts` says why not `src/shared/`; provisional until the
+owner confirms it, A160) and `picked-paths.ts`, the table of stand-in paths that `fs/` reads
+([`fs/README.md`](fs/README.md)'s Design notes, "Picked paths"). Its npm dependencies are the polyfill packages,
 `@emnapi/core` and `@emnapi/runtime`, which `addon/` loads native addons' WebAssembly builds
 through (`d-0163`), and `@sqlite.org/sqlite-wasm`, which `sqlite/` runs.
 
