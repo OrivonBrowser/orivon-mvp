@@ -122,6 +122,29 @@ describe('orivon.fs.userSelected -- the file shape', () => {
     expect(await handles[1]!.read({ position: 0, length: 1 })).toEqual(new Uint8Array([2]))
   })
 
+  it('names each handle with the basename of the file picked, never the folder it is in', async () => {
+    const broker = createBroker(baseDeps({
+      fs: stubFs({ files: new Map([['/home/user/My Videos/movie.mkv', new Uint8Array([1])], ['/home/user/b.txt', new Uint8Array([2])]]) }),
+      pickPath: pickedFiles(['/home/user/My Videos/movie.mkv', '/home/user/b.txt'])
+    }))
+    broker.registerApp(APP, manifestWith({}))
+
+    const handles = await broker.fs.userSelected(APP, { multiple: true })
+
+    expect(handles.map((handle) => handle.name)).toEqual(['movie.mkv', 'b.txt'])
+  })
+
+  it('names a file opened inside a picked folder with its own basename, not a path', async () => {
+    const broker = createBroker(baseDeps({
+      fs: stubFs({ files: new Map([['/home/user/Downloads/sub/a.txt', new Uint8Array([9])]]) }),
+      pickPath: pickedDirectory('/home/user/Downloads')
+    }))
+    broker.registerApp(APP, manifestWith({}))
+    const dir = await broker.fs.userSelected(APP, { directory: true }) as FailableDirectoryHandle
+
+    expect((await dir.open('sub/a.txt', 'r+')).name).toBe('a.txt')
+  })
+
   it('each picked file gets its OWN pick -- revoking one leaves the other live', async () => {
     const broker = createBroker(baseDeps({
       fs: stubFs({ files: new Map([['/home/user/a.txt', new Uint8Array([1])], ['/home/user/b.txt', new Uint8Array([2])]]) }),

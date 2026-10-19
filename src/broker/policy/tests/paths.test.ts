@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { posix } from 'node:path'
-import { CONFINEMENT_ERROR_CODE, confinePath } from '../paths.js'
+import { CONFINEMENT_ERROR_CODE, confinePath, fileNameOf } from '../paths.js'
 import type { ConfineDenialReason } from '../paths.js'
 
 // Every row here is a compromise if it flips. T1/T10 in security-model.md:
@@ -495,6 +495,29 @@ describe('property: the resolved path is always inside the root', () => {
       if (result.ok) {
         expect(result.resolved).toBe(`${ROOT}/${segments.join('/')}`)
       }
+    }
+  })
+})
+
+describe('fileNameOf -- the basename a FileHandle carries, never a folder', () => {
+  it.each([
+    ['/home/user/Videos/movie.mkv', 'movie.mkv'],
+    ['/home/user/My Videos/two words (1).mkv', 'two words (1).mkv'],
+    ['/home/user/\u00e9t\u00e9/\u6620\u753b.mp4', '\u6620\u753b.mp4'],
+    ['/home/user/archive.tar.gz', 'archive.tar.gz'],
+    ['/home/user/no-extension', 'no-extension'],
+    ['/home/user/.hidden', '.hidden'],
+    ['/home/user/back\\slash.txt', 'back\\slash.txt'],
+    ['C:\\Users\\me\\Videos\\movie.mkv', 'movie.mkv'],
+    ['C:/Users/me/Videos/movie.mkv', 'movie.mkv'],
+    ['\\\\server\\share\\dir\\report.pdf', 'report.pdf']
+  ])('%s -> %s', (path, name) => {
+    expect(fileNameOf(path)).toBe(name)
+  })
+
+  it('never contains a separator of either kind, for any path it is given', () => {
+    for (const path of ['/a/b/c.txt', 'C:\\a\\b\\c.txt', 'D:/a/b/c.txt', '\\\\h\\s\\c.txt']) {
+      expect(fileNameOf(path)).not.toMatch(/[\\/]/)
     }
   })
 })

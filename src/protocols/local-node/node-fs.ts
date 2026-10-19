@@ -5,7 +5,7 @@
 import { lstat, mkdir, open, readdir, realpath, rename, rm, stat } from 'node:fs/promises'
 import type { FileHandle as NodeFileHandle } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
-import { dirname, isAbsolute, join, normalize, relative, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, normalize, relative, sep } from 'node:path'
 import type { FileHandle, FileStat } from '../../contracts/index.js'
 import type { WasiFs } from '../../shim/wasi/context.js'
 import type { OrivonErrorCode } from '../../contracts/index.js'
@@ -51,12 +51,13 @@ function statOf (real: { size: number, mtimeMs: number, isFile: () => boolean, i
   return { size: real.size, isFile: real.isFile(), isDirectory: real.isDirectory(), mtimeMs: real.mtimeMs }
 }
 
-function fileHandle (real: NodeFileHandle, release: () => void): FileHandle {
+function fileHandle (real: NodeFileHandle, name: string, release: () => void): FileHandle {
   let done: () => void = () => {}
   const closed = new Promise<void>((resolve) => { done = resolve })
   let shut = false
   return {
     id: `local-node-file-${randomUUID()}`,
+    name,
     closed,
     close: async () => {
       if (shut) return
@@ -118,7 +119,7 @@ export async function createConfinedFs (directory: string): Promise<WasiFs> {
       if (openFiles >= MAX_OPEN_FILES) throw Object.assign(new Error('too many open files'), { code: 'EMFILE' })
       openFiles += 1
       try {
-        return fileHandle(await open(real, flags, 0o600), () => { openFiles -= 1 })
+        return fileHandle(await open(real, flags, 0o600), basename(real), () => { openFiles -= 1 })
       } catch (error) {
         openFiles -= 1
         throw error

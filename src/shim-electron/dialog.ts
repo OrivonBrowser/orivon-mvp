@@ -66,10 +66,7 @@ export interface DialogDeps {
   readonly warn: (message: string) => void
 }
 
-/**
- * The name a picked file carries in its stand-in path. The handle `userSelected` returns has no name, and the
- * stand-in must not reveal the host path, so every picked file is called this.
- */
+/** The name a picked file carries in its stand-in path when its handle reports none. */
 export const PICKED_FILE_NAME = 'picked-file'
 
 const OPEN_MAPPED = new Set(['openFile', 'openDirectory', 'multiSelections'])
@@ -125,7 +122,7 @@ export function createDialog (orivon: Pick<Orivon, 'fs'>, deps: DialogDeps = def
       const handles = await orivon.fs.userSelected({ multiple: properties.includes('multiSelections') })
       return handles.length === 0
         ? { canceled: true, filePaths: [] }
-        : { canceled: false, filePaths: handles.map((handle) => registerPickedFile(handle, PICKED_FILE_NAME)) }
+        : { canceled: false, filePaths: handles.map((handle) => registerPickedFile(handle, handle.name ?? PICKED_FILE_NAME)) }
     } catch (error) {
       if ((error as { code?: string }).code === 'denied') {
         throw refuse('dialog.showOpenDialog', 'invalid-usage', `Orivon refused to show the picker: ${REQUEST_REFUSED}.`)

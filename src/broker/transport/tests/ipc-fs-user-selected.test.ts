@@ -22,6 +22,7 @@ import { APP, OTHER, type BrokerCall, envelope, frameFor, stubBroker } from './i
 function fakeFile (overrides: Partial<FailableFileHandle> = {}): FailableFileHandle {
   return {
     id: 'file-1',
+    name: 'file.bin',
     closed: new Promise(() => {}),
     close: vi.fn(async () => {}),
     fail: vi.fn(),
@@ -49,7 +50,7 @@ describe('fs.userSelected -- the file shape, registers every returned handle', (
       undefined, undefined, undefined, fsTransport
     )
 
-    expect(response).toEqual({ id: 'req-1', ok: true, result: [{ id: 'picked-1' }] })
+    expect(response).toEqual({ id: 'req-1', ok: true, result: [{ id: 'picked-1', name: 'file.bin' }] })
     expect(fsTransport.registry.get(APP, 'picked-1')).toBe(file)
     expect(calls).toEqual([{ method: 'fs.userSelected', origin: APP, args: undefined }])
   })
@@ -66,7 +67,7 @@ describe('fs.userSelected -- the file shape, registers every returned handle', (
       undefined, undefined, undefined, fsTransport
     )
 
-    expect(response).toEqual({ id: 'req-1', ok: true, result: [{ id: 'picked-a' }, { id: 'picked-b' }] })
+    expect(response).toEqual({ id: 'req-1', ok: true, result: [{ id: 'picked-a', name: 'file.bin' }, { id: 'picked-b', name: 'file.bin' }] })
     expect(fsTransport.registry.get(APP, 'picked-a')).toBe(first)
     expect(fsTransport.registry.get(APP, 'picked-b')).toBe(second)
     expect(calls).toEqual([{ method: 'fs.userSelected', origin: APP, args: { multiple: true } }])

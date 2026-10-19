@@ -128,6 +128,7 @@ export function fakeSocketBridgeResult (): {
 export function fakeFileBridgeResult (overrides: Partial<MainWorldFileBridge> = {}): MainWorldFileBridge {
   return {
     id: 'f1',
+    name: 'f1.bin',
     read: async () => new Uint8Array([1, 2, 3]),
     write: async () => 3,
     stat: async () => ({ size: 3, isFile: true, isDirectory: false, mtimeMs: 0 }),
