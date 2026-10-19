@@ -11,7 +11,7 @@ for the whole process at start, and `dns-prefetch-switch.ts` turns DNS prefetchi
 is followed by `https-fallback.ts` (the per-tab record), `https-fallback-runner.ts` (the tab's events) and
 `https-state.ts` (this run's exemptions), and ends in the sheet `https-warning-overlay.ts`
 ([`../../renderer/overlay/https-warning/`](../../renderer/overlay/https-warning/)). `secure-dns.ts` maps the
-Secure DNS choice to the resolver's options, and `storage-access.ts` answers the two storage-access permissions
+Secure DNS choice to the resolver's options, `secure-dns-fallback.ts` keeps the default choice (Quad9 first, this computer's DNS when Quad9 cannot be reached) by running it in secure mode and checking that Quad9 answers, `chromium-resolver.ts` hands the broker's direct dials and `orivon.net.lookup` the answers of that same resolver (`net.resolveHost`), and `storage-access.ts` answers the two storage-access permissions
 from the cookie choice. `install-privacy-net.ts` is the installer `../shell/shell-installers.ts` runs at start.
 
 Showing what sites keep: `cookie-list.ts` is the pure side (which cookies belong to a site, a cookie's view without
@@ -26,6 +26,7 @@ page may ask about it. The site-info popover uses the first two through
 (this run's developer names);
 [`../history/`](../history/) and [`../zoom/`](../zoom/) (what is forgotten through them);
 [`../../broker/grants/origin-hash.ts`](../../broker/grants/origin-hash.ts) (`local-files-domain.ts` names a file by its hash);
+[`../../broker/errors.ts`](../../broker/errors.ts) and the `Resolver` type of [`../../broker/policy/connect.ts`](../../broker/policy/connect.ts) (`chromium-resolver.ts`);
 [`../pages/internal-ipc.ts`](../pages/internal-ipc.ts) (the shape of a page's domain).
 
 **What it must never import.** [`../shell/`](../shell/), except `install-privacy-net.ts`, which takes
@@ -39,6 +40,16 @@ The network controls decide in plain functions and meet Electron only in `instal
 registrations, `configureHostResolver`) and in the events `https-fallback-runner.ts` listens to.
 
 ## Design notes
+
+**The default Secure DNS choice runs in `secure` mode, and `automatic` is only its fallback.** Chromium's `automatic`
+mode answers from the platform's resolver until its own probe of the DoH server succeeds (tens of seconds on a
+network that hijacks DNS), and those answers stay in the host cache, so a page or an app opened early kept
+hijacked addresses. `secure-dns-fallback.ts` applies `secure` with Quad9 at launch, bypassing the cache to look up
+one stable name, and applies `automatic` (which degrades to the platform's DNS) only when that does not answer in 3 s.
+Every five minutes, and when `net.online` turns true, it checks again: from the fallback it tries `secure` mode out
+(`automatic` cannot say whether Quad9 answers), keeps it if the lookup answers, and drops the host cache of the
+website sessions when it does. On a network that blocks Quad9 a trial costs at most 3 s of failing uncached lookups
+every five minutes. The other values keep their meaning, and a forced-off run never starts the check.
 
 **A time range applies to history only.** Electron clears a session's data by type and origin, with no time range,
 so site data and the cache are all or nothing, and the page says so.

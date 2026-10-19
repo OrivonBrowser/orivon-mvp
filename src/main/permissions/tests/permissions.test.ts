@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createBroker } from '../../../broker/index.js'
-import { APP, baseDeps, manifestWith } from '../../../broker/tests/index.test-helpers.js'
+import { APP, baseDeps, manifestWith, resolvesPublic } from '../../../broker/tests/index.test-helpers.js'
 import { rejection } from '../../../broker/handles/tests/handles.test-helpers.js'
 import type { Broker, PickPathResult } from '../../../broker/broker-contracts.js'
 import type { FailableDirectoryHandle } from '../../../broker/handles/handle-contracts.js'
@@ -170,7 +170,7 @@ describe('createPermissionsController', () => {
 
   // THE EXIT-CRITERION TEST.
   it('revoke() tears down a live handle through the exact path the UI calls -- socket.closed rejects "revoked"', async () => {
-    const broker = createBroker(baseDeps())
+    const broker = createBroker(baseDeps({ resolve: resolvesPublic }))
     broker.registerApp(APP, manifestWith({ net: { https: { connect: ['youtube.com:443'] } } }))
     const issued = await broker.grant(APP, 'https.connect', ['youtube.com:443'])
     const socket = await broker.net.connectSecure(APP, { host: 'youtube.com', port: 443 })

@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { createBroker } from '../index.js'
-import { APP, baseDeps, manifestWith, okSecureSocket, okSocket } from './index.test-helpers.js'
+import { APP, baseDeps, manifestWith, okSecureSocket, okSocket, resolvesPublic } from './index.test-helpers.js'
 
 describe('an outbound dial past the socket allowance never reaches the remote host', () => {
   it('net.connect refuses the second socket with limit, and dials only once', async () => {
@@ -26,7 +26,7 @@ describe('an outbound dial past the socket allowance never reaches the remote ho
 
   it('net.connectSecure refuses the second socket with limit, and never starts a second handshake', async () => {
     let handshakes = 0
-    const broker = createBroker(baseDeps({ dialSecure: async () => { handshakes++; return okSecureSocket() } }))
+    const broker = createBroker(baseDeps({ resolve: resolvesPublic, dialSecure: async () => { handshakes++; return okSecureSocket() } }))
     await broker.registerApp(APP, manifestWith({ net: { https: { connect: ['api.example.com:443'] }, concurrentSockets: 1 } }))
     await broker.grant(APP, 'https.connect', ['api.example.com:443'])
 

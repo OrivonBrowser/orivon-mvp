@@ -44,7 +44,8 @@ every other app and website is *not routed*.
 
 | File | Reaches | For | Tunnel |
 |---|---|---|---|
-| `src/broker/adapters/node-adapters.ts` | Any TCP host:port the broker's checks allow; the system resolver | An unrouted app's `orivon.net.connect`, `listen` and `lookup`; the local nodes | Not routed. A routed app never gets here: the broker uses the route's provider for it |
+| `src/broker/adapters/node-adapters.ts` | Any TCP host:port the broker's checks allow; the system resolver (`resolveHost` and `resolveLookup`, used by the local nodes and the broker's own tests) | An unrouted app's `orivon.net.connect` and `listen`; the local nodes | Not routed. A routed app never gets here: the broker uses the route's provider for it |
+| `src/main/privacy/chromium-resolver.ts` | Chromium's resolver (`net.resolveHost`), with the Secure DNS setting applied | The names an unrouted app's `orivon.net.connect`, `connectSecure`, `udp` and `lookup` resolve before the broker's checks and the dial | Not routed. A routed app resolves nothing here: the name goes to its route |
 | `src/broker/adapters/tls-adapter.ts` | The same hosts, over TLS | An unrouted app's `orivon.net.connectSecure` | Not routed. A routed app reuses its handshake over the route's stream (`routed-secure.ts`) |
 | `src/broker/adapters/udp-adapter.ts` | Any UDP host:port the checks allow | An unrouted app's `orivon.net.udp`; the local nodes' DNS datagrams | Not routed. A routed app's socket is loopback-only and its other datagrams go through the route |
 | `src/broker/capabilities/net-udp-route.ts` | Nothing: uses only `isIP` | A routed app's UDP socket decides which datagrams go through the route | Loopback |

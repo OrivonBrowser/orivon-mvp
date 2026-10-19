@@ -54,14 +54,47 @@ describe('options reach the dial unchanged', () => {
     expect(socket).toMatchObject(facts)
   })
 
-  it('with no options, dials the checked name and resolves nothing: the default certificate check binds it', async () => {
-    const resolve = resolvesTo(['93.184.216.34'])
+  it('with no options, resolves the checked name through the injected resolver and dials its answers under the name: the default certificate check binds it', async () => {
+    const resolve = resolvesTo(['203.0.113.7', '2001:db8::7'])
     const { broker, calls } = await grantedBroker(['api.example.com:443'], { resolve })
 
     await broker.net.connectSecure(APP, { host: 'API.example.com', port: 443 })
 
-    expect(calls[0]?.target).toEqual({ host: 'api.example.com', port: 443 })
+    expect(resolve).toHaveBeenCalledTimes(1)
+    expect(resolve).toHaveBeenCalledWith('api.example.com')
+    expect(calls[0]?.target).toEqual({ host: 'api.example.com', port: 443, addresses: ['203.0.113.7', '2001:db8::7'] })
+    expect(calls[0]?.options.servername).toBeUndefined()
+  })
+
+  it('does not apply the address check to a name-bound dial: the name and the certificate are the authorisation', async () => {
+    const resolve = resolvesTo(['10.0.0.5'])
+    const { broker, calls } = await grantedBroker(['intranet.example.com:443'], { resolve })
+
+    await broker.net.connectSecure(APP, { host: 'intranet.example.com', port: 443 })
+
+    expect(calls[0]?.target.addresses).toEqual(['10.0.0.5'])
+  })
+
+  it('a resolver failure on a name-bound dial is unreachable with its real code, and nothing is dialled', async () => {
+    const resolve: CreateBrokerOptions['resolve'] = async () => { throw Object.assign(new Error('nope'), { code: 'ENOTFOUND' }) }
+    const { broker, calls } = await grantedBroker(['api.example.com:443'], { resolve })
+
+    const error = await rejection(broker.net.connectSecure(APP, { host: 'api.example.com', port: 443 }))
+
+    expect(error.code).toBe('unreachable')
+    expect(error.platformCode).toBe('ENOTFOUND')
+    expect(calls).toEqual([])
+  })
+
+  it('asks T20 before resolving anything', async () => {
+    const resolve = resolvesTo(['203.0.113.7'])
+    const { broker, calls } = await grantedBroker(['api.example.com:443'], { resolve, proxyConfigured: async () => true })
+
+    const error = await rejection(broker.net.connectSecure(APP, { host: 'api.example.com', port: 443 }))
+
+    expect(error.code).toBe('denied')
     expect(resolve).not.toHaveBeenCalled()
+    expect(calls).toEqual([])
   })
 
   it.each([
@@ -75,8 +108,8 @@ describe('options reach the dial unchanged', () => {
 
     await broker.net.connectSecure(APP, { host: 'api.example.com', port: 443, ...extra })
 
-    expect(calls[0]?.target.addresses).toBeUndefined()
-    expect(resolve).not.toHaveBeenCalled()
+    expect(calls[0]?.target).toEqual({ host: 'api.example.com', port: 443, addresses: ['93.184.216.34'] })
+    expect(resolve).toHaveBeenCalledTimes(1)
   })
 })
 

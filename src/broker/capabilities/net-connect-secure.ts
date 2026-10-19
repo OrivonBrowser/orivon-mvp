@@ -65,6 +65,19 @@ export function createConnectSecure ({ deps, handleTable, ledger, canonical, soc
     return { host, port, addresses: decision.addresses }
   }
 
+  /**
+   * The handshake binds the granted name, so the answers are not address-checked: the name and the certificate are the
+   * authorisation, and a public name may well resolve to a private address (split-horizon DNS). They are resolved HERE,
+   * by the injected resolver, and dialled as addresses under the name (`servername` and the certificate identity stay the
+   * name): handing the bare name to the TLS dial would have Node's system resolver look it up instead.
+   */
+  async function nameBoundTarget (host: string, port: number): Promise<SecureDialTarget> {
+    if (isLiteral(host)) return { host, port }
+    const addresses = await deps.resolve(host)
+    if (addresses.length === 0) throw fail('unreachable', `could not resolve ${host}`)
+    return { host, port, addresses }
+  }
+
   return async function connectSecure (origin, opts) {
     const key = canonical(origin)
     const { host: hostArg, port, signal: abandon, ...options } = opts
@@ -100,19 +113,16 @@ export function createConnectSecure ({ deps, handleTable, ledger, canonical, soc
           assertSocketRoom(handleTable, key, socketAllowance(key))
           dialed = await dialSecureThroughRoute(route, { host, port }, options, signal)
         } else {
-          // Before ANY resolution or handshake attempt: an unbound handshake
-          // below still resolves `host` through real Node DNS
-          // (`addressCheckedTarget`'s own `checkConnect` call), and even a
-          // bound one hands `host` straight to `deps.dialSecure`'s own Node
-          // TLS connect, which resolves it internally -- neither call is one a
-          // configured proxy ever sees (T20). A routed app reaching this
-          // machine is checked without a resolver and dialled as literals.
+          // Before ANY resolution or handshake attempt: both targets below
+          // resolve `host` through `deps.resolve`, a lookup no configured
+          // proxy ever sees (T20). A routed app reaching this machine is
+          // checked without a resolver and dialled as literals.
           if (route === undefined) {
             const probeUrl = proxyProbeUrl(host, port)
             if (probeUrl === null) throw fail('denied', 'the connection was not authorised')
             if (await deps.proxyConfigured(probeUrl)) throw fail('denied', 'a system proxy is configured; connectSecure refuses to bypass it')
           }
-          const target = bound && route === undefined ? { host, port } : await addressCheckedTarget(current.patterns, host, port, route === undefined ? deps.resolve : NO_RESOLVER)
+          const target = bound && route === undefined ? await nameBoundTarget(host, port) : await addressCheckedTarget(current.patterns, host, port, route === undefined ? deps.resolve : NO_RESOLVER)
           // Without this, a grant revoked between the policy check and the
           // handshake completing would still let `deps.dialSecure` run to
           // completion for a capability the app no longer holds.
