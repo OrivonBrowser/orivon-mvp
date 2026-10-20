@@ -24,9 +24,8 @@ export class ListeningGate {
    * from when it arrived, so the task's own time limit is not taken out of the host's time to start.
    */
   hold (task: Promise<unknown>): void {
-    const mine = task.then(() => {}, () => {})
+    const mine: Promise<void> = task.then(() => {}, () => {}).then(() => { if (this.held === mine) this.held = undefined })
     this.held = mine
-    void mine.then(() => { if (this.held === mine) this.held = undefined })
   }
 
   /** Resolves at once unless the host is still coming up; then when it listens, goes down, or the bound passes. */
