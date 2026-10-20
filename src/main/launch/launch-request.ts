@@ -4,6 +4,7 @@
 import { sanitizeLocalFileUrl } from '../browsing/local-file-input.js'
 import { NEW_PRIVATE_WINDOW_FLAG, NEW_WINDOW_FLAG, switchesOf, urlsFromArgv } from './launch-context.js'
 import { addressesFromOperands } from './local-operand.js'
+import { orivonLinkAddresses } from './orivon-link.js'
 import type { PathKind } from './local-operand.js'
 
 /** `open` only focuses the window in use, with the addresses in it; `window` and `private` open a new one. */
@@ -45,7 +46,7 @@ export interface OperandDisk {
   readonly platform?: NodeJS.Platform
 }
 
-/** The http(s) addresses and local files a command line names, in its order, at most eight. */
+/** The http(s) addresses, `orivon:` links and local files a command line names, in its order, at most eight. */
 export function launchAddresses (argv: readonly string[], packaged: boolean, disk: OperandDisk = { cwd: process.cwd() }): string[] {
   return addressesFromOperands(operandsOf(argv, packaged), disk.cwd, disk.kindOf, disk.platform)
 }
@@ -84,7 +85,7 @@ export function readLaunchRequest (data: unknown, argv: readonly string[]): Laun
   const kind = record?.['kind']
   const urls = record?.['urls']
   if (record?.['orivonLaunch'] !== 1 || !KINDS.includes(kind as LaunchKind) || !isAddressList(urls)) {
-    return { kind: 'open', urls: urlsFromArgv(argv) }
+    return { kind: 'open', urls: argv.flatMap((argument) => [...urlsFromArgv([argument]), ...orivonLinkAddresses([argument])]).slice(0, MAX_ADDRESSES) }
   }
   return { kind: kind as LaunchKind, urls: urls.map((url) => new URL(url).toString()) }
 }
