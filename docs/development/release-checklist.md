@@ -150,6 +150,23 @@ no Gatekeeper dialog, and **About** shows the release's version.
 **Fails if:** a Gatekeeper dialog appears, the digest check is skipped, or the script installs a
 different release than the newest one with a dmg attached.
 
+## 6. The Windows one-line install
+
+**Precondition.** A published release with its x64 installer attached, and a Windows 10 or 11 machine on which
+Orivon is not running.
+
+**Input.** The command in the README section Download, pasted into PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/install-windows.ps1 | iex
+```
+
+**Assertions.** The script prints the release's tag and "Checked the SHA-256", Orivon opens with no "Windows
+protected your PC" dialog, and **About** shows the release's version.
+
+**Fails if:** SmartScreen or Defender stops the installer, the digest check is skipped, or the script installs a
+different release than the newest one with an installer attached.
+
 ---
 
 ## Scheduled additions

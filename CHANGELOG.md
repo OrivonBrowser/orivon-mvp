@@ -26,6 +26,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
+- **One-line Windows install**: paste a PowerShell command and Orivon installs for your user and opens, with no SmartScreen warning; the README and each release's file table carry it.
 - **Look for updates is on by default**: Orivon asks GitHub once a day whether a newer release exists, and installs nothing; Settings > About turns it off. A profile made before this follows the new default.
 - **Secure DNS is on by default, with a fallback**: site names are looked up at Quad9 over HTTPS, and this computer's own DNS answers when Quad9 cannot be reached. Settings > Privacy offers Quad9 or Cloudflare alone, Automatic and Off as before. Sites sent through a tunnel are never looked up here.
 - **The "?" marks of the Web3 Score shield are links**: each one, in the site popup's Web3 Score page and in the "Web?" mark of the address bar, opens the Web3 Score guide at `docs.orivonstack.eth` in a new tab.

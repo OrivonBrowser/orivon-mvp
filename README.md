@@ -243,7 +243,7 @@ against it changing a line. Read those files first if you want to know what Oriv
 | | Package |
 |---|---|
 | 🐧 **Linux** | `.deb` for Debian and Ubuntu, AppImage for any distribution (x64) |
-| 🪟 **Windows** | Installer for x64: per user, no administrator needed |
+| 🪟 **Windows** | One line in PowerShell (below), or an installer for x64: per user, no administrator needed |
 | 🍎 **macOS** | One line in Terminal (below), or a `.dmg` for Apple silicon and for Intel |
 
 **macOS, one line.** Paste this into Terminal. It installs Orivon into Applications (or updates it)
@@ -251,6 +251,13 @@ and opens it, with no Gatekeeper warning. The `.dmg` stays for people who prefer
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/install-macos.sh | bash
+```
+
+**Windows, one line.** Paste this into PowerShell. It installs Orivon for your user, with no administrator and no
+SmartScreen warning, and opens it. Run it again to update.
+
+```powershell
+irm https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/install-windows.ps1 | iex
 ```
 
 **[Get the latest release →](https://github.com/OrivonBrowser/orivon-mvp/releases/latest)**

@@ -16,6 +16,7 @@ const SHIPPED_HEADINGS = ['added', 'changed', 'fixed', 'security', 'removed', 'd
 
 // A pipe inside a table cell is escaped, also inside code.
 const MAC_INSTALL = 'curl -fsSL https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/install-macos.sh \\| bash'
+const WIN_INSTALL = 'irm https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/install-windows.ps1 \\| iex'
 const STORE_PRODUCT_ID = '9MXV3FNMFBP4'
 
 const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -75,6 +76,7 @@ export function whichFileSection({ version, assets, routes, prerelease }) {
   const appImage = `Orivon-${version}-x86_64.AppImage`
 
   if (has(exe)) row('Windows 10 or 11, Intel or AMD (64-bit)', `\`${exe}\``, 'Installs for your user, no administrator needed. Windows asks once whether to run it: More info, then Run anyway')
+  if (has(exe)) row('Windows, from PowerShell', `\`${WIN_INSTALL}\``, 'Installs the newest release for your user and opens it, with no warning from Windows')
   if (routes.store) row('Windows, from the Microsoft Store', `[Orivon Browser](https://apps.microsoft.com/detail/${STORE_PRODUCT_ID.toLowerCase()})`, 'The Store installs and updates it')
   if (routes.winget) row('Windows, from a terminal', `\`winget install ${prerelease ? 'Orivon.Browser.Preview' : 'Orivon.Browser'}\``, 'winget downloads the installer above')
   if (has(arm)) row('Mac with Apple silicon (M1 or later)', `\`${arm}\``, 'Open it and drag Orivon to Applications. macOS asks once: System Settings > Privacy & Security > Open Anyway')
