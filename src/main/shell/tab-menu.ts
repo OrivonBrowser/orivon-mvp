@@ -3,6 +3,7 @@
 // showing it is the caller's.
 import { Menu } from 'electron'
 import type { BaseWindow, MenuItemConstructorOptions } from 'electron'
+import { WEB_LINK_LABEL } from '../os/web-link.js'
 import type { CommandId } from '../shortcuts/commands.js'
 
 export interface TabMenuModel {
@@ -21,6 +22,8 @@ export interface TabMenuModel {
   readonly tabCount: number
   /** The tab has an address worth sharing: not the new-tab page, a shell page or an extension's page. */
   readonly canShare: boolean
+  /** The tab's address has an https form other browsers open that differs from it (`.eth`, IPFS, IPNS). Absent reads as false. */
+  readonly canCopyWebLink?: boolean
   /** The tab is in a split. */
   readonly inSplit: boolean
   /** The tabs it could be split with, that are not in a split already. */
@@ -43,6 +46,7 @@ export interface TabMenuActions {
   ungroup: () => void
   sleep: () => void
   copyLink: () => void
+  copyWebLink: () => void
   emailLink: () => void
   moveToNewWindow: () => void
   separate: () => void
@@ -83,7 +87,11 @@ export function tabMenuTemplate (model: TabMenuModel, actions: TabMenuActions): 
     {
       label: 'Share',
       enabled: model.canShare,
-      submenu: [{ label: 'Copy Link', click: actions.copyLink }, { label: 'Email Link', click: actions.emailLink }]
+      submenu: [
+        { label: 'Copy Link', click: actions.copyLink },
+        ...(model.canCopyWebLink === true ? [{ label: WEB_LINK_LABEL, click: actions.copyWebLink }] : []),
+        { label: 'Email Link', click: actions.emailLink }
+      ]
     },
     ...split,
     { type: 'separator' },

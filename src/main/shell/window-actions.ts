@@ -3,9 +3,9 @@
 // another window. Assembled per window from the pieces window.ts made.
 import { isolationKeyFromUrl, originFromUrl } from '../../broker/policy/origin.js'
 import type { ShellActions } from '../ipc/ipc.js'
-import { copyLinkCommand, emailLinkCommand } from '../os/share-commands.js'
+import { copyLinkCommand, copyWebLinkCommand, emailLinkCommand } from '../os/share-commands.js'
 import { realShareDeps } from '../os/share-runner.js'
-import { shareAddressFor } from '../os/share.js'
+import { shareAddressFor, webLinkForTab } from '../os/share.js'
 import type { NetworksPanel } from '../networks/networks-panel.js'
 import type { SiteInfoPanel } from '../permissions/site-info-panel.js'
 import { isRect } from './actions/overlay.js'
@@ -68,6 +68,7 @@ export function shellActions (parts: WindowParts): ShellActions {
       canSleep: id !== tabs.getState().activeTabId && tab.sleeping !== true,
       tabCount: all.length,
       canShare: shareAddressFor(tab) !== undefined,
+      canCopyWebLink: webLinkForTab(tab) !== undefined,
       inSplit: tab.splitWith !== null,
       splitPartners: partners.map((other) => ({ label: other.title === '' ? 'New Tab' : other.title, split: () => { tabs.splits.split(id, other.id, 'right') } })),
       otherWindows: others.map((other, position) => ({ label: windowLabel(other, position), move: () => { moveToWindow(entry, id, other) } }))
@@ -81,6 +82,7 @@ export function shellActions (parts: WindowParts): ShellActions {
       ungroup: () => { ungroupTab(ctx, id) },
       sleep: () => { void sleepBackgroundTab(entry, id).catch((error: unknown) => { console.error('[shell] sleep background tab failed:', error) }) },
       copyLink: () => { copyLinkCommand(entry, realShareDeps, id) },
+      copyWebLink: () => { copyWebLinkCommand(entry, realShareDeps, id) },
       emailLink: () => { void emailLinkCommand(entry, realShareDeps, id).catch((error: unknown) => { console.error('[shell] email link command failed:', error) }) },
       moveToNewWindow: () => { moveToNewWindow(entry, id, openWindow, cascadeFrom(window.getBounds())) },
       separate: () => { tabs.splits.separate(id) },
