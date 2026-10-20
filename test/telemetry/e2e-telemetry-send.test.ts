@@ -87,9 +87,10 @@ it('with consent, sends the usage report and the sites report, each holding exac
     expect(await waitFor(() => posted(r, '/v1/usage').some((request) => ((request.body['classes'] ?? {}) as Record<string, number>)['web2'] !== undefined && ((request.body['classes'] as Record<string, number>)['web2'] ?? 0) >= 1), 30_000)).toBe(true)
 
     const usage = posted(r, '/v1/usage').at(-1)?.body as Record<string, unknown>
-    expect(sorted(usage)).toEqual(['activeSec', 'backgroundSec', 'classes', 'country', 'installId', 'period', 'schema', 'stream', 'version'])
+    expect(sorted(usage)).toEqual(['activeSec', 'backgroundSec', 'classes', 'country', 'flavour', 'installId', 'period', 'schema', 'stream', 'version'])
     expect(sorted(usage['classes'] as Record<string, unknown>)).toEqual(['web2', 'web25', 'web3'])
     expect(usage).toMatchObject({ schema: PAYLOAD_SCHEMA })
+    expect(usage['flavour']).toBeNull()
     expect(usage['installId']).toMatch(HEX32)
     expect(usage['stream']).toMatch(HEX32)
     expect(usage['country']).toMatch(/^([A-Z]{2}|unknown)$/)
@@ -106,6 +107,23 @@ it('with consent, sends the usage report and the sites report, each holding exac
     expect(JSON.stringify(usage)).not.toContain('level.eth')
     expect(JSON.stringify(r.ingest.requests)).not.toContain('127.0.0.1')
     expect(posted(r, '/v1/erase')).toEqual([])
+  } finally {
+    if (app !== undefined) await closeElectronApp(app)
+    await r.stop()
+  }
+}, TEST_TIMEOUT_MS)
+
+it.each([
+  ['an app a tagged installer opened', JSON.stringify({ id: 'freetube', appliedAt: '2026-10-20T10:00:00.000Z' }), 'freetube'],
+  ['a flavour.json edited to free text', JSON.stringify({ id: 'Orivon-Setup-1.0.0-x64.freetube.exe' }), null]
+])('with consent, the usage report names %s only when it is on the shipped list', async (_name, stored, expected) => {
+  const r = await rig(ACCEPTED)
+  let app: ElectronApplication | undefined
+  try {
+    app = await launchWith(r, {}, async (dir) => { await writeFile(join(dir, 'flavour.json'), stored, 'utf8') })
+    expect(await waitFor(() => posted(r, '/v1/usage').length > 0, 30_000)).toBe(true)
+    expect(posted(r, '/v1/usage').every((request) => request.body['flavour'] === expected)).toBe(true)
+    expect(posted(r, '/v1/sites').every((request) => !('flavour' in request.body))).toBe(true)
   } finally {
     if (app !== undefined) await closeElectronApp(app)
     await r.stop()

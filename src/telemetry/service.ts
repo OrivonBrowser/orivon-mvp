@@ -27,6 +27,8 @@ export interface ServiceDeps {
   readonly system: SystemStore
   readonly version: string
   readonly country: () => Country
+  /** The app a tagged installer opened on this profile's first run, from the profile's folder; null when none, or when what is stored is not on the shipped list. */
+  readonly flavour: () => string | null
   readonly machineReaders: MachineIdReaders
   readonly randomId: () => string
   readonly clock: () => number
@@ -220,6 +222,7 @@ export class TelemetryService {
       consent: () => this.consent(),
       version: this.deps.version,
       country: this.deps.country(),
+      flavour: this.deps.flavour(),
       stream: this.deps.store.getStream(),
       installId: () => this.installId(),
       ...(this.deps.offsetWindowMs === undefined ? {} : { offsetWindowMs: this.deps.offsetWindowMs }),
@@ -280,7 +283,7 @@ export class TelemetryService {
       country: this.deps.country(),
       everAccepted: (await this.consentRecord()).everAccepted,
       installId,
-      usage: buildUsagePayload(this.accounting, { installId: installId ?? INSTALL_ID_PLACEHOLDER, stream: this.deps.store.getStream(), country: this.deps.country(), version: this.deps.version, period }),
+      usage: buildUsagePayload(this.accounting, { installId: installId ?? INSTALL_ID_PLACEHOLDER, stream: this.deps.store.getStream(), country: this.deps.country(), flavour: this.deps.flavour(), version: this.deps.version, period }),
       sites: buildSitesPayload(this.accounting, { installId: installId ?? INSTALL_ID_PLACEHOLDER, stream: this.deps.store.getStream(), version: this.deps.version, period }),
       sent: this.deps.store.getHistoryState().entries
     }

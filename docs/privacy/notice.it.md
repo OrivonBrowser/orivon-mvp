@@ -1,6 +1,6 @@
 # Informativa sulla privacy
 
-Versione dell'informativa: 4
+Versione dell'informativa: 5
 
 Orivon Browser tiene la cronologia della tua navigazione sul tuo computer. Questa pagina dice che cosa ne esce,
 perché, e che cosa puoi fare. È scritta per chi usa il browser; l'elenco tecnico che la sostiene
@@ -42,6 +42,7 @@ l'invio.
 | `installId` | rapporto d'uso, rapporto sui siti, richiesta di cancellazione | Un identificativo di questo computer, di 32 caratteri. Deriva dall'ID macchina del sistema operativo passato in una funzione di hash a senso unico, quindi non si può risalire all'ID macchina. È lo stesso per tutti i profili del browser su questo computer, e per una versione avviata dai sorgenti e una installata. Viene creato solo dopo che attivi la telemetria. Lo porta anche il rapporto sui siti, così i rapporti falsificati da un programma si distinguono dai tuoi |
 | `stream` | rapporto d'uso, rapporto sui siti | Un valore casuale creato una volta per ogni profilo del browser. Due profili aperti insieme vengono contati entrambi e sommati come un solo computer grazie all'ID di installazione, quindi non sono due persone |
 | `country` | rapporto d'uso | Il paese del fuso orario del tuo computer, come codice di due lettere quale `IT` o `US`, ricavato sul tuo computer dall'impostazione del fuso orario; `unknown` quando il fuso orario non indica un paese, come `UTC`. È il paese del fuso orario, non la prova di dove ti trovi, e non viene mai preso dal tuo indirizzo IP |
+| `flavour` | rapporto d'uso | Se hai installato Orivon da un installatore con il nome di un'app, quale app (per esempio `freetube`); altrimenti `null`. Non si invia nient'altro sull'installatore: né il nome del file, né da dove proviene |
 | `version` | rapporto d'uso, rapporto sui siti | La versione di Orivon Browser |
 | `period` | rapporto d'uso, rapporto sui siti | Il mese, per esempio `2026-10`. Il messaggio è un totale del mese finora, inviato di nuovo con un totale più grande nei giorni seguenti |
 | `activeSec` | rapporto d'uso | Secondi del mese in cui usavi il browser: finestra in primo piano e tu attivo |

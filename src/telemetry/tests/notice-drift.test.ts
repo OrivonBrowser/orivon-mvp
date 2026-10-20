@@ -14,7 +14,7 @@ const NOTICES = [
 
 describe('the privacy notice and the payloads', () => {
   const state = { ...fold([]), perSite: { '2026-10': { 'web3:a.eth': 10 } }, perApp: { shell: { '2026-10': { activeSec: 10, backgroundSec: 1 } } } }
-  const usage = buildUsagePayload(state, { installId: 'ab'.repeat(16), stream: 'cd'.repeat(16), country: 'IT', version: '0.1.0', period: '2026-10' })
+  const usage = buildUsagePayload(state, { installId: 'ab'.repeat(16), stream: 'cd'.repeat(16), country: 'IT', flavour: null, version: '0.1.0', period: '2026-10' })
   const sites = buildSitesPayload(state, { installId: 'ab'.repeat(16), stream: 'cd'.repeat(16), version: '0.1.0', period: '2026-10' })
   const erase = buildErasePayload('ab'.repeat(16))
 

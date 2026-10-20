@@ -32,7 +32,7 @@ keyed one-way hash of the operating system's machine ID, computed after consent;
 keeps its own accounting, history, queue and random `stream` under its own data directory, so
 two profiles open together are both counted and summed as one computer on the server.
 
-**Two messages and an erase.** A usage report (install ID, stream, country from the time zone,
+**Two messages and an erase.** A usage report (install ID, stream, country from the time zone, the profile's first-run app,
 version, month, active and background seconds, seconds per site class) and a site report (the
 same install ID and stream, version, month and seconds per named Web3 or Web2.5 site) go to
 `telemetry.orivonstack.com` as month-to-date totals the server upserts: when the person turns
@@ -42,6 +42,12 @@ last inside the quit bound in `main/index.ts`). The country is the time zone's, 
 runtime's ICU region data (`country.ts`), so no zone table is kept here. The
 server counts a site report only when a usage report accounts for it. The erase request carries
 the install ID and removes both. The client ignores every response body.
+
+**The first-run app (`flavour`).** The usage report carries the id in the profile's `flavour.json`
+([`../main/flavour/`](../main/flavour/README.md)) when it is an entry of the shipped list, else `null`
+(`reportedFlavour`); `buildUsagePayload` also drops anything that is not 2 to 24 lowercase letters and
+digits. It rides only in the usage report, so it is never read or sent before consent, and the server
+deletes it with the usage row on erase ([`ADR-0095`](../../docs/decisions/ADR-0095-the-opt-in-usage-report-names-the-app-a-tagged-installer-opened-on-first-run.md)).
 
 **Mostly durable.** `accounting.ts`, `disclosure.ts`, `transport.ts` and `history.ts` are pure;
 `runner.ts` wires them to Electron, and `store.ts` to disk.
