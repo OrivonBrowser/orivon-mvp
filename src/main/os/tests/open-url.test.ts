@@ -22,6 +22,21 @@ describe('a link handed to a running macOS app', () => {
     }
   })
 
+  it('queues the address an orivon:open link names, with the flavour it carries', () => {
+    const plain = run('orivon:open?u=vitalik.eth/a')
+    expect(plain.queue).toHaveBeenCalledWith(['https://vitalik.eth/a'])
+    expect(plain.prevented()).toBe(true)
+    expect(run('orivon://open?u=ipns://docs.ipfs.tech&flavour=freetube').queue).toHaveBeenCalledWith(['https://ipns.orivon/docs.ipfs.tech/'], 'freetube')
+  })
+
+  it('drops an orivon: link that names anything else, and still claims the event', () => {
+    for (const url of ['orivon:open?u=https://example.com', 'orivon:open?u=file:///etc/passwd', 'orivon:open?u=javascript:alert(1)', 'orivon:open', 'orivon:open?u=vitalik.eth/..', 'orivon:open?u=orivon://settings']) {
+      const { queue, prevented } = run(url)
+      expect(queue, url).not.toHaveBeenCalled()
+      expect(prevented(), url).toBe(true)
+    }
+  })
+
   it('still claims an event it dropped, so the system does not offer it elsewhere', () => {
     expect(run('file:///etc/passwd').prevented()).toBe(true)
   })
