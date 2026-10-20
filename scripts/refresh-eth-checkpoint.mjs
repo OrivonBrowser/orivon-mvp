@@ -22,33 +22,32 @@ const BLOCK_ROOT = /^0x[0-9a-f]{64}$/
 const OUTPUT = fileURLToPath(new URL('../src/main/verifier/mainnet-checkpoint.json', import.meta.url))
 
 /**
+ * The twin of `fetchAgreedCheckpoint` in src/main/verifier/checkpoint-fetch.ts, which the browser runs when a
+ * checkpoint has aged out: a script cannot import that TypeScript, so the rule is written twice and
+ * scripts/tests/refresh-eth-checkpoint.test.ts runs the same answers through both. Every API must answer with a
+ * finalized header and all must name the same root and slot.
  * @param {(url: string) => Promise<unknown>} fetchJson
  * @param {string[]} apis
  * @returns {Promise<{ root: string, slot: number, timestamp: number, agreedBy: string[] }>}
  */
 export async function agreedCheckpoint (fetchJson, apis) {
-  if (apis.length < 2) throw new Error('need at least two independent beacon APIs')
-  const answers = await Promise.all(apis.map(async (api) => {
-    const body = /** @type {any} */ (await fetchJson(`${api}/eth/v1/beacon/states/head/finality_checkpoints`))
-    const finalized = body?.data?.finalized
-    if (typeof finalized?.root !== 'string' || !BLOCK_ROOT.test(finalized.root)) throw new Error(`${api} returned no finalized checkpoint`)
-    return { api, epoch: String(finalized.epoch), root: finalized.root }
+  const distinct = [...new Set(apis)]
+  if (distinct.length < 2) throw new Error('need at least two independent beacon APIs')
+  const answers = await Promise.all(distinct.map(async (api) => {
+    const body = /** @type {any} */ (await fetchJson(`${api}/eth/v1/beacon/headers/finalized`))
+    const root = body?.data?.root
+    const rawSlot = body?.data?.header?.message?.slot
+    const slot = typeof rawSlot === 'string' && /^\d{1,12}$/.test(rawSlot) ? Number(rawSlot) : NaN
+    if (typeof root !== 'string' || !BLOCK_ROOT.test(root) || !Number.isSafeInteger(slot) || slot <= 0) throw new Error(`${api} returned no finalized checkpoint`)
+    if (body.finalized === false || body.execution_optimistic === true || body.data.canonical === false) throw new Error(`${api} returned a header that is not finalized`)
+    return { api, root, slot }
   }))
   const [first] = answers
-  const disagreeing = answers.filter((a) => a.root !== first.root || a.epoch !== first.epoch)
-  if (disagreeing.length > 0) {
-    // Finality moves every few minutes, so two honest APIs can briefly differ. Never pick one.
-    throw new Error(`beacon APIs disagree: ${answers.map((a) => `${a.api} epoch ${a.epoch} ${a.root}`).join('; ')}. Run again in a minute.`)
+  // Finality moves every few minutes, so two honest APIs can briefly differ. Never pick one.
+  if (answers.some((a) => a.root !== first.root || a.slot !== first.slot)) {
+    throw new Error(`beacon APIs disagree: ${answers.map((a) => `${a.api} slot ${a.slot} ${a.root}`).join('; ')}. Run again in a minute.`)
   }
-  const headers = await Promise.all(apis.map(async (api) => {
-    const body = /** @type {any} */ (await fetchJson(`${api}/eth/v1/beacon/headers/${first.root}`))
-    const slot = Number(body?.data?.header?.message?.slot)
-    if (!Number.isSafeInteger(slot) || slot <= 0) throw new Error(`${api} returned no slot for ${first.root}`)
-    return slot
-  }))
-  if (new Set(headers).size !== 1) throw new Error(`beacon APIs disagree on the slot of ${first.root}: ${headers.join(', ')}`)
-  const slot = headers[0]
-  return { root: first.root, slot, timestamp: MAINNET_GENESIS_SECONDS + slot * SECONDS_PER_SLOT, agreedBy: apis }
+  return { root: first.root, slot: first.slot, timestamp: MAINNET_GENESIS_SECONDS + first.slot * SECONDS_PER_SLOT, agreedBy: distinct }
 }
 
 /** @param {string} url */

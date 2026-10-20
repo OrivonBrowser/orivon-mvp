@@ -85,6 +85,7 @@ every other app and website is *not routed*.
 | `src/main/self-update/update-check-runner.ts` | GitHub's releases API | Looking for a newer release | Tunnelled while the whole browser is on it (`ownFetch`): the check goes through the tunnel or does not happen. Not routed otherwise |
 | `src/main/sessions/web-context-host.ts` | Nothing from the session: its proxy is a port nothing listens on | A web context answers `https` itself (through `reach`), refuses `http` and WebSocket | Takes the app's route through `reach`; the session's proxy only confines it |
 | `src/main/settings/proxy-checks.ts` | Nothing: uses only `isIPv6` | Reading a SOCKS5 address | Loopback |
+| `src/main/verifier/checkpoint-fetch-net.ts` | The two beacon servers of `DEFAULT_ENDPOINTS.checkpointBeaconApis` (`ethereum-beacon-api.publicnode.com`, `lodestar-mainnet.chainsafe.io`) | Asking for a fresh finalized checkpoint when the release's and the stored one are both past the age limit, as the verifier host starts | Tunnelled while the whole browser is on it (`ownFetch`): the request goes through the tunnel or does not happen. Not routed otherwise |
 | `src/main/verifier/loopback-port.ts` | A free port on loopback | Choosing the port the verifier's server listens on | Loopback |
 
 ## Protocols

@@ -14,8 +14,8 @@ import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { MAX_ADDRESS_NAME } from '../../protocols/address.js'
 import { FloorFile } from './floor-file.js'
-import { FUTURE_TOLERANCE_SECONDS, parseCheckpoint } from './checkpoint.js'
-import type { Checkpoint } from './checkpoint.js'
+import { FUTURE_TOLERANCE_SECONDS, parseCheckpoint, parseStoredCheckpoint } from './checkpoint.js'
+import type { Checkpoint, StoredCheckpoint } from './checkpoint.js'
 
 export { DECIMAL } from './floor-file.js'
 
@@ -87,8 +87,8 @@ export class VerifierStore {
     this.nameSchemes = new FloorFile(dir, join(dir, 'name-schemes.json'), isTopLevelDomainName, MAX_NAME_SCHEMES, 'name schemes', SERVED_SCHEME)
   }
 
-  checkpoint (): Checkpoint | undefined {
-    return parseCheckpoint(readJson(this.checkpointPath))
+  checkpoint (): StoredCheckpoint | undefined {
+    return parseStoredCheckpoint(readJson(this.checkpointPath))
   }
 
   /**
@@ -97,11 +97,20 @@ export class VerifierStore {
    * block every later save and then age out with nothing to replace it.
    */
   saveCheckpoint (checkpoint: Checkpoint, nowSeconds: number): void {
+    this.write(checkpoint, undefined, nowSeconds)
+  }
+
+  /** The same, for a checkpoint fetched at run time: kept with the servers that agreed on it, until the light client stores a newer one of its own. */
+  saveFetchedCheckpoint (checkpoint: Checkpoint, servers: readonly string[], nowSeconds: number): void {
+    this.write(checkpoint, servers, nowSeconds)
+  }
+
+  private write (checkpoint: Checkpoint, fetchedFrom: readonly string[] | undefined, nowSeconds: number): void {
     if (parseCheckpoint(checkpoint) === undefined || checkpoint.timestamp > nowSeconds + FUTURE_TOLERANCE_SECONDS) return
     const current = this.checkpoint()
     if (current !== undefined && current.timestamp >= checkpoint.timestamp) return
     mkdirSync(this.dir, { recursive: true })
-    writeFileAtomic(this.checkpointPath, JSON.stringify(checkpoint))
+    writeFileAtomic(this.checkpointPath, JSON.stringify(fetchedFrom === undefined ? { root: checkpoint.root, timestamp: checkpoint.timestamp } : { root: checkpoint.root, timestamp: checkpoint.timestamp, fetchedFrom }))
   }
 
   /** The IPNS floors, from memory once loaded (see `FloorFile.all`). */

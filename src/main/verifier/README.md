@@ -4,7 +4,7 @@
 `ipfs://` addresses): the resolver rules that send them to the verifier's loopback port, the
 certificate check each session applies, starting and restarting the verifier host (and what a request waits for until it listens)
 ([`../../protocols/verifier-host/`](../../protocols/verifier-host/)), the light client's
-checkpoint ([`ADR-0031`](../../../docs/decisions/ADR-0031-helios-is-the-light-client.md)), what the
+checkpoint ([`ADR-0031`](../../../docs/decisions/ADR-0031-helios-is-the-light-client.md)) and its renewal at run time from two beacon servers that agree ([`ADR-0092`](../../../docs/decisions/ADR-0092-when-no-checkpoint-is-recent-enough-two-beacon-servers-that-agree-supply-one.md)), what the
 host verified between runs (IPNS sequences, Swarm feed indexes, and the address scheme each `.eth` name's content was last found under), the per-site partition stamp, the gateway proxy check, and the
 wording of the status and a name's evidence for Settings and the site-info popover.
 The person can switch the light client off in Settings or from the Available networks popup (`web3.lightClient`, read at each
@@ -12,8 +12,8 @@ start of the host through `configureVerifier` and applied at once: see below); t
 (`lightClientForcedOff`, the one place that reads it), and
 [`web3-domain.ts`](web3-domain.ts) is what the Settings page reads.
 
-**Tied to Electron.** [`verifier-subsystem.ts`](verifier-subsystem.ts) and
-[`local-node-launch.ts`](local-node-launch.ts) are the files that
+**Tied to Electron.** [`verifier-subsystem.ts`](verifier-subsystem.ts),
+[`local-node-launch.ts`](local-node-launch.ts) and [`checkpoint-fetch-net.ts`](checkpoint-fetch-net.ts) are the files that
 import `electron`; the rest are `<name>.ts` decisions ([`../README.md`](../README.md)).
 
 **What it depends on.** [`../../protocols/`](../../protocols/) (`verifier-host/protocol.ts`,
@@ -32,6 +32,15 @@ runs in another process, and only [`host-supervisor.ts`](host-supervisor.ts) tal
 **Owner stream.** `ens-ipfs`.
 
 ## Design notes
+
+**The checkpoint rule is written twice, on purpose.** [`checkpoint-fetch.ts`](checkpoint-fetch.ts) decides, from the
+servers' answers, whether a fresh checkpoint may be used (every server answers, all give the same root and slot, the
+block is finalized, the time is within the clock's tolerance and the age limit); `scripts/refresh-eth-checkpoint.mjs`
+applies the same rule when a release's checkpoint is chosen. A script cannot import the TypeScript, so
+`scripts/tests/refresh-eth-checkpoint.test.ts` feeds both the same answers and compares the verdicts and the server
+lists. A change to either rule is a change to both. The renewal starts as the host's configuration is built
+(`verifier-subsystem.ts`'s `hostConfig`), and requests held for the host count their time to start from its end
+(`listening-gate.ts`'s `hold`), so the servers' time limits are not taken out of the host's.
 
 **A `.eth` name is shown by the scheme of the protocol the host chose to load it, and as its plain origin
 until then.** The host posts `name-scheme` as soon as a name's records are resolved and a gatherer is chosen
