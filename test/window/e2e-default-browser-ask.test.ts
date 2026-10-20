@@ -133,12 +133,12 @@ run('registers http and https when the person says Make default', async () => {
   }
 }, TEST_TIMEOUT_MS)
 
-run('asks with two buttons in the second week, before "Don\'t ask again" is offered', async () => {
+run('asks again a week after the last ask, with "Don\'t ask again" on offer', async () => {
   const { app } = await launched({ days: [8, 8] })
   try {
     await askNow(app)
     const said = await readQuestion(await waitQuestion(app))
-    expect(said.buttons).toEqual(['Not now', 'Make default'])
+    expect(said.buttons).toEqual(['Not now', 'Make default', 'Don\'t ask again'])
     await answerQuestion(app, 'Not now')
   } finally {
     await closeElectron(app)
