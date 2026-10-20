@@ -32,6 +32,7 @@ import { whatsNewDue } from './info/whats-new-runner.js'
 import { setTelemetryOn, telemetryRenewal, welcomeOffersTelemetry } from '../telemetry/runner.js'
 import { firstWindowOptions } from './shell/first-window.js'
 import { seedClosedStack } from './session-restore/restore.js'
+import { flavourOfCommandLine, offerFirstRunFlavour } from './launch/first-run-flavour.js'
 import { atStartup, readLaunchRequest } from './launch/launch-request.js'
 import type { LaunchRequest } from './launch/launch-request.js'
 import { handleOpenUrl } from './os/open-url.js'
@@ -161,8 +162,10 @@ export function boot (runtime: Runtime): void {
   if (madeDir !== undefined) process.once('exit', () => { if (!removeAfterExit(madeDir, process.pid)) removePrivateDir(madeDir) })
   if (!runtime.isPrivate) {
     app.on('second-instance', (_event, argv, _workingDirectory, data) => { queueLaunch(readLaunchRequest(data, argv)) })
+    // A flavour on an `orivon:` link that started this browser is a first-run hint; one that reaches a browser already open is not.
+    offerFirstRunFlavour(flavourOfCommandLine(process.argv, app.isPackaged))
     // macOS hands a clicked link to the running app as an event; it joins the same queue.
-    app.on('open-url', (event, url) => { handleOpenUrl(event, url, (urls) => { queueLaunch({ kind: 'open', urls }) }) })
+    app.on('open-url', (event, url) => { handleOpenUrl(event, url, (urls, flavour) => { if (!started) offerFirstRunFlavour(flavour); queueLaunch({ kind: 'open', urls }) }) })
     // A document the system hands to the browser (the file manager's Open with, a drop on the dock icon) opens as the command line's would.
     app.on('open-file', (event, path) => { handleOpenFile(event, path, (urls) => { queueLaunch({ kind: 'open', urls }) }) })
   }
