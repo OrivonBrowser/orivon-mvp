@@ -122,6 +122,7 @@
     { "prefix": "scripts/fetch-local-nodes.mjs", "run": ["web3"] },
     { "prefix": "scripts/build-nym-tunnel.mjs", "run": [] },
     { "prefix": "scripts/pin-releases.sh", "run": [] },
+    { "prefix": "scripts/pin-extra.mjs", "run": [] },
     { "prefix": "scripts/ipfs-node-watchdog.sh", "run": [] },
     { "prefix": "scripts/ipfs-status.sh", "run": [] },
     { "prefix": "scripts/ci", "run": ["@full"] },

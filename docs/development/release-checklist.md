@@ -176,6 +176,7 @@ forgotten.
 - [ ] After publishing: the Release workflow is green and the release carries the deb, the
       AppImage, the Windows installer, both dmgs and `ipfs.json` ([`packaging.md`](packaging.md)
       section Releases); within about 15 minutes `ipfs://<cid>` from its notes opens in Orivon.
+- [ ] Pin the new release on the additional pinning service: `PINNING_ENDPOINT=<service url> PINNING_TOKEN=<token> node scripts/pin-extra.mjs --extra <file of name=cid lines> --prune` ([`scripts/README.md`](../../scripts/README.md)); `--dry-run` first prints what it would change.
 - [ ] **The Microsoft Store package submitted** ([`packaging.md`](packaging.md) section The Microsoft Store package):
       once the release's workflow run is green, download its `store-msix` artifact (the run's page lists it; it is
       kept 30 days) and submit it in Partner Center. The first submission is made by hand, in this order:

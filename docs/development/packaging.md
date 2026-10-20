@@ -116,6 +116,11 @@ under "On IPFS", which the workflow writes, and in the `ipfs.json` attached to i
 - **Anyone can pin a release too.** The CID depends only on the files and the flags in
   `pin-releases.sh`, so `pin-releases.sh sync` (or `ipfs add` with those flags) on any Kubo node
   reproduces it. Changing the flags changes every CID from the next release on.
+- **An additional pinning service** can hold the same releases: `scripts/pin-extra.mjs` pins the CIDs
+  of the newest releases, and any `name=cid` lines in a file passed with `--extra`, on a service that
+  speaks the IPFS Pinning Service API. It reads `PINNING_ENDPOINT` and `PINNING_TOKEN` from the
+  environment and only adds what is missing; `--prune` also removes pins under the `orivon-` prefix
+  that are no longer listed.
 
 The Orivon node runs it from a systemd timer every 15 minutes:
 
