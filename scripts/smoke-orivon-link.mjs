@@ -66,10 +66,9 @@ function macRegistration (bundle) {
   // What Finder does when a person puts an app in Applications.
   const register = '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister'
   run(register, ['-f', bundle])
+  // Printed for the record; the checks below ask LaunchServices through the API a program uses.
   const dump = run(register, ['-dump']).stdout ?? ''
-  const mine = dump.split(/\n-{10,}\n/).filter((entry) => entry.includes(bundle))
-  console.log(`[smoke-orivon-link] LaunchServices entries for ${bundle}: ${mine.length}\n${mine.join('\n').split('\n').filter((line) => /bindings|path:|bundle id|claim name/i.test(line)).slice(0, 20).join('\n')}`)
-  record('LaunchServices binds orivon to the app', mine.some((entry) => /bindings:.*\borivon:/i.test(entry)))
+  console.log(`[smoke-orivon-link] LaunchServices dump, lines naming orivon:\n${dump.split('\n').filter((line) => /orivon/i.test(line)).slice(0, 30).join('\n')}`)
   const jxa = (scheme) => run('osascript', ['-l', 'JavaScript', '-e', `ObjC.import('AppKit'); var urls = $.NSWorkspace.sharedWorkspace.URLsForApplicationsToOpenURL($.NSURL.URLWithString('${scheme}:open?u=a.eth')); var out = []; for (var i = 0; i < urls.count; i++) out.push(ObjC.unwrap(urls.objectAtIndex(i).path)); out.join('\\n')`]).stdout ?? ''
   for (const scheme of ['http', 'https', 'orivon']) {
     const apps = jxa(scheme).split('\n')
