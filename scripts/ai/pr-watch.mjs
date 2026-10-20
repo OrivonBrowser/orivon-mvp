@@ -75,8 +75,9 @@ export function nextStep ({ checks: all, state, reruns, maxReruns }) {
   if (checks.length === 0 || checks.some((check) => check.conclusion === '')) return { step: 'wait' }
   const failed = checks.filter((check) => FAILED.has(check.conclusion)).map((check) => check.name)
   if (failed.length > 0) {
-    // Failures on a base main has moved past may be fixed there: merging main in comes before any verdict.
-    if (state === 'BEHIND') return { step: 'stale', failed }
+    // Failures on a base main has moved past may be fixed there: merging main in comes before any verdict. DIRTY is
+    // that and a conflict, which updateBranch settles when it is the decision log's alone.
+    if (state === 'BEHIND' || state === 'DIRTY') return { step: 'stale', failed }
     return failed.every((name) => RERUNNABLE.test(name)) && reruns < maxReruns ? { step: 'rerun', failed } : { step: 'fail', failed }
   }
   if (state === 'CLEAN') return { step: 'merge' }
@@ -212,7 +213,7 @@ async function watch (pr, { maxReruns, merge, squash, stop, worktree }) {
       console.log(`merged #${pr}${reruns > 0 ? ` after ${String(reruns)} rerun(s): name the flakes above in the PR` : ''}`)
       return 0
     } else if (next.step === 'stuck') {
-      if (worktree === undefined || now.state !== 'BEHIND' || rounds >= MAX_ROUNDS) {
+      if (worktree === undefined || (now.state !== 'BEHIND' && now.state !== 'DIRTY') || rounds >= MAX_ROUNDS) {
         console.log(`green but ${now.state}: merge main into the branch and push, then watch again`)
         return 2
       }
