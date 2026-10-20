@@ -267,7 +267,7 @@ export function boot (runtime: Runtime): void {
     runShellInstallers(app, shell, ctx, runtime)
     installDownloads(app, { windows: shell.windows, downloads: shell.downloads, defaultSession: session.defaultSession, discardHeldAtQuit: runtime.isPrivate })
     installDownloadsPeek(shell)
-    registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks)
+    registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks, shell.featured)
     // Looks for a newer release once a day when the person has said it may, from the moment they say so; installs nothing.
     if (!runtime.isPrivate) {
       const stopUpdateChecks = scheduleUpdateChecks({

@@ -96,3 +96,15 @@ export function scoreAnswerKeptMs (): number | undefined {
   const kept = Number(process.env['ORIVON_TEST_SCORE_ANSWER_KEPT_MS'])
   return Number.isFinite(kept) && kept >= 100 ? kept : undefined
 }
+
+/** Test builds only: beacon servers to ask for a fresh checkpoint in place of the real ones (comma-separated origins); undefined in an ordinary build. */
+export function testBeaconApis (): readonly string[] | undefined {
+  return SEAM_ENABLED ? list(process.env['ORIVON_TEST_BEACON_APIS']) : undefined
+}
+
+/** Test builds only: how many days old the release's own checkpoint is taken to be, so a suite reaches the state of an old release at any date; undefined in an ordinary build. */
+export function shippedCheckpointAgeDays (): number | undefined {
+  if (!SEAM_ENABLED) return undefined
+  const days = Number(process.env['ORIVON_TEST_SHIPPED_CHECKPOINT_AGE_DAYS'])
+  return Number.isFinite(days) && days >= 0 ? days : undefined
+}

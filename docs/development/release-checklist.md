@@ -171,17 +171,23 @@ forgotten.
 - [ ] **The `.eth` light client's checkpoint is under 7 days old.** The scheduled workflow
       `refresh-eth-checkpoint.yml` opens a pull request with a fresh one every Monday and Thursday;
       merge it, or run `node scripts/refresh-eth-checkpoint.mjs --write` and commit the result. The
-      Release workflow refuses a checkpoint over 7 days old, because the app refuses one over 14
-      and a fresh install of a release past that verifies no `.eth` name.
+      Release workflow refuses a checkpoint over 7 days old, because the app refuses one over 14;
+      an install of a release past that fetches a fresh one from two beacon servers when they are
+      reachable and agree, and verifies no `.eth` name when they are not.
 - [ ] `npm run typecheck && npm test && npm run check:natives && npm run check:contracts` green.
 - [ ] CI green on `main`.
 - [ ] After publishing: the Release workflow is green and the release carries the deb, the
       AppImage, the Windows installer, both dmgs and `ipfs.json` ([`packaging.md`](packaging.md)
-      section Releases); within about 15 minutes `ipfs://<cid>` from its notes opens in Orivon.
+      section Releases); its description lists the version's changes, the "Which file is mine?" table and the
+      IPFS section; within about 15 minutes `ipfs://<cid>` from its notes opens in Orivon.
 - [ ] **The Microsoft Store package submitted** ([`packaging.md`](packaging.md) section The Microsoft Store package):
-      once the release's workflow run is green, download its `store-msix` artifact (the run's page lists it; it is
-      kept 30 days) and submit it in Partner Center. The first submission is made by hand, in this order:
-      1. The product is an **MSIX or PWA app** (an "EXE or MSI app" product asks for installer switches and a
+      after the release's workflow run is green, open the `store` job's page. Its summary says it submitted the package
+      and shows the submission's status; Partner Center certifies it from there. A warning instead names what is
+      missing, and then the package is uploaded by hand:
+      download the run's `store-msix` artifact (kept 30 days) and submit it in Partner Center under **Packages**.
+      One-time setup, by the owner, in this order:
+      1. The first publication is made by hand, because `msstore` only updates a product that has been published once.
+         The product is an **MSIX or PWA app** (an "EXE or MSI app" product asks for installer switches and a
          certificate-signed installer instead). Its **Product identity** values match the `appx` block of
          `electron-builder.yml` (identityName, publisher, publisherDisplayName); the Store refuses a package whose
          identity differs.
@@ -193,9 +199,13 @@ forgotten.
          before one does.
       6. **Age rating:** answer the questionnaire for a web browser (it reaches the open web and shows
          user-generated content from it).
-      7. A later release is a new submission of the same listing with the new package; the Store checks that the
-         browser stays within two major versions of the current Chromium, so an Electron update is due at least
-         that often.
+      7. Once that submission is live, add the four repository secrets `MS_STORE_TENANT_ID`, `MS_STORE_SELLER_ID`,
+         `MS_STORE_CLIENT_ID` and `MS_STORE_CLIENT_SECRET` from a Microsoft Entra application with the Manager role in
+         Partner Center (the click path is in packaging.md), and set `store` to `true` in
+         `packaging/release-routes.json`. Every release after it is a new submission made by the job; the Store checks
+         that the browser stays within two major versions of the current Chromium, so an Electron update is due at
+         least that often. A release published before the secrets existed is submitted by Actions > Release > Run
+         workflow with its tag.
 - [ ] **The winget package** ([`packaging.md`](packaging.md) section winget). One-time setup, by the owner:
       1. Create a **classic** personal access token (fine-grained tokens cannot open the pull request) with the
          `public_repo` scope, in the account the pull requests should come from, and store it as the repository
@@ -206,9 +216,20 @@ forgotten.
          or `komac submit <folder>` for manifests already written), and on that
          first pull request accept Microsoft's contributor agreement with one comment when its bot asks.
       3. Once a pull request is merged, `winget install Orivon.Browser.Preview` (or `Orivon.Browser`) installs
-         without SmartScreen; every release after it is submitted by the job.
+         without SmartScreen; set `winget` to `true` in `packaging/release-routes.json`. Every release after it is
+         submitted by the job, and a release published before the token existed by Actions > Release > Run workflow
+         with its tag.
       After a release: the `winget` job's page shows either the pull request it opened or the warning naming what is missing.
-- [ ] [`CHANGELOG.md`](../../CHANGELOG.md) updated.
+- [ ] **The Arch package** ([`packaging.md`](packaging.md) section The Arch User Repository). One-time setup, by the
+      owner: create an AUR account with an SSH key, store the private key as the repository secret
+      `AUR_SSH_PRIVATE_KEY`, and set `aur` to `true` in `packaging/release-routes.json` once `orivon-bin` is listed.
+      After a release: the `aur` job's page says it pushed `orivon-bin`, or names what is missing.
+- [ ] **AppImageHub** ([`packaging.md`](packaging.md) section AppImageHub). Once, by the owner: a pull request to
+      `AppImage/appimage.github.io` adding `data/Orivon_Browser`, the file in `packaging/appimagehub/`. The Hub reads
+      each later release itself.
+- [ ] [`CHANGELOG.md`](../../CHANGELOG.md) updated, with the `[Unreleased]` entries moved under a heading `## [x.y.z]`
+      for the version being tagged: the release's description is written from that section, and a release whose
+      version has none gets a warning and a description without its changes.
 - [ ] Known limitations stated **in-product**, not only in the README: peers see the user's IP;
       no automatic port forwarding behind NAT; address-bar search text goes to DuckDuckGo.
 - [ ] **Telemetry pre-announced.** Launch-blocking ([`readiness.md`](../planning/readiness.md)

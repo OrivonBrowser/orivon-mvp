@@ -109,7 +109,8 @@ function durationWords (ms: number): string {
 function checkpointAge (seconds: number): string {
   const hours = seconds / 3600
   if (hours < 1) return 'under an hour'
-  return hours < 48 ? `${String(Math.round(hours))} hours` : `${String(Math.round(hours / 24))} days`
+  const [count, unit] = hours < 48 ? [Math.round(hours), 'hour'] : [Math.round(hours / 24), 'day']
+  return `${String(count)} ${unit}${count === 1 ? '' : 's'}`
 }
 
 /** Memory, CPU and how long it has run: only for a process that runs, and only the figures known. */
@@ -132,7 +133,7 @@ function lightClientCard (facts: NetworkFacts['lightClient'], now: number): Netw
   const metrics = (running: boolean): Metric[] => [
     ...(view.block === undefined ? [] : [{ label: 'Latest verified block', value: view.block.toLocaleString('en-US') }]),
     ...(view.headAt === undefined ? [] : [{ label: 'Block produced', value: ago(now - view.headAt) }]),
-    ...(view.checkpointAgeSeconds === undefined ? [] : [{ label: 'Checkpoint', value: `${checkpointAge(view.checkpointAgeSeconds)} old` }]),
+    ...(view.checkpointAgeSeconds === undefined ? [] : [{ label: 'Checkpoint', value: `${checkpointAge(view.checkpointAgeSeconds)} old${view.checkpointFetched === true ? ', fetched from beacon servers' : ''}` }]),
     ...(running ? processMetrics(facts.process, now) : [])
   ]
   switch (view.state) {
