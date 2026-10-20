@@ -27,8 +27,8 @@ export async function seedNoScoreProvider (userDataDir) {
 }
 
 /**
- * A launch with the default-browser test seam on asks to be the default browser once an app has opened in a fresh
- * profile, or on its second day (src/main/os/default-browser-ask.ts), which would open a question over whatever a long spec
+ * A launch with the default-browser test seam on asks to be the default browser half a minute into a fresh
+ * profile's use (src/main/os/default-browser-ask.ts), which would open a question over whatever a long spec
  * drives. Unless the seed wrote the ask's own clock, it starts as asked just now: the next ask is a week away.
  */
 export async function seedDefaultBrowserAskNotDue (userDataDir) {
