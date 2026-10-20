@@ -1,4 +1,4 @@
-# ADR-0092: An `orivon:` link from another program opens a `.eth` name or an IPFS address, and nothing else
+# ADR-0094: An `orivon:` link from another program opens a `.eth` name or an IPFS address, and nothing else
 
 - **Status:** accepted, provisional until a built package has been seen taking the link on Windows and macOS
 - **Date:** 2026-10-20

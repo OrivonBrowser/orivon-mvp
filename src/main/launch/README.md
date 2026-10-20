@@ -62,7 +62,7 @@ take the focus. In this Electron the token is consumed before the main script ru
 (`docs/open-questions.md` A386).
 
 **An `orivon:` link names a `.eth` name or an IPFS address, and the rest is refused** (`orivon-link.ts`,
-[ADR-0092](../../../docs/decisions/ADR-0092-an-orivon-link-from-another-program-opens-a-eth-name-or-an-ipfs-address.md)).
+[ADR-0094](../../../docs/decisions/ADR-0094-an-orivon-link-from-another-program-opens-a-eth-name-or-an-ipfs-address.md)).
 The text comes from any program, so it is checked as an allow-list: a fixed alphabet and length, one `u=`, one decoding,
 no control, space or bidirectional character, no `.` or `..` segment, and a target that is a `.eth` name (ASCII labels)
 or an `ipfs://` or `ipns://` name. It leaves the parser as a web address, so a request carries nothing the check on a

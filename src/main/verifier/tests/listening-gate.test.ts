@@ -23,6 +23,31 @@ describe('ListeningGate', () => {
     expect(await settled(held)).toBe(true)
   })
 
+  it('starts the bound only once a held task has finished, so a long preparation is not cut short', async () => {
+    const gate = new ListeningGate(BOUND_MS)
+    let finish: () => void = () => {}
+    gate.hold(new Promise<void>((resolve) => { finish = resolve }))
+    const held = gate.whenSettled()
+    await vi.advanceTimersByTimeAsync(BOUND_MS * 3)
+    expect(await settled(held)).toBe(false)
+    finish()
+    await vi.advanceTimersByTimeAsync(BOUND_MS - 1)
+    expect(await settled(held)).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await settled(held)).toBe(true)
+  })
+
+  it('releases a request held behind a task as soon as the host listens, and survives a task that fails', async () => {
+    const gate = new ListeningGate(BOUND_MS)
+    gate.hold(new Promise<void>((_resolve, reject) => { setTimeout(() => { reject(new Error('x')) }, 1000) }))
+    const held = gate.whenSettled()
+    gate.listening()
+    expect(await settled(held)).toBe(true)
+    gate.starting()
+    gate.hold(Promise.reject(new Error('again')))
+    expect(await settled(gate.whenSettled())).toBe(false)
+  })
+
   it('does not hold a request while the host is listening', async () => {
     const gate = new ListeningGate(BOUND_MS)
     gate.listening()
