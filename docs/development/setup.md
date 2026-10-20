@@ -232,10 +232,11 @@ Settings shows what it is doing.
 | `ORIVON_TEST_DEFAULT_BROWSER=can-set\|default\|declined` | Test builds only: stands a recording host in for the operating system's default-browser calls, so Settings and the default-browser question can be driven with nothing reaching the machine (`src/main/os/default-browser-test-seam.ts`). An ordinary build contains none of this |
 | `ORIVON_TEST_LOCAL_POINTER=1` | Test builds only: treats the pointer's screen position as unknown, as on a native Wayland session, so a tab drag is the browser's own drag and drop on a virtual X display (`src/main/shell/local-pointer.ts`). An ordinary build contains none of this |
 
-Each release ships a checkpoint for the light client, refreshed with
-`node scripts/refresh-eth-checkpoint.mjs --write` before tagging: it refuses unless two beacon APIs
-agree. An install keeps a newer one of its own after every sync, and refuses any checkpoint older
-than 14 days.
+Each release ships a checkpoint for the light client. `node scripts/refresh-eth-checkpoint.mjs --write`
+refreshes it and refuses unless two beacon APIs agree; the scheduled workflow
+`.github/workflows/refresh-eth-checkpoint.yml` runs it every Monday and Thursday and opens a pull request
+when the file changed. The Release workflow refuses a checkpoint over 7 days old. An install keeps a newer
+one of its own after every sync, and refuses any checkpoint older than 14 days.
 
 ---
 
