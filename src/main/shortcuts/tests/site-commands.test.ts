@@ -11,6 +11,7 @@ const ROWS: ReadonlyArray<[id: string, label: string, category: string, binding:
   ['passwords.open', 'Passwords', 'window', undefined],
   ['siteSettings.open', 'Site settings', 'window', undefined],
   ['share.copyLink', 'Copy link', 'tools', undefined],
+  ['share.copyWebLink', 'Copy web link (opens in any browser)', 'tools', undefined],
   ['share.email', 'Email link', 'tools', undefined],
   ['site.shortcut', 'Create shortcut', 'tools', undefined],
   ['site.certificate', 'View certificate', 'tools', undefined]
@@ -21,6 +22,7 @@ const LANDED: readonly string[] = [
   'passwords.open',
   'privacy.clearData',
   'share.copyLink',
+  'share.copyWebLink',
   'share.email',
   'site.certificate',
   'site.shortcut',

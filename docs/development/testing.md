@@ -501,6 +501,14 @@ brings the evidence back ([`scripts/ci/README.md`](../../scripts/ci/README.md) s
 terminal (the same README, section Live sessions).
 [`release.yml`](../../.github/workflows/release.yml) builds, installs and launches the packages on the same systems.
 
+**The scheduled checkpoint refresh.** [`refresh-eth-checkpoint.yml`](../../.github/workflows/refresh-eth-checkpoint.yml)
+runs every Monday and Thursday (and on demand): it reads a finalized checkpoint with
+`scripts/refresh-eth-checkpoint.mjs`, pushes `automation/eth-checkpoint` and opens, or updates, one pull request.
+A pull request opened with the workflow's `GITHUB_TOKEN` starts no `pull_request` workflow, so the workflow
+dispatches `ci.yml` on the branch, and that run's `check` appears on the pull request. It needs the repository
+setting Actions > General > "Allow GitHub Actions to create and approve pull requests"; with it off, the branch
+is pushed and the run fails with that message.
+
 **With no dedicated code reviewer, CI is the reviewer.** A pull request whose `check` or selected e2e shards are
 red does not merge. The e2e job is not a required status check: the rule is kept by whoever merges, and
 `e2e` is the status to require if the repository ever wants it enforced.

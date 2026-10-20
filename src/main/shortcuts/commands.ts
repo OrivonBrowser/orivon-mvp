@@ -92,6 +92,7 @@ export const COMMANDS = [
   { id: 'page.reader', label: 'Reader view', category: 'tools', default: 'F9' },
   { id: 'caret.toggle', label: 'Caret browsing', category: 'tools', default: 'F7', yieldToApp: true },
   { id: 'share.copyLink', label: 'Copy link', category: 'tools' },
+  { id: 'share.copyWebLink', label: 'Copy web link (opens in any browser)', category: 'tools' },
   { id: 'share.email', label: 'Email link', category: 'tools' },
   { id: 'site.certificate', label: 'View certificate', category: 'tools' },
   { id: 'site.shortcut', label: 'Create shortcut', category: 'tools' },

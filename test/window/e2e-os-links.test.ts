@@ -339,7 +339,7 @@ it('offers the page of a newer release from Settings, in a tab of the same windo
   const { app, chrome } = await launched()
   try {
     await app.evaluate(({ net }) => {
-      net.fetch = (async () => new Response(JSON.stringify({ tag_name: 'v9.9.9' }), { status: 200, headers: { 'content-type': 'application/json' } })) as typeof net.fetch
+      net.fetch = (async () => new Response(JSON.stringify([{ tag_name: 'v9.9.9' }]), { status: 200, headers: { 'content-type': 'application/json' } })) as typeof net.fetch
     })
     const page = await openSettings(app, chrome, '/about')
     expect(await page.locator('#row-updates-release').count()).toBe(0)
@@ -386,6 +386,33 @@ it('copies the address of the page in front and says so, and has nothing to copy
   }
 }, TEST_TIMEOUT_MS)
 
+it('copies a web link another browser opens for a .eth page, with the path, query and fragment kept, and has none for a web page', async () => {
+  const { app, chrome } = await launched()
+  try {
+    await stubSystem(app)
+    await stubNativeDialogs(app)
+    await visit(chrome, 'https://web-link-fixture.eth/docs/a%20b?q=1#top')
+
+    await runCommand(chrome, 'share.copyWebLink')
+    expect(await waitForToast(app, 'Web link copied')).toBe(true)
+    expect((await recorded(app)).clipboard).toEqual(['https://web-link-fixture.eth.limo/docs/a%20b?q=1#top'])
+
+    const share = await menuSubmenu(app, chrome, 'Share')
+    const row = share.getByRole('menuitem', { name: /^Copy web link/ })
+    expect(await row.getAttribute('aria-disabled')).toBeNull()
+    await row.click()
+    expect(await waitFor(async () => (await recorded(app)).clipboard.length === 2)).toBe(true)
+
+    await visit(chrome, `${origin}/plain`)
+    await runCommand(chrome, 'share.copyWebLink')
+    expect(await waitForToast(app, 'This page has no web link to share')).toBe(true)
+    expect((await recorded(app)).clipboard).toHaveLength(2)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
 it('starts an email about the page only after the person agrees, with the title and the address percent-encoded', async () => {
   const { app, chrome } = await launched()
   try {
@@ -417,15 +444,17 @@ it('starts an email about the page only after the person agrees, with the title 
   }
 }, TEST_TIMEOUT_MS)
 
-it('lists Copy link, Email link and the QR code under Share, greyed with the reason on a page that has no address', async () => {
+it('lists Copy link, Copy web link, Email link and the QR code under Share, greyed with the reason where there is nothing to copy', async () => {
   const { app, chrome } = await launched()
   try {
     await stubSystem(app)
     await visit(chrome, `${origin}/menu`)
     const share = await menuSubmenu(app, chrome, 'Share')
     const rows = share.locator('.menu-row:not(.menu-back)')
-    expect(await rows.allInnerTexts().then((texts) => texts.map((text) => text.split('\n')[0]))).toEqual(['Copy link', 'Email link', 'Create QR code'])
-    expect(await rows.evaluateAll((els) => els.map((el) => el.getAttribute('aria-disabled')))).toEqual([null, null, null])
+    expect(await rows.allInnerTexts().then((texts) => texts.map((text) => text.split('\n')[0]))).toEqual(['Copy link', 'Copy web link (opens in any browser)', 'Email link', 'Create QR code'])
+    // A web address is what Copy link copies: the web link row waits for an address another browser cannot open as it is.
+    expect(await rows.evaluateAll((els) => els.map((el) => el.getAttribute('aria-disabled')))).toEqual([null, 'true', null, null])
+    expect(await rows.nth(1).innerText()).toContain('Same as Copy link')
     await shoot(app, share, 'menu-share')
     await share.getByRole('menuitem', { name: /^Copy link/ }).click()
     expect(await waitForToast(app, 'Link copied')).toBe(true)
@@ -437,6 +466,9 @@ it('lists Copy link, Email link and the QR code under Share, greyed with the rea
     expect(await copy.getAttribute('aria-disabled')).toBe('true')
     expect(await copy.innerText()).toContain('No address')
     expect(await grey.getByRole('menuitem', { name: /^Email link/ }).getAttribute('aria-disabled')).toBe('true')
+    const webLink = grey.getByRole('menuitem', { name: /^Copy web link/ })
+    expect(await webLink.getAttribute('aria-disabled')).toBe('true')
+    expect(await webLink.innerText()).toContain('No address')
     await shoot(app, grey, 'menu-share-no-address')
     await copy.dispatchEvent('click')
     await delay(ABSENCE_SETTLE_MS)

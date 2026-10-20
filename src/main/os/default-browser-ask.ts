@@ -1,14 +1,13 @@
-// When Orivon asks to be the default browser: half a minute after the person first uses it, then a week after it last
-// asked, until the person says to stop. The state is three facts in a small file of the default profile; everything
-// here is a pure rule over them and the clock, so a test sets the days and never waits.
+// When Orivon asks to be the default browser: after the first app has opened, or on the second calendar day of use,
+// whichever comes first, then a week after it last asked, until the person says to stop. The state is three facts in a
+// small file of the default profile; everything here is a pure rule over them, the clock and the moment an app last
+// finished loading in this run, so a test sets the days and never waits.
 
 export const DAY_MS = 86_400_000
-/** The first ask comes this long after the profile is first seen in use: long enough to have seen the browser work. */
-export const FIRST_ASK_AFTER_MS = 30_000
+/** The first ask comes this long after an app finishes loading: the page is on screen before the question is. */
+export const APP_OPEN_BEAT_MS = 3_000
 /** The ask comes back this many days after the last one. */
 export const ASK_EVERY_DAYS = 7
-/** "Don't ask again" is offered once this many days have passed since the browser first saw the profile: a person gets a few asks before it. */
-export const STOP_AFTER_DAYS = 14
 
 export interface AskState {
   readonly firstSeenAt: number
@@ -17,7 +16,7 @@ export interface AskState {
   readonly stopped: boolean
 }
 
-/** A profile seen in use for the first time: not asked yet, and asked `FIRST_ASK_AFTER_MS` later. */
+/** A profile seen in use for the first time: not asked yet. */
 export const firstSight = (now: number): AskState => ({ firstSeenAt: now, lastAskedAt: null, stopped: false })
 
 export interface ReadAsk {
@@ -44,18 +43,28 @@ export function readAskState (text: string | undefined, now: number): ReadAsk {
   return { state, repaired: state.firstSeenAt !== firstSeenAt || state.lastAskedAt !== lastAskedAt }
 }
 
-/** When the next ask falls due, or undefined once the person has said to stop. */
-export function askDueAt (state: AskState): number | undefined {
-  if (state.stopped) return undefined
-  return state.lastAskedAt === null ? state.firstSeenAt + FIRST_ASK_AFTER_MS : state.lastAskedAt + ASK_EVERY_DAYS * DAY_MS
+/** The start of the calendar day after the one `at` falls in, by the clock on the wall. */
+export function startOfNextDay (at: number): number {
+  const day = new Date(at)
+  return new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1).getTime()
 }
 
-export const askDue = (state: AskState, now: number): boolean => {
-  const at = askDueAt(state)
+/**
+ * When the next ask falls due, or undefined once the person has said to stop. The first ask falls due at the earlier of
+ * the second calendar day of use and a beat after an app finished loading (`appOpenedAt`, which is undefined while none
+ * has in this run); a profile that has been asked comes back a week after its last ask.
+ */
+export function askDueAt (state: AskState, appOpenedAt?: number): number | undefined {
+  if (state.stopped) return undefined
+  if (state.lastAskedAt !== null) return state.lastAskedAt + ASK_EVERY_DAYS * DAY_MS
+  const secondDay = startOfNextDay(state.firstSeenAt)
+  return appOpenedAt === undefined ? secondDay : Math.min(secondDay, appOpenedAt + APP_OPEN_BEAT_MS)
+}
+
+export const askDue = (state: AskState, now: number, appOpenedAt?: number): boolean => {
+  const at = askDueAt(state, appOpenedAt)
   return at !== undefined && now >= at
 }
-
-export const canStop = (state: AskState, now: number): boolean => now - state.firstSeenAt >= STOP_AFTER_DAYS * DAY_MS
 
 /** The ask was shown and the person did not take it, or Orivon turned out to be the default already. */
 export const askedNow = (state: AskState, now: number): AskState => ({ ...state, lastAskedAt: now })

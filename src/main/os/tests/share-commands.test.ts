@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ShellWindow } from '../../shell/window-registry.js'
-import { copyLinkCommand, emailLinkCommand } from '../share-commands.js'
+import { copyLinkCommand, copyWebLinkCommand, emailLinkCommand } from '../share-commands.js'
 import type { ShareDeps } from '../share-commands.js'
 
 const tabs = [
   { id: 'a', url: 'https://one.example/', displayUrl: 'https://one.example/', title: 'One', isNewTab: false, isInternal: false },
   { id: 'b', url: 'https://two.example/x', displayUrl: 'https://two.example/x', title: 'Two & more', isNewTab: false, isInternal: false },
+  { id: 'd', url: 'https://vitalik.eth/blog', displayUrl: 'ipfs://vitalik.eth/blog?a=1#x', title: 'Vitalik', isNewTab: false, isInternal: false },
   { id: 'c', url: 'orivon://settings', displayUrl: 'orivon://settings', title: 'Settings', isNewTab: false, isInternal: true }
 ]
 
@@ -41,6 +42,38 @@ describe('Copy link', () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => {})
     const { window, deps, toasts } = setup('a', { writeClipboard: () => { throw new Error('no clipboard') } })
     copyLinkCommand(window, deps)
+    expect(toasts()).toEqual(['linkCopyFailed'])
+    log.mockRestore()
+  })
+})
+
+describe('Copy web link', () => {
+  it('copies the https address another browser opens for a .eth tab, and says so', () => {
+    const { window, deps, toasts } = setup('d')
+    copyWebLinkCommand(window, deps)
+    expect(deps.writeClipboard).toHaveBeenCalledWith('https://vitalik.eth.limo/blog?a=1#x')
+    expect(toasts()).toEqual(['webLinkCopied'])
+  })
+
+  it('acts on the tab it was asked about, not the one in front', () => {
+    const { window, deps } = setup('a')
+    copyWebLinkCommand(window, deps, 'd')
+    expect(deps.writeClipboard).toHaveBeenCalledWith('https://vitalik.eth.limo/blog?a=1#x')
+  })
+
+  it('copies nothing for a web page, which Copy link already copies, or for a shell page', () => {
+    for (const active of ['b', 'c']) {
+      const { window, deps, toasts } = setup(active)
+      copyWebLinkCommand(window, deps)
+      expect(deps.writeClipboard).not.toHaveBeenCalled()
+      expect(toasts()).toEqual(['noWebLink'])
+    }
+  })
+
+  it('says so when the clipboard refuses', () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { window, deps, toasts } = setup('d', { writeClipboard: () => { throw new Error('no clipboard') } })
+    copyWebLinkCommand(window, deps)
     expect(toasts()).toEqual(['linkCopyFailed'])
     log.mockRestore()
   })

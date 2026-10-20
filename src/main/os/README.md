@@ -5,8 +5,8 @@ app (`open-url.ts`), and a file the system hands it (`open-file.ts`: the open-fi
 runner, `os-domain.ts` for the Settings page). When Orivon asks to be the default browser (`default-browser-ask.ts`
 is the rule over three facts and the clock; `install-default-browser-ask.ts` looks at it every hour). The entries a
 dock or a taskbar shows for Orivon's icon (`launcher-tasks.ts`, `install-launcher-menu.ts`, and
-`windows-taskbar.ts` for a run from source on Windows). The share commands, Copy link and Email link (`share.ts`,
-`share-commands.ts`, `share-runner.ts`). A site's shortcut: the file's text (`site-shortcut.ts`), where it is
+`windows-taskbar.ts` for a run from source on Windows). The share commands, Copy link, Copy web link and Email link (`share.ts`,
+`share-commands.ts`, `share-runner.ts`; `web-link.ts` is the rewrite Copy web link copies). A site's shortcut: the file's text (`site-shortcut.ts`), where it is
 written (`site-shortcut-runner.ts`), and the sheet that asks for it (`shortcut-open.ts`, `shortcut-overlay.ts`,
 `shortcut-real.ts`). `menu-state.ts` says when the main menu greys those rows. `default-browser-test-seam.ts` is the
 recording host a test build uses in place of the system.
@@ -19,7 +19,7 @@ never touches the machine. `createDefaultBrowserCheck` and `askPlace` are the pa
 **What it depends on.** [`../shell/`](../shell/) (`ShellWindow`, `ShellServices`, `TabState`, the installer and
 window-hook types, the question panel in [`../shell/question/`](../shell/question/), and `intro-view.ts`'s `isIntroShowing`, since the ask
 waits for the welcome screen), [`../overlays/`](../overlays/)
-(`OverlayDef`), [`../startup/restore-overlay.ts`](../startup/restore-overlay.ts) (the ask waits for the restore bar to
+(`OverlayDef`, and `tab-slots.ts`'s `hasAsk`), [`../shell/tab-partition.ts`](../shell/tab-partition.ts) (`appTabViews`, which tabs hold a registered app), [`../startup/restore-overlay.ts`](../startup/restore-overlay.ts) (the ask waits for the restore bar to
 go), [`../page-tools/toast.ts`](../page-tools/toast.ts), [`../launch/launch-context.ts`](../launch/launch-context.ts)
 [`../launch/local-operand.ts`](../launch/local-operand.ts) (which operand of an open-file event is a local file)
 and [`../launch/peer-spawn.ts`](../launch/peer-spawn.ts) (the command that starts Orivon again, one home for it),
@@ -50,13 +50,17 @@ default-apps page, since a package has no `RegisteredApplications` name to selec
 documentation, unmeasured on a Store install (*provisional*, A410), which also lists what else here has not been
 checked inside a package: the taskbar menu, the process's AUMID and a peer started with `peerCommand`.
 
-**The first ask comes half a minute into first use, and each later one a week after the last.** The clock starts
-the first time the check finds a window in use, so time on the welcome screen and its telemetry popup does not
-count; a missing or corrupt file is a profile not seen yet. "Don't ask again" appears two weeks after first sight,
-and a clock set back is reset to now. The check looks at the clock when the next ask falls due (at least hourly)
-and asks the system only when a question is due, because on Linux that is a spawned `xdg-settings check` that holds
-the main process. It asks only in a visible window the person is using, with no welcome screen over it and no
-restore bar in it; otherwise it looks again every ten seconds, so it can never fall back to a native box.
+**The first ask comes a beat after the first app has opened or on the second day of use, whichever is first, and each
+later one a week after the last.** The clock starts the first time the check finds a window in use, so time on the
+welcome screen and its telemetry popup does not count; a missing or corrupt file is a profile not seen yet. An app has
+opened when a registered app's tab (the app-tab flag) finishes loading a page (`app-open-watch.ts`); the moment is kept
+for this run only. The second day is the next calendar day on the wall clock after the one the profile was first seen
+in use. "Don't ask again" is on every ask, the first included, and a clock set back is reset to now. The check looks at
+the clock when the next ask falls due (at least hourly), when an app finishes loading, and asks the system only when a
+question is due, because on Linux that is a spawned `xdg-settings check` that holds the main process. It asks only in
+a visible window the person is using, with no welcome screen over it, no restore bar in it, and no sheet or prompt of
+the active tab on screen or waiting (an app's consent question is one); otherwise it looks again every ten seconds, so
+it can never fall back to a native box.
 
 **A launcher entry is the program and a flag, never the switches of this run.** The system keeps the command past this
 process, so `launcher-tasks.ts` builds it from `peerCommand` and the flag alone: a `--user-data-dir` or `--no-sandbox`
@@ -68,6 +72,15 @@ control characters from the name (a line break would start a new line of the fil
 `Exec=` argument, escapes the characters a quoted argument still reads specially, and doubles `%`. The file name is
 `orivon-<slug>-<8 hex>.desktop`, built in main from the address; the sheet sends a name and a tick, never a path or an
 address. The places it writes come from the host, which a test points at a temporary directory.
+
+**Copy web link copies an address another browser opens, and is offered only where that differs from Copy link.** A `.eth`
+name (`ipfs://name.eth/x`, `ipns://name.eth`, or the plain `https://name.eth` shown before the network is learned)
+becomes `https://name.eth.limo/x`; an `ipfs://<cid>` becomes `https://<cidv1-base32>.ipfs.dweb.link/` (a CIDv0 is
+converted, since a subdomain is lowercase); an `ipns://<key>` becomes `https://<key>.ipns.dweb.link/`. Path, query
+and fragment are kept as written. A name or CID that cannot be one host label, a DNSLink domain, `bzz://`, Orivon
+pages and `file:` have no web link, and their row is not offered (greyed with the reason in the main menu). Nothing is
+requested: the address is only copied, and it says nothing of the page being verified, which only Orivon does. The
+tab menu, the main menu and a link's right-click menu carry it, labelled `WEB_LINK_LABEL`.
 
 **Email link asks first.** The address and the title are a page's words. They are percent-encoded into a `mailto:`
 address, and the same question a page that opens a `mailto:` link is asked is put before the mail program starts.
