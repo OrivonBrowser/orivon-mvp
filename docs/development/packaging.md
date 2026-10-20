@@ -514,7 +514,7 @@ cat /tmp/orivon-deb-inspect/usr/share/applications/*.desktop
 #   Actions=new-window;new-private-window;
 # followed by a [Desktop Action new-window] and a [Desktop Action new-private-window] section whose Exec
 # lines run /opt/Orivon/orivon with --new-window and --new-private-window. The AppImage's own entry
-# (Exec=AppRun) carries no actions: they sit under `deb:` in electron-builder.yml, not `linux:`.
+# (Exec=AppRun) carries no actions: they sit under `deb:` in electron-builder.yml, and `appImage:` has an entry of its own.
 ```
 
 ```bash
@@ -557,8 +557,9 @@ runs `xdg-mime default` with that entry for `text/html`, `application/xhtml+xml`
 
 A right-click on Orivon's icon offers New Window and New Private Window. On Linux they are the `.deb`'s desktop
 actions (`deb.desktop.desktopActions` in `electron-builder.yml`, which run `/opt/Orivon/orivon --new-window` and
-`--new-private-window`); they sit under `deb:` and not `linux:` because electron-builder merges `linux.desktop`
-into the AppImage's entry too, where `Exec` is `AppRun` and `/opt/Orivon` does not exist. On Windows the same two
+`--new-private-window`); they sit under `deb:` and not `linux:`, and the entry's common keys are written under `deb:` and
+`appImage:` each, because a `linux.desktop` would reach the AppImage's entry too, where `Exec` is `AppRun` and `/opt/Orivon`
+does not exist. A built AppImage's entry has no `Actions` line. On Windows the same two
 are jump-list tasks and on macOS dock-menu items, set by the running program (`src/main/os/install-launcher-menu.ts`).
 A run from source on Linux gets both from `scripts/launch-from-source.mjs install` (`docs/development/setup.md`).
 

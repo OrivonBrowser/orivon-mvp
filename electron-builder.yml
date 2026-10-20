@@ -171,7 +171,7 @@ linux:
   # the application menu. AppImage remains the trial artefact; the
   # first-run "install desktop entry" flow that closes its integration gap is a
   # separate, already-scoped piece of work -- this file only has to not make it
-  # impossible, which an allowlisted `files` and a correct `linux.desktop` block do not.
+  # impossible, which an allowlisted `files` and the `desktop` entries below do not.
 
   category: "Network;WebBrowser;"
   # freedesktop.org Categories=. Two values, not one: WebBrowser is the specific
@@ -217,18 +217,6 @@ linux:
   # generated shell-script entry point in v27, and custom desktop/AppArmor/MIME
   # overrides need to reference it, not the raw binary, if anyone adds one later).
 
-  desktop:
-    entry:
-      Name: Orivon Browser
-      Comment: A browser that runs applications Chrome cannot
-      Type: Application
-      Terminal: false
-      StartupWMClass: orivon
-      # A packaged build's window class: Electron names its windows after package.json's
-      # `name` (WM_CLASS "orivon", "orivon"; the Wayland app id comes from `desktopName`,
-      # orivon.desktop). A run from source renames itself `orivon-source` before its first
-      # window (src/main/launch/start-launch.ts), so the dock never files it here.
-
 deb:
   packageCategory: web
   # Debian's Section: field -- a different taxonomy from freedesktop Categories= above
@@ -238,12 +226,18 @@ deb:
   # generally, not browsers specifically).
 
   # The installed entry's right-click menu in a dock or taskbar (a freedesktop "desktop action").
-  # Under `deb`, never `linux`: electron-builder merges `linux.desktop` into the AppImage's
-  # entry too, whose `Exec` is AppRun, and an action naming /opt/Orivon would launch nothing there.
+  # Under `deb`, never `linux`: a `linux.desktop` is shared by reference with every target's options, so the
+  # actions would also land in the AppImage's entry, whose `Exec` is AppRun, and an action naming /opt/Orivon
+  # would launch nothing there. For the same reason the entry's common keys are written under `deb` and `appImage`
+  # each, not once under `linux`.
   # The ids are the conventional ones, so GNOME treats `new-window` as the app's own new-window action rather than
   # adding a second "New Window" item. They and the `orivon.desktop` file name are what a pinned launcher keys on.
   desktop:
     entry:
+      Name: Orivon Browser
+      Type: Application
+      Terminal: false
+      StartupWMClass: orivon
       Actions: "new-window;new-private-window;"
     desktopActions:
       new-window:
@@ -255,6 +249,16 @@ deb:
 
 appImage:
   artifactName: ${productName}-${version}-${arch}.${ext}
+  desktop:
+    entry:
+      Name: Orivon Browser
+      Type: Application
+      Terminal: false
+      # A packaged build's window class: Electron names its windows after package.json's
+      # `name` (WM_CLASS "orivon", "orivon"; the Wayland app id comes from `desktopName`,
+      # orivon.desktop). A run from source renames itself `orivon-source` before its first
+      # window (src/main/launch/start-launch.ts), so the dock never files it here.
+      StartupWMClass: orivon
 
 # --- Windows and macOS: packages, and registration as a browser --------------------------
 # Only an installed package registers Orivon as a browser (src/main/os/default-browser.ts).
