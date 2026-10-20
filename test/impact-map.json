@@ -125,6 +125,7 @@
     { "prefix": "scripts/pin-releases.sh", "run": [] },
     { "prefix": "scripts/ipfs-node-watchdog.sh", "run": [] },
     { "prefix": "scripts/ipfs-status.sh", "run": [] },
+    { "prefix": "scripts/refresh-eth-checkpoint.mjs", "run": [] },
     { "prefix": "scripts/ci", "run": ["@full"] },
     { "prefix": "scripts/ci/cross-os.mjs", "run": [] },
     { "prefix": "scripts/ci/live-*", "run": [] },

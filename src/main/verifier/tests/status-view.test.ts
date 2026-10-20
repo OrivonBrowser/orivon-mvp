@@ -66,7 +66,49 @@ describe('lightClientView', () => {
   it('names a stale checkpoint and what fixes it', () => {
     const view = lightClientView(facts({ checkpoint: { ok: false, problem: 'too-old', source: 'release', ageSeconds: 20 * 86_400 } }), NOW)
     expect(view.state).toBe('failed')
-    expect(view.checkpoint).toMatch(/^No usable checkpoint: the newest checkpoint \(shipped with this release\) is 20 days old, past the 14 days a checkpoint may be\. Installing a newer release/)
+    expect(view.checkpoint).toMatch(/^No usable checkpoint: the newest checkpoint \(shipped with this release\) is 20 days old, past the 14 days a checkpoint may be\. Opening a \.eth name asks two beacon servers for a fresh one\. Installing a newer release brings one too/)
+  })
+
+  it('says why a fresh checkpoint could not be fetched, in Settings and in the summary the site popover shows', () => {
+    const stale = { ok: false, problem: 'too-old', source: 'release', ageSeconds: 20 * 86_400 } as const
+    const reasons = {
+      unreachable: /a beacon server did not answer/,
+      malformed: /answer that could not be read/,
+      'not-finalized': /not finalized/,
+      disagree: /did not give the same answer/,
+      future: /dated after this computer's clock, which may be set behind/,
+      'too-old': /older than a checkpoint may be, which suggests this computer's clock is ahead/,
+      'too-few-servers': /fewer than two/
+    } as const
+    for (const [problem, pattern] of Object.entries(reasons)) {
+      const view = lightClientView(facts({ checkpoint: stale, checkpointFetchProblem: problem as keyof typeof reasons }), NOW)
+      expect(view.checkpoint).toMatch(/A fresh one could not be fetched from the beacon servers: /)
+      expect(view.checkpoint).toMatch(pattern)
+      expect(view.summary).toMatch(/^Not started: it needs a recent checkpoint to start from\. A fresh one could not be fetched: /)
+    }
+  })
+
+  it('leaves the clock case alone: a fetch cannot fix a clock behind the checkpoint', () => {
+    const view = lightClientView(facts({ checkpoint: { ok: false, problem: 'clock-behind' }, checkpointFetchProblem: 'disagree' }), NOW)
+    expect(view.summary).toBe('Not started: it needs a recent checkpoint to start from.')
+    expect(view.checkpoint).not.toMatch(/beacon servers/)
+  })
+
+  it('says a fetched checkpoint was fetched at run time, from which servers, and its date', () => {
+    const timestamp = Date.UTC(2026, 9, 20, 14, 3) / 1000
+    const view = lightClientView(facts({ checkpoint: { ok: true, checkpoint: { root: ROOT, timestamp }, source: 'fetched', ageSeconds: 2 * 3600, fetchedFrom: ['https://ethereum-beacon-api.publicnode.com', 'https://lodestar-mainnet.chainsafe.io'] } }), NOW)
+    expect(view.checkpointFetched).toBe(true)
+    expect(view.checkpoint).toBe('Checkpoint 2 hours old, dated 2026-10-20 14:03 UTC. It was fetched while a .eth name was opened, because none stored here was recent enough; ethereum-beacon-api.publicnode.com and lodestar-mainnet.chainsafe.io gave the same answer.')
+  })
+
+  it('says one hour, not 1 hours', () => {
+    const view = lightClientView(facts({ checkpoint: { ok: true, checkpoint: { root: ROOT, timestamp: 1_790_000_000 }, source: 'release', ageSeconds: 3700 } }), NOW)
+    expect(view.checkpoint).toBe('Checkpoint 1 hour old, shipped with this release.')
+  })
+
+  it('names a fetched checkpoint that has aged out as fetched', () => {
+    const view = lightClientView(facts({ checkpoint: { ok: false, problem: 'too-old', source: 'fetched', ageSeconds: 20 * 86_400, fetchedFrom: ['https://a.example'] } }), NOW)
+    expect(view.checkpoint).toMatch(/\(fetched from beacon servers\) is 20 days old/)
   })
 
   it('points at the clock, not a release, when the clock is behind the checkpoint', () => {
@@ -84,6 +126,14 @@ describe('lightClientView', () => {
       { label: 'IPNS name services', urls: ['https://names'] },
       { label: 'DNS-over-HTTPS, for DNSLink', urls: ['https://doh'] }
     ])
+  })
+})
+
+describe('the servers asked for a fresh checkpoint', () => {
+  it('are listed with what they are asked for, after the beacon API', () => {
+    const view = lightClientView(facts({ endpoints: { ...ENDPOINTS, checkpointBeaconApis: ['https://one', 'https://two'] } }), NOW)
+    expect(view.endpoints.map((e) => e.label).slice(0, 3)).toEqual(['Ethereum RPCs', 'Beacon API', 'Beacon servers for a fresh checkpoint, asked only when none is recent enough'])
+    expect(view.endpoints[2]?.urls).toEqual(['https://one', 'https://two'])
   })
 })
 
