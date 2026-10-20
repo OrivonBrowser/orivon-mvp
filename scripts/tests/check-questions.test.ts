@@ -3,7 +3,8 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  checkQuestionNumbers, findHeadingNumbers, findLongEntries, MAX_ENTRY_LINES, QUESTIONS_FILE, RESOLVED_FILE
+  checkDecisionNumbers, checkQuestionNumbers, DECISION_LOG, DECISIONS_DIR, findHeadingNumbers, findLongEntries, MAX_ENTRY_LINES,
+  QUESTIONS_FILE, RESOLVED_FILE
 } from '../check-questions.mjs'
 
 const TABLE = '| ID | Question | Resolution | Record |\n|---|---|---|---|\n'
@@ -93,5 +94,38 @@ describe('findLongEntries', () => {
   it('ends an entry at the next entry of any series, or at a section heading', () => {
     const body = [entry('A1', 10), entry('B4', 10), '## Section', 'prose '.repeat(3), entry('C2', 13)].join('\n')
     expect(findLongEntries(body)).toEqual([{ id: 'C2', line: 23, lines: 13 }])
+  })
+})
+
+describe('checkDecisionNumbers', () => {
+  const decisions = (adrs: string[], log: string): string => {
+    const root = mkdtempSync(join(tmpdir(), 'orivon-decisions-'))
+    mkdirSync(join(root, DECISIONS_DIR), { recursive: true })
+    for (const name of adrs) writeFileSync(join(root, DECISIONS_DIR, name), '# x\n')
+    writeFileSync(join(root, DECISION_LOG), log)
+    return root
+  }
+  const row = (id: string): string => `| \`${id}\` | 2026-10-20 | text | x |\n`
+
+  it('passes distinct ADR numbers and decision ids, the template included', () => {
+    const root = decisions(['ADR-0000-template.md', 'ADR-0091-a.md', 'ADR-0092-b.md'], row('d-0700') + row('d-0701'))
+    expect(checkDecisionNumbers(root)).toEqual({ ok: true, adrs: [], decisions: [] })
+  })
+
+  it('fails two ADR files with one number, which git never reports as a conflict', () => {
+    const result = checkDecisionNumbers(decisions(['ADR-0092-a.md', 'ADR-0092-b.md'], row('d-0700')))
+    expect(result.ok).toBe(false)
+    expect(result.adrs).toEqual([{ number: '0092', places: [`${DECISIONS_DIR}/ADR-0092-a.md`, `${DECISIONS_DIR}/ADR-0092-b.md`] }])
+  })
+
+  it('fails two decision rows with one id, and not a mention of an id inside a row', () => {
+    const log = row('d-0700') + '| `d-0701` | x | supersedes `d-0700` | y |\n' + row('d-0701')
+    expect(checkDecisionNumbers(decisions([], log)).decisions).toEqual([
+      { number: '0701', places: [`${DECISION_LOG}:2`, `${DECISION_LOG}:3`] }
+    ])
+  })
+
+  it('passes the real files as they stand', () => {
+    expect(checkDecisionNumbers(process.cwd())).toEqual({ ok: true, adrs: [], decisions: [] })
   })
 })
