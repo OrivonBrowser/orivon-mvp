@@ -226,3 +226,10 @@ img.tile-icon { border-radius: 4px; object-fit: contain; }
   text-decoration: underline;
 }
 .link-button:hover { color: #e2e8f0; }
+
+/* The line in a row that has no tile yet. */
+.tile-empty {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(226, 232, 240, 0.7);
+}
