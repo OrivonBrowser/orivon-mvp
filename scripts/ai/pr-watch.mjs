@@ -75,6 +75,8 @@ export function nextStep ({ checks: all, state, reruns, maxReruns }) {
   if (checks.length === 0 || checks.some((check) => check.conclusion === '')) return { step: 'wait' }
   const failed = checks.filter((check) => FAILED.has(check.conclusion)).map((check) => check.name)
   if (failed.length > 0) {
+    // Failures on a base main has moved past may be fixed there: merging main in comes before any verdict.
+    if (state === 'BEHIND') return { step: 'stale', failed }
     return failed.every((name) => RERUNNABLE.test(name)) && reruns < maxReruns ? { step: 'rerun', failed } : { step: 'fail', failed }
   }
   if (state === 'CLEAN') return { step: 'merge' }
@@ -185,7 +187,8 @@ async function watch (pr, { maxReruns, merge, squash, stop, worktree }) {
     const pending = now.checks.filter((check) => check.conclusion === '').length
     const line = `${now.state}, ${String(pending)} of ${String(now.checks.length)} checks pending`
     if (line !== said) { console.log(line); said = line }
-    const next = nextStep({ checks: now.checks, state: now.state, reruns, maxReruns })
+    let next = nextStep({ checks: now.checks, state: now.state, reruns, maxReruns })
+    if (next.step === 'stale') next = worktree !== undefined && rounds < MAX_ROUNDS ? { step: 'stuck' } : { step: 'fail', failed: next.failed }
     if (next.step === 'rerun' || next.step === 'fail') {
       console.log(`failed: ${(next.failed ?? []).join(', ')}`)
       const specs = reportSpecs(now.checks)
