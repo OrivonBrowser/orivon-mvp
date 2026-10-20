@@ -339,7 +339,7 @@ it('offers the page of a newer release from Settings, in a tab of the same windo
   const { app, chrome } = await launched()
   try {
     await app.evaluate(({ net }) => {
-      net.fetch = (async () => new Response(JSON.stringify({ tag_name: 'v9.9.9' }), { status: 200, headers: { 'content-type': 'application/json' } })) as typeof net.fetch
+      net.fetch = (async () => new Response(JSON.stringify([{ tag_name: 'v9.9.9' }]), { status: 200, headers: { 'content-type': 'application/json' } })) as typeof net.fetch
     })
     const page = await openSettings(app, chrome, '/about')
     expect(await page.locator('#row-updates-release').count()).toBe(0)
