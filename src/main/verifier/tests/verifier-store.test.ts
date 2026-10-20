@@ -45,6 +45,23 @@ describe('VerifierStore', () => {
     expect(s.checkpoint()?.root).toBe(root('c'))
   })
 
+  it('keeps the servers that agreed on a fetched checkpoint, until the light client stores a newer one', () => {
+    const { store: s, dir } = store()
+    const servers = ['https://a.example', 'https://b.example']
+    s.saveFetchedCheckpoint({ root: root('a'), timestamp: 1_700_000_000 }, servers, NOW)
+    expect(new VerifierStore(dir).checkpoint()).toEqual({ root: root('a'), timestamp: 1_700_000_000, fetchedFrom: servers })
+    s.saveCheckpoint({ root: root('b'), timestamp: 1_700_000_100 }, NOW)
+    expect(s.checkpoint()).toEqual({ root: root('b'), timestamp: 1_700_000_100 })
+  })
+
+  it('does not let a fetched checkpoint replace a newer one, or one dated in the future', () => {
+    const { store: s } = store()
+    s.saveCheckpoint({ root: root('a'), timestamp: 1_700_000_000 }, NOW)
+    s.saveFetchedCheckpoint({ root: root('b'), timestamp: 1_600_000_000 }, ['https://a.example'], NOW)
+    s.saveFetchedCheckpoint({ root: root('c'), timestamp: NOW + 24 * 3600 }, ['https://a.example'], NOW)
+    expect(s.checkpoint()).toEqual({ root: root('a'), timestamp: 1_700_000_000 })
+  })
+
   it('refuses to save a malformed checkpoint, or one dated in the future', () => {
     const { store: s } = store()
     s.saveCheckpoint({ root: 'nope', timestamp: 1_700_000_000 }, NOW)

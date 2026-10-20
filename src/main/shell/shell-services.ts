@@ -39,6 +39,7 @@ import type { DownloadService } from '../downloads/download-service.js'
 import { CommandBus } from '../shortcuts/command-bus.js'
 import { ShortcutService } from '../shortcuts/shortcut-service.js'
 import { ShortcutStore } from '../shortcuts/shortcut-store.js'
+import { FeaturedStore } from '../newtab/featured-store.js'
 import { ZoomService } from '../zoom/zoom-service.js'
 import { ZoomStore } from '../zoom/zoom-store.js'
 import { ClosedStack } from '../session-restore/closed-stack.js'
@@ -127,6 +128,8 @@ export interface ShellServices {
   readonly windows: WindowRegistry
   /** Where the last-used window was; a private session keeps nothing. */
   readonly windowState: WindowStateStore
+  /** The new tab's Featured row for this profile: the pin it was given and what the person hid; memory only in a private session. */
+  readonly featured: FeaturedStore
   readonly zoom: ZoomService
   readonly zoomStore: ZoomStore
 }
@@ -167,6 +170,7 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
     }),
     downloads: createDownloadService(userDataPath, runtime.isPrivate, settings),
     extensionsLoaded: createLoadedExtensions(session.defaultSession),
+    featured: new FeaturedStore(runtime.isPrivate ? null : join(userDataPath, 'new-tab.json')),
     history: new HistoryService(openedHistory.store, settings, openedHistory.problem, Date.now, (from, to) => { closedTabs.forgetBetween(from, to) }),
     hidDevices: new HidApprovals(runtime.isPrivate ? null : join(userDataPath, 'hid-devices.json')),
     schemeChoices: new SchemeChoices(runtime.isPrivate ? null : join(userDataPath, 'scheme-handlers.json')),

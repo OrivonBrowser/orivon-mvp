@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.orivonstack.orivon</id>
+  <name>Orivon Browser</name>
+  <summary>A browser that runs applications Chrome cannot</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>AGPL-3.0-only</project_license>
+  <developer id="com.orivonstack">
+    <name>OrivonStack</name>
+  </developer>
+  <description>
+    <p>
+      Orivon is a web browser that also runs applications delivered from a URL. An application asks for
+      the network and filesystem access it needs, and each one is granted or refused by the person using it.
+    </p>
+    <p>
+      Orivon reads ipfs://, ipns:// and .eth addresses, can send a site or an application through a tunnel,
+      and runs Chrome extensions.
+    </p>
+  </description>
+  <launchable type="desktop-id">orivon.desktop</launchable>
+  <url type="homepage">https://www.orivonstack.com</url>
+  <url type="bugtracker">https://github.com/OrivonBrowser/orivon-mvp/issues</url>
+  <url type="vcs-browser">https://github.com/OrivonBrowser/orivon-mvp</url>
+  <url type="help">https://docs.orivonstack.com</url>
+  <categories>
+    <category>Network</category>
+    <category>WebBrowser</category>
+  </categories>
+  <provides>
+    <binary>orivon</binary>
+  </provides>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <content_rating type="oars-1.1"/>
+</component>
