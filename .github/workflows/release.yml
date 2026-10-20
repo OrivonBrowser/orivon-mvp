@@ -25,6 +25,9 @@ permissions:
   contents: read
 
 env:
+  # The oldest light-client checkpoint a release may ship. The app refuses one over 14 days old; this leaves a
+  # fresh install a week before that. The scheduled refresh keeps main's checkpoint well inside it.
+  MAX_CHECKPOINT_AGE_DAYS: 7
   KUBO_VERSION: v0.43.1
   KUBO_SHA256: 3f2bf974ab2a3ec6d997fac7d8cb46f59983a7cddd0b55ef998e6ce379155fb2
   KOMAC_VERSION: v2.16.0
@@ -62,14 +65,17 @@ jobs:
           cache: npm
 
       # The app rejects a light-client checkpoint over 14 days old, so a fresh install of a release
-      # shipping one verifies no .eth name. Refresh it before tagging (release-checklist.md).
-      - name: The shipped .eth checkpoint is under 14 days old
+      # shipping one verifies no .eth name. A release refuses one over MAX_CHECKPOINT_AGE_DAYS, so it does
+      # not die within days of shipping. refresh-eth-checkpoint.yml keeps main's checkpoint fresh
+      # (release-checklist.md).
+      - name: The shipped .eth checkpoint is fresh enough
         if: github.event_name == 'release'
         run: >-
           node -e "const c = require('./src/main/verifier/mainnet-checkpoint.json');
+          const max = Number(process.env.MAX_CHECKPOINT_AGE_DAYS);
           const days = (Date.now() / 1000 - c.timestamp) / 86400;
-          console.log('checkpoint age: ' + days.toFixed(1) + ' days');
-          if (days > 14) { console.error('refresh it: node scripts/refresh-eth-checkpoint.mjs --write'); process.exit(1) }"
+          console.log('checkpoint age: ' + days.toFixed(1) + ' days, at most ' + max);
+          if (!(days <= max)) { console.error('refresh it: node scripts/refresh-eth-checkpoint.mjs --write'); process.exit(1) }"
 
       - run: npm ci
 
