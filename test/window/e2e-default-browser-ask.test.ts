@@ -1,11 +1,12 @@
-// The ask to become the default browser, half a minute into first use and then weekly, in the running shell. The
-// operating system is replaced by the test seam's recording host (ORIVON_TEST_DEFAULT_BROWSER), so nothing here
-// changes the machine's default; the ask's own clock is a file in the profile that each case writes in advance, so no
-// case waits a week, or the half minute.
+// The ask to become the default browser, in the running shell: the first time a beat after the first app has opened or
+// on the second day of use, then weekly. The operating system is replaced by the test seam's recording host
+// (ORIVON_TEST_DEFAULT_BROWSER), so nothing here changes the machine's default; the ask's own clock is a file in the
+// profile that each case writes in advance, so no case waits a week, or a day.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
+import type { ChildProcess } from 'node:child_process'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
@@ -13,6 +14,8 @@ import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
 import { focusWebContents, underVirtualDisplay } from '../support/focus-helpers.js'
 import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
 import { ABSENCE_SETTLE_MS, delay, findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { killChild } from '../support/e2e-helpers.js'
+import { grantOriginOnly, PORT_APP_FREETUBE, readAppManifest, startOwnServer } from '../support/freetube-fixture.js'
 
 const TEST_TIMEOUT_MS = 90_000
 const DAY_MS = 86_400_000
@@ -39,7 +42,7 @@ interface AskFile { firstSeenAt: number, lastAskedAt: number | null, stopped: bo
 interface Launched { app: ElectronApplication, chrome: Page, file: () => AskFile | undefined, startedAt: number }
 
 /** Starts with the ask's clock set `days` ago (first seen, last asked), or first seen `firstSeenMsAgo` and never asked, or with no file at all. The page in front has the focus: an ask waits for a window in use. */
-async function launched (options: { days?: [number, number], firstSeenMsAgo?: number, mode?: string, args?: string[] }): Promise<Launched> {
+async function launched (options: { days?: [number, number], firstSeenMsAgo?: number, firstSeenDaysAgo?: number, mode?: string, args?: string[] }): Promise<Launched> {
   const startedAt = Date.now()
   let userData = ''
   const app = await launchElectron({
@@ -50,8 +53,8 @@ async function launched (options: { days?: [number, number], firstSeenMsAgo?: nu
     freshDefaultBrowserAsk: true,
     seedProfile: (dir: string) => {
       userData = dir
-      if (options.firstSeenMsAgo !== undefined) {
-        const state: AskFile = { firstSeenAt: startedAt - options.firstSeenMsAgo, lastAskedAt: null, stopped: false }
+      if (options.firstSeenMsAgo !== undefined || options.firstSeenDaysAgo !== undefined) {
+        const state: AskFile = { firstSeenAt: startedAt - (options.firstSeenMsAgo ?? 0) - (options.firstSeenDaysAgo ?? 0) * DAY_MS, lastAskedAt: null, stopped: false }
         writeFileSync(join(dir, FILE), JSON.stringify(state))
       }
       if (options.days === undefined) return
@@ -158,37 +161,59 @@ run('asks nothing on a fresh profile, and starts its clock once a window is in u
   }
 }, TEST_TIMEOUT_MS)
 
-run('asks the first time half a minute after the profile was first seen in use, with two buttons', async () => {
-  const { app, file, startedAt } = await launched({ firstSeenMsAgo: 31_000 })
+run('asks nothing on the first day of use while no app has opened, however long the browser has been in use', async () => {
+  const { app, file } = await launched({ firstSeenMsAgo: 31_000 })
+  try {
+    await askNow(app)
+    await delay(ABSENCE_SETTLE_MS)
+    expect(await questionGone(app)).toBe(true)
+    expect(file()?.lastAskedAt).toBeNull()
+    expect((await recording(app)).isDefault).toEqual([])
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+run('asks on the second day of use without any app opening, with "Don\'t ask again" on offer from this first ask', async () => {
+  const { app, file, startedAt } = await launched({ firstSeenDaysAgo: 2 })
   try {
     await askNow(app)
     const said = await readQuestion(await waitQuestion(app))
     expect(said.title).toBe('Make Orivon your default browser?')
-    expect(said.buttons).toEqual(['Not now', 'Make default'])
-    await answerQuestion(app, 'Not now')
-    expect(await waitFor(() => (file()?.lastAskedAt ?? 0) >= startedAt)).toBe(true)
+    expect(said.buttons).toEqual(['Not now', 'Make default', 'Don\'t ask again'])
+    await answerQuestion(app, 'Don\'t ask again')
+    expect(await waitFor(() => file()?.stopped === true)).toBe(true)
+    expect(file()?.lastAskedAt).toBeNull()
+    expect(file()?.firstSeenAt).toBeLessThan(startedAt - DAY_MS)
     expect((await recording(app)).setDefault).toEqual([])
   } finally {
     await closeElectron(app)
   }
 }, TEST_TIMEOUT_MS)
 
-run('asks by itself on a fresh profile, half a minute after the window is first in use and not before', async () => {
+run('asks by itself a beat after the first app has opened, and not before', async () => {
+  let server: ChildProcess | undefined
   const { app, file } = await launched({})
   try {
-    // No askNow: the browser's own clock. Its first look (10 s after start) finds the window in use and starts the count.
-    expect(await waitFor(() => file() !== undefined, 20_000)).toBe(true)
-    const seenAt = file()?.firstSeenAt ?? 0
-    expect(file()?.lastAskedAt).toBeNull()
-    await delay(Math.max(0, seenAt + 25_000 - Date.now()))
+    server = await startOwnServer('freetube-server', join(process.cwd(), 'test', 'apps', 'freetube', 'serve.mjs'), ['--port', String(PORT_APP_FREETUBE)])
+    const appOrigin = `http://127.0.0.1:${String(PORT_APP_FREETUBE)}`
+    const chrome = findChrome(app)
+    // An ordinary website opened in the window is no app: nothing is asked of it.
+    await delay(ABSENCE_SETTLE_MS)
     expect(await questionGone(app)).toBe(true)
-    const said = await readQuestion(await waitQuestion(app, 20_000))
-    expect(Date.now() - seenAt).toBeGreaterThanOrEqual(30_000)
-    expect(said.buttons).toEqual(['Not now', 'Make default'])
+
+    const granted = await grantOriginOnly(app.evaluate.bind(app), await readAppManifest(), appOrigin)
+    expect(granted.hooksPresent).toBe(true)
+    await clickAddressBarRetrying(chrome, `${appOrigin}/?app`)
+    expect((await waitForTab(chrome, { address: `${appOrigin}/?app` })).ok).toBe(true)
+    await focusWebContents(app, `${appOrigin}/?app`)
+    const said = await readQuestion(await waitQuestion(app, 30_000))
+    expect(said.buttons).toEqual(['Not now', 'Make default', 'Don\'t ask again'])
     await answerQuestion(app, 'Not now')
-    expect(await waitFor(() => (file()?.lastAskedAt ?? 0) >= seenAt + 30_000)).toBe(true)
+    expect(await waitFor(() => (file()?.lastAskedAt ?? 0) > 0)).toBe(true)
   } finally {
     await closeElectron(app)
+    if (server !== undefined) await killChild(server)
   }
 }, TEST_TIMEOUT_MS)
 
