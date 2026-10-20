@@ -11,7 +11,11 @@
 //   node scripts/ai/pr-watch.mjs <pr> [--update <worktree>] [--stop <spec regex>] [--reruns 2] [--no-merge | --squash]
 //   exit 0 merged (or green, with --no-merge) · 1 a check failed · 2 BEHIND or DIRTY · 3 the head moved · 4 timeout
 import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { isInvokedDirectly } from '../cli.mjs'
+import { LOG } from './renumber-decisions.mjs'
 
 const POLL_MS = 30_000
 const AFTER_RERUN_MS = 90_000
@@ -20,6 +24,7 @@ const MAX_ROUNDS = 6
 const PUSH_SEEN_MS = 120_000
 const PUSH_ATTEMPTS = 3
 const PUSH_RETRY_MS = 5000
+const RENUMBER = fileURLToPath(new URL('./renumber-decisions.mjs', import.meta.url))
 const FAILED = new Set(['FAILURE', 'CANCELLED', 'TIMED_OUT', 'STARTUP_FAILURE', 'ERROR'])
 /** Checks whose failure is rerun before it counts: e2e flakes, and hosted runners that were never acquired. */
 const RERUNNABLE = /^(e2e|e2e-ordinary|e2e-shard-\d+|live \(\w+\)|from source \(\w+\))$/
@@ -96,7 +101,7 @@ export function runIds (checks) {
 /**
  * Merges `origin/main` into the branch checked out in `worktree` and pushes it to the pull request's own branch,
  * `headRef`, whatever the local branch is called; returns the new head, or undefined when the merge conflicts, after
- * aborting it so the worktree is as it was.
+ * aborting it so the worktree is as it was. A conflict in the decision log alone is settled by renumber-decisions.mjs.
  */
 export function updateBranch (worktree, headRef) {
   const git = (...args) => execFileSync('git', ['-C', worktree, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
@@ -104,8 +109,21 @@ export function updateBranch (worktree, headRef) {
   try {
     git('merge', '-q', '--no-edit', 'origin/main')
   } catch {
-    try { git('merge', '--abort') } catch {}
-    return undefined
+    // Two branches that each add a decision row conflict on the log and nowhere else: renumber-decisions settles that.
+    const conflicted = git('diff', '--name-only', '--diff-filter=U').split('\n').filter((file) => file !== '')
+    let settled = false
+    if (conflicted.length === 1 && conflicted[0] === LOG) {
+      try {
+        execFileSync(process.execPath, [RENUMBER], { cwd: worktree, stdio: 'ignore' })
+        settled = !/^<{7} /m.test(readFileSync(join(worktree, LOG), 'utf8'))
+      } catch {}
+    }
+    if (!settled) {
+      try { git('merge', '--abort') } catch {}
+      return undefined
+    }
+    git('add', '-u')
+    git('commit', '-q', '--no-edit')
   }
   // A plain `push origin HEAD` goes to the local branch's name: renamed locally, it made a second remote branch and left the PR behind.
   // GitHub now and then rejects a good push ("fatal error in commit_refs"), so it is tried three times.
