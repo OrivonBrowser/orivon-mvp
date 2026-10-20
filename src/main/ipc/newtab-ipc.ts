@@ -17,14 +17,28 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import type { Bookmark, BookmarkStore } from '../browsing/bookmarks.js'
 import { NEWTAB_COMMAND_CHANNEL } from '../channels.js'
+import type { FeaturedState } from '../newtab/featured-state.js'
+import type { FeaturedStore } from '../newtab/featured-store.js'
 import type { WindowRegistry } from '../shell/window-registry.js'
 
 /** The dashboard's grid holds no more than this many tiles. */
 const DASHBOARD_TILES = 24
 
+/** What the page needs of this profile's Featured choices to draw the row. */
+export type FeaturedPrefs = Pick<FeaturedState, 'newcomerPin' | 'unpinned' | 'hidden'>
+
 export type NewTabCommand =
   | { type: 'getBookmarks' }
+  | { type: 'getFeatured' }
+  | { type: 'hideFeatured'; id: string }
+  | { type: 'unpinFeatured'; id: string }
+  | { type: 'showHiddenFeatured' }
   | { type: 'navigate'; input: string }
+
+function prefsOf (featured: FeaturedStore): FeaturedPrefs {
+  const { newcomerPin, unpinned, hidden } = featured.get()
+  return { newcomerPin, unpinned, hidden }
+}
 
 function isFromDashboard (event: IpcMainInvokeEvent, dashboardUrl: string): boolean {
   return event.senderFrame !== null &&
@@ -33,10 +47,10 @@ function isFromDashboard (event: IpcMainInvokeEvent, dashboardUrl: string): bool
 }
 
 /** Once per process: `ipcMain.handle` refuses a second registration of a channel. */
-export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry, bookmarks: BookmarkStore): void {
+export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry, bookmarks: BookmarkStore, featured: FeaturedStore): void {
   ipcMain.handle(
     NEWTAB_COMMAND_CHANNEL,
-    async (event: IpcMainInvokeEvent, command: NewTabCommand): Promise<Bookmark[] | undefined> => {
+    async (event: IpcMainInvokeEvent, command: NewTabCommand): Promise<Bookmark[] | FeaturedPrefs | undefined> => {
       if (!isFromDashboard(event, dashboardUrl)) {
         // Not the dashboard's own frame -- refuse silently, same
         // non-committal response ipc.ts's isFromChrome() gives, rather
@@ -50,6 +64,17 @@ export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry
           await bookmarks.load()
           // A tile navigates its own tab, and a tab's navigation never opens a local file.
           return bookmarks.getAll().filter((bookmark) => !/^file:/i.test(bookmark.url)).slice(0, DASHBOARD_TILES)
+        case 'getFeatured':
+          return prefsOf(featured)
+        case 'hideFeatured':
+          if (typeof command.id === 'string') featured.hide(command.id)
+          return prefsOf(featured)
+        case 'unpinFeatured':
+          if (typeof command.id === 'string') featured.unpin(command.id)
+          return prefsOf(featured)
+        case 'showHiddenFeatured':
+          featured.showHidden()
+          return prefsOf(featured)
         case 'navigate': {
           // Resolved from the event's OWN sender, in whichever window holds
           // it, never a tab id the page could simply claim -- a dashboard
