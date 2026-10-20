@@ -179,7 +179,15 @@ async function watch (pr, { maxReruns, merge, squash, stop, worktree }) {
       await sleep(AFTER_RERUN_MS)
     } else if (next.step === 'merge') {
       if (!merge) { console.log('green and CLEAN'); return 0 }
-      gh('pr', 'merge', pr, squash ? '--squash' : '--merge')
+      try {
+        gh('pr', 'merge', pr, squash ? '--squash' : '--merge')
+      } catch (error) {
+        // Another merge landed between the read and this one: the next poll sees BEHIND and updates the branch.
+        if (!/Base branch was modified/i.test(String(error.stderr ?? error.message))) throw error
+        console.log('main moved while merging: watching again')
+        said = ''
+        continue
+      }
       console.log(`merged #${pr}${reruns > 0 ? ` after ${String(reruns)} rerun(s): name the flakes above in the PR` : ''}`)
       return 0
     } else if (next.step === 'stuck') {

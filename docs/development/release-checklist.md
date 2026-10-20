@@ -168,9 +168,11 @@ forgotten.
 ## Before tagging a release
 
 - [ ] Every item above passes.
-- [ ] **The `.eth` light client's checkpoint refreshed and committed**:
-      `node scripts/refresh-eth-checkpoint.mjs --write`. A release whose checkpoint is over 14 days
-      old verifies no `.eth` name until the person installs a newer one.
+- [ ] **The `.eth` light client's checkpoint is under 7 days old.** The scheduled workflow
+      `refresh-eth-checkpoint.yml` opens a pull request with a fresh one every Monday and Thursday;
+      merge it, or run `node scripts/refresh-eth-checkpoint.mjs --write` and commit the result. The
+      Release workflow refuses a checkpoint over 7 days old, because the app refuses one over 14
+      and a fresh install of a release past that verifies no `.eth` name.
 - [ ] `npm run typecheck && npm test && npm run check:natives && npm run check:contracts` green.
 - [ ] CI green on `main`.
 - [ ] After publishing: the Release workflow is green and the release carries the deb, the
