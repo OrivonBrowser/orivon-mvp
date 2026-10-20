@@ -16,6 +16,7 @@ on:
       - electron-builder.yml
       - build/**
       - scripts/smoke-packaged.mjs
+      - scripts/smoke-orivon-link.mjs
       - scripts/pin-releases.sh
       - scripts/install-macos.sh
       - .github/workflows/release.yml
@@ -116,6 +117,15 @@ jobs:
           $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter Orivon.exe | Select-Object -First 1
           if (-not $exe) { throw "the installer put no Orivon.exe under $env:LOCALAPPDATA\Programs" }
           node scripts/run-headless.mjs node scripts/smoke-packaged.mjs $exe.FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # The installer's registry entries, and a link handed to Windows the way another program hands one.
+      - name: The installed package is listed as a browser and takes orivon, links
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter Orivon.exe | Select-Object -First 1
+          node scripts/smoke-orivon-link.mjs $exe.FullName
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # The Store signs its package itself, so the one built here is unsigned. To install it on the runner, a
@@ -247,6 +257,12 @@ jobs:
             exit 1
           fi
           node scripts/run-headless.mjs node scripts/smoke-packaged.mjs "$RUNNER_TEMP/apps-local/Orivon.app/Contents/MacOS/Orivon"
+
+      # What LaunchServices knows of the installed app, and a link handed to macOS the way another program hands one.
+      - name: The installed app is known as a browser and takes orivon, links
+        if: matrix.platform == 'mac'
+        run: |
+          node scripts/smoke-orivon-link.mjs "$RUNNER_TEMP/apps-local/Orivon.app/Contents/MacOS/Orivon" "$RUNNER_TEMP/apps-local/Orivon.app"
 
       # The real path as a user runs it: the newest published release is looked up, downloaded and checked. During a
       # release the new one has no packages yet, so this would test the previous release; PRs and manual runs only.
