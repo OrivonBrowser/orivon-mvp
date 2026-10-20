@@ -15,6 +15,18 @@ describe('resolveLog', () => {
     expect([...mapping]).toEqual([['d-0697', 'd-0700'], ['d-0698', 'd-0701']])
   })
 
+  it('keeps a row that holds $` or $\' as it is, and pastes nothing else in', () => {
+    const odd = row('d-0700', 'reads `$EXEFILE`, `$`` and `$\'` literally')
+    const text = row('d-0699', 'old') + '<<<<<<< HEAD\n' + odd + '=======\n' + row('d-0700', 'theirs') + '>>>>>>> origin/main\n' + 'tail\n'
+    const { text: out } = resolveLog(text)
+    expect(out).toBe(row('d-0699', 'old') + row('d-0700', 'theirs') + odd.replace('d-0700', 'd-0701') + 'tail\n')
+  })
+
+  it('refuses a conflict that holds more than rows', () => {
+    const text = '<<<<<<< HEAD\n## A heading\n' + row('d-0001', 'a') + '=======\n' + row('d-0001', 'b') + '>>>>>>> origin/main\n'
+    expect(() => resolveLog(text)).toThrow(/settle it by hand/)
+  })
+
   it('leaves a log with no conflict as it is', () => {
     const text = row('d-0001', 'a')
     expect(resolveLog(text)).toEqual({ text, mapping: new Map() })

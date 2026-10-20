@@ -18,14 +18,19 @@ export function resolveLog (text) {
   let out = text
   for (let match = CONFLICT.exec(out); match !== null; match = CONFLICT.exec(out)) {
     const [whole, ours, theirs] = match
-    const rest = out.replace(whole, theirs)
-    let next = Math.max(0, ...[...rest.matchAll(ID)].map((m) => Number(m[1]))) + 1
+    // Only a conflict of table rows is this script's to settle; anything else (a heading, prose) is settled by hand.
+    const prose = (ours + theirs).split('\n').find((line) => line.trim() !== '' && !line.startsWith('| '))
+    if (prose !== undefined) throw new Error(`the conflict holds more than decision rows (${prose.slice(0, 60)}): settle it by hand`)
+    // Spliced by index, never `String.replace` with a string: a row holding `$'` or $` would paste the rest of the file in.
+    const before = out.slice(0, match.index)
+    const after = out.slice(match.index + whole.length)
+    let next = Math.max(0, ...[...(before + theirs + after).matchAll(ID)].map((m) => Number(m[1]))) + 1
     const renumbered = ours.replace(/^\| `d-(\d{4})` \|/gm, (row, id) => {
       const to = `d-${String(next++).padStart(4, '0')}`
       mapping.set(`d-${id}`, to)
       return `| \`${to}\` |`
     })
-    out = out.replace(whole, theirs + renumbered)
+    out = before + theirs + renumbered + after
   }
   return { text: out, mapping }
 }
@@ -42,7 +47,9 @@ export function rewriteLines (body, mainLines, mapping) {
 }
 
 if (isInvokedDirectly(import.meta.url)) {
-  const { text, mapping } = resolveLog(readFileSync(LOG, 'utf8'))
+  let resolved
+  try { resolved = resolveLog(readFileSync(LOG, 'utf8')) } catch (error) { console.error(error.message); process.exit(1) }
+  const { text, mapping } = resolved
   writeFileSync(LOG, text)
   const changed = execFileSync('git', ['diff', '--name-only', 'origin/main...HEAD'], { encoding: 'utf8' })
     .split('\n').filter((file) => file !== '' && file !== LOG)
@@ -50,7 +57,7 @@ if (isInvokedDirectly(import.meta.url)) {
     let body
     try { body = readFileSync(file, 'utf8') } catch { continue }
     let main
-    try { main = execFileSync('git', ['show', `origin/main:${file}`], { encoding: 'utf8' }) } catch { main = '' }
+    try { main = execFileSync('git', ['show', `origin/main:${file}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) } catch { main = '' }
     const out = rewriteLines(body, new Set(main.split('\n')), mapping)
     if (out !== body) { writeFileSync(file, out); console.log(`rewrote ids in ${file}`) }
   }
