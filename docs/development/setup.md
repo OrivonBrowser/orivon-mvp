@@ -230,12 +230,18 @@ Settings shows what it is doing.
 | `ORIVON_TEST_ETH_FIXTURES`, `ORIVON_TEST_IPFS_GATEWAYS`, `ORIVON_TEST_DOH` | Test builds only (`npm run test:e2e` builds one): `.eth` names mapped to content with no light client, and the gateway and DNS-over-HTTPS endpoints to fetch it from. An ordinary build contains none of this (`npm run check:dev-grant-absent`) |
 | `ORIVON_TEST_IPFS_NODE`, `ORIVON_TEST_IPFS_NODE_RETRY_WAIT_MS` | Test builds only: an endpoint the host reads IPFS from as it does from Orivon's own node (always ready, no process started), and the wait before a block it could not give is asked for again, in place of the real node's 32 s. Needs `ORIVON_TEST_ETH_FIXTURES` too |
 | `ORIVON_TEST_DEFAULT_BROWSER=can-set\|default\|declined` | Test builds only: stands a recording host in for the operating system's default-browser calls, so Settings and the default-browser question can be driven with nothing reaching the machine (`src/main/os/default-browser-test-seam.ts`). An ordinary build contains none of this |
+| `ORIVON_TEST_BEACON_APIS`, `ORIVON_TEST_SHIPPED_CHECKPOINT_AGE_DAYS` | Test builds only: the beacon servers asked for a fresh checkpoint (comma-separated origins) in place of the real two, and how many days old the release's own checkpoint is taken to be, so a suite reaches the state of an old release on any date (`src/main/verifier/test-seam.ts`). An ordinary build contains none of this |
 | `ORIVON_TEST_LOCAL_POINTER=1` | Test builds only: treats the pointer's screen position as unknown, as on a native Wayland session, so a tab drag is the browser's own drag and drop on a virtual X display (`src/main/shell/local-pointer.ts`). An ordinary build contains none of this |
 
-Each release ships a checkpoint for the light client, refreshed with
-`node scripts/refresh-eth-checkpoint.mjs --write` before tagging: it refuses unless two beacon APIs
-agree. An install keeps a newer one of its own after every sync, and refuses any checkpoint older
-than 14 days.
+Each release ships a checkpoint for the light client. `node scripts/refresh-eth-checkpoint.mjs --write`
+refreshes it and refuses unless two beacon APIs agree; the scheduled workflow
+`.github/workflows/refresh-eth-checkpoint.yml` runs it every Monday and Thursday and opens a pull request
+when the file changed. The Release workflow refuses a checkpoint over 7 days old. An install keeps a newer
+one of its own after every sync, and refuses any checkpoint older than 14 days. When the release's and the stored
+one are both past that, the app asks the two beacon servers in `DEFAULT_ENDPOINTS.checkpointBeaconApis` (the same two
+this script asks) for a finalized header when the verifier host starts, and keeps it if they agree
+([`ADR-0092`](../decisions/ADR-0092-when-no-checkpoint-is-recent-enough-two-beacon-servers-that-agree-supply-one.md)).
+The script and `src/main/verifier/checkpoint-fetch.ts` hold the same rule, and a unit test compares them.
 
 ---
 

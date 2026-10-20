@@ -53,6 +53,20 @@ describe('link group', () => {
     ])
   })
 
+  it('adds Copy web link after Copy Link Address for a link another browser cannot follow as it is written', () => {
+    const copyText = vi.fn()
+    const template = contextMenuTemplate(params({ linkURL: 'ipfs://vitalik.eth/blog?a=1', linkText: 'A link' }), { ...full(), copyText }, false, ctx)
+    expect(labels(template).slice(-3)).toEqual(['Copy Link Address', 'Copy web link (opens in any browser)', 'Copy Link Text'])
+    ;(template.find((item) => item.label === 'Copy web link (opens in any browser)')?.click as () => void)()
+    expect(copyText).toHaveBeenCalledWith('https://vitalik.eth.limo/blog?a=1')
+  })
+
+  it('offers no web link for an ordinary web link, a mailto: link or an Orivon page', () => {
+    for (const linkURL of ['https://example.com/a', 'mailto:a@b.c', 'orivon://settings/']) {
+      expect(labels(contextMenuTemplate(params({ linkURL, linkText: 'x' }), full(), false, ctx)), linkURL).not.toContain('Copy web link (opens in any browser)')
+    }
+  })
+
   it('sends the address to the right action', () => {
     const a = full()
     const template = contextMenuTemplate(params({ linkURL: 'https://example.com/a', linkText: ' text ' }), a, false, ctx)

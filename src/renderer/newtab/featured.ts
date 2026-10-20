@@ -1,15 +1,12 @@
-// The entries of "Orivon Featured" on the new tab, in the order they show. Each opens as any address typed in the
-// bar does. The icons are in `featured/`, with their sources in that folder's README.
-export interface FeaturedEntry {
-  readonly title: string
-  readonly url: string
-  readonly icon: string
-}
+// The entries of "Orivon Featured", read from `featured/featured.json`. The icons are in `featured/`, with their
+// sources in that folder's README.
+import type { FeaturedEntry } from './featured-model.js'
+import shipped from './featured/featured.json'
 
-export const FEATURED: readonly FeaturedEntry[] = [
-  { title: 'Explore', url: 'ipfs://explore.orivonstack.eth', icon: new URL('./featured/explore.svg', import.meta.url).href },
-  { title: 'WebTorrent', url: 'ipfs://webtorrent.orivonstack.eth', icon: new URL('./featured/webtorrent.png', import.meta.url).href },
-  { title: 'ASGARDEX', url: 'ipfs://asgardex.orivonstack.eth', icon: new URL('./featured/asgardex.png', import.meta.url).href },
-  { title: 'Ledger Wallet', url: 'ipfs://ledgerwallet.orivonstack.eth', icon: new URL('./featured/ledgerwallet.png', import.meta.url).href },
-  { title: 'The Lounge', url: 'ipfs://thelounge.orivonstack.eth', icon: new URL('./featured/thelounge.png', import.meta.url).href }
-]
+export const FEATURED: readonly FeaturedEntry[] = shipped as FeaturedEntry[]
+
+/** The URL the build serves an entry's icon file at, or null when the entry draws a letter. The template keeps the
+ * folder in the path so the bundler finds every file in it. */
+export function iconUrl (icon: string | null): string | null {
+  return icon === null ? null : new URL(`./featured/${icon}`, import.meta.url).href
+}

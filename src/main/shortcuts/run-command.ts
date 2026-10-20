@@ -24,7 +24,7 @@ import { reopenClosed } from '../session-restore/reopen.js'
 import { openCertificate } from '../auth/certificate-open.js'
 import { groupTabNew, shownNeighbour, stepTab, ungroupTab } from '../tab-groups/groups-runner.js'
 import { openQr } from '../qr/qr-open.js'
-import { copyLinkCommand, emailLinkCommand } from '../os/share-commands.js'
+import { copyLinkCommand, copyWebLinkCommand, emailLinkCommand } from '../os/share-commands.js'
 import { realShareDeps } from '../os/share-runner.js'
 import { openShortcutSheet } from '../os/shortcut-open.js'
 import { sidePanelFor } from '../side-panel/side-panel-host.js'
@@ -162,6 +162,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'page.reader': readerCommand(target, services); return
     case 'caret.toggle': toggleCaret({ window: target, services }); return
     case 'share.copyLink': copyLinkCommand(target, realShareDeps); return
+    case 'share.copyWebLink': copyWebLinkCommand(target, realShareDeps); return
     case 'share.email': void emailLinkCommand(target, realShareDeps).catch((error: unknown) => { console.error('[shortcuts] email link command failed:', error) }); return
     case 'site.certificate': openCertificate(target); return
     case 'site.shortcut': openShortcutSheet(target, services); return

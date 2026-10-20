@@ -6,10 +6,11 @@
 # No certificate is bought. The Windows installer is unsigned, so SmartScreen warns on first run,
 # and it is the only Windows file attached to a release. The Windows build also writes an AppX
 # package (the `appx` block below) for the Microsoft Store, which signs it itself: it is left
-# unsigned here, never attached to a release, and kept as a workflow artifact for the owner to
-# upload in Partner Center. macOS packages are ad-hoc signed (`mac.identity` below), so Gatekeeper
-# asks the person to allow the app once. The schema here is electron-builder 26.x's, checked against
-# the installed node_modules/app-builder-lib/scheme.json.
+# unsigned here, never attached to a release, and submitted to Partner Center by the release
+# workflow's store job (it stays a workflow artifact for upload by hand). macOS packages are
+# ad-hoc signed (`mac.identity` below), so Gatekeeper asks the person to allow the app once. The
+# schema here is electron-builder 26.x's, checked against the installed
+# node_modules/app-builder-lib/scheme.json.
 # The `win` and `mac` blocks also register Orivon with the system as a browser: `protocols`
 # below, and build/installer.nsh for the Windows installer's registry entries
 # (build/appx-extensions.xml is the Store package's equivalent). Whether a built package
@@ -170,7 +171,7 @@ linux:
   # the application menu. AppImage remains the trial artefact; the
   # first-run "install desktop entry" flow that closes its integration gap is a
   # separate, already-scoped piece of work -- this file only has to not make it
-  # impossible, which an allowlisted `files` and a correct `linux.desktop` block do not.
+  # impossible, which an allowlisted `files` and the `desktop` entries below do not.
 
   category: "Network;WebBrowser;"
   # freedesktop.org Categories=. Two values, not one: WebBrowser is the specific
@@ -191,16 +192,22 @@ linux:
   description: >-
     Orivon reaches the network and filesystem under user-granted, per-app capabilities,
     so that ordinary web frontends delivered from a URL can do what today requires a
-    native install. Pre-alpha.
+    native install. Early access.
   # Reuses README.md's own tagline rather than writing new marketing copy for a second
   # place it can drift out of sync.
 
   vendor: OrivonStack
-  maintainer: Orivon <accauntacaso57@gmail.com>
+  maintainer: Orivon <support@orivonstack.com>
   # package.json has no "author" field, and this task may not add one (package.json is
   # off limits here -- see the PR description). A .deb's control file requires a
-  # Maintainer entry, so it is supplied at this layer instead. The address reuses
-  # SECURITY.md's existing public fallback contact rather than introducing a new one.
+  # Maintainer entry, so it is supplied at this layer instead.
+
+  # The AppStream description AppImageHub and software centres read (packaging.md section AppImageHub). The
+  # AppImage's AppDir is the unpacked app folder, so this lands at usr/share/metainfo inside it. The deb gets the
+  # same file under /opt/Orivon, where nothing reads it; the AUR package moves it to /usr/share/metainfo.
+  extraFiles:
+    - from: build/linux/com.orivonstack.orivon.metainfo.xml
+      to: usr/share/metainfo/com.orivonstack.orivon.metainfo.xml
 
   executableName: orivon
   # Linux binaries are lowercase by convention (`/usr/bin/orivon`, not `/usr/bin/Orivon`
@@ -209,18 +216,6 @@ linux:
   # execs into (electron-builder's own migration notes: Linux targets moved to a
   # generated shell-script entry point in v27, and custom desktop/AppArmor/MIME
   # overrides need to reference it, not the raw binary, if anyone adds one later).
-
-  desktop:
-    entry:
-      Name: Orivon Browser
-      Comment: A browser that runs applications Chrome cannot
-      Type: Application
-      Terminal: false
-      StartupWMClass: orivon
-      # A packaged build's window class: Electron names its windows after package.json's
-      # `name` (WM_CLASS "orivon", "orivon"; the Wayland app id comes from `desktopName`,
-      # orivon.desktop). A run from source renames itself `orivon-source` before its first
-      # window (src/main/launch/start-launch.ts), so the dock never files it here.
 
 deb:
   packageCategory: web
@@ -231,12 +226,18 @@ deb:
   # generally, not browsers specifically).
 
   # The installed entry's right-click menu in a dock or taskbar (a freedesktop "desktop action").
-  # Under `deb`, never `linux`: electron-builder merges `linux.desktop` into the AppImage's
-  # entry too, whose `Exec` is AppRun, and an action naming /opt/Orivon would launch nothing there.
+  # Under `deb`, never `linux`: a `linux.desktop` is shared by reference with every target's options, so the
+  # actions would also land in the AppImage's entry, whose `Exec` is AppRun, and an action naming /opt/Orivon
+  # would launch nothing there. For the same reason the entry's common keys are written under `deb` and `appImage`
+  # each, not once under `linux`.
   # The ids are the conventional ones, so GNOME treats `new-window` as the app's own new-window action rather than
   # adding a second "New Window" item. They and the `orivon.desktop` file name are what a pinned launcher keys on.
   desktop:
     entry:
+      Name: Orivon Browser
+      Type: Application
+      Terminal: false
+      StartupWMClass: orivon
       Actions: "new-window;new-private-window;"
     desktopActions:
       new-window:
@@ -248,6 +249,16 @@ deb:
 
 appImage:
   artifactName: ${productName}-${version}-${arch}.${ext}
+  desktop:
+    entry:
+      Name: Orivon Browser
+      Type: Application
+      Terminal: false
+      # A packaged build's window class: Electron names its windows after package.json's
+      # `name` (WM_CLASS "orivon", "orivon"; the Wayland app id comes from `desktopName`,
+      # orivon.desktop). A run from source renames itself `orivon-source` before its first
+      # window (src/main/launch/start-launch.ts), so the dock never files it here.
+      StartupWMClass: orivon
 
 # --- Windows and macOS: packages, and registration as a browser --------------------------
 # Only an installed package registers Orivon as a browser (src/main/os/default-browser.ts).

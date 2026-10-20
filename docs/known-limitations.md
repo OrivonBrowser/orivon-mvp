@@ -47,14 +47,18 @@ servers for data. None of them is trusted to be right; each of them sees what it
   `.eth` address is typed or opened and stops about ten minutes after the last one. It also runs
   once, two minutes after launch, when its newest checkpoint is more than seven days old. It
   follows the chain through `ethereum-beacon-api.publicnode.com` and one of three RPCs
-  (`eth.drpc.org`, `rpc.mevblocker.io`, `ethereum-rpc.publicnode.com`).
+  (`eth.drpc.org`, `rpc.mevblocker.io`, `ethereum-rpc.publicnode.com`). When the checkpoint it came with and the
+  one it stored are both over 14 days old, it first asks `ethereum-beacon-api.publicnode.com` and
+  `lodestar-mainnet.chainsafe.io` for a fresh one and uses it only if both give the same answer; if they do not,
+  or one cannot be reached, no `.eth` name loads until a newer release is installed or they agree.
 - **Opening a name tells those RPCs the name.** The IPFS gateways (`ipfs.orbitor.dev`,
   `ipfs.filebase.io`, `trustless-gateway.link`) learn the content you fetch, and for some names
   `name.web3.storage`, a DNS-over-HTTPS resolver (`cloudflare-dns.com`, `dns.google`) or a server
   the name's own resolver chooses learns the name. Settings > Web3 lists them all.
 - **Servers can withhold, not lie.** A server can refuse to answer or answer slowly. It cannot
   hand you a wrong name record or a wrong byte without the check failing. The light client's root
-  of trust is a chain checkpoint shipped with each release.
+  of trust is a chain checkpoint shipped with each release, or one fetched from two beacon servers that agreed
+  (`ADR-0092`).
 - `ORIVON_ETH_LIGHT_CLIENT=off` switches the light client off for a run; no `.eth` name loads
   then.
 
