@@ -13,6 +13,9 @@ app can rely on. [`known-limitations.md`](known-limitations.md) says what each f
 Orivon is a product in early access. It is a browser to live in and a platform that runs
 applications a web page cannot be, and both are in use now.
 
+In progress: links from other programs that open in Orivon. An `orivon:open?u=...` link names a
+`.eth` name or an IPFS address and opens it, on Linux, Windows and macOS.
+
 ## Expected next
 
 - A native wallet is on the way.
@@ -29,7 +32,7 @@ applications a web page cannot be, and both are in use now.
 - Native desktop apps rendered in a tab, such as Bisq (compatibility tier 3).
 - Deeper WASI and WebAssembly support inside the layer that runs apps today.
 - Spell-check dictionaries served from `.eth` names.
-- Orivon as the system's handler for a link scheme or a file type, so a link clicked in another program, or a `.torrent` file, opens in an app.
+- Orivon as the system's handler for a file type, so a `.torrent` file opens in an app.
 - Windows and macOS code signing with bought certificates.
 - Web3 search.
 - Proxy chains: one tunnel behind another. One tunnel for an installed app, for any website and for the whole browser is built, Nym or your own SOCKS5 address.
