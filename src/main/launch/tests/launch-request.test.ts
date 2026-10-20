@@ -30,6 +30,19 @@ describe('requestFromArgv', () => {
     expect(requestFromArgv([...SOURCE, 'notes/a.html'], false, disk)).toEqual({ kind: 'open', urls: ['file:///work/notes/a.html'] })
   })
 
+  it('opens the address an orivon:open link names, and only that: a link naming anything else only focuses', () => {
+    expect(requestFromArgv([...PACKAGED, '--', 'orivon:open?u=vitalik.eth/a'], true)).toEqual({ kind: 'open', urls: ['https://vitalik.eth/a'] })
+    expect(requestFromArgv([...SOURCE, 'orivon://open?u=ipfs://bafy/x'], false)).toEqual({ kind: 'open', urls: ['https://ipfs.orivon/bafy/x'] })
+    for (const link of ['orivon:open?u=https://example.com', 'orivon:open?u=file:///etc/passwd', 'orivon:open', 'orivon:settings', 'orivon:open?u=vitalik.eth/..']) {
+      expect(requestFromArgv([...PACKAGED, '--', link], true, NOTHING_THERE), link).toEqual({ kind: 'open', urls: [] })
+    }
+  })
+
+  it('never lets a link carrying a switch be read as one', () => {
+    expect(requestFromArgv([...PACKAGED, '--', 'orivon:open?u=vitalik.eth&--no-sandbox'], true).kind).toBe('open')
+    expect(requestFromArgv([...PACKAGED, '--', '--new-private-window'], true, NOTHING_THERE)).toEqual({ kind: 'open', urls: [] })
+  })
+
   it('never reads the app path of a source run as a file', () => {
     const disk = { cwd: '/work', platform: 'linux' as const, kindOf: () => 'directory' as const }
     expect(requestFromArgv(['/usr/lib/electron', '.'], false, disk)).toEqual({ kind: 'window', urls: [] })
@@ -86,6 +99,7 @@ describe('readLaunchRequest', () => {
     const fallback = { kind: 'open', urls: ['https://from-argv.example/'] }
     expect(readLaunchRequest(undefined, argv)).toEqual(fallback)
     expect(readLaunchRequest(null, argv)).toEqual(fallback)
+    expect(readLaunchRequest(undefined, [...argv, 'orivon:open?u=vitalik.eth', 'orivon:open?u=https://evil.example'])).toEqual({ kind: 'open', urls: [...fallback.urls, 'https://vitalik.eth/'] })
     expect(readLaunchRequest('window', argv)).toEqual(fallback)
     expect(readLaunchRequest({ orivonLaunch: 2, kind: 'window', urls: [] }, argv)).toEqual(fallback)
     expect(readLaunchRequest({ orivonLaunch: 1, kind: 'quit', urls: [] }, argv)).toEqual(fallback)
