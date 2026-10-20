@@ -10,7 +10,7 @@
 //
 // This file therefore contains no download, no signature/hash verification,
 // and no install step, anywhere. The only network call it makes is a read of
-// GitHub's "latest release" metadata.
+// GitHub's list of recent releases.
 //
 // STRUCTURE, innermost (pure) to outermost (real I/O): this file's own
 // decision table, then its checkForUpdate wrapper composing it around an

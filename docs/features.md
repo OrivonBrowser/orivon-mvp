@@ -82,5 +82,5 @@ rely on, row by row. A new feature adds its line here when it lands.
 - **Packages for Linux, Windows and macOS** on every GitHub release (deb, AppImage, NSIS installer, dmg for Apple silicon and Intel), also published on IPFS. On macOS a one-line Terminal command installs or updates Orivon with no Gatekeeper warning.
 - **A Microsoft Store package** built with every Windows build and kept for upload to Partner Center (not on the release); a Store install is updated by the Store and looks for no update itself.
 - **winget**: every release's Windows installer is offered to winget-pkgs by the release workflow (`Orivon.Browser`, and `Orivon.Browser.Preview` for a pre-release), once the owner has stored the token and submitted the first version of each.
-- **Update check**: once a day, on by default (Settings > About turns it off), Orivon asks GitHub whether a newer release exists and links to its page; it installs nothing.
+- **Update check**: once a day, on by default (Settings > About turns it off), Orivon asks GitHub whether a newer release (pre-releases included) exists and links to its page; it installs nothing.
 - **Run from source** on Linux, Windows and macOS with `npm install && npm start`.

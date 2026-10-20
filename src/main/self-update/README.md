@@ -1,8 +1,10 @@
 # `src/main/self-update/`: check, notify, never install
 
-**What lives here.** `update-check.ts` compares the running version with the latest GitHub
+**What lives here.** `update-check.ts` compares the running version with the newest GitHub
 release and notifies, never installs (its header says why). `update-check-runner.ts` is the real
 I/O; its `updateCheckSubsystem` is not yet listed in `../subsystems.ts`.
+`newest-release.ts` picks the newest release by version from the list GitHub answers, pre-releases
+included (every release here is one), skipping drafts and tags that are not versions.
 `github-release-version.ts` parses release tags, and must not merge with the broker's version
 comparator (its header says why).
 
