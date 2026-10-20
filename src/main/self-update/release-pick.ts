@@ -1,4 +1,4 @@
-// Which of the repository's releases the update check offers: the newest stable one whose files are signed.
+// Which of the repository's releases the update check offers: the newest one by version whose files are signed.
 import { compareVersions, parseVersion } from './github-release-version.js'
 import type { ParsedVersion } from './github-release-version.js'
 
@@ -26,8 +26,8 @@ function assetNames (release: Record<string, unknown>): string[] {
 }
 
 /**
- * The newest release that is not a draft, a prerelease or a nightly, has a plain version tag, and carries the
- * signed manifest. A release counts as ready only once it is signed: before that its packages may not all be
+ * The newest release that is not a draft or a nightly, has a plain version tag, and carries the
+ * signed manifest. A GitHub pre-release counts: every release of the repository is published as one. A release counts as ready only once it is signed: before that its packages may not all be
  * attached. `list` is the parsed answer of the releases endpoint, read as untrusted.
  */
 export function pickRelease (list: unknown): PickedRelease | null {
@@ -37,7 +37,7 @@ export function pickRelease (list: unknown): PickedRelease | null {
     if (!isRecord(entry)) continue
     const tag = entry['tag_name']
     if (typeof tag !== 'string' || !PLAIN_TAG.test(tag)) continue
-    if (entry['draft'] === true || entry['prerelease'] === true) continue
+    if (entry['draft'] === true) continue
     const name = entry['name']
     if (NIGHTLY.test(tag) || (typeof name === 'string' && NIGHTLY.test(name))) continue
     const parsed = parseVersion(tag)

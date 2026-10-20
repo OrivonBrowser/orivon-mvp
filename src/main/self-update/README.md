@@ -7,7 +7,7 @@ say so, downloads the package for this copy, checks it against the signed hash a
 
 | Piece | Files |
 |---|---|
-| Which release | `release-pick.ts` (drafts, prereleases, nightlies and unsigned releases are never picked), `update-source.ts` (reads the list and the signed files from addresses it builds itself), `release-url.ts`, `github-release-version.ts` |
+| Which release | `release-pick.ts` (drafts, nightlies, tags that are not plain versions and unsigned releases are never picked; a GitHub pre-release is, since every release here is one), `update-source.ts` (reads the list and the signed files from addresses it builds itself), `release-url.ts`, `github-release-version.ts` |
 | Whether to believe it | `update-manifest.ts` (the signed list, verified with `node:crypto`), `update-signing-key.ts` (the trusted public keys) |
 | When to look and ask | `update-check.ts` (the decision table), `update-checker.ts` (the daily look and the ask once per version), `update-schedule.ts` (start, hourly, on the setting), `update-ask.ts` (the two questions' words and buttons), `update-state.ts` (the state file) |
 | What this copy is | `install-kind.ts` (AppImage, deb, Windows installer, macOS app, or none: a run from source), `install-plan.ts` (the steps for each, as data, and what is checked first) |

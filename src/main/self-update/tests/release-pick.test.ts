@@ -18,9 +18,19 @@ describe('pickRelease', () => {
     expect(pickRelease([release('v1.1.0'), release('v1.3.0-nightly.4'), release('v1.2.0', { name: 'Nightly build' })])?.tag).toBe('v1.1.0')
   })
 
-  it('skips a prerelease flag, a semver prerelease part and a draft', () => {
-    const list = [release('v1.0.0'), release('v2.0.0', { prerelease: true }), release('v2.1.0-rc.1'), release('v2.2.0', { draft: true })]
+  it('offers a release GitHub flags as a pre-release, because every release of the repository is one', () => {
+    const list = [release('v0.0.6', { prerelease: true }), release('v0.0.8', { prerelease: true }), release('v0.0.7', { prerelease: true })]
+    expect(pickRelease(list)).toEqual({ tag: 'v0.0.8', version: '0.0.8' })
+  })
+
+  it('skips a draft and a tag with a semver prerelease part, even newer than the rest', () => {
+    const list = [release('v1.0.0'), release('v2.0.0', { draft: true }), release('v2.1.0-rc.1')]
     expect(pickRelease(list)?.tag).toBe('v1.0.0')
+  })
+
+  it('skips a tag that is not a version, such as the one a release without files sits on', () => {
+    expect(pickRelease([release('pre-releases', { prerelease: true }), release('v0.0.8', { prerelease: true })])?.tag).toBe('v0.0.8')
+    expect(pickRelease([release('pre-releases', { prerelease: true })])).toBeNull()
   })
 
   it('offers the older signed release while the newest one is not signed yet', () => {
