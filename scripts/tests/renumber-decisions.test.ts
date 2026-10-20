@@ -1,0 +1,32 @@
+import { describe, expect, it } from 'vitest'
+import { resolveLog, rewriteLines } from '../ai/renumber-decisions.mjs'
+
+const row = (id: string, what: string): string => `| \`${id}\` | 2026-10-20 | ${what} | x |\n`
+
+describe('resolveLog', () => {
+  it('keeps main\'s rows and renumbers the branch\'s after the highest id', () => {
+    const text = row('d-0696', 'old') +
+      '<<<<<<< HEAD\n' + row('d-0697', 'ours a') + row('d-0698', 'ours b') +
+      '=======\n' + row('d-0697', 'theirs a') + row('d-0698', 'theirs b') + row('d-0699', 'theirs c') +
+      '>>>>>>> origin/main\n'
+    const { text: out, mapping } = resolveLog(text)
+    expect(out).toBe(row('d-0696', 'old') + row('d-0697', 'theirs a') + row('d-0698', 'theirs b') + row('d-0699', 'theirs c') +
+      row('d-0700', 'ours a') + row('d-0701', 'ours b'))
+    expect([...mapping]).toEqual([['d-0697', 'd-0700'], ['d-0698', 'd-0701']])
+  })
+
+  it('leaves a log with no conflict as it is', () => {
+    const text = row('d-0001', 'a')
+    expect(resolveLog(text)).toEqual({ text, mapping: new Map() })
+  })
+})
+
+describe('rewriteLines', () => {
+  const mapping = new Map([['d-0698', 'd-0700'], ['d-0699', 'd-0701']])
+
+  it('rewrites only the lines main lacks, without chaining one rewrite into the next', () => {
+    const body = 'main cites d-0698 here\nbranch cites d-0698 and d-0699\n'
+    const out = rewriteLines(body, new Set(['main cites d-0698 here']), mapping)
+    expect(out).toBe('main cites d-0698 here\nbranch cites d-0700 and d-0701\n')
+  })
+})
