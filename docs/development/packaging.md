@@ -88,8 +88,8 @@ when it does not.
    route that is not set up yet.
 4. A release build first refuses an `.eth` light-client checkpoint
    (`src/main/verifier/mainnet-checkpoint.json`) over 7 days old (`MAX_CHECKPOINT_AGE_DAYS` in the
-   workflow): the app rejects one over 14, and a fresh install of a release past that would verify
-   no `.eth` name. `refresh-eth-checkpoint.yml` proposes a fresh one twice a week; merge it before
+   workflow): the app rejects one over 14, and an install of a release past that has to fetch a
+   fresh one from two beacon servers, which it cannot when they are unreachable or disagree. `refresh-eth-checkpoint.yml` proposes a fresh one twice a week; merge it before
    tagging ([`release-checklist.md`](release-checklist.md)).
 
 A pull request that changes `electron-builder.yml`, `build/`, `scripts/smoke-packaged.mjs` or the

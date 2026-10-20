@@ -41,6 +41,11 @@ if (topFrame && expectedUrl !== undefined && location.href === expectedUrl) {
   }
 
   contextBridge.exposeInMainWorld('orivonNewTab', {
+    /** This profile's Featured choices (src/main/newtab/featured-store.ts); the page checks the shape. */
+    getFeatured: async (): Promise<unknown> => await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'getFeatured' }),
+    hideFeatured: async (id: string): Promise<unknown> => await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'hideFeatured', id }),
+    unpinFeatured: async (id: string): Promise<unknown> => await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'unpinFeatured', id }),
+    showHiddenFeatured: async (): Promise<unknown> => await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'showHiddenFeatured' }),
     getBookmarks: async (): Promise<Bookmark[]> => {
       const result: unknown = await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'getBookmarks' })
       return Array.isArray(result) ? result as Bookmark[] : []

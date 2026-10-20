@@ -1,4 +1,16 @@
-# `featured/`: icons of the apps under "Orivon Featured"
+# `featured/`: the apps under "Orivon Featured", and their icons
+
+**`featured.json`** lists the entries the build ships. Each is `{ id, name, url, icon, pinned, order }`:
+`id` a lowercase slug that is also the name label of `url` (`ipfs://<id>.orivonstack.eth`), `icon` a file in this folder
+(`null` draws the first letter of `name`), `pinned` an entry shown before the others, and `order` the place among
+the pinned entries, then among the rest. A person's own choices (hidden, unpinned, and the app a new profile was given first)
+are kept per profile by [`src/main/newtab/`](../../../main/newtab/README.md).
+
+An entry may carry `"hold": { "reason": "..." }`, set by hand while the port lags a security or funds fix of
+the app it ports. `src/renderer/newtab/tests/featured-model.test.ts` fails while any entry has one, so the entry
+leaves the file (or the port catches up and the `hold` is deleted) before the change can merge. The test checks the
+flag, not the port's version: nothing here reads a port's version.
+
 
 Each icon names the app it belongs to and is shown for nothing else; the marks belong to their owners.
 

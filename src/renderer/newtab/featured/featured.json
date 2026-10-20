@@ -1,0 +1,7 @@
+[
+  { "id": "explore", "name": "Explore", "url": "ipfs://explore.orivonstack.eth", "icon": "explore.svg", "pinned": false, "order": 10 },
+  { "id": "webtorrent", "name": "WebTorrent", "url": "ipfs://webtorrent.orivonstack.eth", "icon": "webtorrent.png", "pinned": false, "order": 20 },
+  { "id": "asgardex", "name": "ASGARDEX", "url": "ipfs://asgardex.orivonstack.eth", "icon": "asgardex.png", "pinned": false, "order": 30 },
+  { "id": "ledgerwallet", "name": "Ledger Wallet", "url": "ipfs://ledgerwallet.orivonstack.eth", "icon": "ledgerwallet.png", "pinned": false, "order": 40 },
+  { "id": "thelounge", "name": "The Lounge", "url": "ipfs://thelounge.orivonstack.eth", "icon": "thelounge.png", "pinned": false, "order": 50 }
+]
