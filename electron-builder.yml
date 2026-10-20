@@ -6,10 +6,11 @@
 # No certificate is bought. The Windows installer is unsigned, so SmartScreen warns on first run,
 # and it is the only Windows file attached to a release. The Windows build also writes an AppX
 # package (the `appx` block below) for the Microsoft Store, which signs it itself: it is left
-# unsigned here, never attached to a release, and kept as a workflow artifact for the owner to
-# upload in Partner Center. macOS packages are ad-hoc signed (`mac.identity` below), so Gatekeeper
-# asks the person to allow the app once. The schema here is electron-builder 26.x's, checked against
-# the installed node_modules/app-builder-lib/scheme.json.
+# unsigned here, never attached to a release, and submitted to Partner Center by the release
+# workflow's store job (it stays a workflow artifact for upload by hand). macOS packages are
+# ad-hoc signed (`mac.identity` below), so Gatekeeper asks the person to allow the app once. The
+# schema here is electron-builder 26.x's, checked against the installed
+# node_modules/app-builder-lib/scheme.json.
 # The `win` and `mac` blocks also register Orivon with the system as a browser: `protocols`
 # below, and build/installer.nsh for the Windows installer's registry entries
 # (build/appx-extensions.xml is the Store package's equivalent). Whether a built package
@@ -201,6 +202,13 @@ linux:
   # off limits here -- see the PR description). A .deb's control file requires a
   # Maintainer entry, so it is supplied at this layer instead. The address reuses
   # SECURITY.md's existing public fallback contact rather than introducing a new one.
+
+  # The AppStream description AppImageHub and software centres read (packaging.md section AppImageHub). The
+  # AppImage's AppDir is the unpacked app folder, so this lands at usr/share/metainfo inside it. The deb gets the
+  # same file under /opt/Orivon, where nothing reads it; the AUR package moves it to /usr/share/metainfo.
+  extraFiles:
+    - from: build/linux/com.orivonstack.orivon.metainfo.xml
+      to: usr/share/metainfo/com.orivonstack.orivon.metainfo.xml
 
   executableName: orivon
   # Linux binaries are lowercase by convention (`/usr/bin/orivon`, not `/usr/bin/Orivon`
