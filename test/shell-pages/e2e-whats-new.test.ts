@@ -83,7 +83,7 @@ it('opens nothing on a new profile, and records the version for the next start',
   const app = await launch()
   try {
     expect(await waitFor(() => { try { findChrome(app); return true } catch { return false } })).toBe(true)
-    expect(await waitFor(async () => (await introFile(app).catch(() => ({})))['lastRunVersion'] === '0.2.0')).toBe(true)
+    expect(await waitFor(async () => (await introFile(app).catch((): Record<string, unknown> => ({})))['lastRunVersion'] === '0.2.0')).toBe(true)
     expect(newsPage(app)).toBeUndefined()
   } finally {
     await closeElectron(app)
