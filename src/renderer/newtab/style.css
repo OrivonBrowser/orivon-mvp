@@ -177,18 +177,22 @@ img.tile-icon { border-radius: 4px; object-fit: contain; }
 
 /* A featured tile holds its two small controls, shown only while the tile is hovered or has the keyboard, so the row
    looks as a bookmark row does until the person reaches for one. */
-.tile-wrap { position: relative; display: flex; }
-.tile-wrap > .tile { width: 100%; }
+.tile-wrap { display: grid; }
+/* Both share the one cell, the controls in its top right corner. The wrapper is not positioned: a positioned box
+   changes how the text painted after the row is rendered. */
+.tile-wrap > * { grid-area: 1 / 1; }
 .tile-actions {
-  position: absolute;
-  top: 4px;
-  right: 4px;
+  justify-self: end;
+  align-self: start;
+  margin: 4px;
   display: flex;
   gap: 2px;
-  opacity: 0;
+  /* Hidden, not faded out: a transparent layer would take the sub-pixel text rendering from everything painted after the
+     row. The tile holding the keyboard shows them, so the next Tab reaches them. */
+  visibility: hidden;
 }
 .tile-wrap:hover .tile-actions,
-.tile-wrap:focus-within .tile-actions { opacity: 1; }
+.tile-wrap:focus-within .tile-actions { visibility: visible; }
 .tile-action {
   width: 22px;
   height: 22px;

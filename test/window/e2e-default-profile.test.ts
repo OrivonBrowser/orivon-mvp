@@ -5,7 +5,7 @@
 import { existsSync, mkdirSync } from 'node:fs'
 import { readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { ElectronApplication, Page } from 'playwright'
+import type { ElectronApplication, Locator, Page } from 'playwright'
 import { afterAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, profileDirOf } from '../support/launch-electron.mjs'
 import { evaluateRetrying, findChrome, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
@@ -124,6 +124,13 @@ it('starts a new profile with the bookmarks, uBlock Origin pinned, the Extension
 }, TEST_TIMEOUT_MS)
 
 const featuredNames = async (dashboard: Page): Promise<string[]> => await dashboard.locator('#featured-grid .tile-label').allInnerTexts()
+/** A tile's control, by its accessible name: a control is hidden until its tile is hovered or holds the keyboard, so a role query cannot see it. */
+const control = (dashboard: Page, name: string): Locator => dashboard.locator(`#featured-grid button[aria-label="${name}"]`)
+/** Hovers the tile the control belongs to, which shows it, and presses it. */
+async function pressControl (dashboard: Page, name: string): Promise<void> {
+  await control(dashboard, name).locator('xpath=ancestor::*[contains(@class, "tile-wrap")]').hover()
+  await control(dashboard, name).click()
+}
 
 it('hides a Featured tile and brings it back, and shows the app a profile was given first until it is removed', async () => {
   const first = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], sandbox: true })
@@ -134,11 +141,16 @@ it('hides a Featured tile and brings it back, and shows the app a profile was gi
     expect(await waitFor(async () => (await featuredNames(dashboard)).length === FEATURED.length)).toBe(true)
     expect(await dashboard.locator('#featured-show-hidden').isHidden()).toBe(true)
 
-    // The controls are on the keyboard's path: focus on the control shows it.
-    const hideWebTorrent = dashboard.getByRole('button', { name: 'Hide WebTorrent' })
-    await hideWebTorrent.focus()
-    expect(await hideWebTorrent.evaluate((el) => getComputedStyle(el.parentElement as HTMLElement).opacity)).toBe('1')
-    await hideWebTorrent.press('Enter')
+    // The controls are on the keyboard's path: a tile that is not hovered or focused shows none, and once the tile has the
+    // keyboard the next Tab reaches them.
+    const hideWebTorrent = control(dashboard, 'Hide WebTorrent')
+    const controlsShown = async (): Promise<string> => await hideWebTorrent.evaluate((el) => getComputedStyle(el.parentElement as HTMLElement).visibility)
+    expect(await controlsShown()).toBe('hidden')
+    await dashboard.locator('.tile[data-id="webtorrent"]').focus()
+    expect(await controlsShown()).toBe('visible')
+    await dashboard.keyboard.press('Tab')
+    expect(await dashboard.evaluate(() => document.activeElement?.getAttribute('aria-label'))).toBe('Hide WebTorrent')
+    await dashboard.keyboard.press('Enter')
     expect(await waitFor(async () => (await featuredNames(dashboard)).join() === ['Explore', 'ASGARDEX', 'Ledger Wallet', 'The Lounge'].join())).toBe(true)
     expect(await dashboard.locator('#featured-show-hidden').innerText()).toBe('Show hidden (1)')
     // The keyboard stays in the row, on the tile that took the place.
@@ -158,7 +170,7 @@ it('hides a Featured tile and brings it back, and shows the app a profile was gi
     expect(await waitFor(async () => (await featuredNames(dashboard)).length === 4)).toBe(true)
     expect(await featuredNames(dashboard)).toEqual(['Ledger Wallet', 'Explore', 'ASGARDEX', 'The Lounge'])
 
-    await dashboard.getByRole('button', { name: 'Unpin Ledger Wallet' }).click({ force: true })
+    await pressControl(dashboard, 'Unpin Ledger Wallet')
     expect(await waitFor(async () => (await featuredNames(dashboard)).join() === ['Explore', 'ASGARDEX', 'Ledger Wallet', 'The Lounge'].join())).toBe(true)
     await dashboard.locator('#featured-show-hidden').click()
     expect(await waitFor(async () => (await featuredNames(dashboard)).join() === FEATURED.map(([title]) => title).join())).toBe(true)
@@ -176,6 +188,30 @@ it('hides a Featured tile and brings it back, and shows the app a profile was gi
     expect(await waitFor(async () => (await featuredNames(dashboard)).length === FEATURED.length)).toBe(true)
     expect(await featuredNames(dashboard)).toEqual(FEATURED.map(([title]) => title))
   } finally {
-    await closeElectron(third)
+    await closeElectron(third, { keepProfile: true })
+  }
+
+  // An app outside the shipped set gets a tile with a letter for its icon, first in the row; hiding it removes it for good.
+  await writeFile(file, JSON.stringify({ version: 1, newcomerPin: 'newapp', given: true, unpinned: [], hidden: [] }))
+  const fourth = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], sandbox: true, reuseProfile: dir })
+  try {
+    expect(await waitFor(() => dashboardOf(fourth) !== undefined)).toBe(true)
+    const dashboard = dashboardOf(fourth) as Page
+    expect(await waitFor(async () => (await featuredNames(dashboard)).length === FEATURED.length + 1)).toBe(true)
+    expect(await featuredNames(dashboard)).toEqual(['newapp', ...FEATURED.map(([title]) => title)])
+    expect(await dashboard.locator('#featured-grid .tile').first().getAttribute('title')).toBe('ipfs://newapp.orivonstack.eth')
+    expect(await dashboard.locator('#featured-grid .tile-letter').first().innerText()).toBe('N')
+    const shots = process.env['ORIVON_UI_SHOTS_DIR']
+    if (shots !== undefined) {
+      mkdirSync(shots, { recursive: true })
+      await control(dashboard, 'Hide ASGARDEX').evaluate((el) => { el.parentElement?.style.setProperty('visibility', 'visible') })
+      await dashboard.screenshot({ path: join(shots, 'featured-pinned-outsider.png') })
+    }
+    await pressControl(dashboard, 'Hide newapp')
+    expect(await waitFor(async () => (await featuredNames(dashboard)).join() === FEATURED.map(([title]) => title).join())).toBe(true)
+    // Nothing to bring back: the pin is gone, not hidden.
+    expect(await dashboard.locator('#featured-show-hidden').isHidden()).toBe(true)
+  } finally {
+    await closeElectron(fourth)
   }
 }, TEST_TIMEOUT_MS)
