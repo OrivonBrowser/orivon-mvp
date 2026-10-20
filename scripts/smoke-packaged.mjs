@@ -70,7 +70,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
  * One Runtime.evaluate over a page's DevTools socket. Bounded: a page that reloads or crashes mid-call
  * closes the socket, and a stalled one never answers; either would otherwise hang past the deadline.
  */
-function evaluate (wsUrl, expression) {
+export function evaluate (wsUrl, expression) {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(wsUrl)
     const fail = (why) => { clearTimeout(timer); socket.close(); reject(new Error(why)) }
@@ -88,7 +88,7 @@ const exited = (child) => child.exitCode !== null || child.signalCode !== null
  * Ends the app and everything it started (Chromium's helpers outlive a bare kill of the main process),
  * and waits for it: a dmg cannot be detached while one of its processes is still going.
  */
-async function stop (child) {
+export async function stop (child) {
   if (child.pid === undefined || exited(child)) return
   if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
   else try { process.kill(-child.pid, 'SIGKILL') } catch {}
@@ -96,7 +96,7 @@ async function stop (child) {
 }
 
 /** Resolves once the shell page has rendered; rejects with what the app printed if it never does. */
-async function waitForShell (child, output, deadline) {
+export async function waitForShell (child, output, deadline) {
   while (Date.now() < deadline) {
     if (child.pid === undefined) throw new Error('the app could not be started')
     if (exited(child)) throw new Error(`the app exited (${child.exitCode ?? child.signalCode}) before its shell page rendered`)
