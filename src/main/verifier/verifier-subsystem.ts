@@ -22,7 +22,9 @@ import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import { forEachWebsiteSession } from '../sessions/website-sessions.js'
 import { contentAddressOf } from './content-address.js'
 import { chooseCheckpoint, MAX_CHECKPOINT_AGE_SECONDS, slotTimestamp } from './checkpoint.js'
-import type { CheckpointChoice } from './checkpoint.js'
+import type { Checkpoint, CheckpointChoice } from './checkpoint.js'
+import { CheckpointFetcher, fetchAgreedCheckpoint } from './checkpoint-fetch.js'
+import { beaconJson } from './checkpoint-fetch-net.js'
 import { DEFAULT_ENDPOINTS } from './endpoints.js'
 import { HostSupervisor } from './host-supervisor.js'
 import { TrafficLedger } from './traffic-ledger.js'
@@ -32,7 +34,7 @@ import shippedCheckpoint from './mainnet-checkpoint.json'
 import { composeResolverRules } from './resolver-rules.js'
 import { ListeningGate } from './listening-gate.js'
 import { announceNameSchemeChange } from './name-scheme-events.js'
-import { ethTestSeam, exposeVerifierStart, noteVerifierListening, verifierStartDelayMs, type EthTestSeam } from './test-seam.js'
+import { ethTestSeam, exposeVerifierStart, noteVerifierListening, shippedCheckpointAgeDays, testBeaconApis, verifierStartDelayMs, type EthTestSeam } from './test-seam.js'
 import { VerifierStore } from './verifier-store.js'
 import { chooseNameEvidence } from './name-evidence.js'
 import { lastProvenance } from './kept-provenance.js'
@@ -194,6 +196,18 @@ function installListeningGate (target: Session): void {
 
 const SHIPPED_CHECKPOINT = { root: shippedCheckpoint.root, timestamp: slotTimestamp(shippedCheckpoint.slot) }
 
+/** The release's own checkpoint; a test build may take it to be older than it is. */
+function shipped (): Checkpoint {
+  const days = shippedCheckpointAgeDays()
+  return days === undefined ? SHIPPED_CHECKPOINT : { root: SHIPPED_CHECKPOINT.root, timestamp: Math.floor(Date.now() / 1000) - Math.round(days * 86_400) }
+}
+
+/** The attempts to renew a checkpoint that has aged out: one at a time, and a wait after a failure. */
+const checkpointFetcher = new CheckpointFetcher({
+  run: async () => await fetchAgreedCheckpoint(beaconJson, testBeaconApis() ?? DEFAULT_ENDPOINTS.checkpointBeaconApis, Math.floor(Date.now() / 1000)),
+  now: () => Date.now()
+})
+
 function verifierStore (): VerifierStore {
   store ??= new VerifierStore(join(app.getPath('userData'), 'verifier'))
   return store
@@ -201,8 +215,40 @@ function verifierStore (): VerifierStore {
 
 /** Chooses again from the shipped and stored checkpoints, so Settings shows the one a restart would use. */
 function chooseNow (): CheckpointChoice {
-  checkpoint = chooseCheckpoint(SHIPPED_CHECKPOINT, verifierStore().checkpoint(), Math.floor(Date.now() / 1000))
+  checkpoint = chooseCheckpoint(shipped(), verifierStore().checkpoint(), Math.floor(Date.now() / 1000))
   return checkpoint
+}
+
+/**
+ * Starts renewing the checkpoint when the release's and the stored one have both aged past the limit, and returns the
+ * attempt; undefined when there is nothing to renew. A fetched checkpoint is stored as this install's own, with the
+ * servers that agreed on it, so that Settings can say where it came from. Never rejects.
+ */
+function renewCheckpoint (): Promise<void> | undefined {
+  if (lightClientSwitchedOff()) return undefined
+  const choice = chooseNow()
+  if (choice.ok || choice.problem !== 'too-old') return undefined
+  return checkpointFetcher.renew().then((outcome) => {
+    if (outcome.ok) {
+      try {
+        const { root, timestamp, servers } = outcome.checkpoint
+        verifierStore().saveFetchedCheckpoint({ root, timestamp }, servers, Math.floor(Date.now() / 1000))
+      } catch (error) {
+        console.error('[verifier] could not keep the fetched checkpoint:', error)
+      }
+    }
+    changed()
+  })
+}
+
+/**
+ * A host that is already running started with no usable checkpoint and so without a light client; once the wait after
+ * a failed attempt has passed, the next request for it puts it to sleep, and the start that follows tries again.
+ */
+function restartHostToRenewCheckpoint (): void {
+  if (hostAsleep || lightClientSwitchedOff() || !checkpointFetcher.mayAttempt()) return
+  const choice = chooseNow()
+  if (!choice.ok && choice.problem === 'too-old') idleHost()
 }
 
 /** The Bee-API origins Swarm reads from: the node Orivon runs, unless a test build names its own. */
@@ -222,6 +268,9 @@ function ipfsFromNode (seam: EthTestSeam | undefined): boolean {
 }
 
 async function hostConfig (): Promise<HostConfig> {
+  // Started before anything is awaited, so the requests waiting for the host count their time to start from its end.
+  const renewal = renewCheckpoint()
+  if (renewal !== undefined) listeningGate.hold(renewal)
   const seam = ethTestSeam()
   const front = await tunnelFront(routesOf())
   hostThroughTunnel = front !== undefined
@@ -230,10 +279,11 @@ async function hostConfig (): Promise<HostConfig> {
   if (lightClientSwitchedOff()) {
     lightClient = { lightClient: undefined, lightClientOff: 'the Ethereum light client is switched off, so no .eth name can be verified' }
   } else {
+    await renewal
     const choice = chooseNow()
     lightClient = choice.ok
       ? { lightClient: { executionRpcs: DEFAULT_ENDPOINTS.executionRpcs, consensusRpc: DEFAULT_ENDPOINTS.consensusRpc, checkpoint: choice.checkpoint.root } }
-      : { lightClient: undefined, lightClientOff: `the Ethereum light client cannot start: ${checkpointProblem(choice)}` }
+      : { lightClient: undefined, lightClientOff: `the Ethereum light client cannot start: ${checkpointProblem(choice, checkpointFetcher.lastProblem())}` }
   }
   const gateways = seam?.gateways ?? DEFAULT_ENDPOINTS.gateways
   return {
@@ -275,7 +325,9 @@ function lightClientCanStart (): boolean {
   if (lightClientSwitchedOff()) return false
   const nowSeconds = Math.floor(Date.now() / 1000)
   if (checkpoint?.ok === true && nowSeconds - checkpoint.checkpoint.timestamp <= MAX_CHECKPOINT_AGE_SECONDS) return true
-  return chooseNow().ok
+  const choice = chooseNow()
+  // An aged-out checkpoint is renewed when the host starts, unless the servers were asked a moment ago and failed.
+  return choice.ok || (choice.problem === 'too-old' && (checkpointFetcher.mayAttempt() || checkpointFetcher.busy))
 }
 
 /**
@@ -343,16 +395,18 @@ export function verifierProcessInfo (): ProcessInfo | undefined {
 
 /** The light client's state in words, for the Settings section and the site-info popover. */
 export function verifierView (): LightClientView {
+  const fetchProblem = checkpointFetcher.lastProblem()
   return lightClientView({
     lightClient,
     // A sleeping host reports no newer checkpoint, so the one it would start from is chosen again at the age it has now.
     checkpoint: hostAsleep || checkpoint === undefined ? chooseNow() : checkpoint,
+    ...(fetchProblem !== undefined && { checkpointFetchProblem: fetchProblem }),
     hostDown,
     hostAsleep: hostAsleep && hostDown === undefined,
     switchedOff: lightClientSwitchedOff(),
     ...(ethTestSeam() === undefined && { swarmNode: swarmNodeState() }),
     ...(ipfsFromNode(ethTestSeam()) && { ipfsNode: { state: ipfsNodeState(), lookupService: ipfsLookupServiceChoice() } }),
-    endpoints: { ...DEFAULT_ENDPOINTS, swarmEndpoints: swarmEndpoints(ethTestSeam()), ...(ipfsFromNode(ethTestSeam()) && { ipfsNodeEndpoints: [ipfsNodeEndpoint()] }) }
+    endpoints: { ...DEFAULT_ENDPOINTS, checkpointBeaconApis: testBeaconApis() ?? DEFAULT_ENDPOINTS.checkpointBeaconApis, swarmEndpoints: swarmEndpoints(ethTestSeam()), ...(ipfsFromNode(ethTestSeam()) && { ipfsNodeEndpoints: [ipfsNodeEndpoint()] }) }
   }, Date.now())
 }
 
@@ -480,7 +534,10 @@ export const verifierSubsystem: Subsystem = {
       startDelayMs: verifierStartDelayMs,
       privateSession: ctx.privateSession
     })
-    startHost = () => { lifecycle.request() }
+    startHost = () => {
+      restartHostToRenewCheckpoint()
+      lifecycle.request()
+    }
     provideVerifierAccess({
       start: () => { startHost() },
       ready: async () => { await listeningGate.whenSettled() },

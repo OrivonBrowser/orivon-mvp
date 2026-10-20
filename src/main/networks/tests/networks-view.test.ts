@@ -35,6 +35,11 @@ describe('the four cards', () => {
 })
 
 describe('the Ethereum light client card', () => {
+  it('says the checkpoint was fetched from beacon servers when it was', () => {
+    const view = buildNetworksView(facts({ lightClient: { view: VIEW({ state: 'synced', block: 21_000_123, headAt: NOW - 60_000, checkpointAgeSeconds: 2 * 3600, checkpointFetched: true }), enabled: true, forcedOff: false } }))
+    expect(card(view, 'light-client')?.metrics).toContainEqual({ label: 'Checkpoint', value: '2 hours old, fetched from beacon servers' })
+  })
+
   it('shows the verified block, how old it is and the checkpoint while it follows the chain, with its process', () => {
     const view = buildNetworksView(facts({ lightClient: { view: VIEW({ state: 'synced', block: 21_000_123, headAt: NOW - 60_000, checkpointAgeSeconds: 5 * 3600 }), enabled: true, forcedOff: false, process: { memoryKb: 51_200, cpuPercent: 2.4, startedAt: NOW - 125_000 } } }))
     expect(card(view, 'light-client')).toMatchObject({ status: 'Running', tone: 'ok', on: true })

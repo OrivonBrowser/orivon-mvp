@@ -9,6 +9,9 @@ export const DEFAULT_ENDPOINTS = {
   // Each answer is proven, so any of these may serve a request; the first is the fastest measured.
   executionRpcs: ['https://eth.drpc.org', 'https://rpc.mevblocker.io', 'https://ethereum-rpc.publicnode.com'],
   consensusRpc: 'https://ethereum-beacon-api.publicnode.com',
+  // Asked together, and only when the release's and the stored checkpoint have both aged past the limit: the checkpoint is used
+  // only if every one answers and they agree (checkpoint-fetch.ts). scripts/refresh-eth-checkpoint.mjs asks the same two.
+  checkpointBeaconApis: ['https://ethereum-beacon-api.publicnode.com', 'https://lodestar-mainnet.chainsafe.io'],
   // Asked in this order while all are healthy. trustless-gateway.link is last because it hangs rather than
   // answers (provisional: it moves back up once it answers again).
   gateways: ['https://ipfs.orbitor.dev', 'https://ipfs.filebase.io', 'https://trustless-gateway.link'],

@@ -132,7 +132,7 @@ function lightClientCard (facts: NetworkFacts['lightClient'], now: number): Netw
   const metrics = (running: boolean): Metric[] => [
     ...(view.block === undefined ? [] : [{ label: 'Latest verified block', value: view.block.toLocaleString('en-US') }]),
     ...(view.headAt === undefined ? [] : [{ label: 'Block produced', value: ago(now - view.headAt) }]),
-    ...(view.checkpointAgeSeconds === undefined ? [] : [{ label: 'Checkpoint', value: `${checkpointAge(view.checkpointAgeSeconds)} old` }]),
+    ...(view.checkpointAgeSeconds === undefined ? [] : [{ label: 'Checkpoint', value: `${checkpointAge(view.checkpointAgeSeconds)} old${view.checkpointFetched === true ? ', fetched from beacon servers' : ''}` }]),
     ...(running ? processMetrics(facts.process, now) : [])
   ]
   switch (view.state) {

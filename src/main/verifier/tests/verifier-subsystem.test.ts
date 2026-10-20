@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -44,6 +44,17 @@ vi.mock('../../sessions/web-request-owner.js', () => ({
   })
 }))
 
+const beacon = vi.hoisted(() => ({ asked: [] as string[], answers: new Map<string, unknown>() }))
+
+vi.mock('../checkpoint-fetch-net.js', () => ({
+  beaconJson: async (url: string) => {
+    beacon.asked.push(url)
+    const answer = beacon.answers.get(new URL(url).origin)
+    if (answer === undefined) throw new Error('unreachable')
+    return answer
+  }
+}))
+
 vi.mock('../../dev/eth-resolver.js', () => ({
   devEthNames: () => ({ names: devNames.names, rules: '', secureOrigins: '' }),
   isDevEthName: (host: string) => devNames.names.includes(host)
@@ -81,6 +92,8 @@ describe('the verifier subsystem', () => {
     delete process.env['ORIVON_ETH_LIGHT_CLIENT']
     delete process.env['ORIVON_TEST_ETH_FIXTURES']
     devNames.names = []
+    beacon.asked.length = 0
+    beacon.answers.clear()
   })
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
@@ -253,11 +266,87 @@ describe('the verifier subsystem', () => {
     expect(access.verifierServesName('vitalik.eth')).toBe(true)
   })
 
-  it('stops serving a .eth name once the chosen checkpoint is older than a checkpoint may be, without a restart', async () => {
-    const { access } = await launch()
+  it('stops serving a .eth name once the chosen checkpoint is older than a checkpoint may be and the servers could not renew it', async () => {
+    const { access, request } = await launch()
     expect(access.verifierServesName('vitalik.eth')).toBe(true)
     vi.setSystemTime(Date.now() + MAX_CHECKPOINT_AGE_SECONDS * 1000)
+    void request()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(beacon.asked).toHaveLength(2)
     expect(access.verifierServesName('vitalik.eth')).toBe(false)
+  })
+
+  describe('renewing a checkpoint that has aged out', () => {
+    const SERVERS = ['https://ethereum-beacon-api.publicnode.com', 'https://lodestar-mainnet.chainsafe.io']
+    const ROOT = `0x${'c'.repeat(64)}`
+    type Start = { type: string, config?: { lightClient?: { checkpoint: string }, lightClientOff?: string } }
+    const starts = (index: number): Start[] => (forks()[index]?.sent as Start[]).filter((message) => message.type === 'start')
+
+    /** The finalized header the servers give for a slot a given time before `now`. */
+    function finalizedHeader (root: string, now: number, ageSeconds: number): unknown {
+      const slot = Math.floor((Math.floor(now / 1000) - ageSeconds - MAINNET_GENESIS_SECONDS) / SECONDS_PER_SLOT)
+      return { execution_optimistic: false, finalized: true, data: { root, canonical: true, header: { message: { slot: String(slot) } } } }
+    }
+    const OLD_RELEASE = SHIPPED_AT_MS + 30 * DAY_MS
+
+    it('fetches from two servers and starts the light client from the checkpoint they agree on, which it keeps and says so', async () => {
+      for (const server of SERVERS) beacon.answers.set(server, finalizedHeader(ROOT, OLD_RELEASE, 3600))
+      const { request, verifierView } = await launch(OLD_RELEASE)
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(beacon.asked.sort()).toEqual(SERVERS.map((server) => `${server}/eth/v1/beacon/headers/finalized`).sort())
+      expect(starts(0)[0]?.config?.lightClient?.checkpoint).toBe(ROOT)
+      expect(verifierView().checkpoint).toMatch(/^Checkpoint 1 hours? old, dated .* UTC\. It was fetched while a \.eth name was opened.*ethereum-beacon-api\.publicnode\.com and lodestar-mainnet\.chainsafe\.io gave the same answer\.$/)
+      const stored = JSON.parse(readFileSync(join(electron.userData, 'verifier', 'checkpoint.json'), 'utf8')) as { root: string, fetchedFrom: string[] }
+      expect(stored).toMatchObject({ root: ROOT, fetchedFrom: SERVERS })
+    })
+
+    it('asks nobody while the release\'s checkpoint is within the limit', async () => {
+      const { request } = await launch(SHIPPED_AT_MS + DAY_MS)
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(beacon.asked).toEqual([])
+    })
+
+    it('starts the host without a light client when the servers disagree, and says why where the checkpoint is shown', async () => {
+      beacon.answers.set(SERVERS[0]!, finalizedHeader(ROOT, OLD_RELEASE, 3600))
+      beacon.answers.set(SERVERS[1]!, finalizedHeader(`0x${'d'.repeat(64)}`, OLD_RELEASE, 3600))
+      const { request, verifierView } = await launch(OLD_RELEASE)
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(starts(0)[0]?.config?.lightClientOff).toMatch(/cannot start: the newest checkpoint \(shipped with this release\) is 30 days old.*did not give the same answer/)
+      expect(verifierView().checkpoint).toMatch(/A fresh one could not be fetched from the beacon servers: the beacon servers did not give the same answer/)
+      expect(verifierView().summary).toMatch(/A fresh one could not be fetched/)
+    })
+
+    it('does not ask again within the wait, then puts the running host to sleep and asks once more', async () => {
+      const { request } = await launch(OLD_RELEASE)
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(0)
+      forks()[0]?.listens()
+      expect(beacon.asked).toHaveLength(2)
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(2 * MIN)
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(beacon.asked).toHaveLength(2)
+      expect(forks()[0]?.killed).toBe(false)
+      for (const server of SERVERS) beacon.answers.set(server, finalizedHeader(ROOT, Date.now() + 4 * MIN, 3600))
+      await vi.advanceTimersByTimeAsync(4 * MIN)
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      forks()[0]?.emit('exit', 0)
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(forks()[0]?.killed).toBe(true)
+      expect(beacon.asked).toHaveLength(4)
+      expect(starts(1)[0]?.config?.lightClient?.checkpoint).toBe(ROOT)
+    })
   })
 
   it('serves no .eth name through the light client when the environment or the person switches it off', async () => {
