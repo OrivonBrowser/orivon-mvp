@@ -71,7 +71,7 @@ Please don't report these; they are documented design positions.
 
 ### Current state
 
-**Pre-alpha.** Packages for Linux, Windows and macOS are published on the
+**Early access.** Packages for Linux, Windows and macOS are published on the
 [releases page](https://github.com/OrivonBrowser/orivon-mvp/releases). Reports about the code
 and about the *design* in [`docs/architecture/`](docs/architecture/) are both useful. In the
 code, a flaw costs most in the broker ([`src/broker/`](src/broker/)) and the preload boundary

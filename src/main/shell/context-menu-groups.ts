@@ -5,6 +5,7 @@
 import type { ContextMenuParams, MenuItemConstructorOptions } from 'electron'
 import { localFileKey } from '../../broker/policy/origin.js'
 import { sanitizeDirectUrl } from '../browsing/omnibox.js'
+import { WEB_LINK_LABEL, webLinkDiffering } from '../os/web-link.js'
 import type { CommandId } from '../shortcuts/commands.js'
 import { menuSafe, queryFrom, searchLabel } from './context-menu-text.js'
 
@@ -112,6 +113,8 @@ export function linkGroup (params: MenuParams, actions: ContextMenuActions): Men
   const saveable = webAddress(params.linkURL)
   if (save !== undefined && saveable !== null) items.push(SEPARATOR, { label: 'Save Link As…', click: () => { save(saveable) } })
   items.push({ label: 'Copy Link Address', click: () => { actions.copyText(params.linkURL) } })
+  const webLink = webLinkDiffering(params.linkURL)
+  if (webLink !== undefined) items.push({ label: WEB_LINK_LABEL, click: () => { actions.copyText(webLink) } })
   if (params.linkText.trim() !== '') items.push({ label: 'Copy Link Text', click: () => { actions.copyText(params.linkText.trim()) } })
   return items
 }

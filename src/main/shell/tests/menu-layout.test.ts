@@ -210,13 +210,13 @@ const more = (items: readonly MenuItemView[]): readonly MenuItemView[] => submen
 const share = (items: readonly MenuItemView[]): readonly MenuItemView[] => submenu(items, 'Share')
 
 describe('the Share rows', () => {
-  it('list Copy link, Email link and the QR code, in that order', async () => {
-    const { ctx } = await setup()
+  it('list Copy link, Copy web link, Email link and the QR code, in that order', async () => {
+    const { ctx } = await setup('ipfs://vitalik.eth/')
     const rows = share(menuItems(ctx))
-    expect(rows.flatMap((item) => item.kind === 'command' ? [item.id] : [])).toEqual(['share.copyLink', 'share.email', 'page.qr'])
+    expect(rows.flatMap((item) => item.kind === 'command' ? [item.id] : [])).toEqual(['share.copyLink', 'share.copyWebLink', 'share.email', 'page.qr'])
     expect(find(rows, 'page.qr')).toMatchObject({ label: 'Create QR code' })
     expect(find(more(menuItems(ctx)), 'page.qr')).toBeUndefined()
-    for (const id of ['share.copyLink', 'share.email', 'page.qr']) {
+    for (const id of ['share.copyLink', 'share.copyWebLink', 'share.email', 'page.qr']) {
       expect(find(rows, id), id).not.toHaveProperty('disabled')
       expect(runnableIds(menuItems(ctx)).has(id as never), id).toBe(true)
     }
@@ -231,6 +231,16 @@ describe('the Share rows', () => {
       const ids = runnableIds(menuItems(ctx))
       expect(ids.has('share.copyLink'), url).toBe(false)
       expect(ids.has('share.email'), url).toBe(false)
+    }
+  })
+})
+
+describe('the Copy web link row', () => {
+  it('says why it is greyed: a web address is what Copy link copies, a shell page has no address', async () => {
+    for (const [url, hint] of [['https://example.com/', 'Same as Copy link'], ['orivon://settings/', 'No address'], ['orivon://newtab/', 'No address']] as const) {
+      const { ctx } = await setup(url)
+      expect(find(share(menuItems(ctx)), 'share.copyWebLink'), url).toMatchObject({ disabled: true, hint })
+      expect(runnableIds(menuItems(ctx)).has('share.copyWebLink'), url).toBe(false)
     }
   })
 })

@@ -192,16 +192,15 @@ linux:
   description: >-
     Orivon reaches the network and filesystem under user-granted, per-app capabilities,
     so that ordinary web frontends delivered from a URL can do what today requires a
-    native install. Pre-alpha.
+    native install. Early access.
   # Reuses README.md's own tagline rather than writing new marketing copy for a second
   # place it can drift out of sync.
 
   vendor: OrivonStack
-  maintainer: Orivon <accauntacaso57@gmail.com>
+  maintainer: Orivon <support@orivonstack.com>
   # package.json has no "author" field, and this task may not add one (package.json is
   # off limits here -- see the PR description). A .deb's control file requires a
-  # Maintainer entry, so it is supplied at this layer instead. The address reuses
-  # SECURITY.md's existing public fallback contact rather than introducing a new one.
+  # Maintainer entry, so it is supplied at this layer instead.
 
   # The AppStream description AppImageHub and software centres read (packaging.md section AppImageHub). The
   # AppImage's AppDir is the unpacked app folder, so this lands at usr/share/metainfo inside it. The deb gets the
