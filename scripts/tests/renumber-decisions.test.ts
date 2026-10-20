@@ -27,6 +27,14 @@ describe('resolveLog', () => {
     expect(() => resolveLog(text)).toThrow(/settle it by hand/)
   })
 
+  it('drops a branch row main already holds under another number, and renumbers the rest', () => {
+    const text = '<<<<<<< HEAD\n' + row('d-0700', 'merged earlier') + row('d-0701', 'new') +
+      '=======\n' + row('d-0700', 'theirs') + row('d-0701', 'merged earlier') + '>>>>>>> origin/main\n'
+    const { text: out, mapping } = resolveLog(text)
+    expect(out).toBe(row('d-0700', 'theirs') + row('d-0701', 'merged earlier') + row('d-0702', 'new'))
+    expect([...mapping]).toEqual([['d-0701', 'd-0702']])
+  })
+
   it('leaves a log with no conflict as it is', () => {
     const text = row('d-0001', 'a')
     expect(resolveLog(text)).toEqual({ text, mapping: new Map() })

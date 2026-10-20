@@ -12,6 +12,9 @@ export const LOG = 'docs/decisions/decision-log.md'
 const CONFLICT = /^<<<<<<< [^\n]*\n([\s\S]*?)^=======\n([\s\S]*?)^>>>>>>> [^\n]*\n/m
 const ID = /`d-(\d{4})`/g
 
+/** A row's text after its id, or undefined for a line that is not a decision row. */
+const rowText = (line) => /^\| `d-\d{4}` \|(.*)$/.exec(line)?.[1]
+
 /** The log with each conflict settled (theirs first, ours renumbered after), and which id became which. */
 export function resolveLog (text) {
   const mapping = new Map()
@@ -24,12 +27,16 @@ export function resolveLog (text) {
     // Spliced by index, never `String.replace` with a string: a row holding `$'` or $` would paste the rest of the file in.
     const before = out.slice(0, match.index)
     const after = out.slice(match.index + whole.length)
-    let next = Math.max(0, ...[...(before + theirs + after).matchAll(ID)].map((m) => Number(m[1]))) + 1
-    const renumbered = ours.replace(/^\| `d-(\d{4})` \|/gm, (row, id) => {
-      const to = `d-${String(next++).padStart(4, '0')}`
-      mapping.set(`d-${id}`, to)
-      return `| \`${to}\` |`
-    })
+    const kept = before + theirs + after
+    let next = Math.max(0, ...[...kept.matchAll(ID)].map((m) => Number(m[1]))) + 1
+    // A row main already holds under another number (a branch stacked on a merged one carries it) is dropped, not renumbered.
+    const known = new Set(kept.split('\n').map(rowText).filter((text) => text !== undefined))
+    const renumbered = ours.split('\n').filter((line) => !known.has(rowText(line))).join('\n')
+      .replace(/^\| `d-(\d{4})` \|/gm, (row, id) => {
+        const to = `d-${String(next++).padStart(4, '0')}`
+        mapping.set(`d-${id}`, to)
+        return `| \`${to}\` |`
+      })
     out = before + theirs + renumbered + after
   }
   return { text: out, mapping }
