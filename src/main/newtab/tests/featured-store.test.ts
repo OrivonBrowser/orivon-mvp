@@ -36,3 +36,28 @@ describe('FeaturedStore', () => {
     expect(store.get()).toMatchObject({ newcomerPin: 'explore', hidden: ['thelounge'] })
   })
 })
+
+describe('FeaturedStore, the Start here card', () => {
+  it('keeps the ticked steps and the closing across a restart, beside the Featured choices', () => {
+    const file = join(dir, 'new-tab.json')
+    const first = new FeaturedStore(file)
+    first.hide('explore')
+    first.markStep('eth')
+    first.markStep('eth')
+    const second = new FeaturedStore(file)
+    expect(second.get()).toMatchObject({ hidden: ['explore'], start: { done: ['eth'], closed: false } })
+    second.closeStart()
+    expect(new FeaturedStore(file).get().start).toEqual({ done: ['eth'], closed: true })
+  })
+
+  it('writes nothing for a step that is already ticked', () => {
+    const file = join(dir, 'new-tab.json')
+    const store = new FeaturedStore(file)
+    store.markStep('app')
+    const before = readFileSync(file, 'utf8')
+    rmSync(file)
+    store.markStep('app')
+    expect(() => readFileSync(file, 'utf8')).toThrow()
+    expect(before).toContain('"app"')
+  })
+})

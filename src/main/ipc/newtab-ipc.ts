@@ -19,6 +19,7 @@ import type { Bookmark, BookmarkStore } from '../browsing/bookmarks.js'
 import { NEWTAB_COMMAND_CHANNEL } from '../channels.js'
 import type { FeaturedState } from '../newtab/featured-state.js'
 import type { FeaturedStore } from '../newtab/featured-store.js'
+import { isComplete, startHereView, type StartHereFacts, type StartHereView } from '../newtab/start-here-state.js'
 import type { WindowRegistry } from '../shell/window-registry.js'
 
 /** The dashboard's grid holds no more than this many tiles. */
@@ -33,6 +34,8 @@ export type NewTabCommand =
   | { type: 'hideFeatured'; id: string }
   | { type: 'unpinFeatured'; id: string }
   | { type: 'showHiddenFeatured' }
+  | { type: 'getStartHere' }
+  | { type: 'dismissStartHere' }
   | { type: 'navigate'; input: string }
 
 function prefsOf (featured: FeaturedStore): FeaturedPrefs {
@@ -47,10 +50,10 @@ function isFromDashboard (event: IpcMainInvokeEvent, dashboardUrl: string): bool
 }
 
 /** Once per process: `ipcMain.handle` refuses a second registration of a channel. */
-export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry, bookmarks: BookmarkStore, featured: FeaturedStore): void {
+export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry, bookmarks: BookmarkStore, featured: FeaturedStore, startFacts: () => Promise<StartHereFacts>): void {
   ipcMain.handle(
     NEWTAB_COMMAND_CHANNEL,
-    async (event: IpcMainInvokeEvent, command: NewTabCommand): Promise<Bookmark[] | FeaturedPrefs | undefined> => {
+    async (event: IpcMainInvokeEvent, command: NewTabCommand): Promise<Bookmark[] | FeaturedPrefs | StartHereView | null | undefined> => {
       if (!isFromDashboard(event, dashboardUrl)) {
         // Not the dashboard's own frame -- refuse silently, same
         // non-committal response ipc.ts's isFromChrome() gives, rather
@@ -75,6 +78,15 @@ export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry
         case 'showHiddenFeatured':
           featured.showHidden()
           return prefsOf(featured)
+        case 'getStartHere': {
+          const facts = await startFacts()
+          // A card whose every step is done leaves for good, even if a browser to import from turns up later.
+          if (!facts.isPrivate && isComplete(featured.get().start, facts)) featured.closeStart()
+          return startHereView(featured.get().start, facts)
+        }
+        case 'dismissStartHere':
+          featured.closeStart()
+          return null
         case 'navigate': {
           // Resolved from the event's OWN sender, in whichever window holds
           // it, never a tab id the page could simply claim -- a dashboard

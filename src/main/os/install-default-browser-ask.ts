@@ -155,16 +155,17 @@ export const installDefaultBrowserAsk: ShellInstaller = {
       timer = undefined
       void check().then(schedule).catch((error: unknown) => { console.error('[os] the default browser check failed:', error) })
     }
+    const appOpened = (): void => {
+      if (appOpenedAt !== undefined) return
+      appOpenedAt = Date.now()
+      schedule(APP_OPEN_BEAT_MS)
+    }
     const watch = (contents: WebContents): void => {
       watchAppOpen(contents, () => {
         const found = services.windows.findTab(contents)
         const view = found?.window.tabs.record(found.tabId)?.view
         return view !== undefined && appTabViews.has(view)
-      }, () => {
-        if (appOpenedAt !== undefined) return
-        appOpenedAt = Date.now()
-        schedule(APP_OPEN_BEAT_MS)
-      })
+      }, appOpened)
     }
     services.tabLifecycle.subscribe({
       tabCreated: (contents) => { watch(contents) },

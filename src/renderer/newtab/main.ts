@@ -1,6 +1,7 @@
 import type { Bookmark } from '../../main/browsing/bookmarks.js'
 import { closeIcon, faviconElement, path, svg } from '../icons.js'
 import { FEATURED, iconUrl } from './featured.js'
+import { readStartHere, stepText } from './start-here-model.js'
 import { featuredRow, NO_PREFS, readPrefs, type FeaturedPrefs, type FeaturedTile } from './featured-model.js'
 
 // The dashboard's whole job: a search box, the featured apps and real bookmark tiles -- see
@@ -13,6 +14,8 @@ interface OrivonNewTab {
   hideFeatured: (id: string) => Promise<unknown>
   unpinFeatured: (id: string) => Promise<unknown>
   showHiddenFeatured: () => Promise<unknown>
+  getStartHere: () => Promise<unknown>
+  dismissStartHere: () => Promise<unknown>
 }
 
 declare global {
@@ -52,11 +55,69 @@ if (shell !== undefined) {
     if (value.length > 0) shell.navigate(value)
   })
 
+  const startHere = document.querySelector<HTMLElement>('#start-here')
+  if (startHere !== null) void startStartHere(shell, startHere)
+
   if (featuredGrid !== null && showHiddenButton !== null) void startFeatured(shell, featuredGrid, showHiddenButton)
 
   if (bookmarksSection !== null && bookmarksGrid !== null) {
     void renderBookmarks(shell, bookmarksSection, bookmarksGrid)
   }
+}
+
+/** The card is drawn once main has said this profile still has it to show, and never when main says no. */
+async function startStartHere (shell: OrivonNewTab, card: HTMLElement): Promise<void> {
+  const view = readStartHere(await shell.getStartHere().catch(() => null))
+  const steps = card.querySelector<HTMLOListElement>('#start-here-steps')
+  const dismiss = card.querySelector<HTMLButtonElement>('#start-here-dismiss')
+  const note = card.querySelector<HTMLElement>('#start-here-ubo')
+  if (view === null || steps === null || dismiss === null || note === null) return
+  steps.replaceChildren(...view.steps.map(({ id, done }) => {
+    const text = stepText(id, view)
+    const item = document.createElement('li')
+    item.className = 'start-step'
+    item.dataset['step'] = id
+    item.dataset['done'] = done ? '1' : '0'
+
+    const mark = document.createElement('span')
+    mark.className = 'step-mark'
+    mark.setAttribute('aria-hidden', 'true')
+    if (done) mark.append(checkIcon())
+
+    const status = document.createElement('span')
+    status.className = 'visually-hidden'
+    status.textContent = done ? 'Done: ' : 'To do: '
+
+    const title = document.createElement('span')
+    title.className = 'step-title'
+    title.textContent = text.title
+
+    const body = document.createElement('div')
+    body.className = 'step-body'
+    const heading = document.createElement('div')
+    heading.append(status, title)
+    body.append(heading)
+    if (text.detail !== null) {
+      const detail = document.createElement('p')
+      detail.className = 'step-detail'
+      detail.textContent = text.detail
+      body.append(detail)
+    }
+    const action = document.createElement('button')
+    action.className = 'step-action'
+    action.type = 'button'
+    action.textContent = text.action
+    action.addEventListener('click', () => { shell.navigate(text.target) })
+    body.append(action)
+
+    item.append(mark, body)
+    return item
+  }))
+  note.hidden = !view.uboOn
+  dismiss.addEventListener('click', () => {
+    void shell.dismissStartHere().then(() => { card.hidden = true; searchInput?.focus() })
+  })
+  card.hidden = false
 }
 
 /** The row is drawn once main has said what this profile pinned and hid, so it never shows in the wrong order first. */
@@ -151,6 +212,13 @@ function letterIcon (name: string): HTMLSpanElement {
   mark.textContent = name.charAt(0).toUpperCase()
   mark.setAttribute('aria-hidden', 'true')
   return mark
+}
+
+/** Lucide's `check` (ISC licence, https://lucide.dev). */
+function checkIcon (): SVGSVGElement {
+  const icon = svg('0 0 24 24')
+  icon.append(path('M20 6 9 17l-5-5', '3'))
+  return icon
 }
 
 /** Lucide's `pin` (ISC licence, https://lucide.dev), as the other hand-drawn icons here are. */
