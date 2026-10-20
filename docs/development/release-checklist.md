@@ -174,7 +174,7 @@ forgotten.
       Release workflow refuses a checkpoint over 7 days old, because the app refuses one over 14
       and a fresh install of a release past that verifies no `.eth` name.
 - [ ] `npm run typecheck && npm test && npm run check:natives && npm run check:contracts` green.
-- [ ] CI green on `main`.
+- [ ] CI green on `main`. The Release workflow's `ublock` job runs the uBlock Origin spec before any package is built; a red one means the Electron this release ships does not run the extension ([`testing.md`](testing.md) section Electron upgrades).
 - [ ] After publishing: the Release workflow is green and the release carries the deb, the
       AppImage, the Windows installer, both dmgs and `ipfs.json` ([`packaging.md`](packaging.md)
       section Releases); within about 15 minutes `ipfs://<cid>` from its notes opens in Orivon.

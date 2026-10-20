@@ -408,6 +408,28 @@ built shell and a display); run it after a change to `pane-host.ts`, `attach-vie
 puts a view into a window. `src/main/shell/tests/attach-sites.test.ts` is the part CI runs: no `addChildView`
 outside `attach-view.ts`.
 
+## Electron upgrades
+
+Orivon ships the real uBlock Origin in a new profile, and it blocks only through blocking `webRequest` listeners,
+which Electron does not offer and the extension host bridges (ADR-0053): an Electron upgrade is the change most
+likely to stop it working without a type error. So the spec
+[`e2e-extensions-profiles-ublock`](../../test/extensions/e2e-extensions-profiles-ublock.test.ts) is a required
+check whenever the `electron` range in `package.json` or the version `package-lock.json` resolves changes.
+
+- **On a pull request.** The `scope` job runs [`scripts/ci/electron-version-changed.mjs`](../../scripts/ci/electron-version-changed.mjs)
+  against the base; when it prints `changed=true`, the `ublock-gate` job fetches the pinned uBlock Origin package
+  with `node scripts/fetch-bundled-extensions.mjs --required` (a failed download fails the job, where an ordinary
+  install carries on without the extension), builds with the developer-only hooks and runs that one spec. The
+  `e2e` status fails if the gate does.
+- **What the spec asserts.** A page in the default session, in the tunnel profile and in the direct profile loads
+  scripts from two hosts the filter lists name and one they do not, all served from the spec's own loopback
+  servers; the two are cancelled before they leave (the server sees no request for them) and the third runs.
+  An extension that did not load, or loaded and did not block, fails it. No real ad network is contacted.
+- **On a release.** The Release workflow runs the same spec in its `ublock` job before any package is built: it
+  costs one Linux runner for a few minutes once per release.
+- **By hand.** `node scripts/fetch-bundled-extensions.mjs --required && node scripts/build-e2e.mjs`, then the
+  command in the spec's header.
+
 ## Guards
 
 Nineteen checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,
@@ -468,7 +490,7 @@ exercises and it is the one most likely to break silently.
 
 ## CI
 
-[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) has four kinds of job.
+[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) has five kinds of job.
 
 - **`check`** runs on every pull request and every push to `main`, and is the required status: `npm ci` (which
   fires the Rule 8 guard via `postinstall`), typecheck, unit tests, every guard, and the build. About three
@@ -486,6 +508,8 @@ exercises and it is the one most likely to break silently.
   cannot clash. A failed shard uploads `qa-artifacts/latest/` (section Visual QA and failure evidence).
 - **`e2e`** is the one e2e status: it passes when every selected shard passed or nothing was selected. **`e2e-ordinary`**
   runs the specs that need the build without the developer-only hooks, whenever any e2e is selected.
+- **`ublock-gate`** runs on a pull request that changes the Electron version (section Electron upgrades), and `e2e`
+  requires it when it runs.
 
 **Windows and macOS.** Everything above runs on Linux. [`cross-os.yml`](../../.github/workflows/cross-os.yml) runs
 Orivon from source on hosted Windows and macOS runners: `npm ci` with the Rule 8 guard over that system's own dependencies, `smoke`, and the QA
