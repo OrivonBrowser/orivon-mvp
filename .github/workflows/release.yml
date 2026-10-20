@@ -18,6 +18,7 @@ on:
       - scripts/smoke-packaged.mjs
       - scripts/pin-releases.sh
       - scripts/install-macos.sh
+      - scripts/install-linux.sh
       - .github/workflows/release.yml
   workflow_dispatch:
 
@@ -105,6 +106,31 @@ jobs:
           node scripts/run-headless.mjs node scripts/smoke-packaged.mjs /opt/Orivon/orivon
           chmod +x release/*.AppImage
           node scripts/run-headless.mjs node scripts/smoke-packaged.mjs release/*.AppImage
+
+      # The one-line Linux install, on the AppImage just built, in a scratch home: no sudo, the files it promises, and the
+      # launcher starts it (on this runner without libfuse2 the launcher unpacks the AppImage first).
+      - name: Install with the one-line installer and launch it
+        if: matrix.platform == 'linux'
+        run: |
+          install_home="$RUNNER_TEMP/install-home"
+          mkdir -p "$install_home"
+          HOME="$install_home" ORIVON_APPIMAGE="$(ls release/*.AppImage)" bash scripts/install-linux.sh --no-launch
+          test -x "$install_home/.local/lib/orivon/Orivon.AppImage"
+          test -f "$install_home/.local/share/icons/hicolor/512x512/apps/orivon.png"
+          grep -q 'x-scheme-handler/https' "$install_home/.local/share/applications/orivon.desktop"
+          node scripts/run-headless.mjs node scripts/smoke-packaged.mjs "$install_home/.local/lib/orivon/orivon"
+
+      # The real path as a user runs it: the newest published release is looked up, downloaded and checked. During a
+      # release the new one has no packages yet, so this would test the previous release; PRs and manual runs only.
+      - name: Install the newest published release with the one-line installer
+        if: matrix.platform == 'linux' && github.event_name != 'release'
+        env:
+          ORIVON_GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          install_home="$RUNNER_TEMP/install-home-release"
+          mkdir -p "$install_home"
+          HOME="$install_home" bash scripts/install-linux.sh --no-launch
+          test -x "$install_home/.local/lib/orivon/Orivon.AppImage"
 
       - name: Install with the NSIS installer and launch it
         if: matrix.platform == 'win'
