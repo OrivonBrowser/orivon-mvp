@@ -425,6 +425,11 @@ guarded by `isInvokedDirectly` so the test can import it without running it. Fol
 another, and add the CI step in the same change: `scripts/tests/check-scripts-in-ci.test.ts` fails the unit
 suite if a `check:*` script exists with no step to run it.
 
+One health gate is a unit test rather than a guard, so it needs no CI step of its own: `src/renderer/newtab/tests/featured-model.test.ts`
+fails while an entry of the shipped Featured list (`src/renderer/newtab/featured/featured.json`) carries a `hold`, the flag a
+maintainer sets by hand while the app lags a security or funds fix, and it checks the list's ids, addresses and icons.
+Setting `hold` is how a lagging app is kept off the new tab: the change cannot merge until the entry is removed or the flag is cleared.
+
 A guard imports `node:*` builtins and nothing from `src/` -- one that depended on the code it
 guards could be disabled by the change it exists to catch. The one exception to "builtins only" is
 `check:floating-promises`, which needs the type checker and so drives the `typescript` dev dependency's

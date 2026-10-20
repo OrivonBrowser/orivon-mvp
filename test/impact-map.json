@@ -57,6 +57,7 @@
     { "prefix": "src/main/embed", "run": ["@core"] },
     { "prefix": "src/main/extensions", "run": ["extensions"] },
     { "prefix": "src/main/find", "run": ["page"] },
+    { "prefix": "src/main/newtab", "run": ["window", "shell-pages"] },
     { "prefix": "src/main/focus", "run": ["page", "window"] },
     { "prefix": "src/main/history", "run": ["library", "toolbar"] },
     { "prefix": "src/main/import", "run": ["library"] },

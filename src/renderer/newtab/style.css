@@ -174,3 +174,51 @@ img.tile-icon { border-radius: 4px; object-fit: contain; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* A featured tile holds its two small controls, shown only while the tile is hovered or has the keyboard, so the row
+   looks as a bookmark row does until the person reaches for one. */
+.tile-wrap { position: relative; display: flex; }
+.tile-wrap > .tile { width: 100%; }
+.tile-actions {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+}
+.tile-wrap:hover .tile-actions,
+.tile-wrap:focus-within .tile-actions { opacity: 1; }
+.tile-action {
+  width: 22px;
+  height: 22px;
+  padding: 4px;
+  display: flex;
+  border-radius: 6px;
+  color: var(--wink-dim);
+}
+.tile-action:hover { color: var(--wink); background: color-mix(in srgb, var(--wink) 12%, transparent); }
+.tile-action svg { width: 100%; height: 100%; }
+
+/* The stand-in for an app that ships no icon. */
+.tile-letter {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--waccent) 25%, transparent);
+  color: var(--wink);
+}
+
+.link-button {
+  margin-top: 12px;
+  padding: 2px 4px;
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.7);
+  text-decoration: underline;
+}
+.link-button:hover { color: #e2e8f0; }
