@@ -101,6 +101,11 @@ describe('lightClientView', () => {
     expect(view.checkpoint).toBe('Checkpoint 2 hours old, dated 2026-10-20 14:03 UTC. It was fetched while a .eth name was opened, because none stored here was recent enough; ethereum-beacon-api.publicnode.com and lodestar-mainnet.chainsafe.io gave the same answer.')
   })
 
+  it('says one hour, not 1 hours', () => {
+    const view = lightClientView(facts({ checkpoint: { ok: true, checkpoint: { root: ROOT, timestamp: 1_790_000_000 }, source: 'release', ageSeconds: 3700 } }), NOW)
+    expect(view.checkpoint).toBe('Checkpoint 1 hour old, shipped with this release.')
+  })
+
   it('names a fetched checkpoint that has aged out as fetched', () => {
     const view = lightClientView(facts({ checkpoint: { ok: false, problem: 'too-old', source: 'fetched', ageSeconds: 20 * 86_400, fetchedFrom: ['https://a.example'] } }), NOW)
     expect(view.checkpoint).toMatch(/\(fetched from beacon servers\) is 20 days old/)

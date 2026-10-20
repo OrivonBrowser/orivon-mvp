@@ -3,6 +3,7 @@
 import { sanitizeDirectUrl } from '../browsing/omnibox.js'
 import type { TabState } from '../shell/tab-types.js'
 import { oneLine } from './one-line.js'
+import { webLinkDiffering } from './web-link.js'
 
 type Shareable = Pick<TabState, 'isNewTab' | 'isInternal' | 'displayUrl'>
 
@@ -13,6 +14,12 @@ export function shareAddressFor (tab: Shareable | undefined): string | undefined
   // Only the verdict is used: for a protocol's address the validator answers with the https URL serving it, and
   // what the person copies is the address they see.
   return sanitizeDirectUrl(tab.displayUrl) === null ? undefined : tab.displayUrl
+}
+
+/** The https address any browser opens for `tab`, when it is not the address the tab already shows: a `.eth` name or an IPFS or IPNS content address. Undefined otherwise. */
+export function webLinkForTab (tab: Shareable | undefined): string | undefined {
+  const address = shareAddressFor(tab)
+  return address === undefined ? undefined : webLinkDiffering(address)
 }
 
 /** A subject longer than this is cut: a mail program shows a line, and a page's title is not bounded. */

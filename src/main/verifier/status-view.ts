@@ -74,7 +74,8 @@ export function ago (ms: number): string {
 function age (seconds: number): string {
   const hours = seconds / 3600
   if (hours < 1) return 'under an hour'
-  return hours < 48 ? `${String(Math.round(hours))} hours` : `${String(Math.round(hours / 24))} days`
+  const [count, unit] = hours < 48 ? [Math.round(hours), 'hour'] : [Math.round(hours / 24), 'day']
+  return `${String(count)} ${unit}${count === 1 ? '' : 's'}`
 }
 
 const SOURCE_WORDS = { release: 'shipped with this release', 'this-install': 'last verified on this computer', fetched: 'fetched from beacon servers' } as const

@@ -6,7 +6,7 @@ import type { ExternalLinkQuestion } from '../sessions/external-links.js'
 import type { QuestionTarget } from '../shell/question/ask-question.js'
 import type { TabState } from '../shell/tab-types.js'
 import type { ShellWindow } from '../shell/window-registry.js'
-import { mailtoFor, shareAddressFor } from './share.js'
+import { mailtoFor, shareAddressFor, webLinkForTab } from './share.js'
 
 export interface ShareDeps {
   writeClipboard: (text: string) => void
@@ -29,6 +29,19 @@ export function copyLinkCommand (target: ShellWindow, deps: ShareDeps, tabId?: s
     showToast(target, 'linkCopied')
   } catch (error) {
     console.error('[os] could not copy the link', error)
+    showToast(target, 'linkCopyFailed')
+  }
+}
+
+/** Copies the https address any browser opens for the tab (`https://name.eth.limo/`), which is not the address Orivon shows and says nothing of being verified. */
+export function copyWebLinkCommand (target: ShellWindow, deps: ShareDeps, tabId?: string): void {
+  const link = webLinkForTab(tabOf(target, tabId))
+  if (link === undefined) { showToast(target, 'noWebLink'); return }
+  try {
+    deps.writeClipboard(link)
+    showToast(target, 'webLinkCopied')
+  } catch (error) {
+    console.error('[os] could not copy the web link', error)
     showToast(target, 'linkCopyFailed')
   }
 }
