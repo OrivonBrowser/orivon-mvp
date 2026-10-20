@@ -12,7 +12,7 @@ Orivon is packaged for three systems by [`electron-builder`](https://www.electro
 
 The three systems are equal, and Linux is supported on X11 and Wayland both. Each GitHub release
 builds all of them and attaches them to itself (section Releases), except the Store package, which
-the owner uploads to Partner Center. No certificate is bought, so the Windows installer and the macOS
+the workflow submits to Partner Center instead (section The Microsoft Store package). No certificate is bought, so the Windows installer and the macOS
 packages are not trusted by their systems out of the box (section Windows and macOS). Running from source stays supported on every system ([`setup.md`](setup.md)); its users
 and the package users count the same, and their telemetry works identically.
 
@@ -79,21 +79,32 @@ when it does not.
    the AppImage, installs the Windows installer silently, and mounts each dmg, checking its
    signature, and launches each one with `scripts/smoke-packaged.mjs`. The Windows leg also installs
    the Store package and launches it (section The Microsoft Store package).
-3. When every system passes, a separate job attaches the packages to the release. If one system
-   fails, nothing is attached: re-run the failed job from the Actions tab, and the attach job
-   follows. Re-running replaces assets of the same name.
+3. When every system passes, a separate job attaches the packages to the release and writes its
+   description (section Release notes). If one system fails, nothing is attached: re-run the failed
+   job from the Actions tab, and the attach job follows. Re-running replaces assets of the same name.
+   After it, three jobs offer the release to the places people install from: `winget` (section winget),
+   `store` (section The Microsoft Store package) and `aur` (section The Arch User Repository). Each
+   writes a warning and succeeds while the secret it needs is empty, so a release is never red for a
+   route that is not set up yet.
 4. A release build first refuses an `.eth` light-client checkpoint
    (`src/main/verifier/mainnet-checkpoint.json`) over 7 days old (`MAX_CHECKPOINT_AGE_DAYS` in the
-   workflow): the app rejects one over 14, and a fresh install of a release past that would verify
-   no `.eth` name. `refresh-eth-checkpoint.yml` proposes a fresh one twice a week; merge it before
+   workflow): the app rejects one over 14, and an install of a release past that has to fetch a
+   fresh one from two beacon servers, which it cannot when they are unreachable or disagree. `refresh-eth-checkpoint.yml` proposes a fresh one twice a week; merge it before
    tagging ([`release-checklist.md`](release-checklist.md)).
 
 A pull request that changes `electron-builder.yml`, `build/`, `scripts/smoke-packaged.mjs` or the
 workflow runs the same build and launch, and keeps the packages for seven days as workflow
 artifacts instead of attaching them (the Store package, 30 days, in every run). Actions > Release > Run workflow does the same on demand.
 
-The job that writes to the release only downloads the packages (the artifacts named `orivon-*`) and uploads them. The jobs that
-run `npm ci` or Kubo hold a read-only token, so no dependency's install script can alter a release.
+The job that writes to the release only downloads the packages (the artifacts named `orivon-*`) and the description
+the `notes` job made, and uploads them. The jobs that run `npm ci`, Kubo or the repository's own scripts hold a read-only
+token, so no dependency's install script can alter a release.
+
+**Offering a published release again.** Actions > Release > Run workflow takes an optional `tag`. With one, the run builds
+nothing and runs only `winget`, `store` and `aur` for that already published release: the way to offer a release that was
+published before a secret existed. The `store` job takes the package from the newest Release run of that tag, which
+GitHub keeps for 30 days; past that the package is built again by re-running the release's run, or uploaded by hand.
+Re-running only a failed job of the release's own run works too, within the same 30 days.
 
 ### On IPFS
 
@@ -256,6 +267,21 @@ Any other failure (Komac itself, the network) fails the job and only that job: t
 published. Komac's own check for an open pull request is a prompt that ends a run with `CI=true` without submitting, so the
 job passes `--skip-pr-check` and does the check itself.
 
+**What the owner does once.**
+
+1. Create a classic personal access token with the `public_repo` scope, in the account the pull requests should come from
+   (GitHub > Settings > Developer settings > Personal access tokens > Tokens (classic)). Komac documents this scope; a
+   fine-grained token can write the manifests but cannot open the pull request.
+2. Add it as the repository secret `WINGET_TOKEN` (Settings > Secrets and variables > Actions).
+3. Have the first version of each identifier accepted by hand (`Orivon.Browser.Preview`, and `Orivon.Browser` with the first
+   full release): the job only adds versions to a package winget-pkgs already holds
+   ([`release-checklist.md`](release-checklist.md) item The winget package says how).
+
+From then on every release is submitted by the job. A release published before the secret existed is submitted by running
+the workflow with its tag (section Releases). Once winget-pkgs has accepted a version, set `winget` to `true` in
+[`packaging/release-routes.json`](../../packaging/release-routes.json), so the release notes list the command (section
+Release notes).
+
 ## The Microsoft Store package
 
 The Windows build also writes `Orivon-Store-<version>-x64.appx` (the `appx` target and block of
@@ -263,8 +289,9 @@ The Windows build also writes `Orivon-Store-<version>-x64.appx` (the `appx` targ
 Store accepts, which signs it itself: nothing signs it here, and a Store install is never met with SmartScreen
 ([`ADR-0081`](../decisions/ADR-0081-windows-builds-also-ship-to-the-microsoft-store.md)). The installer stays the
 only Windows file attached to a release. The package is the workflow artifact `store-msix`, which the
-`manifest` and `publish` jobs do not take, so it reaches neither the release nor its IPFS folder; the owner downloads
-it from the run page and uploads it in Partner Center ([`release-checklist.md`](release-checklist.md)).
+`manifest` and `publish` jobs do not take, so it reaches neither the release nor its IPFS folder. The `store` job submits
+it to Partner Center (section Submitting it to Partner Center), and the artifact, kept 30 days, is what the owner uploads
+by hand when that job cannot.
 
 - **Identity comes from Partner Center.** `appx.identityName`, `appx.publisher` and `appx.publisherDisplayName` are
   the three values of the "Orivon Browser" product's Product identity page (Package/Name, Package/Publisher,
@@ -290,6 +317,139 @@ it from the run page and uploads it in Partner Center ([`release-checklist.md`](
   Make default opens the default-apps page without selecting an entry. The taskbar menu, the process's app user
   model id and a second Orivon started by the first are written for the installer and unchecked inside the package
   (`docs/open-questions.md` A410).
+
+### Submitting it to Partner Center
+
+The `store` job of [`release.yml`](../../.github/workflows/release.yml) runs on a published release, after `publish`, on a
+Windows runner. It takes the run's `store-msix` artifact, checks that the package's manifest carries the release's
+version, installs the Microsoft Store Developer CLI ([`msstore`](https://github.com/microsoft/msstore-cli), at the version
+pinned in the step, through Microsoft's `microsoft-store-apppublisher` action, pinned by commit) and runs
+`msstore publish <package> -id 9MXV3FNMFBP4`. That uploads the package to a new submission of the existing product, started
+from the last published one, so the listing text, images and pricing are not touched, and commits it for certification.
+The job logs the submission's status and writes it to the run's summary. Certification by Microsoft follows and takes
+from hours to days; the job does not wait for it.
+
+- **The version.** electron-builder writes the tag's three numbers and a fourth that is always `0`
+  (`getVersionInWeirdWindowsForm` in `app-builder-lib`; `v0.0.9` is `0.0.9.0`), which is the form the Store requires. A
+  tag with a pre-release suffix (`v0.2.0-beta.1`) would carry the version of the release after it, which the Store takes
+  only once and only in increasing order, so the job does not submit it.
+- **The identity** (name `OrivonBrowser.OrivonBrowser`, publisher and display name) is in the `appx` block of
+  `electron-builder.yml`, copied from the product's Product identity page in Partner Center; the Store refuses a package
+  whose identity differs.
+- **Nothing happens without the four secrets** `MS_STORE_TENANT_ID`, `MS_STORE_SELLER_ID`, `MS_STORE_CLIENT_ID` and
+  `MS_STORE_CLIENT_SECRET`: the job writes a warning naming them and succeeds. They are read in two places only, the
+  step that checks they exist and the step that runs `msstore reconfigure`.
+- **One submission at a time.** Partner Center allows one submission of a product in review. `msstore publish` replaces
+  a draft but not a submission in review, so when it fails with that, the job says so in a warning, naming the tag to run
+  again once the first one is published, and succeeds. Any other failure fails the job, and only that job.
+- **After the submission.** Microsoft documents that a submission created through the API is changed only through the API:
+  one edited in Partner Center can no longer be committed through it. A change to the listing text goes into a new draft
+  in Partner Center once the submitted release is published; the next release's `msstore publish` then starts from the
+  published one.
+- **Not verified here.** The job has not run against Partner Center, which needs the secrets. What was checked is its
+  shell logic against a stand-in `msstore`, the version rule in electron-builder's source, and the commands and flags
+  against Microsoft's documentation. The `.msix` copy the job makes of the `.appx` (the CLI names `.msix` and
+  `.msixupload`; the container is the same) and the wording of the in-review failure that the job matches are the two
+  points the first real run settles.
+
+**What the owner does once.**
+
+1. Publish the first version of the product by hand in Partner Center, with its age-rating questionnaire and the steps of
+   [`release-checklist.md`](release-checklist.md) item The Microsoft Store package, and wait until it is live. Microsoft:
+   `msstore` can only publish updates of a product that has been published once. It supports free products.
+2. Have a Microsoft Entra ID tenant associated with the Partner Center account (Microsoft's guide: "Associate an existing
+   Microsoft Entra ID with your Partner Center account", or "Create a new Microsoft Entra ID"). The next step needs a
+   Partner Center sign-in that has the Manager role and is a global administrator of that tenant.
+3. In Partner Center, Account settings > User management > the **Microsoft Entra applications** tab > **Add Microsoft
+   Entra application**: **Create Microsoft Entra application** (a name and a reply URL, which can be any address you own)
+   or **Add Microsoft Entra application** to take one the tenant already has. In **Roles applicable to developer
+   programs** give it **Manager**. Open the application from that list and note its **Tenant ID** and **Client ID**, then
+   **Add new key** and note the **Key** at once: it is shown once, and the list shows when each key expires. Note the
+   account's **Seller ID**, which Microsoft's guide places under Account settings.
+4. Add the four repository secrets: `MS_STORE_TENANT_ID`, `MS_STORE_SELLER_ID`, `MS_STORE_CLIENT_ID` and
+   `MS_STORE_CLIENT_SECRET` (Settings > Secrets and variables > Actions). A failing
+   `reconfigure` in the job is most likely an expired key: add a new one and replace the secret.
+5. Once the Store lists Orivon, set `store` to `true` in
+   [`packaging/release-routes.json`](../../packaging/release-routes.json), so the release notes point to it.
+
+## The Arch User Repository
+
+`orivon-bin` on the [AUR](https://aur.archlinux.org) installs the release's `.deb` on Arch Linux and its relatives. The
+`.deb` is the source, not the AppImage: it is the package CI installs and launches, it carries the desktop entry with its
+two launcher actions and the icon, and it puts `chrome-sandbox` on a filesystem where the SUID bit can be set. The
+template is [`packaging/aur/PKGBUILD`](../../packaging/aur/PKGBUILD): it unpacks the `.deb` into `/opt/Orivon`, links
+`/usr/bin/orivon`, sets `chrome-sandbox` to `4755`, drops Debian's AppArmor profile, moves the AppStream file to
+`/usr/share/metainfo`, and declares `provides=('orivon')`, `conflicts=('orivon')` and the license `AGPL-3.0-only`, the
+license `package.json` and the README state.
+
+The `aur` job of `release.yml` runs after `publish`. It takes the `.deb`'s sha256 from the release's `ipfs.json`, reads what
+the AUR holds now over https, and runs [`packaging/aur/prepare.sh`](../../packaging/aur/prepare.sh) in an Arch container
+(`archlinux:base-devel`, pinned by digest). That script fills `_upstream`, `pkgrel` and `sha256sums`, builds the package once
+with `makepkg` (which downloads the `.deb` and checks the sha256, so a broken PKGBUILD is found before anything is pushed)
+and writes `.SRCINFO` with `makepkg --printsrcinfo`. The last step, the only one that holds the key, pushes `PKGBUILD` and
+`.SRCINFO` to `ssh://aur@aur.archlinux.org/orivon-bin.git`, against the AUR's ed25519 host key, pinned in the step.
+
+- **Versions.** `pkgver` may not contain a hyphen. `0.0.9` is `0.0.9`; a pre-release tag drops the hyphen, so
+  `v0.2.0-beta.1` is `0.2.0beta.1`, which `vercmp` sorts after `0.2.0alpha.3` and before `0.2.0`, and `beta.10` after
+  `beta.9`. A suffix other than a word and an optional `.n` has no such mapping and is not offered. `pkgrel` is 1 for
+  a new version, and one more than the AUR's when the same version is pushed with another `.deb`. A version older than the
+  AUR's, or the same package again, pushes nothing.
+- **Nothing happens without the secret** `AUR_SSH_PRIVATE_KEY`: the job writes a warning and succeeds.
+- **Not verified here.** The PKGBUILD and `prepare.sh` were run in the pinned Arch container against a released `.deb`
+  (the package builds, `.SRCINFO` is written, the version cases above give the results above). The push has not run,
+  which needs the key and an AUR account.
+
+**What the owner does once.**
+
+1. Create an AUR account, and an SSH key pair for it (`ssh-keygen -t ed25519 -f aur-orivon`). Add the public key to the
+   account (AUR > My Account > SSH Public Key).
+2. Add the private key as the repository secret `AUR_SSH_PRIVATE_KEY`. The first push to `orivon-bin` creates the package.
+3. Set `aur` to `true` in [`packaging/release-routes.json`](../../packaging/release-routes.json) once the package is
+   listed, so the release notes list it.
+
+## AppImageHub
+
+[AppImageHub](https://appimage.github.io) lists AppImages found on GitHub releases. A listing is one pull request to
+[`AppImage/appimage.github.io`](https://github.com/AppImage/appimage.github.io), opened once by the owner; the Hub then
+reads the newest release itself. Its rules, as that repository states them: a type 2 AppImage that runs on the oldest
+supported Ubuntu LTS and shows a window within 30 seconds without network access, an English interface, a desktop file that
+passes `desktop-file-validate`, an AppStream file that passes `appstreamcli`, `appdir-lint.sh`, and X11 (it does not test
+Wayland).
+
+- **The AppStream file** is [`build/linux/com.orivonstack.orivon.metainfo.xml`](../../build/linux/com.orivonstack.orivon.metainfo.xml),
+  put into the AppImage at `usr/share/metainfo/` by `linux.extraFiles` in `electron-builder.yml`. A built AppImage was
+  extracted and both files checked: the desktop file passes `desktop-file-validate`, and `appstreamcli validate --pedantic`
+  passes with one pedantic note, that the file lists no `<releases>`. The `.deb` carries the same file under
+  `/opt/Orivon/usr/share/metainfo`, where nothing reads it; the Arch package moves it.
+- **The data file** is [`packaging/appimagehub/Orivon_Browser`](../../packaging/appimagehub/Orivon_Browser): named after the
+  desktop file's `Name` with the space an underscore, and holding one line, the repository's address.
+- **Not checked here.** `appdir-lint.sh` and the Hub's own screenshot and offline runs; the Hub's pull request shows them.
+  An AppImage built with this electron-builder starts with `--no-sandbox` (its desktop entry says so), and on Ubuntu 22.04
+  and later needs `libfuse2` (section Caveats); the Hub's test machine settles whether either stops the listing.
+
+**What the owner does once.** Open a pull request to `AppImage/appimage.github.io` that adds only the file
+`data/Orivon_Browser`, with the content of `packaging/appimagehub/Orivon_Browser`. One file per pull request: the Hub's
+checks fail on any other change. Answer its test comment, and comment `/retest` after a fix is released.
+
+## Release notes
+
+The description of a GitHub release is written by the `notes` job (and attached by `publish`) with
+[`scripts/release-notes.mjs`](../../scripts/release-notes.mjs), which uses Node's built-ins only and is tested in
+[`scripts/tests/release-notes.test.ts`](../../scripts/tests/release-notes.test.ts). It writes, below a hidden marker line:
+
+1. **What changed**: the `Added`, `Changed`, `Fixed`, `Security`, `Removed` and `Deprecated` entries of the tag's section
+   in [`CHANGELOG.md`](../../CHANGELOG.md), verbatim, and a link to the file at the tag. `Changed for apps` is left to the
+   changelog, and `[Unreleased]` is never used: the section must be renamed to the version before tagging. With no such
+   section the description has none and the job shows a warning.
+2. **Which file is mine?**: a table with one row for each package the release carries (Windows installer, both macOS
+   disk images and the Terminal install, the `.deb`, the AppImage), then a row for the Store, winget and the AUR when the
+   route is open in [`packaging/release-routes.json`](../../packaging/release-routes.json), which holds a `true` or `false`
+   for each.
+3. **On IPFS**: the release's CID, as before.
+
+Whatever a person wrote above the marker stays, and a re-run replaces everything from the marker on. A description written
+before the marker existed is converted at its `### On IPFS` heading. The changelog's entries are published as written, so
+they follow the same rules as any release text: shipped items only.
 
 ## Windows and macOS
 
@@ -388,7 +548,7 @@ cat /tmp/orivon-deb-inspect/usr/share/applications/*.desktop
 #   Actions=new-window;new-private-window;
 # followed by a [Desktop Action new-window] and a [Desktop Action new-private-window] section whose Exec
 # lines run /opt/Orivon/orivon with --new-window and --new-private-window. The AppImage's own entry
-# (Exec=AppRun) carries no actions: they sit under `deb:` in electron-builder.yml, not `linux:`.
+# (Exec=AppRun) carries no actions: they sit under `deb:` in electron-builder.yml, and `appImage:` has an entry of its own.
 ```
 
 ```bash
@@ -431,8 +591,9 @@ runs `xdg-mime default` with that entry for `text/html`, `application/xhtml+xml`
 
 A right-click on Orivon's icon offers New Window and New Private Window. On Linux they are the `.deb`'s desktop
 actions (`deb.desktop.desktopActions` in `electron-builder.yml`, which run `/opt/Orivon/orivon --new-window` and
-`--new-private-window`); they sit under `deb:` and not `linux:` because electron-builder merges `linux.desktop`
-into the AppImage's entry too, where `Exec` is `AppRun` and `/opt/Orivon` does not exist. On Windows the same two
+`--new-private-window`); they sit under `deb:` and not `linux:`, and the entry's common keys are written under `deb:` and
+`appImage:` each, because a `linux.desktop` would reach the AppImage's entry too, where `Exec` is `AppRun` and `/opt/Orivon`
+does not exist. A built AppImage's entry has no `Actions` line. On Windows the same two
 are jump-list tasks and on macOS dock-menu items, set by the running program (`src/main/os/install-launcher-menu.ts`).
 A run from source on Linux gets both from `scripts/launch-from-source.mjs install` (`docs/development/setup.md`).
 

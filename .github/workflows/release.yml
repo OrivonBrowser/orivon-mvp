@@ -2,12 +2,13 @@ name: Release
 
 # Packages Orivon for Linux (deb, AppImage), Windows (NSIS installer) and macOS (dmg, Apple
 # silicon and Intel), installs or mounts each package and launches it. Publishing a GitHub
-# release attaches the packages to it, named by the release tag (v1.2.0 packages as 1.2.0).
-# The Windows leg also builds the Microsoft Store package, installs it and launches it with its
-# package identity; it is kept as the workflow artifact `store-msix`, never attached to a release.
-# A pull request that touches packaging runs the same jobs without publishing. Each release
-# also gets an ipfs.json and its CID in its description, and a pinning node puts it on IPFS
-# (scripts/pin-releases.sh), and its Windows installer is offered to winget (the winget job).
+# release attaches the packages to it, named by the release tag (v1.2.0 packages as 1.2.0), and
+# writes its description (CHANGELOG section, which file suits which computer, IPFS CID). The
+# Windows leg also builds the Store package (artifact `store-msix`, never attached to a release).
+# The winget, store and aur jobs then offer the release to winget-pkgs, Partner Center and the AUR;
+# run by hand with a tag, those three offer that published release again. A pull request that
+# touches packaging runs the build jobs without publishing. A pinning node puts each release on
+# IPFS (scripts/pin-releases.sh).
 on:
   release:
     types: [published]
@@ -21,6 +22,12 @@ on:
       - scripts/install-linux.sh
       - .github/workflows/release.yml
   workflow_dispatch:
+    inputs:
+      tag:
+        description: A published release tag (v0.0.9) to offer to winget, the Microsoft Store and the AUR again. Empty only builds the packages.
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -37,6 +44,7 @@ env:
 jobs:
   package:
     name: package (${{ matrix.platform }})
+    if: ${{ inputs.tag == '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -293,9 +301,10 @@ jobs:
           retention-days: 7
 
       # Not named orivon-*: the jobs that attach and hash the release's files take only those, so this
-      # package reaches neither the release nor its IPFS folder. The owner downloads it here for Partner
-      # Center (release-checklist.md), hence the longer retention.
-      - name: Keep the Store package for upload to Partner Center
+      # package reaches neither the release nor its IPFS folder. The store job submits it to Partner Center;
+      # the owner downloads it here to upload by hand when that job cannot (release-checklist.md), hence the
+      # longer retention.
+      - name: Keep the Store package for the store job and for upload by hand
         if: matrix.platform == 'win'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -307,6 +316,7 @@ jobs:
   # The CID of the release's files as one directory, with the same Kubo and flags a pinning node
   # uses to add them, so the node can refuse files that do not add up to it.
   manifest:
+    if: ${{ inputs.tag == '' }}
     needs: package
     runs-on: ubuntu-latest
     steps:
@@ -340,11 +350,58 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # The release's description: the CHANGELOG section of its version, the table of which file suits which
+  # computer, and the IPFS section, kept below a marker so that anything a person wrote above it stays
+  # (scripts/release-notes.mjs, packaging.md section Release notes). A read-only token, and no npm: the
+  # script is the repository's own and uses Node's built-ins. The publish job only writes what this makes.
+  notes:
+    if: github.event_name == 'release'
+    needs: [package, manifest]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: orivon-*
+          path: packages
+          merge-multiple: true
+
+      # Replaces what a previous run wrote: a re-run rebuilds the packages, and their CID with them.
+      - name: Write the description
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body > body.md
+          node scripts/release-notes.mjs --tag "$TAG" --repo "$GITHUB_REPOSITORY" --changelog CHANGELOG.md \
+            --assets-dir packages --ipfs-json packages/ipfs.json --routes packaging/release-routes.json \
+            --prerelease "$PRERELEASE" --body-file body.md --out notes.md
+          cat notes.md
+
+      # Not named orivon-*: the publish job attaches every file of those to the release.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-notes
+          path: notes.md
+          if-no-files-found: error
+          retention-days: 7
+
   # Its own job so the token that can write to the release never runs npm install's scripts or a
   # downloaded binary. It needs every package job, so a release gets all three systems or nothing.
   publish:
     if: github.event_name == 'release'
-    needs: [package, manifest]
+    needs: [package, manifest, notes]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -355,33 +412,32 @@ jobs:
           path: packages
           merge-multiple: true
 
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-notes
+          path: notes
+
       - name: Attach the packages and ipfs.json to the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
         run: gh release upload "$TAG" packages/* --clobber --repo "$GITHUB_REPOSITORY"
 
-      # Replaces the section a previous run wrote: a re-run rebuilds the packages, and their CID with them.
-      - name: Write the release's CID into its description
+      - name: Write the release's description
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
-        run: |
-          cid=$(jq -r .cid packages/ipfs.json)
-          # Notes edited on github.com end their lines with CRLF.
-          body=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body | sed $'/^### On IPFS\r\\{0,1\\}$/,$d')
-          printf '%s\n\n### On IPFS\n\nThe same files, as one folder: `ipfs://%s`. Open it in Orivon, or run `ipfs get %s`. The Orivon node pins it within about 15 minutes, with the two releases before it.\n' \
-            "$body" "$cid" "$cid" > notes.md
-          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
+        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes/notes.md
 
   # Offers the Windows installer to winget-pkgs as a pull request from the owner's account. A winget
   # install is never met with SmartScreen: the default source is trusted. It runs after `publish`, so
   # the installer is a public asset, and it never checks out the repository or runs npm: the only
   # program it runs besides the runner's own gh is the Komac pinned above, and only the last step
   # holds the token. A release never goes red for a winget step that is not set up yet: that step
-  # writes a warning and succeeds (packaging.md section winget).
+  # writes a warning and succeeds (packaging.md section winget). Run by hand with a tag, it offers that
+  # published release instead (Actions > Release > Run workflow).
   winget:
-    if: github.event_name == 'release'
+    if: ${{ !cancelled() && (needs.publish.result == 'success' || inputs.tag != '') }}
     needs: publish
     runs-on: ubuntu-latest
     permissions:
@@ -391,12 +447,15 @@ jobs:
         id: choose
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
           PRERELEASE: ${{ github.event.release.prerelease }}
           HAS_TOKEN: ${{ secrets.WINGET_TOKEN != '' }}
         run: |
           set -euo pipefail
           version="${TAG#v}"
+          if [ -z "$PRERELEASE" ]; then
+            PRERELEASE=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease)
+          fi
           if [ "$PRERELEASE" = true ]; then
             id=Orivon.Browser.Preview
             dir=manifests/o/Orivon/Browser/Preview
@@ -465,9 +524,285 @@ jobs:
           PACKAGE_ID: ${{ steps.choose.outputs.id }}
           VERSION: ${{ steps.choose.outputs.version }}
           URL: ${{ steps.choose.outputs.url }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: >-
           ./komac update "$PACKAGE_ID" --version "$VERSION" --urls "$URL"
           --release-notes-url "https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
           --created-with "Orivon release workflow" --created-with-url "https://github.com/$GITHUB_REPOSITORY"
           --skip-pr-check --submit
+
+  # Submits the Store package to Partner Center as a new submission of the existing product, with the Microsoft
+  # Store Developer CLI (msstore, pinned below) and an Entra ID application that has the Manager role in Partner
+  # Center. The listing is not touched: msstore starts the submission from the last published one. The package
+  # is the `store-msix` artifact of this run, and stays there for upload by hand. A release never goes red for a
+  # Store step that is not set up yet: with a secret empty, or a submission already in review, the job writes a
+  # warning and succeeds (packaging.md section The Microsoft Store package). Run by hand with a tag, it submits
+  # that published release's package, taken from the newest Release run of the tag.
+  store:
+    if: ${{ !cancelled() && (needs.publish.result == 'success' || inputs.tag != '') }}
+    needs: publish
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      actions: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Choose the package
+        id: choose
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          INPUT_TAG: ${{ inputs.tag }}
+          HAS_SECRETS: ${{ secrets.MS_STORE_TENANT_ID != '' && secrets.MS_STORE_SELLER_ID != '' && secrets.MS_STORE_CLIENT_ID != '' && secrets.MS_STORE_CLIENT_SECRET != '' }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "run=false" >> "$GITHUB_OUTPUT"
+          steps="Upload the store-msix artifact of the release's run by hand. Steps: docs/development/release-checklist.md, item The Microsoft Store package."
+
+          if [ "$HAS_SECRETS" != true ]; then
+            echo "::warning title=Microsoft Store::$version was not submitted to the Microsoft Store: one of the repository secrets MS_STORE_TENANT_ID, MS_STORE_SELLER_ID, MS_STORE_CLIENT_ID and MS_STORE_CLIENT_SECRET is empty. $steps"
+            exit 0
+          fi
+
+          # The package's version is the tag's three numbers and a fourth that is always 0. A pre-release tag
+          # (0.2.0-beta.1) would package as 0.2.0.0, the same as the release after it, and the Store only takes
+          # a version higher than its last.
+          if [[ "$version" == *-* ]]; then
+            echo "::notice title=Microsoft Store::$version is a pre-release tag: its package would carry the version of the release it leads to, so it is not submitted."
+            exit 0
+          fi
+
+          if [ -n "$INPUT_TAG" ]; then
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+            run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow release.yml --event release --limit 100 --json databaseId,headBranch --jq "[.[] | select(.headBranch == \"$TAG\")] | first | .databaseId // empty")
+            if [ -z "$run_id" ]; then
+              echo "::error title=Microsoft Store::found no Release workflow run for $TAG among the last 100, so there is no store-msix artifact to submit."
+              exit 1
+            fi
+            echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          fi
+          echo "run=true" >> "$GITHUB_OUTPUT"
+
+      - name: Download the Store package of this run
+        if: steps.choose.outputs.run == 'true' && github.event_name == 'release'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: store-msix
+          path: store
+
+      - name: Download the Store package of the tag's Release run
+        if: steps.choose.outputs.run == 'true' && github.event_name != 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.choose.outputs.run_id }}
+        run: gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name store-msix --dir store
+
+      # What is about to be submitted is the package of this tag: its manifest says so, and the Store wants
+      # the fourth part of the version to be 0 (electron-builder writes it so).
+      - name: Check the package is this release's
+        if: steps.choose.outputs.run == 'true'
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.choose.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @(Get-ChildItem store -Filter 'Orivon-Store-*.appx')
+          if ($files.Count -ne 1) { throw "expected one Orivon-Store-*.appx in the artifact, found $($files.Count)" }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead($files[0].FullName)
+          try {
+            $reader = New-Object System.IO.StreamReader($zip.GetEntry('AppxManifest.xml').Open())
+            [xml]$manifest = $reader.ReadToEnd()
+            $reader.Dispose()
+          } finally { $zip.Dispose() }
+          $identity = $manifest.Package.Identity
+          Write-Host "package $($identity.Name) $($identity.Version), publisher $($identity.Publisher)"
+          $expected = "$($env:VERSION).0"
+          if ($identity.Version -ne $expected) { throw "the package is version $($identity.Version), but the release is $expected" }
+          # msstore takes .msix and .msixupload; the bytes of the two containers are the same.
+          Copy-Item $files[0].FullName (Join-Path $files[0].DirectoryName 'Orivon-Store.msix')
+
+      - name: Install the Microsoft Store Developer CLI
+        if: steps.choose.outputs.run == 'true'
+        uses: microsoft/microsoft-store-apppublisher@cc9910a8d59f2eb55cbb83df0a3800cf3b5300e0 # v1.4
+        with:
+          version: v0.4.3
+
+      # Only this step holds the Partner Center credentials. A submission of the product that is still in
+      # review cannot be replaced (Partner Center allows one at a time), so that failure is told in plain
+      # words and the job still succeeds; any other failure fails the job, and only the job.
+      - name: Submit the package to Partner Center
+        if: steps.choose.outputs.run == 'true'
+        env:
+          MS_STORE_TENANT_ID: ${{ secrets.MS_STORE_TENANT_ID }}
+          MS_STORE_SELLER_ID: ${{ secrets.MS_STORE_SELLER_ID }}
+          MS_STORE_CLIENT_ID: ${{ secrets.MS_STORE_CLIENT_ID }}
+          MS_STORE_CLIENT_SECRET: ${{ secrets.MS_STORE_CLIENT_SECRET }}
+          PRODUCT_ID: 9MXV3FNMFBP4
+          VERSION: ${{ steps.choose.outputs.version }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          set -uo pipefail
+          msstore reconfigure --tenantId "$MS_STORE_TENANT_ID" --sellerId "$MS_STORE_SELLER_ID" \
+            --clientId "$MS_STORE_CLIENT_ID" --clientSecret "$MS_STORE_CLIENT_SECRET" || exit 1
+
+          msix=$(cygpath -w "$PWD/store/Orivon-Store.msix")
+          echo "::group::msstore submission status $PRODUCT_ID, before"
+          msstore submission status "$PRODUCT_ID" || true
+          echo "::endgroup::"
+
+          if msstore publish "$msix" -id "$PRODUCT_ID" 2>&1 | tee publish.log; then
+            ok=true
+          else
+            ok=false
+          fi
+
+          echo "::group::msstore submission status $PRODUCT_ID, after"
+          msstore submission status "$PRODUCT_ID" 2>&1 | tee status.log || true
+          echo "::endgroup::"
+
+          if [ "$ok" = true ]; then
+            {
+              echo "### Microsoft Store"
+              echo
+              echo "Submitted $VERSION ($TAG) to the product $PRODUCT_ID. Partner Center certifies it before it reaches the Store."
+              echo
+              echo '```'
+              cat status.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if grep -Eiq 'in progress|in certification|InCertification|pending submission|already has a (pending|submission)|InvalidState|cannot (be )?(delete|creat)' publish.log; then
+            echo "::warning title=Microsoft Store::$VERSION was not submitted: Partner Center holds a submission of $PRODUCT_ID that is still in review, and it allows one at a time. When it is published, or cancelled in Partner Center, run Actions > Release > Run workflow with the tag $TAG. The package is the store-msix artifact."
+            exit 0
+          fi
+          echo "::error title=Microsoft Store::msstore could not submit $VERSION; its output is above. The package is the store-msix artifact, for upload by hand."
+          exit 1
+
+  # Offers the release's .deb to the Arch User Repository as orivon-bin (packaging/aur/PKGBUILD). The job fills
+  # the version and sha256 from the release, builds the package once in an Arch container to prove the PKGBUILD,
+  # writes .SRCINFO there with makepkg, and pushes both. Only the last step holds the SSH key. A release never
+  # goes red for an AUR step that is not set up yet: with the secret empty, the job writes a warning and
+  # succeeds (packaging.md section The Arch User Repository). Run by hand with a tag, it offers that release.
+  aur:
+    if: ${{ !cancelled() && (needs.publish.result == 'success' || inputs.tag != '') }}
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Choose the version and read what the AUR holds
+        id: choose
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          HAS_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY != '' }}
+        run: |
+          set -euo pipefail
+          echo "run=false" >> "$GITHUB_OUTPUT"
+          steps="Steps: docs/development/release-checklist.md, item The Arch package."
+
+          if [ "$HAS_KEY" != true ]; then
+            echo "::warning title=AUR::$TAG was not offered to the AUR: the repository secret AUR_SSH_PRIVATE_KEY is empty. $steps"
+            exit 0
+          fi
+          case "$TAG" in
+            v[0-9]*) ;;
+            *) echo "::warning title=AUR::$TAG was not offered to the AUR: the tag does not start with v and a number, and the package's download address is built from it."; exit 0 ;;
+          esac
+          upstream="${TAG#v}"
+
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern ipfs.json --dir release
+          sha=$(jq -r --arg name "orivon_${upstream}_amd64.deb" '[.files[] | select(.name == $name) | .sha256] | first // empty' release/ipfs.json)
+          if [ -z "$sha" ]; then
+            echo "::warning title=AUR::$TAG was not offered to the AUR: the release has no orivon_${upstream}_amd64.deb in its ipfs.json."
+            exit 0
+          fi
+
+          # What the AUR holds now, read over https so that no key is needed yet. A 404 is a package it does not hold.
+          code=$(curl -sS -o old-PKGBUILD -w '%{http_code}' 'https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=orivon-bin')
+          old_upstream=
+          old_pkgrel=
+          old_sha=
+          case "$code" in
+            200)
+              old_upstream=$(sed -n "s/^_upstream=//p" old-PKGBUILD | head -1)
+              old_pkgrel=$(sed -n "s/^pkgrel=//p" old-PKGBUILD | head -1)
+              old_sha=$(sed -n "s/^sha256sums=('\\(.*\\)')\$/\\1/p" old-PKGBUILD | head -1)
+              ;;
+            404) ;;
+            *) echo "::error title=AUR::the AUR answered $code when asked for the current PKGBUILD of orivon-bin."; exit 1 ;;
+          esac
+          {
+            echo "upstream=$upstream"
+            echo "sha=$sha"
+            echo "old_upstream=$old_upstream"
+            echo "old_pkgrel=$old_pkgrel"
+            echo "old_sha=$old_sha"
+            echo "run=true"
+          } >> "$GITHUB_OUTPUT"
+
+      # Arch's own tools, pinned by digest like the actions. It builds the package once to prove the PKGBUILD
+      # and the sha256 before anything is pushed; nothing in this step has the key.
+      - name: Fill the PKGBUILD, build it once and write .SRCINFO in an Arch container
+        if: steps.choose.outputs.run == 'true'
+        env:
+          UPSTREAM: ${{ steps.choose.outputs.upstream }}
+          SHA256: ${{ steps.choose.outputs.sha }}
+          OLD_UPSTREAM: ${{ steps.choose.outputs.old_upstream }}
+          OLD_PKGREL: ${{ steps.choose.outputs.old_pkgrel }}
+          OLD_SHA256: ${{ steps.choose.outputs.old_sha }}
+        run: |
+          set -euo pipefail
+          mkdir aur
+          cp packaging/aur/PKGBUILD aur/
+          chmod 777 aur
+          docker run --rm -e HOST_UID="$(id -u)" -e UPSTREAM -e SHA256 -e OLD_UPSTREAM -e OLD_PKGREL -e OLD_SHA256 \
+            -v "$PWD/aur:/pkg" -v "$PWD/packaging/aur/prepare.sh:/prepare.sh:ro" \
+            archlinux:base-devel@sha256:0ccc8b2e55c0c26a6e501e892cc6b1cdea7cfdf77e432941320148b4dabd2bff bash /prepare.sh /pkg
+          result=$(cat aur/result)
+          echo "result=$result" | tee -a "$GITHUB_ENV"
+          case "$result" in
+            publish) ;;
+            same) echo "::notice title=AUR::orivon-bin on the AUR already holds $UPSTREAM with this package." ;;
+            older) echo "::warning title=AUR::orivon-bin on the AUR holds a newer version than $UPSTREAM, so $UPSTREAM was not offered." ;;
+            unmappable) echo "::warning title=AUR::$UPSTREAM was not offered to the AUR: only x.y.z and x.y.z-alpha, -beta or -rc with an optional .n have a version pacman sorts right." ;;
+            *) echo "::error title=AUR::unexpected result $result"; exit 1 ;;
+          esac
+
+      - name: Push to the AUR
+        if: steps.choose.outputs.run == 'true' && env.result == 'publish'
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          UPSTREAM: ${{ steps.choose.outputs.upstream }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/ssh"
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$RUNNER_TEMP/ssh/key"
+          # The AUR's ed25519 host key, SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4, as the AUR announces it.
+          echo 'aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN' > "$RUNNER_TEMP/ssh/known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $RUNNER_TEMP/ssh/key -o IdentitiesOnly=yes -o UserKnownHostsFile=$RUNNER_TEMP/ssh/known_hosts -o StrictHostKeyChecking=yes -o HostKeyAlgorithms=ssh-ed25519"
+          git clone ssh://aur@aur.archlinux.org/orivon-bin.git aur-repo
+          cp aur/PKGBUILD aur/.SRCINFO aur-repo/
+          cd aur-repo
+          git checkout -B master
+          git add PKGBUILD .SRCINFO
+          if git diff --cached --quiet; then
+            echo "::notice title=AUR::nothing changed in orivon-bin."
+            exit 0
+          fi
+          release=$(sed -n 's/^pkgrel=//p' PKGBUILD)
+          git -c user.name='Orivon release workflow' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "Update to ${UPSTREAM}-${release}"
+          git push origin master
+          rm -f "$RUNNER_TEMP/ssh/key"

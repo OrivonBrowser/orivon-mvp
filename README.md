@@ -172,7 +172,7 @@ flowchart LR
 ```
 
 1. **The name is proven.** A `.eth` name is resolved by [Helios](https://github.com/a16z/helios), an
-   Ethereum light client that runs on your machine from a checkpoint shipped with each release. No
+   Ethereum light client that runs on your machine from a recent checkpoint: the one shipped with each release, or one two beacon servers agree on. No
    RPC provider is trusted to tell the truth.
 2. **The content is checked.** Every IPFS block is hashed against its CID before it is used.
    Gateways are trusted to deliver bytes, never to be right about them. A server can refuse to
