@@ -1,7 +1,7 @@
 /**
  * Fails the build if an A-number is used twice across docs/open-questions.md
- * and docs/decisions/resolved-questions.md, or if an open entry runs past
- * 12 lines.
+ * and docs/decisions/resolved-questions.md, if an open entry runs past
+ * 12 lines, or if two ADR files or two decision-log rows share a number.
  *
  * Numbers are cited from source as the authority for why code is shaped a
  * certain way, so a reused one is ambiguous forever. Two branches opened at
@@ -9,7 +9,7 @@
  * this is what catches that at merge. The line ceiling is what keeps the open
  * file readable in one sitting.
  */
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { isInvokedDirectly } from './cli.mjs'
 
@@ -119,8 +119,49 @@ export function checkQuestionNumbers (root) {
   return { ok: duplicates.length === 0 && long.length === 0, duplicates, long }
 }
 
+export const DECISIONS_DIR = 'docs/decisions'
+export const DECISION_LOG = 'docs/decisions/decision-log.md'
+/** An ADR file name, and a decision-log row: the first cell is the id. */
+const ADR_FILE = /^ADR-(\d{4})-/
+const DECISION_ROW = /^\| `d-(\d{4})` \|/
+
+/**
+ * ADR numbers and decision-log ids used twice. Two ADR files with one number never conflict in git (their names
+ * differ), so this is the only place that catches two branches that took the same next number.
+ * @returns {{ ok: boolean, adrs: Array<{ number: string, places: string[] }>,
+ *   decisions: Array<{ number: string, places: string[] }>, error?: string }}
+ */
+export function checkDecisionNumbers (root) {
+  let files, log
+  try {
+    files = readdirSync(join(root, DECISIONS_DIR))
+    log = readFileSync(join(root, DECISION_LOG), 'utf8')
+  } catch (err) {
+    return { ok: false, adrs: [], decisions: [], error: `could not read ${err.path ?? DECISIONS_DIR}: ${err.code ?? err.message}` }
+  }
+  const twice = (entries) => {
+    const byNumber = new Map()
+    for (const [number, place] of entries) byNumber.set(number, [...(byNumber.get(number) ?? []), place])
+    return [...byNumber.entries()].filter(([, places]) => places.length > 1).map(([number, places]) => ({ number, places }))
+      .sort((a, b) => Number(a.number) - Number(b.number))
+  }
+  const adrs = twice(files.sort().flatMap((file) => { const m = ADR_FILE.exec(file); return m ? [[m[1], `${DECISIONS_DIR}/${file}`]] : [] }))
+  const decisions = twice(findMatches(log, DECISION_ROW).map(({ number, line }) => [number, `${DECISION_LOG}:${line}`]))
+  return { ok: adrs.length === 0 && decisions.length === 0, adrs, decisions }
+}
+
 if (isInvokedDirectly(import.meta.url)) {
   const result = checkQuestionNumbers(process.cwd())
+  const numbers = checkDecisionNumbers(process.cwd())
+  if (!numbers.ok) {
+    if (numbers.error) console.error(`\n${numbers.error}\nTreating this as a failed scan, not a clean one.\n`)
+    for (const { number, places } of numbers.adrs) console.error(`\nADR-${number} is used more than once: ${places.join(', ')}`)
+    for (const { number, places } of numbers.decisions) console.error(`\nd-${number} is used more than once: ${places.join(', ')}`)
+    if (numbers.adrs.length + numbers.decisions.length > 0) {
+      console.error("\nRenumber the one that merges later from main's highest (node scripts/ai/renumber-decisions.mjs for rows),\nand move what cites it.\n")
+    }
+    if (result.ok) process.exit(1)
+  }
 
   if (!result.ok) {
     if (result.error) {
@@ -147,5 +188,6 @@ if (isInvokedDirectly(import.meta.url)) {
     process.exit(1)
   }
 
-  console.log(`No A-number is used twice, and every open entry fits in ${MAX_ENTRY_LINES} lines.`)
+  if (!numbers.ok) process.exit(1)
+  console.log(`No A-number, ADR number or decision id is used twice, and every open entry fits in ${MAX_ENTRY_LINES} lines.`)
 }
