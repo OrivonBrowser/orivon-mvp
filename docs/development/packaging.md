@@ -523,7 +523,7 @@ dpkg -x release/*.deb /tmp/orivon-deb-inspect   # full contents
 cat /tmp/orivon-deb-inspect/usr/share/applications/*.desktop
 
 # Expect a line equivalent to:
-#   MimeType=text/html;application/xhtml+xml;image/svg+xml;application/pdf;x-scheme-handler/http;x-scheme-handler/https;
+#   MimeType=text/html;application/xhtml+xml;image/svg+xml;application/pdf;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/orivon;
 # and:
 #   Categories=Network;WebBrowser;
 #   Actions=new-window;new-private-window;
@@ -550,8 +550,8 @@ only the two scheme handlers is unmeasured (`docs/open-questions.md` A387).
 ## Making "set as default browser" possible: what's config and what isn't
 
 `electron-builder.yml` handles the packaging half: the top-level `protocols` key
-(`schemes: [http, https]`) is what electron-builder documents as producing the `.desktop` file's
-`MimeType=` line (`x-scheme-handler/http;x-scheme-handler/https;`), and `linux.category` supplies
+(`schemes: [http, https, orivon]`) is what electron-builder documents as producing the `.desktop` file's
+`MimeType=` line (`x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/orivon;`), and `linux.category` supplies
 `Categories=Network;WebBrowser;`. `linux.mimeTypes` lists `text/html`, `application/xhtml+xml`, `image/svg+xml`
 and `application/pdf`, which puts Orivon under Open with for those files and opens them as local files; only
 as the default browser does it also take `text/html`, `application/xhtml+xml` and `application/pdf` (the
@@ -591,6 +591,13 @@ and macOS' default-app lists (`docs/open-questions.md` A328).
   Make default opens `ms-settings:defaultapps?registeredAppUser=Orivon` and the person chooses. The installer's
   shortcuts carry the app user model id `com.orivonstack.orivon`, the one `src/main/os/launcher-tasks.ts` sets on
   the process.
+- **`orivon:` links.** The Windows installer also writes the class `Software\Classes\orivon` (`URL Protocol`, the same
+  `-- "%1"` command), which is not a default-app choice and is removed on uninstall. On macOS and in the Store manifest
+  the `protocols` entry carries it (`CFBundleURLTypes`; a `windows.protocol` extension), and on Linux the .deb's desktop
+  entry lists `x-scheme-handler/orivon`. A run from source registers none of them, and the Linux "Orivon (source)"
+  entry does not list the scheme, so a checkout never takes the links from an installed Orivon; the AppImage does
+  not integrate with the desktop and takes none either. What an `orivon:` link may name is in
+  [ADR-0094](../decisions/ADR-0094-an-orivon-link-from-another-program-opens-a-eth-name-or-an-ipfs-address.md).
 - **macOS.** `protocols` becomes `CFBundleURLTypes`. No HTML document types are declared, so a file dropped on the
   dock icon is refused and logged. Make default calls `setAsDefaultProtocolClient`, which the system confirms.
 

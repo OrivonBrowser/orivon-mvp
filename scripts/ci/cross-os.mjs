@@ -243,7 +243,19 @@ function collect (run, dir, packaged) {
   return evidence
 }
 
+const FLAGS = new Set(['--systems', '--specs', '--shards', '--packaged', '--run', '--matrix'])
+const USAGE = `usage: node scripts/ci/cross-os.mjs [--systems windows,macos,linux] [--specs "<spec files or folders>" | --specs none] [--shards <n>]
+       node scripts/ci/cross-os.mjs --packaged
+       node scripts/ci/cross-os.mjs --run <run id> | --run latest
+Every form but --run starts a run on GitHub's runners.`
+
 if (isInvokedDirectly(import.meta.url)) {
+  // An unknown switch (--help among them) prints the usage and starts nothing: a run costs runner minutes.
+  const unknown = process.argv.slice(2).filter((argument) => argument.startsWith('-') && !FLAGS.has(argument))
+  if (unknown.length > 0) {
+    console.error(`${unknown[0] === '--help' || unknown[0] === '-h' ? '' : `unknown switch ${unknown[0]}\n`}${USAGE}`)
+    process.exit(unknown[0] === '--help' || unknown[0] === '-h' ? 0 : 2)
+  }
   try {
     const packaged = process.argv.includes('--packaged')
     const workflow = packaged ? PACKAGED_WORKFLOW : WORKFLOW
