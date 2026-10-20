@@ -83,9 +83,10 @@ when it does not.
    fails, nothing is attached: re-run the failed job from the Actions tab, and the attach job
    follows. Re-running replaces assets of the same name.
 4. A release build first refuses an `.eth` light-client checkpoint
-   (`src/main/verifier/mainnet-checkpoint.json`) over 14 days old: the app rejects one that old,
-   and a fresh install of that release would verify no `.eth` name. Refresh it before tagging
-   ([`release-checklist.md`](release-checklist.md)).
+   (`src/main/verifier/mainnet-checkpoint.json`) over 7 days old (`MAX_CHECKPOINT_AGE_DAYS` in the
+   workflow): the app rejects one over 14, and a fresh install of a release past that would verify
+   no `.eth` name. `refresh-eth-checkpoint.yml` proposes a fresh one twice a week; merge it before
+   tagging ([`release-checklist.md`](release-checklist.md)).
 
 A pull request that changes `electron-builder.yml`, `build/`, `scripts/smoke-packaged.mjs` or the
 workflow runs the same build and launch, and keeps the packages for seven days as workflow

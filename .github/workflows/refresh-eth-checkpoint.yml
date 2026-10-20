@@ -1,0 +1,93 @@
+name: Refresh .eth checkpoint
+
+# Keeps the light client's bundled root of trust fresh on main: twice a week it runs
+# scripts/refresh-eth-checkpoint.mjs (a finalized root two beacon APIs agree on) and, when the file changed,
+# pushes automation/eth-checkpoint and opens a pull request, or updates the one that is open. A pull request
+# opened with GITHUB_TOKEN starts no pull_request workflow, so this one starts CI on the branch itself
+# (workflow_dispatch of ci.yml, which the token may do); its `check` run is then on the commit the pull request
+# shows. Opening a pull request needs the repository setting "Allow GitHub Actions to create and approve pull
+# requests"; without it the branch is still pushed and this run fails with that message.
+on:
+  schedule:
+    - cron: '23 5 * * 1,4'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: refresh-eth-checkpoint
+  cancel-in-progress: false
+
+env:
+  BRANCH: automation/eth-checkpoint
+  CHECKPOINT: src/main/verifier/mainnet-checkpoint.json
+
+jobs:
+  refresh:
+    if: github.repository == 'OrivonBrowser/orivon-mvp'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: main
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+
+      - name: Read a finalized checkpoint two beacon APIs agree on
+        run: node scripts/refresh-eth-checkpoint.mjs --write
+
+      - name: Push the branch and open or update the pull request
+        run: |
+          if git diff --quiet -- "$CHECKPOINT"; then
+            echo "The checkpoint on main is already the finalized one."
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c "$BRANCH"
+          git add "$CHECKPOINT"
+          git commit -m 'Refresh the bundled .eth light-client checkpoint' \
+            -m 'A finalized root two independent beacon APIs agree on, read by scripts/refresh-eth-checkpoint.mjs.'
+          git push --force origin "HEAD:refs/heads/$BRANCH"
+
+          number=$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')
+          if [ -z "$number" ]; then
+            cat > "$RUNNER_TEMP/body.md" <<'BODY'
+          ## What changes for the user
+
+          A fresh install opens `.eth` names: the light client refuses a bundled checkpoint over 14 days old, and this one is new.
+
+          ## Changes
+
+          ### Refresh the bundled .eth light-client checkpoint
+
+          - **Goal**. Keep the light client's root of trust on `main` younger than a release may ship.
+          - **What it achieves**. `src/main/verifier/mainnet-checkpoint.json` holds a finalized root two independent beacon APIs agreed on.
+          - **How it works**. The scheduled workflow `refresh-eth-checkpoint.yml` ran `scripts/refresh-eth-checkpoint.mjs --write`. A pull request opened with the workflow token starts no pull-request workflow, so the workflow started CI on the branch itself. If `check` is missing here, run `gh workflow run ci.yml --ref automation/eth-checkpoint`.
+
+          ## How it was verified
+
+          The script refuses unless both APIs return the same finalized root and slot. CI runs on the branch.
+          BODY
+            gh pr create --base main --head "$BRANCH" \
+              --title 'Refresh the bundled .eth light-client checkpoint' \
+              --body-file "$RUNNER_TEMP/body.md" || {
+                echo "::error::The branch $BRANCH is pushed, but this repository does not let GitHub Actions open pull requests (Settings > Actions > General > Allow GitHub Actions to create and approve pull requests). Open it by hand or enable the setting."
+                exit 1
+              }
+          else
+            echo "Pull request #$number already carries this branch; the push updated it."
+          fi
+
+          # The push or the new pull request started no workflow: run CI on the branch so `check` reports on it.
+          gh workflow run ci.yml --ref "$BRANCH"
