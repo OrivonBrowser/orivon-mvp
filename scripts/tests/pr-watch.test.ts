@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -138,6 +138,30 @@ describe('updateBranch', () => {
     const head = updateBranch(mine, 'feature')
     expect(git(join(root, 'origin.git'), 'rev-parse', 'feature')).toBe(head)
     expect(git(join(root, 'origin.git'), 'branch', '--list', 'renamed-here')).toBe('')
+  })
+
+  it('settles a conflict in the decision log alone by renumbering the branch\'s rows', () => {
+    const root = mkdtempSync(join(tmpdir(), 'pr-watch-test-'))
+    roots.push(root)
+    const log = 'docs/decisions/decision-log.md'
+    const row = (id: string, what: string) => `| \`${id}\` | 2026-10-20 | ${what} | x |\n`
+    git(root, 'init', '-q', '--bare', '-b', 'main', 'origin.git')
+    git(root, 'clone', '-q', 'origin.git', 'mine')
+    const mine = join(root, 'mine')
+    mkdirSync(join(mine, 'docs/decisions'), { recursive: true })
+    commit(mine, log, row('d-0001', 'base'))
+    git(mine, 'push', '-q', 'origin', 'HEAD:main')
+    git(mine, 'checkout', '-q', '-b', 'feature')
+    commit(mine, log, row('d-0001', 'base') + row('d-0002', 'ours'))
+    git(mine, 'push', '-q', '-u', 'origin', 'feature')
+    git(root, 'clone', '-q', 'origin.git', 'theirs')
+    const theirs = join(root, 'theirs')
+    commit(theirs, log, row('d-0001', 'base') + row('d-0002', 'theirs'))
+    git(theirs, 'push', '-q', 'origin', 'HEAD:main')
+    const head = updateBranch(mine, 'feature')
+    expect(head).toBe(git(mine, 'rev-parse', 'HEAD'))
+    expect(readFileSync(join(mine, log), 'utf8')).toBe(row('d-0001', 'base') + row('d-0002', 'theirs') + row('d-0003', 'ours'))
+    expect(git(mine, 'status', '--porcelain')).toBe('')
   })
 
   it('leaves the worktree as it was when main does not merge cleanly', () => {
