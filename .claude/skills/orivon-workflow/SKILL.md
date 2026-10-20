@@ -82,6 +82,9 @@ Skip routine sessions.
   merge commit, so every commit of the branch lands on `main`: when one must not (it carried something later removed),
   pass `--squash`. A subagent always gets `--no-merge`, so that the session that briefed it merges. Read its exit
   from the PR's state, never from a pipe's: `cmd | tail` exits 0 whatever `cmd` did.
+- A conflict in `docs/decisions/decision-log.md` after merging `main` in (two branches took the same d-number):
+  `node scripts/ai/renumber-decisions.mjs` keeps main's rows, renumbers the branch's after them, rewrites the
+  branch's own references to those ids, and prints the mapping. Then commit the merge.
 - `npm run test:changed` follows imports. A test that bundles a source tree from disk and compares it with a
   committed artifact is listed in `BUNDLED_FROM` (`scripts/test-changed.mjs`), or nothing local selects it.
 
