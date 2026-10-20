@@ -48,6 +48,8 @@ export const TOAST_TEXT = {
   sidePanelNarrow: { text: 'Make the window wider to open the side panel', tone: 'info' },
   notReadable: { text: 'Reader view is not available for this page.', tone: 'info' },
   linkCopied: { text: 'Link copied', tone: 'ok' },
+  webLinkCopied: { text: 'Web link copied', tone: 'ok' },
+  noWebLink: { text: 'This page has no web link to share', tone: 'info' },
   linkCopyFailed: { text: 'Could not copy the link', tone: 'error' },
   mailFailed: { text: 'Could not open your mail program', tone: 'error' },
   noAddress: { text: 'This page has no address to share', tone: 'info' },

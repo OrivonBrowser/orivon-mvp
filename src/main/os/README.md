@@ -5,8 +5,8 @@ app (`open-url.ts`), and a file the system hands it (`open-file.ts`: the open-fi
 runner, `os-domain.ts` for the Settings page). When Orivon asks to be the default browser (`default-browser-ask.ts`
 is the rule over three facts and the clock; `install-default-browser-ask.ts` looks at it every hour). The entries a
 dock or a taskbar shows for Orivon's icon (`launcher-tasks.ts`, `install-launcher-menu.ts`, and
-`windows-taskbar.ts` for a run from source on Windows). The share commands, Copy link and Email link (`share.ts`,
-`share-commands.ts`, `share-runner.ts`). A site's shortcut: the file's text (`site-shortcut.ts`), where it is
+`windows-taskbar.ts` for a run from source on Windows). The share commands, Copy link, Copy web link and Email link (`share.ts`,
+`share-commands.ts`, `share-runner.ts`; `web-link.ts` is the rewrite Copy web link copies). A site's shortcut: the file's text (`site-shortcut.ts`), where it is
 written (`site-shortcut-runner.ts`), and the sheet that asks for it (`shortcut-open.ts`, `shortcut-overlay.ts`,
 `shortcut-real.ts`). `menu-state.ts` says when the main menu greys those rows. `default-browser-test-seam.ts` is the
 recording host a test build uses in place of the system.
@@ -68,6 +68,15 @@ control characters from the name (a line break would start a new line of the fil
 `Exec=` argument, escapes the characters a quoted argument still reads specially, and doubles `%`. The file name is
 `orivon-<slug>-<8 hex>.desktop`, built in main from the address; the sheet sends a name and a tick, never a path or an
 address. The places it writes come from the host, which a test points at a temporary directory.
+
+**Copy web link copies an address another browser opens, and is offered only where that differs from Copy link.** A `.eth`
+name (`ipfs://name.eth/x`, `ipns://name.eth`, or the plain `https://name.eth` shown before the network is learned)
+becomes `https://name.eth.limo/x`; an `ipfs://<cid>` becomes `https://<cidv1-base32>.ipfs.dweb.link/` (a CIDv0 is
+converted, since a subdomain is lowercase); an `ipns://<key>` becomes `https://<key>.ipns.dweb.link/`. Path, query
+and fragment are kept as written. A name or CID that cannot be one host label, a DNSLink domain, `bzz://`, Orivon
+pages and `file:` have no web link, and their row is not offered (greyed with the reason in the main menu). Nothing is
+requested: the address is only copied, and it says nothing of the page being verified, which only Orivon does. The
+tab menu, the main menu and a link's right-click menu carry it, labelled `WEB_LINK_LABEL`.
 
 **Email link asks first.** The address and the title are a page's words. They are percent-encoded into a `mailto:`
 address, and the same question a page that opens a `mailto:` link is asked is put before the mail program starts.

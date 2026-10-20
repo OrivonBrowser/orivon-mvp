@@ -1064,6 +1064,7 @@ the reference set, and whether this build has it.
 | Link: open in new window | ✅ | Open Link in New Window opens a real window (`context-menu-groups.ts`) |
 | Link: open in private window | ✅ | Starts a private session on the address; hidden inside a private window and in a kiosk (`context-menu-groups.ts`, `ProfilesService.openPrivate`) |
 | Link: copy link address | ✅ | |
+| Link: copy web link | ✅ | For a `.eth`, `ipfs://` or `ipns://` link, "Copy web link (opens in any browser)" copies an `eth.limo` or `dweb.link` address other browsers open; not offered for a link that is already a web address (`context-menu-groups.ts`, `web-link.ts`) |
 | Link: save link as | ✅ | `webContents.downloadURL` through the downloads service: the Downloads folder with no dialog, or Electron's save dialog when "Ask where" is on (`context-menu-groups.ts`, `src/main/downloads/`) |
 | Link: open in split view | ✅ | Orivon-specific addition |
 | Link: copy link text | ✅ | `context-menu-groups.ts` |

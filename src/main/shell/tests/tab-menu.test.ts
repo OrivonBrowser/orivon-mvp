@@ -5,7 +5,7 @@ vi.mock('electron', () => ({ Menu: { buildFromTemplate: vi.fn() } }))
 
 const { tabMenuTemplate } = await import('../tab-menu.js')
 
-const actions = () => ({ newTabRight: vi.fn(), reload: vi.fn(), duplicate: vi.fn(), togglePin: vi.fn(), toggleMute: vi.fn(), newGroup: vi.fn(), ungroup: vi.fn(), sleep: vi.fn(), copyLink: vi.fn(), emailLink: vi.fn(), moveToNewWindow: vi.fn(), separate: vi.fn(), close: vi.fn(), closeOthers: vi.fn(), closeRight: vi.fn(), run: vi.fn() })
+const actions = () => ({ newTabRight: vi.fn(), reload: vi.fn(), duplicate: vi.fn(), togglePin: vi.fn(), toggleMute: vi.fn(), newGroup: vi.fn(), ungroup: vi.fn(), sleep: vi.fn(), copyLink: vi.fn(), copyWebLink: vi.fn(), emailLink: vi.fn(), moveToNewWindow: vi.fn(), separate: vi.fn(), close: vi.fn(), closeOthers: vi.fn(), closeRight: vi.fn(), run: vi.fn() })
 const model = (overrides: Partial<Parameters<typeof tabMenuTemplate>[0]> = {}): Parameters<typeof tabMenuTemplate>[0] => ({
   canDuplicate: true, pinned: false, muted: false, canPin: true, canShare: true, othersClosable: true, rightClosable: true, tabCount: 3, inSplit: false, splitPartners: [], grouped: false, groups: [], otherWindows: [], ...overrides
 })
@@ -105,6 +105,17 @@ describe('a tab\'s menu', () => {
     ;(items[1]?.click as () => void)()
     expect(a.copyLink).toHaveBeenCalledTimes(1)
     expect(a.emailLink).toHaveBeenCalledTimes(1)
+  })
+
+  it('adds Copy web link beside Copy Link only for a tab whose address has another form other browsers open', () => {
+    const a = actions()
+    const withLink = find(tabMenuTemplate(model({ canCopyWebLink: true }), a), 'Share')?.submenu as MenuItemConstructorOptions[]
+    expect(withLink.map((item) => item.label)).toEqual(['Copy Link', 'Copy web link (opens in any browser)', 'Email Link'])
+    ;(withLink[1]?.click as () => void)()
+    expect(a.copyWebLink).toHaveBeenCalledTimes(1)
+    expect(a.copyLink).not.toHaveBeenCalled()
+    const without = find(tabMenuTemplate(model({ canCopyWebLink: false }), actions()), 'Share')?.submenu as MenuItemConstructorOptions[]
+    expect(without.map((item) => item.label)).toEqual(['Copy Link', 'Email Link'])
   })
 
   it('greys Share for a tab with no address to share', () => {
