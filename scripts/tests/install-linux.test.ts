@@ -39,6 +39,10 @@ case "$url" in
 esac
 `
 
+/** The three things the launcher needs before it lets the AppImage mount itself, made by stand-ins so no machine decides. */
+const FAKE_FUSERMOUNT = '#!/bin/sh\nexit 0\n'
+const FAKE_LDCONFIG = '#!/bin/sh\necho "\tlibfuse.so.2 (libc6,x86-64) => /usr/lib/x86_64-linux-gnu/libfuse.so.2"\n'
+
 interface Asset { name: string, digest?: string }
 interface Release { tag: string, draft?: boolean, assets?: Asset[] }
 
@@ -47,6 +51,8 @@ let home: string
 let fixtures: string
 let toolDir: string
 let started: string
+let fuseUsable: Record<string, string>
+let fuseUnusable: Record<string, string>
 
 const sha = (text: string): string => createHash('sha256').update(text).digest('hex')
 
@@ -75,7 +81,7 @@ function withImage (tag: string, tamper?: (asset: { name: string, digest: string
 function run (args: string[] = [], env: Record<string, string> = {}): { status: number | null, out: string } {
   const result = spawnSync('bash', [SCRIPT, ...args], {
     encoding: 'utf8',
-    env: { PATH: `${toolDir}:${process.env['PATH'] ?? ''}`, HOME: home, TMPDIR: root, FIXTURES: fixtures, ORIVON_TEST_STARTED: started, ...env }
+    env: { PATH: `${toolDir}:${process.env['PATH'] ?? ''}`, HOME: home, TMPDIR: root, FIXTURES: fixtures, ORIVON_TEST_STARTED: started, ...fuseUsable, ...env }
   })
   return { status: result.status, out: `${result.stdout}${result.stderr}` }
 }
@@ -91,7 +97,13 @@ beforeEach(() => {
   started = join(root, 'started')
   for (const dir of [home, fixtures, toolDir]) mkdirSync(dir, { recursive: true })
   writeFileSync(join(toolDir, 'curl'), CURL)
-  chmodSync(join(toolDir, 'curl'), 0o755)
+  writeFileSync(join(toolDir, 'fusermount'), FAKE_FUSERMOUNT)
+  writeFileSync(join(toolDir, 'ldconfig'), FAKE_LDCONFIG)
+  for (const tool of ['curl', 'fusermount', 'ldconfig']) chmodSync(join(toolDir, tool), 0o755)
+  writeFileSync(join(root, 'fuse-device'), '')
+  // Every launch starts from "FUSE works", and a test that wants it not to say so; neither depends on this machine's /dev/fuse.
+  fuseUsable = { ORIVON_FUSE_DEVICE: join(root, 'fuse-device') }
+  fuseUnusable = { ORIVON_FUSE_DEVICE: join(root, 'no-such-device') }
 })
 
 afterEach(() => { rmSync(root, { recursive: true, force: true }) })
@@ -206,7 +218,7 @@ describe.skipIf(!onUnix)('scripts/install-linux.sh', () => {
       const result = spawnSync('bash', ['-s', '--', 'ab12'], {
         input: readFileSync(SCRIPT, 'utf8'),
         encoding: 'utf8',
-        env: { PATH: `${toolDir}:${process.env['PATH'] ?? ''}`, HOME: home, TMPDIR: root, FIXTURES: fixtures, ORIVON_TEST_STARTED: started }
+        env: { PATH: `${toolDir}:${process.env['PATH'] ?? ''}`, HOME: home, TMPDIR: root, FIXTURES: fixtures, ORIVON_TEST_STARTED: started, ...fuseUsable }
       })
       expect(result.status).toBe(0)
       await waitForFile(started)
@@ -227,6 +239,13 @@ describe.skipIf(!onUnix)('scripts/install-linux.sh', () => {
       expect(run().status).toBe(0)
       await waitForFile(started)
       expect(readFileSync(started, 'utf8').trim()).toBe('')
+    })
+
+    it('hands the id on after the unpacking switch when the AppImage cannot mount itself', async () => {
+      publish([withImage('v0.0.8')])
+      expect(run(['ab12'], fuseUnusable).status).toBe(0)
+      await waitForFile(started)
+      expect(readFileSync(started, 'utf8').trim()).toBe('--appimage-extract-and-run --orivon-flavour=ab12')
     })
 
     it('does not start Orivon with --no-launch or ORIVON_NO_OPEN=1', async () => {
@@ -268,26 +287,24 @@ describe.skipIf(!onUnix)('scripts/install-linux.sh', () => {
 
   describe('the launcher', () => {
     function start (...args: string[]): string {
-      const result = spawnSync(join(lib(), 'orivon'), args, { encoding: 'utf8', env: { PATH: process.env['PATH'] ?? '', ORIVON_TEST_STARTED: started, ...fuseEnv } })
+      const result = spawnSync(join(lib(), 'orivon'), args, { encoding: 'utf8', env: { PATH: `${toolDir}:${process.env['PATH'] ?? ''}`, ORIVON_TEST_STARTED: started, ...fuseEnv } })
       expect(result.status).toBe(0)
       return readFileSync(started, 'utf8').trim()
     }
     let fuseEnv: Record<string, string> = {}
 
     beforeEach(() => {
-      fuseEnv = {}
+      fuseEnv = fuseUsable
       publish([withImage('v0.0.8')])
       expect(run(['--no-launch']).status).toBe(0)
     })
 
     it('unpacks and runs when the FUSE device cannot be used', () => {
-      fuseEnv = { ORIVON_FUSE_DEVICE: join(root, 'no-such-device') }
+      fuseEnv = fuseUnusable
       expect(start('https://example.test/')).toBe('--appimage-extract-and-run https://example.test/')
     })
 
     it('runs the AppImage itself when the device, fusermount and libfuse.so.2 are all there', () => {
-      const fuse = spawnSync('sh', ['-c', 'test -r /dev/fuse && test -w /dev/fuse && (command -v fusermount >/dev/null || test -x /usr/bin/fusermount) && (ldconfig -p 2>/dev/null || /sbin/ldconfig -p 2>/dev/null) | grep -q "libfuse\\.so\\.2"'])
-      if (fuse.status !== 0) return
       expect(start('--new-window')).toBe('--new-window')
     })
   })
