@@ -225,12 +225,19 @@ jobs:
           sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
 
       # The device-backed WebHID spec makes a virtual device through /dev/uhid (test/support/virtual-hid/); the hosted
-      # image ships the uhid module only in its extra modules. Only a shard that runs that spec pays the ~40 s.
+      # image ships the uhid module only in its extra modules. Only a shard that runs that spec pays the ~40 s. A runner
+      # whose kernel has no extra-modules package in the archive yet cannot load it: the spec then skips with a warning
+      # on the run, instead of every pull request failing on the runner image.
       - name: Load the uhid kernel module
+        id: uhid
         if: ${{ contains(matrix.files, 'e2e-app-hid-device') }}
         run: |
-          sudo apt-get install -y -qq "linux-modules-extra-$(uname -r)"
-          sudo modprobe uhid
+          if sudo modprobe uhid 2>/dev/null \
+            || { sudo apt-get install -y -qq "linux-modules-extra-$(uname -r)" && sudo modprobe uhid; }; then
+            echo "require=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning title=uhid::kernel $(uname -r) has no uhid module in the archive: the device-backed WebHID spec skips on this run."
+          fi
 
       - name: Build with the developer-only hooks the specs need
         run: node scripts/build-e2e.mjs
@@ -238,8 +245,8 @@ jobs:
       - name: Specs of this shard
         env:
           FILES: ${{ matrix.files }}
-          # A missing device fails the spec here instead of skipping it.
-          ORIVON_REQUIRE_VIRTUAL_HID: ${{ contains(matrix.files, 'e2e-app-hid-device') && '1' || '' }}
+          # A missing device fails the spec here instead of skipping it, unless the runner could not load uhid.
+          ORIVON_REQUIRE_VIRTUAL_HID: ${{ steps.uhid.outputs.require }}
         run: xvfb-run -a node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts $FILES
 
       # Screenshots, console logs and the main-process log of every failed
