@@ -10,9 +10,9 @@
 # upload in Partner Center. macOS packages are ad-hoc signed (`mac.identity` below), so Gatekeeper
 # asks the person to allow the app once. The schema here is electron-builder 26.x's, checked against
 # the installed node_modules/app-builder-lib/scheme.json.
-# The `win` and `mac` blocks also register Orivon with the system as a browser: `protocols`
-# below, and build/installer.nsh for the Windows installer's registry entries
-# (build/appx-extensions.xml is the Store package's equivalent). Whether a built package
+# The `win` and `mac` blocks also register Orivon with the system as a browser and as the handler of
+# `orivon:` links: `protocols` below, and build/installer.nsh for the Windows installer's registry
+# entries (build/appx-extensions.xml is the Store package's equivalent). Whether a built package
 # lists Orivon as a browser on Windows and macOS is unverified (*provisional*).
 
 appId: com.orivonstack.orivon
@@ -115,14 +115,13 @@ electronFuses:
   grantFileProtocolExtraPrivileges: false
 
 # --- Cross-platform URL-scheme registration -----------------------------------------
-# `schemes: [http, https]`, not a custom `orivon://` scheme -- Orivon is applying to be
-# a BROWSER, not registering a deep-link handler for itself. This is the piece that
-# makes "set as default browser" reachable at all: `xdg-settings set
-# default-web-browser` (Linux) looks for an installed .desktop file whose MimeType=
-# line includes `x-scheme-handler/http` and `x-scheme-handler/https`, and this is the
-# documented, cross-platform electron-builder mechanism that populates it (it would
-# equally populate the macOS Info.plist; the Windows registry entries are written by
-# build/installer.nsh instead).
+# `http` and `https` make Orivon a BROWSER: `xdg-settings set default-web-browser`
+# (Linux) looks for an installed .desktop file whose MimeType= line includes
+# `x-scheme-handler/http` and `x-scheme-handler/https`, and this is the documented,
+# cross-platform electron-builder mechanism that populates it (it equally populates the
+# macOS Info.plist; the Windows registry entries are written by build/installer.nsh).
+# `orivon` is the scheme of the links other programs hand to Orivon
+# (`orivon:open?u=<name.eth or ipfs address>`, ADR-0092): the same three places carry it.
 # This config key alone does not make Orivon a working browser at the OS level -- the
 # app itself must still call `app.setAsDefaultProtocolClient()` at runtime. That is
 # application code in src/main, out of scope for this file; see
@@ -132,6 +131,7 @@ protocols:
   schemes:
     - http
     - https
+    - orivon
 
 extraResources:
   - from: build/icon.png
@@ -304,7 +304,7 @@ mac:
         - arm64
         - x64
   category: public.app-category.productivity
-  # `protocols` above becomes CFBundleURLTypes (http, https). The document types below are offered
+  # `protocols` above becomes CFBundleURLTypes (http, https, orivon). The document types below are offered
   # under "Open With" and never taken over: rank Alternate leaves the default to the person, who sets
   # it in Finder. Provisional until measured on a Mac.
   fileAssociations:

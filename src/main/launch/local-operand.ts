@@ -5,6 +5,7 @@ import { posix, win32 } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { sanitizeLocalFileUrl } from '../browsing/local-file-input.js'
 import { urlsFromArgv } from './launch-context.js'
+import { orivonLinkAddresses } from './orivon-link.js'
 
 export type PathKind = 'file' | 'directory' | undefined
 
@@ -35,12 +36,12 @@ export function localOperandUrl (operand: string, cwd: string, kindOf: (path: st
   return sanitizeLocalFileUrl(pathToFileURL(absolute, { windows: platform === 'win32' }).href)
 }
 
-/** The http(s) addresses and local files among `operands`, in their order, at most `limit`. */
+/** The http(s) addresses, `orivon:` links and local files among `operands`, in their order, at most `limit`. */
 export function addressesFromOperands (operands: readonly string[], cwd: string, kindOf: (path: string) => PathKind = pathKind, platform: NodeJS.Platform = process.platform, limit = 8): string[] {
   const found: string[] = []
   for (const operand of operands) {
     if (found.length >= limit) break
-    const web = urlsFromArgv([operand], 1)[0]
+    const web = urlsFromArgv([operand], 1)[0] ?? orivonLinkAddresses([operand], 1)[0]
     const address = web ?? localOperandUrl(operand, cwd, kindOf, platform)
     if (address !== null && address !== undefined) found.push(address)
   }

@@ -16,7 +16,7 @@ Private and Settings pages may ask of it.
 
 **What it depends on.** `node:fs`, `node:os`, `node:child_process`;
 [`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts) (`profile-store.ts`'s
-own writes); [`../browsing/local-file-input.ts`](../browsing/local-file-input.ts) (which text names a local file:
+own writes); [`../../protocols/builtin.ts`](../../protocols/builtin.ts) (`orivon-link.ts` serves an `ipfs://` address as the address bar does); [`../browsing/local-file-input.ts`](../browsing/local-file-input.ts) (which text names a local file:
 `launch-request.ts` and `local-operand.ts`); [`../settings/settings-file.ts`](../settings/settings-file.ts) (the settings a private session held to a tunnel is written with: `private-session.ts` and `start-launch.ts`); `electron` only as a type (`start-launch.ts` is handed the `app`).
 [`../shell/`](../shell/) is never imported.
 
@@ -60,6 +60,15 @@ with `--orivon-private` has a directory of its own and takes no lock, so no seco
 take the focus. In this Electron the token is consumed before the main script runs, and the running browser's
 `second-instance` argv holds none, so a private session started from a launcher action cannot be passed one
 (`docs/open-questions.md` A386).
+
+**An `orivon:` link names a `.eth` name or an IPFS address, and the rest is refused** (`orivon-link.ts`,
+[ADR-0092](../../../docs/decisions/ADR-0092-an-orivon-link-from-another-program-opens-a-eth-name-or-an-ipfs-address.md)).
+The text comes from any program, so it is checked as an allow-list: a fixed alphabet and length, one `u=`, one decoding,
+no control, space or bidirectional character, no `.` or `..` segment, and a target that is a `.eth` name (ASCII labels)
+or an `ipfs://` or `ipns://` name. It leaves the parser as a web address, so a request carries nothing the check on a
+request from another process does not already accept. Encode `&`, `#` and `%` inside `u=`: an unencoded `&` ends it. A
+`flavour=` of the shape `FLAVOUR_ID` goes to `firstRunFlavourHint` only on the start a link made (the command line, or
+an `open-url` before the first window); a bad or repeated one is dropped and the target still opens.
 
 **Nothing after `--` is a switch.** The installer's link command ends the switches with `--`, so a link that carries
 `--no-sandbox` or `--orivon-private` is only a link. Every reader of the command line (the launch, the switches a peer
