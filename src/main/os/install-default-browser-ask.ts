@@ -1,18 +1,23 @@
-// Asks whether Orivon may be the default browser, half a minute into its first use and then about once a week: in the
-// window the person is using, as the browser's one kind of question, and only when nothing else has the window's
-// attention. The default profile alone asks. It looks at the clock when the next ask falls due, at least hourly, and
-// every few seconds while an ask waits for a window to ask in; at the operating system only when an ask is due.
+// Asks whether Orivon may be the default browser: the first time a beat after the first app has opened or on the second
+// day of use, whichever comes first, then about once a week: in the window the person is using, as the browser's one
+// kind of question, and only when nothing else has the window's attention. The default profile alone asks. It looks at
+// the clock when the next ask falls due, at least hourly, when an app finishes loading, and every few seconds while an
+// ask waits for a window to ask in; at the operating system only when an ask is due.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import type { WebContents } from 'electron'
 import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 import type { ShellInstaller } from '../shell/shell-installers.js'
 import { introCovers } from '../shell/intro-view.js'
+import { hasAsk } from '../overlays/tab-slots.js'
+import { appTabViews } from '../shell/tab-partition.js'
 import { askQuestion } from '../shell/question/ask-question.js'
 import type { QuestionResult, QuestionSpec } from '../shell/question/question-spec.js'
 import type { ShellWindow, WindowRegistry } from '../shell/window-registry.js'
 import { RESTORE_OVERLAY } from '../startup/restore-overlay.js'
-import { askDueAt, askedNow, canStop, FIRST_ASK_AFTER_MS, firstSight, readAskState, stoppedAsking } from './default-browser-ask.js'
+import { APP_OPEN_BEAT_MS, askDueAt, askedNow, firstSight, readAskState, stoppedAsking } from './default-browser-ask.js'
 import type { AskState } from './default-browser-ask.js'
+import { watchAppOpen } from './app-open-watch.js'
 import { canOfferDefault, makeDefaultBrowser, readDefaultBrowser } from './default-browser.js'
 import type { DefaultBrowserHost } from './default-browser.js'
 import { defaultBrowserHost } from './default-browser-runner.js'
@@ -31,24 +36,32 @@ export interface AskPlace {
   readonly tabId: string
 }
 
-/** The window and tab to ask in, or undefined to wait: one the person is looking at and using, with no welcome screen over it and no restore bar in it. */
-export function askPlace (windows: Pick<WindowRegistry, 'focused'>, introShowing: (window: ShellWindow['window']) => boolean = introCovers): AskPlace | undefined {
+/**
+ * The window and tab to ask in, or undefined to wait: one the person is looking at and using, with no welcome screen
+ * over it, no restore bar in it, and no sheet or prompt of the tab (an app's consent question among them) on screen or
+ * waiting.
+ */
+export function askPlace (
+  windows: Pick<WindowRegistry, 'focused'>,
+  introShowing: (window: ShellWindow['window']) => boolean = introCovers,
+  tabHasAsk: (window: ShellWindow, tabId: string) => boolean = hasAsk
+): AskPlace | undefined {
   const shown = windows.focused()
   if (shown === undefined || shown.window.isDestroyed() || !shown.window.isVisible() || shown.window.isMinimized()) return undefined
   const tabId = shown.tabs.getState().activeTabId
   if (tabId === null || tabId === undefined) return undefined
   // A window shown without being activated still has the focus in the page the person clicked in.
   const inUse = shown.window.isFocused() || shown.tabs.activeWebContents()?.isFocused() === true || shown.chrome.webContents.isFocused()
-  if (!inUse || introShowing(shown.window) || shown.overlays.isOpen(RESTORE_OVERLAY)) return undefined
+  if (!inUse || introShowing(shown.window) || shown.overlays.isOpen(RESTORE_OVERLAY) || tabHasAsk(shown, tabId)) return undefined
   return { window: shown, tabId }
 }
 
-function questionFor (stoppable: boolean): QuestionSpec {
+function question (): QuestionSpec {
   return {
     kind: 'notice',
     title: 'Make Orivon your default browser?',
     message: 'Links you click in other programs will open in Orivon.',
-    buttons: stoppable ? ['Make default', 'Not now', 'Don\'t ask again'] : ['Make default', 'Not now'],
+    buttons: ['Make default', 'Not now', 'Don\'t ask again'],
     cancelId: NOT_NOW,
     guarded: [MAKE_DEFAULT],
     // The question appears while the person may be typing: a key meant for the page must land on no button.
@@ -58,6 +71,8 @@ function questionFor (stoppable: boolean): QuestionSpec {
 
 export interface AskDeps {
   readonly now: () => number
+  /** When the first app of this run finished loading, or undefined while none has. */
+  readonly appOpenedAt: () => number | undefined
   readonly read: () => string | undefined
   readonly write: (text: string) => void
   readonly host: DefaultBrowserHost
@@ -81,15 +96,15 @@ export function createDefaultBrowserCheck (deps: AskDeps): () => Promise<number>
     inFlight = true
     try {
       const now = deps.now()
-      const { state, repaired } = readAskState(deps.read(), now)
+      const read = readAskState(deps.read(), now)
+      let state = read.state
       if (state === undefined) {
         // The clock starts in a window the person is using: time spent on the welcome screen and its popup is not use.
         if (deps.place() === undefined) return RETRY_MS
-        save(firstSight(now))
-        return FIRST_ASK_AFTER_MS
-      }
-      if (repaired) save(state)
-      const dueAt = askDueAt(state)
+        state = firstSight(now)
+        save(state)
+      } else if (read.repaired) save(state)
+      const dueAt = askDueAt(state, deps.appOpenedAt())
       if (dueAt === undefined) return CHECK_EVERY_MS
       if (now < dueAt) return Math.min(CHECK_EVERY_MS, dueAt - now)
       const place = deps.place()
@@ -100,9 +115,8 @@ export function createDefaultBrowserCheck (deps: AskDeps): () => Promise<number>
         save(askedNow(state, deps.now()))
         return CHECK_EVERY_MS
       }
-      const stoppable = canStop(state, deps.now())
-      const { response } = await deps.ask(place, questionFor(stoppable))
-      if (response === DONT_ASK_AGAIN && stoppable) save(stoppedAsking(state))
+      const { response } = await deps.ask(place, question())
+      if (response === DONT_ASK_AGAIN) save(stoppedAsking(state))
       else save(askedNow(state, deps.now()))
       if (response === MAKE_DEFAULT) await makeDefaultBrowser(deps.host, deps.wait)
     } catch (error) {
@@ -119,8 +133,10 @@ export const installDefaultBrowserAsk: ShellInstaller = {
   install: (_app, services, _ctx, runtime) => {
     if (runtime.profileId !== 'default' || runtime.isPrivate || services.kiosk || !canOfferDefault(defaultBrowserHost)) return
     const file = join(runtime.dir, 'default-browser-ask.json')
+    let appOpenedAt: number | undefined
     const check = createDefaultBrowserCheck({
       now: Date.now,
+      appOpenedAt: () => appOpenedAt,
       read: () => { try { return readFileSync(file, 'utf8') } catch { return undefined } },
       write: (text) => { writeFileAtomic(file, text) },
       host: defaultBrowserHost,
@@ -129,7 +145,31 @@ export const installDefaultBrowserAsk: ShellInstaller = {
       wait: async (ms) => { await new Promise<void>((resolve) => { setTimeout(resolve, ms) }) }
     })
     exposeAskNow(check)
-    const look = (): void => { void check().then((next) => { setTimeout(look, next).unref() }).catch((error: unknown) => { console.error('[os] the default browser check failed:', error) }) }
-    setTimeout(look, FIRST_CHECK_MS).unref()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const schedule = (ms: number): void => {
+      if (timer !== undefined) clearTimeout(timer)
+      timer = setTimeout(look, ms)
+      timer.unref()
+    }
+    function look (): void {
+      timer = undefined
+      void check().then(schedule).catch((error: unknown) => { console.error('[os] the default browser check failed:', error) })
+    }
+    const watch = (contents: WebContents): void => {
+      watchAppOpen(contents, () => {
+        const found = services.windows.findTab(contents)
+        const view = found?.window.tabs.record(found.tabId)?.view
+        return view !== undefined && appTabViews.has(view)
+      }, () => {
+        if (appOpenedAt !== undefined) return
+        appOpenedAt = Date.now()
+        schedule(APP_OPEN_BEAT_MS)
+      })
+    }
+    services.tabLifecycle.subscribe({
+      tabCreated: (contents) => { watch(contents) },
+      viewReplaced: (_old, contents) => { watch(contents) }
+    })
+    schedule(FIRST_CHECK_MS)
   }
 }

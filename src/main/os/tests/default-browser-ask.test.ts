@@ -1,29 +1,72 @@
 import { describe, expect, it } from 'vitest'
-import { askDue, askDueAt, askedNow, canStop, DAY_MS, FIRST_ASK_AFTER_MS, firstSight, readAskState, stoppedAsking } from '../default-browser-ask.js'
+import { APP_OPEN_BEAT_MS, askDue, askDueAt, askedNow, DAY_MS, firstSight, readAskState, startOfNextDay, stoppedAsking } from '../default-browser-ask.js'
 
-const NOW = 1_800_000_000_000
+// A fixed moment on the wall clock of whichever zone runs the test, so "the next calendar day" means the same everywhere.
+const NOW = new Date(2027, 0, 15, 14, 0, 0).getTime()
 const daysLater = (days: number): number => NOW + days * DAY_MS
+const midnightAfterNow = new Date(2027, 0, 16, 0, 0, 0).getTime()
 
 describe('the first ask', () => {
   const state = firstSight(NOW)
 
-  it('comes half a minute after the profile is first seen in use, not before', () => {
-    expect(FIRST_ASK_AFTER_MS).toBe(30_000)
-    expect(askDueAt(state)).toBe(NOW + FIRST_ASK_AFTER_MS)
+  it('does not come on the first day of use while no app has opened', () => {
+    expect(askDueAt(state)).toBe(midnightAfterNow)
     expect(askDue(state, NOW)).toBe(false)
-    expect(askDue(state, NOW + FIRST_ASK_AFTER_MS - 1)).toBe(false)
-    expect(askDue(state, NOW + FIRST_ASK_AFTER_MS)).toBe(true)
+    expect(askDue(state, NOW + 60_000)).toBe(false)
+    expect(askDue(state, midnightAfterNow - 1)).toBe(false)
   })
 
-  it('offers no "Don\'t ask again" yet', () => {
-    expect(canStop(state, NOW + FIRST_ASK_AFTER_MS)).toBe(false)
+  it('comes a beat after the first app finished loading', () => {
+    expect(APP_OPEN_BEAT_MS).toBe(3_000)
+    const opened = NOW + 20_000
+    expect(askDueAt(state, opened)).toBe(opened + APP_OPEN_BEAT_MS)
+    expect(askDue(state, opened + APP_OPEN_BEAT_MS - 1, opened)).toBe(false)
+    expect(askDue(state, opened + APP_OPEN_BEAT_MS, opened)).toBe(true)
   })
 
-  it('is followed by the weekly ask, counted from its answer', () => {
-    const answered = askedNow(state, NOW + FIRST_ASK_AFTER_MS)
+  it('comes on the second calendar day without any app opening', () => {
+    expect(askDue(state, midnightAfterNow)).toBe(true)
+    expect(askDue(state, daysLater(1))).toBe(true)
+    expect(askDue(state, daysLater(5))).toBe(true)
+  })
+
+  it('counts a calendar day, not 24 hours: first used just before midnight, the next morning is the second day', () => {
+    const lateEvening = firstSight(new Date(2027, 0, 15, 23, 50, 0).getTime())
+    expect(askDue(lateEvening, new Date(2027, 0, 16, 0, 5, 0).getTime())).toBe(true)
+    expect(askDue(lateEvening, new Date(2027, 0, 15, 23, 59, 0).getTime())).toBe(false)
+  })
+
+  it('comes at the earlier of the two', () => {
+    const lateEvening = firstSight(new Date(2027, 0, 15, 23, 59, 58).getTime())
+    const opened = new Date(2027, 0, 15, 23, 59, 59).getTime()
+    expect(askDueAt(lateEvening, opened)).toBe(new Date(2027, 0, 16, 0, 0, 0).getTime())
+  })
+
+  it('starts the next day at local midnight', () => {
+    expect(startOfNextDay(NOW)).toBe(midnightAfterNow)
+    expect(startOfNextDay(new Date(2027, 0, 31, 23, 59, 59).getTime())).toBe(new Date(2027, 1, 1, 0, 0, 0).getTime())
+    expect(startOfNextDay(new Date(2027, 11, 31, 12, 0, 0).getTime())).toBe(new Date(2028, 0, 1, 0, 0, 0).getTime())
+  })
+
+  it('is followed by the weekly ask, counted from its answer, whatever opened or not afterwards', () => {
+    const answered = askedNow(state, NOW + 20_000)
     expect(answered.firstSeenAt).toBe(NOW)
-    expect(askDue(answered, NOW + FIRST_ASK_AFTER_MS + 7 * DAY_MS - 1)).toBe(false)
-    expect(askDue(answered, NOW + FIRST_ASK_AFTER_MS + 7 * DAY_MS)).toBe(true)
+    expect(askDue(answered, daysLater(2), NOW + 30_000)).toBe(false)
+    expect(askDue(answered, NOW + 20_000 + 7 * DAY_MS - 1)).toBe(false)
+    expect(askDue(answered, NOW + 20_000 + 7 * DAY_MS)).toBe(true)
+  })
+
+  it('stops for good when the person said so on the first ask', () => {
+    const stopped = stoppedAsking(state)
+    expect(askDueAt(stopped, NOW)).toBeUndefined()
+    expect(askDue(stopped, daysLater(30), NOW)).toBe(false)
+  })
+
+  it('leaves a profile that was already asked on its weekly count: an app opening or a new day changes nothing', () => {
+    const asked = { firstSeenAt: NOW - 20 * DAY_MS, lastAskedAt: NOW - 3 * DAY_MS, stopped: false }
+    expect(askDueAt(asked)).toBe(NOW + 4 * DAY_MS)
+    expect(askDueAt(asked, NOW)).toBe(NOW + 4 * DAY_MS)
+    expect(askDue(asked, NOW + DAY_MS, NOW)).toBe(false)
   })
 })
 
@@ -40,14 +83,6 @@ describe('the weekly ask', () => {
     expect(askDue(state, daysLater(7))).toBe(true)
     expect(askDue(state, daysLater(13))).toBe(true)
     expect(askDue(state, daysLater(14))).toBe(true)
-  })
-
-  it('offers "Don\'t ask again" only from day 14 after the profile was first seen', () => {
-    expect(canStop(state, daysLater(0))).toBe(false)
-    expect(canStop(state, daysLater(7))).toBe(false)
-    expect(canStop(state, daysLater(13))).toBe(false)
-    expect(canStop(state, daysLater(14))).toBe(true)
-    expect(canStop(state, daysLater(40))).toBe(true)
   })
 
   it('waits another week after "Not now", counted from the answer', () => {
