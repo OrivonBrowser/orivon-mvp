@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAINNET_GENESIS_SECONDS, chooseCheckpoint, parseCheckpoint, slotTimestamp } from '../checkpoint.js'
+import { MAINNET_GENESIS_SECONDS, chooseCheckpoint, parseCheckpoint, parseStoredCheckpoint, slotTimestamp } from '../checkpoint.js'
 import type { Checkpoint } from '../checkpoint.js'
 
 const DAY = 86_400
@@ -43,6 +43,43 @@ describe('chooseCheckpoint', () => {
 
   it('accepts a checkpoint exactly at the limit', () => {
     expect(chooseCheckpoint(checkpoint(14), undefined, NOW, MAX)).toMatchObject({ ok: true })
+  })
+})
+
+describe('chooseCheckpoint with a checkpoint fetched at run time', () => {
+  const servers = ['https://a.example', 'https://b.example']
+
+  it('names the servers that agreed on the stored checkpoint when it is the newest', () => {
+    expect(chooseCheckpoint(checkpoint(30, 'a'), { ...checkpoint(0, 'b'), fetchedFrom: servers }, NOW, MAX)).toEqual({ ok: true, checkpoint: checkpoint(0, 'b'), source: 'fetched', ageSeconds: 0, fetchedFrom: servers })
+  })
+
+  it('is the install\'s own once the light client stored a newer one over it', () => {
+    expect(chooseCheckpoint(checkpoint(30, 'a'), checkpoint(0, 'c'), NOW, MAX)).toMatchObject({ ok: true, source: 'this-install' })
+  })
+
+  it('still names its servers when it has aged past the limit too', () => {
+    expect(chooseCheckpoint(checkpoint(40, 'a'), { ...checkpoint(20, 'b'), fetchedFrom: servers }, NOW, MAX)).toEqual({ ok: false, problem: 'too-old', source: 'fetched', ageSeconds: 20 * DAY, fetchedFrom: servers })
+  })
+
+  it('leaves the release\'s alone when it is the newer', () => {
+    expect(chooseCheckpoint(checkpoint(1, 'a'), { ...checkpoint(5, 'b'), fetchedFrom: servers }, NOW, MAX)).toEqual({ ok: true, checkpoint: checkpoint(1, 'a'), source: 'release', ageSeconds: DAY })
+  })
+})
+
+describe('parseStoredCheckpoint', () => {
+  it('reads the servers a fetched checkpoint carries', () => {
+    expect(parseStoredCheckpoint({ root: root('c'), timestamp: NOW, fetchedFrom: ['https://a.example'] })).toEqual({ root: root('c'), timestamp: NOW, fetchedFrom: ['https://a.example'] })
+  })
+
+  it('reads one without servers as the light client\'s own', () => {
+    expect(parseStoredCheckpoint({ root: root('c'), timestamp: NOW })).toEqual({ root: root('c'), timestamp: NOW })
+  })
+
+  it('drops servers that are not web origins, and refuses a bad checkpoint', () => {
+    expect(parseStoredCheckpoint({ root: root('c'), timestamp: NOW, fetchedFrom: ['ftp://a.example'] })).toEqual({ root: root('c'), timestamp: NOW })
+    expect(parseStoredCheckpoint({ root: root('c'), timestamp: NOW, fetchedFrom: [] })).toEqual({ root: root('c'), timestamp: NOW })
+    expect(parseStoredCheckpoint({ root: root('c'), timestamp: NOW, fetchedFrom: 'https://a.example' })).toEqual({ root: root('c'), timestamp: NOW })
+    expect(parseStoredCheckpoint({ root: 'x', timestamp: NOW, fetchedFrom: ['https://a.example'] })).toBeUndefined()
   })
 })
 

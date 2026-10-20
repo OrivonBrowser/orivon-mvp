@@ -20,6 +20,8 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 
 ### Done / results
 
+- An install whose checkpoint has aged out now fetches a fresh one from two beacon servers and uses it only if they agree.
+
 ### In my head
 
 ### Non-repo
