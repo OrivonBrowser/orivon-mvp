@@ -22,7 +22,15 @@
   DeleteRegValue SHCTX "Software\Classes\${EXT}\OpenWithProgids" "OrivonHTML"
 !macroend
 
+; The name of the file this installer was started from, written as it is: a package tagged for an app is a copy of
+; the same installer under another name, and the browser reads the tag from this file the first time it runs. Nothing
+; is parsed here (src/main/flavour/flavours.ts does that, against an allowlist).
+!define ORIVON_INSTALLER_NAME "installer-name.txt"
+
 !macro customInstall
+  FileOpen $0 "$INSTDIR\${ORIVON_INSTALLER_NAME}" w
+  FileWrite $0 "$EXEFILE"
+  FileClose $0
   WriteRegStr SHCTX "${ORIVON_CLIENT_KEY}" "" "Orivon"
   WriteRegStr SHCTX "${ORIVON_CLIENT_KEY}\DefaultIcon" "" "$INSTDIR\${APP_EXECUTABLE_FILENAME},0"
   WriteRegStr SHCTX "${ORIVON_CLIENT_KEY}\shell\open\command" "" '"$INSTDIR\${APP_EXECUTABLE_FILENAME}"'
@@ -47,6 +55,7 @@
 !macroend
 
 !macro customUnInstall
+  Delete "$INSTDIR\${ORIVON_INSTALLER_NAME}"
   !insertmacro orivonDocExtensionRemove ".html"
   !insertmacro orivonDocExtensionRemove ".htm"
   !insertmacro orivonDocExtensionRemove ".xhtml"

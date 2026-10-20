@@ -46,6 +46,7 @@ rather than editing here.
 | [`info/`](info/) | The About page and the task manager: the version and graphics facts, the process list, ending a process | when the last processor reading was taken | `about-runner.ts` and `tasks-runner.ts` only |
 | [`page-tools/`](page-tools/) | Print, save as PDF, save the page, view source, screenshots and picture in picture, and the toast that reports them | no | `real-deps.ts` and the files that type a `webContents`, as types |
 | [`zoom/`](zoom/) | How large each site is shown, chosen per site and remembered | `zoom.json` on disk | `attach-zoom.ts` and `install-zoom.ts` only |
+| [`flavour/`](flavour/) | What the first run of a new default profile does when the package was tagged for an app: opens it after the welcome screen and pins it in Featured, from an allowlist, once | `flavour.json` on disk | no |
 | [`newtab/`](newtab/) | What a profile chose about the new tab's Featured row: the app it was given first, the tiles it unpinned and hid | `new-tab.json` on disk (memory only in a private session) | no |
 | [`find/`](find/) | Find in page: the bar, the search it runs in the tab in front, and its commands | the query, per window, in memory | no (types only) |
 | [`spellcheck/`](spellcheck/) | Spell checking in tabs, switched on or off by a setting | no: Chromium keeps the custom dictionary | `install-spellcheck.ts` only |

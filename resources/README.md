@@ -2,6 +2,7 @@
 
 **What lives here.** Files the application reads at run time that are not source:
 - [`default-profile/`](default-profile/): what a new profile starts with.
+- [`flavours.json`](flavours.json): the apps a package can be tagged to open on first run (read by [`src/main/flavour/`](../src/main/flavour/README.md); the release workflow checks each against its port).
 - `<name>-node/`: a local node's files (`swarm-node`, `ipfs-node`).
 - [`nym-tunnel/`](nym-tunnel/): Nym's mixnet client as WebAssembly, the built-in tunnel for installed apps. Built
   from Nym's source with one patch (`vendor/nym-smolmix/`).

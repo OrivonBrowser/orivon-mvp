@@ -15,10 +15,10 @@ export class FeaturedStore {
     return this.state
   }
 
-  /** Puts `appIdOrUrl` (an app's id, or its address) first in this profile's Featured row, and reports whether it did. It does nothing once the profile was given a pin, whether the person kept it or removed it. */
-  setNewcomerPin (appIdOrUrl: string): boolean {
+  /** Puts `appIdOrUrl` (an app's id, or its address) first in this profile's Featured row, and reports whether it did. `name` is what its tile says when the app is not among the shipped entries. It does nothing once the profile was given a pin, whether the person kept it or removed it. */
+  setNewcomerPin (appIdOrUrl: string, name?: string): boolean {
     const before = this.get()
-    this.change(giveNewcomerPin(before, appIdOrUrl))
+    this.change(giveNewcomerPin(before, appIdOrUrl, name))
     return this.get() !== before
   }
 
