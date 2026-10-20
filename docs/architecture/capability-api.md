@@ -165,12 +165,13 @@ field is ignored, and the loader logs a warning naming it. An unknown field anyw
   "consentGranularity": "all-or-nothing",  // omitting this line has the same effect; see below.
                                             // "per-capability" lets the person accept some of the
                                             // capabilities above and refuse others.
-  "crossOriginIsolated": true              // serve the app's documents cross-origin isolated, which
+  "crossOriginIsolated": true,             // serve the app's documents cross-origin isolated, which
                                             // turns on SharedArrayBuffer for a WebAssembly component
                                             // built with threads (ADR-0036); omit it unless needed,
                                             // since an isolated page loses window.opener from its
                                             // popups and sends no credentials with cross-origin loads
-  "domain": "app.orivonstack.eth"          // the one ENS name or DNS host the app calls home; see below
+  "domain": "app.orivonstack.eth",         // the one ENS name or DNS host the app calls home; see below
+  "support": { "issues": "https://example.com/app/issues" }  // where a person reports a problem; see below
 }
 ```
 
@@ -227,6 +228,14 @@ at the host that name gives (ADR-0056). The same files under another name, or a 
 `domain`, show as unverified and still run; a name that moves to such content cannot be switched
 to without the person's Trust & Force confirmation. Ports set it to the name they are published
 under.
+
+### `support`: where a problem is reported
+
+`Manifest.support` is `{ issues }`, and `issues` is one absolute URL written with `https://`, with a host, no user name or
+password, no whitespace or control character, and 2048 characters at most. The site-information panel offers it as
+"Report a problem" for any site whose manifest declares it, installed or not. A malformed `support` rejects the
+manifest with a reason naming `support.issues`; absence is allowed, and a key of `support` a build does not know is skipped.
+`mailto:` and `http:` are not accepted. It is **self-asserted**, like `name`.
 
 ### `version`: semver, ordering, and what an unparseable one costs
 

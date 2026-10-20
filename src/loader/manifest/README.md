@@ -1,7 +1,7 @@
 # `src/loader/manifest/`: parsing and validating the manifest
 
 **What lives here.** `manifest.ts` (parses and validates `/.well-known/orivon.json`) and
-`capabilities.ts` (validates the `capabilities` sub-tree), `domain.ts` (the `domain` host grammar),
+`capabilities.ts` (validates the `capabilities` sub-tree), `domain.ts` (the `domain` host grammar), `support.ts` (`support.issues`, one https URL),
 `embed.ts` (`capabilities.web.embed`) and `media.ts` (`capabilities.media`), the last two split out of it under
 Rule 2. `capabilities.clipboard` is still refused: it has no app door.
 

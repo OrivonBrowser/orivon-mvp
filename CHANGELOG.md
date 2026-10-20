@@ -219,6 +219,7 @@ Pre-release, published 2026-10-06. [Release page](https://github.com/OrivonBrows
 - **`ipfs-url-opens`**: an `ipns://` key now opens the site its signed record names, as an `ipns://` DNSLink name
   already did; nothing changes for apps already published. Apps that keep grants across releases may ship under a key.
   Recheck: none.
+- **`contracts/manifest.ts`**: a manifest may carry `support: { issues }`, an absolute `https://` URL where its publisher takes problem reports; a malformed value rejects the manifest and absence is allowed. Older Orivon builds skip the field. Recheck: nothing; ports add it on their next republish.
 - **`contracts/manifest.ts`**: a manifest may carry `domain`, the one ENS name or DNS host the app calls home; a
   malformed value rejects the manifest and absence is allowed. Apps published under a name set `domain` to that name,
   as a lower-case host with no scheme, port or path. Recheck: every port.
