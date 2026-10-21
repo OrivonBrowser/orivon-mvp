@@ -149,8 +149,11 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
   watchClosedTabs(tabLifecycle, closedTabs)
   // A private session writes down no pages: it never opens a history file at all.
   const openedHistory = runtime.isPrivate ? { store: new NullHistoryStore(), problem: null } : openHistory(join(userDataPath, 'history.db'))
-  // It listed the apps a person used and when, for a row of the new tab that is gone; nothing reads it any more.
-  rmSync(join(userDataPath, 'app-use.json'), { force: true })
+  // It listed the apps a person used and when, for a row of the new tab that is gone; nothing reads it any more. A file
+  // Windows still holds open is left for the next start: the shell must come up whatever happens here.
+  try {
+    rmSync(join(userDataPath, 'app-use.json'), { force: true })
+  } catch {}
   return {
     bookmarks: new BookmarkStore(join(userDataPath, 'bookmarks.json'), undefined, undefined, startsFromDefaultProfile() ? () => defaultBookmarks(currentDefaultProfileDir()) : undefined),
     closedTabs,
