@@ -32,6 +32,10 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Windows gets a one-line PowerShell install with no SmartScreen warning, and the Microsoft Store joins each release's file table.
 - Private live telemetry dashboard on our server; telemetry now keeps each install's usage day by day, and the privacy notice says so.
 - Attila now re-judges every watched .eth site that publishes a new build, every 3 hours: sandboxed Sonnet 5.5, then commit, publish, Telegram.
+- Clicking Web2, Web2.5, Web3 or Web? opens the Web3 Score card with the current site's level marked.
+- Extensions can use the camera and microphone after you allow them, asked per extension, and can run in private windows.
+- Taking an app update now shows an "Updating" screen over its tabs and reloads them on the new version.
+- Ports raise their version by themselves whenever a published build changes, so every republish reaches users as a real update.
 
 ### In my head
 
