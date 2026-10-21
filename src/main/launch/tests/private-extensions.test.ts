@@ -288,6 +288,16 @@ describe('the data a private session starts with', () => {
     expect(files(into)).toEqual([])
   })
 
+  it('takes an entry whose path names the profile through a link, as macOS temp folders do', async () => {
+    if (process.platform === 'win32') return
+    profile()
+    const link = join(root, 'link')
+    symlinkSync(from, link)
+    writeFileSync(join(from, 'extensions', 'registry.json'), serializeRegistry([{ ...entry(ALLOWED, 'allowed'), path: join(link, 'extensions', 'allowed', '1.0.0') }]))
+    expect(await copyPrivateExtensions(from, into, { log })).toEqual([ALLOWED])
+    expect(parseRegistry(readFileSync(join(into, 'extensions', 'registry.json'), 'utf8')).entries[0]?.path).toBe(join(into, 'extensions', 'allowed', '1.0.0'))
+  })
+
   it('refuses an id that is not an extension id', async () => {
     profile()
     const bad = { ...entry('../../x', 'allowed') }

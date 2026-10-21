@@ -4,9 +4,9 @@
 // Windows may hold a file open in the profile's process, so every file is copied on its own and a failure is logged, never
 // raised (a private window must open whatever happens here).
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 import { copyFile, lstat, mkdir, readdir, rm } from 'node:fs/promises'
-import { dirname, isAbsolute, join, relative, sep } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 import { normalizePrefs, parsePrefsFile, serializePrefs } from '../extensions/extension-prefs.js'
 import type { ExtensionPrefs } from '../extensions/extension-prefs.js'
@@ -123,6 +123,15 @@ async function defaultCopyFile (from: string, to: string): Promise<void> {
   await copyFile(from, to)
 }
 
+/** Whether `path` is `<extensionsDir>/<slot>/<version>`, the folders compared as they really are. */
+function isInside (extensionsDir: string, path: string): boolean {
+  try {
+    return realpathSync(dirname(dirname(path))) === realpathSync(extensionsDir)
+  } catch {
+    return false
+  }
+}
+
 interface Allowed {
   readonly entry: InstalledExtension
   readonly slot: string
@@ -142,12 +151,14 @@ function allowedIn (from: string, log: (message: string) => void): Allowed[] {
     for (const entry of parseRegistry(registryText).entries) {
       const chosen = prefs.get(entry.id)
       if (!entry.enabled || chosen?.privateWindows !== true || !EXTENSION_ID.test(entry.id)) continue
-      const inside = relative(extensionsDir, entry.path)
-      const [slot] = inside.split(sep)
-      if (slot === undefined || slot === '' || slot === '..' || isAbsolute(inside)) {
+      // `<extensions>/<slot>/<version>`, compared by where the folders really are: the registry may name the profile through a
+      // link (macOS temp folders), and a path that climbs out of the folder resolves to somewhere else.
+      const slot = basename(dirname(entry.path))
+      if (!isInside(extensionsDir, entry.path) || slot === '' || slot === '.' || slot === '..') {
         log(`[private] ${entry.id} is not inside the extensions folder, not copied`)
         continue
       }
+      const inside = join(slot, basename(entry.path))
       found.push({ entry, slot, inside, chosen })
     }
   } catch (error) {
