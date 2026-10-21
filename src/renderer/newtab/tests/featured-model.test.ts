@@ -43,6 +43,10 @@ describe('featuredRow', () => {
     expect(row.hiddenCount).toBe(2)
   })
 
+  it('names an outsider with the name it was given', () => {
+    expect(featuredRow(entries, { ...NO_PREFS, newcomerPin: 'freetube', newcomerName: 'FreeTube' }).tiles[0]).toMatchObject({ id: 'freetube', name: 'FreeTube' })
+  })
+
   it('names an outsider by its address when it has no Orivon name', () => {
     expect(tileForOutsider('https://app.example/')).toMatchObject({ name: 'app.example', url: 'https://app.example/' })
     expect(tileForOutsider('not an app')).toBeNull()
@@ -51,9 +55,9 @@ describe('featuredRow', () => {
 
 describe('readPrefs', () => {
   it('reads what main answers and falls back to none for anything else', () => {
-    expect(readPrefs({ newcomerPin: 'a', unpinned: ['b'], hidden: ['c', 4] })).toEqual({ newcomerPin: 'a', unpinned: ['b'], hidden: ['c'] })
+    expect(readPrefs({ newcomerPin: 'a', newcomerName: 'A', unpinned: ['b'], hidden: ['c', 4] })).toEqual({ newcomerPin: 'a', newcomerName: 'A', unpinned: ['b'], hidden: ['c'] })
     expect(readPrefs(undefined)).toEqual(NO_PREFS)
-    expect(readPrefs({ newcomerPin: 3, unpinned: 'x' })).toEqual(NO_PREFS)
+    expect(readPrefs({ newcomerPin: 3, unpinned: 'x' })).toEqual({ ...NO_PREFS, newcomerName: null })
   })
 })
 

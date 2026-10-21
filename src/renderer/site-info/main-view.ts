@@ -35,6 +35,7 @@ export interface MainPageCallbacks {
   readonly onReviewPermissions: () => void
   readonly onApplyUpdate: (cid: string) => void
   readonly onOpenHome: () => void
+  readonly onOpenSupport: () => void
   readonly permissions: PermissionsCallbacks
 }
 
@@ -334,4 +335,17 @@ export function renderMainPage (
   allSitesRow.append(allSitesLabel, chevronIcon())
   allSitesRow.addEventListener('click', callbacks.onOpenSiteSettings)
   container.append(allSitesRow)
+
+  // The publisher's own word for where problems go: shown for any site whose manifest names it, installed or not.
+  if (info.supportIssues !== undefined) {
+    const support = document.createElement('button')
+    support.type = 'button'
+    support.id = 'report-problem'
+    support.className = 'nav-row'
+    const supportLabel = document.createElement('span')
+    supportLabel.textContent = 'Report a problem with this site'
+    support.append(supportLabel, chevronIcon())
+    support.addEventListener('click', callbacks.onOpenSupport)
+    container.append(support)
+  }
 }

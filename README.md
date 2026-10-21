@@ -242,7 +242,7 @@ against it changing a line. Read those files first if you want to know what Oriv
 
 | | Package |
 |---|---|
-| 🐧 **Linux** | `.deb` for Debian and Ubuntu, AppImage for any distribution (x64) |
+| 🐧 **Linux** | One line in a terminal (below), a `.deb` for Debian and Ubuntu, or an AppImage for any distribution (x64) |
 | 🪟 **Windows** | One line in PowerShell (below), or an installer for x64: per user, no administrator needed |
 | 🍎 **macOS** | One line in Terminal (below), or a `.dmg` for Apple silicon and for Intel |
 
@@ -260,13 +260,20 @@ SmartScreen warning, and opens it. Run it again to update.
 irm https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/install-windows.ps1 | iex
 ```
 
+**Linux, one line.** Paste this into a terminal. It installs Orivon for your user, with no sudo (the newest
+release's AppImage, a menu entry and an icon), and opens it. Run it again to update.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/install-linux.sh | bash
+```
+
 **[Get the latest release →](https://github.com/OrivonBrowser/orivon-mvp/releases/latest)**
 &nbsp;·&nbsp; also at [`download.orivonstack.eth`](https://download.orivonstack.eth.limo)
 
 Every release is also published on IPFS, and its `ipfs://` address is in the release notes. The
 Windows installer and the macOS `.dmg` are not signed with a bought certificate, so each system
-warns once before the first run ([what to click](docs/known-limitations.md#packages)); the macOS
-Terminal install above does not warn.
+warns once before the first run ([what to click](docs/known-limitations.md#packages)); the one-line
+installs above do not warn.
 
 ### Run from source
 

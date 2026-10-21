@@ -47,8 +47,10 @@ function Install-Orivon {
       Say 'Looking for the newest Orivon for Windows ...'
       $headers = @{ 'User-Agent' = 'orivon-install-windows' }
       if ($env:ORIVON_GITHUB_TOKEN) { $headers['Authorization'] = "Bearer $env:ORIVON_GITHUB_TOKEN" }
+      # Never inside @(): Invoke-RestMethod writes a JSON array as one object, and @() would keep it as a single
+      # release whose .draft is an array of every release's, which is true, so every release would be skipped.
       try {
-        $releases = @(Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases?per_page=20" -Headers $headers)
+        $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases?per_page=20" -Headers $headers
       } catch {
         throw "Could not read the releases of $repo from GitHub (offline, or its rate limit is reached). Try again later."
       }

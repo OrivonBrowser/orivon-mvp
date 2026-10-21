@@ -19,6 +19,8 @@ export interface FeaturedEntry {
 export interface FeaturedPrefs {
   /** The app a new profile was given first in the row, or null once the person removed it or none was given. */
   readonly newcomerPin: string | null
+  /** What the pinned app's tile says when the app is not among the shipped entries. */
+  readonly newcomerName?: string | null
   /** Entries the person unpinned, whatever the data says. */
   readonly unpinned: readonly string[]
   readonly hidden: readonly string[]
@@ -27,9 +29,9 @@ export interface FeaturedPrefs {
 /** The prefs out of what main answered; anything else is none, so a page never fails to draw the row. */
 export function readPrefs (answer: unknown): FeaturedPrefs {
   if (typeof answer !== 'object' || answer === null) return NO_PREFS
-  const { newcomerPin, unpinned, hidden } = answer as Record<string, unknown>
+  const { newcomerPin, newcomerName, unpinned, hidden } = answer as Record<string, unknown>
   const keys = (value: unknown): string[] => Array.isArray(value) ? (value as unknown[]).filter((item): item is string => typeof item === 'string') : []
-  return { newcomerPin: typeof newcomerPin === 'string' ? newcomerPin : null, unpinned: keys(unpinned), hidden: keys(hidden) }
+  return { newcomerPin: typeof newcomerPin === 'string' ? newcomerPin : null, newcomerName: typeof newcomerName === 'string' ? newcomerName : null, unpinned: keys(unpinned), hidden: keys(hidden) }
 }
 
 export interface FeaturedTile {
@@ -46,12 +48,12 @@ const ORIVON_NAME = /^ipfs:\/\/([a-z0-9-]+)\.orivonstack\.eth\/?$/
 const SLUG = /^[a-z0-9-]+$/
 
 /** The tile for a pin that is not in the shipped set. An id, or an `ipfs://<id>.orivonstack.eth` address, gets that name's label as its name; any other address its host. Null when the text is neither. */
-export function tileForOutsider (key: string): FeaturedTile | null {
+export function tileForOutsider (key: string, name?: string | null): FeaturedTile | null {
   const label = SLUG.test(key) ? key : ORIVON_NAME.exec(key)?.[1]
-  if (label !== undefined) return { id: label, name: label, url: `ipfs://${label}.orivonstack.eth`, icon: null, pinned: true }
+  if (label !== undefined) return { id: label, name: name ?? label, url: `ipfs://${label}.orivonstack.eth`, icon: null, pinned: true }
   try {
     const url = new URL(key)
-    return { id: key, name: url.host, url: key, icon: null, pinned: true }
+    return { id: key, name: name ?? url.host, url: key, icon: null, pinned: true }
   } catch {
     return null
   }
@@ -71,7 +73,7 @@ export function featuredRow (entries: readonly FeaturedEntry[], prefs: FeaturedP
   const pin = prefs.newcomerPin
   if (pin !== null && !prefs.hidden.includes(pin)) {
     const at = tiles.findIndex((tile) => tile.id === pin || tile.url === pin)
-    const found = at === -1 ? tileForOutsider(pin) : { ...(tiles.splice(at, 1)[0] as FeaturedTile), pinned: true }
+    const found = at === -1 ? tileForOutsider(pin, prefs.newcomerName) : { ...(tiles.splice(at, 1)[0] as FeaturedTile), pinned: true }
     if (found !== null) tiles.unshift(found)
   }
   return { tiles, hiddenCount: sorted.length - shown.length }
