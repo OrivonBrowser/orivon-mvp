@@ -232,6 +232,17 @@ for (const scheme of SCHEMES) {
         expect(await waitFor(async () => !(await popoverShown(app, '/site-info/')))).toBe(true)
 
         await delay(450) // past the debounce that reads a toggle just after a close as that close's echo
+        await chrome.click('#web3-mark')
+        expect(await popupSized(app, 'overlay=web3-score')).toBe(true)
+        await state(check, app, `web3-mark-card-${scheme}`, {
+          expected: 'The Web3 Score card is open under the Web2 mark at the right end of the address bar, inside the window: the same four level rows as from the shield, with the Level 1 row outlined in red and tagged "This site" at its right end, and no other row outlined or tagged. The gray "Web?" note at the foot is plain.',
+          action: 'Clicked the Web2 mark in the address bar on the fixture page.',
+          ignore: [FIXTURE_ADDRESS]
+        })
+        await chrome.click('#web3-mark')
+        expect(await waitFor(async () => !(await popoverShown(app, 'overlay=web3-score')))).toBe(true)
+
+        await delay(450)
         await chrome.click('#networks-btn')
         expect(await waitFor(async () => await popoverShown(app, '/networks/'))).toBe(true)
         expect(await popupSized(app, '/networks/')).toBe(true)

@@ -38,6 +38,31 @@ body[data-overlay='web3-score'] .ws-level-head { display: flex; align-items: cen
 body[data-overlay='web3-score'] .ws-level-name { font-weight: 600; }
 body[data-overlay='web3-score'] .ws-level-meaning { margin: 2px 0 0; color: var(--wink-dim); line-height: 1.45; }
 
+/* The row of the site whose mark opened the card: the level's own colour outlines it and tags it, without moving a row. */
+body[data-overlay='web3-score'] .ws-level[data-level='1'] { --here: var(--wlevel1); }
+body[data-overlay='web3-score'] .ws-level[data-level='2'] { --here: var(--wlevel2); }
+body[data-overlay='web3-score'] .ws-level[data-level='3'] { --here: var(--wlevel3); }
+body[data-overlay='web3-score'] .ws-level[data-level='4'] { --here: var(--wlevel4); }
+body[data-overlay='web3-score'] .ws-level.ws-here {
+  outline: 1.5px solid var(--here);
+  outline-offset: 4px;
+  border-radius: 8px;
+}
+body[data-overlay='web3-score'] .ws-here-tag {
+  margin-left: auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--here);
+  background: color-mix(in srgb, var(--here) 14%, transparent);
+}
+/* The level colours are too dark to read as small text on the dark card. */
+@media (prefers-color-scheme: dark) {
+  body[data-overlay='web3-score'] .ws-here-tag { color: color-mix(in srgb, var(--here) 45%, white); }
+}
+
 body[data-overlay='web3-score'] .ws-note {
   margin: 14px 0 0;
   padding-top: 10px;
@@ -47,6 +72,12 @@ body[data-overlay='web3-score'] .ws-note {
   line-height: 1.45;
 }
 body[data-overlay='web3-score'] .ws-unscored .web3-mark { vertical-align: middle; }
+body[data-overlay='web3-score'] .ws-note.ws-here {
+  color: var(--wink);
+  outline: 1.5px solid #9ca3af;
+  outline-offset: 4px;
+  border-radius: 8px;
+}
 body[data-overlay='web3-score'] .ws-foot { display: flex; justify-content: space-between; margin-top: 8px; }
 body[data-overlay='web3-score'] .ws-foot .link-btn { padding-left: 0; padding-right: 0; }
 

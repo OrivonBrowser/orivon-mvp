@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { createServer, type RequestListener, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { ElectronApplication, Page } from 'playwright'
-import { findChrome, waitFor } from '../support/smoke-helpers.mjs'
+import { findChrome, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
 import { readShield } from '../support/e2e-helpers.js'
 
 export const bucketOf = (id: string): string => createHash('sha256').update(id, 'utf8').digest('hex').slice(0, 2)
@@ -57,3 +57,26 @@ export async function readScore (app: ElectronApplication, level: string): Promi
   return { level: painted, mark, label, ...page }
 }
 
+
+const cardPage = (app: ElectronApplication): Page | undefined => app.windows().find((w) => w.url().includes('overlay=web3-score') && !w.isClosed())
+
+/** What the card the address bar's Web mark opens marks as this site, read after a real click on the mark; the mark is clicked again to close it. */
+export async function readMarkCard (app: ElectronApplication): Promise<{ marked: string[], tags: string[], noteMarked: boolean, label: string, closed: boolean }> {
+  const chrome = findChrome(app)
+  const label = await chrome.evaluate(() => document.querySelector('#web3-mark')?.getAttribute('aria-label') ?? '')
+  await chrome.click('#web3-mark')
+  if (!await waitFor(async () => await popoverShown(app, 'overlay=web3-score'), 5_000)) throw new Error('the Web3 Score card did not open from the mark')
+  const card = cardPage(app)!
+  await card.waitForSelector('.ws-level')
+  if (!await waitFor(async () => (await card.$$('.ws-level.ws-here')).length > 0, 5_000)) throw new Error('the card marks no level as this site')
+  const read = await card.evaluate(() => ({
+    marked: Array.from(document.querySelectorAll('.ws-level.ws-here .ws-level-name'), (el) => el.textContent ?? ''),
+    tags: Array.from(document.querySelectorAll('.ws-here-tag'), (el) => el.textContent ?? ''),
+    noteMarked: document.querySelector('.ws-note')?.classList.contains('ws-here') === true
+  }))
+  await chrome.click('#web3-mark')
+  const closed = await waitFor(async () => !(await popoverShown(app, 'overlay=web3-score')), 5_000)
+  // Past the host's reopen debounce, so the next click reads as a fresh open.
+  await chrome.waitForTimeout(400)
+  return { ...read, label, closed }
+}
