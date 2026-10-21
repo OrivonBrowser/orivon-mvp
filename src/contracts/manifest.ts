@@ -134,6 +134,8 @@ export interface Manifest {
   readonly crossOriginIsolated?: true
   /** The one ENS name or DNS host the app calls home, in URL host spelling; a judged score counts only there (ADR-0056). */
   readonly domain?: string
+  /** Where a person reports a problem with this app, on the publisher's own tracker: one absolute `https:` URL (ADR-0096). */
+  readonly support?: { readonly issues: string }
 }
 
 export interface Capabilities {
