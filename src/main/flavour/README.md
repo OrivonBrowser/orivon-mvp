@@ -4,7 +4,7 @@
 `flavours.ts` is the allowlist (`resources/flavours.json`) and how a tag is read from a file name, as pure functions.
 `carriers.ts` reads where a tag can come from: the switch `--orivon-flavour=<id>` (`../launch/launch-context.ts`'s
 `flavourSwitch`), the AppImage's own file name (`$APPIMAGE`) and `installer-name.txt`, which the Windows installer writes
-beside the program. `first-run-flavour.ts` holds `applyFirstRunFlavour(id)` and the profile's `flavour.json`;
+beside the program. `first-run-flavour.ts` holds `applyFirstRunFlavour(id)`, the profile's `flavour.json` and `storedFlavourApp` (the app that file names, which the new tab's Start here card offers first);
 `after-welcome.ts` holds work back until the welcome screen closes; `start-first-run-flavour.ts` is the one call
 `../index.ts` makes.
 

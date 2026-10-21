@@ -16,6 +16,7 @@ import { installFocus } from '../focus/install-focus.js'
 import { installLauncherMenu } from '../os/install-launcher-menu.js'
 import { installMediaGrants } from '../media-grants/install-media-grants.js'
 import { installMemorySaver } from '../memory-saver/install-memory-saver.js'
+import { installStartHere } from './install-start-here.js'
 import { installTabSlots } from '../overlays/install-tab-slots.js'
 import { installTabVisibility } from './install-tab-visibility.js'
 import { installTelemetrySites } from './install-telemetry-sites.js'
@@ -63,6 +64,7 @@ export const SHELL_INSTALLERS: readonly ShellInstaller[] = [
   installSidePanel,
   installSitePermissions,
   installSiteSessions,
+  installStartHere,
   installTabGroups,
   installTabSlots,
   installTabVisibility,

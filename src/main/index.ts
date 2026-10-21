@@ -9,6 +9,12 @@ import { askQuestion } from './shell/question/ask-question.js'
 import { SHELL_PARTITION } from './shell/shell-session.js'
 import { attachExtensionShell } from './extensions/extension-host.js'
 import { startFirstRunFlavour } from './flavour/start-first-run-flavour.js'
+import { storedFlavourApp } from './flavour/first-run-flavour.js'
+import { parseFlavours } from './flavour/flavours.js'
+import flavourList from '../../resources/flavours.json'
+import { otherBrowserFound } from './import/import-host.js'
+import { startHereFacts } from './newtab/start-here-facts.js'
+import { readRegistry } from './extensions/registry-runner.js'
 import { registerNewTabIpc } from './ipc/newtab-ipc.js'
 import { applyThemeSetting } from './settings/settings-appliers.js'
 import { startInternalPages } from './pages/start-internal-pages.js'
@@ -271,7 +277,12 @@ export function boot (runtime: Runtime): void {
     runShellInstallers(app, shell, ctx, runtime)
     installDownloads(app, { windows: shell.windows, downloads: shell.downloads, defaultSession: session.defaultSession, discardHeldAtQuit: runtime.isPrivate })
     installDownloadsPeek(shell)
-    registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks, shell.featured, shell.yourApps)
+    registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks, shell.featured, shell.yourApps, startHereFacts({
+      isPrivate: runtime.isPrivate,
+      firstRunApp: () => storedFlavourApp(runtime.dir, parseFlavours(flavourList)),
+      otherBrowserFound,
+      extensionOn: (id) => readRegistry(app.getPath('userData')).some((entry) => entry.id === id && entry.enabled)
+    }))
     // Looks for a newer release once a day when the person has said it may, from the moment they say so; installs nothing.
     if (!runtime.isPrivate) {
       const stopUpdateChecks = scheduleUpdateChecks({
