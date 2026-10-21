@@ -13,6 +13,8 @@ const SHEET: SetupSheet = { kind: 'blocked', name: 'Ledger', differing: ['/app.j
 
 function screensFake (calls: string[], choice: 'leave' | 'retry' = 'leave'): TabScreens {
   return {
+    cover: () => {},
+    reloadFresh: () => {},
     blank: async () => { calls.push('blank') },
     sheet: async (sheet) => { calls.push(`sheet:${sheet.kind}`); return choice },
     end: () => { calls.push('end') },

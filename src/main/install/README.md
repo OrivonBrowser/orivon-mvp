@@ -13,18 +13,20 @@ presses records the file (`../local-files/`) and grants all it declares (`ADR-00
 
 `app-updates.ts` is what happens to an installed app whose name moved (`ADR-0056`): it judges an
 `update-available` verified or not (`../../trust/app-update-trust.ts`), asks through `../consent/`,
-applies the offered root on Yes or a confirmed Trust & Force, and reloads every tab on the origin.
+applies the offered root on Yes or a confirmed Trust & Force, and reloads every tab on the origin. From the yes, every open tab of the origin is covered at once
+(`update-cover.ts`, over `../app-setup/tab-screens.ts`) with "Updating <app>" and both versions; an install reloads each tab from the network and takes the
+cover away when the new page is ready, and anything else takes it away at once, with the old version untouched.
 `update-watch.ts` looks again, every 30 minutes, at each origin with an open app tab, and
 `dialog-caller.ts` is how a question finds the tab that raised it.
 
 **Tied to Electron.** `app-install-subsystem.ts` and `manifest-hint.ts` import `electron`; the
-others -- `granted-origin-csp.ts` included -- must not.
+others -- `granted-origin-csp.ts` included -- must not. `update-cover.ts` imports it for types only and needs just `WebContents`' events and methods, so a test fakes the tabs.
 
 **What it depends on.** [`../../broker/`](../../broker/) (`broker-contracts.ts` type,
 `policy/origin.ts`, `policy/update.ts`, `policy/manifest-patterns.ts`, `grants/origin-hash.ts`,
 `transport/token-bucket.ts`), [`../../loader/`](../../loader/) (`index.ts` type,
 `manifest/manifest.ts`, `electron/serve.ts`'s `liveCspHeaderFor` and
-`isOriginServedFromCacheSync`), [`../app-setup/`](../app-setup/) (`TabScreens`, a type), [`../../trust/ddoc.ts`](../../trust/ddoc.ts) (`ddocVerdict`), [`../consent/`](../consent/) (`install-consent*`,
+`isOriginServedFromCacheSync`), [`../app-setup/`](../app-setup/) (`TabScreens`, a type; the screens `update-cover.ts` is given), [`../../trust/ddoc.ts`](../../trust/ddoc.ts) (`ddocVerdict`), [`../consent/`](../consent/) (`install-consent*`,
 `update-outcomes*`), [`../dev/`](../dev/) (`dev-mode.ts`, `eth-resolver.ts`'s name pattern, `score-levels.ts`),
 [`../extensions/site-reach-runner.ts`](../extensions/site-reach-runner.ts)'s
 `extensionNamesForOrigin` (the extensions disclosure, `docs/planning/extensions-exploration.md`, wired into
@@ -39,6 +41,14 @@ constructs its own `Broker` or `Loader`: read `ctx.broker`/`ctx.loader` from `re
 **Owner stream.** `loader`. Maintenance only.
 
 ## Design notes
+
+**[`update-cover.ts`](update-cover.ts): a taken update is visible from the yes to the new page.** The cover goes up when the person has answered (after the
+Trust & Force confirmation for an unverified offer, after the Yes of a verified one or the key's Update), before the new root is fetched, which over IPFS
+can take many seconds. It ends in exactly one of two ways, whichever is called first: the install reloads every tab of the origin from the network
+(`reloadIgnoringCache`), a covered one keeping its words until the new document's own `dom-ready` after a commit, so the protocol's loading screen for the
+reload (held off by the claim, `../loading-screen/claim.ts`) never replaces them; or any other outcome (a refusal, a failed fetch, an offer that moved,
+a throw) takes the words away at once, reloads nothing, and `deps.prompts.failed` explains. A tab opened during the update is not covered and is
+reloaded the same way; a tab that navigated to another site loses its cover and is left alone; a destroyed tab is skipped.
 
 **[`first-visit.ts`](first-visit.ts) is the order of a first visit, and [`app-install.ts`](app-install.ts) is every visit after it
 (`ADR-0076`, on `ADR-0075`).** An origin Orivon has never held (no registration, pin or saved version, and not refused) loads at once as an ordinary

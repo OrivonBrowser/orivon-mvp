@@ -17,6 +17,23 @@ describe('coverFor', () => {
   })
 })
 
+describe('coverFor an update', () => {
+  it('names the app and both versions, and keeps moving', () => {
+    expect(coverFor({ kind: 'updating', name: 'Notes', fromVersion: '1.0.0', toVersion: '1.1.0' })).toEqual({ title: 'Updating Notes', detail: 'Version 1.0.0 to 1.1.0. The app reloads when the new version is ready.', busy: true })
+  })
+
+  it('names only the new version when the one in use is not readable', () => {
+    expect(coverFor({ kind: 'updating', name: 'Notes', fromVersion: undefined, toVersion: '1.1.0' }).detail).toBe('Version 1.1.0. The app reloads when the new version is ready.')
+  })
+
+  it('cuts a name and versions the manifest made too long, and drops control characters', () => {
+    const text = coverFor({ kind: 'updating', name: 'N'.repeat(500), fromVersion: '1\u0000.0', toVersion: 'v'.repeat(500) })
+    expect(text.title.length).toBeLessThanOrEqual(160)
+    expect(text.detail.length).toBeLessThanOrEqual(300)
+    expect(text.detail).toContain('Version 1.0 to ')
+  })
+})
+
 describe('sheetView', () => {
   const blocked = { kind: 'blocked' as const, name: 'Ledger', differing: ['/app.js', '/index.html'], differingCount: 2, rootMatches: true }
 
