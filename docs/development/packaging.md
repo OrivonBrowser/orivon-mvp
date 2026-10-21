@@ -106,6 +106,21 @@ published before a secret existed. The `store` job takes the package from the ne
 GitHub keeps for 30 days; past that the package is built again by re-running the release's run, or uploaded by hand.
 Re-running only a failed job of the release's own run works too, within the same 30 days.
 
+### Tagged packages
+
+The release also carries copies of the Windows installer and the AppImage named for an app, one per entry of
+[`resources/flavours.json`](../../resources/flavours.json): `Orivon-Setup-<version>-x64.<id>.exe` and
+`Orivon-<version>-x86_64.<id>.AppImage`. They are the same bytes under another name; nothing is built again. The `tagged` job
+makes them and fails the release if a copy's SHA-256 differs from its original or if an entry's `app` is not the `domain` in
+`apps/<port>/orivon.json` of the ports repository's `main`. They join the release and its `ipfs.json` like any `orivon-*`
+artifact. The deb, the dmg, the Store package and winget stay plain.
+
+What a tag does is in [`ADR-0093`](../decisions/ADR-0093-an-installer-file-name-or-switch-selects-an-apps-first-run-presets-from-an-allowlist.md). The Windows
+installer writes the name of the file it was started from to `installer-name.txt` beside the program (`build/installer.nsh`,
+removed on uninstall) and the app reads it on its first run; the AppImage's name is read from `$APPIMAGE`; the macOS script takes
+the id as an argument (`curl ... | bash -s <id>`) and passes `--orivon-flavour=<id>` to the first launch it starts. Adding an app
+is a line in the file, an app that opens by name from its port, and the id never reused.
+
 ### On IPFS
 
 Every release is also one folder on IPFS. Its `ipfs://<cid>` is in the release's description,

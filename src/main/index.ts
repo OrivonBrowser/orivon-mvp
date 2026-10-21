@@ -8,6 +8,7 @@ import { runShellInstallers } from './shell/shell-installers.js'
 import { askQuestion } from './shell/question/ask-question.js'
 import { SHELL_PARTITION } from './shell/shell-session.js'
 import { attachExtensionShell } from './extensions/extension-host.js'
+import { startFirstRunFlavour } from './flavour/start-first-run-flavour.js'
 import { registerNewTabIpc } from './ipc/newtab-ipc.js'
 import { applyThemeSetting } from './settings/settings-appliers.js'
 import { startInternalPages } from './pages/start-internal-pages.js'
@@ -314,10 +315,14 @@ export function boot (runtime: Runtime): void {
       try {
         // Only this first window can open on the welcome screen: the macOS
         // 'activate' below recreates a window in a process that has already shown it.
+        // A package tagged for an app opens it, after the welcome screen, on the first run of a new profile.
+        const afterWelcome = startFirstRunFlavour(shell, runtime.dir, runtime.launch.kind === 'default', process.argv, process.env, process.execPath)
         const plan = firstWindowOptions({ services: shell, isPrivate: false, argv: process.argv, packaged: app.isPackaged, displays: screen.getAllDisplays(), openWindow: (options) => { createShellWindow(ctx, shell, options) } })
         // A first tab that is a local file needs the binary's fuse read, which nothing else at start-up does.
         if (plan.localFiles === true) await fileProtocolFuse()
-        const firstWindow = createShellWindow(ctx, shell, { ...plan, intro: plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData'), { offered: welcomeOffersTelemetry, renewal: telemetryRenewal, choose: async (on) => { await setTelemetryOn(on, 'welcome') } }), firstOfLaunch: true })
+        const intro = afterWelcome.wrap(plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData'), { offered: welcomeOffersTelemetry, renewal: telemetryRenewal, choose: async (on) => { await setTelemetryOn(on, 'welcome') } }))
+        const firstWindow = createShellWindow(ctx, shell, { ...plan, intro, firstOfLaunch: true })
+        afterWelcome.windowOpened(intro)
         const after = plan.after
         // The first start of a newer version shows what it changed, once, in front of what the window opened on.
         const news = await whatsNewDue(app.getPath('userData'))

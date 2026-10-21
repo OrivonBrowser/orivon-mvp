@@ -26,7 +26,7 @@ import type { WindowRegistry } from '../shell/window-registry.js'
 const DASHBOARD_TILES = 24
 
 /** What the page needs of this profile's Featured choices to draw the row. */
-export type FeaturedPrefs = Pick<FeaturedState, 'newcomerPin' | 'unpinned' | 'hidden'>
+export type FeaturedPrefs = Pick<FeaturedState, 'newcomerPin' | 'newcomerName' | 'unpinned' | 'hidden'>
 
 export type NewTabCommand =
   | { type: 'getBookmarks' }
@@ -38,8 +38,8 @@ export type NewTabCommand =
   | { type: 'navigate'; input: string }
 
 function prefsOf (featured: FeaturedStore): FeaturedPrefs {
-  const { newcomerPin, unpinned, hidden } = featured.get()
-  return { newcomerPin, unpinned, hidden }
+  const { newcomerPin, newcomerName, unpinned, hidden } = featured.get()
+  return { newcomerPin, newcomerName, unpinned, hidden }
 }
 
 function isFromDashboard (event: IpcMainInvokeEvent, dashboardUrl: string): boolean {

@@ -5,13 +5,15 @@
 export interface FeaturedState {
   /** The app shown first because the profile was given it; null once the person removed it, or when none was given. */
   readonly newcomerPin: string | null
+  /** What to call the pinned app when it is not among the shipped entries; null shows the key. */
+  readonly newcomerName: string | null
   /** A pin was given once. It is never given again, not even after the person removed it. */
   readonly given: boolean
   readonly unpinned: readonly string[]
   readonly hidden: readonly string[]
 }
 
-export const EMPTY_STATE: FeaturedState = { newcomerPin: null, given: false, unpinned: [], hidden: [] }
+export const EMPTY_STATE: FeaturedState = { newcomerPin: null, newcomerName: null, given: false, unpinned: [], hidden: [] }
 
 const FILE_VERSION = 1
 const MAX_KEY_LENGTH = 2048
@@ -38,27 +40,37 @@ function added (list: readonly string[], key: string): readonly string[] {
   return list.includes(key) ? list : [...list, key].slice(-MAX_KEYS)
 }
 
-/** Gives the profile its newcomer pin. Does nothing once one was given (shown, or removed by the person), or for text that is no app. */
-export function giveNewcomerPin (state: FeaturedState, appIdOrUrl: string): FeaturedState {
-  const key = appKey(appIdOrUrl)
-  if (key === null || state.given) return state
-  return { ...state, newcomerPin: key, given: true }
+const MAX_NAME_LENGTH = 40
+
+/** A name to show for an app: printable text of a modest length, else null. */
+function displayName (name: unknown): string | null {
+  if (typeof name !== 'string') return null
+  const text = name.replace(/\p{C}/gu, '').trim()
+  return text === '' || text.length > MAX_NAME_LENGTH ? null : text
 }
 
-function removingPin (state: FeaturedState, key: string): string | null {
-  return state.newcomerPin === key ? null : state.newcomerPin
+/** Gives the profile its newcomer pin. Does nothing once one was given (shown, or removed by the person), or for text that is no app. */
+export function giveNewcomerPin (state: FeaturedState, appIdOrUrl: string, name?: string): FeaturedState {
+  const key = appKey(appIdOrUrl)
+  if (key === null || state.given) return state
+  return { ...state, newcomerPin: key, newcomerName: displayName(name), given: true }
+}
+
+/** The pin and its name after `key` is removed from the row: gone when it was the pin, as they were otherwise. */
+function withoutPin (state: FeaturedState, key: string): Pick<FeaturedState, 'newcomerPin' | 'newcomerName'> {
+  return state.newcomerPin === key ? { newcomerPin: null, newcomerName: null } : { newcomerPin: state.newcomerPin, newcomerName: state.newcomerName }
 }
 
 /** Hides a tile. A hidden newcomer pin is removed for good. */
 export function hideTile (state: FeaturedState, id: string): FeaturedState {
   const key = appKey(id)
-  return key === null ? state : { ...state, newcomerPin: removingPin(state, key), hidden: added(state.hidden, key) }
+  return key === null ? state : { ...state, ...withoutPin(state, key), hidden: added(state.hidden, key) }
 }
 
 /** Unpins a tile: it stays in the row at its place among the rest. An unpinned newcomer pin is removed for good. */
 export function unpinTile (state: FeaturedState, id: string): FeaturedState {
   const key = appKey(id)
-  return key === null ? state : { ...state, newcomerPin: removingPin(state, key), unpinned: added(state.unpinned, key) }
+  return key === null ? state : { ...state, ...withoutPin(state, key), unpinned: added(state.unpinned, key) }
 }
 
 /** Brings every hidden tile back. A removed newcomer pin stays removed. */
@@ -77,7 +89,7 @@ export function parseState (parsed: unknown): FeaturedState {
   const record = typeof parsed === 'object' && parsed !== null ? parsed as Record<string, unknown> : {}
   if (record['version'] !== FILE_VERSION) return EMPTY_STATE
   const pin = typeof record['newcomerPin'] === 'string' && appKey(record['newcomerPin']) === record['newcomerPin'] ? record['newcomerPin'] : null
-  return { newcomerPin: pin, given: record['given'] === true || pin !== null, unpinned: keysOf(record['unpinned']), hidden: keysOf(record['hidden']) }
+  return { newcomerPin: pin, newcomerName: pin === null ? null : displayName(record['newcomerName']), given: record['given'] === true || pin !== null, unpinned: keysOf(record['unpinned']), hidden: keysOf(record['hidden']) }
 }
 
 export function serializeState (state: FeaturedState): string {

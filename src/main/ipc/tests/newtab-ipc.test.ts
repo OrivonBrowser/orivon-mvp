@@ -72,7 +72,7 @@ describe('registerNewTabIpc -- the Featured row\'s choices', () => {
 
   it('answers the pin and the hidden tiles, and changes them only for the dashboard', async () => {
     featured.setNewcomerPin('asgardex')
-    expect(await dispatch(DASHBOARD_URL, true, hidden)).toEqual({ newcomerPin: 'asgardex', unpinned: [], hidden: [] })
+    expect(await dispatch(DASHBOARD_URL, true, hidden)).toEqual({ newcomerPin: 'asgardex', newcomerName: null, unpinned: [], hidden: [] })
     expect(await dispatch(DASHBOARD_URL, true, { type: 'hideFeatured', id: 'explore' })).toMatchObject({ hidden: ['explore'] })
     expect(await dispatch('https://elsewhere.example/', true, { type: 'hideFeatured', id: 'thelounge' })).toBeUndefined()
     expect(await dispatch(DASHBOARD_URL, false, hidden)).toBeUndefined()

@@ -22,6 +22,9 @@ const PROFILE_FLAG = '--orivon-profile='
 const PRIVATE_FLAG = '--orivon-private'
 const PRIVATE_DIR_FLAG = '--orivon-private-dir='
 const PRIVATE_TUNNEL_FLAG = '--orivon-private-tunnel='
+/** What a package tagged for an app passes on its first launch (`../flavour/`): the id of an allowlisted app, never an address. */
+export const FLAVOUR_FLAG = '--orivon-flavour='
+
 /** What a launcher action passes (a dock or taskbar menu entry, a desktop-entry action). */
 export const NEW_WINDOW_FLAG = '--new-window'
 export const NEW_PRIVATE_WINDOW_FLAG = '--new-private-window'
@@ -56,6 +59,14 @@ export function parseLaunch (command: readonly string[], home: string): LaunchPa
   if (named === undefined || named === DEFAULT_PROFILE_ID) return { ok: true, launch: { kind: 'default', home, dir: home } }
   if (!PROFILE_ID.test(named)) return { ok: false, problem: `"${named}" is not the id of a profile` }
   return { ok: true, launch: { kind: 'profile', id: named, home, dir: join(home, 'profiles', named) } }
+}
+
+/** The value of `--orivon-flavour=` before the first `--`, or undefined when it was not given. Given twice it is the empty text,
+ * which names no app: two tags are one too many to choose between. */
+export function flavourSwitch (command: readonly string[]): string | undefined {
+  const given = switchesOf(command).filter((argument) => argument.startsWith(FLAVOUR_FLAG))
+  if (given.length === 0) return undefined
+  return given.length > 1 ? '' : given[0]?.slice(FLAVOUR_FLAG.length)
 }
 
 /** The flags that start another process as `launch`, for the peer spawn. */
