@@ -97,7 +97,13 @@ A name passes on one of two grounds (A202; `ADR-0025` has the amended wording):
    on the person's behalf.
 
 **`media` meets neither ground, and is not in the table below for that reason: it stays denied
-for an ordinary page.** The one case it passes is a THIRD ground: an extension itself already
+for a page that is not a website the person is asked about or an extension's own page.** Two cases
+pass it. A website is asked once per site (`../site-settings/`). An installed extension's own top page
+that asks for the camera or the microphone (`mediaTypes` naming only `video` and `audio`) is asked per
+extension and device by `../extensions/extension-media-asker.ts`, which registers first in `site-asks.ts`
+and answers on ground 2: the sheet is over the window that shows the page, a page no window shows (an
+offscreen document, a hidden window) gets only a stored allow, a frame never asks, and the check
+handler answers true only for a stored allow. The other is a THIRD ground: an extension itself already
 proved a legitimate capture request by calling the permission-gated `chrome.tabCapture` API,
 which is what `tab-capture-grants.ts` checks for. No person is asked, because the person's own
 consent already happened once, at install, over the `tabCapture` permission line the install
@@ -112,7 +118,7 @@ a web-accessible `chrome-extension://` page the extension injects as an `<iframe
 tab it minted a grant for shares that tab's own `contents` (an iframe is a frame within a page's
 one `WebContents`, never a separate `WebContents`), matching the grant on both signals otherwise
 checked -- `isMainFrame` is what the legitimate flow always has and an iframe's own request never
-does. The CHECK handler answers `false` for `'media'` unconditionally: it fires speculatively,
+does. For a tab capture the CHECK handler answers `false` unconditionally: it fires speculatively,
 with no real call behind it, and carries neither the captured tab's identity nor the request shape
 to check either signal against.
 

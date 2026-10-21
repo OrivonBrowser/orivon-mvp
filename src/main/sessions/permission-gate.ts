@@ -119,7 +119,8 @@ function denyByDefault (target: Session): void {
     const sited = siteAsks.check(contents, permission, requestingOrigin, details)
     if (sited !== undefined) return sited
     if (permission === 'notifications') return siteNotifications.check(requestingOrigin, details.embeddingOrigin)
-    // Always false for 'media', never a shape check --
+    // The extension-media asker, consulted above, answers for an extension's own page, and with true only for a
+    // device the person stored as allowed. Every other 'media' check is always false, never a shape check --
     // allowTabCaptureMediaRequest's own doc says why: this handler fires
     // speculatively, with no getUserMedia() call behind it (marking
     // consumption here released a still-unredeemed grant early, measured),

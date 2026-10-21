@@ -5,6 +5,7 @@
 // data from a document.
 import type { InternalCaller } from '../pages/internal-ipc.js'
 import type { ExtensionsDomainDeps } from './extensions-domain.js'
+import { setMedia } from './details-media.js'
 import { revokeOrigin, revokePermission } from './details-optional.js'
 import { setPrivateWindows } from './details-private-windows.js'
 import { shortcutsCancel, shortcutsClear, shortcutsList, shortcutsMove, shortcutsRecord } from './shortcuts-page.js'
@@ -16,6 +17,7 @@ export type ExtensionPageCommand = (body: Readonly<Record<string, unknown>>, dep
 export const EXTENSION_PAGE_COMMANDS: Readonly<Record<string, ExtensionPageCommand>> = {
   revokeOrigin,
   revokePermission,
+  setMedia,
   setPrivateWindows,
   'shortcuts.cancel': shortcutsCancel,
   'shortcuts.clear': shortcutsClear,

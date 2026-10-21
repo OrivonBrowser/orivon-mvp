@@ -33,15 +33,18 @@ serves a manifest `sandbox.pages` document Chrome's own CSP `sandbox` directive,
 gets an opaque origin rather than only withholding `chrome.*` (UPSTREAM.md patch 40); and `chrome.sidePanel`
 (`side-panel-options.ts`, `side-panel-gesture.ts`, `side-panel-api.ts`, `side-panel-driver.ts`,
 `side-panel-runner.ts`, `side-panel-pages.ts`, `side-panel-behavior-file.ts`): an extension's own page shown in a
-window's side panel (`../side-panel/`), opened by its toolbar button, its key or its `open()` call.
+window's side panel (`../side-panel/`), opened by its toolbar button, its key or its `open()` call; and
+the camera and microphone for an extension's own page: the rules (`extension-media.ts`), the asker that joins them to the
+permission gate (`extension-media-asker.ts`: the window a page shows in, the loaded extensions, Settings' defaults), the
+answer kept per extension in `extension-prefs.ts`'s `media`, and the details page's section (`details-media.ts`).
 
 **What it depends on.** `electron` (every file except `side-panel-api.ts`, `side-panel-behavior-file.ts`,
 `side-panel-driver.ts`, `side-panel-gesture.ts`, `side-panel-options.ts`, `side-panel-pages.ts` (types only), `action-pins-runner.ts`, `action-pins.ts`, `base-manifest-source.ts`, `crx.ts`, `crx3-format.ts`,
 `extension-popup-geometry.ts`, `profile-demand.ts`,
-`details-optional.ts`, `details-private-windows.ts`, `dnr-action-options.ts`, `extension-data.ts`, `dnr-api.ts`, `dnr-match-log.ts`,
+`details-media.ts`, `details-optional.ts`, `details-private-windows.ts`, `dnr-action-options.ts`, `extension-data.ts`, `dnr-api.ts`, `dnr-match-log.ts`,
 `effective-manifest.ts`, `electron-chrome-extensions-lib.d.ts`, `extension-commands.ts`,
 `extension-host-access.ts`, `extension-known-permissions.ts`, `extension-permission-check.ts`,
-`extension-prefs-runner.ts`, `extension-prefs.ts`, `extension-sender-id-check.ts`,
+`extension-media.ts`, `extension-prefs-runner.ts`, `extension-prefs.ts`, `extension-sender-id-check.ts`,
 `extension-tab-details.ts`, `extension-tab-invocation.ts`, `extension-url-policy.ts`,
 `extensions-detail-parts.ts`, `extensions-domain.ts`, `extensions-install-test-hook.ts`,
 `extensions-menu-command.ts`, `extensions-menu-model.ts`, `extensions-menu-names.ts`,
@@ -76,6 +79,7 @@ app-refusal check both key on it),
 [`../default-profile/default-profile.ts`](../default-profile/default-profile.ts) (`seed-bundled.ts` installs the extensions a new profile starts with, with `installBundled`: no prompt, pinned as the list says; `extensions-subsystem.ts` does it only when the registry file does not exist yet),
 [`../side-panel/`](../side-panel/) (the window's panel and its guest slot, which `side-panel-runner.ts` fills),
 [`../site-settings/tab-interaction.ts`](../site-settings/tab-interaction.ts)'s `DELIBERATE_INPUT` (what counts as the person's input on an extension's page),
+[`../site-settings/electron-names.ts`](../site-settings/electron-names.ts), `kinds.ts` and `site-prompt-text.ts` (which devices a `media` request names, the settings key of each, the words of the question), [`../sessions/site-asks.ts`](../sessions/site-asks.ts) (the registry `extension-media-asker.ts` joins first), [`../shell/showing-window.ts`](../shell/showing-window.ts) (the window a page is on screen in),
 [`../shell/window.ts`](../shell/window.ts)'s `createShellWindow`,
 [`../shell/shell-services.ts`](../shell/shell-services.ts)'s `ShellServices` type and
 [`../shell/devtools-app-origin.ts`](../shell/devtools-app-origin.ts)'s `appOrigin` (the same
@@ -105,7 +109,7 @@ same exception, reached only through the virtual specifiers above).
 
 | File | Layer |
 |---|---|
-| `crx.ts`, `crx3-format.ts`, `registry.ts`, `extensions-view.ts`, `extension-commands.ts`, `extension-action-anchor.ts`, `extension-pages-reload.ts`, `store-download-seam.ts`, `extension-prefs.ts`, `effective-manifest.ts`, `manifest-stage-granted.ts`, `manifest-stage-site-access.ts`, `extensions-detail-parts.ts`, `extensions-page-commands.ts`, `extension-permission-check.ts`, `install-private.ts`, `optional-permissions.ts`, `permission-nag-limit.ts`, `granted-host-rule.ts`, `granted-reconcile.ts`, `details-optional.ts`, `details-private-windows.ts`, `request-frames.ts` | The decision -- no `electron`, unit-tested under plain vitest |
+| `crx.ts`, `crx3-format.ts`, `registry.ts`, `extensions-view.ts`, `extension-commands.ts`, `extension-action-anchor.ts`, `extension-pages-reload.ts`, `store-download-seam.ts`, `extension-prefs.ts`, `extension-media.ts`, `effective-manifest.ts`, `manifest-stage-granted.ts`, `manifest-stage-site-access.ts`, `extensions-detail-parts.ts`, `extensions-page-commands.ts`, `extension-permission-check.ts`, `install-private.ts`, `optional-permissions.ts`, `permission-nag-limit.ts`, `granted-host-rule.ts`, `granted-reconcile.ts`, `details-optional.ts`, `details-media.ts`, `details-private-windows.ts`, `request-frames.ts` | The decision -- no `electron`, unit-tested under plain vitest |
 | `unpack-runner.ts`, `registry-runner.ts`, `install-runner.ts`, `install-store-runner.ts`, `install-lifecycle.ts`, `extension-data.ts`, `extension-storage-clear.ts`, `extensions-view-runner.ts`, `store-runner.ts`, `extension-prefs-runner.ts`, `effective-manifest-runner.ts`, `extension-page-open.ts` | The real I/O |
 | `extension-commands-runner.ts`, `install-extension-commands.ts`, `shortcuts-page.ts` | The keys of extension commands: the table and what a key runs (fakes for everything it reaches), the real session, registry and shell behind it, and what the shortcuts page may ask |
 | `extension-install-prompt.ts`, `extensions-picker-runner.ts` | The install question, asked into the panel of the tab it belongs to through `askQuestion`, and the native file and folder pickers (`dialog.showOpenDialog`), parented to the extensions page's window |

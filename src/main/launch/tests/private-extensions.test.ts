@@ -152,12 +152,17 @@ describe('the extensions a private session starts with', () => {
     expect(files(into)).toEqual([])
   })
 
-  it('keeps only the choices of today, so a field added later is never carried over', async () => {
-    const later = { ...normalizePrefs({ privateWindows: true, pinned: true }), media: { camera: 'allow' } } as unknown as ExtensionPrefs
-    const kept = privateCopyOfPrefs(later)
-    expect(Object.keys(kept).sort()).toEqual(['granted', 'noticeSeen', 'overrides', 'pinned', 'privateWindows', 'shortcuts', 'siteAccess'])
+  it('keeps only the choices it names, so a camera or microphone answer starts as Ask in a private window', async () => {
+    const answered = normalizePrefs({ privateWindows: true, pinned: true, media: { camera: 'allow', microphone: 'block' } })
+    const kept = privateCopyOfPrefs(answered)
+    expect(kept.media).toEqual({})
     expect(kept.pinned).toBe(true)
     expect(kept.privateWindows).toBe(true)
+  })
+
+  it('never carries a field it does not name', async () => {
+    const later = { ...normalizePrefs({ privateWindows: true }), futureChoice: 'kept' } as unknown as ExtensionPrefs
+    expect(Object.keys(privateCopyOfPrefs(later))).not.toContain('futureChoice')
   })
 
   it('writes the choices of the copied extension through the prefs file\'s own format', async () => {

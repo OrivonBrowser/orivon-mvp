@@ -6,6 +6,7 @@ import type { ViewName } from './router.js'
 import { shortcutsLinkSection } from './sections/shortcuts-link.js'
 import { aboutSection } from './views/details-about.js'
 import { detailsView } from './views/details.js'
+import { mediaSection } from './views/details-media.js'
 import { optionalSection } from './views/details-optional.js'
 import { privateWindowsSection } from './views/details-private-windows.js'
 import { listView } from './views/list.js'
@@ -16,6 +17,7 @@ export type { CardBadge, DetailSection, ExtensionView, PageContext } from './typ
 /** One per line; shown sorted by `order`. */
 export const DETAIL_SECTIONS: readonly DetailSection[] = [
   aboutSection,
+  mediaSection,
   optionalSection,
   privateWindowsSection,
   shortcutsLinkSection

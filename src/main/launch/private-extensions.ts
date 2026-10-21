@@ -16,7 +16,7 @@ import { PROFILES, profilePartition } from '../route/site-partition.js'
 
 const EXTENSION_ID = /^[a-p]{32}$/
 
-/** The choices a private session is given. A field that is not named here is not carried over, so one added later (a camera or microphone answer) stays in the profile until it is named. */
+/** The choices a private session is given. A field not named here is not carried over: a camera or microphone answer (`media`) stays in the profile, and a private window asks again. */
 const COPIED_CHOICES = ['granted', 'siteAccess', 'pinned', 'shortcuts', 'overrides', 'noticeSeen', 'privateWindows'] as const
 
 /** How many files are copied at once: enough to keep the disk busy, few enough not to starve the process that asked. */

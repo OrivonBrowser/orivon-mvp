@@ -5,6 +5,7 @@
 import type { ExtensionFacts } from './extensions-view.js'
 import type { ExtensionsDomainDeps } from './extensions-domain.js'
 import type { InstalledExtension } from './registry.js'
+import { mediaPart } from './details-media.js'
 import { optionalPart } from './details-optional.js'
 import { privateWindowsPart } from './details-private-windows.js'
 import { shortcutsPart } from './shortcuts-page.js'
@@ -13,6 +14,7 @@ export type ExtensionPart = (entry: InstalledExtension, facts: ExtensionFacts, d
 
 /** Merged into `ExtensionDetails.parts` of the details reply. One per line, alphabetical. */
 export const DETAIL_PARTS: ReadonlyArray<ExtensionPart> = [
+  mediaPart,
   optionalPart,
   privateWindowsPart,
   shortcutsPart
