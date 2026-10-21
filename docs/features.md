@@ -9,6 +9,7 @@ rely on, row by row. A new feature adds its line here when it lands.
 
 - **Capability broker**: an app's manifest, the person's grants, and per-origin enforcement on every call.
 - **`orivon.*` capability API**: the interface apps are written against, as types in `src/contracts/`.
+- **Report a problem with a site**: a site whose manifest names `support.issues`, an `https://` address, has a "Report a problem with this site" row in its site popover, installed or not, which opens that address in a new tab; a site that names none shows no row. A publisher who takes reports on a tracker of its own says so there.
 - **App loader**: fetch a manifest from a URL, cache the bundle hash-pinned, check its integrity, and ask once in plain words before the app runs.
 - **`orivon-node-shim`**: Node's `net`, `tls`, `dgram`, `fs`, `http`, `child_process`, `worker_threads` and `node:sqlite` mapped onto the same capabilities, enough to run a Node web server (Express, Socket.IO) in a tab. An app's `process` and `os` present as Node on Linux (a Node version, no `browser` flag, `linux`, `x64`), so a library takes the path it takes under Node.
 - **UDP sockets** (`net.udpBind`) for peer-to-peer protocols a web page cannot open.
