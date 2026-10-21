@@ -17,25 +17,66 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+## [0.0.9]
+
+Pre-release. [Release page](https://github.com/OrivonBrowser/orivon-mvp/releases/tag/v0.0.9).
+
+### Changed for apps
+
 - **`contracts/manifest.ts`**: a manifest may carry `support: { issues }`, an absolute `https://` URL where its publisher takes problem reports; a malformed value rejects the manifest and absence is allowed. Older Orivon builds skip the field. Recheck: nothing; ports add it on their next republish.
-- **`contracts/handles.ts`**: `FileHandle` gains an optional `name`, the basename of the file the handle is open on (for a picked file, the name the person's file has; never a path). Apps that need a picked file's name or extension read it there once an implementation fills it, and treat an absent name as unknown. Recheck: nothing yet.
-- **`electron-dialog-paths-read-and-write-the-pick`** and **`user-picked-file-and-folder-handles`**: reworded. A picked file's handle now carries `name`, its basename (never a folder), and the stand-in path `dialog.showOpenDialog` answers ends in it, so `path.basename` and `path.extname` give the file's real name and extension where every picked file was called `picked-file`. Apps may rely on the name and keep a fallback for a handle without one. Recheck: WebTorrent and any port that names, types or filters by a picked file's extension.
+- **`manifest-support-link-in-site-panel`**: new row. A manifest that names `support.issues` now has "Report a problem with this site" in its site popover, opening that address in a new tab. Ports can name their own tracker there; nothing changes for apps that name none. Recheck: every port, once it republishes with the field.
+- **`contracts/handles.ts`**, **`electron-dialog-paths-read-and-write-the-pick`** and **`user-picked-file-and-folder-handles`**: `FileHandle` gains an optional `name`, the basename of the file the handle is open on (never a path), and a picked file now has its real name. `dialog.showOpenDialog` and `showSaveDialog` in the `electron` shim return a stand-in path (`/orivon/picked/<id>/movie.mkv`) that `fs` reads and writes straight through the pick, so `path.basename` and `path.extname` work on it. An app can drop a picker of its own and the copy it made of each picked file; a path lasts until the page reloads and `*Sync` calls on it fail. Treat an absent `name` as unknown. Recheck: WebTorrent (its copy-in picker can go); ASGARDEX and Ledger Wallet answer `electron` with their own objects and can use it only by moving to the shim.
 - **`electron-ipc-send-sync-answers-from-the-listener`** and **`electron-power-save-blocker-holds-a-wake-lock`**: new rows. The `electron` shim now has `ipcRenderer.sendSync` (answered by an `ipcMain.on` listener's `event.returnValue`, else a named error), `addListener`, `off` and chainable `on`/`once`, and `powerSaveBlocker` over `navigator.wakeLock`. A port can drop its hand-written `sendSync` and wake-lock code: recheck WebTorrent, whose build bundles this shim, and Ledger Wallet and Element, which answer `electron` with their own objects.
-- **`electron-dialog-paths-read-and-write-the-pick`** and **`user-picked-file-and-folder-handles`**: new row and a row now proven. `dialog.showOpenDialog` and `showSaveDialog` in the `electron` shim return a stand-in path (`/orivon/picked/<id>/...`) that `fs` reads and writes straight through the pick, so an app can drop a picker of its own and the copy it made of each picked file; a picked file is named `picked-file`, a path lasts until the page reloads, and `*Sync` calls on it fail. Recheck WebTorrent (its copy-in picker can go); ASGARDEX and Ledger Wallet answer `electron` with their own objects and can use it only by moving to the shim.
 - **`wake-lock-held-on-a-visible-page`**, **`wake-lock-absent-outside-a-secure-context`** and **`wake-lock-released-when-the-tab-goes-behind`**: new rows. `navigator.wakeLock.request('screen')` is now granted to a tab's top frame (it was always refused), and is released when the tab goes behind another or its window is hidden; ask again on `visibilitychange`. FreeTube, Element, Ledger Wallet and WebTorrent need no rebuild.
-- **`manifest-support-link-in-site-panel`**: new row. A manifest that names `support.issues` (an `https://` address) now has "Report a problem with this site" in its site popover, opening that address in a new tab. Ports can name their own tracker there; nothing changes for apps that name none. Recheck: every port, once it republishes with the field.
-- **`installed-app-without-grants-is-asked-as-a-website`**: an installed app that holds no grant is now asked for a location, a notification or a clipboard read as a website is, and the person's answer and site rules apply to it. An app that needs such a feature declares the capability instead; recheck apps that call these web APIs with no grant.
+- **`direct-app-names-resolve-through-chromium`** and **`named-host-resolving-to-loopback-is-refused`**: new rows. The host names an app's `fetch`, `orivon.net.connect`, `connectSecure`, `udp` and `lookup` dial are looked up by the resolver pages use, so Secure DNS applies to them; a host grant that names a host never reaches a loopback or private address the name resolves to. A routed app still sends the name to its tunnel. Recheck: nothing.
+- **`tls-connect-honours-reject-unauthorized`**, **`routed-fetch-refuses-untrusted-certificate`**, **`oauth-popup-reaches-the-app-by-channel`**, **`routed-fetch-sends-webdav-methods`**, **`blob-download-saves-without-dialog`** and **`audio-loads-from-granted-https-host`**: new rows that pin behaviour already documented. A sign-in popup that leaves for a provider on another origin and returns to the app's own page arrives with no `window.opener`: report the code over a same-origin `BroadcastChannel`. A routed `fetch` has no TLS option and refuses a self-signed host; `tls.connect` and `connectSecure` honour `rejectUnauthorized: false`. Recheck: apps with a popup sign-in.
+- **`orivon:` links**: `orivon:open?u=<name>.eth/path` and `orivon:open?u=ipfs://<address>` open that page in Orivon when clicked in another program; any other `orivon:` link, and any target that is not a `.eth` name or an IPFS or IPNS address, only brings Orivon to the front. Recheck: nothing.
 
 ### Added
 
 - **What's new in this version**: the first start of a newer version opens a page listing what it changed, once; Settings > About has a link to it. Nothing is fetched: the list is part of the download.
+- **Start here card on the new tab**: three steps, each ticked once Orivon sees it happen: open an app, see the shield on a `.eth` name, and bring your bookmarks (shown only when another browser's profile is on this computer). A line says when full uBlock Origin is on. Dismiss closes the card for good, and so does finishing every step. A private window never shows it.
+- **A download can be tagged for an app**: the Windows installer and the Linux AppImage come as `Orivon-Setup-<version>-x64.<app>.exe` and `Orivon-<version>-x86_64.<app>.AppImage`, and the Mac and Linux one-line installs take the app as an argument. The first time it runs on a new profile, that app opens after the welcome screen, asks what it may do as for any visit, and shows first in Orivon Featured. A plain package behaves as before.
+- **Your apps on the new tab**: a row under Orivon Featured lists the apps this profile has allowed to do more than a web page may, the one used most recently first, with a link to Settings > Apps.
+- **Hide a tile in Orivon Featured**: a small cross on each tile hides it for the profile, and "Show hidden" under the row brings them all back.
+- **`orivon:` links open from other programs**: a link written `orivon:open?u=<name>.eth/path` or `orivon:open?u=ipfs://<address>` opens that page in Orivon on Linux (the .deb), Windows and macOS. Any other `orivon:` link only brings Orivon to the front.
+- **Copy web link**: a page at a `.eth`, `ipfs://` or `ipns://` address has "Copy web link (opens in any browser)" beside Copy Link, in a tab's Share menu, the main menu's Share list and a link's right-click menu. It copies an `https` address that a browser without Orivon opens.
 - **Report a problem with a site**: the site popover has a "Report a problem with this site" row for a site whose manifest names where its publisher takes problem reports, and it opens that address in a new tab.
 - **One-line install on Linux**: a command in a terminal installs the newest release's AppImage for your user, without sudo, with a menu entry, an icon and an `orivon` command, and checks the download against the SHA-256 GitHub reports. Run it again to update.
+- **IPFS folders without an index page list their files**: an `ipfs://` folder with no `index.html` shows its sub-folders and files with their sizes, instead of "Nothing here". A link opens a sub-folder or downloads a file.
+- **Video and call pages can keep the screen on**: an app's tab or a website in front is now granted the screen wake lock, and releases it when the tab goes behind another or the window is hidden. Before, every request was refused.
+
+### Changed
+
+- **A site's first load waits 45 seconds** instead of 25 before Orivon offers public gateways, since a cold `ipns://` load of an app sometimes took 26 to 40 seconds.
+- **The default-browser question comes later**: Orivon asks once, after the first app has opened or on the second day of use, whichever comes first, instead of 30 seconds after the first start. It no longer appears over an app's consent prompt, and "Don't ask again" is on every ask.
+- **The first permission question says why it is asked**: one line above its buttons, "This is a desktop app. It needs more than a web page may have, so it asks you once." Later questions are as before.
+- **An app can open and save the file you pick**: an app's own Open and Save buttons now work on the file or folder you choose, and edits land in that file instead of a copy; a video you open is no longer copied into the app's storage first. The app sees the file's name, so it can tell its type.
+- **A release's page lists what changed** and a table of which file suits which computer.
+
+### Fixed
+
+- **An app's connections look names up with Secure DNS**: the host names an app's `fetch` and network calls dial now use the same resolver as pages, so on a network whose DNS hijacks a host such as an IPFS gateway the app no longer fails with a certificate or refused-connection error.
+- **Settings > About "Check now" and the daily update check see a release**: every release is a pre-release, and the check reported that the release could not be read.
+- **`.eth` names open on an install whose built-in checkpoint is old**: on the first `.eth` name, Orivon asks two beacon servers for a fresh checkpoint and uses it only if both agree. Settings > Web3 says where the checkpoint came from, and why when it could not be fetched.
+- **Swarm sites with zero-padded chunks open**: sites whose chunks are stored padded with zeros to 4096 bytes were refused as malformed; they load now, and a chunk that carries anything but zeros past its length is still refused.
+
+## [0.0.8] - 2026-10-17
+
+Pre-release, published 2026-10-17. [Release page](https://github.com/OrivonBrowser/orivon-mvp/releases/tag/v0.0.8).
+
+### Changed for apps
+
+- **`installed-app-without-grants-is-asked-as-a-website`**: an installed app that holds no grant is now asked for a location, a notification or a clipboard read as a website is, and the person's answer and site rules apply to it. An app that needs such a feature declares the capability instead; recheck apps that call these web APIs with no grant.
+
+### Added
+
 - **Look for updates is on by default**: Orivon asks GitHub once a day whether a newer release exists, and installs nothing; Settings > About turns it off. A profile made before this follows the new default.
 - **Secure DNS is on by default, with a fallback**: site names are looked up at Quad9 over HTTPS, and this computer's own DNS answers when Quad9 cannot be reached. Settings > Privacy offers Quad9 or Cloudflare alone, Automatic and Off as before. Sites sent through a tunnel are never looked up here.
 - **The "?" marks of the Web3 Score shield are links**: each one, in the site popup's Web3 Score page and in the "Web?" mark of the address bar, opens the Web3 Score guide at `docs.orivonstack.eth` in a new tab.
 - **Each site and app picks its own tunnel**: the tunnel menu lists Nym and your own proxy for any website, Web3 site or installed app, so one can go through Nym while another goes through the proxy. A website asks first before it moves into a tunnel's profile, where you sign in to it once; people who already used their own proxy keep their logins on updating.
 - **Set and test your proxy from the tunnel menu**: an address field, a Test, and a question first when sites or apps already use the address you change.
+- **Choose whether the nodes use the tunnel**: Settings > Tunnels has "Use tunnel to run network nodes (such as IPFS and Swarm)", off by default. With a tunnel on for the whole browser, the IPFS and Swarm nodes and the Ethereum service that checks `.eth` names connect directly, so `ipfs://`, `bzz://` and `.eth` pages load at a normal speed while the sites' own connections stay in the tunnel.
 
 ### Changed
 
@@ -43,6 +84,11 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 - **The welcome screen no longer promises Bitcoin nodes.**
 - **Installed apps choose their tunnel as websites do**: from the tunnel menu, or from the same three choices (Off, Nym, Your proxy) on the app's card in Settings > Apps. Settings > Tunnels gains a default tunnel and a Test for each tunnel.
 - **Each "Unlimited network access" row says what it is for**: connecting to any computer, sending data to any computer (peer-to-peer and calls), or loading anything from any website, so an app that asks for several shows rows that differ.
+- **Orivon no longer reads a public IPFS gateway on its own**: when your node cannot serve a page, the page says why and offers "Load through public gateways" for that one load. The next load asks again.
+
+### Fixed
+
+- **Maximizing the window no longer freezes the loading bar**: opening an `ipfs://` or `.eth` page after maximizing or fullscreening left the tab's loading bar still until another tab was clicked.
 
 ## [0.0.6] - 2026-10-15
 
