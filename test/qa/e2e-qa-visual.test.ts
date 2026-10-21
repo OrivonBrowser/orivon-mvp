@@ -34,6 +34,9 @@ const FIXTURE_ADDRESS: Rect = { x: 240, y: 44, width: 260, height: 24 }
 const CONSENT_ORIGIN_LINE: Rect = { x: 188, y: 78, width: 240, height: 20 }
 const PAGE_QUESTION_ORIGIN: Rect = { x: 190, y: 78, width: 240, height: 20 }
 
+/** The site popup's header, which names the fixture's origin and so its port. */
+const SITE_INFO_ORIGIN_LINE: Rect = { x: 224, y: 86, width: 220, height: 22 }
+
 /** Settings > Web3's line saying how old the light client's shipped checkpoint is: it reads a day more each day. */
 const CHECKPOINT_AGE: Rect = { x: 700, y: 586, width: 440, height: 24 }
 
@@ -45,6 +48,9 @@ const MANIFEST = JSON.stringify({
   entry: 'index.html',
   capabilities: { fs: { quotaBytes: 1024 } }
 })
+
+/** The consent fixture's manifest also names where its publisher takes problem reports, so the site panel shows that row. */
+const CONSENT_MANIFEST = JSON.stringify({ ...JSON.parse(MANIFEST) as object, support: { issues: 'https://support.example.test/issues/new' } })
 
 /** Windows lets no program make itself the default browser, so the row there opens Windows' own settings. */
 const MAKE_DEFAULT = process.platform === 'win32' ? 'Open Windows Settings' : 'Make default'
@@ -154,9 +160,10 @@ for (const scheme of SCHEMES) {
       await runPhase('visual states of the shell', async (check) => {
         expect(await waitFor(() => dashboardOf(app) !== undefined)).toBe(true)
         await (dashboardOf(app) as Page).waitForLoadState('load')
+        await (dashboardOf(app) as Page).waitForSelector('html[data-settled="1"]')
         await state(check, app, `dashboard-startup-${scheme}`, {
-          expected: 'New-tab dashboard: wallpaper, the Orivon mark and name, a search box, an "Orivon Featured" row of five tiles (Explore, WebTorrent, ASGARDEX, Ledger Wallet, The Lounge) that have icons and labels; one tab titled "New Tab" in the strip; toolbar with back, forward and reload dimmed.',
-          action: 'Launched a fresh profile and waited for the dashboard to load.'
+          expected: 'New-tab dashboard: wallpaper, the Orivon mark and name, a search box, then a "Start here" card with its steps, an "Orivon Featured" row of five tiles (Explore, WebTorrent, ASGARDEX, Ledger Wallet, The Lounge) that have icons and labels, and a "Your apps" block with its "Manage app permissions" link; the page is taller than the window, so the lower part may be cut at the window edge and scroll; one tab titled "New Tab" in the strip; toolbar with back, forward and reload dimmed.',
+          action: 'Launched a fresh profile and waited for the dashboard to load and draw its rows.'
         })
 
         await chrome.click('#address')
@@ -328,6 +335,8 @@ for (const scheme of SCHEMES) {
         // The card rises in, the welcome scene softens out of focus and the browser's picture fades in over it: wait until all three have finished.
         expect(await waitFor(async () => Number(await intro.locator('.consent-card').evaluate((el) => getComputedStyle(el).opacity)) === 1 && await intro.locator('#welcome').evaluate((el) => getComputedStyle(el).filter) === 'blur(18px)' && Number(await intro.locator('#welcome').evaluate((el) => getComputedStyle(el).opacity)) === 0.4)).toBe(true)
         expect(await waitFor(async () => Number(await intro.locator('#behind').evaluate((el) => getComputedStyle(el).opacity)) === 1, 10_000)).toBe(true)
+        // What shows blurred behind is the new tab. The popup's picture of it is taken once the page says every row is drawn (`data-settled`), so wait for that and for the rows it names.
+        expect(await waitFor(async () => { const page = dashboardOf(app); return page !== undefined && await page.locator('html[data-settled="1"]').count() === 1 && await page.locator('#start-here').isVisible() && await page.locator('#featured-grid .tile').count() > 0 })).toBe(true)
         check('neither of the two buttons has the focus', await intro.evaluate(() => document.activeElement?.tagName) === 'BODY')
         await state(check, app, `welcome-telemetry-popup-${scheme}`, {
           expected: 'Behind, the browser (its toolbar and the new-tab page) blurred past reading and dimmed, filling the whole window. In the middle, a rounded dark-indigo card: the round Orivon logo with a soft glow, the title "Support us for free through telemetry", a short paragraph that starts "Orivon is free, has no ads, and keeps your history on your computer", a panel of four short promises in two columns each with a small green check, a "See exactly what is sent" link with a chevron, and two pill buttons of the same size and look side by side, "Accept" and "Deny", neither filled more than the other. All text is readable and the card stays inside the window.',
@@ -403,7 +412,7 @@ for (const scheme of SCHEMES) {
   it(`the question panel shows a consent question and a page's confirm() (${scheme})`, async () => {
     // The consent fixture advertises a manifest, so visiting it asks for its grants; the dialog fixture asks nothing until clicked.
     const consent = await startServer((req, res) => {
-      if (req.url === '/.well-known/orivon.json') { res.writeHead(200, { 'content-type': 'application/json' }).end(MANIFEST); return }
+      if (req.url === '/.well-known/orivon.json') { res.writeHead(200, { 'content-type': 'application/json' }).end(CONSENT_MANIFEST); return }
       html(res, '<!doctype html><meta charset="utf-8"><title>Consent fixture</title><link rel="orivon-manifest" href="/.well-known/orivon.json"><body style="font:16px sans-serif;margin:32px"><h1>Consent fixture</h1>')
     })
     const dialogs = await startServer((_req, res) => {
@@ -426,7 +435,7 @@ for (const scheme of SCHEMES) {
         const grantFit = await panelFits(grant)
         check('the consent card sits inside its view, uncut and unscrolled', grantFit.fits, grantFit.detail)
         await state(check, app, `question-consent-${scheme}`, {
-          expected: 'A question panel floats over the page, directly under the address pill with its top edge crossing into the toolbar: a header naming the 127.0.0.1 origin that is asking, a message about what the app wants, and a switch row for each permission the app asks for, all off, and two readable buttons, Close as plain text and Grant all, the filled one. Text and buttons are fully inside the panel in this colour scheme, nothing is cut, and the page and toolbar stay visible around it.',
+          expected: 'A question panel floats over the page, directly under the address pill with its top edge crossing into the toolbar: a header naming the 127.0.0.1 origin that is asking, a message about what the app wants, a switch row for each permission the app asks for, all off, the claimed name of the app and, because this is the first question of the profile, the line "This is a desktop app. It needs more than a web page may have, so it asks you once." just above two readable buttons, Close as plain text and Grant all, the filled one. Text and buttons are fully inside the panel in this colour scheme, nothing is cut, and the page and toolbar stay visible around it.',
           action: 'Typed the address of a loopback app that advertises a manifest and waited for its grant question to arm.',
           ignore: [FIXTURE_ADDRESS, CONSENT_ORIGIN_LINE]
         })
@@ -437,6 +446,18 @@ for (const scheme of SCHEMES) {
           action: 'Closed the consent question with no switch on and waited for the key to show its dot.',
           ignore: [FIXTURE_ADDRESS]
         })
+
+        await chrome.click('#site-permissions-btn')
+        expect(await waitFor(async () => await popoverShown(app, '/site-info/'))).toBe(true)
+        const panel = app.windows().find((w) => w.url().includes('/site-info/'))
+        expect(await waitFor(async () => (await panel?.$$('#report-problem'))?.length === 1)).toBe(true)
+        await state(check, app, `site-info-report-problem-${scheme}`, {
+          expected: 'The popup under the key starts with the connection card row (the Web3 Score line inside it), then lists the app\'s permission row with its switch off, a "Permissions" group saying the site has not asked for anything with an "Add a permission..." row, then the Cookies and site data and Site settings rows, and last a row reading "Report a problem with this site" with a chevron at the right, in the same type, spacing and colours as the rows above it. The row is fully inside the popup, uncut, and readable in this colour scheme.',
+          action: 'Clicked the key on the consent fixture, whose manifest names where problems are reported.',
+          ignore: [FIXTURE_ADDRESS, SITE_INFO_ORIGIN_LINE]
+        })
+        await chrome.click('#site-permissions-btn')
+        expect(await waitFor(async () => !(await popoverShown(app, '/site-info/')))).toBe(true)
 
         await visit(app, chrome, `${dialogs.origin}/`)
         const view = findViewShowing(app, chrome, `${dialogs.origin}/`) as Page
@@ -550,7 +571,7 @@ window.share = (options) => navigator.mediaDevices.getDisplayMedia(options).then
         check('the picker sits inside its view, uncut and unscrolled', fit)
         await picker.locator('.picker-card').nth(1).click()
         await state(check, app, `screen-share-picker-${scheme}`, {
-          expected: 'A sheet floats over the page, centred in the page area: the title "Choose what to share with <127.0.0.1 origin>", three segments Tab, Window and Entire screen with Tab selected, a grid of two cards each with a pale picture area (a plain icon, no screenshot) and a label, the first marked "This tab" and the second selected with the accent colour, then Cancel and a filled Share button. Text, cards and buttons are fully inside the sheet and readable in this colour scheme.',
+          expected: 'A sheet floats over the page, centred in the page area: the title "Choose what to share with <127.0.0.1 origin>", three segments Tab, Window and Entire screen with Tab selected, a grid of two cards each with a pale picture area and a label, the first marked "This tab" and showing a small real picture of the page behind, and the second (the other tab) showing a plain icon and selected with the accent colour, then Cancel and a filled Share button. Text, cards and buttons are fully inside the sheet and readable in this colour scheme.',
           action: 'Pressed Share on a loopback page that calls getDisplayMedia, with a second tab open, and chose the second card.',
           // The origin in the title and on the second card change with the port; the first card's thumbnail is a live capture of the page behind.
           ignore: [FIXTURE_ADDRESS, { x: 336, y: 296, width: 372, height: 18 }, { x: 545, y: 506, width: 190, height: 18 }, { x: 346, y: 377, width: 182, height: 103 }]

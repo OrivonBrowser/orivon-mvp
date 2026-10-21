@@ -1,0 +1,10 @@
+{
+  "flavours": [
+    { "id": "explore", "app": "explore.orivonstack.eth", "name": "Explore", "port": "explore" },
+    { "id": "webtorrent", "app": "webtorrent.orivonstack.eth", "name": "WebTorrent", "port": "webtorrent" },
+    { "id": "asgardex", "app": "asgardex.orivonstack.eth", "name": "ASGARDEX", "port": "asgardex" },
+    { "id": "thelounge", "app": "thelounge.orivonstack.eth", "name": "The Lounge", "port": "the-lounge" },
+    { "id": "freetube", "app": "freetube.orivonstack.eth", "name": "FreeTube", "port": "freetube" },
+    { "id": "element", "app": "element.orivonstack.eth", "name": "Element", "port": "element" }
+  ]
+}

@@ -1,17 +1,22 @@
-// The About page: the version table at `/`, the graphics report at `/gpu`,
-// both as real addresses so the address bar says which one is showing.
+// The About page: the version table at `/`, the graphics report at `/gpu` and
+// what this version changed at `/whats-new`, all as real addresses so the address bar says which one is showing.
 import { h, replaceChildren } from '../shared/dom.js'
 import { AboutState } from './state.js'
-import { gpuBody, versionBody } from './view.js'
+import { gpuBody, versionBody, whatsNewBody } from './view.js'
 
-type Tab = 'version' | 'gpu'
+type Tab = 'version' | 'gpu' | 'whatsnew'
+
+const TABS: readonly Tab[] = ['version', 'gpu', 'whatsnew']
+const PATHS: Readonly<Record<Tab, string>> = { version: '/', gpu: '/gpu', whatsnew: '/whats-new' }
+const LABELS: Readonly<Record<Tab, string>> = { version: 'Version', gpu: 'Graphics', whatsnew: 'What\'s new' }
 
 const COPIED_MS = 2_000
 
 const state = new AboutState()
 
 function tabFor (pathname: string): Tab {
-  return pathname.split('/').filter((part) => part !== '')[0] === 'gpu' ? 'gpu' : 'version'
+  const first = pathname.split('/').filter((part) => part !== '')[0]
+  return first === 'gpu' ? 'gpu' : first === 'whats-new' ? 'whatsnew' : 'version'
 }
 
 let current: Tab = tabFor(location.pathname)
@@ -19,10 +24,10 @@ let current: Tab = tabFor(location.pathname)
 const version = h('p', { className: 'version', textContent: '' })
 const copyButton = h('button', { className: 'link-btn', type: 'button', textContent: 'Copy details' })
 const body = h('div', { className: 'body' })
-const tabs = (['version', 'gpu'] as const).map((tab) => h('a', {
+const tabs = TABS.map((tab) => h('a', {
   className: 'tab-btn',
-  href: tab === 'version' ? '/' : '/gpu',
-  textContent: tab === 'version' ? 'Version' : 'Graphics',
+  href: PATHS[tab],
+  textContent: LABELS[tab],
   role: 'tab',
   onclick: (event) => {
     event.preventDefault()
@@ -38,7 +43,7 @@ function flash (button: HTMLButtonElement, label: string, done: boolean): void {
 
 function render (): void {
   tabs.forEach((link, index) => {
-    const selected = (index === 0 ? 'version' : 'gpu') === current
+    const selected = TABS[index] === current
     link.setAttribute('aria-selected', String(selected))
     if (selected) link.setAttribute('aria-current', 'page')
     else link.removeAttribute('aria-current')
@@ -47,16 +52,24 @@ function render (): void {
   version.textContent = row === undefined ? '' : `Version ${row.value}`
   replaceChildren(body, current === 'version'
     ? versionBody(state)
-    : gpuBody(state, () => { void state.loadGpu() }, (button) => {
-      void state.copy('gpu').then((ok) => { flash(button, 'Copy', ok) })
-    }))
+    : current === 'whatsnew'
+      ? whatsNewBody(state)
+      : gpuBody(state, () => { void state.loadGpu() }, (button) => {
+        void state.copy('gpu').then((ok) => { flash(button, 'Copy', ok) })
+      }))
+}
+
+/** Asks for what a tab shows the first time it is opened. */
+function load (tab: Tab): void {
+  if (tab === 'gpu' && state.gpu === null) void state.loadGpu()
+  if (tab === 'whatsnew' && state.whatsNew === null) void state.loadWhatsNew()
 }
 
 function go (tab: Tab): void {
   current = tab
-  const path = tab === 'version' ? '/' : '/gpu'
+  const path = PATHS[tab]
   if (location.pathname !== path) history.pushState(null, '', path)
-  if (tab === 'gpu' && state.gpu === null) void state.loadGpu()
+  load(tab)
   render()
 }
 
@@ -67,7 +80,7 @@ copyButton.onclick = () => {
 state.onChange(render)
 window.addEventListener('popstate', () => {
   current = tabFor(location.pathname)
-  if (current === 'gpu' && state.gpu === null) void state.loadGpu()
+  load(current)
   render()
 })
 
@@ -82,6 +95,6 @@ document.getElementById('app')?.append(
     h('nav', { className: 'tabs', role: 'tablist', ariaLabel: 'About' }, ...tabs),
     body))
 
-if (current === 'gpu') void state.loadGpu()
+load(current)
 render()
 void state.loadVersion()

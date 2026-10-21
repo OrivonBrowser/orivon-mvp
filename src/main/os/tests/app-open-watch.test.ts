@@ -41,4 +41,15 @@ describe('an app opening', () => {
     page.emit('did-finish-load')
     expect(opened).toHaveBeenCalledTimes(1)
   })
+
+  it('tells each of two listeners that watch the same page', () => {
+    const page = contents('https://app.example/')
+    const first = vi.fn()
+    const second = vi.fn()
+    watchAppOpen(page as never, () => true, first)
+    watchAppOpen(page as never, () => true, second)
+    page.emit('did-finish-load')
+    expect(first).toHaveBeenCalledTimes(1)
+    expect(second).toHaveBeenCalledTimes(1)
+  })
 })

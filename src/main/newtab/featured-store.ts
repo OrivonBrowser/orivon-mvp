@@ -3,6 +3,7 @@
 import { mkdirSync, readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
+import { closeStart, markStep, type StartHereState, type StepId } from './start-here-state.js'
 import { giveNewcomerPin, hideTile, parseState, serializeState, showHidden, unpinTile, type FeaturedState } from './featured-state.js'
 
 export class FeaturedStore {
@@ -15,16 +16,25 @@ export class FeaturedStore {
     return this.state
   }
 
-  /** Puts `appIdOrUrl` (an app's id, or its address) first in this profile's Featured row, and reports whether it did. It does nothing once the profile was given a pin, whether the person kept it or removed it. */
-  setNewcomerPin (appIdOrUrl: string): boolean {
+  /** Puts `appIdOrUrl` (an app's id, or its address) first in this profile's Featured row, and reports whether it did. `name` is what its tile says when the app is not among the shipped entries. It does nothing once the profile was given a pin, whether the person kept it or removed it. */
+  setNewcomerPin (appIdOrUrl: string, name?: string): boolean {
     const before = this.get()
-    this.change(giveNewcomerPin(before, appIdOrUrl))
+    this.change(giveNewcomerPin(before, appIdOrUrl, name))
     return this.get() !== before
   }
+
+  /** Ticks a step of the "Start here" card. */
+  markStep (id: StepId): void { this.changeStart(markStep(this.get().start, id)) }
+  /** Closes the card for good. */
+  closeStart (): void { this.changeStart(closeStart(this.get().start)) }
 
   hide (id: string): void { this.change(hideTile(this.get(), id)) }
   unpin (id: string): void { this.change(unpinTile(this.get(), id)) }
   showHidden (): void { this.change(showHidden(this.get())) }
+
+  private changeStart (start: StartHereState): void {
+    if (start !== this.get().start) this.change({ ...this.get(), start })
+  }
 
   private change (next: FeaturedState): void {
     if (next === this.get()) return

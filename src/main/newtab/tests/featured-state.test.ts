@@ -24,6 +24,14 @@ describe('the newcomer pin lifecycle', () => {
     expect(state).toMatchObject({ newcomerPin: 'asgardex', given: true })
   })
 
+  it('keeps the name it was given for a tile outside the shipped set, and drops it with the pin', () => {
+    const state = giveNewcomerPin(EMPTY_STATE, 'ipfs://freetube.orivonstack.eth', 'FreeTube')
+    expect(state).toMatchObject({ newcomerPin: 'freetube', newcomerName: 'FreeTube' })
+    expect(unpinTile(state, 'freetube').newcomerName).toBeNull()
+    expect(giveNewcomerPin(EMPTY_STATE, 'freetube', 'x'.repeat(41)).newcomerName).toBeNull()
+    expect(giveNewcomerPin(EMPTY_STATE, 'freetube', '\u0007  ').newcomerName).toBeNull()
+  })
+
   it('is never given a second time while it is kept', () => {
     const state = giveNewcomerPin(EMPTY_STATE, 'asgardex')
     expect(giveNewcomerPin(state, 'webtorrent')).toBe(state)
@@ -82,6 +90,6 @@ describe('the file', () => {
     expect(parseState(null)).toEqual(EMPTY_STATE)
     expect(parseState({ version: 2, hidden: ['explore'] })).toEqual(EMPTY_STATE)
     expect(parseState({ version: 1, newcomerPin: 'javascript:1', hidden: ['explore', 7, 'a b', 'EXPLORE'], unpinned: 'x' }))
-      .toEqual({ newcomerPin: null, given: false, unpinned: [], hidden: ['explore'] })
+      .toEqual({ newcomerPin: null, newcomerName: null, given: false, unpinned: [], hidden: ['explore'], start: { done: [], closed: false } })
   })
 })

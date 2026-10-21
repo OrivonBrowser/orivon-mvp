@@ -4,6 +4,12 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/install-macos.sh | bash
 #
+# An optional argument names an app for Orivon to open the first time it runs on this Mac, passed on only when Orivon is
+# opened by this script (one of the ids in resources/flavours.json; anything that is not 2 to 24 lowercase letters or
+# digits stops the script before it downloads anything):
+#
+#   curl -fsSL https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/install-macos.sh | bash -s freetube
+#
 # Finds the newest release with a package for this Mac, downloads it with curl, checks its SHA-256
 # against the digest GitHub reports for the file, copies Orivon.app into Applications and opens it.
 # curl sets no quarantine attribute, so Gatekeeper never inspects the app. Runs on macOS's own bash 3.2
@@ -60,6 +66,12 @@ pick_release () {
 }
 
 main () {
+  local flavour=${1:-}
+  case "$flavour" in
+    "") ;;
+    *[!a-z0-9]*) fail "The app to open first must be 2 to 24 lowercase letters and digits, such as freetube." ;;
+    *) [ ${#flavour} -ge 2 ] && [ ${#flavour} -le 24 ] || fail "The app to open first must be 2 to 24 lowercase letters and digits, such as freetube." ;;
+  esac
   [ "$(uname -s)" = "Darwin" ] || fail "This installer is for macOS. Download Orivon for your system from https://github.com/$REPO/releases"
 
   # hw.optional.arm64 is 1 on Apple silicon even when Terminal runs under Rosetta, where uname -m says x86_64.
@@ -131,7 +143,8 @@ main () {
   say "Installed Orivon ($tag) at $dest/Orivon.app"
   say "Run this command again at any time to update Orivon."
   if [ "${ORIVON_NO_OPEN:-}" != "1" ]; then
-    open "$dest/Orivon.app"
+    # --args reaches the app only when this opens it, which is a first launch: Orivon is not running here (checked above).
+    if [ -n "$flavour" ]; then open "$dest/Orivon.app" --args "--orivon-flavour=$flavour"; else open "$dest/Orivon.app"; fi
   fi
 }
 

@@ -24,6 +24,12 @@ describe('nextStep', () => {
     expect(nextStep({ ...base, checks: [pass('check'), { name: 'e2e-shard-1', conclusion: '' }] }).step).toBe('wait')
   })
 
+  it('calls failures on a base main has moved past stale, before any rerun or verdict', () => {
+    expect(nextStep({ ...base, state: 'BEHIND', checks: [fail('check'), pass('e2e')] })).toEqual({ step: 'stale', failed: ['check'] })
+    expect(nextStep({ ...base, state: 'BEHIND', checks: [fail('e2e-shard-1')] }).step).toBe('stale')
+    expect(nextStep({ ...base, state: 'DIRTY', checks: [fail('check')] }).step).toBe('stale')
+  })
+
   it('merges only when every check passed and the branch is CLEAN', () => {
     expect(nextStep({ ...base, checks: [pass('check'), { name: 'docs', conclusion: 'SKIPPED' }] }).step).toBe('merge')
     expect(nextStep({ ...base, state: 'UNKNOWN', checks: [pass('check')] }).step).toBe('wait')

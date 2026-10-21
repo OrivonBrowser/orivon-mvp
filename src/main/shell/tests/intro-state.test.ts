@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { introMode, introPageUrl, markIntroSeen, parseLeaving, planIntro, readIntroSeen, shouldShowIntro } from '../intro-state.js'
+import { introMode, introPageUrl, markIntroSeen, parseLeaving, planIntro, readIntroSeen, readLastRunVersion, rememberRunVersion, shouldShowIntro } from '../intro-state.js'
 
 let dir: string
 
@@ -71,6 +71,34 @@ describe('the seen flag on disk', () => {
   it('never throws when the write fails', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     await expect(markIntroSeen(join(dir, 'no', 'such', 'dir'))).resolves.toBeUndefined()
+  })
+})
+
+describe('the last version run, kept in the same file', () => {
+  it('reads as undefined before any version was remembered, and for a value that is no text', async () => {
+    expect(await readLastRunVersion(dir)).toBeUndefined()
+    await writeFile(join(dir, 'intro.json'), '{"lastRunVersion":4}', 'utf8')
+    expect(await readLastRunVersion(dir)).toBeUndefined()
+  })
+
+  it('keeps the seen flag when a version is written, and the version when the screen is marked seen', async () => {
+    await markIntroSeen(dir)
+    await rememberRunVersion(dir, '0.1.0')
+    expect(JSON.parse(await readFile(join(dir, 'intro.json'), 'utf8'))).toEqual({ seen: true, lastRunVersion: '0.1.0' })
+    await rememberRunVersion(dir, '0.2.0')
+    await markIntroSeen(dir)
+    expect(await readLastRunVersion(dir)).toBe('0.2.0')
+    expect(await readIntroSeen(dir)).toBe(true)
+  })
+
+  it('does not lose either of two writes made at once', async () => {
+    await Promise.all([markIntroSeen(dir), rememberRunVersion(dir, '0.3.0')])
+    expect(JSON.parse(await readFile(join(dir, 'intro.json'), 'utf8'))).toEqual({ seen: true, lastRunVersion: '0.3.0' })
+  })
+
+  it('never throws when the write fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    await expect(rememberRunVersion(join(dir, 'no', 'such', 'dir'), '0.3.0')).resolves.toBeUndefined()
   })
 })
 

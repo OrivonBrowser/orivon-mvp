@@ -226,3 +226,115 @@ img.tile-icon { border-radius: 4px; object-fit: contain; }
   text-decoration: underline;
 }
 .link-button:hover { color: #e2e8f0; }
+
+/* The Start here card: a plain surface like the tiles, with its steps in a list. */
+.start-here {
+  width: 100%;
+  padding: 16px 20px;
+  border-radius: 14px;
+  background: var(--wsurface);
+  border: 1px solid var(--wborder);
+  color: var(--wink);
+}
+.start-here[hidden] { display: none; }
+.start-here-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.start-here-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+.start-here-dismiss {
+  padding: 2px 4px;
+  font-size: 12px;
+  color: var(--wink-dim);
+  text-decoration: underline;
+}
+.start-here-dismiss:hover { color: var(--wink); }
+.start-here-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.start-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.step-mark {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 5px;
+  border-radius: 50%;
+  border: 2px solid var(--wink-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+}
+.start-step[data-done='1'] .step-mark {
+  border-color: var(--waccent);
+  background: var(--waccent);
+}
+.step-mark svg { width: 12px; height: 12px; }
+.step-body {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+.step-title { font-size: 14px; font-weight: 600; }
+.step-detail {
+  order: 1;
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 13px;
+  color: var(--wink-dim);
+}
+.step-action {
+  padding: 5px 12px;
+  font-size: 13px;
+  border-radius: 8px;
+  border: 1px solid var(--wborder);
+  background: color-mix(in srgb, var(--wink) 6%, transparent);
+  color: var(--wink);
+}
+.step-action:hover { border-color: color-mix(in srgb, var(--waccent) 50%, transparent); }
+.start-here-note {
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: var(--wink-dim);
+}
+.start-here-note[hidden] { display: none; }
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The line in a row that has no tile yet, and the link under a row: both sit on the picture itself, so they carry a
+   soft shadow the tiles do not need. The link's own padding is taken back so its text starts where the line above does. */
+.tile-empty {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(226, 232, 240, 0.85);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+#your-apps-manage {
+  margin-left: -4px;
+  color: rgba(226, 232, 240, 0.85);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
