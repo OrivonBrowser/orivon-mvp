@@ -10,6 +10,7 @@
 
 import { describeGrantRequest } from './grant-prompt-render.js'
 import { formatOriginForDisplay } from './grant-prompt-origin.js'
+import { takeFirstPromptNote, withFirstPromptLine } from './first-prompt-note.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { askCaller, holdCaller } from './ask-caller.js'
 import type { ConsentPrompt } from './request-grant.js'
@@ -33,7 +34,8 @@ import type { ScoreLevel } from '../../trust/website-level.js'
 export function createGrantPrompt (
   broker: Broker,
   levelOverrideFor: (origin: string) => ScoreLevel | undefined = () => undefined,
-  extensionsOnSite: (origin: string) => Promise<readonly string[]> = async () => []
+  extensionsOnSite: (origin: string) => Promise<readonly string[]> = async () => [],
+  firstOfProfile: () => boolean = takeFirstPromptNote
 ): ConsentPrompt {
   return async (origin, capability, patterns, caller, abandoned) => {
     let manifest
@@ -53,6 +55,7 @@ export function createGrantPrompt (
     const content = describeGrantRequest(origin, manifest, capability, patterns, levelOverrideFor(origin), names)
     // The tab stays where it is until the person has answered: an answer
     // given to a page that has become another page would grant that page.
+    const detail = firstOfProfile() ? withFirstPromptLine(content.detail, formatOriginForDisplay(origin)) : content.detail
     const release = holdCaller(caller)
     try {
       const { response } = await askCaller(caller, {
@@ -61,7 +64,7 @@ export function createGrantPrompt (
         warning: content.warning,
         title: content.title,
         message: content.message,
-        detail: content.detail,
+        detail,
         buttons: ['Allow', 'Deny'],
         cancelId: 1,
         guarded: [0],
