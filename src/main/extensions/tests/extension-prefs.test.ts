@@ -15,8 +15,16 @@ describe('normalizePrefs', () => {
       siteAccess: { mode: 'all', sites: [] },
       shortcuts: {},
       overrides: { newtab: true, history: true, bookmarks: true },
-      noticeSeen: []
+      noticeSeen: [],
+      privateWindows: false
     })
+  })
+
+  it('reads privateWindows as a boolean only, and writes it only when it is on', () => {
+    expect(normalizePrefs({ privateWindows: 'yes' }).privateWindows).toBe(false)
+    expect(normalizePrefs({ privateWindows: true }).privateWindows).toBe(true)
+    expect(serializePrefs(new Map([['a', normalizePrefs({ privateWindows: false })]]))).not.toContain('privateWindows')
+    expect(serializePrefs(new Map([['a', normalizePrefs({ privateWindows: true })]]))).toContain('"privateWindows": true')
   })
 
   it('keeps a good field and defaults only the bad one', () => {

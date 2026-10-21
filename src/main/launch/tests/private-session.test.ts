@@ -50,6 +50,25 @@ describe('a private session\'s directory', () => {
     for (const name of ['bookmarks.json', 'history.db', 'zoom.json', 'telemetry.json', 'identity', 'grants', join('verifier', 'ipns-sequences.json')]) expect(existsSync(join(dir, name)), name).toBe(false)
   })
 
+  it('also begins with the extensions its opener allows in private windows, from the opener\'s own folder', async () => {
+    const opener = join(root, 'opener')
+    const id = 'a'.repeat(32)
+    await mkdir(join(opener, 'extensions', 'slot', '1.0.0'), { recursive: true })
+    await writeFile(join(opener, 'extensions', 'slot', '1.0.0', 'manifest.json'), '{}')
+    await writeFile(join(opener, 'extensions', 'registry.json'), JSON.stringify({ extensions: [{
+      id, name: 'X', version: '1.0.0', enabled: true, installedAt: 1, updatedAt: 1, source: { kind: 'unpacked', from: '/x' },
+      updater: { kind: 'none', reason: 'x' }, path: join(opener, 'extensions', 'slot', '1.0.0'), stripped: { permissions: [], optionalPermissions: [] }
+    }] }))
+    await writeFile(join(opener, 'extensions', 'prefs.json'), JSON.stringify({ version: 1, extensions: { [id]: { privateWindows: true } } }))
+    await mkdir(join(home, 'extensions'), { recursive: true })
+    await writeFile(join(home, 'extensions', 'registry.json'), 'not the opener\'s')
+
+    const dir = createPrivateDir(opener, home, tmp)
+
+    expect(existsSync(join(dir, 'extensions', 'slot', '1.0.0', 'manifest.json'))).toBe(true)
+    expect(await readFile(join(dir, 'extensions', 'registry.json'), 'utf8')).toContain(join(dir, 'extensions', 'slot', '1.0.0').replace(/\\/g, '\\\\'))
+  })
+
   it('takes the settings from the opener and the checkpoint from home, when they are not the same profile', async () => {
     const opener = join(root, 'opener')
     await mkdir(opener, { recursive: true })

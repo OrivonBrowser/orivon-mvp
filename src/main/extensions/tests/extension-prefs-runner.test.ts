@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createExtensionPrefsStore, prefsFilePath } from '../extension-prefs-runner.js'
-import { DEFAULT_EXTENSION_PREFS } from '../extension-prefs.js'
+import { DEFAULT_EXTENSION_PREFS, normalizePrefs } from '../extension-prefs.js'
 
 let dir: string
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'orivon-prefs-')) })
@@ -70,6 +70,17 @@ describe('createExtensionPrefsStore', () => {
     store.update('x', { pinned: true })
     await store.flush()
     expect(store.get('x').pinned).toBe(true)
+    expect(readdirOrEmpty(dir)).toEqual([])
+  })
+
+  it('starts from a seed with no path, and keeps later changes to itself', async () => {
+    const seed = new Map([['x', normalizePrefs({ pinned: true, privateWindows: true })]])
+    const store = createExtensionPrefsStore(null, seed)
+    expect(store.get('x').pinned).toBe(true)
+    store.update('x', { pinned: false })
+    await store.flush()
+    expect(store.get('x').pinned).toBe(false)
+    expect(seed.get('x')?.pinned).toBe(true)
     expect(readdirOrEmpty(dir)).toEqual([])
   })
 })

@@ -1,6 +1,6 @@
 // What a person chose for each installed extension (pinned, granted
 // optional permissions and origins, site access, shortcuts, page overrides,
-// notices seen) -- pure: parse, normalise and merge, no `electron`, no
+// notices seen, whether it also runs in private windows) -- pure: parse, normalise and merge, no `electron`, no
 // filesystem (extension-prefs-runner.ts is the I/O half). Lenient on read: a
 // field that is the wrong shape takes its default instead of failing the
 // file, since one bad field must not forget every other extension's choices.
@@ -14,6 +14,8 @@ export interface ExtensionPrefs {
   readonly shortcuts: Readonly<Record<string, string>>
   readonly overrides: { readonly newtab: boolean, readonly history: boolean, readonly bookmarks: boolean }
   readonly noticeSeen: readonly string[]
+  /** Whether a private window starts with a copy of this extension (`launch/private-extensions.ts`). */
+  readonly privateWindows: boolean
 }
 
 export interface ExtensionPrefsStore {
@@ -71,7 +73,8 @@ export function normalizePrefs (raw: unknown): ExtensionPrefs {
       history: bool(overrides['history'], true),
       bookmarks: bool(overrides['bookmarks'], true)
     }),
-    noticeSeen: stringList(source['noticeSeen'])
+    noticeSeen: stringList(source['noticeSeen']),
+    privateWindows: bool(source['privateWindows'], false)
   })
 }
 
