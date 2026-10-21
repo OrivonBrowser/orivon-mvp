@@ -58,6 +58,10 @@ body[data-overlay='web3-score'] .ws-here-tag {
   color: var(--here);
   background: color-mix(in srgb, var(--here) 14%, transparent);
 }
+/* The level colours are too dark to read as small text on the dark card. */
+@media (prefers-color-scheme: dark) {
+  body[data-overlay='web3-score'] .ws-here-tag { color: color-mix(in srgb, var(--here) 45%, white); }
+}
 
 body[data-overlay='web3-score'] .ws-note {
   margin: 14px 0 0;
