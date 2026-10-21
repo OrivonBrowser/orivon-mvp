@@ -30,6 +30,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Ports gained an upstream-release watcher, attested builds and `orivon-port verify`, which rebuilds a published app and compares its bundle.
 - CI now catches two branches that took the same ADR or decision number, and pr-watch settles decision-log conflicts by itself.
 - Windows gets a one-line PowerShell install with no SmartScreen warning, and the Microsoft Store joins each release's file table.
+- Private live telemetry dashboard on our server; telemetry now keeps each install's usage day by day, and the privacy notice says so.
 
 ### In my head
 
