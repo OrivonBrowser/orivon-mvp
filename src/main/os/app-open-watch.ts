@@ -1,4 +1,4 @@
-// Tells a listener (the default-browser ask, the new tab's Start here card) that an app has opened: a page of a
+// Tells a listener (the default-browser ask) that an app has opened: a page of a
 // registered app finished loading in a tab. The decision is the page's address and the app test the installer passes in; Electron is only the event it listens to.
 import type { WebContents } from 'electron'
 

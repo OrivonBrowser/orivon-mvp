@@ -15,16 +15,11 @@ import type { ImportHost } from './import-domain.js'
 import { MAX_IMPORT_BYTES } from './import-types.js'
 import type { ImportResult, ImportSource } from './import-types.js'
 
-export interface ImportHostServices extends Pick<ShellServices, 'bookmarks' | 'history' | 'isPrivate' | 'settings' | 'windows' | 'commands' | 'featured'> {}
+export interface ImportHostServices extends Pick<ShellServices, 'bookmarks' | 'history' | 'isPrivate' | 'settings' | 'windows' | 'commands'> {}
 
 async function detectHere (): Promise<ImportSource[]> {
   const place = importLocation({ platform: process.platform, home: app.getPath('home'), env: process.env })
   return await detectSources(nodeImportFs, candidateRoots(place.platform, place.home, place.env))
-}
-
-/** Whether another browser's profile can be read on this computer. */
-export async function otherBrowserFound (): Promise<boolean> {
-  return (await detectHere()).length > 0
 }
 
 /** `publish` tells the page which part of an import is running. */
@@ -43,17 +38,12 @@ export function importHost (services: ImportHostServices, publish: (phase: 'book
     // can be hundreds of megabytes, and the copy of it lives only while it is read.
     tempDir: join(app.getPath('userData'), 'import-tmp')
   })
-  /** An import that ran to the end ticks the new tab's "Start here" step. */
-  const finished = (result: ImportResult): ImportResult => {
-    if (result.error === undefined) services.featured.markStep('import')
-    return result
-  }
   return {
     isPrivate: services.isPrivate,
     detect: detectHere,
     historyOn: () => services.settings.get('history.remember'),
     managerAvailable: () => commandById('bookmarks.open')?.pending !== true,
-    run: async (source, what) => finished(await runImport(source, what, deps())),
+    run: async (source, what) => await runImport(source, what, deps()),
     runFile: async (contents) => {
       const path = await pickOpenFile(services.windows.findOwner(contents)?.window, {
         title: 'Choose a bookmarks file',
@@ -61,7 +51,7 @@ export function importHost (services: ImportHostServices, publish: (phase: 'book
       })
       if (path === undefined) return undefined
       // A file that is missing or too large reads as text that is no bookmarks file.
-      return finished(runHtmlImport(await nodeImportFs.readText(path, MAX_IMPORT_BYTES) ?? '', deps()))
+      return runHtmlImport(await nodeImportFs.readText(path, MAX_IMPORT_BYTES) ?? '', deps())
     },
     openManager: (contents) => {
       const window = services.windows.findOwner(contents)

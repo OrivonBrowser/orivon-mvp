@@ -43,14 +43,9 @@ if (topFrame && expectedUrl !== undefined && location.href === expectedUrl) {
   contextBridge.exposeInMainWorld('orivonNewTab', {
     /** This profile's Featured choices (src/main/newtab/featured-store.ts); the page checks the shape. */
     getFeatured: async (): Promise<unknown> => await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'getFeatured' }),
-    /** The apps this profile has granted capabilities to, newest use first (src/main/newtab/your-apps.ts); the page checks the shape. */
-    getYourApps: async (): Promise<unknown> => await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'getYourApps' }),
     hideFeatured: async (id: string): Promise<unknown> => await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'hideFeatured', id }),
     unpinFeatured: async (id: string): Promise<unknown> => await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'unpinFeatured', id }),
     showHiddenFeatured: async (): Promise<unknown> => await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'showHiddenFeatured' }),
-    /** The "Start here" card for this profile, or null when it is not to be shown (src/main/newtab/start-here-state.ts); the page checks the shape. */
-    getStartHere: async (): Promise<unknown> => await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'getStartHere' }),
-    dismissStartHere: async (): Promise<unknown> => await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'dismissStartHere' }),
     getBookmarks: async (): Promise<Bookmark[]> => {
       const result: unknown = await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'getBookmarks' })
       return Array.isArray(result) ? result as Bookmark[] : []

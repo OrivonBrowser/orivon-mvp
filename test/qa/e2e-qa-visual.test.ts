@@ -162,7 +162,7 @@ for (const scheme of SCHEMES) {
         await (dashboardOf(app) as Page).waitForLoadState('load')
         await (dashboardOf(app) as Page).waitForSelector('html[data-settled="1"]')
         await state(check, app, `dashboard-startup-${scheme}`, {
-          expected: 'New-tab dashboard: wallpaper, the Orivon mark and name, a search box, then a "Start here" card with its steps, an "Orivon Featured" row of five tiles (Explore, WebTorrent, ASGARDEX, Ledger Wallet, The Lounge) that have icons and labels, and a "Your apps" block with its "Manage app permissions" link; the page is taller than the window, so the lower part may be cut at the window edge and scroll; one tab titled "New Tab" in the strip; toolbar with back, forward and reload dimmed.',
+          expected: 'New-tab dashboard: wallpaper, the Orivon mark and name, a search box, then an "Orivon Featured" row of five tiles (Explore, WebTorrent, ASGARDEX, Ledger Wallet, The Lounge) that have icons and labels, with no other block under it; in a window too short for the rows, the lower part is cut at the window edge and scrolls; one tab titled "New Tab" in the strip; toolbar with back, forward and reload dimmed.',
           action: 'Launched a fresh profile and waited for the dashboard to load and draw its rows.'
         })
 
@@ -347,7 +347,7 @@ for (const scheme of SCHEMES) {
         expect(await waitFor(async () => Number(await intro.locator('.consent-card').evaluate((el) => getComputedStyle(el).opacity)) === 1 && await intro.locator('#welcome').evaluate((el) => getComputedStyle(el).filter) === 'blur(18px)' && Number(await intro.locator('#welcome').evaluate((el) => getComputedStyle(el).opacity)) === 0.4)).toBe(true)
         expect(await waitFor(async () => Number(await intro.locator('#behind').evaluate((el) => getComputedStyle(el).opacity)) === 1, 10_000)).toBe(true)
         // What shows blurred behind is the new tab. The popup's picture of it is taken once the page says every row is drawn (`data-settled`), so wait for that and for the rows it names.
-        expect(await waitFor(async () => { const page = dashboardOf(app); return page !== undefined && await page.locator('html[data-settled="1"]').count() === 1 && await page.locator('#start-here').isVisible() && await page.locator('#featured-grid .tile').count() > 0 })).toBe(true)
+        expect(await waitFor(async () => { const page = dashboardOf(app); return page !== undefined && await page.locator('html[data-settled="1"]').count() === 1 && await page.locator('#featured-grid .tile').count() > 0 })).toBe(true)
         check('neither of the two buttons has the focus', await intro.evaluate(() => document.activeElement?.tagName) === 'BODY')
         await state(check, app, `welcome-telemetry-popup-${scheme}`, {
           expected: 'Behind, the browser (its toolbar and the new-tab page) blurred past reading and dimmed, filling the whole window. In the middle, a rounded dark-indigo card: the round Orivon logo with a soft glow, the title "Support us for free through telemetry", a short paragraph that starts "Orivon is free, has no ads, and keeps your history on your computer", a panel of four short promises in two columns each with a small green check, a "See exactly what is sent" link with a chevron, and two pill buttons of the same size and look side by side, "Accept" and "Deny", neither filled more than the other. All text is readable and the card stays inside the window.',

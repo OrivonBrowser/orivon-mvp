@@ -281,8 +281,8 @@ export async function launchElectron ({
   }
   const userDataDir = reuseProfile ?? await mkdtemp(join(tmpdir(), 'orivon-test-'))
   if (env['ORIVON_TELEMETRY_HOME'] === undefined) env['ORIVON_TELEMETRY_HOME'] = join(userDataDir, 'telemetry-home')
-  // The new tab's Start here card offers an import only where another browser has a profile: a launch looks in a home
-  // that holds none, never in the machine's own, so what it shows does not depend on who runs it.
+  // The importer lists another browser's profile where one exists: a launch looks in a home that holds none, never in
+  // the machine's own, so what it shows does not depend on who runs it.
   if (env['ORIVON_TEST_IMPORT_HOME'] === undefined) env['ORIVON_TEST_IMPORT_HOME'] = join(userDataDir, 'no-browsers-home')
   let app
   try {

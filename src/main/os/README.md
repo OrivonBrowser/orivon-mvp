@@ -53,8 +53,7 @@ checked inside a package: the taskbar menu, the process's AUMID and a peer start
 **The first ask comes a beat after the first app has opened or on the second day of use, whichever is first, and each
 later one a week after the last.** The clock starts the first time the check finds a window in use, so time on the
 welcome screen and its telemetry popup does not count; a missing or corrupt file is a profile not seen yet. An app has
-opened when a registered app's tab (the app-tab flag) finishes loading a page (`app-open-watch.ts`, which more than one listener may watch: the new tab's Start here card ticks its first step on the same
-signal, with a page of an origin holding a grant counted too); the moment is kept
+opened when a registered app's tab (the app-tab flag) finishes loading a page (`app-open-watch.ts`, which more than one listener may watch); the moment is kept
 for this run only. The second day is the next calendar day on the wall clock after the one the profile was first seen
 in use. "Don't ask again" is on every ask, the first included, and a clock set back is reset to now. The check looks at
 the clock when the next ask falls due (at least hourly), when an app finishes loading, and asks the system only when a

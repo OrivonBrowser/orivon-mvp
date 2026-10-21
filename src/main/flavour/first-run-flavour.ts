@@ -42,13 +42,6 @@ export function storedFlavour (dir: string): string | null {
   }
 }
 
-/** The app the profile's stored tag opened, as the name to show and the address to open; null when none was applied or the id left the allowlist. */
-export function storedFlavourApp (dir: string, flavours: readonly Flavour[]): { readonly name: string, readonly address: string } | null {
-  const id = storedFlavour(dir)
-  const flavour = id === null ? undefined : findFlavour(flavours, id)
-  return flavour === undefined ? null : { name: flavour.name, address: `ipfs://${flavour.app}` }
-}
-
 /** Applies the first-run presets of the allowlisted app `id`, and reports whether it did. It does nothing, silently, for an id
  * that is not on the allowlist, for a profile that is not a new default profile, and once an id was applied to this profile:
  * the stored `flavour.json` (the id and when) is what stops a second one, however the tag reaches the browser. */

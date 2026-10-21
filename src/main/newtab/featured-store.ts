@@ -3,7 +3,6 @@
 import { mkdirSync, readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
-import { closeStart, markStep, type StartHereState, type StepId } from './start-here-state.js'
 import { giveNewcomerPin, hideTile, parseState, serializeState, showHidden, unpinTile, type FeaturedState } from './featured-state.js'
 
 export class FeaturedStore {
@@ -23,18 +22,9 @@ export class FeaturedStore {
     return this.get() !== before
   }
 
-  /** Ticks a step of the "Start here" card. */
-  markStep (id: StepId): void { this.changeStart(markStep(this.get().start, id)) }
-  /** Closes the card for good. */
-  closeStart (): void { this.changeStart(closeStart(this.get().start)) }
-
   hide (id: string): void { this.change(hideTile(this.get(), id)) }
   unpin (id: string): void { this.change(unpinTile(this.get(), id)) }
   showHidden (): void { this.change(showHidden(this.get())) }
-
-  private changeStart (start: StartHereState): void {
-    if (start !== this.get().start) this.change({ ...this.get(), start })
-  }
 
   private change (next: FeaturedState): void {
     if (next === this.get()) return

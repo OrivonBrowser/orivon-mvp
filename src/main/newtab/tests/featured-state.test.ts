@@ -90,6 +90,6 @@ describe('the file', () => {
     expect(parseState(null)).toEqual(EMPTY_STATE)
     expect(parseState({ version: 2, hidden: ['explore'] })).toEqual(EMPTY_STATE)
     expect(parseState({ version: 1, newcomerPin: 'javascript:1', hidden: ['explore', 7, 'a b', 'EXPLORE'], unpinned: 'x' }))
-      .toEqual({ newcomerPin: null, newcomerName: null, given: false, unpinned: [], hidden: ['explore'], start: { done: [], closed: false } })
+      .toEqual({ newcomerPin: null, newcomerName: null, given: false, unpinned: [], hidden: ['explore'] })
   })
 })
