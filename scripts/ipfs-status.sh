@@ -401,22 +401,33 @@ collect_releases () {
   done 3< <(jq -c '.[:10][]' <<<"$list")
 }
 
+# A folder's files as sorted "<cid> <name>" lines, leaving out the index.html pin-releases.sh adds as the start page
+# of the newest-release folder: equal for a release and for that folder made from it.
+files_of () { ipfs --timeout="${TIMEOUT}s" ls --size=false --resolve-type=false "$1" 2>/dev/null | awk '$2 != "index.html"' | sort; }
+
 # Sets LATEST: which release the LATEST_KEY points at, and a problem when that is not the newest pinned one.
 collect_latest () {
-  local site newest
+  local site newest target files held='' tag cid
   LATEST=null
   [ -n "$LATEST_KEY" ] || return 0
   site=$(jq -sc --arg k "$LATEST_KEY" 'map(select(.key == $k and .id != null))[0] // empty' "$T/sites")
   newest=$(jq -sc 'map(select(.pinned == true))[0] // empty' "$T/releases")
-  LATEST=$(jq -nc --arg k "$LATEST_KEY" --argjson s "${site:-null}" --argjson n "${newest:-null}" --slurpfile r "$T/releases" '{
+  target=$(jq -r '.target // empty' <<<"${site:-null}")
+  if [ -n "$target" ]; then
+    files=$(files_of "$target")
+    while read -r tag cid; do
+      if [ -n "$files" ] && [ "$files" = "$(files_of "$cid")" ]; then held=$tag; break; fi
+    done < <(jq -r 'select(.pinned == true and .cid != null) | "\(.tag) \(.cid)"' "$T/releases")
+  fi
+  LATEST=$(jq -nc --arg k "$LATEST_KEY" --argjson s "${site:-null}" --argjson n "${newest:-null}" --arg held "$held" '{
     key: $k, ipns: $s.ipns, names: [($s.names // [])[].name], target: $s.target,
-    tag: ([$r[] | select(.cid != null and .cid == $s.target)][0].tag // null), newest: $n.tag}')
+    tag: (if $held == "" then null else $held end), newest: $n.tag}')
   if [ -z "$site" ]; then
     # A key the names file lists is already reported missing.
     if ! jq -se --arg k "$LATEST_KEY" 'any(.[]; .key == $k)' "$T/sites" >/dev/null; then
       problem error "The key $LATEST_KEY, which names the newest release, is missing from the node: create it with ipfs key gen"
     fi
-  elif [ -n "$newest" ] && [ "$(jq -r .target <<<"$site")" != "$(jq -r .cid <<<"$newest")" ]; then
+  elif [ -n "$newest" ] && [ "$held" != "$(jq -r .tag <<<"$newest")" ]; then
     problem warn "The newest-release key $LATEST_KEY does not point at $(jq -r .tag <<<"$newest") yet; the release pinner moves it on its next run"
   fi
 }
