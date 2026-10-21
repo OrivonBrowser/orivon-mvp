@@ -152,6 +152,26 @@ different release than the newest one with a dmg attached.
 
 ---
 
+## 6. The Linux one-line install
+
+**Precondition.** A published release with its AppImage attached, and a Linux x86_64 computer with a desktop that has
+never had Orivon installed by this script (or run `rm -rf ~/.local/lib/orivon ~/.local/share/applications/orivon.desktop`).
+
+**Input.** The command in the README section Download, pasted into a terminal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/install-linux.sh | bash
+```
+
+**Assertions.** The script prints the release's tag and "Checked the SHA-256", Orivon starts, **About** shows the
+release's version, Orivon Browser is in the application menu with its icon and is listed among the desktop's browsers
+(Settings > Default applications), and running the command again leaves one entry and one install.
+
+**Fails if:** the script asks for a password, the digest check is skipped, it installs a release that is not the
+newest one with an AppImage attached, or a computer without `libfuse2` gets an Orivon that does not start.
+
+---
+
 ## Scheduled additions
 
 Written when the artefacts they depend on exist. Recorded here so the gap is known rather than
@@ -175,11 +195,12 @@ forgotten.
       an install of a release past that fetches a fresh one from two beacon servers when they are
       reachable and agree, and verifies no `.eth` name when they are not.
 - [ ] `npm run typecheck && npm test && npm run check:natives && npm run check:contracts` green.
-- [ ] CI green on `main`.
+- [ ] CI green on `main`. The Release workflow's `ublock` job runs the uBlock Origin spec before any package is built; a red one means the Electron this release ships does not run the extension ([`testing.md`](testing.md) section Electron upgrades).
 - [ ] After publishing: the Release workflow is green and the release carries the deb, the
       AppImage, the Windows installer, both dmgs and `ipfs.json` ([`packaging.md`](packaging.md)
       section Releases); its description lists the version's changes, the "Which file is mine?" table and the
       IPFS section; within about 15 minutes `ipfs://<cid>` from its notes opens in Orivon.
+- [ ] Pin the new release on the additional pinning service: `PINNING_ENDPOINT=<service url> PINNING_TOKEN=<token> node scripts/pin-extra.mjs --extra <file of name=cid lines> --prune` ([`scripts/README.md`](../../scripts/README.md)); `--dry-run` first prints what it would change.
 - [ ] **The Microsoft Store package submitted** ([`packaging.md`](packaging.md) section The Microsoft Store package):
       after the release's workflow run is green, open the `store` job's page. Its summary says it submitted the package
       and shows the submission's status; Partner Center certifies it from there. A warning instead names what is

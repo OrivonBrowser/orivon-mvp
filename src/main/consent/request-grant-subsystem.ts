@@ -21,6 +21,8 @@ import { createGrantPrompt } from './request-grant-prompt.js'
 import { scoreLevelOverrideFor } from '../dev/score-levels.js'
 import { extensionNamesForOrigin } from '../extensions/site-reach-runner.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
+import { join } from 'node:path'
+import { FirstPromptNote, installFirstPromptNote } from './first-prompt-note.js'
 
 export const requestGrantSubsystem: Subsystem = {
   name: 'request-grant',
@@ -40,6 +42,8 @@ export const requestGrantSubsystem: Subsystem = {
       const extensions = ctx.extensions
       return extensions === undefined ? [] : await extensionNamesForOrigin(extensions, origin, isOriginServedFromCacheSync)
     }
+    // The same note app-install-subsystem.ts installs: the first question of a profile, from either, carries the line.
+    installFirstPromptNote(new FirstPromptNote(ctx.privateSession ? null : join(ctx.app.getPath('userData'), 'consent-notes.json')))
     const consent = createGrantPrompt(broker, scoreLevelOverrideFor, extensionsOnSite)
     // ONE map for this running app's whole lifetime: every app.requestGrant
     // call, from any tab, shares it, so a burst of concurrent calls asking
