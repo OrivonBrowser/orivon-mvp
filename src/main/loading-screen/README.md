@@ -12,6 +12,7 @@ protocol's `loadingScreen` in its descriptor ([`../../protocols/README.md`](../.
 
 **What it depends on.** [`../overlays/`](../overlays/) (`overlay-types.ts`, `tab-slots.ts`);
 [`../../protocols/`](../../protocols/) (`builtin.ts` for the addresses, `protocol.ts` for the `LoadingScreen` type);
+[`../verifier/name-scheme-events.ts`](../verifier/name-scheme-events.ts) (the one value it takes from the verifier: when a `.eth` name's scheme is learned);
 [`../sad-tab/sad-tab-text.ts`](../sad-tab/sad-tab-text.ts) (`ADDRESS_LIMIT`); [`../shell/`](../shell/)
 (`window-registry.ts` and `shell-installers.ts`, types only).
 
@@ -26,6 +27,14 @@ not the other way round.
 and `destroyed`. The rule it applies, and the overlay's validation, need nothing of it.
 
 ## Design notes
+
+**A first visit's sheet words the cover under it.** `{ url, text: { title, detail, busy } }` is shown as given, for an address no protocol has a
+screen for, and `claim.ts` keeps the protocol's own screen off that tab while the sheet is up ([`../app-setup/`](../app-setup/README.md)).
+
+**A scheme learned while it shows words it again.** A `.eth` name is shown as its plain origin, with ENS's
+neutral title, until the verifier host reports which network its records point to, which it does before it
+fetches any content. The overlay keeps the last address it was shown and, on `onNameSchemeChange`, sends the page a
+new view: title and address from the protocol of the learned scheme, or only the address when a caller brought its own words.
 
 **The screen waits 300 ms.** A load that finishes sooner (a cached site, a reload) never flashes it. The wait
 restarts when a newer navigation to a screened address begins before the screen is up; once it is up, a newer

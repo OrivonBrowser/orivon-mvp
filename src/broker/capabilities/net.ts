@@ -11,6 +11,9 @@ import type { GrantLedger } from '../grants/grant-ledger.js'
 import { fail } from '../errors.js'
 import { mapIoError } from '../io-errors.js'
 import { checkConnect, connectStillAuthorised } from '../policy/connect.js'
+import { reachesOwnLoopbackPort } from '../policy/own-loopback.js'
+import { NO_RESOLVER, checkRoutedConnect, isLoopbackTarget, routedStillAuthorised } from '../policy/connect-routed.js'
+import { dialThroughRoute } from '../route/routed-socket.js'
 import { checkLookup } from '../policy/lookup.js'
 import { createConnectSecure } from './net-connect-secure.js'
 import { createListen } from './net-listen.js'
@@ -20,7 +23,8 @@ import { assertSocketRoom } from './socket-room.js'
 import { isPublicUnicast } from '../policy/address.js'
 import { proxyProbeUrl } from '../policy/proxy-guard.js'
 import type { Broker, CreateBrokerOptions, DialedSocket } from '../broker-contracts.js'
-import type { CapabilityKind, LookupAddress } from '../../contracts/index.js'
+import type { CapabilityKind, ConnectOptions, LookupAddress, Pattern } from '../../contracts/index.js'
+import { mapRouteError } from '../route/provider.js'
 
 /**
  * The two capabilities `orivon.net.lookup` reads a grant from (d-0030,
@@ -84,7 +88,7 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical, lis
     }
   }
 
-  async function connect (origin: string, opts: { host: string, port: number }): Promise<FailableTcpSocket> {
+  async function connect (origin: string, opts: ConnectOptions): Promise<FailableTcpSocket> {
     const key = canonical(origin)
 
     // THE NARROWING. `current.patterns` is what the user granted; nothing
@@ -96,6 +100,12 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical, lis
     const current = ledger.currentGrant(key, 'tcp.connect')
     if (current === undefined) throw fail('denied', 'tcp.connect is not granted to this origin')
 
+    // Read once per call: a route that changes later applies to the next one.
+    // This machine itself is never sent through a route: the proxy's loopback
+    // is not the app's, and nothing leaves the computer.
+    const route = deps.routeFor?.(key)
+    const viaRoute = route !== undefined && !isLoopbackTarget(opts.host)
+
     return await handleTable.run(key, { on: 'grant', grantId: current.id }, async (signal) => {
       // `checkConnect` calls `deps.resolve` internally and does not catch
       // its rejection (policy/connect.ts is pure, and mapping I/O errors is
@@ -103,26 +113,42 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical, lis
       // rejects raw too. Both need mapIoError; nothing else in this
       // callback throws anything but an OrivonError already, and mapIoError
       // passes those through unchanged.
-      let decision: Awaited<ReturnType<typeof checkConnect>>
       let dialed: DialedSocket
+      let stillCovered: (patterns: readonly Pattern[]) => boolean
       try {
-        // Checked BEFORE `checkConnect`, which resolves the host through
-        // real Node DNS -- a query no proxy sees. Waiting until after
-        // `checkConnect` would let that lookup go around a configured
-        // proxy even on the path that then denies the connect itself (T20).
-        if (await deps.proxyConfigured(proxyProbeUrl(opts.host, opts.port))) {
-          throw fail('denied', 'a system proxy is configured; tcp.connect refuses to bypass it')
+        if (viaRoute) {
+          // A routed app: the route is its proxy, so T20 is not asked, and the
+          // name goes to the route unresolved (policy/connect-routed.ts).
+          const decision = await checkRoutedConnect(current.patterns, opts.host, opts.port)
+          if (!decision.allowed) throw fail('denied', 'the connection was not authorised')
+          if (signal.aborted) throw fail('revoked', 'the grant authorising this connection was withdrawn')
+          assertSocketRoom(handleTable, key, socketAllowance(key))
+          dialed = await dialThroughRoute(route, decision.host, opts.port, signal)
+          stillCovered = (patterns) => routedStillAuthorised(patterns, decision.host, opts.port)
+        } else {
+          // Checked BEFORE `checkConnect`, which resolves the host through
+          // real Node DNS -- a query no proxy sees. Waiting until after
+          // `checkConnect` would let that lookup go around a configured
+          // proxy even on the path that then denies the connect itself (T20).
+          // A routed app has its route as its proxy, and reaches only this
+          // machine here, which needs no resolver.
+          if (route === undefined) {
+            const probeUrl = proxyProbeUrl(opts.host, opts.port)
+            if (probeUrl === null) throw fail('denied', 'the connection was not authorised')
+            if (await deps.proxyConfigured(probeUrl)) throw fail('denied', 'a system proxy is configured; tcp.connect refuses to bypass it')
+          }
+          const decision = await checkConnect(current.patterns, opts.host, opts.port, route === undefined ? deps.resolve : NO_RESOLVER)
+          if (!decision.allowed || reachesOwnLoopbackPort(decision.addresses, opts.port, deps.ownLoopbackPort)) throw fail('denied', 'the connection was not authorised')
+          // Checked here too, not only after `dial` resolves below: without
+          // this, a grant revoked while resolve was still pending would still
+          // reach `deps.dial`, and correctness would depend entirely on the
+          // INJECTED dial implementation independently honouring an
+          // already-aborted signal rather than on the broker itself.
+          if (signal.aborted) throw fail('revoked', 'the grant authorising this connection was withdrawn')
+          assertSocketRoom(handleTable, key, socketAllowance(key))
+          dialed = await deps.dial(decision.addresses, opts.port, signal)
+          stillCovered = (patterns) => connectStillAuthorised(patterns, opts.host, dialed.remoteAddress, opts.port)
         }
-        decision = await checkConnect(current.patterns, opts.host, opts.port, deps.resolve)
-        if (!decision.allowed) throw fail('denied', 'the connection was not authorised')
-        // Checked here too, not only after `dial` resolves below: without
-        // this, a grant revoked while resolve was still pending would still
-        // reach `deps.dial`, and correctness would depend entirely on the
-        // INJECTED dial implementation independently honouring an
-        // already-aborted signal rather than on the broker itself.
-        if (signal.aborted) throw fail('revoked', 'the grant authorising this connection was withdrawn')
-        assertSocketRoom(handleTable, key, socketAllowance(key))
-        dialed = await deps.dial(decision.addresses, opts.port, signal)
       } catch (error) {
         throw mapIoError(error, 'net')
       }
@@ -148,11 +174,11 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical, lis
         authorisedBy: { by: 'grant', grantId: current.id },
         destroy,
         socketLimit: socketAllowance(key),
-        stillCovered: (patterns) => connectStillAuthorised(patterns, opts.host, socketFields.remoteAddress, opts.port)
+        stillCovered
       })
 
       return toFailableSocket(key, entry, socketFields)
-    })
+    }, opts.signal)
   }
 
   /** `orivon.net.connectSecure` (ADR-0017) -- ./net-connect-secure.ts, sharing this file's state and `toFailableSocket`. */
@@ -206,6 +232,7 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical, lis
     // there is nothing to resolve (policy/lookup.ts).
     if (answers !== undefined) return answers
     const authorisedHostname = hostname
+    const route = deps.routeFor?.(key)
 
     return await handleTable.run(key, { on: 'grant', grantId }, async (signal) => {
       // Same reasoning as every other method's mid-check guard: without
@@ -213,17 +240,30 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical, lis
       // `run` actually starting `deps.resolveLookup` would still let the
       // real DNS call go ahead for a capability the app no longer holds.
       if (signal.aborted) throw fail('revoked', 'the grant authorising this lookup was withdrawn')
-      // T20 covers resolution too ("Same for DNS resolution",
-      // security-model.md): checked before the real DNS call below, which
-      // no proxy sees.
-      if (await deps.proxyConfigured(proxyProbeUrl(authorisedHostname))) {
-        throw fail('denied', 'a system proxy is configured; net.lookup refuses to bypass it')
-      }
       let resolved: readonly LookupAddress[]
-      try {
-        resolved = await deps.resolveLookup(authorisedHostname)
-      } catch (error) {
-        throw mapIoError(error, 'net')
+      if (route !== undefined) {
+        // The route's own resolver, or nothing: a name is never resolved here
+        // for a routed app, and a route that cannot resolve refuses.
+        if (route.provider.resolve === undefined) throw fail('denied', 'the route cannot resolve names')
+        try {
+          resolved = await route.provider.resolve(authorisedHostname, signal)
+        } catch (error) {
+          throw signal.aborted ? fail('revoked', 'the grant authorising this lookup was withdrawn') : mapRouteError(error)
+        }
+      } else {
+        // T20 covers resolution too ("Same for DNS resolution",
+        // security-model.md): checked before the real DNS call below, which
+        // no proxy sees.
+        const probeUrl = proxyProbeUrl(authorisedHostname)
+        if (probeUrl === null) throw fail('denied', 'the hostname was not authorised by any held network grant')
+        if (await deps.proxyConfigured(probeUrl)) {
+          throw fail('denied', 'a system proxy is configured; net.lookup refuses to bypass it')
+        }
+        try {
+          resolved = await deps.resolveLookup(authorisedHostname)
+        } catch (error) {
+          throw mapIoError(error, 'net')
+        }
       }
 
       // A RESOLVER IS A NETWORK SCANNER IF ITS ANSWERS ARE NOT FILTERED, and

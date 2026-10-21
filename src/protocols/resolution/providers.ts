@@ -32,12 +32,14 @@ export interface GatherRange {
 }
 
 export interface GatheredFile {
-  /** The file actually served, decoded: `/docs/index.html` for a request of `/docs`. */
+  /** The file actually served, decoded: `/docs/index.html` for a request of `/docs`, or `/docs/` when the directory has no index and the body is a listing of its entries. */
   readonly servedPath: string
   /** The whole file's size, whatever range was asked for. */
   readonly size: number
   /** Set when the path carries no extension to derive a type from: the site's root is itself a file. */
   readonly contentType?: string
+  /** The body is a listing the protocol made of a directory's entries, not bytes of a file: served whole, in full or not at all, under a policy that forbids script and loads. With `servedPath` ending in `/`, a request for the form without the slash is only redirected, and `body` may be empty. */
+  readonly listing?: true
   /** Only bytes that were checked against their hash before being yielded. */
   readonly body: AsyncIterable<Uint8Array>
 }
@@ -61,12 +63,20 @@ export interface Refusal {
   readonly resource: string
 }
 
+/** Where a mount's bytes came from, for the surfaces that tell the person: `reason` says why a source other than the one chosen served them (for IPFS: the person's node could not, and they said yes to public gateways for this one load). */
+export interface ServedFrom {
+  readonly kind: 'node' | 'gateways'
+  readonly reason?: string
+}
+
 /** A name's content, with every pointer to its root already followed and checked. */
 export interface MountedSite {
   readonly gatherer: string
+  /** Set by a gatherer that reads from sources the person can choose between. */
+  readonly servedFrom?: ServedFrom
   readonly root: ContentRoot
   readonly pointers: readonly PointerStep[]
-  /** `/` and a directory serve its `index.html`. Throws a ResolutionError; `not-found` for a missing path. */
+  /** `/` and a directory serve its `index.html` (a protocol may list a directory that has none). Throws a ResolutionError; `not-found` for a missing path. */
   open: (path: string, range?: GatherRange, signal?: AbortSignal) => Promise<GatheredFile>
   ddoc: () => DdocReport
 }

@@ -25,9 +25,9 @@ describe('createPressStamps', () => {
   it('drops a stamp older than a click in progress, so a key later is judged by the clock', () => {
     let now = 0
     const stamps = createPressStamps(() => now)
-    stamps.note('permissions')
+    stamps.note('networks')
     now = PRESS_MAX_AGE_MS + 1
-    expect(stamps.take('permissions')).toBeUndefined()
+    expect(stamps.take('networks')).toBeUndefined()
   })
 })
 
@@ -48,7 +48,7 @@ describe('isEchoOfClose', () => {
 
 describe('isPressButton', () => {
   it('accepts the toolbar buttons and the overlays a button toggles, and nothing else', () => {
-    for (const ok of ['menu', 'permissions', 'web3', 'main', 'bookmark-edit', 'bookmark-folder', 'downloads', 'extensions-menu', 'popups-blocked', 'site-prompt', 'tab-search']) expect(isPressButton(ok)).toBe(true)
+    for (const ok of ['menu', 'networks', 'web3', 'main', 'bookmark-edit', 'bookmark-folder', 'downloads', 'extensions-menu', 'popups-blocked', 'site-prompt', 'tab-search']) expect(isPressButton(ok)).toBe(true)
     for (const bad of ['', 'Menu', 'constructor', '__proto__', 'find', 'downloads-peek', 1, null, undefined, {}, ['menu']]) expect(isPressButton(bad)).toBe(false)
   })
 })

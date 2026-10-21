@@ -51,16 +51,18 @@ Orivon itself is not owned by it.
 **Web4**: the era Orivon aims to open, meaning easy interfaces to *use* Web3, as Web2 was easy
 interfaces to *read and write* Web1 (`OrivonBook/Web3 Potential.md`).
 
-**WASM Orivon Execution Layer**: current name for what earlier documents called "Advanced
-WASM" or "programs on-fly". Today this capability is delivered by the broker, not by
-a WASM runtime (`ADR-0002`).
+**Execution layer**: whatever runs an app from a URL. Today that is the broker, the Node shim and
+the WASI host inside Electron. WebAssembly support grows inside it; a switch to a WebAssembly
+runtime is a possible option, not a plan (`ADR-0002`).
 
-**Web3 Accounts**: the no-setup identity system. Silent per-origin app keys, plus
-named identities (e.g. the Nostr identity) that are cross-origin by explicit consent
-(`capability-api.md`). Not a wallet: no funds, no seed phrase shown, no send or receive.
+**Web3 Accounts**: the no-setup identity system. Silent per-origin app keys, plus named
+identities (wallet accounts, the Nostr identity, `orivon.id`) that are cross-origin. They connect
+automatically only on a Web3 Score Level 4 site; elsewhere the person grants them with one click
+or a broker prompt, and a value-bearing action always asks (`capability-api.md`). No wallet is
+built yet; a native wallet is on the way.
 
-**Web3 Green mark**: the site-facing incentive marking to adopt trustless technology; the
-inverse of the yellow "you are in Web2" badge.
+**Web3 Green mark**: another name for the Web3 Score shield. It is not a
+separate feature.
 
 ## Architecture
 
@@ -90,12 +92,6 @@ change alone changes the bundle hash (`ADR-0009`, `architecture/bundle-hash.md`)
 **`orivon-node-shim`**: implements Node's `net`, `dgram` and `fs` over `orivon.*`, so existing
 Electron apps port mechanically. Load-bearing for every Node.js app (`ADR-0005`).
 
-**`orivon-runtime`**: the deferred Wasmtime host. Purpose: containment for untrusted code, and
-mobile portability. Not cancelled (`ADR-0002`).
-
-**`orivon-core`**: in the published docs, the client wrapping `orivon-runtime`. Orivon
-Browser's broker occupies this role; the name is not yet used in this codebase.
-
 **Developer mode**: off by default; loads unpacked, unsigned apps at the user's risk, with a
 reduced capability set.
 
@@ -114,7 +110,7 @@ standard site ("Web2"); Level 2 a site that meets DDOC, which the browser detect
 and above are judged, and only a Web3 Score provider gives them, or, in this build, a
 developer-only override previewing one (`src/main/dev/score-levels.ts`). The address bar's Web3
 Score shield leads with it, coloured red/orange/yellow/green, a mark at the pill's right end
-names it Web2 (Level 1), Web2.5 (Levels 2-3) or Web3 (Level 4), and the Web3 Score page the
+names it Web2 (Level 1), Web2.5 (Levels 2-3) or Web3 (Level 4), or a gray Web? when a Level 2 site has no judged score yet, and the Web3 Score page the
 shield opens leads with it too (`ADR-0006`).
 
 **Web3 Score provider**: an entity issuing judged scores, published at an address the person
@@ -128,7 +124,7 @@ by hash bucket, so a request names a group of sites, never the site
 level on the subject's scale, and for a website its operations and connections. Unsigned in this
 build (*provisional*, `ADR-0054`).
 
-**Observed behaviour**: what the broker actually saw an app do. The basis of this version's
+**Observed behaviour**: what the broker actually saw an app do. The basis of today's
 indicator. Always reported as *observed*, never *guaranteed*.
 
 **TOFU**: trust on first use. The delivery host is trusted once at install; the bundle is then
@@ -156,7 +152,7 @@ unproven hop: ordinary DNS can be forged on the path.
 **Light client**: a client that verifies Ethereum state from block headers and proofs rather than
 trusting an RPC's answer. Here, Helios, started when a `.eth` address is first needed and stopped after ten idle minutes (`ADR-0031`).
 
-**Checkpoint**: the recent finalized beacon block root the light client starts from and trusts.
+**Checkpoint**: the recent finalized beacon block root the light client starts from and trusts. It comes from the release, from the light client's last sync, or, when both are too old, from two beacon servers that agree.
 Shipped with each release, replaced by the newest one verified here, refused past 14 days.
 
 **Verifier host**: the utility process that runs the light client, fetches and hashes IPFS blocks,

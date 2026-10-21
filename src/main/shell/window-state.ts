@@ -12,6 +12,7 @@ import { barItemsOf } from './bookmarks-bar/bar-items.js'
 import type { HtmlFullscreen } from './fullscreen.js'
 import { sendChromeEvent } from './shell-events.js'
 import { readStateParts, watchStateParts } from './shell-state-parts.js'
+import { onNameSchemeChange } from '../verifier/name-scheme-events.js'
 import type { ShellServices } from './shell-services.js'
 import type { TabManager } from './tabs.js'
 import type { TabsSnapshot } from './tab-types.js'
@@ -89,8 +90,8 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
   let lastActiveTabId: string | null = null
   /** Previous push's active tab's own origin -- catches the site-info
    * popup's own extra close condition: the SAME tab navigating to a
-   * DIFFERENT origin (never a reason to close the all-sites popup, which
-   * shows every app, not just the active tab's). `null` for no active tab
+   * DIFFERENT origin (never a reason to close the Available networks popup,
+   * which shows the nodes, not the active tab's site). `null` for no active tab
    * or one with no canonical origin (the dashboard, about:blank). */
   let lastActiveOrigin: string | null = null
   /** Previous push's active tab's URL without its fragment, to tell a navigation from a scroll to an anchor. */
@@ -121,6 +122,8 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
     const state = tabs.getState()
 
     const iconFilled = offerIcons(state.tabs)
+    const inFront = state.tabs.find((tab) => tab.id === state.activeTabId)
+    if (inFront !== undefined) services.yourApps.noteInFront(inFront)
     const switched = state.activeTabId !== lastActiveTabId
     if (switched) {
       lastActiveTabId = state.activeTabId
@@ -128,7 +131,7 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
     }
     // The site-info popup describes ONE origin -- a same-tab navigation
     // to a different one (the active tab id unchanged) leaves it showing
-    // stale data otherwise. The all-sites popup lists every app and is
+    // stale data otherwise. The Available networks popup shows the nodes and is
     // unaffected by this on its own.
     const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId)
     const activeOrigin = activeTab === undefined ? null : originFromUrl(activeTab.url)
@@ -197,11 +200,13 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
     if (key === 'appearance.bookmarksBar') onBookmarksChanged()
   })
   const stopWatchingParts = watchStateParts(context, pushState)
+  // A `.eth` name learned to live on another network is shown under that network's scheme from the next push.
+  const stopListeningToNameSchemes = onNameSchemeChange(pushState)
   // The process loads the store before its first window (index.ts), so this
   // settles at once; it goes through onBookmarksChanged, not pushState, so a
   // window made before the load (a test's) still grows the chrome by a row
   // when the bookmarks land.
-  void bookmarks.load().then(onBookmarksChanged)
+  void bookmarks.load().then(onBookmarksChanged).catch((error: unknown) => { console.error('[shell] loading the bookmarks for a window failed:', error) })
 
   return {
     pushState,
@@ -211,6 +216,7 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
       stopListeningToZoom()
       stopListeningToProfiles()
       stopWatchingParts()
+      stopListeningToNameSchemes()
     }
   }
 }

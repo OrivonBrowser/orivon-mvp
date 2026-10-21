@@ -11,6 +11,7 @@ function setup (): {
   overlays: { tabSwitched: ReturnType<typeof vi.fn>, navigated: ReturnType<typeof vi.fn>, restack: ReturnType<typeof vi.fn>, relayout: ReturnType<typeof vi.fn> }
   changeBookmarks: (height: number) => void
   tabLayout: ReturnType<typeof vi.fn>
+  noteInFront: ReturnType<typeof vi.fn>
   closeSiteInfo: ReturnType<typeof vi.fn>
   fillMissingFavicon: ReturnType<typeof vi.fn>
   barItems: (items: unknown[]) => void
@@ -28,6 +29,7 @@ function setup (): {
   const fillMissingFavicon = vi.fn()
   let bar: unknown[] = []
   const setFavicon = vi.fn()
+  const noteInFront = vi.fn()
   const tabsChanged = vi.fn()
   const tabLayout = vi.fn()
   const tabs = { getState: () => snapshot, onStateChange: (cb: () => void) => { notify = cb }, layout: tabLayout }
@@ -37,6 +39,7 @@ function setup (): {
   const services = {
     bookmarks: { fillMissingFavicon, has: () => false, children: () => bar, onChange: (cb: () => void) => { bookmarksChanged = cb; return unsubscribed }, load: async () => {} },
     history: { setFavicon },
+    yourApps: { noteInFront },
     zoom: { onChange: subscribe, percentFor: () => 100, defaultPercent: () => 100 },
     profiles: { onChange: subscribe, look: () => ({ name: 'p', color: '#000', isPrivate: false, shown: false }) },
     settings: { onChange: subscribe }
@@ -56,7 +59,7 @@ function setup (): {
   return {
     push: (list, active) => { snapshot = { tabs: list as never, activeTabId: active }; notify() },
     changeBookmarks: (height) => { chromeHeight = height; bookmarksChanged() },
-    barItems: (items) => { bar = items }, tabLayout, send, overlays, closeSiteInfo, fillMissingFavicon, setFavicon, tabsChanged, stop: state.stop, unsubscribed
+    barItems: (items) => { bar = items }, tabLayout, noteInFront, send, overlays, closeSiteInfo, fillMissingFavicon, setFavicon, tabsChanged, stop: state.stop, unsubscribed
   }
 }
 
@@ -71,6 +74,18 @@ describe('createWindowState', () => {
     expect(send).toHaveBeenCalledWith(STATE_CHANNEL, expect.objectContaining({
       activeTabId: 'a', bookmarked: false, bookmarksBar: false, zoomPercent: null, profile: expect.objectContaining({ name: 'p' })
     }))
+  })
+
+  it('tells the Your apps row which page is in front, and nothing about the tabs behind it', () => {
+    const { push, noteInFront } = setup()
+
+    push([tab('a', 'https://a.example/', 'data:image/png;base64,AAAA'), tab('b', 'https://b.example/')], 'a')
+
+    expect(noteInFront).toHaveBeenCalledTimes(1)
+    expect(noteInFront).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://a.example/', favicon: 'data:image/png;base64,AAAA' }))
+    noteInFront.mockClear()
+    push([], null)
+    expect(noteInFront).not.toHaveBeenCalled()
   })
 
   it('tells the overlays when the active tab changes, and only then', () => {

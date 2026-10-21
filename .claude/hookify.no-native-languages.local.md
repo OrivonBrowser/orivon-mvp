@@ -12,6 +12,6 @@ conditions:
 **Non-TypeScript source file — blocked (ADR-0002).**
 
 This repository's code is TypeScript only. No Rust, no C++, no native addons. Apps Orivon runs
-are not bound by this: WebAssembly built from any language qualifies (ADR-0036). `orivon-runtime`
-(Wasmtime) is deferred, not cancelled, and not built yet. If this is really needed, it is an ADR,
+are not bound by this: WebAssembly built from any language qualifies (ADR-0036). A WASM runtime
+is a possible option, not a plan. If this is really needed, it is an ADR,
 not a file.

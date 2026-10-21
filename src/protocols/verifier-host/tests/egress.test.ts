@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { EgressRefused, allowlisted, guardedCcipRequest } from '../egress.js'
+import { RedirectRefused } from '../../gateways/gateways.js'
 import type { CcipDeps, WebFetch } from '../egress.js'
 import type { DirectFetch } from '../direct-fetch.js'
 
@@ -43,10 +44,25 @@ function proxiedDeps (fetch: WebFetch, dns: Record<string, string[]> = { 'gatewa
 const json = (body: unknown): Response => new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } })
 
 describe('allowlisted', () => {
-  it('reaches a listed origin, refusing redirects', async () => {
+  it('reaches a listed origin, asking for a redirect as a response and never following it', async () => {
     const inner = recording(() => new Response('ok'))
     await allowlisted(['https://rpc.example/'], inner, 'the light client')('https://rpc.example/v1', { method: 'POST' })
-    expect(inner.calls[0]?.init).toMatchObject({ method: 'POST', redirect: 'error' })
+    expect(inner.calls[0]?.init).toMatchObject({ method: 'POST', redirect: 'manual' })
+  })
+
+  it('throws RedirectRefused for an answer that is a redirect', async () => {
+    const inner = recording(() => new Response(null, { status: 302, headers: { location: 'https://elsewhere.example/forbidden' } }))
+    const fetch = allowlisted(['https://rpc.example'], inner, 'the light client')
+    await expect(fetch('https://rpc.example/chunks/aa')).rejects.toBeInstanceOf(RedirectRefused)
+    expect(inner.calls).toHaveLength(1)
+  })
+
+  it('maps the error Electron raises for a refused redirect to RedirectRefused, and nothing else', async () => {
+    const refuses = allowlisted(['https://rpc.example'], async () => { throw new Error('Redirect was cancelled') }, 'the light client')
+    await expect(refuses('https://rpc.example/chunks/aa')).rejects.toBeInstanceOf(RedirectRefused)
+    const other = allowlisted(['https://rpc.example'], async () => { throw new Error('net::ERR_CONNECTION_REFUSED') }, 'the light client')
+    await expect(other('https://rpc.example/chunks/aa')).rejects.not.toBeInstanceOf(RedirectRefused)
+    await expect(other('https://rpc.example/chunks/aa')).rejects.toThrow('ERR_CONNECTION_REFUSED')
   })
 
   it('throws for any other origin, before any request', async () => {
@@ -154,5 +170,31 @@ describe('guardedCcipRequest, with a proxy configured (direct: false)', () => {
     expect(await guardedCcipRequest({ data: DATA, sender: SENDER, urls: ['https://gateway.example/a'] }, proxiedDeps(same))).toBe('0xbeef')
     const away = recording(() => new Response(null, { status: 302, headers: { location: 'https://127.0.0.1/x' } }))
     await expect(guardedCcipRequest({ data: DATA, sender: SENDER, urls: ['https://gateway.example/a'] }, proxiedDeps(away))).rejects.toThrow(/another origin/)
+  })
+})
+
+describe('guardedCcipRequest, through the tunnel (farEnd)', () => {
+  const tunnelled = (fetch: WebFetch): CcipDeps => ({ directFetch: NO_DIRECT_FETCH, fetch, resolveHost: async () => { throw new Error('a name must not be resolved on this computer') }, direct: false, farEnd: true })
+
+  it('fetches by hostname and resolves nothing here: the far end resolves the name', async () => {
+    const fetch = recording(() => json({ data: '0xfeed' }))
+    expect(await guardedCcipRequest({ data: DATA, sender: SENDER, urls: ['https://gateway.example/{sender}/{data}.json'] }, tunnelled(fetch))).toBe('0xfeed')
+    expect(fetch.calls[0]?.url).toBe(`https://gateway.example/${SENDER.toLowerCase()}/${DATA}.json`)
+  })
+
+  it('still refuses http, a non-443 port, an address that is not public and a name of this computer, without fetching', async () => {
+    const fetch = recording(() => json({ data: '0xfeed' }))
+    for (const url of ['http://gateway.example/{data}', 'https://93.184.216.34:6379/{data}', 'https://127.0.0.1/{data}', 'https://localhost/{data}', 'https://x.localhost/{data}']) {
+      await expect(guardedCcipRequest({ data: DATA, sender: SENDER, urls: [url] }, tunnelled(fetch)), url).rejects.toThrow(/no offchain gateway answered/)
+    }
+    expect(fetch.calls).toEqual([])
+  })
+
+  it('refuses a name that only means something on a local network, which the far end would resolve on its own side', async () => {
+    const fetch = recording(() => json({ data: '0xfeed' }))
+    for (const url of ['https://router/{data}', 'https://nas.local/{data}', 'https://wiki.corp/{data}', 'https://printer.home.arpa/{data}', 'https://a.b.lan/{data}']) {
+      await expect(guardedCcipRequest({ data: DATA, sender: SENDER, urls: [url] }, tunnelled(fetch)), url).rejects.toThrow(/no offchain gateway answered/)
+    }
+    expect(fetch.calls).toEqual([])
   })
 })

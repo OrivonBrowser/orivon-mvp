@@ -46,7 +46,8 @@ export type ProviderVerdict =
   /** A provider is set, but this page's files were not checked (DDOC), so there is nothing to ask about. */
   | { readonly status: 'not-assessable', readonly address: string }
   | { readonly status: 'pending', readonly address: string }
-  | { readonly status: 'unreachable', readonly address: string, readonly reason: string }
+  /** `retryMs`: how soon asking again is worth it, longer on a slow route; absent when asking again would not help. */
+  | { readonly status: 'unreachable', readonly address: string, readonly reason: string, readonly retryMs?: number }
   | { readonly status: 'no-score', readonly provider: ProviderName }
   | { readonly status: 'judged', readonly provider: ProviderName, readonly evaluation: Evaluation }
 
@@ -156,4 +157,17 @@ export function findEvaluation (file: unknown, subject: ScoreSubject, bucket: st
   if (!isFields(entry)) return { kind: 'none' }
   const evaluation = parseEvaluation(entry, subject, id)
   return evaluation === undefined ? { kind: 'none' } : { kind: 'found', evaluation }
+}
+
+/** A verdict that answers the question: the provider gave a score, or said it has none. */
+export function isSettled (verdict: ProviderVerdict): verdict is Extract<ProviderVerdict, { status: 'judged' | 'no-score' }> {
+  return verdict.status === 'judged' || verdict.status === 'no-score'
+}
+
+/**
+ * What to show for a lookup: a provider that could not be asked (still under way, or unreachable) does not
+ * withdraw what it last settled for the same page; an answer it gives now, higher or lower, replaces it.
+ */
+export function verdictToShow (fresh: ProviderVerdict, lastSettled: ProviderVerdict | undefined): ProviderVerdict {
+  return (fresh.status === 'pending' || fresh.status === 'unreachable') && lastSettled !== undefined ? lastSettled : fresh
 }

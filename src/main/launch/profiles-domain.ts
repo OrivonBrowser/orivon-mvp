@@ -21,7 +21,7 @@ export function profilesDomain (profiles: ProfilesService): InternalDomain {
       const refusedInPrivate = { ok: false, reason: 'private' }
       switch (request.type) {
         case 'list':
-          return { profiles: profiles.list(), colors: PROFILE_COLORS, isPrivate: profiles.isPrivate }
+          return { profiles: profiles.list(), colors: PROFILE_COLORS, isPrivate: profiles.isPrivate, ...(profiles.tunnel === 'nym' ? { tunnel: 'nym' } : {}) }
         case 'create':
           return profiles.isPrivate ? refusedInPrivate : profiles.create(request.name, request.color)
         case 'rename':

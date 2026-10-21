@@ -8,7 +8,11 @@ import { pointerChainVerdict } from '../../protocols/resolution/pointer-chain.js
 import type { ContentPointer, PointerStep, Provenance } from '../../protocols/resolution/records.js'
 import type { ContentEvidence } from '../../trust/website-level.js'
 import type { SiteProvenance } from '../../protocols/verifier-host/protocol.js'
+import type { ServedFrom } from '../../protocols/resolution/providers.js'
 import { ago } from './status-view.js'
+
+/** Source addresses that have a name of their own, by address: the nodes Orivon runs, whose endpoints are known to main alone. */
+export type EndpointNames = Readonly<Record<string, string>>
 
 export interface EvidenceRow {
   readonly term: string
@@ -42,22 +46,36 @@ function provenLine (provenance: Provenance): string {
   }
 }
 
-/** What an `ipfs://` or `ipns://` address itself establishes: only a CID names the content outright. */
-function addressLine (pointer: ContentPointer): string {
+/** What an `ipfs://`, `ipns://` or `bzz://` address itself establishes: only a CID names the content outright. */
+function addressLine (pointer: ContentPointer, viaFeed: boolean): string {
   switch (pointer.kind) {
     case 'ipfs': return "The address is the content's own hash"
     case 'ipns-key': return 'The address is a key; the content is whatever its signed record names'
     case 'dnslink': return 'The address is a DNS name, followed through DNSLink'
+    case 'swarm': return viaFeed ? 'The address names a Swarm feed; the content is whatever its newest signed update names' : "The address is the content's own hash"
     case 'unsupported': return `The address names ${pointer.protocol} content, which this build cannot load`
   }
 }
 
-function stepRow (step: PointerStep): EvidenceRow {
+function stepRow (step: PointerStep, viaFeed: boolean): EvidenceRow {
   switch (step.step) {
-    case 'contenthash': return step.provenance.via === 'address' ? { term: 'Address', value: addressLine(step.pointer) } : { term: 'Name', value: provenLine(step.provenance) }
+    case 'contenthash': return step.provenance.via === 'address' ? { term: 'Address', value: addressLine(step.pointer, viaFeed) } : { term: 'Name', value: provenLine(step.provenance) }
     case 'ipns-record': return { term: 'IPNS record', value: `Signed by its key ${shortId(step.key)}, sequence ${step.sequence.toString()}` }
     case 'dnslink': return { term: 'DNSLink', value: `Via DNS: ${step.domain}, which anyone on the network path could forge` }
+    case 'swarm-feed': return { term: 'Swarm feed', value: `Update ${step.index.toString()}, signed by its owner ${shortId(step.owner)}` }
   }
+}
+
+/** Where the bytes came from, in words; undefined for a protocol that reads from one kind of source only. */
+export function servedFromLine (served: ServedFrom | undefined): string | undefined {
+  if (served === undefined) return undefined
+  if (served.kind === 'node') return "Orivon's IPFS node, on this computer"
+  return served.reason === undefined ? 'Public IPFS gateways' : `Public IPFS gateways, because ${served.reason}`
+}
+
+/** The name a source goes by in the popover: an address a person would not recognise (a node's own, on loopback) is named by what it is, and any other source by itself. */
+function sourceName (source: string, endpointNames: EndpointNames): string {
+  return endpointNames[source] ?? source
 }
 
 function contentOf (provenance: SiteProvenance, pointersVerified: boolean): ContentEvidence {
@@ -71,22 +89,27 @@ function liveLine (provenance: SiteProvenance, now: number): string {
   const term = named?.step === 'contenthash' && named.provenance.via === 'address' ? 'Address' : 'Name'
   if (viaDns !== undefined) return `${term} not verified: it points through DNS (${viaDns.domain})`
   if (named?.step === 'contenthash' && named.provenance.via === 'address') {
-    const how = named.pointer.kind === 'ipns-key' ? 'names a key whose signed record was checked' : "is the content's own hash"
+    const viaFeed = provenance.pointers.some((step) => step.step === 'swarm-feed')
+    const how = named.pointer.kind === 'ipns-key' ? 'names a key whose signed record was checked' : viaFeed ? 'names a feed whose signed update was checked' : "is the content's own hash"
     return `Address verified: it ${how}, ${ago(now - provenance.mountedAt)}`
   }
   if (named?.step !== 'contenthash' || named.provenance.via !== 'chain') return 'Name from a test fixture, not verified'
   return `Name verified by the light client at block ${blockNumber(named.provenance.block)}, ${ago(now - provenance.mountedAt)}`
 }
 
-export function liveNameEvidence (provenance: SiteProvenance, now: number): NameEvidence {
+/** `kept`: the verifier could not be asked now, so `provenance` is the last time it was. */
+export function liveNameEvidence (provenance: SiteProvenance, now: number, endpointNames: EndpointNames = {}, kept = false): NameEvidence {
+  const loadedFrom = servedFromLine(provenance.servedFrom)
   const rows = [
-    ...provenance.pointers.map(stepRow),
+    ...provenance.pointers.map((step) => stepRow(step, provenance.pointers.some((p) => p.step === 'swarm-feed'))),
     { term: 'Content', value: shortId(provenance.root.cid) },
-    { term: 'Checked', value: ago(now - provenance.mountedAt) }
+    ...(loadedFrom === undefined ? [] : [{ term: 'Loaded from', value: loadedFrom }]),
+    { term: 'Checked', value: ago(now - provenance.mountedAt) },
+    ...(kept ? [{ term: 'Now', value: 'It could not be checked again just now, so this is the last check.' }] : [])
   ]
   const refused = provenance.ddoc.refusals
   if (refused.length > 0) {
-    const sources = [...new Set(refused.map((r) => r.source))].join(', ')
+    const sources = [...new Set(refused.map((r) => sourceName(r.source, endpointNames)))].join(', ')
     rows.push({ term: 'Refused', value: `${String(refused.length)} response(s) from ${sources} failed their check and were not used` })
   }
   const nameProven = pointerChainVerdict(provenance.pointers).verified
@@ -125,10 +148,12 @@ export function chooseNameEvidence (
   live: SiteProvenance | null,
   unanswered: string,
   now: number,
-  address: boolean
+  address: boolean,
+  endpointNames: EndpointNames = {},
+  keptLive = false
 ): NameEvidence {
   if (pinned !== undefined && (servedFromCache || live === null)) return pinnedNameEvidence(pinned, address)
-  if (live !== null) return liveNameEvidence(live, now)
+  if (live !== null) return liveNameEvidence(live, now, endpointNames, keptLive)
   const term = address ? 'Address' : 'Name'
   return { content: undefined, nameProven: false, line: `${term} not verified. ${unanswered}`, rows: [{ term, value: `Not verified. ${unanswered}` }] }
 }

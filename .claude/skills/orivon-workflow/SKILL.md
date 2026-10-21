@@ -36,6 +36,10 @@ Two practices with no tool behind them:
 - **`adversarial-reviewer` at the end of a build step only**, on the broker and the loader at
   minimum.
 - **No multi-lane review of a commit range** unless the owner asks for one.
+- **In a worktree, `/security-review` sees the primary checkout's diff, never the worktree's**, so run by a subagent it has
+  reviewed an empty diff without saying so. Review the branch instead: a read-only reviewer agent given
+  `git -C <worktree> diff origin/main...` to read, or the `adversarial-reviewer` skill pointed at that diff. Name the diff
+  in the prompt and check the report quotes a line from it.
 - Each run is one row in `docs/development/review-coverage.md`.
 
 ## At the end of a build step
@@ -45,8 +49,8 @@ Two practices with no tool behind them:
 3. **The readability check.** Give the owner the one document a newcomer would hit at that
    point and ask only: *"Read this cold. Where is the first place you got lost, or had to
    guess?"* Record the answer in `docs/development/readability-log.md` (method in its
-   §The protocol). "Nothing confused me" is a result, and it is logged.
-4. `scope.md` records what landed.
+   section The protocol). "Nothing confused me" is a result, and it is logged.
+4. `docs/features.md` records what landed, and `docs/roadmap.md` moves the item out of Expected next.
 
 ## At the end of a notable session
 
@@ -69,12 +73,27 @@ Skip routine sessions.
   An empty `statusCheckRollup` is no run yet, never "all passed": checks appear some seconds after a
   push, and a `DIRTY` PR (a conflict with `main`) starts none until `main` is merged in. A wait loop
   ends only when the list is non-empty and nothing in it is pending.
+- Wait and merge: `node scripts/ai/pr-watch.mjs <n> --update <worktree> --stop '<your area's spec path>'`, in the
+  background with a two-hour limit (`timeout: 7200000`: the default 30 minutes ends it while `main` keeps moving), never
+  behind a shell `&`; never hand-write the loop. A check that a later run of itself cancelled is not a failure. It reruns failed e2e shards and unacquired runners at most twice, except a
+  spec matching `--stop`, and prints the failed specs, which the PR then names as flakes (Rule 12). Green but
+  BEHIND, it merges `main` into the worktree's branch and pushes (six rounds at most); it merges when every check
+  passed and the branch is CLEAN, and stops on any other failure, on a conflict and on a moved head. It merges with a
+  merge commit, so every commit of the branch lands on `main`: when one must not (it carried something later removed),
+  pass `--squash`. A subagent always gets `--no-merge`, so that the session that briefed it merges. Read its exit
+  from the PR's state, never from a pipe's: `cmd | tail` exits 0 whatever `cmd` did.
+- A conflict in `docs/decisions/decision-log.md` after merging `main` in (two branches took the same d-number):
+  `node scripts/ai/renumber-decisions.mjs` keeps main's rows, renumbers the branch's after them, rewrites the
+  branch's own references to those ids, and prints the mapping. Then commit the merge. pr-watch's `--update`
+  does this by itself when the log is the only conflict.
+- `npm run test:changed` follows imports. A test that bundles a source tree from disk and compares it with a
+  committed artifact is listed in `BUNDLED_FROM` (`scripts/test-changed.mjs`), or nothing local selects it.
 
 ## Context that rarely changes what you do
 
 - `docs/inventory.md` indexes all prior material; do not re-crawl the filesystem for it.
-- `<prior-mvp>` is a failed prior MVP: a visual reference for its GUI, never a baseline.
-- The vision corpus at `<vision-corpus>` is canonical and public as orivon-docs. Summarise and
-  link; never copy it here.
+- `<prior-mvp>` is an earlier prototype that failed: a visual reference for its GUI, never a baseline.
+- The vision corpus at `<vision-corpus>` (the earlier vision docs, not public) is outdated. Verify anything derived from
+  it with the owner before treating it as true, and never copy it here.
 - ADRs are numbered in sequence and never renumbered once on `main`. Two branches can take the
   same number without a git conflict; the one that merges later renumbers its own.

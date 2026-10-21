@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { CID } from 'multiformats/cid'
 import type { Refusal } from '../../resolution/providers.js'
 import { BlockSource } from '../blockstore.js'
-import { GatewayPool } from '../gateways.js'
+import { GatewayPool } from '../../gateways/gateways.js'
 import { DEFAULT_LIMITS } from '../limits.js'
 import type { IpfsLimits } from '../limits.js'
-import { openPath, pathSegments } from '../unixfs.js'
+import { openPath } from '../unixfs.js'
 import { buildDag, fakeGateways } from './dag.test-helpers.js'
 import { fixedSize } from 'ipfs-unixfs-importer/chunker'
 import { balanced } from 'ipfs-unixfs-importer/layout'
@@ -75,12 +75,9 @@ describe('openPath', () => {
     expect(same(await bytes(source().s, '/big.bin', range), BIG.slice(range.start, range.end + 1))).toBe(true)
   })
 
-  it('is not found for a missing path, and for a directory without index.html', async () => {
+  it('is not found for a missing path', async () => {
     await expect(openPath(source().s, dag.root, '/missing.js', undefined, signal, () => {})).rejects.toMatchObject({ failure: 'not-found' })
-    const bare = await buildDag({ 'sub/file.txt': 'x' })
-    const gw = fakeGateways(bare.blocks)
-    const s = new BlockSource(gw.fetch, new GatewayPool(['https://a.gateway'], 4), DEFAULT_LIMITS)
-    await expect(openPath(s, bare.root, '/sub/', undefined, signal, () => {})).rejects.toMatchObject({ failure: 'not-found' })
+    await expect(openPath(source().s, dag.root, '/docs/missing/', undefined, signal, () => {})).rejects.toMatchObject({ failure: 'not-found' })
   })
 
   it('fails a file whose block was tampered on every gateway, and serves none of that block', async () => {
@@ -213,19 +210,5 @@ describe('a root that is itself a file', async () => {
     const home = await openPath(s, tree.root, '/', undefined, signal, () => {})
     expect(home.servedPath).toBe('/index.html')
     expect(home.contentType).toBeUndefined()
-  })
-})
-
-describe('pathSegments', () => {
-  it('splits and decodes', () => {
-    expect(pathSegments('/')).toEqual([])
-    expect(pathSegments('/a/b%2Ec')).toEqual(['a', 'b.c'])
-    expect(pathSegments('/a/')).toEqual(['a'])
-  })
-
-  it('refuses anything that could leave the root or name nothing', () => {
-    for (const p of ['a', '/../x', '/a/../b', '/./a', '/a//b', '/a%2Fb', '/a%00', '/%E0%A4%A']) {
-      expect(pathSegments(p)).toBeUndefined()
-    }
   })
 })

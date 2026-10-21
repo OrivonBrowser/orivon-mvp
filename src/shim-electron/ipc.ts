@@ -13,30 +13,37 @@ export type IpcHandler = (event: IpcEvent, ...args: readonly unknown[]) => unkno
 /**
  * Real Electron's event carries the sender's process/frame identity, because
  * main and renderer are different processes there. There is exactly one
- * realm here, so this is a stub with no real fields to report -- present so
- * a handler's `(event, ...args)` shape still matches real Electron's.
+ * realm here, so `senderId` is a stub with no real value to report -- present
+ * so a handler's `(event, ...args)` shape still matches real Electron's.
+ * `returnValue` is what a listener sets to answer `ipcRenderer.sendSync`.
  */
-export interface IpcEvent { readonly senderId: null }
+export interface IpcEvent { readonly senderId: null, returnValue: unknown }
 
-const EVENT: IpcEvent = { senderId: null }
+/** A fresh event per dispatch: a `returnValue` one call set must never answer the next. */
+const newEvent = (): IpcEvent => ({ senderId: null, returnValue: undefined })
 
 export interface ElectronIpcRenderer {
   invoke(channel: string, ...args: readonly unknown[]): Promise<unknown>
   send(channel: string, ...args: readonly unknown[]): void
-  on(channel: string, listener: IpcListener): void
-  once(channel: string, listener: IpcListener): void
-  removeListener(channel: string, listener: IpcListener): void
-  removeAllListeners(channel: string): void
+  sendSync(channel: string, ...args: readonly unknown[]): unknown
+  on(channel: string, listener: IpcListener): this
+  once(channel: string, listener: IpcListener): this
+  addListener(channel: string, listener: IpcListener): this
+  off(channel: string, listener: IpcListener): this
+  removeListener(channel: string, listener: IpcListener): this
+  removeAllListeners(channel?: string): this
 }
 
 export interface ElectronIpcMain {
   handle(channel: string, handler: IpcHandler): void
   handleOnce(channel: string, handler: IpcHandler): void
   removeHandler(channel: string): void
-  on(channel: string, listener: IpcListener): void
-  once(channel: string, listener: IpcListener): void
-  removeListener(channel: string, listener: IpcListener): void
-  removeAllListeners(channel: string): void
+  on(channel: string, listener: IpcListener): this
+  once(channel: string, listener: IpcListener): this
+  addListener(channel: string, listener: IpcListener): this
+  off(channel: string, listener: IpcListener): this
+  removeListener(channel: string, listener: IpcListener): this
+  removeAllListeners(channel?: string): this
 }
 
 export function createIpc (): { ipcRenderer: ElectronIpcRenderer, ipcMain: ElectronIpcMain } {
@@ -56,20 +63,53 @@ export function createIpc (): { ipcRenderer: ElectronIpcRenderer, ipcMain: Elect
     listeners.get(channel)?.delete(listener)
   }
 
-  function removeAllListeners (channel: string): void {
-    listeners.delete(channel)
+  function removeAllListeners (channel?: string): void {
+    if (channel === undefined) listeners.clear()
+    else listeners.delete(channel)
   }
 
   function once (channel: string, listener: IpcListener): void {
     const wrapped: IpcListener = (event, ...args) => {
       removeListener(channel, wrapped)
-      listener(event, ...args)
+      return listener(event, ...args)
     }
     on(channel, wrapped)
   }
 
   function send (channel: string, ...args: readonly unknown[]): void {
-    for (const listener of listeners.get(channel) ?? []) listener(EVENT, ...args)
+    for (const listener of [...listeners.get(channel) ?? []]) listener(newEvent(), ...args)
+  }
+
+  /**
+   * Runs the channel's listeners to completion and answers with the `returnValue` one of them set. Whether one set it
+   * is read off an accessor, because `undefined` is a legitimate answer. See README.md's Design notes for the refusals.
+   */
+  function sendSync (channel: string, ...args: readonly unknown[]): unknown {
+    const api = `ipcRenderer.sendSync('${channel}')`
+    const registered = [...listeners.get(channel) ?? []]
+    if (registered.length === 0) {
+      throw refuse(api, 'invalid-usage',
+        `no ipcMain.on('${channel}', ...) listener is registered. Register one before calling sendSync; it answers by setting event.returnValue.`)
+    }
+    let answered = false
+    let answer: unknown
+    let promised = false
+    const event: IpcEvent = {
+      senderId: null,
+      get returnValue () { return answer },
+      set returnValue (value: unknown) { answered = true; answer = value }
+    }
+    for (const listener of registered) {
+      const returned: unknown = listener(event, ...args)
+      if (typeof (returned as { then?: unknown } | null)?.then === 'function') promised = true
+    }
+    if (!answered) {
+      throw refuse(api, 'invalid-usage', promised
+        ? `the listener on '${channel}' is async and returned before setting event.returnValue; sendSync is answered ` +
+          'synchronously, so set event.returnValue before the first await, or call ipcRenderer.invoke instead.'
+        : `no listener on '${channel}' set event.returnValue. Set it (to undefined, for an empty answer) before the listener returns.`)
+    }
+    return answer
   }
 
   /** Same restriction as real Electron: one handler per channel, replaced only via removeHandler first. */
@@ -99,11 +139,30 @@ export function createIpc (): { ipcRenderer: ElectronIpcRenderer, ipcMain: Elect
       throw refuse(`ipcRenderer.invoke('${channel}')`, 'invalid-usage',
         `no ipcMain.handle('${channel}', ...) is registered. Register a handler before invoking it.`)
     }
-    return await handler(EVENT, ...args)
+    return await handler(newEvent(), ...args)
   }
 
-  return {
-    ipcRenderer: { invoke, send, on, once, removeListener, removeAllListeners },
-    ipcMain: { handle, handleOnce, removeHandler, on, once, removeListener, removeAllListeners }
+  const ipcRenderer: ElectronIpcRenderer = {
+    invoke,
+    send,
+    sendSync,
+    on: (channel, listener) => { on(channel, listener); return ipcRenderer },
+    once: (channel, listener) => { once(channel, listener); return ipcRenderer },
+    addListener: (channel, listener) => { on(channel, listener); return ipcRenderer },
+    off: (channel, listener) => { removeListener(channel, listener); return ipcRenderer },
+    removeListener: (channel, listener) => { removeListener(channel, listener); return ipcRenderer },
+    removeAllListeners: (channel) => { removeAllListeners(channel); return ipcRenderer }
   }
+  const ipcMain: ElectronIpcMain = {
+    handle,
+    handleOnce,
+    removeHandler,
+    on: (channel, listener) => { on(channel, listener); return ipcMain },
+    once: (channel, listener) => { once(channel, listener); return ipcMain },
+    addListener: (channel, listener) => { on(channel, listener); return ipcMain },
+    off: (channel, listener) => { removeListener(channel, listener); return ipcMain },
+    removeListener: (channel, listener) => { removeListener(channel, listener); return ipcMain },
+    removeAllListeners: (channel) => { removeAllListeners(channel); return ipcMain }
+  }
+  return { ipcRenderer, ipcMain }
 }

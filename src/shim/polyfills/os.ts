@@ -1,4 +1,5 @@
-// `os` module target (module-map.ts): os-browserify's answers, with homedir()
+// `os` module target (module-map.ts): os-browserify's answers, with platform(),
+// type() and arch() agreeing with `process` (node-identity.ts), homedir()
 // and tmpdir() moved to the virtual root every other Node-shaped path agrees
 // on (virtual-root.ts), and cpus() sized from the browser's own core count
 // rather than os-browserify's empty array, since `os.cpus().length` is how
@@ -6,19 +7,20 @@
 
 import browserOs from 'os-browserify/browser.js'
 import { nodeModule } from './module-proxy.js'
+import { NODE_IDENTITY } from '../node-identity.js'
 import { VIRTUAL_ROOT, VIRTUAL_TMPDIR } from '../virtual-root.js'
 
 export const EOL = browserOs.EOL
-export const arch = browserOs.arch
+export function arch (): 'x64' { return NODE_IDENTITY.arch }
 export const endianness = browserOs.endianness
 export const freemem = browserOs.freemem
 export const hostname = browserOs.hostname
 export const loadavg = browserOs.loadavg
 export const networkInterfaces = browserOs.networkInterfaces
-export const platform = browserOs.platform
+export function platform (): 'linux' { return NODE_IDENTITY.platform }
 export const release = browserOs.release
 export const totalmem = browserOs.totalmem
-export const type = browserOs.type
+export function type (): 'Linux' { return NODE_IDENTITY.osType }
 export const uptime = browserOs.uptime
 
 export function homedir (): string { return VIRTUAL_ROOT }

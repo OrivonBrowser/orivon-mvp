@@ -50,6 +50,10 @@ one Node version), which `http2-wrapper` and `undici` destructure as they evalua
 function refuses as *not-built*, since `orivon.net` carries no HTTP/2 session, and a client
 falls back to HTTP/1.1 on the error.
 
+**`constants` is data from real Node** ([`constants.generated.json`](constants.generated.json), a snapshot of one
+Node version, Linux's numbering like `node-errors.ts`): the deprecated flat merge of `os`, `fs` and `crypto`
+constants. `graceful-fs` and `random-access-file` read their open flags from it as they evaluate.
+
 **`async_hooks` cannot follow an `await`.** A page has no per-continuation context, so
 [`async-hooks.ts`](async-hooks.ts) keeps one table of current stores. `AsyncLocalStorage#run`
 sets its store for the synchronous run of the callback, and `AsyncResource` captures the table

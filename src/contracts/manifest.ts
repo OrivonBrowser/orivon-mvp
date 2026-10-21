@@ -14,6 +14,8 @@
 // hint in HTML already delivered -- the only trigger; there is no separate
 // user action (capability-api.md's 2026-09-03 correction).
 
+import type { DevicesCapability } from './devices.js'
+
 /** Opaque identifier for one persisted grant. See ./capability-api.js. */
 export type GrantId = string
 
@@ -28,23 +30,26 @@ export type GrantId = string
 export type Pattern = string
 
 /**
- * How much control a person gets over which of this app's declared
- * capabilities they actually grant. See `Manifest.consentGranularity`, which
- * is where the default-when-absent and the reason the app (not Orivon)
- * chooses are argued.
+ * Whether this app's code copes with holding only part of the capabilities it
+ * declares. The person chooses either way: the install question has one switch
+ * per capability for every app. See `Manifest.consentGranularity`, which is
+ * where the default-when-absent and the reason the app (not Orivon) declares it
+ * are argued.
  */
 export type ConsentGranularity =
   /**
-   * The whole declared capability set is one decision: accept everything,
-   * or run nothing. There is no moment where the app holds part of what it
-   * declared -- every grant it ever receives is all of it or none of it.
+   * The app asked for its capabilities together, and its code may break
+   * without one of them. The install question and the key popup warn that
+   * turning one off may break it, and a person can still keep a subset, so
+   * the app can run holding part of what it declared. It finds out what it
+   * holds from `orivon.app.grants()`.
    */
   | 'all-or-nothing'
   /**
-   * Each declared capability is its own decision. A person can grant the
-   * app's network access and refuse its filesystem access in the same
-   * sitting. The app finds out what it actually got from
-   * `orivon.app.grants()`, which may report less than its manifest declared.
+   * Each declared capability is its own decision, and the app handles a
+   * refused one: no warning shows when a switch is off. The app finds out
+   * what it actually got from `orivon.app.grants()`, which may report less
+   * than its manifest declared.
    */
   | 'per-capability'
 
@@ -87,37 +92,29 @@ export interface Manifest {
   readonly assets?: readonly string[]
   readonly capabilities: Capabilities
   /**
-   * Which consent style this app can survive -- see `ConsentGranularity`
-   * for what each value means for the person granting it. **The app
-   * declares this, not Orivon**, because only the app's own author knows
-   * which their code can survive: code ported from Node or Electron was
+   * Whether this app's code copes with a refused capability -- see
+   * `ConsentGranularity`. **The app declares this, not Orivon**, because
+   * only the app's own author knows: code ported from Node or Electron was
    * never written to handle a capability being refused, so a person
-   * refusing just one of several requested capabilities is not a smaller
-   * version of that app working, it is an unhandled crash wearing a
-   * different shape. An app written for Orivon from the start can check
-   * `orivon.app.grants()` on purpose and degrade a missing capability
-   * gracefully, so its author is free to offer a person real per-item
-   * choice instead.
+   * refusing one of several requested capabilities may get an unhandled
+   * crash rather than a smaller version of the app. An app written for
+   * Orivon from the start can check `orivon.app.grants()` on purpose and
+   * degrade a missing capability gracefully.
    *
-   * OMITTED MEANS `'all-or-nothing'`. Every manifest written before this
-   * field existed was written with no knowledge that a partial grant could
-   * ever happen -- which describes a ported app exactly -- so the safe
-   * reading of silence is the one that can never hand an unprepared app a
-   * state it has no code path for. This costs the generous case (a person
-   * who wants the app but not its filesystem access still has only the
-   * choice to decline the whole thing) to avoid the unsafe one (an app
-   * mid-crash on a refusal its own code has no way to interpret). A person
-   * who wants finer control over an app that has not opted in still has
-   * the settings-list revoke path (`docs/open-questions.md` A101) once the
-   * app is running -- narrower than a row in the install prompt, but not
-   * nothing.
-   * ONE FLAG FOR THE WHOLE MANIFEST, not one per capability. The choice
-   * this expresses is about whether the app's OWN CODE can cope with an
-   * incomplete grant at all, which is a property of the app as a whole --
-   * a ported app has no code path for a missing filesystem grant any more
-   * than for a missing network one, so a finer split would ask an author
-   * to answer a question their code does not actually distinguish.
-   * (`docs/open-questions.md` A138.)
+   * The person decides in every case. The install question offers one
+   * switch per capability for every app, and the key popup and Settings
+   * turn each one on or off later. This field decides only whether Orivon
+   * warns, while a switch is off, that the app may break (ADR-0085).
+   *
+   * OMITTED MEANS `'all-or-nothing'`. A manifest that does not say makes no
+   * promise to cope with a partial grant, which describes a ported app
+   * exactly, so silence keeps the warning.
+   *
+   * ONE FLAG FOR THE WHOLE MANIFEST, not one per capability: whether the
+   * app's own code copes with an incomplete grant is a property of the app
+   * as a whole -- a ported app has no code path for a missing filesystem
+   * grant any more than for a missing network one, so a finer split would
+   * ask an author to answer a question their code does not distinguish.
    */
   readonly consentGranularity?: ConsentGranularity
   /**
@@ -137,6 +134,8 @@ export interface Manifest {
   readonly crossOriginIsolated?: true
   /** The one ENS name or DNS host the app calls home, in URL host spelling; a judged score counts only there (ADR-0056). */
   readonly domain?: string
+  /** Where a person reports a problem with this app, on the publisher's own tracker: one absolute `https:` URL (ADR-0096). */
+  readonly support?: { readonly issues: string }
 }
 
 export interface Capabilities {
@@ -154,29 +153,25 @@ export interface Capabilities {
   readonly web?: WebCapability
   /**
    * Camera, microphone and/or screen capture (ADR-0032, ADR-0055). Presence
-   * of a flag, not a boolean VALUE on it, is the declaration -- the same shape
-   * `fs` and `id` already use, because there is no narrower "how much camera"
-   * to ask for the way `net`'s patterns narrow a host. `true` is the only
-   * value the loader accepts for any flag; omit a flag to not ask for it.
+   * of a flag is the declaration, as with `fs` and `id`: there is no narrower
+   * "how much camera" to ask for the way `net`'s patterns narrow a host.
+   * `true` is the only value the loader accepts; omit a flag to not ask.
    */
   readonly media?: MediaCapability
   /** `navigator.clipboard.readText()`/`read()` (ADR-0032). Same presence-only shape as `media`. */
   readonly clipboard?: ClipboardCapability
-  /**
-   * An origin-bound encrypt/decrypt pair backed by the OS keyring (ADR-0033).
-   * Presence-only, like `fs` and `id`: there is nothing narrower to ask for
-   * than "an app-private secret", so this interface declares no fields of
-   * its own in v0. See `capability-api.ts`'s `OrivonSecrets`.
-   */
+  /** An origin-bound encrypt/decrypt pair backed by the OS keyring (ADR-0033). Presence-only: see `OrivonSecrets`. */
   readonly secrets?: SecretsCapability
   /** What the person's Web3 Score provider says about other sites (ADR-0058). Presence-only, like `media`. */
   readonly trust?: TrustCapability
+  /** USB HID devices, bounded by filters; each device is still asked (ADR-0068). See `devices.ts`. */
+  readonly devices?: DevicesCapability
   /**
-   * Schemes the shell may route to this app, e.g. `["magnet"]`. Declaration
-   * alone never wins the default: routing requires its own user prompt, first
-   * registrant is the default, and conflicts are resolved by the user. The URI
-   * is validated against a strict grammar before it touches any other code
-   * (security-model.md T23).
+   * Schemes the shell may route to this app, e.g. `["magnet"]`, delivered to
+   * `orivon.app.onOpenUrl`. Declaration alone never wins the default: the
+   * person chooses, per scheme, which app a link opens in. `http`, `https`,
+   * `file`, `javascript` and `orivon*` are never routed. The URI is validated
+   * against a strict grammar before it touches any other code (T23).
    */
   readonly protocols?: readonly string[]
 }
@@ -498,3 +493,5 @@ export type CapabilityKind =
   | 'clipboard.read'
   | 'secrets'
   | 'trust.score'
+  /** One HID device filter per pattern, in `devices.ts`'s canonical string (ADR-0068). */
+  | 'devices.hid'

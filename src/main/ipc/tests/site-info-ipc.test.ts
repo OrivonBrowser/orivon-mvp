@@ -5,7 +5,7 @@ import type { SitePermissionsAccess } from '../../site-settings/site-permissions
 
 // The site-info popup's own channel -- get/trust/data/apply/
 // revokePickedPath/clearBrowserData/reload/openSiteSettings, and the sender-
-// identity check every command here gets (mirrors permissions-ipc.ts's own
+// identity check every command here gets (mirrors networks-ipc.ts's own
 // isFromPermissionsPanel, against this popup's webContents instead).
 // site-info-controller.test.ts already proves turnOn/turnOff reach a real
 // broker; this file proves the IPC layer on top routes to the ORIGIN it
@@ -47,15 +47,20 @@ const EMPTY_INFO: SiteInfo = { origin: ORIGIN, displayOrigin: ORIGIN, claimedNam
 
 function fakeController (overrides: Partial<SiteInfoController> = {}): SiteInfoController {
   return {
-    siteSummaryFor: vi.fn(async () => ({ asked: false, warning: false })),
+    siteSummaryFor: vi.fn(async () => ({ asked: false, warning: false, missing: false })),
     siteInfoFor: vi.fn(async () => EMPTY_INFO),
+    inSession: vi.fn((info: SiteInfo) => info),
     siteTrustFor: vi.fn(async () => null),
     storageDeclarationFor: vi.fn(async () => null),
+    setTunnel: vi.fn(async () => true),
+    setProxyAddress: vi.fn(() => 'ok' as const),
+    testTunnel: vi.fn(async () => null),
     turnOn: vi.fn(async () => 'ok' as const),
     turnOff: vi.fn(async () => {}),
     revokePickedPath: vi.fn(async () => {}),
     deleteLocalFileData: vi.fn(async () => false),
     applyUpdate: vi.fn(async () => ({ ok: true as const })),
+    reviewPermissions: vi.fn(async () => true),
     ...overrides
   }
 }
@@ -124,6 +129,92 @@ describe('registerSiteInfoIpc -- applyUpdate', () => {
   })
 })
 
+describe('registerSiteInfoIpc -- setTunnel', () => {
+  it('sends the popup\'s fixed origin through the tunnel asked for, or through none, whatever origin the command names, and returns the info after', async () => {
+    const controller = fakeController()
+    register(controller)
+
+    const nym = await dispatch({ type: 'setTunnel', kind: 'nym', origin: 'https://evil.example' })
+    const proxy = await dispatch({ type: 'setTunnel', kind: 'socks5' })
+    const none = await dispatch({ type: 'setTunnel', kind: null })
+
+    expect(controller.setTunnel).toHaveBeenNthCalledWith(1, ORIGIN, 'nym')
+    expect(controller.setTunnel).toHaveBeenNthCalledWith(2, ORIGIN, 'socks5')
+    expect(controller.setTunnel).toHaveBeenNthCalledWith(3, ORIGIN, null)
+    for (const answer of [nym, proxy, none]) expect(answer).toEqual({ ok: true, info: EMPTY_INFO })
+  })
+
+  it('gives the info as the tab\'s session makes it, so a page opened through an app\'s tunnel is drawn as that tunnel\'s', async () => {
+    const session = {}
+    const inSession = vi.fn((info: SiteInfo) => ({ ...info, tunnelKind: 'nym' as const }))
+    const controller = fakeController({ inSession })
+    register(controller, { activeWebContents: () => ({ getURL: () => ORIGIN, session }) as unknown as import('electron').WebContents })
+    expect(await dispatch({ type: 'setTunnel', kind: 'nym' })).toEqual({ ok: true, info: { ...EMPTY_INFO, tunnelKind: 'nym' } })
+    expect(inSession).toHaveBeenCalledWith(EMPTY_INFO, session)
+  })
+
+  it('refuses a page whose tunnel is fixed (opened through an app\'s tunnel, or adopted into its session) without reaching the controller', async () => {
+    const fixed = { ...EMPTY_INFO, tunnel: { fixed: 'opened' } } as unknown as SiteInfo
+    const controller = fakeController({ inSession: vi.fn(() => fixed) })
+    register(controller, { activeWebContents: () => ({ getURL: () => ORIGIN, session: {} }) as unknown as import('electron').WebContents })
+    expect(await dispatch({ type: 'setTunnel', kind: 'nym' })).toEqual({ ok: false, info: fixed })
+    expect(await dispatch({ type: 'setTunnel', kind: null })).toEqual({ ok: false, info: fixed })
+    expect(controller.setTunnel).not.toHaveBeenCalled()
+  })
+
+  it('says it was not done when the controller could not', async () => {
+    const controller = fakeController({ setTunnel: vi.fn(async () => false) })
+    register(controller)
+    expect(await dispatch({ type: 'setTunnel', kind: 'nym' })).toEqual({ ok: false, info: EMPTY_INFO })
+  })
+
+  it('refuses a value that is not a tunnel, without reaching the controller, and answers nothing from another frame', async () => {
+    const controller = fakeController()
+    register(controller)
+    for (const kind of [undefined, 1, 'true', true, false, 'tor', 'off']) {
+      expect(await dispatch({ type: 'setTunnel', kind })).toEqual({ ok: false, info: EMPTY_INFO })
+    }
+    expect(await dispatch({ type: 'setTunnel', kind: 'nym' }, OTHER_FRAME_URL)).toBeUndefined()
+    expect(controller.setTunnel).not.toHaveBeenCalled()
+  })
+})
+
+describe('registerSiteInfoIpc -- the proxy set from the menu', () => {
+  it('saves the address the popup typed, whatever origin the command names, and returns the info after', async () => {
+    const controller = fakeController({ setProxyAddress: vi.fn(() => 'ok' as const) })
+    register(controller)
+    expect(await dispatch({ type: 'setProxyAddress', text: '127.0.0.1:9150', origin: 'https://evil.example' })).toEqual({ ok: true, info: EMPTY_INFO })
+    expect(controller.setProxyAddress).toHaveBeenCalledWith('127.0.0.1:9150')
+  })
+
+  it('says why it was not saved: the address is not one, or the settings hold it fixed', async () => {
+    const controller = fakeController({ setProxyAddress: vi.fn(() => 'invalid' as const) })
+    register(controller)
+    expect(await dispatch({ type: 'setProxyAddress', text: 'nonsense' })).toEqual({ ok: false, reason: 'invalid', info: EMPTY_INFO })
+    const fixed = fakeController({ setProxyAddress: vi.fn(() => 'refused' as const) })
+    register(fixed)
+    expect(await dispatch({ type: 'setProxyAddress', text: '127.0.0.1:9150' })).toEqual({ ok: false, reason: 'refused', info: EMPTY_INFO })
+  })
+
+  it('refuses a value that is not text without reaching the controller, and answers nothing from another frame', async () => {
+    const controller = fakeController()
+    register(controller)
+    for (const text of [undefined, 1, null, {}, ['127.0.0.1:9050']]) expect(await dispatch({ type: 'setProxyAddress', text })).toEqual({ ok: false, reason: 'invalid', info: EMPTY_INFO })
+    expect(await dispatch({ type: 'setProxyAddress', text: '127.0.0.1:9050' }, OTHER_FRAME_URL)).toBeUndefined()
+    expect(controller.setProxyAddress).not.toHaveBeenCalled()
+  })
+
+  it('tests the tunnel the popup names, naming no address of its own, and nothing else', async () => {
+    const controller = fakeController({ testTunnel: vi.fn(async () => ({ ok: true as const, authentication: 'none' as const })) })
+    register(controller)
+    expect(await dispatch({ type: 'testTunnel', kind: 'socks5', address: '10.0.0.1:1' })).toEqual({ ok: true, authentication: 'none' })
+    expect(controller.testTunnel).toHaveBeenCalledWith('socks5')
+    for (const kind of [undefined, 'tor', null, true]) expect(await dispatch({ type: 'testTunnel', kind }), String(kind)).toBeNull()
+    expect(controller.testTunnel).toHaveBeenCalledTimes(1)
+    expect(await dispatch({ type: 'testTunnel', kind: 'nym' }, OTHER_FRAME_URL)).toBeUndefined()
+  })
+})
+
 describe('registerSiteInfoIpc -- openHome', () => {
   function registerWithHome (home: string | undefined): ReturnType<typeof vi.fn> {
     const openHome = vi.fn()
@@ -148,6 +239,39 @@ describe('registerSiteInfoIpc -- openHome', () => {
     const openHome = registerWithHome('app.eth')
     await dispatch({ type: 'openHome' }, OTHER_FRAME_URL)
     expect(openHome).not.toHaveBeenCalled()
+  })
+})
+
+describe('registerSiteInfoIpc -- openSupport', () => {
+  function registerWithSupport (issues: string | undefined): ReturnType<typeof vi.fn> {
+    const openSupport = vi.fn()
+    const controller = fakeController({ siteInfoFor: vi.fn(async () => ({ ...EMPTY_INFO, ...(issues === undefined ? {} : { supportIssues: issues }) })) })
+    registerSiteInfoIpc(siteInfoWebContents, POPUP_URL, controller, ORIGIN, '/tmp/orivon-test-userdata', () => undefined, () => undefined, () => undefined, () => undefined, undefined, undefined, undefined, undefined, undefined, undefined, openSupport)
+    return openSupport
+  }
+
+  it('opens the address the controller reports, and ignores any a command names', async () => {
+    const openSupport = registerWithSupport('https://example.com/issues')
+    await dispatch({ type: 'openSupport', url: 'https://evil.example/' })
+    expect(openSupport).toHaveBeenCalledExactlyOnceWith('https://example.com/issues')
+  })
+
+  it('does nothing when the manifest names none', async () => {
+    const openSupport = registerWithSupport(undefined)
+    await dispatch({ type: 'openSupport' })
+    expect(openSupport).not.toHaveBeenCalled()
+  })
+
+  it('opens nothing that is not an https address, whatever the controller holds', async () => {
+    const openSupport = registerWithSupport('mailto:help@example.com')
+    await dispatch({ type: 'openSupport' })
+    expect(openSupport).not.toHaveBeenCalled()
+  })
+
+  it('does nothing for a frame that is not the popup\'s own', async () => {
+    const openSupport = registerWithSupport('https://example.com/issues')
+    await dispatch({ type: 'openSupport' }, OTHER_FRAME_URL)
+    expect(openSupport).not.toHaveBeenCalled()
   })
 })
 
@@ -263,6 +387,21 @@ describe('registerSiteInfoIpc -- revokePickedPath / reload / openSiteSettings', 
     expect(result).toBe(EMPTY_INFO)
   })
 
+  it('reviewPermissions gives the question back for the popup\'s own origin, then reloads the tab in front', async () => {
+    const controller = fakeController()
+    const { reloadActiveTab } = register(controller)
+    await dispatch({ type: 'reviewPermissions', origin: 'https://other.example' })
+    expect(controller.reviewPermissions).toHaveBeenCalledWith(ORIGIN)
+    expect(reloadActiveTab).toHaveBeenCalledTimes(1)
+  })
+
+  it('reviewPermissions reloads nothing for an origin that was never let out of the question', async () => {
+    const controller = fakeController({ reviewPermissions: vi.fn(async () => false) })
+    const { reloadActiveTab } = register(controller)
+    await dispatch({ type: 'reviewPermissions' })
+    expect(reloadActiveTab).not.toHaveBeenCalled()
+  })
+
   it('reload calls the injected reloadActiveTab, not a command with a tab id to trust', async () => {
     const { reloadActiveTab } = register(fakeController())
     await dispatch({ type: 'reload' })
@@ -275,6 +414,15 @@ describe('registerSiteInfoIpc -- revokePickedPath / reload / openSiteSettings', 
     expect(openSiteSettings).toHaveBeenCalledOnce()
   })
 
+  it('openSiteSettings opens Settings at its default section, openTunnelSettings at Tunnels, and at the browser-wide switch when asked', async () => {
+    const { openSiteSettings } = register(fakeController())
+    await dispatch({ type: 'openSiteSettings' })
+    await dispatch({ type: 'openTunnelSettings', everywhere: false })
+    await dispatch({ type: 'openTunnelSettings', everywhere: true })
+    await dispatch({ type: 'openTunnelSettings', everywhere: '/privacy' })
+    expect(openSiteSettings.mock.calls).toEqual([[], ['/tunnels'], ['/tunnels#route-everywhere'], ['/tunnels']])
+  })
+
   it('certificate calls the injected callback, from the popup only', async () => {
     const openCertificate = vi.fn()
     registerSiteInfoIpc(siteInfoWebContents, POPUP_URL, fakeController(), ORIGIN, '/tmp/orivon-test-userdata', () => undefined, () => undefined, () => undefined, () => undefined, undefined, openCertificate)
@@ -282,6 +430,15 @@ describe('registerSiteInfoIpc -- revokePickedPath / reload / openSiteSettings', 
     expect(openCertificate).toHaveBeenCalledOnce()
     await dispatch({ type: 'certificate' }, { url: 'https://evil.test/' })
     expect(openCertificate).toHaveBeenCalledOnce()
+  })
+
+  it('openScoreHelp calls the injected callback with no argument, from the popup only', async () => {
+    const openScoreHelp = vi.fn()
+    registerSiteInfoIpc(siteInfoWebContents, POPUP_URL, fakeController(), ORIGIN, '/tmp/orivon-test-userdata', () => undefined, () => undefined, () => undefined, () => undefined, undefined, undefined, undefined, undefined, undefined, openScoreHelp)
+    await dispatch({ type: 'openScoreHelp', url: 'https://evil.test/' })
+    expect(openScoreHelp).toHaveBeenCalledExactlyOnceWith()
+    await dispatch({ type: 'openScoreHelp' }, { url: 'https://evil.test/' })
+    expect(openScoreHelp).toHaveBeenCalledOnce()
   })
 
   it('openExtensions calls the injected callback', async () => {

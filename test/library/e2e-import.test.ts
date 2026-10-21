@@ -12,7 +12,7 @@ import { afterAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
 import { delay, waitFor } from '../support/smoke-helpers.mjs'
 import { openInternalPage } from './downloads-fixture.js'
-import { barTitles, fakeHome, launchImport, openImportPage, removeHome, runCommand, stubFileDialog } from './import-fixture.js'
+import { barTitles, chromeRoot, fakeHome, launchImport, openImportPage, removeHome, runCommand, stubFileDialog } from './import-fixture.js'
 
 const TEST_TIMEOUT_MS = 120_000
 const SHOTS = process.env['ORIVON_UI_SHOTS_DIR']
@@ -101,7 +101,7 @@ it('opens from the command with the browsers found, the first chosen and the fil
 it.skipIf(process.platform !== 'linux')('shows placeholders while the browsers are being looked for, and the choice once they are found', async () => {
   const fake = await home()
   // A named pipe stands in for a file that is slow to read: opening it waits until something writes to it.
-  const pipe = join(fake, '.config', 'google-chrome', 'Local State')
+  const pipe = join(chromeRoot(fake), 'Local State')
   await rm(pipe)
   execFileSync('mkfifo', [pipe])
   const { app, chrome } = await launchImport(fake)
@@ -172,7 +172,7 @@ it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('puts the bo
     expect(await barTitles(chrome)).toEqual(['Fox bookmark', 'Imported from Chrome'])
     await shoot(page, 'done-folder')
 
-    const historyFile = join(fake, '.config', 'google-chrome', 'Default', 'History')
+    const historyFile = join(chromeRoot(fake), 'Default', 'History')
     await chmod(historyFile, 0)
     try {
       await importAnother(page)

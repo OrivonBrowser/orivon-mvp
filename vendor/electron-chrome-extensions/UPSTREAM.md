@@ -901,6 +901,31 @@ directly against the real files, instead of only against a same-shaped local fak
 and `api/common.ts`/`impl.ts` sit on the same import path and needed no patch of their own: measured,
 `npx tsc --noEmit -p tsconfig.json` reports nothing for any of them as authored.
 
+71. **No promise is floated.** `src/browser/index.ts` (`prependPreload`), `src/browser/manifest.ts`
+    (`readUrlOverrides`), `src/browser/router.ts` (the registration wait's `finally`, and the async
+    `crx-add-listener` body), `src/browser/api/browser-action.ts` (`createTab` for the home and
+    options pages), `src/browser/api/tabs.ts` (`insertCSS`) and `src/browser/api/windows.ts`
+    (`removeWindow`): each call whose promise nothing awaited ends in a `.catch` that logs. Reason: the
+    main process exits on an unhandled rejection (`npm run check:floating-promises`).
+72. **`matchesPattern` and `matchesTitlePattern` match without a regex.** `src/browser/api/common.ts`:
+    both ran `new RegExp` over a pattern the extension chose, split on `*` and joined with `.*`, on the
+    main thread: for every right-click (`contextMenus` `documentUrlPatterns` and `targetUrlPatterns`) and
+    every `tabs.query` with `url` or `title`. A pattern such as `*a*a*a*a*a*a*a*a*a*a*b` against a long
+    address that does not end in `b` froze the browser. They now call `matchesGlob` (patch 39), moved
+    unchanged from `src/browser/router.ts` into the new `src/browser/glob.ts`, which imports nothing, so
+    both files and a unit test share the one matcher. `*` is any run of characters and everything else is
+    literal, as before; `<all_urls>` still matches every address. The old `.*` did not cross a line break
+    and `matchesGlob` does, which only matters for a title that has one.
+73. **A toolbar list that changes partition follows the new one.** `src/browser-action.ts`: the
+    `<browser-action-list>` element registered itself as an observer of its `partition` once, when it
+    connected, so setting the attribute fetched the new partition's state once and heard none of its
+    later updates (a badge, an icon). A changed `partition` now removes the observer of the old one and
+    adds the new. Reason: the shell moves the list to the profile session of the tab in front.
+74. **The action menu builder is told the session.** `src/browser/api/browser-action.ts`:
+    `ActionMenuBuilder` takes the toolbar's `session` as a third argument. Reason: with an instance of
+    the library in each profile session, "Options" in a button's menu must open the page of the
+    instance that was clicked.
+
 Nothing else changed; upstream code is not reformatted.
 
 ## Native-code check

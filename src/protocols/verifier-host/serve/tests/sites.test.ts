@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { GatewaysOffered, ResolutionError } from '../../../resolution/records.js'
 import type { NameRecord } from '../../../resolution/records.js'
 import type { DataGatherer, MountedSite, NameResolver } from '../../../resolution/providers.js'
 import { ProtocolRegistry } from '../../../registry.js'
 import { defineProtocol } from '../../../protocol.js'
 import { ENS } from '../../../ens/descriptor.js'
-import { IPFS } from '../../../ipfs/descriptor.js'
 import { FAILURE_TTL_MS, MAX_CONCURRENT_MOUNTS, MAX_SITES, Sites, SITE_TTL_MS, STALE_SERVE_MS } from '../sites.js'
 
 const P = 'https://top.example'
@@ -15,8 +15,7 @@ function registry (resolve: () => Promise<NameRecord[]>): { registry: ProtocolRe
   const calls = { n: 0 }
   const resolver: NameResolver = { id: 'stub', namespaces: ['.eth'], resolve: async () => { calls.n++; return await resolve() } }
   const gatherer: DataGatherer = { id: 'stub', supports: () => true, mount: async () => site }
-  // ENS's displayScheme names 'ipfs', so IPFS must be a given protocol too, even with no providers of its own here.
-  return { registry: new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [gatherer] }), defineProtocol(IPFS, {})]), calls }
+  return { registry: new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [gatherer] })]), calls }
 }
 
 describe('Sites', () => {
@@ -32,9 +31,59 @@ describe('Sites', () => {
     expect(calls.n).toBe(2)
   })
 
+  it('tells the observer which gatherer is chosen, and a throwing observer does not fail the mount', async () => {
+    const { registry: r } = registry(async () => [record])
+    const seen: string[] = []
+    const sites = new Sites(r, Date.now, 50, (host, gatherer) => { seen.push(`${host} ${gatherer}`); throw new Error('observer bug') })
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect((await sites.get('a.eth', P)).site).toBe(site)
+    expect(seen).toEqual(['a.eth stub'])
+    errors.mockRestore()
+  })
+
+  it('tells the observer before the gatherer has mounted anything, so a mount that never settles still reports', async () => {
+    const resolver: NameResolver = { id: 'stub', namespaces: ['.eth'], resolve: async () => [record] }
+    const gatherer: DataGatherer = { id: 'slow', supports: () => true, mount: async () => await new Promise<MountedSite>(() => {}) }
+    const r = new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [gatherer] })])
+    const seen: string[] = []
+    const sites = new Sites(r, Date.now, 50, (host, chosen) => { seen.push(`${host} ${chosen}`) })
+    await expect(sites.get('a.eth', P)).rejects.toMatchObject({ failure: 'unavailable' })
+    expect(seen).toEqual(['a.eth slow'])
+  })
+
+  it('tells the observer of each gatherer tried, in order, when one fails and the next takes over', async () => {
+    const resolver: NameResolver = { id: 'stub', namespaces: ['.eth'], resolve: async () => [record] }
+    const failing: DataGatherer = { id: 'first', supports: () => true, mount: async () => { throw new ResolutionError('unavailable', 'down') } }
+    const working: DataGatherer = { id: 'second', supports: () => true, mount: async () => site }
+    const r = new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [failing, working] })])
+    const seen: string[] = []
+    await new Sites(r, Date.now, 50, (host, chosen) => { seen.push(`${host} ${chosen}`) }).get('a.eth', P)
+    expect(seen).toEqual(['a.eth first', 'a.eth second'])
+  })
+
+  it('tells the observer nothing for a name whose records no gatherer can load, or that does not resolve', async () => {
+    const resolver: NameResolver = { id: 'stub', namespaces: ['.eth'], resolve: async (name) => name === 'none.eth' ? [] : [record] }
+    const picky: DataGatherer = { id: 'picky', supports: () => false, mount: async () => site }
+    const r = new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [picky] })])
+    const seen: string[] = []
+    const sites = new Sites(r, Date.now, 50, (host, chosen) => { seen.push(`${host} ${chosen}`) })
+    await expect(sites.get('a.eth', P)).rejects.toMatchObject({ failure: 'unsupported' })
+    await expect(sites.get('none.eth', P)).rejects.toMatchObject({ failure: 'not-found' })
+    expect(seen).toEqual([])
+  })
+
   it('gives up on a mount that takes too long, as unavailable', async () => {
     const { registry: r } = registry(async () => await new Promise<NameRecord[]>(() => {}))
     await expect(new Sites(r, Date.now, 50).get('slow.eth', P)).rejects.toMatchObject({ failure: 'unavailable', message: expect.stringMatching(/within 0.05 s/) })
+  })
+
+  it('reads the wait for a mount when the mount starts, so a route that has grown more patient is waited on for longer', async () => {
+    const { registry: r } = registry(async () => await new Promise<NameRecord[]>(() => {}))
+    let wait = 30
+    const sites = new Sites(r, Date.now, () => wait)
+    await expect(sites.get('slow.eth', P)).rejects.toMatchObject({ message: expect.stringMatching(/within 0.03 s/) })
+    wait = 60
+    await expect(sites.get('slow.eth', 'https://other')).rejects.toMatchObject({ message: expect.stringMatching(/within 0.06 s/) })
   })
 
   it('has nothing current for a host it never mounted, or one whose mount failed', async () => {
@@ -67,6 +116,35 @@ describe('Sites', () => {
     await sites.get('other.eth', P).catch(() => {})
     expect((sites as unknown as { entries: Map<string, unknown> }).entries.has('gone.eth')).toBe(false)
     expect(calls.n).toBe(2)
+  })
+
+  it('remembers a failure for a request that is not a person\'s own, and tries again for one that is', async () => {
+    const clock = { now: 0 }
+    let up = false
+    const { registry: r, calls } = registry(async () => { if (!up) throw new Error('down'); return [record] })
+    const sites = new Sites(r, () => clock.now)
+    await expect(sites.get('flaky.eth', P)).rejects.toMatchObject({ failure: 'unavailable' })
+    await expect(sites.get('flaky.eth', P)).rejects.toMatchObject({ failure: 'unavailable' })
+    expect(calls.n).toBe(1)
+    up = true
+    await expect(sites.get('flaky.eth', P)).rejects.toMatchObject({ failure: 'unavailable' })
+    expect(calls.n).toBe(1)
+    expect((await sites.get('flaky.eth', P, true)).site).toBe(site)
+    expect(calls.n).toBe(2)
+    expect((await sites.get('flaky.eth', P)).site).toBe(site)
+    expect(calls.n).toBe(2)
+  })
+
+  it('joins a mount that is still running for a person\'s own request, never restarts it', async () => {
+    let release: () => void = () => {}
+    const { registry: r, calls } = registry(async () => { await new Promise<void>((resolve) => { release = resolve }); return [record] })
+    const sites = new Sites(r)
+    const first = sites.get('slow.eth', P)
+    const again = sites.get('slow.eth', P, true)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    release()
+    await Promise.all([first, again])
+    expect(calls.n).toBe(1)
   })
 
   it('proves only a few names at once, and the rest wait their turn', async () => {
@@ -112,7 +190,7 @@ function switchableRegistry (): { registry: ProtocolRegistry, resolve: { current
   const resolve = { current: async () => [record] }
   const resolver: NameResolver = { id: 'stub', namespaces: ['.eth'], resolve: async () => { calls.n++; return await resolve.current() } }
   const gatherer: DataGatherer = { id: 'stub', supports: () => true, mount: async () => site }
-  return { registry: new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [gatherer] }), defineProtocol(IPFS, {})]), resolve, calls }
+  return { registry: new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [gatherer] })]), resolve, calls }
 }
 
 describe('Sites -- stale-while-revalidate', () => {
@@ -216,5 +294,41 @@ describe('Sites -- stale-while-revalidate', () => {
     resolve.current = async () => { throw new Error('down') }
     await expect(sites.get('a.eth', P)).rejects.toThrow()
     expect(await sites.current('a.eth', P)).toBeUndefined()
+  })
+
+  it('keeps an offer of gateways when the deadline ends a mount, since the gatherer says so the moment it is aborted', async () => {
+    const resolver: NameResolver = { id: 'stub', namespaces: ['.eth'], resolve: async () => [record] }
+    const searching: DataGatherer = { id: 'ipfs', supports: () => true, mount: async (_name, _records, signal) => await new Promise<MountedSite>((_resolve, reject) => { signal?.addEventListener('abort', () => { reject(new GatewaysOffered('the node did not find it in time')) }) }) }
+    const r = new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [searching] })])
+    await expect(new Sites(r, Date.now, 50).get('a.eth', P)).rejects.toBeInstanceOf(GatewaysOffered)
+  })
+
+  describe('a site loaded by the person\'s yes for one load', () => {
+    const byYes: MountedSite = { ...site, servedFrom: { kind: 'gateways', reason: 'the person said yes' } }
+    function world () {
+      const resolver: NameResolver = { id: 'stub', namespaces: ['.eth'], resolve: async () => [record] }
+      const mounts = { n: 0 }
+      const gatherer: DataGatherer = { id: 'stub', supports: () => true, mount: async () => { mounts.n++; return byYes } }
+      const r = new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [gatherer] })])
+      return { sites: new Sites(r, Date.now, 50, () => {}, (mounted) => mounted.servedFrom?.reason !== undefined), mounts }
+    }
+
+    it('serves the page\'s own files without mounting again, and mounts again for a page load the person starts', async () => {
+      const { sites, mounts } = world()
+      await sites.get('a.eth', P, true, true)
+      await sites.get('a.eth', P)
+      await sites.get('a.eth', P, true)
+      expect(mounts.n).toBe(1)
+      await sites.get('a.eth', P, true, true)
+      expect(mounts.n).toBe(2)
+    })
+
+    it('does not mount again for the page load of a site the node served', async () => {
+      const { registry: r, calls } = registry(async () => [record])
+      const sites = new Sites(r, Date.now, 50, () => {}, () => false)
+      await sites.get('a.eth', P, true, true)
+      await sites.get('a.eth', P, true, true)
+      expect(calls.n).toBe(1)
+    })
   })
 })

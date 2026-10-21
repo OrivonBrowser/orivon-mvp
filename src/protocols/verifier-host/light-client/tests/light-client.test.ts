@@ -150,6 +150,43 @@ describe('startHeliosLightClient -- one bad refresh does not fail every mount', 
     await requested
   })
 
+  it('waits the time it was given for a first sync, not the direct one', async () => {
+    const helios = fakeHelios()
+    let finish: () => void = () => {}
+    helios.waitSynced = async () => await new Promise<void>((resolve) => { finish = resolve })
+    vi.mocked(createHeliosProvider).mockResolvedValue(helios as never)
+    const client = startHeliosLightClient(CONFIG, (async () => new Response('{}')) as never, () => {}, 'direct', { syncWaitMs: 40_000, startAfterMs: 0 })
+    await vi.advanceTimersByTimeAsync(10)
+    let answer: string | undefined
+    void client.provider.request({ method: 'eth_chainId' }).then(() => { answer = 'answered' }, (error: unknown) => { answer = `failed: ${(error as Error).message}` })
+    await vi.advanceTimersByTimeAsync(SYNC_WAIT_MS + 1_000)
+    expect(answer, 'still waiting after the direct time').toBeUndefined()
+    finish()
+    await vi.advanceTimersByTimeAsync(100)
+    expect(answer).toBe('answered')
+  })
+
+  it('with a start delay, waits to sync until a request needs it or the delay is over, whichever comes first', async () => {
+    const helios = fakeHelios()
+    vi.mocked(createHeliosProvider).mockResolvedValue(helios as never)
+    const later = startHeliosLightClient(CONFIG, (async () => new Response('{}')) as never, () => {}, 'direct', { syncWaitMs: 8_000, startAfterMs: 60_000 })
+    await vi.advanceTimersByTimeAsync(59_000)
+    expect(createHeliosProvider).not.toHaveBeenCalled()
+    expect(later.status().state).toBe('starting')
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(createHeliosProvider).toHaveBeenCalledTimes(1)
+    await synced(later)
+
+    vi.mocked(createHeliosProvider).mockClear()
+    const asked = startHeliosLightClient(CONFIG, (async () => new Response('{}')) as never, () => {}, 'direct', { syncWaitMs: 8_000, startAfterMs: 60_000 })
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(createHeliosProvider).not.toHaveBeenCalled()
+    const answered = asked.provider.request({ method: 'eth_chainId' })
+    await vi.advanceTimersByTimeAsync(100)
+    expect(createHeliosProvider).toHaveBeenCalledTimes(1)
+    await expect(answered).resolves.toBe('0x1')
+  })
+
   it('wakes a request waiting while syncing as soon as a refresh recovers, not after SYNC_WAIT_MS', async () => {
     const helios = fakeHelios()
     vi.mocked(createHeliosProvider).mockResolvedValue(helios as never)
@@ -202,5 +239,52 @@ describe('startHeliosLightClient -- one bad refresh does not fail every mount', 
     expect(client.status()).toMatchObject({ state: 'synced' })
     expect(reportedTypes).not.toContain('checkpoint')
     expect(reportedTypes.filter((t) => t === 'status')).not.toHaveLength(0)
+  })
+})
+
+describe('startHeliosLightClient -- a second client for the tunnel', () => {
+  const answer = async (_url: string, _init?: RequestInit): Promise<Response> => new Response('{"jsonrpc":"2.0","id":1,"result":"0x1"}', { headers: { 'content-type': 'application/json' } })
+
+  async function bothClients () {
+    vi.mocked(createHeliosProvider).mockResolvedValue(fakeHelios() as never)
+    const direct = vi.fn(answer)
+    const tunnel = vi.fn(answer)
+    const first = startHeliosLightClient(CONFIG, direct as never, () => {})
+    // The module is imported once before the second client asks for it: two imports of a mocked module at the same moment can give the second the real one.
+    await synced(first)
+    const second = startHeliosLightClient(CONFIG, tunnel as never, () => {}, 'nym')
+    await synced(second)
+    const [one, two] = (vi.mocked(createHeliosProvider).mock.calls as unknown as Array<[{ executionRpc: string, consensusRpc: string }]>).map(([config]) => config)
+    return { direct, tunnel, one: one as { executionRpc: string, consensusRpc: string }, two: two as { executionRpc: string, consensusRpc: string } }
+  }
+
+  it('gives each Helios its own names for the two servers, the tunnel\'s resolving nowhere', async () => {
+    const { one, two } = await bothClients()
+    expect(one).toMatchObject({ executionRpc: 'https://rpc.example', consensusRpc: 'https://beacon.example' })
+    expect(two.executionRpc).toMatch(/\.invalid/)
+    expect(two.consensusRpc).toMatch(/\.invalid/)
+  })
+
+  it('sends the tunnel client\'s requests to the tunnel\'s fetch alone, at the real servers', async () => {
+    const { direct, tunnel, two } = await bothClients()
+    await globalThis.fetch(new Request(two.executionRpc, { method: 'POST', body: '{"jsonrpc":"2.0","id":1,"method":"eth_chainId"}' }))
+    await globalThis.fetch(`${two.consensusRpc}/eth/v1/beacon/light_client/bootstrap/0x01?x=1`)
+    expect(tunnel.mock.calls.map(([url]) => url)).toEqual(['https://rpc.example', 'https://beacon.example/eth/v1/beacon/light_client/bootstrap/0x01?x=1'])
+    expect(direct).not.toHaveBeenCalled()
+  })
+
+  it('keeps the first client\'s requests on its own fetch', async () => {
+    const { direct, tunnel } = await bothClients()
+    await globalThis.fetch(new Request('https://rpc.example', { method: 'POST', body: '{"jsonrpc":"2.0","id":1,"method":"eth_chainId"}' }))
+    await globalThis.fetch('https://beacon.example/eth/v1/beacon/headers')
+    expect(direct.mock.calls.map(([url]) => url)).toEqual(['https://rpc.example', 'https://beacon.example/eth/v1/beacon/headers'])
+    expect(tunnel).not.toHaveBeenCalled()
+  })
+
+  it('refuses a request to any other address, rather than hand it to either client\'s fetch', async () => {
+    const { direct, tunnel } = await bothClients()
+    await expect(globalThis.fetch('https://elsewhere.example/')).rejects.toThrow(/no client of this process uses/)
+    expect(direct).not.toHaveBeenCalled()
+    expect(tunnel).not.toHaveBeenCalled()
   })
 })

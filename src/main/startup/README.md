@@ -6,13 +6,13 @@ session into what the first window opens and which windows follow, and says whet
 reads the binary's file-protocol fuse before the window exists (`planOpensLocalFile`). `startup-open.ts` carries that out
 (tabs, display-aware placement, taking reopened windows off the closed stack). `startup-domain.ts` answers the
 Settings page's two questions about the pages list. `restore-offer.ts` and `restore-overlay.ts` are the bar
-that offers the last session back after a run that did not end cleanly; `startup-overlays.ts` wires it to the
+that offers the last session back after a run that did not end cleanly, and the report of that crash ("Report the problem", from `../diagnostics/crash-lookup.ts`), which it also offers when nothing is left to restore; `startup-overlays.ts` wires it to the
 real displays. `fetch-stack.ts` loads Node's `fetch`/`Response` implementation before any hook or window exists, so a debugger command cannot arrive in the middle of its lazy load.
 
 **Tied to Electron, partly.** Only `startup-overlays.ts` imports `electron`; the rest takes plain values and
 structural types, so it runs under plain vitest.
 
-**What it depends on.** [`../session-restore/`](../session-restore/) (the saved session, `openSnapshot`,
+**What it depends on.** [`../diagnostics/`](../diagnostics/) (`crash-lookup.ts`); [`../session-restore/`](../session-restore/) (the saved session, `openSnapshot`,
 `fillTabs`, the closed stack), [`../window-state/placement.ts`](../window-state/placement.ts),
 [`../browsing/omnibox.ts`](../browsing/omnibox.ts) (which addresses load), [`../settings/`](../settings/),
 [`../overlays/`](../overlays/) and the window-hook types of [`../shell/`](../shell/).

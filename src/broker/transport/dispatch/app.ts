@@ -1,4 +1,4 @@
-// app.manifest / app.grants / app.requestGrant, split out of ../ipc.ts's
+// app.manifest / app.grants / app.requestGrant and the scheme-routing calls, split out of ../ipc.ts's
 // dispatch() switch under code-guidelines.md Rule 2 -- one capability's
 // worth of dispatch cases, the same seam ./fs.ts, ./id.ts
 // and ./net.ts split along. See ./README.md's Design notes for why
@@ -7,8 +7,8 @@
 import { fail } from '../../errors.js'
 import type { Broker } from '../../broker-contracts.js'
 import type { CapabilityRequest } from '../../../contracts/index.js'
-import { isAppRequestGrantParams } from '../ipc-validation.js'
-import type { ControlMethod, RequestGrantCaller, RequestGrantCtx } from '../ipc-validation.js'
+import { isAppRequestGrantParams, isAppSchemeParams } from '../ipc-validation.js'
+import type { ControlMethod, RequestGrantCaller, RequestGrantCtx, SchemeCtx } from '../ipc-validation.js'
 
 /** The `app.*` slice of `ControlMethod` -- derived, not retyped, so a new app method added to ipc-validation.ts's union reaches this switch's exhaustiveness check automatically. */
 export type AppControlMethod = Extract<ControlMethod, `app.${string}`>
@@ -27,7 +27,7 @@ export async function dispatchApp (
   origin: string,
   method: AppControlMethod,
   payload: unknown,
-  requestGrantCtx: RequestGrantCtx | undefined,
+  requestGrantCtx: (RequestGrantCtx & SchemeCtx) | undefined,
   caller: RequestGrantCaller,
   abandoned?: AbortSignal
 ): Promise<unknown> {
@@ -47,6 +47,20 @@ export async function dispatchApp (
         : { capability: payload.capability, patterns: payload.patterns }
       return await requestGrantCtx.requestGrant(origin, request, caller, abandoned)
     }
+    // Scheme routing (d-0596). Only an app that holds a grant can be handed a link, so these three answer 'denied' to an
+    // origin that holds none rather than saying anything about which schemes exist.
+    case 'app.nextOpenUrl': {
+      const host = schemeHostFor(broker, origin, requestGrantCtx)
+      return await host.nextUrl(origin, abandoned ?? new AbortController().signal, caller.contents?.())
+    }
+    case 'app.requestSchemeHandler': {
+      if (!isAppSchemeParams(payload)) throw fail('invalid', 'app.requestSchemeHandler requires { scheme: string }')
+      return await schemeHostFor(broker, origin, requestGrantCtx).requestHandler(origin, payload.scheme, caller)
+    }
+    case 'app.isSchemeHandler': {
+      if (!isAppSchemeParams(payload)) throw fail('invalid', 'app.isSchemeHandler requires { scheme: string }')
+      return await schemeHostFor(broker, origin, requestGrantCtx).isHandler(origin, payload.scheme)
+    }
     default: {
       // Exhaustiveness check, same reasoning and shape as ../ipc.ts's own
       // dispatch() and ./net.ts's dispatchNet (A185): if
@@ -58,4 +72,10 @@ export async function dispatchApp (
       throw fail('internal', `unrouted app control method: ${unrouted as string}`)
     }
   }
+}
+
+function schemeHostFor (broker: Broker, origin: string, ctx: SchemeCtx | undefined): NonNullable<SchemeCtx['schemeHost']> {
+  if (!broker.app.hasGrantsSync(origin)) throw fail('denied', 'this app holds no grant, so no link can be sent to it')
+  if (ctx?.schemeHost === undefined) throw fail('internal', 'scheme routing is not available -- the shell has not wired it')
+  return ctx.schemeHost
 }

@@ -17,6 +17,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Subsystem } from '../main/registry.js'
 import { devModeEnabled } from '../main/dev/dev-mode.js'
+import { ownFetch } from '../main/route/own-requests.js'
 import type { SiteKey } from './accounting.js'
 import type { ConsentSource } from './consent.js'
 import type { ErasePayload, SentPayload } from './disclosure.js'
@@ -40,7 +41,8 @@ async function post (endpoint: Endpoint, body: SentPayload | ErasePayload): Prom
   const { net } = await import('electron')
   const base = ingestBaseUrl(IS_TEST_BUILD, testOverrides().url, modeInputsFromEnv(process.env, devModeEnabled(), false).development)
   try {
-    const response = await net.fetch(endpointUrl(base, endpoint), {
+    // Through the tunnel while the whole browser is on it, or not at all.
+    const response = await ownFetch(async (url, init) => await net.fetch(url, init))(endpointUrl(base, endpoint), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
@@ -146,8 +148,8 @@ async function startTelemetry (app: App, servicePromise: Promise<TelemetryServic
       console.error('[orivon] telemetry send failed:', error)
     }
   }
-  setInterval(() => { void checkpointTick() }, tickMs ?? CHECKPOINT_INTERVAL_MS)
-  setInterval(() => { void sendTick() }, tickMs ?? SEND_CHECK_INTERVAL_MS)
+  setInterval(() => { void checkpointTick().catch((error: unknown) => { console.error('[telemetry] checkpoint tick failed:', error) }) }, tickMs ?? CHECKPOINT_INTERVAL_MS)
+  setInterval(() => { void sendTick().catch((error: unknown) => { console.error('[telemetry] send tick failed:', error) }) }, tickMs ?? SEND_CHECK_INTERVAL_MS)
   const sendAtStart = async (): Promise<void> => {
     try {
       await service.sendNow()
@@ -159,7 +161,7 @@ async function startTelemetry (app: App, servicePromise: Promise<TelemetryServic
   // of a month's reports. Delayed because this runs before the first window exists, and the first send
   // reads the machine identifier and the country. A quit inside the delay still sends. A test tick
   // shortens the delay, never lengthens it.
-  void checkpointTick().then(() => { setTimeout(() => { void sendAtStart() }, Math.min(tickMs ?? START_SEND_DELAY_MS, START_SEND_DELAY_MS)) })
+  void checkpointTick().then(() => { setTimeout(() => { void sendAtStart().catch((error: unknown) => { console.error('[telemetry] send at start failed:', error) }) }, Math.min(tickMs ?? START_SEND_DELAY_MS, START_SEND_DELAY_MS)) }).catch((error: unknown) => { console.error('[telemetry] checkpoint tick failed:', error) })
 }
 
 export const telemetrySubsystem: Subsystem = {
@@ -192,7 +194,7 @@ async function running (): Promise<TelemetryService | undefined> {
 
 /** The site now in front, from the shell's tab events. Nothing happens when telemetry does not run. */
 export function noteSite (site: SiteKey): void {
-  void running().then((service) => { service?.noteSite(site) })
+  void running().then((service) => { service?.noteSite(site) }).catch((error: unknown) => { console.error('[telemetry] noting the site in front failed:', error) })
 }
 
 export type StatusReply = { readonly off: OffReason } | { readonly off: undefined, readonly status: TelemetryStatus }
@@ -214,6 +216,12 @@ export async function setTelemetryOn (on: boolean, source: ConsentSource): Promi
 export async function welcomeOffersTelemetry (): Promise<boolean> {
   const service = await running()
   return service === undefined ? false : await service.offerAtWelcome()
+}
+
+/** The change lines when the person's earlier acceptance is due to be asked again at this start, else undefined (also when telemetry does not run here). */
+export async function telemetryRenewal (): Promise<readonly string[] | undefined> {
+  const service = await running()
+  return service === undefined ? undefined : await service.renewalAtStart()
 }
 
 /** 'done' when the server confirmed, 'failed' when it did not, 'nothing' when nothing was ever sent from this computer. */

@@ -255,8 +255,8 @@ describe('formatOriginForDisplay -- the last three labels, owner decision 2026-0
     expect(formatOriginForDisplay('https://a-b-c-example-com.ipns.orivon')).toBe('ipns://...c.example.com')
   })
 
-  it('shows a .eth origin under its ipfs display scheme', () => {
-    expect(formatOriginForDisplay('https://vitalik.eth')).toBe('ipfs://vitalik.eth')
+  it('shows a .eth origin whose network is not learned as the plain origin', () => {
+    expect(formatOriginForDisplay('https://vitalik.eth')).toBe('https://vitalik.eth')
   })
 
   it('elides a subdomain-prefix confusable to exactly its last three labels, so the reassuring prefix does not survive alone', () => {
@@ -487,7 +487,7 @@ describe('describeInstallConsent', () => {
     expect(content.message).toBe('This app wants to:')
     expect(content.detail).toBe(
       'Claims to be "Test app".\n' +
-      '- ⚠ Unlimited network access\n' +
+      '- ⚠ Unlimited network access: load anything from any website, without the browser\'s usual limits\n' +
       '  This app can connect to any website, not just specific ones.\n' +
       '- Store files in a private folder for this app on this device\n' +
       'https://app.example'
@@ -533,7 +533,7 @@ describe('describeInstallConsent', () => {
     expect(content.warning).toBe(true)
     expect(content.detail).toBe(
       'Claims to be "Test app".\n' +
-      '- ⚠ Unlimited network access\n' +
+      '- ⚠ Unlimited network access: load anything from any website, without the browser\'s usual limits\n' +
       '  This app can connect to any website, not just specific ones.\n' +
       '- ⚠ Accept incoming connections on port 6881-6889\n' +
       '  This opens a door into your device: any other computer that can reach this port -- on your network, or the internet if it is forwarded -- can connect to this app, not only computers it reached out to first.\n' +
@@ -541,12 +541,9 @@ describe('describeInstallConsent', () => {
     )
   })
 
-  // Coordinator review, 2026-09-14: the round above did not test what
-  // happens when SEVERAL warned capabilities appear together, and the
-  // torrent example manifest (capability-api.md) broke it -- 4 of 5 rows
-  // warned, one headline ("⚠ Unlimited network access") appearing twice
-  // from tcp.connect and udp.send. These pin the two merges that fix it.
-  it('merges tcp.connect and udp.send into ONE row when both are unlimited -- an identical headline never repeats', () => {
+  // A manifest holding several warned capabilities at once (the torrent
+  // example manifest in capability-api.md) must not show rows that read alike.
+  it('keeps tcp.connect and udp.send as two rows, each saying what it is for', () => {
     const manifest = manifestWith({ net: { tcp: { connect: ['*:*'] }, udp: { send: ['*:*'] } } })
 
     const content = describeInstallConsent(ORIGIN, manifest, ['tcp.connect', 'udp.send'])
@@ -554,10 +551,20 @@ describe('describeInstallConsent', () => {
     expect(content.warning).toBe(true)
     expect(content.detail).toBe(
       'Claims to be "Test app".\n' +
-      '- ⚠ Unlimited network access\n' +
-      '  This app can connect to any computer on the internet, not just specific ones. This app can send data to any computer on the internet, not just specific ones.\n' +
+      '- ⚠ Unlimited network access: open direct connections to any computer on the internet\n' +
+      '  This app can connect to any computer on the internet, not just specific ones.\n' +
+      '- ⚠ Unlimited network access: send data directly to any computer (used for peer-to-peer transfers and calls)\n' +
+      '  This app can send data to any computer on the internet, not just specific ones.\n' +
       'https://app.example'
     )
+  })
+
+  it('still merges two capabilities that render the identical row into one', () => {
+    const manifest = manifestWith({ net: { tcp: { connect: ['a.example:443'] }, https: { connect: ['a.example:443'] } } })
+
+    const content = describeInstallConsent(ORIGIN, manifest, ['tcp.connect', 'https.connect'])
+
+    expect(content.detail.match(/\n- /g)).toHaveLength(1)
   })
 
   it('merges tcp.listen.network and udp.bind.network into ONE row on the same ports, not two "opens a door" rows', () => {
@@ -591,7 +598,7 @@ describe('describeInstallConsent', () => {
     expect(content.detail).not.toContain('Accepts connections and data from other computers')
   })
 
-  it('THE FLAGSHIP: connect *:*, listen, bind and udp.send *:* together render exactly two warnings, not four, and no repeated headline', () => {
+  it('THE FLAGSHIP: connect *:*, listen, bind and udp.send *:* together render three warnings, each different', () => {
     const manifest = manifestWith({
       net: {
         tcp: { connect: ['*:*'], listen: { network: ['6881-6889'] } },
@@ -605,18 +612,19 @@ describe('describeInstallConsent', () => {
     expect(content.warning).toBe(true)
     expect(content.detail).toBe(
       'Claims to be "Test app".\n' +
-      '- ⚠ Unlimited network access\n' +
-      '  This app can connect to any computer on the internet, not just specific ones. This app can send data to any computer on the internet, not just specific ones.\n' +
+      '- ⚠ Unlimited network access: open direct connections to any computer on the internet\n' +
+      '  This app can connect to any computer on the internet, not just specific ones.\n' +
       '- ⚠ Accepts connections and data from other computers on port 6881-6889\n' +
       '  This opens a door into your device: any other computer that can reach these ports -- on your network, or the internet if they are forwarded -- can connect to or send data to this app, not only computers this app contacted first.\n' +
+      '- ⚠ Unlimited network access: send data directly to any computer (used for peer-to-peer transfers and calls)\n' +
+      '  This app can send data to any computer on the internet, not just specific ones.\n' +
       '- Store files in a private folder for this app on this device\n' +
       'https://app.example'
     )
-    // Five declared capabilities collapse to three rows: two distinct kinds
-    // of breadth (outbound reach, inbound reach), never a fourth repeating
-    // one of the first two.
-    expect(content.detail.match(/\n- /g)).toHaveLength(3)
-    expect(content.detail.match(/⚠/g)).toHaveLength(2)
+    // Five declared capabilities collapse to four rows: listen and bind are
+    // one fact stated twice, the rest each say something of their own.
+    expect(content.detail.match(/\n- /g)).toHaveLength(4)
+    expect(content.detail.match(/⚠/g)).toHaveLength(3)
   })
 
   // A170 (CRITICAL): a capability can already be held when this dialog
@@ -732,7 +740,7 @@ describe('ADR-0037 -- Level 4 carries no warning, on every dialog level threads 
     const content = describeGrantRequest(ORIGIN, manifest, 'https.connect', ['*:*'], 4)
 
     expect(content.warning).toBe(false)
-    expect(content.message).toBe('Unlimited network access')
+    expect(content.message).toBe("Unlimited network access: load anything from any website, without the browser's usual limits")
     expect(content.detail).not.toContain('⚠')
     expect(content.detail).not.toContain('This app can connect to any website')
   })
@@ -743,7 +751,7 @@ describe('ADR-0037 -- Level 4 carries no warning, on every dialog level threads 
     const noLevel = describeGrantRequest(ORIGIN, manifest, 'https.connect', ['*:*'])
 
     expect(atLevel3.warning).toBe(true)
-    expect(atLevel3.message).toBe('⚠ Unlimited network access')
+    expect(atLevel3.message).toBe("⚠ Unlimited network access: load anything from any website, without the browser's usual limits")
     expect(atLevel3).toEqual(noLevel)
   })
 
@@ -755,7 +763,7 @@ describe('ADR-0037 -- Level 4 carries no warning, on every dialog level threads 
     expect(content.warning).toBe(false)
     expect(content.detail).toBe(
       'Claims to be "Test app".\n' +
-      '- Unlimited network access\n' +
+      "- Unlimited network access: load anything from any website, without the browser's usual limits\n" +
       '- Store files in a private folder for this app on this device\n' +
       'https://app.example'
     )

@@ -1,6 +1,8 @@
 // The screen over a tab whose protocol page is loading: a title, the address and a line of detail, drawn over the whole
-// page area. The tab's watcher asks for it with the address; this wording comes from the protocol's descriptor.
+// page area. The tab's watcher asks for it with the address; this wording comes from the protocol's descriptor. A first
+// visit to an app (../app-setup/) asks with its own words instead, for an address no protocol has a screen for.
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
+import { onNameSchemeChange } from '../verifier/name-scheme-events.js'
 import type { OverlayDef, OverlayHandler, OverlayWindow } from '../overlays/overlay-types.js'
 import { slotClosed } from '../overlays/tab-slots.js'
 import { ADDRESS_LIMIT } from '../sad-tab/sad-tab-text.js'
@@ -12,16 +14,45 @@ export interface LoadingScreenView {
   readonly detail: string
   /** The address as the person reads it (`ipfs://<name>/`), cut to ADDRESS_LIMIT. */
   readonly address: string
+  /** Something is still moving: the page draws its slim bar. False once a sheet explains why nothing will. */
+  readonly busy: boolean
 }
+
+/** Words a caller brings for an address no protocol words a screen for. */
+interface SetupText { readonly title: string, readonly detail: string, readonly busy: boolean }
+
+const TEXT_TITLE_LIMIT = 160
+const TEXT_DETAIL_LIMIT = 300
 
 /** The longest address taken from the payload: a page can navigate to a URL of any length. */
 const URL_LIMIT = 4096
 
-function asUrl (payload: unknown): string | undefined {
+function asText (value: unknown): SetupText | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const { title, detail, busy } = value as { title?: unknown, detail?: unknown, busy?: unknown }
+  if (Object.keys(value).length !== 3 || typeof title !== 'string' || typeof detail !== 'string' || typeof busy !== 'boolean') return undefined
+  return title.length <= TEXT_TITLE_LIMIT && detail.length <= TEXT_DETAIL_LIMIT ? { title, detail, busy } : undefined
+}
+
+/** `{ url }`, worded by the protocol; or `{ url, text }`, worded by the caller. Anything else is refused whole. */
+function asAsk (payload: unknown): { url: string, text: SetupText | undefined } | undefined {
   if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return undefined
   const keys = Object.keys(payload)
-  const { url } = payload as { url?: unknown }
-  return keys.length === 1 && typeof url === 'string' && url.length <= URL_LIMIT ? url : undefined
+  const { url, text } = payload as { url?: unknown, text?: unknown }
+  if (typeof url !== 'string' || url.length > URL_LIMIT) return undefined
+  if (keys.length === 1) return { url, text: undefined }
+  if (keys.length !== 2 || !Object.hasOwn(payload, 'text')) return undefined
+  const words = asText(text)
+  return words === undefined ? undefined : { url, text: words }
+}
+
+type Ask = NonNullable<ReturnType<typeof asAsk>>
+
+/** What the screen says for `ask` now, or undefined when no protocol words a screen for its address. */
+function viewOf (ask: Ask): LoadingScreenView | undefined {
+  const screen = ask.text ?? BUILTIN_ADDRESSES.loadingScreenFor(ask.url)
+  if (screen === undefined) return undefined
+  return { title: screen.title, detail: screen.detail ?? '', address: BUILTIN_ADDRESSES.displayUrl(ask.url).slice(0, ADDRESS_LIMIT), busy: ask.text?.busy ?? true }
 }
 
 export const loadingScreenOverlay: OverlayDef = {
@@ -33,14 +64,33 @@ export const loadingScreenOverlay: OverlayDef = {
   layer: 'cover',
   closeOn: { blur: false, tabSwitch: true, navigation: false, layout: false },
   keep: 'warm',
-  attach: ({ window, close }: OverlayWindow): OverlayHandler => ({
-    show: (payload): LoadingScreenView | undefined => {
-      const url = asUrl(payload)
-      const screen = url === undefined ? undefined : BUILTIN_ADDRESSES.loadingScreenFor(url)
-      if (url === undefined || screen === undefined) { close(); return undefined }
-      return { title: screen.title, detail: screen.detail ?? '', address: BUILTIN_ADDRESSES.displayUrl(url).slice(0, ADDRESS_LIMIT) }
-    },
-    request: () => undefined,
-    closed: (reason) => { slotClosed(window, LOADING_SCREEN_OVERLAY, reason) }
-  })
+  attach: ({ window, close, send }: OverlayWindow): OverlayHandler => {
+    /** What is on screen, so a scheme learned while it shows can word it again. */
+    let shown: Ask | undefined
+    let stopListening: (() => void) | undefined
+    const stop = (): void => {
+      shown = undefined
+      stopListening?.()
+      stopListening = undefined
+    }
+    return {
+      show: (payload): LoadingScreenView | undefined => {
+        const ask = asAsk(payload)
+        const view = ask === undefined ? undefined : viewOf(ask)
+        if (ask === undefined || view === undefined) { stop(); close(); return undefined }
+        shown = ask
+        stopListening ??= onNameSchemeChange(() => {
+          const again = shown === undefined ? undefined : viewOf(shown)
+          if (again !== undefined) send({ type: 'view', view: again })
+        })
+        return view
+      },
+      request: () => undefined,
+      closed: (reason) => {
+        stop()
+        slotClosed(window, LOADING_SCREEN_OVERLAY, reason)
+      },
+      disposed: stop
+    }
+  }
 }

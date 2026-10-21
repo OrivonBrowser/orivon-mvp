@@ -19,14 +19,15 @@ const NOT_FOUND = 404
 /**
  * `website`: the host answered 404 and named the root it looked in as this one, so that root has
  * no manifest. A 404 without that echo (a name that points at no content gets one too) is
- * `unread`, like anything else that stopped the read: it proves nothing about the content.
+ * `unread`, like anything else that stopped the read: it proves nothing about the content. An
+ * origin with no root (`cid` undefined) can therefore never read as `website`.
  */
 export type ManifestAtRoot =
   | { readonly kind: 'app', readonly manifest: Manifest, readonly bytes: Uint8Array }
   | { readonly kind: 'website' }
   | { readonly kind: 'unread', readonly reason: string }
 
-export async function fetchManifestAtRoot (fetchFn: Fetch, resolveFn: Resolver, canonicalOrigin: string, cid: string): Promise<ManifestAtRoot> {
+export async function fetchManifestAtRoot (fetchFn: Fetch, resolveFn: Resolver, canonicalOrigin: string, cid: string | undefined): Promise<ManifestAtRoot> {
   const controller = new AbortController()
   const timer = setTimeout(() => { controller.abort() }, MANIFEST_READ_TIMEOUT_MS)
   try {
@@ -36,7 +37,7 @@ export async function fetchManifestAtRoot (fetchFn: Fetch, resolveFn: Resolver, 
     let absentUnderRoot = false
     const noting: Fetch = async (url, addresses, signal, headers): Promise<FetchResponse> => {
       const response = await fetchFn(url, addresses, signal, headers)
-      absentUnderRoot = response.status === NOT_FOUND && response.headers?.get(CONTENT_ROOT_HEADER) === cid
+      absentUnderRoot = cid !== undefined && response.status === NOT_FOUND && response.headers?.get(CONTENT_ROOT_HEADER) === cid
       return response
     }
     const chunks: Uint8Array[] = []

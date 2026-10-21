@@ -139,9 +139,9 @@ interface Scenario {
 
 const SCENARIOS: Scenario[] = [
   { label: 'middle-click a plain same-origin link', sel: '#same-origin', clickOptions: { button: 'middle' }, expectActivates: false },
-  { label: 'ctrl-click a plain cross-origin link', sel: '#cross-origin', clickOptions: { modifiers: ['Control'] }, expectActivates: false },
+  { label: 'ctrl-click a plain cross-origin link', sel: '#cross-origin', clickOptions: { modifiers: ['ControlOrMeta'] }, expectActivates: false },
   { label: 'left-click a target=_blank link', sel: '#blank', clickOptions: {}, expectActivates: true },
-  { label: 'ctrl+shift-click a plain link', sel: '#ctrlshift', clickOptions: { modifiers: ['Control', 'Shift'] }, expectActivates: true },
+  { label: 'ctrl+shift-click a plain link', sel: '#ctrlshift', clickOptions: { modifiers: ['ControlOrMeta', 'Shift'] }, expectActivates: true },
   { label: 'middle-click a target=_blank link', sel: '#blank-middle', clickOptions: { button: 'middle' }, expectActivates: false }
 ]
 
@@ -300,8 +300,8 @@ it('a page cannot open unlimited windows with synthetic, untrusted shift-clicks:
   }
 }, 60_000)
 
-const POST_MODIFIERS: Array<{ label: string, modifiers: Array<'Control' | 'Shift'> }> = [
-  { label: 'ctrl-click (opens a background tab)', modifiers: ['Control'] },
+const POST_MODIFIERS: Array<{ label: string, modifiers: Array<'ControlOrMeta' | 'Shift'> }> = [
+  { label: 'ctrl-click (opens a background tab)', modifiers: ['ControlOrMeta'] },
   { label: 'shift-click (opens a new window)', modifiers: ['Shift'] }
 ]
 

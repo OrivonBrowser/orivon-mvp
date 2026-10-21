@@ -11,6 +11,8 @@ import { findChrome, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers
 import { startIngest, telemetryHomeFolder } from '../support/telemetry-ingest.js'
 import type { DevGrantRequest } from '../../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../../src/contracts/index.js'
+import { PAYLOAD_SCHEMA } from '../../src/telemetry/disclosure.js'
+import { NOTICE_VERSION } from '../../src/telemetry/consent.js'
 
 afterAll(async () => { expect(await assertNoElectronSurvivors()).toEqual([]) })
 
@@ -44,7 +46,7 @@ function manifest (): Manifest {
   }
 }
 
-it('lists an app that holds a permission with what it has stored, and takes the permission back', async () => {
+it('lists an app that holds a permission with what it has stored, and switches the permission off and on', async () => {
   const { app, chrome } = await launched()
   try {
     const origin = 'http://127.0.0.1:47391'
@@ -62,12 +64,31 @@ it('lists an app that holds a permission with what it has stored, and takes the 
     expect(await card.locator('.muted').first().textContent()).toContain('Settings sections e2e fixture')
     expect(await card.locator('.app-stored').textContent()).toContain('Stores 0 bytes of files')
     expect(await card.locator('.perm').count()).toBe(1)
-    // No keyring under the test's password store: the identity key is remade on each start.
-    expect(await page.locator('#row-apps-identity .value').textContent()).toContain('Made again each time')
+    // A Linux run has no keyring under its password store, so the identity key is remade on each start; macOS and
+    // Windows always keep it in theirs (the Keychain, DPAPI).
+    expect(await page.locator('#row-apps-identity .value').textContent()).toContain(process.platform === 'linux' ? 'Made again each time' : 'Kept in your system\'s keyring')
 
-    await card.locator('.perm button', { hasText: 'Revoke' }).click()
-    expect(await waitFor(async () => (await card.locator('.perm').count()) === 0)).toBe(true)
-    expect(await card.textContent()).toContain('Nothing is granted to it now.')
+    const permission = card.locator('.perm[data-capability="tcp.connect"]')
+    expect(await permission.locator('input').isChecked()).toBe(true)
+    await permission.locator('.switch').click()
+    // The row stays, off, so the app is still where the person finds it to allow it again.
+    expect(await waitFor(async () => !(await permission.locator('input').isChecked()))).toBe(true)
+    expect(await card.locator('.perm').count()).toBe(1)
+    await permission.locator('.switch').click()
+    expect(await waitFor(async () => await permission.locator('input').isChecked())).toBe(true)
+
+    // With two apps listed, a switch of the second keeps the keyboard after the redraw, not the first app's.
+    const second = 'http://127.0.0.1:47392'
+    await app.evaluate(async (_electron, request: DevGrantRequest) => {
+      const hook = (globalThis as unknown as { __orivonDevGrant?: (r: DevGrantRequest) => Promise<Grant> }).__orivonDevGrant
+      if (typeof hook === 'function') await hook(request)
+    }, { origin: second, manifest: manifest(), capability: 'tcp.connect', patterns: ['127.0.0.1:9'] } satisfies DevGrantRequest)
+    const other = page.locator(`.app-card[data-origin="${second}"]`)
+    await other.waitFor()
+    await other.locator('.perm[data-capability="tcp.connect"] input').focus()
+    await other.locator('.perm[data-capability="tcp.connect"] input').press('Space')
+    expect(await waitFor(async () => !(await other.locator('.perm[data-capability="tcp.connect"] input').isChecked()))).toBe(true)
+    expect(await page.evaluate((origin) => document.activeElement?.closest('.app-card')?.getAttribute('data-origin') === origin, second)).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
@@ -92,6 +113,29 @@ it('says how the light client is, and shows its switch off and out of reach whil
     expect(await page.locator('#row-web3-servers .value').textContent()).toContain('https://')
     // A restart inherits the forced switch, so none is offered.
     expect(await page.locator('#row-web3-restart').count()).toBe(0)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('offers where IPFS is read from, shows the node\'s state, and hides the lookup service switch once gateways are chosen', async () => {
+  const { app, chrome } = await launched()
+  try {
+    const page = await openSettings(app, chrome, '/web3')
+    await page.waitForSelector('#row-web3-ipfs-source')
+    const source = page.locator('#row-web3-ipfs-source select')
+    expect(await source.inputValue()).toBe('node')
+    expect(await page.locator('#row-web3-ipfs-source option').allTextContents()).toEqual(['Your own IPFS node', 'Public IPFS gateways'])
+    expect(await page.locator('#row-web3-ipfs-lookup input[type=checkbox]').isChecked()).toBe(true)
+    expect(await page.locator('#row-web3-ipfs-lookup label, #row-web3-ipfs-lookup .label').first().textContent()).toContain('Use a lookup service to find IPFS sites faster')
+    expect(await waitFor(async () => (await page.locator('#row-web3-ipfs-node .value').textContent().catch(() => '')) !== '')).toBe(true)
+    expect(await page.locator('#row-web3-ipfs-node .value').textContent()).toMatch(/^Off/)
+
+    await source.selectOption('gateways')
+    expect(await waitFor(async () => await page.locator('#row-web3-ipfs-lookup').count() === 0)).toBe(true)
+    expect(await waitFor(async () => await page.locator('#row-web3-ipfs-node').count() === 0)).toBe(true)
+    expect(await page.locator('#row-web3-servers .value').textContent()).toContain('IPFS gateways:')
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
@@ -155,7 +199,7 @@ it('shows usage statistics as not chosen yet with the exact text that would be s
     await row.locator('.switch').click()
     await page.waitForFunction(() => document.querySelector('#usage-state')?.textContent?.startsWith('On.') === true)
     expect(await waitFor(() => readConsent(home)?.['state'] === 'accepted')).toBe(true)
-    expect(readConsent(home)).toMatchObject({ source: 'settings', noticeVersion: 4 })
+    expect(readConsent(home)).toMatchObject({ source: 'settings', noticeVersion: NOTICE_VERSION })
     const installId = await row.locator('#usage-install-id').textContent()
     expect(installId).toMatch(/^[0-9a-f]{32}$/)
     expect(JSON.parse(await row.locator('#usage-json').textContent() ?? '{}')).toMatchObject({ installId })
@@ -189,7 +233,7 @@ it('Delete my data asks the server to erase the install ID, turns telemetry off 
 
     await row.locator('#usage-delete').click()
     await page.waitForFunction(() => document.querySelector('#usage-erase')?.textContent?.startsWith('Done.') === true)
-    expect(ingest.requests.filter((request) => request.path === '/v1/erase')).toEqual([{ path: '/v1/erase', body: { schema: 4, installId } }])
+    expect(ingest.requests.filter((request) => request.path === '/v1/erase')).toEqual([{ path: '/v1/erase', body: { schema: PAYLOAD_SCHEMA, installId } }])
     expect(readConsent(home)?.['state']).toBe('declined')
     expect(await row.locator('#usage-state').textContent()).toContain('Off.')
 
@@ -229,18 +273,18 @@ it('shows the privacy notice from the page itself, with no network, and draws it
   }
 }, TEST_TIMEOUT_MS)
 
-it('keeps looking for updates off until it is turned on', async () => {
+it('looks for updates by default, and keeps it off once it is turned off', async () => {
   const { app, chrome } = await launched()
   try {
     const userData = await userDataOf(app)
     const page = await openSettings(app, chrome, '/about')
     const toggle = page.locator('#row-updates-check input[type=checkbox]')
     await toggle.waitFor({ state: 'attached' })
-    expect(await toggle.isChecked()).toBe(false)
+    expect(await toggle.isChecked()).toBe(true)
     expect(await page.locator('#row-updates-result').count()).toBe(0)
 
     await toggle.click()
-    expect(await waitFor(() => { try { return (JSON.parse(readFileSync(join(userData, 'settings.json'), 'utf8')) as { values: Record<string, unknown> }).values['updates.check'] === true } catch { return false } })).toBe(true)
+    expect(await waitFor(() => { try { return (JSON.parse(readFileSync(join(userData, 'settings.json'), 'utf8')) as { values: Record<string, unknown> }).values['updates.check'] === false } catch { return false } })).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)

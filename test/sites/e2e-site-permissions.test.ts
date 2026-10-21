@@ -2,7 +2,7 @@
 // shell and an ordinary loopback website: pointer lock, and keyboard lock in
 // fullscreen, pass with a notice saying how to leave; an external link opens
 // only once the person allows it, and exactly the URL they were shown; a
-// site's notification answer is listed in the permissions panel, where Reset
+// site's notification answer is listed under Settings, Sites, where Reset
 // forgets it; and it is asked once, remembered across a restart, and read
 // back by Notification.permission.
 //
@@ -18,9 +18,9 @@
 // NOTIFICATIONS RUN ONLY ON A PRIVATE SESSION BUS. A notification this page
 // never shows would still reach the desktop over D-Bus if one were shown, so
 // that phase is skipped unless the runner says the bus is private
-// (ORIVON_E2E_PRIVATE_BUS=1 with a session bus that is not this user's own):
-//   ORIVON_PRIVATE_BUS=1 node scripts/run-headless.mjs npx vitest run \
-//     --config test/vitest.e2e.config.ts test/sites/e2e-site-permissions.test.ts
+// (ORIVON_E2E_PRIVATE_BUS=1 with a session bus that is not this user's own),
+// which scripts/run-headless.mjs gives every run off CI, and CI with
+// ORIVON_PRIVATE_BUS=1.
 // It never constructs a Notification: it reads permission state only.
 //
 // THE CLICKS ARE THE POINT: pointer lock and the second external link each
@@ -30,7 +30,7 @@ import { afterAll, expect, it } from 'vitest'
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
 import { ABSENCE_SETTLE_MS, HERMETIC_RESOLVER, delay, evaluateRetrying, findChrome, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
@@ -128,6 +128,9 @@ const pageState = async (view: Page): Promise<PageState> =>
 const inFullscreen = async (view: Page): Promise<boolean> =>
   await evaluateRetrying(view, () => document.fullscreenElement !== null)
 
+/** An allowed link reaches the system through Chromium's own opener, which on Linux runs the first of `xdg-open` and its kin found on PATH. Windows hands it to its shell and macOS to `open`, neither of which any script on PATH can stand in for, and no JavaScript stub sees it: this page-initiated path is not `shell.openExternal` (that call is proven in the app-behaviour suite, e2e-app-electron-clipboard-shell). */
+const OPENERS_ON_PATH = process.platform !== 'win32' && process.platform !== 'darwin'
+
 /** A PATH directory whose openers record their argument and launch nothing. */
 function stubOpeners (): { dir: string, log: string, launched: () => string } {
   const dir = mkdtempSync(join(tmpdir(), 'orivon-e2e-openers-'))
@@ -161,7 +164,7 @@ it('lets a page lock the pointer and keyboard with a notice, and open an externa
     const openers = stubOpeners()
     try {
       server = await serveFixture()
-      app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], env: { PATH: `${openers.dir}:${process.env['PATH'] ?? ''}` } })
+      app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], env: { PATH: `${openers.dir}${delimiter}${process.env['PATH'] ?? ''}` } })
       await stubNativeDialogs(app)
       const view = await navigateToFixture(app, PAGE_URL, TITLE)
 
@@ -223,15 +226,20 @@ it('lets a page lock the pointer and keyboard with a notice, and open an externa
       check('a clicked mailto: link is asked about', mail.message === 'Open mailto link with your system\'s default app?', JSON.stringify(mail))
       await answerQuestion(app, 'Cancel')
       await delay(ABSENCE_SETTLE_MS)
-      check('Cancel launches nothing', openers.launched() === '', openers.launched())
+      if (OPENERS_ON_PATH) check('Cancel launches nothing', openers.launched() === '', openers.launched())
 
       await view.click('#magnet')
       const magnet = await readQuestion(await waitQuestion(app))
       await answerQuestion(app, 'Allow')
-      const launched = await waitFor(() => openers.launched() !== '')
-      check('Allow hands exactly the URL the person was shown to the OS handler',
-        launched && openers.launched() === `${MAGNET}\n` && magnet.detail === `${ORIGIN} wants to open:\n${MAGNET}`,
-        `${openers.launched()} / ${JSON.stringify(magnet)}`)
+      check('the question for the link the person clicked names the site and the exact URL', magnet.detail === `${ORIGIN} wants to open:\n${MAGNET}`, JSON.stringify(magnet))
+      if (OPENERS_ON_PATH) {
+        const launched = await waitFor(() => openers.launched() !== '')
+        check('Allow hands exactly the URL the person was shown to the OS handler',
+          launched && openers.launched() === `${MAGNET}\n`,
+          openers.launched())
+      } else {
+        check('Allow closes the question', await waitFor(async () => await questionGone(app as ElectronApplication)))
+      }
       check('no native message box was opened for any of them', (await noNativeDialogs(app)).length === 0)
     } finally {
       if (app !== undefined) await closeElectronApp(app)
@@ -243,8 +251,8 @@ it('lets a page lock the pointer and keyboard with a notice, and open an externa
 
 // Reads and resets stored answers only: no page here touches the
 // Notification API, so this runs on any runner.
-it('lists each site\'s notification answer in the permissions panel, and Reset forgets it on disk', async () => {
-  await runPhase('site-notification-panel', async (check) => {
+it('lists each site\'s notification answer under Settings, Sites, and Reset forgets it on disk', async () => {
+  await runPhase('site-notification-list', async (check) => {
     const decisions = { version: 1, origins: { [ORIGIN]: 'allow', 'https://ads.example': 'block' } }
     const app = await launchElectron({
       appPath: '.',
@@ -255,25 +263,27 @@ it('lists each site\'s notification answer in the permissions panel, and Reset f
       await waitFor(() => app.windows().length === 2)
       const chrome = findChrome(app)
       await waitForAddressBarStable(chrome)
-      await chrome.click('#permissions-btn')
-      let panel: Page | undefined
-      await waitFor(() => { panel = app.windows().find((w) => w.url().endsWith('/renderer/permissions/index.html')); return panel !== undefined })
-      if (panel === undefined) throw new Error('the permissions panel did not open')
-      const settings = panel
-      const cards = async (): Promise<Array<{ origin: string, message: string }>> => await evaluateRetrying(settings, () =>
-        Array.from(document.querySelectorAll<HTMLElement>('.app-card')).map((card) => ({
-          origin: card.dataset['origin'] ?? '',
-          message: card.querySelector('.permission-message')?.textContent ?? ''
-        })))
-      const listed = await waitFor(async () => (await cards()).length === 2)
-      check('each decided site has a card saying what it may do', listed && JSON.stringify(await cards()) === JSON.stringify([
-        { origin: ORIGIN, message: 'Can show notifications.' },
-        { origin: 'https://ads.example', message: 'Blocked from showing notifications.' }
-      ]), JSON.stringify(await cards()))
+      await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/sites') })
+      let settings: Page | undefined
+      await waitFor(() => { settings = app.windows().find((w) => w.url().startsWith('orivon://settings') && !w.isClosed()); return settings !== undefined })
+      if (settings === undefined) throw new Error('the Settings page did not open')
+      const sites = settings
+      await sites.waitForSelector('#row-sites-list .site-item')
+      const badges = async (): Promise<Array<{ origin: string, badges: string[] }>> => (await evaluateRetrying(sites, () =>
+        Array.from(document.querySelectorAll<HTMLElement>('#row-sites-list .site-item')).map((item) => ({
+          origin: item.dataset['origin'] ?? '',
+          badges: Array.from(item.querySelectorAll('.badge')).map((badge) => badge.textContent ?? '')
+        })))).sort((a: { origin: string }, b: { origin: string }) => a.origin.localeCompare(b.origin))
+      const listed = await waitFor(async () => (await badges()).length === 2)
+      check('Settings, Sites lists each decided site with what it may do', listed && JSON.stringify(await badges()) === JSON.stringify([
+        { origin: ORIGIN, badges: ['Notifications allowed'] },
+        { origin: 'https://ads.example', badges: ['Notifications blocked'] }
+      ]), JSON.stringify(await badges()))
 
-      await settings.click('[data-origin="https://ads.example"] .revoke-btn')
-      const reset = await waitFor(async () => (await cards()).length === 1)
-      check('Reset removes that site\'s card, and only that one', reset && (await cards())[0]?.origin === ORIGIN, JSON.stringify(await cards()))
+      await sites.click('#row-sites-list .site-item[data-origin="https://ads.example"] .btn.icon')
+      await sites.click('#row-sites-list .site-item[data-origin="https://ads.example"] .btn.danger.armed')
+      const reset = await waitFor(async () => (await badges()).length === 1)
+      check('Reset removes that site, and only that one', reset && (await badges())[0]?.origin === ORIGIN, JSON.stringify(await badges()))
       const userData = await app.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))
       const saved = JSON.parse(readFileSync(join(userData, 'notification-decisions.json'), 'utf8')) as { origins: Record<string, string> }
       check('and forgets its answer on disk', JSON.stringify(saved.origins) === JSON.stringify({ [ORIGIN]: 'allow' }), JSON.stringify(saved))

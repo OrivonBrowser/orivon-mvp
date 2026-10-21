@@ -4,7 +4,7 @@
 `permissions.ts`, `site-info.ts`, `overlay.ts`, `split-frame.ts`, `drop-catcher.ts`, `internal.ts`, `embed.ts`,
 `child-host.ts` and `extension-api.ts`), the
 app-tab wiring they share (`manifest-hint.ts`, `expose-shim-globals.ts`, `expose-fetch-route.ts`,
-`page-buffer.ts`, `embed-event-relay.ts`, `page-visibility.ts`, `display-capture.ts`, `ordinary-tab.ts`), the sign-in form watcher (`form-watch.ts`, with
+`page-buffer.ts`, `embed-event-relay.ts`, `page-visibility.ts`, `display-capture.ts`, `hid-announce.ts`, `ordinary-tab.ts`), the sign-in form watcher (`form-watch.ts`, with
 the decisions it makes in `login-fields.ts`), the app-tab key report (`page-keys.ts`, `find-chord.ts`), and
 `orivon-error.ts`, the plain-object error shape [`surface/`](surface/) and [`ports/`](ports/)
 share. The narrowest and most security-critical surface in the repository. Tied to Electron,
@@ -45,7 +45,7 @@ across this boundary.
 |---|---|---|
 | `app.ts` | every ordinary tab | `./page-dialogs.ts`'s `prompt` wrapper; `./ordinary-tab.ts`'s `exposeOrdinaryTabSurface()` only from the top frame (`./frame.ts`'s `inMainFrame()`): `window.orivon` and what depends on it -- none of that on a `chrome-extension:` page, which still gets the `prompt` wrapper |
 | `shell.ts` | only the chrome view, and only at the URL `--orivon-shell-url` names | Tab commands, typed by its `OrivonShell` |
-| `permissions.ts` | only the all-sites popup (`src/main/permissions/permissions-panel.ts`), and only at its expected URL | `orivonPermissions`: list and revoke grants, list and reset notification answers; `src/main/ipc/permissions-ipc.ts` re-verifies the sender on every call |
+| `networks.ts` | only the Available networks popup (`src/main/networks/networks-panel.ts`), and only at its expected URL | `orivonNetworks`: the cards, a card's switch, a push on every change; `src/main/ipc/networks-ipc.ts` re-verifies the sender on every call |
 | `overlay.ts` | only an overlay view (`src/main/overlays/overlay-view.ts`), and only at the exact URL main built for it | `orivonOverlay`: which overlay this is, `ready`, `request`, `size`, `close` and `onEvent`; `src/main/overlays/overlay-ipc.ts` re-verifies the sender on every call, and the host runs only the handler of the overlay the view was built for |
 | `split-frame.ts` | only the view behind a split (`src/main/shell/split-frame.ts`) | `orivonSplit`: what to draw, and drag the divider to a place or reset it |
 | `drop-catcher.ts` | only the transparent view over a window's page while a tab is dragged (`src/main/shell/drop-catcher.ts`), and only at its expected URL | nothing: it listens for the drag's events on its own document and reports where they were to main; only a drag carrying the tab type is touched |
@@ -58,7 +58,8 @@ across this boundary.
 | `newtab.ts` | only a fresh tab (`src/main/shell/tabs.ts`'s `createTab()` with no `url`) | Read-only bookmarks and navigate-this-tab; otherwise the same `exposeOrdinaryTabSurface()` as `app.ts` |
 | `embed-event-relay.ts` | `./ordinary-tab.ts`, so every ordinary tab | Nothing on `window`: turns the shell's notice that a page shown in a `<webview>` asked for a window or started a download (`EMBED_EVENT_CHANNEL`, ADR-0047) into a bubbling `orivon-popup` or `orivon-download` event on the element, dispatched in the main world so the page can read `detail`; idle until main sends, and a page cannot send on that channel |
 | `display-capture.ts` | `./ordinary-tab.ts`, so every ordinary tab and app tab, top frame only; never an extension's own page or an embed | Nothing new on `window`: a `Proxy` over the page's `MediaDevices.prototype.getDisplayMedia` (and over the `clone` of a stream or track it handed out) that asks main for the screen-share picker, then has the isolated world arm the ticket and start the one real call, which a closure made at document start runs in the page's world (so the page's `CaptureController` binds), and takes the stream from a detached element the closure returns. `toString`, `name` and the descriptor stay the platform's. Keeps every track it handed out so Stop reaches them and reports when all ended (`DISPLAY_CAPTURE_*` channels, `src/main/display-capture/`); for a share chosen in the system's dialog it also holds one clone on the source for the share's life and resolves the page's call at the capture's first frame. A page that goes around it is refused in main |
-| `page-visibility.ts` | `./ordinary-tab.ts`, so every ordinary tab, top frame only; never an extension's own page | Nothing new on `window`: replaces the page's `Document.prototype` getters for `visibilityState`, `hidden`, `webkitVisibilityState` and `webkitHidden`, installed in the main world before the page's scripts, so a tab out of sight reads hidden and sees one `visibilitychange` per change, as in Chrome. The state is a closure; the shell's message (`TAB_VISIBILITY_CHANNEL`) reaches it through a per-document event name no page script is told. A page that tampers with it only fools itself |
+| `hid-announce.ts` | `./ordinary-tab.ts`, so every ordinary tab, top frame only | Nothing on `window`: when main says (`HID_ANNOUNCE_CHANNEL`) that the person just allowed a USB HID device (ADR-0068), runs a closure in the page's world that finds it in the page's own `navigator.hid.getDevices()` and dispatches a `connect` event on `navigator.hid` with an own `device` property, because Electron 44 builds the event with a null `device`. A page cannot send on that channel, and a device the page's `getDevices()` does not list is never announced |
+| `page-visibility.ts` | `./ordinary-tab.ts`, so every ordinary tab, top frame only; never an extension's own page | Nothing new on `window`: replaces the page's `Document.prototype` getters for `visibilityState`, `hidden`, `webkitVisibilityState` and `webkitHidden`, installed in the main world before the page's scripts, so a tab out of sight reads hidden and sees one `visibilitychange` per change, as in Chrome; it also wraps `WakeLock.prototype.request` so the screen locks a hidden tab holds are released (Design notes). The state is a closure; the shell's message (`TAB_VISIBILITY_CHANNEL`) reaches it through a per-document event name no page script is told. A page that tampers with it only fools itself |
 | `form-watch.ts`, `login-fields.ts` | `./ordinary-tab.ts`, so every ordinary tab, top frame only | Nothing on `window`: reports a page's password fields, the box a person focused and a submitted sign-in over `FORM_WATCH_CHANNEL`, and writes the account a person chose in Orivon's chooser into the page's own fields when main says so on `FORM_FILL_CHANNEL`; inert until main's config turns it on, and a page can neither ask it for a value nor trigger a fill |
 | `page-keys.ts`, `find-chord.ts` | `./ordinary-tab.ts`, top frame of an app tab only | Nothing on `window`: when a `Ctrl+F` (`Cmd+F` on macOS) reaches the end of the page's own handlers without `preventDefault`, sends `{ command: 'find.open' }` over `PAGE_KEY_CHANNEL`; `src/main/shortcuts/page-key-ipc.ts` accepts it only from the top frame of the tab in front, on a registered app's tab, at five a second |
 | `expose-fetch-route.ts`, `expose-shim-globals.ts`, `expose-child-host-connect.ts` | `./ordinary-tab.ts`, shared by `app.ts` and `newtab.ts`'s fallback | On an app tab only: the routed network path, `process`/`global`/`setImmediate`/`clearImmediate`/`Buffer`, and (ADR-0046) a registered-symbol bridge (`start`/`send`/`kill` closures, never the raw port -- T17) letting the page reach its app's child host with no new global; each closure applies `window.orivon`'s own page-caller check (ADR-0045), so an extension's script in the page cannot start, message or kill the app's children |
@@ -69,7 +70,7 @@ across this boundary.
 `location.href` against the URL main passed them (`--orivon-shell-url` and its siblings) before exposing
 anything. The chrome view, the popups and the split view are also locked to that document
 (`src/main/shell/lock-navigation.ts`); a fresh tab is not, since it navigates. Main re-verifies the sender on
-every call: `ipc.ts`'s `isFromChrome` by frame identity and URL, `newtab-ipc.ts` by URL, `permissions-ipc.ts`,
+every call: `ipc.ts`'s `isFromChrome` by frame identity and URL, `newtab-ipc.ts` by URL, `networks-ipc.ts`,
 `overlay-ipc.ts` and `site-info-ipc.ts` by identity and URL (A269), and site-info fixes the origin itself.
 
 ## The rule that governs this directory
@@ -146,3 +147,11 @@ properties follow it; why the browser reports a background tab this way is in th
 (`visible`), because a tab's preload does not run in subframes, so an embedded player or widget that backs off
 on `document.hidden` still runs at full rate in a background tab. The state is also unset until the first message
 after a document loads, so a page's first scripts in a background tab can read `visible` for an instant.
+
+**The same file releases a page's screen wake locks when the tab is hidden, because Chromium will not.** The Screen
+Wake Lock API ends a lock when its document is hidden, but that works from Chromium's own state, which a tab behind
+another never leaves (measured: the lock was still held eight seconds after another tab came to the front). So the
+file wraps `WakeLock.prototype.request` to remember the sentinels it hands out, releases them with the browser's own
+`release` when the shell says hidden, and refuses a request made while hidden with `NotAllowedError`. The gate grants
+the lock only to a tab's top frame (`ADR-0090`) for this reason: a frame has no such wrapper. Taking the wrapper out
+leaves the grant unsafe, and `test/app-behaviours/e2e-app-wake-lock.test.ts` is the check that fails.

@@ -17,7 +17,7 @@ function fakeOrivon (): Orivon {
   const unusedSync = (): never => { throw new Error('unused in this test') }
   return {
     version: 0,
-    app: { manifest: async () => MANIFEST, grants: async () => [], requestGrant: async () => false },
+    app: { manifest: async () => MANIFEST, grants: async () => [], requestGrant: async () => false, onOpenUrl: () => () => {}, requestSchemeHandler: async () => false, isSchemeHandler: async () => false },
     net: { connect: unused, connectSecure: unused, listen: unused, udpBind: unused, lookup: unused },
     fs: {
       readFile: async () => new Uint8Array(),
@@ -81,7 +81,7 @@ describe('the electron module entry point', () => {
  * call site, which is the defect this whole file exists to close.
  */
 const NOT_YET_CONSIDERED = [
-  'shell', 'clipboard', 'session', 'protocol', 'webContents', 'nativeImage',
+  'session', 'protocol', 'webContents', 'nativeImage',
   'screen', 'contextBridge', 'crashReporter', 'powerMonitor',
   'systemPreferences', 'globalShortcut', 'nativeTheme', 'webFrame', 'desktopCapturer'
 ] as const
@@ -107,6 +107,31 @@ describe('electron exports this package has not yet considered', () => {
       expect((error as { reason?: string }).reason).toBe('unimplemented')
       expect((error as { api?: string }).api).toBe(`${name}.someMethod`)
     }
+  })
+})
+
+describe('powerSaveBlocker and ipcRenderer.sendSync', () => {
+  it('are named exports and sit on the default export; start works without a wake lock and sendSync answers', async () => {
+    vi.stubGlobal('orivon', fakeOrivon())
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const mod = await import('../index.js')
+    expect(mod.default.powerSaveBlocker).toBe(mod.powerSaveBlocker)
+    const id = mod.powerSaveBlocker.start('prevent-display-sleep')
+    expect(mod.powerSaveBlocker.isStarted(id)).toBe(true)
+    mod.ipcMain.on('probe', (event) => { event.returnValue = 'yes' })
+    expect(mod.ipcRenderer.sendSync('probe')).toBe('yes')
+  })
+})
+
+describe('clipboard and shell', () => {
+  it('are built, not whole-module refusals: writeText and openExternal exist and the rest refuse by name', async () => {
+    vi.stubGlobal('orivon', fakeOrivon())
+    const mod = await import('../index.js')
+    expect(mod.clipboard.readText()).toBe('')
+    expect(() => mod.clipboard.writeText('x')).not.toThrow()
+    await expect(mod.shell.openExternal('not a url')).rejects.toThrow(mod.ElectronShimError)
+    expect(() => (mod.shell as unknown as Record<string, () => void>).openPath!()).toThrow(mod.ElectronShimError)
+    expect(() => (mod.clipboard as unknown as Record<string, () => void>).read!()).toThrow(mod.ElectronShimError)
   })
 })
 

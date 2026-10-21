@@ -1,18 +1,19 @@
 import type { SiteInfo } from '../../main/permissions/site-info.js'
 import type { SiteTrust } from '../../main/browsing/site-trust.js'
-import type { ApplyResult, SiteDataSnapshot } from '../../main/ipc/site-info-ipc.js'
+import type { ApplyResult, ProxyAddressResult, SiteDataSnapshot, TunnelResult } from '../../main/ipc/site-info-ipc.js'
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import { closeOnEscape } from '../pages/shared/escape-closes.js'
 import type { ApplyOutcome } from '../../main/install/app-updates.js'
 import { renderMainPage } from './main-view.js'
 import { renderWeb3Page } from './web3-view.js'
 import { renderDataPage } from './data-view.js'
+import { createTunnelsPage } from './tunnels-page.js'
 import type { SitePermissionsView } from '../../main/site-settings/site-permissions-view.js'
 import type { SiteKind } from '../../main/site-settings/kinds.js'
 import type { DataPageView } from './data-view.js'
 
 // The site-info popup's whole job: fetch this ONE origin's info, render
-// whichever of the three pages is current, and stage capability switches
+// whichever of the four pages is current, and stage capability switches
 // until Confirm. No live push channel (unlike the chrome view's
 // ShellState) -- the popup is built fresh on every open
 // (src/main/permissions/site-info-panel.ts), so there is nothing to keep
@@ -27,18 +28,25 @@ interface OrivonSiteInfo {
   setSitePermission: (kind: string, value: string) => Promise<SitePermissionsView | null>
   revokePickedPath: (pickId: string) => Promise<SiteInfo | null>
   applyUpdate: (cid: string) => Promise<ApplyOutcome>
+  setTunnel: (kind: 'nym' | 'socks5' | null) => Promise<TunnelResult | null>
+  setProxyAddress: (text: string) => Promise<ProxyAddressResult | null>
+  testTunnel: (kind: 'nym' | 'socks5') => Promise<unknown>
   openHome: () => Promise<void>
+  openSupport: () => Promise<void>
   clearBrowserData: () => Promise<void>
   deleteLocalFile: () => Promise<boolean>
   removeCookie: (key: string) => Promise<void>
   clearCookies: () => Promise<void>
   reload: () => Promise<void>
+  reviewPermissions: () => Promise<void>
   openSiteSettings: () => Promise<void>
+  openTunnelSettings: (everywhere: boolean) => Promise<void>
   openExtensions: () => Promise<void>
   openCertificate: () => Promise<void>
+  openScoreHelp: () => Promise<void>
   reportHeight: (height: number) => void
   close: () => void
-  initialPage: 'main' | 'web3'
+  initialPage: 'main' | 'web3' | 'tunnels'
   origin: string | null
 }
 
@@ -64,8 +72,9 @@ closeOnEscape(document, () => { bridge.close() })
 const mainSection = must(document.querySelector<HTMLElement>('#main-page'), '#main-page missing')
 const web3Section = must(document.querySelector<HTMLElement>('#web3-page'), '#web3-page missing')
 const dataSection = must(document.querySelector<HTMLElement>('#data-page'), '#data-page missing')
+const tunnelsSection = must(document.querySelector<HTMLElement>('#tunnels-page'), '#tunnels-page missing')
 
-type Page = 'main' | 'web3' | 'data'
+type Page = 'main' | 'web3' | 'data' | 'tunnels'
 
 let page: Page = bridge.initialPage
 let info: SiteInfo | null = null
@@ -91,6 +100,13 @@ let disarmTimer: ReturnType<typeof setTimeout> | undefined
 /** A second press within this long confirms a delete. */
 const ARM_MS = 4000
 
+const tunnelsPage = createTunnelsPage({
+  bridge,
+  getInfo: () => info,
+  setInfo: (next) => { info = next },
+  redraw: () => { renderCurrent() }
+})
+
 /** Measured from where the content actually ENDS, matching
  * ../settings/main.ts's own reportContentHeight exactly -- see that
  * file's own doc for why `.page`'s own height cannot be used directly. */
@@ -110,6 +126,7 @@ function renderCurrent (): void {
   mainSection.hidden = page !== 'main'
   web3Section.hidden = page !== 'web3'
   dataSection.hidden = page !== 'data'
+  tunnelsSection.hidden = page !== 'tunnels'
 
   if (page === 'main' && info !== null) {
     const permissions = sitePermissions === null ? null : { view: sitePermissions, touched: touchedKinds, moreOpen: permissionsMoreOpen, changed: permissionsChanged }
@@ -135,11 +152,15 @@ function renderCurrent (): void {
       },
       onManageExtensions: () => { void bridge.openExtensions() },
       onReload: () => { void bridge.reload() },
+      onReviewPermissions: () => { void bridge.reviewPermissions() },
       onApplyUpdate: (cid) => { void applyUpdate(cid) },
-      onOpenHome: () => { void bridge.openHome() }
+      onOpenHome: () => { void bridge.openHome() },
+      onOpenSupport: () => { void bridge.openSupport() }
     }, updateFailure)
+  } else if (page === 'tunnels' && info !== null) {
+    tunnelsPage.render(tunnelsSection, info)
   } else if (page === 'web3') {
-    renderWeb3Page(web3Section, trust, () => { page = 'main'; renderCurrent() })
+    renderWeb3Page(web3Section, trust, () => { page = 'main'; renderCurrent() }, () => { void bridge.openScoreHelp() })
   } else if (page === 'data' && info !== null) {
     renderDataPage(dataSection, data, info.pickedPathRows, dataView, {
       onBack: () => { page = 'main'; renderCurrent() },

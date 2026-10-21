@@ -16,6 +16,9 @@ capabilities its manifest declares.
 A spec goes in the folder of the area it proves. A helper used by one area lives in that area; one used by
 more goes in `support/`. A new area is a new folder and a new row here; `npm run check:test-paths` fails a
 spec left at the top of `test/` and a folder with no row. File names keep their `e2e-` prefix.
+A spec and its tests are named after the behaviour they prove; the app that inspired one is named only
+in a code comment ([code guidelines](../docs/development/code-guidelines.md) Rule 8). That holds in `ported-apps/` too, where a spec
+runs a real upstream app.
 
 | Folder | What it proves |
 |---|---|
@@ -35,7 +38,7 @@ spec left at the top of `test/` and a folder with no row. File names keep their 
 | `telemetry/` | What usage statistics send and when: a real send of both reports to a loopback ingest, and nothing sent without consent or after it is withdrawn |
 | `window/` | Launch and start-up, profiles, windows, menus, overlays, shortcuts and theme |
 | `qa/` | The QA machinery proving itself: the layout audit, visual states, the failure-evidence bundle, journeys |
-| [`support/`](support/) | The shared harness: `launch-electron.mjs`, `smoke-helpers.mjs`, `e2e-helpers.ts`, the `qa-*` files, `question-support.ts`, and the unit tests of the teardown and the chrome-ready waits |
+| [`support/`](support/) | The shared harness: `launch-electron.mjs` (with `profile-seeds.mjs`, what it writes into a fresh profile, and `launch-env.mjs`, what a launch may do to the machine), `smoke-helpers.mjs`, `e2e-helpers.ts`, the `qa-*` files, `question-support.ts`, and the unit tests of the teardown and the chrome-ready waits; [`virtual-hid/`](support/virtual-hid/README.md), a virtual USB HID device made through Docker and `/dev/uhid` |
 | [`apps/`](apps/), `fixtures/` | The apps and static pages the specs serve |
 
 `impact-map.json` says which of these areas a changed file reaches, and `spec-weights.json` how long each spec
@@ -46,6 +49,15 @@ takes; CI uses them to run only the specs a pull request can reach, in parallel 
 `vitest.e2e.config.ts` selects every `test/**/*.test.ts` except `apps/`; CI, `npm run test:e2e` and the
 scripts cite it by that path.
 
+## Keys a spec presses and reads
+
+The product binds `Mod` to Command on macOS and to Control elsewhere, and some commands have another key there
+(`macDefault` in `src/main/shortcuts/commands.ts`). A spec presses `pressCommand(app, urlPart, 'tab.new')` or
+`pressBinding(app, urlPart, 'Mod+Shift+O')` from `support/e2e-helpers.ts`, never `pressKey` with a hard-coded
+`'control'`; `pressKey` stays for a key with no modifier or a literal `Ctrl` binding such as `Ctrl+Tab`. The text a menu,
+tooltip or Settings row shows for a binding is `shownBinding(bindingOf('tab.new'))` or `keyCapsOf(binding)`. In
+Playwright, `ControlOrMeta` stands for `Mod` in a click or a key typed into a text field.
+
 ## `support/launch-electron.mjs` — the only correct way to start Electron in this repo
 
 **This machine has `ELECTRON_RUN_AS_NODE=1` set in the ambient shell.** It makes the Electron
@@ -55,6 +67,11 @@ against nothing.
 
 `launchElectron()` strips it and verifies the launch is real. **Never launch Electron
 directly.** See [`.claude/skills/orivon-electron/SKILL.md`](../.claude/skills/orivon-electron/SKILL.md).
+
+On Linux, `launchElectron()` also refuses to start unless the command runs under
+`node scripts/run-headless.mjs` (every npm script that launches Electron does), because a launch
+outside it opens a real window on the desktop. Set `ORIVON_ALLOW_VISIBLE_WINDOW=1` for a run you
+mean to watch.
 
 ## Every launch tears itself down, by construction
 
@@ -85,7 +102,7 @@ prove.
 | `support/qa-layout-audit.mjs` | The in-page layout audit. Plain JavaScript and self-contained: Playwright serialises the function, so it may close over nothing |
 | `support/qa-visual.ts` | The audit wrapper, the machine-local pixel baseline, `captureState` and `checkState` |
 | `support/qa-helpers.ts` | A port-0 fixture server, a launched shell, and navigation that waits on what it asserts |
-| `qa/` | The specs (`e2e-qa-*`, `qa-visual`, `qa-evidence`); `docs/development/testing.md` §Visual QA and failure evidence lists what each proves |
+| `qa/` | The specs (`e2e-qa-*`, `qa-visual`, `qa-evidence`); `docs/development/testing.md` section Visual QA and failure evidence lists what each proves |
 
 `launchElectron({ reuseProfile })` relaunches on a profile that `closeElectron(app, { keepProfile: true })`
 kept, for a test that needs the first run's state on disk; only a temp `orivon-test-*` directory the
@@ -97,3 +114,12 @@ Spike gate 3 is **BLOCKED, not failed**: the app works, confirmed by a direct no
 launch, but Playwright's `_electron` driver could not attach to that window, for a cause still
 unidentified ([`open-questions.md`](../docs/open-questions.md) C6). Build step 2's end-to-end
 test uses the same driver. **Check this early**, not the day the test is due.
+
+On a macOS runner, Playwright 1.62 sometimes never attaches a page opened in a later tab: Electron has it loaded
+and on screen, and `app.windows()` does not list it, with or without window focus (measured in a live session). A
+spec that looks such a page up through `findViewShowing` or `app.windows()` can fail there for that reason alone.
+Read the failure's `views.json` and window composite before treating it as a product failure.
+
+Reading `webContents.mainFrame` from the main process while a main-frame navigation is pending can crash Electron
+44 under load (a breakpoint in `electron.exe`, traced on a Windows runner). A spec that polls frames from
+`app.evaluate` skips contents that are still loading.

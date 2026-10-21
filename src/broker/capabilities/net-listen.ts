@@ -42,13 +42,17 @@ export function createListen ({ deps, handleTable, ledger, canonical, socketAllo
     // and the interface `deps.listen` opens: `'local'` is loopback only, and
     // only `'network'` reaches other devices.
     const scope = requestedScope(opts.scope, 'net.listen')
+    // A route gives no address others can reach, so a routed app listens on
+    // loopback only; its own pages and listeners need nothing more.
+    const routed = deps.routeFor?.(key) !== undefined
+    if (routed && scope === 'network') throw fail('denied', 'a routed app cannot listen on a network-reachable socket')
     const { grant: current, ranges } = bindGrantFor(ledger, key, 'tcp.listen', scope, opts.port)
 
     return await handleTable.run(key, { on: 'grant', grantId: current.id }, async (signal) => {
       let listened: ListenedServer
       try {
         // T20, as `udpBind`'s own check (./net-udp.ts).
-        if (await deps.proxyConfigured(GENERIC_PROXY_PROBE_URL)) {
+        if (!routed && await deps.proxyConfigured(GENERIC_PROXY_PROBE_URL)) {
           throw fail('denied', 'a system proxy is configured; tcp.listen refuses to bypass it')
         }
         if (signal.aborted) throw fail('revoked', 'the grant authorising this listen was withdrawn')
@@ -90,41 +94,46 @@ export function createListen ({ deps, handleTable, ledger, canonical, socketAllo
       // no explicit queuing strategy needed for a one-item-per-pull stream.
       const connections = new ReadableStream<FailableTcpSocket>({
         async pull (controller) {
-          let accepted: DialedSocket | null
-          try {
-            accepted = await listened.accept()
-          } catch (error) {
-            // ListenedServer.accept's own doc: rejects for an ABRUPT close
-            // reason, which is exactly this stream's revoked/failed case.
-            controller.error(mapIoError(error, 'net'))
-            return
-          }
-          if (accepted === null) {
-            // A graceful close ('closed'/'sessionEnded') -- ListenedServer's
-            // own contract for what null means.
-            controller.close()
-            return
-          }
+          // One pull must end with an enqueue, a close or an error: the accept
+          // pump keeps a single read pending and a stream never calls pull()
+          // again for a read it has already been asked to serve.
+          for (;;) {
+            let accepted: DialedSocket | null
+            try {
+              accepted = await listened.accept()
+            } catch (error) {
+              // ListenedServer.accept's own doc: rejects for an ABRUPT close
+              // reason, which is exactly this stream's revoked/failed case.
+              controller.error(mapIoError(error, 'net'))
+              return
+            }
+            if (accepted === null) {
+              // A graceful close ('closed'/'sessionEnded') -- ListenedServer's
+              // own contract for what null means.
+              controller.close()
+              return
+            }
 
-          const { destroy, ...socketFields } = accepted
-          try {
-            const childEntry = handleTable.acquireDerived({
-              origin: key,
-              kind: 'tcpSocket',
-              parentId: entry.id,
-              destroy,
-              socketLimit: socketAllowance(key)
-            })
-            controller.enqueue(toFailableSocket(key, childEntry, socketFields))
-          } catch {
-            // The server's own grant was revoked, or this origin's socket
-            // budget is exhausted, in the window between accept() resolving
-            // and registration. Discarding this one connection rather than
-            // erroring the whole stream matches `authorisedSend`'s own
-            // reasoning for udp.send (A87): one rejected item is not the
-            // same failure as the capability itself being gone, and the app
-            // can simply read again for the next connection.
-            await destroy('failed')
+            const { destroy, ...socketFields } = accepted
+            try {
+              const childEntry = handleTable.acquireDerived({
+                origin: key,
+                kind: 'tcpSocket',
+                parentId: entry.id,
+                destroy,
+                socketLimit: socketAllowance(key)
+              })
+              controller.enqueue(toFailableSocket(key, childEntry, socketFields))
+              return
+            } catch {
+              // The server's own grant was revoked, or this origin's socket
+              // budget is exhausted, in the window between accept() resolving
+              // and registration. `acquireDerived` has already destroyed this
+              // one connection; dropping it rather than erroring the whole
+              // stream matches `authorisedSend`'s own reasoning for udp.send
+              // (A87), and the loop takes the next peer for the same read. A
+              // revoked server ends the loop through `accept`.
+            }
           }
         }
       }, { highWaterMark: 0 })

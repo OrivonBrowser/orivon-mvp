@@ -1,11 +1,11 @@
-// readFileSync and existsSync: the two synchronous fs calls that work
-// everywhere, both over orivon.fs.readFileSync, ADR-0016's original
-// synchronous entry point. Every other *Sync call: refused on the page and
-// in a Worker with no SharedArrayBuffer, and built over the Worker's
-// synchronous twin (Symbol.for('orivon.synchronous')) otherwise -- ADR-0016's
-// amendment. src/shim/fs/tests/sync-in-worker.test.ts proves the Worker route
-// against a real worker_threads thread and a real disk; this file proves the
-// two refusals and the twin-call shape with a fake orivon on this thread.
+// readFileSync and existsSync work everywhere, over orivon.fs.readFileSync
+// when there is no synchronous twin. Every other path-based *Sync call is
+// built over the twin (Symbol.for('orivon.synchronous')) -- the Worker's, or
+// the page's, which has no `open` -- and refused without one; a handle-based
+// call is refused on the page's twin. ADR-0016's amendment.
+// src/shim/fs/tests/sync-in-worker.test.ts proves the Worker route against a
+// real worker_threads thread and a real disk; this file proves the refusals
+// and the twin-call shape with a fake orivon on this thread.
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Orivon } from '../../../contracts/capability-api.js'
@@ -118,7 +118,7 @@ describe('fs.existsSync', () => {
   })
 })
 
-describe('the Worker-only *Sync calls, on the page or without shared memory', () => {
+describe('every *Sync call, in a Worker with no SharedArrayBuffer (no synchronous twin at all)', () => {
   it('refuse by name, naming where the call does work', async () => {
     installFakeOrivon({})
     const fs = await import('../fs.js')
@@ -437,5 +437,44 @@ describe('every *Sync export creates os.tmpdir() on first use, like the async tw
     installTmpdirTwin()
     const fs = await import('../fs.js')
     expect(() => fs.appendFileSync(`${VIRTUAL_TMPDIR}/x.log`, 'hi')).not.toThrow()
+  })
+})
+
+describe("on the page, whose synchronous twin has the path-based members and no `open`", () => {
+  const page = (): Array<{ member: string, args: unknown[] }> => installSyncTwin({
+    stat: () => ({ size: 3, isFile: true, isDirectory: false, mtimeMs: 0 }),
+    readFile: () => new Uint8Array([1, 2, 3]),
+    writeFile: () => {}, mkdir: () => {}, readdir: () => ['a'], rm: () => {}, rename: () => {}
+  })
+
+  it('runs the path-based calls over the twin', async () => {
+    const calls = page()
+    const fs = await import('../fs.js')
+
+    fs.mkdirSync('d', { recursive: true })
+    fs.writeFileSync('d/f', 'abc')
+    fs.copyFileSync('d/f', 'd/g')
+    expect(fs.statSync('d/f')?.size).toBe(3)
+    expect(fs.readdirSync('d')).toEqual(['a'])
+    fs.renameSync('d/f', 'd/h')
+    fs.rmSync('d', { recursive: true })
+
+    expect(calls.map((c) => c.member)).toEqual(['mkdir', 'writeFile', 'readFile', 'writeFile', 'stat', 'readdir', 'rename', 'rm'])
+  })
+
+  it('refuses a handle-based call by name, as an unsupported error and not a bare TypeError', async () => {
+    page()
+    const fs = await import('../fs.js')
+    for (const run of [() => fs.openSync('f', 'r'), () => fs.writeFileSync('f', 'x', { flag: 'a' }), () => fs.appendFileSync('f', 'x')]) {
+      expect(run).toThrow(expect.objectContaining({ code: 'ERR_ORIVON_FS_SYNC_UNSUPPORTED' }))
+      expect(run).toThrow(/forked child or a worker_threads.Worker/)
+    }
+  })
+
+  it('answers existsSync with a stat, never a whole-file read', async () => {
+    const calls = page()
+    const fs = await import('../fs.js')
+    expect(fs.existsSync('f')).toBe(true)
+    expect(calls.map((c) => c.member)).toEqual(['stat'])
   })
 })

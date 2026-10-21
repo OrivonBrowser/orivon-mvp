@@ -40,8 +40,8 @@ A saved password is never handed to a page through a channel a page can call.
 
 ## Design notes
 
-**The store refuses instead of falling back.** Without a real keyring behind `safeStorage` (`basic_text` or `unknown`,
-the rule the identity seed uses), in a private window, and with a file this build cannot read, `state()` is not `ready`
+**The store refuses instead of falling back.** Without a real keyring behind `safeStorage` (on Linux, `basic_text` or
+`unknown`; macOS and Windows always have one; the rule the identity seed uses), in a private window, and with a file this build cannot read, `state()` is not `ready`
 and nothing is written: a password stored under a key that sits beside the file protects nothing, and overwriting a
 file that may hold real passwords is worse than not saving. A file with some invalid entries is used without them, and
 the file they came from is kept beside it as `passwords.json.invalid` before the first write.

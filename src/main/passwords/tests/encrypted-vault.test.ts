@@ -191,6 +191,19 @@ describe('EncryptedVault', () => {
     expect(readdirSync(dir)).toEqual([])
   })
 
+  // Electron's safeStorage has getSelectedStorageBackend on Linux only.
+  it('is ready on Windows and macOS, whose keyring has no backend name, and unavailable on Linux without one', async () => {
+    const { getSelectedStorageBackend: _unused, ...storage } = createFakeKeyring()
+    for (const platform of ['win32', 'darwin'] as const) {
+      const vault = new EncryptedVault({ path, storage, platform })
+      await vault.ready()
+      expect(vault.state()).toBe('ready')
+    }
+    const linux = new EncryptedVault({ path, storage, platform: 'linux' })
+    await linux.ready()
+    expect(linux.state()).toBe('unavailable')
+  })
+
   it('is unavailable when the system says encryption is not available, or cannot be asked', async () => {
     expect((await opened({ ...createFakeKeyring(), isAsyncEncryptionAvailable: async () => false })).state()).toBe('unavailable')
     expect((await opened({ ...createFakeKeyring(), isAsyncEncryptionAvailable: async () => { throw new Error('no bus') } })).state()).toBe('unavailable')

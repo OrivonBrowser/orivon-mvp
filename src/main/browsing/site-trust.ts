@@ -76,6 +76,14 @@ export interface Web3Score {
   readonly deliveryOverridden: boolean
   /** The level rests on a DDOC counted only because a local origin is running in developer mode. */
   readonly localDev: boolean
+  /** The level is the one this browser observed (2) and no provider has judged the page: its mark reads "Web?", not "Web2.5". */
+  readonly unscored: boolean
+  /** No Web3 Score provider is chosen, so no score is coming: the tooltip says so instead of "yet". */
+  readonly noProvider: boolean
+  /** The provider was asked and did not answer (and nothing it said earlier is kept): the tooltip says so instead of "no score yet", and the shield asks again later. */
+  readonly unreachable: boolean
+  /** When `unreachable`, how soon asking again is worth it: later on a slow route. Absent otherwise. */
+  readonly retryMs?: number
 }
 
 export function web3Score (trust: SiteTrust | null): Web3Score | null {
@@ -88,7 +96,11 @@ export function web3Score (trust: SiteTrust | null): Web3Score | null {
     pending: trust.judged.status === 'pending' || trust.homePending,
     delivery: trust.displayedDelivery,
     deliveryOverridden: trust.deliveryOverride !== undefined,
-    localDev: trust.ddoc.status === 'local-dev'
+    localDev: trust.ddoc.status === 'local-dev',
+    unscored: !overridden && trust.displayedLevel === 2 && trust.judged.status !== 'judged',
+    noProvider: trust.judged.status === 'off',
+    unreachable: trust.judged.status === 'unreachable',
+    ...(trust.judged.status === 'unreachable' && trust.judged.retryMs !== undefined && { retryMs: trust.judged.retryMs })
   }
 }
 

@@ -105,4 +105,51 @@ describe('parseBookmarksHtml', () => {
     parseBookmarksHtml(`${HEAD}${'<A HREF="https://x.test/">'.repeat(40_000)}${'<H3>'.repeat(40_000)}${'<a <a <a '.repeat(40_000)}`)
     expect(Date.now() - started).toBeLessThan(3000)
   })
+
+  describe('a hostile file costs time in step with its size', () => {
+    const BUDGET_MS = 200
+    const timed = (text: string): number => {
+      const started = performance.now()
+      parseBookmarksHtml(text)
+      return performance.now() - started
+    }
+    const entry = (tag: string, title = 't'): string => `${HEAD}<DL><p><DT>${tag}${title}</A></DL>`
+
+    it('reads a title that is a long run of unclosed angle brackets', () => {
+      expect(timed(`${HEAD}<DL><p><DT><A HREF="https://a.test/">${'<'.repeat(200_000)}`)).toBeLessThan(BUDGET_MS)
+      expect(timed(entry('<A HREF="https://a.test/">', '<'.repeat(200_000)))).toBeLessThan(BUDGET_MS)
+    })
+
+    it('reads a tag holding a long run of name characters with no equals sign', () => {
+      expect(timed(entry(`<A HREF="https://a.test/" ${'a'.repeat(200_000)}>`))).toBeLessThan(BUDGET_MS)
+      expect(timed(entry(`<A ${'a-'.repeat(100_000)}>`))).toBeLessThan(BUDGET_MS)
+    })
+
+    it('reads a tag whose own name, or the space before it, is very long', () => {
+      expect(timed(`${HEAD}<DL><p><DT><${'a'.repeat(200_000)}`)).toBeLessThan(BUDGET_MS)
+      expect(timed(`${HEAD}<DL><p><DT><${' '.repeat(200_000)}A HREF="https://a.test/">`)).toBeLessThan(BUDGET_MS)
+      expect(timed(`${HEAD}<DL><p><DT><A${' '.repeat(200_000)}HREF`)).toBeLessThan(BUDGET_MS)
+    })
+
+    it('reads a tag that opens a quote it never closes', () => {
+      expect(timed(entry(`<A HREF="${'x'.repeat(200_000)}`))).toBeLessThan(BUDGET_MS)
+      expect(timed(`${HEAD}${'<A HREF="https://a.test/" TITLE=\'a>'.repeat(5_000)}`)).toBeLessThan(BUDGET_MS)
+    })
+
+    it('keeps a page whose tag carries a large inline icon, as the browsers export', () => {
+      const icon = `data:image/png;base64,${'A'.repeat(20_000)}`
+      const { other } = parseBookmarksHtml(entry(`<A HREF="https://icon.test/" ADD_DATE="1600000000" ICON="${icon}">`, 'Icon'))
+      expect(other).toEqual([{ kind: 'url', title: 'Icon', url: 'https://icon.test/', added: 1_600_000_000_000 }])
+    })
+
+    it('keeps the start of a title that runs on far past what a title can be', () => {
+      const { other } = parseBookmarksHtml(entry('<A HREF="https://long.test/">', 'x'.repeat(100_000)))
+      expect(other[0]?.title).toBe('x'.repeat(512))
+    })
+
+    it('still removes inline markup from an ordinary title, and keeps the text around an unclosed bracket', () => {
+      const { other } = parseBookmarksHtml(`${HEAD}<DL><p><DT><A HREF="https://m.test/">a<b>b</b>c</A><DT><A HREF="https://n.test/">1 < 2</A></DL>`)
+      expect(other.map((node) => node.title)).toEqual(['abc', '1 < 2'])
+    })
+  })
 })

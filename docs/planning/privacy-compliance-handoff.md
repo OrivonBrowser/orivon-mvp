@@ -7,7 +7,7 @@ Written against `main` at `c3ac426e`.
 ## Goal and need
 
 Make what Orivon sends, and what it says about what it sends, meet EU law (ePrivacy Art. 5(3),
-GDPR) and US law (FTC Act §5, CalOPPA, California's Opt Me Out Act) **before the telemetry
+GDPR) and US law (FTC Act section 5, CalOPPA, California's Opt Me Out Act) **before the telemetry
 ingest endpoint is switched on**. The need (Rule 4): the success metric is measured from EU and
 US users, and [ADR-0004](../decisions/ADR-0004-telemetry.md) telemetry cannot be switched on
 lawfully without this work.
@@ -47,7 +47,7 @@ lawfully without this work.
 | Record of processing; the under-250-staff exemption does not cover non-occasional processing | GDPR Art. 30 | Yes |
 | Processor contract with whoever hosts the ingest server | GDPR Art. 28 | Yes, once hosted |
 | No new consent request for 6 months after a refusal; refusing as easy as accepting | Digital Omnibus, Art. 88a in the Council text of June 2026 | *Provisional*: not law; the European Parliament has not voted. Treat as a design target |
-| What is said must match what is done; using collected data more widely needs express consent; browsing data is treated as sensitive | FTC Act §5; FTC v. Avast (2024) | Yes |
+| What is said must match what is done; using collected data more widely needs express consent; browsing data is treated as sensitive | FTC Act section 5; FTC v. Avast (2024) | Yes |
 | Conspicuous privacy policy, including how Do Not Track is handled | CalOPPA | Probably not triggered by this payload alone; cheap to meet in the same notice |
 | A browser offers a setting that sends an opt-out preference signal, from 2027-01-01 | California AB 566 (Opt Me Out Act) | *Provisional*: settled by checking whether the CCPA "business" thresholds bound it |
 | CCPA/CPRA and other state privacy laws | Revenue and volume thresholds | No, thresholds not met; revisit at scale |
@@ -79,7 +79,7 @@ lawfully without this work.
 5. **No re-asking.** After "Turn off", no surface asks again for at least 6 months, tested.
    This also binds any first-run prompt D4 may bring back.
 6. **Drift guard.** A test fails when the `TelemetryPayload` fields and the field list in the
-   notice disagree, so the notice cannot fall behind the code (FTC §5, Rule 17).
+   notice disagree, so the notice cannot fall behind the code (FTC section 5, Rule 17).
 7. **Make the documents true** (Rule 3). Rewrite ADR-0004's title and Reasoning to match its
    Decision and D4, fix the "screens are not built" line in `src/telemetry/README.md`, add a
    decision-log row, and add a short telemetry statement to the root `README.md` (ADR-0004's
@@ -156,4 +156,4 @@ on them (Rule 13). Record each answer in the decision log.
 - California Opt Me Out Act:
   [California Privacy Protection Agency](https://privacy.ca.gov/2026/01/californias-opt-me-out-act-your-privacy-just-got-easier),
   [Jones Day](https://www.jonesday.com/de/insights/2025/10/california-enacts-trio-of-new-consumer-privacy-obligations).
-- FTC v. Avast (2024); California Online Privacy Protection Act (Bus. & Prof. Code §22575).
+- FTC v. Avast (2024); California Online Privacy Protection Act (Bus. & Prof. Code section 22575).

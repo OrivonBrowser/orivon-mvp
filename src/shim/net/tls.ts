@@ -39,9 +39,9 @@ interface HandshakeState {
  * they wait on this same promise.
  */
 function secureDial (dial: SecureDialFn, plan: TlsPlan | OrivonShimError, state: HandshakeState, servername: unknown): NetDialFn {
-  return async ({ host, port }) => {
+  return async ({ host, port, signal }) => {
     if (plan instanceof Error) throw plan
-    const handle = await dial({ ...plan.broker, host, port })
+    const handle = await dial({ ...plan.broker, host, port, ...(signal === undefined ? {} : { signal }) })
     // Node checks identity against `servername || host`.
     const identity = typeof servername === 'string' && servername !== '' ? servername : host
     const verdict = verdictFor(handle, plan, identity)

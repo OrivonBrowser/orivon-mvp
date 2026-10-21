@@ -24,7 +24,7 @@ describe('SITE_KINDS', () => {
   })
 
   it('marks a kind available only once its feature enforces it', () => {
-    expect(SITE_KINDS.filter((kind) => kind.available).map((kind) => kind.id)).toEqual(['camera', 'microphone', 'location', 'clipboardRead', 'midi', 'idle', 'windowManagement', 'notifications', 'popups', 'javascript', 'images', 'sound', 'autoDownloads', 'screenShare'])
+    expect(SITE_KINDS.filter((kind) => kind.available).map((kind) => kind.id)).toEqual(['camera', 'microphone', 'location', 'clipboardRead', 'midi', 'idle', 'windowManagement', 'notifications', 'popups', 'javascript', 'images', 'sound', 'autoDownloads', 'devices', 'screenShare'])
   })
 
   it('finds a kind by id and answers undefined for anything else', () => {
@@ -33,8 +33,8 @@ describe('SITE_KINDS', () => {
     expect(siteKindById(3)).toBeUndefined()
   })
 
-  it('lets only screen sharing keep a block and nothing else restrict its answers', () => {
-    expect(SITE_KINDS.filter((kind) => kind.remembers !== undefined).map((kind) => [kind.id, kind.remembers])).toEqual([['screenShare', ['block']]])
+  it('lets only screen sharing and devices keep a block and nothing else restrict its answers', () => {
+    expect(SITE_KINDS.filter((kind) => kind.remembers !== undefined).map((kind) => [kind.id, kind.remembers])).toEqual([['devices', ['block']], ['screenShare', ['block']]])
     const screen = siteKindById('screenShare')
     const camera = siteKindById('camera')
     if (screen === undefined || camera === undefined) throw new Error('missing kind')

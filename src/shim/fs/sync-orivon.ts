@@ -4,11 +4,13 @@
 // already needs handle.ts's openHandleSync, the one-way dependency core.ts
 // and handle.ts already have).
 //
-// ADR-0016's amendment: every path-based fs *Sync call works in a Worker (a
-// forked child or a worker_threads thread) of a cross-origin isolated app,
-// over this twin. Elsewhere -- the page, or a Worker with no
-// SharedArrayBuffer -- `syncFs()` throws fs/unsupported.ts's own
-// OrivonFsUnsupportedError.
+// ADR-0016's amendment: every path-based fs *Sync call works over this twin,
+// in a Worker (a forked child or a worker_threads thread) of a cross-origin
+// isolated app, and on the page, where the preload serves the same members
+// over a blocking IPC call. The page's twin has no `open`: a handle-based
+// *Sync call (openSync and what rides it) works in a Worker only. Without a
+// twin at all -- a Worker with no SharedArrayBuffer -- `syncFs()` throws
+// fs/unsupported.ts's own OrivonFsUnsupportedError.
 
 import { SYNCHRONOUS } from '../worker/sync-channel.js'
 import { getOrivon } from '../orivon-global.js'
@@ -34,7 +36,8 @@ export interface SyncOrivonFs {
   readdir (path: string): readonly string[]
   rm (path: string, opts?: { recursive?: boolean }): void
   rename (from: string, to: string): void
-  open (path: string, flags: string): SyncFileHandleWire
+  /** Absent on the page's twin: a synchronous handle would need the main process to hold state for a blocked caller. */
+  open?(path: string, flags: string): SyncFileHandleWire
 }
 
 /** `undefined` outside a Worker with shared memory -- never throws, for existsSync's own fallback to the page's whole-file-read route. */
@@ -48,12 +51,26 @@ export function syncFs (api: string): SyncOrivonFs {
   if (fs === undefined) {
     throw new OrivonFsUnsupportedError(
       api,
-      'this call works in a forked child or a worker_threads.Worker of a cross-origin isolated app, ' +
-      'over the synchronous channel -- not on the page, and not in a Worker with no SharedArrayBuffer. Use the async form here',
+      'this call needs the synchronous channel: the page has it, and so does a forked child or a worker_threads.Worker ' +
+      'of a cross-origin isolated app, but not a Worker with no SharedArrayBuffer. Use the async form here',
       'ERR_ORIVON_FS_SYNC_UNSUPPORTED'
     )
   }
   return fs
+}
+
+/** `syncFs` for the handle-based calls (openSync and what rides it): a Worker's twin has `open`, the page's does not. */
+export function syncFsWithOpen (api: string): SyncOrivonFs & { open: NonNullable<SyncOrivonFs['open']> } {
+  const fs = syncFs(api)
+  if (fs.open === undefined) {
+    throw new OrivonFsUnsupportedError(
+      api,
+      'a file handle held across synchronous calls works in a forked child or a worker_threads.Worker of a cross-origin ' +
+      'isolated app, not on the page. Use the path-based call (readFileSync, writeFileSync) or the async form here',
+      'ERR_ORIVON_FS_SYNC_UNSUPPORTED'
+    )
+  }
+  return fs as SyncOrivonFs & { open: NonNullable<SyncOrivonFs['open']> }
 }
 
 /**

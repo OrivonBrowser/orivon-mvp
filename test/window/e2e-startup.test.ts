@@ -38,6 +38,8 @@ const seed = (files: { settings?: Record<string, unknown>, session?: string }) =
   if (files.session !== undefined) await writeFile(join(dir, 'session.json'), files.session)
 }
 const sessionText = (windows: SavedWindow[], clean = true): string => JSON.stringify({ version: 1, clean, windows })
+/** The restore bar closes its own page when a button is pressed, which can end the click's round trip before it answers. */
+const ignoreClosedPage = (error: unknown): void => { if (!/Target page, context or browser has been closed/.test(String(error))) throw error }
 const sized = (x: number, y: number): NonNullable<SavedWindow['bounds']> => ({ x, y, width: 1000, height: 700 })
 
 interface StripTab { title: string, active: boolean, pinned: boolean }
@@ -239,14 +241,20 @@ it('chooses the start from Settings, with its help, and keeps a list of pages: a
     await shoot(settings, 'settings-startup-new-tab')
 
     // By key, so the select really has focus: a redraw must give it back.
+    // macOS opens a native popup menu on ArrowUp and ArrowDown, which Playwright cannot drive and which changes nothing
+    // on its own, so there the choice is set on the focused select directly (the same input and change events).
+    const choose = async (key: string, value: string): Promise<void> => {
+      if (process.platform === 'darwin') await settings.selectOption('#row-startup-mode select', value)
+      else await settings.keyboard.press(key)
+    }
     await settings.focus('#row-startup-mode select')
-    await settings.keyboard.press('ArrowDown')
+    await choose('ArrowDown', 'continue')
     await settings.waitForSelector('#row-startup-mode .row-help')
     expect(await settings.textContent('#row-startup-mode .row-help')).toBe('Your windows and tabs from last time reopen. Private windows are never reopened.')
     expect(await settings.locator('#row-startup-pages').count()).toBe(0)
     await shoot(settings, 'settings-startup-continue')
 
-    await settings.keyboard.press('ArrowDown')
+    await choose('ArrowDown', 'pages')
     await settings.waitForSelector('#row-startup-pages .page-list')
     expect(await settings.textContent('#row-startup-mode .row-help')).toBe('These pages open in the first window.')
     // The choice still has the keyboard after the page drew itself again.
@@ -373,7 +381,7 @@ it('offers the last session back after a crash, and Restore reopens its windows 
     expect(await bar.getAttribute('.btn.icon', 'aria-label')).toBe('Dismiss')
     await shoot(bar, 'restore-bar')
 
-    await bar.click('.btn.primary')
+    await bar.click('.btn.primary').catch(ignoreClosedPage)
     expect(await waitFor(() => chromePages(app).length === 3)).toBe(true)
     await waitTitles(await windowShowing(app, 'page a'), ['page a', 'page b'])
     await waitTitles(await windowShowing(app, 'page c'), ['page c'])
@@ -392,7 +400,7 @@ it('leaves the session on the closed stack when the bar is dismissed, and offers
     expect(await waitFor(async () => await popoverShown(dismissed.app, 'overlay=restore'))).toBe(true)
     expect(await waitFor(() => dismissed.app.windows().some((w) => w.url().includes('overlay=restore')))).toBe(true)
     const bar = dismissed.app.windows().find((w) => w.url().includes('overlay=restore')) as Page
-    await bar.click('.btn.icon')
+    await bar.click('.btn.icon').catch(ignoreClosedPage)
     expect(await waitFor(async () => !(await popoverShown(dismissed.app, 'overlay=restore')))).toBe(true)
     expect(await windowCount(dismissed.app)).toBe(1)
     await command(dismissed.chrome, 'tab.reopen')

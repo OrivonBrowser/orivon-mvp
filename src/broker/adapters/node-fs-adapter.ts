@@ -8,7 +8,9 @@
 // test that exercised them keeps exercising the same code, imported from
 // here instead.
 
-import { createReadStream, createWriteStream, existsSync, mkdirSync, realpathSync, renameSync } from 'node:fs'
+import {
+  createReadStream, createWriteStream, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync
+} from 'node:fs'
 import type { WriteStream } from 'node:fs'
 import {
   lstat,
@@ -23,7 +25,7 @@ import {
 } from 'node:fs/promises'
 import { Readable, Writable } from 'node:stream'
 import { dirname, join } from 'node:path'
-import type { BrokerFs, OpenedFile } from '../broker-contracts.js'
+import type { BrokerFs, BrokerFsSync, OpenedFile } from '../broker-contracts.js'
 import type { CloseReason } from '../handles/handle-contracts.js'
 import { appDataRoot, originHash } from '../grants/origin-hash.js'
 
@@ -301,7 +303,8 @@ export function nodeFs (userDataPath: string): BrokerFs {
     // silently create directory structure on its behalf.
     rename: async (from, to) => { await fsRename(from, to) },
     open: openFile,
-    diskUsage
+    diskUsage,
+    sync: nodeFsSync
   }
 }
 
@@ -322,5 +325,49 @@ async function diskUsage (path: string): Promise<number> {
   if (!info.isDirectory()) return 0
   let total = 0
   for (const name of await fsReaddir(path)) total += await diskUsage(join(path, name))
+  return total
+}
+
+/**
+ * `BrokerFs`'s blocking twins, one per async method above and with the same
+ * rules: no catch (the caller maps the raw error), no `force` on `rm`, a
+ * `writeFile` that creates its parent directories, a `rename` that does not.
+ */
+const nodeFsSync: BrokerFsSync = {
+  writeFile: (path, data) => {
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, data)
+  },
+  mkdir: (path, opts) => { mkdirSync(path, { recursive: opts?.recursive ?? false }) },
+  readdir: (path) => readdirSync(path),
+  stat: (path) => {
+    const s = statSync(path)
+    return { size: s.size, isFile: s.isFile(), isDirectory: s.isDirectory(), mtimeMs: s.mtimeMs }
+  },
+  rm: (path, opts) => { rmSync(path, { recursive: opts?.recursive ?? false }) },
+  rename: (from, to) => { renameSync(from, to) },
+  diskUsage: (path, maxEntries) => diskUsageSync(path, { left: maxEntries ?? Infinity })
+}
+
+/** `diskUsage`, blocking: lstat, never stat, so a symlink is counted as itself and never followed. `budget.left` entries remain; `null` once the tree needs more. */
+function diskUsageSync (path: string, budget: { left: number }): number | null {
+  if (--budget.left < 0) return null
+  let info
+  try {
+    info = lstatSync(path)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0
+    throw error
+  }
+  if (info.isFile()) return info.size
+  if (!info.isDirectory()) return 0
+  const names = readdirSync(path)
+  if (names.length > budget.left) return null
+  let total = 0
+  for (const name of names) {
+    const part = diskUsageSync(join(path, name), budget)
+    if (part === null) return null
+    total += part
+  }
   return total
 }

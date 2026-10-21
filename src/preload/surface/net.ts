@@ -7,6 +7,7 @@
 import { ipcRenderer } from 'electron'
 import { PORT_CHANNEL } from '../../main/channels.js'
 import { call, TIMEOUT_MS } from './control-call.js'
+import type { OnAbandon } from './control-call.js'
 import { createSocketBridge } from '../ports/socket-bridge.js'
 import type { IpcRendererLike } from '../ports/socket-bridge.js'
 import { createSocketPort, wrapPort } from '../ports/socket.js'
@@ -59,8 +60,8 @@ const socketBridge = createSocketBridge({ ipcRenderer: ipcRenderer as unknown as
  * operations (close/setNoDelay/setKeepAlive) net.connect itself doesn't
  * expose.
  */
-export async function netConnectBridge (opts: { host: string, port: number }): Promise<MainWorldSocketBridge> {
-  const descriptor = await call<SocketDescriptor>('net.connect', opts, TIMEOUT_MS.net)
+export async function netConnectBridge (opts: { host: string, port: number }, onAbandon?: OnAbandon): Promise<MainWorldSocketBridge> {
+  const descriptor = await call<SocketDescriptor>('net.connect', opts, TIMEOUT_MS.net, onAbandon)
   try {
     return buildBridgeResult(descriptor, await socketBridge.waitForPort(descriptor.id))
   } catch (error) {
@@ -85,8 +86,8 @@ export async function netConnectBridge (opts: { host: string, port: number }): P
  * buildBridgeResult below is reused rather than copied (code-guidelines.md
  * Rule 3).
  */
-export async function netConnectSecureBridge (opts: SecureConnectOptions): Promise<MainWorldSocketBridge> {
-  const descriptor = await call<SocketDescriptor>('net.connectSecure', opts, TIMEOUT_MS.net)
+export async function netConnectSecureBridge (opts: Omit<SecureConnectOptions, 'signal'>, onAbandon?: OnAbandon): Promise<MainWorldSocketBridge> {
+  const descriptor = await call<SocketDescriptor>('net.connectSecure', opts, TIMEOUT_MS.net, onAbandon)
   try {
     return buildBridgeResult(descriptor, await socketBridge.waitForPort(descriptor.id))
   } catch (error) {

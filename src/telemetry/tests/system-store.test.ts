@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { UNDECIDED, recordChoice } from '../consent.js'
 import { SystemStore } from '../system-store.js'
+import { NOTICE_VERSION } from '../consent.js'
 
 describe('SystemStore', () => {
   let dir: string
@@ -24,7 +25,7 @@ describe('SystemStore', () => {
     const record = recordChoice('accepted', 123, 'welcome')
     await store.writeConsent(record)
     expect(await store.readConsent()).toEqual(record)
-    expect(JSON.parse(await readFile(join(home, 'consent.json'), 'utf8'))).toEqual({ state: 'accepted', atMs: 123, noticeVersion: 4, source: 'welcome', everAccepted: true })
+    expect(JSON.parse(await readFile(join(home, 'consent.json'), 'utf8'))).toEqual({ state: 'accepted', atMs: 123, noticeVersion: NOTICE_VERSION, source: 'welcome', everAccepted: true })
   })
 
   it('is shared: a second store on the same folder, the way another profile is, sees the choice at once', async () => {

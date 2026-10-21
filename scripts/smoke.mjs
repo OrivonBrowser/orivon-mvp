@@ -70,10 +70,10 @@ import {
   waitForTab
 } from '../test/support/smoke-helpers.mjs'
 
-/** Where the omnibox sends non-address input (src/main/omnibox.ts). Only used
- * to build the expected URL -- the resolver rule blackholes everything that
- * is not loopback, so changing this cannot cause real egress. */
-const SEARCH_HOST = 'duckduckgo.com'
+/** Where the omnibox sends non-address input on a fresh profile: the Web3 search engine
+ * (src/main/browsing/search-engines.ts). Only used to build the expected URL. The page
+ * cannot load offline, so no network is learned for the name and the bar shows it as its plain origin. */
+const SEARCH_TEMPLATE = 'https://explore.orivonstack.eth/#/search?q='
 
 // A 1x1 transparent PNG -- real bytes, real content-type, so the favicon
 // scenario below exercises the actual fetch/cap/encode path
@@ -224,16 +224,14 @@ async function main () {
         JSON.stringify(dashboardShell)
       )
 
-      const tiles = await evaluateRetrying(dashboardView, () =>
-        Array.from(document.querySelectorAll('.tile')).map((el) => ({
-          label: el.querySelector('.tile-label')?.textContent,
-          disabled: el.disabled
-        }))
-      )
+      const tiles = await evaluateRetrying(dashboardView, () => ({
+        title: document.querySelector('#featured-section .tile-section-title')?.textContent,
+        labels: Array.from(document.querySelectorAll('#featured-grid .tile .tile-label')).map((el) => el.textContent),
+        inert: Array.from(document.querySelectorAll('#featured-grid .tile')).filter((el) => el.disabled).length
+      }))
       check(
-        'the Torrent and Nostr app tiles are present and disabled -- both are ideas, not in this build',
-        tiles.some((t) => t.label === 'Torrent' && t.disabled) &&
-          tiles.some((t) => t.label === 'Nostr' && t.disabled),
+        'the dashboard shows Orivon Featured: Explore, WebTorrent, ASGARDEX, Ledger Wallet and The Lounge, each a live tile',
+        /^orivon featured$/i.test(tiles.title ?? '') && tiles.labels.join() === 'Explore,WebTorrent,ASGARDEX,Ledger Wallet,The Lounge' && tiles.inert === 0,
         JSON.stringify(tiles)
       )
 
@@ -388,9 +386,12 @@ async function main () {
         `tab view width tracks resize (${tabViewport.w} === ${targetWidth})`,
         tabViewport.w === targetWidth
       )
+      // The height the window got, not the one asked for: macOS keeps a window inside the visible screen, and a
+      // screen shorter than targetHeight gets a shorter window.
+      const contentHeight = await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0].getContentBounds().height)
       check(
-        `tab view height is window height minus CHROME_HEIGHT (${tabViewport.h} === ${targetHeight - CHROME_HEIGHT})`,
-        tabViewport.h === targetHeight - CHROME_HEIGHT
+        `tab view height is window height minus CHROME_HEIGHT (${tabViewport.h} === ${contentHeight - CHROME_HEIGHT})`,
+        tabViewport.h === contentHeight - CHROME_HEIGHT
       )
     }
 
@@ -488,15 +489,13 @@ async function main () {
     }
 
     // ---- Address-bar text that is not a URL resolves to a search ---------
-    // Owner decision, build step 1 (scope.md IN table; build-plan.md's
-    // "Sequence" step 1): non-address input is sent to DuckDuckGo -- a stated
-    // known limitation, since in the PRODUCT the search text leaves the
-    // machine.
+    // Owner decision: non-address input is searched on the Web3 by default
+    // (Explore), and on the Web2 (DuckDuckGo) when the person switches.
     //
     // What this check proves, precisely: parseOmniboxInput's `search` branch
     // reaches loadURL with the exact right target, through the real
     // renderer -> IPC -> TabManager path. What it does NOT prove, and cannot,
-    // is that DuckDuckGo answered -- the address bar reads
+    // is that the engine answered -- the address bar reads
     // webContents.getURL(), and Chromium commits the REQUESTED url even when
     // it serves an error page instead. An earlier version of this check
     // claimed to exercise a real network round trip and forbade "mocking" it;
@@ -506,7 +505,7 @@ async function main () {
     const SEARCH_QUERY = 'orivon browser smoke check'
     // Built the same way production builds it (omnibox.ts), rather than
     // re-implementing the encoding -- hand-rolled variants diverge on !'()*~
-    const expectedSearchUrl = `https://${SEARCH_HOST}/?${new URLSearchParams({ q: SEARCH_QUERY }).toString()}`
+    const expectedSearchUrl = `${SEARCH_TEMPLATE}${new URLSearchParams({ q: SEARCH_QUERY }).toString().slice(2)}`
 
     const wantSearch = { address: expectedSearchUrl }
     const search = await navigateTo(SEARCH_QUERY, wantSearch)
@@ -517,11 +516,12 @@ async function main () {
     } catch {
       searchUrl = undefined
     }
+    // The query sits in the fragment (`#/search?q=...`), as Explore reads it.
 
-    checkTab('a plain-text address-bar entry resolves to a DuckDuckGo search, not a URL', wantSearch, search)
-    const q = searchUrl?.searchParams.get('q')
+    checkTab('a plain-text address-bar entry resolves to an Explore search, not a URL', wantSearch, search)
+    const q = new URLSearchParams(searchUrl?.hash.split('?')[1] ?? '').get('q')
     check(
-      'the DuckDuckGo query carries the exact typed text',
+      'the Explore query carries the exact typed text',
       q === SEARCH_QUERY,
       q === SEARCH_QUERY ? undefined : `q read ${JSON.stringify(q ?? null)}`
     )

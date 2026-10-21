@@ -3,7 +3,7 @@
 **What lives here.** ENS's descriptor ([`descriptor.ts`](descriptor.ts): the `.eth` top-level
 domain), and the `NameResolver` ([`../resolution/`](../resolution/)) for it: a host checked
 against ENSIP-15 normalisation, the name's contenthash read through ENS's Universal Resolver with
-CCIP-Read on, and the contenthash decoded (ENSIP-7) into an IPFS CID, an IPNS key, a DNSLink
+CCIP-Read on, and the contenthash decoded (ENSIP-7) into an IPFS CID, a Swarm reference, an IPNS key, a DNSLink
 domain, or a kind this build does not load.
 
 **Not tied to Electron.** Durable. It runs in the verifier host, but nothing here knows that.
@@ -20,9 +20,14 @@ offchain lookup may go.
 
 ## Design notes
 
+**A `.eth` name is shown under the scheme of where its content lives, not ENS's.** The descriptor
+names no scheme: the verifier host reports the scheme of the protocol whose gatherer it chose for the
+name's records, and until this install has learned that the name is shown as its plain origin, with ENS's
+own neutral loading screen ([`../README.md`](../README.md) section Adding a protocol).
+
 **[`resolver.ts`](resolver.ts) proves at the newest verified block, not the finalized one**
 ([`ADR-0030`](../../../docs/decisions/ADR-0030-a-eth-name-is-an-origin-served-by-a-verifier.md)
-§Decision, *provisional*). What it gives up is resistance to a reorg of the last few blocks, which
+section Decision, *provisional*). What it gives up is resistance to a reorg of the last few blocks, which
 could only matter for a name whose record changed in them.
 
 **Do not swap in viem's own ENS actions.** They read every Universal Resolver revert as "no

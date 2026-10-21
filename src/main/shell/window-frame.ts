@@ -44,7 +44,7 @@ export const MIN_WINDOW_HEIGHT = 400
 
 // Dev/test tooling only -- never gated on app.isPackaged or "is this a
 // production build" (run-from-source is a real shipping path on Windows and
-// macOS, build-plan.md; a real user's window must always take focus).
+// macOS, CLAUDE.md Rule 8; a real user's window must always take focus).
 // showInactive() shows the window without activating it, so a build or e2e
 // run started while the owner is typing elsewhere does not steal keystrokes.
 // Set by `npm run dev`, and by test/support/launch-electron.mjs for every Electron
@@ -72,7 +72,7 @@ export function windowBackgroundColor (isPrivate: boolean): string {
 }
 
 /** `dirname`: the calling module's own `import.meta.dirname`, from which a run
- * from source finds the repo's build/icon.png (out/main -> ../../build). */
+ * from source finds the repo's build/icon-source.png (out/main -> ../../build). */
 export function createWindowFrame (dirname: string, place: Placement = {}, isPrivate = false, kiosk = false): WindowFrame {
   const overlay = (): { color: string, symbolColor: string } => isPrivate
     ? (nativeTheme.shouldUseDarkColors ? OVERLAY_PRIVATE_DARK : OVERLAY_PRIVATE_LIGHT)
@@ -80,14 +80,15 @@ export function createWindowFrame (dirname: string, place: Placement = {}, isPri
   const background = (): string => windowBackgroundColor(isPrivate)
   // Hands the app icon to the window. GNOME's dock does not read it -- the
   // icon shown for a running window comes from matching the window's WM_CLASS
-  // ("orivon") against a .desktop entry's Icon=/StartupWMClass, and this
+  // ("orivon", or "orivon-source" from source) against a .desktop entry's Icon=/StartupWMClass, and this
   // option's X11 _NET_WM_ICON property stays empty on this Electron build even
   // when set. Window managers that do read the property use it, so the line
   // stays; packaged builds get their .desktop from electron-builder.yml.
-  // A packaged build loads resources/icon.png (extraResources there).
+  // A packaged build loads resources/icon.png (extraResources there); a run from
+  // source has an icon of its own, as its desktop entry does.
   const iconPath = app.isPackaged
     ? join(process.resourcesPath, 'icon.png')
-    : join(dirname, '../../build/icon.png')
+    : join(dirname, '../../build/icon-source.png')
 
   // Centers on the OS's primary display. Not on whichever display holds the
   // pointer: Wayland does not let an app control its own window position at
@@ -114,6 +115,8 @@ export function createWindowFrame (dirname: string, place: Placement = {}, isPri
   const initialOverlay = overlay()
   const win = new BaseWindow({
     ...initialBounds,
+    // What a task switcher and a window list call it; left unset, it is the app name ("orivon").
+    title: app.isPackaged ? 'Orivon Browser' : 'Orivon (source)',
     show: false,
     minWidth: MIN_WINDOW_WIDTH,
     minHeight: MIN_WINDOW_HEIGHT,
@@ -122,10 +125,11 @@ export function createWindowFrame (dirname: string, place: Placement = {}, isPri
     backgroundColor: background(),
     titleBarStyle: 'hidden',
     titleBarOverlay: { ...initialOverlay, height: OVERLAY_HEIGHT },
-    // Matches orivon-browser-v2's own tab-row-height traffic-light
-    // position (visual reference only) -- macOS ignores titleBarOverlay
-    // entirely and uses this instead.
-    trafficLightPosition: { x: 20, y: 10 }
+    // The 14px buttons centred on the tabs' middle, 21px down the 36px tab row,
+    // as the + after the tabs is -- macOS ignores titleBarOverlay entirely and
+    // uses this instead. The chrome draws the same three in full screen
+    // (src/renderer/chrome/mac-window-buttons.ts), where the system hides them.
+    trafficLightPosition: { x: 20, y: 14 }
   })
 
   // titleBarOverlay is Windows/Linux only and has no live theme callback

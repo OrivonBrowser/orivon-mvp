@@ -91,6 +91,19 @@ and a dev launch runs beside an open Orivon instead of handing over to it. The c
 the directory at start. Other profiles the launch makes live inside it, so while one of them
 is still open the directory is kept, and the next `npm run dev` deletes it.
 
+A new profile, in `npm run dev`, `npm start` or a package, starts with the five bookmarks of the bar and uBlock Origin
+installed and pinned to the toolbar (`src/main/default-profile/`); only a profile Orivon has
+never run on gets them (no `history.db`, `bookmarks.json` or `extensions/registry.json` when it starts), so removing
+one is never undone and an existing profile, even one with no bookmarks or extensions, keeps what it has. `npm install`, `npm run dev` and
+`npm start` fetch uBlock Origin's release file into `resources/default-profile/extensions/` (git ignores it) when
+it is missing; with no network the browser starts without it, and `node scripts/fetch-bundled-extensions.mjs`
+retries. `ORIVON_DEFAULT_PROFILE=off` starts a profile blank:
+
+| `ORIVON_DEFAULT_PROFILE` | Behaviour |
+|---|---|
+| `on` (or unset) | A new profile gets the bookmarks and uBlock Origin. What `npm run dev`, `npm start` and a package do |
+| `off` | Neither. `test/support/launch-electron.mjs` sets it for every smoke and e2e launch unless a test asks otherwise |
+
 To keep a dev profile across launches, name one: `npm run dev -- --user-data-dir=<dir>`. A
 named directory is never deleted. To test on your real profile, use `npm start`.
 
@@ -126,10 +139,17 @@ real screen at all, not even briefly. **On macOS, on Windows, or a Linux box tha
 virtual display. Either way, typing a plain `npm run smoke` or `npm run test:e2e` with no wrapper
 is safe to do while you are working.
 
-With `ORIVON_PRIVATE_BUS=1`, `run-headless.mjs` also gives the command a D-Bus session bus of its
-own (`dbus-run-session`, started inside `xvfb-run`) and refuses to run if it cannot; the
-notification phase of `test/sites/e2e-site-permissions.test.ts` runs only under it. It is not the
-default, because a whole suite on a private bus would lose the keyring that `safeStorage` reads.
+Under the virtual display, `run-headless.mjs` also gives the command a D-Bus session bus of its own
+(`dbus-run-session`, started inside `xvfb-run`, with
+[`scripts/private-session-bus.conf`](../../scripts/private-session-bus.conf), which starts no service
+on demand). A window on a virtual display can still reach the real screen over the desktop's bus: a
+file picker through the desktop portal, a notification, a media control in the top bar. On a machine
+someone may be at, which is anywhere but CI, that bus is the default; without `dbus-run-session` the
+command gets a bus address nothing listens on instead, never the desktop's. `ORIVON_PRIVATE_BUS=0`
+keeps the desktop bus for a run someone means to watch, and `ORIVON_PRIVATE_BUS=1` asks for the
+private bus on CI too, refusing to run if it cannot have one. The launches pass
+`--password-store=basic`, so no suite needs the desktop keyring, as on CI. The notification phase
+of `test/sites/e2e-site-permissions.test.ts` runs only on a private bus.
 
 ### `npm run dev` deliberately does not pass `--watch`
 
@@ -204,15 +224,24 @@ Settings shows what it is doing.
 | Variable | What it does |
 |---|---|
 | `ORIVON_ETH_LIGHT_CLIENT=off` | Keeps the light client from starting, so the run contacts no Ethereum server and every real `.eth` name fails closed. `test/support/launch-electron.mjs` sets it for every smoke and e2e launch unless a test asks otherwise |
+| `ORIVON_UPDATE_CHECK=off` | Stops the daily look for a newer release (on by default), so the run asks GitHub nothing. `test/support/launch-electron.mjs` sets it for every smoke and e2e launch unless a test asks otherwise |
+| `ORIVON_SECURE_DNS=off` | Replaces the default secure DNS (Quad9, with this computer's DNS as the fallback) with off, so the run asks no DNS provider; a profile that names its own choice keeps it. Set for every smoke and e2e launch like the one above |
 | `ORIVON_LIVE_ETH=1` | Runs `src/protocols/verifier-host/light-client/tests/live-ens.test.ts`, which resolves real names through the light client against mainnet. Skipped otherwise |
 | `ORIVON_TEST_ETH_FIXTURES`, `ORIVON_TEST_IPFS_GATEWAYS`, `ORIVON_TEST_DOH` | Test builds only (`npm run test:e2e` builds one): `.eth` names mapped to content with no light client, and the gateway and DNS-over-HTTPS endpoints to fetch it from. An ordinary build contains none of this (`npm run check:dev-grant-absent`) |
-| `ORIVON_TEST_DEFAULT_BROWSER=can-set\|default\|declined` | Test builds only: stands a recording host in for the operating system's default-browser calls, so Settings, the welcome screen's box and the weekly ask can be driven with nothing reaching the machine (`src/main/os/default-browser-test-seam.ts`). An ordinary build contains none of this |
+| `ORIVON_TEST_IPFS_NODE`, `ORIVON_TEST_IPFS_NODE_RETRY_WAIT_MS` | Test builds only: an endpoint the host reads IPFS from as it does from Orivon's own node (always ready, no process started), and the wait before a block it could not give is asked for again, in place of the real node's 32 s. Needs `ORIVON_TEST_ETH_FIXTURES` too |
+| `ORIVON_TEST_DEFAULT_BROWSER=can-set\|default\|declined` | Test builds only: stands a recording host in for the operating system's default-browser calls, so Settings and the default-browser question can be driven with nothing reaching the machine (`src/main/os/default-browser-test-seam.ts`). An ordinary build contains none of this |
+| `ORIVON_TEST_BEACON_APIS`, `ORIVON_TEST_SHIPPED_CHECKPOINT_AGE_DAYS` | Test builds only: the beacon servers asked for a fresh checkpoint (comma-separated origins) in place of the real two, and how many days old the release's own checkpoint is taken to be, so a suite reaches the state of an old release on any date (`src/main/verifier/test-seam.ts`). An ordinary build contains none of this |
 | `ORIVON_TEST_LOCAL_POINTER=1` | Test builds only: treats the pointer's screen position as unknown, as on a native Wayland session, so a tab drag is the browser's own drag and drop on a virtual X display (`src/main/shell/local-pointer.ts`). An ordinary build contains none of this |
 
-Each release ships a checkpoint for the light client, refreshed with
-`node scripts/refresh-eth-checkpoint.mjs --write` before tagging: it refuses unless two beacon APIs
-agree. An install keeps a newer one of its own after every sync, and refuses any checkpoint older
-than 14 days.
+Each release ships a checkpoint for the light client. `node scripts/refresh-eth-checkpoint.mjs --write`
+refreshes it and refuses unless two beacon APIs agree; the scheduled workflow
+`.github/workflows/refresh-eth-checkpoint.yml` runs it every Monday and Thursday and opens a pull request
+when the file changed. The Release workflow refuses a checkpoint over 7 days old. An install keeps a newer
+one of its own after every sync, and refuses any checkpoint older than 14 days. When the release's and the stored
+one are both past that, the app asks the two beacon servers in `DEFAULT_ENDPOINTS.checkpointBeaconApis` (the same two
+this script asks) for a finalized header when the verifier host starts, and keeps it if they agree
+([`ADR-0092`](../decisions/ADR-0092-when-no-checkpoint-is-recent-enough-two-beacon-servers-that-agree-supply-one.md)).
+The script and `src/main/verifier/checkpoint-fetch.ts` hold the same rule, and a unit test compares them.
 
 ---
 
@@ -235,9 +264,9 @@ today, but npm warns that it will stop working, so use the first form. An `ORIVO
 in the environment is used as it stands, and the flag beats it. To see the `once` showing again
 on a profile that has passed it, delete `intro.json` from the profile directory.
 
-The welcome screen also offers a box, unticked, to make Orivon the default browser, on a build installed from a
-package and on a Linux run from source whose entry is installed (below); other runs from source never show it
-(`docs/development/packaging.md`).
+While telemetry is undecided (`ORIVON_TELEMETRY=on` in development), "Enter Orivon" opens the telemetry popup over
+the blurred browser before it lets the person in; when only a changed notice is due, on a screen already seen, the
+popup shows alone.
 
 ---
 
@@ -254,9 +283,14 @@ a click reaches it at once and `out/` is never rebuilt under it. Once the entry 
 the default browser. `remove` deletes the entry. Never name an entry of your own `orivon.desktop`: in
 `~/.local/share/applications` it hides the installed package's entry, its actions and its default-browser choice.
 
-A run from source and an installed package share the default profile's data and its lock, so whichever starts first
-receives the other's starts. On Windows and macOS a run from source never registers as the default browser, and on
-Windows its taskbar button has an identity of its own (`com.orivonstack.orivon.source`).
+A run from source and an installed package are two programs (ADR-0057). A run from source keeps its data in
+`<appData>/orivon-source` (`~/.config/orivon-source` on Linux) with a lock of its own, names its windows
+`orivon-source` and titles them "Orivon (source)", so the dock shows it under its own warm-coloured icon beside the
+package's "Orivon Browser". `npm start` and the entry's own start rewrite an installed entry that an older checkout
+wrote. A start with `--user-data-dir` uses that directory instead. To give a run from source the data of the package's
+profile, copy or move `~/.config/orivon` to `~/.config/orivon-source` while neither runs: both binaries store it alike. On Windows and macOS a run from source never
+registers as the default browser, and on Windows its taskbar button has an identity of its own
+(`com.orivonstack.orivon.source`).
 
 ---
 

@@ -24,7 +24,7 @@ export interface SiteKindDef {
   readonly settingKey: SettingKey
   /** False until the kind's feature enforces it. */
   readonly available: boolean
-  /** The answers a site may store; absent means allow and block. Screen sharing remembers only a block: every share is chosen anew. */
+  /** The answers a site may store; absent means allow and block. Screen sharing and devices remember only a block: every share and every device is chosen anew. */
   readonly remembers?: ReadonlyArray<Exclude<SiteValue, 'ask'>>
 }
 
@@ -47,7 +47,7 @@ export const SITE_KINDS: readonly SiteKindDef[] = [
   { id: 'images', label: 'Images', group: 'content', values: ['allow', 'block'], settingKey: 'sites.images', available: true },
   { id: 'sound', label: 'Sound', group: 'content', values: ['allow', 'block'], settingKey: 'sites.sound', available: true },
   { id: 'autoDownloads', label: 'Automatic downloads', group: 'content', values: ['ask', 'block'], settingKey: 'sites.autoDownloads', available: true },
-  { id: 'devices', label: 'USB and HID devices', group: 'device', values: ['ask', 'block'], settingKey: 'sites.devices', available: false },
+  { id: 'devices', label: 'USB and HID devices', group: 'device', values: ['ask', 'block'], settingKey: 'sites.devices', available: true, remembers: ['block'] },
   { id: 'screenShare', label: 'Screen sharing', group: 'device', values: ['ask', 'block'], settingKey: 'sites.screenShare', available: true, remembers: ['block'] }
 ]
 

@@ -14,15 +14,25 @@ import { startupDomain } from '../startup/startup-domain.js'
 import { shortcutsDomain } from '../shortcuts/shortcuts-domain.js'
 import { pagesDomain } from './pages-domain.js'
 import { appsDomain } from '../permissions/apps-domain.js'
+import { createAppSwitches } from '../permissions/app-switches.js'
+import { announceEntryChange } from '../app-setup/entry-changes.js'
+import { scoreLevelOverrideFor } from '../dev/score-levels.js'
+import type { AppRoutes } from '../permissions/apps-domain.js'
+import { probeSocks5 } from '../../broker/route/socks5-probe.js'
+import { routeDomain } from '../route/route-domain.js'
+import { forgetChoicesWhenGrantEnds } from '../scheme-routing/grant-watch.js'
 import { identityKeyStorage } from '../keyring/electron-keychain.js'
-import { onVerifierChange, verifierView } from '../verifier/verifier-subsystem.js'
+import { forgetKeptProvenance } from '../verifier/kept-provenance.js'
+import { forgetIpfsNodeData, forgetNameSchemes, lightClientForcedOff, onVerifierChange, verifierView } from '../verifier/verifier-subsystem.js'
 import { web3Domain } from '../verifier/web3-domain.js'
 import { appDomain } from './app-domain.js'
 import { telemetryDomain } from './telemetry-domain.js'
+import { reportDomainFor } from '../diagnostics/report-runner.js'
 import { defaultBrowserHost } from '../os/default-browser-runner.js'
 import { osDomain } from '../os/os-domain.js'
 import { checkUpdateNow } from '../self-update/update-check-runner.js'
 import { updatesDomain } from '../self-update/updates-domain.js'
+import { isStoreInstall } from '../os/windows-store.js'
 import { onTelemetryChanged } from '../../telemetry/runner.js'
 import { profilesDomain } from '../launch/profiles-domain.js'
 import { historyDomain } from '../history/history-domain.js'
@@ -37,6 +47,7 @@ import { downloadsDomain } from '../downloads/downloads-domain.js'
 import { downloadsHost } from '../downloads/folder-runner.js'
 import { infoDomain } from '../info/about-domain.js'
 import { copyToClipboard, readAboutFacts, readGpu } from '../info/about-runner.js'
+import { runningRelease } from '../info/running-release.js'
 import { tasksDomain } from '../info/tasks-domain.js'
 import { endProcess, focusTab, listTasks } from '../info/tasks-runner.js'
 import type { TasksEnv } from '../info/tasks-runner.js'
@@ -48,9 +59,18 @@ import { siteDataDomain } from '../privacy/site-data-domain.js'
 import { localFilesDomain } from '../privacy/local-files-domain.js'
 import { deleteLocalFileData } from '../local-files/delete-local-file-data.js'
 import { localFileApps } from '../local-files/local-file-apps.js'
+import { declinedApps } from '../install/declined-apps.js'
 import { LOCAL_FILES_PARTITION } from '../local-files/partition.js'
 import { siteSettingsControllerFor } from '../site-settings/site-settings-runner.js'
-import { sitesDomain } from '../site-settings/sites-domain.js'
+import { createDeviceRows } from '../devices/hid-rows.js'
+import { forgetDevicesWhenGrantEnds } from '../devices/hid-grant-watch.js'
+import { forgetRoutesOfGoneApps } from '../route/forget-watch.js'
+import { profilePartitionsToClear } from '../route/site-partition.js'
+import { NYM_SWITCHED_OFF } from '../route/nym-subsystem.js'
+import { madeSiteSessions } from '../route/site-routes.js'
+import { isRegisteredAppOrigin } from '../site-settings/app-origin.js'
+import { isWebOrigin } from '../site-settings/site-settings-controller.js'
+import { resetAllSiteSettings, sitesDomain } from '../site-settings/sites-domain.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { nodeLoaderStorage } from '../../loader/cache/node-storage.js'
@@ -72,7 +92,8 @@ function aboutDomain (): InternalDomain {
       node: process.versions.node,
       platform: process.platform,
       userAgent: session.defaultSession.getUserAgent(),
-      developerMode: devModeEnabled()
+      developerMode: devModeEnabled(),
+      updatesFromStore: isStoreInstall()
     })
   }
 }
@@ -81,10 +102,30 @@ function aboutDomain (): InternalDomain {
 export function startInternalPages (services: ShellServices, ctx: SubsystemContext): void {
   const permissions = createPermissionsController(ctx)
   const siteSettings = siteSettingsControllerFor(services, ctx)
+  // An app's devices are listed on its Apps card, a website's under Sites; the origin decides which (ADR-0068).
+  // An app not opened this session is still an app: its record on disk says so.
+  const deviceRows = createDeviceRows(services.hidDevices, (origin) =>
+    isWebOrigin(origin) && !isRegisteredAppOrigin(ctx, origin) && ctx.broker?.app.persistedAppsSync().some((app) => app.origin === origin) !== true)
   if (ctx.extensions === undefined) {
     throw new Error('startInternalPages requires ctx.extensions -- check extensionsSubsystem\'s position in subsystems.ts')
   }
   const extensions = ctx.extensions
+  const routes = ctx.routes
+  if (routes === undefined) throw new Error('startInternalPages requires ctx.routes -- check routeSubsystem\'s position in subsystems.ts')
+  // An app can be routed once there is a proxy and its files are held here: its updates are not checked while routed, which a first visit has no pin to skip.
+  const routeSwitch = routes.routeSwitch
+  const appRoutes: AppRoutes = {
+    stateOf: (origin) => routes.hub.state(origin),
+    kindOf: (origin) => routes.hub.kindOf(origin) ?? null,
+    unreadable: () => routes.hub.unreadable(),
+    blockedFor: (origin, kind) => {
+      const blocked = routeSwitch.blockedFor(origin, kind)
+      if (blocked === 'local') return 'not-cached'
+      const nym = routes.nym.state()
+      return blocked ?? (kind === 'nym' && nym.state === 'unavailable' && nym.reason === NYM_SWITCHED_OFF ? 'nym-off' : undefined)
+    },
+    set: (origin, kind) => routeSwitch.choose(origin, kind)
+  }
   const tasksEnv: TasksEnv = {
     windows: services.windows,
     extensionName: (id) => extensions.list().find((entry) => entry.id === id)?.name
@@ -110,7 +151,8 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     info: infoDomain({
       facts: () => readAboutFacts(services.settings, services.isPrivate),
       gpu: readGpu,
-      copy: copyToClipboard
+      copy: copyToClipboard,
+      release: () => runningRelease(app.getVersion())
     }),
     profiles: profilesDomain(services.profiles),
     reader: readerDomain({
@@ -139,9 +181,11 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     privacy: privacyDomain(services.history, services.zoomStore, {
       history: services.history,
       zoom: services.zoomStore,
-      siteSettings,
+      siteSettings: { resetAll: () => { resetAllSiteSettings(siteSettings, deviceRows) } },
       websites: session.defaultSession,
       localFiles: () => allLocalPartitions().map((partition) => session.fromPartition(partition)),
+      // A website with a tunnel setting keeps its storage in a profile, which the shared session's clearing never reaches; a profile session nothing has made is not created to be cleared.
+      siteSessions: () => profilePartitionsToClear((profile) => routes.store.apart(profile).length > 0, madeSiteSessions()).map((partition) => session.fromPartition(partition)),
       // Only a CACHE-SERVED app still has a partition of its own to clear:
       // a granted-without-install app shares session.defaultSession, which
       // `websites` above already reaches. Calling session.fromPartition on
@@ -151,21 +195,25 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       appSessions: async () => (await permissions.list())
         .filter((app) => isOriginServedFromCacheSync(app.origin))
         .map((app) => session.fromPartition(partitionFor(app.origin))),
+      forgetNameSchemes,
+      forgetNodeData: forgetIpfsNodeData,
+      forgetAppUse: (from) => { services.appUse.forgetSince(from) },
+      forgetEarnedLevels: () => { forgetKeptProvenance(); services.scoreProvider.forget() },
       now: Date.now
     }),
-    sites: sitesDomain(siteSettings, { isPrivate: services.isPrivate }),
+    sites: sitesDomain(siteSettings, { isPrivate: services.isPrivate, devices: deviceRows, declinedApps: { list: () => declinedApps()?.list() ?? [], remove: (origin) => declinedApps()?.remove(origin) === true } }),
     siteData: siteDataDomain(() => session.defaultSession),
     localFileData: localFilesDomain({
       list: () => localFileApps()?.list() ?? [],
       deleteFile: async (key) => await deleteLocalFileData({ broker: ctx.broker, userDataPath: app.getPath('userData'), clearPartition: async (partition) => { await session.fromPartition(partition).clearData() } }, key),
       clearShared: async () => { await session.fromPartition(LOCAL_FILES_PARTITION).clearData() }
     }),
-    apps: appsDomain({ permissions, userDataPath: app.getPath('userData'), identity: identityKeyStorage }),
+    apps: appsDomain({ permissions, switches: createAppSwitches(ctx, scoreLevelOverrideFor, announceEntryChange), devices: deviceRows, links: services.schemeChoices, userDataPath: app.getPath('userData'), identity: identityKeyStorage, routes: appRoutes, changed: announceEntryChange }),
+    route: routeDomain({ proxy: () => services.settings.get('network.route.proxy'), kind: () => services.settings.get('network.route.kind'), probe: probeSocks5, nym: routes.nym, routeSwitch: routes.routeSwitch, settingsUnreadable: () => services.settings.fileUnreadable(), heldToNym: () => ctx.privateTunnel === 'nym' }),
     web3: web3Domain({
       view: verifierView,
       enabled: () => services.settings.get('web3.lightClient'),
-      enabledAtStart: services.settings.get('web3.lightClient'),
-      forcedOff: () => process.env['ORIVON_ETH_LIGHT_CLIENT'] === 'off'
+      forcedOff: lightClientForcedOff
     }),
     app: appDomain(app, services.profiles.isPrivate),
     os: osDomain(defaultBrowserHost, services.profiles.isPrivate, async (ms) => { await new Promise<void>((resolve) => { setTimeout(resolve, ms) }) }),
@@ -179,8 +227,10 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       async () => await checkUpdateNow(app),
       services.profiles.isPrivate,
       (answer) => { services.internalPages.publish('updates.changed', answer, ['settings']) },
-      (caller, url) => { services.windows.findOwner(caller.contents)?.tabs.createTab(url) }
+      (caller, url) => { services.windows.findOwner(caller.contents)?.tabs.createTab(url) },
+      isStoreInstall()
     ),
+    report: reportDomainFor(services, ctx),
     about: aboutDomain()
   })
   extensions.prefs.onChange(() => { services.internalPages.publish('extensions.changed', undefined, ['extensions']) })
@@ -189,6 +239,13 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   // Reaches 'extensions' too: it reads and writes 'extensions.developerMode' through this same domain. And 'import',
   // whose history box follows 'history.remember'.
   services.settings.onChange((change) => { services.internalPages.publish('settings.changed', change, ['settings', 'extensions', 'import']) })
+  // An app's route switch is on its card in Apps: it follows the switch itself, and whether there is a proxy to turn it on for.
+  routes.hub.onChange(() => { services.internalPages.publish('apps.changed', undefined, ['settings']); services.internalPages.publish('route.changed', undefined, ['settings']) })
+  services.settings.onChange((change) => { if (change.key === 'network.route.proxy' || change.key === 'network.route.kind') services.internalPages.publish('apps.changed', undefined, ['settings']) })
+  routes.nym.onChange(() => {
+    services.internalPages.publish('nym.changed', { nym: routes.nym.state() }, ['settings'])
+    services.internalPages.publish('apps.changed', undefined, ['settings'])
+  })
   services.searchEngines.onChange(() => { services.internalPages.publish('searchEngines.changed', undefined, ['settings']) })
   services.shortcuts.onChange(() => { services.internalPages.publish('shortcuts.changed', services.shortcuts.rows(), ['settings']) })
   // Every grant/revoke, from every surface (install, the site-info popover, a
@@ -214,6 +271,16 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   services.downloads.onChange(throttleChanges((change) => { services.internalPages.publish('downloads.changed', change, ['downloads']) }))
   services.zoomStore.onChange(() => { services.internalPages.publish('privacy.changed', undefined, ['settings']) })
   siteSettings.onChange(() => { services.internalPages.publish('sites.changed', undefined, ['settings']) })
+  // An approval or a forgotten device changes an app's card and a site's row alike.
+  services.hidDevices.onChange(() => {
+    services.internalPages.publish('apps.changed', undefined, ['settings'])
+    services.internalPages.publish('sites.changed', undefined, ['settings'])
+  })
+  if (ctx.broker !== undefined) forgetDevicesWhenGrantEnds(ctx.broker, services.hidDevices)
+  if (ctx.broker !== undefined) forgetChoicesWhenGrantEnds(ctx.broker, services.schemeChoices)
+  if (ctx.broker !== undefined) forgetRoutesOfGoneApps(ctx.broker, routes)
+  // The app a kind of link opens in is part of its card in Apps.
+  services.schemeChoices.onChange(() => { services.internalPages.publish('apps.changed', undefined, ['settings']) })
   services.passwords.onChange(() => { services.internalPages.publish('passwords.changed', undefined, ['settings']) })
   services.profiles.onChange(() => { services.internalPages.publish('profiles.changed', undefined, ['settings', 'profiles']) })
   // Never fires in a private session: telemetry never runs there, and

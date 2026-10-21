@@ -7,8 +7,8 @@ import type { SiteInfoController } from '../../permissions/site-info-controller.
 // commands are exercised end-to-end by scripts/smoke.mjs instead) -- this
 // file covers only the commands this lane and the site-info lane added on
 // COMMAND_CHANNEL: the toolbar key's per-tab summary, and opening the
-// all-sites and site-info popups. Listing every app and revoking live on
-// the all-sites popup's OWN channel instead (permissions-ipc.test.ts); the
+// Available networks and site-info popups. The cards and their switches live on
+// the Available networks popup's OWN channel instead (networks-ipc.test.ts); the
 // site-info popup's own get/apply/trust/data commands live on ITS own
 // channel too (site-info-ipc.test.ts) -- see ShellCommand's own doc on why.
 
@@ -30,10 +30,15 @@ const OTHER_FRAME = {}
 
 function fakeSiteInfo (overrides: Partial<SiteInfoController> = {}): SiteInfoController {
   return {
-    siteSummaryFor: vi.fn(async () => ({ asked: false, warning: false })),
+    siteSummaryFor: vi.fn(async () => ({ asked: false, warning: false, missing: false })),
+    reviewPermissions: vi.fn(async () => true),
     siteInfoFor: vi.fn(async () => { throw new Error('not stubbed') }),
+    inSession: vi.fn((info) => info),
     siteTrustFor: vi.fn(async () => null),
     storageDeclarationFor: vi.fn(async () => null),
+    setTunnel: vi.fn(async () => true),
+    setProxyAddress: vi.fn(() => 'ok' as const),
+    testTunnel: vi.fn(async () => null),
     turnOn: vi.fn(async () => 'not-registered' as const),
     turnOff: vi.fn(async () => {}),
     revokePickedPath: vi.fn(async () => {}),
@@ -46,7 +51,7 @@ function fakeSiteInfo (overrides: Partial<SiteInfoController> = {}): SiteInfoCon
 
 function actions (overrides: Partial<ShellActions> = {}): ShellActions {
   return {
-    openPermissions: vi.fn(),
+    openNetworks: vi.fn(),
     openSiteInfo: vi.fn(),
     runCommand: vi.fn(),
     openMenu: vi.fn(),
@@ -77,13 +82,13 @@ function dispatch (command: unknown, senderFrame: unknown = CHROME_FRAME): unkno
 
 describe('registerShellIpc -- siteSummaryFor', () => {
   it('forwards the tab URL to siteInfo.siteSummaryFor()', async () => {
-    const siteInfo = fakeSiteInfo({ siteSummaryFor: vi.fn(async () => ({ asked: true, warning: false })) })
+    const siteInfo = fakeSiteInfo({ siteSummaryFor: vi.fn(async () => ({ asked: true, warning: false, missing: false })) })
     registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, siteInfo, actions())
 
     const result = await dispatch({ type: 'siteSummaryFor', url: 'https://app.example/page' })
 
     expect(siteInfo.siteSummaryFor).toHaveBeenCalledWith('https://app.example/page')
-    expect(result).toEqual({ asked: true, warning: false })
+    expect(result).toEqual({ asked: true, warning: false, missing: false })
   })
 
   it('refuses siteSummaryFor from a frame that is not the chrome view\'s own', async () => {
@@ -153,28 +158,26 @@ describe('registerShellIpc -- press', () => {
   })
 })
 
-describe('registerShellIpc -- openPermissions', () => {
-  it('toggles the all-sites popup, passing the tune icon\'s anchor and the tab url when given', async () => {
-    const openPermissions = vi.fn()
-    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ openPermissions }))
+describe('registerShellIpc -- openNetworks', () => {
+  it('toggles the Available networks popup, passing the button\'s anchor', async () => {
+    const openNetworks = vi.fn()
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ openNetworks }))
 
-    // The anchor is the chrome view's measurement of its own tune icon --
+    // The anchor is the chrome view's measurement of its own button --
     // main has no way to derive it, so it always rides the command.
     const anchor = { x: 900, y: 44, width: 32, height: 32 }
-    await dispatch({ type: 'openPermissions', anchor })
-    await dispatch({ type: 'openPermissions', url: 'https://app.example/some/page', anchor })
+    await dispatch({ type: 'openNetworks', anchor })
 
-    expect(openPermissions).toHaveBeenNthCalledWith(1, anchor, undefined)
-    expect(openPermissions).toHaveBeenNthCalledWith(2, anchor, 'https://app.example/some/page')
+    expect(openNetworks).toHaveBeenCalledExactlyOnceWith(anchor)
   })
 
-  it('refuses openPermissions from a frame that is not the chrome view\'s own', async () => {
-    const openPermissions = vi.fn()
-    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ openPermissions }))
+  it('refuses openNetworks from a frame that is not the chrome view\'s own', async () => {
+    const openNetworks = vi.fn()
+    registerShellIpc(chromeWebContents, CHROME_URL, {} as TabManager, {} as BookmarkStore, fakeSiteInfo(), actions({ openNetworks }))
 
-    await dispatch({ type: 'openPermissions', anchor: { x: 900, y: 44, width: 32, height: 32 } }, OTHER_FRAME)
+    await dispatch({ type: 'openNetworks', anchor: { x: 900, y: 44, width: 32, height: 32 } }, OTHER_FRAME)
 
-    expect(openPermissions).not.toHaveBeenCalled()
+    expect(openNetworks).not.toHaveBeenCalled()
   })
 })
 
@@ -241,7 +244,7 @@ describe('registerShellIpc -- web3ScoreFor', () => {
     const result = await dispatch({ type: 'web3ScoreFor', url: 'https://app.example/page' })
 
     expect(siteInfo.siteTrustFor).toHaveBeenCalledWith('https://app.example/page')
-    expect(result).toEqual({ level: 4, overridden: true, judgedBy: undefined, pending: false, delivery: 1, deliveryOverridden: false, localDev: false })
+    expect(result).toEqual({ level: 4, overridden: true, judgedBy: undefined, pending: false, delivery: 1, deliveryOverridden: false, localDev: false, unscored: false, noProvider: true, unreachable: false })
   })
 
   it('is null when siteTrustFor has nothing to report', async () => {

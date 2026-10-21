@@ -3,12 +3,25 @@ import type { Section } from '../model.js'
 export const search: Section = {
   id: 'search',
   title: 'Search',
-  intro: 'What you type in the address bar that is not an address goes to this search engine.',
+  intro: 'What you type in the address bar that is not an address is searched on the Web3 (sites on IPFS with ENS names) or on the Web2 (ordinary search engines). Each has its own engine.',
   rows: [
     {
+      id: 'search-mode',
+      label: 'Address bar searches',
+      help: 'You can also switch with the Web3 or Web2 button in the address bar while you type.',
+      keywords: ['web3', 'web2', 'mode', 'explore', 'ipfs', 'ens', 'address bar', 'omnibox', 'switch'],
+      control: { type: 'choice', key: 'search.mode' }
+    },
+    {
+      id: 'search-web3-engine',
+      label: 'Web3 search engine',
+      keywords: ['web3', 'explore', 'ipfs', 'ens', 'decentralised', 'address bar', 'omnibox'],
+      control: { type: 'choice', key: 'search.web3Engine' }
+    },
+    {
       id: 'search-engine',
-      label: 'Search engine',
-      keywords: ['duckduckgo', 'google', 'bing', 'brave', 'startpage', 'address bar', 'omnibox'],
+      label: 'Web2 search engine',
+      keywords: ['web2', 'duckduckgo', 'google', 'bing', 'brave', 'startpage', 'address bar', 'omnibox'],
       control: { type: 'choice', key: 'search.engine' }
     },
     {
@@ -26,7 +39,8 @@ export const search: Section = {
         const name = state.engines.defaultName === '' ? 'Your search engine' : state.engines.defaultName
         if (state.engines.isPrivate) return 'Not used in a private window.'
         if (!state.engines.suggestable) return `${name} does not offer suggestions.`
-        return `As you type a search, Orivon sends what you type to ${name}. Off, suggestions come only from your history, bookmarks and open tabs.`
+        const web2Only = state.value('search.mode') === 'web3' ? ' This applies while the address bar searches Web2; the Web3 search engine gives no suggestions.' : ''
+        return `As you type a search, Orivon sends what you type to ${name}. Off, suggestions come only from your history, bookmarks and open tabs.${web2Only}`
       },
       keywords: ['suggestions', 'autocomplete', 'predictions', 'search suggestions', 'address bar', 'omnibox', 'privacy', 'typing'],
       control: { type: 'toggle', key: 'search.suggestions', disabled: (state) => state.engines.isPrivate || !state.engines.suggestable }

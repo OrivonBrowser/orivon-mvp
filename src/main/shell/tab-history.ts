@@ -2,6 +2,8 @@
 // in the original would.
 import type { WebContents } from 'electron'
 import { isShellSchemeUrl } from './shell-session.js'
+import { noteCommit } from './tab-outer-history.js'
+import type { HistoryEntry, OuterHistory } from './tab-outer-history.js'
 
 /**
  * `entries` without the shell's own pages, `index` moved to the entry that was shown. Null when the shown entry
@@ -58,4 +60,29 @@ export function carryHistory (from: WebContents | undefined, to: WebContents | u
   }
   if (entries.length < 2) return false
   return restoreHistory(to, entries, index)
+}
+
+/** `wc`'s back and forward list, address and title only, and the entry it shows. */
+export function listOf (wc: WebContents): { entries: HistoryEntry[], index: number } {
+  const history = wc.navigationHistory
+  return { entries: history.getAllEntries().map(({ url, title }) => ({ url, title })), index: history.getActiveIndex() }
+}
+
+/** The tab's view committed a page (`sameDocument` for a fragment or `pushState` change). A view that has just
+ * stepped out of its list, or a parked view the tab came back to, is left holding that page alone: its other pages
+ * are in the tab's outer history already, and going back to the page a parked app left for would load it inside the
+ * app's session. A parked view's own blank page committing late is not the page it came back for. */
+export function settleOuterHistory (record: { outer?: OuterHistory }, wc: WebContents, url: string, sameDocument = false): void {
+  let outer = record.outer
+  if (outer === undefined) return
+  // A step in the tab's own view has committed (load-in-tab.ts's `stepOutOfView`).
+  if (outer.pending !== undefined && !sameDocument && url !== 'about:blank') outer = outer.pending
+  const history = wc.navigationHistory
+  if (outer.trimOnCommit === true) {
+    if (sameDocument || url === 'about:blank') return
+    const active = history.getActiveIndex()
+    // From the end, so each removal leaves the indices still to visit alone.
+    for (let index = history.length() - 1; index >= 0; index--) if (index !== active) history.removeEntryAtIndex(index)
+  }
+  record.outer = noteCommit(outer, history.getAllEntries().map((entry) => entry.url), history.getActiveIndex())
 }

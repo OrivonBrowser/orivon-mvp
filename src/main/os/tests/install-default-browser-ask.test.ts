@@ -1,17 +1,19 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ShellWindow } from '../../shell/window-registry.js'
-import { DAY_MS, firstSight } from '../default-browser-ask.js'
+import { APP_OPEN_BEAT_MS, DAY_MS, firstSight } from '../default-browser-ask.js'
 import type { AskState } from '../default-browser-ask.js'
 import type { DefaultBrowserHost, Launcher } from '../default-browser.js'
-import { askPlace, createDefaultBrowserCheck, installDefaultBrowserAsk } from '../install-default-browser-ask.js'
+import { askPlace, createDefaultBrowserCheck, installDefaultBrowserAsk, RETRY_MS } from '../install-default-browser-ask.js'
 import type { AskPlace } from '../install-default-browser-ask.js'
 
-const NOW = 1_800_000_000_000
+// Local wall-clock time, so the second calendar day means the same in every zone the test runs in.
+const NOW = new Date(2027, 0, 15, 14, 0, 0).getTime()
+const HOUR_MS = 60 * 60 * 1000
 const PLACE = { window: {}, tabId: 't1' } as unknown as AskPlace
 
-interface Setup { run: () => Promise<void>, written: AskState[], asked: ReturnType<typeof vi.fn>, host: DefaultBrowserHost & { isDefault: ReturnType<typeof vi.fn>, setDefault: ReturnType<typeof vi.fn> }, place: ReturnType<typeof vi.fn> }
+interface Setup { run: () => Promise<number>, written: AskState[], asked: ReturnType<typeof vi.fn>, host: DefaultBrowserHost & { isDefault: ReturnType<typeof vi.fn>, setDefault: ReturnType<typeof vi.fn> }, place: ReturnType<typeof vi.fn> }
 
-function setup (over: { state?: AskState | string, now?: number, place?: AskPlace | undefined, response?: number, registered?: boolean, launcher?: Launcher } = {}): Setup {
+function setup (over: { state?: AskState | string, now?: number, appOpenedAt?: number, place?: AskPlace | undefined, response?: number, registered?: boolean, launcher?: Launcher } = {}): Setup {
   const written: AskState[] = []
   const registered = { value: over.registered ?? false }
   const host = {
@@ -26,6 +28,7 @@ function setup (over: { state?: AskState | string, now?: number, place?: AskPlac
   const place = vi.fn(() => ('place' in over ? over.place : PLACE))
   const run = createDefaultBrowserCheck({
     now: () => over.now ?? NOW,
+    appOpenedAt: () => over.appOpenedAt,
     read: () => text,
     write: (written_) => { written.push(JSON.parse(written_) as AskState) },
     host,
@@ -39,30 +42,101 @@ function setup (over: { state?: AskState | string, now?: number, place?: AskPlac
 const seen = (daysAgo: number, askedDaysAgo = daysAgo): AskState => ({ firstSeenAt: NOW - daysAgo * DAY_MS, lastAskedAt: NOW - askedDaysAgo * DAY_MS, stopped: false })
 
 describe('the weekly default-browser check', () => {
-  it('writes a first sight and asks nothing, and queries nobody, on a profile it has not seen', async () => {
+  it('writes a first sight once a window is in use on a profile it has not seen, asks nothing, and looks again within the hour', async () => {
     const s = setup()
-    await s.run()
+    expect(await s.run()).toBe(HOUR_MS)
     expect(s.written).toEqual([firstSight(NOW)])
     expect(s.asked).not.toHaveBeenCalled()
     expect(s.host.isDefault).not.toHaveBeenCalled()
-    expect(s.place).not.toHaveBeenCalled()
   })
 
-  it('does not query the system or look for a window before an ask is due', async () => {
-    const s = setup({ state: seen(6) })
+  it('does not start the clock while no window is in use, the welcome screen and its popup included, and looks again soon', async () => {
+    const s = setup({ place: undefined })
+    expect(await s.run()).toBe(RETRY_MS)
+    expect(s.written).toEqual([])
+    expect(s.host.isDefault).not.toHaveBeenCalled()
+  })
+
+  it('never asks on the first day while no app has opened, however long the browser has been in use', async () => {
+    const s = setup({ state: firstSight(NOW - 10 * HOUR_MS) })
+    expect(await s.run()).toBe(HOUR_MS)
+    expect(s.asked).not.toHaveBeenCalled()
+    expect(s.host.isDefault).not.toHaveBeenCalled()
+    expect(s.written).toEqual([])
+  })
+
+  it('asks once, with all three buttons, a beat after the first app opened, and the answer starts the weekly count', async () => {
+    const openedAt = NOW - APP_OPEN_BEAT_MS + 1_000
+    const early = setup({ state: firstSight(NOW - 60_000), appOpenedAt: openedAt })
+    expect(await early.run()).toBe(1_000)
+    expect(early.asked).not.toHaveBeenCalled()
+
+    const s = setup({ state: firstSight(NOW - 60_000), appOpenedAt: NOW - APP_OPEN_BEAT_MS, response: 1 })
+    expect(await s.run()).toBe(HOUR_MS)
+    const spec = (s.asked.mock.calls[0] as [AskPlace, { buttons: string[], title: string }])[1]
+    expect(spec.title).toBe('Make Orivon your default browser?')
+    expect(spec.buttons).toEqual(['Make default', 'Not now', 'Don\'t ask again'])
+    expect(s.written).toEqual([{ firstSeenAt: NOW - 60_000, lastAskedAt: NOW, stopped: false }])
+
+    // The app opened again later in the same run: the weekly count governs now.
+    const again = setup({ state: { firstSeenAt: NOW - 60_000, lastAskedAt: NOW, stopped: false }, appOpenedAt: NOW - APP_OPEN_BEAT_MS })
+    await again.run()
+    expect(again.asked).not.toHaveBeenCalled()
+  })
+
+  it('waits for a window to ask in after an app opened, and asks nothing meanwhile', async () => {
+    const s = setup({ state: firstSight(NOW - 60_000), appOpenedAt: NOW - APP_OPEN_BEAT_MS, place: undefined })
+    expect(await s.run()).toBe(RETRY_MS)
+    expect(s.asked).not.toHaveBeenCalled()
+    expect(s.written).toEqual([])
+  })
+
+  it('starts the clock and asks at once when an app opened before the profile was first seen in use', async () => {
+    const s = setup({ appOpenedAt: NOW - APP_OPEN_BEAT_MS, response: 1 })
     await s.run()
+    expect(s.asked).toHaveBeenCalledTimes(1)
+    expect(s.written).toEqual([firstSight(NOW), { firstSeenAt: NOW, lastAskedAt: NOW, stopped: false }])
+  })
+
+  it('asks on the second calendar day without any app opening', async () => {
+    const yesterdayEvening = new Date(2027, 0, 14, 23, 0, 0).getTime()
+    const s = setup({ state: firstSight(yesterdayEvening), response: 1 })
+    await s.run()
+    expect(s.asked).toHaveBeenCalledTimes(1)
+    expect(s.written).toEqual([{ firstSeenAt: yesterdayEvening, lastAskedAt: NOW, stopped: false }])
+  })
+
+  it('stops for good when the person chooses "Don\'t ask again" on the very first ask', async () => {
+    const s = setup({ state: firstSight(NOW - 60_000), appOpenedAt: NOW - APP_OPEN_BEAT_MS, response: 2 })
+    await s.run()
+    expect(s.written).toEqual([{ firstSeenAt: NOW - 60_000, lastAskedAt: null, stopped: true }])
+    const later = setup({ state: s.written[0] as AskState, now: NOW + 30 * DAY_MS, appOpenedAt: NOW })
+    await later.run()
+    expect(later.asked).not.toHaveBeenCalled()
+  })
+
+  it('keeps an already asked profile on its weekly count, whether or not an app opens', async () => {
+    const s = setup({ state: seen(2), appOpenedAt: NOW - APP_OPEN_BEAT_MS })
+    expect(await s.run()).toBe(HOUR_MS)
+    expect(s.asked).not.toHaveBeenCalled()
+    expect(s.written).toEqual([])
+  })
+
+  it('does not query the system or look for a window before an ask is due, and looks again within the hour', async () => {
+    const s = setup({ state: seen(6) })
+    expect(await s.run()).toBe(HOUR_MS)
     expect(s.host.isDefault).not.toHaveBeenCalled()
     expect(s.place).not.toHaveBeenCalled()
     expect(s.asked).not.toHaveBeenCalled()
     expect(s.written).toEqual([])
   })
 
-  it('asks with two buttons in the second week, and Not now writes the time of the ask', async () => {
+  it('asks again a week after the last ask, and Not now writes the time of the ask', async () => {
     const s = setup({ state: seen(8, 8), response: 1 })
     await s.run()
     expect(s.asked).toHaveBeenCalledTimes(1)
     const spec = (s.asked.mock.calls[0] as [AskPlace, { buttons: string[], cancelId: number, guarded: number[], kind: string }])[1]
-    expect(spec.buttons).toEqual(['Make default', 'Not now'])
+    expect(spec.buttons).toEqual(['Make default', 'Not now', 'Don\'t ask again'])
     expect(spec).toMatchObject({ kind: 'notice', cancelId: 1, guarded: [0] })
     // A prompt that appears unprompted must not put a key meant for the page on the button that changes the system.
     expect((spec as { focus?: unknown }).focus).toBe('dialog')
@@ -70,11 +144,9 @@ describe('the weekly default-browser check', () => {
     expect(s.host.setDefault).not.toHaveBeenCalled()
   })
 
-  it('offers "Don\'t ask again" from day 14, and choosing it stops the ask for good', async () => {
+  it('stops the ask for good when "Don\'t ask again" is chosen', async () => {
     const s = setup({ state: seen(15, 8), response: 2 })
     await s.run()
-    const spec = (s.asked.mock.calls[0] as [AskPlace, { buttons: string[] }])[1]
-    expect(spec.buttons).toEqual(['Make default', 'Not now', 'Don\'t ask again'])
     expect(s.written).toEqual([{ firstSeenAt: NOW - 15 * DAY_MS, lastAskedAt: NOW - 8 * DAY_MS, stopped: true }])
   })
 
@@ -105,9 +177,9 @@ describe('the weekly default-browser check', () => {
     expect(s.written).toEqual([{ firstSeenAt: NOW - 8 * DAY_MS, lastAskedAt: NOW, stopped: false }])
   })
 
-  it('waits, and records nothing, when no window is in a state to be asked in', async () => {
+  it('waits, records nothing, and looks again soon when no window is in a state to be asked in', async () => {
     const s = setup({ state: seen(8), place: undefined })
-    await s.run()
+    expect(await s.run()).toBe(RETRY_MS)
     expect(s.asked).not.toHaveBeenCalled()
     expect(s.host.isDefault).not.toHaveBeenCalled()
     expect(s.written).toEqual([])
@@ -120,9 +192,9 @@ describe('the weekly default-browser check', () => {
     expect(s.written).toEqual([])
   })
 
-  it('makes the state again when its file is corrupt, and asks nothing that day', async () => {
+  it('treats a corrupt file as a profile not seen yet: a first sight, and nothing asked', async () => {
     const s = setup({ state: 'garbage{' })
-    await s.run()
+    expect(await s.run()).toBe(HOUR_MS)
     expect(s.written).toEqual([firstSight(NOW)])
     expect(s.asked).not.toHaveBeenCalled()
   })
@@ -173,6 +245,13 @@ describe('where the ask may be shown', () => {
   it('waits under the welcome screen and beside the restore bar', () => {
     expect(place(windowFake(), true)).toBeUndefined()
     expect(place(windowFake({ restoreOpen: true }))).toBeUndefined()
+  })
+
+  it('waits while the tab has a sheet or a prompt on screen or waiting, such as an app\'s consent question', () => {
+    const target = windowFake()
+    expect(askPlace({ focused: () => target }, () => false, () => true)).toBeUndefined()
+    expect(askPlace({ focused: () => target }, () => false, (window, tabId) => window === target && tabId === 't1')).toBeUndefined()
+    expect(askPlace({ focused: () => target }, () => false, () => false)).toEqual({ window: target, tabId: 't1' })
   })
 })
 

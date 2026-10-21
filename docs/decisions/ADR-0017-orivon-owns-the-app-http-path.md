@@ -1,6 +1,6 @@
 # ADR-0017: Orivon owns the app's HTTP path, terminating TLS, routing `fetch`, and letting apps set their own headers
 
-- **Status:** accepted, amended 2026-09-22 and 2026-09-23 (see the amendments under §Consequences)
+- **Status:** accepted, amended 2026-09-22 and 2026-09-23 (see the amendments under section Consequences)
 - **Date:** 2026-09-09
 - **Type:** architecture
 - **Decided by:** owner

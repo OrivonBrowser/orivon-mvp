@@ -32,7 +32,8 @@ locks `window.orivon`, the one page global that stays locked
 ([ADR-0021](../../../docs/decisions/ADR-0021-page-globals-carry-the-platform-descriptor.md)).
 
 **What is wired, and what is left off.** The broker side is
-`../../broker/transport/ipc.ts`'s `handleControlRequest`; `fs.readFileSync` alone goes over
+`../../broker/transport/ipc.ts`'s `handleControlRequest`; `fs.readFileSync`, and the page's synchronous
+path-based `fs` twin (`Symbol.for('orivon.synchronous')`, no `open`), go over
 `SYNC_CONTROL_CHANNEL`
 ([ADR-0016](../../../docs/decisions/ADR-0016-synchronous-file-reads-are-permitted.md)). Left
 off under the parent README's rule, because the broker does not implement them: `fs.open`'s
@@ -81,7 +82,13 @@ frozen `Error.prepareStackTrace` is -- main-world code that obtains its own `Cal
 `prepareStackTrace`) cannot make a later frame lie about its origin by replacing a prototype
 method. V8 defines those methods non-writable and non-configurable, so on Electron 44 the
 replacement itself fails (`test/extensions/e2e-extensions-orivon-filter.test.ts` measures it); the
-comparison guards an engine that allows it. The decision, over the CallSites excluding `guarded`'s own frame
+comparison guards an engine that allows it. The frame list is built by an indexed loop into
+an array literal, each element written with the saved `Reflect.defineProperty` and a
+null-prototype descriptor, and the capture's own descriptors and holder object have no
+prototype either: nothing a page can redefine after install (`Array.prototype.constructor`,
+`Array[Symbol.species]`, an `Array.prototype` index setter, `Symbol.iterator`, fields on
+`Object.prototype`) is consulted between the capture and the decision, so none can swap in a
+forged list. The decision, over the CallSites excluding `guarded`'s own frame
 (`Error.captureStackTrace`'s second argument does the excluding): refuse if any frame's file
 name, script name or eval origin CONTAINS a `chrome-extension://` script (refusing more is
 safe); otherwise refuse unless some frame is page code -- checked STARTS-WITH, and only over the
@@ -128,6 +135,10 @@ a MAIN-world extension script reaching a method there are indistinguishable. Eve
 builds (`deniedRejection`/`deniedThrow`) keeps its real shape -- an app's own `typeof
 window.orivon.fs.open === 'function'` feature check still passes -- but refuses instead of
 forwarding, and it logs once so a silently fail-closed `window.orivon` still shows in devtools.
+
+**`net.connect`'s `signal` is split off in the main world** (`dial` in `main-world-socket.ts`, `ADR-0071`). An `AbortSignal`
+cannot cross `contextBridge`, so the isolated side gets a function that registers a listener instead; the abort becomes a
+`net.cancel` message for the pending request (`control-call.ts`'s `call`), and the broker answers that request `'closed'`.
 
 **`net.connect`/`net.connectSecure`'s own unwrapped implementations reach `../routed/dial.ts`
 through a private symbol on `target`, never through `window.orivon.net`.** `dial.ts` is

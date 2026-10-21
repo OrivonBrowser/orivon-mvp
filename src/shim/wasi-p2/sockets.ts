@@ -5,7 +5,7 @@
 
 import { type IpAddress, type IpAddressFamily, ResolvedNames, type SocketNet, parseAddress, socketFailure } from './addresses.js'
 import { type IoError, Pollable } from './io.js'
-import { TcpSocket } from './tcp.js'
+import { DROP_GRACE_MS, TcpSocket } from './tcp.js'
 import { IncomingDatagramStream, OutgoingDatagramStream, UdpSocket } from './udp.js'
 
 /** wasi:sockets/network's `network`: the one this host hands out stands for the app's own grants. */
@@ -47,10 +47,10 @@ export class ResolveAddressStream {
   }
 }
 
-export function socketInterfaces (net: SocketNet): Record<string, Record<string, unknown>> {
+export function socketInterfaces (net: SocketNet, options: { readonly dropGraceMs?: number } = {}): Record<string, Record<string, unknown>> {
   const names = new ResolvedNames()
   const network = new Network()
-  const context = { net, names }
+  const context = { net, names, dropGraceMs: options.dropGraceMs ?? DROP_GRACE_MS }
   return {
     'wasi:sockets/network': { Network, networkErrorCode: (error: IoError): string | undefined => error.codeFor('network') },
     'wasi:sockets/instance-network': { instanceNetwork: (): Network => network },

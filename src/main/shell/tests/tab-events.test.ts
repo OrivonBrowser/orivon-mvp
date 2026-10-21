@@ -74,6 +74,8 @@ function fakeHost (overrides: Partial<Host> = {}): Host & Record<string, unknown
     attachView: vi.fn(),
     paneCommitted: vi.fn(),
     paneClicked: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
     openInSplit: vi.fn(),
     devtools: undefined,
     emitState: vi.fn(),

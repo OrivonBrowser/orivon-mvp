@@ -2,8 +2,8 @@
 
 > **Done**, apart from one run from source on Windows and macOS with the light client in the
 > tree (EI-12). Written 2026-09-24 against `main` at `e218ca4`, after the owner's decisions of the
-> same day (§Decisions taken); the owner's answers of 2026-09-25 to A254 to A256 changed two
-> things below, which [§Where it stands](#where-it-stands) records with every other departure.
+> same day (section Decisions taken); the owner's answers of 2026-09-25 to A254 to A256 changed two
+> things below, which [section Where it stands](#where-it-stands) records with every other departure.
 
 **What this is.** The work queue for making `name.eth` load in this build as `https://name.eth`,
 with every byte checked locally against what the Ethereum chain says the name points to. External
@@ -12,12 +12,10 @@ servers supply availability only: none of them is trusted for correctness. It fo
 each ending in an exit criterion that must be demonstrably true. Where this sits in the roadmap is
 decided elsewhere; nothing here assumes an order relative to other work.
 
-**Read first.** The canonical pages this plan implements:
-[Web3 scores](https://docs.orivonstack.com/docs/implementations/web3-score),
-[DNS resolution](https://docs.orivonstack.com/docs/implementations/dns-resolution),
-[Data gathering](https://docs.orivonstack.com/docs/implementations/data-gathering), and
-[Native DDOC](https://docs.orivonstack.com/docs/implementations/native-ddoc-specs). In this
-repository: [`scope.md`](../scope.md) (both features sit in its OUT table until EI-0
+**Read first.** The canonical pages this plan implements, in the earlier vision docs at
+`<vision-corpus>/implementations/`: `web3-score.md` (Web3 scores), `dns-resolution.md`
+(DNS resolution), `data-gathering.md` (Data gathering) and `native-ddoc-specs.md` (Native DDOC). In this
+repository: the retired `scope.md` (both features sit in its OUT table until EI-0
 lands), [ADR-0006](../decisions/ADR-0006-trust-indicator-from-observed-behaviour.md) (the trust
 indicator, which EI-0 amends), and
 [ADR-0007](../decisions/ADR-0007-cached-bundles-served-at-their-own-origin.md) (a bundle is
@@ -62,7 +60,7 @@ asked of it. It cannot make Orivon use a byte it changed.
 Owner, 2026-09-24. EI-0 records each in the decision log.
 
 1. **Trustlessity levels follow the canonical
-   [Web3 scores](https://docs.orivonstack.com/docs/implementations/web3-score) page.** On every
+   Web3 scores page.** On every
    site, `.eth` or not, the person sees its **Website level**. Only Level 1 (no DDOC) and Level 2
    (DDOC) are detected automatically. Level 3 and above come only from a Web3 Score provider
    assessing the site's content identifier: the bundle hash of a hash-pinned app, or the CID of
@@ -77,8 +75,7 @@ Owner, 2026-09-24. EI-0 records each in the decision log.
    of the site-info popover on `.eth` pages.
 5. **Built in, in the canonical shape.** ENS resolution and IPFS data gathering are built into
    Orivon as its default providers. They sit behind internal interfaces that match the canonical
-   [DNS resolution](https://docs.orivonstack.com/docs/implementations/dns-resolution) and
-   [Data gathering](https://docs.orivonstack.com/docs/implementations/data-gathering) pages: a
+   DNS resolution and Data gathering pages: a
    resolver returns records for its top-level domain; a gatherer loads from those records and
    reports DDOC; each top-level domain has an ordered provider list with fallback. Opening those
    interfaces to third-party Apps is a later `src/contracts/` change, not part of this plan.
@@ -453,15 +450,15 @@ recovery after restart.
 - `security-model.md` gets the rows below, from T27. Run `/security-review` and
   `adversarial-reviewer` on the verifier host and `src/ipfs/`.
 - Docs to update:
-  - `ARCHITECTURE.md` §Where things live: `src/resolution/`, `src/ens/` and `src/ipfs/` are not
+  - `ARCHITECTURE.md` section Where things live: `src/resolution/`, `src/ens/` and `src/ipfs/` are not
     tied to Electron; `src/verifier-host/` is entirely tied to it.
   - A README per new directory.
   - Glossary: contenthash, CID, trustless gateway, checkpoint, DNSLink, Website level.
-  - `compatibility-matrix.md` rows, and `capability-api.md` §How a URL becomes an app.
+  - `compatibility-matrix.md` rows, and `capability-api.md` section How a URL becomes an app.
   - `setup.md` for the dev path, and the light-client switch.
   - A stream row in `parallel-work.md`.
 - The README names the endpoints contacted at every launch.
-- Release checklist §3 (run from source on Windows and macOS), run once with Helios in the tree.
+- Release checklist section 3 (run from source on Windows and macOS), run once with Helios in the tree.
 - A devlog bullet.
 
 **Exit:** every review finding is addressed or acknowledged.
@@ -557,7 +554,7 @@ Updated 2026-09-25. Each item is built to its exit criterion unless noted.
 
 - **A DNSLink name is Level 2, not Level 1, and so is an installed site whose files match its
   published tree.** The owner answered A254: a site that meets DDOC is Level 2, the site's own
-  host counting as an anchor. IPFS content meets DDOC by design, so the §Decisions taken
+  host counting as an anchor. IPFS content meets DDOC by design, so the section Decisions taken
   consequence that a DNSLink name is Level 1 is replaced (`d-0115`, awaiting the owner's
   confirmation); its DNS hop stays unproven evidence, and D4 unmet.
 - **The verifier's caches are per top-level site** (A256, `d-0117`), which the threat table below

@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
-import { clickAddressBarRetrying, pressKey } from '../support/e2e-helpers.js'
+import { clickAddressBarRetrying, pressCommand } from '../support/e2e-helpers.js'
 import { delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 const servers: Server[] = []
@@ -68,15 +68,15 @@ it('zooms a site with the keys and the chip, shows it on every tab of the site, 
     expect((await waitForTab(chrome, { address: `${siteOrigin}/one` })).ok).toBe(true)
     expect(await chip(chrome)).toBeNull()
 
-    await pressKey(app, `${siteOrigin}/one`, '=', ['control'])
+    await pressCommand(app, `${siteOrigin}/one`, 'zoom.in')
     expect(await waitFor(async () => Math.abs((await factorAt(app, `${siteOrigin}/one`) ?? 0) - 1.1) < 0.001)).toBe(true)
     expect(await waitFor(async () => await chip(chrome) === '110%')).toBe(true)
-    await pressKey(app, `${siteOrigin}/one`, '-', ['control'])
-    await pressKey(app, `${siteOrigin}/one`, '-', ['control'])
+    await pressCommand(app, `${siteOrigin}/one`, 'zoom.out')
+    await pressCommand(app, `${siteOrigin}/one`, 'zoom.out')
     expect(await waitFor(async () => await chip(chrome) === '90%')).toBe(true)
 
     // Another tab on the same site shows the same level, another site does not.
-    await pressKey(app, `${siteOrigin}/one`, 'T', ['control'])
+    await pressCommand(app, `${siteOrigin}/one`, 'tab.new')
     expect(await waitFor(async () => (await tabIds(chrome)).length === 2)).toBe(true)
     await clickAddressBarRetrying(chrome, `${siteOrigin}/two`)
     expect((await waitForTab(chrome, { address: `${siteOrigin}/two` })).ok).toBe(true)
@@ -106,7 +106,9 @@ it('zooms a site with the keys and the chip, shows it on every tab of the site, 
   }
 }, TEST_TIMEOUT_MS)
 
-it('steps a site with Ctrl and the mouse wheel', async () => {
+// Chromium zooms on Ctrl and the wheel everywhere but macOS: there the system has its own scroll zoom and Ctrl is the
+// context-menu key (WebContentsImpl::HandleWheelEvent), so a wheel turn reaches no zoom handler on that system.
+it.skipIf(process.platform === 'darwin')('steps a site with Ctrl and the mouse wheel', async () => {
   const { app, chrome } = await launched()
   try {
     await clickAddressBarRetrying(chrome, `${siteOrigin}/wheel`)
@@ -171,8 +173,8 @@ it('scales the pixels of the page, not only the stored factor, and keeps the lev
     const full = await viewportWidthAt(app, `${siteOrigin}/pixels`)
     expect(full).toBeGreaterThan(400)
 
-    await pressKey(app, `${siteOrigin}/pixels`, '=', ['control'])
-    await pressKey(app, `${siteOrigin}/pixels`, '=', ['control'])
+    await pressCommand(app, `${siteOrigin}/pixels`, 'zoom.in')
+    await pressCommand(app, `${siteOrigin}/pixels`, 'zoom.in')
     expect(await waitFor(async () => await chip(chrome) === '125%')).toBe(true)
     expect(await waitFor(async () => Math.abs((await viewportWidthAt(app, `${siteOrigin}/pixels`) ?? 0) - (full ?? 0) / 1.25) <= 1)).toBe(true)
 
@@ -187,7 +189,7 @@ it('scales the pixels of the page, not only the stored factor, and keeps the lev
     // Actual size gives the page its full width back.
     await clickAddressBarRetrying(chrome, `${siteOrigin}/pixels`)
     expect((await waitForTab(chrome, { address: `${siteOrigin}/pixels` })).ok).toBe(true)
-    await pressKey(app, `${siteOrigin}/pixels`, '0', ['control'])
+    await pressCommand(app, `${siteOrigin}/pixels`, 'zoom.reset')
     expect(await waitFor(async () => await viewportWidthAt(app, `${siteOrigin}/pixels`) === full)).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {

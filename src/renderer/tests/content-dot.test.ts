@@ -51,6 +51,11 @@ describe('the content dot', () => {
     expect(attrs.get('aria-description')).toBe(CONTENT_BLOCKED_NOTE)
   })
 
+  it('says nothing about the tunnel: the tunnel button does', () => {
+    const { attrs } = mount()
+    expect(attrs.has('data-tunnel')).toBe(false)
+  })
+
   it('does nothing when the key is not in the page', () => {
     const { render } = mount(false)
     expect(() => { render(true) }).not.toThrow()

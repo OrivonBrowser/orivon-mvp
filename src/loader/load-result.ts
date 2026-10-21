@@ -36,6 +36,12 @@ export interface LoadInstalled {
    */
   readonly rollbackNotice?: true
   /**
+   * Registering the bundle to be served from the pin failed (`CreateLoaderOptions.onInstalled` threw). The bundle is on disk and
+   * pinned, so an ordinary install goes on and the next start restores serving; a first visit takes it for a failed install and
+   * grants nothing, since the app could not open.
+   */
+  readonly servingFailed?: true
+  /**
    * Set by `src/main/install/app-install.ts`, never by this loader: this
    * install is what registered the origin with the broker this session. A
    * tab built before that has no app-tab flag, so it runs without its

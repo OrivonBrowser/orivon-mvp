@@ -4,7 +4,7 @@
 `sad-tab-text.ts` is the fixed table of what the card says per reason. `sad-tab-state.ts` reads what
 is wrong with a tab's page off its record (a crash is on the record, a hang is remembered here).
 `sad-tab-controller.ts` opens, keeps or closes one window's card to match its active tab.
-`sad-tab-overlay.ts` declares the card as an overlay and runs its three buttons. The page is
+`sad-tab-overlay.ts` declares the card as an overlay and runs its buttons; Report on a crashed page opens `orivon://report` at that crash's record. The page is
 [`../../renderer/overlay/sad-tab/`](../../renderer/overlay/sad-tab/); the events that feed this come from
 [`../shell/signals/crashed.ts`](../shell/signals/crashed.ts), and the strip's warning icon is
 [`../../renderer/chrome/tab-crashed.ts`](../../renderer/chrome/tab-crashed.ts).
@@ -15,7 +15,7 @@ main-frame loads and asks for the sheet through the tab's slot queue ([`../overl
 and `install-load-errors.ts` wires the watcher to every tab. Its page is
 [`../../renderer/overlay/load-error/`](../../renderer/overlay/load-error/).
 
-**What it depends on.** [`../overlays/`](../overlays/) (`overlay-types.ts`, `tab-slots.ts`); [`../auth/`](../auth/) (`isCertError`, so a certificate failure is left to its own sheet); [`../privacy/`](../privacy/) (`upgradeTracker`, the failures HTTPS-only explains); [`../local-files/partition.ts`](../local-files/partition.ts) (`partitionAfterFileBlock`, a blocked file the tab is about to move with, which gets no sheet); [`../shell/`](../shell/)
+**What it depends on.** [`../diagnostics/`](../diagnostics/) (`crash-lookup.ts`, the record of the crash a Report opens); [`../overlays/`](../overlays/) (`overlay-types.ts`, `tab-slots.ts`); [`../auth/`](../auth/) (`isCertError`, so a certificate failure is left to its own sheet); [`../privacy/`](../privacy/) (`upgradeTracker`, the failures HTTPS-only explains); [`../local-files/partition.ts`](../local-files/partition.ts) (`partitionAfterFileBlock`, a blocked file the tab is about to move with, which gets no sheet); [`../shell/`](../shell/)
 (`window-registry.ts`, `tab-lifecycle.ts`, `tab-types.ts` and `shell-installers.ts`, types only).
 
 **What it must never import.** The renderer, or a value from the rest of the shell: the shell lists this

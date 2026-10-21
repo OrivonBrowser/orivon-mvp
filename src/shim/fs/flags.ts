@@ -1,6 +1,7 @@
 // `fs.open` flags: Node takes a string ('r', 'wx', ...) or a number built from
 // fs.constants.O_*; orivon.fs takes the strings only. This maps a number onto
-// the string that opens the file the same way, and refuses (EINVAL) a
+// the string that opens the file the same way, opens O_CREAT without
+// O_TRUNC in two steps (CREATE_IN_PLACE), and refuses (EINVAL) any other
 // combination no string flag expresses rather than opening it differently.
 //
 // O_NOFOLLOW and O_NONBLOCK are accepted and dropped: orivon.fs resolves a
@@ -42,9 +43,56 @@ export function normalizeOpenFlags (flags: string | number | null | undefined): 
     if (!create) refuse('O_TRUNC without O_CREAT')
     return `${exclusive ? 'wx' : 'w'}${plus}`
   }
-  if (create) {
-    if (exclusive) return `wx${plus}`
-    refuse('O_CREAT without O_TRUNC, O_APPEND or O_EXCL')
-  }
+  if (create) return exclusive ? `wx${plus}` : CREATE_IN_PLACE
   return 'r+'
+}
+
+/**
+ * What O_CREAT asks for without O_TRUNC, O_APPEND or O_EXCL: create the file
+ * if it is missing and keep what is there (random-access-file, webtorrent's
+ * disk store, opens every file this way). No string flag says that, so
+ * openFlagged opens it in two steps, and orivon.fs never sees this value. A
+ * write-only request opens read-write, as O_WRONLY alone already does.
+ */
+export const CREATE_IN_PLACE = 'r+ (create)'
+
+/** A second opener can create the file between the two steps; after this many rounds the last error stands. */
+const CREATE_ATTEMPTS = 3
+
+function codeIs (error: unknown, ...codes: readonly string[]): boolean {
+  return typeof error === 'object' && error !== null && codes.includes(String((error as { code?: unknown }).code))
+}
+
+/** `open(path, flags)` for any flag normalizeOpenFlags returns: CREATE_IN_PLACE is 'r+', then 'wx+' when the file is missing, then 'r+' again if it appeared meanwhile. */
+export async function openFlagged<H> (open: (path: string, flags: string) => Promise<H>, path: string, flags: string): Promise<H> {
+  if (flags !== CREATE_IN_PLACE) return await open(path, flags)
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await open(path, 'r+')
+    } catch (error) {
+      if (!codeIs(error, 'notFound', 'ENOENT')) throw error
+    }
+    try {
+      return await open(path, 'wx+')
+    } catch (error) {
+      if (!codeIs(error, 'exists', 'EEXIST') || attempt === CREATE_ATTEMPTS) throw error
+    }
+  }
+}
+
+/** openFlagged's synchronous twin, for the *Sync family. */
+export function openFlaggedSync<H> (open: (path: string, flags: string) => H, path: string, flags: string): H {
+  if (flags !== CREATE_IN_PLACE) return open(path, flags)
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return open(path, 'r+')
+    } catch (error) {
+      if (!codeIs(error, 'notFound', 'ENOENT')) throw error
+    }
+    try {
+      return open(path, 'wx+')
+    } catch (error) {
+      if (!codeIs(error, 'exists', 'EEXIST') || attempt === CREATE_ATTEMPTS) throw error
+    }
+  }
 }

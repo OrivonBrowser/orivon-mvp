@@ -7,6 +7,12 @@ import { WebContentsView } from 'electron'
 import type { HandlerDetails, LoadURLOptions, WebContents, WebPreferences, WindowOpenHandlerResponse } from 'electron'
 import { localFileKey, originFromUrl } from '../../broker/policy/origin.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
+import { sanitizeDirectUrl } from '../browsing/omnibox.js'
+import { askableScheme } from '../sessions/external-links.js'
+import type { Leave } from '../route/leave-decision.js'
+import { sessionRoutesLike } from '../route/site-routes.js'
+import { isTemporaryRoutePartition } from '../route/temporary-routes.js'
+import type { LeaveChoice } from './leaving-route.js'
 
 export type PopupRoute = 'adopt' | 'new-tab'
 
@@ -62,6 +68,10 @@ export function routePopup (
   // Adopted anywhere else, its origin would run whatever the network sends,
   // with its grants.
   if (targetPartition !== undefined) return 'new-tab'
+  // An opener whose session would send the address less tunnelled than the shared one (a direct profile with the address on the
+  // tunnel, say) never has the popup's first request: it opens as a tab or a window of its own, where it loads in the right session.
+  // A blank popup holds no address yet, and moves when it navigates.
+  if (opener.partition !== undefined && details.url !== 'about:blank' && !sessionRoutesLike(opener.partition, details.url)) return 'new-tab'
   // Out onto the open web: only a page that asked for a popup window, or a
   // blank one it will fill, is waiting on the opener link. A link or a plain
   // window.open(url) loads in the right session from its first request.
@@ -78,8 +88,7 @@ export interface PopupHost {
   /** `url` is what the popup was opened at, for anything the tab decides from it.
    * `active` -- see `openTab`'s own doc. */
   adoptPopup: (view: WebContentsView, partition: string | undefined, url: string, active: boolean) => void
-  /** `url` (a blob:, `blobMintedByOpener`'s own doc) opened directly in `partition`, the opener's
-   * own -- the one case a blob: URL is safe to open at all. `active`/`loadOptions` -- `openTab`'s own doc. */
+  /** `url` opened directly in `partition`, which the caller has chosen: a blob: URL in the opener's own (`blobMintedByOpener`'s own doc -- the one case a blob: URL is safe to open at all), or a checked web address in a temporary routed session. `active`/`loadOptions` -- `openTab`'s own doc. */
   openBlobTab: (url: string, partition: string | undefined, active: boolean, loadOptions?: LoadURLOptions) => WebContents | undefined
   /** `url`, a local file, in a new tab of the local-files session. Absent: a local file is never opened from a page. */
   openLocalFile?: (url: string, active: boolean) => Promise<WebContents | undefined>
@@ -98,6 +107,12 @@ export interface PopupHost {
   gatewayTarget?: (url: string) => string | undefined
   /** True when the pop-up blocker refuses this open (site-settings/popup-blocker.ts). Absent in a test with no blocker: nothing is refused. */
   popupBlocked?: (details: HandlerDetails, opener: PopupOpener) => boolean
+  /** Asks the person whether `url`, an address another program on the computer handles, may be handed to it: what a click on a link to it does. Absent in a test with no gate: such an open does nothing. */
+  openExternal?: (url: string) => void
+  /** What opening `url` from a routed app's page asks the person, or undefined when nothing: the page is not a routed app's, or the address stays inside its sessions (route/leave-decision.ts). Absent in a test with no routes. */
+  leaveFor?: (url: string, from: PopupOpener) => Leave | undefined
+  /** Asks that question for the opener's tab and makes ready what the answer needs. Absent: such an open is cancelled. */
+  chooseLeave?: (leave: Leave) => Promise<LeaveChoice>
 }
 
 /** The webContents Chromium already built for the open, if any -- present in the `options`
@@ -184,6 +199,22 @@ function newWindowLimiter (): Budget {
   return newBudget(MAX_NEW_WINDOWS_PER_MINUTE_PER_TAB, NEW_WINDOW_MIN_SPACING_MS)
 }
 
+/** A popup that asked for a window of its own is adopted into the opener's session, which for a routed app is routed: it is not the open web the question is about. A featureless open that is adopted (a shift-click) has no window of Chromium's to adopt and loads in the shared session. */
+function staysInOpenerSession (details: HandlerDetails, from: PopupOpener, host: PopupHost): boolean {
+  return details.features.trim() !== '' && host.gatewayTarget?.(details.url) === undefined && routePopup(details, from, host.partitionFor(details.url), host.isApp) === 'adopt'
+}
+
+/** An ordinary website opened from a page that is itself in a temporary routed session loads in that session, never in the shared one. */
+function opensInTemporarySession (url: string, from: PopupOpener, host: PopupHost): boolean {
+  return isTemporaryRoutePartition(from.partition) && host.gatewayTarget?.(url) === undefined && host.partitionFor(url) === undefined && originFromUrl(url) !== null
+}
+
+/** A web address opened in a temporary routed session: normalised as a typed one is, and nothing but an http(s) address, which is all a proxy can carry. */
+function openInTemporary (host: PopupHost, url: string, partition: string | undefined, active: boolean, loadOptions: LoadURLOptions | undefined): WebContents | undefined {
+  const target = sanitizeDirectUrl(url)
+  return target === null || originFromUrl(target) === null ? undefined : host.openBlobTab(target, partition, active, loadOptions)
+}
+
 export function windowOpenHandler (
   host: PopupHost,
   opener: () => PopupOpener
@@ -193,16 +224,37 @@ export function windowOpenHandler (
     if (host.atCapacity()) return { action: 'deny' }
     const from = opener()
     if (host.popupBlocked?.(details, from) === true) return { action: 'deny' }
+    // A mailto: or magnet: address has no page to load: a tab would stay blank and nothing would ask the person, as a click on a link to it does.
+    if (askableScheme(details.url) !== null) {
+      host.openExternal?.(details.url)
+      return { action: 'deny' }
+    }
     // Every browser opens a middle click or a plain ctrl+click behind the current tab.
     const active = details.disposition !== 'background-tab'
     if (isFileTarget(details.url)) {
       // Only a page that is itself a local file may open another, and it never gets a window to script
       // (a sibling is its own origin), so it is never adopted. A web frame inside a local page cannot
       // reach here: Chromium refuses its `file:` target before any handler runs.
-      if (localFileKey(details.url) !== null && localFileKey(from.url) !== null) void host.openLocalFile?.(details.url, active)
+      if (localFileKey(details.url) !== null && localFileKey(from.url) !== null) void host.openLocalFile?.(details.url, active).catch((error: unknown) => { console.error('[shell] opening a local file from a popup failed:', error) })
       return { action: 'deny' }
     }
     const loadOptions = loadOptionsFor(details)
+    // As a new tab or window: a burst is bounded per tab and per process, and a window falls back to a tab.
+    const openOutside = (): void => {
+      const canOpenWindow = details.disposition === 'new-window' && processWindowBudget.allow() && limiter.allow()
+      if (!canOpenWindow || host.openWindow(details.url, loadOptions) === undefined) {
+        host.openTab(details.url, active, loadOptions)
+      }
+    }
+    const leave = host.leaveFor?.(details.url, from)
+    if (leave !== undefined && !staysInOpenerSession(details, from, host)) {
+      // Electron wants the answer to this call now and the person has not given theirs: the open is refused here (so `window.open` returns null) and made, if allowed, after the question.
+      void host.chooseLeave?.(leave).then((choice) => {
+        if (choice.kind === 'website') openInTemporary(host, details.url, choice.partition, active, loadOptions)
+        else if (choice.kind !== 'cancel') openOutside()
+      }).catch((error: unknown) => { console.error('[route] opening a window from a routed app failed:', error) })
+      return { action: 'deny' }
+    }
     if (host.gatewayTarget?.(details.url) !== undefined || routePopup(details, from, host.partitionFor(details.url), host.isApp) === 'new-tab') {
       // routePopup's 'new-tab' returns before disposition is ever weighed (a builtin address, a
       // cross-origin app target, an opener-severing feature) -- but a shift-click still reaches
@@ -210,10 +262,8 @@ export function windowOpenHandler (
       // Electron 44: a plain click or window.open() with no sizing features never produces it,
       // only a real sized popup or a genuine shift-click do), so it still deserves a window, not a
       // tab, through the same rate-limited path.
-      const canOpenWindow = details.disposition === 'new-window' && processWindowBudget.allow() && limiter.allow()
-      if (!canOpenWindow || host.openWindow(details.url, loadOptions) === undefined) {
-        host.openTab(details.url, active, loadOptions)
-      }
+      if (opensInTemporarySession(details.url, from, host)) openInTemporary(host, details.url, from.partition, active, loadOptions)
+      else openOutside()
       return { action: 'deny' }
     }
     return {
@@ -241,6 +291,9 @@ export function windowOpenHandler (
           // its own either; it only ever means "a tab in the session that minted it".
           if (blobMintedByOpener(details.url, from)) {
             const opened = host.openBlobTab(details.url, from.partition, active, loadOptions)
+            if (opened !== undefined) return opened
+          } else if (opensInTemporarySession(details.url, from, host)) {
+            const opened = openInTemporary(host, details.url, from.partition, active, loadOptions)
             if (opened !== undefined) return opened
           } else if (details.disposition === 'new-window' && processWindowBudget.allow() && limiter.allow()) {
             const opened = host.openWindow(details.url, loadOptions)

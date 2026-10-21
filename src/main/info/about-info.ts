@@ -3,6 +3,8 @@
 
 export interface AboutFacts {
   readonly orivon: string
+  /** The commit this build was made from. */
+  readonly commit: string
   readonly electron: string
   readonly chromium: string
   readonly node: string
@@ -45,6 +47,7 @@ export function aboutRows (facts: AboutFacts): AboutRow[] {
   const system = [osName(facts.platform), facts.osVersion].filter((part) => part !== '').join(' ')
   return [
     row('Orivon', facts.orivon),
+    row('Commit', facts.commit, true),
     row('Electron', facts.electron),
     row('Chromium', facts.chromium),
     row('Node.js', facts.node),

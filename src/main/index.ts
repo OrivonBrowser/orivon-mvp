@@ -8,6 +8,13 @@ import { runShellInstallers } from './shell/shell-installers.js'
 import { askQuestion } from './shell/question/ask-question.js'
 import { SHELL_PARTITION } from './shell/shell-session.js'
 import { attachExtensionShell } from './extensions/extension-host.js'
+import { startFirstRunFlavour } from './flavour/start-first-run-flavour.js'
+import { storedFlavourApp } from './flavour/first-run-flavour.js'
+import { parseFlavours } from './flavour/flavours.js'
+import flavourList from '../../resources/flavours.json'
+import { otherBrowserFound } from './import/import-host.js'
+import { startHereFacts } from './newtab/start-here-facts.js'
+import { readRegistry } from './extensions/registry-runner.js'
 import { registerNewTabIpc } from './ipc/newtab-ipc.js'
 import { applyThemeSetting } from './settings/settings-appliers.js'
 import { startInternalPages } from './pages/start-internal-pages.js'
@@ -24,28 +31,34 @@ import { subsystems } from './subsystems.js'
 import { DebouncedWriter } from './storage/debounced-writer.js'
 import { devOnlySwitches } from './shell/dev-switches.js'
 import { applyGlobalPrivacyControl } from './privacy/gpc-switch.js'
+import { disableDnsPrefetching } from './privacy/dns-prefetch-switch.js'
 import { readSettingBeforeReady } from './settings/settings-file.js'
 import { chromeUserAgent } from './shell/user-agent.js'
 import { planIntro } from './shell/intro-state.js'
-import { setTelemetryOn, welcomeOffersTelemetry } from '../telemetry/runner.js'
+import { whatsNewDue } from './info/whats-new-runner.js'
+import { setTelemetryOn, telemetryRenewal, welcomeOffersTelemetry } from '../telemetry/runner.js'
 import { firstWindowOptions } from './shell/first-window.js'
 import { seedClosedStack } from './session-restore/restore.js'
+import { flavourOfCommandLine, offerFirstRunFlavour } from './launch/first-run-flavour.js'
 import { atStartup, readLaunchRequest } from './launch/launch-request.js'
 import type { LaunchRequest } from './launch/launch-request.js'
-import { canOfferDefault } from './os/default-browser.js'
-import { defaultBrowserHost } from './os/default-browser-runner.js'
 import { handleOpenUrl } from './os/open-url.js'
 import { handleOpenFile } from './os/open-file.js'
 import { removeAfterExit, removePrivateDir, sweepPrivateDirs } from './launch/private-session.js'
 import { loadFetchStack } from './startup/fetch-stack.js'
+import { installFocusedContentsGuard } from './focus/focused-contents-guard.js'
 import { runUpdateCheck } from './self-update/update-check-runner.js'
-import { scheduleUpdateChecks } from './self-update/update-schedule.js'
-import { configureVerifier, verifierEthContentCid } from './verifier/verifier-subsystem.js'
+import { scheduleUpdateChecks, updateChecksEnabled, updateChecksForcedOff } from './self-update/update-schedule.js'
+import { isStoreInstall } from './os/windows-store.js'
+import { configureVerifier, ipfsSettingsChanged, lightClientSettingChanged, swarmSettingChanged, tunnelDefaultChanged, verifierEthContentCid } from './verifier/verifier-subsystem.js'
 import { createPageScoreLookup } from './browsing/page-score-lookup.js'
+import { installSchemeRouting } from './scheme-routing/install-scheme-routing.js'
 import { netFetchJson } from './browsing/score-provider-client.js'
 import { isDevEthName } from './dev/eth-resolver.js'
-import { isOriginServedFromCacheSync } from '../loader/electron/serve.js'
+import { isOriginPinnedSync } from '../loader/electron/serve.js'
 import type { Runtime } from './launch/start-launch.js'
+import { decideDefaultProfile } from './default-profile/profile-start.js'
+import { recordFatal as recordFatalCrash, setPageClassifier, startDiagnostics } from './diagnostics/diagnostics-runner.js'
 
 // Do not add `ozone-platform: x11` here without solving its GPU crash on
 // this machine first -- the window-visibility bug it was chasing is really
@@ -53,6 +66,9 @@ import type { Runtime } from './launch/start-launch.js'
 
 // Before any subsystem or hook exists (startup/fetch-stack.ts says why).
 loadFetchStack()
+
+// Before the first menu exists: Electron's menus ask it on every click (focus/focused-contents-guard.ts).
+installFocusedContentsGuard()
 
 // Before any subsystem runs: Electron applies this fallback reliably only when
 // it is set ahead of the first session. Its own default carries `Electron/`
@@ -63,6 +79,9 @@ app.userAgentFallback = chromeUserAgent(process.versions.chrome, process.platfor
 // verifierSubsystem's own beforeReady -- this one is not `.eth`-specific
 // (dev-switches.ts), so it lives here rather than there.
 for (const flag of devOnlySwitches()) app.commandLine.appendSwitch(flag)
+
+// Always: a page's dns-prefetch hint would resolve a name here that a proxy or tunnel resolves far away (privacy/dns-prefetch-switch.ts).
+disableDnsPrefetching(app.commandLine)
 
 // Subsystems register in subsystems.ts (the append point), never here.
 function report (failures: SubsystemFailure[]): void {
@@ -116,8 +135,17 @@ const SWEEP_DELAY_MS = 20_000
 /** `web-contents-created` takes a listener from each installer; past Node's default of ten it warns of a leak that is not one. */
 const APP_LISTENER_ROOM = 24
 
+/** Called by `start.ts` when an error ends the process: the crash record the next start offers a report for. */
+export function recordFatal (kind: string, error: unknown): void {
+  recordFatalCrash(kind, error)
+}
+
 /** Starts the browser this process is. */
 export function boot (runtime: Runtime): void {
+  // First of all, so the log holds everything this run printed and the marker is down before anything can fail.
+  startDiagnostics({ dir: runtime.dir, isPrivate: runtime.isPrivate })
+  // Read before any store or subsystem opens a file of the profile.
+  decideDefaultProfile(runtime.dir, process.env)
   app.setMaxListeners(Math.max(app.getMaxListeners(), APP_LISTENER_ROOM))
   // Chromium reads the feature at start, so the saved choice is read here, before the settings store exists.
   applyGlobalPrivacyControl(app.commandLine, readSettingBeforeReady(join(runtime.dir, 'settings.json'), 'privacy.globalPrivacyControl'))
@@ -133,7 +161,7 @@ export function boot (runtime: Runtime): void {
   const requested: LaunchRequest[] = []
   const queueLaunch = (request: LaunchRequest): void => {
     requested.push(started ? request : atStartup(request))
-    void startedUp.then(() => { for (const waiting of requested.splice(0)) opener(waiting) })
+    void startedUp.then(() => { for (const waiting of requested.splice(0)) opener(waiting) }).catch((error: unknown) => { console.error('[main] opening a queued launch request failed:', error) })
   }
   // A private session nobody started from another browser removes its own directory once its process is gone: Chromium
   // writes more as it quits, so a removal from inside would be undone. The sweep at a later start removes what is left.
@@ -141,8 +169,10 @@ export function boot (runtime: Runtime): void {
   if (madeDir !== undefined) process.once('exit', () => { if (!removeAfterExit(madeDir, process.pid)) removePrivateDir(madeDir) })
   if (!runtime.isPrivate) {
     app.on('second-instance', (_event, argv, _workingDirectory, data) => { queueLaunch(readLaunchRequest(data, argv)) })
+    // A flavour on an `orivon:` link that started this browser is a first-run hint; one that reaches a browser already open is not.
+    offerFirstRunFlavour(flavourOfCommandLine(process.argv, app.isPackaged))
     // macOS hands a clicked link to the running app as an event; it joins the same queue.
-    app.on('open-url', (event, url) => { handleOpenUrl(event, url, (urls) => { queueLaunch({ kind: 'open', urls }) }) })
+    app.on('open-url', (event, url) => { handleOpenUrl(event, url, (urls, flavour) => { if (!started) offerFirstRunFlavour(flavour); queueLaunch({ kind: 'open', urls }) }) })
     // A document the system hands to the browser (the file manager's Open with, a drop on the dock icon) opens as the command line's would.
     app.on('open-file', (event, path) => { handleOpenFile(event, path, (urls) => { queueLaunch({ kind: 'open', urls }) }) })
   }
@@ -153,7 +183,7 @@ export function boot (runtime: Runtime): void {
   })
 
   void app.whenReady().then(async () => {
-    const ctx = createSubsystemContext(app, runtime.isPrivate)
+    const ctx = createSubsystemContext(app, runtime.isPrivate, runtime.launch.kind === 'private' ? runtime.launch.tunnel ?? null : null)
     const afterReadyFailures = await runAfterReady(subsystems, ctx)
     report(afterReadyFailures)
 
@@ -191,11 +221,14 @@ export function boot (runtime: Runtime): void {
       providerAddress: () => shell.settings.get('web3.scoreProvider'),
       isDevEthName,
       fetchJson: netFetchJson,
+      routedCaller: (caller) => ctx.routes?.hub.isRouted(caller) === true,
       resolveEthContent: verifierEthContentCid,
       manifestAt: async (origin, cid) => await ctx.loader?.manifestAt(origin, cid) ?? { kind: 'unread', reason: 'the loader is not running' }
     }).websiteScore)
+    // A link of a scheme an app declares can open in that app, once the windows that show it exist.
+    installSchemeRouting(ctx, shell)
     // A refusal the person should read, drawn in the window they are using.
-    publishShowNotice(ctx, ({ title, message }) => { void askQuestion({}, { kind: 'notice', title, message, buttons: ['OK'], cancelId: 0 }) })
+    publishShowNotice(ctx, ({ title, message }) => { void askQuestion({}, { kind: 'notice', title, message, buttons: ['OK'], cancelId: 0 }).catch((error: unknown) => { console.error('[main] showing a notice failed:', error) }) })
     // Before the first window, so it opens in the chosen theme with the chosen
     // bookmarks bar rather than changing after it is on screen, and so a page
     // starred in the first moments is added to the bookmarks on disk, not to an
@@ -207,10 +240,29 @@ export function boot (runtime: Runtime): void {
       shell.session.carry(() => shell.closedTabs.list().flatMap((entry) => entry.kind === 'window' && seeded.includes(entry.id) ? [entry.window] : []))
     }
     applyThemeSetting(shell.settings, nativeTheme)
+    // The proxy an app can be routed through is the saved one until now; from here the setting itself.
+    ctx.routes?.followSettings(shell.settings)
     // The host starts only when a .eth address is needed, by which time the settings have been read: the person's choice reaches it.
-    configureVerifier({ lightClientEnabled: () => shell.settings.get('web3.lightClient'), windows: () => shell.windows.all(), servedFromCache: isOriginServedFromCacheSync })
+    configureVerifier({
+      lightClientEnabled: () => shell.settings.get('web3.lightClient'),
+      windows: () => shell.windows.all(),
+      servedFromCache: isOriginPinnedSync,
+      ipfsSource: () => shell.settings.get('web3.ipfsSource') === 'gateways' ? 'gateways' : 'node',
+      ipfsLookupService: () => shell.settings.get('web3.ipfsLookupService'),
+      swarmNodeEnabled: () => shell.settings.get('web3.swarmNode'),
+      nodesFollowTunnel: () => shell.settings.get('network.tunnel.nodes')
+    })
+    // Where IPFS is read from, and whether the light client runs, apply at once: the node and the verifier host start again from the new choice.
+    shell.settings.onChange(({ key }) => {
+      if (key === 'web3.ipfsSource') ipfsSettingsChanged('source')
+      else if (key === 'web3.ipfsLookupService') ipfsSettingsChanged('lookupService')
+      else if (key === 'web3.lightClient') lightClientSettingChanged()
+      else if (key === 'web3.swarmNode') swarmSettingChanged()
+      else if (key === 'network.tunnel.nodes') tunnelDefaultChanged()
+    })
     shell.history.prune()
     startInternalPages(shell, ctx)
+    setPageClassifier((contents) => ({ internalPage: shell.internalPages.pageOf(contents), isTab: shell.windows.findTab(contents) !== null }))
     // Another profile's own process can rename, add, remove or start one --
     // profiles-watcher.ts's own header on why this is the one store the
     // filesystem itself has to announce.
@@ -225,11 +277,16 @@ export function boot (runtime: Runtime): void {
     runShellInstallers(app, shell, ctx, runtime)
     installDownloads(app, { windows: shell.windows, downloads: shell.downloads, defaultSession: session.defaultSession, discardHeldAtQuit: runtime.isPrivate })
     installDownloadsPeek(shell)
-    registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks)
+    registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks, shell.featured, shell.yourApps, startHereFacts({
+      isPrivate: runtime.isPrivate,
+      firstRunApp: () => storedFlavourApp(runtime.dir, parseFlavours(flavourList)),
+      otherBrowserFound,
+      extensionOn: (id) => readRegistry(app.getPath('userData')).some((entry) => entry.id === id && entry.enabled)
+    }))
     // Looks for a newer release once a day when the person has said it may, from the moment they say so; installs nothing.
     if (!runtime.isPrivate) {
       const stopUpdateChecks = scheduleUpdateChecks({
-        enabled: () => shell.settings.get('updates.check'),
+        enabled: () => updateChecksEnabled(shell.settings.get('updates.check'), isStoreInstall(), updateChecksForcedOff()),
         onEnabledChange: (listener) => shell.settings.onChange((change) => { if (change.key === 'updates.check') listener() }),
         run: async () => { await runUpdateCheck(app).catch((error: unknown) => { console.error('[orivon] the update check failed:', error) }) }
       })
@@ -269,14 +326,21 @@ export function boot (runtime: Runtime): void {
       try {
         // Only this first window can open on the welcome screen: the macOS
         // 'activate' below recreates a window in a process that has already shown it.
-        // Only the default profile's own screen offers it, and a kiosk is no one's browser.
-        const offersDefault = runtime.profileId === 'default' && !shell.kiosk && canOfferDefault(defaultBrowserHost)
+        // A package tagged for an app opens it, after the welcome screen, on the first run of a new profile.
+        const afterWelcome = startFirstRunFlavour(shell, runtime.dir, runtime.launch.kind === 'default', process.argv, process.env, process.execPath)
         const plan = firstWindowOptions({ services: shell, isPrivate: false, argv: process.argv, packaged: app.isPackaged, displays: screen.getAllDisplays(), openWindow: (options) => { createShellWindow(ctx, shell, options) } })
         // A first tab that is a local file needs the binary's fuse read, which nothing else at start-up does.
         if (plan.localFiles === true) await fileProtocolFuse()
-        const firstWindow = createShellWindow(ctx, shell, { ...plan, intro: plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData'), offersDefault, { offered: welcomeOffersTelemetry, choose: async (on) => { await setTelemetryOn(on, 'welcome') } }), firstOfLaunch: true })
+        const intro = afterWelcome.wrap(plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData'), { offered: welcomeOffersTelemetry, renewal: telemetryRenewal, choose: async (on) => { await setTelemetryOn(on, 'welcome') } }))
+        const firstWindow = createShellWindow(ctx, shell, { ...plan, intro, firstOfLaunch: true })
+        afterWelcome.windowOpened(intro)
         const after = plan.after
-        afterFirst = after === undefined ? undefined : () => { after(firstWindow) }
+        // The first start of a newer version shows what it changed, once, in front of what the window opened on.
+        const news = await whatsNewDue(app.getPath('userData'))
+        afterFirst = after === undefined && !news ? undefined : () => {
+          after?.(firstWindow)
+          if (news) shell.windows.all().find((entry) => entry.window === firstWindow)?.tabs.openInternal('about', '/whats-new')
+        }
       } finally {
         markStarted()
       }
@@ -286,5 +350,5 @@ export function boot (runtime: Runtime): void {
         if (BaseWindow.getAllWindows().length === 0) createShellWindow(ctx, shell)
       })
     }
-  })
+  }).catch((error: unknown) => { console.error('[main] starting up failed:', error) })
 }

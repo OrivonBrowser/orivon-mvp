@@ -108,8 +108,9 @@ Also mandatory:
 On Linux, `npm install` (the `postinstall` hook) and `npm run install:electron` turn `grantFileProtocolExtraPrivileges`
 off and `enableCookieEncryption` on in `node_modules/electron/dist/electron`, as `electron-builder.yml` sets them for a
 package (`CHECKOUT_FUSES` in `scripts/install-electron.mjs`; a unit test fails when the two disagree). Cookie encryption
-is one-way per profile: a run from source shares the default profile with an installed package (ADR-0057), and a binary
-without the fuse reads none of the cookies the package encrypted and deletes them, signing the person out of every site.
+is one-way per profile: a binary without the fuse reads none of the cookies an encrypting binary wrote and deletes them,
+signing the person out of every site. A run from source has a profile of its own (`~/.config/orivon-source`, ADR-0057),
+which the fuse keeps readable when it moves between a checkout and a package.
 Every test launch passes `--password-store=basic`, so the cookie key never comes from the desktop's keyring.
 With the file-protocol fuse off, a `file:` page's module scripts are blocked (a null origin), a canvas read of a sibling image
 throws `SecurityError` and `fetch` of a sibling file rejects, so the shell's own pages load from
@@ -187,6 +188,15 @@ worse than the issue as filed.
   available. Structured clone (which copies) is not a fallback for a rescue plan — it is the
   *only* mechanism, and it is fast enough on its own: 313–1134 MB/s measured, against a
   1–5 MB/s product requirement.
+
+## The main-process clipboard writes return nothing, whatever the typings say
+
+Electron 44's `electron.d.ts` types `clipboard.writeText` and `clipboard.write` as `Promise<void>`. In the main
+process they return `undefined`. A `.catch(...)` on the result therefore throws (`Cannot read properties of
+undefined (reading 'catch')`), and every copy command built that way fails: CI's `e2e-os-links` caught it once.
+Call them plainly; `check:floating-promises` allows them for this reason, as it allows `loadURL`. Under this
+machine's xvfb a main-process clipboard call can also hang, so a spec checks what the person sees (a toast, a
+returned outcome), never a clipboard round trip.
 
 ## A shim must mirror the whole surface a dependency touches, not the obvious methods
 
@@ -305,9 +315,9 @@ settled bounds.
 Electron's `'resized'` event, which exists specifically to sidestep this class of bug, is
 declared `@platform darwin,win32` in the `.d.ts` — **it does not exist on Linux at all, on any
 window manager**, so it was never an option here regardless of which part of the cause above
-turns out to be WM-specific. `scope.md` puts Linux (AppImage + deb) first in the packaging
-IN table, so the `setImmediate` deferral below is the fix on the primary target, not a
-workaround for one desktop.
+turns out to be WM-specific. Linux, Windows and macOS are equal targets and Linux runs on X11 and
+Wayland both, so the `setImmediate` deferral below is the fix on the Linux path, not a workaround
+for one desktop.
 
 Fix (`src/main/shell/window.ts`'s `'resize'` handler):
 
@@ -361,7 +371,7 @@ hypotheses from scratch.
 ## Two smoke-test traps — written up in full in `testing.md`, not repeated here
 
 Both cost real time and are easy to reintroduce, but the complete write-up already lives in
-`docs/development/testing.md` §"What `npm run smoke` is, and what it is not" — read that; this
+`docs/development/testing.md` section "What `npm run smoke` is, and what it is not" — read that; this
 is only the pointer:
 
 - **A `waitFor` helper must never be pointed at a condition the pre-action state already
@@ -379,7 +389,7 @@ is only the pointer:
 - `docs/planning/spike-results/gate-{0,1a,1b,2,3,4}.json` — raw measured evidence.
 - `docs/planning/week-0-spike-plan.md` and `spike-remaining-gates-plan.md` — the spike's
   execution plans, with its state table and traps list.
-- `docs/architecture/capability-api.md` §Design rules, §Throughput — where the durable lessons
+- `docs/architecture/capability-api.md` section Design rules, section Throughput — where the durable lessons
   (shim completeness, error visibility, transferables) are folded into the actual spec.
 - `spike/launch.mjs`, `spike/gate1b/vite.config.js`, `spike/gate1b/shim/*.js` — the reference
   implementations. The `spike/` directory is throwaway; this skill and the docs above are what

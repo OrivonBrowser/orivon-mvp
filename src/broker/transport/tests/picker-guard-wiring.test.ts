@@ -8,10 +8,16 @@ import { additionalProtectedRoots, notifyPickRefused, privateSessionGuard } from
 // electron-free half.
 
 describe('additionalProtectedRoots', () => {
-  it('names the default profile\'s own directory, reconstructed from appData + the app name', () => {
-    const app = { getPath: (name: string) => (name === 'appData' ? '/home/user/.config' : ''), getName: () => 'Orivon' }
+  const appNamed = (name: string): { getPath: (path: string) => string, getName: () => string } => ({ getPath: (path: string) => (path === 'appData' ? '/home/user/.config' : ''), getName: () => name })
 
-    expect(additionalProtectedRoots(app)).toEqual(['/home/user/.config/Orivon'])
+  it('names the default profile\'s own directory, reconstructed from appData + the app name', () => {
+    expect(additionalProtectedRoots(appNamed('Orivon'))).toContain('/home/user/.config/Orivon')
+  })
+
+  it('names the other Orivon program\'s directory too: a run from source and an installed package hold one person\'s data', () => {
+    for (const name of ['orivon', 'orivon-source']) {
+      expect([...additionalProtectedRoots(appNamed(name))].sort()).toEqual(['/home/user/.config/orivon', '/home/user/.config/orivon-source'])
+    }
   })
 })
 

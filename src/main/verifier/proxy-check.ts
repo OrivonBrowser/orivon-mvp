@@ -34,3 +34,9 @@ export async function unproxiedGateways (gateways: readonly string[], resolvePro
   }))
   return gateways.filter((_gateway, index) => checked[index] === true)
 }
+
+/** Whether a proxy answer (`PROXY 127.0.0.1:1234`, possibly a list) names the tunnel's front at `port` and nothing else as the way out. */
+export function answersFront (answer: string, port: number): boolean {
+  const choices = answer.split(';').map((choice) => choice.trim()).filter((choice) => choice !== '')
+  return choices.length > 0 && choices.every((choice) => choice === `PROXY 127.0.0.1:${String(port)}` || choice === `HTTP 127.0.0.1:${String(port)}`)
+}

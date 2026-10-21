@@ -71,7 +71,7 @@ describe('tls.connect dials connectSecure with the app\'s options', () => {
     socket.on('secureConnect', () => order.push('secureConnect'))
     await vi.waitFor(() => expect(order).toContain('cb'))
     expect(order).toEqual(['connect', 'cb', 'secureConnect'])
-    expect(state.secureCalls).toEqual([{ host: 'electrum.example', port: 50002 }])
+    expect(state.secureCalls).toEqual([{ host: 'electrum.example', port: 50002, signal: expect.any(AbortSignal) }])
     expect(state.plainCalls).toBe(0)
     expect(socket.encrypted).toBe(true)
     expect(socket.authorized).toBe(true)
@@ -98,6 +98,7 @@ describe('tls.connect dials connectSecure with the app\'s options', () => {
     expect(state.secureCalls).toEqual([{
       host: 'example.com',
       port: 443,
+      signal: expect.any(AbortSignal),
       ca: ['CA-PEM', 'CA2'],
       cert: 'CERT',
       key: 'KEY',
@@ -117,7 +118,7 @@ describe('tls.connect dials connectSecure with the app\'s options', () => {
     const wire = Buffer.from([2, 0x68, 0x32, 8, ...Buffer.from('http/1.1')])
     const socket = tls.connect({ host: '192.0.2.1', port: 443, servername: '192.0.2.1', ALPNProtocols: wire })
     expect(await settled(socket)).toBe('secureConnect')
-    expect(state.secureCalls).toEqual([{ host: '192.0.2.1', port: 443, alpnProtocols: ['h2', 'http/1.1'] }])
+    expect(state.secureCalls).toEqual([{ host: '192.0.2.1', port: 443, signal: expect.any(AbortSignal), alpnProtocols: ['h2', 'http/1.1'] }])
     socket.destroy()
   })
 })

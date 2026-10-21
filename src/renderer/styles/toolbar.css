@@ -86,8 +86,7 @@
 #web3-score-btn .web3-shield { flex: none; }
 
 /* The site-info popup's other entry point -- an unlimited grant among its
-   rows tints the key the same warning colour the all-sites list's own
-   rows use for the identical fact (permissions-view.ts). */
+   rows tints the key in the warning colour. */
 #site-permissions-btn.has-warning { color: var(--winsecure); }
 
 .addressbar {
@@ -185,7 +184,7 @@
   background: var(--whover-soft);
 }
 /* The Web2 / Web2.5 / Web3 mark at the pill's right end (web3-shield.ts's
-   paintMark): orange, yellow, green. --tone draws the dot and tints the
+   paintMark): orange, yellow, green, and gray for Web?. --tone draws the dot and tints the
    plate; --ink is the text, one step darker in light mode and one lighter
    in dark, since the raw tone (yellow above all) is too faint as small text
    on either surface. */
@@ -208,7 +207,14 @@
   background: color-mix(in srgb, var(--tone) 13%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 30%, transparent);
   transition: color 300ms ease, background-color 300ms ease, box-shadow 300ms ease;
+  border: 0;
+  font-family: inherit;
+  cursor: default;
 }
+/* The "Web?" mark is a button that opens the page on what the levels mean. */
+button.web3-mark:disabled { opacity: 1; }
+button.web3-mark:enabled { cursor: pointer; }
+button.web3-mark:enabled:hover { background: color-mix(in srgb, var(--tone) 22%, transparent); }
 /* display above would otherwise override the attribute's own display: none. */
 .web3-mark[hidden] { display: none; }
 .web3-mark::before {
@@ -222,10 +228,12 @@
 .web3-mark[data-mark='Web2'] { --tone: #f97316; --ink: #c2410c; }
 .web3-mark[data-mark='Web2.5'] { --tone: #eab308; --ink: #a16207; }
 .web3-mark[data-mark='Web3'] { --tone: #22c55e; --ink: #15803d; }
+.web3-mark[data-mark='Web?'] { --tone: #9ca3af; --ink: #4b5563; }
 @media (prefers-color-scheme: dark) {
   .web3-mark[data-mark='Web2'] { --ink: #fdba74; }
   .web3-mark[data-mark='Web2.5'] { --ink: #fde047; }
   .web3-mark[data-mark='Web3'] { --ink: #86efac; }
+  .web3-mark[data-mark='Web?'] { --ink: #d1d5db; }
 }
 
 .toolbar-cluster {
@@ -324,13 +332,27 @@ browser-action-list::part(badge) {
   opacity: 0.55;
   cursor: not-allowed;
 }
-.statusdot {
+/* The wallet button waits, hidden, for a wallet; the display above would otherwise show it. */
+#identity[hidden] { display: none; }
+
+/* The dot on the Available networks button: how the nodes are. Green while one runs, amber while one starts or
+   syncs, red when one that is switched on failed, and none while nothing runs. */
+.networks-btn { position: relative; }
+.networks-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
   width: 8px;
   height: 8px;
-  flex: none;
+  box-sizing: border-box;
   border-radius: 50%;
-  background: var(--wok);
+  border: 1.5px solid var(--wchrome);
+  pointer-events: none;
 }
+.networks-dot[data-dot='none'] { display: none; }
+.networks-dot[data-dot='green'] { background: var(--wok); }
+.networks-dot[data-dot='amber'] { background: var(--wwarn-mark); }
+.networks-dot[data-dot='red'] { background: var(--winsecure); }
 
 /* Where a feature adds a toolbar button without editing index.html (chrome/toolbar-button.ts). Buttons
    sit in ascending `order`; a slot with nothing visible in it takes no room, not even the gap its
@@ -350,15 +372,20 @@ browser-action-list::part(badge) {
 
 /* A narrow window (it stops at 500px, window-frame.ts's MIN_WINDOW_WIDTH): the address field is the only
    part of the row that gives way, so the two placeholders in the cluster go, the gaps tighten, and the
-   extension buttons stop at one whole button (two leave the field about 64px wide at the minimum). */
+   extension buttons stop at one whole button. At 540px and below, while the Extensions button is shown, the
+   pinned buttons go too and the Extensions menu, which lists every extension, is where they are reached:
+   Home, the Extensions button and one pinned button leave the field 96px wide at 532px, its floor. */
 @container (max-width: 640px) {
   .toolbar { padding: 0 8px; }
   .bookmarkbtn { margin: 0 4px; }
   .toolbar-cluster { margin-left: 4px; }
   .toolbar-cluster .sep,
-  #identity,
-  .statusdot { display: none; }
+  #identity { display: none; }
   browser-action-list { max-width: 32px; overflow: hidden; }
   browser-action-list::part(action) { flex: none; }
   .profile-chip { max-width: 72px; }
+}
+
+@container (max-width: 540px) {
+  .toolbar:has(#extensions-menu-btn:not([hidden])) browser-action-list { display: none; }
 }

@@ -48,6 +48,13 @@ describe('the main menu layout', () => {
     for (const id of commandsIn(MENU_LAYOUT)) expect(commandById(id), id).toBeDefined()
   })
 
+  it('lists the private window with Nym right after the private window, with its label and its key', async () => {
+    const order = commandsIn(MENU_LAYOUT)
+    expect(order.indexOf('window.newPrivateNym')).toBe(order.indexOf('window.newPrivate') + 1)
+    const { ctx } = await setup()
+    expect(find(menuItems(ctx), 'window.newPrivateNym')).toMatchObject({ label: 'Open a private window with Nym', keys: ['Alt', 'Shift', 'N'] })
+  })
+
   it('never starts, ends or doubles a separator, at any depth', async () => {
     const { ctx } = await setup()
     const check = (items: readonly MenuItemView[]): void => {
@@ -59,6 +66,15 @@ describe('the main menu layout', () => {
       })
     }
     check(menuItems(ctx))
+  })
+
+  it('keeps Report a problem and About Orivon in a Help submenu, just above Quit', async () => {
+    const { ctx } = await setup()
+    const items = menuItems(ctx)
+    const help = items.find((item) => item.kind === 'submenu' && item.label === 'Help')
+    expect(help !== undefined && 'items' in help ? help.items.map((item) => 'id' in item ? item.id : item.kind) : []).toEqual(['report.open', 'about.open'])
+    expect(items.at(-2)).toBe(help)
+    expect(items.at(-1)).toMatchObject({ kind: 'command', id: 'app.quit' })
   })
 
   it('has the zoom row after the history group, and More tools as a submenu', async () => {
@@ -194,13 +210,13 @@ const more = (items: readonly MenuItemView[]): readonly MenuItemView[] => submen
 const share = (items: readonly MenuItemView[]): readonly MenuItemView[] => submenu(items, 'Share')
 
 describe('the Share rows', () => {
-  it('list Copy link, Email link and the QR code, in that order', async () => {
-    const { ctx } = await setup()
+  it('list Copy link, Copy web link, Email link and the QR code, in that order', async () => {
+    const { ctx } = await setup('ipfs://vitalik.eth/')
     const rows = share(menuItems(ctx))
-    expect(rows.flatMap((item) => item.kind === 'command' ? [item.id] : [])).toEqual(['share.copyLink', 'share.email', 'page.qr'])
+    expect(rows.flatMap((item) => item.kind === 'command' ? [item.id] : [])).toEqual(['share.copyLink', 'share.copyWebLink', 'share.email', 'page.qr'])
     expect(find(rows, 'page.qr')).toMatchObject({ label: 'Create QR code' })
     expect(find(more(menuItems(ctx)), 'page.qr')).toBeUndefined()
-    for (const id of ['share.copyLink', 'share.email', 'page.qr']) {
+    for (const id of ['share.copyLink', 'share.copyWebLink', 'share.email', 'page.qr']) {
       expect(find(rows, id), id).not.toHaveProperty('disabled')
       expect(runnableIds(menuItems(ctx)).has(id as never), id).toBe(true)
     }
@@ -215,6 +231,16 @@ describe('the Share rows', () => {
       const ids = runnableIds(menuItems(ctx))
       expect(ids.has('share.copyLink'), url).toBe(false)
       expect(ids.has('share.email'), url).toBe(false)
+    }
+  })
+})
+
+describe('the Copy web link row', () => {
+  it('says why it is greyed: a web address is what Copy link copies, a shell page has no address', async () => {
+    for (const [url, hint] of [['https://example.com/', 'Same as Copy link'], ['orivon://settings/', 'No address'], ['orivon://newtab/', 'No address']] as const) {
+      const { ctx } = await setup(url)
+      expect(find(share(menuItems(ctx)), 'share.copyWebLink'), url).toMatchObject({ disabled: true, hint })
+      expect(runnableIds(menuItems(ctx)).has('share.copyWebLink'), url).toBe(false)
     }
   })
 })

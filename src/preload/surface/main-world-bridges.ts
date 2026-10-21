@@ -19,7 +19,7 @@
 
 import type { OrivonErrorCode } from '../../contracts/errors.js'
 import type { FileStat, LookupAddress, SecureHandshake, SendRefusal } from '../../contracts/handles.js'
-import type { BindScope, CapabilityRequest, SecureConnectOptions } from '../../contracts/capability-api.js'
+import type { BindScope, CapabilityRequest, SecureConnectOptions } from '../../contracts/index.js'
 import type { ResponseEnvelope } from '../../contracts/ipc.js'
 import type { WebsiteScore } from '../../contracts/trust.js'
 
@@ -39,6 +39,8 @@ import type { WebsiteScore } from '../../contracts/trust.js'
  */
 export interface MainWorldFileBridge {
   readonly id: string
+  /** The file's basename (`FileHandle.name`). */
+  readonly name: string
   read: (opts: { position: number, length: number }) => Promise<Uint8Array>
   write: (opts: { position: number, data: Uint8Array }) => Promise<number>
   stat: () => Promise<FileStat>
@@ -187,19 +189,25 @@ export interface MainWorldBridge {
   appManifest: () => Promise<unknown>
   appGrants: () => Promise<unknown>
   appRequestGrant: (request: CapabilityRequest) => Promise<boolean>
+  /** Registers a page's listener in the isolated world, which runs the poll for links (./open-url.ts); returns the removal. */
+  appOnOpenUrl: (listener: (url: string) => void) => () => void
+  appRequestSchemeHandler: (scheme: string) => Promise<boolean>
+  appIsSchemeHandler: (scheme: string) => Promise<boolean>
   fsReadFile: (path: string) => Promise<Uint8Array>
   fsWriteFile: (path: string, data: Uint8Array) => Promise<void>
   /**
-   * ADR-0016's one synchronous call. Returns the raw envelope, NEVER
-   * throws -- a value THROWN by this closure would cross the
+   * ADR-0016's synchronous calls: readFileSync, and the path-based twin the
+   * page's shim reaches under `Symbol.for('orivon.synchronous')`. `op` is one
+   * of `../../broker/transport/sync-fs.ts`'s `SyncFsOp`. Returns the raw
+   * envelope, NEVER throws -- a value THROWN by this closure would cross the
    * contextBridge proxy boundary back into this main-world code stripped
    * of everything but `.message` (found live; see surface/orivon.ts's own
-   * `fsReadFileSyncEnvelope` for the full argument), so the failure shape
+   * `fsSyncEnvelope` for the full argument), so the failure shape
    * is built and thrown by `./main-world-socket.ts`'s own `installOrivon`,
    * entirely inside that already-main-world function, from data that
    * crossed intact instead.
    */
-  fsReadFileSync: (path: string) => ResponseEnvelope<Uint8Array>
+  fsSync: (op: string, args: unknown[]) => ResponseEnvelope<unknown>
   // The extended fs surface (queue item 2.1) -- no main-world stream
   // wrapping needed, exactly like fsReadFile/fsWriteFile above, so these
   // four are plain proxied closures too.
@@ -233,9 +241,10 @@ export interface MainWorldBridge {
   webOpenContext: (opts: { origin: string, width?: number, height?: number }) => Promise<MainWorldWebContextBridge>
   /** ADR-0039 -- plain request/reply, `idPublicKey`'s own shape: no main-world wrapping needed. */
   webSetEmbedScript: (source: string) => Promise<void>
-  netConnect: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
+  /** `onAbandon` registers the page's cancel for the pending call (ADR-0071): the page's `AbortSignal` itself cannot cross this bridge. */
+  netConnect: (opts: { host: string, port: number }, onAbandon?: (listener: () => void) => void) => Promise<MainWorldSocketBridge>
   /** net.connectSecure's own closure -- resolves to netConnect's bridge shape plus `tls`; `./main-world-socket.ts`'s own `buildSocket` is shared by both (Rule 3). The options pass through untouched: the broker validates them. */
-  netConnectSecure: (opts: SecureConnectOptions) => Promise<MainWorldSocketBridge>
+  netConnectSecure: (opts: Omit<SecureConnectOptions, 'signal'>, onAbandon?: (listener: () => void) => void) => Promise<MainWorldSocketBridge>
   netUdpBind: (opts: { port: number, scope?: BindScope }) => Promise<MainWorldUdpBridge>
   netListen: (opts: { port: number, scope?: BindScope }) => Promise<MainWorldServerBridge>
   /** `net.lookup` (d-0030) -- plain data, not a bridge: no per-socket state to wrap, unlike every other `net*` entry above. */

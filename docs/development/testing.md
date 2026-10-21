@@ -3,9 +3,8 @@
 ## Read this first, because the test suite looks neglected and is not
 
 There are no coverage targets and a deliberately small number of unit tests, and the UI is
-covered by an end-to-end suite that drives the real shell (§Visual QA and failure evidence). The
-small unit count is a decision, not a backlog ([`build-plan.md`](../planning/build-plan.md)
-§Testing).
+covered by an end-to-end suite that drives the real shell (section Visual QA and failure evidence).
+The small unit count is a decision, not a backlog.
 
 The reasoning: this is a browser built by one person, and at that scale broad test suites
 cost more than they return: they are written once, then maintained forever, against code that
@@ -27,8 +26,8 @@ seconds, and a test would be paying rent to tell you something you already know.
 | `npm run typecheck` | `tsc --noEmit`. Strict mode with `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`, so the compiler is doing a lot of the work a test suite would elsewhere. `tsconfig.json`'s `include` covers `test/**/*.ts`, so this also type-checks `test/capabilities/e2e-capability-boundary.test.ts`, and a type error there fails this always-on check even on a push that never runs the separate `e2e` job below |
 | `npm test` | Vitest. `environment: 'node'`, no DOM. Picks up `src/**/*.test.ts` and `scripts/**/*.test.ts` |
 | `npm run smoke` | Builds and drives the real shell with real clicks. The only check that proves a window appears |
-| `npm run test:e2e` | Builds, then runs every spec under `test/` (the TCP and UDP boundary specs among them) via [`test/vitest.e2e.config.ts`](../../test/vitest.e2e.config.ts); see §The end-to-end test below. CI runs it in shards: only the specs a change can reach on a pull request, everything on `main` and nightly (§CI). Needs a display; on Linux with `xvfb-run` installed it uses a virtual one automatically (see [setup.md](setup.md) "The no-focus switch"), so a plain `npm run test:e2e` is safe with no wrapper, and on a platform with no virtual display it runs directly instead, without stealing your keyboard focus |
-| `npm run qa` · `qa:visual` · `qa:report` | The QA specs and the inspection sheet; §Visual QA and failure evidence |
+| `npm run test:e2e` | Builds, then runs every spec under `test/` (the TCP and UDP boundary specs among them) via [`test/vitest.e2e.config.ts`](../../test/vitest.e2e.config.ts); see section The end-to-end test below. CI runs it in shards: only the specs a change can reach on a pull request, everything on `main` and nightly (section CI). Needs a display; on Linux with `xvfb-run` installed it uses a virtual one automatically (see [setup.md](setup.md) "The no-focus switch"), so a plain `npm run test:e2e` is safe with no wrapper, and on a platform with no virtual display it runs directly instead, without stealing your keyboard focus |
+| `npm run qa` · `qa:visual` · `qa:report` | The QA specs and the inspection sheet; section Visual QA and failure evidence |
 
 Unit tests are **colocated** with what they test: `src/main/tests/omnibox.test.ts` sits beside
 `src/main/browsing/omnibox.ts`.
@@ -36,7 +35,7 @@ Unit tests are **colocated** with what they test: `src/main/tests/omnibox.test.t
 ### What `npm run smoke` is, and what it is not
 
 It is the **shell's** regression check, a different thing from the unit tests below, held to a
-different bar. §The six security-critical areas argues for testing only where failure is
+different bar. section The six security-critical areas argues for testing only where failure is
 *silent*; that argument governs the unit tests. `smoke.mjs` also asserts loud things (a window
 opens, the back button works), on purpose: it launches the real app either way, so the extra
 assertions are nearly free once the launch is paid for.
@@ -60,7 +59,7 @@ Three properties it is required to keep:
   *not* happen, cannot be polled for at all; only waited out.
 
 It is **not** an end-to-end test of the capability stack; that is the separate one described in
-§The end-to-end test.
+section The end-to-end test.
 
 ---
 
@@ -240,9 +239,14 @@ built app, and unless the build is the ordinary one (`ORIVON_ORDINARY_BUILD=1`),
 does; it binds 9000 and 6667. The server's release check may reach `api.github.com` from the main process
 (`--host-resolver-rules` does not cover it); no assertion depends on the answer.
 
+A spec that needs a USB HID device makes one with
+[`virtual-hid`](../../test/support/virtual-hid/README.md): a Docker container creates it through `/dev/uhid`
+and opens its hidraw node to the user. Where Docker or `/dev/uhid` is missing the spec skips with the reason in
+its name, and `ORIVON_REQUIRE_VIRTUAL_HID=1` makes the skip a failure.
+
 **They run automatically.** `npm run test:e2e` runs every `test/**/*.test.ts` outside `test/apps/` under
 `test/vitest.e2e.config.ts`, and `.github/workflows/ci.yml`'s `e2e` job runs it on every push and
-pull request (see §How to run above).
+pull request (see section How to run above).
 
 ### Playwright's `_electron` driver and this shell
 
@@ -316,6 +320,13 @@ every state once per scheme (`ORIVON_QA_SCHEMES=light` or `dark` narrows it, and
 own baseline), and [`e2e-theme-backing`](../../test/window/e2e-theme-backing.test.ts) reads the colours a view
 and the window hold at the moments a navigation starts.
 
+**A blank profile, unless a spec asks.** `launchElectron` sets `ORIVON_DEFAULT_PROFILE=off`, so a launch starts
+with no bookmarks and no extension, as most specs assume; the welcome screen (`ORIVON_INTRO`), telemetry and the
+Ethereum light client are off the same way. A spec that proves what a new profile starts with passes
+`env: { ORIVON_DEFAULT_PROFILE: 'on' }` ([`e2e-default-profile`](../../test/window/e2e-default-profile.test.ts)); it also relaunches the profile to prove nothing is added back, including to
+one that has history but no bookmarks or extensions; it needs the
+fetched uBlock Origin file (`node scripts/fetch-bundled-extensions.mjs`, which `npm install` runs).
+
 **Failure evidence, for every e2e spec.** [`launch-electron.mjs`](../../test/support/launch-electron.mjs)
 starts recording each launched app ([`qa-evidence.mjs`](../../test/support/qa-evidence.mjs)) and, at close,
 snapshots its final state. [`qa-setup.ts`](../../test/support/qa-setup.ts), a Vitest setup file, writes that
@@ -382,7 +393,9 @@ view's page is visible (a view removed from its window and added back stays hidd
 bug is seen by launching `electron-vite dev` itself under `openbox` (or a private `gnome-shell --headless` on its
 own D-Bus session, with `--ozone-platform=wayland`), driving the button with real pointer events, and reading the
 window's pixels from the compositor; the main process can log `visibilityState` and a `requestAnimationFrame`
-that never fires. A spec pins the cause it can see (the structure of the window's children) instead.
+that never fires. A spec pins the cause it can see (the structure of the window's children) instead, or launches the
+shell with nothing driving the pages and reads them through the main process's own inspector, as
+`test/window/e2e-chrome-shown.test.ts` does for the chrome left hidden by a full-width overlay over a resized window.
 
 `scripts/probe-view-visibility.mjs` is that recipe for every view put into a window, with no Playwright: it launches
 the built shell (build it first) on a throwaway profile with `--inspect` on the main process alone, which does
@@ -395,16 +408,38 @@ built shell and a display); run it after a change to `pane-host.ts`, `attach-vie
 puts a view into a window. `src/main/shell/tests/attach-sites.test.ts` is the part CI runs: no `addChildView`
 outside `attach-view.ts`.
 
+## Electron upgrades
+
+Orivon ships the real uBlock Origin in a new profile, and it blocks only through blocking `webRequest` listeners,
+which Electron does not offer and the extension host bridges (ADR-0053): an Electron upgrade is the change most
+likely to stop it working without a type error. So the spec
+[`e2e-extensions-profiles-ublock`](../../test/extensions/e2e-extensions-profiles-ublock.test.ts) is a required
+check whenever the `electron` range in `package.json` or the version `package-lock.json` resolves changes.
+
+- **On a pull request.** The `scope` job runs [`scripts/ci/electron-version-changed.mjs`](../../scripts/ci/electron-version-changed.mjs)
+  against the base; when it prints `changed=true`, the `ublock-gate` job fetches the pinned uBlock Origin package
+  with `node scripts/fetch-bundled-extensions.mjs --required` (a failed download fails the job, where an ordinary
+  install carries on without the extension), builds with the developer-only hooks and runs that one spec. The
+  `e2e` status fails if the gate does.
+- **What the spec asserts.** A page in the default session, in the tunnel profile and in the direct profile loads
+  scripts from two hosts the filter lists name and one they do not, all served from the spec's own loopback
+  servers; the two are cancelled before they leave (the server sees no request for them) and the third runs.
+  An extension that did not load, or loaded and did not block, fails it. No real ad network is contacted.
+- **On a release.** The Release workflow runs the same spec in its `ublock` job before any package is built: it
+  costs one Linux runner for a few minutes once per release.
+- **By hand.** `node scripts/fetch-bundled-extensions.mjs --required && node scripts/build-e2e.mjs`, then the
+  command in the spec's header.
+
 ## Guards
 
-Seventeen checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,
+Nineteen checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,
 and CI's `check` job runs all of them; [`../../scripts/README.md`](../../scripts/README.md) says
 what each one enforces.
 
 `check:natives` · `check:contracts` · `check:secrets` · `check:vectors` · `check:comments` ·
 `check:size` · `check:questions` · `check:manifest-parity` · `check:page-globals` ·
-`check:dev-grant-absent` · `check:advisories` · `check:devlog` · `check:native-dialogs` ·
-`check:test-paths` · `check:impact-map` · `check:app-behaviours` · `check:contracts-surface` (the last two: §App behaviours)
+`check:dev-grant-absent` · `check:advisories` · `check:devlog` · `check:native-dialogs` · `check:egress` ·
+`check:floating-promises` · `check:test-paths` · `check:impact-map` · `check:app-behaviours` · `check:contracts-surface` (the last two: section App behaviours)
 
 Every one is an exported pure function over a root directory, unit tested against temp fixtures
 (`scripts/tests/`, or `tests/` beside a guard that has its own folder under `scripts/`), with a CLI block
@@ -412,8 +447,15 @@ guarded by `isInvokedDirectly` so the test can import it without running it. Fol
 another, and add the CI step in the same change: `scripts/tests/check-scripts-in-ci.test.ts` fails the unit
 suite if a `check:*` script exists with no step to run it.
 
+One health gate is a unit test rather than a guard, so it needs no CI step of its own: `src/renderer/newtab/tests/featured-model.test.ts`
+fails while an entry of the shipped Featured list (`src/renderer/newtab/featured/featured.json`) carries a `hold`, the flag a
+maintainer sets by hand while the app lags a security or funds fix, and it checks the list's ids, addresses and icons.
+Setting `hold` is how a lagging app is kept off the new tab: the change cannot merge until the entry is removed or the flag is cleared.
+
 A guard imports `node:*` builtins and nothing from `src/` -- one that depended on the code it
-guards could be disabled by the change it exists to catch.
+guards could be disabled by the change it exists to catch. The one exception to "builtins only" is
+`check:floating-promises`, which needs the type checker and so drives the `typescript` dev dependency's
+own API (`typescript/unstable/sync`).
 
 ---
 
@@ -453,7 +495,7 @@ exercises and it is the one most likely to break silently.
 
 ## CI
 
-[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) has four kinds of job.
+[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) has five kinds of job.
 
 - **`check`** runs on every pull request and every push to `main`, and is the required status: `npm ci` (which
   fires the Rule 8 guard via `postinstall`), typecheck, unit tests, every guard, and the build. About three
@@ -468,9 +510,28 @@ exercises and it is the one most likely to break silently.
   server (`xvfb-run`; no display server on `ubuntu-latest` otherwise). The specs are split by recorded duration
   ([`test/spec-weights.json`](../../test/spec-weights.json)) into at most ten shards of about four minutes, so the
   whole suite takes about five minutes of wall time. Each runner is its own machine, so the fixed fixture ports
-  cannot clash. A failed shard uploads `qa-artifacts/latest/` (§Visual QA and failure evidence).
+  cannot clash. A failed shard uploads `qa-artifacts/latest/` (section Visual QA and failure evidence).
 - **`e2e`** is the one e2e status: it passes when every selected shard passed or nothing was selected. **`e2e-ordinary`**
   runs the specs that need the build without the developer-only hooks, whenever any e2e is selected.
+- **`ublock-gate`** runs on a pull request that changes the Electron version (section Electron upgrades), and `e2e`
+  requires it when it runs.
+
+**Windows and macOS.** Everything above runs on Linux. [`cross-os.yml`](../../.github/workflows/cross-os.yml) runs
+Orivon from source on hosted Windows and macOS runners: `npm ci` with the Rule 8 guard over that system's own dependencies, `smoke`, and the QA
+states spec with its screenshots. It runs nightly on `main`, on a pull request that changes the install or launch
+scripts, `package.json` or `src/main/os/`, and on demand through `node scripts/ci/cross-os.mjs`, which waits and
+brings the evidence back ([`scripts/ci/README.md`](../../scripts/ci/README.md) section Other systems).
+`node scripts/ci/live-session.mjs` keeps Orivon running on one of those runners and drives it step by step from a
+terminal (the same README, section Live sessions).
+[`release.yml`](../../.github/workflows/release.yml) builds, installs and launches the packages on the same systems.
+
+**The scheduled checkpoint refresh.** [`refresh-eth-checkpoint.yml`](../../.github/workflows/refresh-eth-checkpoint.yml)
+runs every Monday and Thursday (and on demand): it reads a finalized checkpoint with
+`scripts/refresh-eth-checkpoint.mjs`, pushes `automation/eth-checkpoint` and opens, or updates, one pull request.
+A pull request opened with the workflow's `GITHUB_TOKEN` starts no `pull_request` workflow, so the workflow
+dispatches `ci.yml` on the branch, and that run's `check` appears on the pull request. It needs the repository
+setting Actions > General > "Allow GitHub Actions to create and approve pull requests"; with it off, the branch
+is pushed and the run fails with that message.
 
 **With no dedicated code reviewer, CI is the reviewer.** A pull request whose `check` or selected e2e shards are
 red does not merge. The e2e job is not a required status check: the rule is kept by whoever merges, and

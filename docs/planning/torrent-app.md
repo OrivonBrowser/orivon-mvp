@@ -1,7 +1,7 @@
 # A torrent app: what is already known
 
 **An idea, not a build step.** A BitTorrent streaming app is listed under
-[`scope.md`](../scope.md) §LATER: nobody is building it, and nothing in this repository
+[`roadmap.md`](../roadmap.md) (Later): nobody is building it, and nothing in this repository
 waits on it. [`ADR-0001`](../decisions/ADR-0001-flagship-app-bittorrent-streaming.md) has the
 case for building one. This page keeps what the week-0 spike and the planning around it
 established, so whoever picks the idea up does not re-derive it.
@@ -15,11 +15,11 @@ described below is the app.
 
 `webtorrent` via the shim, player UI, magnet input, file list, resume. Ships as a pre-built app
 asset, never as a shell dependency: `node-datachannel` is a hard transitive dependency and needs
-a C++ toolchain, which breaks run-from-source ([`build-plan.md`](build-plan.md) §Platform policy).
+a C++ toolchain, which breaks run-from-source (CLAUDE.md Rule 8).
 
 A naive renderer bundle is **WebRTC-only**: webtorrent's `browser` field maps `net`,
 `bittorrent-dht`, `ut_pex`, `utp` and `conn-pool` to `false`, which is Brave parity. The fix is
-per-module resolution overrides (`ARCHITECTURE.md` §Two facts that are expensive to rediscover).
+per-module resolution overrides (`ARCHITECTURE.md` section Two facts that are expensive to rediscover).
 
 ## Media path
 
@@ -37,7 +37,7 @@ explicitly in webtorrent's own docs as the intended use case. Without it, webtor
 its Node implementation in the renderer and attempt to open a real listening socket rather than
 using the Service-Worker path. Call it as `client.createServer({ controller }, 'browser')`.
 
-Separately confirmed by the spike (`week-0-spike-plan.md` §Gate 3): Electron treats a `file://`
+Separately confirmed by the spike (`week-0-spike-plan.md` section Gate 3): Electron treats a `file://`
 origin loaded via `loadFile()` as a secure context, so service worker registration for this path
 needs no fallback: `navigator.serviceWorker.register(...)` succeeds without any extra scheme
 registration. The `protocol.handle()` custom-scheme path remains the fallback if that changes.
@@ -94,5 +94,5 @@ one that actually governs, and `ADR-0006` exists to prevent exactly this kind of
   likeliest way an app fills a disk.
 - **Protocol routing** (`"protocols": ["magnet"]`), so a magnet link reaches the app. It is
   specified (`capability-api.md`, `security-model.md` T23) and unbuilt.
-- **Brand handling** (`ADR-0001` §Consequences): never ship default content, never bundle an
+- **Brand handling** (`ADR-0001` section Consequences): never ship default content, never bundle an
   index or search, position strictly as "P2P content, self-verifying by hash".

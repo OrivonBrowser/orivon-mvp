@@ -6,14 +6,13 @@ import { afterAll, expect, it } from 'vitest'
 import type { ElectronApplication } from 'playwright'
 import { assertNoElectronSurvivors, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
 import { ABSENCE_SETTLE_MS, delay, findChrome, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, readShield, runPhase } from '../support/e2e-helpers.js'
-import { BUILTIN_ADDRESSES } from '../../src/protocols/builtin.js'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, readShield, runPhase, shownOnIpfs } from '../support/e2e-helpers.js'
 import { answerAccepting, answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
 import { updateApp } from '../apps/app-update/site.mjs'
 import { buildsAt, eventually, launchPhase, pinOf, profileOf, quietOf, runsAsApp, startRig } from './app-update-support.js'
 
 const ORIGIN = 'https://app.eth'
-const SHOWN = BUILTIN_ADDRESSES.displayUrl(`${ORIGIN}/`)
+const SHOWN = shownOnIpfs(`${ORIGIN}/`)
 const TEST_TIMEOUT_MS = ADDRESS_BAR_STABLE_TIMEOUT_MS * 6 + DEFAULT_ACTION_TIMEOUT_MS * 20 + APP_CLOSE_RACE_MS * 4 + 180_000
 
 afterAll(async () => {
@@ -52,8 +51,9 @@ it('tells the person about an unverified version and keeps the old one, takes it
       let app = await launchPhase(rig, { names: { 'app.eth': 'b' } })
       await stubNativeDialogs(app)
       await visit(app, `${ORIGIN}/`)
-      check('build B loads', (await waitForTab(findChrome(app), { address: SHOWN, title: 'update fixture B' })).ok)
       await answerAccepting(app)
+      check('build B loads', (await waitForTab(findChrome(app), { address: SHOWN, title: 'update fixture B' })).ok)
+      check('the tab reloaded as the app', await eventually(async () => await runsAsApp(app, `${ORIGIN}/`), 30_000))
       check('the first visit pinned build B', await eventually(() => pinOf(app, ORIGIN)?.content?.cid === root('b'), 25_000))
       const profile = profileOf(app)
       await closeElectronApp(app, APP_CLOSE_RACE_MS, { keepProfile: true })
@@ -112,10 +112,10 @@ it('tells the person about an unverified version and keeps the old one, takes it
       await visit(app, 'https://evil.eth/')
       const home = await readQuestion(await waitQuestion(app, 40_000))
       check(`the install question says where the app says it lives (${home.detail})`, home.detail.includes('This app names app.eth as its home.'))
-      const shield = await readShield(findChrome(app))
-      check(`build B under another name shows Level 2, not the judged 3 (${String(shield.level)})`, shield.level === '2')
       await answerAccepting(app)
       check('the tab has reloaded and runs as the app', await eventually(async () => await runsAsApp(app, 'https://evil.eth/')))
+      const shield = await readShield(findChrome(app))
+      check(`build B under another name shows Level 2, not the judged 3 (${String(shield.level)})`, shield.level === '2')
       popup = await openKey(app)
       check('the key says so too', (await popup.textContent('.site-home'))?.includes('This app names app.eth as its home.') === true)
       check('and offers to open it', (await popup.textContent('.link-button'))?.includes('Open app.eth') === true)

@@ -3,7 +3,7 @@
 - **Status:** accepted, **amended 2026-09-24: the off-host anchor is in scope, as the name's ENS
   record**, **2026-09-25: that record is the contenthash, and a verified tree is Website Level
   2**, and **2026-09-28: in developer mode, a local origin's served tree counts as its DDOC** (see
-  the Amendments below)
+  the Amendments below); for a first install the declared tree blocks ([ADR-0074](ADR-0074-a-published-app-is-asked-about-and-checked-before-its-page-is-entered.md)), file by file as each is served ([ADR-0075](ADR-0075-a-published-app-is-let-in-when-allowed-and-each-file-is-checked-as-it-is-served.md))
 - **Date:** 2026-09-24
 - **Type:** architecture
 - **Decided by:** owner
@@ -102,7 +102,7 @@ first use rather than proven.)*
 
 ## Consequences
 
-- **The file format is a publisher contract**, specified in `bundle-hash.md` §Where a publisher
+- **The file format is a publisher contract**, specified in `bundle-hash.md` section Where a publisher
   declares it: the path, the JSON shape, the parse rules and the size cap. Anything that fails to
   parse counts as not published.
 - **The loader fetches the tree after the manifest, and never after a 304.** It stores the tree

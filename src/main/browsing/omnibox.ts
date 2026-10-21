@@ -1,6 +1,5 @@
 // Classifies address-bar input. Pure function, no Electron/Node dependency --
-// this is the one genuinely unit-testable piece of build step 1
-// (build-plan.md's "Testing" section: security-critical logic only).
+// this is a unit-testable piece with security-critical logic.
 //
 // Security-critical rows: `javascript:`, `data:`, `file:` and `about:` must
 // NEVER resolve to { kind: 'url' }. The address bar is chrome-privileged
@@ -8,8 +7,9 @@
 // escape or a local-file-disclosure vector one keystroke away, unlike a
 // normal page navigation which is already sandboxed.
 //
-// Input that is not an address goes to the chosen search engine, DuckDuckGo
-// unless the person picked another (./search-engines.ts).
+// Input that is not an address goes to the search the caller hands in (./search-current.ts decides it from the
+// settings: the Web3 or the Web2 engine, by the search mode). With none handed in, the first Web2 engine
+// (./search-engines.ts).
 
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { DEFAULT_SEARCH_ENGINE, searchUrlFor } from './search-engines.js'

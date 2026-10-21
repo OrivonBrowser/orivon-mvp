@@ -296,6 +296,9 @@ type ParsedPattern =
 /** A pattern that is a whole origin (`web.context`'s, and `web.embed`'s exact origins and local patterns), not a `host:port`. */
 const ORIGIN_SHAPED = /^https?:\/\//
 
+/** A `devices.hid` filter's canonical string (contracts/devices.ts): it leads with a vendor and has no host or port to compare. */
+const HID_SHAPED = /^vendor=[0-9a-f]{4}(?:,|$)/
+
 /**
  * True if everything `requested` authorises is already authorised by
  * `granted`.
@@ -329,6 +332,8 @@ export function covers (granted: Pattern, requested: Pattern): boolean {
   // origins and local patterns (`http://*.localhost:<port>`) are the same
   // shape over http, so they take the same route.
   if (ORIGIN_SHAPED.test(granted) || ORIGIN_SHAPED.test(requested)) return granted === requested
+  // A hid filter has no subset structure this grammar understands: equal strings only, so a changed filter asks again.
+  if (HID_SHAPED.test(granted) || HID_SHAPED.test(requested)) return granted === requested
 
   const from = parseForCoverage(granted)
   const to = parseForCoverage(requested)

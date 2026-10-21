@@ -8,6 +8,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app, protocol, session } from 'electron'
 import type { Session } from 'electron'
+import { APP_FILE_SCHEME } from '../../broker/policy/app-files-by-url.js'
 import { INTERNAL_PARTITION, INTERNAL_SCHEME } from './internal-pages.js'
 import { createInternalHandler, isDevServerRequest } from './serve.js'
 import { validatedDevServerUrl } from '../shell/renderer-entry.js'
@@ -46,12 +47,16 @@ export function internalSession (): Session | undefined {
  * (`vendor/electron-chrome-extensions/src/browser/api/browser-action.ts`'s
  * `handleCRXRequest`) -- `bypassCSP` is the same privilege upstream's own,
  * now-removed module-level call used, so an icon loads under the chrome
- * view's `img-src` list regardless of what else that CSP allows. */
+ * view's `img-src` list regardless of what else that CSP allows.
+ *
+ * `orivon-file` carries an app's own files to its page (sessions/app-files-by-url.ts): `stream` for a
+ * media element's `Range` requests, `corsEnabled` for an `<img crossorigin>`. */
 export function registerInternalScheme (): void {
   protocol.registerSchemesAsPrivileged([
     { scheme: INTERNAL_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
     { scheme: SHELL_SCHEME, privileges: { standard: true, secure: true } },
-    { scheme: 'crx', privileges: { bypassCSP: true } }
+    { scheme: 'crx', privileges: { bypassCSP: true } },
+    { scheme: APP_FILE_SCHEME, privileges: { standard: true, secure: true, stream: true, corsEnabled: true } }
   ])
 }
 

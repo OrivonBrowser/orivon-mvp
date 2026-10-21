@@ -13,6 +13,7 @@
 import { vi } from 'vitest'
 import type { ControlEvent, PortLike, PortPair, PortTransport } from '../ipc.js'
 import { createPortRegistry } from '../relay/port-registry.js'
+import { createPendingDials } from '../pending-dials.js'
 import type { Datagram, OrivonError, OrivonErrorCode } from '../../../contracts/index.js'
 import type { CloseReason, FailableTcpServer, FailableTcpSocket, FailableUdpSocket } from '../../handles/handle-contracts.js'
 import type { RequestEnvelope } from '../../../contracts/ipc.js'
@@ -124,7 +125,7 @@ export function fakePortPair (): { readonly pair: PortPair, readonly port1: Retu
 
 /** A PortTransport whose createPortPair always returns the SAME pair -- fine for tests that make at most one net.connect call. */
 export function fakeTransport (pair: PortPair): PortTransport {
-  return { createPortPair: () => pair, registry: createPortRegistry() }
+  return { createPortPair: () => pair, registry: createPortRegistry(), dials: createPendingDials() }
 }
 
 /**
@@ -143,6 +144,7 @@ export function fakeMultiTransport (): PortTransport & { readonly pairs: Readonl
       return next.pair
     },
     registry: createPortRegistry(),
+    dials: createPendingDials(),
     pairs
   }
 }

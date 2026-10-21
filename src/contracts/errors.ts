@@ -56,11 +56,11 @@ export interface OrivonError extends Error {
 
   /**
    * The underlying engine's own detail -- a Node errno today (ECONNREFUSED,
-   * ENOENT, ...), whatever WASI or Mojo expose later.
+   * ENOENT, ...), whatever another engine would expose.
    *
    * ADVISORY AND UNVERSIONED. An app that branches on this is coding against
    * the engine underneath rather than against Orivon, and may need adjusting
-   * across the Node -> Wasmtime -> Chromium/Mojo transitions. It exists so
+   * if that engine changes. It exists so
    * orivon-node-shim can reconstruct a faithful Node Error, because
    * `err.code === 'ECONNREFUSED'` is a real Node idiom that must keep working
    * through the shim.

@@ -8,14 +8,19 @@ import { contentBlockedStatePart } from './state/content-blocked.js'
 import { addressBarStatePart } from './state/address-bar.js'
 import { groupsStatePart } from './state/groups.js'
 import { downloadsStatePart } from './state/downloads.js'
+import { entryChangesStatePart } from './state/entry-changes.js'
 import { extensionsStatePart } from './state/extensions.js'
+import { filesFailedStatePart } from './state/files-failed.js'
+import { fullScreenStatePart } from './state/full-screen.js'
 import { homeStatePart } from './state/home.js'
 import { loginsStatePart } from '../passwords/logins-state.js'
+import { networksStatePart } from './state/networks.js'
 import { popupsBlockedStatePart } from './state/popups-blocked.js'
 import { sharingStatePart } from './state/sharing.js'
 import { shortcutsStatePart } from './state/shortcuts.js'
 import { sidePanelStatePart } from './state/side-panel.js'
 import { siteAccessStatePart } from './state/site-access.js'
+import { tunnelStatePart } from './state/tunnel.js'
 import { updateOfferedStatePart } from './state/update-offered.js'
 import type { ShellState, TabsSnapshot } from './tab-types.js'
 import type { WindowContext } from './window-context.js'
@@ -34,15 +39,20 @@ export const SHELL_STATE_PARTS: readonly ShellStatePart[] = [
   bookmarkedStatePart,
   contentBlockedStatePart,
   downloadsStatePart,
+  entryChangesStatePart,
   extensionsStatePart,
+  filesFailedStatePart,
+  fullScreenStatePart,
   groupsStatePart,
   homeStatePart,
   loginsStatePart,
+  networksStatePart,
   popupsBlockedStatePart,
   sharingStatePart,
   shortcutsStatePart,
   sidePanelStatePart,
   siteAccessStatePart,
+  tunnelStatePart,
   updateOfferedStatePart
 ]
 

@@ -7,7 +7,7 @@
  * enforced by hand in the 2026-08-27 refactor; this is the mechanical guard
  * for it, following the same idiom as check-no-native-modules.mjs and
  * check-contracts-pure.mjs. Wired into `npm run check:size` and CI's `check`
- * job as of 2026-09-04 -- code-guidelines.md's own §Status records the
+ * job as of 2026-09-04 -- code-guidelines.md's own section Status records the
  * reversal of the earlier "rules first, enforcement later" deferral.
  *
  * "Test file" is exactly what code-guidelines.md Rule 2 defines, no more:
@@ -52,6 +52,14 @@ const DECLARATION_FILE = /\.d\.ts$/
  *     make future patches harder to diff against the original.
  */
 const SKIPPED_DIRECTORIES = new Set(['node_modules', 'out', 'dist', 'build', 'release', 'coverage', 'spike', 'vendor'])
+
+/**
+ * Top-level directories never walked: `resources/` holds data the app reads,
+ * never code (its README), and the files `fetch-bundled-extensions.mjs` and
+ * `fetch-local-nodes.mjs` download into it, which git ignores. Matched at the
+ * root only, so a `resources` folder inside `src/` is still checked.
+ */
+const SKIPPED_ROOT_DIRECTORIES = new Set(['resources'])
 
 /**
  * @param {string} file Root-relative, forward-slashed path.
@@ -126,6 +134,7 @@ export function checkFileSizes (root) {
 
       if (entry.isDirectory()) {
         if (entry.name.startsWith('.') || SKIPPED_DIRECTORIES.has(entry.name)) continue
+        if (dir === root && SKIPPED_ROOT_DIRECTORIES.has(entry.name)) continue
         walk(full)
         continue
       }

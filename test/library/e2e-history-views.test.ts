@@ -241,7 +241,7 @@ it('chooses rows by key, forgets them with a second press, and the rows are gone
   }
 }, TEST_TIMEOUT_MS)
 
-it('moves through the list by key and opens a row with Enter, in the background with Ctrl+Enter', async () => {
+it('moves through the list by key and opens a row with Enter, in the background with Mod+Enter', async () => {
   const { app, chrome } = await launched((dir) => { seed(dir, (_host, n) => `${origin}/seed-${String(n)}`) })
   try {
     const page = await openHistoryPage(app, chrome)
@@ -264,7 +264,7 @@ it('moves through the list by key and opens a row with Enter, in the background 
     await page.keyboard.press('ArrowDown')
     const tabCount = async (): Promise<number> => await evaluateRetrying(chrome, () => document.querySelectorAll('.tab').length)
     const before = await tabCount()
-    await page.keyboard.press('Control+Enter')
+    await page.keyboard.press('ControlOrMeta+Enter')
     expect(await waitFor(async () => await tabCount() === before + 1)).toBe(true)
     // The page stays where it is: a background tab opens, and this one keeps the list.
     expect(page.url()).toBe('orivon://history/')

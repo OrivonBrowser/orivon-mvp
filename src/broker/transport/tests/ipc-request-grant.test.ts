@@ -110,7 +110,7 @@ describe('app.requestGrant', () => {
   it('registerBrokerIpc threads requestGrantCtx through to the real registered handler', async () => {
     const registered = new Map<string, (event: ControlEvent, envelope: RequestEnvelope<unknown>) => Promise<ResponseEnvelope<unknown>>>()
     const fakeIpcMain: IpcMainLike = { handle: (channel, listener) => { registered.set(channel, listener) } }
-    const fakeTransport = { createPortPair: (): never => { throw new Error('not needed for this test') }, registry: { register: vi.fn(), get: vi.fn(), remove: vi.fn() } }
+    const fakeTransport = { createPortPair: (): never => { throw new Error('not needed for this test') }, registry: { register: vi.fn(), get: vi.fn(), remove: vi.fn() }, dials: { begin: vi.fn(), cancel: vi.fn() } }
     const { ctx, calls } = fakeCtx()
 
     registerBrokerIpc(fakeIpcMain, stubBroker([]), fakeTransport, undefined, ctx)

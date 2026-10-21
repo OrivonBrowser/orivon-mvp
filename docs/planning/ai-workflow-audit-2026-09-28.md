@@ -2,7 +2,7 @@
 
 Written 2026-09-28 for the agent session that will apply it, and for the owner, who reads
 section 6. `docs/planning/` is exempt from CLAUDE.md Rule 2, so this page carries dates and
-history on purpose. Applied the same day on `stream/ai-workflow-audit`; §7 records where the
+history on purpose. Applied the same day on `stream/ai-workflow-audit`; section 7 records where the
 application departed from the plan.
 
 ## 1. What was measured
@@ -380,11 +380,11 @@ Ask them in one batch, before step 2.
 
 ## 7. How it was applied (2026-09-28)
 
-Owner answers to §5: standard model and effort `high` by default; keep adversarial-reviewer,
+Owner answers to section 5: standard model and effort `high` by default; keep adversarial-reviewer,
 named-persona-adversarial-review, usage-guard and humanizer; security-guidance stays on; a
 400-word PR ceiling (d-0144 to d-0147). Decision 6 is answered by the list in the PR body.
 
-Where the application departed from §4:
+Where the application departed from section 4:
 
 - **Step 3.** The auto-mode classifier refused an agent edit to `.claude/settings.json`, so
   flipping superpowers off is left to the owner.

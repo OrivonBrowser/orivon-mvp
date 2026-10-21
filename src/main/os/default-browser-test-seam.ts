@@ -20,18 +20,20 @@ export interface Recording {
 declare global {
   // `var`: TypeScript requires it for a `declare global` augmentation.
   var __orivonDevDefaultBrowser: Recording | undefined
-  var __orivonDevDefaultBrowserAskNow: (() => Promise<void>) | undefined
+  var __orivonDevDefaultBrowserAskNow: (() => Promise<unknown>) | undefined
 }
 
 export function parseSeamMode (raw: string | undefined): SeamMode | undefined {
   return raw === 'can-set' || raw === 'default' || raw === 'declined' ? raw : undefined
 }
 
-/** A host on Linux from an installed package that records every call and keeps its own answer. */
-export function recordingHost (mode: SeamMode): DefaultBrowserHost & { readonly recording: Recording } {
+/** A host of an installed package that records every call and keeps its own answer. It reports the platform it runs
+ * on, so the code that branches on the system (Windows only opens its settings, macOS leaves the choice to the person)
+ * takes the path a real run takes. */
+export function recordingHost (mode: SeamMode, platform: NodeJS.Platform = process.platform): DefaultBrowserHost & { readonly recording: Recording } {
   const recording: Recording = { isDefault: [], setDefault: [], opened: 0, registered: mode === 'default' }
   return {
-    platform: 'linux',
+    platform,
     launcher: 'installed',
     recording,
     isDefault: async (protocol) => { recording.isDefault.push(protocol); return recording.registered },
@@ -53,12 +55,12 @@ export function testDefaultBrowserHost (env: NodeJS.ProcessEnv = process.env): D
   if (!SEAM_ENABLED) return undefined
   const mode = parseSeamMode(env['ORIVON_TEST_DEFAULT_BROWSER'])
   if (mode === undefined) return undefined
-  const host = recordingHost(mode)
+  const host = recordingHost(mode, process.platform)
   globalThis.__orivonDevDefaultBrowser = host.recording
   return host
 }
 
 /** Lets a test run the weekly check now, instead of waiting for its timer. */
-export function exposeAskNow (check: () => Promise<void>): void {
+export function exposeAskNow (check: () => Promise<unknown>): void {
   if (SEAM_ENABLED) globalThis.__orivonDevDefaultBrowserAskNow = check
 }

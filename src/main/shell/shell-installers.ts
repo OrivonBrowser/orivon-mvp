@@ -5,6 +5,7 @@
 import type { App } from 'electron'
 import type { Runtime } from '../launch/start-launch.js'
 import type { SubsystemContext } from '../registry.js'
+import { installAppSetup } from '../app-setup/install-app-setup.js'
 import { installAuth } from '../auth/install-auth.js'
 import { installAutofill } from '../autofill/install-autofill.js'
 import { installChoosers } from '../devices/install-choosers.js'
@@ -15,6 +16,7 @@ import { installFocus } from '../focus/install-focus.js'
 import { installLauncherMenu } from '../os/install-launcher-menu.js'
 import { installMediaGrants } from '../media-grants/install-media-grants.js'
 import { installMemorySaver } from '../memory-saver/install-memory-saver.js'
+import { installStartHere } from './install-start-here.js'
 import { installTabSlots } from '../overlays/install-tab-slots.js'
 import { installTabVisibility } from './install-tab-visibility.js'
 import { installTelemetrySites } from './install-telemetry-sites.js'
@@ -28,6 +30,7 @@ import { installQuestions } from './question/install-questions.js'
 import { installSidePanel } from '../side-panel/install-side-panel.js'
 import { installContentSettings } from '../site-settings/install-content-settings.js'
 import { installSitePermissions } from '../site-settings/install-site-permissions.js'
+import { installSiteSessions } from './install-site-sessions.js'
 import { installTabGroups } from '../tab-groups/install-tab-groups.js'
 import type { ShellServices } from './shell-services.js'
 
@@ -39,6 +42,7 @@ export interface ShellInstaller {
 // Order is the order the per-site askers answer in: the first answer that is not `undefined` wins. `media-grants`
 // must stay ahead of `site-permissions`, which refuses every app origin, so an app's camera goes to its grant.
 export const SHELL_INSTALLERS: readonly ShellInstaller[] = [
+  installAppSetup,
   installAuth,
   installAutofill,
   installChoosers,
@@ -59,6 +63,8 @@ export const SHELL_INSTALLERS: readonly ShellInstaller[] = [
   installReader,
   installSidePanel,
   installSitePermissions,
+  installSiteSessions,
+  installStartHere,
   installTabGroups,
   installTabSlots,
   installTabVisibility,

@@ -7,6 +7,7 @@
 
 import { LIMITS } from '../../contracts/index.js'
 import type { Capabilities, CapabilityKind, FsCapability, IdCapability, NetCapability, Pattern } from '../../contracts/index.js'
+import { hidFilterToPattern } from './hid-pattern.js'
 import type { PatternSet } from './update.js'
 
 /**
@@ -66,6 +67,10 @@ export function patternSetFromCapabilities (capabilities: Capabilities): Pattern
   if (capabilities.media?.camera === true) set['media.camera'] = []
   if (capabilities.media?.microphone === true) set['media.microphone'] = []
   if (capabilities.media?.screen === true) set['media.screen'] = []
+
+  // ADR-0068: each hid filter is one canonical pattern string.
+  const hid = capabilities.devices?.hid
+  if (hid !== undefined) set['devices.hid'] = hid.map(hidFilterToPattern)
 
   // ADR-0019: web.contexts IS the pattern list for 'web.context' -- each
   // declared origin is compared exactly against a grant's own patterns

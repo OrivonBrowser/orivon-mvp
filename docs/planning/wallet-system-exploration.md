@@ -6,13 +6,13 @@
 > exempt from CLAUDE.md Rule 2, so dates and reasoning stay here; the live pages named in section
 > 12 must be rewritten to state only what is true once the work lands.
 
-**The ask.** Build the wallet system of the canonical
-[Wallet system](https://docs.orivonstack.com/docs/implementations/wallet-system) page. In this
+**The ask.** Build the wallet system of the vision's Wallet system page (the older published
+docs; verify anything taken from it with the owner). In this
 build every layer is provided by the browser itself; nothing is provided by an installed app yet.
-The code must keep the seams that let integrations (installed apps acting as providers) plug into
-each layer later, without a rewrite.
+The code must keep the seams that let installed apps acting as providers plug into each layer
+later, without a rewrite.
 
-**Read first, in this order:** `CLAUDE.md`, `docs/scope.md`, `docs/architecture/capability-api.md`
+**Read first, in this order:** `CLAUDE.md`, `docs/roadmap.md`, `docs/architecture/capability-api.md`
 (the "Two kinds of identity" section), `ADR-0010`, `ADR-0033`, `ADR-0021`, `ADR-0031`,
 `src/resolution/README.md`, `src/main/keyring/README.md`, `src/nostr/README.md`, then this
 document. Section 8 is the file map for the code path a new capability follows.
@@ -34,7 +34,7 @@ Summarised and linked, never copied (CLAUDE.md, "The vision corpus"). Sources:
 `technical-design/standards.mdx`, `technical-design/orivon-runtime.mdx`, `orivon.mdx`,
 `implementations/web3-score.md`, `implementations/dashboard-app.md`.
 
-**Three layers, each one a kind of App (integration) in the vision:**
+**Three layers, each one a kind of App in the vision:**
 
 | Layer | Vision name | What it provides | Holds private keys? |
 |---|---|---|---|
@@ -87,11 +87,10 @@ starts (next free number at the time of writing: A259; check the tail of the fil
    have no access to private keys. Recommendation: it returns a **public** key (or an extended
    public key for derivation), never a private one; a private key never crosses a module
    boundary. Needs the owner's confirmation before it is written into a type.
-3. **Auto-connect versus the repository's identity model.** The vision lets an account connect
-   automatically "depending on user settings and Web3 Score". `open-questions.md` B4 records
-   that a funds-bearing wallet is "a separate, setup-requiring thing" behind explicit per-site
-   consent. Both can hold if auto-connect is off by default and only ever available at site
-   Level 4; section 6.2 proposes exactly that. It is a policy the owner must confirm.
+3. **Auto-connect and the identity model.** Accounts are pre-installed and connect to a site
+   automatically only on a site at Web3 Score Level 4 (trustless); on any other site a one-click
+   or broker grant is asked first. Money and value actions always prompt, on every site. Section
+   6.2 states the rule.
 4. **The `CapabilityDescriptor` examples are illustrative, not valid code** (a `.join` on an
    object literal, an object written with array braces). The repository should define its own
    TypeScript type that transcribes the *shape* and its wildcard grammar, and say the vision page
@@ -135,15 +134,12 @@ page, never append a correction beneath it.
 
 | Page | Current statement |
 |---|---|
-| `docs/scope.md` OUT table | "Funds-bearing wallet: different security model entirely from per-origin identity" |
-| `docs/scope.md` LATER | "wallet Crypto and Address-book layers plus `CapabilityDescriptor`" |
-| `docs/scope.md` Explicit non-goals | "**Not a wallet.** No funds, no seed phrase, no send/receive." |
-| `docs/scope.md` IN table, new-tab dashboard row | "no Wallet, Network or App-Store tiles" |
-| `README.md` | Restates the non-goal (check its Known limitations and non-goals sections) |
+| `docs/roadmap.md` | "A native wallet is on the way." The line moves to `docs/features.md` when the wallet lands |
+| `docs/features.md`, new-tab dashboard line | A dashboard with no Wallet tile |
+| `README.md` | Roadmap section: "A native wallet is on the way." |
 | `docs/architecture/capability-api.md`, "Deliberately not in v0" | "`hid` / USB. No wallet app in this version." `hid` stays out; the reason changes |
 | `docs/architecture/capability-api.md`, "Two kinds of identity" | Consumer column: "future wallet connect" |
 | `docs/planning/compatibility-matrix.md` row "Web ecosystem" | "`window.nostr` (NIP-07); later `window.ethereum`" |
-| `docs/planning/build-plan.md` "Not in this plan" | lists "wallet" |
 | `docs/open-questions.md` A2 | "(wallet) simplified and deferred, keep architecture ready" |
 | `docs/open-questions.md` B4 | "the exact UI language distinguishing throwaway keys / named identities / wallets" is still open. The wallet UI must answer it |
 | `ARCHITECTURE.md` "Where things live" | Needs rows for the new directories, each labelled durable or tied to Electron (Rule 5) |
@@ -157,16 +153,16 @@ page, never append a correction beneath it.
   brings it.
 - **Any wallet code, storage, UI, or IPC.** Nothing under `src/` mentions a wallet except the
   scope statements above and `LIMITS.secretBytes`'s comment.
-- **An inbound shell-to-app channel, a background lifetime and an integration grant tier**,
+- **An inbound shell-to-app channel, a background lifetime and a provider grant tier**,
   the three things an *installed app* would need to act as a provider. They were found missing
-  in the integrations exploration of 2026-09-28 (Data Gathering) and are the same three the
-  wallet's integration seam will wait on. This step does not build them (section 13).
+  in an earlier exploration of 2026-09-28 and are the same three the wallet's provider seam will
+  wait on. This step does not build them (section 13).
 
 ---
 
 ## 3. The shape: three provider layers behind one registry
 
-This is the part of the design that carries the "keep the infrastructure for integrations"
+This is the part of the design that carries the "keep the infrastructure for installed providers"
 requirement. It follows `src/resolution/` deliberately, because that directory already solved
 the same problem for the DNS-resolution and Data-gathering pages of the vision: provider
 interfaces as internal TypeScript, a registry that orders them, built-in entries only, and a
@@ -177,7 +173,7 @@ one-line statement that opening them to apps is a contracts change.
 1. **A vision App is a provider; a provider is an interface.** `AccountProvider` (layer 1),
    `CryptoModule` (layer 2, one per TAG) and `AddressBookProvider` (layer 3) are TypeScript
    interfaces in a durable directory. This build registers one built-in implementation of each.
-   An integration is a later, second implementation of the same interface, driven over a
+   An installed provider is a later, second implementation of the same interface, driven over a
    message channel.
 2. **Plain data across every provider boundary.** Arguments and results are structured-clonable
    (no functions, no class instances, no `Uint8Array` views into shared buffers, `bigint` only
@@ -212,7 +208,7 @@ and `keychain` already do; section 8.1 has the files.
 
 ### 3.3 The interfaces, sketched
 
-Sketches, not final code. Names track `standards.mdx` so that a future integration mapping is
+Sketches, not final code. Names track `standards.mdx` so that a future provider mapping is
 mechanical, and `readonly`/`Promise` shapes track `src/resolution/providers.ts`.
 
 ```ts
@@ -318,7 +314,7 @@ Two shapes are deliberate and worth a sentence each in the eventual README:
 - **Account ids and address-book entries** opaque and generated, never derived from a label,
   for the reason `ADR-0010` gives for `identityId`.
 
-### 3.5 How an integration plugs in later, and what it waits on
+### 3.5 How an installed provider plugs in later, and what it waits on
 
 An installed app that wants to be an account, crypto or address-book provider would implement
 one of the interfaces above over a message channel: the registry would hold a proxy that
@@ -329,10 +325,9 @@ that harder, and three things it does not build make it possible:
    shell);
 2. a **background lifetime** for an app whose tab is closed
    (`compatibility-matrix.md`, "Background lifetime", unspecified);
-3. an **integration grant tier**, distinct from capability grants, held by an installed app.
+3. a **provider grant tier**, distinct from capability grants, held by an installed app.
 
-All three were identified on 2026-09-28 for the Data Gathering integration and are the same
-here. Opening the interfaces is then a `src/contracts/` change with its own PR, and, because the
+All three were identified on 2026-09-28 and are the same here. Opening the interfaces is then a `src/contracts/` change with its own PR, and, because the
 vision's descriptors and ids would become app-facing, an ADR. Until then the interfaces are
 internal and may change freely, which is another reason to keep them out of `src/contracts/`
 now.
@@ -345,8 +340,8 @@ The first, and in this build the only, `AccountProvider`.
 
 ### 4.1 The secret is not the identity seed
 
-`docs/scope.md` calls a funds-bearing wallet "a different security model entirely from
-per-origin identity", and it is right, for one reason above all: **the identity seed has no
+A funds-bearing wallet has a different security model from per-origin identity, for one reason
+above all: **the identity seed has no
 backup and no export** (`ADR-0003`, `ADR-0010`). A key that can hold money must be
 recoverable on another machine, or the first lost laptop loses the money. So:
 
@@ -517,15 +512,15 @@ panel. Removing an account disconnects every site that held it and emits `accoun
 
 This keeps `src/contracts/` untouched in this step. It is also the honest model: what the
 person is deciding is "this site may see and ask this account to sign", which is what the connect
-prompt says.
+says.
 
 **The Web3 Score hook.** `src/wallet/policy/connect-policy.ts` is a pure function
-`connectDecision({ siteLevel, autoConnectSetting, existingConnection }) -> 'silent' | 'prompt' |
-'refuse'`. In this step it returns `'prompt'` for any origin with no connection and `'silent'`
-for one that has, and it carries the one extra branch the vision asks for: `'silent'` for a new
-origin **only when the setting is on and the site is Level 4**. The setting ships **off**, and
-the prompt always shows the site's level and mark beside the origin. Provisional; the owner
-confirms both the default and the level (section 14).
+`connectDecision({ siteLevel, existingConnection }) -> 'silent' | 'prompt' |
+'refuse'`. It returns `'silent'` for an origin that has a connection, and for a new origin
+**only when the site is at Web3 Score Level 4** (trustless); for any other new origin it returns
+`'prompt'`, a one-click or broker grant that shows the site's level and mark beside the origin.
+Level 4 is the only level that connects without being asked. A value-bearing request (a transfer,
+a signature that moves money, a spend approval) always prompts, whatever the connection.
 
 ### 6.3 `orivon.wallet` in `src/contracts/`: not in this step
 
@@ -580,12 +575,12 @@ Vanilla TypeScript pages, as everything in `src/renderer/` is; no framework.
   require the person to confirm they saved it), import a phrase, back up (reveal, behind a
   confirmation), rename, remove (with the disconnect consequence stated), the address book per
   TAG with more addresses on request, connections with revoke, the signing log, and the
-  auto-connect setting with its Level-4 condition explained. The first-run experience is
+  the connect rule with its Level-4 condition explained. The first-run experience is
   **nothing**: no wallet exists until a site asks or the person opens the page. That is the
   owner's "no setup" position applied to funds: the person is not asked to set up money they
   have not decided to hold.
-- **The new-tab dashboard** gains a Wallet tile that opens the page (the `scope.md` dashboard
-  row changes accordingly; the pluggable widget platform stays out).
+- **The new-tab dashboard** gains a Wallet tile that opens the page (the dashboard
+  line in `features.md` changes accordingly; no pluggable widget platform).
 - **UI language**, the open half of B4: three words for three things, used consistently in
   every surface: *app key* (never shown), *identity* (the named, Nostr-shaped thing, when it
   ships), *account* (a wallet account that can hold funds). The word "wallet" names the feature
@@ -824,7 +819,7 @@ writing, and two branches can take the same number, so check `main` before mergi
 1. *The wallet system is three provider layers behind one registry.* Architecture. The
    interfaces, plain-data rule, registry, built-in-only status, and the sentence that opening
    them to apps is a `src/contracts/` change that waits on the inbound channel, the background
-   lifetime and the integration grant tier. Reversibility: cheap while internal.
+   lifetime and the provider grant tier. Reversibility: cheap while internal.
 2. *A wallet account's phrase is a separate, keyring-sealed, person-exportable secret.*
    Security. Not the identity seed, not derivable from it, never app-exportable, no password by
    default, the no-keyring rule, the in-memory rule, and the direct dependency on the audited
@@ -838,7 +833,7 @@ writing, and two branches can take the same number, so check `main` before mergi
    project's control.
 
 **Decision-log rows** (`docs/decisions/decision-log.md`, next `d-` id at the tail): TAG
-`ETHEREUM_V1` provisional; mainnet only; auto-connect off by default and Level 4 only; no
+`ETHEREUM_V1` provisional; mainnet only; auto-connect on Level 4 sites only, a prompt elsewhere; no
 `isMetaMask`; `eth_sign` refused; prompts native first; the three words (app key, identity,
 account); the default and selectable derivation books; the EIP-6963 `rdns` and name.
 
@@ -863,7 +858,7 @@ lands.
 For `writing-plans`. One or two PRs per working day (CLAUDE.md, "Before opening a PR"); no
 `src/contracts/` change is expected in this step, and if one turns out to be needed (a new
 `OrivonErrorCode`, say) it goes first in its own PR. Sizes are relative, not hours; record hours
-as `scope.md` asks.
+per port and per build step.
 
 | Phase | What | Merges alone? | Size |
 |---|---|---|---|
@@ -892,8 +887,8 @@ Each has a recommendation; the plan proceeds on it unless the owner says otherwi
    saved.** Recommended: yes.
 4. **The person can reveal the phrase in the wallet page.** Recommended: yes; a funds key with
    no backup is a lost-laptop away from lost money.
-5. **Auto-connect: off by default, Level 4 only, dormant until a score provider exists.**
-   Recommended: yes.
+5. **Auto-connect: Level 4 sites only, a one-click or broker grant elsewhere, value actions always
+   prompt.** Decided by the owner.
 6. **Mainnet only through the light client; other chains answer `4902`.** Recommended: yes.
 7. **`ETHEREUM_V1` as the provisional TAG.** Recommended: yes, with the discrepancy filed.
 8. **`accountGetKey` returns public keys only.** Recommended: yes.
@@ -918,11 +913,11 @@ Each has a recommendation; the plan proceeds on it unless the owner says otherwi
 | WalletConnect | A second app-facing adapter over the same broker API; the routed `WebSocket` for the relay; a pairing UI |
 | Other EVM chains, L2s, testnets | A `Network` per CAIP-2 id; Helios's OP Stack and Linea kinds, or a plain RPC marked `verified: false` |
 | Bitcoin, Monero, Solana and any non-EVM TAG | A `CryptoModule` per TAG whose `requires` descriptor selects compatible accounts; the mnemonic provider already declares the schemes |
-| Installed apps as providers ("integrations") | The inbound shell-to-app channel, the background lifetime, the integration grant tier; then a `src/contracts/` PR opening the interfaces |
+| Installed apps as providers | The inbound shell-to-app channel, the background lifetime, the provider grant tier; then a `src/contracts/` PR opening the interfaces |
 | `orivon.wallet` and a manifest field for TAGs | A `src/contracts/` PR, merged first, transcribing the registry's shapes by hand |
 | Smart accounts, multisig, Safe address lists | Layer-1 types and layer-3 books the vision names; nothing here blocks them |
 | Transaction simulation, local analysis of a contract call, ZK connection proofs (the owner's use-case notes) | The `OperationSummary` the transaction prompt renders is the hook |
-| Token balances, price feeds, token lists | `CryptoModule` extensions; no third-party price API by default, for the privacy reason the DuckDuckGo row in `scope.md` already states |
+| Token balances, price feeds, token lists | `CryptoModule` extensions; no third-party price API by default, for the privacy reason the search-engine note in `known-limitations.md` already states |
 | A passphrase lock, an idle auto-lock policy the person tunes | The keystore file's reserved version byte |
 | An account derived from the identity seed ("no setup" funds) | After identity export ships (`ADR-0010`) |
 | Nostr signing with the same curve library (A44) | The same direct dependency; its own ADR in the `nostr` stream |
@@ -936,9 +931,9 @@ Each has a recommendation; the plan proceeds on it unless the owner says otherwi
 `implementations/data-gathering.md`, `implementations/dashboard-app.md`,
 `technical-design/orivon-objects.mdx`, `technical-design/standards.mdx`,
 `technical-design/orivon-runtime.mdx`, `technical-design/orivon-core.mdx`, `orivon.mdx`,
-`roadmap.mdx`. This repository: `CLAUDE.md`, `README.md`, `ARCHITECTURE.md`, `docs/scope.md`,
+`roadmap.mdx`. This repository: `CLAUDE.md`, `README.md`, `ARCHITECTURE.md`, `docs/roadmap.md`,
 `docs/architecture/capability-api.md`, `handle-contracts.md`, `security-model.md`,
-`app-compatibility.md`, `docs/planning/compatibility-matrix.md`, `build-plan.md`,
+`app-compatibility.md`, `docs/planning/compatibility-matrix.md`,
 `docs/open-questions.md` (A2, A32, A44, A111, B4), `docs/decisions/` (0003, 0010, 0012, 0014,
 0018, 0021, 0028, 0030, 0031, 0032, 0033, 0037 and the log), `src/contracts/`,
 `src/resolution/`, `src/ens/`, `src/verifier-host/`, `src/main/keyring/`, `src/main/verifier/`,

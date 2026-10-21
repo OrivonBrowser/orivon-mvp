@@ -19,7 +19,7 @@ package-lock.json   -diff linguist-generated=true
 
 # Normalise line endings so a Windows contributor's checkout does not show
 # every file as modified. Windows and macOS are supported day one via
-# run-from-source (build-plan.md SSPlatform policy), so this is not theoretical.
+# run-from-source (CLAUDE.md Rule 8), so this is not theoretical.
 * text=auto eol=lf
 *.png binary
 *.jpg binary

@@ -1,6 +1,6 @@
 # ENS and IPFS spike: results
 
-The three measurements [`ens-ipfs-plan.md`](../ens-ipfs-plan.md) §EI-1 asked for, taken on
+The three measurements [`ens-ipfs-plan.md`](../ens-ipfs-plan.md) section EI-1 asked for, taken on
 2026-09-24 with Electron 44.0.0 (Chromium 152), Node 24, on Linux x64, from one residential line.
 One client and one afternoon, so the timings are indicative, not a benchmark. The raw numbers are
 in `ens-ipfs-ei1a.json`, `ens-ipfs-ei1b.json` and `ens-ipfs-ei1c.json` beside this note. No spike

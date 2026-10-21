@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
+import { waitForStartPageLoaded } from '../support/e2e-helpers.js'
 import { html, launchShell, startServer } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
 import { ABSENCE_SETTLE_MS, activeTabInfo, delay, popoverShown, tabIds, waitFor } from '../support/smoke-helpers.mjs'
@@ -47,11 +48,12 @@ afterAll(async () => {
 type App = ElectronApplication
 const suggestRequests = (): Seen[] => seen.filter((request) => request.path.startsWith('/suggest'))
 
-/** A profile whose default engine is the fixture, the engine `fx` searching it at /kw, and any more files. */
-function seed (more: { suggestions?: boolean, engines?: boolean } = {}) {
+/** A profile whose Web2 engine is the fixture, the engine `fx` searching it at /kw, and any more files. It searches the Web2 unless told the Web3, or told to leave the mode unset, as a fresh profile has it. */
+function seed (more: { suggestions?: boolean, engines?: boolean, mode?: 'web3' | 'web2' | 'unset' } = {}) {
   return async (dir: string): Promise<void> => {
     await mkdir(dir, { recursive: true })
     const values: Record<string, unknown> = { 'search.engine': 'custom', 'search.customUrl': `${server.origin}/search?q=%s` }
+    if (more.mode !== 'unset') values['search.mode'] = more.mode ?? 'web2'
     if (more.suggestions === true) values['search.suggestions'] = true
     writeFileSync(join(dir, 'settings.json'), JSON.stringify({ version: 1, values }))
     if (more.engines !== false) {
@@ -74,7 +76,7 @@ async function waitForRows (app: App, count = 1): Promise<string[]> {
 
 async function typeInBar (chrome: Page, text: string): Promise<void> {
   await chrome.click('#address')
-  await chrome.keyboard.press('Control+A')
+  await chrome.keyboard.press('ControlOrMeta+A')
   await chrome.keyboard.type(text, { delay: 25 })
 }
 
@@ -89,10 +91,11 @@ async function loadInTab (app: App, chrome: Page, address: string): Promise<void
   expect(await waitFor(async () => (await activeTabInfo(chrome)).address === address)).toBe(true)
 }
 
-async function openTab (chrome: Page): Promise<void> {
+async function openTab (app: App, chrome: Page): Promise<void> {
   const before = (await tabIds(chrome)).length
   await chrome.evaluate(() => { (window as unknown as { orivonShell: { runCommand: (id: string) => void } }).orivonShell.runCommand('tab.new') })
   expect(await waitFor(async () => (await tabIds(chrome)).length === before + 1)).toBe(true)
+  expect(await waitForStartPageLoaded(app)).toBe(true)
 }
 
 async function openSettings (app: App, chrome: Page): Promise<Page> {
@@ -229,13 +232,13 @@ it('searches the engine a keyword names, and only for a whole first word followe
     expect(await waitFor(async () => (await tabAddresses(app)).includes(`${server.origin}/kw?q=hello`))).toBe(true)
 
     // Whatever the case, and the terms are encoded as a search box does.
-    await openTab(chrome)
+    await openTab(app, chrome)
     await typeInBar(chrome, 'FX Big Cats')
     await chrome.keyboard.press('Enter')
     expect(await waitFor(async () => (await tabAddresses(app)).includes(`${server.origin}/kw?q=Big+Cats`))).toBe(true)
 
     // A keyword alone is an ordinary search of the default engine.
-    await openTab(chrome)
+    await openTab(app, chrome)
     await typeInBar(chrome, 'fx')
     const alone = await waitForRows(app, 1)
     expect(alone[0]).not.toContain('Search Fixture')
@@ -243,7 +246,7 @@ it('searches the engine a keyword names, and only for a whole first word followe
     expect(await waitFor(async () => (await tabAddresses(app)).includes(`${server.origin}/search?q=fx`))).toBe(true)
 
     // A keyword never takes the place of an address.
-    await openTab(chrome)
+    await openTab(app, chrome)
     await typeInBar(chrome, 'fx.com')
     expect((await waitForRows(app, 1))[0]).toContain('Go to address')
     expect(mainOutput(app)).not.toContain('uncaught exception')
@@ -269,7 +272,7 @@ it('asks the engine for suggestions only when the setting is on, and sends nothi
   try {
     // A cookie the engine's own site set, so a request that carried cookies would show it.
     await loadInTab(app, chrome, `${server.origin}/login`)
-    await openTab(chrome)
+    await openTab(app, chrome)
     await typeInBar(chrome, 'he')
     const rows = await waitForRows(app, 5)
     expect(rows.slice(1).map((row) => row.trim())).toEqual(['hello world', 'help desk', 'hero movie', 'heat map'])
@@ -322,6 +325,53 @@ it('asks for no suggestions in a private window, keeps keywords, and shows the l
     expect(await page.locator('#row-search-suggestions input').isDisabled()).toBe(true)
     expect(await page.locator('#row-search-suggestions .row-help').innerText()).toBe('Not used in a private window.')
     await shootPage(app, page, 'settings-engines-private')
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+const chipOf = (chrome: Page): ReturnType<Page['locator']> => chrome.locator('#search-mode')
+const addressOf = async (chrome: Page): Promise<string> => String((await activeTabInfo(chrome) as { address?: string }).address)
+
+it('searches the Web3 with Explore on a fresh profile, switches to the Web2 from the chip, and keeps the choice in Settings', async () => {
+  const { app, chrome } = await launchShell({ seedProfile: seed({ mode: 'unset', engines: false }) })
+  try {
+    // A new tab shows the chip with the mode on; it names both engines.
+    expect(await waitFor(async () => await chipOf(chrome).isVisible())).toBe(true)
+    expect(await chipOf(chrome).innerText()).toBe('Web3')
+    expect(await chipOf(chrome).getAttribute('aria-pressed')).toBe('true')
+    expect(await chipOf(chrome).getAttribute('aria-label')).toBe('Searching Web3 with Explore. Click to search Web2.')
+    await shootDropdown(app, chrome, 'search-mode-chip')
+
+    await typeInBar(chrome, 'free speech')
+    expect((await waitForRows(app, 1))[0]).toContain('Explore')
+    await chrome.keyboard.press('Enter')
+    // The page itself cannot load without an IPFS route, so no network is learned for the name and it stays its plain origin; the tab is sent to Explore's address, which is what is checked.
+    expect(await waitFor(async () => (await addressOf(chrome)) === 'https://explore.orivonstack.eth/#/search?q=free+speech')).toBe(true)
+
+    // The chip does not take the keyboard from the field, and the open dropdown names the other engine afterwards.
+    await openTab(app, chrome)
+    await typeInBar(chrome, 'cats')
+    expect((await waitForRows(app, 1))[0]).toContain('Explore')
+    await chipOf(chrome).click()
+    expect(await waitFor(async () => (await chipOf(chrome).innerText()) === 'Web2')).toBe(true)
+    expect(await chipOf(chrome).getAttribute('aria-pressed')).toBe('false')
+    expect(await chrome.evaluate(() => document.activeElement?.id)).toBe('address')
+    expect(await waitFor(async () => !(await rowsOf(app))[0]?.includes('Explore'))).toBe(true)
+    await chrome.keyboard.press('Enter')
+    expect(await waitFor(async () => (await tabAddresses(app)).includes(`${server.origin}/search?q=cats`))).toBe(true)
+
+    // The chip is gone beside a loaded page's address, so it never reads as that site's own level.
+    expect(await waitFor(async () => !(await chipOf(chrome).isVisible()))).toBe(true)
+
+    // Settings holds the same choice, and changing it there moves the chip.
+    const page = await openSettings(app, chrome)
+    expect(await page.locator('#row-search-mode select').inputValue()).toBe('web2')
+    expect(await page.locator('#row-search-web3-engine select').inputValue()).toBe('explore')
+    await page.locator('#row-search-mode select').selectOption('web3')
+    await chrome.click('#address')
+    expect(await waitFor(async () => (await chipOf(chrome).innerText()) === 'Web3')).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)

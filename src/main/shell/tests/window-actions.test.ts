@@ -7,7 +7,7 @@ function makeParts (window: unknown): WindowParts {
   return {
     entry: entry as never,
     services: {} as never,
-    panels: { permissions: { close: vi.fn() }, siteInfo: { close: vi.fn() } } as never,
+    panels: { networks: { close: vi.fn() }, siteInfo: { close: vi.fn() } } as never,
     closeOverlays: vi.fn(),
     openWindow: vi.fn(),
     topHeight: 0,
@@ -60,15 +60,15 @@ describe('shellActions press', () => {
     }
   })
 
-  it('gives the all-sites popup its own stamp', () => {
-    const permissions = { close: vi.fn(), toggle: vi.fn() }
+  it('gives the Available networks popup its own stamp', () => {
+    const networks = { close: vi.fn(), toggle: vi.fn() }
     const parts = makeParts({})
-    ;(parts.panels as unknown as { permissions: unknown }).permissions = permissions
+    ;(parts.panels as unknown as { networks: unknown }).networks = networks
     const actions = shellActions(parts)
     const anchor = { x: 800, y: 40, width: 30, height: 30 }
 
-    actions.press('permissions')
-    actions.openPermissions(anchor, undefined)
-    expect(permissions.toggle).toHaveBeenCalledExactlyOnceWith(anchor, undefined, expect.any(Number))
+    actions.press('networks')
+    actions.openNetworks(anchor)
+    expect(networks.toggle).toHaveBeenCalledExactlyOnceWith(anchor, expect.any(Number))
   })
 })

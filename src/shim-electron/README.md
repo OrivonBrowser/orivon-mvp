@@ -1,14 +1,15 @@
 # `src/shim-electron/`: the `electron` module compatibility package
 
-**What lives here.** Electron's `app`, `dialog`, `safeStorage`, `desktopCapturer`, `ipcRenderer`/`ipcMain`,
-`BrowserWindow`, `Menu` and `Tray`, rebuilt (or refused by name) on `orivon.*`, so a ported app's
+**What lives here.** Electron's `app`, `dialog`, `safeStorage`, `desktopCapturer`, `clipboard`, `shell`, `powerSaveBlocker`,
+`ipcRenderer`/`ipcMain`, `BrowserWindow`, `Menu` and `Tray`, rebuilt (or refused by name) on `orivon.*`, so a ported app's
 `require('electron')` resolves instead of failing to load. What each API maps to, and which
 refuse, is [`compatibility-matrix.md`](../../docs/planning/compatibility-matrix.md) Table 2's
 `electron` table; any other top-level name refuses as `'unimplemented'` (`index.ts`).
 
 It is the second of the matrix's adapter families, a sibling of [`src/shim/`](../shim/README.md)
-(the Node stdlib family), not part of it. One exception: `src/shim/` imports this package's
-`unimplemented.ts` (`refusingProxy`) directly (A135, A160). The reverse must not happen.
+(the Node stdlib family), not part of it. Two exceptions: `src/shim/` imports this package's
+`unimplemented.ts` (`refusingProxy`, A135, A160) and `picked-paths.ts` (the table of stand-in paths
+`dialog` fills and `src/shim/fs/` reads) directly. The reverse must not happen.
 
 **What it depends on.** [`src/contracts/`](../contracts/) (types only) and the `window.orivon`
 global the preload installs before app code runs.
@@ -34,12 +35,22 @@ by `orivon.secrets`
 the sync trio cannot be (`safe-storage.ts` says why), and `false` is the signal Element Desktop's
 and AirGap Vault's documented non-keyring fallbacks check for.
 
+**`app-links.ts` backs the links half of `app` on `orivon.app`, and answers differently from Electron where the person
+decides.** `setAsDefaultProtocolClient(scheme)` returns at once, as Electron's does, but the answer is `true` only when the
+app already is the default: otherwise it asks `requestSchemeHandler` (which needs a click or key press, and a scheme the
+manifest lists) and answers `false` while the question is open, so `isDefaultProtocolClient` is what reads the result. That
+read is the state at `whenReady()` plus the app's own requests since, and a change made in Settings shows at the next start;
+`removeAsDefaultProtocolClient` answers `false`. `app.on('open-url', (event, url))` subscribes to `onOpenUrl` only while a
+listener exists, works before `whenReady()` and keeps the page's links held until then; every other event name throws
+`unimplemented` by name, because an accepted listener that can never fire would look like a working one
+([`ADR-0072`](../../docs/decisions/ADR-0072-a-link-scheme-an-app-declares-opens-in-the-app-the-person-chooses.md)).
+
 **`desktop-shell.ts` uses three small classes, not a `Proxy`.** Apps call statics
 (`Menu.setApplicationMenu`, `BrowserWindow.getAllWindows`) before constructing one, and a few
 named entry points read more plainly than `construct`/`get` traps.
 
 **One refusal mechanism, `unimplemented.ts`'s `refusingProxy`**, reused for a whole missing module
-(`shell`, `clipboard`, the rest of `index.ts`'s list), for one extra method (`dialog`'s others), and
+(`session`, `protocol`, the rest of `index.ts`'s list), for one extra method (`dialog`'s others), and
 for the default export (`withUnimplementedFallback`). `src/shim/` reuses it with its own error type.
 
 **Why "total" stops at the default export.** An ES module namespace (`import * as electron`,
@@ -49,6 +60,14 @@ leaves an undeclared name `undefined`; the same `Proxy` as `default` throws corr
 `import electron from 'electron'` refuses every unknown name, while `import { someNewApi }` fails
 at bundle time, outside `ElectronShimError`. `index.ts`'s curated list closes this for the names
 ported apps use most; naming every real Electron export is not this package's job.
+
+**`file-urls.ts` rewrites `file:///orivon/app/<path>` where a page sets a media or image address.** An Electron
+app builds `'file://' + path` for its own files, and Chromium refuses a `file:` URL on an http(s) page before a
+request leaves. The rewrite turns that address into `/orivon/app/<path>`, which the app's origin answers from its
+files (ADR-0070), through `src` on `<audio>`, `<video>`, `<img>` and `<source>`, `setAttribute('src', ...)` on them
+and `new Audio(url)`. It installs when the `electron` shim loads, because only an Electron port builds such
+URLs; the Node shim has no use for it. Any other `file:` URL is left alone. Markup an app parses and CSS
+`url(file://...)` are not covered: an app that needs them uses the root-absolute path.
 
 **`desktopCapturer` runs Orivon's picker, and serves what the person picked.** `getSources` calls the page's
 `getDisplayMedia` (so the picker, the sharing indicators and the stop control are Orivon's, never the app's), keeps
@@ -67,3 +86,71 @@ source the person picks holds a live capture (the sharing indicator stays on) un
 scaled to fit, empty at 0 by 0) with `toDataURL`, `toPNG`, `toJPEG`, `isEmpty` and `getSize`; `display_id` is `''`,
 `appIcon` is `null`, and `fetchWindowIcons` has nothing to fetch. The app needs `media.screen` declared, and
 `navigator.mediaDevices` (a secure context) to be present.
+
+**`clipboard.readText()` answers the text being pasted, and `''` otherwise.** Electron reads the system clipboard
+synchronously; a page can neither read it synchronously nor read it at all without a grant, so the shim answers from
+what it can honestly know: a capture-phase `paste` listener on the document, installed when the module loads, keeps
+that event's `clipboardData` text until the next task. Capture phase, so an app listener that stops propagation cannot
+hide it. A task and not a microtask, because the browser runs microtasks between one listener's callback and the next,
+which would clear the text before the app's own listener read it. Outside a paste (a modal that prefills a field from
+the clipboard) the answer is `''`, which is the truth: the page has no way to know. The `type` argument is ignored, and
+`read`, `readHTML`, `readImage`, `has` and the rest refuse. `writeText` calls `navigator.clipboard.writeText` and returns
+at once; a refused copy is a console warning, never an exception, since Electron's call cannot fail.
+
+**`shell.openExternal` opens the address with `window.open(url, '_blank', 'noopener,noreferrer')`.** The browser is the
+system's handler: an `http(s)` address opens a tab (in front, as a click on a `target=_blank` link does), and an address
+another program handles (`mailto:`, `magnet:`) meets the external-link question, which the window-open handler raises
+exactly as a clicked link does. `noopener` makes `window.open` return `null` whether the tab opened or the browser
+declined, so the returned window says nothing and the promise resolves once the call returns; a string that is not an
+absolute URL rejects with `invalid-usage` before any window is asked for. Electron's `options` are ignored. `openPath`,
+`showItemInFolder`, `trashItem` and `beep` refuse as `desktop-shell`; every other member as `unimplemented`.
+
+**`ipcRenderer.sendSync` runs the channel's listeners on the spot and answers with the `returnValue` one set.** Main and
+renderer share one realm, so there is no process to block on: `sendSync` calls every `ipcMain.on` (and `ipcRenderer.on`)
+listener of the channel in order, each with a fresh event whose `returnValue` is an accessor, and returns what was set.
+An accessor and not a field because `undefined` is a legitimate answer, and `event.returnValue = undefined` has to
+count. Electron's documentation recommends always setting `returnValue` and gives an unanswered call no meaning, so that
+case throws an `ElectronShimError` (`invalid-usage`) naming the channel: a port's bridge that forgot to register the
+listener would otherwise let an `undefined` run into app code, far from its cause. Three cases are told apart in the message: no listener at all, a
+listener that never set `returnValue`, and a listener that returned a promise without setting it. The last one cannot
+work by construction: the answer has to be set before the listener's first `await`, and an app that needs a late answer
+calls `invoke`. The event is `{ senderId: null, returnValue }`; the rest of `IpcMainEvent` does not exist. `on`, `once`,
+`addListener`, `off`, `removeListener` and `removeAllListeners` return the emitter as Electron's do, and
+`removeAllListeners()` with no channel clears every channel.
+
+**`powerSaveBlocker` is a counter over one `navigator.wakeLock` screen lock (`power-save-blocker.ts`).** The web offers
+only a `'screen'` lock, so both types map to it: `prevent-display-sleep` is exactly that, and `prevent-app-suspension`
+(system awake, screen allowed off) is answered by the stronger lock because the app's stated need is to keep running and
+a screen that stays on costs less than an app that is suspended. Electron likewise lets the stronger type win while
+both are started. The lock is requested for the first started id and released with the last `stop`; a request that
+resolves after the last id stopped is released at once. The platform drops the lock whenever the page is hidden, so the
+shim asks again on `visibilitychange` to visible while an id is started, and does not ask while hidden. A refused
+request, a page with no `navigator.wakeLock` and a synchronous throw from the request each leave a console warning and
+nothing else, since Electron's `start` cannot fail and the web says only that a request settles, granted or refused.
+`isStarted(id)` answers whether the app started that id and has not stopped it, never whether the platform holds the
+lock right now, since Electron's answer is about the blocker the app created. `stop` answers `false` for an id that is
+not started. A type other than the two Electron names throws `invalid-usage`.
+
+**`dialog` returns stand-in paths, and `picked-paths.ts` is where they are answered (ADR-0091).** `showOpenDialog` is Orivon's own picker
+(`orivon.fs.userSelected`) and `showSaveDialog` is the web's `showSaveFilePicker`; each registers what the person picked in a table
+and returns `/orivon/picked/<id>/<name>` (a folder: `/orivon/picked/<id>`), which `src/shim/fs/` routes to the pick's handle. The table is a
+module here and not a global: the dialog fills it, `src/shim/` reads it, and one app bundle holds one instance of each module. A
+Worker or a forked child has a table of its own, so a path made in the page is stale there. The id is random, never a counter, so a path from before
+a reload cannot name another pick. A path is normalised before it is matched. **What each Electron option becomes:** `openFile`,
+`openDirectory` (wins when both are given, as on Windows and Linux) and `multiSelections` choose the picker's shape, and `multiSelections` on a folder is
+ignored; the other `properties`, `filters`, `defaultPath`, `title`, `buttonLabel` and `message` are not applied, since the picker is worded to name the
+app that asks and does not filter, and each is named once in the console. A save dialog takes `defaultPath`'s last segment as `suggestedName`
+and turns `filters` with real extensions into `types`; its other options are named once and not applied. The window argument is accepted and
+ignored. A call with no click or key press a moment before rejects (`invalid-usage`) naming the click, never resolves as a cancel, because
+a cancel would tell the app the person declined; a dismissed save dialog is `{ canceled: true, filePath: '' }`. A picked file's stand-in path ends in the
+name its handle carries (the basename, never a folder), made safe as one path segment, and `picked-file` where a handle carries none; a saved-to
+file keeps the browser's name. `showOpenDialogSync` and
+`showSaveDialogSync` refuse as `desktop-shell`: a page cannot block on a person. Every other `dialog` member refuses as `unimplemented`.
+
+**A saved-to file is a `FileHandle` over a web writer that commits on close (`web-file-handle.ts`).** A `FileSystemFileHandle`'s writer shows
+nothing in the file until it closes, so the adapter keeps one writer open, serialises every call so two writes never open two writers, and commits (closes it)
+on `sync`, on `close`, and before any `read` or `stat` so those see what was written. `src/shim/fs/` closes the handle at the end of each call that
+wrote, so `writeFile`, `appendFile` and a finished write stream are on disk when they report done. The writer is opened with `keepExistingData`, so a
+write at an offset keeps the rest; `writeFile` empties the file first. A failed web call is turned into an error with the closed code the Node shim maps
+(`NotAllowedError` to `denied`, `NotFoundError` to `notFound`, `QuotaExceededError` to `limit`). The browser's picker creates the file empty as soon as the
+person chooses it, which Electron's does not.

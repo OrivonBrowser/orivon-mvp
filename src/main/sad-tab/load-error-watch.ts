@@ -1,6 +1,7 @@
 // Watches one tab's web contents for a page that failed to load, and puts the sheet over the tab. Chromium shows a
 // failed load as an empty page under the address that failed, so without the sheet nothing says it failed. The sheet
-// belongs to that failure only: the tab's next navigation takes it, or its place in the queue, away.
+// belongs to that failure only: the tab's next navigation, or other web contents taking the tab's place, takes it, or
+// its place in the queue, away.
 import type { WebContents } from 'electron'
 import { isCertError } from '../auth/cert-error-text.js'
 import type { requestSlot } from '../overlays/tab-slots.js'
@@ -21,16 +22,22 @@ export interface LoadErrorDeps {
   readonly movesTab?: (partition: string | undefined, url: string, code: number) => boolean
 }
 
-const watched = new WeakSet<WebContents>()
+/** Each watched web contents, with what takes its sheet away. */
+const watched = new WeakMap<WebContents, () => void>()
+
+/** Other web contents took the tab's place (a first visit let in as an app, a sleeping tab): this one's sheet is about a page the tab no longer shows. */
+export function forgetLoadErrors (contents: WebContents): void {
+  watched.get(contents)?.()
+}
 
 export function watchLoadErrors (contents: WebContents, deps: LoadErrorDeps): void {
   if (watched.has(contents)) return
-  watched.add(contents)
   let pending: { cancel: () => void } | undefined
   const withdraw = (): void => {
     pending?.cancel()
     pending = undefined
   }
+  watched.set(contents, withdraw)
   contents.on('did-start-navigation', (details) => {
     if (details.isMainFrame && !details.isSameDocument) withdraw()
   })

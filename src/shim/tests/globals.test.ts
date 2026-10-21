@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { installGlobals, VIRTUAL_ROOT, VIRTUAL_TMPDIR, type GlobalsErrorReporter, type GlobalsTarget } from '../globals.js'
+import { installGlobals, NODE_IDENTITY, VIRTUAL_ROOT, VIRTUAL_TMPDIR, type GlobalsErrorReporter, type GlobalsTarget } from '../globals.js'
 
-const PATHS = { root: VIRTUAL_ROOT, tmpdir: VIRTUAL_TMPDIR }
+const PATHS = { root: VIRTUAL_ROOT, tmpdir: VIRTUAL_TMPDIR, node: NODE_IDENTITY }
 
 // Every test installs onto a throwaway object, never onto the real
 // globalThis -- that is the property under test as much as any single
@@ -49,39 +49,21 @@ describe('installGlobals', () => {
   })
 
   describe('process surface', () => {
-    it('exposes platform as a string that can never collide with a real Node platform', () => {
+    // d-0594: the platform is the one whose rules the app's files follow. The fs shim is POSIX on every
+    // host (virtual-root.ts), so a library on 'linux' takes path.posix and XDG directories under $HOME
+    // and never looks for a drive letter, on a Windows or macOS host too.
+    it('reports linux, the platform whose rules the virtual file system follows', () => {
       const { target } = install()
-      // toBeDefined() first: without it this test passes vacuously when
-      // process is undefined, because `undefined` is not in the list either.
       expect(target.process).toBeDefined()
-      // Not asserting the literal 'browser' value here -- asserting the
-      // PROPERTY this value must hold: it must never equal any of Node's
-      // own platform names, or an `=== 'win32'`-style check downstream
-      // could fire on a wrong guess instead of safely falling through.
-      const realPlatforms = ['aix', 'darwin', 'freebsd', 'linux', 'openbsd', 'sunos', 'win32', 'android', 'cygwin', 'netbsd', 'haiku']
-      expect(realPlatforms).not.toContain(target.process?.platform)
+      expect(target.process?.platform).toBe('linux')
     })
 
-    // EVIDENCED AGAINST THE REAL CALL GRAPH, not against this file's
-    // anticipated surface (src/shim/README.md requirement 1). Grepping the
-    // spike's shipped bundles -- the ones that made gates 1a/1b actually
-    // pass -- finds `process.browser` read 4 times in gate1a and 6 in
-    // gate1b, and the npm `process` polyfill they bundled sets it to true:
-    //
-    //   bittorrent-tracker (Client AND Server):
-    //     if (!process.browser && !opts.port) throw new Error('Option `port` is required')
-    //   crypto-browserify checkNative():
-    //     if (global.process && !global.process.browser) return Promise.resolve(false)
-    //   crypto-browserify default encoding, and webtorrent's FILESYSTEM_CONCURRENCY.
-    //
-    // Omitting it does NOT fail loudly. It makes each of those quietly take
-    // the Node branch -- which is this file's own rule 2 ("louder, not
-    // quieter") violated by the shim that exists to enforce it.
-    it('sets browser true, so a dependency guarding on !process.browser takes the browser branch', () => {
+    it('has no browser flag, so a dependency guarding on process.browser takes its Node path', () => {
+      // bittorrent-tracker, crypto-browserify, debug and webtorrent read process.browser to pick the browser
+      // branch. Absent, as in Node, each takes the branch it takes under Node and Electron (d-0594).
       const { target } = install()
-      // Strictly true, not merely truthy: debug's entry point compares with
-      // `process.browser === true`.
-      expect(target.process?.browser).toBe(true)
+      expect(target.process).toBeDefined()
+      expect('browser' in (target.process ?? {})).toBe(false)
     })
 
     it('seeds env with the directory variables only, never the ambient environment', () => {
@@ -104,9 +86,10 @@ describe('installGlobals', () => {
       expect(second.target.process.env['DEBUG']).toBeUndefined()
     })
 
-    it('does not fabricate a specific Node version', () => {
+    it('reports a Node version, the one the shim is measured against', () => {
       const { target } = install()
-      expect(target.process?.version).toBe('')
+      expect(target.process?.version).toBe(`v${NODE_IDENTITY.node}`)
+      expect(target.process?.versions['node']).toBe(NODE_IDENTITY.node)
     })
 
     // path-browserify's resolve() calls process.cwd() for any argument list

@@ -8,7 +8,7 @@ import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
 import { pressKey } from '../support/e2e-helpers.js'
 import { focusWebContents, underVirtualDisplay, webContentsFocused } from '../support/focus-helpers.js'
-import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from '../support/qa-helpers.js'
+import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visitWithoutPage } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
 import { popoverShown, waitFor } from '../support/smoke-helpers.mjs'
 
@@ -96,14 +96,14 @@ async function toastReads (app: App, text: string): Promise<boolean> {
 
 async function newTabAt (app: App, chrome: Page, url: string): Promise<void> {
   await chrome.click('#new-tab')
-  await visit(app, chrome, url)
+  await visitWithoutPage(app, chrome, url)
 }
 
 it('walks the address bar, toolbar, tabs and page with F6, and back with Shift+F6', async () => {
   const { app, chrome } = await launchShell()
   try {
     const url = `${server.origin}/`
-    await visit(app, chrome, url)
+    await visitWithoutPage(app, chrome, url)
     if (underVirtualDisplay()) await focusWebContents(app, url)
     expect(await webContentsFocused(app, url)).toBe(true)
 
@@ -159,7 +159,7 @@ it('walks the address bar, toolbar, tabs and page with F6, and back with Shift+F
 it('moves between tabs with the arrow keys, activates with Enter, closes with Delete and keeps its place across rebuilds', async () => {
   const { app, chrome } = await launchShell()
   try {
-    await visit(app, chrome, `${server.origin}/a`)
+    await visitWithoutPage(app, chrome, `${server.origin}/a`)
     await newTabAt(app, chrome, `${server.origin}/b`)
     await newTabAt(app, chrome, `${server.origin}/c`)
     if (underVirtualDisplay()) await focusWebContents(app, `${server.origin}/c`)
@@ -220,7 +220,7 @@ it('holds the toolbar to one Tab stop, walks it in visual order past disabled bu
   const { app, chrome } = await launchShell()
   try {
     const url = `${server.origin}/`
-    await visit(app, chrome, url)
+    await visitWithoutPage(app, chrome, url)
     if (underVirtualDisplay()) await focusWebContents(app, url)
     await pressKey(app, url, 'F6')
     await pressKey(app, CHROME, 'F6')
@@ -273,7 +273,7 @@ it('turns caret browsing on from F7 behind a question, on every tab and one open
   const { app, chrome } = await launchShell()
   try {
     const first = `${server.origin}/first`
-    await visit(app, chrome, first)
+    await visitWithoutPage(app, chrome, first)
     await newTabAt(app, chrome, `${server.origin}/second`)
     if (underVirtualDisplay()) await focusWebContents(app, `${server.origin}/second`)
     expect(Object.values(await caretByPage(app)).every((on) => !on)).toBe(true)
@@ -305,9 +305,9 @@ it('turns caret browsing on from F7 behind a question, on every tab and one open
 
     // A tab opened later has it, and so does one that moves to another origin.
     await chrome.click('#new-tab')
-    await visit(app, chrome, `${server.origin}/third`)
+    await visitWithoutPage(app, chrome, `${server.origin}/third`)
     expect((await caretByPage(app))[`${server.origin}/third`]).toBe(true)
-    await visit(app, chrome, `${other.origin}/`)
+    await visitWithoutPage(app, chrome, `${other.origin}/`)
     expect(await waitFor(async () => (await caretByPage(app))[`${other.origin}/`] === true)).toBe(true)
     expect((await caretByPage(app))[`${server.origin}/first`]).toBe(true)
 
@@ -342,7 +342,7 @@ it('turns caret browsing on with no question when the setting says not to ask, a
   })
   try {
     const url = `${server.origin}/quiet`
-    await visit(app, chrome, url)
+    await visitWithoutPage(app, chrome, url)
     if (underVirtualDisplay()) await focusWebContents(app, url)
     await pressKey(app, url, 'F7')
     expect(await waitFor(async () => (await caretByPage(app))[url] === true)).toBe(true)
@@ -384,7 +384,7 @@ it('stops at the bookmarks bar between the tabs and the page when it has somethi
   })
   try {
     const url = `${server.origin}/`
-    await visit(app, chrome, url)
+    await visitWithoutPage(app, chrome, url)
     expect(await waitFor(async () => (await chrome.locator('#bookmarks-list .bmitem').count()) === 2)).toBe(true)
     if (underVirtualDisplay()) await focusWebContents(app, url)
     await pressKey(app, url, 'F6')

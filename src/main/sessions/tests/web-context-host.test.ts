@@ -24,6 +24,7 @@ interface FakeSession {
   readonly webRequest: { onBeforeRequest: ReturnType<typeof vi.fn> }
   setPermissionCheckHandler: ReturnType<typeof vi.fn>
   setPermissionRequestHandler: ReturnType<typeof vi.fn>
+  setDevicePermissionHandler: ReturnType<typeof vi.fn>
   setProxy: ReturnType<typeof vi.fn>
   on: ReturnType<typeof vi.fn>
   removeAllListeners: ReturnType<typeof vi.fn>
@@ -51,6 +52,7 @@ function fakeSession (partition: string): FakeSession {
     webRequest: { onBeforeRequest: vi.fn() },
     setPermissionCheckHandler: vi.fn(),
     setPermissionRequestHandler: vi.fn(),
+    setDevicePermissionHandler: vi.fn(),
     setProxy: vi.fn(async () => {}),
     on: vi.fn((event: string) => { if (event === 'will-download') s.downloadListenerCount += 1 }),
     removeAllListeners: vi.fn((event: string) => { if (event === 'will-download') s.downloadListenerCount = 0 }),
@@ -343,6 +345,17 @@ describe('createWebContextHost -- open', () => {
     const subFrameEvent = { preventDefault: vi.fn(), isMainFrame: false }
     wc.listeners['will-frame-navigate']?.[0]?.(subFrameEvent)
     expect(subFrameEvent.preventDefault).not.toHaveBeenCalled()
+  })
+
+  it('answers no for every device, so a device a tab was given never reaches a document running another site\'s script', async () => {
+    setNextWebContents(ORIGIN)
+    const host = createWebContextHost(stubBroker)
+
+    await host.open(OPENER, ORIGIN, { width: 100, height: 100 })
+
+    const contextSession = sessionsByPartition.get(fromPartitionCalls[0] as string) as FakeSession
+    const deviceHandler = contextSession.setDevicePermissionHandler.mock.calls.at(-1)?.[0] as (details: unknown) => boolean
+    expect(deviceHandler({ deviceType: 'hid', origin: ORIGIN, device: {} })).toBe(false)
   })
 
   it('denies every permission outright and cancels downloads', async () => {

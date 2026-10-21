@@ -1,6 +1,6 @@
 # ADR-0038: An address scheme is shown as itself and served over HTTPS, under one routed suffix
 
-- **Status:** accepted, amended 2026-09-29
+- **Status:** accepted, amended 2026-09-29 and 2026-10-12
 - **Date:** 2026-09-28
 - **Type:** architecture
 - **Decided by:** owner, for serving over HTTPS rather than a custom scheme, for `ipfs://` and
@@ -133,6 +133,32 @@ elsewhere `ipfs://` takes only a CID, never a name that still needs resolving.
 (`ADR-0030`), so the descriptor can simply name the shown prefix. Once a second data gatherer can
 serve a `.eth` name, the shown prefix should come from what actually loaded the page, not from a
 fixed field on the protocol's descriptor.
+
+## Amendment, 2026-10-12: a .eth name is shown by where its content lives
+
+The shown prefix of a `.eth` name now comes from what loaded it, as the provisional note above
+asked: `bzz://<name>` when the data gatherer that mounted it is Swarm's, `ipfs://<name>` when it is
+IPFS's (decision `d-0603`). The descriptor's `displayScheme` stays as the default for a name this
+install has not mounted yet.
+
+- **The verifier host reports it, the shell keeps it.** After a mount of a top-level-domain name the
+  host posts the address scheme of the mounting gatherer's protocol (its descriptor's first scheme),
+  so a third protocol needs no edit there. Main keeps the last answer per name in the profile (4096
+  names, least recently touched dropped first) and gives it to the address module once, as a lookup.
+  The shell still reads descriptors only and loads no protocol's code.
+- **A name that moves networks** is shown under the new scheme from its next mount.
+- **A private session** keeps the answers only for the session, like the rest of the verifier's
+  profile.
+- **Not covered:** Settings and the permissions page run their own copy of the address module and
+  learn nothing, so they show the default scheme; a history row keeps the address it was recorded
+  under.
+
+*Amendment, 2026-10-12 (later the same day), under `d-0603`: the descriptor's `displayScheme` is removed, so no
+network is guessed.* A `.eth` name this install has not learned a network for is shown as its plain origin
+(`https://<name>.eth`) in the address bar, the loading screen, history and every page that shows an origin,
+with ENS's neutral loading screen. The verifier host reports the scheme as soon as it has resolved the name's
+records and chosen the gatherer that will load them, before any content is fetched, and every surface that
+shows an address draws it again when it is learned.
 
 ## Reversibility
 

@@ -7,22 +7,24 @@ Orivon is packaged for three systems by [`electron-builder`](https://www.electro
 |---|---|---|
 | Linux (x64) | `orivon_<version>_amd64.deb` and `Orivon-<version>-x86_64.AppImage` | no (Linux packages are not) |
 | Windows (x64) | `Orivon-Setup-<version>-x64.exe`, an NSIS installer | no: SmartScreen warns on first run |
+| Windows (x64), Microsoft Store | `Orivon-Store-<version>-x64.appx` | no: the Store signs it after upload (section The Microsoft Store package) |
 | macOS | `Orivon-<version>-arm64.dmg` (Apple silicon) and `Orivon-<version>-x64.dmg` (Intel) | ad hoc: Gatekeeper asks once |
 
-Each GitHub release builds all of them and attaches them to itself (§Releases). No certificate is
-bought, so Windows and macOS packages are not trusted by their systems out of the box
-(§Windows and macOS). Running from source stays supported on every system
-([`setup.md`](setup.md)).
+The three systems are equal, and Linux is supported on X11 and Wayland both. Each GitHub release
+builds all of them and attaches them to itself (section Releases), except the Store package, which
+the workflow submits to Partner Center instead (section The Microsoft Store package). No certificate is bought, so the Windows installer and the macOS
+packages are not trusted by their systems out of the box (section Windows and macOS). Running from source stays supported on every system ([`setup.md`](setup.md)); its users
+and the package users count the same, and their telemetry works identically.
 
 > **Status.** CI builds every package on its own system, installs or mounts it, and launches it
-> until the shell page renders (§Releases). **Not yet checked against a real build:** the
+> until the shell page renders (section Releases). **Not yet checked against a real build:** the
 > desktop-entry contents, the `MimeType=`/`Categories=` composition, and the `xdg-settings`
-> registration flow. §Known gaps lists what is and is not confirmed.
+> registration flow. section Known gaps lists what is and is not confirmed.
 
 ## `deb` is the primary artefact
 
-Not a coin flip between two equally good options. The project's success metric is measured in
-daily-driver hours ([`docs/scope.md`](../scope.md)), and only an **installed package**
+Not a coin flip between two equally good options. The success metric is measured in
+daily-driver hours, and only an **installed package**
 can put a `.desktop` file where `xdg-settings` looks for it. `xdg-settings
 set default-web-browser` walks `/usr/share/applications/`, not the filesystem in general, and a
 bare AppImage never places anything there on its own, and electron-builder's own docs say plainly
@@ -33,9 +35,9 @@ So:
 - **`deb`** is what makes "set Orivon as your default browser" reachable at all.
 - **`AppImage`** is for trying Orivon without installing anything. It still carries the same
   `.desktop` metadata internally (electron-builder generates one for every Linux target from the
-  shared `linux:` config), but nothing copies it into `~/.local/share/applications/` for you. A
-  first-run "install desktop entry" flow that does that from inside the running app is planned
-  (`build-plan.md` "Packaging"), and nothing in this config makes it impossible.
+  shared `linux:` config), but nothing copies it into `~/.local/share/applications/` for you. The
+  one-line installer (the Linux one-line install paragraph of section Windows and macOS) does that from outside the app, without sudo; a
+  first-run "install desktop entry" flow inside the running app is not built.
 
 ## How to build
 
@@ -48,7 +50,10 @@ npm run package:win     # on Windows
 npm run package:mac     # on macOS: both architectures
 ```
 
-Each runs the ordinary build first (`scripts/build-ordinary.mjs`: `out/main`, `out/preload`,
+Each first runs `node scripts/fetch-bundled-extensions.mjs --required`, which downloads the extensions a new profile starts with
+(uBlock Origin, pinned to a release and its sha256 in `resources/default-profile/bundled-extensions.json`) and fails the
+package when one cannot be fetched or does not match, so a release never ships without them. `electron-builder.yml`
+copies `resources/default-profile/` into the package's resources folder. Each then runs the ordinary build (`scripts/build-ordinary.mjs`: `out/main`, `out/preload`,
 `out/renderer`, with the developer-only grant path stripped), then `electron-builder` for that
 system with `--publish never`. `electron-builder` does not build the app itself: it packages
 whatever is in `out/`. Build each system on that system: a Windows installer can be built
@@ -72,21 +77,49 @@ when it does not.
 2. The workflow sets each package's version from the tag (`package.json` stays `0.0.0` in git),
    builds on `ubuntu-latest`, `windows-latest` and `macos-latest`, then installs the deb and runs
    the AppImage, installs the Windows installer silently, and mounts each dmg, checking its
-   signature, and launches each one with `scripts/smoke-packaged.mjs`.
-3. When every system passes, a separate job attaches the packages to the release. If one system
-   fails, nothing is attached: re-run the failed job from the Actions tab, and the attach job
-   follows. Re-running replaces assets of the same name.
+   signature, and launches each one with `scripts/smoke-packaged.mjs`. The Windows leg also installs
+   the Store package and launches it (section The Microsoft Store package).
+3. When every system passes, a separate job attaches the packages to the release and writes its
+   description (section Release notes). If one system fails, nothing is attached: re-run the failed
+   job from the Actions tab, and the attach job follows. Re-running replaces assets of the same name.
+   After it, three jobs offer the release to the places people install from: `winget` (section winget),
+   `store` (section The Microsoft Store package) and `aur` (section The Arch User Repository). Each
+   writes a warning and succeeds while the secret it needs is empty, so a release is never red for a
+   route that is not set up yet.
 4. A release build first refuses an `.eth` light-client checkpoint
-   (`src/main/verifier/mainnet-checkpoint.json`) over 14 days old: the app rejects one that old,
-   and a fresh install of that release would verify no `.eth` name. Refresh it before tagging
-   ([`release-checklist.md`](release-checklist.md)).
+   (`src/main/verifier/mainnet-checkpoint.json`) over 7 days old (`MAX_CHECKPOINT_AGE_DAYS` in the
+   workflow): the app rejects one over 14, and an install of a release past that has to fetch a
+   fresh one from two beacon servers, which it cannot when they are unreachable or disagree. `refresh-eth-checkpoint.yml` proposes a fresh one twice a week; merge it before
+   tagging ([`release-checklist.md`](release-checklist.md)).
 
 A pull request that changes `electron-builder.yml`, `build/`, `scripts/smoke-packaged.mjs` or the
 workflow runs the same build and launch, and keeps the packages for seven days as workflow
-artifacts instead of attaching them. Actions > Release > Run workflow does the same on demand.
+artifacts instead of attaching them (the Store package, 30 days, in every run). Actions > Release > Run workflow does the same on demand.
 
-The job that writes to the release only downloads the packages and uploads them. The jobs that
-run `npm ci` or Kubo hold a read-only token, so no dependency's install script can alter a release.
+The job that writes to the release only downloads the packages (the artifacts named `orivon-*`) and the description
+the `notes` job made, and uploads them. The jobs that run `npm ci`, Kubo or the repository's own scripts hold a read-only
+token, so no dependency's install script can alter a release.
+
+**Offering a published release again.** Actions > Release > Run workflow takes an optional `tag`. With one, the run builds
+nothing and runs only `winget`, `store` and `aur` for that already published release: the way to offer a release that was
+published before a secret existed. The `store` job takes the package from the newest Release run of that tag, which
+GitHub keeps for 30 days; past that the package is built again by re-running the release's run, or uploaded by hand.
+Re-running only a failed job of the release's own run works too, within the same 30 days.
+
+### Tagged packages
+
+The release also carries copies of the Windows installer and the AppImage named for an app, one per entry of
+[`resources/flavours.json`](../../resources/flavours.json): `Orivon-Setup-<version>-x64.<id>.exe` and
+`Orivon-<version>-x86_64.<id>.AppImage`. They are the same bytes under another name; nothing is built again. The `tagged` job
+makes them and fails the release if a copy's SHA-256 differs from its original or if an entry's `app` is not the `domain` in
+`apps/<port>/orivon.json` of the ports repository's `main`. They join the release and its `ipfs.json` like any `orivon-*`
+artifact. The deb, the dmg, the Store package and winget stay plain.
+
+What a tag does is in [`ADR-0093`](../decisions/ADR-0093-an-installer-file-name-or-switch-selects-an-apps-first-run-presets-from-an-allowlist.md). The Windows
+installer writes the name of the file it was started from to `installer-name.txt` beside the program (`build/installer.nsh`,
+removed on uninstall) and the app reads it on its first run; the AppImage's name is read from `$APPIMAGE`; the macOS script takes
+the id as an argument (`curl ... | bash -s <id>`) and passes `--orivon-flavour=<id>` to the first launch it starts. Adding an app
+is a line in the file, an app that opens by name from its port, and the id never reused.
 
 ### On IPFS
 
@@ -104,10 +137,17 @@ under "On IPFS", which the workflow writes, and in the `ipfs.json` attached to i
   downloads the files of the newest three releases, checks each against its SHA-256, adds them
   with the same flags, and refuses a release whose files add up to any other CID. It pins what
   it keeps as `orivon-release-<tag>` and unpins the older releases it pinned; a pin without that
-  name is never touched. There is no IPNS name: a release's description is where its CID lives.
+  name is never touched. With `LATEST_KEY` set it also points that IPNS key at the newest release
+  it keeps, so one `ipns://` address, and a `.eth` name whose contenthash is that address, always
+  opens the newest release; each release's own CID stays in its description.
 - **Anyone can pin a release too.** The CID depends only on the files and the flags in
   `pin-releases.sh`, so `pin-releases.sh sync` (or `ipfs add` with those flags) on any Kubo node
   reproduces it. Changing the flags changes every CID from the next release on.
+- **An additional pinning service** can hold the same releases: `scripts/pin-extra.mjs` pins the CIDs
+  of the newest releases, and any `name=cid` lines in a file passed with `--extra`, on a service that
+  speaks the IPFS Pinning Service API. It reads `PINNING_ENDPOINT` and `PINNING_TOKEN` from the
+  environment and only adds what is missing; `--prune` also removes pins under the `orivon-` prefix
+  that are no longer listed.
 
 The Orivon node runs it from a systemd timer every 15 minutes:
 
@@ -116,7 +156,7 @@ The Orivon node runs it from a systemd timer every 15 minutes:
 [Service]
 Type=oneshot
 User=<a user that can reach the Kubo API>
-Environment=IPFS_API=/ip4/127.0.0.1/tcp/5001 KEEP=3
+Environment=IPFS_API=/ip4/127.0.0.1/tcp/5001 KEEP=3 LATEST_KEY=latest-release
 ExecStart=/path/to/pin-releases.sh sync
 
 # orivon-release-pinner.timer
@@ -129,14 +169,315 @@ WantedBy=timers.target
 ```
 
 `journalctl -u orivon-release-pinner` shows each run: a line per release pinned, refused or
-unpinned. A refused release is not downloaded again until its `ipfs.json` names another CID.
+unpinned, and each move of the latest key. `ipfs key gen --type=ed25519 latest-release` creates the key
+once. A refused release is not downloaded again until its `ipfs.json` names another CID.
+
+#### Keeping the node reachable
+
+Kubo's resource manager keeps counting some inbound connections after they close (on Kubo 0.43.1, about
+one a minute, while the swarm's own opened and closed totals stay level), so its count climbs until it
+reaches the system limit. From then on every new dial is refused, and content only this node holds (a new release) cannot be fetched
+although it is pinned. A restart resets the count. [`scripts/ipfs-node-watchdog.sh`](../../scripts/ipfs-node-watchdog.sh)
+`check` restarts Kubo when the count is at least `LEAK_PCT` percent of the limit and exceeds the real
+connections by `GAP_PCT` percent of it, or when the API has not answered `API_FAILS` runs in a row. It
+waits while the release pinner is running and keeps `MIN_INTERVAL` seconds between restarts. A crash
+is left to systemd. `status` prints the numbers and never acts; `DRY_RUN=1` says what `check` would do.
+
+```ini
+# orivon-ipfs-watchdog.service
+[Service]
+Type=oneshot
+User=root
+Environment=IPFS_API=/ip4/127.0.0.1/tcp/5001 STATE_FILE=/var/lib/orivon-ipfs-watchdog/watchdog.json
+# SUMMARY_LOG=/path/to/summary.md also gets a line for each restart
+ExecStart=/path/to/ipfs-node-watchdog.sh check
+
+# orivon-ipfs-watchdog.timer
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target
+```
+
+It runs as root because it restarts the Kubo service. The state file records each check and the last
+ten restarts.
+
+#### The status page
+
+[`scripts/ipfs-status.sh`](../../scripts/ipfs-status.sh) answers "is everything served?" on one page. It
+lists every IPNS key of the node with its `ipns://` address, the build it points at, whether that build
+is pinned, whether the IPNS record and the node as a provider are on the network, and whether public
+gateways hand back what the node holds, byte for byte: a site's whole `index.html` and 1 KiB at a random
+offset of its largest other file, or 1 KiB of every file of a folder with no page (a release). A random
+offset deep in a large file is rarely in a gateway's cache, so the gateway has to fetch it from the network;
+every sample is a range request, because a gateway behind a CDN can rewrite a whole HTML answer. It lists
+the newest releases with their `ipfs://` CID, which are kept and pinned here, and the same samples. It runs
+on the pinning node, so it cannot say whether a page opens in a person's own browser. For each IPNS key it reads the `.eth` names that should point at it from
+`NAMES_FILE` and checks their contenthash on Ethereum (and, unless `ETH_LIMO=0`, that `<name>.limo`
+loads). Below them it shows the node's version, uptime, inbound connection budget, storage and the last
+runs of the pinner and the watchdog. A banner at the top is green when nothing is wrong and otherwise
+lists each problem in plain words; one gateway failing while another serves shows in the table but is not
+a problem. With `LATEST_KEY` set it also says which release that key opens. `status.json` holds the same
+data for agents; `STATUS.md` is the page as Markdown.
+
+`NAMES_FILE` has one line per IPNS key, the key name first and then the names, with `#` starting a comment:
+
+```
+# IPNS key   .eth names whose contenthash should be ipns://<that key>
+website      example.eth www.example.eth
+docs         docs.example.eth
+```
+
+A key without a line is shown as "none expected"; a line whose key is not in the node's keystore is an error.
+The page names every key and the node's health, so it is served privately: the Orivon node's web server
+serves `OUT_DIR` over HTTPS behind a password. The script itself publishes nothing.
+
+```ini
+# orivon-ipfs-status.service
+[Service]
+Type=oneshot
+User=<the user that runs the release pinner>
+Environment=IPFS_API=/ip4/127.0.0.1/tcp/5001 OUT_DIR=/path/to/status NAMES_FILE=/path/to/names.conf
+Environment=WATCHDOG_STATE=/var/lib/orivon-ipfs-watchdog/watchdog.json LATEST_KEY=latest-release
+ExecStart=/path/to/ipfs-status.sh run
+
+# orivon-ipfs-status.timer
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+
+[Install]
+WantedBy=timers.target
+```
+
+A run takes one to three minutes, most of it waiting on gateways; `TIMEOUT` caps each network check.
+The page reloads itself every five minutes; if the job stops, it shows "This page is stale" once it is
+three intervals old.
+
+## winget
+
+Every GitHub release also offers its Windows installer to [winget-pkgs](https://github.com/microsoft/winget-pkgs), the
+repository behind `winget install`. winget's default source is trusted, and winget marks an installer it downloads from it
+as coming from a trusted zone, so a winget install is not met with SmartScreen. That comes from reading winget's source,
+not from a run of Orivon's own installer (*provisional*: the first install of a merged Orivon package settles it).
+
+| Release | Package identifier |
+|---|---|
+| marked pre-release on GitHub | `Orivon.Browser.Preview` |
+| a full release | `Orivon.Browser` |
+
+The `winget` job of `release.yml` runs on a published release, after `publish` has attached the installer. It never
+checks out the repository or runs npm; the one program it downloads is [Komac](https://github.com/russellbanks/Komac),
+at the version and sha256 pinned in the workflow's `env`, and only its last step holds the token. It takes the version from
+the tag without its `v`, looks the installer up among the release's assets (`Orivon-Setup-<version>-x64.exe`) and runs
+`komac update`, which downloads the installer, reads its product code and uninstall entry, copies the previous version's
+descriptive fields and opens a pull request to `microsoft/winget-pkgs` from the fork it creates in the token's account.
+
+It succeeds with a warning, or a notice, and submits nothing, when:
+
+- the repository secret `WINGET_TOKEN` is empty;
+- winget-pkgs holds no version of the identifier yet, because Komac only adds a version to a package that exists (the
+  first version of each identifier is submitted by hand, [`release-checklist.md`](release-checklist.md) item The winget package);
+- winget-pkgs already holds that version, or has an open pull request for it;
+- the release has no such installer asset.
+
+Any other failure (Komac itself, the network) fails the job and only that job: the release and its packages are already
+published. Komac's own check for an open pull request is a prompt that ends a run with `CI=true` without submitting, so the
+job passes `--skip-pr-check` and does the check itself.
+
+**What the owner does once.**
+
+1. Create a classic personal access token with the `public_repo` scope, in the account the pull requests should come from
+   (GitHub > Settings > Developer settings > Personal access tokens > Tokens (classic)). Komac documents this scope; a
+   fine-grained token can write the manifests but cannot open the pull request.
+2. Add it as the repository secret `WINGET_TOKEN` (Settings > Secrets and variables > Actions).
+3. Have the first version of each identifier accepted by hand (`Orivon.Browser.Preview`, and `Orivon.Browser` with the first
+   full release): the job only adds versions to a package winget-pkgs already holds
+   ([`release-checklist.md`](release-checklist.md) item The winget package says how).
+
+From then on every release is submitted by the job. A release published before the secret existed is submitted by running
+the workflow with its tag (section Releases). Once winget-pkgs has accepted a version, set `winget` to `true` in
+[`packaging/release-routes.json`](../../packaging/release-routes.json), so the release notes list the command (section
+Release notes).
+
+## The Microsoft Store package
+
+The Windows build also writes `Orivon-Store-<version>-x64.appx` (the `appx` target and block of
+[`electron-builder.yml`](../../electron-builder.yml)), the same app as the installer wrapped in a package the Microsoft
+Store accepts, which signs it itself: nothing signs it here, and a Store install is never met with SmartScreen
+([`ADR-0081`](../decisions/ADR-0081-windows-builds-also-ship-to-the-microsoft-store.md)). The installer stays the
+only Windows file attached to a release. The package is the workflow artifact `store-msix`, which the
+`manifest` and `publish` jobs do not take, so it reaches neither the release nor its IPFS folder. The `store` job submits
+it to Partner Center (section Submitting it to Partner Center), and the artifact, kept 30 days, is what the owner uploads
+by hand when that job cannot.
+
+- **Identity comes from Partner Center.** `appx.identityName`, `appx.publisher` and `appx.publisherDisplayName` are
+  the three values of the "Orivon Browser" product's Product identity page (Package/Name, Package/Publisher,
+  Package/PublisherDisplayName), copied verbatim into `electron-builder.yml`. The Store refuses a package with any
+  other identity. `applicationId` (`Orivon`) and `displayName` are Orivon's own.
+- **The tiles are Orivon's.** `build/appx/` holds the four logos the manifest names and two more tile sizes, cut from
+  `build/icon.png` with ImageMagick (`convert build/icon.png -resize 150x150 Square150x150Logo.png`, and likewise for
+  the others); without them electron-builder fills the package with its own stock logo.
+- **Protocols and file types.** `protocols` becomes `windows.protocol` entries for http and https. The five document
+  types the installer registers under Open with (`.html`, `.htm`, `.xhtml`, `.svg`, `.pdf`) are in
+  `build/appx-extensions.xml`, read through `appx.customExtensionsPath`, so the installer is unaffected. The
+  manifest's other facts: Windows 10 1809 as the minimum, `en-US` as the language, the `runFullTrust` capability
+  (electron-builder adds it; a Win32 app needs it), no auto-launch extension.
+- **What CI proves.** The Windows job prints the package's `AppxManifest.xml`, signs a copy with a throwaway
+  certificate whose subject is the manifest's publisher, trusts it for the run, installs it (`Add-AppxPackage`),
+  launches it through its AUMID (`shell:AppsFolder\<PackageFamilyName>!Orivon`, the only way an app gets its package
+  identity), asserts an `Orivon.exe` from the package's own folder keeps running for 20 seconds, then starts the
+  app inside the package with `Invoke-CommandInDesktopPackage` and a DevTools port and runs
+  `scripts/smoke-packaged.mjs --attach <port>` against it, and removes the package. No secret is involved.
+- **What differs inside the package.** `process.windowsStore` is true. No update check runs and Settings says the
+  Store delivers updates. The default-browser read compares the person's handler's `AppUserModelID` with the
+  package's own, since a packaged handler has no path (`src/main/os/windows-store.ts`, `default-browser-runner.ts`);
+  Make default opens the default-apps page without selecting an entry. The taskbar menu, the process's app user
+  model id and a second Orivon started by the first are written for the installer and unchecked inside the package
+  (`docs/open-questions.md` A410).
+
+### Submitting it to Partner Center
+
+The `store` job of [`release.yml`](../../.github/workflows/release.yml) runs on a published release, after `publish`, on a
+Windows runner. It takes the run's `store-msix` artifact, checks that the package's manifest carries the release's
+version, installs the Microsoft Store Developer CLI ([`msstore`](https://github.com/microsoft/msstore-cli), at the version
+pinned in the step, through Microsoft's `microsoft-store-apppublisher` action, pinned by commit) and runs
+`msstore publish <package> -id 9MXV3FNMFBP4`. That uploads the package to a new submission of the existing product, started
+from the last published one, so the listing text, images and pricing are not touched, and commits it for certification.
+The job logs the submission's status and writes it to the run's summary. Certification by Microsoft follows and takes
+from hours to days; the job does not wait for it.
+
+- **The version.** electron-builder writes the tag's three numbers and a fourth that is always `0`
+  (`getVersionInWeirdWindowsForm` in `app-builder-lib`; `v0.0.9` is `0.0.9.0`), which is the form the Store requires. A
+  tag with a pre-release suffix (`v0.2.0-beta.1`) would carry the version of the release after it, which the Store takes
+  only once and only in increasing order, so the job does not submit it.
+- **The identity** (name `OrivonBrowser.OrivonBrowser`, publisher and display name) is in the `appx` block of
+  `electron-builder.yml`, copied from the product's Product identity page in Partner Center; the Store refuses a package
+  whose identity differs.
+- **Nothing happens without the four secrets** `MS_STORE_TENANT_ID`, `MS_STORE_SELLER_ID`, `MS_STORE_CLIENT_ID` and
+  `MS_STORE_CLIENT_SECRET`: the job writes a warning naming them and succeeds. They are read in two places only, the
+  step that checks they exist and the step that runs `msstore reconfigure`.
+- **One submission at a time.** Partner Center allows one submission of a product in review. `msstore publish` replaces
+  a draft but not a submission in review, so when it fails with that, the job says so in a warning, naming the tag to run
+  again once the first one is published, and succeeds. Any other failure fails the job, and only that job.
+- **After the submission.** Microsoft documents that a submission created through the API is changed only through the API:
+  one edited in Partner Center can no longer be committed through it. A change to the listing text goes into a new draft
+  in Partner Center once the submitted release is published; the next release's `msstore publish` then starts from the
+  published one.
+- **Not verified here.** The job has not run against Partner Center, which needs the secrets. What was checked is its
+  shell logic against a stand-in `msstore`, the version rule in electron-builder's source, and the commands and flags
+  against Microsoft's documentation. The `.msix` copy the job makes of the `.appx` (the CLI names `.msix` and
+  `.msixupload`; the container is the same) and the wording of the in-review failure that the job matches are the two
+  points the first real run settles.
+
+**What the owner does once.**
+
+1. Publish the first version of the product by hand in Partner Center, with its age-rating questionnaire and the steps of
+   [`release-checklist.md`](release-checklist.md) item The Microsoft Store package, and wait until it is live. Microsoft:
+   `msstore` can only publish updates of a product that has been published once. It supports free products.
+2. Have a Microsoft Entra ID tenant associated with the Partner Center account (Microsoft's guide: "Associate an existing
+   Microsoft Entra ID with your Partner Center account", or "Create a new Microsoft Entra ID"). The next step needs a
+   Partner Center sign-in that has the Manager role and is a global administrator of that tenant.
+3. In Partner Center, Account settings > User management > the **Microsoft Entra applications** tab > **Add Microsoft
+   Entra application**: **Create Microsoft Entra application** (a name and a reply URL, which can be any address you own)
+   or **Add Microsoft Entra application** to take one the tenant already has. In **Roles applicable to developer
+   programs** give it **Manager**. Open the application from that list and note its **Tenant ID** and **Client ID**, then
+   **Add new key** and note the **Key** at once: it is shown once, and the list shows when each key expires. Note the
+   account's **Seller ID**, which Microsoft's guide places under Account settings.
+4. Add the four repository secrets: `MS_STORE_TENANT_ID`, `MS_STORE_SELLER_ID`, `MS_STORE_CLIENT_ID` and
+   `MS_STORE_CLIENT_SECRET` (Settings > Secrets and variables > Actions). A failing
+   `reconfigure` in the job is most likely an expired key: add a new one and replace the secret.
+5. Once the Store lists Orivon, set `store` to `true` in
+   [`packaging/release-routes.json`](../../packaging/release-routes.json), so the release notes point to it.
+
+## The Arch User Repository
+
+`orivon-bin` on the [AUR](https://aur.archlinux.org) installs the release's `.deb` on Arch Linux and its relatives. The
+`.deb` is the source, not the AppImage: it is the package CI installs and launches, it carries the desktop entry with its
+two launcher actions and the icon, and it puts `chrome-sandbox` on a filesystem where the SUID bit can be set. The
+template is [`packaging/aur/PKGBUILD`](../../packaging/aur/PKGBUILD): it unpacks the `.deb` into `/opt/Orivon`, links
+`/usr/bin/orivon`, sets `chrome-sandbox` to `4755`, drops Debian's AppArmor profile, moves the AppStream file to
+`/usr/share/metainfo`, and declares `provides=('orivon')`, `conflicts=('orivon')` and the license `AGPL-3.0-only`, the
+license `package.json` and the README state.
+
+The `aur` job of `release.yml` runs after `publish`. It takes the `.deb`'s sha256 from the release's `ipfs.json`, reads what
+the AUR holds now over https, and runs [`packaging/aur/prepare.sh`](../../packaging/aur/prepare.sh) in an Arch container
+(`archlinux:base-devel`, pinned by digest). That script fills `_upstream`, `pkgrel` and `sha256sums`, builds the package once
+with `makepkg` (which downloads the `.deb` and checks the sha256, so a broken PKGBUILD is found before anything is pushed)
+and writes `.SRCINFO` with `makepkg --printsrcinfo`. The last step, the only one that holds the key, pushes `PKGBUILD` and
+`.SRCINFO` to `ssh://aur@aur.archlinux.org/orivon-bin.git`, against the AUR's ed25519 host key, pinned in the step.
+
+- **Versions.** `pkgver` may not contain a hyphen. `0.0.9` is `0.0.9`; a pre-release tag drops the hyphen, so
+  `v0.2.0-beta.1` is `0.2.0beta.1`, which `vercmp` sorts after `0.2.0alpha.3` and before `0.2.0`, and `beta.10` after
+  `beta.9`. A suffix other than a word and an optional `.n` has no such mapping and is not offered. `pkgrel` is 1 for
+  a new version, and one more than the AUR's when the same version is pushed with another `.deb`. A version older than the
+  AUR's, or the same package again, pushes nothing.
+- **Nothing happens without the secret** `AUR_SSH_PRIVATE_KEY`: the job writes a warning and succeeds.
+- **Not verified here.** The PKGBUILD and `prepare.sh` were run in the pinned Arch container against a released `.deb`
+  (the package builds, `.SRCINFO` is written, the version cases above give the results above). The push has not run,
+  which needs the key and an AUR account.
+
+**What the owner does once.**
+
+1. Create an AUR account, and an SSH key pair for it (`ssh-keygen -t ed25519 -f aur-orivon`). Add the public key to the
+   account (AUR > My Account > SSH Public Key).
+2. Add the private key as the repository secret `AUR_SSH_PRIVATE_KEY`. The first push to `orivon-bin` creates the package.
+3. Set `aur` to `true` in [`packaging/release-routes.json`](../../packaging/release-routes.json) once the package is
+   listed, so the release notes list it.
+
+## AppImageHub
+
+[AppImageHub](https://appimage.github.io) lists AppImages found on GitHub releases. A listing is one pull request to
+[`AppImage/appimage.github.io`](https://github.com/AppImage/appimage.github.io), opened once by the owner; the Hub then
+reads the newest release itself. Its rules, as that repository states them: a type 2 AppImage that runs on the oldest
+supported Ubuntu LTS and shows a window within 30 seconds without network access, an English interface, a desktop file that
+passes `desktop-file-validate`, an AppStream file that passes `appstreamcli`, `appdir-lint.sh`, and X11 (it does not test
+Wayland).
+
+- **The AppStream file** is [`build/linux/com.orivonstack.orivon.metainfo.xml`](../../build/linux/com.orivonstack.orivon.metainfo.xml),
+  put into the AppImage at `usr/share/metainfo/` by `linux.extraFiles` in `electron-builder.yml`. A built AppImage was
+  extracted and both files checked: the desktop file passes `desktop-file-validate`, and `appstreamcli validate --pedantic`
+  passes with one pedantic note, that the file lists no `<releases>`. The `.deb` carries the same file under
+  `/opt/Orivon/usr/share/metainfo`, where nothing reads it; the Arch package moves it.
+- **The data file** is [`packaging/appimagehub/Orivon_Browser`](../../packaging/appimagehub/Orivon_Browser): named after the
+  desktop file's `Name` with the space an underscore, and holding one line, the repository's address.
+- **Not checked here.** `appdir-lint.sh` and the Hub's own screenshot and offline runs; the Hub's pull request shows them.
+  An AppImage built with this electron-builder starts with `--no-sandbox` (its desktop entry says so), and on Ubuntu 22.04
+  and later needs `libfuse2` (section Caveats); the Hub's test machine settles whether either stops the listing.
+
+**What the owner does once.** Open a pull request to `AppImage/appimage.github.io` that adds only the file
+`data/Orivon_Browser`, with the content of `packaging/appimagehub/Orivon_Browser`. One file per pull request: the Hub's
+checks fail on any other change. Answer its test comment, and comment `/retest` after a fix is released.
+
+## Release notes
+
+The description of a GitHub release is written by the `notes` job (and attached by `publish`) with
+[`scripts/release-notes.mjs`](../../scripts/release-notes.mjs), which uses Node's built-ins only and is tested in
+[`scripts/tests/release-notes.test.ts`](../../scripts/tests/release-notes.test.ts). It writes, below a hidden marker line:
+
+1. **What changed**: the `Added`, `Changed`, `Fixed`, `Security`, `Removed` and `Deprecated` entries of the tag's section
+   in [`CHANGELOG.md`](../../CHANGELOG.md), verbatim, and a link to the file at the tag. `Changed for apps` is left to the
+   changelog, and `[Unreleased]` is never used: the section must be renamed to the version before tagging. With no such
+   section the description has none and the job shows a warning.
+2. **Which file is mine?**: a table with one row for each package the release carries (Windows installer, both macOS
+   disk images and the Terminal install, the `.deb`, the AppImage), then a row for the Store, winget and the AUR when the
+   route is open in [`packaging/release-routes.json`](../../packaging/release-routes.json), which holds a `true` or `false`
+   for each.
+3. **On IPFS**: the release's CID, as before.
+
+Whatever a person wrote above the marker stays, and a re-run replaces everything from the marker on. A description written
+before the marker existed is converted at its `### On IPFS` heading. The changelog's entries are published as written, so
+they follow the same rules as any release text: shipped items only.
 
 ## Windows and macOS
 
 **Windows.** The installer is unsigned. On first run SmartScreen shows "Windows protected your
 PC": **More info**, then **Run anyway**. It installs for the current user into
 `%LOCALAPPDATA%\Programs\Orivon`, needs no administrator, and lets the person choose another
-folder. Silent install: `Orivon-Setup-<version>-x64.exe /S`.
+folder. Silent install: `Orivon-Setup-<version>-x64.exe /S`. A person who would rather not see the warning installs
+from the Microsoft Store instead (section The Microsoft Store package).
 
 **macOS.** The app is signed ad hoc, not with a Developer ID, and not notarized. Apple silicon
 refuses a binary with no signature at all, and packaging rewrites the Electron binary (its fuses,
@@ -147,8 +488,61 @@ Applications, the first open is refused: open **System Settings > Privacy & Secu
 **Open Anyway**, or run `xattr -dr com.apple.quarantine /Applications/Orivon.app`. The Intel dmg
 is built on an Apple silicon runner and launched there under Rosetta.
 
+**macOS one-line install.** `scripts/install-macos.sh`, run as
+`curl -fsSL https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/install-macos.sh | bash`,
+installs or updates Orivon with no Gatekeeper prompt. Gatekeeper only checks files that carry the
+`com.apple.quarantine` attribute, which a browser adds to a download and `curl` does not; Apple
+silicon still wants a signature, and the ad-hoc one the build has is enough. The script reads the
+newest releases from GitHub's API and takes the newest non-pre-release that has a dmg for the Mac's
+architecture with a digest, else the newest pre-release that has one (a release whose packages are not
+attached yet is skipped). It downloads that dmg, compares its SHA-256 with the digest GitHub reports
+for the asset, copies `Orivon.app` into `/Applications` (or `~/Applications` when the first is not
+writable; never sudo), checks `codesign --verify`, and opens it. It refuses to run while Orivon is
+running. The digest check guards against a broken or swapped download in transit, not against
+someone who controls the GitHub repository. It runs on macOS's own bash and tools. Four environment
+variables: `ORIVON_REPO` (the repository to read releases from), `ORIVON_DMG` (a local dmg, which
+skips the lookup, download and digest check), `ORIVON_INSTALL_DIR` (where `Orivon.app` goes) and
+`ORIVON_NO_OPEN=1` (do not open it). The release workflow installs the package it just built through
+the script and launches the result with the packaged smoke check; on pull requests and manual runs
+it also installs the newest published release through it, which exercises the lookup, download and
+digest check.
+
+**Linux one-line install.** `scripts/install-linux.sh`, run as
+`curl -fsSL https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/install-linux.sh | bash`
+(or `bash -s <id>` with an app id), installs or updates the AppImage for the person alone, with no sudo, on
+x86_64. It reads the newest releases from GitHub's API the way the update check does: the highest version, pre-releases
+counted, drafts and tags that are not versions (`pre-releases`) skipped, and a release whose AppImage is not
+attached yet passed over. It downloads that `Orivon-<version>-x86_64.AppImage`, compares its SHA-256 with the digest
+GitHub reports for the asset, and refuses a mismatch or a missing digest before it installs anything. Then it
+writes, under the home folder only: the AppImage as `~/.local/lib/orivon/Orivon.AppImage`; a launcher beside it,
+`orivon`; `~/.local/share/applications/orivon.desktop` (the packaged entry's name, categories and the
+`x-scheme-handler/http` and `https` types, plus New Window and New Private Window, its `Exec` the launcher, so
+a desktop's default-browser choice lists Orivon and the entry works wherever the folder is); the icon in
+`~/.local/share/icons/hicolor/512x512/apps/`, unpacked from the AppImage (the repository's copy at the release's
+tag when that fails); and `~/.local/bin/orivon`, a link to the launcher, only when that folder is already on
+`PATH` and holds no other file of that name. The file is renamed into place, so a running Orivon keeps working
+and the next start is the new version; running the command again is the update.
+
+The launcher decides at every start whether the AppImage can mount itself: `/dev/fuse` readable and writable,
+`fusermount`, and `libfuse.so.2` from `ldconfig -p` or the usual library folders must all be there. When one is
+missing (Ubuntu 22.10 and later without `libfuse2`, a container) it starts the AppImage with
+`--appimage-extract-and-run`, which unpacks it to a temporary folder first (slower to start, nothing to
+install); installing `libfuse2` later needs no new install. The launcher is not the registration of Orivon as the
+default browser that a package makes at a person's click (the runtime half in section Making "set as default browser" possible): the desktop entry only lets a desktop list it.
+
+An app id (2 to 24 lower-case letters and digits, refused otherwise) is passed to the launch the installer makes
+as `--orivon-flavour=<id>`; `--no-launch` (or `ORIVON_NO_OPEN=1`) installs without starting Orivon, which is what
+a test uses, and then the id is not used. The environment variables are `ORIVON_REPO` (the repository to read
+releases from), `ORIVON_APPIMAGE` (a local AppImage, which skips the lookup, download and digest check) and
+`ORIVON_GITHUB_TOKEN` (lifts the unauthenticated rate limit). Reading GitHub's answer needs `python3` or `jq`;
+the script reads either and refuses to guess without one. The digest check guards against a broken or swapped
+download in transit, not against someone who controls the GitHub repository. The unit tests
+(`scripts/tests/install-linux.test.ts`) run it in a scratch home against a stand-in `curl`; the release workflow
+installs the AppImage it just built through it and starts the launcher with the packaged smoke check, and on pull
+requests and manual runs also installs the newest published release.
+
 **Signing later.** A Developer ID certificate (with notarization) and a Windows code-signing
-certificate would remove both warnings. electron-builder reads them from the environment
+certificate would remove both warnings (the Store package has none to remove). electron-builder reads them from the environment
 (`CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`), so
 adding them is repository secrets, the matching `env:` lines in the workflow, and removing
 `identity: "-"` and `hardenedRuntime: false` from `mac:`.
@@ -168,13 +562,13 @@ dpkg -x release/*.deb /tmp/orivon-deb-inspect   # full contents
 cat /tmp/orivon-deb-inspect/usr/share/applications/*.desktop
 
 # Expect a line equivalent to:
-#   MimeType=text/html;application/xhtml+xml;image/svg+xml;application/pdf;x-scheme-handler/http;x-scheme-handler/https;
+#   MimeType=text/html;application/xhtml+xml;image/svg+xml;application/pdf;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/orivon;
 # and:
 #   Categories=Network;WebBrowser;
 #   Actions=new-window;new-private-window;
 # followed by a [Desktop Action new-window] and a [Desktop Action new-private-window] section whose Exec
 # lines run /opt/Orivon/orivon with --new-window and --new-private-window. The AppImage's own entry
-# (Exec=AppRun) carries no actions: they sit under `deb:` in electron-builder.yml, not `linux:`.
+# (Exec=AppRun) carries no actions: they sit under `deb:` in electron-builder.yml, and `appImage:` has an entry of its own.
 ```
 
 ```bash
@@ -187,15 +581,16 @@ xdg-settings check default-url-scheme-handler https orivon.desktop
 
 The file name is `orivon.desktop`, from `linux.executableName` and `desktopName` in `package.json`; confirm it
 with `ls /usr/share/applications | grep -i orivon`. A file of that name in `~/.local/share/applications` wins
-over it: the dock then starts whatever that file names, and a default-browser choice opens links with it. A run
-from source has its own entry, `orivon-source.desktop` (`scripts/launch-from-source.mjs`). Whether a desktop lists Orivon in its browser list with
+over it: the dock then starts whatever that file names, and a default-browser choice opens links with it. The entry is named "Orivon Browser", as
+the window's title is. A run from source has its own entry, `orivon-source.desktop` (`scripts/launch-from-source.mjs`),
+and names its windows `orivon-source`, so the dock never shows it under the package's icon (ADR-0057). Whether a desktop lists Orivon in its browser list with
 only the two scheme handlers is unmeasured (`docs/open-questions.md` A387).
 
 ## Making "set as default browser" possible: what's config and what isn't
 
 `electron-builder.yml` handles the packaging half: the top-level `protocols` key
-(`schemes: [http, https]`) is what electron-builder documents as producing the `.desktop` file's
-`MimeType=` line (`x-scheme-handler/http;x-scheme-handler/https;`), and `linux.category` supplies
+(`schemes: [http, https, orivon]`) is what electron-builder documents as producing the `.desktop` file's
+`MimeType=` line (`x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/orivon;`), and `linux.category` supplies
 `Categories=Network;WebBrowser;`. `linux.mimeTypes` lists `text/html`, `application/xhtml+xml`, `image/svg+xml`
 and `application/pdf`, which puts Orivon under Open with for those files and opens them as local files; only
 as the default browser does it also take `text/html`, `application/xhtml+xml` and `application/pdf` (the
@@ -205,7 +600,7 @@ installer script lists them under `Capabilities\FileAssociations` and each exten
 never taking an extension over; neither is read back on a system yet (A397).
 
 The runtime half is application code in `src/main/os/`: an installed package registers, and only when a person
-clicks (Settings > Default browser, the welcome screen's box, or the weekly question). An AppImage never registers,
+clicks (Settings > Default browser, or the question the default profile asks). An AppImage never registers,
 because a registration naming it would point at a file that moves, and neither does a run from source on Windows or
 macOS, which would register the Electron binary. A Linux run from source registers its own entry,
 `orivon-source.desktop`, once `scripts/launch-from-source.mjs install` has written it. On Linux the same click also
@@ -216,8 +611,9 @@ runs `xdg-mime default` with that entry for `text/html`, `application/xhtml+xml`
 
 A right-click on Orivon's icon offers New Window and New Private Window. On Linux they are the `.deb`'s desktop
 actions (`deb.desktop.desktopActions` in `electron-builder.yml`, which run `/opt/Orivon/orivon --new-window` and
-`--new-private-window`); they sit under `deb:` and not `linux:` because electron-builder merges `linux.desktop`
-into the AppImage's entry too, where `Exec` is `AppRun` and `/opt/Orivon` does not exist. On Windows the same two
+`--new-private-window`); they sit under `deb:` and not `linux:`, and the entry's common keys are written under `deb:` and
+`appImage:` each, because a `linux.desktop` would reach the AppImage's entry too, where `Exec` is `AppRun` and `/opt/Orivon`
+does not exist. A built AppImage's entry has no `Actions` line. On Windows the same two
 are jump-list tasks and on macOS dock-menu items, set by the running program (`src/main/os/install-launcher-menu.ts`).
 A run from source on Linux gets both from `scripts/launch-from-source.mjs install` (`docs/development/setup.md`).
 
@@ -234,6 +630,13 @@ and macOS' default-app lists (`docs/open-questions.md` A328).
   Make default opens `ms-settings:defaultapps?registeredAppUser=Orivon` and the person chooses. The installer's
   shortcuts carry the app user model id `com.orivonstack.orivon`, the one `src/main/os/launcher-tasks.ts` sets on
   the process.
+- **`orivon:` links.** The Windows installer also writes the class `Software\Classes\orivon` (`URL Protocol`, the same
+  `-- "%1"` command), which is not a default-app choice and is removed on uninstall. On macOS and in the Store manifest
+  the `protocols` entry carries it (`CFBundleURLTypes`; a `windows.protocol` extension), and on Linux the .deb's desktop
+  entry lists `x-scheme-handler/orivon`. A run from source registers none of them, and the Linux "Orivon (source)"
+  entry does not list the scheme, so a checkout never takes the links from an installed Orivon; the AppImage does
+  not integrate with the desktop and takes none either. What an `orivon:` link may name is in
+  [ADR-0094](../decisions/ADR-0094-an-orivon-link-from-another-program-opens-a-eth-name-or-an-ipfs-address.md).
 - **macOS.** `protocols` becomes `CFBundleURLTypes`. No HTML document types are declared, so a file dropped on the
   dock icon is refused and logged. Make default calls `setAsDefaultProtocolClient`, which the system confirms.
 
@@ -309,20 +712,23 @@ What a real build leaves open. None of them blocks a build.
   dedicated packaging/releases address instead.
 - **`electron-builder` is pinned at `^26.15.3`** in `package.json`, npm's actual `latest` tag.
   v27 exists only as alpha prereleases and some of its documented behaviour does not hold for
-  26.x; see §Version notes below.
+  26.x; see section Version notes below.
 
 ## What this document does not cover
 
-**Auto-update.** Cut (`build-plan.md`): unsigned
+**Auto-update.** Unsigned
 `electron-updater` on Linux verifies only a SHA-512 fetched from the same host that serves the
-binary, which is a standing remote-code-execution channel keyed to a GitHub token. v0 checks
-for a new version and notifies instead, which is a separate, already-scoped piece of work, not
+binary, which is a standing remote-code-execution channel keyed to a GitHub token, so it is not
+used. Today Orivon checks for a new version and notifies; installing one is not built, and the
+person downloads the package from the release page. A signed self-update is expected next
+([`roadmap.md`](../roadmap.md)): it checks by default, installs only after the person answers
+"Yes, install", and always offers the manual download. It is a separate piece of work, not
 part of this config. `electron-builder.yml` sets `publish: null` explicitly (not just omitted)
 specifically so that a stray `latest-linux.yml`/`app-update.yml` never ships implying an update
 channel that doesn't exist, since electron-builder would otherwise auto-detect a GitHub publish
 target from `package.json`'s `repository` field.
 
-**Code signing with a bought certificate.** Not configured; §Windows and macOS says what a
+**Code signing with a bought certificate.** Not configured; section Windows and macOS says what a
 person sees without it, and what adding it takes.
 
 ## Version notes: 26.x, not v27

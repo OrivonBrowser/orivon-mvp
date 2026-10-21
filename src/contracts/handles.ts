@@ -356,6 +356,8 @@ export interface FileStat {
  * what asking at all is for.
  */
 export interface FileHandle extends Handle {
+  /** The basename of the file (for a pick, the name the person's file has): never a path or separator. Optional, provisionally, until every implementation sets it; absent means unknown. */
+  readonly name?: string
   /** Short read at EOF. */
   read(opts: { position: number, length: number }): Promise<Uint8Array>
   /** Returns bytes written. */

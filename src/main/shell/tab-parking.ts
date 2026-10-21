@@ -11,7 +11,8 @@ import { INTERNAL_PARTITION } from '../pages/internal-pages.js'
 import { isLocalPartition } from '../local-files/partition.js'
 import type { TabRecord } from './tab-types.js'
 import { applyTabSignals } from './tab-signals.js'
-import { carryHistory } from './tab-history.js'
+import { carryHistory, listOf } from './tab-history.js'
+import { EMPTY_OUTER, leaveView } from './tab-outer-history.js'
 import { appTabArgsFor, appTabOrigins, appTabViews, makeTabView, wireView } from './tab-view.js'
 import type { WebContentsView } from 'electron'
 
@@ -64,23 +65,6 @@ function takeParkedView (record: TabRecord, partition: string | undefined, appTa
   return undefined
 }
 
-/** Once a parked view commits the tab's return, drops every history entry
- * that is not its app's own page: the page the app left for, which committed
- * here before the tab moved, and the blank page it waited on. Going back to
- * either would load it inside the app's session. */
-function keepOnlyOwnEntriesOnReturn (record: TabRecord, view: WebContentsView, target: string): void {
-  const origin = originFromUrl(target)
-  view.webContents.once('did-navigate', () => {
-    const history = view.webContents.navigationHistory
-    const active = history.getActiveIndex()
-    // From the end, so each removal leaves the indices still to visit alone.
-    for (let index = history.length() - 1; index >= 0; index--) {
-      if (index !== active && originFromUrl(history.getEntryAtIndex(index).url) !== origin) history.removeEntryAtIndex(index)
-    }
-    record.host.emitState()
-  })
-}
-
 /** Closes the views a tab parked for the apps it left: the tab is going. */
 export function closeParkedViews (record: TabRecord): void {
   for (const view of record.parkedViews.values()) closeView(view)
@@ -93,22 +77,25 @@ export function closeParkedViews (record: TabRecord): void {
  * session" API). Guarded by `partitionChanged` so it never fires for a
  * same-origin navigation, a rejected/about:blank fallback or the dashboard.
  * Called for a typed target (pre-fetch) and a gateway link, both through
- * load-in-tab.ts, and from tab-view.ts's wireView()'s did-navigate handler
+ * load-in-tab.ts, from tab-view.ts's wireView()'s did-navigate handler
  * (a redirect, clicked link, form submission or script navigation -- the
- * target is only known once Chromium has already committed it).
+ * target is only known once Chromium has already committed it), and for a
+ * Back or Forward past the ends of the view (`step`).
  *
  * A view leaving an app's partition is parked rather than closed, and a tab
- * coming back to that app gets it again, with the app's own history and
- * sessionStorage. A swap within one session (the app-tab flag flipping on a
- * newly registered origin, an opener being cut) carries the back and forward
- * list over with `NavigationHistory.restore`. A swap across partitions starts
- * from an empty list: entering an app, or leaving one for the open web, still
- * costs the back button (A109; ADR-0018 for what swaps at all). */
+ * coming back to that app gets it again, with the app's sessionStorage. A
+ * swap within one session (the app-tab flag flipping on a newly registered
+ * origin, an opener being cut) carries the back and forward list over with
+ * `NavigationHistory.restore`. Any other swap moves the pages of the view
+ * being left into the tab's outer history (tab-outer-history.ts), where the
+ * Back button still reaches them; a returning parked view is left holding
+ * only the page it returns to (tab-history.ts's `settleOuterHistory`). */
 export function repartitionView (
   id: string,
   record: TabRecord,
   target: string,
-  nextPartition: string | undefined
+  nextPartition: string | undefined,
+  step = false
 ): void {
   const { host } = record
   // A navigation that commits as the window closes must not make a view nobody will close.
@@ -125,10 +112,7 @@ export function repartitionView (
   record.isDashboardTab = false
   record.internalPage = null
   if (parked === undefined) wireView(id, record)
-  else {
-    keepOnlyOwnEntriesOnReturn(record, parked, target)
-    applyTabSignals(id, record)
-  }
+  else applyTabSignals(id, record)
 
   // Same tab, fresh WebContents -- the lifecycle seam's one event tab-
   // view.ts raises directly (tab-lifecycle.ts's own doc says why).
@@ -138,7 +122,12 @@ export function repartitionView (
   // not committed yet, so the pages up to the one being left carry and the
   // address loads after them. Same session, so no cookie, storage or
   // partition boundary is crossed.
-  const carried = parked === undefined && oldPartition === nextPartition && !oldView.webContents.isDestroyed() && carryHistory(oldView.webContents, newView.webContents, target)
+  const left = oldView.webContents.isDestroyed() ? null : listOf(oldView.webContents)
+  const carried = !step && parked === undefined && oldPartition === nextPartition && left !== null && carryHistory(oldView.webContents, newView.webContents, target)
+  // Whatever the new view does not hold stays with the tab. A step has already moved the pages it leaves.
+  const outer = record.outer ?? EMPTY_OUTER
+  const kept = carried || step || left === null ? outer : leaveView(outer, left.entries, left.index, left.entries[left.index]?.url === target)
+  record.outer = { back: kept.back, forward: kept.forward, ...(parked !== undefined || kept.trimOnCommit === true ? { trimOnCommit: true } : {}) }
 
   // Only once the record shows the new view: the old one's handlers then
   // ignore it, so closing it here cannot reach forgetTab().

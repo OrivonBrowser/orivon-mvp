@@ -15,12 +15,14 @@ import { closeElectronApp, navigateToFixture } from '../support/e2e-helpers.js'
 import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
 import { ABSENCE_SETTLE_MS, HERMETIC_RESOLVER, findChrome, waitFor } from '../support/smoke-helpers.mjs'
 import { startIngest, telemetryHomeFolder, type Ingest, type IngestRequest } from '../support/telemetry-ingest.js'
+import { PAYLOAD_SCHEMA } from '../../src/telemetry/disclosure.js'
+import { NOTICE_VERSION } from '../../src/telemetry/consent.js'
 
 afterAll(async () => { expect(await assertNoElectronSurvivors()).toEqual([]) })
 
 const TEST_TIMEOUT_MS = 90_000
 const HEX32 = /^[0-9a-f]{32}$/
-const ACCEPTED = { state: 'accepted', atMs: Date.now(), noticeVersion: 4, source: 'welcome' }
+const ACCEPTED = { state: 'accepted', atMs: Date.now(), noticeVersion: NOTICE_VERSION, source: 'welcome' }
 
 interface Rig {
   readonly ingest: Ingest
@@ -87,7 +89,7 @@ it('with consent, sends the usage report and the sites report, each holding exac
     const usage = posted(r, '/v1/usage').at(-1)?.body as Record<string, unknown>
     expect(sorted(usage)).toEqual(['activeSec', 'backgroundSec', 'classes', 'country', 'installId', 'period', 'schema', 'stream', 'version'])
     expect(sorted(usage['classes'] as Record<string, unknown>)).toEqual(['web2', 'web25', 'web3'])
-    expect(usage).toMatchObject({ schema: 4 })
+    expect(usage).toMatchObject({ schema: PAYLOAD_SCHEMA })
     expect(usage['installId']).toMatch(HEX32)
     expect(usage['stream']).toMatch(HEX32)
     expect(usage['country']).toMatch(/^([A-Z]{2}|unknown)$/)
@@ -97,7 +99,7 @@ it('with consent, sends the usage report and the sites report, each holding exac
 
     const sites = posted(r, '/v1/sites').at(-1)?.body as Record<string, unknown>
     expect(sorted(sites)).toEqual(['installId', 'period', 'schema', 'sites', 'stream', 'version'])
-    expect(sites).toMatchObject({ schema: 4, installId: usage['installId'], stream: usage['stream'] })
+    expect(sites).toMatchObject({ schema: PAYLOAD_SCHEMA, installId: usage['installId'], stream: usage['stream'] })
     expect(sorted(sites['sites'] as Record<string, unknown>)).toEqual(['web25:level.eth'])
 
     // Both reports carry the same install ID and stream, and neither names a Web2 site.
@@ -125,7 +127,7 @@ it('accepting in Settings sends at once, without waiting for a tick, and quittin
     expect(r.ingest.requests).toEqual([])
     await page.locator('#row-usage-statistics .switch').click()
     expect(await waitFor(() => posted(r, '/v1/usage').length > 0, 15_000)).toBe(true)
-    expect(posted(r, '/v1/usage')[0]?.body).toMatchObject({ schema: 4, period: new Date().toISOString().slice(0, 7) })
+    expect(posted(r, '/v1/usage')[0]?.body).toMatchObject({ schema: PAYLOAD_SCHEMA, period: new Date().toISOString().slice(0, 7) })
 
     const before = posted(r, '/v1/usage').length
     await closeElectronApp(app)
@@ -165,7 +167,7 @@ it('sends the usage report and the site report when the browser starts, before a
 }, TEST_TIMEOUT_MS)
 
 it('sends nothing when the person has not chosen, or has refused', async () => {
-  for (const consent of [undefined, { state: 'declined', atMs: Date.now(), noticeVersion: 4, source: 'welcome' }]) {
+  for (const consent of [undefined, { state: 'declined', atMs: Date.now(), noticeVersion: NOTICE_VERSION, source: 'welcome' }]) {
     const r = await rig(consent)
     let app: ElectronApplication | undefined
     try {
@@ -192,7 +194,7 @@ it('sends nothing after consent is withdrawn, by a choice another profile made a
     await navigateToFixture(app, 'https://level.eth/', 'level fixture')
     expect(await waitFor(() => posted(r, '/v1/usage').length > 0 && posted(r, '/v1/sites').length > 0, 30_000)).toBe(true)
 
-    await writeFile(join(r.home, 'consent.json'), JSON.stringify({ state: 'declined', atMs: Date.now(), noticeVersion: 4, source: 'settings' }), 'utf8')
+    await writeFile(join(r.home, 'consent.json'), JSON.stringify({ state: 'declined', atMs: Date.now(), noticeVersion: NOTICE_VERSION, source: 'settings' }), 'utf8')
     await new Promise((resolve) => setTimeout(resolve, 1500))
     const before = r.ingest.requests.length
     await new Promise((resolve) => setTimeout(resolve, ABSENCE_SETTLE_MS * 2))

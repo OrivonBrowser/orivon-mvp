@@ -17,6 +17,7 @@ import {
   assertRootMkdirAllowed, isRootPath, rootIsDirectoryError, rootNotRemovableError, rootReaddirError, rootStat
 } from './root.js'
 import { confineSync, fsError, type PathLike } from './paths.js'
+import { pickedExistsSync } from './picked.js'
 import { openHandleSync } from './handle.js'
 import { announce, announceWrite, watchersExist } from './notices.js'
 import { guardedSync, syncFs, tryStatSync, type SyncOrivonFs } from './sync-orivon.js'
@@ -25,7 +26,7 @@ import { encode, encodingOf } from '../encoding.js'
 import { VIRTUAL_ROOT } from '../virtual-root.js'
 import type { MkdirOptions, ReaddirOptions, RmdirOptions, RmOptions, WriteFileOptions } from './core.js'
 import { Buffer } from 'buffer'
-import { join } from 'path'
+import { join } from 'path/posix'
 
 export function doStatSync (path: PathLike): NodeStats {
   const confined = confineSync(path, 'stat', 'fs.statSync')
@@ -231,6 +232,8 @@ function randomSuffix (): string {
  * this maps its error exactly once, itself.
  */
 export function existsSyncCore (path: PathLike, readFileSyncFallback: (confined: string) => Uint8Array): boolean {
+  const pickedAnswer = pickedExistsSync(path)
+  if (pickedAnswer !== undefined) return pickedAnswer
   let confined: string
   try {
     confined = confineSync(path, 'access', 'fs.existsSync')

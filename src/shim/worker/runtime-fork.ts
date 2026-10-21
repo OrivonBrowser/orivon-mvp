@@ -11,6 +11,7 @@ import { installGlobals } from '../globals.js'
 import { Console } from '../polyfills/console-class.js'
 import { createRequire } from '../polyfills/module.js'
 import type { GlobalsTarget, ShimProcess } from '../globals-types.js'
+import { NODE_IDENTITY } from '../node-identity.js'
 import { VIRTUAL_ROOT, VIRTUAL_TMPDIR } from '../virtual-root.js'
 import { Liveness, trackScope } from './liveness.js'
 import { createOrivonClient } from './orivon-client.js'
@@ -36,9 +37,6 @@ type SendCallback = (error: Error | null) => void
 
 /** Thrown by process.exit to unwind the code after it; the runtime swallows it. */
 class ChildExit extends Error {}
-
-/** The Node release a child claims: the first one with `node:sqlite` unflagged. */
-const NODE_VERSION = '22.13.0'
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] }
 
@@ -74,7 +72,7 @@ function serialize (message: unknown, serialization: ForkStart['serialization'])
  */
 export function setupChildProcess (scope: ForkScope, parent: ParentChannel, start: { type: 'fork' | 'thread', argv: readonly string[], env: Readonly<Record<string, string>>, cwd: string, orivon: MessagePort }): ChildProcessSetup {
   // The runtime installed these before its polyfills loaded (early-globals.ts); a test scope has none yet.
-  if (scope.process === undefined) installGlobals({ root: VIRTUAL_ROOT, tmpdir: VIRTUAL_TMPDIR }, scope)
+  if (scope.process === undefined) installGlobals({ root: VIRTUAL_ROOT, tmpdir: VIRTUAL_TMPDIR, node: NODE_IDENTITY }, scope)
   const proc = scope.process as BaseProcess
   let exited = false
   const liveness: Liveness = new Liveness(() => {
@@ -108,10 +106,6 @@ export function setupChildProcess (scope: ForkScope, parent: ParentChannel, star
     return true
   }
 
-  // A child is a Node program, unlike a page: packages read these to pick their Node branch.
-  proc.versions = { ...proc.versions, node: NODE_VERSION }
-  proc.version = `v${NODE_VERSION}`
-  proc.release = { name: 'node' }
   proc.argv = [...start.argv]
   proc.env = { ...start.env }
   proc.cwd = () => start.cwd

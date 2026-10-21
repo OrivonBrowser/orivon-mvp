@@ -1,6 +1,6 @@
 // Owns every tab's WebContentsView and the state pushed to the chrome UI.
 //
-// Main holds truth (build-plan.md's shell architecture, this session's plan):
+// Main holds truth (the shell's architecture):
 // the chrome view sends commands (newTab, navigate, back, ...) and receives a
 // full ShellState snapshot after every change. It never derives tab state
 // itself.
@@ -98,6 +98,8 @@ export class TabManager {
       paneClicked: (id) => { this.panes.clicked(id) },
       openInSplit: (id, url) => { if (!this.atCapacity()) this.splits.split(id, this.createTab(url), 'right') },
       reload: (id) => { this.reload(id) },
+      back: (id) => { this.back(id) },
+      forward: (id) => { this.forward(id) },
       emitState: () => { this.changedSoon() },
       // Which document declared the icon, and whether this record is still the one the map holds when the fetch lands.
       captureFavicon: async (id, record, favicons) => {
@@ -246,7 +248,7 @@ export class TabManager {
   openBlobTab (url: string, partition: string | undefined, active = true, loadOptions?: LoadURLOptions): string { return this.opener.openBlobTab(url, partition, active, loadOptions) }
 
   /** createTab() for a trusted caller (the extension host), which has checked `target` itself. */
-  openTrusted (target?: string): [string, Electron.WebContents] | undefined { return this.opener.openTrusted(target) }
+  openTrusted (target?: string, partition?: string): [string, Electron.WebContents] | undefined { return this.opener.openTrusted(target, partition) }
 
   /** Shows one of the shell's own pages, in the tab that has it or a new one. */
   openInternal (page: InternalPageId, path = '/'): void { this.opener.openInternal(page, path) }

@@ -2,7 +2,7 @@
 
 **What lives here.** The verifier host: an Electron utility process that runs every protocol's
 providers ([`protocols.ts`](protocols.ts)), proves `.eth` names with a light client
-([`light-client/`](light-client/)), gathers IPFS content block by verified block, and serves it to
+([`light-client/`](light-client/)), gathers IPFS content block by verified block and Swarm content chunk by verified chunk, and serves it to
 tabs from a loopback TLS server ([`serve/`](serve/)). Every untrusted parser (the light client's
 WebAssembly, CCIP-Read answers, IPNS protobuf, dag-pb, DNS-over-HTTPS JSON) runs here, never in
 the main process.
@@ -15,13 +15,36 @@ file that imports `electron`; [`service.ts`](service.ts) takes Electron's `net` 
 as arguments, so everything else runs under plain vitest.
 
 **What it depends on.** [`../resolution/`](../resolution/), [`../ens/`](../ens/),
-[`../ipfs/`](../ipfs/); from [`../../loader/`](../../loader/) the range parser, the content-type
+[`../ipfs/`](../ipfs/), [`../swarm/`](../swarm/); from [`../../loader/`](../../loader/) the range parser, the content-type
 map and the redirect rule, and from [`../../broker/policy/`](../../broker/policy/) the address
 classifier, all reused rather than copied; `@a16z/helios`.
 
 **What it must never import.** [`src/main/`](../../main/) beyond type-only imports: main starts it
 and talks to it over [`protocol.ts`](protocol.ts), and nothing else.
 [`../../main/verifier/`](../../main/verifier/) is its other side.
+
+**A local node is asked for before each mount that reads from it.** [`node-link.ts`](node-link.ts) serves any
+kind of node by its name (`NodeLinks.to`). When `HostConfig.swarmNode` is set, the Swarm endpoint is the node
+Orivon runs ([`../swarm-node/`](../swarm-node/)): the link posts `node-wanted` to main on every mount (which
+keeps the node's ten-minute idle wait from running out under use) and holds the mount up to twenty seconds for
+main's `node` notice, then fails it `unavailable` in plain words: off or failed with the reason, or still
+finding peers. A state other than ready is main's answer to this ask, never an earlier one.
+
+**IPFS reads the node, and a gateway only with the person's yes for this load.** When `HostConfig.ipfsNode` is set, `startIpfs` builds two
+gatherers over the same protocol, one over the node's endpoint and one over `gateways`
+([`../ipfs/node-first.ts`](../ipfs/node-first.ts)). A mount asks the link for the node: ready, it reads only the
+node; off, failed, still starting, or ready but unable to find the content, the mount fails with `GatewaysOffered`, which the error page
+([`serve/error-pages.ts`](serve/error-pages.ts)) turns into a button, "Load through public gateways". The button is a link to
+`/.orivon/load-through-gateways` on the site's own origin with a token only that page was given ([`gateway-consent.ts`](gateway-consent.ts):
+an HMAC of the site's origin); the server grants a yes only to a navigation the person started (`Sec-Fetch-User`) that carries the token for
+the request's own partition, and redirects back to the page. The yes is for one load: the first mount in that partition takes it (`take`), it is
+gone after a minute unused, and `Sites.get` does not reuse a site a yes loaded for a page load the person starts (a document navigation), so a
+reload or a new tab asks again. The mounted site says why it came from gateways (`servedFrom`). With no node chosen (the person's standing choice
+of gateways) `ipfsNode` is absent and the gateways serve as the person chose. A name
+service is still asked for an IPNS record after the node, unless the lookup service is off. Each read from the node
+carries the key of the mount's partition (`partition-key.ts`; header `x-orivon-partition`) and no other source sees it. A block the node could not give is asked for again after the node's own memory of it has passed (`../ipfs/README.md`); a test build can name a fixture endpoint as the node and shorten that wait (`HostConfig.ipfsNode.retryWaitMs`).
+
+**A website in a tunnel's profile is served from a set of protocols of that tunnel** ([`tunnel-protocols.ts`](tunnel-protocols.ts), routed by `x-orivon-route: nym` or `socks5`, which main sets on every request of that tunnel's profile session and strips from every other; a set is started at the first request that names its tunnel, so a person who uses one tunnel pays for one). Every fetch a set makes is [`routed-fetch.ts`](routed-fetch.ts)'s: HTTP over TLS over a `CONNECT` to that tunnel profile's front (`HostConfig.profileFronts`), which opens the stream through the tunnel with the name unresolved. IPFS is read from the local node when `HostConfig.tunnelSitesReadNodes` says its traffic does not betray the site (the node is read on loopback with the host's ordinary fetch, never through the tunnel), and otherwise fails with `IPFS_NOT_TUNNELLED`'s reason and the same offer of gateways, which are then read through the tunnel; DNSLink, IPNS name services and CCIP-Read go through the tunnel. The name is proved by a light client of the tunnel's own (`light-client/README.md`) started at the first such `.eth` name, or by the shared client when `HostConfig.ethereumOutside` is set. A Swarm address, or a name whose content is on Swarm, is served by the Swarm node under the same condition as IPFS, and refused with `SWARM_NOT_TUNNELLED`'s sentence otherwise. `Sites` keeps one set of mounts per route (`RoutedSites`), so a name proved through one tunnel is never served to a direct website or to the other tunnel's; the IPNS sequence and Swarm feed index stores are shared, since they only move forward. The set follows the person's choice of IPFS source like the other (no node chosen: gateways through the tunnel), and the lookup-service setting for a node-served website.
 
 **Owner stream.** `ens-ipfs`.
 
@@ -38,10 +61,25 @@ an address a check already resolved, confirmed against Electron 44's API, the sa
 found no proxy in front of the default session. With one configured, the request goes back through
 `net` by hostname instead: a proxy must keep doing the resolving, never be silently gone around for
 one kind of request (T20), so the residual rebind window is accepted there rather than closed by
-bypassing it. `ccipDirect` is a snapshot taken once, when the host starts
+bypassing it. **While the whole browser is on the tunnel** (`HostConfig.front`) the host fetches with `net.request` and answers
+the front's proxy challenge itself, for that front's address and port alone ([`front-login.ts`](front-login.ts)), because `net.fetch` in a utility process raises no
+`login` event and would end at the front's `407`; main points the process's own requests at the front with `app.setProxy`, a name is
+never resolved on this computer (`resolveHost` refuses, and a CCIP-Read check resolves nothing, the far end does), and `unproxiedGateways` and `ccipDirect` are empty and false, so
+none of the host's direct routes is taken. Main restarts the host when the setting flips. `ccipDirect` is a snapshot taken once, when the host starts
 (`main/verifier/verifier-subsystem.ts`'s `ccipDirectFor`, checked against a generic URL since a
 CCIP-Read destination is not known yet); a proxy turned on mid-run is not seen until the host
 restarts, the same shape as `security-model.md` T40's own snapshot. The one OTHER path around
 `net` is [`dns-fallback.ts`](dns-fallback.ts), only for a gateway that had no proxy configured when
 the host started (ADR-0030's 2026-09-26 amendment); taking it for a proxied gateway would silently
 bypass that proxy, and the check being a snapshot is T40's residual there too.
+
+**What the host waits for follows the route its requests travel, and the shared light client starts late on a slow one.** [`pace.ts`](pace.ts) turns a route's pace ([`../route-pace.ts`](../route-pace.ts), [`ADR-0088`](../../../docs/decisions/ADR-0088-every-wait-on-the-load-path-comes-from-the-route-it-travels.md)) into the host's own waits: a `.eth` load waits 8 s for the light client's first sync and a name's proof is given 25 s on a direct connection, and a route that is six times slower than that (the tunnel's declared profile, measured against Nym) waits six times as long, plus the time the tunnel may need to come up while it has carried nothing yet. Every other wait on the load path reads the same route: the first byte of a block, a record or a chunk, the hedge to a second source, the node's patient retries, the DNS-over-HTTPS lookup of a DNSLink, and how long a failed read of a file has before it is not read again ([`serve/retry.ts`](serve/retry.ts)). The host keeps one route for the requests every website's pages use (the tunnel's when `config.front` is set, because the whole browser is on it) and one for the tunnel profile's. With the whole browser on the tunnel the shared light client does not sync when the host starts but when a `.eth` name first asks, or three minutes later, whichever comes first: the sync fetches about two megabytes, which a mixnet carries in two minutes, and every other request through the tunnel crawls meanwhile, an `ipfs://` page included. The three minutes keep the checkpoint renewal that a host started for it (`../../main/verifier/README.md`) relies on. The shell asks the host for a mount with the longest wait the route can ever give (`mountCeilingMs`), so it never gives up before the host does.
+
+**The Ethereum light client can leave outside the tunnel.** With `HostConfig.ethereumOutside` and the whole browser on the tunnel (`front`), `startEns` gives Helios and CCIP-Read [`outside-fetch.ts`](outside-fetch.ts)'s fetch (`HostDeps.outside`): Node sockets, through `direct-fetch.ts`, to addresses the system resolver (`dns.lookup`) returned and the fence checked, because the process's own network context is pointed at the front and `net` cannot leave it. Its pace is the direct pace. Main sets the flag from "Use tunnel to run network nodes" being off, and not while a proxy of the system's own applies.
+
+**The routed fetch speaks to the profile's front, not to the tunnel's SOCKS5 address.** [`routed-fetch.ts`](routed-fetch.ts) sends a `CONNECT` with the front's sign-in and then runs TLS over the stream, with Node's own sockets, because `net.fetch` in a utility process cannot sign in to a front (it ends at the `407`). The front is the one place that already waits for Nym to start, follows a changed tunnel and fails closed with nothing direct, and Nym's port changes at every start, so the host would otherwise have to ask main for an address at each connection. Connections are kept alive and pooled per destination, since a Nym stream is slow to open. It follows no redirect (a 3xx comes back as a response and `allowlisted` refuses it), carries no cookie and no cache, and takes plain HTTP only in a test build's fixture.
+
+**The host counts what it reads from a node.** [`node-traffic.ts`](node-traffic.ts) wraps each read `NodeLink.reading` makes:
+the read is in flight from its start to the end of its body (or its cancel, or its failure), and every byte read is added up.
+The totals go to main as `node-traffic` at most once a second, with a last report when the reads stop, so a popup that shows them
+costs nothing while nobody looks. Nothing here decides anything: the figures are only what the Available networks popup says.

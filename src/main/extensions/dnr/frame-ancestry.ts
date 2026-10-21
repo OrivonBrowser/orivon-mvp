@@ -19,7 +19,7 @@ export interface AncestorFrame {
  * Best-effort replacement for the live frame tree (`nsIBrowsingContext`)
  * `RequestDetails#ancestorRequestDetails` walks in upstream Firefox --
  * `vendor/firefox-dnr/src/extension-dnr.mjs`'s top comment and this
- * directory's README §Design notes have the full rationale. `dnr-engine.ts`
+ * directory's README section Design notes have the full rationale. `dnr-engine.ts`
  * feeds every main_frame/sub_frame request through `record()` before
  * evaluating it, so that a later subresource or child frame in the same tab
  * can look its ancestry up.

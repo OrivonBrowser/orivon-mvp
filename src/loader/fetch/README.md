@@ -23,6 +23,12 @@ root `entry`, HTML served in place of a script, and the undeclared-file warning 
 documented where they are enforced: `install-origin.ts`, `asset.ts`, `budget.ts` (the `Fetch`
 type), `../electron/fetch.ts`, `../manifest/manifest.ts` and `undeclared-assets.ts`.
 
+**A file that meets a transient fault is fetched again, a bounded number of times.** A gateway's
+502/503/504 or a dropped connection ([`budget.ts`](budget.ts) marks the rejection `transient`) is
+retried after a pause by [`retry.ts`](retry.ts): three attempts at most (1 s and 3 s apart), or five for a file the verifier serves (1, 3, 10 and 30 s apart: behind it are gateways, a light client and, with the tunnel on, a mixnet, and the verifier host starts again when the tunnel setting changes), the bundle's deadline
+cutting a pause short. A 404, a script served as HTML and a byte cap reject at once. A rejection
+still marked `transient` after the last attempt means the download failed, not that the bundle is bad.
+
 **[`bundle.ts`](bundle.ts) owns one concern**: `(fetch, hintedUrl)` in, a validated bundle out.
 TOFU versus `decideUpdate()` is `../index.ts`'s job, and persistence is
 [`../cache/install.ts`](../cache/install.ts)'s.

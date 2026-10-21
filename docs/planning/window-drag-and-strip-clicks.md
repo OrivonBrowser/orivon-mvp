@@ -1,8 +1,8 @@
 # Window drag and strip clicks: can the empty end of the tab strip move the window and open a tab?
 
 **Status: research, 2026-10-03. Answers A292; nothing here is built or decided.** Every claim is
-marked **measured** (a run on this machine, with the command in §8) or **read** (from the upstream
-source cited in §3 and §4). The measuring setup is real pointer input into real windows, on a private
+marked **measured** (a run on this machine, with the command in section 8) or **read** (from the upstream
+source cited in section 3 and section 4). The measuring setup is real pointer input into real windows, on a private
 virtual display, so none of it touched the owner's screen or speakers.
 
 ## 1. The answer
@@ -15,7 +15,7 @@ virtual display, so none of it touched the owner's screen or speakers.
    tab in Chromium's source is on the `+` button (it opens the clipboard's URL, or searches it), and
    it did nothing with an empty clipboard. So the premise "Brave opens a tab there" is not
    reproduced here; the owner may have meant the `+` button, another platform, or another setting
-   (§6, "To ask the owner").
+   (section 6, "To ask the owner").
 2. **Brave moves the window with the same mechanism Orivon uses.** Its empty strip is a caption
    area (`HTCAPTION`), the same hit-test answer Electron's `-webkit-app-region: drag` produces. The
    same Chromium event filter handles both, so Brave has *exactly* the page-sees-nothing behaviour
@@ -24,20 +24,20 @@ virtual display, so none of it touched the owner's screen or speakers.
    every variant that has one (`titleBarStyle: 'hidden'` with the overlay, plain `frame: false`, a
    `BrowserWindow`, a drag region under a stacked view): the page gets no event of any button, and
    neither does `before-mouse-event` or `input-event` in the main process. It is by construction
-   (§5.1): the frame view claims the whole hit-tested rectangle. It does not change with the GNOME
+   (section 5.1): the frame view claims the whole hit-tested rectangle. It does not change with the GNOME
    action or with X11 versus Wayland. One button is an exception: the right button reaches the page
    if the window's `system-context-menu` event is cancelled.
 4. **What does work, without a native module: split the pixels.** A region that is a drag region for
    one part of the strip and `no-drag` for the rest gives the window manager's drag *and* the
    page's middle click, on X11 and on Wayland, each in its own part (measured). The cost is that no
    pixel does both.
-5. **The fix that gives both on the same pixels is a small change inside Electron** (§5): the
+5. **The fix that gives both on the same pixels is a small change inside Electron** (section 5): the
    right-click path already re-dispatches the press to the page with draggable regions switched
    off; the middle button is not in that path. Not built, not testable here (needs an Electron
    build).
 
-Recommendation in §6: build nothing yet. If the owner wants the behaviour before an Electron change,
-the safe no-native-module design is the top-band split, §6 option B.
+Recommendation in section 6: build nothing yet. If the owner wants the behaviour before an Electron change,
+the safe no-native-module design is the top-band split, section 6 option B.
 
 ## 2. Setup
 
@@ -74,11 +74,11 @@ the window buttons; `+` = its glyph.
 | Left drag from the empty strip, +100,+100 | window moved +92,+92 (WM move, after the drag threshold) | same | moved +100,+100 (compositor move) | same |
 | Double click on the empty strip | maximised (1280x800) | maximised | geometry changed (1068x658 to 1100x700) | not run |
 
-Commands: `brave-x11.sh <lower|none>` and `brave-wl.sh <lower|none>` (§8). The Wayland `lower` cell
-shows nothing because Chromium's `LowerWindow` is compiled for X11 only (§4), not because the click
+Commands: `brave-x11.sh <lower|none>` and `brave-wl.sh <lower|none>` (section 8). The Wayland `lower` cell
+shows nothing because Chromium's `LowerWindow` is compiled for X11 only (section 4), not because the click
 was lost: the same injected middle click produces `auxclick` in the Electron probe on the same
-compositor (§5.2). Only `lower` and `none` are valid comparisons: a first `minimize` run was made
-before the `gtk-*/settings.ini` entry existed (§2) and changed nothing, so it is not a datum.
+compositor (section 5.2). Only `lower` and `none` are valid comparisons: a first `minimize` run was made
+before the `gtk-*/settings.ini` entry existed (section 2) and changed nothing, so it is not a datum.
 
 ## 4. How Chromium delivers it (read, from `main` on 2026-10-03; Electron 44 is Chromium 152)
 
@@ -111,7 +111,7 @@ before the `gtk-*/settings.ini` entry existed (§2) and changed nothing, so it i
 
 Electron's `-webkit-app-region: drag` is not a different mechanism: the renderer reports the drag
 rectangles, `electron::api::WebContentsView::NonClientHitTest` answers `HTCAPTION` inside them, and
-the same filter runs. So the question for Electron is only how the *target* is chosen, §5.
+the same filter runs. So the question for Electron is only how the *target* is chosen, section 5.
 
 ## 5. What Electron 44 allows (read, then measured)
 
@@ -194,7 +194,7 @@ give both at all, only H keeps the whole empty end working for both, and it is a
 Electron itself: a fork or a patch to carry. Whether that fits Rules 6 and 8 is the owner's to say. So:
 
 1. **Do not build anything for A292 now.** Today's behaviour is exactly Brave's measured behaviour;
-   the only difference is the owner's recollection (§1 point 1). Ask first.
+   the only difference is the owner's recollection (section 1 point 1). Ask first.
 2. **If the owner still wants it, take B**, with the `+` button and the first tab's gutter also
    draggable, and implement double-click-to-maximise over IPC. It needs no native module and no
    permission change. What it spends is drag area, which the owner should weigh against the benefit
@@ -213,7 +213,7 @@ Electron itself: a fork or a patch to carry. Whether that fits Rules 6 and 8 is 
 
 - What exactly did Brave do: which platform (Windows, Linux X11, Linux Wayland), which version, the
   `+` button or the empty strip, vertical tabs or horizontal. Measured here, the Linux strip does
-  not open a tab (§3).
+  not open a tab (section 3).
 - Whether a thinner drag target (B) is an acceptable price for the middle click, or the behaviour
   should wait for H.
 
@@ -230,7 +230,7 @@ Electron itself: a fork or a patch to carry. Whether that fits Rules 6 and 8 is 
   X11 row is definitive.
 - `minimize` and `toggle-maximize` as middle-click actions were not run through the Electron probe:
   `lower`, `none` and the no-op Wayland case already show the page is never reached, and the
-  frame-action table in §4 shows `minimize` and `toggle-maximize` act on the window the same way.
+  frame-action table in section 4 shows `minimize` and `toggle-maximize` act on the window the same way.
 
 ## 8. Reproducing it
 

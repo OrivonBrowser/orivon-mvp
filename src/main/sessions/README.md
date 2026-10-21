@@ -9,9 +9,10 @@ origin redeeming a live `chrome.tabCapture` grant (`tab-capture-media.ts`, with
 gate asks `site-asks.ts`, a registry of per-site askers: each answers only the permissions it owns,
 only for a tab, and answers `undefined` otherwise, so the gate's rules decide. An asker may be added first (`addFirst`) when
 it must see a request before the general askers do, and may hear every grant once the gate has told
-Electron (`afterGrant`). `display-media-handler.ts` is the slot `setDisplayMediaRequestHandler`
+Electron (`afterGrant`). `device-permission-handler.ts` is the slot `setDevicePermissionHandler` points at: it answers no for every device until [`../devices/`](../devices/) binds the handler for a HID device, and no for USB and serial always. `display-media-handler.ts` is the slot `setDisplayMediaRequestHandler`
 points at on every session: it answers no stream (the page's call fails) until
-[`../display-capture/`](../display-capture/) binds the handler that gives the source the person picked. `external-links.ts` and
+[`../display-capture/`](../display-capture/) binds the handler that gives the source the person picked. `wake-lock-asker.ts` is the asker that owns `screen-wake-lock` (`ADR-0090`): yes for a tab's top frame, no for any other contents or frame, never a question.
+`external-links.ts` and
 `site-notifications.ts` decide the two that ask the person; `notification-decisions.ts` remembers
 each site's notification answer; `tab-prompts.ts` is what each tab remembers between questions.
 `web-context-host.ts` is `ADR-0019`'s Electron half of the isolated `WebContext`: the real
@@ -19,7 +20,18 @@ each site's notification answer; `tab-prompts.ts` is what each tab remembers bet
 through `CreateBrokerOptions.webContextHost`. `web-request-owner.ts` is the one place anything
 registers Electron's own `onBeforeRequest`/`onBeforeSendHeaders`/`onHeadersReceived` on a session
 it covers, composing every registered handler through `web-request-compose.ts`'s pure ordering
-logic; see this file's Design notes below. `session-attribution.ts` publishes
+logic; see this file's Design notes below. `own-listener-media-gate.ts` is `ADR-0069`'s Electron half:
+it cancels a loopback image or media request from a page that holds a `tcp.listen` grant when the
+port is not one its own listeners hold, on the default session and on each session an app is served
+from, with the pure decision in [`../../broker/policy/own-listener-media.ts`](../../broker/policy/own-listener-media.ts).
+`local-node-port-gate.ts` cancels, in every session, a request from any page to a loopback port a local node holds
+(`local-node-ports.ts` is the pure decision), so no page can time a node that keeps what it fetched.
+`app-files-by-url.ts` is `ADR-0070`'s Electron half: on the same sessions it redirects an app page's image or
+media request for `/orivon/app/<path>` to the `orivon-file:` scheme and answers that scheme with the app's own
+file (`app-file-response.ts`, no Electron in it), with the pure decision in
+[`../../broker/policy/app-files-by-url.ts`](../../broker/policy/app-files-by-url.ts).
+`website-sessions.ts` is the list of sessions a website runs in (the default one, and the tunnel profile and the direct profile a website with an entry of its own lives in, `../route/`): a control that guards or adjusts a website's requests installs through `forEachWebsiteSession`, so a website that moves into a profile keeps it, and a session missing one is refused.
+`session-attribution.ts` publishes
 `ctx.senderAttributed` (`../registry.ts`): whether a WebContents is attributed to the origin it
 claims, decided at that document's own commit and reused afterward rather than re-decided live (except a cache-served origin and a local file, checked live),
 reusing [`../shell/tab-view.ts`](../shell/tab-view.ts)'s own `partitionForTarget` rule so every
@@ -35,8 +47,8 @@ a document is fixed for its life, so only the session can be wrong.
 [`../../protocols/builtin.ts`](../../protocols/builtin.ts), [`../shell/`](../shell/) (the native
 question `external-link-prompt.ts`; `showing-window.ts`;
 `exclusive-access-notice.ts`; `lock-navigation.ts`; `tab-view.ts`'s `partitionForTarget`), [`../local-files/`](../local-files/)'s `partition.ts`, the
-top-level `registry.ts`. Only `permission-gate.ts`, `web-context-host.ts`, `web-request-owner.ts`
-and `session-attribution.ts` import `electron`: the decision files, `web-request-compose.ts`
+top-level `registry.ts`. Only `permission-gate.ts`, `web-context-host.ts`, `web-request-owner.ts`,
+`own-listener-media-gate.ts`, `local-node-port-gate.ts`, `app-files-by-url.ts` and `session-attribution.ts` import `electron`: the decision files, `web-request-compose.ts`
 included, are unit-tested under plain vitest.
 
 **What it must never import.** Nothing security-relevant about an isolated context may live in
@@ -45,7 +57,7 @@ Electron-free by its own rule, which is why this directory exists. The partition
 construction and the network confinement have to live somewhere Electron-shaped, and this is it.
 
 **Durable or tied to Electron.** `permission-gate.ts`, `web-context-host.ts`,
-`web-request-owner.ts` and `session-attribution.ts` are tied to Electron's `Session`; the decision
+`web-request-owner.ts`, `own-listener-media-gate.ts`, `app-files-by-url.ts` and `session-attribution.ts` are tied to Electron's `Session`; the decision
 files (`web-request-compose.ts` included), the notification store and `tab-capture-grants.ts` are
 plain Node and would survive an engine change.
 
@@ -53,6 +65,16 @@ plain Node and would survive an engine change.
 (`web-context-host.ts`). Maintenance only.
 
 ## Design notes
+
+**[`app-files-by-url.ts`](app-files-by-url.ts) redirects instead of answering, on purpose.** An app's files
+have to reach a page of a granted loopback origin on the shared session, and `protocol.handle('http')` there
+would route every `http:` request of every tab through JavaScript. A web-request handler filtered to
+`/orivon/app/` images and media redirects the one verified request to `orivon-file:` (measured on Electron 44:
+the redirect crosses origins, `img-src`/`media-src` check its target, `Range` reaches the scheme handler and a
+media element seeks). A cache-served app's session sees the same request through the handler's `onBeforeRequest`
+before its own scheme handler does. The scheme is open to every page of those sessions, so the URL carries a
+MAC over origin and path that only this process makes: without it a page could name another app's file.
+The handle comes from `Broker.fs.open`, which confines and checks the grant again at the read.
 
 **[`permission-gate.ts`](permission-gate.ts): wired through `app.on('session-created', ...)`,
 not at any one session's construction site.** Electron fires that event once for every `Session`
@@ -101,14 +123,20 @@ to check either signal against.
 | `fullscreen` | 1(b) | A click; Escape in the browser process; "Press Esc to exit full screen" | `ADR-0025` |
 | `pointerLock` | 1(b) | A click; Escape in the browser process; "Press Esc to show your cursor" | `ADR-0026` |
 | `keyboardLock` | 1(b) | Acts only in fullscreen, which a click enters; holding Escape leaves; "Press and hold Esc to exit full screen" | `ADR-0026` |
+| `screen-wake-lock` | 1(b) | Chromium offers it to a secure context only; the tab's preload releases a lock when the shell hides the tab, which Chromium never does for a tab behind another (`../../preload/page-visibility.ts`); owned by `wake-lock-asker.ts`, so only a tab's top frame passes; `system-wake-lock` stays denied | `ADR-0090` |
 | `openExternal` | 2 | "Open *scheme* link with your system's default app?", every time; never asked for a page an app shows in a `<webview>`, which is refused (`ADR-0047`) | `ADR-0027` |
 | `notifications` | 2 | "*site* wants to show notifications", once per site, remembered; asked in the per-site prompt under the address bar | `ADR-0028` |
+
+**`screen-wake-lock` is in the table but not in `allowed-permissions.ts`.** Its answer depends on the contents (an ordinary
+tab) and the frame (the top one), which a name and its details cannot say, so `wake-lock-asker.ts` owns it and the
+gate's own rules deny it for whatever the asker does not answer. The grant is only as safe as the release in the
+tab's preload: remove that and a tab behind another keeps the screen on.
 
 **Names a per-site asker owns.** `media` (camera and microphone, one question for both),
 `clipboard-read` and `deprecated-sync-clipboard-read`, `geolocation`, `midi` and `midiSysex`,
 `idle-detection` and `window-management` are answered first by the asker
 [`../site-settings/`](../site-settings/) registers, and only for an ordinary tab on an `http(s)`
-site that is not a registered app. A main frame asks once per site and the answer is remembered; a
+site that holds no grants. A main frame asks once per site and the answer is remembered; a
 frame never asks and gets only its own page's stored allow; the check handler reads the stored
 answers and never asks. Anything the asker does not own, or any contents that is not a tab (an
 extension's page, a shell view, an embed), falls through to this table, where none of these names
@@ -126,9 +154,9 @@ follow from it:
   the gate notes a grant before answering it (`ADR-0026`).
 
 The notification measurement is the last phase of `test/sites/e2e-site-permissions.test.ts`, which
-runs only on a private session bus
+runs only on a private session bus, which `scripts/run-headless.mjs` gives every run off CI
 ([`setup.md`](../../../docs/development/setup.md)):
-`ORIVON_PRIVATE_BUS=1 node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/sites/e2e-site-permissions.test.ts`.
+`node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/sites/e2e-site-permissions.test.ts`.
 
 **`web-context-host.ts` reinstalls deny-everything handlers on isolated-context sessions.** They
 are the only thing keeping every name above away from a document running another site's script;
@@ -172,9 +200,9 @@ independent features registering directly on the same session would fight over w
 (`onSendHeaders`, `onResponseStarted`, `onBeforeRedirect`, `onCompleted`, `onErrorOccurred`); every caller instead registers a
 handler with an `order`, a `WebRequestFilter` and a URL predicate, and `web-request-compose.ts`'s
 pure logic runs them in order, threading each one's result to the next. Used for
-`session.defaultSession` today: the verifier's partition stamp (`../verifier/verifier-
+the sessions a website runs in (`website-sessions.ts`) today: the verifier's partition stamp (`../verifier/verifier-
 subsystem.ts`), the granted-origin CSP (`../install/granted-origin-csp.ts`), the Firefox
-request headers on Google's sign-in hosts (`../shell/sign-in-identity-headers.ts`) and the three
+request headers on Google's sign-in hosts (`../shell/sign-in-identity-headers.ts`) the privacy and content-setting handlers, and, on `session.defaultSession` alone, the three
 `declarativeNetRequest` handlers (`../extensions/dnr-webrequest.ts`) and the extension `webRequest`
 dispatcher (`../extensions/web-request-dispatch.ts`). The embed session
 ([`../embed/embed-host.ts`](../embed/embed-host.ts)), the internal-pages session

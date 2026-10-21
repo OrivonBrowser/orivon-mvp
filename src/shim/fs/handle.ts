@@ -14,23 +14,22 @@
 // snapshot -- real Node's own documented hazard for concurrent fs.read/
 // fs.write on one fd, not a bug introduced here.
 //
-// SCOPE LIMIT: FileHandle.readable()/writable() are built in the broker but
-// not page-reachable yet (A184, docs/open-questions.md) -- createReadStream/
-// createWriteStream below refuse loudly by name rather than faking a stream
-// this shim cannot actually get bytes through yet.
+// SCOPE LIMIT: FileHandle.readable()/writable() are built in the broker but not page-reachable yet (A184,
+// docs/open-questions.md), so FileHandle#createReadStream/createWriteStream below refuse by name.
 
 import type { FileHandle } from '../../contracts/handles.js'
 import { getOrivon } from '../orivon-global.js'
 import { toNodeStats, type NodeStats } from './stats.js'
 import { encode, encodingOf } from '../encoding.js'
 import { announce, canCreate, watchersExist } from './notices.js'
-import { normalizeOpenFlags } from './flags.js'
+import { normalizeOpenFlags, openFlagged, openFlaggedSync } from './flags.js'
 import { assertMode, confine, confineSync, fsError, guarded, type PathLike } from './paths.js'
 import { refuseShim } from '../errors.js'
 import {
   assertRootOpenAllowed, isRootPath, rootDirectoryHandle, rootDirectoryHandleSync, rootReadError, rootTruncateError, rootWriteError
 } from './root.js'
-import { guardedSync, syncFs, tryStatSync, type SyncFileHandleWire } from './sync-orivon.js'
+import { guardedSync, syncFsWithOpen, tryStatSync, type SyncFileHandleWire } from './sync-orivon.js'
+import { pickedOpen, pickedTarget } from './picked.js'
 
 export type NodeCallback<T> = (error: Error | null, result?: T) => void
 
@@ -139,6 +138,14 @@ export class NodeFileHandle {
   // `path` is mapped by fs/paths.ts's `confine`, the same as every other
   // fs call; the root ITSELF never reaches orivon.fs (fs/root.ts).
   static async open (path: PathLike, flags: string): Promise<NodeFileHandle> {
+    const picked = pickedTarget(path, 'open')
+    if (picked !== undefined) {
+      const handle = await pickedOpen(picked, flags)
+      const fd = nextFd++
+      const wrapped = new NodeFileHandle(fd, handle, new LocalCursor(await guarded(async () => await initialCursor(handle, flags))), picked.path, picked.rel === '')
+      openByFd.set(fd, wrapped)
+      return wrapped
+    }
     const confined = await confine(path, 'open')
     if (isRootPath(confined)) {
       assertRootOpenAllowed(flags)
@@ -149,7 +156,7 @@ export class NodeFileHandle {
     }
     const existed = !(canCreate(flags) && watchersExist()) || await getOrivon().fs.stat(confined).then(() => true, () => false)
     return await guarded(async () => {
-      const handle = await getOrivon().fs.open(confined, flags)
+      const handle = await openFlagged(async (at, mode) => await getOrivon().fs.open(at, mode), confined, flags)
       const cursor = new LocalCursor(await initialCursor(handle, flags))
       const fd = nextFd++
       const wrapped = new NodeFileHandle(fd, handle, cursor, confined)
@@ -410,7 +417,7 @@ class SyncNodeFileHandle {
     }
     const existed = !(canCreate(flags) && watchersExist()) || tryStatSync(confined) !== false
     return guardedSync(() => {
-      const handle = syncFs('fs.openSync').open(confined, flags)
+      const handle = openFlaggedSync((at, mode) => syncFsWithOpen('fs.openSync').open(at, mode), confined, flags)
       const cursor = new SyncLocalCursor(initialCursorSync(handle, flags))
       const fd = nextFd++
       const wrapped = new SyncNodeFileHandle(fd, handle, cursor, confined)

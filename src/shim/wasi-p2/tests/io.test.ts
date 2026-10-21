@@ -1,11 +1,11 @@
 // wasi:io's streams and pollables, and the addresses the socket interfaces
 // convert, driven the way jco's glue calls them.
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ResolvedNames, formatAddress, parseAddress, reportedAddress, socketErrorCode } from '../addresses.js'
 import { ComponentExit, exit, monotonicClock } from '../basics.js'
 import { componentImports } from '../imports.js'
-import { CLOSED, InputStream, IoError, OutputStream, poll } from '../io.js'
+import { CLOSED, InputStream, IoError, OutputStream, Pollable, poll } from '../io.js'
 
 function source (chunks: Uint8Array[]): () => Promise<Uint8Array> {
   return async () => chunks.shift() ?? new Uint8Array(0)
@@ -80,6 +80,42 @@ describe('poll', () => {
     const later = monotonicClock.subscribeDuration(10_000_000_000n)
     expect([...await poll([later, soon])]).toEqual([1])
     await expect(poll([])).rejects.toThrow(TypeError)
+  })
+
+  // A guest's event loop polls every socket each time anything wakes it; a reaction left on an idle socket's pending promise by each poll grew a busy program to gigabytes.
+  it('waits on a pollable that stays pending once, however often it is polled with others', async () => {
+    const idle = new Promise<void>(() => {})
+    const waitedOn = vi.fn(async () => { await idle })
+    const quiet = new Pollable(() => false, waitedOn)
+    let ticks = 0
+    const busy = new Pollable(() => ticks > 0, async () => { await Promise.resolve() })
+    for (let round = 0; round < 200; round++) {
+      ticks = 0
+      const waiting = poll([quiet, busy])
+      ticks = 1
+      expect([...await waiting]).toEqual([1])
+    }
+    expect(waitedOn.mock.calls.length).toBe(1)
+  })
+
+  it('wakes every poll waiting on one pollable, and arms its wait again afterwards', async () => {
+    let ready = false
+    let release: () => void = () => {}
+    let waits = 0
+    const gate = new Pollable(() => ready, async () => { waits++; await new Promise<void>((resolve) => { release = resolve }) })
+    const first = poll([gate])
+    const second = poll([gate])
+    ready = true
+    release()
+    expect([...await first]).toEqual([0])
+    expect([...await second]).toEqual([0])
+    ready = false
+    const third = poll([gate])
+    await Promise.resolve()
+    expect(waits).toBe(2)
+    ready = true
+    release()
+    await third
   })
 })
 

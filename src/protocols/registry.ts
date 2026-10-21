@@ -4,7 +4,7 @@
 
 import { ProtocolAddresses } from './address.js'
 import type { Protocol } from './protocol.js'
-import { ResolutionError, mostSpecificFailure } from './resolution/records.js'
+import { GatewaysOffered, ResolutionError, mostSpecificFailure } from './resolution/records.js'
 import type { NameRecord, ResolutionFailure } from './resolution/records.js'
 import type { DataGatherer, MountedSite, NameResolver, Namespace } from './resolution/providers.js'
 
@@ -18,29 +18,44 @@ interface Attempt {
   readonly provider: string
   readonly failure: ResolutionFailure
   readonly message: string
+  /** The provider could not serve, and public gateways could, if the person says so. */
+  readonly offersGateways?: boolean
 }
 
 function attemptOf (provider: string, error: unknown): Attempt {
-  if (error instanceof ResolutionError) return { provider, failure: error.failure, message: error.message }
+  if (error instanceof ResolutionError) return { provider, failure: error.failure, message: error.message, ...(error instanceof GatewaysOffered && { offersGateways: true }) }
   // A bug is not an answer: it must never look like one, nor like a proven absence.
   return { provider, failure: 'unavailable', message: error instanceof Error ? error.message : String(error) }
 }
 
 function exhausted (what: string, attempts: readonly Attempt[]): ResolutionError {
   const reasons = attempts.map((a) => `${a.provider}: ${a.message}`).join('; ')
-  return new ResolutionError(mostSpecificFailure(attempts.map((a) => a.failure)), `${what} (${reasons})`)
+  const failure = mostSpecificFailure(attempts.map((a) => a.failure))
+  // The offer survives only while nothing worse than "could not get it" was found: a lie or a missing name is not cured by asking a gateway.
+  if (failure === 'unavailable' && attempts.some((a) => a.offersGateways === true)) return new GatewaysOffered(`${what} (${reasons})`)
+  return new ResolutionError(failure, `${what} (${reasons})`)
 }
 
 export class ProtocolRegistry {
   readonly addresses: ProtocolAddresses
   private readonly resolvers: readonly NameResolver[]
   private readonly gatherers: readonly DataGatherer[]
+  private readonly schemeByGatherer: ReadonlyMap<string, string>
 
   /** Resolvers and gatherers are tried in the order their protocols are given. */
   constructor (protocols: readonly Protocol[]) {
     this.addresses = new ProtocolAddresses(protocols.map((p) => p.descriptor))
     this.resolvers = protocols.flatMap((p) => p.resolvers)
     this.gatherers = protocols.flatMap((p) => p.gatherers)
+    this.schemeByGatherer = new Map(protocols.flatMap((p) => {
+      const scheme = p.descriptor.schemes[0]
+      return scheme === undefined ? [] : p.gatherers.map((g): [string, string] => [g.id, scheme])
+    }))
+  }
+
+  /** The address scheme of the protocol that owns the gatherer: where a site it mounted lives (`bzz` for Swarm's). Undefined for a protocol with no scheme. */
+  schemeOfGatherer (gatherer: string): string | undefined {
+    return this.schemeByGatherer.get(gatherer)
   }
 
   private resolversFor (namespace: Namespace): NameResolver[] {
@@ -78,12 +93,14 @@ export class ProtocolRegistry {
     throw exhausted(`${served.name} could not be resolved`, attempts)
   }
 
-  async mount (name: string, records: readonly NameRecord[], signal?: AbortSignal, partition?: string): Promise<MountedSite> {
+  /** `loading` is told each gatherer's id just before it is tried, so a caller learns where the content lives before any of it is fetched. */
+  async mount (name: string, records: readonly NameRecord[], signal?: AbortSignal, partition?: string, loading?: (gatherer: string) => void): Promise<MountedSite> {
     const candidates = this.gatherers.filter((g) => g.supports(records))
     if (candidates.length === 0) throw new ResolutionError('unsupported', `no gatherer can load ${name}'s records`)
     const attempts: Attempt[] = []
     for (const gatherer of candidates) {
       try {
+        loading?.(gatherer.id)
         return await gatherer.mount(name, records, signal, partition)
       } catch (error) {
         attempts.push(attemptOf(gatherer.id, error))

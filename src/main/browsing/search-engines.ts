@@ -27,6 +27,32 @@ export const SEARCH_ENGINES: readonly SearchEngine[] = [
   { id: 'google', label: 'Google', keyword: 'g', template: 'https://www.google.com/search?q=%s', suggestUrl: 'https://suggestqueries.google.com/complete/search?client=firefox&q=%s' }
 ]
 
+/** An engine that searches the Web3: a directory of sites on `ipfs://` and ENS names, not a crawl of https pages. It has no
+ * keyword and no suggestion address; its template is an address Orivon opens like any other, so it is not held to
+ * `isValidSearchTemplate`'s https rule. */
+export interface Web3SearchEngine {
+  readonly id: string
+  readonly label: string
+  /** `%s` marks where the query goes. */
+  readonly template: string
+}
+
+export const DEFAULT_WEB3_SEARCH_ENGINE = 'explore'
+
+export const WEB3_SEARCH_ENGINES: readonly Web3SearchEngine[] = [
+  { id: 'explore', label: 'Explore', template: 'ipfs://explore.orivonstack.eth/#/search?q=%s' }
+]
+
+/** Which list an address-bar search goes to: Web3 by default. */
+export const SEARCH_MODES = ['web3', 'web2'] as const
+export type SearchMode = typeof SEARCH_MODES[number]
+export const DEFAULT_SEARCH_MODE: SearchMode = 'web3'
+
+/** The Web3 engine with this id; the first one when the id is unknown. */
+export function web3EngineFor (engineId: string): Web3SearchEngine {
+  return WEB3_SEARCH_ENGINES.find((engine) => engine.id === engineId) ?? (WEB3_SEARCH_ENGINES[0] as Web3SearchEngine)
+}
+
 const MAX_TEMPLATE_LENGTH = 2048
 
 function isLoopbackHost (hostname: string): boolean {

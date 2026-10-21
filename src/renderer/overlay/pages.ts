@@ -1,6 +1,7 @@
 // Every overlay page, keyed by the overlay's name (src/main/overlays/overlays.ts).
 // One line per page, in name order.
 import type { OverlayPage } from './kit.js'
+import { appSetupPage } from './app-setup/page.js'
 import { authSheetPage } from './auth-sheet/page.js'
 import { bookmarkEditPage } from './bookmark-edit/page.js'
 import { bookmarkFolderPage } from './bookmark-folder/page.js'
@@ -33,8 +34,10 @@ import { sitePromptPage } from './site-prompt/page.js'
 import { tabGroupPage } from './tab-group/page.js'
 import { tabSearchPage } from './tab-search/page.js'
 import { toastPage } from './toast/page.js'
+import { web3ScorePage } from './web3-score/page.js'
 
 export const OVERLAY_PAGES: Readonly<Record<string, OverlayPage>> = {
+  'app-setup-sheet': appSetupPage,
   'auth-sheet': authSheetPage,
   'bookmark-all-tabs': bookmarkEditPage,
   'bookmark-edit': bookmarkEditPage,
@@ -70,5 +73,6 @@ export const OVERLAY_PAGES: Readonly<Record<string, OverlayPage>> = {
   'site-prompt': sitePromptPage,
   'tab-group': tabGroupPage,
   'tab-search': tabSearchPage,
-  toast: toastPage
+  toast: toastPage,
+  'web3-score': web3ScorePage
 }

@@ -15,29 +15,34 @@
 // why. Only `brokerIpcSubsystem`, which nothing in ipc.test.ts calls,
 // touches the real `ipcMain`/`MessageChannelMain` value imports below.
 
-import { ipcMain, MessageChannelMain, session as electronSession } from 'electron'
+import { ipcMain, MessageChannelMain, net } from 'electron'
 import type { MessagePortMain, WebContents } from 'electron'
 import { CONTROL_CHANNEL, PORT_CHANNEL, SYNC_CONTROL_CHANNEL } from '../../main/channels.js'
 import { publishBroker } from '../../main/registry.js'
 import type { Subsystem, SubsystemContext } from '../../main/registry.js'
 import { createBroker } from '../index.js'
 import type { Broker, CreateBrokerOptions } from '../broker-contracts.js'
-import { dialTcp, listenTcp, nodeFs, resolveHost, resolveLookup } from '../adapters/node-adapters.js'
+import { dialTcp, listenTcp, nodeFs } from '../adapters/node-adapters.js'
 import { dialTls } from '../adapters/tls-adapter.js'
 import { bindUdp } from '../adapters/udp-adapter.js'
 import { nodeLedgerStorage } from '../grants/node-ledger-storage.js'
 import { cachingProxyProbe } from './proxy-probe.js'
+import { systemProxyFor } from '../../main/route/system-proxy.js'
+import { chromiumResolvers } from '../../main/privacy/chromium-resolver.js'
+import { heldNodePorts, loopbackPort } from '../../main/verifier/loopback-port.js'
+import { ownLoopbackPortCheck } from './own-loopback-ports.js'
 import { createWebContextHost } from '../../main/sessions/web-context-host.js'
 import { createElectronKeychain } from '../../main/keyring/electron-keychain.js'
 import { SESSION_ONLY_STORAGE } from '../../main/keyring/seed-store.js'
 import { createPortRegistry } from './relay/port-registry.js'
+import { createPendingDials } from './pending-dials.js'
 import type { RateLimiter } from './token-bucket.js'
 import { admitControlCall, createControlLimiter } from './control-limiter.js'
 import type { ControlLimiter } from './control-limiter.js'
 import { additionalProtectedRoots, notifyPickRefused, privateSessionGuard } from './picker-guard-wiring.js'
 import { createPickPath } from './picker-dialog.js'
 import { createSyncFsPolicy } from './sync-fs-policy.js'
-import { handleSyncFsReadRequest } from './sync-fs.js'
+import { handleSyncFsRequest } from './sync-fs.js'
 import type { SyncControlEvent, SyncFsPolicy } from './sync-fs.js'
 import { callerKeyFromSenderFrame, isAttributedSession } from '../policy/origin.js'
 import { fail } from '../errors.js'
@@ -58,7 +63,7 @@ export { CONTROL_CHANNEL, PORT_CHANNEL }
 export type {
   AppRequestGrantParams, ControlMethod, FsPathWithRecursiveParams, FsReaddirParams, FsReadFileParams, FsRenameParams,
   FsStatParams, FsWriteFileParams, IdPublicKeyParams, IdSignParams,
-  NetConnectParams, NetCloseParams, NetSetKeepAliveParams, NetSetNoDelayParams, NetUdpBindParams, RequestGrantCtx,
+  NetCancelParams, NetConnectParams, NetCloseParams, NetSetKeepAliveParams, NetSetNoDelayParams, NetUdpBindParams, RequestGrantCtx,
   SecretsDecryptParams, SecretsEncryptParams, TrustCtx, TrustWebsiteScoreParams,
   WebCloseParams, WebEvaluateParams, WebOpenContextParams
 } from './ipc-validation.js'
@@ -66,7 +71,7 @@ export type {
   ControlEvent, PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor, TcpServerDescriptor,
   UdpSocketDescriptor
 } from './relay/port-transport.js'
-export type { FsControlMethod, FsHandleDescriptor, FsTransport } from './dispatch/fs.js'
+export type { FsControlMethod, FsFileDescriptor, FsHandleDescriptor, FsTransport } from './dispatch/fs.js'
 export type { WebControlMethod } from './dispatch/web.js'
 
 /**
@@ -87,6 +92,7 @@ async function dispatch (
   requestGrantCtx: ControlCtx | undefined,
   fsTransport: FsTransport | undefined,
   abandoned: AbortSignal,
+  dialAbandoned: AbortSignal | undefined,
   windowForSender?: (sender: unknown) => unknown
 ): Promise<unknown> {
   if (!isControlMethod(method)) throw fail('invalid', `unknown control method: ${method}`)
@@ -95,6 +101,9 @@ async function dispatch (
     case 'app.manifest':
     case 'app.grants':
     case 'app.requestGrant':
+    case 'app.nextOpenUrl':
+    case 'app.requestSchemeHandler':
+    case 'app.isSchemeHandler':
       // Both closures re-read `event.sender` LIVE, whenever the dialog
       // actually calls them (A153), never a value captured here. `id` is
       // `event.sender` itself: a stable per-tab identity for
@@ -141,7 +150,8 @@ async function dispatch (
     case 'net.setNoDelay':
     case 'net.setKeepAlive':
     case 'net.lookup':
-      return await dispatchNet(broker, origin, method, payload, event, transport)
+    case 'net.cancel':
+      return await dispatchNet(broker, origin, method, payload, event, transport, dialAbandoned)
     case 'web.openContext':
     case 'web.evaluate':
     case 'web.close':
@@ -263,21 +273,30 @@ export async function handleControlRequest (
     return { id: envelope.id, ok: false, code: 'denied', message: 'this document is not in the session its origin belongs to' }
   }
 
-  // Checked before dispatch() ever runs, so a throttled call never reaches
-  // the broker at all (A38). Which budget a method draws on, and why one of
-  // them paces instead of refusing: ./control-limiter.ts.
-  if (!(await admitControlCall(limiter, origin, envelope.method))) {
-    return { id: envelope.id, ok: false, code: 'limit', message: 'this origin is calling too frequently; wait and retry' }
-  }
-
+  // A dial is findable by its request id from here on, even while the limiter below holds it, so a cancel sent
+  // right behind it always finds it (ADR-0071).
+  const dial = (envelope.method === 'net.connect' || envelope.method === 'net.connectSecure') && event.senderFrame !== null
+    ? transport?.dials.begin(event.senderFrame, origin, envelope.id)
+    : undefined
   try {
-    const result = await withTimeout(
-      async (abandoned) => await dispatch(broker, origin, envelope.method, envelope.payload, event, transport, requestGrantCtx, fsTransport, abandoned, windowForSender),
-      envelope.timeoutMs
-    )
-    return { id: envelope.id, ok: true, result }
-  } catch (error) {
-    return toFailureResponse(envelope.id, error)
+    // Checked before dispatch() ever runs, so a throttled call never reaches
+    // the broker at all (A38). Which budget a method draws on, and why one of
+    // them paces instead of refusing: ./control-limiter.ts.
+    if (!(await admitControlCall(limiter, origin, envelope.method))) {
+      return { id: envelope.id, ok: false, code: 'limit', message: 'this origin is calling too frequently; wait and retry' }
+    }
+
+    try {
+      const result = await withTimeout(
+        async (abandoned) => await dispatch(broker, origin, envelope.method, envelope.payload, event, transport, requestGrantCtx, fsTransport, abandoned, dial?.signal, windowForSender),
+        envelope.timeoutMs
+      )
+      return { id: envelope.id, ok: true, result }
+    } catch (error) {
+      return toFailureResponse(envelope.id, error)
+    }
+  } finally {
+    dial?.end()
   }
 }
 
@@ -317,10 +336,10 @@ export interface IpcMainOnLike {
   ): void
 }
 
-/** Thin wiring over `handleSyncFsReadRequest`, sharing `limiter` with `registerBrokerIpc` so this channel cannot be used to dodge CONTROL_CHANNEL's rate limit. */
+/** Thin wiring over `handleSyncFsRequest`, sharing `limiter` with `registerBrokerIpc` so this channel cannot be used to dodge CONTROL_CHANNEL's rate limit. */
 export function registerSyncFsIpc (ipc: IpcMainOnLike, policy: SyncFsPolicy, limiter?: RateLimiter, attributed?: (sender: unknown, origin: string) => boolean): void {
   ipc.on(SYNC_CONTROL_CHANNEL, (event, payload) => {
-    event.returnValue = handleSyncFsReadRequest(policy, event, payload, limiter, attributed)
+    event.returnValue = handleSyncFsRequest(policy, event, payload, limiter, attributed)
   })
 }
 
@@ -371,6 +390,13 @@ export const brokerIpcSubsystem: Subsystem = {
   critical: true,
   afterReady: (ctx: SubsystemContext) => {
     const realNow = (): number => Date.now()
+    // Thrown rather than skipped: without the route store an app the person routed would go direct.
+    const routes = ctx.routes
+    if (routes === undefined) throw fail('internal', 'ctx.routes is not published -- the route subsystem is missing or misordered')
+    // The names an app dials directly are resolved by Chromium's resolver, the one Secure DNS configures; node-adapters.ts's
+    // `resolveHost` and `resolveLookup` use the system's, which never hears of that setting. A routed app resolves nothing
+    // here: the name goes to its route.
+    const resolvers = chromiumResolvers(async (host) => await net.resolveHost(host))
     const deps: CreateBrokerOptions = {
       dial: dialTcp,
       // `dialTls` -- ADR-0017's real node:tls stack, no override, no new
@@ -380,13 +406,24 @@ export const brokerIpcSubsystem: Subsystem = {
       dialSecure: dialTls,
       bind: bindUdp,
       listen: listenTcp,
-      resolve: resolveHost,
-      resolveLookup,
+      resolve: resolvers.resolveHost,
+      resolveLookup: resolvers.resolveLookup,
+      // An app the person routed is carried by its route and by nothing else; the others keep the direct path and T20.
+      routeFor: routes.hub.routeFor,
       // T20's fail-closed check (security-model.md, docs/open-questions.md
-      // A263), asked of the SAME session every ordinary page loads through
-      // -- not a per-app or per-context one, since every net capability
-      // shares one system/OS proxy question, not an app-scoped one.
-      proxyConfigured: cachingProxyProbe(async (url) => await electronSession.defaultSession.resolveProxy(url)),
+      // A263): does the SYSTEM's proxy apply to this destination? Asked of a
+      // session that only ever follows the system (../../main/route/system-proxy.ts),
+      // not of the default session: while the whole browser is on the tunnel
+      // that one is pointed at the tunnel's front and would always say "a
+      // proxy", refusing every app the person left off the tunnel. It is one
+      // question for every net capability, not an app-scoped one.
+      proxyConfigured: cachingProxyProbe(async (url) => await systemProxyFor(url)),
+      // The loopback listeners Orivon runs: an app's loopback grant never reaches them, as no page does (T12).
+      ownLoopbackPort: ownLoopbackPortCheck({
+        verifier: loopbackPort,
+        nodes: heldNodePorts,
+        routeFront: (port) => routes.controller.challengeCredentials({ isProxy: true, host: '127.0.0.1', port }) !== undefined
+      }),
       now: realNow,
       fs: nodeFs(ctx.app.getPath('userData')),
       ledgerStorage: nodeLedgerStorage(ctx.app.getPath('userData')),
@@ -413,7 +450,7 @@ export const brokerIpcSubsystem: Subsystem = {
       privateSessionGuard,
       notifyPickRefused: (info) => { notifyPickRefused(info, ctx.showNotice) }
     }
-    const transport: PortTransport = { createPortPair: realPortPair, registry: createPortRegistry() }
+    const transport: PortTransport = { createPortPair: realPortPair, registry: createPortRegistry(), dials: createPendingDials() }
     // fs.open's own per-origin lookup (A184) -- the same generic
     // createPortRegistry `transport.registry` above uses, over
     // FailableFileHandle instead of RegisteredSocket. One instance for the

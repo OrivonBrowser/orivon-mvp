@@ -45,3 +45,20 @@ describe('activateTabShowing', () => {
     expect(activateTabShowing([windowWith({ a: page('https://x.example/', true) })], 'https://x.example/')).toBe(false)
   })
 })
+
+describe('activateTabShowing across sessions', () => {
+  it('counts only a tab of the session asked for: the page of an extension in another session is another copy of it', () => {
+    const mine = { id: 'mine' } as never
+    const other = { id: 'other' } as never
+    const elsewhere = { getURL: () => URL, on: vi.fn(), session: other } as unknown as WebContents
+    markExtensionOpened(elsewhere, URL)
+    const here = { getURL: () => URL, on: vi.fn(), session: mine } as unknown as WebContents
+    markExtensionOpened(here, URL)
+    const window = windowWith({ a: elsewhere, b: here })
+    expect(activateTabShowing([window], URL, mine)).toBe(true)
+    expect(window.activateTab).toHaveBeenCalledWith('b')
+    const alone = windowWith({ a: elsewhere })
+    expect(activateTabShowing([alone], URL, mine)).toBe(false)
+    expect(activateTabShowing([alone], URL)).toBe(true)
+  })
+})

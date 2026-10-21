@@ -15,5 +15,5 @@ conditions:
 **Native (or native-pulling) dependency written into package.json — blocked (Rule 8).**
 
 `webtorrent` must not be a shell dependency: it transitively requires `node-datachannel`
-(CMake + libdatachannel). Ship it as a pre-built app asset instead (`build-plan.md`, spike
+(CMake + libdatachannel). Ship it as a pre-built app asset instead (spike
 check 2). For the others, find a JavaScript or WebAssembly alternative or raise it with the owner.

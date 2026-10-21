@@ -158,7 +158,7 @@ input:focus-visible {
   color: var(--wink);
   transition: border-color 150ms ease;
 }
-.tile:not(:disabled):hover {
+.tile:hover {
   border-color: color-mix(in srgb, var(--waccent) 50%, transparent);
 }
 /* The same box whether the tile got the site's real favicon or the globe
@@ -173,4 +173,168 @@ img.tile-icon { border-radius: 4px; object-fit: contain; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A featured tile holds its two small controls, shown only while the tile is hovered or has the keyboard, so the row
+   looks as a bookmark row does until the person reaches for one. */
+.tile-wrap { display: grid; }
+/* Both share the one cell, the controls in its top right corner. The wrapper is not positioned: a positioned box
+   changes how the text painted after the row is rendered. */
+.tile-wrap > * { grid-area: 1 / 1; }
+.tile-actions {
+  justify-self: end;
+  align-self: start;
+  margin: 4px;
+  display: flex;
+  gap: 2px;
+  /* Hidden, not faded out: a transparent layer would take the sub-pixel text rendering from everything painted after the
+     row. The tile holding the keyboard shows them, so the next Tab reaches them. */
+  visibility: hidden;
+}
+.tile-wrap:hover .tile-actions,
+.tile-wrap:focus-within .tile-actions { visibility: visible; }
+.tile-action {
+  width: 22px;
+  height: 22px;
+  padding: 4px;
+  display: flex;
+  border-radius: 6px;
+  color: var(--wink-dim);
+}
+.tile-action:hover { color: var(--wink); background: color-mix(in srgb, var(--wink) 12%, transparent); }
+.tile-action svg { width: 100%; height: 100%; }
+
+/* The stand-in for an app that ships no icon. */
+.tile-letter {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--waccent) 25%, transparent);
+  color: var(--wink);
+}
+
+.link-button {
+  margin-top: 12px;
+  padding: 2px 4px;
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.7);
+  text-decoration: underline;
+}
+.link-button:hover { color: #e2e8f0; }
+
+/* The Start here card: a plain surface like the tiles, with its steps in a list. */
+.start-here {
+  width: 100%;
+  padding: 16px 20px;
+  border-radius: 14px;
+  background: var(--wsurface);
+  border: 1px solid var(--wborder);
+  color: var(--wink);
+}
+.start-here[hidden] { display: none; }
+.start-here-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.start-here-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+.start-here-dismiss {
+  padding: 2px 4px;
+  font-size: 12px;
+  color: var(--wink-dim);
+  text-decoration: underline;
+}
+.start-here-dismiss:hover { color: var(--wink); }
+.start-here-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.start-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.step-mark {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 5px;
+  border-radius: 50%;
+  border: 2px solid var(--wink-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+}
+.start-step[data-done='1'] .step-mark {
+  border-color: var(--waccent);
+  background: var(--waccent);
+}
+.step-mark svg { width: 12px; height: 12px; }
+.step-body {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+.step-title { font-size: 14px; font-weight: 600; }
+.step-detail {
+  order: 1;
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 13px;
+  color: var(--wink-dim);
+}
+.step-action {
+  padding: 5px 12px;
+  font-size: 13px;
+  border-radius: 8px;
+  border: 1px solid var(--wborder);
+  background: color-mix(in srgb, var(--wink) 6%, transparent);
+  color: var(--wink);
+}
+.step-action:hover { border-color: color-mix(in srgb, var(--waccent) 50%, transparent); }
+.start-here-note {
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: var(--wink-dim);
+}
+.start-here-note[hidden] { display: none; }
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The line in a row that has no tile yet, and the link under a row: both sit on the picture itself, so they carry a
+   soft shadow the tiles do not need. The link's own padding is taken back so its text starts where the line above does. */
+.tile-empty {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(226, 232, 240, 0.85);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+#your-apps-manage {
+  margin-left: -4px;
+  color: rgba(226, 232, 240, 0.85);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
 }

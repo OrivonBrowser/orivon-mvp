@@ -21,7 +21,7 @@ import { judgedElsewhereNote } from '../../trust/domain-binding.js'
 // still-unwired per-app axis (the "Connections: Not observed yet" row
 // below) -- see that module's own header.
 
-/** The canonical meanings, summarised: docs.orivonstack.com/docs/implementations/web3-score. */
+/** The level meanings, summarised from the scale in the root README.md. */
 const LEVEL_LABELS = [
   'Standard website (Web2)',
   'DDOC: its files match what its owner published',
@@ -42,7 +42,10 @@ function bundleHashShort (hash: string): string {
   return `${hash.slice(0, 8)}…${hash.slice(-6)}`
 }
 
-function rungItem (badgeText: string, labelText: string, state: 'met' | 'unmet' | 'unknown', levelClass?: string): HTMLLIElement {
+/** Opens the page that says what the levels mean. */
+type OnHelp = () => void
+
+function rungItem (badgeText: string, labelText: string, state: 'met' | 'unmet' | 'unknown', levelClass?: string, onHelp?: OnHelp): HTMLLIElement {
   const li = document.createElement('li')
   const metLevel = state === 'met' && levelClass !== undefined ? ` ${levelClass}` : ''
   li.className = `rung ${state}${metLevel}`
@@ -54,9 +57,16 @@ function rungItem (badgeText: string, labelText: string, state: 'met' | 'unmet' 
   label.textContent = labelText
   li.append(badge, label)
   if (state === 'unknown') {
-    const mark = document.createElement('span')
+    const mark = document.createElement(onHelp === undefined ? 'span' : 'button')
     mark.className = 'rung-mark'
     mark.textContent = '?'
+    if (onHelp !== undefined && mark instanceof HTMLButtonElement) {
+      mark.type = 'button'
+      mark.classList.add('rung-help')
+      mark.title = 'What the Web3 Score levels mean'
+      mark.setAttribute('aria-label', `${badgeText} is not known. What the Web3 Score levels mean`)
+      mark.addEventListener('click', onHelp)
+    }
     li.append(mark)
   }
   return li
@@ -117,7 +127,7 @@ function providerLine (judged: ProviderVerdict): string {
   }
 }
 
-function levelSection (trust: SiteTrust): HTMLElement[] {
+function levelSection (trust: SiteTrust, onHelp: OnHelp): HTMLElement[] {
   const { level, because, assessable } = trust.level
   const displayed = trust.displayedLevel
   const overridden = trust.levelOverride !== undefined
@@ -126,7 +136,7 @@ function levelSection (trust: SiteTrust): HTMLElement[] {
   list.className = 'rung-list level-list'
   LEVEL_LABELS.forEach((label, index) => {
     const n = index + 1
-    list.append(rungItem(`L${String(n)}`, label, rungState(n, displayed, judged === undefined ? 2 : 4), `level-${String(n)}`))
+    list.append(rungItem(`L${String(n)}`, label, rungState(n, displayed, judged === undefined ? 2 : 4), `level-${String(n)}`, onHelp))
   })
   const assessed = assessable === undefined
     ? 'Nothing: this page has neither a CID nor a bundle hash.'
@@ -183,14 +193,14 @@ function judgedParts (trust: SiteTrust): HTMLElement[] {
   return sections
 }
 
-function deliverySection (trust: SiteTrust): HTMLElement[] {
+function deliverySection (trust: SiteTrust, onHelp: OnHelp): HTMLElement[] {
   const displayed = trust.displayedDelivery
   const overridden = trust.deliveryOverride !== undefined
   const list = document.createElement('ul')
   list.className = 'rung-list delivery-list'
   DELIVERY_LABELS.forEach((label, index) => {
     const n = index + 1
-    list.append(rungItem(`D${String(n)}`, label, rungState(n, displayed, 2), n === 1 ? 'level-1' : n === 2 ? 'level-3' : 'level-4'))
+    list.append(rungItem(`D${String(n)}`, label, rungState(n, displayed, 2), n === 1 ? 'level-1' : n === 2 ? 'level-3' : 'level-4', onHelp))
   })
   const disclaimer = overridden
     ? `Level D${String(displayed)} is a developer override (ORIVON_SCORE_LEVELS_FILE): not observed.`
@@ -220,7 +230,7 @@ function ddocLabel (ddoc: DdocVerdict): string {
   }
 }
 
-export function renderWeb3Page (container: HTMLElement, trust: SiteTrust | null, onBack: () => void): void {
+export function renderWeb3Page (container: HTMLElement, trust: SiteTrust | null, onBack: () => void, onHelp: OnHelp): void {
   container.replaceChildren()
 
   const backRow = document.createElement('button')
@@ -241,7 +251,7 @@ export function renderWeb3Page (container: HTMLElement, trust: SiteTrust | null,
     return
   }
 
-  container.append(...levelSection(trust))
+  container.append(...levelSection(trust, onHelp))
 
   if (trust.name !== undefined) {
     container.append(document.createElement('hr'), paragraph('section-heading', 'Name'))
@@ -249,7 +259,7 @@ export function renderWeb3Page (container: HTMLElement, trust: SiteTrust | null,
   }
 
   container.append(document.createElement('hr'))
-  container.append(...deliverySection(trust))
+  container.append(...deliverySection(trust, onHelp))
 
   if (trust.pin !== undefined) {
     container.append(document.createElement('hr'))

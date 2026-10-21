@@ -4,6 +4,7 @@ import type { SavedSession, SavedWindow } from '../../session-restore/session-ty
 const fuse = vi.hoisted(() => ({ known: undefined as string | undefined, read: vi.fn() }))
 vi.mock('../../local-files/file-fuse.js', () => ({ knownFileProtocolFuse: () => fuse.known, fileProtocolFuse: fuse.read }))
 
+import { setCrashLookups } from '../../diagnostics/crash-lookup.js'
 import { OFFER_SHOWN_MS, restoreOverlayFor } from '../restore-overlay.js'
 
 const window = (url: string): SavedWindow => ({ bounds: { x: 10, y: 10, width: 800, height: 600 }, maximized: false, active: 0, tabs: [{ url, title: '', pinned: false }] })
@@ -14,9 +15,10 @@ function setup (previous: SavedSession | null) {
   for (const saved of previous?.windows ?? []) closedTabs.push({ kind: 'window', window: saved })
   const openWindow = vi.fn()
   const close = vi.fn()
+  const openInternal = vi.fn()
   const overlay = restoreOverlayFor({ displays: () => [display] })
-  const handler = overlay.attach({ services: { session: { previous: () => previous }, closedTabs, commands: { openWindow }, shortcuts: { keysOf: () => ['Ctrl', 'Shift', 'T'] } }, close } as never)
-  return { overlay, handler, openWindow, close, closedTabs }
+  const handler = overlay.attach({ window: { tabs: { openInternal } }, services: { session: { previous: () => previous }, closedTabs, commands: { openWindow }, shortcuts: { keysOf: () => ['Ctrl', 'Shift', 'T'] } }, close } as never)
+  return { overlay, handler, openWindow, close, closedTabs, openInternal }
 }
 
 describe('the restore overlay', () => {
@@ -27,7 +29,7 @@ describe('the restore overlay', () => {
 
   it('is a bar that never takes focus and stays over a tab switch', () => {
     const { overlay } = setup(previous)
-    expect(overlay).toMatchObject({ name: 'restore', focus: 'never', layer: 'bar', keep: 'fresh', placement: { kind: 'area', at: 'top-center', width: 420 } })
+    expect(overlay).toMatchObject({ name: 'restore', focus: 'never', layer: 'bar', keep: 'fresh', placement: { kind: 'area', at: 'top-center', width: 540 } })
     expect(overlay.closeOn).toEqual({ blur: false, tabSwitch: false, navigation: false, layout: false })
   })
 
@@ -67,7 +69,24 @@ describe('the restore overlay', () => {
 
   it('tells the page the keys that do the same from the keyboard', () => {
     const { handler } = setup(previous)
-    expect(handler.show?.(undefined)).toEqual({ keys: ['Ctrl', 'Shift', 'T'] })
+    expect(handler.show?.(undefined)).toEqual({ keys: ['Ctrl', 'Shift', 'T'], restore: true, report: false })
+  })
+
+  it('says whether the offer is to restore, to report, or both', () => {
+    const { handler } = setup(previous)
+    expect(handler.show?.({ restore: false, report: true })).toMatchObject({ restore: false, report: true })
+    expect(handler.show?.({ restore: true, report: true })).toMatchObject({ restore: true, report: true })
+    expect(handler.show?.({ report: 'yes' })).toMatchObject({ restore: true, report: false })
+  })
+
+  it('opens the report page at the last run\'s crash on Report, closes, and restores nothing', () => {
+    setCrashLookups({ page: () => undefined, lastRun: () => '0123456789abcdef' })
+    const { handler, openInternal, close, openWindow } = setup(previous)
+    handler.request({ type: 'report' })
+    expect(openInternal).toHaveBeenCalledWith('report', '/crash/0123456789abcdef')
+    expect(close).toHaveBeenCalledTimes(1)
+    expect(openWindow).not.toHaveBeenCalled()
+    setCrashLookups({ page: () => undefined, lastRun: () => undefined })
   })
 
   it('restores once, however often it is asked', () => {

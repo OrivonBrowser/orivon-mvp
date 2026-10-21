@@ -23,7 +23,8 @@ const MINIMAL_PDF = [
   '%%EOF'
 ].join('\n')
 
-const HOSTILE_NAME = '<img src=x onerror=document.title=1>.txt'
+// Windows file names cannot hold < or >, so there the name is the entity-escaped spelling of the markup: if the listing did not escape the &, the browser would show the markup itself and the name assertion would fail.
+const HOSTILE_NAME = process.platform === 'win32' ? '&lt;img src=x onerror=document.title=1&gt;&#39;.txt' : '<img src=x onerror=document.title=1>.txt'
 
 let dir: string
 const urlOf = (name: string): string => pathToFileURL(join(dir, name)).href

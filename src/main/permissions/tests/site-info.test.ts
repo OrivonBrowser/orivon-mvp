@@ -80,10 +80,10 @@ describe('buildSiteInfo -- capability rows', () => {
     const grants: Grant[] = [grant({ patterns: ['*:*'] })]
 
     const held = buildSiteInfo(APP, manifest, grants, [], true, 4)
-    expect(held.capabilityRows[0]).toMatchObject({ warning: false, message: 'Unlimited network access' })
+    expect(held.capabilityRows[0]).toMatchObject({ warning: false, message: 'Unlimited network access: open direct connections to any computer on the internet' })
 
     const notHeld = buildSiteInfo(APP, manifest, [], [], true, 4)
-    expect(notHeld.capabilityRows[0]).toMatchObject({ warning: false, message: 'Unlimited network access' })
+    expect(notHeld.capabilityRows[0]).toMatchObject({ warning: false, message: 'Unlimited network access: open direct connections to any computer on the internet' })
   })
 
   it('a grant for a capability the current manifest no longer declares is left out -- nothing left to switch', () => {
@@ -100,7 +100,7 @@ describe('buildSiteInfo -- capability rows', () => {
 })
 
 describe('buildSiteInfo -- picked paths', () => {
-  it('renders one row per picked path, worded the same as the all-sites list', () => {
+  it('renders one row per picked path, worded the same as the apps card in Settings', () => {
     const info = buildSiteInfo(APP, manifestWith({}), [], [{ id: 'pick-1', kind: 'file', path: '/home/person/notes.txt', pickedAt: 0 }], true)
     expect(info.pickedPathRows).toEqual([
       { pickId: 'pick-1', kind: 'file', warning: false, message: 'Can read and change "/home/person/notes.txt", including emptying it.' }
@@ -135,6 +135,17 @@ describe('buildSiteInfo -- identity fields', () => {
   it('carries the home the manifest names, and none when it names none', () => {
     expect(buildSiteInfo(APP, { ...manifestWith({}), domain: 'app.eth' }, [], [], true).homeDomain).toBe('app.eth')
     expect(buildSiteInfo(APP, manifestWith({}), [], [], true).homeDomain).toBeUndefined()
+  })
+})
+
+describe('buildSiteInfo -- supportIssues', () => {
+  it('carries the address the manifest gives for reporting a problem', () => {
+    const manifest = { ...manifestWith({}), support: { issues: 'https://example.com/issues' } }
+    expect(buildSiteInfo(APP, manifest, [], [], true).supportIssues).toBe('https://example.com/issues')
+  })
+
+  it('has no such key when the manifest gives none', () => {
+    expect(Object.hasOwn(buildSiteInfo(APP, manifestWith({}), [], [], true), 'supportIssues')).toBe(false)
   })
 })
 

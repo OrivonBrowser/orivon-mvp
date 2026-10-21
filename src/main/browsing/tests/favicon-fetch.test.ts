@@ -1,4 +1,5 @@
 import { Readable } from 'node:stream'
+import type { Session } from 'electron'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Resolver } from '../../../broker/policy/connect.js'
 import { MAX_FAVICON_BYTES } from '../favicon-format.js'
@@ -360,6 +361,105 @@ describe('fetchFaviconDataUrlCached -- over net.request', () => {
   it('resolves null, not a rejection, on a transport error', async () => {
     mockRequestOnce((request) => { request.emit('error', new Error('ECONNRESET')) })
     await expect(fetchUncached('https://93.184.216.34/icon.png', PUBLIC_PAGE)).resolves.toBeNull()
+  })
+})
+
+// A routed app's icons from other hosts: the name goes to its route unresolved, and the request leaves from the
+// route's own session, never the default one.
+describe('isSafeFaviconUrl -- for a routed app', () => {
+  it('accepts a public hostname without resolving it here', async () => {
+    await expect(isSafeFaviconUrl('https://cdn.example/icon.png', PUBLIC_PAGE, unreachableResolver, { routed: true })).resolves.toBe(true)
+  })
+
+  it('still judges a literal address, and keeps loopback away from a public page', async () => {
+    await expect(isSafeFaviconUrl('https://10.0.0.1/icon.png', PUBLIC_PAGE, unreachableResolver, { routed: true })).resolves.toBe(false)
+    await expect(isSafeFaviconUrl('http://127.0.0.1:8080/icon.png', PUBLIC_PAGE, unreachableResolver, { routed: true })).resolves.toBe(false)
+    await expect(isSafeFaviconUrl('https://localhost/icon.png', PUBLIC_PAGE, unreachableResolver, { routed: true })).resolves.toBe(false)
+    await expect(isSafeFaviconUrl('http://cdn.example/icon.png', PUBLIC_PAGE, unreachableResolver, { routed: true })).resolves.toBe(false)
+  })
+})
+
+describe('fetchFaviconDataUrlCached -- for a routed app', () => {
+  it('asks the route\'s session for another host, and the page\'s own session for its own origin', async () => {
+    const route = { name: 'route' } as unknown as Session
+    const page = { name: 'page' } as unknown as Session
+    mockRequestOnce((request) => { request.emit('response', respondOk(200, [PNG_BYTES])) })
+    mockRequestOnce((request) => { request.emit('response', respondOk(200, [PNG_BYTES])) })
+
+    await fetchFaviconDataUrlCached('https://cdn.example/icon.png', PUBLIC_PAGE, () => false, page, async () => route)
+    await fetchFaviconDataUrlCached('https://example.com/icon.png', PUBLIC_PAGE, () => false, page, async () => route)
+
+    expect(vi.mocked(net.request).mock.calls.map(([options]) => (options as unknown as { session?: unknown }).session)).toEqual([route, page])
+  })
+
+  it('follows a redirect to another host through the route too, without resolving it here', async () => {
+    const route = { name: 'route' } as unknown as Session
+    mockRequestOnce((request) => { request.emit('redirect', 301, 'GET', 'https://other-cdn.example/icon.png', {}) })
+    mockRequestOnce((request) => { request.emit('response', respondOk(200, [PNG_BYTES])) })
+
+    await expect(fetchFaviconDataUrlCached('https://cdn.example/icon.png', PUBLIC_PAGE, () => false, undefined, async () => route)).resolves.toMatch(/^data:image\/png/)
+
+    expect(vi.mocked(net.request).mock.calls.map(([options]) => (options as unknown as { session?: unknown }).session)).toEqual([route, route])
+  })
+})
+
+describe('fetchFaviconDataUrlCached -- the front\'s proxy challenge', () => {
+  it('is answered by the request itself, because no web contents is there to raise the application\'s login event', async () => {
+    const { setRouteChallengeSource } = await import('../../route/lookup-session.js')
+    setRouteChallengeSource((info) => info.port === 4040 ? { username: 'orivon', password: 'secret' } : undefined)
+    const route = { name: 'route' } as unknown as Session
+    const answers: unknown[][] = []
+    mockRequestOnce((request) => {
+      request.emit('login', { isProxy: true, host: '127.0.0.1', port: 4040 }, (...given: unknown[]) => { answers.push(given) })
+      request.emit('login', { isProxy: true, host: '127.0.0.1', port: 5050 }, (...given: unknown[]) => { answers.push(given) })
+      request.emit('response', respondOk(200, [PNG_BYTES]))
+    })
+
+    await fetchFaviconDataUrlCached('https://93.184.216.34/icon.png', PUBLIC_PAGE, () => false, undefined, async () => route)
+
+    expect(answers).toEqual([['orivon', 'secret'], []])
+  })
+})
+
+describe('fetchFaviconDataUrlCached -- a route switched while the icon is being fetched', () => {
+  const sessionOf = (name: string): Session => ({ name }) as unknown as Session
+  const sessionsAsked = (): unknown[] => vi.mocked(net.request).mock.calls.map(([options]) => (options as unknown as { session?: unknown }).session)
+
+  it('sends the hop after a switch-on through the route, never the default session', async () => {
+    const route = sessionOf('route')
+    let routed = false
+    mockRequestOnce((request) => { routed = true; request.emit('redirect', 301, 'GET', 'https://93.184.216.35/icon.png', {}) })
+    mockRequestOnce((request) => { request.emit('response', respondOk(200, [PNG_BYTES])) })
+
+    await expect(fetchFaviconDataUrlCached('https://93.184.216.34/icon.png', PUBLIC_PAGE, () => false, undefined, async () => routed ? route : undefined)).resolves.toMatch(/^data:image\/png/)
+
+    expect(sessionsAsked()).toEqual([undefined, route])
+  })
+
+  it('makes no hop at all once the route cannot be had', async () => {
+    const route = sessionOf('route')
+    let available = true
+    mockRequestOnce((request) => { available = false; request.emit('redirect', 301, 'GET', 'https://93.184.216.35/icon.png', {}) })
+
+    await expect(fetchFaviconDataUrlCached('https://93.184.216.34/icon.png', PUBLIC_PAGE, () => false, undefined, async () => { if (!available) throw new Error('no route'); return route })).resolves.toBeNull()
+
+    expect(sessionsAsked()).toEqual([route])
+  })
+
+  it('judges the first hop again, as the unrouted app it now is, when the route went away after the first check', async () => {
+    const route = sessionOf('route')
+    let asked = 0
+
+    // The name was cleared unresolved for a route; resolved here it cannot be (no resolver in this test), so nothing is sent.
+    await expect(fetchFaviconDataUrlCached('https://cdn.example/icon.png', PUBLIC_PAGE, () => false, undefined, async () => { asked += 1; return asked === 1 ? route : undefined })).resolves.toBeNull()
+
+    expect(vi.mocked(net.request)).not.toHaveBeenCalled()
+  })
+
+  it('fetches nothing when the route cannot be had from the start', async () => {
+    await expect(fetchFaviconDataUrlCached('https://93.184.216.34/icon.png', PUBLIC_PAGE, () => false, undefined, async () => { throw new Error('no route') })).resolves.toBeNull()
+
+    expect(vi.mocked(net.request)).not.toHaveBeenCalled()
   })
 })
 

@@ -235,6 +235,17 @@ describe('shellRequestAllowed', () => {
     }
   })
 
+  // Chromium can hand over a new document's first requests before it records the commit, so the frame reads empty.
+  it('lets a new-tab page that has not committed yet load its files, and nothing else whose frame reads empty', () => {
+    for (const resourceType of ['script', 'stylesheet']) {
+      expect(shellRequestAllowed({ resourceType, frame: from(''), firstDashboardLoad: true }), resourceType).toBe(true)
+      expect(shellRequestAllowed({ resourceType, frame: from('', false), firstDashboardLoad: true }), resourceType).toBe(false)
+      expect(shellRequestAllowed({ resourceType, frame: from('https://a.example/'), firstDashboardLoad: true }), resourceType).toBe(false)
+      expect(shellRequestAllowed({ resourceType, frame: null, firstDashboardLoad: true }), resourceType).toBe(false)
+      expect(shellRequestAllowed({ resourceType, frame: from(''), firstDashboardLoad: false }), resourceType).toBe(false)
+    }
+  })
+
   it('stops a frame inside the new-tab page and a page that only names it in its path or query', () => {
     expect(shellRequestAllowed({ resourceType: 'script', frame: from(DASHBOARD, false) })).toBe(false)
     expect(shellRequestAllowed({ resourceType: 'script', frame: from('https://a.example/?u=orivon-shell://renderer/newtab/index.html') })).toBe(false)
@@ -249,6 +260,13 @@ describe('shellDetailsAllowed', () => {
     expect(shellDetailsAllowed({ resourceType: 'script', frame: { url: DASHBOARD, parent: null } })).toBe(true)
     expect(shellDetailsAllowed({ resourceType: 'script', frame: { url: DASHBOARD, parent: {} } })).toBe(false)
     expect(shellDetailsAllowed({ resourceType: 'script' })).toBe(false)
+  })
+
+  it('asks whether the requesting web contents is a new-tab page still loading its first document', () => {
+    const first = (id: number): boolean => id === 7
+    expect(shellDetailsAllowed({ resourceType: 'script', frame: { url: '', parent: null }, webContentsId: 7 }, first)).toBe(true)
+    expect(shellDetailsAllowed({ resourceType: 'script', frame: { url: '', parent: null }, webContentsId: 8 }, first)).toBe(false)
+    expect(shellDetailsAllowed({ resourceType: 'script', frame: { url: '', parent: null } }, first)).toBe(false)
   })
 
   it('refuses a request whose frame cannot be read', () => {

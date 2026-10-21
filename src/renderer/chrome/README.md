@@ -14,21 +14,26 @@ Electron, entirely: it runs in the chrome's `WebContentsView` on `src/preload/sh
 | `tab-groups.ts`, `tab-group-drag.ts` | a group's chip before its first tab, the group's colour on its tabs, hiding a collapsed group's tabs, and dragging a chip to move the group |
 | `tab-sleeping.ts` | a sleeping tab's dimmed, ringed icon and the word "sleeping" in its tooltip and accessible name; a `TabDecorator` |
 | `tab-search-button.ts` | the button at the strip's right end that opens tab search |
+| `mac-window-buttons.ts` | on macOS in full screen, where the system hides them, the window's close, minimise and full-screen buttons, drawn where the system puts them |
 | `navigation.ts` | back, forward, reload, the address bar |
 | `address-suggest.ts` | the address field's dropdown from the field's side: what is typed, the arrows, Enter and Escape (the rules are in `address-suggest-model.ts`) |
+| `search-mode.ts` | the Web3 / Web2 chip at the start of the address bar's trailing marks: shown while the field is in use or empty, it runs `search.toggleMode`; a change of engine asks the open dropdown (through `address-suggest.ts`'s `address-refresh` event) to name the new one |
 | `address-display.ts` | the unfocused address over the input: the connection mark and the address in two tones (`address-format.ts` splits it), and when the field selects its text (`address-select.ts`: an entry selects, a window refocus keeps the caret) |
 | `downloads-button.ts` | the downloads button in the cluster: a progress ring, a dot for what wants a look, the bubble on a click; `downloads-ring.ts` is its pure part |
 | `home-button.ts` | the Home button, shown while `toolbar.home` is on |
 | `reader-button.ts` | the book in the address pill while the page in front looks like an article; opens reader view |
 | `password-key.ts` | the password button in the address pill: saved logins for this site, or an offer to keep the last sign-in |
+| `chrome-shown.ts` | tells main (`chrome.hidden`) when the page reads hidden, so main can show it again |
 | `prompt-anchor.ts` | reports the address pill's rectangle to main (`prompt.anchor`), so a prompt can open under it |
-| `site-badges.ts` | the Web3 Score shield and mark, the permissions key |
+| `site-badges.ts` | the Web3 Score shield and mark, the permissions key and its `data-missing` attribute (an app's permissions are not all granted), drawn as a dot by `styles/content-dot.css` |
 | `site-access-chip.ts` | the mark in the address bar for a page that asked for the camera, a location or another permission; it opens the review bubble |
-| `content-dot.ts` | a mark on the address bar's key for a site with JavaScript, images or sound switched off: an attribute on `site-badges`'s button, drawn by `styles/content-dot.css` |
+| `content-dot.ts` | a mark on the address bar's key for a site with JavaScript, images or sound switched off, or an app with an update offered: an attribute on `site-badges`'s button, drawn by `styles/content-dot.css` |
+| `tunnel-button.ts` | the tunnel button, last in the address pill after the Web2 / Web2.5 / Web3 mark: shown for any page with a site, purple while the page is on a tunnel and the warning colour when the tunnel does not answer (`data-tunnel`, drawn by `styles/tunnel-button.css`); its label names the tunnel the page goes through, which for a popup adopted into an app's session is the app's (`tunnelVia`); it opens the tunnels page of the site-info popup under itself |
 | `sharing-chip.ts` | the mark in the address bar for a page that is sharing a screen, a window or a tab; it brings back the window's sharing bar |
+| `files-chip.ts` | the mark in the address bar for a page that asked the verifier for files it could not give (a stylesheet, a script), which loads a page that looks broken though the browser counts it loaded; pressing it reloads the page |
 | `popups-chip.ts` | the mark in the address bar for a page whose pop-ups were blocked, with a count from two; it opens the `popups-blocked` bubble |
 | `side-panel-button.ts` | the cluster's side panel button: pressed while open, disabled in a window too narrow for a panel |
-| `cluster.ts` | the bookmark star, the zoom chip, the all-sites button, the profile chip, the menu button |
+| `cluster.ts` | the bookmark star, the zoom chip, the Available networks button and its dot, the profile chip, the menu button |
 | `bookmark-star.ts` | the star: opens the bookmark bubble under itself, and answers Mod+D with its rectangle |
 | `bookmarks-bar.ts` | the row under the toolbar: the bar's items, folder menus, the overflow button, the right-click menu |
 | `bar-overflow.ts` | pure: which items fit, where an arrow key goes, what an event from main is worth |

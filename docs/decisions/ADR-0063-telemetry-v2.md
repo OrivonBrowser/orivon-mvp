@@ -3,7 +3,9 @@
 - **Status:** accepted; supersedes [ADR-0004](ADR-0004-telemetry.md) in part (its payload, its
   install identifier, its country field, and its promise to publish the ingest configuration).
   **Superseded in part by [ADR-0064](ADR-0064-telemetry-country-and-start-send.md)**: item 4's
-  region (the payload names the country) and item 6's cadence (both reports also go at start)
+  region (the payload names the country) and item 6's cadence (both reports also go at start).
+  Item 9's provisional "the welcome does not ask again" is settled by d-0552: an acceptance under
+  an older notice is asked again at the next start
 - **Date:** 2026-10-06
 - **Type:** product / security
 - **Decided by:** **owner**
@@ -76,7 +78,7 @@ response channel) and widens what is measured and how the person chooses.
     wants to check the server's claims can only read what the notice says; that is the cost.
 
 ## Context
-The success metric is 100 active users in EU/USA at 25 hours a month (Rule 4). One identifier per
+The success metric counts active people (Rule 4). One identifier per
 install counted a person with two profiles, or a source and a packaged run, as several, and
 overstated the base. The owner also wants to know what kind of site the time goes to, since the
 product's claim is Web3 and Web2.5 use, and which single sites those are. The owner asked for a
@@ -140,7 +142,7 @@ stays in the payload for the metric, from the time zone, and decides nothing in 
 - The welcome cannot be dismissed without answering, which is one forced press for every new
   person; the cost is accepted for valid consent.
 - The identifier is a stable device identifier. It must be treated as personal data, and the
-  notice says so (`docs/privacy/dpia-screening.md` §Result).
+  notice says so (`docs/privacy/dpia-screening.md` section Result).
 - The system-wide consent means one choice applies to every profile of an operating-system user,
   and a profile cannot opt out alone.
 - Time-zone region is wrong for some people. It is a count by region, not an identity, and no
@@ -154,7 +156,8 @@ stays in the payload for the metric, from the time zone, and decides nothing in 
 
 ## Reversibility
 - **Cost to reverse:** cheap to narrow (drop per-site, drop a class); expensive
-  to widen, as ADR-0004 says: any further field needs a new ADR and a notice version bump.
+  to widen: any further field needs a decision-log row, a notice version bump with its
+  `NOTICE_CHANGES` line, and the notice's field table (d-0553).
 - **What would make us revisit:** a supervisory authority or counsel finding the
   machine-derived identifier needs more than consent, or the notice needing the server's source
   published to be credible; the consent rate in the EU making the metric unmeasurable; or a measured

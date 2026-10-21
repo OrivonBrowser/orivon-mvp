@@ -18,12 +18,16 @@
 // the load-bearing bit that must survive spike/ being deleted. See
 // .claude/skills/orivon-electron/SKILL.md for the full incident writeup.
 import { _electron as electron } from 'playwright'
-import { rmSync } from 'node:fs'
-import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { realpathSync, rmSync } from 'node:fs'
+import { mkdtemp, readdir, readFile, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { attachCollectors, holdEvidence } from './qa-evidence.mjs'
 import { CHROME_READY_TIMEOUT_MS, waitForChromeDrawn, waitForChromeReady, waitForChromeView } from './smoke-helpers.mjs'
+import { seedDefaultBrowserAskNotDue, seedNoScoreProvider, seedTheme } from './profile-seeds.mjs'
+import { noFocusDefault, SILENT_AUDIO_ENV, SILENT_AUDIO_SWITCH, visibleDesktopRefusal } from './launch-env.mjs'
+
+export { noFocusDefault, visibleDesktopRefusal }
 
 /**
  * The minimal shape registerLaunchForTeardown/closeElectron actually call --
@@ -40,23 +44,6 @@ import { CHROME_READY_TIMEOUT_MS, waitForChromeDrawn, waitForChromeReady, waitFo
 /** Environment variables that silently change what the binary IS. */
 const POISON = ['ELECTRON_RUN_AS_NODE']
 
-/**
- * This machine's audio output is a real, audible desktop: xvfb hides a
- * window, but nothing hides sound -- Chromium's audio service reaches
- * PipeWire/PulseAudio regardless of the virtual display, so a test page
- * that plays a tone (an oscillator, a captured tab) is heard on the
- * owner's real speakers. `PULSE_SERVER=unix:/nonexistent` makes Chromium's
- * PulseAudio client unable to connect, and it falls back to ALSA;
- * `--alsa-output-device=null` points that ALSA fallback at alsa-lib's own
- * null PCM instead of the real card. Audio still runs at real-time rate
- * (capture and `isCurrentlyAudible()` keep working, measured against
- * a tabCapture feasibility probe), only nothing
- * reaches a speaker. `--mute-audio` was not used instead: it can replace
- * the renderer's own sink with a null one and was not verified to leave
- * tab capture intact.
- */
-const SILENT_AUDIO_ENV = { PULSE_SERVER: 'unix:/nonexistent' }
-const SILENT_AUDIO_SWITCH = '--alsa-output-device=null'
 
 /**
  * Ceiling on any single Playwright ACTION (click, fill, press) started
@@ -148,36 +135,14 @@ const SEEN_PIDS = new Set()
 export function registerLaunchForTeardown (app, { userDataDir } = {}) {
   if (userDataDir !== undefined) {
     USER_DATA_DIRS.set(app, userDataDir)
-    KNOWN_PROFILES.add(resolve(userDataDir))
-    KEPT_PROFILES.delete(resolve(userDataDir))
+    KNOWN_PROFILES.add(profileKey(userDataDir))
+    KEPT_PROFILES.delete(profileKey(userDataDir))
   }
   const pid = app.process().pid
   if (pid !== undefined) {
     SEEN_PIDS.add(pid)
     APP_PIDS.set(app, pid)
   }
-}
-
-/** Writes one value into the profile's settings file, keeping every value a seed already put there; `ifAbsent` leaves a value the seed set. */
-async function seedSetting (userDataDir, key, value, { ifAbsent = false } = {}) {
-  const file = join(userDataDir, 'settings.json')
-  let stored = { version: 1, values: {} }
-  try { stored = JSON.parse(await readFile(file, 'utf8')) } catch { /* no file yet */ }
-  if (ifAbsent && stored.values?.[key] !== undefined) return
-  await mkdir(userDataDir, { recursive: true })
-  await writeFile(file, JSON.stringify({ ...stored, values: { ...stored.values, [key]: value } }))
-}
-
-async function seedTheme (userDataDir, scheme) {
-  await seedSetting(userDataDir, 'appearance.theme', scheme)
-}
-
-/**
- * A fresh profile asks no Web3 Score provider unless its seed names one: the default provider is a
- * network address, and a test run contacts nothing it did not start.
- */
-async function seedNoScoreProvider (userDataDir) {
-  await seedSetting(userDataDir, 'web3.scoreProvider', '', { ifAbsent: true })
 }
 
 /**
@@ -223,6 +188,9 @@ async function seedNoScoreProvider (userDataDir) {
  *   profile's `appearance.theme` is written (merged into a seeded
  *   settings.json), so the first paint and every page agree and the desktop's
  *   own theme cannot leak in.
+ * @param {boolean} [options.freshDefaultBrowserAsk] With ORIVON_TEST_DEFAULT_BROWSER set, a profile whose
+ *   seed wrote no default-browser ask clock gets one that is not due (seedDefaultBrowserAskNotDue); true
+ *   leaves it fresh, for a spec of the first ask itself.
  * @param {string} [options.reuseProfile] A profile directory from an earlier
  *   launch in this process, kept by closeElectron(app, { keepProfile: true }),
  *   for a test that relaunches on the state the first run wrote. Only a
@@ -244,6 +212,7 @@ export async function launchElectron ({
   scheme,
   reuseProfile,
   chrome = true,
+  freshDefaultBrowserAsk = false,
   onLaunch
 } = {}) {
   const env = { ...process.env, ...envOverrides }
@@ -257,19 +226,22 @@ export async function launchElectron ({
   if (stripped.length > 0) {
     console.log(`[launch] stripped from env: ${stripped.join(', ')}`)
   }
+  const refusal = visibleDesktopRefusal(env)
+  if (refusal !== undefined) throw new Error(refusal)
 
   // Nothing a test plays may reach the owner's real speakers -- see
-  // SILENT_AUDIO_ENV/SILENT_AUDIO_SWITCH's own doc. A caller that already
+  // SILENT_AUDIO_ENV/SILENT_AUDIO_SWITCH's own doc in launch-env.mjs. A caller that already
   // set PULSE_SERVER is left alone.
   if (env['PULSE_SERVER'] === undefined) env['PULSE_SERVER'] = SILENT_AUDIO_ENV.PULSE_SERVER
-  if (!args.some((a) => a.startsWith('--alsa-output-device'))) args = [...args, SILENT_AUDIO_SWITCH]
+  // In front of the caller's arguments: after a caller's `--` it would be an operand Chromium never reads.
+  if (!args.some((a) => a.startsWith('--alsa-output-device'))) args = [SILENT_AUDIO_SWITCH, ...args]
 
   // Every launch made through this shared file defaults to the no-focus
   // window path (src/main/window.ts) unless a caller explicitly overrides
   // it -- this is what makes `npm run smoke`/`test:e2e` no-focus even for
   // someone who runs them without xvfb-run, on a platform with no virtual
   // display at all (docs/development/setup.md).
-  if (env['ORIVON_WINDOW_NO_FOCUS'] === undefined) env['ORIVON_WINDOW_NO_FOCUS'] = '1'
+  if (env['ORIVON_WINDOW_NO_FOCUS'] === undefined) env['ORIVON_WINDOW_NO_FOCUS'] = noFocusDefault(process.platform, env)
   // The same for the Ethereum light client: off unless a caller turns it on,
   // so no test run contacts a mainnet RPC or beacon API. Every real `.eth`
   // name then fails closed; fixture names still load in a test build.
@@ -278,10 +250,17 @@ export async function launchElectron ({
   // has a fresh profile, so the default would put it over every page a test
   // drives, and the window count tests wait for would include its view.
   if (env['ORIVON_INTRO'] === undefined) env['ORIVON_INTRO'] = 'off'
+  // And the default profile: off unless a spec asks for it, so a launch starts with no bookmarks and no
+  // extension, as every spec written before it assumes (src/main/default-profile/).
+  if (env['ORIVON_DEFAULT_PROFILE'] === undefined) env['ORIVON_DEFAULT_PROFILE'] = 'off'
   // And telemetry: off unless a spec turns it on, so no run counts, reads this machine's identifier or
   // sends anything. A spec that needs it sets ORIVON_TELEMETRY=on; its state then lives in the profile's
   // own temporary folder (below), never the real ~/.config/orivon-telemetry.
   if (env['ORIVON_TELEMETRY'] === undefined) env['ORIVON_TELEMETRY'] = 'off'
+  // And the update check, which is on by default: off here so no run asks GitHub for the latest release.
+  if (env['ORIVON_UPDATE_CHECK'] === undefined) env['ORIVON_UPDATE_CHECK'] = 'off'
+  // And secure DNS, which is on by default: off here unless a spec names a choice, so no run asks a DNS provider.
+  if (env['ORIVON_SECURE_DNS'] === undefined) env['ORIVON_SECURE_DNS'] = 'off'
   // A spec that turns it on sends to a loopback address of its own, or to this closed port: never the real server.
   if (env['ORIVON_TELEMETRY_URL'] === undefined) env['ORIVON_TELEMETRY_URL'] = 'http://127.0.0.1:9/'
 
@@ -302,12 +281,16 @@ export async function launchElectron ({
   }
   const userDataDir = reuseProfile ?? await mkdtemp(join(tmpdir(), 'orivon-test-'))
   if (env['ORIVON_TELEMETRY_HOME'] === undefined) env['ORIVON_TELEMETRY_HOME'] = join(userDataDir, 'telemetry-home')
+  // The new tab's Start here card offers an import only where another browser has a profile: a launch looks in a home
+  // that holds none, never in the machine's own, so what it shows does not depend on who runs it.
+  if (env['ORIVON_TEST_IMPORT_HOME'] === undefined) env['ORIVON_TEST_IMPORT_HOME'] = join(userDataDir, 'no-browsers-home')
   let app
   try {
     // Inside the same try as the launch, so a throwing seed is cleaned up by
     // the same catch rather than leaking the directory it was given.
     if (seedProfile !== undefined) await seedProfile(userDataDir)
     if (reuseProfile === undefined) await seedNoScoreProvider(userDataDir)
+    if (reuseProfile === undefined && env['ORIVON_TEST_DEFAULT_BROWSER'] !== undefined && !freshDefaultBrowserAsk) await seedDefaultBrowserAskNotDue(userDataDir)
     if (scheme !== undefined) await seedTheme(userDataDir, scheme)
     app = await electron.launch({
       // The binary encrypts cookies (scripts/install-electron.mjs), so Chromium reads its key at every start; on
@@ -657,16 +640,29 @@ async function rmUserDataDir (dir, context) {
   })
 }
 
+/**
+ * One spelling per profile directory. macOS reaches its temporary folder through a symlink (`/var` is
+ * `/private/var`), and Electron reports the resolved path, so a spec handing back `app.getPath('userData')`
+ * names the same directory this file made under the other spelling.
+ */
+function profileKey (dir) {
+  try {
+    return realpathSync(dir)
+  } catch {
+    return resolve(dir)
+  }
+}
+
 /** True only for a profile directory this process made and has not removed. */
 function isOwnTempProfile (dir) {
-  return KNOWN_PROFILES.has(resolve(dir))
+  return KNOWN_PROFILES.has(profileKey(dir))
 }
 
 function keepProfileOf (app) {
   const dir = USER_DATA_DIRS.get(app)
   if (dir === undefined) return
   USER_DATA_DIRS.delete(app)
-  KEPT_PROFILES.add(resolve(dir))
+  KEPT_PROFILES.add(profileKey(dir))
   if (!sweepKeptAtExit) {
     sweepKeptAtExit = true
     process.once('exit', () => { for (const kept of KEPT_PROFILES) rmSync(kept, { recursive: true, force: true }) })
@@ -688,7 +684,7 @@ async function removeUserDataDirFor (app) {
   const dir = USER_DATA_DIRS.get(app)
   if (dir === undefined) return
   USER_DATA_DIRS.delete(app)
-  KNOWN_PROFILES.delete(resolve(dir))
+  KNOWN_PROFILES.delete(profileKey(dir))
   await rmUserDataDir(dir, 'closeElectron')
 }
 

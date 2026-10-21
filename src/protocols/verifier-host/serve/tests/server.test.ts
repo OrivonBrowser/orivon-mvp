@@ -12,8 +12,15 @@ import { IPFS } from '../../../ipfs/descriptor.js'
 import { createIpfsAddressResolvers } from '../../../ipfs/address-resolver.js'
 import { CID } from 'multiformats/cid'
 import { createRunCertificate } from '../certificate.js'
+import { DDOC_MISMATCH, EXPECT_LEAF_HEADER, FAILURE_HEADER } from '../../../../loader/fetch/content-root.js'
+import { leafOf } from '../../../../loader/leaf-hash.js'
 import { MAX_BUFFERED_BYTES, createVerifierServer } from '../server.js'
-import { Sites } from '../sites.js'
+import { RoutedSites, Sites } from '../sites.js'
+import { BlockSource } from '../../../ipfs/blockstore.js'
+import { DEFAULT_LIMITS } from '../../../ipfs/limits.js'
+import { openPath } from '../../../ipfs/unixfs.js'
+import { GatewayPool } from '../../../gateways/gateways.js'
+import { buildDag, fakeGateways } from '../../../ipfs/tests/dag.test-helpers.js'
 
 const ROOT = 'bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi'
 const BIG = MAX_BUFFERED_BYTES + 1024
@@ -25,6 +32,8 @@ const FILES: Record<string, StubFile> = {
   '/docs/index.html': { bytes: Buffer.from('<h1>docs</h1>') },
   '/app.js': { bytes: Buffer.from('run()') },
   '/bad.js': { bytes: Buffer.from('x'.repeat(100)), failAfter: 10, failure: new ResolutionError('unverifiable', 'block does not hash to its CID') },
+  '/lied.js': { bytes: Buffer.from('x'.repeat(100)), failAfter: 10, failure: new ResolutionError('unverifiable', 'every gateway sent bytes that failed their hash', true) },
+  '/mid.bin': { bytes: Buffer.alloc(5 * 1024 * 1024, 3) },
   '/big.bin': { bytes: Buffer.alloc(BIG, 7), failAfter: 1024 * 1024, failure: new ResolutionError('unverifiable', 'tampered') },
   '/cut.js': { bytes: Buffer.alloc(CUT, 7), failAfter: 64 * 1024, failure: new ResolutionError('unverifiable', 'tampered') }
 }
@@ -73,6 +82,10 @@ function fileRoot (range: { start: number, end: number } | undefined): GatheredF
   return { servedPath: '/', size: FILE_ROOT.length, contentType: 'text/html; charset=utf-8', body: (async function * () { yield bytes })() }
 }
 
+/** A folder with no index.html, opened through the real UnixFS reader over an in-memory gateway. */
+const folder = await buildDag({ 'a.txt': 'first', 'sub/b.txt': 'second' })
+const folderSource = new BlockSource(fakeGateways(folder.blocks).fetch, new GatewayPool(['https://a.gateway'], 4), DEFAULT_LIMITS)
+
 const opened: string[] = []
 const partitions: string[] = []
 const site: MountedSite = {
@@ -82,17 +95,24 @@ const site: MountedSite = {
   open: async (p, r, signal) => {
     opened.push(p)
     if (p === '/file-root') return fileRoot(r)
+    if (p === '/sub' || p === '/sub/') return await openPath(folderSource, folder.root, p, r, signal ?? new AbortController().signal, () => {})
     return p === '/stream.bin' ? streamed(signal) : open(p, r)
   },
   ddoc: () => ({ status: 'met', refusals: [] })
 }
 const record: NameRecord = { type: 'contenthash', pointer: { kind: 'ipfs', cid: ROOT }, provenance: { via: 'fixture' } }
+const flakyResolves = new Map<string, number>()
 const resolver: NameResolver = {
   id: 'stub',
   namespaces: ['.eth'],
   resolve: async (name) => {
+    if (name.endsWith('flaky.eth')) {
+      const seen = (flakyResolves.get(name) ?? 0) + 1
+      flakyResolves.set(name, seen)
+      if (seen === 1) throw new ResolutionError('unavailable', 'no gateway answered')
+    }
     if (name === 'syncing.eth') throw new ResolutionError('not-synced', 'light client syncing')
-    if (name === 'site.eth' || name === 'part.eth' || name === 'own.eth') return [record]
+    if (name === 'site.eth' || name.endsWith('flaky.eth') || name === 'part.eth' || name === 'own.eth') return [record]
     throw new ResolutionError('not-found', 'no such name')
   }
 }
@@ -107,7 +127,7 @@ let server: Server
 let port: number
 
 beforeAll(async () => {
-  server = createVerifierServer(registry, new Sites(registry), certificate)
+  server = createVerifierServer(registry, new RoutedSites(new Sites(registry), () => new Sites(registry)), certificate)
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   port = (server.address() as AddressInfo).port
 })
@@ -175,6 +195,34 @@ describe('the .eth loopback server', () => {
     expect(reply.status).toBe(301)
     expect(reply.headers.location).toBe('/docs/?x=1')
     expect((await get('/docs/')).body.toString()).toBe('<h1>docs</h1>')
+  })
+
+  it('redirects a folder shown as a listing to its slash form, and serves the listing there as verified HTML', async () => {
+    const reply = await get('/sub?x=1')
+    expect(reply.status).toBe(301)
+    expect(reply.headers.location).toBe('/sub/?x=1')
+    const page = await get('/sub/')
+    expect(page.status).toBe(200)
+    expect(page.body.toString()).toContain('Index of /sub/')
+    expect(page.headers['content-type']).toBe('text/html; charset=utf-8')
+    expect(page.headers['x-content-type-options']).toBe('nosniff')
+    expect(page.headers['content-security-policy']).toBe("default-src 'none'; style-src 'unsafe-inline'; treat-as-public-address; frame-ancestors 'self'")
+    expect(page.headers.etag).toBe(`"${ROOT}"`)
+  })
+
+  it('answers a listing whole and without ranges, whatever range or method asks', async () => {
+    const whole = await get('/sub/')
+    expect(whole.headers['accept-ranges']).toBeUndefined()
+    const ranged = await get('/sub/', { headers: { range: 'bytes=2-9' } })
+    expect(ranged.status).toBe(200)
+    expect(ranged.headers['content-range']).toBeUndefined()
+    expect(ranged.body.equals(whole.body)).toBe(true)
+    expect((await get('/sub/', { headers: { range: 'bytes=999999-9999999' } })).status).toBe(200)
+    const head = await get('/sub/', { method: 'HEAD' })
+    expect(head.status).toBe(200)
+    expect(head.body.length).toBe(0)
+    expect(Number(head.headers['content-length'])).toBe(whole.body.length)
+    expect(Number(whole.headers['content-length'])).toBe(whole.body.length)
   })
 
   it('serves a byte range, and refuses an unsatisfiable one', async () => {
@@ -267,11 +315,54 @@ describe('the .eth loopback server', () => {
     expect(reply.headers['retry-after']).toBe('10')
   })
 
+  it('offers Try again on a page about a failure that may pass, and on no other', async () => {
+    const TRY_AGAIN = '<a class="retry" href="">Try again</a>'
+    expect((await get('/', { host: 'syncing.eth' })).body.toString()).toContain(TRY_AGAIN)
+    expect((await get('/', { host: 'nobody.eth' })).body.toString()).not.toContain('Try again')
+    expect((await get('/bad.js')).body.toString()).not.toContain('Try again')
+  })
+
+  const NAV = { 'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'navigate' }
+  const SUBRESOURCE = { 'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'no-cors', 'sec-fetch-dest': 'script' }
+
+  it('answers Try again with a new attempt, though the failed one is remembered for a subresource', async () => {
+    const failed = await get('/', { host: 'flaky.eth', headers: { 'sec-fetch-site': 'none' } })
+    expect(failed.status).toBe(502)
+    expect(failed.body.toString()).toContain('Try again')
+    expect((await get('/app.js', { host: 'flaky.eth', headers: SUBRESOURCE })).status).toBe(502)
+    expect(flakyResolves.get('flaky.eth')).toBe(1)
+    const retried = await get('/', { host: 'flaky.eth', headers: { ...NAV, 'sec-fetch-dest': 'document' } })
+    expect(retried.status).toBe(200)
+    expect(retried.body.toString()).toBe('<h1>home</h1>')
+    expect(flakyResolves.get('flaky.eth')).toBe(2)
+  })
+
+  it('answers Try again inside a frame with a new attempt too', async () => {
+    const host = 'frame.flaky.eth'
+    expect((await get('/', { host, headers: { 'sec-fetch-site': 'none' } })).status).toBe(502)
+    expect((await get('/app.js', { host, headers: SUBRESOURCE })).status).toBe(502)
+    expect((await get('/', { host, headers: { ...NAV, 'sec-fetch-dest': 'iframe' } })).status).toBe(200)
+    expect(flakyResolves.get(host)).toBe(2)
+  })
+
   it('sends none of a small file that fails verification part-way: the error page instead', async () => {
     const reply = await get('/bad.js')
     expect(reply.status).toBe(502)
     expect(reply.body.toString()).not.toContain('xxxx')
     expect(reply.body.toString()).toContain('Cannot verify this site')
+  })
+
+  it('says a failed verification in a header of its own, and never for a name that merely does not resolve or a light client still syncing', async () => {
+    expect((await get('/bad.js')).headers['x-orivon-failure']).toBe('unverifiable')
+    expect((await get('/', { host: 'syncing.eth' })).headers['x-orivon-failure']).toBeUndefined()
+    expect((await get('/missing.js')).headers['x-orivon-failure']).toBeUndefined()
+  })
+
+  it('keeps its error page for a source that lied, and does not say the content failed: no gateway delivered the real bytes', async () => {
+    const reply = await get('/lied.js')
+    expect(reply.status).toBe(502)
+    expect(reply.body.toString()).toContain('Cannot verify this site')
+    expect(reply.headers['x-orivon-failure']).toBeUndefined()
   })
 
   it('streams even a small file to an install, which names its root and checks every byte itself, so a slow gateway still reads as progress', async () => {
@@ -346,5 +437,103 @@ describe('the loopback server, for an address scheme', () => {
     const reply = await get('/vitalik.eth/p?q=1', { host: 'ipns.orivon' })
     expect(reply.status).toBe(301)
     expect(reply.headers.location).toBe('https://vitalik.eth/p?q=1')
+  })
+
+  it.each([
+    ['an encoded slash', 'evil.example%2F.eth'],
+    ['an encoded hash', 'evil.example%23.eth'],
+    ['an encoded colon', 'evil.example%3A80.eth'],
+    ['an encoded at sign', 'user%40evil.example.eth'],
+    ['an encoded backslash', 'evil.example%5C.eth'],
+    ['an encoded question mark', 'evil.example%3F.eth'],
+    ['an empty label', 'a..eth'],
+    ['a leading dot', '%2Eeth.eth']
+  ])('never redirects a top-level-domain name that holds %s', async (_what, written) => {
+    const reply = await get(`/${written}/p`, { host: 'ipns.orivon' })
+    expect(reply.headers.location ?? 'none').toMatch(/^(none|https:\/\/[a-z0-9-]+\.ipns\.orivon\/)/)
+  })
+
+  it('sends a name written in capitals to its lowercase origin', async () => {
+    const reply = await get('/Vitalik.ETH/p', { host: 'ipfs.orivon' })
+    expect(reply.status).toBe(301)
+    expect(reply.headers.location).toBe('https://vitalik.eth/p')
+  })
+
+  it('still sends a longer top-level-domain name to its own origin', async () => {
+    const reply = await get('/sub.vitalik.eth/', { host: 'ipfs.orivon' })
+    expect(reply.status).toBe(301)
+    expect(reply.headers.location).toBe('https://sub.vitalik.eth/')
+  })
+})
+
+describe('the loopback server, for a file whose leaf the caller expects', () => {
+  const leafOfFile = async (path: string): Promise<string> => {
+    const bytes = FILES[path]!.bytes
+    return await leafOf(path, bytes.length, [bytes])
+  }
+
+  it('sends the file once its leaf matches, whole and by range', async () => {
+    const leaf = await leafOfFile('/app.js')
+    const whole = await get('/app.js', { headers: { [EXPECT_LEAF_HEADER]: leaf } })
+    expect(whole.status).toBe(200)
+    expect(whole.body.toString()).toBe('run()')
+    const part = await get('/app.js', { headers: { [EXPECT_LEAF_HEADER]: leaf, range: 'bytes=1-3' } })
+    expect(part.status).toBe(206)
+    expect(part.body.toString()).toBe('un(')
+    expect(part.headers['content-range']).toBe('bytes 1-3/5')
+  })
+
+  it('sends none of a file whose leaf differs, and says it was the declared tree that it failed', async () => {
+    const wrong = await leafOfFile('/index.html')
+    const reply = await get('/app.js', { headers: { [EXPECT_LEAF_HEADER]: wrong } })
+    expect(reply.status).toBe(502)
+    expect(reply.headers[FAILURE_HEADER]).toBe(DDOC_MISMATCH)
+    expect(reply.body.toString()).not.toContain('run()')
+    const ranged = await get('/app.js', { headers: { [EXPECT_LEAF_HEADER]: wrong, range: 'bytes=0-1' } })
+    expect(ranged.status).toBe(502)
+    expect(ranged.body.toString()).not.toContain('ru')
+  })
+
+  it('hashes the file under the canonical path of the request, so the same bytes at another path do not match', async () => {
+    const bytes = FILES['/app.js']!.bytes
+    const elsewhere = await leafOf('/other.js', bytes.length, [bytes])
+    expect((await get('/app.js', { headers: { [EXPECT_LEAF_HEADER]: elsewhere } })).status).toBe(502)
+  })
+
+  it('checks a file an install fetches too, however large the install would have let it stream', async () => {
+    const leaf = await leafOfFile('/app.js')
+    expect((await get('/app.js', { headers: { [EXPECT_LEAF_HEADER]: leaf, 'x-orivon-content-root': ROOT } })).status).toBe(200)
+    expect((await get('/app.js', { headers: { [EXPECT_LEAF_HEADER]: await leafOfFile('/docs/index.html'), 'x-orivon-content-root': ROOT } })).status).toBe(502)
+  })
+
+  it('answers HEAD only after the file was checked', async () => {
+    const leaf = await leafOfFile('/app.js')
+    expect((await get('/app.js', { method: 'HEAD', headers: { [EXPECT_LEAF_HEADER]: leaf } })).status).toBe(200)
+    expect((await get('/app.js', { method: 'HEAD', headers: { [EXPECT_LEAF_HEADER]: await leafOfFile('/docs/index.html') } })).status).toBe(502)
+  })
+
+  it('refuses a leaf that is no leaf, rather than serving the file unchecked', async () => {
+    const reply = await get('/app.js', { headers: { [EXPECT_LEAF_HEADER]: 'not-a-leaf' } })
+    expect(reply.status).toBe(400)
+    expect(reply.body.toString()).not.toContain('run()')
+  })
+
+  it('gives every byte it held back, so many large files one after another never fill the budget', async () => {
+    const leaf = await leafOfFile('/mid.bin')
+    for (let each = 0; each < 20; each++) {
+      expect((await get('/mid.bin', { headers: { [EXPECT_LEAF_HEADER]: leaf, range: 'bytes=0-9' } })).status).toBe(206)
+    }
+    const failing = await leafOfFile('/app.js')
+    for (let each = 0; each < 20; each++) expect((await get('/mid.bin', { headers: { [EXPECT_LEAF_HEADER]: failing } })).status).toBe(502)
+    expect((await get('/mid.bin', { headers: { [EXPECT_LEAF_HEADER]: leaf } })).status).toBe(200)
+  })
+
+  it('still gives a file that fails verification part-way the error page, not the declared-tree failure', async () => {
+    const reply = await get('/bad.js', { headers: { [EXPECT_LEAF_HEADER]: await leafOfFile('/app.js') } })
+    expect(reply.headers[FAILURE_HEADER]).toBe('unverifiable')
+  })
+
+  it('does not hold a file against the leaf of a path that does not exist', async () => {
+    expect((await get('/missing.js', { headers: { [EXPECT_LEAF_HEADER]: await leafOfFile('/app.js') } })).status).toBe(404)
   })
 })

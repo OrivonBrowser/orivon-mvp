@@ -33,7 +33,8 @@ import type { Manifest, Pattern } from '../../contracts/index.js'
 import { entryCanonicalPath } from '../fetch/bundle.js'
 import { parseManifest } from '../manifest/manifest.js'
 import type { PinCoverageOutcome } from './pin-coverage.js'
-import { buildResponse, openServable } from './asset.js'
+import { buildResponse, openServable, redirectResponse } from './asset.js'
+import type { CspOptions } from './csp.js'
 import type { RetainedVerdicts } from './asset.js'
 import { isCorsPreflight, preflightResponse, withReachCors } from '../reach/cors.js'
 import { guardReachResponse } from '../reach/guard.js'
@@ -74,6 +75,12 @@ export type GrantedConnectPatterns = () => Promise<readonly Pattern[]>
 export type GrantedSecurePatterns = () => Promise<readonly Pattern[]>
 
 /**
+ * The two grant-derived widenings of an app's `img-src` and `media-src`: loopback media for a live
+ * `tcp.listen` grant (ADR-0069), the app-file scheme for a live `fs` grant (ADR-0070).
+ */
+export type GrantedMediaSources = () => Promise<Pick<CspOptions, 'ownListenerMedia' | 'appFiles'>>
+
+/**
  * THE live authorisation gate for a third-party request -- the only thing
  * `fetchThirdParty` ever asks before proxying one to the real network.
  * Deliberately a DIFFERENT type than `GrantedSecurePatterns`: a caller
@@ -108,6 +115,8 @@ export type RecordPinCoverage = (outcome: PinCoverageOutcome, bytes?: number) =>
 
 export { isNavigationRequest, resolveRequestPath } from './path.js'
 export type { ResolvedRequest } from './path.js'
+
+const SYSTEM_PROXY_REFUSAL = 'a system proxy is configured; this app is not routed, so Orivon will not reach the host around it'
 
 function denyResponse (reason: string): Response {
   return new Response(`Orivon: ${reason}`, { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } })
@@ -197,7 +206,7 @@ export async function fetchThirdParty (
   const decision = await authoriseReach(url.hostname, port)
   if (!decision.allowed) {
     recordCoverage?.('denied')
-    return denyResponse('this host is not granted to this app')
+    return denyResponse(decision.reason === 'system-proxy' ? SYSTEM_PROXY_REFUSAL : 'this host is not granted to this app')
   }
   if (appOrigin !== undefined && isCorsPreflight(request)) return preflightResponse(request, appOrigin)
 
@@ -215,10 +224,13 @@ export async function fetchThirdParty (
     releaseReachSlot?.()
   }
   // A grant revoked while this request waited in the queue must not dial.
-  if (reserved instanceof Promise && !(await authoriseReach(url.hostname, port)).allowed) {
-    release()
-    recordCoverage?.('denied')
-    return denyResponse('this host is not granted to this app')
+  if (reserved instanceof Promise) {
+    const again = await authoriseReach(url.hostname, port)
+    if (!again.allowed) {
+      release()
+      recordCoverage?.('denied')
+      return denyResponse(again.reason === 'system-proxy' ? SYSTEM_PROXY_REFUSAL : 'this host is not granted to this app')
+    }
   }
 
   let response: Response
@@ -342,7 +354,8 @@ export async function createAppRequestHandler (
    * false` result here still denies every request, the same as if this
    * function had resolved it directly.
    */
-  preResolved?: VerifiedBundleResult
+  preResolved?: VerifiedBundleResult,
+  grantedMediaSources?: GrantedMediaSources
 ): Promise<AppRequestHandler> {
   const resolved = preResolved ?? await resolveVerifiedBundle(storage, origin)
   if (!resolved.ok) {
@@ -374,7 +387,11 @@ export async function createAppRequestHandler (
       recordCoverage?.('denied')
       return denyResponse(resolved.reason)
     }
-    if ('redirectTo' in resolved) return new Response(null, { status: 302, headers: { location: resolved.redirectTo } })
+
+    const connectPatterns = grantedConnectPatterns === undefined ? [] : await grantedConnectPatterns()
+    const securePatterns = grantedSecurePatterns === undefined ? [] : await grantedSecurePatterns()
+    const mediaSources = grantedMediaSources === undefined ? {} : await grantedMediaSources()
+    if ('redirectTo' in resolved) return redirectResponse(resolved.redirectTo, connectPatterns, securePatterns, manifest.crossOriginIsolated === true, mediaSources)
 
     const servable = await openServable(storage, origin, resolved.canonicalPath, resolved.retainedLeaf, retainedVerdicts)
     if (!servable.ok) {
@@ -382,9 +399,7 @@ export async function createAppRequestHandler (
       return denyResponse(servable.reason)
     }
 
-    const connectPatterns = grantedConnectPatterns === undefined ? [] : await grantedConnectPatterns()
-    const securePatterns = grantedSecurePatterns === undefined ? [] : await grantedSecurePatterns()
-    const response = buildResponse(servable.file, request, connectPatterns, securePatterns, manifest.crossOriginIsolated === true)
+    const response = buildResponse(servable.file, request, connectPatterns, securePatterns, manifest.crossOriginIsolated === true, mediaSources)
     // A175: record what was actually SENT -- a Range request serves only a
     // slice, and a 416 serves no body at all, a KNOWN zero rather than a size
     // that could not be measured (pin-coverage.ts's `bytesIncomplete`).

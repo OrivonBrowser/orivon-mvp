@@ -21,6 +21,14 @@ describe('contentAddressOf', () => {
     ]))).toEqual({ cid: CID, via: 'dnslink', pointersVerified: false })
   })
 
+  it('records a Swarm site, a signed feed hop counting as verified', () => {
+    const swarm = { ...provenance([
+      { step: 'contenthash', name: 'site.eth', pointer: { kind: 'swarm', cid: CID }, provenance: { via: 'chain', block: 7, offchain: false } },
+      { step: 'swarm-feed', owner: 'ab'.repeat(20), topic: 'cd'.repeat(32), index: 3n, target: CID }
+    ]), root: { kind: 'swarm' as const, cid: CID } }
+    expect(contentAddressOf(swarm)).toEqual({ cid: CID, via: 'swarm', block: 7, pointersVerified: true })
+  })
+
   it('refuses a site with no contenthash hop', () => {
     expect(() => contentAddressOf(provenance([]))).toThrow(/contenthash/)
   })

@@ -36,18 +36,23 @@ bundler needs one exact entry per specifier, `node:` forms included (webpack: `u
 and `tests/support/` keep `node:*`; `tests/support/page-buffer.ts` and `page-stream.ts` give a
 test the page's own classes.
 
+**Guest paths are POSIX whatever runs the shim.** The virtual root and a WASI guest name are slash paths, so a module that handles one imports
+`path/posix`, never a bare `path`: a page gets the polyfill for both, but the local nodes run the WASI host in a Node process where a bare
+`path` is the platform's own (backslashes on Windows). `tests/guest-paths-posix.test.ts` fails a shim source that imports the bare form.
+
 **`zlib` is gzip/deflate only**: `browserify-zlib` predates brotli. Why each polyfill package was
-chosen: [`shim-dependency-review.md`](../../docs/planning/shim-dependency-review.md) §Status.
+chosen: [`shim-dependency-review.md`](../../docs/planning/shim-dependency-review.md) section Status.
 
 **Breaking an app.** What a working app relies on is a row of
 [`test/app-behaviours/catalogue.md`](../../test/app-behaviours/catalogue.md), proven by an end-to-end spec, so a
 change here that breaks one fails a test that names it. A new or changed capability needs its rows and specs
 ([README](../../test/app-behaviours/README.md)); CI fails a capability kind that has no line in the catalogue's coverage table.
 
-**What it depends on.** [`src/contracts/`](../contracts/), and
-[`src/shim-electron/unimplemented.ts`](../shim-electron/unimplemented.ts)'s `refusingProxy`, the
-one import across the two sibling packages (`unimplemented.ts` says why not `src/shared/`;
-provisional until the owner confirms it, A160). Its npm dependencies are the polyfill packages,
+**What it depends on.** [`src/contracts/`](../contracts/), and two files of
+[`src/shim-electron/`](../shim-electron/), the only imports across the two sibling packages:
+`unimplemented.ts`'s `refusingProxy` (`unimplemented.ts` says why not `src/shared/`; provisional until the
+owner confirms it, A160) and `picked-paths.ts`, the table of stand-in paths that `fs/` reads
+([`fs/README.md`](fs/README.md)'s Design notes, "Picked paths"). Its npm dependencies are the polyfill packages,
 `@emnapi/core` and `@emnapi/runtime`, which `addon/` loads native addons' WebAssembly builds
 through (`d-0163`), and `@sqlite.org/sqlite-wasm`, which `sqlite/` runs.
 
@@ -59,7 +64,7 @@ main-process authority.
 `module-map.ts`.
 
 **Binding requirements.** Read
-[`handle-contracts.md`](../../docs/architecture/handle-contracts.md) §What the shim must do
+[`handle-contracts.md`](../../docs/architecture/handle-contracts.md) section What the shim must do
 before writing a line here; code cites its rules by number:
 
 1. Completeness is measured against a dependency's real call graph (`net.isIP()`, which
@@ -78,9 +83,15 @@ Also read [`.claude/skills/orivon-electron/SKILL.md`](../../.claude/skills/orivo
 [`ADR-0021`](../../docs/decisions/ADR-0021-page-globals-carry-the-platform-descriptor.md).
 `npm run check:page-globals` and `tests/globals.test.ts` guard it.
 
-**`process` answers what libraries read without claiming to be Node.** Provisional (`d-0079`):
-each value and its reason is in `globals-types.ts`; where a `nextTick`/`setImmediate` error goes,
-and why `setImmediate` is a `MessageChannel` task, is in `globals.ts`.
+**`process` and `os` answer as Node does, on Linux.** Provisional ([`ADR-0073`](../../docs/decisions/ADR-0073-apps-see-a-node-process-on-linux-x64.md)): `process.version` and
+`versions.node` are the Node release `node-builtin-exports.generated.json` is measured against, there is no
+`process.browser`, and `platform`, `arch`, `os.platform()`, `os.type()` and `os.arch()` are `linux` and `x64` on
+every host, because the files an app sees follow Linux rules ([`node-identity.ts`](node-identity.ts) is the one
+place, passed to `installGlobals` as an option so that function stays self-contained). A library then takes the
+path it takes under Node and Electron. Orivon never sets `versions.electron` or `process.type`: they belong to an
+Electron port's own build. Each field and its reason is in `globals-types.ts`; where a `nextTick`/`setImmediate`
+error goes, and why `setImmediate` is a `MessageChannel` task, is in `globals.ts`. A forked child and a thread get the
+same identity from the same function (`worker/early-globals.ts`).
 
 **Refusing an unbuilt member by name (A135, A169).** `net/net.ts`, `net/dns.ts`, `fs/fs.ts` and
 `http/http.ts`/`https.ts` wrap their default export with `refusingProxy`; every other module does

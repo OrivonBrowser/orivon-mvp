@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { unproxiedGateways } from '../proxy-check.js'
+import { answersFront, unproxiedGateways } from '../proxy-check.js'
 
 const A = 'https://a.gateway'
 const B = 'https://b.gateway'
@@ -37,5 +37,20 @@ describe('unproxiedGateways', () => {
     const resolveProxy = async (): Promise<string> => { calls++; return 'DIRECT' }
     expect(await unproxiedGateways([], resolveProxy)).toEqual([])
     expect(calls).toBe(0)
+  })
+})
+
+describe('answersFront', () => {
+  it('is true for the front alone', () => {
+    expect(answersFront('PROXY 127.0.0.1:4000', 4000)).toBe(true)
+    expect(answersFront(' PROXY 127.0.0.1:4000 ', 4000)).toBe(true)
+  })
+
+  it('is false for direct, another port, another proxy, a fallback to direct and nothing', () => {
+    expect(answersFront('DIRECT', 4000)).toBe(false)
+    expect(answersFront('PROXY 127.0.0.1:4001', 4000)).toBe(false)
+    expect(answersFront('PROXY 10.0.0.1:4000', 4000)).toBe(false)
+    expect(answersFront('PROXY 127.0.0.1:4000; DIRECT', 4000)).toBe(false)
+    expect(answersFront('', 4000)).toBe(false)
   })
 })

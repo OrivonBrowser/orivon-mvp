@@ -13,7 +13,7 @@ import { deflateSync, crc32 } from 'node:zlib'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput, profileDirOf } from '../support/launch-electron.mjs'
-import { pressKey } from '../support/e2e-helpers.js'
+import { pressCommand } from '../support/e2e-helpers.js'
 import { delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor } from '../support/smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 120_000
@@ -94,7 +94,7 @@ async function managerPage (app: ElectronApplication): Promise<Page> {
 async function openWithShortcut (app: ElectronApplication): Promise<Page> {
   // Read where pressKey looks, in main: Playwright can list the page before its webContents has committed the address.
   expect(await waitFor(async () => await app.evaluate(({ webContents }) => webContents.getAllWebContents().some((contents) => contents.getURL().includes('/newtab/') && !contents.isLoading())))).toBe(true)
-  await pressKey(app, '/newtab/', 'O', ['control', 'shift'])
+  await pressCommand(app, '/newtab/', 'bookmarks.open')
   return await managerPage(app)
 }
 
@@ -302,7 +302,7 @@ it('says a new profile has no bookmarks and points at the star and at import', a
   try {
     const page = await openWithShortcut(app)
     expect(await page.locator('.empty-state').innerText()).toContain('This folder is empty.')
-    expect(await page.locator('.empty-state').innerText()).toContain('Bookmark a page with the bookmark button next to the address bar (Ctrl+D), or import bookmarks from another browser.')
+    expect(await page.locator('.empty-state').innerText()).toContain(`Bookmark a page with the bookmark button next to the address bar (${process.platform === 'darwin' ? '⌘D' : 'Ctrl+D'}), or import bookmarks from another browser.`)
     expect(await page.locator('.tree-label').allInnerTexts()).toEqual(['Bookmarks bar', 'Other bookmarks'])
     await shoot(page, 'empty')
     expect(mainOutput(app)).not.toContain('uncaught exception')

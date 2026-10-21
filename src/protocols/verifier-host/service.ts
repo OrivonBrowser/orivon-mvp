@@ -10,9 +10,16 @@ import { createRunCertificate } from './serve/certificate.js'
 import type { WebFetch } from './egress.js'
 import type { DirectFetch } from './direct-fetch.js'
 import { startProtocols } from './protocols.js'
-import type { FromHost, HostConfig, HostReplies, HostRequest, LightClientConfig, LightClientState, SiteProvenance } from './protocol.js'
+import { startTunnelProtocols } from './tunnel-protocols.js'
+import { NodeLinks } from './node-link.js'
+import { GatewayConsent } from './gateway-consent.js'
+import type { FromHost, NodeNotice, HostConfig, HostReplies, HostRequest, LightClientConfig, LightClientState, SiteProvenance, TunnelRoute } from './protocol.js'
 import { createVerifierServer } from './serve/server.js'
-import { Sites } from './serve/sites.js'
+import type { LightClientPace } from './light-client/light-client.js'
+import { paceOn } from './pace.js'
+import type { RoutePace } from '../route-pace.js'
+import { RoutedSites, Sites } from './serve/sites.js'
+import type { MountedSite } from '../resolution/providers.js'
 import type { SiteRecord } from './serve/sites.js'
 
 export interface LightClient {
@@ -25,7 +32,8 @@ export interface HostDeps {
   readonly fetch: WebFetch
   readonly resolveHost: (host: string) => Promise<readonly string[]>
   readonly post: (message: FromHost) => void
-  readonly startLightClient: (config: LightClientConfig, fetch: WebFetch, report: (message: FromHost) => void) => LightClient
+  /** `route` a tunnel: the client that proves the names of the websites in that tunnel's profile, which reports nothing and has requests of its own. */
+  readonly startLightClient: (config: LightClientConfig, fetch: WebFetch, report: (message: FromHost) => void, route?: TunnelRoute, pace?: LightClientPace) => LightClient
   /** True only in a test build; fixture names are refused otherwise, whatever the config says. */
   readonly fixturesAllowed: boolean
   /** The DNS-tamper fallback's own egress (dns-fallback.ts), reached only
@@ -39,6 +47,14 @@ export interface HostDeps {
    * above, allows the POST form and follows a redirect (the caller decides
    * whether to, per hop). */
   readonly ccipFetch: DirectFetch
+  /** Everything a website in a tunnel's profile needs from the network goes through this and nothing else: that profile's front (`routed-fetch.ts`). */
+  readonly routedFetch: (route: TunnelRoute) => WebFetch
+  /**
+   * What leaves outside the tunnel while the whole browser is on it (`outside-fetch.ts`), for the Ethereum light client when the person
+   * asked the nodes to run outside the tunnel (`HostConfig.ethereumOutside`). Absent in a host with no such path: the light client then
+   * follows the tunnel.
+   */
+  readonly outside?: { readonly send: WebFetch, readonly resolveHost: (host: string) => Promise<readonly string[]> }
 }
 
 export interface RunningHost {
@@ -46,14 +62,41 @@ export interface RunningHost {
   readonly port: number
   readonly fingerprint: string
   answer: (request: HostRequest) => Promise<HostReplies[HostRequest['kind']]>
+  /** What main says a local node is doing. */
+  node: (notice: NodeNotice) => void
+  /** Whether a name service may be asked for an IPNS record after the IPFS node, from the next lookup. */
+  ipfsLookup: (allowed: boolean) => void
 }
 
+/** A site mounted from gateways with a reason was mounted because the person's node could not serve it and they said yes for that load (`ServedFrom`): no other mount gives a reason. */
+const usedGatewaysByYes = (site: MountedSite): boolean => site.servedFrom?.kind === 'gateways' && site.servedFrom.reason !== undefined
+
 export async function startHost (config: HostConfig, deps: HostDeps): Promise<RunningHost> {
-  const { protocols, lightClient } = startProtocols(config, deps)
+  const nodes = new NodeLinks(deps.post)
+  const consent = new GatewayConsent()
+  const controls = { lookupService: config.ipfsNode?.lookupService !== false, consent }
+  const { protocols, lightClient, stores, route, ens } = startProtocols(config, deps, nodes, controls)
   const registry = new ProtocolRegistry(protocols)
-  const sites = new Sites(registry)
+  // The protocols of a tunnel are started at the first request of a website in its profile: a person who uses one tunnel never pays for the other's.
+  const tunnelSets = new Map<TunnelRoute, { readonly sites: Sites, readonly route: RoutePace }>()
+  // A top-level-domain name is shown by where its content lives, which is known once a gatherer is chosen for its records.
+  const sitesOf = (of: ProtocolRegistry, via: RoutePace): Sites => new Sites(of, Date.now, () => paceOn(via).mountTimeoutMs, (host, gatherer) => {
+    const served = of.addresses.servedName(host)
+    const scheme = of.schemeOfGatherer(gatherer)
+    if (served?.namespace.startsWith('.') === true && scheme !== undefined) deps.post({ type: 'name-scheme', host: served.name, scheme })
+  }, (site, partition) => usedGatewaysByYes(site) || (site.servedFrom?.kind === 'node' && consent.pending(partition)))
+  const tunnelSet = (tunnel: TunnelRoute): { readonly sites: Sites, readonly route: RoutePace } => {
+    let set = tunnelSets.get(tunnel)
+    if (set === undefined) {
+      const protocolsOf = startTunnelProtocols(config, deps, stores, nodes, controls, ens, tunnel)
+      set = { sites: sitesOf(new ProtocolRegistry(protocolsOf.protocols), protocolsOf.route), route: protocolsOf.route }
+      tunnelSets.set(tunnel, set)
+    }
+    return set
+  }
+  const sites = new RoutedSites(sitesOf(registry, route), (tunnel) => tunnelSet(tunnel).sites)
   const certificate = createRunCertificate()
-  const server = createVerifierServer(registry, sites, certificate)
+  const server = createVerifierServer(registry, sites, certificate, undefined, { direct: route, tunnel: (tunnel) => tunnelSet(tunnel).route }, consent)
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
     server.listen(config.port, '127.0.0.1', () => {
@@ -63,14 +106,14 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
   })
 
   const provenanceOf = (host: string, { site, resolver, mountedAt }: SiteRecord): SiteProvenance =>
-    ({ host, resolver, root: site.root, pointers: site.pointers, ddoc: site.ddoc(), mountedAt })
+    ({ host, resolver, root: site.root, pointers: site.pointers, ddoc: site.ddoc(), mountedAt, ...(site.servedFrom !== undefined && { servedFrom: site.servedFrom }) })
 
   const answer = async (request: HostRequest): Promise<HostReplies[HostRequest['kind']]> => {
     switch (request.kind) {
       case 'status': return lightClient?.status() ?? { state: 'off' }
-      case 'mount': return provenanceOf(request.host, await sites.get(request.host, request.partition))
+      case 'mount': return provenanceOf(request.host, await sites.get(request.host, request.partition, request.route))
       case 'provenance': {
-        const current = await sites.current(request.host, request.partition)
+        const current = await sites.current(request.host, request.partition, request.route)
         return current === undefined ? null : provenanceOf(request.host, current)
       }
     }
@@ -80,6 +123,8 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
     server,
     port: (server.address() as AddressInfo).port,
     fingerprint: certificate.fingerprint,
-    answer
+    answer,
+    node: (notice) => { nodes.notice(notice) },
+    ipfsLookup: (allowed) => { controls.lookupService = allowed }
   }
 }

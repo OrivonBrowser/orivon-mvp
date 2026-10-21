@@ -5,7 +5,7 @@ subsystem registry every other stream plugs into, one directory per job
 ([`ADR-0023`](../../docs/decisions/ADR-0023-src-main-is-organised-by-job.md)). `start.ts`
 (the process entry: it takes the single-instance lock before `index.ts`, the rest of the browser, is loaded),
 `index.ts`, `registry.ts`, `subsystems.ts` and `channels.ts` stay at the top level: `registry.ts` and
-`channels.ts` are the seam other packages import as values.
+`channels.ts` are the seam other packages import as values; `published-slot.ts` is the one-time slot behind each field `registry.ts` lists.
 
 **Tied to Electron, entirely.** Only the pure `<name>.ts` files run under plain vitest.
 
@@ -13,6 +13,11 @@ subsystem registry every other stream plugs into, one directory per job
 
 **What it must never import.** [`src/renderer/`](../renderer/) code. Main and the renderer
 communicate over IPC, never by sharing modules.
+
+**A promise started and let go needs a rejection handler.** `start.ts` ends the whole browser on any
+unhandled rejection, so `void work()` or a bare `work()` that can reject takes every tab with it. End
+the chain with `.catch((error: unknown) => { console.error('[area] what failed:', error) })`, or await
+it; `npm run check:floating-promises` lists the rest (this folder and everything it imports).
 
 **Owner stream.** `shell`. Maintenance only; other streams add themselves via `subsystems.ts`
 rather than editing here.
@@ -37,9 +42,12 @@ rather than editing here.
 | [`autofill/`](autofill/) | Saved postal addresses and the chooser that fills a form from them; this build has only an empty installer | no | the installer only |
 | [`devices/`](devices/) | The choosers for a screen to share and for a USB or HID device; this build has only an empty installer | no | the installer only |
 | [`devtools/`](devtools/) | When developer tools may open on a page, and the question before they open on an app | which tools are open | `devtools-prompt.ts` only |
+| [`diagnostics/`](diagnostics/) | The main process's log, the crash records and native dumps kept on this computer, and the bug report a person may send about one | `diagnostics/` under the profile folder (a private session's is removed with it) | `diagnostics-runner.ts` and `report-runner.ts` only |
 | [`info/`](info/) | The About page and the task manager: the version and graphics facts, the process list, ending a process | when the last processor reading was taken | `about-runner.ts` and `tasks-runner.ts` only |
 | [`page-tools/`](page-tools/) | Print, save as PDF, save the page, view source, screenshots and picture in picture, and the toast that reports them | no | `real-deps.ts` and the files that type a `webContents`, as types |
 | [`zoom/`](zoom/) | How large each site is shown, chosen per site and remembered | `zoom.json` on disk | `attach-zoom.ts` and `install-zoom.ts` only |
+| [`flavour/`](flavour/) | What the first run of a new default profile does when the package was tagged for an app: opens it after the welcome screen and pins it in Featured, from an allowlist, once | `flavour.json` on disk | no |
+| [`newtab/`](newtab/) | What a profile chose about the new tab's Featured row (the app it was given first, the tiles it unpinned and hid), and when each granted app was last in front for the Your apps row | `new-tab.json` and `app-use.json` on disk (memory only in a private session) | no |
 | [`find/`](find/) | Find in page: the bar, the search it runs in the tab in front, and its commands | the query, per window, in memory | no (types only) |
 | [`spellcheck/`](spellcheck/) | Spell checking in tabs, switched on or off by a setting | no: Chromium keeps the custom dictionary | `install-spellcheck.ts` only |
 | [`window-state/`](window-state/) | Where the first window opens (the last-used window's place) and what a kiosk may run | `window-state.json` on disk | `window-state-recorder.ts` as a type only |
@@ -72,6 +80,7 @@ rather than editing here.
 | [`verifier/`](verifier/) | Start the `.eth` verifier, trust its certificate, choose its checkpoint | host process, checkpoint, IPNS sequences | `verifier-subsystem.ts` only |
 | [`embed/`](embed/) | The pages an app shows inside itself, in a `<webview>` (`ADR-0039`) | which app owns which guest | `embed-host.ts` and `embed-subsystem.ts` only |
 | [`children/`](children/) | The hidden host each app's forked/threaded children run in, and how long they live (`ADR-0046`) | live pages per origin, one offscreen host per origin | `watch-pages.ts`, `child-host.ts` and `children-subsystem.ts` only |
+| [`route/`](route/) | The network route an installed app can have: which apps the person routed through their proxy, the loopback front their Chromium sessions use, and what routing does to those sessions (`ADR-0080`) | the routed apps in `routes.json` (memory only in a private session); one front per routed app | `route-subsystem.ts` only |
 | [`extensions/`](extensions/) | Install, register and load Chrome extensions | the installed-extension registry | all but `action-pins-runner.ts`, `action-pins.ts`, `base-manifest-source.ts`, `crx.ts`, `crx3-format.ts`, `details-optional.ts`, `dnr-action-options.ts`, `dnr-api.ts`, `dnr-match-log.ts`, `effective-manifest.ts`, `electron-chrome-extensions-lib.d.ts`, `extension-commands.ts`, `extension-host-access.ts`, `extension-known-permissions.ts`, `extension-permission-check.ts`, `extension-prefs-runner.ts`, `extension-prefs.ts`, `extension-sender-id-check.ts`, `extension-tab-details.ts`, `extension-tab-invocation.ts`, `extension-url-policy.ts`, `extensions-detail-parts.ts`, `extensions-domain.ts`, `extensions-install-test-hook.ts`, `extensions-menu-command.ts`, `extensions-menu-model.ts`, `extensions-menu-names.ts`, `extensions-menu-overlay.ts`, `extensions-menu-points.ts`, `extensions-page-commands.ts`, `extensions-view-runner.ts`, `extensions-view.ts`, `granted-host-rule.ts`, `granted-reconcile.ts`, `install-lifecycle.ts`, `install-private.ts`, `install-store-runner.ts`, `manifest-stage-granted.ts`, `manifest-stage-site-access.ts`, `optional-permissions.ts`, `permission-nag-limit.ts`, `permission-prompt-overlay.ts`, `registry-runner.ts`, `registry.ts`, `shortcuts-page.ts`, `site-reach-runner.ts`, `site-reach.ts`, `store-download-seam.ts`, `store-runner.ts`, `store-test-hook.ts` and `unpack-runner.ts` |
 
 ### The organising rule

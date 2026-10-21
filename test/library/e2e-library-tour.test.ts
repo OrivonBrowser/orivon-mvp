@@ -84,7 +84,7 @@ it('pictures the chrome and each library surface together', async () => {
     await snap(app, '01-chrome-bar')
 
     await chrome.click('#address')
-    await chrome.keyboard.press('Control+A')
+    await chrome.keyboard.press('ControlOrMeta+A')
     await chrome.keyboard.type('files', { delay: 40 })
     expect(await waitFor(async () => await popoverShown(app, 'overlay=omnibox'))).toBe(true)
     await delay(600)

@@ -27,6 +27,7 @@ const FAILED_WORDS: Readonly<Record<string, string>> = {
   history: 'history',
   siteData: 'cookies and site data',
   cache: 'cached files',
+  nameSchemes: 'which network each .eth name was found on',
   zoomLevels: 'saved zoom levels',
   siteSettings: 'site settings',
   appData: 'app data'
@@ -61,14 +62,14 @@ function option (label: string, help: string | null, checked: boolean, onToggle:
 }
 
 export function renderClearData (state: SettingsState): HTMLElement {
-  const history = option('Browsing history', null, selection.historyChecked, (checked) => { selection.historyChecked = checked })
+  const history = option('Browsing history', 'Clearing all time also forgets which network each .eth name was last found on.', selection.historyChecked, (checked) => { selection.historyChecked = checked })
   const range = h('select', { className: 'select' })
   for (const [value, label] of RANGES) range.append(h('option', { value, textContent: label }))
   range.value = selection.range
   range.addEventListener('change', () => { selection.range = range.value as HistoryRange })
   range.setAttribute('aria-label', 'How far back to clear history')
   const siteData = option('Cookies and site data', 'Signs you out of websites and removes what they stored in this browser. Always for all time.', selection.siteData, (checked) => { selection.siteData = checked })
-  const cache = option('Cached files', 'Pages and images kept to load sites faster. Always for all time.', selection.cache, (checked) => { selection.cache = checked })
+  const cache = option('Cached files', 'Pages and images kept to load sites faster, and which network each .eth name was last found on. Always for all time.', selection.cache, (checked) => { selection.cache = checked })
   const zoom = option('Saved zoom levels', null, selection.zoomLevels, (checked) => { selection.zoomLevels = checked })
   const siteSettings = option('Site settings and permissions', 'Forgets what you allowed or blocked for each site.', selection.siteSettings, (checked) => { selection.siteSettings = checked })
   const appData = option('App data', 'What apps that hold permissions keep in the browser, such as a signed-in session or a local database. It cannot be undone. Files an app saved in its own folder are not removed.', selection.appData, (checked) => { selection.appData = checked })

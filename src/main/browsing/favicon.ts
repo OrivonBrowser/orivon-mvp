@@ -3,6 +3,8 @@
 
 import type { Session } from 'electron'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
+import { isTemporaryRouteSession } from '../route/leaving-routes.js'
+import { lookupSessionFor } from '../route/lookup-session.js'
 import { fetchFaviconDataUrlCached } from './favicon-fetch.js'
 import { decodeDataUrl, MAX_FAVICON_BYTES, toDataUrl } from './favicon-format.js'
 
@@ -107,6 +109,21 @@ export function faviconOnCommit (target: FaviconTarget, nextUrl: string, saved: 
   target.faviconOrigin = origin
 }
 
+/**
+ * A main-frame load failed and its error page committed under `failedUrl`. Electron reports that commit as
+ * `did-fail-load`, never `did-navigate`, so `faviconOnCommit` does not see it, and the error page kept the icon of
+ * the page before it. The commit's rule applies: an icon of another origin goes, along with a fetch still running for
+ * it. Nothing remembered for the failed address comes back: an error page is not that site's page. True when the icon
+ * changed.
+ */
+export function faviconOnFailedLoad (target: FaviconTarget, failedUrl: string): boolean {
+  if (!shouldClearFavicon(target.faviconOrigin, failedUrl)) return false
+  target.favicon = null
+  target.faviconOrigin = null
+  target.pendingFaviconUrl = null
+  return true
+}
+
 /** The mutable favicon slice of a tab record. `TabRecord` (tab-types.ts)
  * satisfies this structurally, so nothing has to adapt it. */
 export interface FaviconTarget {
@@ -166,6 +183,8 @@ export async function captureFaviconInto (
     return
   }
   const stillTheSamePage = (): boolean => isStillCurrent() && !shouldClearFavicon(declaringOrigin, pageUrl())
+  // A routed app's icons from other hosts are fetched through its route, which is asked for again at every hop. A page in a temporary routed session is its own route: its other hosts go through that session too.
+  const routeLookup = async (): Promise<Session | undefined> => isTemporaryRouteSession(pageSession) ? pageSession : await lookupSessionFor(declaringOrigin)
 
   for (const candidate of candidates) {
     if (!stillTheSamePage()) return
@@ -179,7 +198,7 @@ export async function captureFaviconInto (
     // `data:` URL has no hostname, so isSafeFaviconUrl never accepts one).
     const dataUrl = /^data:/i.test(candidate)
       ? decodedDataUrlCandidate(candidate)
-      : await fetchFaviconDataUrlCached(candidate, declaringPage, stillWanted, pageSession)
+      : await fetchFaviconDataUrlCached(candidate, declaringPage, stillWanted, pageSession, routeLookup)
 
     if (!stillWanted()) return
     if (dataUrl === null) continue

@@ -15,7 +15,7 @@ import { join } from 'node:path'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
-import { requestPartition, withPartition } from '../verifier/partition.js'
+import { requestPartition, withPartition, withRoute } from '../verifier/partition.js'
 import { holdForVerifier } from '../verifier/verifier-access.js'
 import { EMBED_EVENT_CHANNEL } from '../channels.js'
 import type { EmbedDownload, EmbedPopup } from '../../contracts/index.js'
@@ -28,6 +28,7 @@ import { watchPageDialogs } from '../shell/page-dialogs.js'
  * which this directory's README forbids depending on -- a shown page is
  * another site's document, never a pinned bundle. */
 const PARTITION_HEADER = 'x-orivon-partition'
+const ROUTE_HEADER = 'x-orivon-route'
 
 export interface EmbedHost {
   /** The app origin that shows guest `webContentsId`, or undefined for anything that is not a live guest. */
@@ -78,9 +79,11 @@ interface AppNotifier {
  * request judged against the app's LIVE grant, read fresh per request so a
  * revoke or a narrowed re-consent reaches the next load. The permission
  * gate already covers this session through its own `session-created`
- * listener.
+ * listener, except for devices: its device handler answers from the origin
+ * alone, so a shown page at the app's origin would be given a device a tab was.
  */
-function configureEmbedSession (embedSession: Session, appOrigin: string, broker: Broker, notify: AppNotifier): void {
+function configureEmbedSession (embedSession: Session, appOrigin: string, broker: Broker, notify: AppNotifier, isRouted: (appOrigin: string) => boolean): void {
+  embedSession.setDevicePermissionHandler(() => false)
   embedSession.on('will-download', (event, item, guest) => {
     // The item is gone from the next tick once cancelled: read it first.
     const detail = downloadDetail({ urlChain: item.getURLChain(), filename: item.getFilename(), mimeType: item.getMimeType(), totalBytes: item.getTotalBytes() })
@@ -95,7 +98,8 @@ function configureEmbedSession (embedSession: Session, appOrigin: string, broker
       details.resourceType,
       broker.embed.originsSync(appOrigin),
       resolve,
-      (port) => broker.embed.holdsListenerSync(appOrigin, port)
+      (port) => broker.embed.holdsListenerSync(appOrigin, port),
+      isRouted(appOrigin)
     )
       // A callback Electron waits on is called exactly once: a rejection
       // refuses, the way every refusal here fails closed.
@@ -104,7 +108,7 @@ function configureEmbedSession (embedSession: Session, appOrigin: string, broker
         // The verifier host sleeps when unused: a shown page that names one of its hosts waits for it to listen.
         if (!cancel) await holdForVerifier(details.url).catch(() => {})
         callback({ cancel })
-      })
+      }).catch((error: unknown) => { console.error('[embed] answering a guest request failed:', error) })
   })
   // A shown page reaches the verifier (a `.eth` name, an `ipfs://` address)
   // the same ordinary way any tab does -- unlike an installed app's own
@@ -123,12 +127,13 @@ function configureEmbedSession (embedSession: Session, appOrigin: string, broker
       frame = undefined
     }
     const partition = requestPartition({ url: details.url, resourceType: details.resourceType, topUrl: frame?.top?.url })
-    callback({ requestHeaders: withPartition(details.requestHeaders, PARTITION_HEADER, partition) })
+    // An embed is never in a tunnel profile: a route mark a page set is stripped.
+    callback({ requestHeaders: withRoute(withPartition(details.requestHeaders, PARTITION_HEADER, partition), ROUTE_HEADER, undefined) })
   })
 }
 
 /** Installs the host: `will-attach-webview` and `did-attach-webview` on every WebContents from now on. */
-export function installEmbedHost (broker: Broker, preloadPath = join(import.meta.dirname, '../preload/embed.js')): EmbedHost {
+export function installEmbedHost (broker: Broker, preloadPath = join(import.meta.dirname, '../preload/embed.js'), isRouted: (appOrigin: string) => boolean = () => false): EmbedHost {
   const owners = new Map<number, string>()
   const guests = new Map<number, WebContents>()
   /** Guest id -> the page that holds its `<webview>`, where a notice for the guest is sent, and how many more this second. */
@@ -157,7 +162,7 @@ export function installEmbedHost (broker: Broker, preloadPath = join(import.meta
       configured.add(partition)
       const embedSession = electronSession.fromPartition(partition)
       embedSessionOrigins.set(embedSession, appOrigin)
-      configureEmbedSession(embedSession, appOrigin, broker, notify)
+      configureEmbedSession(embedSession, appOrigin, broker, notify, isRouted)
     }
     return partition
   }

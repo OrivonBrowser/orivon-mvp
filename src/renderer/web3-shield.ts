@@ -1,4 +1,4 @@
-// The Web3 Score shield and the Web2 / Web2.5 / Web3 mark, both painted from
+// The Web3 Score shield and the Web2 / Web2.5 / Web3 / Web? mark, both painted from
 // one displayed Website level. The shield is shared between the toolbar
 // (`main.ts`) and the site-info popup's connection row
 // (`site-info/main-view.ts`), so the two can never draw it differently; the
@@ -17,10 +17,11 @@ import { path, svg } from './icons.js'
 /** lucide's `shield` (ISC licence), the icon set `index.html`'s other toolbar buttons are drawn from. */
 const SHIELD_PATH = 'M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z'
 
-export type Web3Mark = 'Web2' | 'Web2.5' | 'Web3'
+export type Web3Mark = 'Web2' | 'Web2.5' | 'Web3' | 'Web?'
 
-/** Level 1 is Web2, Levels 2 and 3 are Web2.5, Level 4 is Web3. */
-export function web3Mark (level: ScoreLevel): Web3Mark {
+/** Level 1 is Web2, Levels 2 and 3 are Web2.5, Level 4 is Web3. A Level 2 that no provider has scored (`unscored`) is Web?: it may yet be judged Level 3 or 4. */
+export function web3Mark (level: ScoreLevel, unscored = false): Web3Mark {
+  if (unscored && level === 2) return 'Web?'
   const siteClass = siteClassOfLevel(level)
   return siteClass === 'web2' ? 'Web2' : siteClass === 'web3' ? 'Web3' : 'Web2.5'
 }
@@ -40,16 +41,24 @@ export function paintShield (el: SVGSVGElement, level: ScoreLevel | null): void 
 }
 
 /** Hidden with no level, so a new tab carries no mark at all. */
-export function paintMark (el: HTMLElement, level: ScoreLevel | null): void {
+export function paintMark (el: HTMLElement, level: ScoreLevel | null, unscored = false): void {
   el.hidden = level === null
   if (level === null) {
     delete el.dataset['mark']
     el.textContent = ''
     return
   }
-  const mark = web3Mark(level)
+  const mark = web3Mark(level, unscored)
   el.dataset['mark'] = mark
   el.textContent = mark
+}
+
+/** Why a Level 2 page reads "Web?": no provider, a provider that could not be asked, or a score not there yet. */
+function unscoredNote (score: Web3Score): string {
+  if (score.noProvider) return ': no Web3 Score provider is chosen'
+  if (score.unreachable) return ': the Web3 Score provider could not be reached, so Orivon will ask again'
+  if (score.pending) return ': still checking with the Web3 Score provider'
+  return ': no Web3 Score for this site yet'
 }
 
 /** The tooltip/`aria-label` text: the Website level, and anything that
@@ -57,7 +66,8 @@ export function paintMark (el: HTMLElement, level: ScoreLevel | null): void {
  * The popup's own connection row carries the fuller glance. */
 export function shieldLabel (score: Web3Score | null): string {
   if (score === null) return 'Web3 Score'
-  const base = `Website level ${String(score.level)} (${web3Mark(score.level)})`
+  const mark = web3Mark(score.level, score.unscored)
+  const base = `Website level ${String(score.level)} (${mark})${mark === 'Web?' ? unscoredNote(score) : ''}`
   if (score.overridden) return `${base} (developer override)`
   const judged = score.judgedBy === undefined ? base : `${base}, judged by ${score.judgedBy}`
   return score.localDev ? `${judged} (developer mode)` : judged

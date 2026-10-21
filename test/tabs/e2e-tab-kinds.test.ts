@@ -13,7 +13,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { CID } from 'multiformats/cid'
 import { assertNoElectronSurvivors, closeElectron, launchElectron } from '../support/launch-electron.mjs'
-import { clickAddressBarRetrying, pressKey } from '../support/e2e-helpers.js'
+import { clickAddressBarRetrying, pressKey, pressCommand } from '../support/e2e-helpers.js'
 import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
 import { evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
@@ -118,23 +118,23 @@ for (const kind of KINDS) {
       expect((await waitForTab(chrome, { address: kind.shown() })).ok).toBe(true)
 
       // Zoom, kept for the site.
-      await pressKey(app, part, '=', ['control'])
+      await pressCommand(app, part, 'zoom.in')
       expect(await waitFor(async () => Math.abs((await factorAt(app, part) ?? 0) - 1.1) < 0.001)).toBe(true)
       expect(await waitFor(async () => await chip(chrome) === '110%')).toBe(true)
       expect(await waitFor(() => { try { return (JSON.parse(readFileSync(join(userData, 'zoom.json'), 'utf8')) as { levels: Record<string, number> }).levels[kind.siteOrigin()] === 110 } catch { return false } })).toBe(true)
 
       // Developer tools open and close; an app asks once.
-      await pressKey(app, part, 'F12')
+      await pressCommand(app, part, 'devtools.toggle')
       if (kind.isApp) {
         expect((await readQuestion(await waitQuestion(app))).message).toContain(origin)
         await answerQuestion(app, 'Open developer tools')
       }
       expect(await waitFor(async () => await toolsOpenAt(app, part) === true)).toBe(true)
-      await pressKey(app, part, 'F12')
+      await pressCommand(app, part, 'devtools.toggle')
       expect(await waitFor(async () => await toolsOpenAt(app, part) === false)).toBe(true)
-      await pressKey(app, part, 'F12')
+      await pressCommand(app, part, 'devtools.toggle')
       expect(await waitFor(async () => await toolsOpenAt(app, part) === true)).toBe(true)
-      await pressKey(app, part, 'F12')
+      await pressCommand(app, part, 'devtools.toggle')
       expect(await waitFor(async () => await toolsOpenAt(app, part) === false)).toBe(true)
       expect(await questionGone(app)).toBe(true)
       expect(await noNativeDialogs(app)).toEqual([])

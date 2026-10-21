@@ -9,6 +9,7 @@ import assert from './assert.js'
 import asyncHooks from './async-hooks.js'
 import buffer from './buffer.js'
 import consoleModule from './console.js'
+import constants from './constants.js'
 import crypto from './crypto.js'
 import diagnosticsChannel from './diagnostics-channel.js'
 import events from 'events'
@@ -41,7 +42,7 @@ import vm from './vm.js'
 import zlib from './zlib.js'
 
 const registry = new Map<string, unknown>(Object.entries({
-  assert, async_hooks: asyncHooks, buffer, console: consoleModule, crypto, diagnostics_channel: diagnosticsChannel,
+  assert, async_hooks: asyncHooks, buffer, console: consoleModule, constants, crypto, diagnostics_channel: diagnosticsChannel,
   dgram, dns, 'dns/promises': dnsPromises, events, fs, 'fs/promises': fsPromises, http, http2, https, net, os, path,
   'path/posix': path, process: processModule, perf_hooks: perfHooks, querystring, readline, stream, 'stream/promises': streamPromises,
   string_decoder: stringDecoder, timers, 'timers/promises': timersPromises, tls, tty, url, util, 'util/types': utilTypes, vm, zlib

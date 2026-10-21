@@ -1,7 +1,7 @@
 # Performance audit: CPU and memory, 2026-10-03
 
 What makes this build heavy on CPU and memory, measured on `main` at `7fa137b1`, and what to change:
-now, next, and as standing rules for later work. §Fix plan says which of the changes this audit led
+now, next, and as standing rules for later work. section Fix plan says which of the changes this audit led
 to have landed.
 
 ## The 10 GB report: an extension store feeding on itself
@@ -182,7 +182,7 @@ host closes with its app's last document.
 |---|---|---|
 | N1 | The verifier host and its light client start when a `.eth` name is typed or opened, and stop after about 10 min with no `.eth` tab or request; 2 min after launch they run once when the newest checkpoint is over 7 days old. Measured: no verifier process at idle (was 1.7-1.9% CPU and about 70 MB, always) | d-0422 |
 | N2 | A tab out of view, or in a minimized or hidden window, reports `document.hidden` and fires `visibilitychange`, as Chrome does: the shell computes the state and the page's preload answers the getters in the main world. Subframes keep the browser's own answer | d-0423 |
-| N3 | Memory saver: 30 min by default; while available memory is low, up to three eligible tabs a minute sleep early, least recently used first. The new-tab and internal pages stay awake for now (see §Later) | d-0424 |
+| N3 | Memory saver: 30 min by default; while available memory is low, up to three eligible tabs a minute sleep early, least recently used first. The new-tab and internal pages stay awake for now (see section Later) | d-0424 |
 | N4 | The menu, find, side panel and toast overlays close after about 60 s hidden; the address-bar dropdown stays warm | d-0425 |
 
 ### Measured after the "now" changes
@@ -219,7 +219,7 @@ with F1, F2, F4, F6 and F7.
 
 ## Rules for later work
 
-Kept in [`code-guidelines.md`](../development/code-guidelines.md) §Rules:
+Kept in [`code-guidelines.md`](../development/code-guidelines.md) section Rules:
 
 1. Work done per event is proportional to what changed, never to the number of tabs, windows or
    bookmarks.

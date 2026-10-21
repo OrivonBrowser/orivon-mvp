@@ -13,14 +13,13 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
 import { findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from '../support/e2e-helpers.js'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, shownOnIpfs, waitForAddressBarStable } from '../support/e2e-helpers.js'
 import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 import { originHash } from '../../src/broker/grants/origin-hash.js'
-import { BUILTIN_ADDRESSES } from '../../src/protocols/builtin.js'
 import { answerEveryQuestion, noNativeDialogs, stubNativeDialogs } from '../support/question-support.js'
 
 const ORIGIN = 'https://app.eth'
-const SHOWN = BUILTIN_ADDRESSES.displayUrl(`${ORIGIN}/`)
+const SHOWN = shownOnIpfs(`${ORIGIN}/`)
 const MANIFEST = { orivonApiVersion: 0, id: 'eth.orivon.fixture', name: 'Eth fixture', version: '1.0.0', entry: 'index.html', assets: ['app.js'], capabilities: {} }
 const APP = {
   'index.html': '<!doctype html><meta charset="utf-8"><title>eth app</title><link rel="orivon-manifest" href="/.well-known/orivon.json"><body>eth app<script src="app.js"></script></body>',

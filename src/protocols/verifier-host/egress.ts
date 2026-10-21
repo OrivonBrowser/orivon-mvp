@@ -5,33 +5,18 @@
 import type { Hex } from 'viem'
 import { classifyAddress, isPublicUnicast } from '../../broker/policy/address.js'
 import { redirectRefusal } from '../../loader/electron/fetch.js'
-import { readCapped } from '../ipfs/gateways.js'
+import { readCapped } from '../gateways/gateways.js'
+import { EgressRefused } from '../gateways/allowlisted-fetch.js'
+import type { WebFetch } from '../gateways/allowlisted-fetch.js'
 import type { CcipRequestParameters } from '../ens/resolver.js'
 import { BUILTIN_ADDRESSES } from '../builtin.js'
 import type { DirectFetch } from './direct-fetch.js'
 
-export type WebFetch = (url: string, init?: RequestInit) => Promise<Response>
-
-export class EgressRefused extends Error {
-  override readonly name = 'EgressRefused'
-}
-
-/**
- * A fetch that reaches only `origins`, and follows no redirect: a
- * configured endpoint that redirects elsewhere would otherwise take the
- * request with it.
- */
-export function allowlisted (origins: readonly string[], fetch: WebFetch, label: string): WebFetch {
-  const allowed = new Set(origins.map((o) => new URL(o).origin))
-  return async (url, init) => {
-    const origin = new URL(url).origin
-    if (!allowed.has(origin)) throw new EgressRefused(`${label} may not reach ${origin}`)
-    return await fetch(url, { ...init, redirect: 'error' })
-  }
-}
+export { EgressRefused, allowlisted } from '../gateways/allowlisted-fetch.js'
+export type { WebFetch } from '../gateways/allowlisted-fetch.js'
 
 export interface CcipDeps {
-  /** Every address the host resolves to, from the same resolver the request will use. */
+  /** Every address the host resolves to, from the same resolver the request will use. Never asked when the name is resolved at the far end of the tunnel (`farEnd`). */
   readonly resolveHost: (host: string) => Promise<readonly string[]>
   /**
    * Dials the address this module already checked, TLS still verified
@@ -55,6 +40,8 @@ export interface CcipDeps {
    * started (`main/verifier/verifier-subsystem.ts`'s `ccipDirectFor`): a
    * snapshot, not re-checked per request or per URL. */
   readonly direct: boolean
+  /** The request goes through the tunnel (the host's `config.front`), whose far end resolves the name: no name is resolved on this computer. */
+  readonly farEnd?: boolean
 }
 
 export interface CcipLimits {
@@ -66,6 +53,9 @@ export const DEFAULT_CCIP_LIMITS: CcipLimits = { maxResponseBytes: 1024 * 1024, 
 
 const MAX_URLS = 8
 const HEX = /^0x(?:[0-9a-fA-F]{2})*$/
+
+/** Names that only mean something on a local network: a tunnel's far end would resolve them on its own side. */
+const LOCAL_NAME = /\.(?:local|lan|internal|home\.arpa|corp|home|intranet|private)$/i
 
 type UrlCheck = { readonly ok: true, readonly addresses: readonly string[] } | { readonly ok: false, readonly refusal: string }
 
@@ -86,6 +76,8 @@ async function checkUrl (raw: string, deps: CcipDeps): Promise<UrlCheck> {
   }
   // A protocol host resolves to the verifier itself, never to a public server.
   if (host === 'localhost' || host.endsWith('.localhost') || BUILTIN_ADDRESSES.routesToVerifier(host)) return { ok: false, refusal: `${host} is not a public name` }
+  // Through the tunnel the far end resolves the name: resolving it here as well would be a lookup from this computer that the tunnel was set to hide, and its answer is not the address that gets dialled. Any other proxy keeps the check on what this computer resolves.
+  if (deps.farEnd === true) return LOCAL_NAME.test(host) || !host.includes('.') ? { ok: false, refusal: `${host} is not a public name` } : { ok: true, addresses: [] }
   const addresses = await deps.resolveHost(host)
   if (addresses.length === 0) return { ok: false, refusal: `${host} resolved to no address` }
   const private_ = addresses.find((a) => !isPublicUnicast(a))

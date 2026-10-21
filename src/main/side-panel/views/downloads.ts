@@ -55,6 +55,6 @@ export const downloadsView: PanelViewDef = {
     .filter((entry) => holds(query, entry.fileName))
     .sort((a, b) => b.startedAt - a.startedAt)
     .map(rowOf),
-  activate: ({ services }, id) => { void services.downloads.open(id) },
+  activate: ({ services }, id) => { void services.downloads.open(id).catch((error: unknown) => { console.error('[side-panel] opening a download failed:', error) }) },
   watch: ({ services }, changed) => services.downloads.onChange(changed)
 }

@@ -24,7 +24,7 @@ import { reopenClosed } from '../session-restore/reopen.js'
 import { openCertificate } from '../auth/certificate-open.js'
 import { groupTabNew, shownNeighbour, stepTab, ungroupTab } from '../tab-groups/groups-runner.js'
 import { openQr } from '../qr/qr-open.js'
-import { copyLinkCommand, emailLinkCommand } from '../os/share-commands.js'
+import { copyLinkCommand, copyWebLinkCommand, emailLinkCommand } from '../os/share-commands.js'
 import { realShareDeps } from '../os/share-runner.js'
 import { openShortcutSheet } from '../os/shortcut-open.js'
 import { sidePanelFor } from '../side-panel/side-panel-host.js'
@@ -59,7 +59,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
 
   switch (id) {
     case 'tab.new': tabs.createTab(); return
-    case 'file.open': void openFileCommand(target); return
+    case 'file.open': void openFileCommand(target).catch((error: unknown) => { console.error('[shortcuts] open file command failed:', error) }); return
     case 'tab.close': if (active !== undefined) tabs.closeTab(active.id); return
     case 'tab.next': case 'tab.previous': {
       const next = shownNeighbour(tabs, activeTabId, id === 'tab.next' ? 1 : -1)
@@ -98,6 +98,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
       sendChromeEvent(target, OMNIBOX_MODULE, { type: 'focusSearch' })
       sendChromeEvent(target, NAVIGATION_MODULE, { type: 'focusSearch' })
       return
+    case 'search.toggleMode': services.settings.set('search.mode', services.settings.get('search.mode') === 'web3' ? 'web2' : 'web3'); return
     case 'zoom.in': case 'zoom.out': case 'zoom.reset': {
       const origin = active === undefined ? null : originFromUrl(active.url)
       if (origin === null) return
@@ -111,8 +112,8 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'history.open': tabs.openInternal('history'); return
     case 'privacy.clearData': tabs.openInternal('settings', '/privacy#clear-data'); return
     case 'bookmarks.open': tabs.openInternal('bookmarks'); return
-    case 'devtools.toggle': void services.devtools.toggle(tabs.activeWebContents()); return
-    case 'devtools.console': void services.devtools.openConsole(tabs.activeWebContents()); return
+    case 'devtools.toggle': void services.devtools.toggle(tabs.activeWebContents()).catch((error: unknown) => { console.error('[shortcuts] toggling the developer tools failed:', error) }); return
+    case 'devtools.console': void services.devtools.openConsole(tabs.activeWebContents()).catch((error: unknown) => { console.error('[shortcuts] open console failed:', error) }); return
     case 'tasks.open': tabs.openInternal('tasks'); return
     // Saves a page that is new and opens the bubble; on a saved page it only opens it, so the key never removes one.
     case 'bookmark.toggle': starCommand({ window: target, services }); return
@@ -134,9 +135,10 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'tab.closeRight': if (active !== undefined) closeToRight(tabs, active.id); return
     case 'tab.group': if (active !== undefined) groupTabNew({ window: target, services }, active.id); return
     case 'tab.ungroup': if (active !== undefined) ungroupTab({ window: target, services }, active.id); return
-    case 'tab.sleep': if (active !== undefined) void sleepFrontTab(target, active.id); return
+    case 'tab.sleep': if (active !== undefined) void sleepFrontTab(target, active.id).catch((error: unknown) => { console.error('[shortcuts] sleep front tab failed:', error) }); return
     case 'tab.search': target.overlays.toggle(TAB_SEARCH_OVERLAY); return
     case 'window.newPrivate': services.profiles.openPrivate(); return
+    case 'window.newPrivateNym': services.profiles.openPrivateNym(); return
     case 'profiles.open': tabs.openInternal('profiles'); return
     case 'downloads.open': tabs.openInternal('downloads'); return
     case 'window.close': window.close(); return
@@ -148,22 +150,24 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'passwords.open': tabs.openInternal('settings', '/passwords'); return
     case 'siteSettings.open': tabs.openInternal('settings', '/sites'); return
     case 'about.open': tabs.openInternal('about'); return
+    case 'report.open': tabs.openInternal('report'); return
     case 'extensions.open': tabs.openInternal('extensions'); return
     case 'extensions.menu': toggleExtensionsMenu(target, services.isPrivate); return
     case 'import.open': tabs.openInternal('import'); return
     case 'app.quit': deps.quit(); return
-    case 'page.print': void printCommand(target, realDeps); return
-    case 'page.pdf': void pdfCommand(target, realDeps); return
-    case 'page.save': void saveCommand(target, realDeps); return
-    case 'page.viewSource': void viewSourceCommand(target); return
+    case 'page.print': void printCommand(target, realDeps).catch((error: unknown) => { console.error('[shortcuts] print command failed:', error) }); return
+    case 'page.pdf': void pdfCommand(target, realDeps).catch((error: unknown) => { console.error('[shortcuts] pdf command failed:', error) }); return
+    case 'page.save': void saveCommand(target, realDeps).catch((error: unknown) => { console.error('[shortcuts] save command failed:', error) }); return
+    case 'page.viewSource': void viewSourceCommand(target).catch((error: unknown) => { console.error('[shortcuts] view source command failed:', error) }); return
     case 'page.reader': readerCommand(target, services); return
     case 'caret.toggle': toggleCaret({ window: target, services }); return
     case 'share.copyLink': copyLinkCommand(target, realShareDeps); return
-    case 'share.email': void emailLinkCommand(target, realShareDeps); return
+    case 'share.copyWebLink': copyWebLinkCommand(target, realShareDeps); return
+    case 'share.email': void emailLinkCommand(target, realShareDeps).catch((error: unknown) => { console.error('[shortcuts] email link command failed:', error) }); return
     case 'site.certificate': openCertificate(target); return
     case 'site.shortcut': openShortcutSheet(target, services); return
-    case 'page.screenshot': void screenshotCommand(target); return
+    case 'page.screenshot': void screenshotCommand(target).catch((error: unknown) => { console.error('[shortcuts] screenshot command failed:', error) }); return
     case 'page.qr': openQr(target); return
-    case 'page.pip': void pipCommand(target); return
+    case 'page.pip': void pipCommand(target).catch((error: unknown) => { console.error('[shortcuts] pip command failed:', error) }); return
   }
 }

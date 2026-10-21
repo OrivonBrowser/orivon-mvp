@@ -10,7 +10,7 @@ import { pathToFileURL } from 'node:url'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
-import { pressKey } from '../support/e2e-helpers.js'
+import { pressCommand } from '../support/e2e-helpers.js'
 import { launchShell, QA_TEST_TIMEOUT_MS } from '../support/qa-helpers.js'
 import { nativeDialogsAsked, stubNativeDialogs } from '../support/question-support.js'
 import { ABSENCE_SETTLE_MS, delay, waitFor } from '../support/smoke-helpers.mjs'
@@ -101,7 +101,7 @@ it('brings a local file back from the last session, and keeps one a person starr
   try {
     expect(await waitFor(async () => (await fileTabs(app)).includes(urlOf('d.html')))).toBe(true)
     // The star on a local file's page keeps its file: address.
-    await pressKey(app, urlOf('d.html'), 'D', ['control'])
+    await pressCommand(app, urlOf('d.html'), 'bookmark.toggle')
     const bookmarks = join(await userDataOf(app), 'bookmarks.json')
     expect(await waitFor(() => existsSync(bookmarks) && readFileSync(bookmarks, 'utf8').includes(urlOf('d.html')))).toBe(true)
     expect(chrome.isClosed()).toBe(false)

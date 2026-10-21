@@ -9,6 +9,9 @@ export type ErrorPage = ResolutionFailure
 
 export const ERROR_PAGE_CSP = "default-src 'none'; style-src 'unsafe-inline'"
 
+/** The failures a later attempt may pass: the page offers to make one. */
+const MAY_PASS: ReadonlySet<ErrorPage> = new Set<ErrorPage>(['not-synced', 'unavailable'])
+
 const PAGES: Readonly<Record<ErrorPage, { status: number, title: string, lead: string }>> = {
   'not-synced': {
     status: 503,
@@ -46,12 +49,27 @@ function escapeHtml (text: string): string {
   return text.replace(/[&<>"']/g, (c) => `&#${String(c.charCodeAt(0))};`)
 }
 
-export function renderErrorPage (page: ErrorPage, shown: string, detail: string): { status: number, html: string } {
+/** What a page offers when the person's own node could not serve the site: one load through public gateways, `href` being the link that says yes. */
+export interface GatewayOffer {
+  readonly href: string
+  /** The site is in the tunnel, so a gateway would see the tunnel's exit and not this computer. */
+  readonly tunnelled: boolean
+}
+
+function offerWords (tunnelled: boolean): string {
+  return `Public IPFS gateways can serve this site instead. They would see ${tunnelled ? "the tunnel's exit address" : "this computer's address"} and which content you ask for, so Orivon asks first. Nothing has been sent to any gateway.`
+}
+const OFFER_SETTINGS = 'To read IPFS from public gateways every time, choose it in Settings under Web3 (IPFS source).'
+
+export function renderErrorPage (page: ErrorPage, shown: string, detail: string, offer?: GatewayOffer): { status: number, html: string } {
   const { status, title, lead } = PAGES[page]
+  // No script runs here: a link to this very address is a navigation, which the verifier answers with a new attempt.
+  const retry = MAY_PASS.has(page) ? '<p><a class="retry" href="">Try again</a></p>' : ''
+  const gateways = offer === undefined ? '' : `<p>${escapeHtml(offerWords(offer.tunnelled))}</p><p><a class="retry" id="load-through-gateways" href="${escapeHtml(offer.href)}">Load through public gateways</a></p><p class="detail">${escapeHtml(OFFER_SETTINGS)}</p>`
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="color-scheme" content="light dark"><title>${escapeHtml(title)}</title>
-<style>body{font:15px/1.5 system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem}code{word-break:break-all}.detail{opacity:.7;font-size:13px}</style></head>
-<body><h1>${escapeHtml(title)}</h1><p>${escapeHtml(lead)}</p><p><code>${escapeHtml(shown)}</code></p><p class="detail">${escapeHtml(detail)}</p></body></html>
+<style>body{font:15px/1.5 system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem}code{word-break:break-all}.detail{opacity:.7;font-size:13px}.retry{display:inline-block;padding:.4rem 1rem;border:1px solid currentColor;border-radius:6px;color:inherit;text-decoration:none}</style></head>
+<body><h1>${escapeHtml(title)}</h1><p>${escapeHtml(lead)}</p><p><code>${escapeHtml(shown)}</code></p><p class="detail">${escapeHtml(detail)}</p>${gateways}${retry}</body></html>
 `
   return { status, html }
 }

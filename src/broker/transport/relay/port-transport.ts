@@ -7,6 +7,7 @@
 
 import type { SenderFrameLike } from '../../policy/origin.js'
 import type { PortRegistry } from './port-registry.js'
+import type { PendingDials } from '../pending-dials.js'
 import type { BrokerToRendererMessage, SecureHandshake } from '../../../contracts/index.js'
 
 /**
@@ -136,6 +137,8 @@ export type RegisteredSocket =
 export interface PortTransport {
   readonly createPortPair: () => PortPair
   readonly registry: PortRegistry<RegisteredSocket>
+  /** The dials a page may still cancel (../pending-dials.ts). */
+  readonly dials: PendingDials
 }
 
 /**

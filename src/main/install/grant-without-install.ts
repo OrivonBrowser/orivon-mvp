@@ -16,7 +16,7 @@
 
 import { MAX_MANIFEST_BYTES, parseManifest } from '../../loader/manifest/manifest.js'
 import { requestInstallConsent } from '../consent/install-consent.js'
-import type { InstallConsentPrompt, PerCapabilityConsentPrompt } from '../consent/install-consent.js'
+import type { InstallConsentPrompt } from '../consent/install-consent.js'
 import type { DialogCaller } from '../consent/request-grant.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { patternSetFromGrants, widensAuthority } from '../../broker/policy/update.js'
@@ -67,7 +67,6 @@ export interface GrantWithoutInstallDeps {
   readonly broker: Broker
   readonly fetchManifest: (url: string) => Promise<{ ok: boolean, status: number, text: string }>
   readonly consent?: InstallConsentPrompt
-  readonly perCapabilityConsent?: PerCapabilityConsentPrompt
 }
 
 /**
@@ -192,7 +191,7 @@ export async function grantWithoutInstall (deps: GrantWithoutInstallDeps, origin
   const release = caller?.hold?.()
   try {
     await deps.broker.registerApp(origin, result.manifest)
-    await requestInstallConsent(deps.broker, deps.consent, origin, result.manifest, deps.perCapabilityConsent, caller)
+    await requestInstallConsent(deps.broker, deps.consent, origin, result.manifest, caller)
   } finally {
     release?.()
   }

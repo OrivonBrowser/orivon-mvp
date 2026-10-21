@@ -4,6 +4,7 @@
 // data and the request, never a second browser inside this one.
 import { removePrivateDir, createPrivateDir } from './private-session.js'
 import { flagsFor, urlsFromArgv, DEFAULT_PROFILE_ID } from './launch-context.js'
+import type { PrivateTunnel } from './launch-context.js'
 import { spawnPeer } from './peer-spawn.js'
 import { watchProfiles } from './profiles-watcher.js'
 import type { ProfilesWatcher } from './profiles-watcher.js'
@@ -21,6 +22,8 @@ export interface ProfileLook {
   readonly name: string
   readonly color: string
   readonly isPrivate: boolean
+  /** The tunnel a private session is held to: it goes through nothing else, and cannot be set otherwise. */
+  readonly tunnel?: PrivateTunnel
   /** Whether the chrome shows it: there is more than one profile, or this is a private session. */
   readonly shown: boolean
 }
@@ -36,13 +39,18 @@ export class ProfilesService {
     return this.runtime.isPrivate
   }
 
+  /** The tunnel this process is held to, when it is a private session that is. */
+  get tunnel (): PrivateTunnel | null {
+    return this.runtime.launch.kind === 'private' ? this.runtime.launch.tunnel ?? null : null
+  }
+
   list (): ProfileRow[] {
     return this.runtime.profiles.list().map((profile) => ({ ...profile, running: this.runtime.profiles.isRunning(profile.id), current: profile.id === this.runtime.profileId }))
   }
 
   /** How this process's profile shows in the chrome. */
   look (): ProfileLook {
-    if (this.runtime.isPrivate) return { name: 'Private', color: 'purple', isPrivate: true, shown: true }
+    if (this.runtime.isPrivate) return { name: this.tunnel === 'nym' ? 'Private with Nym' : 'Private', color: 'purple', isPrivate: true, ...(this.tunnel === null ? {} : { tunnel: this.tunnel }), shown: true }
     const own = this.runtime.profiles.read(this.runtime.profileId)
     return { name: own?.name ?? 'Profile', color: own?.color ?? 'blue', isPrivate: false, shown: this.runtime.profiles.list().length > 1 }
   }
@@ -88,15 +96,25 @@ export class ProfilesService {
 
   /** Starts a private session: a fresh directory holding this profile's settings, and a process of its own for it. Deleted when it ends.
    * A shortcut calls this from an event handler, where a throw would end the browser: a failure is reported, not raised.
-   * `url`, one address or several, is opened in it where it is an http or https address; anything else is dropped rather than passed on. */
+   * `url`, one address or several, is opened in it where it is an http or https address; anything else is dropped rather than passed on.
+   * From a session held to a tunnel the new one is held to it too: a window opened from there never leaves it. */
   openPrivate (url?: string | readonly string[]): boolean {
+    return this.startPrivate(url, this.tunnel ?? undefined)
+  }
+
+  /** Starts a private session that goes through Nym only: its settings begin with the tunnel on and fixed, and its process knows it from its first instant. */
+  openPrivateNym (url?: string | readonly string[]): boolean {
+    return this.startPrivate(url, 'nym')
+  }
+
+  private startPrivate (url: string | readonly string[] | undefined, tunnel: PrivateTunnel | undefined): boolean {
     if (this.kiosk) return false
     let dir: string | null = null
     try {
-      const made = createPrivateDir(this.runtime.dir, this.runtime.launch.home)
+      const made = createPrivateDir(this.runtime.dir, this.runtime.launch.home, undefined, tunnel)
       dir = made
       const address = url === undefined ? [] : urlsFromArgv(typeof url === 'string' ? [url] : url)
-      const child = this.spawn(this.runtime.source, [...this.runtime.inherit, ...flagsFor({ kind: 'private', dir: made }), ...address])
+      const child = this.spawn(this.runtime.source, [...this.runtime.inherit, ...flagsFor({ kind: 'private', dir: made, ...(tunnel === undefined ? {} : { tunnel }) }), ...address])
       child.once('exit', () => { removePrivateDir(made) })
       child.once('error', () => { removePrivateDir(made) })
       return true

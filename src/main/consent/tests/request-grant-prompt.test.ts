@@ -102,7 +102,7 @@ describe('createGrantPrompt', () => {
 
     await consent(ORIGIN, 'https.connect', ['*:*'])
 
-    expect(specOf()).toMatchObject({ warning: false, message: 'Unlimited network access' })
+    expect(specOf()).toMatchObject({ warning: false, message: "Unlimited network access: load anything from any website, without the browser's usual limits" })
   })
 
   it('extensions disclosure: defaults to naming no extensions, so every pre-existing call above is unaffected', async () => {
@@ -196,5 +196,24 @@ describe('createGrantPrompt', () => {
     await createGrantPrompt(brokerWithManifest(manifestWith({ fs: {} })))(ORIGIN, 'fs', [])
 
     expect(specOf()).toMatchObject({ kind: 'consent', buttons: ['Allow', 'Deny'], cancelId: 1, guarded: [0], focus: 'dialog' })
+  })
+
+  it('adds the first-prompt line above the buttons on the first question of a profile and never again, leaving the buttons as they are', async () => {
+    const { FirstPromptNote, FIRST_PROMPT_LINE } = await import('../first-prompt-note.js')
+    const note = new FirstPromptNote(null)
+    askQuestion.mockResolvedValue({ response: 1, checkboxChecked: false })
+    const consent = createGrantPrompt(brokerWithManifest(manifestWith({ fs: {} })), () => undefined, async () => [], () => note.take())
+
+    await consent(ORIGIN, 'fs', [])
+    await consent(ORIGIN, 'fs', [])
+
+    const first = specOf(0) as { detail: string }
+    const second = specOf(1) as { detail: string }
+    expect(first.detail).toContain(FIRST_PROMPT_LINE)
+    expect(first.detail.split('\n').at(-1)).toBe(ORIGIN)
+    expect(second.detail).not.toContain(FIRST_PROMPT_LINE)
+    expect(first.detail.replace(`${FIRST_PROMPT_LINE}\n`, '')).toBe(second.detail)
+    const buttonsOf = ({ buttons, cancelId, guarded, focus }: Record<string, unknown>): unknown => ({ buttons, cancelId, guarded, focus })
+    expect(buttonsOf(specOf(0) as Record<string, unknown>)).toEqual(buttonsOf(specOf(1) as Record<string, unknown>))
   })
 })

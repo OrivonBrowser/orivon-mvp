@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
-import { PROFILE_ID, flagsFor, parseLaunch, switchesOf, urlsFromArgv, withoutAddresses } from '../launch-context.js'
+import { PROFILE_ID, flagsFor, flavourSwitch, parseLaunch, switchesOf, urlsFromArgv, withoutAddresses } from '../launch-context.js'
 
 const HOME = '/home/person/.config/orivon'
 const parse = (...argv: string[]): ReturnType<typeof parseLaunch> => parseLaunch(['/usr/bin/orivon', '--no-sandbox', ...argv], HOME)
@@ -31,6 +31,33 @@ describe('parseLaunch', () => {
   it('refuses a launch that asks to be two things', () => {
     expect(parse('--orivon-private', '--orivon-profile=a1b2c3d4e5f6').ok).toBe(false)
     expect(parse('--orivon-profile=a1b2c3d4e5f6', '--orivon-profile=b1b2c3d4e5f6').ok).toBe(false)
+  })
+})
+
+describe('a private session held to a tunnel', () => {
+  it('reads the tunnel from the flag, and only for a private session', () => {
+    expect(parse('--orivon-private', '--orivon-private-tunnel=nym')).toEqual({ ok: true, launch: { kind: 'private', home: HOME, dir: null, tunnel: 'nym' } })
+    expect(parse('--orivon-private', '--orivon-private-dir=/tmp/orivon-private-Ab3dEf', '--orivon-private-tunnel=nym')).toEqual({ ok: true, launch: { kind: 'private', home: HOME, dir: '/tmp/orivon-private-Ab3dEf', tunnel: 'nym' } })
+    expect(parse('--orivon-private-tunnel=nym').ok).toBe(false)
+    expect(parse('--orivon-profile=a1b2c3d4e5f6', '--orivon-private-tunnel=nym').ok).toBe(false)
+  })
+
+  it('refuses a tunnel it does not know, or two, rather than reading either as none', () => {
+    expect(parse('--orivon-private', '--orivon-private-tunnel=tor').ok).toBe(false)
+    expect(parse('--orivon-private', '--orivon-private-tunnel=').ok).toBe(false)
+    expect(parse('--orivon-private', '--orivon-private-tunnel').ok).toBe(false)
+    expect(parse('--orivon-private', '--orivon-private-tunnel', 'nym').ok).toBe(false)
+    expect(parse('--orivon-private', '--orivon-private-tunnel=nym', '--orivon-private-tunnel=nym').ok).toBe(false)
+  })
+
+  it('is not asked for by a link after the end of the switches', () => {
+    expect(parseLaunch(['/opt/Orivon/orivon', '--orivon-private', '--', '--orivon-private-tunnel=nym'], HOME)).toEqual({ ok: true, launch: { kind: 'private', home: HOME, dir: null } })
+  })
+
+  it('travels in the flags that start a peer', () => {
+    const session = flagsFor({ kind: 'private', dir: '/tmp/orivon-private-Ab3dEf', tunnel: 'nym' })
+    expect(parseLaunch(['x', ...session], HOME)).toEqual({ ok: true, launch: { kind: 'private', home: HOME, dir: '/tmp/orivon-private-Ab3dEf', tunnel: 'nym' } })
+    expect(flagsFor({ kind: 'private', dir: '/tmp/orivon-private-Ab3dEf' })).not.toContain('--orivon-private-tunnel=nym')
   })
 })
 
@@ -102,5 +129,22 @@ describe('withoutAddresses', () => {
   it('keeps the app path of a run from source, and only the first operand is it', () => {
     expect(withoutAddresses(['.', '--no-sandbox', '/home/a/page.html'], false)).toEqual(['.', '--no-sandbox'])
     expect(withoutAddresses(['--no-sandbox', '/repo', '/home/a/page.html'], false)).toEqual(['--no-sandbox', '/repo'])
+  })
+})
+
+describe('flavourSwitch', () => {
+  it('reads the id before the first --, and nothing after it', () => {
+    expect(flavourSwitch(['orivon', '--orivon-flavour=freetube'])).toBe('freetube')
+    expect(flavourSwitch(['orivon'])).toBeUndefined()
+    expect(flavourSwitch(['orivon', '--', '--orivon-flavour=freetube'])).toBeUndefined()
+  })
+
+  it('gives the empty text for an empty value or for two switches, which name no app', () => {
+    expect(flavourSwitch(['orivon', '--orivon-flavour='])).toBe('')
+    expect(flavourSwitch(['orivon', '--orivon-flavour=a1', '--orivon-flavour=b2'])).toBe('')
+  })
+
+  it('does not change which browser the process is', () => {
+    expect(parseLaunch(['orivon', '--orivon-flavour=freetube'], HOME)).toEqual({ ok: true, launch: { kind: 'default', home: HOME, dir: HOME } })
   })
 })

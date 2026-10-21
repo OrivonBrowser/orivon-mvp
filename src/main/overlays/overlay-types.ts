@@ -83,12 +83,14 @@ export interface OverlayHost {
   /** Without a name, closes every popup. */
   close: (name?: string) => void
   isOpen: (name: string) => boolean
-  /** Whether a popup is up: a popup-layer overlay, or a legacy panel the host adopted (the site-info and all-sites popups). */
+  /** Whether a popup is up: a popup-layer overlay, or a legacy panel the host adopted (the site-info and Available networks popups). */
   popupOpen: () => boolean
   /** The control an open overlay hangs from has moved (the address pill, after a resize): it is placed under it again. */
   reanchor: (name: string, anchor: OverlayAnchor) => void
   prewarm: (name: string) => void
   send: (name: string, event: unknown) => void
+  /** Hides and shows each overlay on screen in one turn. The chrome is shown again by it when a full-width overlay put over a resized window left the chrome reading hidden (README.md's Design notes). */
+  reshow: () => void
 }
 
 /**

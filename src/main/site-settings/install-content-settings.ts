@@ -1,15 +1,15 @@
 // Wires the content settings once the settings are loaded: pop-ups blocked
 // unless the person's own input opened them, JavaScript and images switched
 // off per site, sound silenced per site, and downloads a page starts on its
-// own asked about. Every request-level rule is a handler on the default
-// session's one web-request owner (never `session.webRequest`, which a second
-// registration would silently replace). The script and image handlers are on the
+// own asked about. Every request-level rule is a handler on the one web-request
+// owner of each session a website runs in (never `session.webRequest`, which a
+// second registration would silently replace). The script and image handlers are on the
 // owner only while some rule can block that kind, and read the rule per request.
-import { session } from 'electron'
 import type { WebContents } from 'electron'
 import { isAppOrigin } from './app-origin.js'
 import { handlerWhileNeeded } from '../sessions/handler-while-needed.js'
 import { webRequestOwnerFor } from '../sessions/web-request-owner.js'
+import { forEachWebsiteSession, websiteSessions } from '../sessions/website-sessions.js'
 import type { ShellInstaller } from '../shell/shell-installers.js'
 import { applyMuted } from '../shell/signals/audio.js'
 import { askSite } from './ask-site.js'
@@ -34,7 +34,7 @@ export const installContentSettings: ShellInstaller = {
     const rules = createContentRules({
       store: siteSettings,
       defaultFor: (kind: ContentKind) => settings.get(`sites.${kind}`) === 'block' ? 'block' : 'allow',
-      // The same test the permission gate makes: an app holding grants, or one served from the cache.
+      // The same test the permission gate makes: an origin holding grants.
       isApp: (origin) => isAppOrigin(ctx, origin)
     })
 
@@ -59,28 +59,31 @@ export const installContentSettings: ShellInstaller = {
     const pageOf = (details: Parameters<typeof requestPage>[0] & { webContents?: WebContents | undefined }): string | undefined =>
       requestPage({ ...details, navigating: details.webContents === undefined ? undefined : navigating.get(details.webContents) })
 
-    const owner = webRequestOwnerFor(session.defaultSession)
     // A kind can be blocked when its default is "block" or any site was told to block it.
     const canBlock = (kind: 'javascript' | 'images'): boolean => settings.get(`sites.${kind}`) === 'block' || siteSettings.hasBlock(kind)
-    // The owner matches a handler by address alone, so each one checks the kind of request it is about.
-    const wanted = [
-      handlerWhileNeeded(() => canBlock('javascript'), () => owner.onHeadersReceived(CONTENT_ORDER, { urls: WEB, types: ['mainFrame', 'subFrame'] }, WEB_ADDRESS, (details, current) => {
-        if (details.resourceType !== 'mainFrame' && details.resourceType !== 'subFrame') return current
-        // A main frame's own address is the page; a frame's page is the top document it sits in.
-        const page = details.resourceType === 'mainFrame' ? details.url : pageOf(details)
-        if (!rules.scriptsBlocked(page) || isPdf(current.responseHeaders)) return current
-        return { ...current, responseHeaders: withScriptBlock(current.responseHeaders) }
-      })),
-      handlerWhileNeeded(() => canBlock('images'), () => owner.onBeforeRequest(CONTENT_ORDER, { urls: WEB, types: ['image'] }, WEB_ADDRESS, (details, current) => {
-        return details.resourceType === 'image' && rules.imagesBlocked(pageOf(details)) ? { cancel: true } : current
-      }))
-    ]
-    const syncHandlers = (): void => { for (const handler of wanted) handler.sync() }
-    syncHandlers()
-    settings.onChange(syncHandlers)
-    siteSettings.onChange(syncHandlers)
+    // The shared session and each session of its own a website gets: a rule the person set for a site holds wherever the site runs.
+    forEachWebsiteSession((target) => {
+      const owner = webRequestOwnerFor(target)
+      // The owner matches a handler by address alone, so each one checks the kind of request it is about.
+      const wanted = [
+        handlerWhileNeeded(() => canBlock('javascript'), () => owner.onHeadersReceived(CONTENT_ORDER, { urls: WEB, types: ['mainFrame', 'subFrame'] }, WEB_ADDRESS, (details, current) => {
+          if (details.resourceType !== 'mainFrame' && details.resourceType !== 'subFrame') return current
+          // A main frame's own address is the page; a frame's page is the top document it sits in.
+          const page = details.resourceType === 'mainFrame' ? details.url : pageOf(details)
+          if (!rules.scriptsBlocked(page) || isPdf(current.responseHeaders)) return current
+          return { ...current, responseHeaders: withScriptBlock(current.responseHeaders) }
+        })),
+        handlerWhileNeeded(() => canBlock('images'), () => owner.onBeforeRequest(CONTENT_ORDER, { urls: WEB, types: ['image'] }, WEB_ADDRESS, (details, current) => {
+          return details.resourceType === 'image' && rules.imagesBlocked(pageOf(details)) ? { cancel: true } : current
+        }))
+      ]
+      const syncHandlers = (): void => { for (const handler of wanted) handler.sync() }
+      syncHandlers()
+      settings.onChange(syncHandlers)
+      siteSettings.onChange(syncHandlers)
+    })
 
-    siteSound.bind((pageUrl) => rules.soundBlocked(pageUrl))
+    siteSound.bind((pageUrl, openerUrl) => rules.soundBlocked(pageUrl, openerUrl))
     const applySound = (): void => {
       for (const window of services.windows.all()) {
         for (const id of window.tabs.ids()) {
@@ -97,8 +100,10 @@ export const installContentSettings: ShellInstaller = {
     // whose JavaScript is blocked has its workers taken off: its next page comes from the network, where the block
     // applies, and with scripts blocked no worker is registered again.
     const dropWorkers = (origin?: string): void => {
-      void session.defaultSession.clearStorageData({ ...(origin === undefined ? {} : { origin }), storages: ['serviceworkers'] })
-        .catch((error: unknown) => { console.error('[content-settings] a site\'s service workers could not be taken off:', error) })
+      for (const target of websiteSessions()) {
+        void target.clearStorageData({ ...(origin === undefined ? {} : { origin }), storages: ['serviceworkers'] })
+          .catch((error: unknown) => { console.error('[content-settings] a site\'s service workers could not be taken off:', error) })
+      }
     }
     siteSettings.onChange((origin) => { if (origin !== null && rules.scriptsBlocked(origin)) dropWorkers(origin) })
     settings.onChange(({ key }) => {

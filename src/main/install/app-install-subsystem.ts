@@ -15,17 +15,23 @@
 import { net, session } from 'electron'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { publishAppUpdates, publishInstallApp } from '../registry.js'
+import { publishFirstVisit, tabSetupNow } from '../app-setup/tab-setup-ref.js'
+import { join } from 'node:path'
+import { DeclinedApps, installDeclinedApps } from './declined-apps.js'
+import { createFirstVisit } from './first-visit.js'
 import { installFromHint } from './app-install.js'
-import { createInstallConsentPrompt, createPerCapabilityConsentPrompt } from '../consent/install-consent-prompt.js'
+import { createInstallConsentPrompt } from '../consent/install-consent-prompt.js'
+import { FirstPromptNote, installFirstPromptNote } from '../consent/first-prompt-note.js'
 import { createCapabilityPrompt, createReconsentPrompt, createRollbackChoicePrompt } from '../consent/update-outcomes-prompt.js'
 import { createUpdatePrompts } from '../consent/update-offer-prompts.js'
 import type { UpdateOutcomeDeps } from '../consent/update-outcomes.js'
 import { createAppUpdates } from './app-updates.js'
 import { dialogCallerFor } from './dialog-caller.js'
 import { OPEN_TAB_CHECK_MS, startUpdateWatch } from './update-watch.js'
-import { updateWatchMs } from '../verifier/test-seam.js'
+import { backgroundPinDelayMs, updateWatchMs } from '../verifier/test-seam.js'
 import { grantableWithoutInstall, grantWithoutInstall } from './grant-without-install.js'
 import { grantLocalFile } from './local-file-grant.js'
+import { announceEntryChange } from '../app-setup/entry-changes.js'
 import { createLocalFileConsentPrompt } from '../consent/local-file-consent.js'
 import { localFileApps } from '../local-files/local-file-apps.js'
 import { localPartitionFor } from '../local-files/partition.js'
@@ -33,11 +39,15 @@ import type { DialogCaller } from '../consent/request-grant.js'
 import { isLocalFileKey } from '../../broker/policy/origin.js'
 import { defaultSessionGrantedOriginCsp, GRANTED_ORIGIN_CSP_FILTER } from './granted-origin-csp.js'
 import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
+import { forEachWebsiteSession } from '../sessions/website-sessions.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import { scoreLevelOverrideFor } from '../dev/score-levels.js'
 import { extensionNamesForOrigin } from '../extensions/site-reach-runner.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { outsideOriginQueue, withOriginQueue } from './origin-queue.js'
+import { ownFetch } from '../route/own-requests.js'
+import { blockOpenTabs } from '../app-setup/block-tabs.js'
+import { pagesInPartitionOf } from '../app-setup/pages-in-partition.js'
 import { MAX_MANIFEST_BYTES } from '../../loader/manifest/manifest.js'
 
 const GRANT_MANIFEST_TIMEOUT_MS = 5_000
@@ -79,13 +89,14 @@ export async function readCapped (response: Response, capBytes: number): Promise
 }
 
 async function fetchGrantManifest (url: string): Promise<{ ok: boolean, status: number, text: string }> {
-  const response = await net.fetch(url, { redirect: 'error', signal: AbortSignal.timeout(GRANT_MANIFEST_TIMEOUT_MS) })
+  // Through the tunnel while the whole browser is on it, unless the app's origin is set to off (`ownFetch`).
+  const response = await ownFetch(async (target, init) => await net.fetch(target, init), new URL(url).origin)(url, { redirect: 'error', signal: AbortSignal.timeout(GRANT_MANIFEST_TIMEOUT_MS) })
   return { ok: response.ok, status: response.status, text: await readCapped(response, MAX_MANIFEST_BYTES) }
 }
 
 export const appInstallSubsystem: Subsystem = {
   name: 'app-install',
-  afterReady: (ctx: SubsystemContext) => {
+  afterReady: (ctx: SubsystemContext): void | Promise<void> => {
     if (ctx.broker === undefined) {
       throw new Error('app-install subsystem requires ctx.broker -- check its position in subsystems.ts')
     }
@@ -99,7 +110,8 @@ export const appInstallSubsystem: Subsystem = {
     // no per-origin registration needed on top of it (granted-origin-csp.ts's
     // own header explains the mechanism; RUN_LAST so Orivon's policy is
     // applied after anything else on this session).
-    webRequestOwnerFor(session.defaultSession).onHeadersReceived(RUN_LAST, GRANTED_ORIGIN_CSP_FILTER, () => true, defaultSessionGrantedOriginCsp(broker))
+    const grantedOriginCsp = defaultSessionGrantedOriginCsp(broker)
+    forEachWebsiteSession((target) => { webRequestOwnerFor(target).onHeadersReceived(RUN_LAST, GRANTED_ORIGIN_CSP_FILTER, () => true, grantedOriginCsp) })
     // ADR-0037: an L4 site's grants read without warnings on every one of
     // these -- the developer-only override is the only source of L4 today
     // (../dev/score-levels.ts), always named as an override, never as
@@ -111,12 +123,12 @@ export const appInstallSubsystem: Subsystem = {
       const extensions = ctx.extensions
       return extensions === undefined ? [] : await extensionNamesForOrigin(extensions, origin, isOriginServedFromCacheSync)
     }
+    installFirstPromptNote(new FirstPromptNote(ctx.privateSession ? null : join(ctx.app.getPath('userData'), 'consent-notes.json')))
     const consent = createInstallConsentPrompt(scoreLevelOverrideFor, extensionsOnSite)
-    const perCapabilityConsent = createPerCapabilityConsentPrompt(scoreLevelOverrideFor, extensionsOnSite)
     const reconsentPrompt = createReconsentPrompt()
     const capabilityPrompt = createCapabilityPrompt(scoreLevelOverrideFor)
     const rollbackChoicePrompt = createRollbackChoicePrompt()
-    const outcomeDeps: UpdateOutcomeDeps = { broker, loader, consent, perCapabilityConsent, reconsentPrompt, capabilityPrompt, rollbackChoicePrompt }
+    const outcomeDeps: UpdateOutcomeDeps = { broker, loader, consent, reconsentPrompt, capabilityPrompt, rollbackChoicePrompt }
     // An installed app whose name moved is offered, never installed unasked (ADR-0056).
     const updates = createAppUpdates({
       outcome: outcomeDeps,
@@ -146,6 +158,17 @@ export const appInstallSubsystem: Subsystem = {
       },
       intervalMs: updateWatchMs() ?? OPEN_TAB_CHECK_MS
     })
+    // A page's first visit (ADR-0075): asks, lets the tab into the app at once with every file checked as it is served, and pins the app in the background. It
+    // leaves alone the origins that never install: a local file, loopback and developer origins, anything not https.
+    // The refusals are kept in `declined-apps.json`, and in memory only in a private session.
+    const declined = new DeclinedApps(ctx.privateSession ? undefined : join(ctx.app.getPath('userData'), 'declined-apps.json'))
+    installDeclinedApps(declined)
+    const firstVisit = createFirstVisit({
+      deps: { broker, loader, consent, capabilityPrompt, declined, changed: announceEntryChange, blocked: blockOpenTabs({ tabsOn: (origin) => ctx.openTabs?.on(origin) ?? [], pagesOf: pagesInPartitionOf, setup: tabSetupNow }), askerFor: (origin) => { const tab = ctx.openTabs?.on(origin)[0]; return tab === undefined ? undefined : dialogCallerFor(tab, (sender) => ctx.windowForSender?.(sender as never)) }, backgroundDelayMs: backgroundPinDelayMs() },
+      untouched: (origin) => isLocalFileKey(origin) || grantableWithoutInstall(origin, devModeEnabled()) || !origin.startsWith('https://'),
+      servedFromCache: isOriginServedFromCacheSync
+    })
+    publishFirstVisit(firstVisit)
     const localFileConsent = createLocalFileConsentPrompt()
     const localFileRefusals = new Set<string>()
     publishInstallApp(ctx, async (hintingOrigin, hintedUrl, caller) => {
@@ -178,7 +201,7 @@ export const appInstallSubsystem: Subsystem = {
         // (grantableWithoutInstall's own true/false split), so sharing the
         // queue costs nothing and closes the same race for both.
         const outcome = await withOriginQueue(hintingOrigin, async () => await grantWithoutInstall(
-          { broker, fetchManifest: fetchGrantManifest, consent, perCapabilityConsent },
+          { broker, fetchManifest: fetchGrantManifest, consent },
           hintingOrigin,
           caller
         ))
@@ -193,5 +216,7 @@ export const appInstallSubsystem: Subsystem = {
       }
       return result
     })
+    // An app allowed and not yet pinned is served again, checked, before any tab can ask for it (a restored tab included).
+    return firstVisit.resume().catch((error: unknown) => { console.error('[app-install] apps allowed before a restart could not be served again', error) })
   }
 }

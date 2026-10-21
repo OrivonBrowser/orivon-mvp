@@ -23,6 +23,8 @@ export interface AboutInfo {
   readonly platform: string
   readonly userAgent: string
   readonly developerMode: boolean
+  /** A Microsoft Store install: the Store delivers its updates. */
+  readonly updatesFromStore: boolean
 }
 
 interface GetReply {
@@ -30,6 +32,8 @@ interface GetReply {
   readonly values: Readonly<Record<string, unknown>>
   /** The values this process started with, for a setting that is read only then. */
   readonly atStart: Readonly<Record<string, unknown>>
+  /** The settings this process is held to for its whole life: shown as they are, and fixed. */
+  readonly held?: readonly string[]
 }
 
 type Outcome = { readonly ok: true } | { readonly ok: false, readonly reason: string }
@@ -38,6 +42,7 @@ export class SettingsState {
   readonly descriptions = new Map<string, SettingDescription>()
   private readonly values = new Map<string, unknown>()
   private readonly valuesAtStart = new Map<string, unknown>()
+  private readonly held = new Set<string>()
   about: AboutInfo | null = null
   readonly shortcuts: ShortcutsState
   readonly privacy: PrivacyState
@@ -48,7 +53,7 @@ export class SettingsState {
   readonly updates: UpdatesState
   readonly web3: Web3State
   /** This profile and the others, and whether this window is private. */
-  profiles: { readonly profiles: ReadonlyArray<{ readonly id: string, readonly name: string, readonly current: boolean }>, readonly isPrivate: boolean } | null = null
+  profiles: { readonly profiles: ReadonlyArray<{ readonly id: string, readonly name: string, readonly current: boolean }>, readonly isPrivate: boolean, readonly tunnel?: 'nym' } | null = null
   private readonly listeners = new Set<() => void>()
   private readonly parts = new Map<string, SettingsPart>()
   private readonly reloadProfilesCoalesced: () => void
@@ -74,6 +79,8 @@ export class SettingsState {
     for (const description of reply.descriptions) this.descriptions.set(description.key, description)
     for (const [key, value] of Object.entries(reply.values)) this.values.set(key, value)
     for (const [key, value] of Object.entries(reply.atStart)) this.valuesAtStart.set(key, value)
+    this.held.clear()
+    for (const key of reply.held ?? []) this.held.add(key)
     this.about = await this.bridge.request('about', {}) as AboutInfo
     await this.shortcuts.load()
     await this.privacy.load()
@@ -117,6 +124,11 @@ export class SettingsState {
     return part as P
   }
 
+  /** This window is held to the value of `key` (a private window that always goes through Nym): it cannot be changed here. */
+  isHeld (key: string): boolean {
+    return this.held.has(key)
+  }
+
   value (key: string): unknown {
     return this.values.get(key)
   }
@@ -145,7 +157,8 @@ export class SettingsState {
 
   async resetAll (): Promise<void> {
     await this.bridge.request('settings', { type: 'resetAll' })
-    for (const description of this.descriptions.values()) this.values.set(description.key, description.default)
+    // A setting this window is held to keeps its value.
+    for (const description of this.descriptions.values()) if (!this.held.has(description.key)) this.values.set(description.key, description.default)
     this.notify()
   }
 

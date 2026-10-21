@@ -1,23 +1,19 @@
-// The one function handed to `contextBridge.executeInMainWorld`. SERIALISED
-// (Function.prototype.toString) and re-evaluated fresh in the main world, so
-// every helper it needs -- streams, the caller-attribution check below --
-// must be declared INSIDE its own body: no free variables, no imports, no
-// module-level consts. See README.md's Design notes for why. `bridge` is a
-// plain object of proxied closures surface/orivon.ts built, one per
-// CONTROL_CHANNEL method; `target` defaults to the real `window` (overridable, matching src/shim/globals.ts) so a test never mutates the shared global.
+// The one function handed to `contextBridge.executeInMainWorld`. SERIALISED (Function.prototype.toString) and
+// re-evaluated fresh in the main world, so every helper it needs must be declared INSIDE its own body: no free
+// variables, no imports, no module-level consts (README.md's Design notes). `bridge` is a plain object of proxied
+// closures surface/orivon.ts built, one per CONTROL_CHANNEL method; `target` defaults to the real `window`
+// (overridable, matching src/shim/globals.ts) so a test never mutates the shared global.
 
 import type { OrivonErrorCode } from '../../contracts/errors.js'
 import type { SendRefusal, UdpSocket } from '../../contracts/handles.js'
-import type { BindScope, CapabilityRequest, SecureConnectOptions } from '../../contracts/capability-api.js'
+import type { BindScope, CapabilityRequest, SecureConnectOptions } from '../../contracts/index.js'
 import type {
   CallSiteMethods, MainWorldBridge, MainWorldDatagram, MainWorldDirectoryBridge, MainWorldFileBridge, MainWorldServerBridge,
   MainWorldSocketBridge, MainWorldUdpBridge, MainWorldWebContextBridge, OrivonLimits
 } from './main-world-bridges.js'
 
-// The bridge shapes -- including `bridge`'s own PARAMETER shape,
-// MainWorldBridge -- live in ./main-world-bridges.ts (Rule 2: an `interface`
-// produces no JS, so this is safe despite the constraint above). Re-exported
-// so no import site changes.
+// The bridge shapes, MainWorldBridge included, live in ./main-world-bridges.ts (an `interface` produces no JS, so the
+// constraint above does not apply); re-exported so no import site changes.
 export type {
   MainWorldBridge, MainWorldDatagram, MainWorldDirectoryBridge, MainWorldFileBridge, MainWorldServerBridge,
   MainWorldSocketBridge, MainWorldUdpBridge, MainWorldWebContextBridge, OrivonLimits
@@ -285,7 +281,7 @@ export function installOrivon (
   /** `fsOpen`'s counterpart to `buildSocket`/`buildUdpSocket` -- a plain request/reply round trip, no port or stream; each nested closure needs its own `callRevived` since any one can reject independently. */
   function buildFile (f: Awaited<ReturnType<typeof bridge.fsOpen>>): MainWorldFileBridge {
     return Object.freeze({
-      id: f.id,
+      id: f.id, name: f.name,
       read: async (opts: { position: number, length: number }) => await callRevived(f.read(opts)),
       write: async (opts: { position: number, data: Uint8Array }) => await callRevived(f.write(opts)),
       stat: async () => await callRevived(f.stat()),
@@ -323,13 +319,13 @@ export function installOrivon (
   // Refuses extension code at every page-callable method below, over every built-in the decision path calls -- decision rule, what it catches and why: README.md's Design notes.
   const RealError = Error
   const nativeCaptureStackTrace = RealError.captureStackTrace
-  const { defineProperty: defineOwn, getOwnPropertyDescriptor: ownDescriptor, apply: applyOwn, getPrototypeOf: getProtoOf } = Reflect
-  const mapOwn = Array.prototype.map
+  const { defineProperty: defineOwn, getOwnPropertyDescriptor: ownDescriptor, apply: applyOwn, getPrototypeOf: getProtoOf, setPrototypeOf: setProtoOf } = Reflect
   const someOwn = Array.prototype.some
   const { indexOf: indexOfOwn, startsWith: startsWithOwn } = String.prototype
   function hasSource (text: unknown, needles: readonly string[]): boolean {
     return typeof text === 'string' && applyOwn(someOwn, needles, [(needle: string) => applyOwn(indexOfOwn, text, [needle]) !== -1])
   }
+  /** A descriptor is read through its prototype chain for any field it lacks, so every one built or replayed here has none. */ function bare (d: PropertyDescriptor | undefined): PropertyDescriptor | undefined { if (d !== undefined) setProtoOf(d, null); return d }
   interface CallerFrame { fileName?: string, scriptNameOrSourceURL?: string, evalOrigin?: string }
   // A document that is itself a local file runs scripts it loaded from `file:`, as a web page does from http(s); a web document has no `file:` frame of its own to count.
   const fileDocument = typeof window !== 'undefined' && window.location.protocol === 'file:'
@@ -344,13 +340,13 @@ export function installOrivon (
     if (applyOwn(someOwn, frames, [isExtension])) return true
     return !applyOwn(someOwn, frames, [isPage])
   }
-  // The four CallSite.prototype methods, saved by mapFrames' own first call
-  // (forced synchronously below); a live/saved mismatch is itself tamper. README.md's Design notes.
+  // The four CallSite.prototype methods, saved by mapFrames' own first call (forced synchronously below); a live/saved mismatch is itself tamper. mapFrames reads no built-in a page can redefine after install (Array species, index setters, Object.prototype fields). README.md's Design notes.
   let savedCallSiteMethods: CallSiteMethods | undefined
   function mapFrames (raw: readonly NodeJS.CallSite[]): CallerFrame[] {
-    return applyOwn(mapOwn, raw, [(cs: NodeJS.CallSite) => {
-      const live = getProtoOf(cs) as CallSiteMethods | null
-      if (live === null) throw new RealError('orivon: no CallSite prototype')
+    const frames: CallerFrame[] = []
+    for (let i = 0; i < raw.length; i++) {
+      const cs = raw[i] as NodeJS.CallSite
+      const live = getProtoOf(cs) as CallSiteMethods
       if (savedCallSiteMethods === undefined) {
         savedCallSiteMethods = { getFileName: live.getFileName, getScriptNameOrSourceURL: live.getScriptNameOrSourceURL, isEval: live.isEval, getEvalOrigin: live.getEvalOrigin }
       } else if (live.getFileName !== savedCallSiteMethods.getFileName || live.getScriptNameOrSourceURL !== savedCallSiteMethods.getScriptNameOrSourceURL ||
@@ -359,32 +355,31 @@ export function installOrivon (
       }
       const m = savedCallSiteMethods
       if (m.getFileName === undefined || m.getScriptNameOrSourceURL === undefined || m.isEval === undefined || m.getEvalOrigin === undefined) throw new RealError('orivon: CallSite methods unavailable')
-      return {
-        fileName: applyOwn(m.getFileName, cs, []) ?? undefined,
-        scriptNameOrSourceURL: applyOwn(m.getScriptNameOrSourceURL, cs, []) ?? undefined,
-        evalOrigin: applyOwn(m.isEval, cs, []) ? applyOwn(m.getEvalOrigin, cs, []) : undefined
+      const value = {
+        fileName: applyOwn(m.getFileName, cs, []) ?? undefined, scriptNameOrSourceURL: applyOwn(m.getScriptNameOrSourceURL, cs, []) ?? undefined, evalOrigin: applyOwn(m.isEval, cs, []) ? applyOwn(m.getEvalOrigin, cs, []) : undefined
       }
-    }]) as CallerFrame[]
+      if (!defineOwn(frames, i, { __proto__: null, value, writable: true, enumerable: true, configurable: true } as PropertyDescriptor)) throw new RealError('orivon: frame list unwritable')
+    }
+    return frames
   }
   /** Captures `exclude`'s caller's stack, excluding `exclude`'s own frame. `tampered: true` when the capture machinery was frozen first -- refuse rather than decide from an empty/partial stack. */
   function captureCaller (exclude: (...args: never[]) => unknown): { tampered: boolean, frames: CallerFrame[] } {
-    const savedPrepare = ownDescriptor(RealError, 'prepareStackTrace')
+    const savedPrepare = bare(ownDescriptor(RealError, 'prepareStackTrace'))
     let setPrepare = false
-    try { setPrepare = defineOwn(RealError, 'prepareStackTrace', { value: (_e: Error, s: unknown) => s, writable: true, configurable: true, enumerable: false }) } catch { setPrepare = false }
+    try { setPrepare = defineOwn(RealError, 'prepareStackTrace', { __proto__: null, value: (_e: Error, s: unknown) => s, writable: true, configurable: true, enumerable: false } as PropertyDescriptor) } catch { setPrepare = false }
     if (!setPrepare) return { tampered: true, frames: [] }
-    const savedLimit = ownDescriptor(RealError, 'stackTraceLimit')
+    const savedLimit = bare(ownDescriptor(RealError, 'stackTraceLimit'))
     let setLimit = false
-    try { setLimit = defineOwn(RealError, 'stackTraceLimit', { value: Infinity, writable: true, configurable: true, enumerable: false }) } catch { setLimit = false }
+    try { setLimit = defineOwn(RealError, 'stackTraceLimit', { __proto__: null, value: Infinity, writable: true, configurable: true, enumerable: false } as PropertyDescriptor) } catch { setLimit = false }
     // Any frozen value refuses raising it to Infinity, not just 0 -- README.md's Design notes.
     let tampered = !setLimit
     let frames: CallerFrame[] = []
     if (!tampered) {
       try {
-        const holder: { stack?: unknown } = {}
+        const holder = { __proto__: null } as { stack?: unknown }
         if (typeof nativeCaptureStackTrace === 'function') applyOwn(nativeCaptureStackTrace, RealError, [holder, exclude])
         else holder.stack = new RealError().stack
-        const raw = holder.stack as NodeJS.CallSite[] | undefined
-        frames = raw !== undefined && raw.length > 0 ? mapFrames(raw) : []
+        frames = mapFrames(holder.stack as NodeJS.CallSite[])
         if (frames.length === 0) tampered = true
       } catch { tampered = true }
     }
@@ -392,11 +387,7 @@ export function installOrivon (
     try { if (setLimit) { if (savedLimit !== undefined) defineOwn(RealError, 'stackTraceLimit', savedLimit); else delete (RealError as { stackTraceLimit?: unknown }).stackTraceLimit } } catch { /* best effort restore */ }
     return { tampered, frames }
   }
-  // Forces the bootstrap capture above to happen NOW, before any page or
-  // extension script runs, rather than on whatever call is first; a failed
-  // bootstrap leaves savedCallSiteMethods permanently mismatched (`{}`),
-  // refusing every call. Genuinely CALLED, not just referenced --
-  // captureStackTrace's exclude only trims a frame that is on the stack.
+  // Forces the bootstrap capture NOW, before any page script runs; a failed one leaves savedCallSiteMethods `{}`, refusing every call. Genuinely CALLED: captureStackTrace's exclude only trims a frame on the stack.
   function bootstrapCallSiteMethods (): void { captureCaller(bootstrapCallSiteMethods) }
   bootstrapCallSiteMethods()
   if (savedCallSiteMethods === undefined) savedCallSiteMethods = {}
@@ -415,28 +406,42 @@ export function installOrivon (
     return wrapped as unknown as F
   }
 
-  // UNWRAPPED net.connect/net.connectSecure -- ../routed/dial.ts's own use, via the internal-net slot below (README.md's Design notes).
-  const netConnectImpl = async (opts: { host: string, port: number }): Promise<unknown> => buildSocket(await callRevived(bridge.netConnect(opts)))
-  const netConnectSecureImpl = async (opts: SecureConnectOptions): Promise<unknown> => buildSocket(await callRevived(bridge.netConnectSecure(opts)))
+  // UNWRAPPED net.connect/net.connectSecure for ../routed/dial.ts (internal-net slot below). ADR-0071: an AbortSignal cannot
+  // cross the bridge, so the isolated side gets a function registering its cancel instead.
+  async function dial (open: (rest: never, onAbandon?: (listener: () => void) => void) => Promise<Awaited<ReturnType<typeof bridge.netConnect>>>, opts: unknown): Promise<unknown> {
+    const { signal, ...rest } = (typeof opts === 'object' && opts !== null ? opts : {}) as { signal?: unknown }
+    if (signal !== undefined && !(signal instanceof AbortSignal)) throw toOrivonError('invalid', { message: 'orivon: signal must be an AbortSignal' })
+    if (signal?.aborted === true) throw toOrivonError('closed', { message: 'orivon: the connection attempt was aborted before it began' })
+    let hook = (): void => {}
+    const onAbandon = signal === undefined ? undefined : (listener: () => void): void => { hook = () => { listener() }; signal.addEventListener('abort', hook, { once: true }) }
+    try { return buildSocket(await callRevived(open(rest as never, onAbandon))) } finally { signal?.removeEventListener('abort', hook) }
+  }
+  const netConnectImpl = async (opts: { host: string, port: number, signal?: AbortSignal }): Promise<unknown> => await dial(bridge.netConnect, opts)
+  const netConnectSecureImpl = async (opts: SecureConnectOptions): Promise<unknown> => await dial(bridge.netConnectSecure, opts)
+
+  /** One blocking round trip over `bridge.fsSync`. It never throws, so the failure is built and thrown HERE, never via callRevived. */
+  function syncCall (op: string, args: unknown[]): unknown {
+    const r = bridge.fsSync(op, args)
+    if (r.ok) return r.result
+    throw toOrivonError(r.code, r.platformCode === undefined ? { message: r.message } : { message: r.message, platformCode: r.platformCode })
+  }
+  // The page's synchronous twin of `fs` (`Symbol.for('orivon.synchronous')`, like a Worker's): the path-based members only, no `open`, attributed like readFileSync.
+  const synchronousFs: Record<string, unknown> = {}
+  for (const op of ['stat', 'readFile', 'writeFile', 'mkdir', 'readdir', 'rm', 'rename']) synchronousFs[op] = guarded((...args: unknown[]) => syncCall(op, args), true)
 
   const api = {
     version: 0,
     app: Object.freeze({
       manifest: guarded(async () => await callRevived(bridge.appManifest())),
       grants: guarded(async () => await callRevived(bridge.appGrants())),
-      requestGrant: guarded(async (request: CapabilityRequest) => await callRevived(bridge.appRequestGrant(request)))
+      requestGrant: guarded(async (request: CapabilityRequest) => await callRevived(bridge.appRequestGrant(request))),
+      onOpenUrl: guarded((listener: (url: string) => void) => bridge.appOnOpenUrl(listener)), requestSchemeHandler: guarded(async (scheme: string) => await callRevived(bridge.appRequestSchemeHandler(scheme))), isSchemeHandler: guarded(async (scheme: string) => await callRevived(bridge.appIsSchemeHandler(scheme)))
     }),
     fs: Object.freeze({
       readFile: guarded(async (path: string) => await callRevived(bridge.fsReadFile(path))),
       writeFile: guarded(async (path: string, data: Uint8Array) => { await callRevived(bridge.fsWriteFile(path, data)) }),
-      // NOT `async`, genuinely synchronous through `executeInMainWorld` -- `bridge.fsReadFileSync` never throws, so the failure branch is built and thrown HERE, never via callRevived.
-      readFileSync: guarded((path: string) => {
-        const response = bridge.fsReadFileSync(path)
-        if (response.ok) return response.result
-        throw toOrivonError(response.code, response.platformCode === undefined
-          ? { message: response.message }
-          : { message: response.message, platformCode: response.platformCode })
-      }, true),
+      // NOT `async`, genuinely synchronous through `executeInMainWorld` -- see `syncCall`.
+      readFileSync: guarded((path: string) => syncCall('readFile', [path]) as Uint8Array, true),
       mkdir: guarded(async (path: string, opts?: { recursive?: boolean }) => { await callRevived(bridge.fsMkdir(path, opts)) }),
       readdir: guarded(async (path: string) => await callRevived(bridge.fsReaddir(path))),
       stat: guarded(async (path: string) => await callRevived(bridge.fsStat(path))),
@@ -477,7 +482,9 @@ export function installOrivon (
       lookup: guarded(async (opts: { hostname: string }) => await callRevived(bridge.netLookup(opts)))
     })
   }
-  // A plain assignment would let a page script replace orivon.net.connect for every other script on the same page.
+  // Not on the child host's object: it never meets a page, so there is no call to attribute.
+  if (attributeCallers) Object.defineProperty(api, Symbol.for('orivon.synchronous'), { value: Object.freeze({ fs: Object.freeze(synchronousFs) }) })
+  // Not assignable: a page script could otherwise replace orivon.net.connect for every other script on the page.
   Object.defineProperty(target, 'orivon', { value: Object.freeze(api), writable: false, configurable: false, enumerable: true })
 
   // A private slot for the ../routed/ installers alone -- README.md's Design notes. `callerIsPage` is `guarded`'s own attribution, shared rather than copied a third time.

@@ -9,11 +9,13 @@ import { base36 } from 'multiformats/bases/base36'
 import { ResolutionError } from '../resolution/records.js'
 import type { Refusal } from '../resolution/providers.js'
 import { sleepOrAbort } from '../resolution/timing.js'
-import { GatewayFailure, TooLarge, askGateway, readCapped } from './gateways.js'
-import type { Fetch, GatewayPool } from './gateways.js'
+import { GatewayFailure, TooLarge, askGateway, readCapped } from '../gateways/gateways.js'
+import { StallClock } from '../gateways/stall.js'
+import type { RoutePace } from '../route-pace.js'
+import type { Fetch, GatewayPool } from '../gateways/gateways.js'
 import type { IpfsLimits } from './limits.js'
-import { racePass } from './race.js'
-import type { AttemptOutcome, PassResult } from './race.js'
+import { racePass } from '../gateways/race.js'
+import type { AttemptOutcome, PassResult } from '../gateways/race.js'
 
 /** The IPNS spec's own ceiling. */
 const MAX_RECORD_BYTES = 10 * 1024
@@ -38,18 +40,24 @@ export interface VerifiedIpnsRecord {
  * `record` is the signed record in base64. Read with a plain fetch, no
  * pool slot and no health tracking -- there is at most one per mount, and
  * a name service is not one of the gateways cooldowns are scheduled over. */
-async function readNameServiceRecord (origin: string, key: string, fetch: Fetch, timeoutMs: number, signal: AbortSignal): Promise<Uint8Array> {
-  const response = await fetch(`${origin}/name/${key}`, {
-    headers: { accept: 'application/json' },
-    signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
-  })
-  if (!response.ok) {
-    await response.body?.cancel()
-    throw new Error(`${origin} answered ${String(response.status)}`)
+async function readNameServiceRecord (origin: string, key: string, fetch: Fetch, route: RoutePace, timeoutMs: number, signal: AbortSignal): Promise<Uint8Array> {
+  const clock = new StallClock({ firstByteMs: route.firstWait(timeoutMs), stallMs: route.stallMs(), capMs: route.firstWait(timeoutMs) + route.transferMs(MAX_RECORD_BYTES * 2) })
+  try {
+    const response = await fetch(`${origin}/name/${key}`, {
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.any([signal, clock.signal])
+    })
+    clock.progress()
+    if (!response.ok) {
+      await response.body?.cancel()
+      throw new Error(`${origin} answered ${String(response.status)}`)
+    }
+    const body = JSON.parse(new TextDecoder().decode(await readCapped(response, MAX_RECORD_BYTES * 2, () => { clock.progress() }))) as { record?: unknown }
+    if (typeof body.record !== 'string') throw new Error(`${origin}: no record in the answer`)
+    return Uint8Array.from(atob(body.record), (c) => c.charCodeAt(0))
+  } finally {
+    clock.finish()
   }
-  const body = JSON.parse(new TextDecoder().decode(await readCapped(response, MAX_RECORD_BYTES * 2))) as { record?: unknown }
-  if (typeof body.record !== 'string') throw new Error(`${origin}: no record in the answer`)
-  return Uint8Array.from(atob(body.record), (c) => c.charCodeAt(0))
 }
 
 export interface IpnsSources {
@@ -67,12 +75,12 @@ async function readSource (name: string, kind: 'gateway' | 'name-service', sourc
     if (kind === 'gateway') {
       return await askGateway(
         sources.pool, fetch, name,
-        { url: `${name}/ipns/${key}?format=ipns-record`, accept: 'application/vnd.ipfs.ipns-record', timeoutMs },
-        async (response) => await readCapped(response, MAX_RECORD_BYTES),
+        { url: `${name}/ipns/${key}?format=ipns-record`, accept: 'application/vnd.ipfs.ipns-record', timeoutMs, maxBytes: MAX_RECORD_BYTES },
+        async (response, progress) => await readCapped(response, MAX_RECORD_BYTES, progress),
         signal
       )
     }
-    return await readNameServiceRecord(name, key, fetch, timeoutMs, signal)
+    return await readNameServiceRecord(name, key, fetch, sources.pool.route, timeoutMs, signal)
   } catch (error) {
     if (error instanceof GatewayFailure) throw error
     throw new Error(error instanceof TooLarge ? `${name} sent more than a record may be` : `${name}: ${error instanceof Error ? error.message : String(error)}`)
@@ -95,19 +103,20 @@ async function gatewaysToAsk (pool: GatewayPool, timeoutMs: number, signal: Abor
  * record offered is older than one seen before, otherwise `unavailable`. */
 export async function resolveIpnsKey (
   key: string, fetch: Fetch, sources: IpnsSources, sequences: SequenceStore,
-  limits: Pick<IpfsLimits, 'blockTimeoutMs' | 'hedgeDelayMs'>, signal: AbortSignal, onRefusal: (refusal: Refusal) => void
+  limits: Pick<IpfsLimits, 'blockTimeoutMs' | 'hedgeDelayMs' | 'recordTimeoutMs'>, signal: AbortSignal, onRefusal: (refusal: Refusal) => void
 ): Promise<VerifiedIpnsRecord> {
   const multihash = CID.parse(key, base36).multihash
   // A key is an inlined public key (identity) or a hash of one (sha2-256); nothing else names an IPNS key.
   if (multihash.code !== 0x00 && multihash.code !== 0x12) throw new ResolutionError('unsupported', `IPNS name ${key} is not a key this build can check`)
   const routingKey = multihashToIPNSRoutingKey(multihash as typeof multihash & { code: 0x00 | 0x12 })
+  const recordTimeoutMs = limits.recordTimeoutMs ?? limits.blockTimeoutMs
   const floor = sequences.highest(key)
   const nameServices = new Set(sources.nameServices)
 
   const attempt = async (source: string, attemptSignal: AbortSignal): Promise<AttemptOutcome<VerifiedIpnsRecord>> => {
     let bytes: Uint8Array
     try {
-      bytes = await readSource(source, nameServices.has(source) ? 'name-service' : 'gateway', sources, key, fetch, limits.blockTimeoutMs, attemptSignal)
+      bytes = await readSource(source, nameServices.has(source) ? 'name-service' : 'gateway', sources, key, fetch, recordTimeoutMs, attemptSignal)
     } catch (error) {
       return { kind: 'failed', retryable: false, reason: (error as Error).message }
     }
@@ -118,7 +127,7 @@ export async function resolveIpnsKey (
       if (typeof name === 'string' && FORGED.has(name)) {
         onRefusal({ source, resource: `/ipns/${key}` })
         // A name service is never one of the pool's gateways, so there is nothing to drop.
-        if (!nameServices.has(source)) sources.pool.drop(source)
+        if (!nameServices.has(source)) sources.pool.refuse(source)
         return { kind: 'lied', reason: `${source}: ${(error as Error).message}` }
       }
       return { kind: 'failed', retryable: false, reason: `${source}: ${(error as Error).message}` }
@@ -131,10 +140,10 @@ export async function resolveIpnsKey (
   }
 
   // Raced like a block, so a gateway that hangs costs the hedge delay, not its whole timeout.
-  const gateways = await gatewaysToAsk(sources.pool, limits.blockTimeoutMs, signal)
+  const gateways = await gatewaysToAsk(sources.pool, recordTimeoutMs, signal)
   let result: PassResult<VerifiedIpnsRecord>
   try {
-    result = await racePass([...gateways, ...sources.nameServices], attempt, limits.hedgeDelayMs, signal)
+    result = await racePass([...gateways, ...sources.nameServices], attempt, sources.pool.route.wait(limits.hedgeDelayMs), signal)
   } catch (error) {
     // racePass rejects only for the caller's own signal.
     throw new ResolutionError('unavailable', `IPNS name ${key}: ${error instanceof Error ? error.message : String(error)}`)
@@ -145,7 +154,7 @@ export async function resolveIpnsKey (
     return result.value
   }
   const rolledBack = floor !== undefined && result.reasons.some((r) => r.includes('older than'))
-  throw new ResolutionError(result.lied || rolledBack ? 'unverifiable' : 'unavailable', `IPNS name ${key}: ${result.reasons.join('; ') || 'no source left to ask'}`)
+  throw new ResolutionError(result.lied || rolledBack ? 'unverifiable' : 'unavailable', `IPNS name ${key}: ${result.reasons.join('; ') || 'no source left to ask'}`, result.lied || rolledBack)
 }
 
 /** Highest sequences for this session only; the verifier host supplies a persistent one. */

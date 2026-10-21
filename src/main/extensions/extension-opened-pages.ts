@@ -54,9 +54,9 @@ export function isExtensionOpened (contents: WebContents, extensionId: string): 
   return hostOpened.isOpenedBy(contents, extensionId)
 }
 
-/** `tabs.openTrusted` for a caller that has checked `target`, remembering a tab it puts on an extension page. */
-export function openExtensionTab (tabs: { readonly openTrusted: (target?: string) => [string, WebContents] | undefined }, target?: string): [string, WebContents] | undefined {
-  const opened = tabs.openTrusted(target)
+/** `tabs.openTrusted` for a caller that has checked `target`, remembering a tab it puts on an extension page. `partition` is the profile session a page of an extension in that session runs in. */
+export function openExtensionTab (tabs: { readonly openTrusted: (target?: string, partition?: string) => [string, WebContents] | undefined }, target?: string, partition?: string): [string, WebContents] | undefined {
+  const opened = partition === undefined ? tabs.openTrusted(target) : tabs.openTrusted(target, partition)
   if (opened !== undefined && target !== undefined) markExtensionOpened(opened[1], target)
   return opened
 }

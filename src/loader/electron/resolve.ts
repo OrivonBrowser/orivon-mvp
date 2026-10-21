@@ -18,9 +18,11 @@
 // genuinely differ (a raw socket dial vs. what a browser-grade fetch does),
 // not because Rule 3 was skipped.
 
-import type { Resolver } from '../../broker/policy/connect.js'
+import type { FarEndResolver } from '../fetch/install-origin.js'
+import { ownRouteFor } from '../../main/route/own-requests.js'
 
-export const electronResolveHost: Resolver = async (host) => {
+/** Through the tunnel the far end resolves a name, so the install guard resolves none here (`atFarEnd`). */
+export const electronResolveHost: FarEndResolver = Object.assign(async (host: string): Promise<string[]> => {
   // Dynamically imported: outside a real Electron process (i.e. under
   // vitest), `electron`'s entry point is a path STRING, and a top-level
   // import would silently bind `undefined` rather than throw -- same
@@ -28,4 +30,4 @@ export const electronResolveHost: Resolver = async (host) => {
   const { net } = await import('electron')
   const resolved = await net.resolveHost(host)
   return resolved.endpoints.map((endpoint) => endpoint.address)
-}
+}, { atFarEnd: (origin: string) => ownRouteFor(origin) === 'tunnel' })

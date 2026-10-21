@@ -1,12 +1,12 @@
 // ADR-0037: an L4 site's grants carry no warnings, on every consent surface
 // a grant summary reaches -- proven here against the REAL install-consent
 // consent question (`createInstallConsentPrompt`, drawn in the tab's panel),
-// the REAL site-info popup and the REAL all-sites panel, driven through a
+// the REAL site-info popup and the REAL apps card in Settings, driven through a
 // real loopback grant-without-install flow (grantableWithoutInstall always
 // allows loopback, dev mode or not), with the developer-only Website/Delivery
 // level override (`src/main/dev/score-levels.ts`) forcing one origin to
 // Level 4 and leaving a second, identical origin as a control at Level 1.
-// The test reads the question the panel draws and presses its real "Allow".
+// The test reads the question the panel draws and presses its real "Grant all".
 // Everything else -- the manifest hint, the grant, the shield, the popup, the
 // panel -- is the shipped code path.
 //
@@ -64,7 +64,7 @@ function findPopup (app: ElectronApplication, path: string): Page | undefined {
 }
 
 it(
-  'an L4-overridden origin\'s dialog, shield, popup and settings row all read without warning; an identical, un-overridden origin still warns throughout',
+  'an L4-overridden origin\'s dialog, shield, popup and Settings row all read without warning; an identical, un-overridden origin still warns throughout',
   async () => {
     await runPhase('score-level-override', async (check) => {
       const a = await startFixture('app.orivon.fixture.score-level-a')
@@ -91,13 +91,13 @@ it(
 
         // --- Origin A: overridden to Website Level 4 ----------------------
         await clickAddressBarRetrying(chrome, a.url)
-        const dialogA: QuestionText = await answerAndRead(running, 'Allow')
+        const dialogA: QuestionText = await answerAndRead(running, 'Grant all')
         const keyAppearedA = await waitFor(async () => (await chrome.getAttribute('#site-permissions-btn', 'hidden')) === null, 15_000)
         check('origin A: the key appeared once the loopback grant-without-install flow granted it', keyAppearedA)
         await chrome.waitForTimeout(500) // past the repartition, same margin e2e-site-info.test.ts's reloadAndSettle uses
 
         check(`origin A's question is drawn plain, not in the warning style (${JSON.stringify(dialogA)})`, !dialogA.warning)
-        check('origin A\'s question carries the plain "Unlimited network access" line, no ⚠', dialogA.detail.includes('Unlimited network access') && !dialogA.detail.includes('⚠'))
+        check('origin A\'s question carries the plain "Unlimited network access" line, no ⚠', [...dialogA.choices, dialogA.detail].join('\n').includes('Unlimited network access') && ![...dialogA.choices, dialogA.detail].join('\n').includes('⚠'))
 
         const shieldA = await readShield(chrome)
         check(`origin A's shield paints Level 4, marked "Web3" (${JSON.stringify(shieldA)})`, shieldA.level === '4' && shieldA.mark === 'Web3')
@@ -118,32 +118,32 @@ it(
         await waitFor(() => findPopup(running, '/site-info/') === undefined, 5_000)
         await chrome.waitForTimeout(400)
 
-        await chrome.click('#permissions-btn')
-        await waitFor(() => findPopup(running, '/renderer/permissions/') !== undefined, 5_000)
-        const settingsA = findPopup(running, '/renderer/permissions/')
-        if (settingsA === undefined) throw new Error('the all-sites panel did not open')
-        await waitFor(async () => (await settingsA.$$(`[data-origin="${originA}"] .permission-row`)).length > 0, 5_000)
+        await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/apps') })
+        await waitFor(() => findPopup(running, 'orivon://settings') !== undefined, 5_000)
+        const settingsA = findPopup(running, 'orivon://settings')
+        if (settingsA === undefined) throw new Error('the Settings page did not open')
+        await waitFor(async () => (await settingsA.$$(`[data-origin="${originA}"] .perm`)).length > 0, 5_000)
         const cardA = await settingsA.evaluate((origin) => {
           const card = document.querySelector(`[data-origin="${origin}"]`)
           return {
-            warned: card?.querySelectorAll('.permission-row.warning').length ?? -1,
-            icons: card?.querySelectorAll('.permission-row .grant-icon').length ?? -1
+            warned: card?.querySelectorAll('.perm.warning').length ?? -1,
+            icons: card?.querySelectorAll('.perm .grant-icon').length ?? -1
           }
         }, originA)
-        check(`origin A's settings card carries no warning either (${JSON.stringify(cardA)})`, cardA.warned === 0 && cardA.icons > 0)
+        check(`origin A's Settings card carries no warning either (${JSON.stringify(cardA)})`, cardA.warned === 0 && cardA.icons > 0)
 
-        await chrome.click('#permissions-btn')
-        await waitFor(() => findPopup(running, '/renderer/permissions/') === undefined, 5_000)
+        // Back to the first tab, so the next origin opens there.
+        await chrome.evaluate(() => { document.querySelectorAll<HTMLElement>('.tab')[0]?.click() })
         await chrome.waitForTimeout(400)
 
         // --- Origin B: the control, no override at all ---------------------
         await clickAddressBarRetrying(chrome, b.url)
-        const dialogB: QuestionText = await answerAndRead(running, 'Allow')
+        const dialogB: QuestionText = await answerAndRead(running, 'Grant all')
         const keyAppearedB = await waitFor(async () => (await chrome.getAttribute('#site-permissions-btn', 'hidden')) === null, 15_000)
         check('origin B: the key appeared once its own loopback grant landed', keyAppearedB)
         await chrome.waitForTimeout(500)
 
-        check(`origin B's question is still drawn in the warning style, with ⚠ (${JSON.stringify(dialogB)})`, dialogB.warning && dialogB.detail.includes('⚠'))
+        check(`origin B's question is still drawn in the warning style, with ⚠ (${JSON.stringify(dialogB)})`, dialogB.warning && dialogB.choices.join('\n').includes('⚠'))
         check('no native message box was opened for either question', (await noNativeDialogs(running)).length === 0)
 
         const shieldB = await readShield(chrome)

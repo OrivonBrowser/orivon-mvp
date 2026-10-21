@@ -1,6 +1,6 @@
 // The new-tab dashboard's IPC surface: read-only access to the bookmarks that are web addresses, and
-// navigating the CALLING tab -- nothing else. Owner override, 2026-08-28
-// (scope.md; the dashboard replaces about:blank for a fresh tab).
+// navigating the CALLING tab -- nothing else. The dashboard
+// replaces about:blank for a fresh tab.
 //
 // A separate channel and a separate sender check from ipc.ts's
 // registerShellIpc() on purpose. That check compares identity against the
@@ -17,14 +17,33 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import type { Bookmark, BookmarkStore } from '../browsing/bookmarks.js'
 import { NEWTAB_COMMAND_CHANNEL } from '../channels.js'
+import type { FeaturedState } from '../newtab/featured-state.js'
+import type { FeaturedStore } from '../newtab/featured-store.js'
+import { isComplete, startHereView, type StartHereFacts, type StartHereView } from '../newtab/start-here-state.js'
+import type { YourApps, YourAppsAnswer } from '../newtab/your-apps.js'
 import type { WindowRegistry } from '../shell/window-registry.js'
 
 /** The dashboard's grid holds no more than this many tiles. */
 const DASHBOARD_TILES = 24
 
+/** What the page needs of this profile's Featured choices to draw the row. */
+export type FeaturedPrefs = Pick<FeaturedState, 'newcomerPin' | 'newcomerName' | 'unpinned' | 'hidden'>
+
 export type NewTabCommand =
   | { type: 'getBookmarks' }
+  | { type: 'getFeatured' }
+  | { type: 'getYourApps' }
+  | { type: 'hideFeatured'; id: string }
+  | { type: 'unpinFeatured'; id: string }
+  | { type: 'showHiddenFeatured' }
+  | { type: 'getStartHere' }
+  | { type: 'dismissStartHere' }
   | { type: 'navigate'; input: string }
+
+function prefsOf (featured: FeaturedStore): FeaturedPrefs {
+  const { newcomerPin, newcomerName, unpinned, hidden } = featured.get()
+  return { newcomerPin, newcomerName, unpinned, hidden }
+}
 
 function isFromDashboard (event: IpcMainInvokeEvent, dashboardUrl: string): boolean {
   return event.senderFrame !== null &&
@@ -33,10 +52,10 @@ function isFromDashboard (event: IpcMainInvokeEvent, dashboardUrl: string): bool
 }
 
 /** Once per process: `ipcMain.handle` refuses a second registration of a channel. */
-export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry, bookmarks: BookmarkStore): void {
+export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry, bookmarks: BookmarkStore, featured: FeaturedStore, yourApps: Pick<YourApps, 'list'>, startFacts: () => Promise<StartHereFacts>): void {
   ipcMain.handle(
     NEWTAB_COMMAND_CHANNEL,
-    async (event: IpcMainInvokeEvent, command: NewTabCommand): Promise<Bookmark[] | undefined> => {
+    async (event: IpcMainInvokeEvent, command: NewTabCommand): Promise<Bookmark[] | FeaturedPrefs | YourAppsAnswer | StartHereView | null | undefined> => {
       if (!isFromDashboard(event, dashboardUrl)) {
         // Not the dashboard's own frame -- refuse silently, same
         // non-committal response ipc.ts's isFromChrome() gives, rather
@@ -50,6 +69,28 @@ export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry
           await bookmarks.load()
           // A tile navigates its own tab, and a tab's navigation never opens a local file.
           return bookmarks.getAll().filter((bookmark) => !/^file:/i.test(bookmark.url)).slice(0, DASHBOARD_TILES)
+        case 'getFeatured':
+          return prefsOf(featured)
+        case 'getYourApps':
+          return await yourApps.list()
+        case 'hideFeatured':
+          if (typeof command.id === 'string') featured.hide(command.id)
+          return prefsOf(featured)
+        case 'unpinFeatured':
+          if (typeof command.id === 'string') featured.unpin(command.id)
+          return prefsOf(featured)
+        case 'showHiddenFeatured':
+          featured.showHidden()
+          return prefsOf(featured)
+        case 'getStartHere': {
+          const facts = await startFacts()
+          // A card whose every step is done leaves for good, even if a browser to import from turns up later.
+          if (!facts.isPrivate && isComplete(featured.get().start, facts)) featured.closeStart()
+          return startHereView(featured.get().start, facts)
+        }
+        case 'dismissStartHere':
+          featured.closeStart()
+          return null
         case 'navigate': {
           // Resolved from the event's OWN sender, in whichever window holds
           // it, never a tab id the page could simply claim -- a dashboard

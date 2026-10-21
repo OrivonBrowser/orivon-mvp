@@ -15,20 +15,26 @@
 // PATHS ARE MAPPED IN ONE PLACE, fs/paths.ts's `confine`: the virtual
 // root is stripped from an absolute path, a relative one reaches orivon.fs
 // exactly as written, and one outside the root fails EACCES before any call.
-// The root itself never reaches orivon.fs (fs/root.ts).
+// The root itself never reaches orivon.fs (fs/root.ts). A stand-in path for a file or folder the person
+// picked (shim-electron/picked-paths.ts) is answered first, by the pick's own handle (fs/picked.ts), and
+// never reaches orivon.fs either.
 
 import { getOrivon } from '../orivon-global.js'
 import { NodeDirent, toNodeStats, type NodeStats } from './stats.js'
+import type { FileStat } from '../../contracts/handles.js'
 import { openHandle } from './handle.js'
 import { announce, announceWrite, watchersExist } from './notices.js'
 import {
   assertRootMkdirAllowed, isRootPath, rootIsDirectoryError, rootNotRemovableError, rootReaddirError, rootStat
 } from './root.js'
-import { confine, fsError, guarded, type PathLike } from './paths.js'
+import { confine, fsError, guarded, pathText, type PathLike } from './paths.js'
 import { decode, encode, encodingOf } from '../encoding.js'
 import { VIRTUAL_ROOT } from '../virtual-root.js'
 import { Buffer } from 'buffer'
-import { join } from 'path'
+import { join } from 'path/posix'
+import {
+  pickedMkdir, pickedReaddir, pickedReadFile, pickedRename, pickedRm, pickedRmdir, pickedStat, pickedTarget, pickedWriteFile
+} from './picked.js'
 
 export interface ReadFileOptions { encoding?: string | null }
 export interface WriteFileOptions { encoding?: string | null, flag?: string }
@@ -38,6 +44,8 @@ export interface RmdirOptions { recursive?: boolean }
 export interface ReaddirOptions { encoding?: string | null, withFileTypes?: boolean }
 
 export async function doReadFile (path: PathLike, encoding: string | null | undefined): Promise<Uint8Array | string> {
+  const picked = pickedTarget(path, 'open')
+  if (picked !== undefined) return decode(await pickedReadFile(picked), encoding)
   const confined = await confine(path, 'open')
   if (isRootPath(confined)) rootIsDirectoryError('read')
   return decode(await guarded(async () => await getOrivon().fs.readFile(confined)), encoding)
@@ -48,6 +56,8 @@ export async function doWriteFile (path: PathLike, data: unknown, options: Write
   const bytes = encode(data, encodingOf(options))
   const flag = typeof options === 'object' && options !== null ? options.flag : undefined
   if (flag !== undefined && flag !== 'w') { await writeThroughHandle(path, bytes, flag); return }
+  const picked = pickedTarget(path, 'open')
+  if (picked !== undefined) { await pickedWriteFile(picked, bytes); return }
   const confined = await confine(path, 'open')
   if (isRootPath(confined)) rootIsDirectoryError('open')
   const existed = await existedBefore(confined)
@@ -88,6 +98,8 @@ async function writeThroughHandle (path: PathLike, bytes: Uint8Array, flags: str
 
 /** `mkdir -p` of the root succeeds locally (@seald-io/nedb's own `path.dirname('settings.db')` is '.'); fs/root.ts says why. */
 export async function doMkdir (path: PathLike, opts: MkdirOptions | undefined): Promise<void> {
+  const picked = pickedTarget(path, 'mkdir')
+  if (picked !== undefined) { await pickedMkdir(picked, opts); return }
   const confined = await confine(path, 'mkdir')
   if (isRootPath(confined)) { assertRootMkdirAllowed(opts); return }
   const existed = opts?.recursive === true ? await existedBefore(confined) : false
@@ -96,21 +108,31 @@ export async function doMkdir (path: PathLike, opts: MkdirOptions | undefined): 
 }
 
 export async function doReaddir (path: PathLike, options: ReaddirOptions | string | null | undefined): Promise<ReadonlyArray<string | Uint8Array | NodeDirent>> {
-  const confined = await confine(path, 'scandir')
-  if (isRootPath(confined)) rootReaddirError()
-  const names = await guarded(async () => await getOrivon().fs.readdir(confined))
+  const picked = pickedTarget(path, 'scandir')
+  let confined = ''
+  let names: readonly string[]
+  let statOf: (name: string) => Promise<FileStat | undefined>
+  if (picked !== undefined) {
+    names = await pickedReaddir(picked)
+    statOf = async (name) => await picked.ops.stat(join(picked.rel, name)).catch(() => undefined)
+  } else {
+    confined = await confine(path, 'scandir')
+    if (isRootPath(confined)) rootReaddirError()
+    const inApp = confined
+    names = await guarded(async () => await getOrivon().fs.readdir(inApp))
+    statOf = async (name) => await getOrivon().fs.stat(join(inApp, name)).catch(() => undefined)
+  }
   if (typeof options === 'object' && options?.withFileTypes === true) {
     const parentPath = typeof path === 'string' ? path : confined
-    return await Promise.all(names.map(async (name) => {
-      const stat = await getOrivon().fs.stat(join(confined, name)).catch(() => undefined)
-      return new NodeDirent(name, parentPath, stat)
-    }))
+    return await Promise.all(names.map(async (name) => new NodeDirent(name, parentPath, await statOf(name))))
   }
-  return encodingOf(options) === 'buffer' ? names.map((name) => Buffer.from(name)) : names
+  return encodingOf(options) === 'buffer' ? names.map((name) => Buffer.from(name)) : [...names]
 }
 
 /** `lstat` and `stat` never differ here: orivon.fs resolves a symlink that stays inside the root transparently and denies one that would not, so no entry is ever reported as a link (`doLstatSync`'s own reasoning). */
 export async function doStat (path: PathLike): Promise<NodeStats> {
+  const picked = pickedTarget(path, 'stat')
+  if (picked !== undefined) return toNodeStats(await pickedStat(picked), picked.path)
   const confined = await confine(path, 'stat')
   if (isRootPath(confined)) return toNodeStats(rootStat(), confined)
   return toNodeStats(await guarded(async () => await getOrivon().fs.stat(confined)), confined)
@@ -118,16 +140,18 @@ export async function doStat (path: PathLike): Promise<NodeStats> {
 
 /** `force` is Node's, not the broker's: it is applied here, by ignoring ENOENT, and never forwarded. */
 export async function doRm (path: PathLike, opts: RmOptions | undefined): Promise<void> {
-  const confined = await confine(path, 'rm')
-  if (isRootPath(confined)) rootNotRemovableError('rm')
+  const picked = pickedTarget(path, 'rm')
+  const confined = picked === undefined ? await confine(path, 'rm') : ''
+  if (picked === undefined && isRootPath(confined)) rootNotRemovableError('rm')
   const brokerOpts = opts?.recursive === undefined ? undefined : { recursive: opts.recursive }
   try {
-    await guarded(async () => { await getOrivon().fs.rm(confined, brokerOpts) })
+    if (picked !== undefined) await pickedRm(picked, brokerOpts)
+    else await guarded(async () => { await getOrivon().fs.rm(confined, brokerOpts) })
   } catch (error) {
     if (opts?.force === true && (error as { code?: string }).code === 'ENOENT') return
     throw error
   }
-  announce(confined, 'rename')
+  if (picked === undefined) announce(confined, 'rename')
 }
 
 /**
@@ -144,6 +168,8 @@ export async function doRm (path: PathLike, opts: RmOptions | undefined): Promis
  * as `rm`'s own option.
  */
 export async function doRmdir (path: PathLike, opts: RmdirOptions | undefined): Promise<void> {
+  const picked = pickedTarget(path, 'rmdir')
+  if (picked !== undefined) { await pickedRmdir(picked, opts); return }
   const confined = await confine(path, 'rmdir')
   if (isRootPath(confined)) rootNotRemovableError('rmdir')
   if (opts?.recursive === true) {
@@ -171,12 +197,20 @@ export async function doRmdir (path: PathLike, opts: RmdirOptions | undefined): 
  * call (`root.ts`).
  */
 export async function doRealpath (path: PathLike): Promise<string> {
+  const picked = pickedTarget(path, 'lstat')
+  if (picked !== undefined) {
+    await pickedStat(picked)
+    return picked.path
+  }
   const confined = await confine(path, 'lstat')
   if (!isRootPath(confined)) await guarded(async () => { await getOrivon().fs.stat(confined) })
   return isRootPath(confined) ? VIRTUAL_ROOT : join(VIRTUAL_ROOT, confined)
 }
 
 export async function doRename (from: PathLike, to: PathLike): Promise<void> {
+  const pickedFrom = pickedTarget(from, 'rename')
+  const pickedTo = pickedTarget(to, 'rename')
+  if (pickedFrom !== undefined || pickedTo !== undefined) { await pickedRename(pickedFrom, pickedTo, pathText(from)); return }
   const source = await confine(from, 'rename')
   const target = await confine(to, 'rename')
   if (isRootPath(source) || isRootPath(target)) rootNotRemovableError('rename')
@@ -187,6 +221,8 @@ export async function doRename (from: PathLike, to: PathLike): Promise<void> {
 
 /** Real Node's fs.unlink never takes a `recursive` option -- orivon.fs has no separate unlink primitive, so this rides fs.rm with none given, failing on a directory the same non-recursive way rm's own callers already do. */
 export async function doUnlink (path: PathLike): Promise<void> {
+  const picked = pickedTarget(path, 'unlink')
+  if (picked !== undefined) { await pickedRm(picked, undefined); return }
   const confined = await confine(path, 'unlink')
   if (isRootPath(confined)) rootNotRemovableError('unlink')
   await guarded(async () => { await getOrivon().fs.rm(confined) })
@@ -202,6 +238,8 @@ export async function doUnlink (path: PathLike): Promise<void> {
  * Not owner-reviewed: README.md's Design notes, "fs.access's mode".
  */
 export async function doAccess (path: PathLike, syscall = 'access'): Promise<void> {
+  const picked = pickedTarget(path, syscall)
+  if (picked !== undefined) { await pickedStat(picked); return }
   const confined = await confine(path, syscall)
   if (isRootPath(confined)) return
   await guarded(async () => { await getOrivon().fs.stat(confined) })

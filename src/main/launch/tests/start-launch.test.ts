@@ -2,7 +2,9 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { startLaunch } from '../start-launch.js'
+import { PACKAGE_PROGRAM, SOURCE_PROGRAM } from '../program-names.js'
+import { everywhereBeforeReady } from '../../settings/settings-file.js'
+import { startLaunch, takeSourceIdentity } from '../start-launch.js'
 
 let home = ''
 let tmp = ''
@@ -94,6 +96,45 @@ describe('a first start of a profile', () => {
     expect(run(fakeApp(true).app)?.madeDir).toBeUndefined()
   })
 
+  it('held to Nym, knows it in its runtime and reads settings that already hold the tunnel, whether it made its directory or was given one', () => {
+    const made = run(fakeApp(false).app, '--orivon-private', '--orivon-private-tunnel=nym')
+    expect(made?.launch).toMatchObject({ kind: 'private', tunnel: 'nym' })
+    expect(everywhereBeforeReady(join(made?.dir ?? '', 'settings.json'))).toBe(true)
+
+    // A directory the opener made with a settings file that does not hold it: this process writes it again before anything reads it.
+    const given = join(tmp, 'orivon-private-abc123')
+    mkdirSync(given)
+    writeFileSync(join(given, 'settings.json'), JSON.stringify({ version: 2, values: { 'network.tunnel.everywhere': false } }))
+    const named = run(fakeApp(false).app, '--orivon-private', `--orivon-private-dir=${given}`, '--orivon-private-tunnel=nym')
+    expect(named?.dir).toBe(given)
+    expect(everywhereBeforeReady(join(given, 'settings.json'))).toBe(true)
+    // Without the flag it is an ordinary private session, which reads its file as it is.
+    const plain = join(tmp, 'orivon-private-abc124')
+    mkdirSync(plain)
+    writeFileSync(join(plain, 'settings.json'), JSON.stringify({ version: 2, values: { 'network.tunnel.everywhere': false } }))
+    expect(run(fakeApp(false).app, '--orivon-private', `--orivon-private-dir=${plain}`)?.launch).not.toHaveProperty('tunnel')
+    expect(everywhereBeforeReady(join(plain, 'settings.json'))).toBe(false)
+  })
+
+  it('held to Nym, does not start when its settings cannot be set up', () => {
+    const given = join(tmp, 'orivon-private-abc125')
+    mkdirSync(given)
+    mkdirSync(join(given, 'settings.json'))
+    const { app, exit } = fakeApp(false)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(run(app, '--orivon-private', `--orivon-private-dir=${given}`, '--orivon-private-tunnel=nym')).toBeNull()
+    expect(exit).toHaveBeenCalledWith(2)
+  })
+
+  it('held to Nym, does not start when the directory it would make cannot be set up', () => {
+    mkdirSync(join(home, 'settings.json'))
+    const { app, exit } = fakeApp(false)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(run(app, '--orivon-private', '--orivon-private-tunnel=nym')).toBeNull()
+    expect(exit).toHaveBeenCalledWith(2)
+    expect(readdirSync(tmp)).toEqual([])
+  })
+
   it('named a private session on the command line takes no lock at all', () => {
     const { app, calls } = fakeApp(false)
     const runtime = run(app, '--orivon-private')
@@ -107,5 +148,50 @@ describe('a first start of a profile', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     expect(run(app, '--orivon-profile=0123456789ab')).toBeNull()
     expect(exit).toHaveBeenCalledWith(2)
+  })
+})
+
+describe('a run from source', () => {
+  function sourceApp (switches: readonly string[] = [], isPackaged = false): { app: Parameters<typeof takeSourceIdentity>[0], setName: ReturnType<typeof vi.fn>, setDesktopName: ReturnType<typeof vi.fn>, setPath: ReturnType<typeof vi.fn> } {
+    const setName = vi.fn()
+    const setDesktopName = vi.fn()
+    const setPath = vi.fn()
+    const app = { isPackaged, setName, setDesktopName, setPath, getPath: () => home, commandLine: { hasSwitch: (name: string) => switches.includes(name) } }
+    return { app: app as unknown as Parameters<typeof takeSourceIdentity>[0], setName, setDesktopName, setPath }
+  }
+
+  it('keeps its data in a directory of its own, never the one an installed package uses', () => {
+    const { app, setPath } = sourceApp()
+    takeSourceIdentity(app, 'linux')
+    const dir = join(home, SOURCE_PROGRAM)
+    expect(setPath).toHaveBeenCalledWith('userData', dir)
+    expect(existsSync(dir)).toBe(true)
+    expect(SOURCE_PROGRAM).not.toBe(PACKAGE_PROGRAM)
+  })
+
+  it('names its windows after its own desktop entry, so the dock gives it an icon of its own', () => {
+    const { app, setName, setDesktopName } = sourceApp()
+    takeSourceIdentity(app, 'linux')
+    expect(setName).toHaveBeenCalledWith(SOURCE_PROGRAM)
+    expect(setDesktopName).toHaveBeenCalledWith(`${SOURCE_PROGRAM}.desktop`)
+  })
+
+  it('names no desktop entry where there is none', () => {
+    const { app, setDesktopName } = sourceApp()
+    takeSourceIdentity(app, 'win32')
+    expect(setDesktopName).not.toHaveBeenCalled()
+  })
+
+  it('keeps a data directory named on its command line', () => {
+    const { app, setName, setPath } = sourceApp(['user-data-dir'])
+    takeSourceIdentity(app, 'linux')
+    expect(setName).toHaveBeenCalledWith(SOURCE_PROGRAM)
+    expect(setPath).not.toHaveBeenCalled()
+  })
+
+  it('changes nothing in an installed package', () => {
+    const { app, setName, setDesktopName, setPath } = sourceApp([], true)
+    takeSourceIdentity(app, 'linux')
+    for (const call of [setName, setDesktopName, setPath]) expect(call).not.toHaveBeenCalled()
   })
 })

@@ -62,7 +62,7 @@ describe('exposeOrivon -- fs.userSelected needs a fresh user gesture', () => {
 
     await expect(orivon.fs.userSelected()).rejects.toMatchObject({ code: 'denied' })
     await expect(orivon.fs.userSelected({ directory: true })).rejects.toMatchObject({ code: 'denied' })
-    // No IPC round trip at all -- §Contracts: "without one it rejects
+    // No IPC round trip at all -- section Contracts: "without one it rejects
     // 'denied' and shows no dialog", checked BEFORE `call()` ever runs.
     expect(invoke).not.toHaveBeenCalled()
   })

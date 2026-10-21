@@ -3,7 +3,7 @@
 How code is written here. [`parallel-work.md`](parallel-work.md) covers where it is written and
 by whom.
 
-Five rules:
+Eight rules:
 
 1. **Comments earn their place**, and rationale goes in the README, not the file header.
 2. **No source file over 500 lines**, or 800 for tests.
@@ -11,19 +11,24 @@ Five rules:
 4. **One home per fact**: a fact lives in one page and is linked from the others.
 5. **Cost follows change and use**: work per event is in proportion to what changed, and a
    feature costs nothing before it is used.
+6. **Node-shaped APIs behave exactly like Node** wherever possible: the same results and error
+   codes.
+7. **Node-shaped, never browser-shaped**: an app meets Node, and a port bundles for Node.
+8. **A gap a port finds is fixed generically in Orivon**, never patched in the port.
 
 Written for a human contributor arriving cold and for a smaller model working here without
 holding the whole tree in its head. Both are served by the same five things: short files,
 honest comments, one implementation per idea, one home per fact, and a browser that stays
-light on the machine it runs on.
+light on the machine it runs on. Rules 6-8 serve a third reader: an app written for Node, which
+should run here unchanged.
 
-**Read §Rules 1-5 to write code here. Everything below them is background**: why each rule is
+**Read section Rules 1-8 to write code here. Everything below them is background**: why each rule is
 shaped the way it is, and what is still open. It is there so a settled argument is not reopened,
 not because you need it to start.
 
-> The five rules and every exception stated with them are settled. §Status is what is still
-> open. No ADR was written: none of this is architecture, and the one structural piece,
-> `src/shared/`, is freely reversible while it is small.
+> The eight rules and every exception stated with them are settled. section Status is what is still
+> open. Rules 1-5 have no ADR: none of them is architecture, and the one structural piece,
+> `src/shared/`, is freely reversible while it is small. Rule 7 rests on ADR-0073.
 
 ---
 
@@ -61,7 +66,7 @@ out.setUint32(0, bytes.length, false)
 
 Worked example: [`connection-log.ts`](../../src/trust/connection-log.ts), header 29 lines before
 this rule and 7 after. Its rationale lives in
-[`src/trust/README.md`](../../src/trust/README.md) §Design notes.
+[`src/trust/README.md`](../../src/trust/README.md) section Design notes.
 
 | Comment | Verdict |
 |---|---|
@@ -156,7 +161,7 @@ source kept in its upstream shape, patched as its `UPSTREAM.md` lists).
 | Test files (`*.test.ts`, anything under [`test/`](../../test/) except [`test/apps/`](../../test/apps/), and [`scripts/smoke.mjs`](../../scripts/smoke.mjs)) | **800** |
 
 Everything else in `scripts/` is source and gets 500
-([`parallel-work.md`](parallel-work.md) §Why `scripts/` is split). So are the apps under
+([`parallel-work.md`](parallel-work.md) section Why `scripts/` is split). So are the apps under
 [`test/apps/`](../../test/apps/): the suites serve them, which makes them app code sitting
 beside the tests, not test code.
 
@@ -173,7 +178,7 @@ came from: same coupling, plus a new lie in its name. If a file cannot be split 
 seam, that is a design signal; raise it rather than cutting arbitrarily.
 
 Each new file lands inside the owning stream's paths
-([`parallel-work.md`](parallel-work.md) §The ownership map), and each directory's `README.md`
+([`parallel-work.md`](parallel-work.md) section The ownership map), and each directory's `README.md`
 already states what it may import.
 
 **Why tests get 800.** Table-driven tests grow with their vector tables, and that growth is
@@ -248,7 +253,7 @@ change touching every stream at once):
 - **It imports nothing from `src/`.** Pure, dependency-free helpers only. If it needs `electron`,
   a broker type, or anything stream-owned, it does not belong there.
 - **A change to it goes in its own PR and merges first**, never mixed with an implementation
-  ([`parallel-work.md`](parallel-work.md) §3).
+  ([`parallel-work.md`](parallel-work.md) section 3).
 
 **It is not a dumping ground.** A helper earns its place by being needed on both sides of a
 boundary. One caller means it stays where it is. See
@@ -268,7 +273,7 @@ and the others go stale while still reading as true.
   whether it is tied to Electron, and the traps a reader would otherwise walk into. It links an
   ADR rather than restating it, and does not walk through the files one by one.
 - **A change is recorded once per audience**: the page it governs states the behaviour, the
-  decision log says who decided it, `CHANGELOG.md` gives it at most three lines, and the PR
+  decision log says who decided it (owner decisions and reversals only), `CHANGELOG.md` gives it at most three lines, and the PR
   body carries the rest.
 
 ## Rule 5: Cost follows change and use
@@ -288,6 +293,31 @@ measured: [`performance-audit-2026-10-03.md`](../planning/performance-audit-2026
   attached hidden view keeps painting.
 - **A change to a hot path runs `npm run perf:probe` before and after**, and its PR gives both
   numbers.
+
+## Rule 6: Node-shaped APIs behave exactly like Node
+
+**Wherever possible, a Node-shaped API gives the results and error codes Node gives**, so a
+ported app needs no change: `writeFile` into a missing parent fails with `ENOENT`, as it does
+under Node.
+
+- **A deliberate difference is documented where the API lives**, in its module or its directory
+  README, saying what differs and why.
+
+## Rule 7: Node-shaped, never browser-shaped
+
+**A port bundles for Node, and Orivon's Node layer presents to an app as Node**, so a library
+takes the path it takes under Node and Electron
+([ADR-0073](../decisions/ADR-0073-apps-see-a-node-process-on-linux-x64.md)).
+
+- **A port's original behaviour is the target**: where Node gives it, Orivon gives it too.
+
+## Rule 8: A gap a port finds is fixed generically in Orivon
+
+**The fix lands here, never as a patch in the port**; the port stays upstream plus a bridge.
+
+- **Tests are generic and named after the behaviour.** The app that inspired one is named only
+  in a code comment. The catalogue row and the spec it needs:
+  [`test/app-behaviours/README.md`](../../test/app-behaviours/README.md).
 
 ---
 
@@ -338,6 +368,12 @@ that both `derive.ts` and `bundle-hash.ts` depend on. Two drifting copies would 
 subsystems disagree about an encoding that hashes and keys depend on, and both frozen
 golden-vector tables are what prove they agree.
 
+**Rule 7: a browser shape costs every port.** A library that sees a browser takes its browser
+path, and every port met the gap that left: one library switched off its stream API, another
+threw on an unknown platform, and a port had to compile Electron's values into its bundle to get
+the paths upstream takes. [ADR-0073](../decisions/ADR-0073-apps-see-a-node-process-on-linux-x64.md)
+has the cases.
+
 ## Status
 
 **Enforcement.** Rules 1 and 2 are enforced in CI, by `npm run check:comments` and
@@ -369,5 +405,5 @@ path `Write`/`Edit` pass, and dies silently.
 |---|---|
 | [`parallel-work.md`](parallel-work.md) | Who owns which paths, and a split under Rule 2 must respect it |
 | [`testing.md`](testing.md) | What is tested here, and why so little is |
-| [`CLAUDE.md`](../../CLAUDE.md) | §Rules 6 and 7: prefer mature components, and no abstractions for elegance alone |
+| [`CLAUDE.md`](../../CLAUDE.md) | section Rules 6 and 7: prefer mature components, and no abstractions for elegance alone |
 | [`.claude/skills/orivon-comments/`](../../.claude/skills/orivon-comments/SKILL.md) | The working method for applying Rule 1 while writing code: this document is the policy, that skill is how |

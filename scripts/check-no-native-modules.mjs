@@ -1,7 +1,7 @@
 /**
  * Fails the build if any native build artefact appears under node_modules.
  *
- * Rule 8 (CLAUDE.md) and build-plan.md SS Platform policy: Windows and macOS
+ * Rule 8 (CLAUDE.md): Windows and macOS
  * are supported from day one via run-from-source. A dependency that needs
  * node-gyp, CMake or a C++ toolchain turns `npm install` into a worse wall
  * than the code-signing certificate it was meant to avoid.
@@ -122,7 +122,7 @@ if (isInvokedDirectly(import.meta.url)) {
     for (const offender of offenders) console.error(`  ${offender}`)
     console.error(
       '\nRule 8 forbids these. They break run-from-source on Windows and macOS,' +
-      '\nwhich build-plan.md makes a supported path. If a dependency needs them,' +
+      '\nwhich Rule 8 keeps a supported path. If a dependency needs them,' +
       '\nship it as a pre-built app asset instead of a shell dependency.\n'
     )
     process.exit(1)

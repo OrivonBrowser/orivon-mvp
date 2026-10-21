@@ -79,7 +79,7 @@ which only the preload (via `contextBridge`) can invoke. That reachability diffe
 cosmetic here. The write-direction backpressure mechanism PR #81 builds alongside this surface
 (the write-window byte cap bounding how much unacknowledged data one socket may buffer in the
 broker before the app's `write()` calls start blocking, 256 KiB per socket, the write-side
-sibling of the read-direction credit window `handle-contracts.md` §Backpressure already
+sibling of the read-direction credit window `handle-contracts.md` section Backpressure already
 specifies, and the mechanism `security-model.md` T11b names as the general defence against one
 origin exhausting broker memory) depends on the app's own code being unable to bypass the
 closures that enforce it. A hidden bridge built over `webFrame.executeJavaScript` cannot make
@@ -94,7 +94,7 @@ guarantee, so this alternative was not built.
 Not seriously considered as a final shape, since `ADR-0008` already settled that handles are WHATWG
 streams, and reopening that would need its own ADR reversal, not a workaround buried in this
 one. Named here only because it is the shape of what fail-closed produces if
-`executeInMainWorld` ever stops working (see §Consequences), the point being that this ADR
+`executeInMainWorld` ever stops working (see section Consequences), the point being that this ADR
 chooses that outcome deliberately, in advance, rather than something worse happening by
 accident later.
 
@@ -112,12 +112,12 @@ this works" into "this was actually exercised, sandboxed, both directions, and p
 **This does not contradict `ADR-0002`.** `ADR-0002`'s own load-bearing claim is that the
 *durable* asset is the `orivon.*` API shape, and the *Electron mechanism underneath it* is
 explicitly disposable: "a shortcut in `src/main/` costs a refactor of code that was replaceable
-anyway" (`CLAUDE.md` §The load-bearing idea). Depending on an experimental Electron API to
+anyway" (`CLAUDE.md` section The load-bearing idea). Depending on an experimental Electron API to
 deliver a stable, unchanging `window.orivon.net` surface is exactly that tradeoff, not an
 exception to it: apps written against `orivon.net.connect(...)` see no difference at all if
 `executeInMainWorld` is ever replaced by some other main-world-construction mechanism, because
 nothing about the `orivon.*` shape depends on how the stream was built underneath it. The
-fail-closed design in §Consequences below is what makes that true under failure, not just under
+fail-closed design in section Consequences below is what makes that true under failure, not just under
 normal operation. It protects the durability guarantee `ADR-0002` already made, rather than
 weakening it.
 
@@ -155,11 +155,11 @@ weakening it.
   weaker capability (see the rejected alternatives above): a one-way door in practice, not by
   design choice but because no better path currently exists in the platform.
 - **What would make us revisit:** (1) Electron deprecates or breaks `executeInMainWorld` without
-  shipping a working replacement, at which point the fail-closed behaviour in §Consequences is
+  shipping a working replacement, at which point the fail-closed behaviour in section Consequences is
   already the live, observed outcome, and this ADR's job becomes finding or building the
-  replacement; (2) `webFrame.executeJavaScript`'s backpressure weakness (§Alternatives) is found
+  replacement; (2) `webFrame.executeJavaScript`'s backpressure weakness (section Alternatives) is found
   to be exploitable in practice against the rejected-alternative design, which would mean this
   ADR's own reasoning for preferring `executeInMainWorld` was insufficiently cautious and needs
   re-examining; (3) Electron promotes `executeInMainWorld` out of `@experimental`, which is not a reason
-  to change anything, but the point at which this ADR's central risk (§Decision, §Consequences)
+  to change anything, but the point at which this ADR's central risk (section Decision, section Consequences)
   is resolved and the document should say so.

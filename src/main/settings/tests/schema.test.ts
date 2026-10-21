@@ -56,9 +56,26 @@ describe('the settings schema', () => {
     expect(validateSetting(SETTINGS['search.customUrl'], 'http://search.example/?q=%s')).toBeUndefined()
   })
 
+  it('searches the Web3 with Explore by default, and keeps the Web2 engine apart under its own key', () => {
+    expect(SETTINGS['search.mode']).toMatchObject({ kind: 'enum', default: 'web3', options: ['web3', 'web2'], labels: { web3: 'Web3', web2: 'Web2' } })
+    expect(SETTINGS['search.web3Engine']).toMatchObject({ kind: 'enum', default: 'explore', options: ['explore'], labels: { explore: 'Explore' } })
+    expect(SETTINGS['search.engine'].default).toBe('duckduckgo')
+    expect(validateSetting(SETTINGS['search.mode'], 'web2')).toBe('web2')
+    expect(validateSetting(SETTINGS['search.mode'], 'web4')).toBeUndefined()
+  })
+
   it('pins an extension installed from now on only when asked, and keeps the older setting for one with no recorded pin', () => {
     expect(SETTINGS['extensions.pinInstalled']).toEqual({ kind: 'bool', default: false })
     expect(SETTINGS['extensions.pinNew'].default).toBe(true)
+  })
+
+  it('shows the Extensions button from the first start', () => {
+    expect(SETTINGS['toolbar.extensions'].default).toBe('always')
+  })
+
+  it('reads IPFS from the node on this computer, with a lookup service, unless told otherwise', () => {
+    expect(SETTINGS['web3.ipfsSource']).toMatchObject({ kind: 'enum', options: ['node', 'gateways'], default: 'node' })
+    expect(SETTINGS['web3.ipfsLookupService']).toEqual({ kind: 'bool', default: true })
   })
 
   it('opens gateway addresses as .eth names unless told not to', () => {
@@ -68,7 +85,7 @@ describe('the settings schema', () => {
 
 describe('the Web3 Score provider setting', () => {
   it('defaults to the official provider, an address the setting itself accepts, and lets a person clear it', () => {
-    expect(DEFAULT_SCORE_PROVIDER).toBe('ipns://k51qzi5uqu5dli7gc98gxy6jlbarijipfrw1x8z2wfyre3rvhssxvzeummkaff/score')
+    expect(DEFAULT_SCORE_PROVIDER).toBe('ipfs://attila.orivonstack.eth/score')
     expect(SETTINGS['web3.scoreProvider'].default).toBe(DEFAULT_SCORE_PROVIDER)
     expect(validateSetting(SETTINGS['web3.scoreProvider'], DEFAULT_SCORE_PROVIDER)).toBe(DEFAULT_SCORE_PROVIDER)
     expect(validateSetting(SETTINGS['web3.scoreProvider'], '')).toBe('')

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { createRequire, isBuiltin } from 'node:module'
@@ -6,6 +7,8 @@ import { build, normalizePath, type Plugin } from 'vite'
 import { aliasPattern, buildAliasEntries } from './src/shim/module-map.js'
 import { isShimSource } from './src/shim/is-shim-source.js'
 import { privacyNotice } from './scripts/privacy-notice-plugin.js'
+import { buildCommit } from './scripts/build-commit.js'
+import { releaseNotes } from './src/main/info/release-notes.js'
 
 export const root = dirname(fileURLToPath(import.meta.url))
 
@@ -166,6 +169,16 @@ if (process.stdout.moveCursor === undefined) {
   process.stdout.moveCursor = () => true
 }
 
+/** The notes CHANGELOG.md holds for the version package.json names (the release workflow sets it from the tag), or null. */
+function bundledReleaseNotes (): ReturnType<typeof releaseNotes> {
+  try {
+    const version = (JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as { version?: unknown }).version
+    return typeof version === 'string' ? releaseNotes(readFileSync(resolve(root, 'CHANGELOG.md'), 'utf8'), version) : null
+  } catch {
+    return null
+  }
+}
+
 export default defineConfig({
   main: {
     // Maps the virtual specifiers electron-chrome-extensions-lib.d.ts
@@ -192,18 +205,23 @@ export default defineConfig({
     // header and scripts/check-dev-grant-absent.mjs, which proves this
     // against the actual compiled output.
     define: {
-      __ORIVON_DEV_GRANT_ENABLED__: JSON.stringify(process.env.ORIVON_ENABLE_DEV_GRANT === '1')
+      __ORIVON_DEV_GRANT_ENABLED__: JSON.stringify(process.env.ORIVON_ENABLE_DEV_GRANT === '1'),
+      __ORIVON_COMMIT__: JSON.stringify(buildCommit(root)),
+      __ORIVON_RELEASE_NOTES__: JSON.stringify(bundledReleaseNotes())
     },
     build: {
-      // Three entries: the process start (small, so a second start of an open profile exits early),
-      // the browser it loads once it is the process that stays (index), and the verifier host it forks as a
-      // utility process (src/protocols/verifier-host/). Keys are the output names in
-      // out/main/, which src/main/verifier/ forks by name.
+      // Five entries: the process start (small, so a second start of an open profile exits early),
+      // the browser it loads once it is the process that stays (index), and the verifier host, the
+      // local node host (any kind of node) and the Nym tunnel host it forks as utility processes
+      // (src/protocols/verifier-host/, src/protocols/local-node/, src/protocols/nym-tunnel/).
+      // Keys are the output names in out/main/, which src/main/verifier/ forks by name.
       rollupOptions: {
         input: {
           start: resolve(root, 'src/main/start.ts'),
           index: resolve(root, 'src/main/index.ts'),
-          'verifier-host': resolve(root, 'src/protocols/verifier-host/entry.ts')
+          'verifier-host': resolve(root, 'src/protocols/verifier-host/entry.ts'),
+          'local-node-host': resolve(root, 'src/protocols/local-node/entry.ts'),
+          'nym-tunnel-host': resolve(root, 'src/protocols/nym-tunnel/entry.ts')
         }
       },
       // Dependencies stay external, loaded from node_modules at run time,
@@ -253,7 +271,7 @@ export default defineConfig({
           app: resolve(root, 'src/preload/app.ts'),
           shell: resolve(root, 'src/preload/shell.ts'),
           newtab: resolve(root, 'src/preload/newtab.ts'),
-          permissions: resolve(root, 'src/preload/permissions.ts'),
+          networks: resolve(root, 'src/preload/networks.ts'),
           internal: resolve(root, 'src/preload/internal.ts'),
           'site-info': resolve(root, 'src/preload/site-info.ts'),
           overlay: resolve(root, 'src/preload/overlay.ts'),
@@ -300,7 +318,7 @@ export default defineConfig({
           index: resolve(root, 'src/renderer/index.html'),
           newtab: resolve(root, 'src/renderer/newtab/index.html'),
           intro: resolve(root, 'src/renderer/intro/index.html'),
-          permissions: resolve(root, 'src/renderer/permissions/index.html'),
+          networks: resolve(root, 'src/renderer/networks/index.html'),
           'page-about': resolve(root, 'src/renderer/pages/about/index.html'),
           'page-settings': resolve(root, 'src/renderer/pages/settings/index.html'),
           'page-bookmarks': resolve(root, 'src/renderer/pages/bookmarks/index.html'),
@@ -312,6 +330,7 @@ export default defineConfig({
           'page-reader': resolve(root, 'src/renderer/pages/reader/index.html'),
           'page-extensions': resolve(root, 'src/renderer/pages/extensions/index.html'),
           'page-tasks': resolve(root, 'src/renderer/pages/tasks/index.html'),
+          'page-report': resolve(root, 'src/renderer/pages/report/index.html'),
           'site-info': resolve(root, 'src/renderer/site-info/index.html'),
           overlay: resolve(root, 'src/renderer/overlay/index.html'),
           'split-frame': resolve(root, 'src/renderer/split-frame/index.html'),

@@ -29,7 +29,7 @@ import { MAX_PATTERNS } from '../policy/connect.js'
  * the correct reuse, not a second mechanism).
  */
 export type ControlMethod =
-  | 'app.manifest' | 'app.grants' | 'app.requestGrant' | 'fs.readFile' | 'fs.writeFile'
+  | 'app.manifest' | 'app.grants' | 'app.requestGrant' | 'app.nextOpenUrl' | 'app.requestSchemeHandler' | 'app.isSchemeHandler' | 'fs.readFile' | 'fs.writeFile'
   | 'fs.mkdir' | 'fs.readdir' | 'fs.stat' | 'fs.rm' | 'fs.rename'
   | 'fs.open' | 'fs.read' | 'fs.write' | 'fs.fstat' | 'fs.truncate' | 'fs.sync' | 'fs.close'
   | 'fs.userSelected'
@@ -37,13 +37,14 @@ export type ControlMethod =
   | 'fs.dirReadFile' | 'fs.dirWriteFile' | 'fs.dirOpen'
   | 'id.publicKey' | 'id.sign'
   | 'net.connect' | 'net.connectSecure' | 'net.udpBind' | 'net.listen' | 'net.close'
-  | 'net.setNoDelay' | 'net.setKeepAlive' | 'net.lookup'
+  | 'net.setNoDelay' | 'net.setKeepAlive' | 'net.lookup' | 'net.cancel'
   | 'web.openContext' | 'web.evaluate' | 'web.close' | 'web.awaitClose' | 'web.setEmbedScript'
   | 'secrets.available' | 'secrets.encrypt' | 'secrets.decrypt'
   | 'trust.websiteScore'
 
 export function isControlMethod (method: string): method is ControlMethod {
   return method === 'app.manifest' || method === 'app.grants' || method === 'app.requestGrant' ||
+    method === 'app.nextOpenUrl' || method === 'app.requestSchemeHandler' || method === 'app.isSchemeHandler' ||
     method === 'fs.readFile' || method === 'fs.writeFile' ||
     method === 'fs.mkdir' || method === 'fs.readdir' || method === 'fs.stat' ||
     method === 'fs.rm' || method === 'fs.rename' ||
@@ -57,7 +58,7 @@ export function isControlMethod (method: string): method is ControlMethod {
     method === 'net.connect' || method === 'net.connectSecure' ||
     method === 'net.udpBind' || method === 'net.listen' || method === 'net.close' ||
     method === 'net.setNoDelay' || method === 'net.setKeepAlive' ||
-    method === 'net.lookup' ||
+    method === 'net.lookup' || method === 'net.cancel' ||
     method === 'web.openContext' || method === 'web.evaluate' || method === 'web.close' || method === 'web.awaitClose' ||
     method === 'web.setEmbedScript' ||
     method === 'secrets.available' || method === 'secrets.encrypt' || method === 'secrets.decrypt' ||
@@ -130,10 +131,17 @@ export interface NetConnectParams { readonly host: string, readonly port: number
  */
 export interface NetUdpBindParams { readonly port: number, readonly scope?: BindScope }
 export interface NetCloseParams { readonly id: string }
+/** `net.cancel` (ADR-0071): the id of the page's own pending `net.connect` or `net.connectSecure` request, not a handle id. */
+export interface NetCancelParams { readonly requestId: string }
 /** `net.lookup` (d-0030) -- no port, unlike NetConnectParams: a lookup is bounded by the origin's held network grants, never by a port of its own. */
 export interface NetLookupParams { readonly hostname: string }
 export interface NetSetNoDelayParams { readonly id: string, readonly on: boolean }
 export interface NetSetKeepAliveParams { readonly id: string, readonly on: boolean, readonly initialDelayMs?: number }
+/**
+ * `app.requestSchemeHandler` and `app.isSchemeHandler`. The scheme is checked against the URI scheme grammar here,
+ * so a value that is no scheme name is an 'invalid' call; whether the scheme may be routed is the shell's to decide.
+ */
+export interface AppSchemeParams { readonly scheme: string }
 /** The wire shape of `CapabilityRequest` (capability-api.ts) -- untrusted, including `capability`, which `main/request-grant.ts` narrows against the manifest; this file only checks shape. */
 export interface AppRequestGrantParams { readonly capability: string, readonly patterns?: readonly Pattern[] }
 
@@ -182,8 +190,35 @@ export interface TrustCtx {
   readonly websiteScore?: ((origin: string, address: string) => Promise<WebsiteScore>) | undefined
 }
 
+/**
+ * What an app's `orivon.app.onOpenUrl`, `requestSchemeHandler` and `isSchemeHandler` reach (d-0596): the shell's
+ * routing of a link scheme to an app. Read live like `TrustCtx`, because the shell is built after the broker is wired.
+ */
+export interface SchemeHost {
+  /**
+   * The next link routed to `origin`'s app, or null after a wait with none (the page asks again). Ends, answering
+   * null, when `abandoned` fires or the page that asked (`contents`, the sending tab) leaves: a link must never be
+   * handed to a document that is gone.
+   */
+  readonly nextUrl: (origin: string, abandoned: AbortSignal, contents: unknown) => Promise<string | null>
+  /** Asks the person whether `origin`'s app becomes the default for `scheme`; false when it may not or they decline. */
+  readonly requestHandler: (origin: string, scheme: string, caller: RequestGrantCaller) => Promise<boolean>
+  readonly isHandler: (origin: string, scheme: string) => Promise<boolean>
+}
+
+export interface SchemeCtx {
+  readonly schemeHost?: SchemeHost | undefined
+}
+
 /** What the control channel reads, live, from the subsystem context. */
-export type ControlCtx = RequestGrantCtx & TrustCtx
+export type ControlCtx = RequestGrantCtx & TrustCtx & SchemeCtx
+
+/** A URI scheme name, lower case as the manifest holds it (RFC 3986), short enough that no honest caller is refused. */
+export function isAppSchemeParams (payload: unknown): payload is AppSchemeParams {
+  if (typeof payload !== 'object' || payload === null) return false
+  const { scheme } = payload as { scheme?: unknown }
+  return typeof scheme === 'string' && scheme.length <= 64 && /^[a-z][a-z0-9+.-]*$/.test(scheme)
+}
 
 export function isNetUdpBindParams (payload: unknown): payload is NetUdpBindParams {
   if (typeof payload !== 'object' || payload === null) return false
@@ -413,6 +448,11 @@ export function isNetSetKeepAliveParams (payload: unknown): payload is NetSetKee
 export function isNetCloseParams (payload: unknown): payload is NetCloseParams {
   return typeof payload === 'object' && payload !== null &&
     typeof (payload as { id?: unknown }).id === 'string'
+}
+
+export function isNetCancelParams (payload: unknown): payload is NetCancelParams {
+  return typeof payload === 'object' && payload !== null &&
+    typeof (payload as { requestId?: unknown }).requestId === 'string'
 }
 
 export function isNetLookupParams (payload: unknown): payload is NetLookupParams {

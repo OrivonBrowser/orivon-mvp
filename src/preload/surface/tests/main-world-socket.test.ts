@@ -66,6 +66,30 @@ describe('installOrivon', () => {
     expect(calls).toEqual([{ capability: 'fs' }])
   })
 
+  it('app.onOpenUrl hands the page\'s listener to the bridge and returns its removal; the scheme calls delegate with the scheme', async () => {
+    const target: Record<string, unknown> = {}
+    const bridge = fakeBridge(fakeSocketBridgeResult())
+    const listeners: Array<(url: string) => void> = []
+    let removed = 0
+    bridge.appOnOpenUrl = (listener) => { listeners.push(listener); return () => { removed += 1 } }
+    const asked: string[] = []
+    bridge.appRequestSchemeHandler = async (scheme) => { asked.push(`request ${scheme}`); return true }
+    bridge.appIsSchemeHandler = async (scheme) => { asked.push(`is ${scheme}`); return false }
+    installOrivon(bridge, LIMITS, target)
+
+    const { app } = asPage(target.orivon) as { app: { onOpenUrl: (listener: (url: string) => void) => () => void, requestSchemeHandler: (scheme: string) => Promise<boolean>, isSchemeHandler: (scheme: string) => Promise<boolean> } }
+    const heard: string[] = []
+    const stop = app.onOpenUrl((url) => { heard.push(url) })
+    listeners[0]?.('magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567')
+    stop()
+
+    expect(heard).toEqual(['magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567'])
+    expect(removed).toBe(1)
+    expect(await app.requestSchemeHandler('magnet')).toBe(true)
+    expect(await app.isSchemeHandler('magnet')).toBe(false)
+    expect(asked).toEqual(['request magnet', 'is magnet'])
+  })
+
   it('fs.mkdir/readdir/stat/rm/rename delegate to the matching bridge closures, args intact', async () => {
     const target: Record<string, unknown> = {}
     const bridge = fakeBridge(fakeSocketBridgeResult())
@@ -110,12 +134,12 @@ describe('installOrivon', () => {
   })
 
   describe('fs.readFileSync (ADR-0016)', () => {
-    it('delegates to bridge.fsReadFileSync with the path unwrapped, and returns the ok envelope\'s result WITHOUT a Promise wrapper', () => {
+    it('delegates to bridge.fsSync as a readFile op with the path unwrapped, and returns the ok envelope\'s result WITHOUT a Promise wrapper', () => {
       const target: Record<string, unknown> = {}
-      const calls: string[] = []
+      const calls: unknown[] = []
       const bytes = new Uint8Array([1, 2, 3])
-      const bridge = fakeBridge(fakeSocketBridgeResult(), undefined, (path) => {
-        calls.push(path)
+      const bridge = fakeBridge(fakeSocketBridgeResult(), undefined, (op, args) => {
+        calls.push([op, ...args])
         return { id: '', ok: true, result: bytes }
       })
       installOrivon(bridge, LIMITS, target)
@@ -123,7 +147,7 @@ describe('installOrivon', () => {
       const orivon = asPage(target.orivon) as { fs: { readFileSync: (path: string) => Uint8Array } }
       const result = orivon.fs.readFileSync('/a/b.txt')
 
-      expect(calls).toEqual(['/a/b.txt'])
+      expect(calls).toEqual([['readFile', '/a/b.txt']])
       expect(result).toBe(bytes)
       // Not a thenable -- api.fs.readFileSync is deliberately not `async`
       // (see installOrivon's own comment on this closure). Whether the
@@ -133,7 +157,7 @@ describe('installOrivon', () => {
       expect(typeof (result as unknown as { then?: unknown }).then).not.toBe('function')
     })
 
-    // bridge.fsReadFileSync itself NEVER throws (see its own doc): a real
+    // bridge.fsSync itself NEVER throws (see its own doc): a real
     // Electron launch found that a value thrown across contextBridge's
     // function-proxy boundary loses everything but `.message`. This test
     // proves installOrivon builds the real OrivonError from the RETURNED
@@ -172,6 +196,74 @@ describe('installOrivon', () => {
         caught = e
       }
       expect(caught).toMatchObject({ name: 'OrivonError', code: 'notFound', platformCode: 'ENOENT' })
+    })
+  })
+
+  describe("the page's synchronous fs twin (Symbol.for('orivon.synchronous'), ADR-0016)", () => {
+    const SYNC = Symbol.for('orivon.synchronous')
+    interface Twin {
+      stat: (path: string) => unknown
+      readFile: (path: string) => unknown
+      writeFile: (path: string, data: Uint8Array) => void
+      mkdir: (path: string, opts?: { recursive?: boolean }) => void
+      readdir: (path: string) => unknown
+      rm: (path: string, opts?: { recursive?: boolean }) => void
+      rename: (from: string, to: string) => void
+    }
+    const twinOf = (target: Record<string, unknown>): Twin => ((asPage(target.orivon) as unknown as Record<symbol, { fs: Twin }>)[SYNC] as { fs: Twin }).fs
+
+    it('has the seven path-based members and no open, so a handle-based call is refused by the shim', () => {
+      const target: Record<string, unknown> = {}
+      installOrivon(fakeBridge(fakeSocketBridgeResult()), LIMITS, target)
+      expect(Object.keys(twinOf(target)).sort()).toEqual(['mkdir', 'readFile', 'readdir', 'rename', 'rm', 'stat', 'writeFile'])
+      // The real target.orivon, not asPage's copy (test-helpers.ts's own asPage doc).
+      expect(Object.isFrozen((target.orivon as Record<symbol, { fs: unknown }>)[SYNC]?.fs)).toBe(true)
+    })
+
+    it('sends each member as one { op, args } call and returns the ok envelope result without a Promise', () => {
+      const target: Record<string, unknown> = {}
+      const calls: unknown[] = []
+      const bridge = fakeBridge(fakeSocketBridgeResult(), undefined, (op, args) => {
+        calls.push([op, ...args])
+        return { id: '', ok: true, result: op === 'readdir' ? ['a'] : undefined }
+      })
+      installOrivon(bridge, LIMITS, target)
+      const fs = twinOf(target)
+      const data = new Uint8Array([1])
+
+      expect(fs.readdir('/d')).toEqual(['a'])
+      fs.mkdir('/d', { recursive: true })
+      fs.writeFile('/d/f', data)
+      fs.rename('/d/f', '/d/g')
+      fs.rm('/d', { recursive: true })
+      fs.stat('/d')
+
+      expect(calls).toEqual([
+        ['readdir', '/d'], ['mkdir', '/d', { recursive: true }], ['writeFile', '/d/f', data],
+        ['rename', '/d/f', '/d/g'], ['rm', '/d', { recursive: true }], ['stat', '/d']
+      ])
+    })
+
+    it('throws a real OrivonError built from a failure envelope, carrying platformCode', () => {
+      const target: Record<string, unknown> = {}
+      const bridge = fakeBridge(fakeSocketBridgeResult(), undefined, () => (
+        { id: '', ok: false, code: 'exists', message: 'the filesystem operation failed', platformCode: 'EEXIST' }
+      ))
+      installOrivon(bridge, LIMITS, target)
+      let caught: unknown
+      try {
+        twinOf(target).mkdir('/d')
+      } catch (e) {
+        caught = e
+      }
+      expect(caught).toBeInstanceOf(Error)
+      expect(caught).toMatchObject({ name: 'OrivonError', code: 'exists', platformCode: 'EEXIST' })
+    })
+
+    it('is not installed where no page frame exists to attribute a call to (the child host)', () => {
+      const target: Record<string, unknown> = {}
+      installOrivon(fakeBridge(fakeSocketBridgeResult()), LIMITS, target, false)
+      expect((target.orivon as Record<symbol, unknown>)[SYNC]).toBeUndefined()
     })
   })
 

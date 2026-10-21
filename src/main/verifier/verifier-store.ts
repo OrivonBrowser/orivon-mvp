@@ -1,18 +1,23 @@
-// What the verifier keeps in the profile between runs: the newest
-// checkpoint the light client verified, and the highest IPNS sequence seen
-// per key. A missing or corrupt file reads as empty, never as an error.
+// What the verifier keeps in the profile between runs: the salt the IPFS
+// node's partition keys are made with, the newest
+// checkpoint the light client verified, the highest IPNS sequence seen per
+// key, the highest Swarm feed index seen per feed, and the address scheme each
+// `.eth` name's content was last found under. A missing or corrupt
+// file reads as empty, never as an error.
 
+import { randomBytes } from 'node:crypto'
 import { mkdirSync, readFileSync } from 'node:fs'
-import { mkdir, open, rename } from 'node:fs/promises'
 import { join } from 'node:path'
 import { CID } from 'multiformats/cid'
 import { base36 } from 'multiformats/bases/base36'
 import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
-import { FUTURE_TOLERANCE_SECONDS, parseCheckpoint } from './checkpoint.js'
-import type { Checkpoint } from './checkpoint.js'
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
+import { MAX_ADDRESS_NAME } from '../../protocols/address.js'
+import { FloorFile } from './floor-file.js'
+import { FUTURE_TOLERANCE_SECONDS, parseCheckpoint, parseStoredCheckpoint } from './checkpoint.js'
+import type { Checkpoint, StoredCheckpoint } from './checkpoint.js'
 
-/** A decimal, up to 20 digits (past uint64's own ceiling): an IPNS sequence's own shape, shared with the boundary check on messages the host posts (`host-messages.ts`). */
-export const DECIMAL = /^\d{1,20}$/
+export { DECIMAL } from './floor-file.js'
 
 /** Kept at once; the least recently touched dropped first. Any page can
  * make the host resolve any number of `.eth`/IPNS names, so this rollback
@@ -20,10 +25,10 @@ export const DECIMAL = /^\d{1,20}$/
  * costs such a page to push one name's floor out: that many other valid
  * IPNS names, each resolved. About 120 bytes each on disk. */
 export const MAX_IPNS_KEYS = 4096
-/** How long a run of saves waits before its one write to disk: an update a
- * page can trigger by the thousand must cost one write for the whole burst,
- * not one fsync each. */
-const IPNS_FLUSH_DEBOUNCE_MS = 2_000
+/** Same bound for feeds, and for the same reason: any page can make the host follow any number of Swarm feeds. */
+export const MAX_FEEDS = 4096
+/** Same bound for `.eth` names, and for the same reason: any page can make the host mount any number of names. A name dropped shows its default scheme until it is next mounted. */
+export const MAX_NAME_SCHEMES = 4096
 
 /** An IPNS key, spelled the way `resolveIpnsKey` (ipfs/ipns.ts) parses one:
  * a base36 CID whose multihash is an inlined public key (identity) or a
@@ -39,6 +44,24 @@ function isIpnsKey (key: string): boolean {
   }
 }
 
+/** A feed key: its owner (20 bytes) and topic (32 bytes) in lowercase hex, which is what `swarm/feed.ts` keys a floor by. */
+function isFeedKey (key: string): boolean {
+  return /^[0-9a-f]{40}\/[0-9a-f]{64}$/.test(key)
+}
+
+/** A `.eth` name in the one spelling `ProtocolAddresses` reads a host as, since that is what looks a scheme up. */
+function isTopLevelDomainName (key: string): boolean {
+  if (key.length > MAX_ADDRESS_NAME) return false
+  const served = BUILTIN_ADDRESSES.servedName(key)
+  return served !== undefined && served.namespace.startsWith('.') && served.name === key
+}
+
+/** A scheme some built-in protocol serves, and a new one replaces the kept one: a name that moves networks is shown by where it is now. */
+const SERVED_SCHEME = {
+  valid: (value: string): boolean => BUILTIN_ADDRESSES.servesScheme(value),
+  replaces: (): boolean => true
+}
+
 function readJson (path: string): unknown {
   try {
     return JSON.parse(readFileSync(path, 'utf8'))
@@ -49,20 +72,23 @@ function readJson (path: string): unknown {
 
 export class VerifierStore {
   private readonly checkpointPath: string
-  private readonly sequencesPath: string
-  /** Hydrated from disk on first save, then kept in memory between the
-   * debounced flushes below: this store is the only writer of its own
-   * file, so nothing else changes it out from under a pending batch. */
-  private sequences: Map<string, string> | undefined
-  private flushTimer: NodeJS.Timeout | undefined
+  private readonly saltPath: string
+  private readonly dir: string
+  private readonly sequences: FloorFile
+  private readonly feeds: FloorFile
+  private readonly nameSchemes: FloorFile
 
-  constructor (private readonly dir: string) {
+  constructor (dir: string) {
     this.checkpointPath = join(dir, 'checkpoint.json')
-    this.sequencesPath = join(dir, 'ipns-sequences.json')
+    this.saltPath = join(dir, 'ipfs-node-partition-salt.json')
+    this.dir = dir
+    this.sequences = new FloorFile(dir, join(dir, 'ipns-sequences.json'), isIpnsKey, MAX_IPNS_KEYS, 'IPNS sequences')
+    this.feeds = new FloorFile(dir, join(dir, 'swarm-feed-indexes.json'), isFeedKey, MAX_FEEDS, 'Swarm feed indexes')
+    this.nameSchemes = new FloorFile(dir, join(dir, 'name-schemes.json'), isTopLevelDomainName, MAX_NAME_SCHEMES, 'name schemes', SERVED_SCHEME)
   }
 
-  checkpoint (): Checkpoint | undefined {
-    return parseCheckpoint(readJson(this.checkpointPath))
+  checkpoint (): StoredCheckpoint | undefined {
+    return parseStoredCheckpoint(readJson(this.checkpointPath))
   }
 
   /**
@@ -71,96 +97,84 @@ export class VerifierStore {
    * block every later save and then age out with nothing to replace it.
    */
   saveCheckpoint (checkpoint: Checkpoint, nowSeconds: number): void {
+    this.write(checkpoint, undefined, nowSeconds)
+  }
+
+  /** The same, for a checkpoint fetched at run time: kept with the servers that agreed on it, until the light client stores a newer one of its own. */
+  saveFetchedCheckpoint (checkpoint: Checkpoint, servers: readonly string[], nowSeconds: number): void {
+    this.write(checkpoint, servers, nowSeconds)
+  }
+
+  private write (checkpoint: Checkpoint, fetchedFrom: readonly string[] | undefined, nowSeconds: number): void {
     if (parseCheckpoint(checkpoint) === undefined || checkpoint.timestamp > nowSeconds + FUTURE_TOLERANCE_SECONDS) return
     const current = this.checkpoint()
     if (current !== undefined && current.timestamp >= checkpoint.timestamp) return
-    this.write(this.checkpointPath, checkpoint)
-  }
-
-  /**
-   * Answers from the in-memory floors once loaded, never the file: a host
-   * that restarts asks this same store again before its own debounced write
-   * has landed, and a rollback protection kept only on disk would then hand
-   * the restarted host an older floor than the one it already reported.
-   */
-  ipnsSequences (): Record<string, string> {
-    return Object.fromEntries(this.loadedSequences())
-  }
-
-  /**
-   * Keeps the highest per key, so a restart never forgets how far a name
-   * has advanced, up to `MAX_IPNS_KEYS`; the write to disk is debounced
-   * (`scheduleFlush`), never one fsync per call.
-   */
-  saveIpnsSequence (key: string, sequence: string): void {
-    if (!DECIMAL.test(sequence) || !isIpnsKey(key)) return
-    const sequences = this.loadedSequences()
-    const current = sequences.get(key)
-    if (current !== undefined && BigInt(current) >= BigInt(sequence)) return
-    sequences.delete(key) // re-inserted below, now the most recently touched
-    sequences.set(key, sequence)
-    for (const oldest of sequences.keys()) {
-      if (sequences.size <= MAX_IPNS_KEYS) break
-      sequences.delete(oldest)
-    }
-    this.scheduleFlush()
-  }
-
-  /** Writes whatever is pending right now, instead of waiting out the
-   * debounce. Used by tests; `flushSync` below is what quit actually calls,
-   * since nothing after `will-quit` can be awaited. */
-  async flush (): Promise<void> {
-    if (this.flushTimer !== undefined) { clearTimeout(this.flushTimer); this.flushTimer = undefined }
-    if (this.sequences === undefined) return
-    await this.writeSequences(this.sequences)
-  }
-
-  /** The quit-time equivalent of `flush`: blocking, so the process cannot
-   * exit out from under an async write the way `will-quit` otherwise would. */
-  flushSync (): void {
-    if (this.flushTimer !== undefined) { clearTimeout(this.flushTimer); this.flushTimer = undefined }
-    if (this.sequences === undefined) return
-    this.write(this.sequencesPath, Object.fromEntries(this.sequences))
-  }
-
-  private loadedSequences (): Map<string, string> {
-    this.sequences ??= new Map(Object.entries(this.readSequencesFromDisk()))
-    return this.sequences
-  }
-
-  private readSequencesFromDisk (): Record<string, string> {
-    const stored = readJson(this.sequencesPath)
-    if (typeof stored !== 'object' || stored === null) return {}
-    return Object.fromEntries(Object.entries(stored).filter((entry): entry is [string, string] => isIpnsKey(entry[0]) && typeof entry[1] === 'string' && DECIMAL.test(entry[1])))
-  }
-
-  private scheduleFlush (): void {
-    if (this.flushTimer !== undefined) return
-    this.flushTimer = setTimeout(() => {
-      this.flushTimer = undefined
-      const sequences = this.sequences
-      if (sequences === undefined) return
-      this.writeSequences(sequences).catch((error: unknown) => { console.error('[verifier] failed to save IPNS sequences:', error) })
-    }, IPNS_FLUSH_DEBOUNCE_MS)
-    this.flushTimer.unref()
-  }
-
-  private async writeSequences (sequences: ReadonlyMap<string, string>): Promise<void> {
-    await mkdir(this.dir, { recursive: true })
-    const text = JSON.stringify(Object.fromEntries(sequences))
-    const tmp = `${this.sequencesPath}.tmp`
-    const handle = await open(tmp, 'w')
-    try {
-      await handle.writeFile(text)
-      await handle.sync()
-    } finally {
-      await handle.close()
-    }
-    await rename(tmp, this.sequencesPath)
-  }
-
-  private write (path: string, value: unknown): void {
     mkdirSync(this.dir, { recursive: true })
-    writeFileAtomic(path, JSON.stringify(value))
+    writeFileAtomic(this.checkpointPath, JSON.stringify(fetchedFrom === undefined ? { root: checkpoint.root, timestamp: checkpoint.timestamp } : { root: checkpoint.root, timestamp: checkpoint.timestamp, fetchedFrom }))
+  }
+
+  /** The IPNS floors, from memory once loaded (see `FloorFile.all`). */
+  ipnsSequences (): Record<string, string> {
+    return this.sequences.all()
+  }
+
+  /** Keeps the highest per key, up to `MAX_IPNS_KEYS`; the write to disk is debounced, never one fsync per call. */
+  saveIpnsSequence (key: string, sequence: string): void {
+    this.sequences.save(key, sequence)
+  }
+
+  /** Highest Swarm feed update index seen, keyed `<owner>/<topic>`. */
+  swarmFeedIndexes (): Record<string, string> {
+    return this.feeds.all()
+  }
+
+  saveSwarmFeedIndex (feed: string, index: string): void {
+    this.feeds.save(feed, index)
+  }
+
+  /** The address scheme the content of a `.eth` name was last found under, from memory once loaded. */
+  nameScheme (name: string): string | undefined {
+    return this.nameSchemes.get(name)
+  }
+
+  /** Whether the name's kept scheme changed, so the shell knows to show it again. The write to disk is debounced. */
+  saveNameScheme (name: string, scheme: string): boolean {
+    return this.nameSchemes.save(name, scheme)
+  }
+
+  /**
+   * The random bytes, in hex, that the IPFS node's store keys are made with (`verifier-host/partition-key.ts`): made
+   * once per profile and kept here, and handed to the verifier host alone. Replaced by `rotatePartitionSalt`.
+   */
+  partitionSalt (): string {
+    const kept = readJson(this.saltPath)
+    if (typeof kept === 'object' && kept !== null && typeof (kept as { salt?: unknown }).salt === 'string' && /^[0-9a-f]{64}$/.test((kept as { salt: string }).salt)) return (kept as { salt: string }).salt
+    return this.rotatePartitionSalt()
+  }
+
+  /** A new salt, so what the node kept under the old one can no longer be asked for: used when browsing data is cleared. */
+  rotatePartitionSalt (): string {
+    const salt = randomBytes(32).toString('hex')
+    mkdirSync(this.dir, { recursive: true })
+    writeFileAtomic(this.saltPath, JSON.stringify({ salt }))
+    return salt
+  }
+
+  /** Forgets every name's scheme, so each shows its default until it is next mounted. The file is emptied before this resolves. */
+  async forgetNameSchemes (): Promise<void> {
+    await this.nameSchemes.clear()
+  }
+
+  /** Writes whatever is pending right now, instead of waiting out the debounce. Used by tests; `flushSync` is what quit calls, since nothing after `will-quit` can be awaited. */
+  async flush (): Promise<void> {
+    await this.sequences.flush()
+    await this.feeds.flush()
+    await this.nameSchemes.flush()
+  }
+
+  flushSync (): void {
+    this.sequences.flushSync()
+    this.feeds.flushSync()
+    this.nameSchemes.flushSync()
   }
 }

@@ -1,0 +1,323 @@
+diff --git a/wasm/smolmix/src/bridge.rs b/wasm/smolmix/src/bridge.rs
+index bf47b6e..32e498d 100644
+--- a/wasm/smolmix/src/bridge.rs
++++ b/wasm/smolmix/src/bridge.rs
+@@ -20,6 +20,7 @@ use nym_wasm_client_core::client::base_client::ClientInput;
+ use nym_wasm_client_core::nym_task::ShutdownTracker;
+ 
+ use crate::ipr::{self, ReconstructedReceiver};
++use crate::resequence::Resequencer;
+ use crate::reactor::{ReactorNotify, SmoltcpStack};
+ use crate::state::{State, TaskName};
+ 
+@@ -59,6 +60,8 @@ pub fn start_bridge(
+             // Outbound seq starts at 1; seq=0 is reserved for handshake
+             // frames (see `ipr::open_and_connect`).
+             let mut seq: u32 = 1;
++            // The exit's frames come back by routes of their own; TCP is given them in the order they were numbered.
++            let mut order: Resequencer<Vec<Vec<u8>>> = Resequencer::new();
+ 
+             loop {
+                 // Block until something happens (incoming message or timer tick).
+@@ -75,7 +78,7 @@ pub fn start_bridge(
+                             break;
+                         };
+                         process_incoming(
+-                            &stack, &messages, stream_id, &notify_reactor,
++                            &stack, &messages, stream_id, &notify_reactor, &mut order,
+                         );
+                     }
+                     _ = tx_interval.tick().fuse() => {}
+@@ -84,7 +87,12 @@ pub fn start_bridge(
+                 // Non-blockingly drain any remaining incoming messages so we
+                 // never let them queue up while we're sending outgoing packets.
+                 while let Some(Some(messages)) = msg_receiver.next().now_or_never() {
+-                    process_incoming(&stack, &messages, stream_id, &notify_reactor);
++                    process_incoming(&stack, &messages, stream_id, &notify_reactor, &mut order);
++                }
++                if order.is_holding() {
++                    let mut due = Vec::new();
++                    order.tick(js_sys::Date::now(), &mut due);
++                    deliver(&stack, due, &notify_reactor);
+                 }
+ 
+                 // Drain outgoing packets (capped to avoid starving incoming).
+@@ -127,24 +135,33 @@ fn process_incoming(
+     messages: &[nym_wasm_client_core::ReconstructedMessage],
+     stream_id: u64,
+     notify_reactor: &ReactorNotify,
++    order: &mut Resequencer<Vec<Vec<u8>>>,
+ ) {
+-    let mut pushed = 0usize;
++    let now = js_sys::Date::now();
++    let mut due: Vec<Vec<Vec<u8>>> = Vec::new();
+     for msg in messages {
+-        match ipr::parse_incoming(msg, stream_id) {
+-            Ok(Some(packets)) => {
+-                stack.with(|s| {
+-                    for packet in &packets {
+-                        s.device.push_rx(packet.clone());
+-                        pushed += 1;
+-                    }
+-                });
+-            }
++        match ipr::parse_incoming_numbered(msg, stream_id) {
++            Ok(Some((number, packets))) => order.push(number, packets, now, &mut due),
+             Ok(None) => {}
+             Err(e) => {
+                 crate::util::debug_error!("[bridge] incoming error: {e}");
+             }
+         }
+     }
++    deliver(stack, due, notify_reactor);
++}
++
++/// Hands frames, already in order, to the smoltcp device and wakes the reactor.
++fn deliver(stack: &SmoltcpStack, frames: Vec<Vec<Vec<u8>>>, notify_reactor: &ReactorNotify) {
++    let mut pushed = 0usize;
++    for packets in frames {
++        stack.with(|s| {
++            for packet in packets {
++                s.device.push_rx(packet);
++                pushed += 1;
++            }
++        });
++    }
+ 
+     if pushed > 0 {
+         crate::util::debug_log!("[bridge] ▼ rx ({pushed} packets)");
+diff --git a/wasm/smolmix/src/ipr.rs b/wasm/smolmix/src/ipr.rs
+index 0ae407f..c7ab423 100644
+--- a/wasm/smolmix/src/ipr.rs
++++ b/wasm/smolmix/src/ipr.rs
+@@ -313,6 +313,14 @@ pub fn parse_incoming(
+     msg: &ReconstructedMessage,
+     expected_stream_id: u64,
+ ) -> Result<Option<Vec<Vec<u8>>>, FetchError> {
++    Ok(parse_incoming_numbered(msg, expected_stream_id)?.map(|(_, packets)| packets))
++}
++
++/// As [`parse_incoming`], with the sequence number the exit gave the frame.
++pub fn parse_incoming_numbered(
++    msg: &ReconstructedMessage,
++    expected_stream_id: u64,
++) -> Result<Option<(u32, Vec<Vec<u8>>)>, FetchError> {
+     let Some((attrs, content)) = decode_lp_stream(&msg.message) else {
+         return Ok(None);
+     };
+@@ -324,7 +332,10 @@ pub fn parse_incoming(
+     match nym_ip_packet_requests::response_helpers::handle_ipr_response(&content) {
+         Some(nym_ip_packet_requests::response_helpers::MixnetMessageOutcome::IpPackets(
+             packets,
+-        )) => Ok(Some(packets.into_iter().map(|b| b.to_vec()).collect())),
++        )) => Ok(Some((
++            attrs.sequence_num,
++            packets.into_iter().map(|b| b.to_vec()).collect(),
++        ))),
+         Some(nym_ip_packet_requests::response_helpers::MixnetMessageOutcome::Disconnect) => {
+             crate::util::debug_error!("[ipr] IPR sent DISCONNECT");
+             Err(FetchError::Tunnel("IPR disconnected".into()))
+diff --git a/wasm/smolmix/src/lib.rs b/wasm/smolmix/src/lib.rs
+index a392798..dc0990d 100644
+--- a/wasm/smolmix/src/lib.rs
++++ b/wasm/smolmix/src/lib.rs
+@@ -37,6 +37,7 @@ mod mixfetch;
+ mod mixwebsocket;
+ #[cfg(target_arch = "wasm32")]
+ mod raw;
++mod resequence;
+ #[cfg(target_arch = "wasm32")]
+ mod reactor;
+ #[cfg(target_arch = "wasm32")]
+diff --git a/wasm/smolmix/src/resequence.rs b/wasm/smolmix/src/resequence.rs
+new file mode 100644
+index 0000000..dbd981f
+--- /dev/null
++++ b/wasm/smolmix/src/resequence.rs
+@@ -0,0 +1,186 @@
++// SPDX-License-Identifier: Apache-2.0
++
++//! Puts the exit's reply frames back in the order it numbered them.
++//!
++//! The exit numbers every reply frame (1, 2, 3, ...), and each frame then reaches the client by a route of its own through the
++//! mixnet, so frames arrive in an order that is far from the one they were sent in. TCP below sees that as loss: the
++//! receiver acknowledges the same byte again and again, the sender takes the repeats for lost segments, sends them a second
++//! time and slows down. Holding a frame back until the ones before it have come, for a bounded time, gives TCP the order it
++//! was sent in.
++
++use std::collections::BTreeMap;
++
++/// How long a frame may be held for one that has not come. The run goes on without it after that; the frame, if it comes
++/// later, is passed on at once.
++pub const GAP_TIMEOUT_MS: f64 = 1500.0;
++/// Most frames held at once; past it the oldest gap is given up.
++const MAX_HELD_FRAMES: usize = 512;
++/// A frame this far ahead of the one expected is a new numbering, not a frame far ahead.
++const RESTART_DISTANCE: u32 = 8192;
++
++pub struct Resequencer<T> {
++    next: u32,
++    held: BTreeMap<u32, T>,
++    /// When the oldest wait for a missing frame began.
++    waiting_since: Option<f64>,
++}
++
++impl<T> Default for Resequencer<T> {
++    fn default() -> Self {
++        Self::new()
++    }
++}
++
++impl<T> Resequencer<T> {
++    /// The exit's run starts at 1; 0 is for control replies, which are not part of the run.
++    pub fn new() -> Self {
++        Self {
++            next: 1,
++            held: BTreeMap::new(),
++            waiting_since: None,
++        }
++    }
++
++    /// Offers the frame numbered `seq`, which arrived at `now` (milliseconds). The frames that are due go to `out`, in order.
++    pub fn push(&mut self, seq: u32, frame: T, now: f64, out: &mut Vec<T>) {
++        if seq == 0 {
++            out.push(frame);
++            return;
++        }
++        let ahead = seq.wrapping_sub(self.next);
++        if ahead == 0 {
++            out.push(frame);
++            self.next = self.next.wrapping_add(1);
++            self.release_run(out);
++            self.waiting_since = if self.held.is_empty() { None } else { Some(now) };
++        } else if ahead >= 1 << 31 {
++            // A frame whose turn was given up: TCP below copes with a late segment.
++            out.push(frame);
++        } else if ahead > RESTART_DISTANCE {
++            self.release_all(out);
++            out.push(frame);
++            self.next = seq.wrapping_add(1);
++            self.waiting_since = None;
++        } else {
++            self.held.insert(seq, frame);
++            if self.waiting_since.is_none() {
++                self.waiting_since = Some(now);
++            }
++            if self.held.len() > MAX_HELD_FRAMES {
++                self.give_up_gap(now, out);
++            }
++        }
++    }
++
++    /// Gives up the wait for a missing frame once it has lasted `GAP_TIMEOUT_MS`.
++    pub fn tick(&mut self, now: f64, out: &mut Vec<T>) {
++        if let Some(since) = self.waiting_since {
++            if now - since >= GAP_TIMEOUT_MS {
++                self.give_up_gap(now, out);
++            }
++        }
++    }
++
++    /// Whether any frame is being held.
++    pub fn is_holding(&self) -> bool {
++        !self.held.is_empty()
++    }
++
++    fn give_up_gap(&mut self, now: f64, out: &mut Vec<T>) {
++        if let Some(&first) = self.held.keys().next() {
++            self.next = first;
++            self.release_run(out);
++        }
++        self.waiting_since = if self.held.is_empty() { None } else { Some(now) };
++    }
++
++    fn release_run(&mut self, out: &mut Vec<T>) {
++        while let Some(frame) = self.held.remove(&self.next) {
++            out.push(frame);
++            self.next = self.next.wrapping_add(1);
++        }
++    }
++
++    fn release_all(&mut self, out: &mut Vec<T>) {
++        out.extend(std::mem::take(&mut self.held).into_values());
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn pushed(r: &mut Resequencer<u32>, seq: u32, now: f64) -> Vec<u32> {
++        let mut out = Vec::new();
++        r.push(seq, seq, now, &mut out);
++        out
++    }
++
++    #[test]
++    fn frames_in_order_pass_straight_through() {
++        let mut r = Resequencer::new();
++        assert_eq!(pushed(&mut r, 1, 0.0), vec![1]);
++        assert_eq!(pushed(&mut r, 2, 1.0), vec![2]);
++        assert!(!r.is_holding());
++    }
++
++    #[test]
++    fn a_frame_ahead_waits_for_the_one_before_it() {
++        let mut r = Resequencer::new();
++        assert_eq!(pushed(&mut r, 3, 0.0), Vec::<u32>::new());
++        assert_eq!(pushed(&mut r, 2, 1.0), Vec::<u32>::new());
++        assert_eq!(pushed(&mut r, 1, 2.0), vec![1, 2, 3]);
++        assert!(!r.is_holding());
++    }
++
++    #[test]
++    fn the_wait_for_a_missing_frame_ends_and_the_late_frame_is_passed_on_at_once() {
++        let mut r = Resequencer::new();
++        assert_eq!(pushed(&mut r, 2, 0.0), Vec::<u32>::new());
++        let mut out = Vec::new();
++        r.tick(GAP_TIMEOUT_MS - 1.0, &mut out);
++        assert!(out.is_empty());
++        r.tick(GAP_TIMEOUT_MS, &mut out);
++        assert_eq!(out, vec![2]);
++        assert_eq!(pushed(&mut r, 1, GAP_TIMEOUT_MS + 5.0), vec![1]);
++        assert_eq!(pushed(&mut r, 3, GAP_TIMEOUT_MS + 6.0), vec![3]);
++    }
++
++    #[test]
++    fn control_replies_numbered_zero_are_not_held() {
++        let mut r = Resequencer::new();
++        assert_eq!(pushed(&mut r, 0, 0.0), vec![0]);
++        assert_eq!(pushed(&mut r, 1, 1.0), vec![1]);
++    }
++
++    #[test]
++    fn too_many_held_frames_give_up_the_oldest_gap() {
++        let mut r = Resequencer::new();
++        let mut released = Vec::new();
++        for seq in 2..=(MAX_HELD_FRAMES as u32 + 2) {
++            r.push(seq, seq, 0.0, &mut released);
++        }
++        assert_eq!(released.len(), MAX_HELD_FRAMES + 1);
++        assert_eq!(released[0], 2);
++        assert!(!r.is_holding());
++    }
++
++    #[test]
++    fn a_far_jump_is_a_new_numbering() {
++        let mut r = Resequencer::new();
++        assert_eq!(pushed(&mut r, 2, 0.0), Vec::<u32>::new());
++        let mut out = Vec::new();
++        r.push(RESTART_DISTANCE + 100, RESTART_DISTANCE + 100, 1.0, &mut out);
++        assert_eq!(out, vec![2, RESTART_DISTANCE + 100]);
++        assert_eq!(pushed(&mut r, RESTART_DISTANCE + 101, 2.0), vec![RESTART_DISTANCE + 101]);
++    }
++
++    #[test]
++    fn numbering_wraps() {
++        let mut r = Resequencer::new();
++        r.next = u32::MAX;
++        assert_eq!(pushed(&mut r, 0, 0.0), vec![0]);
++        assert_eq!(pushed(&mut r, 1, 0.0), Vec::<u32>::new());
++        assert_eq!(pushed(&mut r, u32::MAX, 0.0), vec![u32::MAX]);
++    }
++}

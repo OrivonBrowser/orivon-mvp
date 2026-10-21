@@ -2,7 +2,8 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { readSettingBeforeReady, settingsFromFile } from '../settings-file.js'
+import { SETTINGS } from '../schema.js'
+import { everywhereBeforeReady, readSettingBeforeReady, settingsFileProblem, settingsFromFile } from '../settings-file.js'
 
 let dir: string
 let file: string
@@ -18,6 +19,15 @@ describe('settingsFromFile', () => {
     const { overrides, dropped } = settingsFromFile({ version: 1, values: { 'privacy.globalPrivacyControl': false, 'privacy.doNotTrack': false, 'appearance.theme': 'neon', 'nope': 1 } })
     expect([...overrides]).toEqual([['privacy.globalPrivacyControl', false]])
     expect(dropped).toBe(2)
+  })
+
+  it('lets a file that never named the update check follow the default, which is on, and keeps an explicit off', () => {
+    expect(SETTINGS['updates.check']).toMatchObject({ default: true })
+    for (const version of [1, 2]) {
+      expect(settingsFromFile({ version, values: { 'appearance.theme': 'dark' } }).overrides.has('updates.check')).toBe(false)
+      expect([...settingsFromFile({ version, values: { 'updates.check': true } }).overrides]).not.toContainEqual(['updates.check', true])
+      expect(settingsFromFile({ version, values: { 'updates.check': false } }).overrides.get('updates.check')).toBe(false)
+    }
   })
 
   it('holds nothing for text that is not a settings file of this version', () => {
@@ -44,5 +54,23 @@ describe('readSettingBeforeReady', () => {
   it('answers the default for a value the schema refuses', async () => {
     await writeFile(file, JSON.stringify({ version: 1, values: { 'privacy.globalPrivacyControl': 'off' } }))
     expect(readSettingBeforeReady(file, 'privacy.globalPrivacyControl')).toBe(true)
+  })
+})
+
+describe('everywhereBeforeReady', () => {
+  it('is off for a missing file and the saved value for a good one', async () => {
+    expect(everywhereBeforeReady(join(dir, 'none.json'))).toBe(false)
+    await writeFile(file, JSON.stringify({ version: 2, values: {} }))
+    expect(everywhereBeforeReady(file)).toBe(false)
+    await writeFile(file, JSON.stringify({ version: 2, values: { 'network.tunnel.everywhere': true } }))
+    expect(everywhereBeforeReady(file)).toBe(true)
+  })
+
+  it('is on for a file that is there and cannot be used: broken text, a version this build does not read, or not a settings file', async () => {
+    for (const text of ['{ not json', JSON.stringify({ version: 9, values: {} }), JSON.stringify([]), JSON.stringify({ version: 2 })]) {
+      await writeFile(file, text)
+      expect(settingsFileProblem(file), text).toBe('unreadable')
+      expect(everywhereBeforeReady(file), text).toBe(true)
+    }
   })
 })

@@ -130,7 +130,7 @@ describe('the rate limiter (open-questions.md A38)', () => {
     const broker = stubBroker(calls, { grants: async () => [] })
     const registered = new Map<string, (event: ControlEvent, envelope: RequestEnvelope<unknown>) => Promise<ResponseEnvelope<unknown>>>()
     const fakeIpcMain: IpcMainLike = { handle: (channel, listener) => { registered.set(channel, listener) } }
-    const fakeTransport = { createPortPair: (): never => { throw new Error('not needed for this test') }, registry: { register: vi.fn(), get: vi.fn(), remove: vi.fn() } }
+    const fakeTransport = { createPortPair: (): never => { throw new Error('not needed for this test') }, registry: { register: vi.fn(), get: vi.fn(), remove: vi.fn() }, dials: { begin: vi.fn(), cancel: vi.fn() } }
     const limiter = fixedLimiter(false)
 
     registerBrokerIpc(fakeIpcMain, broker, fakeTransport, limiter)

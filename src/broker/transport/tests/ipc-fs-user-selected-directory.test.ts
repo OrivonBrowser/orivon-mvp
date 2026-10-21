@@ -33,6 +33,7 @@ import { APP, OTHER, type BrokerCall, envelope, frameFor, stubBroker } from './i
 function fakeFile (overrides: Partial<FailableFileHandle> = {}): FailableFileHandle {
   return {
     id: 'opened-file-1',
+    name: 'file.bin',
     closed: new Promise(() => {}),
     close: vi.fn(async () => {}),
     fail: vi.fn(),
@@ -264,7 +265,7 @@ describe('DirectoryHandle -- each of the nine members reaches a page', () => {
       undefined, undefined, undefined, transport
     )
 
-    expect(openResponse).toEqual({ id: 'req-1', ok: true, result: { id: 'file-from-dir' } })
+    expect(openResponse).toEqual({ id: 'req-1', ok: true, result: { id: 'file-from-dir', name: 'file.bin' } })
     expect(dir.open).toHaveBeenCalledWith('piece.bin', 'w+')
     expect(transport.registry.get(APP, 'file-from-dir')).toBe(openedFile)
 

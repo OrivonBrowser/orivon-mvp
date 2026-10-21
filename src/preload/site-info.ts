@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { SITE_INFO_COMMAND_CHANNEL } from '../main/channels.js'
-import type { ApplyResult, SiteDataSnapshot, SiteInfoCommand } from '../main/ipc/site-info-ipc.js'
+import type { ApplyResult, ProxyAddressResult, SiteDataSnapshot, SiteInfoCommand, TunnelResult } from '../main/ipc/site-info-ipc.js'
 import type { SiteInfo } from '../main/permissions/site-info.js'
 import type { SitePermissionsView } from '../main/site-settings/site-permissions-view.js'
 import type { SiteTrust } from '../main/browsing/site-trust.js'
@@ -9,7 +9,7 @@ import type { CapabilityKind, Pattern } from '../contracts/index.js'
 
 // Loaded ONLY by the site-info popup's own WebContentsView
 // (src/main/permissions/site-info-panel.ts). Same defense-in-depth as
-// src/preload/permissions.ts: this page never navigates anywhere else, but the
+// src/preload/networks.ts: this page never navigates anywhere else, but the
 // check below still runs before exposing anything privileged, and
 // src/main/ipc/site-info-ipc.ts re-verifies the same thing from the
 // authoritative main-process side on every call -- neither layer trusts
@@ -56,8 +56,23 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
       const result: unknown = await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'applyUpdate', cid } satisfies SiteInfoCommand)
       return (result ?? { ok: false, reason: 'no answer' }) as ApplyOutcome
     },
+    /** The tunnel of the website or app: Nym, the person's proxy, or none. Main decides what it can do and answers the info after. */
+    setTunnel: async (kind: 'nym' | 'socks5' | null): Promise<TunnelResult | null> => {
+      const result: unknown = await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'setTunnel', kind } satisfies SiteInfoCommand)
+      return (result ?? null) as TunnelResult | null
+    },
+    /** Saves the address of the person's proxy. Main checks it as Settings does and answers why not, with the info after. */
+    setProxyAddress: async (text: string): Promise<ProxyAddressResult | null> => {
+      const result: unknown = await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'setProxyAddress', text } satisfies SiteInfoCommand)
+      return (result ?? null) as ProxyAddressResult | null
+    },
+    /** Whether a tunnel answers. The answer is main's, read by the page with `resultOf`. */
+    testTunnel: async (kind: 'nym' | 'socks5'): Promise<unknown> => await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'testTunnel', kind } satisfies SiteInfoCommand),
     openHome: async (): Promise<void> => {
       await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'openHome' } satisfies SiteInfoCommand)
+    },
+    openSupport: async (): Promise<void> => {
+      await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'openSupport' } satisfies SiteInfoCommand)
     },
     clearBrowserData: async (): Promise<void> => {
       await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'clearBrowserData' } satisfies SiteInfoCommand)
@@ -75,11 +90,20 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
     reload: async (): Promise<void> => {
       await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'reload' } satisfies SiteInfoCommand)
     },
+    reviewPermissions: async (): Promise<void> => {
+      await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'reviewPermissions' } satisfies SiteInfoCommand)
+    },
     openSiteSettings: async (): Promise<void> => {
       await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'openSiteSettings' } satisfies SiteInfoCommand)
     },
+    openTunnelSettings: async (everywhere: boolean): Promise<void> => {
+      await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'openTunnelSettings', everywhere } satisfies SiteInfoCommand)
+    },
     openExtensions: async (): Promise<void> => {
       await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'openExtensions' } satisfies SiteInfoCommand)
+    },
+    openScoreHelp: async (): Promise<void> => {
+      await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'openScoreHelp' } satisfies SiteInfoCommand)
     },
     openCertificate: async (): Promise<void> => {
       await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'certificate' } satisfies SiteInfoCommand)
@@ -97,7 +121,7 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
      * before the first `get()` round trip resolves. Both come from the
      * SAME argv main already fixed the popup's origin from; nothing here
      * is a claim the page itself gets to make. */
-    initialPage: page === 'web3' ? 'web3' : 'main',
+    initialPage: page === 'web3' || page === 'tunnels' ? page : 'main',
     origin: origin ?? null
   })
 }

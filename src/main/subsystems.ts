@@ -28,24 +28,32 @@ import { localFilesSubsystem } from './local-files/local-files-subsystem.js'
 import { verifierSubsystem } from './verifier/verifier-subsystem.js'
 import { signInIdentitySubsystem } from './shell/sign-in-identity-headers.js'
 import { extensionsSubsystem } from './extensions/extensions-subsystem.js'
+import { routeSubsystem } from './route/route-subsystem.js'
 import { brokerIpcSubsystem } from '../broker/transport/ipc.js'
 import { devGrantSubsystem } from './dev/dev-grant.js'
 import { requestGrantSubsystem } from './consent/request-grant-subsystem.js'
 import { embedSubsystem } from './embed/embed-subsystem.js'
 import { childrenSubsystem } from './children/children-subsystem.js'
 import { loaderSubsystem } from '../loader/subsystem.js'
+import { localNodePortGateSubsystem } from './sessions/local-node-port-gate.js'
+import { ownListenerMediaGateSubsystem } from './sessions/own-listener-media-gate.js'
+import { appFilesByUrlSubsystem } from './sessions/app-files-by-url.js'
 import { appInstallSubsystem } from './install/app-install-subsystem.js'
 import { manifestHintSubsystem } from './install/manifest-hint.js'
 import { telemetrySubsystem } from '../telemetry/runner.js'
 import { pagesSubsystem } from './pages/pages-subsystem.js'
+import { diagnosticsSubsystem } from './diagnostics/diagnostics-runner.js'
 
 export const subsystems: Subsystem[] = [
+  diagnosticsSubsystem, // native crash dumps, collected here and never uploaded -> src/main/diagnostics/. Reads neither ctx.broker nor ctx.loader.
   // Listed first, ahead of everything else here: its beforeReady attaches
   // a listener that must exist before Electron can create ANY session,
   // including one a later entry's own beforeReady might trigger. Reads
   // neither ctx.broker nor ctx.loader, so it has no ordering constraint
   // from either of those -- only this one, self-imposed.
   permissionGateSubsystem, // security -> src/main/permission-gate.ts
+  // Cancels every request to a port a local node holds, in every session -> src/main/sessions/local-node-port-gate.ts. Its beforeReady also listens for sessions as they are created, so it sits beside the permission gate. Reads neither ctx.broker nor ctx.loader.
+  localNodePortGateSubsystem,
   // Publishes ctx.senderAttributed -> src/main/sessions/session-attribution.ts.
   // Reads neither ctx.broker nor ctx.loader (its closure reads ctx.broker
   // lazily, once a real request needs it), but must stay ABOVE
@@ -55,6 +63,8 @@ export const subsystems: Subsystem[] = [
   localFilesSubsystem,
   verifierSubsystem, // .eth names: resolver rules, certificate check, verifier host -> src/main/verifier/. Reads neither ctx.broker nor ctx.loader.
   signInIdentitySubsystem, // Firefox request headers on Google's sign-in hosts -> src/main/shell/sign-in-identity-headers.ts. Reads neither ctx.broker nor ctx.loader.
+  // The network route an app can have: its store, fronts and Chromium sessions -> src/main/route/. Critical. Publishes ctx.routes, which brokerIpcSubsystem reads -- must stay above it. Reads ctx.broker only when a route changes. Listed ahead of the extensions on purpose: with the whole browser on the tunnel, the default session is stopped and pointed at the front before the first extension loads into it.
+  routeSubsystem,
   // extensions -> src/main/extensions/. Listed here, before anything else
   // touches session.defaultSession (extensions/README.md's Design notes).
   // Reads neither ctx.broker nor ctx.loader.
@@ -72,6 +82,8 @@ export const subsystems: Subsystem[] = [
   // it is the production caller of the install path, so ctx.installApp has
   // to be published before its first hint can arrive.
   manifestHintSubsystem,
+  ownListenerMediaGateSubsystem, // ADR-0069: the loopback ports a listen-granted page may load media from -> src/main/sessions/. Reads ctx.broker -- must stay below brokerIpcSubsystem.
+  appFilesByUrlSubsystem, // ADR-0070: an app's page shows its own files at /orivon/app/<path> -> src/main/sessions/. Reads ctx.broker -- must stay below brokerIpcSubsystem.
   // build step 7: trust     -> src/trust/
   // nostr -> src/nostr/, parked: an idea, not a build step
   telemetrySubsystem, // build step 8: telemetry -> src/telemetry/

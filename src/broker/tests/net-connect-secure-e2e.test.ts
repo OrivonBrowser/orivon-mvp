@@ -42,7 +42,7 @@ describe('net.connectSecure end to end: a real handshake, and a real refusal', (
   })
 
   it('grants https.connect for "localhost", dials the real server, and reads real plaintext bytes back', async () => {
-    const broker = createBroker(baseDeps({ dialSecure: createDialTls({ ca: fixtureCa }) }))
+    const broker = createBroker(baseDeps({ resolve: async () => ['127.0.0.1'], dialSecure: createDialTls({ ca: fixtureCa }) }))
     broker.registerApp(APP, manifestWith({ net: { https: { connect: [`localhost:${String(port)}`] } } }))
     await broker.grant(APP, 'https.connect', [`localhost:${String(port)}`])
 
@@ -64,7 +64,7 @@ describe('net.connectSecure end to end: a real handshake, and a real refusal', (
     // request clears the POLICY check (checkConnectSecure) and reaches the
     // real handshake. The certificate's SAN is DNS:localhost only, so
     // hostname verification is the thing that refuses this, not the grant.
-    const broker = createBroker(baseDeps({ dialSecure: createDialTls({ ca: fixtureCa }) }))
+    const broker = createBroker(baseDeps({ resolve: async () => ['127.0.0.1'], dialSecure: createDialTls({ ca: fixtureCa }) }))
     broker.registerApp(APP, manifestWith({ net: { https: { connect: [`127.0.0.1:${String(port)}`] } } }))
     await broker.grant(APP, 'https.connect', [`127.0.0.1:${String(port)}`])
 
@@ -75,7 +75,7 @@ describe('net.connectSecure end to end: a real handshake, and a real refusal', (
   })
 
   it('a hostname the grant never named is refused by POLICY, before any handshake is attempted', async () => {
-    const broker = createBroker(baseDeps({ dialSecure: createDialTls({ ca: fixtureCa }) }))
+    const broker = createBroker(baseDeps({ resolve: async () => ['127.0.0.1'], dialSecure: createDialTls({ ca: fixtureCa }) }))
     broker.registerApp(APP, manifestWith({ net: { https: { connect: [`localhost:${String(port)}`] } } }))
     await broker.grant(APP, 'https.connect', [`localhost:${String(port)}`])
 
@@ -108,7 +108,7 @@ describe('net.connectSecure end to end against a self-signed server, through the
   })
 
   async function granted (): Promise<ReturnType<typeof createBroker>> {
-    const broker = createBroker(baseDeps({ dialSecure: dialTls }))
+    const broker = createBroker(baseDeps({ resolve: async () => ['127.0.0.1'], dialSecure: dialTls }))
     broker.registerApp(APP, manifestWith({ net: { https: { connect: [`localhost:${String(port)}`] } } }))
     await broker.grant(APP, 'https.connect', [`localhost:${String(port)}`])
     return broker

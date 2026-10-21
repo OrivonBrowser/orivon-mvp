@@ -5,9 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { totalsFor } from '../accounting.js'
 import { deriveInstallId } from '../install-id.js'
 import type { SentPayload } from '../disclosure.js'
+import { NOTICE_CHANGES, NOTICE_VERSION, recordChoice } from '../consent.js'
 import { TelemetryService } from '../service.js'
 import { TelemetryStore } from '../store.js'
 import { SystemStore } from '../system-store.js'
+import { PAYLOAD_SCHEMA } from '../disclosure.js'
 
 const SEC = 1000
 const MACHINE = '0123456789abcdef0123456789abcdef'
@@ -58,6 +60,8 @@ describe('TelemetryService', () => {
   })
 
   afterEach(async () => {
+    // An acceptance starts a send it does not wait for, and that send writes when it ends: let it land before the folder goes.
+    await service.sendNow()
     await rm(dir, { recursive: true, force: true })
   })
 
@@ -99,7 +103,7 @@ describe('TelemetryService', () => {
     await browse(60, 'web3:vitalik.eth')
     await service.sendNow()
     const usage = sent.find((payload) => !('sites' in payload))
-    expect(usage).toMatchObject({ schema: 4, installId: deriveInstallId(MACHINE), stream: 'ab'.repeat(16), country: 'IT', period: '2026-10', activeSec: 60, classes: { web3: 60, web25: 0, web2: 0 } })
+    expect(usage).toMatchObject({ schema: PAYLOAD_SCHEMA, installId: deriveInstallId(MACHINE), stream: 'ab'.repeat(16), country: 'IT', period: '2026-10', activeSec: 60, classes: { web3: 60, web25: 0, web2: 0 } })
     expect(sent.find((payload) => 'sites' in payload)).toMatchObject({ installId: deriveInstallId(MACHINE), stream: 'ab'.repeat(16), sites: { 'web3:vitalik.eth': 60 } })
     expect((await service.status()).sent.length).toBeGreaterThanOrEqual(2)
   })
@@ -183,7 +187,7 @@ describe('TelemetryService', () => {
   })
 
   it('reads a choice another profile made, at the next tick', async () => {
-    await new SystemStore(join(dir, 'home')).writeConsent({ state: 'accepted', atMs: start, noticeVersion: 4, source: 'welcome', everAccepted: true })
+    await new SystemStore(join(dir, 'home')).writeConsent({ state: 'accepted', atMs: start, noticeVersion: NOTICE_VERSION, source: 'welcome', everAccepted: true })
     await service.checkpointTick(focused, true)
     now += 40 * SEC
     await service.checkpointTick(focused, true)
@@ -214,6 +218,18 @@ describe('TelemetryService', () => {
     expect(await service.offerAtWelcome()).toBe(true)
     await service.setOn(false, 'welcome')
     expect(await service.offerAtWelcome()).toBe(false)
+  })
+
+  it('asks again at the start only when an acceptance was given under an older notice, and says what changed', async () => {
+    expect(await service.renewalAtStart()).toBeUndefined()
+    await system.writeConsent(recordChoice('accepted', start, 'welcome', NOTICE_VERSION - 1))
+    expect(await service.renewalAtStart()).toEqual([NOTICE_CHANGES[NOTICE_VERSION]])
+    await system.writeConsent(recordChoice('declined', start, 'welcome', NOTICE_VERSION - 1))
+    expect(await service.renewalAtStart()).toBeUndefined()
+    await system.writeConsent(recordChoice('accepted', start, 'welcome', 1))
+    expect(await service.renewalAtStart()).toEqual(expect.arrayContaining([NOTICE_CHANGES[NOTICE_VERSION]]))
+    await acceptAndSettle()
+    expect(await service.renewalAtStart()).toBeUndefined()
   })
 
   it('writes the counted time to disk at each checkpoint', async () => {

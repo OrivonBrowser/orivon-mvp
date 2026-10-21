@@ -6,17 +6,21 @@ import { createAddressDisplay } from './address-display.js'
 import { createAddressSuggest } from './address-suggest.js'
 import { createBookmarkStar } from './bookmark-star.js'
 import { createBookmarksBar } from './bookmarks-bar.js'
+import { createChromeShown } from './chrome-shown.js'
 import { createCluster } from './cluster.js'
 import { createExtensionsButton } from './extensions-button.js'
 import { createDownloadsButton } from './downloads-button.js'
 import { createHomeButton } from './home-button.js'
+import { createMacWindowButtons } from './mac-window-buttons.js'
 import { createNavigation } from './navigation.js'
 import { createPanes } from './panes.js'
 import { createPasswordKey } from './password-key.js'
 import { createContentDot } from './content-dot.js'
+import { createFilesChip } from './files-chip.js'
 import { createPopupsChip } from './popups-chip.js'
 import { createPromptAnchor } from './prompt-anchor.js'
 import { createReaderButton } from './reader-button.js'
+import { createSearchMode } from './search-mode.js'
 import { createSharingChip } from './sharing-chip.js'
 import { createSidePanelButton } from './side-panel-button.js'
 import { createSiteAccessChip } from './site-access-chip.js'
@@ -27,6 +31,7 @@ import { createTabGroups, decorateTabGroup, placeGroupChips } from './tab-groups
 import { decorateTabSleeping } from './tab-sleeping.js'
 import { createTabSearchButton } from './tab-search-button.js'
 import { createTabStrip } from './tab-strip.js'
+import { createTunnelButton } from './tunnel-button.js'
 
 const panes = createPanes()
 
@@ -43,18 +48,23 @@ export const TAB_DECORATORS: readonly TabDecorator[] = [
 export const CHROME_MODULES: readonly ChromeModule[] = [
   createTabStrip(TAB_DECORATORS, [placeGroupChips]),
   createTabSearchButton(),
+  createMacWindowButtons(),
   createTabGroups(),
   createNavigation(),
   createAddressDisplay(),
   createAddressSuggest(),
+  createSearchMode(),
   createHomeButton(),
   createSiteBadges(),
+  createTunnelButton(),
   createSiteAccessChip(),
   createSharingChip(),
+  createFilesChip(),
   createPopupsChip(),
   createContentDot(),
   createPasswordKey(),
   createPromptAnchor(),
+  createChromeShown(),
   createReaderButton(),
   createCluster(),
   createExtensionsButton(),

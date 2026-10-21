@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ResolutionError } from '../resolution/records.js'
+import { GatewaysOffered, ResolutionError } from '../resolution/records.js'
 import type { NameRecord } from '../resolution/records.js'
 import type { DataGatherer, MountedSite, NameResolver, Namespace } from '../resolution/providers.js'
 import { defineProtocol } from '../protocol.js'
@@ -187,5 +187,28 @@ describe('ProtocolRegistry, for an address scheme', () => {
     expect(registryOf([plain, upper]).canonicalName('foo', 'Abc')).toBe('ABC')
     expect(registryOf([plain]).canonicalName('foo', 'Abc')).toBe('abc')
     expect(() => registryOf([plain]).canonicalName('bar', 'abc')).toThrow(ResolutionError)
+  })
+
+  it("names the first scheme of the protocol that owns a gatherer, and nothing for one whose protocol has no scheme", () => {
+    const gatherer = (id: string): DataGatherer => ({ id, supports: () => true, mount: async () => site(id) })
+    const registry = new ProtocolRegistry([
+      defineProtocol({ id: 'names', schemes: [], topLevelDomains: ['eth'] }, { gatherers: [gatherer('bare')] }),
+      defineProtocol({ id: 'swarmish', schemes: ['bzz', 'other'], topLevelDomains: [] }, { gatherers: [gatherer('chunks')] })
+    ])
+    expect(registry.schemeOfGatherer('chunks')).toBe('bzz')
+    expect(registry.schemeOfGatherer('bare')).toBeUndefined()
+    expect(registry.schemeOfGatherer('unknown')).toBeUndefined()
+  })
+
+  it('keeps an offer of gateways when the only thing wrong is that the content could not be had, and drops it when something worse was found', async () => {
+    const offering = gatherer('node', true, async () => { throw new GatewaysOffered('the node is off') })
+    const asOffered = registryOf([resolver('r', ['.eth'], async () => [record()])], [offering])
+    await expect(asOffered.mount('a.eth', [record()])).rejects.toBeInstanceOf(GatewaysOffered)
+    const lying = gatherer('other', true, async () => { throw new ResolutionError('unverifiable', 'a block did not hash') })
+    const mixed = registryOf([resolver('r', ['.eth'], async () => [record()])], [offering, lying])
+    const failure = await mixed.mount('a.eth', [record()]).catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(ResolutionError)
+    expect(failure).not.toBeInstanceOf(GatewaysOffered)
+    expect((failure as ResolutionError).failure).toBe('unverifiable')
   })
 })

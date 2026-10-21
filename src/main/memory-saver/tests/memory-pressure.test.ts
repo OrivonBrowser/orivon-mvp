@@ -21,6 +21,13 @@ describe('isMemoryLow', () => {
     expect(isMemoryLow({ total: 16 * GB, free: 8 * GB })).toBe(false)
   })
 
+  // macOS: free counts only pages nothing uses; the file cache and purgeable memory come back under pressure.
+  it('counts what macOS can take back as left, besides what it calls free', () => {
+    expect(isMemoryLow({ total: 8 * GB, free: 200 * KB_PER_MB, fileBacked: 3 * GB, purgeable: 0 })).toBe(false)
+    expect(isMemoryLow({ total: 8 * GB, free: 200 * KB_PER_MB, fileBacked: 512 * KB_PER_MB, purgeable: 600 * KB_PER_MB })).toBe(false)
+    expect(isMemoryLow({ total: 8 * GB, free: 200 * KB_PER_MB, fileBacked: 0, purgeable: 0 })).toBe(true)
+  })
+
   it('is not low when the system gives no usable reading', () => {
     expect(isMemoryLow({ total: 0, free: 0 })).toBe(false)
     expect(isMemoryLow({ total: Number.NaN, free: Number.NaN })).toBe(false)

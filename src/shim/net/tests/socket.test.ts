@@ -139,14 +139,14 @@ describe('createConnectFactory -- Node\'s real net.connect overloads', () => {
     const { connect, calls } = factory()
     connect(6881)
     await vi.waitFor(() => expect(calls).toHaveLength(1))
-    expect(calls[0]).toEqual({ host: 'localhost', port: 6881 })
+    expect(calls[0]).toEqual({ host: 'localhost', port: 6881, signal: expect.any(AbortSignal) })
   })
 
   it('(port, host) dials the given host, not "localhost"', async () => {
     const { connect, calls } = factory()
     connect(6881, 'router.bittorrent.com')
     await vi.waitFor(() => expect(calls).toHaveLength(1))
-    expect(calls[0]).toEqual({ host: 'router.bittorrent.com', port: 6881 })
+    expect(calls[0]).toEqual({ host: 'router.bittorrent.com', port: 6881, signal: expect.any(AbortSignal) })
   })
 
   it('(port, cb) dials the default host and still fires the connect listener', async () => {
@@ -154,7 +154,7 @@ describe('createConnectFactory -- Node\'s real net.connect overloads', () => {
     const onConnect = vi.fn()
     connect(6881, onConnect)
     await vi.waitFor(() => expect(calls).toHaveLength(1))
-    expect(calls[0]).toEqual({ host: 'localhost', port: 6881 })
+    expect(calls[0]).toEqual({ host: 'localhost', port: 6881, signal: expect.any(AbortSignal) })
     await vi.waitFor(() => expect(onConnect).toHaveBeenCalledOnce())
   })
 
@@ -163,7 +163,7 @@ describe('createConnectFactory -- Node\'s real net.connect overloads', () => {
     const onConnect = vi.fn()
     connect(6881, 'router.bittorrent.com', onConnect)
     await vi.waitFor(() => expect(calls).toHaveLength(1))
-    expect(calls[0]).toEqual({ host: 'router.bittorrent.com', port: 6881 })
+    expect(calls[0]).toEqual({ host: 'router.bittorrent.com', port: 6881, signal: expect.any(AbortSignal) })
     await vi.waitFor(() => expect(onConnect).toHaveBeenCalledOnce())
   })
 
@@ -171,7 +171,7 @@ describe('createConnectFactory -- Node\'s real net.connect overloads', () => {
     const { connect, calls } = factory()
     connect({ host: 'example.com', port: 80 })
     await vi.waitFor(() => expect(calls).toHaveLength(1))
-    expect(calls[0]).toEqual({ host: 'example.com', port: 80 })
+    expect(calls[0]).toEqual({ host: 'example.com', port: 80, signal: expect.any(AbortSignal) })
   })
 
   it('(options, cb) dials from the options object AND fires the connect listener', async () => {
@@ -179,7 +179,7 @@ describe('createConnectFactory -- Node\'s real net.connect overloads', () => {
     const onConnect = vi.fn()
     connect({ host: 'example.com', port: 80 }, onConnect)
     await vi.waitFor(() => expect(calls).toHaveLength(1))
-    expect(calls[0]).toEqual({ host: 'example.com', port: 80 })
+    expect(calls[0]).toEqual({ host: 'example.com', port: 80, signal: expect.any(AbortSignal) })
     await vi.waitFor(() => expect(onConnect).toHaveBeenCalledOnce())
   })
 })
@@ -217,7 +217,7 @@ describe('new net.Socket(options) then .connect(...)', () => {
     const onConnect = vi.fn()
     expect(socket.connect(8080, 'example.com', onConnect)).toBe(socket)
     await vi.waitFor(() => expect(onConnect).toHaveBeenCalledOnce())
-    expect(calls).toEqual([{ host: 'example.com', port: 8080 }])
+    expect(calls).toEqual([{ host: 'example.com', port: 8080, signal: expect.any(AbortSignal) }])
   })
 
   it('connect(options, cb) reads host and port from the object and ignores what Node would ignore', async () => {
@@ -226,13 +226,13 @@ describe('new net.Socket(options) then .connect(...)', () => {
     const onConnect = vi.fn()
     socket.connect({ host: 'example.com', port: 80, family: 4, localAddress: '0.0.0.0', lookup: () => {}, hints: 0 }, onConnect)
     await vi.waitFor(() => expect(onConnect).toHaveBeenCalledOnce())
-    expect(calls).toEqual([{ host: 'example.com', port: 80 }])
+    expect(calls).toEqual([{ host: 'example.com', port: 80, signal: expect.any(AbortSignal) }])
   })
 
   it('coerces a numeric string port the way Node does', async () => {
     const { calls, dial } = fakeDialer()
     new Socket({ [kDial]: dial }).connect(' 6881', 'peer.example')
-    await vi.waitFor(() => expect(calls).toEqual([{ host: 'peer.example', port: 6881 }]))
+    await vi.waitFor(() => expect(calls).toEqual([{ host: 'peer.example', port: 6881, signal: expect.any(AbortSignal) }]))
   })
 
   it.each([
@@ -396,5 +396,64 @@ describe('net.Socket#setTimeout -- an idle timer', () => {
   it('rejects a negative timeout like Node', () => {
     const socket = new Socket({ [kDial]: fakeDialer().dial })
     expect(() => socket.setTimeout(-1)).toThrow(RangeError)
+  })
+})
+
+describe('a socket destroyed while it is still connecting abandons its dial', () => {
+  /** A dial that never answers by itself and records the signal it was given. */
+  function hungDialer (): { dial: NetDialFn, signals: AbortSignal[] } {
+    const signals: AbortSignal[] = []
+    const dial: NetDialFn = async (opts) => await new Promise((_resolve, reject) => {
+      if (opts.signal === undefined) return
+      signals.push(opts.signal)
+      opts.signal.addEventListener('abort', () => { reject(Object.assign(new Error('abandoned'), { name: 'OrivonError', code: 'closed' })) }, { once: true })
+    })
+    return { dial, signals }
+  }
+
+  it('aborts the dial it started, once, and closes without an error', async () => {
+    const { dial, signals } = hungDialer()
+    const socket = new Socket({ [kDial]: dial })
+    const onError = vi.fn()
+    const onClose = vi.fn()
+    socket.on('error', onError)
+    socket.on('close', onClose)
+    socket.connect(8080, 'peer.example')
+    await vi.waitFor(() => expect(signals).toHaveLength(1))
+
+    socket.destroy()
+
+    expect(signals[0]?.aborted).toBe(true)
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalledOnce())
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(onError).not.toHaveBeenCalled()
+    expect(signals).toHaveLength(1)
+  })
+
+  it('does not abort a dial that already connected', async () => {
+    const fake = createFakeTcpSocket()
+    const signals: Array<AbortSignal | undefined> = []
+    const socket = new Socket({ [kDial]: async (opts) => { signals.push(opts.signal); return fake.socket } })
+    socket.connect(8080, 'peer.example')
+    await vi.waitFor(() => expect(socket.connecting).toBe(false))
+
+    socket.destroy()
+
+    expect(signals[0]?.aborted).toBe(false)
+  })
+
+  it('never starts a dial that was destroyed while it waited in the queue', async () => {
+    const { dial, signals } = hungDialer()
+    const sockets = Array.from({ length: 80 }, () => new Socket({ [kDial]: dial }).on('error', () => {}))
+    for (const socket of sockets) socket.connect(8080, 'peer.example')
+    await vi.waitFor(() => expect(signals.length).toBeGreaterThan(0))
+    const started = signals.length
+
+    for (const socket of sockets) socket.destroy()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(started).toBeLessThan(80)
+    expect(signals).toHaveLength(started)
+    for (const signal of signals) expect(signal.aborted).toBe(true)
   })
 })

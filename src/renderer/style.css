@@ -15,13 +15,17 @@
 @import './styles/tab-badges.css';
 @import './styles/site-access.css';
 @import './styles/content-dot.css';
+@import './styles/tunnel-button.css';
+@import './styles/files-chip.css';
 @import './styles/popups-chip.css';
+@import './styles/search-mode.css';
 @import './styles/sharing-chip.css';
 @import './styles/tab-crashed.css';
 @import './styles/password-key.css';
 @import './styles/tab-groups.css';
 @import './styles/tab-sleeping.css';
 @import './styles/tab-search-button.css';
+@import './styles/mac-window-buttons.css';
 @import './styles/toolbar.css';
 @import './styles/bookmarks.css';
 @import './styles/focus.css';
@@ -53,6 +57,8 @@
   /* Theme-invariant in the reference -- same value both modes. */
   --waccent: #4f46e5;
   --wmark: #ff6900;
+  /* The tunnel button while the page goes through a tunnel. --waccent is indigo; this is purple. */
+  --wtunnel: #7e22ce;
   --wok: #00c950;
   color-scheme: light dark;
 }
@@ -73,6 +79,7 @@
     --wink-off: #6b7280;
     --whover-strong: rgba(255, 255, 255, 0.08);
     --whover-soft: rgba(255, 255, 255, 0.05);
+    --wtunnel: #c084fc;
   }
 }
 
@@ -168,12 +175,15 @@ input:focus-visible:not(.addressbar) {
 .no-drag { -webkit-app-region: no-drag; }
 
 /* Reserved space so the tab strip's own content -- tabs, the + button --
-   never renders underneath Electron's native window buttons. An
-   approximation, not a measurement: env(titlebar-area-*) and
-   navigator.windowControlsOverlay both report empty/false for this
-   shell's BaseWindow + WebContentsView chrome, confirmed empirically
-   (open-questions.md A34). main.ts sets [data-platform] from
-   process.platform, exposed read-only over the chrome preload. */
-[data-platform="darwin"] .tabrow { padding-left: 78px; }
+   never renders underneath Electron's native window buttons.
+   env(titlebar-area-*) and navigator.windowControlsOverlay both report
+   empty/false for this shell's BaseWindow + WebContentsView chrome, so
+   the room is set by hand. macOS is measured: the buttons span x 20-79
+   (window-frame.ts's trafficLightPosition), and the first tab starts the
+   same 9px after them that they keep between each other. Windows and
+   Linux are an approximation (open-questions.md A34). main.ts sets
+   [data-platform] from process.platform, exposed read-only over the
+   chrome preload. */
+[data-platform="darwin"] .tabrow { padding-left: 88px; }
 [data-platform="win32"] .tabrow,
 [data-platform="linux"] .tabrow { padding-right: 138px; }

@@ -163,7 +163,9 @@ export const LIMITS = {
    * holding real bulk data wants `orivon.fs`, whose quota is declared and
    * shown at grant time, not a byte ceiling fixed for every app alike.
    */
-  secretBytes: 64 * 1024
+  secretBytes: 64 * 1024,
+  /** The most `capabilities.devices.hid` filters one manifest may declare (ADR-0068). */
+  hidFilters: 16
 } as const
 
 export type Limits = typeof LIMITS

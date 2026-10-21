@@ -351,12 +351,16 @@ describe('the content address of a bundle fetched from IPFS', () => {
     expect(parsePinRecord(validRaw())).not.toHaveProperty('content')
   })
 
+  it('records a Swarm reference as the content a name led to', () => {
+    expect(parsePinRecord({ ...validRaw(), content: { cid: CID, via: 'swarm', pointersVerified: true } })?.content).toEqual({ cid: CID, via: 'swarm', pointersVerified: true })
+  })
+
   it('may omit the block, as a test fixture name does', () => {
     expect(parsePinRecord({ ...validRaw(), content: { cid: CID, via: 'ipns-key', pointersVerified: true } })?.content).toEqual({ cid: CID, via: 'ipns-key', pointersVerified: true })
   })
 
   it('makes the whole record unreadable when malformed, never silently dropped', () => {
-    for (const bad of [null, 'x', { ...content, cid: 'QmNotBase32' }, { ...content, via: 'swarm' }, { ...content, block: -1 }, { ...content, block: 1.5 }, { cid: CID, via: 'ipfs' }]) {
+    for (const bad of [null, 'x', { ...content, cid: 'QmNotBase32' }, { ...content, via: 'arweave' }, { ...content, block: -1 }, { ...content, block: 1.5 }, { cid: CID, via: 'ipfs' }]) {
       expect(parsePinRecord({ ...validRaw(), content: bad })).toBeNull()
     }
   })

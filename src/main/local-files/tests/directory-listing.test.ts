@@ -29,6 +29,12 @@ describe('renderDirectoryListing', () => {
     expect(page).toContain('%22%3E%3Cscript%3E')
   })
 
+  it('escapes the ampersand of a name that already looks like an entity, so the browser shows the name as it is', () => {
+    const page = renderDirectoryListing('file:///home/u/docs/', [{ name: '&lt;img&gt;&#39;.txt', isDirectory: false }])
+    expect(page).toContain('&amp;lt;img&amp;gt;&amp;#39;.txt')
+    expect(page).not.toContain('>&lt;img')
+  })
+
   it('escapes the folder\'s own path in the title and the heading', () => {
     const page = renderDirectoryListing('file:///home/u/%3Cb%3Ex', [])
     expect(page).not.toContain('<b>x')

@@ -74,7 +74,7 @@ perspective, for a team the owner is reporting to.
 - The bar is *awareness*, not authorship. Something an agent implemented from the owner's
   decision counts. Three fixes the owner has never heard of do not.
 - When unsure whether the owner was aware of an item, keep it and flag it in the chat report
-  under §5 so they can strike it — do not silently guess in either direction.
+  under section 5 so they can strike it — do not silently guess in either direction.
 
 **C. One line per bullet. Brevity is not in tension with rules A and B — it enforces
 them.** The owner has corrected the length twice. Both times the long version came from
@@ -98,7 +98,7 @@ style is telegraphic and result-first. This is the target shape, not a floor to 
 
 ```
 **Weekly update:**
-- Completed the MVP preparation phase: scope, architecture decisions, build plan
+- Completed the first packaging pass: installers, signing notes, release checklist
 - Resolved the three open capability-API defaults (A9)
 - Various alignment & ideas calls with JB
 ```

@@ -8,7 +8,7 @@ import type { ElectronChromeExtensions } from 'orivon:crx-extensions'
 import { setPermissionCheck } from 'orivon:crx-extensions-router'
 import { originFromUrl } from '../../../broker/policy/origin.js'
 import type { SubsystemContext } from '../../registry.js'
-import { shellServices, whenShellServices } from '../extension-host.js'
+import { hostForSession, shellServices, whenShellServices } from '../extension-host.js'
 import { createBaseManifestCache, setBaseManifestSource } from '../base-manifest-source.js'
 import { readBaseManifestText } from '../effective-manifest-runner.js'
 import { getCachedStrippedPermissions, slotDirForLoadedExtension } from '../extensions-dnr.js'
@@ -16,8 +16,8 @@ import { parentOf } from '../extension-popup-policy.js'
 import { sidePanelWindowOf } from '../side-panel-pages.js'
 import { installPermissionCheck, type PermissionHeld } from '../extension-permission-check.js'
 import type { ExtensionPrefsStore } from '../extension-prefs.js'
-import { installExtensionApis } from './api-context.js'
-import { EXTENSION_APIS } from './api-registry.js'
+import { installExtensionApis, type ExtensionApiDeps } from './api-context.js'
+import { EXTENSION_APIS, PROFILE_EXTENSION_APIS } from './api-registry.js'
 
 export interface InstallApisOptions {
   readonly host: ElectronChromeExtensions
@@ -27,8 +27,29 @@ export interface InstallApisOptions {
   readonly prefs: ExtensionPrefsStore
 }
 
-export function installApis (options: InstallApisOptions): PermissionHeld {
+function dependenciesOf (options: InstallApisOptions, held: PermissionHeld): ExtensionApiDeps {
   const { host, session, userDataPath, ctx, prefs } = options
+  return {
+    host,
+    hostFor: hostForSession,
+    session,
+    userDataPath,
+    shell: shellServices,
+    onShell: whenShellServices,
+    extensions: () => ctx.extensions,
+    prefs,
+    held,
+    isAppOrigin: (url) => {
+      const origin = originFromUrl(url)
+      return origin !== null && ctx.broker?.app.hasGrantsSync(origin) === true
+    },
+    webContentsFromId: (id) => webContents.fromId(id),
+    popupParent: (contents) => parentOf(contents) ?? sidePanelWindowOf(contents)
+  }
+}
+
+export function installApis (options: InstallApisOptions): PermissionHeld {
+  const { session, userDataPath, prefs } = options
   const bases = createBaseManifestCache({
     readText: (id) => {
       const slotDir = slotDirForLoadedExtension(userDataPath, id)
@@ -46,21 +67,15 @@ export function installApis (options: InstallApisOptions): PermissionHeld {
     },
     prefs
   }, setPermissionCheck)
-  installExtensionApis({
-    host,
-    session,
-    userDataPath,
-    shell: shellServices,
-    onShell: whenShellServices,
-    extensions: () => ctx.extensions,
-    prefs,
-    held,
-    isAppOrigin: (url) => {
-      const origin = originFromUrl(url)
-      return origin !== null && ctx.broker?.app.hasGrantsSync(origin) === true
-    },
-    webContentsFromId: (id) => webContents.fromId(id),
-    popupParent: (contents) => parentOf(contents) ?? sidePanelWindowOf(contents)
-  }, EXTENSION_APIS)
+  installExtensionApis(dependenciesOf(options, held), EXTENSION_APIS)
   return held
+}
+
+/**
+ * The APIs of the library instance of a profile session. The permission check and the base manifests are the process's, set by
+ * `installApis` (they answer by extension id, and the profile session holds the same extensions), so only the handlers go on the
+ * instance's own router.
+ */
+export function installProfileApis (options: InstallApisOptions, held: PermissionHeld): void {
+  installExtensionApis(dependenciesOf(options, held), PROFILE_EXTENSION_APIS)
 }

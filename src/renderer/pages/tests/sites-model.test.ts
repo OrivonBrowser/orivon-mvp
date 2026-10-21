@@ -32,6 +32,13 @@ describe('a site\'s badges', () => {
     expect(badgesFor(site('https://b.example')).shown).toEqual([])
   })
 
+  it('name the USB devices a site was given first, in the singular for one', () => {
+    expect(badgesFor({ ...SHOP, devices: 1 }).shown[0]).toEqual({ text: '1 device allowed', tone: 'ok' })
+    expect(badgesFor({ origin: 'https://k.example', kinds: [], devices: 2 }).shown).toEqual([{ text: '2 devices allowed', tone: 'ok' }])
+    expect(badgesFor({ ...SHOP, devices: 0 }).shown[0]?.text).toBe('Camera allowed')
+    expect(sentenceFor({ origin: 'https://k.example', kinds: [], devices: 2 })).toBe('k.example: 2 devices allowed')
+  })
+
   it('read as one sentence for a screen reader, with every answer', () => {
     expect(sentenceFor(SHOP)).toBe('shop.example: Camera allowed, Pop-ups allowed, JavaScript blocked, Location blocked, MIDI blocked')
   })

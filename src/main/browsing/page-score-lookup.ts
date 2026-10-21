@@ -6,6 +6,7 @@
 import { fail } from '../../broker/errors.js'
 import { createTokenBucketLimiter } from '../../broker/transport/token-bucket.js'
 import { canonicalCid } from '../../protocols/ipfs/names.js'
+import { parseReference, referenceCid } from '../../protocols/swarm/reference.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { scoreIdOf } from '../../trust/score-provider.js'
 import { judgedLevelCounts } from '../../trust/domain-binding.js'
@@ -23,6 +24,7 @@ const MAX_ADDRESS_CHARS = 2048
 /** Longer than the shield waits: a page asks about many sites at once, and a read that is still under way is shared by the next ask. */
 const HOME_WAIT_MS = 5_000
 const IPFS_ADDRESS = /^ipfs:\/\/([^/?#\s]+)/i
+const SWARM_ADDRESS = /^bzz:\/\/([^/?#\s]+)/i
 const BARE_ETH_ADDRESS = /^[^:/?#\s]+\.eth(?:[/?#]|$)/i
 
 export interface PageScoreDeps extends ScoreProviderDeps {
@@ -30,6 +32,8 @@ export interface PageScoreDeps extends ScoreProviderDeps {
   readonly resolveEthContent: (host: string, partition: string) => Promise<string | undefined>
   /** The manifest of the content `cid` names, read through `origin` (`Loader.manifestAt`); the shield reads it the same way. */
   readonly manifestAt: (origin: string, cid: string) => Promise<ManifestAtRoot>
+  /** Whether `caller` is an app the person routed: its lookups go through its route, and the two reads that cannot (the verifier resolving a name, the loader reading a manifest from a gateway) do not happen. */
+  readonly routedCaller?: (caller: string) => boolean
 }
 
 export interface PageScoreLookup {
@@ -37,7 +41,7 @@ export interface PageScoreLookup {
   readonly websiteScore: (callerOrigin: string, address: string) => Promise<WebsiteScore>
 }
 
-type Named = { readonly kind: 'cid', readonly cid: string } | { readonly kind: 'eth', readonly host: string }
+type Named = { readonly kind: 'cid', readonly scheme: 'ipfs' | 'bzz', readonly cid: string } | { readonly kind: 'eth', readonly host: string }
 
 function ethHostOf (address: string): string | undefined {
   const candidate = /^https:\/\//i.test(address) ? address : BARE_ETH_ADDRESS.test(address) ? `https://${address}` : undefined
@@ -58,7 +62,12 @@ function contentNamedBy (address: string): Named | undefined {
   const ipfs = IPFS_ADDRESS.exec(text)
   if (ipfs !== null) {
     const cid = canonicalCid(ipfs[1]!)
-    return cid === undefined ? undefined : { kind: 'cid', cid }
+    return cid === undefined ? undefined : { kind: 'cid', scheme: 'ipfs', cid }
+  }
+  const swarm = SWARM_ADDRESS.exec(text)
+  if (swarm !== null) {
+    const reference = parseReference(swarm[1]!)
+    return reference === undefined ? undefined : { kind: 'cid', scheme: 'bzz', cid: referenceCid(reference) }
   }
   const host = ethHostOf(text)
   return host === undefined ? undefined : { kind: 'eth', host }
@@ -85,7 +94,7 @@ export function createPageScoreLookup (deps: PageScoreDeps): PageScoreLookup {
   /** The content's root CID, and the origin the shield would show that content at. */
   async function contentOf (named: Named, caller: string): Promise<{ cid: string, origin: string } | undefined> {
     const cid = named.kind === 'cid' ? named.cid : canonicalCid(await deps.resolveEthContent(named.host, caller) ?? '')
-    const origin = named.kind === 'cid' ? BUILTIN_ADDRESSES.originFor('ipfs', named.cid) : `https://${named.host}`
+    const origin = named.kind === 'cid' ? BUILTIN_ADDRESSES.originFor(named.scheme, named.cid) : `https://${named.host}`
     return cid === undefined || origin === undefined ? undefined : { cid, origin }
   }
 
@@ -94,17 +103,20 @@ export function createPageScoreLookup (deps: PageScoreDeps): PageScoreLookup {
     if (configured === '') return { provider: null, level: null }
     const client = clientFor(caller)
     const named = contentNamedBy(address)
+    const routed = deps.routedCaller?.(caller) === true
     let content: { cid: string, origin: string } | undefined
     try {
-      content = named === undefined ? undefined : await contentOf(named, caller)
+      content = named === undefined || (routed && named.kind === 'eth') ? undefined : await contentOf(named, caller)
     } catch {
       content = undefined
     }
-    if (content === undefined) return { provider: await client.providerName() ?? configured, level: null }
-    const verdict = await client.verdictFor(scoreIdOf({ kind: 'cid', value: content.cid }))
+    if (content === undefined) return { provider: await client.providerName(caller) ?? configured, level: null }
+    const verdict = await client.verdictFor(scoreIdOf({ kind: 'cid', value: content.cid }), undefined, caller)
     switch (verdict.status) {
       case 'judged': {
         const level = verdict.evaluation.trustlessity.level
+        // The manifest that binds a level to its host is read from a gateway, which a routed app's lookup may not do.
+        if (routed) return { provider: verdict.provider.name, level: null }
         const home = await readHomeAtRoot(deps.manifestAt, content.origin, content.cid, verdict, HOME_WAIT_MS)
         // A judgement of content counts only at the host its manifest names; elsewhere the page is told what the shield shows: no judged level.
         const counted = judgedLevelCounts(home.binding)

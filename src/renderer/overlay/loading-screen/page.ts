@@ -11,8 +11,15 @@ const ADDRESS_FIT = 44
 
 export function isLoadingScreenView (value: unknown): value is LoadingScreenView {
   if (typeof value !== 'object' || value === null) return false
-  const { title, detail, address } = value as Record<string, unknown>
-  return typeof title === 'string' && typeof detail === 'string' && typeof address === 'string'
+  const { title, detail, address, busy } = value as Record<string, unknown>
+  return typeof title === 'string' && typeof detail === 'string' && typeof address === 'string' && typeof busy === 'boolean'
+}
+
+/** Main sends this when a scheme it learned changes what the address reads. */
+function viewOfEvent (event: unknown): LoadingScreenView | undefined {
+  if (typeof event !== 'object' || event === null) return undefined
+  const { type, view } = event as { type?: unknown, view?: unknown }
+  return type === 'view' && isLoadingScreenView(view) ? view : undefined
 }
 
 export const loadingScreenPage: OverlayPage = {
@@ -21,14 +28,22 @@ export const loadingScreenPage: OverlayPage = {
     column.setAttribute('aria-live', 'polite')
     column.setAttribute('aria-busy', 'true')
     content.append(column)
+    const draw = (view: LoadingScreenView): void => {
+      column.setAttribute('aria-busy', String(view.busy))
+      column.replaceChildren(
+        h('p', { className: 'loading-screen-title' }, view.title),
+        h('p', { className: 'loading-screen-address', title: view.address }, shortenMiddle(view.address, ADDRESS_FIT)),
+        ...(view.busy ? [h('div', { className: 'loading-screen-bar', ariaHidden: 'true' }, h('span', { className: 'loading-screen-slide' }))] : []),
+        ...(view.detail === '' ? [] : [h('p', { className: 'loading-screen-detail' }, view.detail)]))
+    }
+    overlay.onEvent((event) => {
+      const view = viewOfEvent(event)
+      if (view !== undefined) draw(view)
+    })
     return {
       shown (payload) {
         if (!isLoadingScreenView(payload)) { overlay.close(); return }
-        column.replaceChildren(
-          h('p', { className: 'loading-screen-title' }, payload.title),
-          h('p', { className: 'loading-screen-address', title: payload.address }, shortenMiddle(payload.address, ADDRESS_FIT)),
-          h('div', { className: 'loading-screen-bar', ariaHidden: 'true' }, h('span', { className: 'loading-screen-slide' })),
-          ...(payload.detail === '' ? [] : [h('p', { className: 'loading-screen-detail' }, payload.detail)]))
+        draw(payload)
       }
     }
   }

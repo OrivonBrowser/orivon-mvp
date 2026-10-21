@@ -1,18 +1,19 @@
-// The toolbar's popups in the running shell: Escape closes the site card, the Web3 Score page and the all-sites
-// list and hands the keyboard back so Ctrl+F still opens find; the key and the shield swap one popup for the other
-// whichever order they are pressed in, including after the first popup already lost focus to the press. The all-sites
+// The toolbar's popups in the running shell: Escape closes the site card, the Web3 Score page and the Available networks
+// popup and hands the keyboard back so Mod+F still opens find; the key and the shield swap one popup for the other
+// whichever order they are pressed in, including after the first popup already lost focus to the press. The Available networks
 // popup reopens topmost, sized and painted after every way it can have left the window, among them an overlay or a tab
-// switch closing it without a blur, and its page crashing or being destroyed while it shows.
+// switch closing it without a blur, and its page crashing or being destroyed while it shows. On a new tab the shield
+// opens the card that explains the Web3 Score instead.
 // RUN THIS WITH:
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/toolbar/e2e-toolbar-popups.test.ts
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
-import { pressKey, waitForKeyboardAt } from '../support/e2e-helpers.js'
+import { pressKey, waitForKeyboardAt, pressCommand } from '../support/e2e-helpers.js'
 import { distinctColours } from '../support/qa-visual.js'
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
-import { delay, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, delay, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
 
 let server: FixtureServer
 
@@ -26,7 +27,7 @@ afterAll(async () => {
 })
 
 const siteInfoShown = async (app: ElectronApplication): Promise<boolean> => await popoverShown(app, '/site-info/')
-const permissionsShown = async (app: ElectronApplication): Promise<boolean> => await popoverShown(app, '/permissions/')
+const networksShown = async (app: ElectronApplication): Promise<boolean> => await popoverShown(app, '/networks/')
 const findShown = async (app: ElectronApplication): Promise<boolean> => await popoverShown(app, 'overlay=find')
 
 /** The tab at `urlPart` holds the keyboard. */
@@ -56,14 +57,14 @@ async function shownPage (app: ElectronApplication): Promise<string | undefined>
 
 async function expectFindOpensOnTheTab (app: ElectronApplication): Promise<void> {
   expect(await waitFor(async () => await tabFocused(app, server.origin))).toBe(true)
-  await pressKey(app, server.origin, 'F', ['control'])
+  await pressCommand(app, server.origin, 'find.open')
   expect(await waitFor(async () => await findShown(app))).toBe(true)
   expect(await waitForKeyboardAt(app, 'overlay=find')).toBe(true)
   await pressKey(app, 'overlay=find', 'Escape')
   expect(await waitFor(async () => !(await findShown(app)))).toBe(true)
 }
 
-it('Escape closes the key popup and the shield popup, and Ctrl+F then opens find in the page', async () => {
+it('Escape closes the key popup and the shield popup, and Mod+F then opens find in the page', async () => {
   const { app, chrome } = await launchShell()
   try {
     await ready(app, chrome)
@@ -82,22 +83,22 @@ it('Escape closes the key popup and the shield popup, and Ctrl+F then opens find
   }
 }, QA_TEST_TIMEOUT_MS)
 
-it('Escape closes the all-sites popup and gives the keyboard back to the page', async () => {
+it('Escape closes the Available networks popup and gives the keyboard back to the page', async () => {
   const { app, chrome } = await launchShell()
   try {
     await ready(app, chrome)
-    await chrome.locator('#permissions-btn').click()
-    expect(await waitFor(async () => await permissionsShown(app))).toBe(true)
-    expect(await waitForKeyboardAt(app, '/permissions/')).toBe(true)
-    await pressKey(app, '/permissions/', 'Escape')
-    expect(await waitFor(async () => !(await permissionsShown(app)))).toBe(true)
+    await chrome.locator('#networks-btn').click()
+    expect(await waitFor(async () => await networksShown(app))).toBe(true)
+    expect(await waitForKeyboardAt(app, '/networks/')).toBe(true)
+    await pressKey(app, '/networks/', 'Escape')
+    expect(await waitFor(async () => !(await networksShown(app)))).toBe(true)
     await expectFindOpensOnTheTab(app)
   } finally {
     await closeElectron(app)
   }
 }, QA_TEST_TIMEOUT_MS)
 
-it('a popup closed by the window resizing hands the keyboard back, so Ctrl+F still opens find', async () => {
+it('a popup closed by the window resizing hands the keyboard back, so Mod+F still opens find', async () => {
   const { app, chrome } = await launchShell()
   try {
     await ready(app, chrome)
@@ -159,42 +160,39 @@ it('the other icon swaps the popup, after the first lost focus to the press and 
   }
 }, QA_TEST_TIMEOUT_MS)
 
-/** What a reopened all-sites popup must be: the topmost child of its window, with a real size, painting more than one colour. */
-async function expectPermissionsOnScreen (app: ElectronApplication, path: string): Promise<void> {
+/** What a reopened Available networks popup must be: the topmost child of its window, with a real size, painting more than one colour. */
+async function expectNetworksOnScreen (app: ElectronApplication, path: string): Promise<void> {
   const top = await app.evaluate(({ BaseWindow }) => {
     const view = BaseWindow.getAllWindows()[0]?.contentView.children.at(-1) as { webContents?: { getURL: () => string }, getBounds: () => { width: number, height: number } } | undefined
     return view === undefined ? null : { url: view.webContents?.getURL() ?? '', bounds: view.getBounds() }
   })
-  expect({ path, topmost: top?.url.includes('/permissions/') }).toEqual({ path, topmost: true })
+  expect({ path, topmost: top?.url.includes('/networks/') }).toEqual({ path, topmost: true })
   expect(top?.bounds.width ?? 0).toBeGreaterThan(100)
   expect(top?.bounds.height ?? 0).toBeGreaterThan(100)
-  const page = app.windows().find((w) => w.url().includes('/permissions/'))
+  const page = app.windows().find((w) => w.url().includes('/networks/'))
   expect(page).toBeDefined()
-  await page?.waitForSelector('#site-settings-link')
+  await page?.waitForSelector('.card')
   expect({ path, colours: distinctColours(await (page as NonNullable<typeof page>).screenshot()) > 3 }).toEqual({ path, colours: true })
 }
 
-it('the all-sites popup reopens on screen after every way it can have been closed', async () => {
+it('the Available networks popup reopens on screen after every way it can have been closed', async () => {
   const { app, chrome } = await launchShell()
   try {
     await ready(app, chrome)
     const open = async (): Promise<void> => {
       // Past the debounce that reads a toggle just after a blur close as that close's echo.
       await delay(450)
-      await chrome.locator('#permissions-btn').click()
-      expect(await waitFor(async () => await permissionsShown(app))).toBe(true)
+      await chrome.locator('#networks-btn').click()
+      expect(await waitFor(async () => await networksShown(app))).toBe(true)
     }
     const closedBy: Record<string, () => Promise<void>> = {
-      'the button again': async () => { await chrome.locator('#permissions-btn').click() },
+      'the button again': async () => { await chrome.locator('#networks-btn').click() },
       'a click into the page': async () => {
         await app.evaluate(({ webContents }) => { webContents.getAllWebContents().find((wc) => wc.getType() === 'window' && /\/newtab\/|127\.0\.0\.1/.test(wc.getURL()))?.focus() })
       },
       Escape: async () => {
-        expect(await waitForKeyboardAt(app, '/permissions/')).toBe(true)
-        await pressKey(app, '/permissions/', 'Escape')
-      },
-      'All site settings': async () => {
-        await app.windows().find((w) => w.url().includes('/permissions/'))?.locator('#site-settings-link').click()
+        expect(await waitForKeyboardAt(app, '/networks/')).toBe(true)
+        await pressKey(app, '/networks/', 'Escape')
       },
       'the window losing focus': async () => {
         await app.evaluate(({ BaseWindow }) => { BaseWindow.getAllWindows()[0]?.blur() })
@@ -203,51 +201,51 @@ it('the all-sites popup reopens on screen after every way it can have been close
     }
 
     await open()
-    await expectPermissionsOnScreen(app, 'first open')
+    await expectNetworksOnScreen(app, 'first open')
     for (const [path, close] of Object.entries(closedBy)) {
       await close()
-      expect({ path, closed: await waitFor(async () => !(await permissionsShown(app))) }).toEqual({ path, closed: true })
+      expect({ path, closed: await waitFor(async () => !(await networksShown(app))) }).toEqual({ path, closed: true })
       await open()
-      await expectPermissionsOnScreen(app, path)
+      await expectNetworksOnScreen(app, path)
     }
   } finally {
     await closeElectron(app)
   }
 }, 90_000)
 
-/** The all-sites popup's webContents id, or undefined while none exists. */
-async function permissionsContentsId (app: ElectronApplication): Promise<number | undefined> {
-  return await app.evaluate(({ webContents }) => webContents.getAllWebContents().find((wc) => wc.getURL().includes('/permissions/'))?.id)
+/** The Available networks popup's webContents id, or undefined while none exists. */
+async function networksContentsId (app: ElectronApplication): Promise<number | undefined> {
+  return await app.evaluate(({ webContents }) => webContents.getAllWebContents().find((wc) => wc.getURL().includes('/networks/'))?.id)
 }
 
-async function openPermissions (app: ElectronApplication, chrome: Page): Promise<void> {
+async function openNetworks (app: ElectronApplication, chrome: Page): Promise<void> {
   // Past the debounce that reads a toggle just after a blur close as that close's echo.
   await delay(450)
-  await chrome.locator('#permissions-btn').click()
-  expect(await waitFor(async () => await permissionsShown(app))).toBe(true)
+  await chrome.locator('#networks-btn').click()
+  expect(await waitFor(async () => await networksShown(app))).toBe(true)
 }
 
-it('the all-sites popup reopens on screen after another overlay, a tab switch or the site card took its place', async () => {
+it('the Available networks popup reopens on screen after another overlay, a tab switch or the site card took its place', async () => {
   const { app, chrome } = await launchShell()
   try {
     await ready(app, chrome)
     const closedBy: Record<string, () => Promise<void>> = {
       // Pressed inside the popup, which holds the keyboard: the overlay host closes it, no blur first.
       'the find bar opening': async () => {
-        expect(await waitForKeyboardAt(app, '/permissions/')).toBe(true)
-        await pressKey(app, '/permissions/', 'F', ['control'])
+        expect(await waitForKeyboardAt(app, '/networks/')).toBe(true)
+        await pressCommand(app, '/networks/', 'find.open')
         expect(await waitFor(async () => await findShown(app))).toBe(true)
         expect(await waitForKeyboardAt(app, 'overlay=find')).toBe(true)
         await pressKey(app, 'overlay=find', 'Escape')
         expect(await waitFor(async () => !(await findShown(app)))).toBe(true)
       },
       'a new tab': async () => {
-        expect(await waitForKeyboardAt(app, '/permissions/')).toBe(true)
-        await pressKey(app, '/permissions/', 'T', ['control'])
+        expect(await waitForKeyboardAt(app, '/networks/')).toBe(true)
+        await pressCommand(app, '/networks/', 'tab.new')
       },
       'a tab switch': async () => {
-        expect(await waitForKeyboardAt(app, '/permissions/')).toBe(true)
-        await pressKey(app, '/permissions/', 'Tab', ['control'])
+        expect(await waitForKeyboardAt(app, '/networks/')).toBe(true)
+        await pressCommand(app, '/networks/', 'tab.next')
       },
       'the site card opening': async () => {
         await chrome.locator('#site-permissions-btn').click()
@@ -266,45 +264,111 @@ it('the all-sites popup reopens on screen after another overlay, a tab switch or
       }
     }
 
-    await openPermissions(app, chrome)
+    await openNetworks(app, chrome)
     for (const [path, close] of Object.entries(closedBy)) {
       await close()
-      expect({ path, closed: await waitFor(async () => !(await permissionsShown(app))) }).toEqual({ path, closed: true })
-      await openPermissions(app, chrome)
-      await expectPermissionsOnScreen(app, path)
+      expect({ path, closed: await waitFor(async () => !(await networksShown(app))) }).toEqual({ path, closed: true })
+      await openNetworks(app, chrome)
+      await expectNetworksOnScreen(app, path)
     }
   } finally {
     await closeElectron(app)
   }
 }, 120_000)
 
-it('the all-sites popup reopens on screen after its renderer crashed or its contents were destroyed while it showed', async () => {
+it('the Available networks popup reopens on screen after its renderer crashed or its contents were destroyed while it showed', async () => {
   const { app, chrome } = await launchShell()
   try {
     await ready(app, chrome)
     const brokenBy: Record<string, () => Promise<void>> = {
       'the renderer crashing': async () => {
-        await app.evaluate(({ webContents }) => { webContents.getAllWebContents().find((wc) => wc.getURL().includes('/permissions/'))?.forcefullyCrashRenderer() })
+        await app.evaluate(({ webContents }) => { webContents.getAllWebContents().find((wc) => wc.getURL().includes('/networks/'))?.forcefullyCrashRenderer() })
       },
       'the contents being destroyed': async () => {
-        await app.evaluate(({ webContents }) => { webContents.getAllWebContents().find((wc) => wc.getURL().includes('/permissions/'))?.close({ waitForBeforeUnload: false }) })
+        await app.evaluate(({ webContents }) => { webContents.getAllWebContents().find((wc) => wc.getURL().includes('/networks/'))?.close({ waitForBeforeUnload: false }) })
       }
     }
     for (const [path, breakIt] of Object.entries(brokenBy)) {
-      await openPermissions(app, chrome)
-      await expectPermissionsOnScreen(app, `${path}: first open`)
-      const before = await permissionsContentsId(app)
+      await openNetworks(app, chrome)
+      await expectNetworksOnScreen(app, `${path}: first open`)
+      const before = await networksContentsId(app)
       await breakIt()
       // A popup that lost its page takes itself off the window, so the person's next click opens a new one.
-      expect({ path, closed: await waitFor(async () => !(await permissionsShown(app))) }).toEqual({ path, closed: true })
-      await openPermissions(app, chrome)
-      await expectPermissionsOnScreen(app, path)
-      expect({ path, rebuilt: (await permissionsContentsId(app)) !== before }).toEqual({ path, rebuilt: true })
-      expect(await waitForKeyboardAt(app, '/permissions/')).toBe(true)
-      await pressKey(app, '/permissions/', 'Escape')
-      expect(await waitFor(async () => !(await permissionsShown(app)))).toBe(true)
+      expect({ path, closed: await waitFor(async () => !(await networksShown(app))) }).toEqual({ path, closed: true })
+      await openNetworks(app, chrome)
+      await expectNetworksOnScreen(app, path)
+      expect({ path, rebuilt: (await networksContentsId(app)) !== before }).toEqual({ path, rebuilt: true })
+      expect(await waitForKeyboardAt(app, '/networks/')).toBe(true)
+      await pressKey(app, '/networks/', 'Escape')
+      expect(await waitFor(async () => !(await networksShown(app)))).toBe(true)
     }
   } finally {
     await closeElectron(app)
   }
 }, 120_000)
+
+it('the question marks of the shield popup are buttons that open the Web3 Score guide in a new tab in front, and the popup gives way', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    await ready(app, chrome)
+    // The pill's mark is a control only while it reads "Web?"; on a plain page it reads Web2 and does nothing.
+    expect(await chrome.evaluate(() => { const mark = document.querySelector<HTMLButtonElement>('#web3-mark'); return { tag: mark?.tagName, text: mark?.textContent, disabled: mark?.disabled } })).toEqual({ tag: 'BUTTON', text: 'Web2', disabled: true })
+    await chrome.locator('#web3-score-btn').click()
+    expect(await waitFor(async () => await shownPage(app) === 'web3')).toBe(true)
+    const popup = app.windows().find((w) => w.url().includes('/site-info/')) as Page
+    await popup.waitForSelector('.level-list .rung.unknown .rung-help')
+    const marks = await popup.evaluate(() => [...document.querySelectorAll<HTMLButtonElement>('.rung.unknown .rung-help')].map((el) => ({ tag: el.tagName, text: el.textContent, title: el.title, name: el.getAttribute('aria-label') ?? '', tabbable: el.tabIndex >= 0 })))
+    expect(marks.length).toBeGreaterThanOrEqual(3)
+    for (const mark of marks) expect(mark).toMatchObject({ tag: 'BUTTON', text: '?', title: 'What the Web3 Score levels mean', tabbable: true })
+    expect(marks.every((mark) => mark.name.endsWith('What the Web3 Score levels mean'))).toBe(true)
+
+    await popup.locator('.level-list .rung-help').first().click()
+    const guide = 'https://docs.orivonstack.eth/docs/using/web3-score'
+    expect(await waitFor(async () => await app.evaluate(({ webContents }, address) => webContents.getAllWebContents().some((wc) => wc.getURL() === address), guide))).toBe(true)
+    expect(await waitFor(async () => !(await siteInfoShown(app)))).toBe(true)
+    expect(await waitFor(async () => (await chrome.locator('#address').inputValue()).includes('docs.orivonstack.eth'))).toBe(true)
+  } finally {
+    await closeElectron(app)
+  }
+}, 120_000)
+
+it('on a new tab the shield opens the card that explains the Web3 Score, closes it on a second click, and leads to the provider setting', async () => {
+  const { app, chrome } = await launchShell()
+  const cardShown = async (): Promise<boolean> => await popoverShown(app, 'overlay=web3-score')
+  try {
+    expect(await waitFor(async () => (await chrome.locator('#address').inputValue()) === '' && app.windows().some((w) => w.url().includes('/newtab/')))).toBe(true)
+
+    await chrome.locator('#web3-score-btn').click()
+    expect(await waitFor(cardShown)).toBe(true)
+    expect(await siteInfoShown(app), 'there is no site, so no site card').toBe(false)
+    const card = app.windows().find((w) => w.url().includes('overlay=web3-score')) as Page
+    // The card counts as shown when it is attached, before its page has mounted the rows.
+    await card.waitForSelector('.ws-level')
+    const levels = await card.evaluate(() => [...document.querySelectorAll('.ws-level')].map((row) => ({
+      shield: row.querySelector<SVGElement>('.web3-shield')?.dataset['level'],
+      mark: row.querySelector('.web3-mark')?.textContent,
+      meaning: (row.querySelector('.ws-level-meaning')?.textContent ?? '').length > 0
+    })))
+    expect(levels).toEqual([
+      { shield: '1', mark: 'Web2', meaning: true },
+      { shield: '2', mark: 'Web2.5', meaning: true },
+      { shield: '3', mark: 'Web2.5', meaning: true },
+      { shield: '4', mark: 'Web3', meaning: true }
+    ])
+
+    // The press takes the focus the card holds and closes it; the click it ends must not open it again.
+    await chrome.locator('#web3-score-btn').click()
+    expect(await waitFor(async () => !(await cardShown()))).toBe(true)
+    await delay(ABSENCE_SETTLE_MS)
+    expect(await cardShown(), 'a second click leaves the card closed').toBe(false)
+
+    await chrome.locator('#web3-score-btn').click()
+    expect(await waitFor(cardShown)).toBe(true)
+    const reopened = app.windows().find((w) => w.url().includes('overlay=web3-score')) as Page
+    await reopened.getByRole('button', { name: 'Choose a score provider' }).click()
+    expect(await waitFor(async () => !(await cardShown()))).toBe(true)
+    expect(await waitFor(async () => (await chrome.locator('#address').inputValue()).includes('settings/web3'))).toBe(true)
+  } finally {
+    await closeElectron(app)
+  }
+}, QA_TEST_TIMEOUT_MS)

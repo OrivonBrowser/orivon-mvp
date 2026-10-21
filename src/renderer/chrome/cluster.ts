@@ -1,20 +1,25 @@
 import type { ShellState } from '../../main/shell/tabs.js'
 import type { ChromeContext, ChromeModule } from './context.js'
-import { hasSite, must } from './context.js'
+import { must } from './context.js'
 
-/** The bookmark star, the zoom chip, and the toolbar's right end: the all-sites permissions button, the
+/** The bookmark star, the zoom chip, and the toolbar's right end: the Available networks button, the
  * profile chip and the menu button. */
 export function createCluster (): ChromeModule {
   let bookmarkToggle: HTMLButtonElement | undefined
   let zoomChip: HTMLButtonElement | undefined
   let profileChip: HTMLButtonElement | undefined
+  let networksDot: HTMLElement | undefined
 
   function renderProfile (profile: ShellState['profile']): void {
     if (profileChip === undefined) return
     profileChip.hidden = !profile.shown
     profileChip.dataset['color'] = profile.color
     profileChip.textContent = profile.name
-    profileChip.title = profile.isPrivate ? 'A private window: what it keeps, and what it does not' : `Profile: ${profile.name}`
+    if (profile.tunnel === undefined) delete profileChip.dataset['tunnel']
+    else profileChip.dataset['tunnel'] = profile.tunnel
+    profileChip.title = profile.tunnel === 'nym'
+      ? 'A private window that goes through Nym only: what it keeps, and what it does not'
+      : profile.isPrivate ? 'A private window: what it keeps, and what it does not' : `Profile: ${profile.name}`
   }
 
   function wireMenu (menuBtn: HTMLButtonElement, ctx: ChromeContext): void {
@@ -42,7 +47,7 @@ export function createCluster (): ChromeModule {
     init: (ctx) => {
       const { shell } = ctx
       const toggle = must(document.querySelector<HTMLButtonElement>('#bookmark-toggle'), '#bookmark-toggle missing')
-      const permissionsBtn = must(document.querySelector<HTMLButtonElement>('#permissions-btn'), '#permissions-btn missing')
+      const networksBtn = must(document.querySelector<HTMLButtonElement>('#networks-btn'), '#networks-btn missing')
       const chip = must(document.querySelector<HTMLButtonElement>('#zoom-chip'), '#zoom-chip missing')
       const profile = must(document.querySelector<HTMLButtonElement>('#profile-chip'), '#profile-chip missing')
       const menuBtn = must(document.querySelector<HTMLButtonElement>('#menu'), '#menu missing')
@@ -50,14 +55,9 @@ export function createCluster (): ChromeModule {
       zoomChip = chip
       profileChip = profile
 
-      // The all-sites popup: always the full list, scrolled to whichever app the CURRENT tab is when there is
-      // one. A URL that belongs to no app is harmless -- settings/main.ts finds no card to scroll to and
-      // renders the list unscrolled, which is the ordinary open.
-      permissionsBtn.addEventListener('pointerdown', (event) => { if (event.button === 0) shell.press('permissions') })
-      permissionsBtn.addEventListener('click', () => {
-        const active = ctx.activeTab()
-        shell.openPermissions(ctx.anchorFor(permissionsBtn), hasSite(active) ? active.url : undefined)
-      })
+      // The Available networks popup: the same list whichever tab is in front.
+      networksBtn.addEventListener('pointerdown', (event) => { if (event.button === 0) shell.press('networks') })
+      networksBtn.addEventListener('click', () => { shell.openNetworks(ctx.anchorFor(networksBtn)) })
       chip.addEventListener('click', () => { shell.runCommand('zoom.reset') })
       profile.addEventListener('click', () => { shell.openInternal(ctx.state()?.profile.isPrivate === true ? 'private' : 'profiles') })
       wireMenu(menuBtn, ctx)
@@ -72,6 +72,8 @@ export function createCluster (): ChromeModule {
         zoomChip.hidden = state.zoomPercent === null
         if (state.zoomPercent !== null) zoomChip.textContent = `${String(state.zoomPercent)}%`
       }
+      networksDot ??= document.querySelector<HTMLElement>('#networks-btn .networks-dot') ?? undefined
+      if (networksDot !== undefined) networksDot.dataset['dot'] = state.networksDot
       document.documentElement.dataset['private'] = String(state.profile.isPrivate)
       renderProfile(state.profile)
     }

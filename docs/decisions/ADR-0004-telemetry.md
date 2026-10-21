@@ -44,7 +44,7 @@ changes below remove and keep):
 
 1. **`activeSec` is split from `backgroundSec`, and the metric is stated on `activeSec`**
    (owner decision). The previous `durationSec` measured how long the app was *open*, and a
-   torrent client seeds in the background by design, so 25 h/month was satisfiable by a user
+   torrent client seeds in the background by design, so the active-use threshold was satisfiable by a user
    who pasted one magnet and walked away. The metric could not distinguish a daily driver from
    an idle process, making the central hypothesis unfalsifiable in its own favour.
 2. **Monthly aggregate replaces the session array.** Per-session `startedAt` against a stable
@@ -68,24 +68,23 @@ fingerprint. (ADR-0063 adds one device-derived identifier, a keyed one-way hash 
 ID, read only after consent.)
 
 ## Context
-The MVP's success metric is **100 active users in EU/USA at 25 hours/month each**. That
+The success metric (its numbers are kept privately) counts active users over a month. That
 cannot be validated without per-user monthly usage data, so *some* stable identifier and
-*some* duration measurement are unavoidable. The target audience, Monero, Tor and
-Bitcoin-maximalist users, is the most telemetry-hostile population on the internet and will
-actively look for this.
+*some* duration measurement are unavoidable. The privacy-minded people Orivon
+serves are the most telemetry-hostile population on the internet and will actively look for this.
 
 Owner's position: anonymised, non-invasive data (country and usage) is acceptable, and
 measurement efficiency matters more than the opt-in ceremony.
 
 ## Alternatives considered
 - **Opt-in (previously accepted, now rejected by the owner).** Converts 30-60%, which would
-  have required 200-300 installs to measure 100 users. Rejected as too lossy for a
+  have required several times more installs to measure the same users. Rejected as too lossy for a
   single-month validation window where the sample is small and the metric is the point.
 - **No telemetry at all.** Rejected: it would make the MVP's central hypothesis
   unfalsifiable. Measuring is the reason for building it.
 - **Disclosed opt-out** (on, with a way to turn it off). Rejected: an identifier that is sent
   before the person answers is not consent in the EU. A box that starts ticked is the same thing
-  in a smaller form, and the choice that stands is two equal buttons ([ADR-0063](ADR-0063-telemetry-v2.md) §Alternatives).
+  in a smaller form, and the choice that stands is two equal buttons ([ADR-0063](ADR-0063-telemetry-v2.md) section Alternatives).
 - **Silent opt-out** (no first-run disclosure). Rejected. It retains essentially the same data
   as *disclosed* opt-out while carrying all of the reputational risk, and is strictly dominated.
 - **A third-party analytics SaaS** (Google Analytics, Mixpanel, PostHog Cloud). Rejected
@@ -127,7 +126,7 @@ story. The data collected is identical either way, so there is no cost to announ
 - The explicit choice keeps more installs than opt-in, by an amount not yet measured. The
   honest requirement is in the thousands of downloads, because consent, retention and activation
   all discount it; sizing it is owner-side work (`scope.md`).
-- **The metric resolves around month 3.** 25 h/month cannot be observed until ~30 days after
+- **The metric resolves around month 3.** The monthly threshold cannot be observed until ~30 days after
   ship. The build month produces a shipped product, not a measured result.
 - Requires a small self-hosted ingest endpoint, the only server Orivon operates. It must not
   log IPs. (ADR-0063 withdraws the promise to publish its configuration: the server's source is

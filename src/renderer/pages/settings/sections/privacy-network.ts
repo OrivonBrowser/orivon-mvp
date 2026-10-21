@@ -59,17 +59,18 @@ export const privacyNetworkRows: readonly Row[] = [
   {
     id: 'secure-dns',
     label: 'Secure DNS',
-    help: 'Looks up site addresses over an encrypted connection, so the network you are on cannot see or change them. .eth names are resolved separately and are not affected.',
+    help: 'Looks up site addresses over an encrypted connection, so the network you are on cannot see or change them. By default Orivon asks Quad9, a non-profit resolver, and if Quad9 cannot be reached it uses this computer\'s own DNS, so a network that blocks Quad9 still works. Quad9 learns the names of the sites you open, as your network\'s DNS did. Sites you send through a tunnel are looked up at the tunnel\'s far end, never here, and .eth names are resolved separately.',
     keywords: ['dns', 'doh', 'dns over https', 'cloudflare', 'quad9', 'resolver', 'lookup', 'encrypted dns', 'provider'],
     group: GROUP,
     control: {
       type: 'choice',
       key: 'privacy.secureDns',
       options: [
+        { value: 'quad9Fallback', label: 'Quad9, or this computer\'s DNS if Quad9 cannot be reached' },
         { value: 'off', label: 'Off (use this computer\'s DNS)' },
         { value: 'automatic', label: 'Automatic (use secure DNS when the provider offers it)' },
-        { value: 'cloudflare', label: 'Cloudflare (1.1.1.1)' },
-        { value: 'quad9', label: 'Quad9 (9.9.9.9)' }
+        { value: 'cloudflare', label: 'Cloudflare only (1.1.1.1)' },
+        { value: 'quad9', label: 'Quad9 only (9.9.9.9)' }
       ]
     }
   }

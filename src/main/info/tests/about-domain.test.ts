@@ -4,28 +4,35 @@ import { infoDomain } from '../about-domain.js'
 import type { AboutFacts } from '../about-info.js'
 
 const FACTS: AboutFacts = {
-  orivon: '1.0.0', electron: '44', chromium: '152', node: '24', v8: '15', platform: 'linux', osVersion: '6', arch: 'x64',
+  orivon: '1.0.0', commit: 'abc', electron: '44', chromium: '152', node: '24', v8: '15', platform: 'linux', osVersion: '6', arch: 'x64',
   language: 'en', userAgent: 'UA', commandLine: 'orivon', programPath: '/o', profilePath: '/p', downloadsPath: '/d', isPrivate: false
 }
 const CALLER = {} as InternalCaller
+const RELEASE = { version: '1.0.0', notes: { version: '1.0.0', sections: [{ heading: 'Added', items: ['**A**: b'] }] } }
 
 function setup (gpu: () => Promise<{ status: unknown, info: unknown }> = async () => ({ status: { webgl: 'enabled' }, info: { gpuDevice: [{ active: true, vendorId: 0x8086 }] } })): {
   call: (command: unknown) => Promise<unknown>, copy: ReturnType<typeof vi.fn>
 } {
   const copy = vi.fn()
-  const domain = infoDomain({ facts: () => FACTS, gpu, copy })
+  const domain = infoDomain({ facts: () => FACTS, gpu, copy, release: () => RELEASE })
   return { call: async (command) => await domain.handle(command, CALLER), copy }
 }
 
 describe('the About domain', () => {
   it('is for the About page alone', () => {
-    expect(infoDomain({ facts: () => FACTS, gpu: async () => ({ status: {}, info: {} }), copy: () => {} }).pages).toEqual(['about'])
+    expect(infoDomain({ facts: () => FACTS, gpu: async () => ({ status: {}, info: {} }), copy: () => {}, release: () => RELEASE }).pages).toEqual(['about'])
+  })
+
+  it('answers what this version changed, and an empty list for a build with no notes', async () => {
+    expect(await setup().call({ type: 'whatsnew' })).toEqual({ version: '1.0.0', sections: [{ heading: 'Added', items: ['**A**: b'] }] })
+    const bare = infoDomain({ facts: () => FACTS, gpu: async () => ({ status: {}, info: {} }), copy: () => {}, release: () => ({ version: '0.0.0', notes: null }) })
+    expect(await bare.handle({ type: 'whatsnew' }, CALLER)).toEqual({ version: '0.0.0', sections: [] })
   })
 
   it('answers the version table', async () => {
     const reply = await setup().call({ type: 'version' }) as { rows: Array<{ label: string }> }
     expect(reply.rows[0]?.label).toBe('Orivon')
-    expect(reply.rows).toHaveLength(12)
+    expect(reply.rows).toHaveLength(13)
   })
 
   it('answers the graphics report with features, devices and the raw text', async () => {

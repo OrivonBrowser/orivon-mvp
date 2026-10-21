@@ -3,12 +3,14 @@ import { barFolder, barItems, barMenu, barMove, barOpen } from './bookmarks-bar/
 import { omniboxClose, omniboxPick, omniboxQuery, omniboxSelect } from '../omnibox/omnibox-actions.js'
 import { sharingBar } from '../display-capture/indicators/sharing-action.js'
 import { passwordsKey } from '../passwords/passwords-key-action.js'
+import { chromeHidden } from './actions/chrome-hidden.js'
 import { homeOpen } from './actions/home-open.js'
 import { groupMenu, groupMove, groupToggle } from './actions/tab-group.js'
 import { overlayClose, overlayToggle } from './actions/overlay.js'
 import { paneLeave } from './actions/pane-leave.js'
 import { promptAnchorReport } from './actions/prompt-anchor.js'
 import { tabMute } from './actions/tab-mute.js'
+import { web3ScoreHelp } from '../web3-score/web3-score-help-action.js'
 import type { PressButton } from './press-stamps.js'
 import type { WindowContext } from './window-context.js'
 
@@ -30,6 +32,7 @@ export const CHROME_ACTIONS: Readonly<Record<string, ChromeAction>> = {
   'bookmarks.menu': barMenu,
   'bookmarks.move': barMove,
   'bookmarks.open': barOpen,
+  'chrome.hidden': chromeHidden,
   'group.menu': groupMenu,
   'group.move': groupMove,
   'group.toggle': groupToggle,
@@ -44,7 +47,8 @@ export const CHROME_ACTIONS: Readonly<Record<string, ChromeAction>> = {
   'passwords.key': passwordsKey,
   'prompt.anchor': promptAnchorReport,
   'sharing.bar': sharingBar,
-  'tab.mute': tabMute
+  'tab.mute': tabMute,
+  'web3-score.help': web3ScoreHelp
 }
 
 /** Runs the action called `name`. Own keys only: `constructor` or `__proto__` from a renderer must not

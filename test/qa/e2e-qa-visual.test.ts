@@ -13,6 +13,7 @@
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
@@ -24,6 +25,7 @@ import { answerQuestion, noNativeDialogs, readQuestion, stubNativeDialogs, waitQ
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from '../support/qa-helpers.js'
 import { captureState, checkState, prepareWindow, type Check, type Rect, type StateSpec } from '../support/qa-visual.js'
 import { ABSENCE_SETTLE_MS, delay, evaluateRetrying, findChrome, findViewShowing, popoverShown, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { fuseFilePath, readFileProtocolFuse } from '../../src/main/local-files/file-fuse.js'
 
 /** The address text of a fixture page: its port changes on every run. */
 const FIXTURE_ADDRESS: Rect = { x: 240, y: 44, width: 260, height: 24 }
@@ -31,6 +33,9 @@ const FIXTURE_ADDRESS: Rect = { x: 240, y: 44, width: 260, height: 24 }
 /** Where a question panel names its origin, whose port changes on every run: the header of a consent question, and the header of a page's own question. */
 const CONSENT_ORIGIN_LINE: Rect = { x: 188, y: 78, width: 240, height: 20 }
 const PAGE_QUESTION_ORIGIN: Rect = { x: 190, y: 78, width: 240, height: 20 }
+
+/** The site popup's header, which names the fixture's origin and so its port. */
+const SITE_INFO_ORIGIN_LINE: Rect = { x: 224, y: 86, width: 220, height: 22 }
 
 /** Settings > Web3's line saying how old the light client's shipped checkpoint is: it reads a day more each day. */
 const CHECKPOINT_AGE: Rect = { x: 700, y: 586, width: 440, height: 24 }
@@ -43,6 +48,17 @@ const MANIFEST = JSON.stringify({
   entry: 'index.html',
   capabilities: { fs: { quotaBytes: 1024 } }
 })
+
+/** The consent fixture's manifest also names where its publisher takes problem reports, so the site panel shows that row. */
+const CONSENT_MANIFEST = JSON.stringify({ ...JSON.parse(MANIFEST) as object, support: { issues: 'https://support.example.test/issues/new' } })
+
+/** Windows lets no program make itself the default browser, so the row there opens Windows' own settings. */
+const MAKE_DEFAULT = process.platform === 'win32' ? 'Open Windows Settings' : 'Make default'
+
+// Local files serve nothing while the binary's file-protocol fuse is on, as it stays in a checkout whose install
+// could not flip it. e2e-file-protocol-fuse fails when it is on, so skipping here hides nothing.
+const electronPath: string = createRequire(import.meta.url)('electron')
+const localFilesServed = await readFileProtocolFuse(fuseFilePath(electronPath)) === 'off'
 
 /** The schemes every state is captured in. */
 const requested = (process.env['ORIVON_QA_SCHEMES'] ?? 'light,dark').split(',').map((s) => s.trim())
@@ -124,6 +140,19 @@ it('prepareWindow sets the size the window keeps even when called the moment the
   }
 }, QA_TEST_TIMEOUT_MS)
 
+/** The Settings page draws all its rows again whenever one of its parts reports (the tunnel, the profiles, the sites), and a redraw drops the scroll and detaches the row. So the row is scrolled to once the page has been quiet for half a second, from the page itself, which holds no element across a redraw. */
+async function scrollToTunnelRow (settings: Page): Promise<void> {
+  await settings.evaluate(async () => {
+    await new Promise<void>((resolve) => {
+      let timer = setTimeout(done, 500)
+      const watching = new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(done, 500) })
+      function done (): void { watching.disconnect(); resolve() }
+      watching.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true })
+    })
+    ;(document.getElementById('row-route-kind') as (HTMLElement & { scrollIntoViewIfNeeded?: () => void }) | null)?.scrollIntoViewIfNeeded?.()
+  })
+}
+
 for (const scheme of SCHEMES) {
   it(`the shell looks right in each state it can be in (${scheme})`, async () => {
     const { app, chrome } = await launchShell({ scheme })
@@ -131,9 +160,10 @@ for (const scheme of SCHEMES) {
       await runPhase('visual states of the shell', async (check) => {
         expect(await waitFor(() => dashboardOf(app) !== undefined)).toBe(true)
         await (dashboardOf(app) as Page).waitForLoadState('load')
+        await (dashboardOf(app) as Page).waitForSelector('html[data-settled="1"]')
         await state(check, app, `dashboard-startup-${scheme}`, {
-          expected: 'New-tab dashboard: wallpaper, the Orivon mark and name, a search box, an APPS row with tiles that have icons and labels; one tab titled "New Tab" in the strip; toolbar with back, forward and reload dimmed.',
-          action: 'Launched a fresh profile and waited for the dashboard to load.'
+          expected: 'New-tab dashboard: wallpaper, the Orivon mark and name, a search box, then a "Start here" card with its steps, an "Orivon Featured" row of five tiles (Explore, WebTorrent, ASGARDEX, Ledger Wallet, The Lounge) that have icons and labels, and a "Your apps" block with its "Manage app permissions" link; the page is taller than the window, so the lower part may be cut at the window edge and scroll; one tab titled "New Tab" in the strip; toolbar with back, forward and reload dimmed.',
+          action: 'Launched a fresh profile and waited for the dashboard to load and draw its rows.'
         })
 
         await chrome.click('#address')
@@ -150,13 +180,22 @@ for (const scheme of SCHEMES) {
         await chrome.click('#menu')
         expect(await waitFor(async () => await popoverShown(app, 'overlay=menu'))).toBe(true)
         const menuPage = app.windows().find((page) => page.url().includes('overlay=menu')) as Page
-        check('the menu card fills its view to the right edge', await menuPage.evaluate(() => window.innerWidth - document.body.getBoundingClientRect().right) === 0)
+        check('the menu card fills its view to the right edge', await menuPage.evaluate(() => document.documentElement.clientWidth - document.body.getBoundingClientRect().right) === 0)
         await state(check, app, `menu-popup-${scheme}`, {
           expected: 'The main menu is open as a popup under the menu button at the top right: a list of labelled entries, none cut off or overlapping, inside the window.',
           action: 'Clicked the menu button and waited for the popup to be shown.'
         })
         await chrome.click('#menu')
         expect(await waitFor(async () => !(await popoverShown(app, 'overlay=menu')))).toBe(true)
+
+        await chrome.click('#web3-score-btn')
+        expect(await popupSized(app, 'overlay=web3-score')).toBe(true)
+        await state(check, app, `web3-score-card-${scheme}`, {
+          expected: 'A card under the shield at the left of the address bar, headed "Web3 Score" beside a grey shield: one sentence on what the shield shows, then four rows, Level 1 to Level 4, each with a shield in its colour (red, orange, yellow, green), a Web2, Web2.5, Web2.5 or Web3 mark and one line of meaning; a note led by a gray "Web?" mark on a Level 2 site no provider has scored yet; a note on which levels this computer checks, and two links, "Choose a score provider" and "How scores work". Nothing is cut and the card sits inside the window.',
+          action: 'Clicked the shield button on the new tab.'
+        })
+        await chrome.click('#web3-score-btn')
+        expect(await waitFor(async () => !(await popoverShown(app, 'overlay=web3-score')))).toBe(true)
 
         await openInternal(app, chrome, 'settings')
         await state(check, app, `settings-page-${scheme}`, {
@@ -190,6 +229,19 @@ for (const scheme of SCHEMES) {
           ignore: [FIXTURE_ADDRESS]
         })
         await chrome.click('#web3-score-btn')
+        expect(await waitFor(async () => !(await popoverShown(app, '/site-info/')))).toBe(true)
+
+        await delay(450) // past the debounce that reads a toggle just after a close as that close's echo
+        await chrome.click('#networks-btn')
+        expect(await waitFor(async () => await popoverShown(app, '/networks/'))).toBe(true)
+        expect(await popupSized(app, '/networks/')).toBe(true)
+        await state(check, app, `networks-popup-${scheme}`, {
+          expected: 'The popup under the Available networks button, the network icon at the top right, is headed "Available networks" with one plain line under it, and lists four cards in order: Ethereum light client, IPFS node, Swarm node and Nym tunnel. Each has a status word, a switch at the right (the light client\'s off and dimmed in a test run), one sentence and, where a node runs, figures; none is cut off or overlaps, and the popup sits inside the window.',
+          action: 'Closed the shield popup and clicked the Available networks button on the fixture page.',
+          ignore: [FIXTURE_ADDRESS]
+        })
+        await chrome.click('#networks-btn')
+        expect(await waitFor(async () => !(await popoverShown(app, '/networks/')))).toBe(true)
 
         await chrome.click('#address')
         await chrome.fill('#address', 'http://unresolvable.invalid/')
@@ -228,29 +280,15 @@ for (const scheme of SCHEMES) {
     }
   }, QA_TEST_TIMEOUT_MS)
 
-  it(`Settings > Default browser and the welcome screen's offer look right (${scheme})`, async () => {
-    const { app, chrome } = await launchShell({ scheme, env: { ORIVON_INTRO: 'once', ORIVON_TEST_DEFAULT_BROWSER: 'can-set' }, chrome: false })
+  it(`Settings > Default browser looks right (${scheme})`, async () => {
+    const { app, chrome } = await launchShell({ scheme, env: { ORIVON_TEST_DEFAULT_BROWSER: 'can-set' } })
     try {
-      await runPhase('visual states of the default-browser surfaces', async (check) => {
-        expect(await waitFor(() => app.windows().some((w) => w.url().includes('/intro/index.html')))).toBe(true)
-        const intro = app.windows().find((w) => w.url().includes('/intro/index.html')) as Page
-        await intro.waitForLoadState('load')
-        await intro.waitForSelector('#default-offer:not([hidden])')
-        // The offer fades in after the headline: wait until it has finished, so the picture shows it whole.
-        expect(await waitFor(async () => Number(await intro.locator('#default-offer').evaluate((el) => getComputedStyle(el).opacity)) === 1)).toBe(true)
-        check('the welcome screen offers the default-browser box unticked', !(await intro.locator('#make-default').isChecked()))
-        await state(check, app, `welcome-default-offer-${scheme}`, {
-          expected: 'The welcome screen fills the window as before and, under the "Enter Orivon" button and its note, a small unticked checkbox with the label "Make Orivon my default browser" in readable light text; nothing overlaps the button or is cut at the window edge.',
-          action: 'Launched a fresh profile with the welcome screen enabled on a build that can register as the default browser.'
-        })
-        await intro.click('#enter')
-        expect(await waitFor(() => !app.windows().some((w) => w.url().includes('/intro/index.html')))).toBe(true)
-
+      await runPhase('visual state of Settings > Default browser', async (check) => {
         const settings = await openInternal(app, chrome, 'settings', '/default-browser')
         await settings.waitForSelector('#row-default-browser button')
-        check('Settings > Default browser has the section in the navigation and a Make default button', (await settings.locator('.nav-list').innerText()).includes('Default browser') && await settings.getByRole('button', { name: 'Make default' }).isVisible())
+        check(`Settings > Default browser has the section in the navigation and a ${MAKE_DEFAULT} button`, (await settings.locator('.nav-list').innerText()).includes('Default browser') && await settings.getByRole('button', { name: MAKE_DEFAULT }).isVisible())
         await state(check, app, `settings-default-browser-${scheme}`, {
-          expected: 'orivon://settings/default-browser is open with "Default browser" selected in the navigation, directly under Search. The section has a short intro line and one row labelled "Default browser" with the help text "Links you click in other programs open in Orivon." and a "Make default" button on its right.',
+          expected: `orivon://settings/default-browser is open with "Default browser" selected in the navigation, directly under Search. The section has a short intro line and one row labelled "Default browser" with the help text "Links you click in other programs open in Orivon." and a "${MAKE_DEFAULT}" button on its right.`,
           action: 'Opened orivon://settings/default-browser on a build that can register as the default browser.'
         })
       })
@@ -259,26 +297,56 @@ for (const scheme of SCHEMES) {
     }
   }, QA_TEST_TIMEOUT_MS)
 
-  it(`the welcome screen's telemetry question looks right, closed and with what is sent open (${scheme})`, async () => {
-    const { app } = await launchShell({ scheme, env: { ORIVON_INTRO: 'once', ORIVON_TELEMETRY: 'on', ORIVON_TEST_DEFAULT_BROWSER: 'can-set' }, chrome: false })
+  it(`Settings > Tunnels looks right on Nym and on an address (${scheme})`, async () => {
+    const { app, chrome } = await launchShell({ scheme, seedProfile: async (dir) => { writeFileSync(join(dir, 'settings.json'), JSON.stringify({ version: 2, values: {} })) } })
     try {
-      await runPhase('visual states of the welcome screen telemetry question', async (check) => {
+      await runPhase('visual states of Settings > Tunnels', async (check) => {
+        const settings = await openInternal(app, chrome, 'settings', '/tunnels')
+        await settings.waitForSelector('#row-route-nym-status:has-text("Starts when")')
+        await scrollToTunnelRow(settings)
+        check('the default tunnel is Nym (built in); the Nym rows, the address row and a Test for each tunnel are all shown', (await settings.locator('#row-route-kind select').inputValue()) === 'nym' && await settings.locator('#row-route-nym-status').isVisible() && await settings.locator('#row-route-nym-privacy select').inputValue() === 'balanced' && await settings.locator('#row-route-proxy').isVisible() && await settings.locator('#row-route-nym-test button').isVisible() && await settings.locator('#row-route-proxy-test button').isVisible())
+        await state(check, app, `settings-tunnel-nym-${scheme}`, {
+          expected: 'orivon://settings/tunnels is open under the heading "Tunnels" with the "Default tunnel" row showing the choice "Nym (built in)" and the "Send all of Orivon\'s traffic through the default tunnel" row, then a "Nym" group with a "Let Nym run" switch, a "Nym" row saying "Starts when an app that uses it connects.", a "Nym privacy" row with a choice showing "Balanced" and one sentence for each of Balanced and Strongest, and a "Test Nym" row with a Test button; then a "Your proxy" group with a "SOCKS5 address" row holding an empty text field whose placeholder is 127.0.0.1:9050 and a "Test your proxy" row whose Test button is greyed out.',
+          action: 'Opened orivon://settings/tunnels on a fresh profile and scrolled to the tunnel rows.'
+        })
+        await settings.locator('#row-route-kind select').selectOption('socks5')
+        await settings.waitForFunction(() => (document.querySelector('#row-route-kind select') as HTMLSelectElement | null)?.value === 'socks5')
+        await scrollToTunnelRow(settings)
+        check('choosing the address as the default hides nothing: Nym\'s rows and the address row are all still shown', await settings.locator('#row-route-proxy input').isVisible() && await settings.locator('#row-route-nym-status').isVisible() && await settings.locator('#row-route-nym-privacy').isVisible())
+        await state(check, app, `settings-tunnel-address-${scheme}`, {
+          expected: 'The "Default tunnel" row shows "Your own SOCKS5 address"; every other row is still there, Nym\'s and the proxy\'s, because a site or app can use either whichever is the default; the "Test your proxy" Test button is greyed out while the address is empty.',
+          action: 'Chose "Your own SOCKS5 address" in the default tunnel row.'
+        })
+      })
+    } finally {
+      await closeElectron(app)
+    }
+  }, QA_TEST_TIMEOUT_MS)
+
+  it(`the telemetry popup "Enter Orivon" opens looks right, closed and with what is sent open (${scheme})`, async () => {
+    const { app } = await launchShell({ scheme, env: { ORIVON_INTRO: 'once', ORIVON_TELEMETRY: 'on' }, chrome: false })
+    try {
+      await runPhase('visual states of the telemetry popup', async (check) => {
         expect(await waitFor(() => app.windows().some((w) => w.url().includes('/intro/index.html')))).toBe(true)
         const intro = app.windows().find((w) => w.url().includes('/intro/index.html')) as Page
         await intro.waitForLoadState('load')
-        await intro.waitForSelector('#telemetry-choice:not([hidden])')
-        // The block and the box fade in after the headline: wait until both have finished.
-        expect(await waitFor(async () => Number(await intro.locator('#telemetry-choice').evaluate((el) => getComputedStyle(el).opacity)) === 1 && Number(await intro.locator('#default-offer').evaluate((el) => getComputedStyle(el).opacity)) === 1)).toBe(true)
-        check('the single Enter button is gone and neither of the two buttons has the focus', await intro.locator('#enter').isHidden() && await intro.evaluate(() => document.activeElement?.tagName) === 'BODY')
-        await state(check, app, `welcome-telemetry-choice-${scheme}`, {
-          expected: 'The welcome screen fills the window with its headline. Where the "Enter Orivon" button was there is a bordered block titled "Telemetry", a short paragraph that starts "Orivon has no ads and keeps your history on your computer", a "What is sent" line, and two buttons of the same size and the same look side by side, "Enter and share telemetry" and "Enter without telemetry", neither filled more than the other. Under the block, the unticked "Make Orivon my default browser" box. All text is readable and nothing overlaps or is cut at the window edge.',
-          action: 'Launched a fresh profile with the welcome screen enabled and telemetry running, on a build that can register as the default browser.'
+        await intro.click('#enter')
+        await intro.waitForSelector('#consent:not([hidden])')
+        // The card rises in, the welcome scene softens out of focus and the browser's picture fades in over it: wait until all three have finished.
+        expect(await waitFor(async () => Number(await intro.locator('.consent-card').evaluate((el) => getComputedStyle(el).opacity)) === 1 && await intro.locator('#welcome').evaluate((el) => getComputedStyle(el).filter) === 'blur(18px)' && Number(await intro.locator('#welcome').evaluate((el) => getComputedStyle(el).opacity)) === 0.4)).toBe(true)
+        expect(await waitFor(async () => Number(await intro.locator('#behind').evaluate((el) => getComputedStyle(el).opacity)) === 1, 10_000)).toBe(true)
+        // What shows blurred behind is the new tab. The popup's picture of it is taken once the page says every row is drawn (`data-settled`), so wait for that and for the rows it names.
+        expect(await waitFor(async () => { const page = dashboardOf(app); return page !== undefined && await page.locator('html[data-settled="1"]').count() === 1 && await page.locator('#start-here').isVisible() && await page.locator('#featured-grid .tile').count() > 0 })).toBe(true)
+        check('neither of the two buttons has the focus', await intro.evaluate(() => document.activeElement?.tagName) === 'BODY')
+        await state(check, app, `welcome-telemetry-popup-${scheme}`, {
+          expected: 'Behind, the browser (its toolbar and the new-tab page) blurred past reading and dimmed, filling the whole window. In the middle, a rounded dark-indigo card: the round Orivon logo with a soft glow, the title "Support us for free through telemetry", a short paragraph that starts "Orivon is free, has no ads, and keeps your history on your computer", a panel of four short promises in two columns each with a small green check, a "See exactly what is sent" link with a chevron, and two pill buttons of the same size and look side by side, "Accept" and "Deny", neither filled more than the other. All text is readable and the card stays inside the window.',
+          action: 'Launched a fresh profile with the welcome screen enabled and telemetry running, and clicked "Enter Orivon".'
         })
-        await intro.click('#telemetry-choice summary')
-        await intro.waitForSelector('#telemetry-choice details[open]')
+        await intro.click('.consent-details summary')
+        await intro.waitForSelector('.consent-details[open]')
         await state(check, app, `welcome-telemetry-details-${scheme}`, {
-          expected: 'The same screen with "What is sent" open: a solid card of four short bullets sits directly above the Telemetry block, and the big headline is hidden while it is open (no part of it shows around the card); the Telemetry block and its two same-size buttons have not moved, and the card stays inside the window.',
-          action: 'Opened "What is sent" on the welcome screen telemetry question.'
+          expected: 'The same popup with "See exactly what is sent" open: the chevron points up and a darker rounded panel of four short bullets sits under the link, inside the card; the card grew downwards with the buttons still under it, and if it no longer fits the window it scrolls rather than being cut.',
+          action: 'Opened "See exactly what is sent" on the telemetry popup.'
         })
       })
     } finally {
@@ -332,7 +400,7 @@ for (const scheme of SCHEMES) {
           action: 'Resized the window content to 800x600 on the dashboard.'
         }, { width: 800, height: 600 })
         await state(check, app, `dashboard-500x400-${scheme}`, {
-          expected: 'At the smallest size a window can have, 500x400, the toolbar is one row: back, forward, reload, the star, an address field wide enough to read an address in, the all-sites button, the side-panel button and the menu. The identity placeholder and the node-status dot are gone, and nothing is cut or overlaps.',
+          expected: 'At the smallest size a window can have, 500x400, the toolbar is one row: back, forward, reload, the star, an address field wide enough to read an address in, the Available networks button, the Extensions button, the side-panel button and the menu. The separator in the cluster is gone, and nothing is cut or overlaps.',
           action: 'Resized the window content to 500x400, the minimum, on the dashboard.'
         }, { width: 500, height: 400 })
       })
@@ -344,7 +412,7 @@ for (const scheme of SCHEMES) {
   it(`the question panel shows a consent question and a page's confirm() (${scheme})`, async () => {
     // The consent fixture advertises a manifest, so visiting it asks for its grants; the dialog fixture asks nothing until clicked.
     const consent = await startServer((req, res) => {
-      if (req.url === '/.well-known/orivon.json') { res.writeHead(200, { 'content-type': 'application/json' }).end(MANIFEST); return }
+      if (req.url === '/.well-known/orivon.json') { res.writeHead(200, { 'content-type': 'application/json' }).end(CONSENT_MANIFEST); return }
       html(res, '<!doctype html><meta charset="utf-8"><title>Consent fixture</title><link rel="orivon-manifest" href="/.well-known/orivon.json"><body style="font:16px sans-serif;margin:32px"><h1>Consent fixture</h1>')
     })
     const dialogs = await startServer((_req, res) => {
@@ -361,17 +429,35 @@ for (const scheme of SCHEMES) {
         const grant = await waitQuestion(app)
         await grant.waitForSelector('.q:not(.arming)')
         const said = await readQuestion(grant)
-        check('the consent question names the app origin and offers Allow and Deny', said.buttons.includes('Allow') && said.buttons.includes('Deny'), JSON.stringify(said))
+        check('the consent question names the app origin and offers Grant all and Close', said.buttons.includes('Grant all') && said.buttons.includes('Close'), JSON.stringify(said))
         const shown = [said.origin, said.title, said.message, said.detail].join('\n')
         check('the consent question names the origin once', said.origin.length > 0 && shown.split(said.origin).length === 2, JSON.stringify(said))
         const grantFit = await panelFits(grant)
         check('the consent card sits inside its view, uncut and unscrolled', grantFit.fits, grantFit.detail)
         await state(check, app, `question-consent-${scheme}`, {
-          expected: 'A question panel floats over the page, directly under the address pill with its top edge crossing into the toolbar: a header naming the 127.0.0.1 origin that is asking, a message about what the app wants, and two readable buttons, Allow and Deny, with Allow the filled one. Text and buttons are fully inside the panel in this colour scheme, nothing is cut, and the page and toolbar stay visible around it.',
+          expected: 'A question panel floats over the page, directly under the address pill with its top edge crossing into the toolbar: a header naming the 127.0.0.1 origin that is asking, a message about what the app wants, a switch row for each permission the app asks for, all off, the claimed name of the app and, because this is the first question of the profile, the line "This is a desktop app. It needs more than a web page may have, so it asks you once." just above two readable buttons, Close as plain text and Grant all, the filled one. Text and buttons are fully inside the panel in this colour scheme, nothing is cut, and the page and toolbar stay visible around it.',
           action: 'Typed the address of a loopback app that advertises a manifest and waited for its grant question to arm.',
           ignore: [FIXTURE_ADDRESS, CONSENT_ORIGIN_LINE]
         })
-        await answerQuestion(app, 'Deny')
+        await answerQuestion(app, 'Close')
+        await chrome.waitForSelector('#site-permissions-btn[data-missing]', { timeout: 20_000 })
+        await state(check, app, `key-dot-${scheme}`, {
+          expected: 'The address pill after the question was closed with every switch off: the key beside the address wears a small filled dot in the accent colour at its bottom right, fully inside the pill and clear of the key glyph, and nothing else on the pill changed. The dot reads clearly against the pill in this colour scheme.',
+          action: 'Closed the consent question with no switch on and waited for the key to show its dot.',
+          ignore: [FIXTURE_ADDRESS]
+        })
+
+        await chrome.click('#site-permissions-btn')
+        expect(await waitFor(async () => await popoverShown(app, '/site-info/'))).toBe(true)
+        const panel = app.windows().find((w) => w.url().includes('/site-info/'))
+        expect(await waitFor(async () => (await panel?.$$('#report-problem'))?.length === 1)).toBe(true)
+        await state(check, app, `site-info-report-problem-${scheme}`, {
+          expected: 'The popup under the key starts with the connection card row (the Web3 Score line inside it), then lists the app\'s permission row with its switch off, a "Permissions" group saying the site has not asked for anything with an "Add a permission..." row, then the Cookies and site data and Site settings rows, and last a row reading "Report a problem with this site" with a chevron at the right, in the same type, spacing and colours as the rows above it. The row is fully inside the popup, uncut, and readable in this colour scheme.',
+          action: 'Clicked the key on the consent fixture, whose manifest names where problems are reported.',
+          ignore: [FIXTURE_ADDRESS, SITE_INFO_ORIGIN_LINE]
+        })
+        await chrome.click('#site-permissions-btn')
+        expect(await waitFor(async () => !(await popoverShown(app, '/site-info/')))).toBe(true)
 
         await visit(app, chrome, `${dialogs.origin}/`)
         const view = findViewShowing(app, chrome, `${dialogs.origin}/`) as Page
@@ -400,7 +486,7 @@ for (const scheme of SCHEMES) {
     }
   }, QA_TEST_TIMEOUT_MS)
 
-  it(`a local file's question and its mark look right (${scheme})`, async () => {
+  it.skipIf(!localFilesServed)(`a local file's question and its mark look right (${scheme})`, async () => {
     const folder = realpathSync(mkdtempSync(join(tmpdir(), 'orivon-visual-local-')))
     writeFileSync(join(folder, 'orivon.json'), MANIFEST)
     writeFileSync(join(folder, 'app.html'), '<!doctype html><meta charset="utf-8"><title>Local fixture</title><link rel="orivon-manifest" href="orivon.json"><body style="font:16px sans-serif;margin:32px"><h1>Local fixture</h1><p>A file on this computer.</p>')
@@ -485,7 +571,7 @@ window.share = (options) => navigator.mediaDevices.getDisplayMedia(options).then
         check('the picker sits inside its view, uncut and unscrolled', fit)
         await picker.locator('.picker-card').nth(1).click()
         await state(check, app, `screen-share-picker-${scheme}`, {
-          expected: 'A sheet floats over the page, centred in the page area: the title "Choose what to share with <127.0.0.1 origin>", three segments Tab, Window and Entire screen with Tab selected, a grid of two cards each with a pale picture area (a plain icon, no screenshot) and a label, the first marked "This tab" and the second selected with the accent colour, then Cancel and a filled Share button. Text, cards and buttons are fully inside the sheet and readable in this colour scheme.',
+          expected: 'A sheet floats over the page, centred in the page area: the title "Choose what to share with <127.0.0.1 origin>", three segments Tab, Window and Entire screen with Tab selected, a grid of two cards each with a pale picture area and a label, the first marked "This tab" and showing a small real picture of the page behind, and the second (the other tab) showing a plain icon and selected with the accent colour, then Cancel and a filled Share button. Text, cards and buttons are fully inside the sheet and readable in this colour scheme.',
           action: 'Pressed Share on a loopback page that calls getDisplayMedia, with a second tab open, and chose the second card.',
           // The origin in the title and on the second card change with the port; the first card's thumbnail is a live capture of the page behind.
           ignore: [FIXTURE_ADDRESS, { x: 336, y: 296, width: 372, height: 18 }, { x: 545, y: 506, width: 190, height: 18 }, { x: 346, y: 377, width: 182, height: 103 }]
@@ -558,7 +644,7 @@ window.share = (options) => navigator.mediaDevices.getDisplayMedia(options).then
         const toggle = web3.locator('#row-web3-light-client input[type=checkbox]')
         const stateLine = (await web3.locator('#row-web3-state .value').textContent()) ?? ''
         check('Settings > Web3: the light-client switch is off and disabled while this run forces it off, and its state line is a sentence', await toggle.isDisabled() && !(await toggle.isChecked()) && /^[A-Z]/.test(stateLine) && !/^[a-z]+: /.test(stateLine), stateLine)
-        check('the key and the Web2 pill stay away from a Settings page', !(await chrome.locator('#site-permissions-btn').isVisible()) && !(await chrome.locator('#web3-mark').isVisible()))
+        check('the key, the tunnel button and the Web2 pill stay away from a Settings page', !(await chrome.locator('#site-permissions-btn').isVisible()) && !(await chrome.locator('#tunnel-btn').isVisible()) && !(await chrome.locator('#web3-mark').isVisible()))
         await state(check, app, `settings-web3-${scheme}`, {
           expected: 'orivon://settings/web3 is open with Web3 selected in the navigation. A light-client row shows its switch OFF and greyed out, labelled "Off for this run" because this run forces it off; the state row below it is a full sentence beginning with a capital letter, not a "code: value" pair. No key button sits in the address field.',
           action: 'Opened orivon://settings/web3 in a run that forces the light client off.',

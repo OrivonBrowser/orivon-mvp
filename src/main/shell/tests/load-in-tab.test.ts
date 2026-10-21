@@ -8,6 +8,7 @@ vi.mock('../tab-parking.js', () => ({ repartitionView: (...args: unknown[]) => r
 vi.mock('../tab-partition.js', () => ({ partitionChanged: (target: string, current: string | undefined) => partitionChanged(target, current), appTabFlagChanged: () => appTabFlagChanged() }))
 
 const { gatewayLinkTarget, loadInTab, repartitionForTarget } = await import('../load-in-tab.js')
+const { setLeavingRoutes } = await import('../../route/leaving-routes.js')
 
 const loadURL = vi.fn(async () => {})
 const record = (partition: string | undefined, redirect = true): never => ({ partition, view: { webContents: { loadURL } }, host: { broker: undefined, services: { settings: { get: () => redirect } } } }) as never
@@ -27,19 +28,47 @@ describe('repartitionForTarget', () => {
     partitionChanged.mockReturnValue({ to: undefined })
     const tab = record('persist:app')
     expect(repartitionForTarget('t1', tab, 'https://site.eth/')).toBe(true)
-    expect(repartitionView).toHaveBeenCalledExactlyOnceWith('t1', tab, 'https://site.eth/', undefined)
+    expect(repartitionView).toHaveBeenCalledExactlyOnceWith('t1', tab, 'https://site.eth/', undefined, false)
   })
 
   it('swaps within the session when only the app-tab flag differs', () => {
     appTabFlagChanged.mockReturnValue(true)
     const tab = record('persist:app')
     expect(repartitionForTarget('t1', tab, 'https://site.eth/')).toBe(true)
-    expect(repartitionView).toHaveBeenCalledExactlyOnceWith('t1', tab, 'https://site.eth/', 'persist:app')
+    expect(repartitionView).toHaveBeenCalledExactlyOnceWith('t1', tab, 'https://site.eth/', 'persist:app', false)
   })
 
   it('does nothing when the session and the flag are the tab\'s', () => {
     expect(repartitionForTarget('t1', record(undefined), 'https://site.eth/')).toBe(false)
     expect(repartitionView).not.toHaveBeenCalled()
+  })
+})
+
+describe('repartitionForTarget onto a page the person opened through their proxy', () => {
+  const live = (partition: string): void => {
+    setLeavingRoutes({
+      world: { isRouted: () => true, isInstalledApp: () => false, routedOriginOf: () => undefined, servedOrigin: () => undefined },
+      temporary: { open: async () => partition, owns: () => true, isLive: (name) => name === partition },
+      routeSwitch: { blockedFor: () => undefined, choose: async () => {} }, kindOf: () => undefined, defaultKind: () => 'nym'
+    })
+  }
+  afterEach(() => { setLeavingRoutes(undefined) })
+
+  it('steps back into the temporary routed session while it is alive, never to the shared one', () => {
+    live('orivon-route-tab-1')
+    partitionChanged.mockReturnValue({ to: undefined })
+    const tab = { ...(record('persist:app') as object), routedAway: 'orivon-route-tab-1' } as never
+    expect(repartitionForTarget('t1', tab, 'https://site.example/', true)).toBe(true)
+    expect(repartitionView).toHaveBeenCalledExactlyOnceWith('t1', tab, 'https://site.example/', 'orivon-route-tab-1', true)
+  })
+
+  it('goes to the shared session once that session is gone, and for a typed address', () => {
+    live('orivon-route-tab-2')
+    partitionChanged.mockReturnValue({ to: undefined })
+    const tab = { ...(record('persist:app') as object), routedAway: 'orivon-route-tab-1' } as never
+    repartitionForTarget('t1', tab, 'https://site.example/', true)
+    repartitionForTarget('t1', { ...(tab as object), routedAway: 'orivon-route-tab-2' } as never, 'https://site.example/')
+    expect(repartitionView.mock.calls.map((call) => call[3])).toEqual([undefined, undefined])
   })
 })
 
@@ -53,7 +82,7 @@ describe('loadInTab', () => {
   it('moves a tab in a cache-served app\'s session to the default one instead of loading there', () => {
     partitionChanged.mockReturnValue({ to: undefined })
     loadInTab('t1', record('persist:app'), 'https://site.eth/')
-    expect(repartitionView).toHaveBeenCalledWith('t1', expect.anything(), 'https://site.eth/', undefined)
+    expect(repartitionView).toHaveBeenCalledWith('t1', expect.anything(), 'https://site.eth/', undefined, false)
     expect(loadURL).not.toHaveBeenCalled()
   })
 })

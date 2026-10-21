@@ -12,7 +12,7 @@ vi.mock('electron', () => ({
 }))
 
 const { net } = await import('electron')
-const { MAX_FAVICON_CANDIDATES, captureFaviconInto, faviconCandidates, faviconOnCommit, shouldClearFavicon } = await import('../favicon.js')
+const { MAX_FAVICON_CANDIDATES, captureFaviconInto, faviconCandidates, faviconOnCommit, faviconOnFailedLoad, shouldClearFavicon } = await import('../favicon.js')
 const { mockRequestOnce, PNG_BYTES, PUBLIC_PAGE, respondOk } = await import('./favicon.test-helpers.js')
 
 // net.request is one shared mock across the whole file (the module-level
@@ -81,6 +81,22 @@ describe('shouldClearFavicon', () => {
 
   it('clears for a string that is not a parseable URL at all', () => {
     expect(shouldClearFavicon('https://a.example', 'not a url')).toBe(true)
+  })
+})
+
+describe('faviconOnFailedLoad', () => {
+  it('drops the icon of another origin, and a fetch still running for it, when an error page commits', () => {
+    const target: FaviconTarget = { favicon: 'data:image/png;base64,Qw==', faviconOrigin: 'http://127.0.0.1:8000', pendingFaviconUrl: 'http://127.0.0.1:8000/fav.png' }
+    expect(faviconOnFailedLoad(target, 'http://does-not-exist.invalid/')).toBe(true)
+    expect(target).toEqual({ favicon: null, faviconOrigin: null, pendingFaviconUrl: null })
+  })
+
+  it('keeps the icon of the same origin, and changes nothing for a tab that has none', () => {
+    const same: FaviconTarget = { favicon: 'data:image/png;base64,Qw==', faviconOrigin: 'https://example.com', pendingFaviconUrl: null }
+    expect(faviconOnFailedLoad(same, 'https://example.com/broken')).toBe(false)
+    expect(same.favicon).toBe('data:image/png;base64,Qw==')
+    const none: FaviconTarget = { favicon: null, faviconOrigin: null, pendingFaviconUrl: null }
+    expect(faviconOnFailedLoad(none, 'http://does-not-exist.invalid/')).toBe(false)
   })
 })
 
@@ -357,6 +373,28 @@ describe('captureFaviconInto -- which session asks', () => {
     await captureFaviconInto(target, ['https://93.184.216.34/cdn-icon.png'], () => PUBLIC_PAGE, () => true, () => {}, pageSession)
 
     expect(vi.mocked(net.request).mock.calls[0]?.[0]).not.toHaveProperty('session')
+  })
+})
+
+describe('captureFaviconInto -- a page in a temporary routed session', () => {
+  it('asks for an icon on another host through that session as well, never the default one', async () => {
+    const { setLeavingRoutes } = await import('../../route/leaving-routes.js')
+    const temporary = { id: 'the temporary session' } as unknown as import('electron').Session
+    setLeavingRoutes({
+      world: { isRouted: () => false, isInstalledApp: () => false, routedOriginOf: () => undefined, servedOrigin: () => undefined },
+      temporary: { open: async () => 'orivon-route-tab-1', owns: (one) => one === temporary, isLive: () => true },
+      routeSwitch: { blockedFor: () => undefined, choose: async () => {} }, kindOf: () => undefined, defaultKind: () => 'nym'
+    })
+    try {
+      mockRequestOnce((request) => { request.emit('response', respondOk(200, [PNG_BYTES])) })
+      const target: FaviconTarget = { favicon: null, faviconOrigin: null, pendingFaviconUrl: null }
+
+      await captureFaviconInto(target, ['https://cdn.example/cdn-icon.png'], () => PUBLIC_PAGE, () => true, () => {}, temporary)
+
+      expect(vi.mocked(net.request).mock.calls[0]?.[0]).toMatchObject({ url: 'https://cdn.example/cdn-icon.png', session: temporary })
+    } finally {
+      setLeavingRoutes(undefined)
+    }
   })
 })
 

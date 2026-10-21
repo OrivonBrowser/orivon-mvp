@@ -12,7 +12,8 @@ import { afterAll, beforeAll, expect, it } from 'vitest'
 import { SqliteHistoryStore } from '../../src/main/history/sqlite-history-store.js'
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
 import { runCommand } from '../support/auth-support.js'
-import { clearFocusLog, readFocusLog, startFocusLog } from '../support/focus-helpers.js'
+import { clearFocusLog, readFocusLog, startFocusLog, underVirtualDisplay } from '../support/focus-helpers.js'
+import { waitForStartPageLoaded } from '../support/e2e-helpers.js'
 import { html, launchShell, startServer } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
 import { ABSENCE_SETTLE_MS, activeTabInfo, delay, popoverShown, tabIds, tabViews, waitFor } from '../support/smoke-helpers.mjs'
@@ -78,7 +79,7 @@ const selectedRow = async (app: App): Promise<string> =>
 
 async function typeInBar (chrome: Page, text: string): Promise<void> {
   await chrome.click('#address')
-  await chrome.keyboard.press('Control+A')
+  await chrome.keyboard.press('ControlOrMeta+A')
   await chrome.keyboard.type(text, { delay: 25 })
 }
 
@@ -86,10 +87,11 @@ async function typeInBar (chrome: Page, text: string): Promise<void> {
 const tabAddresses = async (app: App): Promise<string[]> =>
   await app.evaluate(({ webContents }) => webContents.getAllWebContents().map((wc) => wc.getURL()).filter((url) => url.startsWith('http://127.0.0.1')))
 
-async function openTab (chrome: Page): Promise<void> {
+async function openTab (app: App, chrome: Page): Promise<void> {
   const before = (await tabIds(chrome)).length
   await chrome.evaluate(() => { (window as unknown as { orivonShell: { runCommand: (id: string) => void } }).orivonShell.runCommand('tab.new') })
   expect(await waitFor(async () => (await tabIds(chrome)).length === before + 1)).toBe(true)
+  expect(await waitForStartPageLoaded(app)).toBe(true)
 }
 
 async function go (app: App, chrome: Page, address: string): Promise<void> {
@@ -183,7 +185,7 @@ it('builds no overlay before the first keystroke, and finishes what is typed inl
     console.log(`[omnibox probe] fill produced input events: ${JSON.stringify(inputTypes)}`)
 
     // Real typing: the bar shows the text and, selected after it, the rest of the host.
-    await openTab(chrome)
+    await openTab(app, chrome)
     await chrome.evaluate(() => { (window as unknown as { __inputs: string[] }).__inputs.length = 0 })
     await typeInBar(chrome, '127')
     const rows = await waitForRows(app, 4)
@@ -216,7 +218,7 @@ it('moves the selection with the arrows, goes to the selected row on Enter, and 
   const { app, chrome } = await launchShell({ seedProfile: async (dir: string) => { await seedPages(dir) } })
   try {
     await go(app, chrome, `${server.origin}/delta`)
-    await openTab(chrome)
+    await openTab(app, chrome)
     await typeInBar(chrome, '127')
     await waitForRows(app, 4)
     const first = await selectedRow(app)
@@ -279,11 +281,12 @@ it('closes on the first Escape with the typed text back, and restores the page\'
   }
 }, TEST_TIMEOUT_MS)
 
-it('goes to a row on a real click without the field losing what was typed first, and opens a background tab on a middle click', async () => {
+// The press comes from an X server's test extension, so it needs the virtual display: no other system has an OS-level click to send from here.
+it.skipIf(!underVirtualDisplay())('goes to a row on a real click without the field losing what was typed first', async () => {
   const { app, chrome } = await launchShell({ seedProfile: async (dir: string) => { await seedPages(dir) } })
   try {
     await go(app, chrome, `${server.origin}/delta`)
-    await openTab(chrome)
+    await openTab(app, chrome)
     await chrome.evaluate(() => {
       const input = document.querySelector('#address') as HTMLInputElement
       const log: string[] = []
@@ -304,9 +307,18 @@ it('goes to a row on a real click without the field losing what was typed first,
     console.log(`[omnibox probe] after a real click the field's value at each blur was ${JSON.stringify(blurs)}; focused: ${JSON.stringify(focus)}`)
     // The press navigated, and the field blurred at most once, afterwards (the page's own address had replaced the text by then).
     expect(blurs.length).toBeLessThanOrEqual(1)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
 
+it('opens a background tab on a middle click, and on a click with the open-in-background modifier', async () => {
+  const { app, chrome } = await launchShell({ seedProfile: async (dir: string) => { await seedPages(dir) } })
+  try {
+    await go(app, chrome, `${server.origin}/delta`)
     // A middle click opens the page in a tab behind this one.
-    await openTab(chrome)
+    await openTab(app, chrome)
     await typeInBar(chrome, '127')
     await waitForRows(app, 4)
     const before = (await tabIds(chrome)).length
@@ -318,12 +330,12 @@ it('goes to a row on a real click without the field losing what was typed first,
     expect(await waitFor(async () => !(await shown(app)))).toBe(true)
 
     // Ctrl with a plain click does the same.
-    await openTab(chrome)
+    await openTab(app, chrome)
     await typeInBar(chrome, '127')
     await waitForRows(app, 4)
     const beforeCtrl = (await tabIds(chrome)).length
     const listed = await rowsOf(app)
-    await (overlayOf(app) as Page).locator('.listbox-item').nth(listed.length - 1).click({ modifiers: ['Control'] })
+    await (overlayOf(app) as Page).locator('.listbox-item').nth(listed.length - 1).click({ modifiers: ['ControlOrMeta'] })
     expect(await waitFor(async () => (await tabIds(chrome)).length === beforeCtrl + 1)).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
@@ -335,7 +347,7 @@ it('switches to an open tab from its row and leaves no empty tab behind, and Alt
   const { app, chrome } = await launchShell({ seedProfile: async (dir: string) => { await seedPages(dir) } })
   try {
     await go(app, chrome, `${server.origin}/delta`)
-    await openTab(chrome)
+    await openTab(app, chrome)
     const tabs = await tabIds(chrome)
     expect(tabs).toHaveLength(2)
     await typeInBar(chrome, 'delta')
@@ -374,7 +386,7 @@ it('searches for what follows a question mark, and the search key puts one in th
     await chrome.keyboard.type('127.0.0.1', { delay: 25 })
     const rows = await waitForRows(app, 1)
     expect(rows[0]).toContain('127.0.0.1')
-    expect(rows[0]).toContain('Search DuckDuckGo')
+    expect(rows[0]).toContain('Search Explore')
     // A forced search is never finished with a page.
     expect((await field(chrome)).value).toBe('? 127.0.0.1')
     await shoot(app, chrome, 'omnibox-search')
@@ -420,7 +432,7 @@ it('offers no history in a private window, only the tabs open in it', async () =
   try {
     await go(app, chrome, `${server.origin}/alpha`)
     await go(app, chrome, `${server.origin}/beta`)
-    await openTab(chrome)
+    await openTab(app, chrome)
     await typeInBar(chrome, '127')
     const rows = await waitForRows(app, 2)
     expect(rows.some((row) => row.includes('Beta journal') && row.includes('Switch to this tab'))).toBe(true)

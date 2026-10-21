@@ -239,3 +239,21 @@ describe('the loading-screen watcher: when it goes away', () => {
     expect(asks).toHaveLength(2)
   })
 })
+
+describe('the loading-screen watcher: a first visit owns the cover', () => {
+  it('asks for nothing while the tab is claimed, whether the delay or an already-up screen would have asked', () => {
+    const s = setup()
+    let claimed = true
+    watchLoadingScreen(s.contents as unknown as WebContents, { ...s.deps, claimed: () => claimed })
+    start(s, IPFS)
+    vi.advanceTimersByTime(SHOW_AFTER_MS)
+    expect(s.asks).toHaveLength(0)
+    claimed = false
+    start(s, IPFS)
+    vi.advanceTimersByTime(SHOW_AFTER_MS)
+    expect(s.asks).toHaveLength(1)
+    claimed = true
+    start(s, IPFS)
+    expect(s.asks).toHaveLength(1)
+  })
+})

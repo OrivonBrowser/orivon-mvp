@@ -9,13 +9,15 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { pressKey } from '../support/e2e-helpers.js'
+import { bindingOf, pressCommand, shownBinding } from '../support/e2e-helpers.js'
 import { closeElectron, assertNoElectronSurvivors, mainOutput } from '../support/launch-electron.mjs'
 import { html, launchShell, startServer, visit, type FixtureServer } from '../support/qa-helpers.js'
 import { ABSENCE_SETTLE_MS, activeTabInfo, delay, evaluateRetrying, findViewShowing, popoverShown, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 const SHOTS_DIR = process.env['ORIVON_UI_SHOTS_DIR']
 const TEST_TIMEOUT_MS = 90_000
+// The container width (toolbar.css) at and below which pinned extension buttons give way to the Extensions button.
+const PINNED_BUTTONS_WIDTH = 540
 
 let server: FixtureServer
 beforeAll(async () => {
@@ -48,8 +50,11 @@ const resizeShown = async (app: ElectronApplication, bounds: { x: number, y: num
   expect(await waitFor(async () => await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.isVisible() === true))).toBe(true)
   await app.evaluate(({ BaseWindow }, next) => { BaseWindow.getAllWindows()[0]?.setBounds(next) }, bounds)
 }
-const primaryDisplay = async (app: ElectronApplication): Promise<{ width: number, height: number }> =>
-  await app.evaluate(({ screen }) => screen.getPrimaryDisplay().bounds)
+const primaryDisplay = async (app: ElectronApplication): Promise<{ width: number, height: number, workHeight: number }> =>
+  await app.evaluate(({ screen }) => {
+    const display = screen.getPrimaryDisplay()
+    return { width: display.bounds.width, height: display.bounds.height, workHeight: display.workArea.height }
+  })
 const runCommand = async (chrome: Page, id: string): Promise<void> => {
   await chrome.evaluate((command) => { (window as unknown as { orivonShell: { runCommand: (id: string) => void } }).orivonShell.runCommand(command) }, id)
 }
@@ -73,7 +78,7 @@ it('shows the Home button when asked, loads the home page in this tab, and opens
   try {
     expect(await waitFor(async () => await homeShown(chrome))).toBe(true)
     expect(await chrome.getAttribute('#home', 'aria-label')).toBe('Home')
-    expect(await chrome.getAttribute('#home', 'title')).toBe('Home (Alt+Home)')
+    expect(await chrome.getAttribute('#home', 'title')).toBe(`Home (${shownBinding(bindingOf('nav.home'))})`)
     // Right of Reload, before the bookmark star.
     const box = async (selector: string): Promise<number> => (await chrome.locator(selector).boundingBox())?.x ?? -1
     expect(await box('#home')).toBeGreaterThan(await box('#reload'))
@@ -91,16 +96,16 @@ it('shows the Home button when asked, loads the home page in this tab, and opens
     expect(await tabIds(chrome)).toHaveLength(1)
 
     await visit(app, chrome, `${server.origin}/a`)
-    await pressKey(app, '/a', 'Home', ['alt'])
+    await pressCommand(app, '/a', 'nav.home')
     expect((await waitForTab(chrome, { address: home })).ok).toBe(true)
     expect(await tabIds(chrome)).toHaveLength(1)
 
-    // A middle click and a Ctrl click each open the home page in a background tab.
+    // A middle click and a Mod click each open the home page in a background tab.
     await visit(app, chrome, `${server.origin}/a`)
     const [current] = await tabIds(chrome)
     await chrome.click('#home', { button: 'middle' })
     expect(await waitFor(async () => (await tabIds(chrome)).length === 2)).toBe(true)
-    await chrome.click('#home', { modifiers: ['Control'] })
+    await chrome.click('#home', { modifiers: ['ControlOrMeta'] })
     expect(await waitFor(async () => (await tabIds(chrome)).length === 3)).toBe(true)
     expect((await activeTabInfo(chrome)).activeId).toBe(current)
     expect(await activeAddress(chrome)).toBe(`${server.origin}/a`)
@@ -165,16 +170,50 @@ it('with no home page, Home opens the new tab page and never swaps a loaded page
   }
 }, TEST_TIMEOUT_MS)
 
+const MIN_WIDTH = 500
+
+const setWidth = async (app: ElectronApplication, chrome: Page, width: number): Promise<void> => {
+  await app.evaluate(({ BaseWindow }, w) => { BaseWindow.getAllWindows()[0]?.setSize(w, 400) }, width)
+  // The chrome view takes the new width a moment after the window does.
+  expect(await waitFor(async () => (await chrome.evaluate(() => window.innerWidth)) === width)).toBe(true)
+}
+
+const addActionButtons = (chrome: Page, count: number): Promise<boolean> => chrome.evaluate((n) => {
+  const root = document.querySelector('browser-action-list')?.shadowRoot
+  if (root === null || root === undefined) return false
+  for (let i = 0; i < n; i += 1) {
+    const node = document.createElement('button')
+    node.className = 'action'
+    ;(node as unknown as { part: string }).part = 'action'
+    root.appendChild(node)
+  }
+  return true
+}, count)
+
+const toolbarRow = (chrome: Page) => chrome.evaluate(() => {
+  const list = document.querySelector('browser-action-list')
+  const root = list?.shadowRoot
+  const box = list?.getBoundingClientRect()
+  return {
+    listShown: list !== null && getComputedStyle(list).display !== 'none',
+    listRight: box?.right ?? 0,
+    widths: [...(root?.querySelectorAll('.action') ?? [])].map((node) => node.getBoundingClientRect().width),
+    rights: [...(root?.querySelectorAll('.action') ?? [])].map((node) => node.getBoundingClientRect().right),
+    extensionsButton: (document.querySelector<HTMLElement>('#extensions-menu-btn')?.getBoundingClientRect().width ?? 0) > 0,
+    field: document.querySelector<HTMLInputElement>('#address')?.getBoundingClientRect().width ?? 0
+  }
+})
+
 it('stops the window at its minimum size, and the address field still has room there', async () => {
-  const { app, chrome } = await launchShell({ seedProfile: settingsJson({ 'toolbar.home': true }) })
+  const { app, chrome } = await launchShell({ seedProfile: settingsJson({ 'toolbar.home': true, 'toolbar.extensions': 'never' }) })
   try {
     expect(await waitFor(async () => await homeShown(chrome))).toBe(true)
-    expect(await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.getMinimumSize())).toEqual([500, 400])
+    expect(await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.getMinimumSize())).toEqual([MIN_WIDTH, 400])
     expect(await waitFor(async () => await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.isVisible() === true))).toBe(true)
     await app.evaluate(({ BaseWindow }) => { BaseWindow.getAllWindows()[0]?.setSize(300, 200) })
     expect(await waitFor(async () => (await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.getSize())) !== undefined)).toBe(true)
     const size = await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.getSize() ?? [0, 0])
-    expect(size[0]).toBeGreaterThanOrEqual(500)
+    expect(size[0]).toBeGreaterThanOrEqual(MIN_WIDTH)
     expect(size[1]).toBeGreaterThanOrEqual(400)
     // The chrome view takes the new width a moment after the window does.
     expect(await waitFor(async () => (await chrome.evaluate(() => window.innerWidth)) <= 520)).toBe(true)
@@ -183,29 +222,46 @@ it('stops the window at its minimum size, and the address field still has room t
 
     // Four extension buttons (the library's own element and class, built by hand since no extension is
     // installed): the list shows one whole button and clips the rest, instead of squeezing all four.
-    const buttons = await chrome.evaluate(() => {
-      const list = document.querySelector('browser-action-list')
-      const root = list?.shadowRoot
-      if (list === null || list === undefined || root === null || root === undefined) return null
-      for (let i = 0; i < 4; i += 1) {
-        const node = document.createElement('button')
-        node.className = 'action'
-        ;(node as unknown as { part: string }).part = 'action'
-        root.appendChild(node)
-      }
-      const box = list.getBoundingClientRect()
-      return {
-        listRight: box.right,
-        widths: [...root.querySelectorAll('.action')].map((node) => node.getBoundingClientRect().width),
-        rights: [...root.querySelectorAll('.action')].map((node) => node.getBoundingClientRect().right),
-        field: document.querySelector<HTMLInputElement>('#address')?.getBoundingClientRect().width ?? 0
-      }
-    })
-    expect(buttons).not.toBeNull()
-    expect(buttons?.widths).toEqual([32, 32, 32, 32])
-    expect(buttons?.rights[0] ?? 1e9).toBeLessThanOrEqual((buttons?.listRight ?? 0) + 0.5)
-    expect(buttons?.rights[1] ?? 0).toBeGreaterThan((buttons?.listRight ?? 1e9) + 0.5)
-    expect(buttons?.field ?? 0).toBeGreaterThanOrEqual(96)
+    expect(await addActionButtons(chrome, 4)).toBe(true)
+    const buttons = await toolbarRow(chrome)
+    expect(buttons.widths).toEqual([32, 32, 32, 32])
+    expect(buttons.rights[0] ?? 1e9).toBeLessThanOrEqual(buttons.listRight + 0.5)
+    expect(buttons.rights[1] ?? 0).toBeGreaterThan(buttons.listRight + 0.5)
+    expect(buttons.field).toBeGreaterThanOrEqual(96)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('with the Extensions button shown, the pinned buttons wait in its menu at the minimum size, and the address field keeps its room', async () => {
+  const { app, chrome } = await launchShell({ seedProfile: settingsJson({ 'toolbar.home': true }) })
+  try {
+    expect(await waitFor(async () => await homeShown(chrome))).toBe(true)
+    expect(await waitFor(async () => await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.isVisible() === true))).toBe(true)
+    await setWidth(app, chrome, MIN_WIDTH)
+    const atMinimum = await toolbarRow(chrome)
+    expect(atMinimum.extensionsButton).toBe(true)
+    expect(atMinimum.field).toBeGreaterThanOrEqual(96)
+
+    expect(await addActionButtons(chrome, 4)).toBe(true)
+    const crowded = await toolbarRow(chrome)
+    expect(crowded.listShown).toBe(false)
+    expect(crowded.extensionsButton).toBe(true)
+    expect(crowded.field).toBeGreaterThanOrEqual(96)
+
+    // Just above the width where the list gives way, one whole pinned button is back and the field still has room.
+    await setWidth(app, chrome, PINNED_BUTTONS_WIDTH + 10)
+    const roomy = await toolbarRow(chrome)
+    expect(roomy.listShown).toBe(true)
+    expect(roomy.widths).toEqual([32, 32, 32, 32])
+    expect(roomy.rights[0] ?? 1e9).toBeLessThanOrEqual(roomy.listRight + 0.5)
+    expect(roomy.rights[1] ?? 0).toBeGreaterThan(roomy.listRight + 0.5)
+    expect(roomy.field).toBeGreaterThanOrEqual(96)
+
+    // At the width itself the list is already gone.
+    await setWidth(app, chrome, PINNED_BUTTONS_WIDTH)
+    expect((await toolbarRow(chrome)).listShown).toBe(false)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
@@ -224,7 +280,8 @@ it('opens the window at the place it was left, and never at one no display shows
   const gone = await launchShell({ seedProfile: stateJson({ x: 50_000, y: 40, width: 900, height: 620 }) })
   try {
     const display = await primaryDisplay(gone.app)
-    const expected = { width: Math.min(1280, display.width), height: Math.min(800, display.height) }
+    // Cocoa keeps a new window inside the visible frame (below the menu bar, above the Dock), so on macOS the work area bounds the height.
+    const expected = { width: Math.min(1280, display.width), height: Math.min(800, display.height, process.platform === 'darwin' ? display.workHeight : display.height) }
     expect(await waitFor(async () => (await firstWindowBounds(gone.app)).width === expected.width)).toBe(true)
     expect((await firstWindowBounds(gone.app)).height).toBe(expected.height)
   } finally {
@@ -260,7 +317,10 @@ it('opens the web addresses and local files it is started with as tabs, in order
   const folder = await mkdtemp(join(await realpath(tmpdir()), 'orivon-start-file-'))
   const local = join(folder, 'local.html')
   await writeFile(local, '<!doctype html><title>Local c</title><p>c</p>')
-  const { app, chrome } = await launchShell({ args: [`${server.origin}/a`, pathToFileURL(local).href, 'javascript:alert(1)', `${server.origin}/b`, 'file://nas/share/x.html'] })
+  const operands = [`${server.origin}/a`, pathToFileURL(local).href, 'javascript:alert(1)', `${server.origin}/b`, 'file://nas/share/x.html']
+  // Electron on Windows exits before any script runs when a URL is followed by another operand with no `--` first, its
+  // guard against arguments smuggled through a protocol link; src/main/launch/launch-request.ts reads past the `--`.
+  const { app, chrome } = await launchShell({ args: process.platform === 'win32' ? ['--', ...operands] : operands })
   try {
     expect(await waitFor(async () => (await tabIds(chrome)).length === 3)).toBe(true)
     expect((await waitForTab(chrome, { address: `${server.origin}/a` })).ok).toBe(true)
@@ -333,7 +393,7 @@ it('a kiosk fills the screen with the given address, no chrome, and runs only wh
     expect(layout.views.filter((view) => view.visible).every((view) => view.y === 0)).toBe(true)
     expect(layout.views.some((view) => !view.visible)).toBe(true)
 
-    await pressKey(app, '/a', 'T', ['control'])
+    await pressCommand(app, '/a', 'tab.new')
     await delay(ABSENCE_SETTLE_MS)
     expect(await tabIds(chrome)).toHaveLength(1)
     expect(mainOutput(app)).not.toContain('uncaught exception')

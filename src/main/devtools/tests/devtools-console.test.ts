@@ -10,6 +10,7 @@ vi.mock('../open-console.js', () => ({ showConsolePanel }))
 class FakeContents extends EventEmitter {
   opened = false
   destroyed = false
+  readonly devToolsWebContents = null
   readonly openDevTools = vi.fn(() => { this.opened = true })
   getURL (): string { return 'https://site.example/' }
   isDestroyed (): boolean { return this.destroyed }

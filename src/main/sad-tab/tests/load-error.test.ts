@@ -6,7 +6,7 @@ import type { SlotAsk } from '../../overlays/tab-slots.js'
 import type { ShellWindow } from '../../shell/window-registry.js'
 import { loadErrorOverlay } from '../load-error-overlay.js'
 import { isErrorName, loadErrorText } from '../load-error-text.js'
-import { watchLoadErrors } from '../load-error-watch.js'
+import { forgetLoadErrors, watchLoadErrors } from '../load-error-watch.js'
 
 describe('what the load-error sheet says', () => {
   it('names the usual failures in words, and has a sentence for any other code', () => {
@@ -14,6 +14,7 @@ describe('what the load-error sheet says', () => {
     expect(loadErrorText(-102).body).toBe('The server refused the connection.')
     expect(loadErrorText(-106).title).toBe('You are offline')
     expect(loadErrorText(-20).title).toBe('This page was blocked')
+    for (const code of [-111, -130]) expect(loadErrorText(code).body, String(code)).toContain('The tunnel did not carry this page, and nothing was sent outside it.')
     expect(loadErrorText(-999)).toEqual({ title: 'This page couldn\'t be loaded', body: 'Something went wrong while loading it. Trying again may help.' })
   })
 
@@ -101,6 +102,20 @@ describe('the load-error watcher', () => {
     expect(s.cancel).toHaveBeenCalledOnce()
     fail(s, -102, 'http://127.0.0.1:1/')
     expect(s.asks).toHaveLength(2)
+  })
+
+  it('takes the sheet away when other web contents take the tab\'s place, and only that web contents\' sheet', () => {
+    const s = setup()
+    const other = setup()
+    watchLoadErrors(s.contents as unknown as WebContents, s.deps)
+    watchLoadErrors(other.contents as unknown as WebContents, other.deps)
+    fail(s, -105, 'http://a.invalid/')
+    fail(other, -105, 'http://b.invalid/')
+    forgetLoadErrors(s.contents as unknown as WebContents)
+    expect(s.cancel).toHaveBeenCalledOnce()
+    expect(other.cancel).not.toHaveBeenCalled()
+    forgetLoadErrors(new EventEmitter() as unknown as WebContents)
+    expect(other.cancel).not.toHaveBeenCalled()
   })
 
   it('watches a web contents once', () => {

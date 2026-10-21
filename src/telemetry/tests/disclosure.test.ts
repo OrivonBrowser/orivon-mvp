@@ -31,7 +31,7 @@ describe('buildUsagePayload', () => {
   it('is the schema 4 usage report: the shell totals, the class split, no site names', () => {
     const payload = buildUsagePayload(browsing(), meta)
     expect(payload).toEqual({
-      schema: 4, installId: meta.installId, stream: meta.stream, country: 'IT', version: '0.1.0', period: '2026-09',
+      schema: PAYLOAD_SCHEMA, installId: meta.installId, stream: meta.stream, country: 'IT', version: '0.1.0', period: '2026-09',
       activeSec: 320, backgroundSec: 80, classes: { web3: 120, web25: 100, web2: 100 }
     })
     expect(PAYLOAD_SCHEMA).toBe(4)
@@ -63,7 +63,7 @@ describe('buildSitesPayload', () => {
   it('names only Web3 and Web2.5 sites, with an empty name reading (unlisted), under the install ID and stream', () => {
     const payload = buildSitesPayload(browsing(), { installId: meta.installId, stream: meta.stream, version: '0.1.0', period: '2026-09' })
     expect(payload).toEqual({
-      schema: 4, installId: meta.installId, stream: meta.stream, version: '0.1.0', period: '2026-09',
+      schema: PAYLOAD_SCHEMA, installId: meta.installId, stream: meta.stream, version: '0.1.0', period: '2026-09',
       sites: { 'web3:vitalik.eth': 100, 'web25:app.example.org': 100, 'web3:(unlisted)': 20 }
     })
     expect(Object.keys(payload)).toEqual(['schema', 'installId', 'stream', 'version', 'period', 'sites'])
@@ -89,7 +89,7 @@ describe('buildSitesPayload', () => {
 
 describe('buildErasePayload', () => {
   it('carries the schema and the install ID, nothing else', () => {
-    expect(buildErasePayload('ab'.repeat(16))).toEqual({ schema: 4, installId: 'ab'.repeat(16) })
+    expect(buildErasePayload('ab'.repeat(16))).toEqual({ schema: PAYLOAD_SCHEMA, installId: 'ab'.repeat(16) })
   })
 })
 

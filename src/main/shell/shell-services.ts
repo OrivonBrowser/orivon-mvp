@@ -4,8 +4,14 @@
 import { join } from 'node:path'
 import { app, safeStorage, session } from 'electron'
 import { BookmarkStore } from '../browsing/bookmarks.js'
+import { defaultBookmarks } from '../default-profile/default-profile.js'
+import { startsFromDefaultProfile } from '../default-profile/profile-start.js'
+import { currentDefaultProfileDir } from '../default-profile/default-profile-dir.js'
+import { HidApprovals } from '../devices/hid-approvals.js'
+import { SchemeChoices } from '../scheme-routing/scheme-choices.js'
 import { SearchEngineStore } from '../browsing/search-engine-store.js'
 import { InternalPageRegistry } from '../pages/internal-registry.js'
+import { NYM_HELD_SETTINGS } from '../settings/settings-file.js'
 import { SettingsStore } from '../settings/settings-store.js'
 import { isDevEthName } from '../dev/eth-resolver.js'
 import type { UpdateOffer } from '../install/app-updates.js'
@@ -33,6 +39,10 @@ import type { DownloadService } from '../downloads/download-service.js'
 import { CommandBus } from '../shortcuts/command-bus.js'
 import { ShortcutService } from '../shortcuts/shortcut-service.js'
 import { ShortcutStore } from '../shortcuts/shortcut-store.js'
+import { AppUseStore } from '../newtab/app-use-store.js'
+import { FeaturedStore } from '../newtab/featured-store.js'
+import { createYourApps, type YourApps } from '../newtab/your-apps.js'
+import { createPermissionsController } from '../permissions/permissions.js'
 import { ZoomService } from '../zoom/zoom-service.js'
 import { ZoomStore } from '../zoom/zoom-store.js'
 import { ClosedStack } from '../session-restore/closed-stack.js'
@@ -46,8 +56,15 @@ import { NativeTabDrag } from './native-tab-drag.js'
 import { imageToDataUrl, previewSizeFor, TearDragController } from './tear-drag.js'
 import { captureTabPage } from './tab-view.js'
 import { WindowRegistry } from './window-registry.js'
+import { isTemporaryRoutePartition } from '../route/temporary-routes.js'
+import { tunnelLookFor } from '../route/tunnel-mark.js'
+import type { TunnelLook } from '../route/tunnel-mark.js'
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import type { SubsystemContext } from '../registry.js'
+import { scoreAnswerKeptMs } from '../verifier/test-seam.js'
 import { TabLifecycle } from './tab-lifecycle.js'
+import { createNetworks } from '../networks/networks-runner.js'
+import type { NetworksSource } from '../networks/networks-source.js'
 import { KIOSK_FLAG } from '../window-state/kiosk.js'
 import { FileWindowStateStore, NullWindowStateStore } from '../window-state/window-state-store.js'
 import type { WindowStateStore } from '../window-state/window-state-store.js'
@@ -66,6 +83,10 @@ export interface ShellServices {
   /** The extensions loaded in the session pages run in, and when that changes. */
   readonly extensionsLoaded: LoadedExtensions
   readonly history: HistoryService
+  /** The USB HID devices the person approved, per app and per site (ADR-0068). */
+  readonly hidDevices: HidApprovals
+  /** The app each kind of link opens in, when the person chose one (d-0596). */
+  readonly schemeChoices: SchemeChoices
   readonly internalPages: InternalPageRegistry
   /** This process is a private session: it never writes a store file of its own. */
   readonly isPrivate: boolean
@@ -86,6 +107,13 @@ export interface ShellServices {
     readonly pending: (origin: string) => UpdateOffer | undefined
     readonly onChange: (listener: (origin: string) => void) => () => void
   }
+  /** What the address bar's tunnel button says about a page; null while the routes are not running or the page is not on the tunnel. */
+  readonly tunnel: {
+    readonly lookOf: (url: string, partition: string | undefined) => TunnelLook
+    readonly onChange: (listener: () => void) => () => void
+  }
+  /** The nodes Orivon runs on this computer, for the Available networks popup and the dot on its button. */
+  readonly networks: NetworksSource
   /** What the person told each site it may do; a private session keeps it in memory. */
   readonly siteSettings: SiteSettingsStore
   readonly shortcuts: ShortcutService
@@ -103,13 +131,18 @@ export interface ShellServices {
   readonly windows: WindowRegistry
   /** Where the last-used window was; a private session keeps nothing. */
   readonly windowState: WindowStateStore
+  /** The new tab's Featured row for this profile: the pin it was given and what the person hid; memory only in a private session. */
+  readonly featured: FeaturedStore
+  /** The new tab's Your apps row: the apps this profile has granted capabilities to, and when each was last in front; memory only in a private session. */
+  readonly yourApps: YourApps
+  readonly appUse: AppUseStore
   readonly zoom: ZoomService
   readonly zoomStore: ZoomStore
 }
 
 export function createShellServices (userDataPath: string, runtime: Runtime, ctx: SubsystemContext, platform: NodeJS.Platform = process.platform): ShellServices {
   const shortcutStore = new ShortcutStore(join(userDataPath, 'shortcuts.json'), platform)
-  const settings = new SettingsStore(join(userDataPath, 'settings.json'))
+  const settings = new SettingsStore(join(userDataPath, 'settings.json'), runtime.launch.kind === 'private' && runtime.launch.tunnel === 'nym' ? NYM_HELD_SETTINGS : undefined)
   const zoomStore = new ZoomStore(join(userDataPath, 'zoom.json'))
   const internalPages = new InternalPageRegistry()
   const windows = new WindowRegistry()
@@ -121,8 +154,17 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
   watchClosedTabs(tabLifecycle, closedTabs)
   // A private session writes down no pages: it never opens a history file at all.
   const openedHistory = runtime.isPrivate ? { store: new NullHistoryStore(), problem: null } : openHistory(join(userDataPath, 'history.db'))
+  const appUse = new AppUseStore(runtime.isPrivate ? null : join(userDataPath, 'app-use.json'))
+  const permissions = createPermissionsController(ctx)
+  const yourApps = createYourApps({
+    store: appUse,
+    isPrivate: runtime.isPrivate,
+    holdsGrant: (url) => ctx.broker?.app.hasGrantsSync(url) === true,
+    granted: async () => (await permissions.list()).filter((app) => app.rows.length > 0).map((app) => ({ origin: app.origin, name: app.appName }))
+  })
   return {
-    bookmarks: new BookmarkStore(join(userDataPath, 'bookmarks.json')),
+    appUse,
+    bookmarks: new BookmarkStore(join(userDataPath, 'bookmarks.json'), undefined, undefined, startsFromDefaultProfile() ? () => defaultBookmarks(currentDefaultProfileDir()) : undefined),
     closedTabs,
     commands: new CommandBus(),
     devtools: new DevToolsService(settings, {
@@ -143,7 +185,11 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
     }),
     downloads: createDownloadService(userDataPath, runtime.isPrivate, settings),
     extensionsLoaded: createLoadedExtensions(session.defaultSession),
+    featured: new FeaturedStore(runtime.isPrivate ? null : join(userDataPath, 'new-tab.json')),
+    yourApps,
     history: new HistoryService(openedHistory.store, settings, openedHistory.problem, Date.now, (from, to) => { closedTabs.forgetBetween(from, to) }),
+    hidDevices: new HidApprovals(runtime.isPrivate ? null : join(userDataPath, 'hid-devices.json')),
+    schemeChoices: new SchemeChoices(runtime.isPrivate ? null : join(userDataPath, 'scheme-handlers.json')),
     internalPages,
     isPrivate: runtime.isPrivate,
     kiosk,
@@ -152,11 +198,23 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
     searchEngines: new SearchEngineStore(join(userDataPath, 'search-engines.json'), { readOnly: runtime.isPrivate }),
     session: runtime.isPrivate || kiosk ? new NullSessionStore() : new SessionStore(join(userDataPath, 'session.json')),
     settings,
-    scoreProvider: createScoreProviderClient({ providerAddress: () => settings.get('web3.scoreProvider'), isDevEthName, fetchJson: netFetchJson }),
+    scoreProvider: createScoreProviderClient({ providerAddress: () => settings.get('web3.scoreProvider'), isDevEthName, fetchJson: netFetchJson, answerKeptMs: scoreAnswerKeptMs() }),
     updateOffers: {
       pending: (origin) => ctx.appUpdates?.pending(origin),
       onChange: (listener) => ctx.appUpdates?.onChange(listener) ?? (() => {})
     },
+    tunnel: {
+      lookOf: (url, partition) => {
+        const origin = originFromUrl(url)
+        const routes = ctx.routes
+        if (origin === null || routes === undefined) return { mark: null, via: null }
+        // The session a page runs in decides how it leaves, not only its own origin: a popup adopted into an app's session goes where the app does.
+        const holder = partition === undefined ? session.defaultSession : session.fromPartition(partition)
+        return tunnelLookFor({ state: routes.hub.state(origin), temporary: isTemporaryRoutePartition(partition), own: routes.hub.kindOf(origin), session: routes.controller.tunnelOf(holder) })
+      },
+      onChange: (listener) => ctx.routes?.hub.onChange(() => { listener() }) ?? (() => {})
+    },
+    networks: createNetworks(settings, ctx),
     siteSettings: new SiteSettingsStore(runtime.isPrivate ? null : join(userDataPath, 'site-settings.json')),
     shortcuts: new ShortcutService(shortcutStore, platform),
     shortcutStore,

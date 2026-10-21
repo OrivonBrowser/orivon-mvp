@@ -5,11 +5,17 @@
 // dns-fallback.ts's direct connection to a gateway `config.unproxiedGateways`
 // already found to have no proxy in front of it, taken only once `net`
 // itself has failed that gateway and a DNS-over-HTTPS answer disagreed with
-// the system resolver's (A251, docs/open-questions.md). It is started and
-// restarted by src/main/verifier/.
+// the system resolver's (A251, docs/open-questions.md). A tunnel-profile
+// website's fetches leave through routed-fetch.ts instead, never through net.
+// It is started and restarted by src/main/verifier/.
 
 import { net } from 'electron'
+import { createRequestFetch } from '../../loader/electron/request-fetch.js'
 import { createDirectFetch } from './direct-fetch.js'
+import { lookup } from 'node:dns/promises'
+import { createOutsideFetch } from './outside-fetch.js'
+import { createRoutedFetch } from './routed-fetch.js'
+import { answerForFront } from './front-login.js'
 import { startHeliosLightClient } from './light-client/light-client.js'
 import type { FromHost, ToHost } from './protocol.js'
 import { startHost } from './service.js'
@@ -26,6 +32,9 @@ function describe (error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+/** The names the person asked to resolve outside the tunnel: the system's own resolver, which neither the front nor the proxy setting of this process reaches. */
+const resolveOutside = async (name: string): Promise<readonly string[]> => (await lookup(name, { all: true })).map((entry) => entry.address)
+
 function main (): void {
   // A rejection nothing observed would end this process, and every `.eth` page with it; each request's own handler catches what it expects.
   process.on('unhandledRejection', (reason) => { console.error('[verifier] unhandled rejection:', reason) })
@@ -34,21 +43,41 @@ function main (): void {
     const message = event.data as ToHost
     if (message.type === 'start') {
       if (host !== undefined) return
+      const { front } = message.config
+      const tunnelFetch = front === undefined ? undefined : createRequestFetch({ net, answer: answerForFront(front) })
       host = startHost(message.config, {
         // No HTTP cache: one would answer a block another site's pages fetched faster, and so tell a page where the person has been (A256).
         // No credentials: this process's fetches are gateways, RPCs and DNS-over-HTTPS endpoints, never a page's own request, so nothing here should carry a cookie or a client certificate a session might hold.
-        fetch: async (url, init) => await net.fetch(url, { ...init, cache: 'no-store', credentials: 'omit' }),
-        resolveHost: async (name) => (await net.resolveHost(name)).endpoints.map((endpoint) => endpoint.address),
+        // Through the tunnel's front (`config.front`), `net.fetch` would end at the front's 407, so `net.request` answers it: for the front's own port, and no other proxy. It asks for revalidation where `net.fetch` bypassed the cache, and this process's network context is no session's, so no page's fetch fills it.
+        fetch: tunnelFetch === undefined
+          ? async (url, init) => await net.fetch(url, { ...init, cache: 'no-store', credentials: 'omit' })
+          : async (url, init) => await tunnelFetch(url, { ...init, cache: 'no-store' }),
+        // A name is never resolved on this computer while the tunnel carries the host's requests: the far end resolves it.
+        resolveHost: front === undefined
+          ? async (name) => (await net.resolveHost(name)).endpoints.map((endpoint) => endpoint.address)
+          : async () => { throw new Error('a name is resolved at the far end of the tunnel, not on this computer') },
         post,
         startLightClient: startHeliosLightClient,
         fixturesAllowed: FIXTURES_ALLOWED,
         directFetch: createDirectFetch(),
-        ccipFetch: createDirectFetch({ allowPost: true, allowRedirect: true })
+        ccipFetch: createDirectFetch({ allowPost: true, allowRedirect: true }),
+        // A tunnel profile's website's only way to the network: Node sockets to that profile's front, never `net`. A test build's fixture gateways are plain HTTP.
+        routedFetch: (tunnel) => createRoutedFetch({ front: () => message.config.profileFronts?.[tunnel], allowHttp: FIXTURES_ALLOWED }),
+        // What the person asked to run outside the tunnel leaves on Node's own sockets, to addresses this process resolves and checks.
+        outside: { send: createOutsideFetch(createDirectFetch({ allowPost: true }), resolveOutside), resolveHost: resolveOutside }
       })
       host.then(
         (running) => { post({ type: 'listening', fingerprint: running.fingerprint }) },
         (error: unknown) => { post({ type: 'failed', stage: (error as { code?: unknown }).code === 'EADDRINUSE' ? 'listen' : 'start', message: describe(error) }) }
       )
+      return
+    }
+    if (message.type === 'node') {
+      host?.then((running) => { running.node(message) }, () => {})
+      return
+    }
+    if (message.type === 'ipfs-lookup') {
+      host?.then((running) => { running.ipfsLookup(message.allowed) }, () => {})
       return
     }
     const { id, request } = message

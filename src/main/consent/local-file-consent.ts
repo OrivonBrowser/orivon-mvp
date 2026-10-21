@@ -3,7 +3,8 @@
 // double press (`../shell/question/question-spec.ts`'s `doublePress`). Nothing is known about a local file but its path,
 // so the words say that, and what follows from it. The capability rows are `./grant-prompt-render.ts`'s own.
 import { fileURLToPath } from 'node:url'
-import type { InstallConsentPrompt } from './install-consent.js'
+import type { CapabilityKind, Manifest } from '../../contracts/index.js'
+import type { DialogCaller } from './request-grant.js'
 import { describeInstallConsent } from './grant-prompt-render.js'
 import { askCaller, holdCaller } from './ask-caller.js'
 
@@ -32,8 +33,11 @@ export function displayPathOf (key: string, platform: NodeJS.Platform = process.
   }
 }
 
-/** Builds the real `InstallConsentPrompt` for a local file: the shape `requestInstallConsent`'s own takes, so the grants it leads to go through the same code. */
-export function createLocalFileConsentPrompt (): InstallConsentPrompt {
+/** Asks about the whole declared set of a file, `held` marking what it already holds; true is the person's Allow. */
+export type LocalFileConsentPrompt = (key: string, manifest: Manifest, capabilities: readonly CapabilityKind[], held: readonly CapabilityKind[], caller?: DialogCaller) => Promise<boolean>
+
+/** Builds the real `LocalFileConsentPrompt`: the grants an Allow leads to go through the same code as every other consent. */
+export function createLocalFileConsentPrompt (): LocalFileConsentPrompt {
   return async (key, manifest, capabilities, held = [], caller) => {
     if (caller !== undefined && !caller.stillOn(key)) return false
     const path = displayPathOf(key)

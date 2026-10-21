@@ -69,6 +69,7 @@ export const COMMANDS = [
   { id: 'focus.previousPane', label: 'Previous pane', category: 'navigation', default: 'Shift+F6' },
   { id: 'focus.toolbar', label: 'Go to the toolbar', category: 'navigation', default: 'Alt+Shift+T' },
   { id: 'nav.focusSearch', label: 'Search the web', category: 'navigation', default: 'Mod+K', aliases: ['Mod+E'], yieldToApp: true },
+  { id: 'search.toggleMode', label: 'Switch search between Web3 and Web2', category: 'navigation' },
   { id: 'zoom.in', label: 'Zoom in', category: 'navigation', default: 'Mod+=', aliases: ['Mod++'], repeatable: true },
   { id: 'zoom.out', label: 'Zoom out', category: 'navigation', default: 'Mod+-', repeatable: true },
   { id: 'zoom.reset', label: 'Reset zoom', category: 'navigation', default: 'Mod+0' },
@@ -91,6 +92,7 @@ export const COMMANDS = [
   { id: 'page.reader', label: 'Reader view', category: 'tools', default: 'F9' },
   { id: 'caret.toggle', label: 'Caret browsing', category: 'tools', default: 'F7', yieldToApp: true },
   { id: 'share.copyLink', label: 'Copy link', category: 'tools' },
+  { id: 'share.copyWebLink', label: 'Copy web link (opens in any browser)', category: 'tools' },
   { id: 'share.email', label: 'Email link', category: 'tools' },
   { id: 'site.certificate', label: 'View certificate', category: 'tools' },
   { id: 'site.shortcut', label: 'Create shortcut', category: 'tools' },
@@ -99,6 +101,7 @@ export const COMMANDS = [
   { id: 'page.pip', label: 'Picture in picture', category: 'tools' },
   { id: 'window.new', label: 'New window', category: 'window', default: 'Mod+N' },
   { id: 'window.newPrivate', label: 'New private window', category: 'window', default: 'Mod+Shift+N' },
+  { id: 'window.newPrivateNym', label: 'Open a private window with Nym', category: 'window', default: 'Alt+Shift+N' },
   { id: 'profiles.open', label: 'Profiles', category: 'window' },
   { id: 'window.close', label: 'Close window', category: 'window', default: 'Mod+Shift+W' },
   { id: 'window.fullscreen', label: 'Full screen', category: 'window', default: 'F11', macDefault: 'Ctrl+Meta+F' },
@@ -111,6 +114,7 @@ export const COMMANDS = [
   { id: 'extensions.menu', label: 'Extensions menu', category: 'window' },
   { id: 'import.open', label: 'Import bookmarks and history', category: 'window' },
   { id: 'about.open', label: 'About Orivon', category: 'window' },
+  { id: 'report.open', label: 'Report a problem…', category: 'window', default: 'Alt+Shift+I' },
   // Shift+Escape is an alias, not the default: a binding needs Ctrl, Alt or Cmd, and this one is fixed to match the key other browsers use.
   { id: 'tasks.open', label: 'Task manager', category: 'window', aliases: ['Shift+Escape'] },
   { id: 'app.quit', label: 'Quit Orivon', category: 'window', default: 'Ctrl+Shift+Q' }

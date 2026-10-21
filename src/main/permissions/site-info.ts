@@ -9,9 +9,10 @@
 // is ROW-PER-DECLARED-CAPABILITY instead -- the manifest is the source of
 // what to show a switch for; whether it is on comes from the live grants.
 
+import type { NymState } from '../route/nym-status.js'
 import type { CapabilityKind, ConsentGranularity, Grant, Manifest, Pattern } from '../../contracts/index.js'
 import type { PickedPath } from '../../broker/broker-contracts.js'
-import { decideGrantRequest } from '../../broker/policy/request-grant.js'
+import { offerCapability } from '../consent/capability-row.js'
 import { patternSetFromCapabilities } from '../../broker/policy/manifest-patterns.js'
 import { describeCapabilityGrant, formatOriginForDisplay } from '../consent/grant-prompt-render.js'
 import { summaryAtLevel } from '../consent/grant-level.js'
@@ -58,14 +59,64 @@ export interface SiteUpdate {
   readonly reasons: readonly string[]
 }
 
+/** What a routed app's route is doing, as the popover says it. An app that is not routed has none. `temporary` is a website opened through the proxy from a routed app: its session holds nothing past its last tab. */
+export type SiteRoute = 'idle' | 'ok' | 'down' | 'no-proxy' | 'temporary' | 'moving'
+
+/** A tunnel a website or an installed app can be sent through. */
+export type SiteTunnelKind = 'nym' | 'socks5'
+
+/**
+ * What the popover shows for the tunnel of a website or an installed app, which is chosen the same way for both. `via` is the
+ * tunnel it goes through now; `following` says it has no choice of its own and goes where the browser's default sends it.
+ * `swarm` marks an address read from the Swarm node Orivon runs, which cannot be sent through a tunnel, so the address does not
+ * open while a tunnel is on for it; `unreadable` that the list of tunnel settings could not be read, so every site is on and the
+ * choice is fixed.
+ */
+/** A profile a website lives in: Nym's, the person's proxy's, or the direct one. */
+export type SiteTunnelProfile = SiteTunnelKind | 'direct'
+
+export interface SiteTunnel {
+  readonly via: SiteTunnelKind | null
+  readonly following: boolean
+  readonly subject: 'app' | 'site'
+  /** Why each tunnel cannot be chosen now (a tunnel can always be given up). */
+  readonly blocked: Readonly<Partial<Record<SiteTunnelKind, 'no-proxy' | 'nym-off' | 'not-kept'>>>
+  /** The profile each choice would move a website into for the first time, so the person is told first. `off` is the choice of no tunnel. Never set for an app. */
+  readonly notices: Readonly<Partial<Record<SiteTunnelKind | 'off', SiteTunnelProfile>>>
+  readonly swarm: boolean
+  readonly unreadable: boolean
+  /** The profile the website lives in now, when its entry puts it in one. */
+  readonly profile?: SiteTunnelProfile
+  /** The tunnel everything without a choice of its own goes through. */
+  readonly defaultKind: SiteTunnelKind
+  /** The person's own proxy: the address saved ('' when none), and what goes through it now, so a change of address can say who it moves. */
+  readonly proxy: { readonly address: string, readonly users: { readonly sites: number, readonly apps: number, readonly everything: boolean } }
+  /** The page does not choose its tunnel here: it runs in a temporary session opened through an app's tunnel, or in the session of the app that opened it. */
+  readonly fixed?: 'temporary' | 'opened'
+}
+
 export interface SiteInfo {
   readonly origin: string
   readonly displayOrigin: string
   readonly claimedName: string | undefined
   /** The `domain` the app's manifest names as its home, when it names one. */
   readonly homeDomain: string | undefined
+  /** Where the manifest says a problem with the app is reported (`Manifest.support`): an `https://` address. Absent when it names none. */
+  readonly supportIssues?: string
   /** The update offered to this installed app, when its name has moved. */
   readonly update: SiteUpdate | undefined
+  /** The state of the app's route when the person routed it through their proxy (`../route/`). */
+  readonly route?: SiteRoute
+  /** What Nym is doing, when the app's route leaves through it. */
+  readonly nym?: NymState
+  /** Which tunnel the person's choice sends traffic through: Nym, or their own SOCKS5 address. Absent while routes are not running. */
+  readonly tunnelKind?: 'nym' | 'socks5'
+  /** The whole browser goes through the tunnel unless a site is set to off. Absent while routes are not running. */
+  readonly everywhere?: boolean
+  /** This is a private window held to a tunnel for its whole life: every switch is on and fixed. Absent otherwise. */
+  readonly tunnelHeld?: 'nym'
+  /** The tunnel switch of a website; absent for an installed app, a local file and this computer. */
+  readonly tunnel?: SiteTunnel
   /** True when the site has asked for at least one Orivon capability or
    * picked a file/folder -- what the toolbar key's visibility switches on. */
   readonly asked: boolean
@@ -88,6 +139,8 @@ export interface SiteInfo {
    * of `buildSiteInfo` here and in tests keeps building the same shape.
    */
   readonly extensionsOnSite: readonly string[]
+  /** Set for an app Orivon was never let into -- its first-visit question was dismissed (`later`) or closed with nothing switched on (`declined`) -- so the popup can offer the question back. */
+  readonly notLetIn?: 'later' | 'declined'
 }
 
 /**
@@ -122,13 +175,10 @@ export function buildSiteInfo (
       continue
     }
 
-    // Not held: what turning this on would grant, under the CURRENT
-    // manifest -- never the raw declaration unnarrowed, matching
-    // grantChangedCapabilities's own call shape one level up.
-    const decision = decideGrantRequest(manifest, capability, undefined)
-    if (!decision.allowed) continue // decideGrantRequest fails-closed; nothing to switch.
-    const { warning, message } = summaryAtLevel(describeCapabilityGrant(capability, decision.patterns), level)
-    capabilityRows.push({ capability, on: false, canTurnOn: registered, warning, message, patterns: decision.patterns })
+    // Not held: what turning this on would grant, under the CURRENT manifest -- never the raw declaration unnarrowed.
+    const offered = offerCapability(manifest, capability, level)
+    if (offered === undefined) continue // decideGrantRequest fails-closed; nothing to switch.
+    capabilityRows.push({ capability, on: false, canTurnOn: registered, warning: offered.warning, message: offered.message, patterns: offered.patterns })
   }
 
   const pickedPathRows = pickedPaths.map((pick): PickedPathRow => {
@@ -141,6 +191,7 @@ export function buildSiteInfo (
     displayOrigin: formatOriginForDisplay(origin),
     claimedName: manifest.name,
     homeDomain: manifest.domain,
+    ...(manifest.support === undefined ? {} : { supportIssues: manifest.support.issues }),
     update: undefined,
     asked: capabilityRows.length > 0 || pickedPathRows.length > 0,
     capabilityRows,

@@ -1,25 +1,31 @@
 # `src/main/permissions/`: the grant list, and the per-site popover
 
-**What lives here.** Two surfaces, each behind its own controller.
+**What lives here.** The grant list, the apps card in Settings and the per-site popover, each behind its own controller.
 
-- **All sites**, off the toolbar's tune icon: `permissions.ts` (`PermissionsController`) lists
-  grants and revokes them, recording each revoke as a declined capability (`d-0087`), and lists
-  each site's remembered notification answer for reset. Revoke only: forgetting an app entirely
-  is `GrantLedger.forgetOrigin`. A local file is not listed here: it is not an app a person installed, and the privacy page lists the recorded ones. `permissions-panel.ts` is its popup.
+- **The grant list**: `permissions.ts` (`PermissionsController`) lists every app the broker knows with what it holds
+  and the files it was given, and takes a picked path away; a revoke it makes is recorded as a declined capability
+  (`d-0087`). Forgetting an app entirely is `GrantLedger.forgetOrigin`. A local file is not listed here: it is not an app a
+  person installed, and the privacy page lists the recorded ones.
+- **The apps card in Settings**: `apps-domain.ts` (the `apps` domain, checking every field of a request) and `app-switches.ts`
+  (`AppSwitches`: one row per capability an app declares or holds, built by `app-capability-rows.ts` for an app not opened this session,
+  and the switch that moves one through `site-switches.ts`, the door the key popup uses). A permission is switched, never revoked
+  with a button; an app switched fully off is still listed, because its record remembers the refusal.
 - **One site**, off the address pill's shield and key (`d-0037`; a local file is named by its path, shows no Web3 Score, and has Turn off and Delete data): `site-info.ts` (pure, one row
   per declared capability), `site-switches.ts` (turn one capability off or on, re-validated
   against the manifest), `site-info-controller.ts` (the surface's one door to the broker and
   loader), `site-data-runner.ts` (Cookies and site data I/O) and `site-info-panel.ts`. The controller also
 reports the update a moved name offers the installed app and takes the person's choice to apply it
-(`ADR-0056`).
+(`ADR-0056`). Its `siteSummaryFor` says whether the toolbar key wears a dot (`missing`: an app's declared capability is
+off, or the app was never let in), and an app never let in carries `SiteInfo.notLetIn` and has `reviewPermissions`
+(`ADR-0085`); what it asks of the first visit (`AppEntry`) is injected by `../shell/window-panels.ts`.
 
-Both popups share their `WebContentsView` lifecycle through `popover-view.ts`: it closes a popup on blur, on Escape
+The site-info popup and the Available networks popup ([`../networks/`](../networks/README.md)) share their `WebContentsView` lifecycle through `popover-view.ts`: it closes a popup on blur, on Escape
 (each page asks main to close it over its own channel) and when another popup opens, hands the keyboard back to the tab in front
 when the popup held it, and keys a toggle by the icon that asked, so the key and the shield swap one page for the other. A re-click on the icon that opened it is judged by the stamped press it completes (`../shell/press-stamps.ts`), so a slow click closes the popup and leaves it closed. Rows take an
 optional displayed Website level; at Level 4 their warnings are gone
 ([`ADR-0037`](../../../docs/decisions/ADR-0037-a-level-4-site-s-grants-are-shown-without-warnings.md)).
 
-**Tied to Electron.** The two `-panel` files and `popover-view.ts` import `electron` values;
+**Tied to Electron.** `site-info-panel.ts` and `popover-view.ts` import `electron` values;
 `site-info.ts` and `site-switches.ts` are pure. The loader's `electron/serve.ts` functions are
 injected by `../shell/window.ts`, never imported here.
 
@@ -32,10 +38,9 @@ types), [`../../loader/`](../../loader/) (`index.ts`, `manifest/manifest.ts`),
 [`../extensions/site-reach-runner.ts`](../extensions/site-reach-runner.ts)'s
 `extensionNamesForOrigin` (`site-info-controller.ts` only -- the extensions disclosure,
 `docs/planning/extensions-exploration.md`),
-[`../sessions/notification-decisions.ts`](../sessions/notification-decisions.ts),
 `../shell/renderer-entry.ts`, `../shell/lock-navigation.ts`, `../shell/press-stamps.ts`, `../shell/shell-session.ts`,
 `../shell/theme-colors.ts`, `../shell/view-background-test-hook.ts`,
-`../ipc/permissions-ipc.ts`, `../ipc/site-info-ipc.ts`, the top-level
+`../ipc/site-info-ipc.ts`, the top-level
 `channels.ts`/`registry.ts`, `node:fs/promises`, `node:path`.
 
 **What it must never import.** Nothing bypasses either controller. Every renderer surface that
@@ -45,6 +50,11 @@ shows grants or switches reaches the broker only through `permissions.ts` or
 **Owner stream.** `shell`. Maintenance only.
 
 ## Design notes
+
+**An app's route switch lives on its card and its state in the popover.** `apps-domain.ts` lists each app's route state and
+what blocks turning it on (no proxy, or the app's files are not held here), and `setRoute` turns it on only when
+nothing blocks it; the popover's `SiteInfo.route` carries the state of a routed app so it can say where the traffic goes
+and when the tunnel is not answering. A website and an installed app have the same switches in the popover's tunnels page (the page the address bar's tunnel button opens): `SiteInfo.tunnel` says which tunnel it goes through (`via`: Nym, the person's own proxy, or none), whether that is the browser's default it follows, why each tunnel cannot be chosen now (no proxy address, Nym switched off, an app's files not held here), which first move into a profile needs the storage notice first (never for an app), whether it is a Swarm address, which does not open while a tunnel is on for it, and whether the page does not choose here (`fixed`: a page opened through an app's tunnel, or by an app whose session it runs in; `inSession` sets that from the tab's session); `setTunnel(origin, kind | null)` takes the choice through the route's one switch path. The person's proxy is set from the same page: `SiteInfo.tunnel.proxy` carries the saved address and how many sites and apps go through it, `setProxyAddress` checks an address as Settings does (`../settings/proxy-checks.ts`) and saves it through the settings store (`proxy-setup.ts`), and `testTunnel` is Settings' Test (`../route/route-domain.ts`'s `testTunnel`). Both are refused in a window held to Nym. The route itself is [`../route/`](../route/README.md)'s.
 
 **[`site-info-controller.ts`](site-info-controller.ts)'s `extensionsOnSite` (the extensions disclosure,
 `docs/planning/extensions-exploration.md`) is computed once, ahead of the registered/

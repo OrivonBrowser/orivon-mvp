@@ -4,7 +4,7 @@
 private session (`ADR-0042`), and what follows from that. `launch-context.ts` reads the command line;
 `launch-request.ts` is what a start asks for (open the addresses, a new window, a new private window) and the check
 on a request that arrives from another process; `local-operand.ts` reads an operand that names a file on this computer (a
-`file:` URI, or an existing path read against the directory the start was made in); `start-launch.ts` runs first of all, points the data directory at the
+`file:` URI, or an existing path read against the directory the start was made in); `start-launch.ts` runs first of all, gives a run from source a name and data directory of its own (ADR-0057; the names are in `program-names.ts`), points the data directory at the
 right place and steps aside if that profile is already open; `profile-store.ts` is the profiles (one directory each, with a `profile.json`);
 `private-session.ts` makes, marks, removes and sweeps the directories of private sessions;
 `pid-liveness.ts` is the one check both it and `profile-store.ts` use to tell a marker's process from one
@@ -16,8 +16,8 @@ Private and Settings pages may ask of it.
 
 **What it depends on.** `node:fs`, `node:os`, `node:child_process`;
 [`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts) (`profile-store.ts`'s
-own writes); [`../browsing/local-file-input.ts`](../browsing/local-file-input.ts) (which text names a local file:
-`launch-request.ts` and `local-operand.ts`); `electron` only as a type (`start-launch.ts` is handed the `app`).
+own writes); [`../../protocols/builtin.ts`](../../protocols/builtin.ts) (`orivon-link.ts` serves an `ipfs://` address as the address bar does); [`../browsing/local-file-input.ts`](../browsing/local-file-input.ts) (which text names a local file:
+`launch-request.ts` and `local-operand.ts`); [`../settings/settings-file.ts`](../settings/settings-file.ts) (the settings a private session held to a tunnel is written with: `private-session.ts` and `start-launch.ts`); `electron` only as a type (`start-launch.ts` is handed the `app`).
 [`../shell/`](../shell/) is never imported.
 
 **What it must never import.** [`../shell/tabs.ts`](../shell/tabs.ts) or any store that reads the data
@@ -29,6 +29,15 @@ directory: the launch has to run before one exists.
 engine beneath it; `start-launch.ts` calls Electron's `app.setPath` and single-instance lock and is tied to it.
 
 ## Design notes
+
+**A private session can be held to a tunnel from its first instant.** `--orivon-private-tunnel=nym` (parsed in `launch-context.ts`, only
+with `--orivon-private`; any other value, or two, is a launch that cannot start, never "no tunnel") makes `ProfilesService.openPrivateNym` and the
+"Open a private window with Nym" command. The opener writes the session's settings copy with the browser-wide tunnel on, Nym as the tunnel and
+Nym allowed to run (`createPrivateDir`, through `settings-file.ts`'s `forceSettingsFile`: the file's version and checks, never edited text), and
+the session writes the same again before anything reads the file (`start-launch.ts`), so what the route subsystem reads first, ahead of any
+session or window, already holds the tunnel. A directory that cannot be set up is removed and nothing is started. From then on the process is held:
+its settings store reads those three whatever a file says and refuses a change, its route store refuses an `off` entry, and a private window opened
+from it is held too. The launcher menus (`../os/`) offer only the ordinary private window.
 
 **It runs before the data directory is read.** A store that had read the default directory could not be moved,
 so `start-launch.ts` is called before the subsystems' `beforeReady`. No module reads the directory when it is
@@ -51,6 +60,15 @@ with `--orivon-private` has a directory of its own and takes no lock, so no seco
 take the focus. In this Electron the token is consumed before the main script runs, and the running browser's
 `second-instance` argv holds none, so a private session started from a launcher action cannot be passed one
 (`docs/open-questions.md` A386).
+
+**An `orivon:` link names a `.eth` name or an IPFS address, and the rest is refused** (`orivon-link.ts`,
+[ADR-0094](../../../docs/decisions/ADR-0094-an-orivon-link-from-another-program-opens-a-eth-name-or-an-ipfs-address.md)).
+The text comes from any program, so it is checked as an allow-list: a fixed alphabet and length, one `u=`, one decoding,
+no control, space or bidirectional character, no `.` or `..` segment, and a target that is a `.eth` name (ASCII labels)
+or an `ipfs://` or `ipns://` name. It leaves the parser as a web address, so a request carries nothing the check on a
+request from another process does not already accept. Encode `&`, `#` and `%` inside `u=`: an unencoded `&` ends it. A
+`flavour=` of the shape `FLAVOUR_ID` goes to `firstRunFlavourHint` only on the start a link made (the command line, or
+an `open-url` before the first window); a bad or repeated one is dropped and the target still opens.
 
 **Nothing after `--` is a switch.** The installer's link command ends the switches with `--`, so a link that carries
 `--no-sandbox` or `--orivon-private` is only a link. Every reader of the command line (the launch, the switches a peer

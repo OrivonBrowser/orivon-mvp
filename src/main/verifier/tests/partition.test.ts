@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { requestPartition, withPartition } from '../partition.js'
+import { requestPartition, withPartition, withRoute } from '../partition.js'
 
 describe('requestPartition', () => {
   it('gives a top-level navigation the partition of the page it opens', () => {
@@ -27,5 +27,16 @@ describe('withPartition', () => {
 
   it('removes it when there is no partition', () => {
     expect(withPartition({ 'x-orivon-partition': 'https://victim.example' }, 'x-orivon-partition', undefined)).toEqual({})
+  })
+})
+
+describe('withRoute', () => {
+  it('marks the request of a website in a tunnel\'s profile with that tunnel, replacing whatever the page sent', () => {
+    expect(withRoute({ Accept: '*/*', 'X-Orivon-Route': 'direct' }, 'x-orivon-route', 'nym')).toEqual({ Accept: '*/*', 'x-orivon-route': 'nym' })
+    expect(withRoute({ Accept: '*/*', 'X-Orivon-Route': 'nym' }, 'x-orivon-route', 'socks5')).toEqual({ Accept: '*/*', 'x-orivon-route': 'socks5' })
+  })
+
+  it('strips the mark from every other request, so a page cannot name a route for itself', () => {
+    expect(withRoute({ Accept: '*/*', 'x-orivon-route': 'nym' }, 'x-orivon-route', undefined)).toEqual({ Accept: '*/*' })
   })
 })

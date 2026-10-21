@@ -2,12 +2,14 @@
 // session-aware, unlike Node's global fetch.
 
 import { Readable } from 'node:stream'
-import type { IncomingMessage } from 'electron'
+import type { IncomingMessage, Session } from 'electron'
 import type { Fetch, FetchResponse } from '../fetch/bundle.js'
 import type { RequestHeaders } from '../fetch/budget.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { classifyAddress, isPublicUnicast } from '../../broker/policy/address.js'
 import { servedByVerifier } from '../fetch/verifier-origin.js'
+import { answerRouteChallenge } from '../../main/route/lookup-session.js'
+import { ownDirectSession, ownRequestsSettled, ownRouteFor, ownSiteSession } from '../../main/route/own-requests.js'
 
 export const electronFetch: Fetch = async (url, pinnedAddresses, signal, headers) => {
   // Dynamically imported: outside a real Electron process (i.e. under
@@ -57,6 +59,8 @@ export const electronFetch: Fetch = async (url, pinnedAddresses, signal, headers
   // matters is "still public", not "still this exact address".
   const hostname = new URL(url).hostname
   if (servedByVerifier(url)) return await netFetch(url, signal, headers)
+  // Through the tunnel the far end resolves the name: a lookup here would show it to this computer's resolver, and its answer is not what gets dialled.
+  if (ownRouteFor(new URL(url).origin) === 'tunnel' && classifyAddress(hostname) === 'unparseable') return await netFetch(url, signal, headers)
   if (classifyAddress(hostname) === 'unparseable') {
     const resolved = await net.resolveHost(hostname)
     if (resolved.endpoints.length === 0) {
@@ -136,8 +140,16 @@ function toFetchResponse (url: string, response: IncomingMessage): FetchResponse
  */
 export async function netFetch (url: string, signal: AbortSignal, headers?: RequestHeaders): Promise<FetchResponse> {
   const { net } = await import('electron')
+  // While the setting is being applied the default session may still be direct or still on the front: the request waits, or is refused.
+  await ownRequestsSettled()
+  // A website with a tunnel of its own is fetched in that tunnel's profile session whatever the browser-wide setting says; a rejection means its route cannot be had, and nothing is fetched.
+  const profile = await ownSiteSession(new URL(url).origin)
   return await new Promise<FetchResponse>((resolve, reject) => {
-    const request = net.request({ url, method: 'GET', credentials: 'omit', useSessionCookies: false, redirect: 'manual' })
+    // An origin set to off while the whole browser is on the tunnel is fetched on the system's proxy; otherwise the default session, which then is the tunnel's, whose front this request signs in to.
+    const direct = ownRouteFor(new URL(url).origin) === 'direct' ? ownDirectSession() : undefined
+    const used = direct ?? profile
+    const request = net.request({ url, method: 'GET', credentials: 'omit', useSessionCookies: false, redirect: 'manual', ...(used === undefined ? {} : { session: used as Session }) })
+    request.on('login', (info, callback) => { answerRouteChallenge(info, callback) })
     for (const [name, value] of Object.entries(headers ?? {})) request.setHeader(name, value)
     let hops = 0
     let settled = false
@@ -164,4 +176,14 @@ export async function netFetch (url: string, signal: AbortSignal, headers?: Requ
     signal.addEventListener('abort', () => { request.abort(); fail(new Error('aborted')) }, { once: true })
     request.end()
   })
+}
+
+/**
+ * One request to the verifier's server for the origin of an app served live (serve/live-serve.ts), made as the
+ * browser itself and not as any page: no credentials, no cache, a redirect an error rather than a hop taken
+ * unseen, and the custom-scheme handler of an app's partition bypassed so the request reaches the network.
+ */
+export async function fetchFromVerifier (url: string, init: { readonly method: string, readonly headers: Record<string, string>, readonly signal: AbortSignal }): Promise<Response> {
+  const { net } = await import('electron')
+  return await net.fetch(url, { method: init.method, headers: init.headers, signal: init.signal, redirect: 'error', credentials: 'omit', cache: 'no-store', bypassCustomProtocolHandlers: true })
 }

@@ -26,7 +26,7 @@
 
 import { electronFetch } from './electron/fetch.js'
 import { electronResolveHost } from './electron/resolve.js'
-import { registerServingFor, restorePinnedServing } from './electron/serve.js'
+import { endLiveFor, registerServingFor, restorePinnedServing, serveLiveFor } from './electron/serve.js'
 import { maybeInstallDevServeHook } from './dev-serve.js'
 import { nodeLoaderStorage } from './cache/node-storage.js'
 import { UPDATE_CHECK_INTERVAL_MS, createLoader } from './index.js'
@@ -59,8 +59,12 @@ export const loaderSubsystem: Subsystem = {
       // doc for why `undefined` (no broker subsystem this run) still
       // serves the app correctly, just with a narrower header.
       onInstalled: async (origin) => { await registerServingFor(storage, origin, ctx.broker) },
+      serveLive: async (bundle) => { await serveLiveFor(bundle, ctx.broker) },
+      endLive: endLiveFor,
       updateCheckIntervalMs: UPDATE_CHECK_INTERVAL_MS,
-      contentAddress: verifierContentAddress
+      contentAddress: verifierContentAddress,
+      // Read per load: an installed app the person routed is not asked about from this machine.
+      updatesPaused: (origin) => ctx.routes?.hub.isRouted(origin) === true
     })
     publishLoader(ctx, loader)
     maybeInstallDevServeHook(async (origin) => { await registerServingFor(storage, origin, ctx.broker) })

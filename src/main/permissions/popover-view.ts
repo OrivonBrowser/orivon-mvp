@@ -1,9 +1,6 @@
-// The `WebContentsView` lifecycle every toolbar popup in this chrome shares
-// -- sizing, click-away dismissal, content-height resizing -- extracted
-// once a second popup (../permissions/site-info-panel.js, the site-info
-// popover) needed the exact same mechanism ./permissions-panel.ts already
-// had (code-guidelines.md Rule 3). Neither caller's own domain (grant rows,
-// site info) belongs here; this file only ever moves a rectangle of
+// The `WebContentsView` lifecycle the toolbar popups share: sizing, click-away dismissal and content-height resizing.
+// The site-info popup (./site-info-panel.ts) and the Available networks popup (../networks/networks-panel.ts) are built
+// on it. Neither caller's own domain (site facts, node cards) belongs here; this file only ever moves a rectangle of
 // somebody else's web content around.
 //
 // WHY A SEPARATE VIEW, NOT A REGION OF THE CHROME VIEW: the chrome view is
@@ -58,14 +55,14 @@ export interface PopoverSpec {
   readonly entryPath: string
   /** The renderer entry this popup loads when built. */
   readonly entry: ShellEntry
-  /** Preload script path relative to `dirname`, e.g. `../preload/permissions.js`. */
+  /** Preload script path relative to `dirname`, e.g. `../preload/networks.js`. */
   readonly preloadRelPath: string
-  /** The `--orivon-<name>-url` flag this popup's own preload gates on -- see e.g. `../../preload/permissions.ts`. */
+  /** The `--orivon-<name>-url` flag this popup's own preload gates on -- see e.g. `../../preload/networks.ts`. */
   readonly urlArgName: string
-  /** `'right'` hangs the popup off its icon's right edge (the all-sites list, near the window's right edge); `'left'` off its left edge (the site-info popup, near the window's left edge). */
+  /** `'right'` hangs the popup off its icon's right edge (the Available networks popup, near the window's right edge); `'left'` off its left edge (the site-info popup, near the window's left edge). */
   readonly align: PopoverAlign
   /**
-   * Registers whatever `PERMISSIONS_COMMAND_CHANNEL`-shaped IPC this popup
+   * Registers whatever `NETWORKS_COMMAND_CHANNEL`-shaped IPC this popup
    * owns for its `webContents`, wired to resize via `onContentHeight`.
    * `url` is the exact address this popup was loaded at (`lockNavigation`
    * already refuses any other), so the registered handler can check it the
@@ -96,9 +93,7 @@ export interface PopoverSpec {
    * attaches/detaches it, never re-navigates it. Only safe for a popup whose
    * content takes no per-open argument (`extraArgs` below is ignored for a
    * `warm` popup's own construction, since a warm view is built once, before
-   * any `toggle()` call ever supplies one). Permissions and site-info both
-   * need a different origin's data on each open and stay on the ordinary
-   * create/destroy path.
+   * any `toggle()` call ever supplies one). The Available networks popup and site-info stay on the ordinary create/destroy path: a popup that polls while it shows must stop when it closes.
    * NOT built at construction: every window would otherwise carry a hidden
    * renderer process nobody may ever open (`npm run smoke`'s own two-window
    * count, and every e2e launch, measures exactly this). `prewarm()` on the
@@ -228,8 +223,10 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
       popup.setBounds(popoverBounds(win, currentAnchor, spec.align, contentHeight, maxHeight))
     })
     // Click-away dismissal, the one behaviour that makes this feel like a
-    // toolbar popup rather than a stuck overlay.
-    popup.webContents.on('blur', () => { if (shown === popup) hide() })
+    // toolbar popup rather than a stuck overlay. After the native call, never
+    // inside it: Chromium blurs a view a window resize leaves outside from
+    // within `setSize`, and removing the view there ends the main process.
+    popup.webContents.on('blur', () => { setImmediate(() => { if (shown === popup) hide() }) })
     // A popup whose page is gone (crashed, or its contents destroyed) leaves the window the same way a click away does,
     // so the person's next click on its icon opens a new one instead of closing the dead one.
     const gone = (): void => {

@@ -246,13 +246,19 @@ it('closes the others, or those to the right, but never a pinned tab, and copies
   }
 }, TEST_TIMEOUT_MS)
 
-it('gives the tabs the room there is, then scrolls only their run, keeping the buttons and the tab in front in view', async () => {
+it('gives the tabs the room there is, then scrolls only their run, keeping the buttons in line with the tabs and the tab in front in view', async () => {
   const { app, chrome } = await launched()
   try {
     await openTabs(chrome, '/one', '/two')
     const widths = await chrome.evaluate(() => [...document.querySelectorAll<HTMLElement>('.tab')].map((el) => el.getBoundingClientRect().width))
     // With room to spare a tab is as wide as a tab gets, not at its minimum.
     expect(widths.every((width) => width >= 150)).toBe(true)
+    const [tabMiddle, newTabMiddle, searchMiddle] = await chrome.evaluate(() => ['.tab', '#new-tab', '#tab-search'].map((selector) => {
+      const box = document.querySelector(selector)?.getBoundingClientRect()
+      return box === undefined ? Number.NaN : box.top + box.height / 2
+    }))
+    expect(Math.abs((newTabMiddle ?? Number.NaN) - (tabMiddle ?? Number.NaN)), 'the + button is centred on the tabs, not above them').toBeLessThanOrEqual(1)
+    expect(Math.abs((searchMiddle ?? Number.NaN) - (tabMiddle ?? Number.NaN)), 'the tab search button is centred on the tabs').toBeLessThanOrEqual(1)
 
     for (let n = 0; n < 40; n += 1) {
       await chrome.evaluate((url) => { (window as unknown as { orivonShell: { newTab: (u: string) => void } }).orivonShell.newTab(url) }, `${origin}/many${String(n)}`)

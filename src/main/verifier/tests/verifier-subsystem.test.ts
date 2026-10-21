@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -22,7 +22,7 @@ class FakeProcess extends EventEmitter {
 const electron = vi.hoisted(() => ({ forks: [] as unknown[], userData: '' }))
 const remove = vi.hoisted(() => vi.fn())
 const devNames = vi.hoisted(() => ({ names: [] as string[] }))
-const registered = vi.hoisted(() => ({ beforeRequest: [] as Array<(details: unknown, current: unknown) => Promise<unknown>>, beforeSendHeaders: 0 }))
+const registered = vi.hoisted(() => ({ beforeRequest: [] as Array<(details: unknown, current: unknown) => Promise<unknown>>, beforeSendHeaders: 0, stamps: [] as Array<(details: unknown, current: { requestHeaders: Record<string, string> }) => { requestHeaders: Record<string, string> }> }))
 
 vi.mock('electron', () => ({
   app: {
@@ -38,9 +38,21 @@ vi.mock('electron', () => ({
 vi.mock('../../sessions/web-request-owner.js', () => ({
   RUN_LAST: Number.MAX_SAFE_INTEGER,
   webRequestOwnerFor: () => ({
-    onBeforeSendHeaders: () => { registered.beforeSendHeaders += 1; return { remove } },
-    onBeforeRequest: (_order: number, _filter: unknown, _matches: unknown, run: (details: unknown, current: unknown) => Promise<unknown>) => { registered.beforeRequest.push(run); return { remove } }
+    onBeforeSendHeaders: (_order: number, _filter: unknown, _matches: unknown, run: (typeof registered.stamps)[number]) => { registered.beforeSendHeaders += 1; registered.stamps.push(run); return { remove } },
+    onBeforeRequest: (_order: number, _filter: unknown, _matches: unknown, run: (details: unknown, current: unknown) => Promise<unknown>) => { registered.beforeRequest.push(run); return { remove } },
+    onCompleted: () => ({ remove })
   })
+}))
+
+const beacon = vi.hoisted(() => ({ asked: [] as string[], answers: new Map<string, unknown>() }))
+
+vi.mock('../checkpoint-fetch-net.js', () => ({
+  beaconJson: async (url: string) => {
+    beacon.asked.push(url)
+    const answer = beacon.answers.get(new URL(url).origin)
+    if (answer === undefined) throw new Error('unreachable')
+    return answer
+  }
 }))
 
 vi.mock('../../dev/eth-resolver.js', () => ({
@@ -74,11 +86,14 @@ describe('the verifier subsystem', () => {
     electron.userData = mkdtempSync(join(tmpdir(), 'orivon-verifier-test-'))
     registered.beforeRequest.length = 0
     registered.beforeSendHeaders = 0
+    registered.stamps.length = 0
     remove.mockClear()
     tabs.open = []
     delete process.env['ORIVON_ETH_LIGHT_CLIENT']
     delete process.env['ORIVON_TEST_ETH_FIXTURES']
     devNames.names = []
+    beacon.asked.length = 0
+    beacon.answers.clear()
   })
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
@@ -118,16 +133,220 @@ describe('the verifier subsystem', () => {
     expect(done).toBe(true)
   })
 
+  describe('where IPFS is read from', () => {
+    type StartMessage = { type: string, config?: { ipfsNode?: { endpoint: string, partitionSalt: string, lookupService: boolean }, gateways: string[] } }
+    const started = (index: number): StartMessage | undefined => (forks()[index]?.sent as StartMessage[]).find((message) => message.type === 'start')
+
+    async function launchWith (source: () => 'node' | 'gateways') {
+      const launched = await launch()
+      launched.configureVerifier({ lightClientEnabled: () => true, windows: () => tabs.open, servedFromCache: () => false, ipfsSource: source, ipfsLookupService: () => true })
+      return launched
+    }
+
+    it('gives the host the node\'s loopback endpoint, and keeps the gateways for the node that cannot run, when the person reads IPFS from the node', async () => {
+      const { request } = await launchWith(() => 'node')
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      const config = started(0)?.config
+      expect(config?.ipfsNode?.endpoint).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
+      expect(config?.gateways.length).toBeGreaterThan(0)
+    })
+
+    it('gives the host no node, and the gateways as before, when the person chose gateways', async () => {
+      const { request } = await launchWith(() => 'gateways')
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(started(0)?.config).not.toHaveProperty('ipfsNode')
+      expect(started(0)?.config?.gateways.length).toBeGreaterThan(0)
+    })
+
+    it('puts the host to sleep when the choice changes, and its next start follows the new choice', async () => {
+      let source: 'node' | 'gateways' = 'node'
+      const { request, ipfsSettingsChanged } = await launchWith(() => source)
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      forks()[0]?.listens()
+      expect(started(0)?.config).toHaveProperty('ipfsNode')
+      source = 'gateways'
+      ipfsSettingsChanged('source')
+      expect(forks()[0]?.killed).toBe(true)
+      forks()[0]?.emit('exit', 0)
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(forks()).toHaveLength(2)
+      expect(started(1)?.config).not.toHaveProperty('ipfsNode')
+    })
+
+    it('stops only the IPFS node when the lookup service changes, tells the running host, and leaves it and the light client running', async () => {
+      let allowed = true
+      const launched = await launchWith(() => 'node')
+      launched.configureVerifier({ lightClientEnabled: () => true, windows: () => tabs.open, servedFromCache: () => false, ipfsSource: () => 'node', ipfsLookupService: () => allowed })
+      void launched.request()
+      await vi.advanceTimersByTimeAsync(0)
+      forks()[0]?.listens()
+      expect(started(0)?.config?.ipfsNode?.lookupService).toBe(true)
+      allowed = false
+      launched.ipfsSettingsChanged('lookupService')
+      expect(forks()[0]?.killed).toBe(false)
+      expect(forks()).toHaveLength(1)
+      expect(forks()[0]?.sent.at(-1)).toEqual({ type: 'ipfs-lookup', allowed: false })
+    })
+
+    it('hands the host a per-profile salt for the node\'s partition keys, the same at every start', async () => {
+      const { request, ipfsSettingsChanged } = await launchWith(() => 'node')
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      forks()[0]?.listens()
+      const salt = started(0)?.config?.ipfsNode?.partitionSalt
+      expect(salt).toMatch(/^[0-9a-f]{64}$/)
+      ipfsSettingsChanged('source')
+      forks()[0]?.emit('exit', 0)
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(started(1)?.config?.ipfsNode?.partitionSalt).toBe(salt)
+    })
+
+    it('replaces the salt and puts the host to sleep when the node\'s data is forgotten, so the next start keys its reads anew', async () => {
+      const { request, forgetIpfsNodeData } = await launchWith(() => 'node')
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      forks()[0]?.listens()
+      const salt = started(0)?.config?.ipfsNode?.partitionSalt
+      await forgetIpfsNodeData()
+      expect(forks()[0]?.killed).toBe(true)
+      forks()[0]?.emit('exit', 0)
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      const next = started(1)?.config?.ipfsNode?.partitionSalt
+      expect(next).toMatch(/^[0-9a-f]{64}$/)
+      expect(next).not.toBe(salt)
+    })
+
+    it('never forks the IPFS node for a host that asks for it while IPFS is read from public gateways, and says where to switch it on', async () => {
+      let source: 'node' | 'gateways' = 'gateways'
+      const { request } = await launchWith(() => source)
+      const { ipfsNodeState } = await import('../ipfs-node-subsystem.js')
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      forks()[0]?.listens()
+      forks()[0]?.emit('message', { type: 'node-wanted', node: 'ipfs-node' })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(forks()).toHaveLength(1)
+      expect(ipfsNodeState()).toMatchObject({ state: 'off', reason: expect.stringMatching(/public gateways.*Settings under Web3/) })
+      source = 'node'
+    })
+
+    it('lets the node run again, with the refusal forgotten, once the person reads IPFS from it', async () => {
+      let source: 'node' | 'gateways' = 'gateways'
+      const { request, ipfsSettingsChanged } = await launchWith(() => source)
+      const { ipfsNodeState } = await import('../ipfs-node-subsystem.js')
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      forks()[0]?.listens()
+      forks()[0]?.emit('message', { type: 'node-wanted', node: 'ipfs-node' })
+      await vi.advanceTimersByTimeAsync(0)
+      source = 'node'
+      ipfsSettingsChanged('source')
+      expect(ipfsNodeState()).toEqual({ state: 'off' })
+    })
+
+    it('says in the view what the node is doing while IPFS is read from it, and nothing when it is not', async () => {
+      let source: 'node' | 'gateways' = 'node'
+      const { verifierView } = await launchWith(() => source)
+      expect(verifierView().ipfsNode?.state).toBe('off')
+      expect(verifierView().endpoints.map((group) => group.label)).toContain('IPFS node, on this computer')
+      source = 'gateways'
+      expect(verifierView().ipfsNode).toBeUndefined()
+      expect(verifierView().endpoints.map((group) => group.label)).toContain('IPFS gateways')
+    })
+  })
+
   it('serves a .eth name while the light client can start', async () => {
     const { access } = await launch()
     expect(access.verifierServesName('vitalik.eth')).toBe(true)
   })
 
-  it('stops serving a .eth name once the chosen checkpoint is older than a checkpoint may be, without a restart', async () => {
-    const { access } = await launch()
+  it('stops serving a .eth name once the chosen checkpoint is older than a checkpoint may be and the servers could not renew it', async () => {
+    const { access, request } = await launch()
     expect(access.verifierServesName('vitalik.eth')).toBe(true)
     vi.setSystemTime(Date.now() + MAX_CHECKPOINT_AGE_SECONDS * 1000)
+    void request()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(beacon.asked).toHaveLength(2)
     expect(access.verifierServesName('vitalik.eth')).toBe(false)
+  })
+
+  describe('renewing a checkpoint that has aged out', () => {
+    const SERVERS = ['https://ethereum-beacon-api.publicnode.com', 'https://lodestar-mainnet.chainsafe.io']
+    const ROOT = `0x${'c'.repeat(64)}`
+    type Start = { type: string, config?: { lightClient?: { checkpoint: string }, lightClientOff?: string } }
+    const starts = (index: number): Start[] => (forks()[index]?.sent as Start[]).filter((message) => message.type === 'start')
+
+    /** The finalized header the servers give for a slot a given time before `now`. */
+    function finalizedHeader (root: string, now: number, ageSeconds: number): unknown {
+      const slot = Math.floor((Math.floor(now / 1000) - ageSeconds - MAINNET_GENESIS_SECONDS) / SECONDS_PER_SLOT)
+      return { execution_optimistic: false, finalized: true, data: { root, canonical: true, header: { message: { slot: String(slot) } } } }
+    }
+    const OLD_RELEASE = SHIPPED_AT_MS + 30 * DAY_MS
+
+    it('fetches from two servers and starts the light client from the checkpoint they agree on, which it keeps and says so', async () => {
+      for (const server of SERVERS) beacon.answers.set(server, finalizedHeader(ROOT, OLD_RELEASE, 3600))
+      const { request, verifierView } = await launch(OLD_RELEASE)
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(beacon.asked.sort()).toEqual(SERVERS.map((server) => `${server}/eth/v1/beacon/headers/finalized`).sort())
+      expect(starts(0)[0]?.config?.lightClient?.checkpoint).toBe(ROOT)
+      expect(verifierView().checkpoint).toMatch(/^Checkpoint 1 hours? old, dated .* UTC\. It was fetched while a \.eth name was opened.*ethereum-beacon-api\.publicnode\.com and lodestar-mainnet\.chainsafe\.io gave the same answer\.$/)
+      const stored = JSON.parse(readFileSync(join(electron.userData, 'verifier', 'checkpoint.json'), 'utf8')) as { root: string, fetchedFrom: string[] }
+      expect(stored).toMatchObject({ root: ROOT, fetchedFrom: SERVERS })
+    })
+
+    it('asks nobody while the release\'s checkpoint is within the limit', async () => {
+      const { request } = await launch(SHIPPED_AT_MS + DAY_MS)
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(beacon.asked).toEqual([])
+    })
+
+    it('starts the host without a light client when the servers disagree, and says why where the checkpoint is shown', async () => {
+      beacon.answers.set(SERVERS[0]!, finalizedHeader(ROOT, OLD_RELEASE, 3600))
+      beacon.answers.set(SERVERS[1]!, finalizedHeader(`0x${'d'.repeat(64)}`, OLD_RELEASE, 3600))
+      const { request, verifierView } = await launch(OLD_RELEASE)
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(starts(0)[0]?.config?.lightClientOff).toMatch(/cannot start: the newest checkpoint \(shipped with this release\) is 30 days old.*did not give the same answer/)
+      expect(verifierView().checkpoint).toMatch(/A fresh one could not be fetched from the beacon servers: the beacon servers did not give the same answer/)
+      expect(verifierView().summary).toMatch(/A fresh one could not be fetched/)
+    })
+
+    it('does not ask again within the wait, then puts the running host to sleep and asks once more', async () => {
+      const { request } = await launch(OLD_RELEASE)
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(0)
+      forks()[0]?.listens()
+      expect(beacon.asked).toHaveLength(2)
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(2 * MIN)
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(beacon.asked).toHaveLength(2)
+      expect(forks()[0]?.killed).toBe(false)
+      for (const server of SERVERS) beacon.answers.set(server, finalizedHeader(ROOT, Date.now() + 4 * MIN, 3600))
+      await vi.advanceTimersByTimeAsync(4 * MIN)
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      forks()[0]?.emit('exit', 0)
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(forks()[0]?.killed).toBe(true)
+      expect(beacon.asked).toHaveLength(4)
+      expect(starts(1)[0]?.config?.lightClient?.checkpoint).toBe(ROOT)
+    })
   })
 
   it('serves no .eth name through the light client when the environment or the person switches it off', async () => {
@@ -203,15 +422,83 @@ describe('the verifier subsystem', () => {
     expect(view.summary).toMatch(/^On, and waiting/)
   })
 
-  it('keeps the light client choice it was started with when the setting changes, as Settings says it applies at the next start', async () => {
+  it('follows the light client switch at once: the view says off, and the host\'s next start is told it is off', async () => {
     vi.resetModules()
     vi.setSystemTime(SHIPPED_AT_MS + DAY_MS)
     const subsystem = await import('../verifier-subsystem.js')
     await subsystem.verifierSubsystem.afterReady?.({} as never)
     let enabled = true
     subsystem.configureVerifier({ lightClientEnabled: () => enabled, windows: () => tabs.open, servedFromCache: () => false })
+    expect(subsystem.verifierView()).toMatchObject({ state: 'waiting' })
     enabled = false
-    expect(subsystem.verifierView()).toMatchObject({ state: 'waiting', summary: expect.stringMatching(/^On, and waiting/) })
+    expect(subsystem.verifierView()).toMatchObject({ state: 'off', summary: expect.stringMatching(/^Switched off/) })
+  })
+
+  it('puts the host to sleep when the light client is switched, so its next start builds its config from the new choice', async () => {
+    vi.resetModules()
+    vi.setSystemTime(SHIPPED_AT_MS + DAY_MS)
+    const subsystem = await import('../verifier-subsystem.js')
+    await subsystem.verifierSubsystem.afterReady?.({} as never)
+    const started = (index: number): { config?: { lightClient?: unknown, lightClientOff?: string } } | undefined => (forks()[index]?.sent as Array<{ type: string, config?: { lightClient?: unknown, lightClientOff?: string } }>).find((message) => message.type === 'start')
+    let enabled = true
+    subsystem.configureVerifier({ lightClientEnabled: () => enabled, windows: () => tabs.open, servedFromCache: () => false })
+    void subsystem.verifierContentAddress('https://vitalik.eth').catch(() => {})
+    await vi.advanceTimersByTimeAsync(0)
+    forks()[0]?.listens()
+    expect(started(0)?.config?.lightClient).toBeDefined()
+    enabled = false
+    subsystem.lightClientSettingChanged()
+    expect(forks()[0]?.killed).toBe(true)
+    forks()[0]?.emit('exit', 0)
+    void subsystem.verifierContentAddress('https://vitalik.eth').catch(() => {})
+    await vi.advanceTimersByTimeAsync(0)
+    expect(forks()).toHaveLength(2)
+    expect(started(1)?.config?.lightClient).toBeUndefined()
+    expect(started(1)?.config?.lightClientOff).toMatch(/switched off/)
+  })
+
+  it('puts the host to sleep when the Swarm node is switched, so what it mounted from Swarm and its Swarm config do not outlive the switch', async () => {
+    vi.resetModules()
+    vi.setSystemTime(SHIPPED_AT_MS + DAY_MS)
+    const subsystem = await import('../verifier-subsystem.js')
+    await subsystem.verifierSubsystem.afterReady?.({} as never)
+    let swarmOn = true
+    subsystem.configureVerifier({ lightClientEnabled: () => true, windows: () => tabs.open, servedFromCache: () => false, swarmNodeEnabled: () => swarmOn })
+    void subsystem.verifierContentAddress('https://vitalik.eth').catch(() => {})
+    await vi.advanceTimersByTimeAsync(0)
+    forks()[0]?.listens()
+    swarmOn = false
+    subsystem.swarmSettingChanged()
+    expect(forks()[0]?.killed).toBe(true)
+  })
+
+  it('keeps what the host counted of the nodes it knows and forgets any other name, which a hostile host could send for ever', async () => {
+    const { request, nodeTraffic } = await launch()
+    void request()
+    await vi.advanceTimersByTimeAsync(0)
+    forks()[0]?.listens()
+    forks()[0]?.emit('message', { type: 'node-traffic', node: 'ipfs-node', active: 2, bytes: 500 })
+    forks()[0]?.emit('message', { type: 'node-traffic', node: 'made-up-node', active: 9, bytes: 9_000 })
+    expect(nodeTraffic('ipfs-node')).toEqual({ active: 2, bytes: 500 })
+    expect(nodeTraffic('made-up-node')).toEqual({ active: 0, bytes: 0 })
+    forks()[0]?.emit('exit', 1)
+    expect(nodeTraffic('ipfs-node')).toEqual({ active: 0, bytes: 500 })
+  })
+
+  it('does not count a report twice that a host sends after it failed and before it exited, and counts the next host', async () => {
+    const { request, nodeTraffic } = await launch()
+    void request()
+    await vi.advanceTimersByTimeAsync(0)
+    forks()[0]?.listens()
+    forks()[0]?.emit('message', { type: 'node-traffic', node: 'ipfs-node', active: 2, bytes: 500 })
+    forks()[0]?.emit('message', { type: 'failed', stage: 'listen', message: 'port taken' })
+    forks()[0]?.emit('message', { type: 'node-traffic', node: 'ipfs-node', active: 2, bytes: 600 })
+    forks()[0]?.emit('exit', 1)
+    expect(nodeTraffic('ipfs-node')).toEqual({ active: 0, bytes: 500 })
+    await vi.advanceTimersByTimeAsync(60_000)
+    forks()[1]?.listens()
+    forks()[1]?.emit('message', { type: 'node-traffic', node: 'ipfs-node', active: 1, bytes: 40 })
+    expect(nodeTraffic('ipfs-node')).toEqual({ active: 1, bytes: 540 })
   })
 
   it('says the light client is on and waiting before any .eth address was opened', async () => {
@@ -233,5 +520,94 @@ describe('the verifier subsystem', () => {
     expect(registered.beforeSendHeaders).toBe(1)
     expect(registered.beforeRequest).toHaveLength(1)
     expect(remove).not.toHaveBeenCalled()
+  })
+
+  it('marks the requests of the tunnel profile\'s session as a tunnel-profile website\'s and strips the mark from every other session\'s', async () => {
+    await launch()
+    const { announceWebsiteSession } = await import('../../sessions/website-sessions.js')
+    announceWebsiteSession({} as never, 'nym')
+    announceWebsiteSession({} as never, undefined)
+    announceWebsiteSession({} as never, 'socks5')
+    expect(registered.stamps).toHaveLength(4)
+    const stamped = registered.stamps.map((stamp) => stamp({ url: 'https://a.eth/', resourceType: 'mainFrame', frame: undefined }, { requestHeaders: { 'X-Orivon-Route': 'nym', accept: '*/*' } }).requestHeaders)
+    expect(stamped.map((headers) => headers['x-orivon-route'])).toEqual([undefined, 'nym', undefined, 'socks5'])
+    expect(stamped.map((headers) => Object.keys(headers).filter((name) => name.toLowerCase() === 'x-orivon-route').length)).toEqual([0, 1, 0, 1])
+  })
+
+  describe('with the tunnel profile', () => {
+    const FRONT = { port: 4242, username: 'orivon', secret: 'profile-secret' }
+    const frontsAsked: string[] = []
+    const routes = (profile: 'nym' | 'socks5' | 'direct' | undefined, kind: 'nym' | 'socks5' = 'nym') => ({
+      controller: { settled: async () => {} },
+      hub: { isRouted: () => false, front: async (origin: string) => { frontsAsked.push(origin); return FRONT }, profileFor: () => profile },
+      defaultKind: () => kind
+    })
+    type Sent = { type: string, config?: { profileFronts?: unknown }, request?: { kind: string, route?: string, partition: string } }
+    const sent = (): Sent[] => forks()[0]?.sent as Sent[]
+
+    async function launchWithRoutes (profile: 'nym' | 'socks5' | 'direct' | undefined, kind: 'nym' | 'socks5' = 'nym') {
+      vi.resetModules()
+      vi.setSystemTime(SHIPPED_AT_MS + DAY_MS)
+      const subsystem = await import('../verifier-subsystem.js')
+      await subsystem.verifierSubsystem.afterReady?.({ routes: routes(profile, kind) } as never)
+      subsystem.configureVerifier({ lightClientEnabled: () => true, windows: () => tabs.open, servedFromCache: () => false })
+      const gate = registered.beforeRequest[0]
+      void gate?.({ url: 'https://vitalik.eth/' }, {})
+      await vi.advanceTimersByTimeAsync(0)
+      forks()[0]?.listens()
+      await vi.advanceTimersByTimeAsync(0)
+      return subsystem
+    }
+
+    it('gives the host the front of each tunnel\'s profile to fetch through for its websites, whatever the whole-browser setting is and whichever tunnel is the default', async () => {
+      for (const kind of ['nym', 'socks5'] as const) {
+        frontsAsked.length = 0
+        forks().length = 0
+        registered.beforeRequest.length = 0
+        await launchWithRoutes('nym', kind)
+        const front = { port: 4242, username: 'orivon', password: 'profile-secret' }
+        expect(sent().find((message) => message.type === 'start')?.config?.profileFronts, kind).toEqual({ nym: front, socks5: front })
+        expect(frontsAsked.sort(), kind).toEqual(['orivon-proxy-profile', 'orivon-tunnel-profile'])
+      }
+    })
+
+    it('asks the host about a tunnel-profile website through the tunnel, and about any other website the ordinary way', async () => {
+      const tunnelled = await launchWithRoutes('nym')
+      void tunnelled.siteProvenance('https://a.eth')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(sent().filter((message) => message.type === 'request').map((message) => message.request)).toEqual([{ kind: 'provenance', host: 'a.eth', partition: 'https://a.eth', route: 'nym' }])
+      forks().length = 0
+      registered.beforeRequest.length = 0
+      const proxied = await launchWithRoutes('socks5')
+      void proxied.siteProvenance('https://a.eth')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(sent().filter((message) => message.type === 'request').map((message) => message.request)).toEqual([{ kind: 'provenance', host: 'a.eth', partition: 'https://a.eth', route: 'socks5' }])
+      forks().length = 0
+      registered.beforeRequest.length = 0
+      const direct = await launchWithRoutes('direct')
+      void direct.siteProvenance('https://a.eth')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(sent().filter((message) => message.type === 'request').map((message) => message.request)).toEqual([{ kind: 'provenance', host: 'a.eth', partition: 'https://a.eth' }])
+    })
+  })
+
+  it('shows a name by the scheme the host reports, tells the windows when it changes, and forgets it on request', async () => {
+    const { request, forgetNameSchemes } = await launch()
+    const { onNameSchemeChange } = await import('../name-scheme-events.js')
+    const { BUILTIN_ADDRESSES } = await import('../../../protocols/builtin.js')
+    const changed = vi.fn()
+    onNameSchemeChange(changed)
+    void request()
+    await vi.advanceTimersByTimeAsync(0)
+    forks()[0]?.listens()
+    expect(BUILTIN_ADDRESSES.displayUrl('https://swarm.eth/')).toBe('https://swarm.eth/')
+    forks()[0]?.emit('message', { type: 'name-scheme', host: 'swarm.eth', scheme: 'bzz' })
+    expect(BUILTIN_ADDRESSES.displayUrl('https://swarm.eth/')).toBe('bzz://swarm.eth/')
+    expect(changed).toHaveBeenCalledTimes(1)
+    forks()[0]?.emit('message', { type: 'name-scheme', host: 'swarm.eth', scheme: 'bzz' })
+    expect(changed).toHaveBeenCalledTimes(1)
+    await forgetNameSchemes()
+    expect(BUILTIN_ADDRESSES.displayUrl('https://swarm.eth/')).toBe('https://swarm.eth/')
+    expect(changed).toHaveBeenCalledTimes(2)
   })
 })

@@ -8,8 +8,7 @@ private-address classification, path confinement, origin derivation, the update 
 **What it must never import.** **`electron`, `node:fs`, `node:net`, `node:dns`, or anything
 that performs I/O.** This is what lets `createBroker({ dial, resolve, now, fs, keychain })` run
 every capability test against stubs, with no Electron and no network
-([`build-plan.md`](../../../docs/planning/build-plan.md) §Week 0, and
-[`../index.ts`](../index.ts)'s header). An I/O step a decision needs is injected, as `paths.ts`'s
+([`../index.ts`](../index.ts)'s header). An I/O step a decision needs is injected, as `paths.ts`'s
 `realpath` is. If you want an `electron` import here, the function is doing two jobs: split the
 decision from the effect, and put the effect one level up.
 
@@ -47,6 +46,13 @@ rides `.network` alone. The first grant whose ports cover the port wins and the 
 inside its ranges only, so a wider grant beside it never lends ranges to a port the chosen one
 does not cover.
 
+**[`own-loopback.ts`](own-loopback.ts) is the exclusion a loopback grant never overrides.** The
+loopback listeners Orivon runs (the verifier, held local nodes, route fronts) are kept from pages by
+a webRequest gate that an `orivon.net` socket never passes through, so `connect` and `connectSecure`
+refuse this machine on those ports after the grant check. The held ports come from the caller
+(`CreateBrokerOptions.ownLoopbackPort`), because they live in the main process and change while it
+runs.
+
 **`bind(0)` returns ranges, not a yes.** Port 0 asks the OS to pick, and a bare yes would let it
 pick outside what the person read ("ports 6881-6889"). Returning the granted ranges means the
 caller binds inside them by the shape of the result, as `ConnectAllowed.addresses` does for
@@ -56,7 +62,7 @@ connect. Provisional: A88.
 secp256k1, and hand-rolling variable-time scalar multiplication over the secret behind every
 identity is unacceptable. A pure-JS curve library breaks no rule, but it belongs in `src/nostr/`,
 which needs one anyway
-([`ADR-0010`](../../../docs/decisions/ADR-0010-key-derivation-frozen-at-v1.md) §Reversibility).
+([`ADR-0010`](../../../docs/decisions/ADR-0010-key-derivation-frozen-at-v1.md) section Reversibility).
 The scalar, frozen by golden vectors, pins the identity either way.
 
 **[`origin.ts`](origin.ts)'s `ORIGIN_BEARING_SCHEMES` is an allowlist, never a denylist.**
@@ -93,7 +99,7 @@ port, and nothing else** ([`connect-patterns.ts`](connect-patterns.ts)'s `LOCALH
 where it leads:
 
 - **`localhost` is never resolved.** `checkConnect` substitutes the two literals and
-  `checkLookup` returns them, so no nameserver or hosts file has a say (RFC 6761 §6.3). Rebinding
+  `checkLookup` returns them, so no nameserver or hosts file has a say (RFC 6761 section 6.3). Rebinding
   needs an answer somebody else chose; this one is a constant, which is also why
   `connect('localhost', p)` dials only the literals the grant covers.
 - **It grants what the two literal patterns would, and the person saw it:** `localhost:8080`
@@ -137,7 +143,7 @@ grant (`app.grants()`) and can replay it through `connect`.
 
 Why `https.connect` is not in that union: `OUTBOUND_CAPABILITIES`'s doc in
 [`../capabilities/net.ts`](../capabilities/net.ts). The refusal stays a uniform `'denied'`
-([`handle-contracts.md`](../../../docs/architecture/handle-contracts.md) §How much failure detail
+([`handle-contracts.md`](../../../docs/architecture/handle-contracts.md) section How much failure detail
 an app receives); `src/shim/net/dns.ts`'s `describeLookupDenial` names it for a ported app from
 the app's own grants.
 

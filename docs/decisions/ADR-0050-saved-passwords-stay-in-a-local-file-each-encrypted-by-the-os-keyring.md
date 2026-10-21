@@ -36,7 +36,7 @@ through `safeStorage`, which is the operating system's keyring. Four rules bound
 
 ## Context
 
-The browser had no password store; a person who lives in it for 25 hours a month needs one, and the
+The browser had no password store; a person who lives in it every day needs one, and the
 success metric counts people who arrive from other browsers. A password store is the most valuable
 thing a browser keeps after the identity seed, and the form watcher puts new code in every ordinary
 tab, where a hostile page is the adversary.

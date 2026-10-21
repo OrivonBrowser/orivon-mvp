@@ -5,29 +5,12 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { fold } from '../accounting.js'
 import { buildErasePayload, buildSitesPayload, buildUsagePayload } from '../disclosure.js'
+import { fieldPaths, noticeFields } from './notice-fields.js'
 
 const NOTICES = [
   { file: join(import.meta.dirname, '../../../docs/privacy/notice.md'), heading: 'What telemetry sends' },
   { file: join(import.meta.dirname, '../../../docs/privacy/notice.it.md'), heading: 'Cosa invia la telemetria' }
 ]
-
-/** Dotted paths of every key, going into objects but treating `sites` (a map of site names) as one field. */
-function fieldPaths (value: unknown, prefix = ''): string[] {
-  if (typeof value !== 'object' || value === null) return []
-  return Object.entries(value).flatMap(([key, inner]) => {
-    const path = prefix === '' ? key : `${prefix}.${key}`
-    return key === 'sites' || typeof inner !== 'object' || inner === null ? [path] : fieldPaths(inner, path)
-  })
-}
-
-function noticeFields (text: string, heading = 'What telemetry sends'): string[] {
-  const section = text.split(/^## /m).find((part) => part.startsWith(heading))
-  if (section === undefined) return []
-  return section.split('\n')
-    .filter((line) => line.startsWith('|'))
-    .map((line) => /^\|\s*`([A-Za-z0-9_.]+)`\s*\|/.exec(line)?.[1])
-    .filter((field): field is string => field !== undefined)
-}
 
 describe('the privacy notice and the payloads', () => {
   const state = { ...fold([]), perSite: { '2026-10': { 'web3:a.eth': 10 } }, perApp: { shell: { '2026-10': { activeSec: 10, backgroundSec: 1 } } } }
@@ -43,8 +26,8 @@ describe('the privacy notice and the payloads', () => {
   })
 
   it('finds the fields in a notice table, and none in a notice without one', () => {
-    expect(noticeFields('## What telemetry sends\n\n| `a` | x |\n| `b.c` | y |\n\n## Next\n| `z` | no |')).toEqual(['a', 'b.c'])
-    expect(noticeFields('# Notice\n')).toEqual([])
+    expect(noticeFields('## What telemetry sends\n\n| `a` | x |\n| `b.c` | y |\n\n## Next\n| `z` | no |', 'What telemetry sends')).toEqual(['a', 'b.c'])
+    expect(noticeFields('# Notice\n', 'What telemetry sends')).toEqual([])
   })
 
   it('reads the dotted names of nested fields and keeps the site map one field', () => {

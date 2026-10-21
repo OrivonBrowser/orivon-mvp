@@ -6,7 +6,7 @@ import type { AddressInfo } from 'node:net'
 import type { ElectronApplication, Locator, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
-import { clickAddressBarRetrying, pressKey } from '../support/e2e-helpers.js'
+import { clickAddressBarRetrying, pressCommand } from '../support/e2e-helpers.js'
 import { ABSENCE_SETTLE_MS, delay, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 let server: Server
@@ -66,12 +66,12 @@ it('moves the active tab along the strip with the keys', async () => {
   try {
     const [first, a, b] = await openTabs(app, chrome, '/a', '/b') as [string, string, string]
     // /b is active and last.
-    await pressKey(app, `${origin}/b`, 'PageUp', ['control', 'shift'])
+    await pressCommand(app, `${origin}/b`, 'tab.moveLeft')
     expect(await waitFor(async () => (await tabIds(chrome)).join() === [first, b, a].join())).toBe(true)
-    await pressKey(app, `${origin}/b`, 'PageUp', ['control', 'shift'])
-    await pressKey(app, `${origin}/b`, 'PageUp', ['control', 'shift'])
+    await pressCommand(app, `${origin}/b`, 'tab.moveLeft')
+    await pressCommand(app, `${origin}/b`, 'tab.moveLeft')
     expect(await waitFor(async () => (await tabIds(chrome)).join() === [b, first, a].join())).toBe(true)
-    await pressKey(app, `${origin}/b`, 'PageDown', ['control', 'shift'])
+    await pressCommand(app, `${origin}/b`, 'tab.moveRight')
     expect(await waitFor(async () => (await tabIds(chrome)).join() === [first, b, a].join())).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {

@@ -1,5 +1,9 @@
 import type { Section } from '../model.js'
+import type { SettingsState } from '../state.js'
+import { STORE_UPDATES } from '../updates-state.js'
 import { aboutSystemRows } from './about-system.js'
+
+const fromStore = (state: SettingsState): boolean => state.about?.updatesFromStore === true
 
 export const about: Section = {
   id: 'about',
@@ -19,16 +23,24 @@ export const about: Section = {
     {
       id: 'updates-check',
       label: 'Look for updates',
-      help: 'Once a day Orivon asks GitHub whether a newer release exists, and tells you if one does. It never downloads or installs anything, and sends nothing about you but the request itself. It is off until you turn it on.',
+      help: 'Once a day Orivon asks GitHub whether a newer release exists, and tells you if one does. It never downloads or installs anything, and sends nothing about you but the request itself. It is on by default; turn it off here and Orivon never asks.',
       keywords: ['update', 'upgrade', 'release', 'version', 'new', 'automatic'],
-      control: { type: 'toggle', key: 'updates.check' }
+      control: { type: 'toggle', key: 'updates.check' },
+      visible: (state) => !fromStore(state)
+    },
+    {
+      id: 'updates-store',
+      label: 'Updates',
+      keywords: ['update', 'upgrade', 'store', 'microsoft'],
+      control: { type: 'info', text: () => STORE_UPDATES },
+      visible: fromStore
     },
     {
       id: 'updates-now',
       label: 'Check now',
       keywords: ['update', 'upgrade', 'latest'],
       control: { type: 'action', label: 'Check for an update', run: async (state) => { await state.updates.check() } },
-      visible: (state) => state.profiles?.isPrivate !== true
+      visible: (state) => state.profiles?.isPrivate !== true && !fromStore(state)
     },
     {
       id: 'updates-result',
@@ -36,6 +48,13 @@ export const about: Section = {
       keywords: ['update', 'latest', 'version'],
       control: { type: 'info', text: (state) => state.updates.words() },
       visible: (state) => state.updates.words() !== '' && state.updates.available() === null
+    },
+    {
+      id: 'about-whats-new',
+      label: 'What\'s new in this version',
+      help: 'The changes this version of Orivon brought.',
+      keywords: ['changes', 'changelog', 'release notes', 'new', 'version'],
+      control: { type: 'action', label: 'Show what\'s new', run: async (state) => { await state.openPage('about', '/whats-new') } }
     },
     ...aboutSystemRows,
     {

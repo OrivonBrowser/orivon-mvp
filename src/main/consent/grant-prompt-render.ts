@@ -21,6 +21,7 @@ import type { CapabilityGrantSummary } from './grant-prompt-connect.js'
 import { cappedRows, describeConnectCapability, portsPhrase, WARNING_MARK } from './grant-prompt-connect.js'
 import { patternSetFromCapabilities } from '../../broker/policy/manifest-patterns.js'
 import { describeEmbedGrant } from './grant-prompt-embed.js'
+import { describeDevicesGrant } from './grant-prompt-devices.js'
 import { describeMediaGrant } from './grant-prompt-media.js'
 import { extensionsOnSiteLine } from './grant-prompt-extensions.js'
 import type { PatternSet } from '../../broker/policy/update.js'
@@ -106,18 +107,21 @@ export function describeCapabilityGrant (capability: CapabilityKind, patterns: r
     case 'tcp.connect':
       return describeConnectCapability(
         'Connect to', 'computer', 'computers',
+        'open direct connections to any computer on the internet',
         'This app can connect to any computer on the internet, not just specific ones.',
         patterns
       )
     case 'https.connect':
       return describeConnectCapability(
         'Connect to', 'site', 'sites',
+        'load anything from any website, without the browser\'s usual limits',
         'This app can connect to any website, not just specific ones.',
         patterns
       )
     case 'udp.send':
       return describeConnectCapability(
         'Send data to', 'computer', 'computers',
+        'send data directly to any computer (used for peer-to-peer transfers and calls)',
         'This app can send data to any computer on the internet, not just specific ones.',
         patterns
       )
@@ -185,13 +189,14 @@ export function describeCapabilityGrant (capability: CapabilityKind, patterns: r
         message: 'See what your Web3 Score provider says about other sites',
         explanation: 'The provider you chose is asked about sites this app names. It sees which group of sites each one falls in, as when Orivon checks a site for you. With no provider chosen, nothing is asked.'
       }
+    case 'devices.hid':
+      return describeDevicesGrant(capability, patterns)
     case 'media.camera':
     case 'media.microphone':
     case 'media.screen':
       return describeMediaGrant(capability)
     case 'clipboard.read':
-      // ADR-0032: no app door yet, so no live grant reaches this switch.
-      // Thrown, not rendered, until one is built and gives it real copy.
+      // ADR-0032: no app door yet, so no live grant reaches this switch; thrown until one gives it copy.
       throw new Error(`grant-prompt-render: ${capability} is not renderable yet (ADR-0032)`)
     default: {
       // Exhaustiveness guard, matching app-install.ts's own pattern: a new
@@ -281,15 +286,13 @@ function describeInboundAccess (listenPatterns: readonly Pattern[], bindPatterns
 
 /**
  * Collapses rows that render the IDENTICAL headline into one, unioning
- * their explanations -- the fix for the other half of the same redundancy
- * `describeInboundAccess` targets. `tcp.connect: ["*:*"]` and
- * `udp.send: ["*:*"]` both produce the literal string `WARNING_HEADLINE`
- * with DIFFERENT explanations; shown as two rows, an identical headline
- * repeated reads as a rendering bug, not as two facts. Order-preserving --
+ * their explanations. The unlimited-network rows no longer collide (each
+ * kind ends its headline with its own purpose), so this now catches only
+ * two capabilities that genuinely say the same thing. Order-preserving --
  * the merged row appears where its first contributor did, so `fs`/`id`
  * rows are never reordered around it -- and general on purpose: it fires
- * for any two capabilities that happen to share a headline, not only this
- * pair, without either capability needing to know about the other.
+ * for any two capabilities that happen to share a headline, without either
+ * needing to know about the other.
  */
 function mergeRowsWithIdenticalMessage (rows: readonly CapabilityGrantSummary[]): readonly CapabilityGrantSummary[] {
   const merged: CapabilityGrantSummary[] = []
@@ -323,20 +326,16 @@ function mergeRowsWithIdenticalMessage (rows: readonly CapabilityGrantSummary[])
  * own line, not only through an icon a person may not consciously register.
  *
  * TWO MERGES RUN BEFORE RENDERING, both fixing REDUNDANT rows rather than
- * TRUE ones -- found against the torrent example manifest (capability-api.md:
- * `connect: ["*:*"]` + `listen` + `bind` + `send: ["*:*"]` + `fs`), which
- * rendered 4 of 5 rows warned and one headline twice. Neither merge
- * silences a real warning: `tcp.listen.network`+`udp.bind.network` become
- * one row (`describeInboundAccess`) because they are one fact stated
- * twice, and any two rows that render the identical headline collapse into
- * one (`mergeRowsWithIdenticalMessage`) for the same reason. What is left
- * after both is exactly as many warned rows as there are DISTINCT kinds of
- * breadth the manifest actually declares -- for that manifest, two: it can
- * reach anywhere outbound, and it can be reached from anywhere on the
- * network inbound. Considered and rejected: a second, lower-severity
- * marker for `tcp.listen.network`/`udp.bind.network` (README, Design
- * notes) -- the two facts are not degrees of the same risk, so grading one
- * below the other would misstate it rather than declutter it.
+ * TRUE ones. Neither silences a real warning: `tcp.listen.network` +
+ * `udp.bind.network` become one row (`describeInboundAccess`) because they
+ * are one fact stated twice, and any two rows that render the identical
+ * headline collapse into one (`mergeRowsWithIdenticalMessage`) for the same
+ * reason. The outbound kinds (`tcp.connect`, `udp.send`, `https.connect`)
+ * each carry a headline of their own, so a torrent-style manifest shows each
+ * kind on its own row, saying what it is for. Considered and rejected: a
+ * second, lower-severity marker for `tcp.listen.network`/`udp.bind.network`
+ * (README, Design notes) -- the two facts are not degrees of the same risk,
+ * so grading one below the other would misstate it rather than declutter it.
  */
 function describeCapabilitySet (
   origin: string,
@@ -378,9 +377,7 @@ function describeCapabilitySet (
   // contributed to it (recovered by matching on `message`, the same key
   // mergeRowsWithIdenticalMessage itself merges on) is already held -- a
   // row combining a held capability with a not-yet-decided one still reads
-  // as something Deny genuinely affects. Wording matches
-  // describeCapabilityChoice's own `[Allowed]`/`[Denied]` bracket
-  // convention (grant-prompt-choice.ts) rather than inventing a second one.
+  // as something Deny genuinely affects.
   const rowLines = mergedRows.map((row) => {
     const contributing = rowCapabilities.filter((_, index) => rows[index]?.message === row.message).flat()
     const isHeld = contributing.length > 0 && contributing.every((capability) => held.includes(capability))
@@ -415,7 +412,6 @@ function describeCapabilitySet (
  * `held` (A170) names whatever `capabilities` already holds through a
  * SEPARATE door (`app.requestGrant`) -- each such row is marked, so Deny
  * visibly does not cover it. Defaults to none, so every pre-existing caller
- * (including the per-capability overview, ./install-consent-prompt.ts)
  * keeps rendering exactly as before. `extensionsOnSite` is the same
  * disclosure `describeGrantRequest` takes, and defaults the same way.
  */

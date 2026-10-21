@@ -1,8 +1,8 @@
 # Extensions: build plan
 
-> **Working plan, 2026-09-28.** The owner's answers to `extensions-exploration.md` §10 are
+> **Working plan, 2026-09-28.** The owner's answers to `extensions-exploration.md` section 10 are
 > below; this page turns them into packages of work. `docs/planning/` is exempt from CLAUDE.md
-> Rule 2. Live pages are rewritten when each package lands (exploration §12).
+> Rule 2. Live pages are rewritten when each package lands (exploration section 12).
 
 ## Owner decisions (2026-09-28)
 
@@ -222,6 +222,6 @@ Day PRs: A (packages 1-4) and B can open the same day; C needs the owner; D and 
 ADRs: vendoring and the fork reason; the session model (after owner confirmation); the
 extension principal and `orivon` key; dNR ownership of `webRequest`. `security-model.md`: T4
 rewritten (the ordinary-tab preload exposes `orivon`; the contradiction is filed first), plus
-the exploration §9 rows and item 3 above. `scope.md` IN row. `ARCHITECTURE.md` §Where things
+the exploration section 9 rows and item 3 above. `scope.md` IN row. `ARCHITECTURE.md` section Where things
 live: `vendor/`, `src/main/extensions/` (tied), manifest policy (durable). Compatibility
 matrix: a Chrome extensions line.

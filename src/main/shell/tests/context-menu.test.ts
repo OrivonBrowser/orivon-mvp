@@ -216,7 +216,7 @@ describe('showContextMenu -- a tab\'s menu against a chrome menu', () => {
     const open = vi.fn()
     showContextMenu(tabContents() as never, params({ linkURL: 'https://example.com/', mediaType: 'image', srcURL: 'https://example.com/i.png', selectionText: 'words', editFlags: { ...NO_EDIT, canCopy: true } }), {
       window: {} as never, kiosk: true, openInNewTab: open, openInWindow: open, openInPrivate: open, openInSplit: open, openInFront: open,
-      page: { bare: () => false }, services: { settings: settings({ 'search.engine': 'brave', 'search.customUrl': '', 'spellcheck.enabled': true }) } as never
+      page: { bare: () => false }, services: { settings: settings({ 'search.mode': 'web2', 'search.engine': 'brave', 'search.customUrl': '', 'spellcheck.enabled': true }) } as never
     })
     const all = labels(lastTemplate())
     expect(all.filter((label) => /Open |Search/.test(label))).toEqual([])
@@ -276,7 +276,7 @@ describe('showContextMenu -- a tab\'s menu against a chrome menu', () => {
       openInNewTab: background,
       openInFront: inFront,
       page: { bare: () => false },
-      services: { settings: settings({ 'search.engine': 'brave', 'search.customUrl': '', 'spellcheck.enabled': true }) } as never
+      services: { settings: settings({ 'search.mode': 'web2', 'search.engine': 'brave', 'search.customUrl': '', 'spellcheck.enabled': true }) } as never
     })
     const template = lastTemplate()
     expect(labels(template)).toEqual(['Copy', 'Search Brave Search for “a b”'])
@@ -285,18 +285,34 @@ describe('showContextMenu -- a tab\'s menu against a chrome menu', () => {
     expect(background).not.toHaveBeenCalled()
   })
 
+  it('searches the selection with the Web3 engine while the address bar does', () => {
+    buildFromTemplate.mockClear()
+    const inFront = vi.fn()
+    showContextMenu(tabContents() as never, params({ selectionText: 'a b', editFlags: { ...NO_EDIT, canCopy: true } }), {
+      window: {} as never,
+      openInNewTab: vi.fn(),
+      openInFront: inFront,
+      page: { bare: () => false },
+      services: { settings: settings({ 'search.mode': 'web3', 'search.web3Engine': 'explore', 'search.engine': 'brave', 'search.customUrl': '', 'spellcheck.enabled': true }) } as never
+    })
+    const template = lastTemplate()
+    expect(labels(template)).toEqual(['Copy', 'Search Explore for “a b”'])
+    click(template, 'Search Explore for “a b”')
+    expect(inFront).toHaveBeenCalledWith('https://explore.orivonstack.eth/#/search?q=a+b')
+  })
+
   it('words a custom engine as "the Web"', () => {
     buildFromTemplate.mockClear()
     showContextMenu(tabContents() as never, params({ selectionText: 'q' }), {
       window: {} as never, openInNewTab: vi.fn(), page: { bare: () => false },
-      services: { settings: settings({ 'search.engine': 'custom', 'search.customUrl': 'https://x.test/?q=%s', 'spellcheck.enabled': true }) } as never
+      services: { settings: settings({ 'search.mode': 'web2', 'search.engine': 'custom', 'search.customUrl': 'https://x.test/?q=%s', 'spellcheck.enabled': true }) } as never
     })
     expect(labels(lastTemplate())).toContain('Search the Web for “q”')
   })
 
   it('switches spell checking off from the editable menu, and hides suggestions while it is off', () => {
     buildFromTemplate.mockClear()
-    const store = settings({ 'search.engine': 'duckduckgo', 'search.customUrl': '', 'spellcheck.enabled': true })
+    const store = settings({ 'search.mode': 'web2', 'search.engine': 'duckduckgo', 'search.customUrl': '', 'spellcheck.enabled': true })
     const wc = tabContents()
     showContextMenu(wc as never, params({ isEditable: true, misspelledWord: 'helo', dictionarySuggestions: ['hello'] }), {
       window: {} as never, openInNewTab: vi.fn(), page: { bare: () => false }, services: { settings: store } as never
@@ -312,7 +328,7 @@ describe('showContextMenu -- a tab\'s menu against a chrome menu', () => {
     buildFromTemplate.mockClear()
     showContextMenu(wc as never, params({ isEditable: true, misspelledWord: 'helo', dictionarySuggestions: ['hello'] }), {
       window: {} as never, openInNewTab: vi.fn(), page: { bare: () => false },
-      services: { settings: settings({ 'search.engine': 'duckduckgo', 'search.customUrl': '', 'spellcheck.enabled': false }) } as never
+      services: { settings: settings({ 'search.mode': 'web2', 'search.engine': 'duckduckgo', 'search.customUrl': '', 'spellcheck.enabled': false }) } as never
     })
     expect(labels(lastTemplate())).not.toContain('hello')
     expect(lastTemplate().find((i) => i.label === 'Check Spelling')).toMatchObject({ checked: false })

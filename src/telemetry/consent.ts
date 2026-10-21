@@ -4,8 +4,9 @@
 import type { ConsentState } from './disclosure.js'
 
 /**
- * Bump on any change to what is sent or to the notice that describes it: an acceptance given under an
- * older version no longer counts, so nothing is sent until the person chooses again.
+ * Bump on any change to what telemetry sends or to what the notice says about it: an acceptance given
+ * under an older version no longer counts, so nothing is sent until the person chooses again. The
+ * notice's bug-report section is not under it: a report is agreed to one at a time, in full view.
  */
 export const NOTICE_VERSION = 4
 
@@ -69,4 +70,27 @@ export function mayAskAgain (record: ConsentRecord, nowMs: number, noticeVersion
 /** The welcome screen's box: shown only while the system consent is open and no refusal is recent. */
 export function shouldOfferAtWelcome (record: ConsentRecord, nowMs: number, noticeVersion: number = NOTICE_VERSION): boolean {
   return effectiveConsent(record, noticeVersion) === 'undecided' && mayAskAgain(record, nowMs, noticeVersion)
+}
+
+/** One plain sentence for each notice version that changed what is sent, shown to a person who agreed to an older one. */
+export const NOTICE_CHANGES: Readonly<Record<number, string>> = {
+  4: 'The usage report names your country, from your time zone, instead of EU, US or other, and both reports are also sent when Orivon starts.'
+}
+
+/**
+ * An acceptance given under an older notice is asked again at the next start; a refusal waits out its six months.
+ * One given under a newer notice (a newer build shares this file) is left alone: this build sends nothing under it.
+ */
+export function renewalDue (record: ConsentRecord, noticeVersion: number = NOTICE_VERSION): boolean {
+  return record.state === 'accepted' && record.noticeVersion < noticeVersion
+}
+
+/** The sentences for the versions after the one the person agreed to, up to the current one, oldest first. */
+export function changesSince (record: ConsentRecord, noticeVersion: number = NOTICE_VERSION, changes: Readonly<Record<number, string>> = NOTICE_CHANGES): string[] {
+  const lines: string[] = []
+  for (let version = record.noticeVersion + 1; version <= noticeVersion; version++) {
+    const line = changes[version]
+    if (line !== undefined) lines.push(line)
+  }
+  return lines
 }

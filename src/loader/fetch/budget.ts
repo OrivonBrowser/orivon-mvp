@@ -4,6 +4,7 @@
 // into a hashed BundleTree) does not need to know the inside of. Tested
 // through fetch/tests/bundle.test.ts's own suite, same as install-origin.ts.
 
+import { FAILURE_HEADER } from './content-root.js'
 import { servedByVerifier } from './verifier-origin.js'
 
 /**
@@ -121,11 +122,31 @@ export const BUNDLE_TIMEOUT_MS = 30 * 60_000
 export interface FetchBundleRejected {
   readonly ok: false
   readonly reason: string
+  /** A fault that may pass on its own (a gateway's 502/503/504, a dropped connection): worth fetching again, and, once the attempts run out, a failed download rather than a bad bundle. */
+  readonly transient?: true
+  /** The bundle (or a file of it) is larger than Orivon allows: no gateway will make it smaller. */
+  readonly tooLarge?: true
+  /** The verifier proved the content is not what its name or address names (`FAILURE_HEADER`): a real integrity failure, never a fault that passes. */
+  readonly integrity?: true
+  /** The HTTP status that refused the request, when one did. */
+  readonly status?: number
 }
 
 export function rejected (reason: string): FetchBundleRejected {
   return { ok: false, reason }
 }
+
+/** A rejection for a size cap: the first-visit order names it plainly rather than as a failure or a fault in the files. */
+export function tooLargeRejected (reason: string): FetchBundleRejected {
+  return { ok: false, reason, tooLarge: true }
+}
+
+function transientlyRejected (reason: string): FetchBundleRejected {
+  return { ok: false, reason, transient: true }
+}
+
+/** Statuses a gateway or proxy answers while it is the one that is unwell. A 500 is not here: an origin answers it for a fault that will repeat. */
+const TRANSIENT_STATUSES: ReadonlySet<number> = new Set([502, 503, 504])
 
 /**
  * The bundle's byte budget, shared by every asset fetch running at once:
@@ -146,6 +167,11 @@ export class ByteBudget {
     if (bytes > this.#remaining) return false
     this.#remaining -= bytes
     return true
+  }
+
+  /** Returns bytes taken by a download that is being fetched again from the start. */
+  give (bytes: number): void {
+    this.#remaining += bytes
   }
 }
 
@@ -267,24 +293,33 @@ export async function fetchWithBudget (
     try {
       response = await raceAbort(fetchFn(url, pinnedAddresses, controller.signal, conditional), controller.signal, abortError)
     } catch (error) {
-      return rejected(`could not fetch ${label} (${url}): ${error instanceof Error ? error.message : String(error)}`)
+      const reason = `could not fetch ${label} (${url}): ${error instanceof Error ? error.message : String(error)}`
+      // The fetch itself failed, as opposed to this call's own deadline or idle timer cutting it off.
+      return controller.signal.aborted ? rejected(reason) : transientlyRejected(reason)
     }
     if (conditional !== undefined && response.status === NOT_MODIFIED) {
       response.body?.cancel().catch(() => {})
       return { response, byteLength: 0 }
     }
-    if (!response.ok) return rejected(`${label} fetch failed: HTTP ${String(response.status)} (${url})`)
+    if (!response.ok) {
+      const reason = `${label} fetch failed: HTTP ${String(response.status)} (${url})`
+      response.body?.cancel().catch(() => {})
+      if (servedByVerifier(url) && response.headers?.get(FAILURE_HEADER) === 'unverifiable') return { ok: false, reason, integrity: true, status: response.status }
+      if (!TRANSIENT_STATUSES.has(response.status)) return { ok: false, reason, status: response.status }
+      return { ...transientlyRejected(reason), status: response.status }
+    }
 
     const declared = declaredLength(response)
     if (declared !== undefined) {
-      if (declared > assetCap) return rejected(`${label} declares ${String(declared)} bytes, over its cap of ${String(assetCap)}: ${url}`)
-      if (declared > budget.remaining) return rejected(`${label} declares ${String(declared)} bytes, more than fits in the bundle's remaining budget: ${url}`)
+      if (declared > assetCap) return tooLargeRejected(`${label} declares ${String(declared)} bytes, over its cap of ${String(assetCap)}: ${url}`)
+      if (declared > budget.remaining) return tooLargeRejected(`${label} declares ${String(declared)} bytes, more than fits in the bundle's remaining budget: ${url}`)
     }
 
     const body = response.body
     if (body === null) return { response, byteLength: 0 }
     const reader = body.getReader()
     let total = 0
+    let taken = 0
     while (true) {
       idle.touch()
       let step: ReadableStreamReadResult<Uint8Array>
@@ -292,18 +327,22 @@ export async function fetchWithBudget (
         step = await raceAbort(reader.read(), controller.signal, abortError)
       } catch (error) {
         reader.cancel().catch(() => {})
-        return rejected(`reading ${label} failed (${url}): ${error instanceof Error ? error.message : String(error)}`)
+        const reason = `reading ${label} failed (${url}): ${error instanceof Error ? error.message : String(error)}`
+        if (controller.signal.aborted) return rejected(reason)
+        budget.give(taken)
+        return transientlyRejected(reason)
       }
       if (step.done) break
       total += step.value.byteLength
       if (total > assetCap) {
         reader.cancel().catch(() => {})
-        return rejected(`${label} exceeds its cap of ${String(assetCap)} bytes (MAX_ASSET_BYTES): ${url}`)
+        return tooLargeRejected(`${label} exceeds its cap of ${String(assetCap)} bytes (MAX_ASSET_BYTES): ${url}`)
       }
       if (!budget.take(step.value.byteLength)) {
         reader.cancel().catch(() => {})
-        return rejected(`${label} does not fit in the bundle's remaining byte budget (MAX_BUNDLE_BYTES): ${url}`)
+        return tooLargeRejected(`${label} does not fit in the bundle's remaining byte budget (MAX_BUNDLE_BYTES): ${url}`)
       }
+      taken += step.value.byteLength
       idle.pause()
       try {
         await onChunk(step.value)

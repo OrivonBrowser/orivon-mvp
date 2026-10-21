@@ -68,3 +68,10 @@
 
 .sites-show-all { justify-self: start; }
 .sites-show-all[hidden], .sites-list .banner[hidden], .sites-foot .btn[hidden] { display: none; }
+
+/* Apps the person refused at their first visit: a host and the one button, under the list. */
+.sites-declined-head { margin: 8px 0 0; font-size: 14px; font-weight: 600; }
+.sites-declined-note { margin: 0; font-size: 13px; color: var(--wink-dim); }
+.sites-declined-head[hidden], .sites-declined-note[hidden], .sites-declined[hidden] { display: none; }
+.declined-app .site-line { padding: 4px 8px; }
+.declined-app .site-host { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

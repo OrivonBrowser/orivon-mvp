@@ -5,6 +5,7 @@
 // registered apps are both known.
 import { configureSiteNotifications, setNotificationsBlockedCheck } from '../sessions/permission-gate.js'
 import { siteAsks } from '../sessions/site-asks.js'
+import { createWakeLockAsker } from '../sessions/wake-lock-asker.js'
 import type { ShellInstaller } from '../shell/shell-installers.js'
 import { windowShowing } from '../shell/showing-window.js'
 import { isAppOrigin } from './app-origin.js'
@@ -33,6 +34,7 @@ export const installSitePermissions: ShellInstaller = {
       access: pageAccess
     })
     siteAsks.add(createSiteAsker(engine))
+    siteAsks.add(createWakeLockAsker({ isTab: (contents) => services.windows.findTab(contents) !== null }))
     configureSiteNotifications({ isPrivate: services.isPrivate, isApp: (origin) => isAppOrigin(ctx, origin) })
     setNotificationsBlockedCheck(() => services.settings.get('sites.notifications') === 'block')
   }

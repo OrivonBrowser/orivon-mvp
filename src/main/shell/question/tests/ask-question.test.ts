@@ -89,7 +89,7 @@ describe('askQuestion', () => {
     r.drawn()
     await vi.advanceTimersByTimeAsync(GUARD_MS)
     r.press(0)
-    expect(await answer).toEqual({ response: 0, checkboxChecked: false })
+    expect(await answer).toEqual({ clicked: true, response: 0, checkboxChecked: false })
   })
 
   it('ignores the accepting button inside the guard, and resolves a cancel with the cancel index', async () => {
@@ -286,7 +286,7 @@ describe('askQuestion', () => {
     const answer = r.ask({ window: r.window, tabId: 't1' }, NOTICE)
     expect(r.shown).toHaveLength(1)
     r.press(0)
-    expect(await answer).toEqual({ response: 0, checkboxChecked: false })
+    expect(await answer).toEqual({ clicked: true, response: 0, checkboxChecked: false })
     expect(r.native).not.toHaveBeenCalled()
   })
 

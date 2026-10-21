@@ -1,8 +1,8 @@
 # `src/broker/transport/`: how a page reaches the broker, and how bytes move
 
 **What lives here.** The Electron IPC front door ([`ipc.ts`](ipc.ts)), its message validation,
-the per-origin rate limiter, and `orivon.fs.readFileSync`'s synchronous channel
-(`SYNC_CONTROL_CHANNEL`,
+the per-origin rate limiter, and the page's synchronous `fs` channel (`readFileSync` and the path-based twin;
+`SYNC_CONTROL_CHANNEL`,
 [`ADR-0016`](../../../docs/decisions/ADR-0016-synchronous-file-reads-are-permitted.md)).
 [`dispatch/`](dispatch/) holds `dispatch()`'s per-capability switch cases; [`relay/`](relay/)
 holds the byte path: the credit-window pumps, the sinks, the port registry and the per-kind
@@ -33,7 +33,7 @@ is well-behaved.
 **Bytes never travel over request/response IPC.** `net.connect` returns a plain descriptor and
 separately hands the frame a dedicated port; the read pump and the write sink relay over it, each
 bounded by a credit window ([`contracts/ipc.ts`](../../contracts/ipc.ts),
-[`handle-contracts.md`](../../../docs/architecture/handle-contracts.md) §Backpressure).
+[`handle-contracts.md`](../../../docs/architecture/handle-contracts.md) section Backpressure).
 
 ## Design notes
 
@@ -51,6 +51,11 @@ grant check comes first, so an app without `trust.score` learns nothing, not eve
 **`ControlEvent` lives in [`relay/port-transport.ts`](relay/port-transport.ts).** `dispatch/net.ts`
 needs it and must not import `ipc.ts`, which imports `dispatchNet`: that is a cycle. `ipc.ts`
 re-exports it.
+
+**`net.cancel` withdraws a pending dial** ([`pending-dials.ts`](pending-dials.ts), `ADR-0071`). A `net.connect` or
+`net.connectSecure` request is findable by its id from the moment it arrives, even while the limiter holds it, under the
+sending frame and the origin derived for it; a frame cancels only what it began. The dial's `AbortSignal` goes to the
+broker, which answers the request `'closed'`. A `signal` in the payload of either call is never read.
 
 ### [`picker-dialog.ts`](picker-dialog.ts): the OS picker's wording
 
@@ -146,7 +151,7 @@ defeating TCP backpressure to the peer, and `NaN` poisons the counter for good.
 
 The credit window run backwards: the broker grants the renderer a byte window to post into,
 because a `MessagePortMain` has no `pause()` or drain (T11b). Why there is no sequence number and
-why the heartbeat exists: `handle-contracts.md` §Backpressure: write direction. An ack flushes at
+why the heartbeat exists: `handle-contracts.md` section Backpressure: write direction. An ack flushes at
 `CREDIT_COALESCE_BYTES` or when nothing else is outstanding, so a lone slow write is never held
 back by coalescing. The `writer.close()` trap is at the call.
 

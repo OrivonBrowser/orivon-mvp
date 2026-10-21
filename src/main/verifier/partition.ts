@@ -3,6 +3,8 @@
 // site opened is then cold for every other site, so no page can time a
 // `.eth` request to learn where the person has been (A256).
 
+import type { TunnelRoute } from '../../protocols/verifier-host/protocol.js'
+
 /** A request as the shell sees it: its URL, its kind, and the URL of the top-level page it came from, if any. */
 export interface PageRequest {
   readonly url: string
@@ -36,5 +38,15 @@ export function requestPartition (request: PageRequest): string | undefined {
 export function withPartition (headers: Readonly<Record<string, string>>, header: string, partition: string | undefined): Record<string, string> {
   const out = Object.fromEntries(Object.entries(headers).filter(([name]) => name.toLowerCase() !== header))
   if (partition !== undefined) out[header] = partition
+  return out
+}
+
+/**
+ * `headers` with the route header set to the tunnel when the request is a website's in that tunnel's profile, and removed
+ * otherwise: whatever a page put there itself never reaches the verifier.
+ */
+export function withRoute (headers: Readonly<Record<string, string>>, header: string, tunnel: TunnelRoute | undefined): Record<string, string> {
+  const out = Object.fromEntries(Object.entries(headers).filter(([name]) => name.toLowerCase() !== header))
+  if (tunnel !== undefined) out[header] = tunnel
   return out
 }

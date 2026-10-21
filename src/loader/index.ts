@@ -27,14 +27,13 @@ import { parsePinRecord } from '../broker/policy/pin.js'
 import type { ContentAddress, PinRecord } from '../broker/policy/pin.js'
 import { decideUpdate } from '../broker/policy/update.js'
 import type { PatternSet } from '../broker/policy/update.js'
-import { widensInvisibleLimits, withoutSwitchedOffCapabilities } from '../broker/policy/manifest-patterns.js'
+import { patternSetFromCapabilities, widensInvisibleLimits, withoutSwitchedOffCapabilities } from '../broker/policy/manifest-patterns.js'
 import { fetchBundle } from './fetch/bundle.js'
 import type { Fetch, StagedAsset } from './fetch/bundle.js'
 import { installAndNotify } from './cache/install.js'
 import { parseDdocDeclaration } from './ddoc-declaration.js'
 import type { DdocDeclaration } from './ddoc-declaration.js'
 import type { LoaderStorage } from './cache/storage.js'
-import { patternSetFromCapabilities } from '../broker/policy/manifest-patterns.js'
 import { originFromUrl } from '../broker/policy/origin.js'
 import { MANIFEST_PATH } from '../broker/policy/canonical-path.js'
 import { leafOf } from './leaf-hash.js'
@@ -44,10 +43,15 @@ import type { LoadInstalled, LoadRejected, LoadResult } from './load-result.js'
 import { pinnedToRoot } from './fetch/content-root.js'
 import { rememberingManifestReader } from './fetch/manifest-at-root.js'
 import { createNameUpdates } from './name-update.js'
+import { createFirstVisit } from './first-visit.js'
+import type { FirstVisitApi } from './first-visit.js'
+import type { LiveBundle } from './serve/live-serve.js'
 import type { AppUpdateApi } from './name-update.js'
 import { readQuietOffers, writeQuietOffer } from './update-offer.js'
 
 export type { Fetch, FetchResponse } from './fetch/bundle.js'
+export type { FirstBundle, FirstDeclaration, FirstManifest, FirstManifestApp } from './first-visit.js'
+export type { PendingConsent } from './pending-consent.js'
 export type { LoadInstalled, LoadNeedsCapabilityPrompt, LoadNeedsReconsent, LoadNeedsRollbackChoice, LoadRejected, LoadResult, LoadUpToDate, LoadUpdateAvailable } from './load-result.js'
 export type { LoaderStorage } from './cache/storage.js'
 export { appRootDirectoryName } from './cache/storage.js'
@@ -83,12 +87,17 @@ export interface CreateLoaderOptions {
    */
   readonly onInstalled?: (origin: string) => Promise<void>
   /**
-   * When set, `load()` answers `'up-to-date'` without fetching anything for
-   * an origin whose last completed check (any outcome but `'rejected'`) was
-   * less than this many milliseconds ago, a record kept in `storage` so it
-   * survives a restart; and a later check asks for the manifest
-   * conditionally, answering `'up-to-date'` on a 304 without downloading
-   * the bundle. Unset means every call checks in full.
+   * Serves an origin from the verifier before its files are pinned (`serveLive` below): electron/serve.ts's
+   * `serveLiveFor`. Absent in a run with no shell, where `serveLive` answers that nothing was set up.
+   */
+  readonly serveLive?: (bundle: LiveBundle) => Promise<void>
+  /** Takes what `serveLive` set up away again (`endLive` below): electron/serve.ts's `endLiveFor`. */
+  readonly endLive?: (origin: string) => Promise<void>
+  /**
+   * When set, `load()` answers `'up-to-date'` without fetching anything for an origin whose last completed check
+   * (any outcome but `'rejected'`) was less than this many milliseconds ago, a record kept in `storage` so it
+   * survives a restart; and a later check asks for the manifest conditionally, answering `'up-to-date'` on a 304
+   * without downloading the bundle. Unset means every call checks in full.
    */
   readonly updateCheckIntervalMs?: number
   /**
@@ -98,6 +107,8 @@ export interface CreateLoaderOptions {
    * root, and the pin records it. Throws when it cannot be verified.
    */
   readonly contentAddress?: (origin: string) => Promise<ContentAddress | undefined>
+  /** Whether `origin`'s update checks are paused (an installed app whose traffic is routed): `load()` then answers `'up-to-date'` without asking anyone. A first visit is unaffected. */
+  readonly updatesPaused?: (origin: string) => boolean
 }
 
 /**
@@ -165,7 +176,7 @@ export interface LoadOptions {
   readonly recheck?: true
 }
 
-export interface Loader extends AppUpdateApi {
+export interface Loader extends AppUpdateApi, FirstVisitApi {
   /**
    * `hintedUrl` names the origin to install -- from a `<link
    * rel="orivon-manifest">` hint already in delivered HTML, the only
@@ -392,6 +403,7 @@ export function createLoader (options: CreateLoaderOptions): Loader {
   async function load (hintedUrl: string, context: LoadContext, loadOptions?: LoadOptions): Promise<LoadResult> {
     const interval = options.updateCheckIntervalMs
     const origin = originFromUrl(hintedUrl)
+    if (origin !== null && options.updatesPaused?.(origin) === true && await pinFor(origin) !== null) return { outcome: 'up-to-date', canonicalOrigin: origin }
     if (origin !== null && options.contentAddress !== undefined) {
       const pin = await pinFor(origin)
       if (pin?.content !== undefined) {
@@ -474,6 +486,7 @@ export function createLoader (options: CreateLoaderOptions): Loader {
   }
 
   async function applyUpdate (origin: string, toCid: string, context: LoadContext): Promise<LoadResult> {
+    if (options.updatesPaused?.(origin) === true) return { outcome: 'rejected', reason: 'updates are paused while this app is routed' }
     return await names.apply(origin, origin, toCid, context)
   }
 
@@ -483,5 +496,5 @@ export function createLoader (options: CreateLoaderOptions): Loader {
 
   const manifestAt = rememberingManifestReader(options.fetch, options.resolve)
 
-  return { load, reconsider, installFetched, applyUpdate, pinFor, ddocFor, quietOffers: async (origin) => await readQuietOffers(options.storage, origin), keepQuiet: async (origin, offer) => { await writeQuietOffer(options.storage, origin, offer) }, manifestFor, manifestAt }
+  return { ...createFirstVisit(options, contentOf, manifestAt), load, reconsider, installFetched, applyUpdate, pinFor, ddocFor, quietOffers: async (origin) => await readQuietOffers(options.storage, origin), keepQuiet: async (origin, offer) => { await writeQuietOffer(options.storage, origin, offer) }, manifestFor, manifestAt }
 }

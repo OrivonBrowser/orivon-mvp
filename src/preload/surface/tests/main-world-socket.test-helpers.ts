@@ -52,9 +52,9 @@ const pageFrame = new vm.Script('(fn) => fn()', { filename: 'https://orivon-test
  */
 export function asPage<T> (value: T): T {
   if (typeof value !== 'object' || value === null) return value
-  const out: Record<string, unknown> = {}
-  for (const key of Object.getOwnPropertyNames(value)) {
-    const member = (value as Record<string, unknown>)[key]
+  const out: Record<PropertyKey, unknown> = {}
+  for (const key of Reflect.ownKeys(value)) {
+    const member = (value as Record<PropertyKey, unknown>)[key]
     out[key] = typeof member === 'function'
       ? (...args: unknown[]) => pageFrame(() => Reflect.apply(member as (...a: unknown[]) => unknown, value, args))
       : asPage(member)
@@ -128,6 +128,7 @@ export function fakeSocketBridgeResult (): {
 export function fakeFileBridgeResult (overrides: Partial<MainWorldFileBridge> = {}): MainWorldFileBridge {
   return {
     id: 'f1',
+    name: 'f1.bin',
     read: async () => new Uint8Array([1, 2, 3]),
     write: async () => 3,
     stat: async () => ({ size: 3, isFile: true, isDirectory: false, mtimeMs: 0 }),
@@ -170,14 +171,16 @@ export function fakeDirectoryBridgeResult (overrides: Partial<MainWorldDirectory
 export function fakeBridge (
   netConnectResult: ReturnType<typeof fakeSocketBridgeResult>,
   udpResult?: ReturnType<typeof fakeUdpBridgeResult>,
-  fsReadFileSync: (path: string) => ResponseEnvelope<Uint8Array> = () => ({ id: '', ok: true, result: new Uint8Array() }),
+  fsSync: (op: string, args: unknown[]) => ResponseEnvelope<unknown> = () => ({ id: '', ok: true, result: new Uint8Array() }),
   netConnectSecureResult: ReturnType<typeof fakeSocketBridgeResult> = fakeSocketBridgeResult(),
   serverResult?: ReturnType<typeof fakeServerBridgeResult>
 ): {
   appManifest: () => Promise<unknown>, appGrants: () => Promise<unknown>
   appRequestGrant: (request: { capability: string, patterns?: readonly string[] }) => Promise<boolean>
+  appOnOpenUrl: (listener: (url: string) => void) => () => void
+  appRequestSchemeHandler: (scheme: string) => Promise<boolean>, appIsSchemeHandler: (scheme: string) => Promise<boolean>
   fsReadFile: (path: string) => Promise<Uint8Array>, fsWriteFile: (path: string, data: Uint8Array) => Promise<void>
-  fsReadFileSync: (path: string) => ResponseEnvelope<Uint8Array>
+  fsSync: (op: string, args: unknown[]) => ResponseEnvelope<unknown>
   fsMkdir: (path: string, opts?: { recursive?: boolean }) => Promise<void>
   fsReaddir: (path: string) => Promise<readonly string[]>
   fsStat: (path: string) => Promise<FileStat>
@@ -193,8 +196,8 @@ export function fakeBridge (
   trustWebsiteScore: (address: string) => Promise<{ provider: string | null, level: 1 | 2 | 3 | 4 | null }>
   webOpenContext: (opts: { origin: string, width?: number, height?: number }) => Promise<MainWorldWebContextBridge>
   webSetEmbedScript: (source: string) => Promise<void>
-  netConnect: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
-  netConnectSecure: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
+  netConnect: (opts: { host: string, port: number }, onAbandon?: (listener: () => void) => void) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
+  netConnectSecure: (opts: { host: string, port: number }, onAbandon?: (listener: () => void) => void) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
   netUdpBind: (opts: { port: number, scope?: BindScope }) => Promise<MainWorldUdpBridge>
   netListen: (opts: { port: number, scope?: BindScope }) => Promise<MainWorldServerBridge>
   netLookup: (opts: { hostname: string }) => Promise<ReadonlyArray<{ address: string, family: 'IPv4' | 'IPv6' }>>
@@ -203,9 +206,12 @@ export function fakeBridge (
     appManifest: async () => ({ orivonApiVersion: 0 }),
     appGrants: async () => [],
     appRequestGrant: async () => true,
+    appOnOpenUrl: () => () => {},
+    appRequestSchemeHandler: async () => false,
+    appIsSchemeHandler: async () => false,
     fsReadFile: async () => new Uint8Array(),
     fsWriteFile: async () => {},
-    fsReadFileSync,
+    fsSync,
     fsMkdir: async () => {},
     fsReaddir: async () => [],
     fsStat: async () => ({ size: 0, isFile: true, isDirectory: false, mtimeMs: 0 }),

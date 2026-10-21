@@ -19,6 +19,7 @@ import { REVOKED_GRANT_MEMORY, remember } from './tombstones.js'
 import type { PendingOperation } from './handle-store.js'
 import { aliasesOf, replaceGrantIn } from './grant-replacement.js'
 import { queueFull, releaseSlot, tryTakeSlot, waitForSlot } from './in-flight.js'
+import { throwIfAbandoned, watchAbandon } from './abandon.js'
 import type {
   AcquireDerivedRequest,
   AcquireRequest,
@@ -128,14 +129,16 @@ export class HandleTable {
    * stop `work` running to completion, so `work` should check
    * `signal.aborted` and destroy what it produced rather than rely on
    * `acquire` refusing a withdrawn grant.
+   *
+   * `abandon` is the app withdrawing this one call: the signal passed to `work` fires and the promise rejects 'closed' at
+   * once, freeing the slot or the place in the queue whether or not `work` notices.
    */
-  async run<T> (origin: string, scope: OperationScope, work: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  async run<T> (origin: string, scope: OperationScope, work: (signal: AbortSignal) => Promise<T>, abandon?: AbortSignal): Promise<T> {
+    throwIfAbandoned(abandon)
     const key = this.#key(origin)
 
-    // Ownership first, so an unauthorised caller learns nothing about the
-    // origin's budget, and so the error is the useful one. A handle-scoped
-    // call must not allocate a table either -- `lookup` states that rule and
-    // this is the other read path it has to hold for.
+    // Ownership first, so an unauthorised caller learns nothing about the origin's budget. A handle-scoped call
+    // allocates no table either, the rule `lookup` states.
     let table: OriginTable
     let operations: Set<PendingOperation>
     if (scope.on === 'handle') {
@@ -149,8 +152,7 @@ export class HandleTable {
         throw fail('revoked', 'the grant authorising this operation was withdrawn')
       }
       table = this.#table(key)
-      // Deliberately allocated AFTER the in-flight check below would have
-      // thrown -- see there.
+      // Allocated after the in-flight check below, which may throw.
       operations = new Set<PendingOperation>()
     }
 
@@ -158,19 +160,18 @@ export class HandleTable {
       throw fail('limit', `origin has ${String(LIMITS.inFlightOperations)} operations in flight and as many waiting`)
     }
 
-    // Only now is the grant's bucket materialised. Creating it before the cap
-    // check leaked one empty Set per grant id every time the cap was hit.
+    // Only now is the grant's bucket made: before the cap check it leaked an empty Set per refused call.
     if (scope.on === 'grant') operations = table.grantOperationsFor(scope.grantId)
 
     const controller = new AbortController()
     let cancel!: (error: OrivonError) => void
-    // Promise.race attaches a handler to this immediately, so it can never
-    // become an unhandled rejection even when `work` wins the race.
+    // Promise.race attaches a handler at once, so this never becomes an unhandled rejection.
     const cancelled = new Promise<never>((_resolve, reject) => { cancel = reject })
     const operation: PendingOperation = { controller, reject: cancel }
 
     // Registered before waiting, so a revoke or close reaches a queued call.
     operations.add(operation)
+    const stopWatching = watchAbandon(abandon, (error) => { controller.abort(); cancel(error) })
     try {
       if (!tryTakeSlot(table)) await waitForSlot(table, cancelled)
       try {
@@ -179,10 +180,9 @@ export class HandleTable {
         releaseSlot(table)
       }
     } finally {
+      stopWatching()
       operations.delete(operation)
-      // Drop the grant's bucket once it empties. Otherwise the table keeps one
-      // empty Set per grant id it has ever seen, which is a slow leak rather
-      // than a bound -- and grant ids are not something this module verifies.
+      // Drop the grant's bucket once it empties, or the table keeps an empty Set per grant id it has ever seen.
       if (scope.on === 'grant' && operations.size === 0 && table.grantOperations.get(scope.grantId) === operations) {
         table.grantOperations.delete(scope.grantId)
       }
@@ -281,7 +281,7 @@ export class HandleTable {
     if (table === undefined) throw fail('denied', NOT_YOURS, handleId)
     const record = table.record(handleId)
 
-    void table.closeTree(record, reason, this.#onFault, error)
+    void table.closeTree(record, reason, this.#onFault, error).catch((error: unknown) => { console.error('[broker] closing a handle tree failed:', error) })
     this.#reap(key, table)
   }
 
@@ -316,7 +316,7 @@ export class HandleTable {
     // flight under them answers to this grant now (./grant-replacement.ts).
     for (const alias of aliasesOf(table, grantId)) {
       table.grantAliases.delete(alias)
-      void this.revoke(origin, alias)
+      void this.revoke(origin, alias).catch((error: unknown) => { console.error('[broker] revoking a replaced grant alias failed:', error) })
     }
 
     const pending = table.grantOperations.get(grantId)
@@ -333,7 +333,7 @@ export class HandleTable {
         const record = table.handles.get(id)
         // Absent means a sibling's cascade already took it -- a socket
         // reachable both as a member of this grant and as a child of a server.
-        if (record !== undefined) void table.closeTree(record, 'revoked', this.#onFault)
+        if (record !== undefined) void table.closeTree(record, 'revoked', this.#onFault).catch((error: unknown) => { console.error('[broker] closing a handle tree failed:', error) })
       }
       // NOTHING IS DELETED HERE. closeTree removes each id from its grant's
       // set as it goes and drops the set once it empties, so by this point the
@@ -383,7 +383,7 @@ export class HandleTable {
     if (ids !== undefined) {
       for (const id of Array.from(ids)) {
         const record = existing.handles.get(id)
-        if (record !== undefined) void existing.closeTree(record, 'revoked', this.#onFault)
+        if (record !== undefined) void existing.closeTree(record, 'revoked', this.#onFault).catch((error: unknown) => { console.error('[broker] closing a handle tree failed:', error) })
       }
     }
 

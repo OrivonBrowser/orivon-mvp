@@ -1,0 +1,10 @@
+[
+  {
+    "file": "ublock-origin.crx",
+    "name": "uBlock Origin",
+    "version": "1.75.0",
+    "url": "https://github.com/gorhill/uBlock/releases/download/1.75.0/uBlock0_1.75.0.chromium.crx",
+    "sha256": "d688ed3f0262ec4f8bdcd4c8f65987c5444c560aeb387a9e02aca1facdfa7046",
+    "pinned": true
+  }
+]

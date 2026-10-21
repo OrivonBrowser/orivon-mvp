@@ -1,0 +1,12 @@
+{
+  "cid": "bafybeifqliiaxkggam4g5huutq2s3xl56usbmp3zlnpvv6cuhmlo5btd3a",
+  "name": "swarm-node",
+  "files": [
+    { "name": "swarm-node.js", "bytes": 1039440, "sha256": "35569b8ae4ff6969a89f03393e2bcbc36110a9e2d9cfd511561a99d1cd1963f1" },
+    { "name": "swarm-node.core.wasm", "bytes": 12664081, "sha256": "69ea0cc4c9fc549523489cf0289e025d107d7200418d209169d3098ef7b96e68" },
+    { "name": "swarm-node.core2.wasm", "bytes": 4045, "sha256": "2e45f4f3a2928147d4ea2dbb5afa5a6026482289e306392ef2800722c74bcca8" },
+    { "name": "swarm-node.core3.wasm", "bytes": 1766, "sha256": "72278eef6afa55e9ddeb9e11bb3c0240bdda3b49c11bb557e6b5a67753944ff5" },
+    { "name": "swarm-node.core4.wasm", "bytes": 714, "sha256": "1157639b074d11cf6cae0efd528e386e07a9da0b4a096ec92ef98be510bf012b" },
+    { "name": "LICENSE", "bytes": 11358, "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30" }
+  ]
+}

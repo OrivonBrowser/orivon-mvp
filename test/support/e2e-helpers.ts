@@ -14,12 +14,21 @@ import { expect } from 'vitest'
 import type { ChildProcess } from 'node:child_process'
 import { connect as netConnect } from 'node:net'
 import type { ElectronApplication } from 'playwright'
-import { closeElectron, APP_CLOSE_RACE_MS } from './launch-electron.mjs'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { isolationCredentials } from '../../src/broker/route/socks5.js'
+import { closeElectron, APP_CLOSE_RACE_MS, profileDirOf } from './launch-electron.mjs'
 import { evaluateRetrying, findChrome, findViewShowing, waitFor, waitForChromeReady, waitForTab } from './smoke-helpers.mjs'
 
 // Re-exported for a window a spec opens after launch: launchElectron has already waited for the first one.
 export { waitForChromeReady }
-import { BUILTIN_ADDRESSES } from '../../src/protocols/builtin.js'
+import { ProtocolAddresses } from '../../src/protocols/address.js'
+import { BUILTIN_PROTOCOLS } from '../../src/protocols/builtin.js'
+import type { CommandId } from '../../src/main/shortcuts/commands.js'
+import { bindingOf, keyCodeOf, modifiersOf } from './key-bindings.js'
+
+// What a spec needs to name a shortcut the way this platform binds and shows it.
+export { bindingOf, keyCapsOf, shownBinding } from './key-bindings.js'
 /** Ceiling for waitForAddressBarStable below. Named so the budget
  * arithmetic beneath it can reuse the real number instead of retyping
  * `8_000` in two places that could quietly drift apart. */
@@ -284,6 +293,15 @@ export async function asPage<T> (
   return outcome.result
 }
 
+/** Every fixture `.eth` name a spec serves from IPFS: once the page has loaded it is shown under `ipfs://`. */
+const ADDRESSES_ON_IPFS = new ProtocolAddresses(BUILTIN_PROTOCOLS)
+ADDRESSES_ON_IPFS.learnSchemes(() => 'ipfs')
+
+/** The address the bar shows for `url` once a page served from IPFS has loaded: a `.eth` name under `ipfs://`. */
+export function shownOnIpfs (url: string): string {
+  return ADDRESSES_ON_IPFS.displayUrl(url)
+}
+
 export async function navigateToFixture (
   app: ElectronApplication,
   url: string,
@@ -293,7 +311,7 @@ export async function navigateToFixture (
   const chrome = findChrome(app)
   await waitForAddressBarStable(chrome)
   await clickAddressBarRetrying(chrome, url)
-  const shown = BUILTIN_ADDRESSES.displayUrl(url)
+  const shown = shownOnIpfs(url)
   const navigated = await waitForTab(chrome, { address: shown, title: expectedTitle })
   if (!navigated.ok) throw new Error(`fixture tab did not navigate to ${shown}: ${JSON.stringify(navigated.info)}`)
   const view = findViewShowing(app, chrome, url)
@@ -378,6 +396,18 @@ export async function pressKey (app: ElectronApplication, urlPart: string, keyCo
   }, [urlPart, keyCode, modifiers] as const)
 }
 
+/** Presses a binding written the way the product writes it (`Mod+Shift+O`) as this platform reads it: `Mod` is
+ * Command on macOS and Control elsewhere, and a literal `Ctrl+Tab` stays Control on both. */
+export async function pressBinding (app: ElectronApplication, urlPart: string, binding: string): Promise<void> {
+  await pressKey(app, urlPart, keyCodeOf(binding), modifiersOf(binding))
+}
+
+/** Presses the binding a command has on this platform (`macDefault ?? default`), so a spec asks for
+ * "the bookmark manager's key" without restating it. */
+export async function pressCommand (app: ElectronApplication, urlPart: string, id: CommandId): Promise<void> {
+  await pressBinding(app, urlPart, bindingOf(id))
+}
+
 /** Waits until the view at `urlPart` has finished loading its page and holds the keyboard: where a person's key goes.
  * A popup counts as shown when it is attached, which is before its page has run, and a key sent then reaches a
  * document with no listener yet. */
@@ -388,9 +418,28 @@ export async function waitForKeyboardAt (app: ElectronApplication, urlPart: stri
   }, urlPart))
 }
 
+/** Waits until a tab's start page has finished loading. The page takes the keyboard when it runs (src/renderer/newtab/main.ts),
+ * so text typed in the address bar before then is cut off, and the suggestions popup closes under it, on a runner slow
+ * enough to run the page after the keys. */
+export async function waitForStartPageLoaded (app: ElectronApplication): Promise<boolean> {
+  return await waitFor(async () => await app.evaluate(({ webContents }) =>
+    webContents.getAllWebContents().some((contents) => contents.getURL().includes('/newtab/') && !contents.isLoading())))
+}
+
 /** Switches the whole app to a colour scheme at run time, the way the OS theme flipping would. `nativeTheme`
  * is the one source every view reads, so a launch that does not pin the pages' scheme (launch-electron.mjs's
  * `scheme` option) follows it in the chrome, the tabs, the overlays and the main-side backing colours. */
 export async function setScheme (app: ElectronApplication, scheme: 'light' | 'dark' | 'system'): Promise<void> {
   await app.evaluate(({ nativeTheme }, next) => { nativeTheme.themeSource = next }, scheme)
+}
+
+/**
+ * The proxy sign-in `key` (an origin, or `local-node:<node>`) makes under the profile `app` runs on: the user name is made under
+ * the profile's own secret, the one the verifier keeps for the IPFS node's store keys, so a spec reads it from the profile.
+ */
+export function signInOf (app: ElectronApplication, key: string): { readonly userId: string } {
+  const dir = profileDirOf(app)
+  if (dir === undefined) throw new Error('the launcher did not report a profile directory')
+  const salt = (JSON.parse(readFileSync(join(dir, 'verifier', 'ipfs-node-partition-salt.json'), 'utf8')) as { salt: string }).salt
+  return { userId: isolationCredentials(undefined, Buffer.from(salt, 'hex'))(key).userId }
 }

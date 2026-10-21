@@ -4,6 +4,7 @@ import type { ConsentState, SentPayload } from '../disclosure.js'
 import { initialHistoryState } from '../history.js'
 import type { Sender } from '../transport.js'
 import { initialKindState, runSendCycle, withdrawn, type SendContext, type SendCycleState } from '../engine.js'
+import { PAYLOAD_SCHEMA } from '../disclosure.js'
 
 const SEC = 1000
 const september = Date.UTC(2026, 8, 1)
@@ -43,8 +44,8 @@ describe('runSendCycle', () => {
     const result = await runSendCycle(stateWith(browsingSince(september, 500)), context('accepted'), sender, now)
 
     expect(sent.map((payload) => 'sites' in payload ? 'sites' : 'usage')).toEqual(['usage', 'sites'])
-    expect(sent[0]).toMatchObject({ schema: 4, installId: INSTALL, period: '2026-09', activeSec: 500, classes: { web3: 500 } })
-    expect(sent[1]).toMatchObject({ schema: 4, installId: INSTALL, stream: 'cd'.repeat(16), sites: { 'web3:vitalik.eth': 500 } })
+    expect(sent[0]).toMatchObject({ schema: PAYLOAD_SCHEMA, installId: INSTALL, period: '2026-09', activeSec: 500, classes: { web3: 500 } })
+    expect(sent[1]).toMatchObject({ schema: PAYLOAD_SCHEMA, installId: INSTALL, stream: 'cd'.repeat(16), sites: { 'web3:vitalik.eth': 500 } })
     expect(result.state.history.entries.map((entry) => entry.payload)).toEqual(sent)
     expect(result.state.usage.transport.queue).toHaveLength(0)
   })

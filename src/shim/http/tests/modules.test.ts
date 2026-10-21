@@ -40,7 +40,7 @@ describe('http/http.ts', () => {
     const http = await import('../http.js')
     http.get({ host: 'example.com', path: '/' })
     await vi.waitFor(() => expect(connectCalls).toHaveLength(1))
-    expect(connectCalls[0]).toEqual({ host: 'example.com', port: 80 })
+    expect(connectCalls[0]).toEqual({ host: 'example.com', port: 80, signal: expect.any(AbortSignal) })
   })
 
   it('exports STATUS_CODES and METHODS as non-empty, both as named and default exports', async () => {
@@ -134,7 +134,7 @@ describe('http/https.ts', () => {
     const https = await import('../https.js')
     https.get({ host: 'example.com', path: '/' })
     await vi.waitFor(() => expect(connectSecureCalls).toHaveLength(1))
-    expect(connectSecureCalls[0]).toEqual({ host: 'example.com', port: 443 })
+    expect(connectSecureCalls[0]).toEqual({ host: 'example.com', port: 443, signal: expect.any(AbortSignal) })
   })
 
   it('never routes an https request through plain net.connect', async () => {
@@ -183,7 +183,7 @@ describe('http/https.ts', () => {
     const req = https.get({ host: 'self-signed.example', path: '/', ca: 'PEM', rejectUnauthorized: false })
     req.on('error', () => {})
     await vi.waitFor(() => expect(connectSecureCalls).toHaveLength(1))
-    expect(connectSecureCalls[0]).toEqual({ host: 'self-signed.example', port: 443, ca: 'PEM', rejectUnauthorized: false })
+    expect(connectSecureCalls[0]).toEqual({ host: 'self-signed.example', port: 443, signal: expect.any(AbortSignal), ca: 'PEM', rejectUnauthorized: false })
     req.destroy()
   })
 
@@ -194,7 +194,7 @@ describe('http/https.ts', () => {
     const req = https.get({ host: 'example.com', path: '/', ca: 'REQUEST-PEM', servername: 'example.com', agent })
     req.on('error', () => {})
     await vi.waitFor(() => expect(connectSecureCalls).toHaveLength(1))
-    expect(connectSecureCalls[0]).toEqual({ host: 'example.com', port: 443, ca: 'AGENT-PEM', servername: 'example.com' })
+    expect(connectSecureCalls[0]).toEqual({ host: 'example.com', port: 443, signal: expect.any(AbortSignal), ca: 'AGENT-PEM', servername: 'example.com' })
     req.destroy()
   })
 
@@ -206,8 +206,8 @@ describe('http/https.ts', () => {
     named.on('error', () => {})
     unnamed.on('error', () => {})
     await vi.waitFor(() => expect(connectSecureCalls).toHaveLength(2))
-    expect(connectSecureCalls).toContainEqual({ host: '203.0.113.7', port: 443, servername: 'api.example.com' })
-    expect(connectSecureCalls).toContainEqual({ host: 'api.example.com', port: 443, servername: '' })
+    expect(connectSecureCalls).toContainEqual({ host: '203.0.113.7', port: 443, signal: expect.any(AbortSignal), servername: 'api.example.com' })
+    expect(connectSecureCalls).toContainEqual({ host: 'api.example.com', port: 443, signal: expect.any(AbortSignal), servername: '' })
     named.destroy()
     unnamed.destroy()
   })

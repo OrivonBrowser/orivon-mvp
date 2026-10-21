@@ -41,6 +41,7 @@ import { SHELL_PARTITION } from './shell-session.js'
 import { NATIVE_TAB_DRAG_ARGUMENT } from '../channels.js'
 import { pointerIsLocal } from './local-pointer.js'
 import { showToast } from '../page-tools/toast.js'
+import { relayoutOnSizeChange } from './window-size-settle.js'
 
 /** The new-tab page's own URL: the dev server's nested path, or its address on the shell scheme. */
 export function resolveDashboardUrl (): string {
@@ -110,7 +111,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // path; the built path matches electron.vite.config.ts's `newtab` entry.
   const dashboardUrl = resolveDashboardUrl()
 
-  // Bookmarks (scope.md, ADR-0003) are a store of their own, shared by every
+  // Bookmarks (ADR-0003) are a store of their own, shared by every
   // window of this process and not folded into TabManager: tabs and bookmarks
   // change independently and neither needs to know the other exists.
   // The bookmarks bar is rendered only when it is asked for or has an item in
@@ -133,6 +134,8 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     showNotice: () => { notice.show(NOTICES.fullscreen) },
     hideNotice: () => { notice.hide() }
   })
+
+  win.on('leave-full-screen', () => { fullscreen.windowLeft((id) => tabs.getState().tabs.some((tab) => tab.id === id)) })
 
   const { chromeHeight, layoutChrome, tabBounds, reachChrome } = createWindowLayout({
     win, chrome, fullscreenTabId: () => fullscreen.tabId, bookmarksBarShown, kiosk, pageInsets: () => sidePanelInsets(win)
@@ -238,7 +241,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // where chrome-context-menu.ts's gate allows it.
   chrome.webContents.on('context-menu', (_event, params) => {
     showContextMenu(chrome.webContents, params, chromeContextMenuHost(services.devtools, chrome.webContents, win, (url) => { tabs.createTab(url) }, () => {
-      void pasteAndGo(() => clipboard.readText(), (text) => { sendChromeEvent(entry, 'navigation', { type: 'pasteAndGo', text }) })
+      void pasteAndGo(() => clipboard.readText(), (text) => { sendChromeEvent(entry, 'navigation', { type: 'pasteAndGo', text }) }).catch((error: unknown) => { console.error('[shell] paste and go failed:', error) })
     }, {
       on: () => services.settings.get('addressBar.showFullUrl'),
       toggle: () => { services.settings.set('addressBar.showFullUrl', !services.settings.get('addressBar.showFullUrl')) }
@@ -282,9 +285,8 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // drag-resize is unaffected either way: it already fires 'resize'
   // repeatedly as the drag continues, so one tick of latency per frame
   // is not observable.
-  win.on('resize', () => {
-    setImmediate(() => { if (!win.isDestroyed()) layoutAll() })
-  })
+  // The same read is repeated for a second after, and lays out again whenever the size has moved since (./window-size-settle.ts).
+  relayoutOnSizeChange(win, layoutAll)
 
   layoutChrome()
   win.on('closed', followActiveTabBacking(win, tabs))

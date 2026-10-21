@@ -1,20 +1,18 @@
 // One verified block, fetched from whichever gateway answers first --
 // hedged against a slow one, retried across a cooling one, never against a
-// gateway that has lied.
+// gateway that has lied (the passes are ../gateways/fetch-passes.ts).
 
 import type { CID } from 'multiformats/cid'
 import { ResolutionError } from '../resolution/records.js'
-import { sleepOrAbort } from '../resolution/timing.js'
 import type { Refusal } from '../resolution/providers.js'
-import { GatewayFailure, askGateway, readCapped } from './gateways.js'
-import type { Fetch, GatewayPool } from './gateways.js'
+import { askGateway, readCapped } from '../gateways/gateways.js'
+import type { Fetch, GatewayPool } from '../gateways/gateways.js'
 import type { IpfsLimits } from './limits.js'
 import { BlockRefused, checkCidAccepted, inlineBlock, verifyBlock } from './verify-block.js'
-import { racePass } from './race.js'
-import type { AttemptOutcome, PassResult } from './race.js'
-
-/** A rate-limited or unreachable pass earns one retry, up to this many total. */
-export const MAX_PASSES = 3
+import { failedAttempt, fetchAcrossGateways, retryWhileWanted } from '../gateways/fetch-passes.js'
+import type { AttemptOutcome } from '../gateways/race.js'
+import type { PatientRetry } from '../gateways/fetch-passes.js'
+import type { RoutePace } from '../route-pace.js'
 
 export interface FetchDeps {
   readonly fetch: Fetch
@@ -31,26 +29,25 @@ function limitFailure (error: unknown): ResolutionError {
   return new ResolutionError(unsupported ? 'unsupported' : 'unverifiable', message)
 }
 
-async function attemptGateway (gateway: string, cid: CID, key: string, deps: FetchDeps, signal: AbortSignal, onRefusal: (refusal: Refusal) => void): Promise<AttemptOutcome<Uint8Array>> {
+async function attemptGateway (gateway: string, cid: CID, key: string, deps: FetchDeps, signal: AbortSignal, onRefusal: (refusal: Refusal) => void, unwell: Set<string>): Promise<AttemptOutcome<Uint8Array>> {
   let bytes: Uint8Array
   try {
     bytes = await askGateway(
       deps.pool, deps.fetch, gateway,
-      { url: `${gateway}/ipfs/${key}?format=raw`, accept: 'application/vnd.ipld.raw', timeoutMs: deps.limits.blockTimeoutMs },
-      async (response) => await readCapped(response, deps.limits.maxBlockBytes),
+      { url: `${gateway}/ipfs/${key}?format=raw`, accept: 'application/vnd.ipld.raw', timeoutMs: deps.limits.blockTimeoutMs, maxBytes: deps.limits.maxBlockBytes },
+      async (response, progress) => await readCapped(response, deps.limits.maxBlockBytes, progress),
       signal
     )
   } catch (error) {
-    if (!(error instanceof GatewayFailure)) throw error
-    if (error.outcome.kind === 'cancelled') return { kind: 'failed', retryable: false, reason: `${gateway}: cancelled` }
-    return { kind: 'failed', retryable: error.outcome.kind === 'rate-limited' || error.outcome.kind === 'unreachable', reason: error.message }
+    return failedAttempt(error, gateway, unwell, !deps.pool.serverErrorsAreAnswers)
   }
+  unwell.delete(gateway)
   try {
     await verifyBlock(cid, bytes, deps.limits)
   } catch (error) {
     if (error instanceof BlockRefused && error.reason === 'mismatch') {
       onRefusal({ source: gateway, resource: key })
-      deps.pool.drop(gateway)
+      deps.pool.refuse(gateway)
       return { kind: 'lied', reason: `${gateway} sent bytes that failed their hash` }
     }
     return { kind: 'fatal', error: limitFailure(error) }
@@ -58,9 +55,15 @@ async function attemptGateway (gateway: string, cid: CID, key: string, deps: Fet
   return { kind: 'verified', value: bytes }
 }
 
+/** `retry` as written for a direct connection, for the route: a slow one gets more tries (up to three times as many) and keeps starting them for longer, since a lookup that missed there may well find on the next. */
+export function retryOn (retry: PatientRetry, route: RoutePace): PatientRetry {
+  return { ...retry, maxRetries: Math.round(retry.maxRetries * Math.min(3, route.scale())), startByMs: route.wait(retry.startByMs) }
+}
+
 /** Throws a ResolutionError: `unsupported` before any gateway is asked, for
  * a CID this build cannot verify at all; otherwise `unverifiable` once a
- * gateway has lied, or `unavailable` when none answered.
+ * gateway has lied, or `unavailable` when none answered, after the patient
+ * retries `limits.blockRetry` allows (a local node's) are spent.
  */
 export async function fetchVerifiedBlock (cid: CID, deps: FetchDeps, signal: AbortSignal, onRefusal: (refusal: Refusal) => void): Promise<Uint8Array> {
   try {
@@ -79,50 +82,7 @@ export async function fetchVerifiedBlock (cid: CID, deps: FetchDeps, signal: Abo
   }
 
   const key = cid.toString()
-  let anyLied = false
-  const reasons: string[] = []
-  // Waiting out a cooldown is not one of the MAX_PASSES real attempts, but
-  // it still needs its OWN bound: a signal that aborts mid-wait must end
-  // this function, never spin -- sleepOrAbort returns early on abort
-  // without throwing, so without this the next loop turn would just call
-  // it again, see it return instantly, and spin forever making no progress.
-  const MAX_COOLDOWN_WAITS = MAX_PASSES * 2
-
-  let pass = 0
-  let cooldownWaits = 0
-  while (pass < MAX_PASSES) {
-    if (signal.aborted) throw new ResolutionError('unavailable', 'aborted')
-    const candidates = deps.pool.candidates()
-    if (candidates.length === 0) {
-      if (deps.pool.usable().length === 0) break
-      cooldownWaits++
-      if (cooldownWaits > MAX_COOLDOWN_WAITS) break
-      const waitMs = (deps.pool.nextReadyAt() ?? deps.pool.now()) - deps.pool.now()
-      if (waitMs > 0) await sleepOrAbort(waitMs, signal)
-      continue
-    }
-
-    let result: PassResult<Uint8Array>
-    try {
-      result = await racePass(candidates, (gateway, attemptSignal) => attemptGateway(gateway, cid, key, deps, attemptSignal, onRefusal), deps.limits.hedgeDelayMs, signal)
-    } catch (error) {
-      // racePass only ever rejects for the caller's own signal aborting
-      // (its own attempts never reject: a bug there surfaces as `fatal`,
-      // returned, not thrown) -- wrapped so this function's contract
-      // ("throws a ResolutionError") holds regardless of what the signal's
-      // own abort reason happens to be.
-      throw error instanceof ResolutionError ? error : new ResolutionError('unavailable', error instanceof Error ? error.message : String(error))
-    }
-    if (result.kind === 'verified') return result.value
-    if (result.kind === 'fatal') throw result.error
-    anyLied = anyLied || result.lied
-    reasons.push(...result.reasons)
-    pass++
-    // A lie alone earns no new pass: the liar is dropped, and every other
-    // gateway in this pass has already answered.
-    if (!result.retryable) break
-  }
-
-  if (deps.pool.usable().length === 0) throw new ResolutionError('unverifiable', `block ${key}: every gateway was dropped this session for sending bytes that failed their hash`)
-  throw new ResolutionError(anyLied ? 'unverifiable' : 'unavailable', `block ${key}: ${reasons.join('; ') || 'no gateway answered'}`)
+  const once = async (): Promise<Uint8Array> => await fetchAcrossGateways(`block ${key}`, { pool: deps.pool, hedgeDelayMs: deps.limits.hedgeDelayMs }, (gateway, attemptSignal, unwell) => attemptGateway(gateway, cid, key, deps, attemptSignal, onRefusal, unwell), signal)
+  const { blockRetry } = deps.limits
+  return blockRetry === undefined ? await once() : await retryWhileWanted(once, retryOn(blockRetry, deps.pool.route), () => deps.pool.now(), signal)
 }

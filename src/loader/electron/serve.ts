@@ -30,11 +30,18 @@ import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import { createPinCoverageTracker } from '../serve/pin-coverage.js'
 import type { PinCoverageSnapshot } from '../serve/pin-coverage.js'
 import { createAppRequestHandler, fetchThirdParty, resolveVerifiedBundle } from '../serve/serve.js'
+import { createLiveRequestHandler } from '../serve/live-serve.js'
+import type { LiveBundle } from '../serve/live-serve.js'
+import { fetchFromVerifier } from './fetch.js'
+import { isOriginPinnedSync, isOriginServedFromCacheSync, prepareAppSessionOrStop, registerAppOrigin, retireAppOrigin } from './app-partitions.js'
+
+export { beforeAppSessionServes, forEachAppSession, prepareAppSession, isOriginPinnedSync, isOriginServedFromCacheSync, registerAppOrigin, retireAppOrigin } from './app-partitions.js'
 import { saveCheckRecord } from '../fetch/update-check.js'
 import type { AppRequestHandler, AuthoriseReach } from '../serve/serve.js'
 import { cspHeaderValue } from '../serve/csp.js'
 import type { CspOptions } from '../serve/csp.js'
 import { nodeReachDial } from '../reach/reach.js'
+import { reachRouteOf } from './reach-route.js'
 import { createRedirectChains } from '../reach/redirects.js'
 import { createReachSlotPool } from '../reach/slots.js'
 import type { ReachSlotPool } from '../reach/slots.js'
@@ -107,56 +114,6 @@ function retainedAssets (origin: string, pin: PinRecord): ReadonlyMap<string, st
 }
 
 /**
- * Registers `handler` as `origin`'s own scheme's handler on `appSession`.
- *
- * IDEMPOTENT ACROSS CALLS, DELIBERATELY. Electron's `protocol.handle` throws
- * "The scheme has been registered" on a second call for a scheme already
- * handled on that session (`protocol_registry.cc`'s `RegisterProtocol` uses
- * `try_emplace`, which only inserts once) -- confirmed against Electron's
- * own source rather than assumed. `partitionFor` keys a session to exactly
- * one canonical origin (origin-hash.ts), so a second registration on the
- * SAME session can only mean this same origin was reinstalled within one
- * process run; `unhandle` first, then `handle` again, so the session always
- * answers with whatever `handler` the caller just built from the freshly
- * re-verified pin, never a stale one left over from before the update.
- */
-export function registerAppOrigin (appSession: Session, origin: string, handler: AppRequestHandler): void {
-  const scheme = new URL(origin).protocol.replace(':', '')
-  if (appSession.protocol.isProtocolHandled(scheme)) {
-    appSession.protocol.unhandle(scheme)
-  }
-  appSession.protocol.handle(scheme, handler)
-  servedPartitions.add(partitionFor(origin))
-}
-
-/** Partitions this process has actually installed a cache handler into.
- *
- * Keyed by partition, not origin, so the two sides cannot disagree about
- * canonical spelling: `partitionFor` is already the one function that decides
- * what "the same app" means, and tab-view.ts computes the identical string.
- *
- * There is no removal, because there is no unregistration -- `registerAppOrigin`
- * re-registers in place (see its own doc), and a handler lives for the process.
- */
-const servedPartitions = new Set<string>()
-
-/**
- * Is `origin` being served from the pinned cache right now -- synchronously,
- * with no side effect?
- *
- * Needed because a tab's partition is fixed when its `WebContentsView` is
- * constructed, and because the toolbar's own delivery/level query
- * (`../../main/permissions/site-info-controller.js`) must not itself probe
- * `session.fromPartition(...)` per navigation: that call CREATES the session
- * it asks about, and `partitionFor` yields a `persist:` partition -- so
- * probing it for every ordinary website visited would mint an on-disk app
- * partition for each one, which is the cost A109 removed.
- */
-export function isOriginServedFromCacheSync (origin: string): boolean {
-  return servedPartitions.has(partitionFor(origin))
-}
-
-/**
  * `origin`'s live grant for `capability`, straight off the broker -- shared
  * by `grantedConnectPatternsFor` (`tcp.connect`, bare sources in
  * `connect-src`) and `secureHeaderPatternsFor` (`https.connect`, the reach
@@ -188,6 +145,31 @@ async function liveGrantedPatternsFor (broker: Broker, origin: string, capabilit
   }
 }
 
+/**
+ * Whether `origin` holds a live `tcp.listen` grant of either scope -- the one fact that opens its
+ * `img-src` and `media-src` to the loopback ports its own listeners hold (ADR-0069). Shared with
+ * main/sessions/own-listener-media-gate.ts, so the header and the gate that narrows it read the same
+ * ledger. Falls back to false, the strictest answer.
+ */
+export async function holdsListenGrant (broker: Broker, origin: string): Promise<boolean> {
+  try {
+    const grants = await broker.app.grants(origin)
+    return grants.some((grant) => grant.capability === 'tcp.listen.local' || grant.capability === 'tcp.listen.network')
+  } catch {
+    return false
+  }
+}
+
+/** Whether `origin` holds a live `fs` grant, which opens its `img-src` and `media-src` to the app-file scheme (ADR-0070). Shared with main/sessions/app-files-by-url.ts for the same reason as `holdsListenGrant`. */
+export async function holdsFsGrant (broker: Broker, origin: string): Promise<boolean> {
+  try {
+    const grants = await broker.app.grants(origin)
+    return grants.some((grant) => grant.capability === 'fs')
+  } catch {
+    return false
+  }
+}
+
 /** `connect-src`'s source -- `tcp.connect` is the ONLY thing standing
  * between an app's page and a live `WebSocket` connection (`docs/
  * open-questions.md` A42), so this must never be wider than what is truly
@@ -205,9 +187,21 @@ async function secureHeaderPatternsFor (broker: Broker, origin: string): Promise
   return await liveGrantedPatternsFor(broker, origin, 'https.connect')
 }
 
-/** The CSP a served response carries, from `origin`'s live grants -- shared with src/main/install/granted-origin-csp.ts, so an origin granted without installing runs under the same policy an installed one does. */
+/** The widenings of `origin`'s `img-src` and `media-src` its live grants call for, read fresh per response. */
+async function liveMediaSources (broker: Broker, origin: string): Promise<Pick<CspOptions, 'ownListenerMedia' | 'appFiles'>> {
+  const [ownListenerMedia, appFiles] = await Promise.all([holdsListenGrant(broker, origin), holdsFsGrant(broker, origin)])
+  return { ownListenerMedia, appFiles }
+}
+
+/**
+ * The CSP a served response carries, from `origin`'s live grants -- shared with src/main/install/granted-origin-csp.ts, so an origin granted without installing runs under the same policy an installed one does.
+ * `options.ownListenerMedia` and `options.appFiles` are requests, not facts: the loopback sources are emitted only when the ledger also shows a listen grant, the app-file scheme only when it shows an `fs` grant, and both only for the callers whose documents the request gates attribute.
+ */
 export async function liveCspHeaderFor (broker: Broker, origin: string, options: CspOptions = {}): Promise<string> {
-  return cspHeaderValue(await grantedConnectPatternsFor(broker, origin), await secureHeaderPatternsFor(broker, origin), options)
+  const live = await liveMediaSources(broker, origin)
+  const ownListenerMedia = options.ownListenerMedia === true && live.ownListenerMedia === true
+  const appFiles = options.appFiles === true && live.appFiles === true
+  return cspHeaderValue(await grantedConnectPatternsFor(broker, origin), await secureHeaderPatternsFor(broker, origin), { ...options, ownListenerMedia, appFiles })
 }
 
 /**
@@ -225,13 +219,18 @@ export async function liveCspHeaderFor (broker: Broker, origin: string, options:
  * no grant, has an empty live ledger either way; `checkConnectSecure` denies
  * an empty pattern list the same way it denies "never granted", because
  * from here those two cases MUST be indistinguishable (A137).
+ *
+ * A granted host is still refused while a system proxy applies and the app is not routed: this path dials with
+ * Node, which never sees the proxy (T20). The question is the broker's own, the one `orivon.net` asks.
  */
 function authoriseReachFor (broker: Broker, origin: string): AuthoriseReach {
   return async (host, port) => {
     try {
       const grants = await broker.app.grants(origin)
       const patterns = grants.find((grant) => grant.capability === 'https.connect')?.patterns ?? []
-      return checkConnectSecure(patterns, host, port)
+      const decision = checkConnectSecure(patterns, host, port)
+      if (decision.allowed && await broker.app.reachBypassesProxy(origin, host, port)) return { allowed: false, code: 'denied', reason: 'system-proxy' }
+      return decision
     } catch {
       return { allowed: false, code: 'denied', reason: 'not-declared' }
     }
@@ -257,11 +256,48 @@ function authoriseReachFor (broker: Broker, origin: string): AuthoriseReach {
  */
 export function reachOnlyHandlerFor (broker: Broker, opener: string): (request: Request) => Promise<Response> {
   const authoriseReach = authoriseReachFor(broker, opener)
-  const reachDial = nodeReachDial()
+  const reachDial = nodeReachDial({ routeProvider: reachRouteOf(opener) })
   const { reserve, release } = reachSlotsFor(broker, opener)
   const options = { redirects: createRedirectChains() }
   return async (request: Request): Promise<Response> =>
     await fetchThirdParty(request, authoriseReach, reachDial, undefined, reserve, release, options)
+}
+
+/**
+ * Serves `bundle.origin` from the verifier on its own partition, the way a pinned app is served from its pin, so a
+ * consented app opens before its files are down (serve/live-serve.ts has the rules). Replaced in place by
+ * `registerServingFor` when the pin lands. `broker`, when given, supplies the live grants the headers and the
+ * reach gate read, as for a pinned app.
+ */
+export async function serveLiveFor (bundle: LiveBundle, broker?: Broker): Promise<void> {
+  const { origin } = bundle
+  const reachSlots = broker === undefined ? undefined : reachSlotsFor(broker, origin)
+  const handler = createLiveRequestHandler({
+    ...bundle,
+    fetchVerified: bundle.fetchNetwork === undefined ? fetchFromVerifier : undefined,
+    grantedConnectPatterns: broker === undefined ? undefined : async () => await grantedConnectPatternsFor(broker, origin),
+    grantedSecurePatterns: broker === undefined ? undefined : async () => await secureHeaderPatternsFor(broker, origin),
+    grantedMediaSources: broker === undefined ? undefined : async () => await liveMediaSources(broker, origin),
+    authoriseReach: broker === undefined ? undefined : authoriseReachFor(broker, origin),
+    reachDial: nodeReachDial({ routeProvider: reachRouteOf(origin) }),
+    reserveReachSlot: reachSlots?.reserve,
+    releaseReachSlot: reachSlots?.release
+  })
+  const { session } = await import('electron')
+  const appSession = session.fromPartition(partitionFor(origin))
+  await prepareAppSessionOrStop(appSession, origin, 'verifier')
+  registerAppOrigin(appSession, origin, handler, 'verifier')
+}
+
+/**
+ * Takes a live-served origin off its partition (a block), unless its pin already answers for it. What the app stored in
+ * its partition stays: that is the person's data, and a block takes an app's permissions, never its data.
+ */
+export async function endLiveFor (origin: string): Promise<void> {
+  if (isOriginPinnedSync(origin)) return
+  const { session } = await import('electron')
+  retireAppOrigin(session.fromPartition(partitionFor(origin)), origin)
+  coverageTrackers.delete(origin)
 }
 
 /**
@@ -328,15 +364,18 @@ export async function registerServingFor (storage: LoaderStorage, origin: string
     broker === undefined ? undefined : async () => await grantedConnectPatternsFor(broker, origin),
     broker === undefined ? undefined : async () => await secureHeaderPatternsFor(broker, origin),
     broker === undefined ? undefined : authoriseReachFor(broker, origin),
-    nodeReachDial(),
+    nodeReachDial({ routeProvider: reachRouteOf(origin) }),
     tracker.record,
     reachSlots?.reserve,
     reachSlots?.release,
     pin === null ? undefined : retainedAssets(origin, pin),
-    resolved
+    resolved,
+    broker === undefined ? undefined : async () => await liveMediaSources(broker, origin)
   )
   const { session } = await import('electron')
-  registerAppOrigin(session.fromPartition(partitionFor(origin)), origin, handler)
+  const appSession = session.fromPartition(partitionFor(origin))
+  await prepareAppSessionOrStop(appSession, origin, 'pin')
+  registerAppOrigin(appSession, origin, handler)
   if (pin !== null) rememberServed(origin, pin)
 }
 

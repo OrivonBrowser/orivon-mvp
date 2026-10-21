@@ -8,8 +8,8 @@
 ## Decision
 Orivon's durable, long-lived asset is the **capability API surface** that applications
 program against, *not* the engine that implements it. For the MVP that API is implemented
-by a **broker in the Electron main process** over Node primitives. Wasmtime / WASI /
-Component Model (`orivon-runtime` as originally specified) is **deferred**, not cancelled.
+by a **broker in the Electron main process** over Node primitives. A WASM runtime
+(`orivon-runtime` as originally specified) is **deferred**: a possible option, not a plan.
 
 The API surface is deliberately shaped to **mirror the subset of Node APIs that real Web3
 desktop applications already use**, so that porting an existing Electron app is mechanical.
@@ -22,9 +22,8 @@ renderer (sandbox: true, contextIsolation: true, nodeIntegration: false)
 capability broker (main process) — enforces app manifest + user grants, Android-style
       ▼
 implementation, swappable without touching apps:
-      month 1  →  Node sockets / fs / supervised helper process
-      later    →  Wasmtime host functions  (containment for untrusted code, mobile)
-      later    →  Chromium fork + Mojo
+      today    →  Node sockets / fs / supervised helper process
+      later    →  whatever engine replaces it, unseen by apps
 ```
 
 ## Amendments recorded 2026-08-25
@@ -58,7 +57,7 @@ URL-delivered app code cannot run in the main process, moving it to the renderer
 **all app code runs in the renderer and the broker is a pure syscall proxy.**
 
 Two consequences, stated rather than smoothed over:
-- The migration ladder is, as now designed, **Node → Mojo**. Wasmtime would be a *different app
+- A WASM runtime would be a *different app
   model* (apps ship standalone WASI modules), not a swap beneath a stable API.
 - The containment argument is probably wrong. Hostile app code already runs inside a V8
   renderer sandbox; what makes it dangerous is **the grants it holds**, which is an
@@ -74,7 +73,7 @@ repository.
 **5. Amendment 4's "all app code is renderer JS" now reads "all app code runs in the renderer".** It
 named where app code runs, never its language. An app's code may be JavaScript or WebAssembly, and
 both run in the renderer (`ADR-0036`). WebAssembly there reaches the network and disk as the app's
-JavaScript does, through `orivon.*`. The Wasmtime "different app model" above is WebAssembly with no
+JavaScript does, through `orivon.*`. The WASM-runtime "different app model" above is WebAssembly with no
 JavaScript around it, calling a WASI host, and remains deferred. The "capability-bearing WASM inside
 the renderer's own V8" alternative below is impossible only in the sense it states, raw sockets from
 inside the sandbox; nothing needs that.
@@ -87,6 +86,13 @@ one at a time as a need calls for each. Read "month 1" and "the MVP" above as *t
 shell is labelled *tied to Electron* (`CLAUDE.md` Rule 5), not disposable. The decision stands: the
 capability API is the durable asset, specified with care so that the implementation beneath it
 could change without any app already written having to change.
+
+## Amendment recorded 2026-10-08
+
+**7. Stronger sandboxing is expected later, and no runtime is planned.** Read "`orivon-runtime` is
+not cancelled" below in that light: a WASM runtime is one possible way to contain untrusted code,
+not a scheduled component, and the engine beneath the capability API may change without naming
+its successor here (`docs/roadmap.md`, Later).
 
 ## Context
 The public technical design (`orivon-runtime.mdx`, `orivon-core.mdx`,
@@ -137,11 +143,11 @@ Two owner interventions shaped this ADR and are recorded because they changed th
 The dead-end risk in an Electron MVP was never Electron. It was committing to a capability
 *interface* that would have to break later. Therefore: **specify the interface with care
 now; implement it cheaply now; harden the implementation later.** If apps call
-`orivon.net.tcpConnect`, replacing Node sockets with Wasmtime host functions, or later with
-Mojo in a Chromium fork, is invisible to every app already written.
+`orivon.net.tcpConnect`, replacing Node sockets with another engine's primitives is invisible
+to every app already written.
 
 This makes the Electron shell **explicitly disposable** and the API spec **explicitly
-durable**, which is the concrete answer to "keep the path to Chromium open".
+durable**, which is what keeps the engine replaceable.
 
 Because the API mirrors Node, a companion **`orivon-node-shim`** package can implement `net`,
 `dgram`, `fs` and `hid` on top of `orivon.*`, so an existing Electron app's main-process code
@@ -175,7 +181,7 @@ A developer therefore needs: a JSON manifest, a frontend, and "load unpacked". T
 deliberately small surface so someone can build an Orivon app in an afternoon.
 
 ## Consequences
-- **Weaker containment than Wasmtime, stated openly.** A hole in the broker means full OS
+- **Weaker containment than a WASM runtime, stated openly.** A hole in the broker means full OS
   access, so developer mode carries a real warning rather than a reassuring one. This is the
   first concrete, user-visible justification for `orivon-runtime`: WASM is what turns "at
   your own risk" into "actually contained".

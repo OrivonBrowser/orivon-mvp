@@ -12,6 +12,7 @@ vi.mock('electron', () => ({
 }))
 
 const { net } = await import('electron')
+const { setOwnRequests } = await import('../../../main/route/own-requests.js')
 const { MAX_REDIRECTS, electronFetch, netFetch, redirectRefusal } = await import('../fetch.js')
 
 const requestMock = vi.mocked(net.request)
@@ -114,6 +115,18 @@ describe('electronFetch', () => {
 
     expect(resolveHostMock).toHaveBeenCalledExactlyOnceWith('cdn.example')
     expect(requestMock).toHaveBeenCalledOnce()
+  })
+
+  it('does not look the host of a website with a tunnel of its own up here, with the whole browser off the tunnel', async () => {
+    setOwnRequests({ everywhere: () => false, isRouted: () => true, tunnel: async () => new Response(''), direct: async () => new Response(''), directSession: () => ({}), siteTunnelled: (origin) => origin === 'https://hidden.onion.example' })
+    try {
+      requestMock.mockReturnValue(fakeRequest([]) as never)
+      await electronFetch('https://hidden.onion.example/a.js', [], new AbortController().signal)
+      expect(resolveHostMock).not.toHaveBeenCalled()
+      expect(requestMock).toHaveBeenCalledOnce()
+    } finally {
+      setOwnRequests(undefined)
+    }
   })
 
   it('never calls net.request when a literal address fails the guard', async () => {

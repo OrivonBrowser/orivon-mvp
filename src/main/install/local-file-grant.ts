@@ -19,7 +19,7 @@ import type { CapabilityKind } from '../../contracts/index.js'
 import { MAX_MANIFEST_BYTES, parseManifest } from '../../loader/manifest/manifest.js'
 import { dropLocalFileGrants } from '../local-files/drop-local-file-grants.js'
 import { grantChangedCapabilities } from '../consent/grant-changed-capabilities.js'
-import type { InstallConsentPrompt } from '../consent/install-consent.js'
+import type { LocalFileConsentPrompt } from '../consent/local-file-consent.js'
 import type { DialogCaller } from '../consent/request-grant.js'
 import type { GrantWithoutInstallOutcome } from './grant-without-install.js'
 import { widensHeldGrants } from './grant-without-install.js'
@@ -28,7 +28,7 @@ export interface LocalFileGrantDeps {
   readonly broker: Broker
   /** The record of the files let use Orivon permissions (`LocalFileApps`): `add` is false when it could not be written. */
   readonly records: { readonly has: (key: string) => boolean, readonly add: (key: string) => boolean }
-  readonly consent: InstallConsentPrompt
+  readonly consent: LocalFileConsentPrompt
   /** Whether the tab that raised the hint already runs in the session `key` belongs in (`localPartitionFor`): false for a tab still in the shared local-files session. */
   readonly inOwnSession: (caller: DialogCaller | undefined, key: string) => boolean
   /** What a No was said to in this run, one entry per file and manifest: it is not asked again until the browser starts again or the file declares something else. */

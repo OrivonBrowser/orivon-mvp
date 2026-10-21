@@ -11,6 +11,7 @@ import { instantiateFrom, tourFixture } from '../../wasi-p2/tests/support/compon
 import { type OrivonServer, serveOrivon } from '../orivon-server.js'
 import type { ParentChannel } from '../parent.js'
 import type { FromWorker, ToWorker } from '../protocol.js'
+import { NODE_IDENTITY } from '../../node-identity.js'
 import { type ForkScope, runFork } from '../runtime-fork.js'
 import { runSpawn } from '../runtime-spawn.js'
 import { runThread } from '../runtime-thread.js'
@@ -321,16 +322,19 @@ describe('runFork', () => {
     expect(parent.posts).toContainEqual({ type: 'ipc', message: { configuredWith: 'config' } })
   })
 
-  it('reports the Node version a child claims, since a package run there reads process.versions.node', async () => {
+  it('is Node-shaped like a page (d-0594): a package run there reads process.versions.node', async () => {
     const scope = fakeScope()
     const parent = fakeParent()
-    let seen: { version: string, versions: Record<string, string>, release: { name: string } } | undefined
+    let seen: { version: string, versions: Record<string, string>, release: { name: string }, platform: string, arch: string } | undefined
     await runFork(forkStart(await orivonPort()), parent, scope, async () => {
       seen = scope.process as unknown as typeof seen
     })
-    expect(seen?.versions['node']).toMatch(/^\d+\.\d+\.\d+$/)
-    expect(seen?.version).toBe(`v${seen?.versions['node'] ?? ''}`)
+    expect(seen?.versions['node']).toBe(NODE_IDENTITY.node)
+    expect(seen?.version).toBe(`v${NODE_IDENTITY.node}`)
     expect(seen?.release.name).toBe('node')
+    expect(seen?.platform).toBe('linux')
+    expect(seen?.arch).toBe('x64')
+    expect('browser' in (seen ?? {})).toBe(false)
   })
 
   it('ends on its own with code 0, after beforeExit, when nothing is pending and nothing listens on the channel, as a Node child does', async () => {

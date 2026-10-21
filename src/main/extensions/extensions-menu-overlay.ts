@@ -14,7 +14,7 @@ import { buildRows, anchorFrom, asRequest, fallbackAnchor, isExtensionId, siteHo
 import { openExtensionTab } from './extension-opened-pages.js'
 import { activateTabShowing } from './extension-options-tab.js'
 import type { MenuPayload, Rect } from './extensions-menu-model.js'
-import { EXTENSIONS_BUTTON_MODULE, EXTENSIONS_MENU_OVERLAY, EXTENSION_STORE_URL } from './extensions-menu-names.js'
+import { EXTENSIONS_BUTTON_MODULE, EXTENSIONS_MENU_OVERLAY } from './extensions-menu-names.js'
 import { EXTENSION_MENU_REQUESTS, EXTENSION_MENU_ROW_PARTS } from './extensions-menu-points.js'
 import type { MenuRequestContext } from './extensions-menu-points.js'
 
@@ -71,10 +71,6 @@ export function createExtensionsMenu (win: OverlayWindow, deps: ExtensionsMenuDe
       case 'manage-all':
         win.close()
         window.tabs.openInternal('extensions')
-        return undefined
-      case 'store':
-        win.close()
-        window.tabs.createTab(EXTENSION_STORE_URL)
         return undefined
       case 'activate': case 'pin': case 'options': case 'manage': case 'remove': {
         const id = enabledId(body['id'])

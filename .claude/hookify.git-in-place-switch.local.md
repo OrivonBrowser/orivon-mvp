@@ -16,7 +16,7 @@ loses the work. Instead:
 - **Another branch:** `git worktree add <path> -b <branch> <base>`, then symlink `node_modules`
   (`docs/development/parallel-work.md`).
 - **A PR:** `git -C <worktree> fetch origin pull/<n>/head` (this rule blocks `gh pr checkout`).
-- **Syncing `main`:** never `git pull`; follow parallel-work.md §Syncing `main` with `origin`.
+- **Syncing `main`:** never `git pull`; follow parallel-work.md section Syncing `main` with `origin`.
   Sync unprompted only on a clean tree; on a dirty tree, report and do not act.
 - **Inside a worktree you own:** `git -C <literal path> ...` is not blocked.
 - **Stashed something?** Pop it in the same session.

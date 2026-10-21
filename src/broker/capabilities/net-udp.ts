@@ -12,8 +12,11 @@ import { fail } from '../errors.js'
 import { mapIoError } from '../io-errors.js'
 import { checkBind } from '../policy/bind.js'
 import { checkConnect } from '../policy/connect.js'
+import { NO_RESOLVER, checkRoutedConnect, isLoopbackTarget } from '../policy/connect-routed.js'
 import { GENERIC_PROXY_PROBE_URL, proxyProbeUrl } from '../policy/proxy-guard.js'
 import { bindGrantFor, requestedScope } from './net-bind-grant.js'
+import { routeBoundUdp } from './net-udp-route.js'
+import type { RoutedUdpBinding } from './net-udp-route.js'
 import type { BoundUdpSocket, CreateBrokerOptions, SendOutcome } from '../broker-contracts.js'
 
 export interface UdpBindOptions {
@@ -47,23 +50,42 @@ export function createUdpBind ({ deps, handleTable, ledger, canonical, socketAll
    * to error the app's WritableStream, which errors it permanently, and a
    * denied destination is ordinary traffic for a P2P app (A87). A resolver
    * failure is 'unreachable' and a denial is 'denied', both as values.
+   *
+   * A ROUTED APP (`routing` is set when the socket was bound with a route in
+   * force): a datagram to this machine goes out of the bound socket, and any
+   * other goes through the route, named and never resolved here. The route is
+   * also read live, and when it has appeared or gone since the bind, only
+   * this machine can be reached, so a socket never sends where its app's
+   * route does not say.
    */
   async function authorisedSend (
     key: string,
     rawSend: BoundUdpSocket['send'],
-    datagram: Datagram
+    datagram: Datagram,
+    routing: RoutedUdpBinding | undefined
   ): Promise<SendOutcome> {
     const grant = ledger.currentGrant(key, 'udp.send')
     if (grant === undefined) return { sent: false, code: 'denied' }
 
+    const live = deps.routeFor?.(key)
+    const direct = (routing === undefined && live === undefined) || isLoopbackTarget(datagram.address)
+    if (!direct) {
+      if (routing === undefined || live === undefined) return { sent: false, code: 'denied' }
+      const routed = await checkRoutedConnect(grant.patterns, datagram.address, datagram.port)
+      return routed.allowed ? await routing.sendThrough(live, routed.host, datagram.port, datagram.data) : { sent: false, code: 'denied' }
+    }
+
     let decision: Awaited<ReturnType<typeof checkConnect>>
     try {
       // Same T20 ordering as `connect`'s: before `checkConnect` resolves
-      // anything, not after.
-      if (await deps.proxyConfigured(proxyProbeUrl(datagram.address, datagram.port))) {
-        return { sent: false, code: 'denied' }
+      // anything, not after. A routed app has its route as its proxy.
+      if (live === undefined) {
+        const probeUrl = proxyProbeUrl(datagram.address, datagram.port)
+        if (probeUrl === null || await deps.proxyConfigured(probeUrl)) return { sent: false, code: 'denied' }
       }
-      decision = await checkConnect(grant.patterns, datagram.address, datagram.port, deps.resolve, ledger.parsedPatternsFor(grant))
+      // Only this machine is reached directly while a route is in force, and
+      // that needs no resolver.
+      decision = await checkConnect(grant.patterns, datagram.address, datagram.port, live === undefined ? deps.resolve : NO_RESOLVER, ledger.parsedPatternsFor(grant))
     } catch (error) {
       const mapped = mapIoError(error, 'net')
       // The key is omitted, not set to undefined: exactOptionalPropertyTypes
@@ -95,6 +117,10 @@ export function createUdpBind ({ deps, handleTable, ledger, canonical, socketAll
     // The scope picks which grants may authorise the call and which interface
     // `deps.bind` opens (./net-bind-grant.ts).
     const scope = requestedScope(opts.scope, 'net.udpBind')
+    // Read once per bind. A route gives no address others can reach, so a
+    // routed app binds loopback only.
+    const route = deps.routeFor?.(key)
+    if (route !== undefined && scope === 'network') throw fail('denied', 'a routed app cannot bind a network-reachable socket')
     const { grant: current, ranges } = bindGrantFor(ledger, key, 'udp.bind', scope, opts.port)
 
     return await handleTable.run(key, { on: 'grant', grantId: current.id }, async (signal) => {
@@ -104,7 +130,7 @@ export function createUdpBind ({ deps, handleTable, ledger, canonical, socketAll
         // own doc on GENERIC_PROXY_PROBE_URL) -- T20 still applies: a raw
         // listening socket is reachable however the person's traffic is
         // routed, proxy or not.
-        if (await deps.proxyConfigured(GENERIC_PROXY_PROBE_URL)) {
+        if (route === undefined && await deps.proxyConfigured(GENERIC_PROXY_PROBE_URL)) {
           throw fail('denied', 'a system proxy is configured; udp.bind refuses to bypass it')
         }
         if (signal.aborted) throw fail('revoked', 'the grant authorising this bind was withdrawn')
@@ -121,11 +147,13 @@ export function createUdpBind ({ deps, handleTable, ledger, canonical, socketAll
         throw fail('revoked', 'the grant authorising this bind was withdrawn')
       }
 
+      const routing = route === undefined ? undefined : routeBoundUdp(bound)
+      const socket = routing?.socket ?? bound
       const entry = handleTable.acquire({
         origin: key,
         kind: 'udpSocket',
         authorisedBy: { by: 'grant', grantId: current.id },
-        destroy: bound.destroy,
+        destroy: socket.destroy,
         socketLimit: socketAllowance(key),
         stillCovered: (patterns) => checkBind(patterns, bound.localPort).allowed
       })
@@ -136,11 +164,11 @@ export function createUdpBind ({ deps, handleTable, ledger, canonical, socketAll
       // would read a counter that never moves and conclude it had lost
       // nothing.
       return {
-        readable: bound.readable,
-        localAddress: bound.localAddress,
-        localPort: bound.localPort,
-        get droppedInbound () { return bound.droppedInbound },
-        send: async (datagram: Datagram) => await authorisedSend(key, bound.send, datagram),
+        readable: socket.readable,
+        localAddress: socket.localAddress,
+        localPort: socket.localPort,
+        get droppedInbound () { return socket.droppedInbound },
+        send: async (datagram: Datagram) => await authorisedSend(key, socket.send, datagram, routing),
         id: entry.id,
         closed: entry.closed,
         close: async (): Promise<void> => { await handleTable.release(key, entry.id) },

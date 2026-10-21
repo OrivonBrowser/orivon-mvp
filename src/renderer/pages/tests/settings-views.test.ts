@@ -55,6 +55,12 @@ describe('what "Check now" says', () => {
     expect(nothing.updates.words()).toContain('private window')
   })
 
+  it('says the Store delivers updates when a Store install is asked', async () => {
+    const store = state({ ok: false, reason: 'store' })
+    await store.updates.check()
+    expect(store.updates.words()).toContain('Microsoft Store')
+  })
+
   it('names the newer release without its v, and only when there is one', async () => {
     const newer = state({ ok: true, answer: { reached: true, current: '1.0.0', latest: 'v1.1.0', newer: true, url: 'x' } })
     expect(newer.updates.available()).toBeNull()
@@ -124,6 +130,13 @@ describe('AppsState.handle', () => {
   it('ignores any other topic', () => {
     const bridge = { request: async () => { throw new Error('must not be called') } } as unknown as OrivonInternal
     expect(new AppsState(bridge, () => {}).handle('settings.changed')).toBe(false)
+  })
+
+  it('asks main to take back a kind of link, then fetches the list again', async () => {
+    const sent: unknown[] = []
+    const bridge = { request: async (_domain: string, command: unknown) => { sent.push(command); return { apps: [], identity: 'not-started' } } } as unknown as OrivonInternal
+    await new AppsState(bridge, () => {}).forgetLink('https://torrent.example', 'magnet')
+    expect(sent).toEqual([{ type: 'forgetLink', origin: 'https://torrent.example', scheme: 'magnet' }, { type: 'list' }])
   })
 })
 

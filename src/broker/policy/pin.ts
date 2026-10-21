@@ -51,24 +51,24 @@ export type PinnedAsset = PathLeaf
 
 /** A CIDv1 in its default base32 string form. */
 const CID_PATTERN = /^b[a-z2-7]{20,200}$/
-const CONTENT_VIA: ReadonlySet<string> = new Set(['ipfs', 'ipns-key', 'dnslink'])
+const CONTENT_VIA: ReadonlySet<string> = new Set(['ipfs', 'ipns-key', 'dnslink', 'swarm'])
 
 /**
- * Where a bundle fetched from IPFS came from: the CID every one of its files
+ * Where a bundle fetched from IPFS or Swarm came from: the CID every one of its files
  * was verified against, which is also the identifier a Web3 Score provider
  * assesses, and how the name led there.
  */
 export interface ContentAddress {
   readonly cid: string
-  /** What the name's contenthash named: the CID itself, a signed IPNS key, or a DNSLink domain. */
-  readonly via: 'ipfs' | 'ipns-key' | 'dnslink'
+  /** What the name's contenthash named: the CID itself, a signed IPNS key, a DNSLink domain, or a Swarm reference. */
+  readonly via: 'ipfs' | 'ipns-key' | 'dnslink' | 'swarm'
   /** The block the name was proven at, the newest the light client had verified; absent for a test build's fixture name. */
   readonly block?: number
   /** Whether every pointer from the name to the CID was verified: false through a DNSLink. */
   readonly pointersVerified: boolean
 }
 
-function parseContentAddress (raw: unknown): ContentAddress | null {
+export function parseContentAddress (raw: unknown): ContentAddress | null {
   if (typeof raw !== 'object' || raw === null) return null
   const cid = ownProperty(raw, 'cid', isString)
   const via = ownProperty(raw, 'via', isString)
@@ -111,7 +111,7 @@ export interface PinRecord {
   readonly version: string
   /** When this pin was written, epoch milliseconds. */
   readonly pinnedAt: number
-  /** Present only for a bundle fetched from IPFS through a `.eth` name. Optional, so schema 1 still reads every older pin. */
+  /** Present only for a bundle fetched from IPFS or Swarm through a `.eth` name. Optional, so schema 1 still reads every older pin. */
   readonly content?: ContentAddress
 }
 
@@ -217,7 +217,7 @@ function parseAssets (raw: object): readonly PinnedAsset[] | null {
  * stops "one unsigned `<script>` into a code-split chunk the pinned asset set
  * never covered."
  */
-export function isPinnedPath (pin: PinRecord, canonicalPath: string): boolean {
+export function isPinnedPath (pin: Pick<PinRecord, 'assets'>, canonicalPath: string): boolean {
   return pin.assets.some((asset) => asset.path === canonicalPath)
 }
 

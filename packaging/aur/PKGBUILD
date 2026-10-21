@@ -1,0 +1,56 @@
+# Maintainer: the Orivon project (https://github.com/OrivonBrowser/orivon-mvp)
+#
+# orivon-bin: Orivon's own release package, repackaged. The release workflow (.github/workflows/release.yml,
+# job `aur`) fills _upstream, pkgrel and sha256sums from the release's assets, regenerates .SRCINFO with
+# `makepkg --printsrcinfo` and pushes both here; this copy in the repository is the template.
+#
+# _upstream is the release version as the tag writes it (0.0.8, 0.2.0-beta.1). pkgver may not contain a
+# hyphen, so a pre-release drops it: 0.2.0-beta.1 is 0.2.0beta.1, which pacman sorts before 0.2.0 and
+# after 0.2.0alpha.3 (vercmp); a joining underscore would sort it after the release.
+pkgname=orivon-bin
+_upstream=0.0.0
+pkgver=${_upstream//-/}
+pkgrel=1
+pkgdesc='A browser that runs applications Chrome cannot (official binary release)'
+arch=('x86_64')
+url='https://github.com/OrivonBrowser/orivon-mvp'
+license=('AGPL-3.0-only')
+depends=('alsa-lib' 'at-spi2-core' 'gtk3' 'libnotify' 'libsecret' 'libxss' 'libxtst' 'nss' 'util-linux-libs' 'xdg-utils')
+optdepends=('libappindicator-gtk3: tray icon')
+provides=('orivon')
+conflicts=('orivon')
+# The browser is one large Electron binary that is already what the release built: stripping it only costs time.
+options=('!strip' '!debug')
+_deb="orivon_${_upstream}_amd64.deb"
+noextract=("${_deb}")
+source=("${_deb}::${url}/releases/download/v${_upstream}/${_deb}")
+sha256sums=('SKIP')
+
+package() {
+  # The release's .deb is the package Orivon tests (release.yml installs and launches it): /opt/Orivon, the
+  # desktop entry with its two actions, and the icon. Its data archive is xz or zstd, so take whichever it is.
+  bsdtar -xf "${srcdir}/${_deb}" -C "${srcdir}"
+  bsdtar -xf "${srcdir}"/data.tar.* -C "${pkgdir}"
+
+  # Debian's maintainer script does these; pacman has none.
+  install -d "${pkgdir}/usr/bin"
+  ln -sf /opt/Orivon/orivon "${pkgdir}/usr/bin/orivon"
+  chmod 4755 "${pkgdir}/opt/Orivon/chrome-sandbox"
+
+  # The AppArmor profile is for Ubuntu 24.04+, which Arch is not.
+  rm -rf "${pkgdir}/etc/apparmor.d"
+  rm -rf "${pkgdir}/usr/share/doc"
+
+  # Releases from 0.0.9 on carry the AppStream description inside /opt/Orivon, where software centres do not look.
+  local metainfo=usr/share/metainfo/com.orivonstack.orivon.metainfo.xml
+  if [ -f "${pkgdir}/opt/Orivon/${metainfo}" ]; then
+    install -Dm644 "${pkgdir}/opt/Orivon/${metainfo}" "${pkgdir}/${metainfo}"
+    rm -rf "${pkgdir}/opt/Orivon/usr"
+  fi
+
+  install -d "${pkgdir}/usr/share/licenses/${pkgname}"
+  local f
+  for f in LICENSE.electron.txt LICENSES.chromium.html; do
+    ln -sf "/opt/Orivon/${f}" "${pkgdir}/usr/share/licenses/${pkgname}/${f}"
+  done
+}

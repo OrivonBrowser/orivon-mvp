@@ -7,6 +7,7 @@ import { createServer } from 'node:https'
 import type { Server } from 'node:https'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { TLSSocket } from 'node:tls'
+import { isDnsLabel } from '../../resolution/dns-name.js'
 import { ResolutionError } from '../../resolution/records.js'
 import type { GatheredFile } from '../../resolution/providers.js'
 import { MAX_ADDRESS_NAME } from '../../address.js'
@@ -14,10 +15,19 @@ import type { ProtocolAddresses } from '../../address.js'
 import type { ProtocolRegistry } from '../../registry.js'
 import { contentTypeFor } from '../../../loader/serve/content-type.js'
 import { parseRange } from '../../../loader/serve/range.js'
-import { CONTENT_ROOT_HEADER, PARTITION_HEADER } from '../../../loader/fetch/content-root.js'
+import { CONTENT_ROOT_HEADER, DDOC_MISMATCH, FAILURE_HEADER, PARTITION_HEADER } from '../../../loader/fetch/content-root.js'
 import type { RunCertificate } from './certificate.js'
 import { ERROR_PAGE_CSP, renderErrorPage } from './error-pages.js'
-import type { Sites } from './sites.js'
+import type { GatewayOffer } from './error-pages.js'
+import { CONSENT_PATH, GatewayConsent } from '../gateway-consent.js'
+import { answerConsent, gatewayOffer, isDocumentLoad } from './gateway-offer.js'
+import { checkLeaf, expectedLeafOf, sliceChunks } from './leaf-check.js'
+import type { SiteSource } from './sites.js'
+import { paceOf, routeOf } from './route-of.js'
+import type { ServeRoutes } from './route-of.js'
+import { FILE_RETRIES, readWithRetries } from './retry.js'
+import { DIRECT_ROUTE } from '../../route-pace.js'
+import type { RoutePace } from '../../route-pace.js'
 
 /** A file up to this size is read and verified whole before its first byte is sent to a page, so a failure is an error page, never half a document. */
 export const MAX_BUFFERED_BYTES = 16 * 1024 * 1024
@@ -57,6 +67,10 @@ const MAX_TOTAL_BUFFERED_BYTES = 16 * MAX_BUFFERED_BYTES
  */
 export const BUFFERED_RESPONSE_DEADLINE_MS = 30_000
 
+/** How long each chunk of a file whose leaf is checked waits for room in the buffer budget before the file is refused: a page loads many files at once, and a refused script breaks the app. The wait is counted per chunk, not from the start of the request, because on a slow route the chunks arrive minutes apart. */
+const LEAF_CHECK_WAIT_MS = 10_000
+const BUDGET_POLL_MS = 25
+
 /**
  * Buffered bytes held right now, kept per partition (the same key
  * `sites.ts` mounts by) so one page's unread requests cost only that
@@ -76,6 +90,16 @@ class BufferBudget {
     if (current + length > MAX_PARTITION_BUFFERED_BYTES || this.total + length > MAX_TOTAL_BUFFERED_BYTES) return false
     this.perPartition.set(key, current + length)
     this.total += length
+    return true
+  }
+
+  /** `reserve`, waiting up to `waitMs` for a response held by someone else to finish and free its share. */
+  async reserveWithin (partition: string | undefined, length: number, waitMs: number): Promise<boolean> {
+    const until = Date.now() + waitMs
+    while (!this.reserve(partition, length)) {
+      if (Date.now() >= until) return false
+      await new Promise((resolve) => setTimeout(resolve, BUDGET_POLL_MS))
+    }
     return true
   }
 
@@ -132,6 +156,16 @@ function partitionOf (req: IncomingMessage, host: string): string | undefined {
   return site === 'none' || site === 'same-origin' ? `https://${host}` : undefined
 }
 
+/**
+ * A navigation (typed, a reload, a click on a link or on Try again, a frame's own load), as the browser marks a
+ * document load. A subresource is not one: it keeps a remembered failure, so a failed page's own requests do not
+ * each start the mount again. A mount already running is joined, so a page of frames starts no more than one.
+ */
+function isNavigation (req: IncomingMessage): boolean {
+  const dest = req.headers['sec-fetch-dest']
+  return req.headers['sec-fetch-mode'] === 'navigate' && (dest === 'document' || dest === 'iframe' || dest === 'frame')
+}
+
 /** The path of an origin-form request target. `//x/y` would read as an authority, so it is refused, not reinterpreted. */
 function pathOf (target: string | undefined, host: string): URL | undefined {
   if (target === undefined || !target.startsWith('/') || target.startsWith('//')) return undefined
@@ -146,10 +180,10 @@ function pathOf (target: string | undefined, host: string): URL | undefined {
  * `servedRoot` is set only for a failure reached after the name resolved to a root: a 404 that
  * carries it says that root has no such path, where one without it may say the name has no content.
  */
-function sendError (res: ServerResponse, shown: string, error: unknown, servedRoot?: string): void {
+function sendError (res: ServerResponse, shown: string, error: unknown, servedRoot?: string, offer?: GatewayOffer): void {
   const failure = error instanceof ResolutionError ? error.failure : 'unavailable'
   const detail = error instanceof Error ? error.message : String(error)
-  const { status, html } = renderErrorPage(failure, shown, detail)
+  const { status, html } = renderErrorPage(failure, shown, detail, offer)
   const headers: Record<string, string> = {
     'content-type': 'text/html; charset=utf-8',
     'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}; ${FRAME_ANCESTORS_SELF_CSP}`,
@@ -157,6 +191,8 @@ function sendError (res: ServerResponse, shown: string, error: unknown, servedRo
     'x-content-type-options': 'nosniff'
   }
   if (failure === 'not-synced') headers['retry-after'] = '10'
+  // Only content that is itself wrong: a source that lied while none delivered the real bytes is a source problem, and says so only in the page.
+  if (failure === 'unverifiable' && !(error instanceof ResolutionError && error.sourceFault)) headers[FAILURE_HEADER] = failure
   if (servedRoot !== undefined) headers[CONTENT_ROOT_HEADER] = servedRoot
   res.writeHead(status, headers).end(html)
 }
@@ -215,7 +251,7 @@ async function writeBufferedChunks (res: ServerResponse, chunks: Uint8Array[], d
   }
 }
 
-async function sendBody (res: ServerResponse, status: number, headers: Record<string, string>, file: GatheredFile, length: number, budget: BufferBudget, partition: string | undefined, bufferedResponseDeadlineMs: number, forInstall: boolean): Promise<void> {
+async function sendBody (res: ServerResponse, status: number, headers: Record<string, string>, file: GatheredFile, reopen: () => Promise<GatheredFile>, length: number, budget: BufferBudget, partition: string | undefined, bufferedResponseDeadlineMs: number, forInstall: boolean, plan: ReadPlan): Promise<void> {
   // An install is streamed whatever the size: it checks every byte itself and
   // refuses a short body, and it gives up on a response that sends nothing for
   // a while, which a file gathered whole from slow gateways would do.
@@ -228,7 +264,8 @@ async function sendBody (res: ServerResponse, status: number, headers: Record<st
       // Read (and, in doing so, verify) the whole body before anything is
       // written, so a failure past this point is still caught below and
       // turned into an error page rather than left as a half-sent document.
-      const chunks = await collect(file.body)
+      // A read that fails because nothing answered in time is made again, from the blocks already held, before it is an error page.
+      const chunks = await readWithRetries(async (n) => await collect((n === 0 ? file : await reopen()).body), plan.route, plan.left, plan.retries)
       res.writeHead(status, headers)
       await writeBufferedChunks(res, chunks, bufferedResponseDeadlineMs)
     } finally {
@@ -247,9 +284,60 @@ async function sendBody (res: ServerResponse, status: number, headers: Record<st
   }
 }
 
+/**
+ * A file whose leaf the caller named: read whole (and so verified against its address) and hashed before a byte is
+ * sent. A file of any size is held, up to the largest an app may carry, because a leaf cannot be known from a
+ * prefix. On a mismatch nothing of it is sent and the answer says it was the declared tree that failed, which the
+ * caller treats as bad data.
+ */
+async function sendChecked (res: ServerResponse, host: string, target: string, expected: string, status: number, headers: Record<string, string>, file: GatheredFile, reopen: () => Promise<GatheredFile>, range: { readonly start: number, readonly end: number } | undefined, head: boolean, budget: BufferBudget, partition: string | undefined, bufferedResponseDeadlineMs: number, plan: ReadPlan): Promise<void> {
+  // Held against the app's own origin, never the shared key, and taken as the bytes arrive: a large cold file must not
+  // keep its whole size from the scripts the page asked for beside it.
+  const key = partition ?? `https://${host}`
+  let held = 0
+  /** Every chunk of the file, or undefined once the buffer budget has no room for it. */
+  const gather = async (source: GatheredFile): Promise<Uint8Array[] | undefined> => {
+    const chunks: Uint8Array[] = []
+    for await (const chunk of source.body) {
+      if (!await budget.reserveWithin(key, chunk.length, LEAF_CHECK_WAIT_MS)) return undefined
+      held += chunk.length
+      chunks.push(chunk)
+    }
+    return chunks
+  }
+  try {
+    const chunks = await readWithRetries(async (n) => {
+      // What an earlier read held is given back before the file is read again.
+      budget.release(key, held)
+      held = 0
+      return await gather(n === 0 ? file : await reopen())
+    }, plan.route, plan.left, plan.retries)
+    if (chunks === undefined) {
+      res.writeHead(503, { 'content-type': 'text/plain', 'cache-control': 'no-store', 'retry-after': '1' }).end('the verifier is holding too many responses right now')
+      return
+    }
+    const verdict = await checkLeaf(host, target, file.size, chunks, expected)
+    if (!verdict.ok) {
+      res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': SERVED_CONTENT_CSP, [FAILURE_HEADER]: DDOC_MISMATCH }).end(`${verdict.path} is not the file the declared tree names`)
+      return
+    }
+    if (head) {
+      res.writeHead(status, headers).end()
+      return
+    }
+    res.writeHead(status, headers)
+    await writeBufferedChunks(res, range === undefined ? chunks : sliceChunks(chunks, range.start, range.end), bufferedResponseDeadlineMs)
+  } finally {
+    budget.release(key, held)
+  }
+}
+
 function redirectTo (res: ServerResponse, origin: string, path: string, search: string): void {
   res.writeHead(301, { location: `${origin}${path}${search}`, 'cache-control': 'no-store', 'content-security-policy': `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}` }).end()
 }
+
+/** Every dot-separated label a DNS label, so the text can only be one host. */
+const isHostName = (name: string): boolean => name.split('.').every(isDnsLabel)
 
 /**
  * `https://ipfs.orivon/<name>/<path>`, where a typed or linked `ipfs://` address
@@ -264,7 +352,8 @@ function redirectToCanonical (registry: ProtocolRegistry, scheme: string, url: U
     // Any page can send one of these, and a protocol's parser may be slow on a long string.
     if (decoded.length > MAX_ADDRESS_NAME) throw new ResolutionError('invalid-name', `${scheme}:// names are at most ${String(MAX_ADDRESS_NAME)} characters`)
     // A top-level-domain name already has its own origin: send it straight there, never through this scheme's own resolution.
-    const named = registry.addresses.nameOrigin(decoded)
+    // Only a spelling that is a host name once lowercased (nameOrigin lowercases it): encoded delimiters would otherwise end the host inside the Location.
+    const named = isHostName(decoded.toLowerCase()) ? registry.addresses.nameOrigin(decoded) : undefined
     if (named !== undefined) {
       redirectTo(res, named, path, url.search)
       return
@@ -278,7 +367,7 @@ function redirectToCanonical (registry: ProtocolRegistry, scheme: string, url: U
   }
 }
 
-async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMessage, res: ServerResponse, budget: BufferBudget, bufferedResponseDeadlineMs: number): Promise<void> {
+async function handle (registry: ProtocolRegistry, sites: SiteSource, routes: ServeRoutes, consent: GatewayConsent, req: IncomingMessage, res: ServerResponse, budget: BufferBudget, bufferedResponseDeadlineMs: number): Promise<void> {
   const host = hostOf(req, registry.addresses)
   if (host === undefined || (registry.addresses.servedName(host) === undefined && registry.addresses.schemeEndpoint(host) === undefined)) {
     res.writeHead(421, { 'content-type': 'text/plain' }).end("this server answers only the names and addresses Orivon's protocols serve")
@@ -298,16 +387,27 @@ async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMe
     redirectToCanonical(registry, scheme, url, res)
     return
   }
+  if (url.pathname === CONSENT_PATH) {
+    answerConsent(consent, req.headers, url, partitionOf(req, host), res, `${ERROR_PAGE_CSP}; ${PUBLIC_ADDRESS_CSP}`)
+    return
+  }
+  const expectedLeaf = expectedLeafOf(req.headers)
+  if (expectedLeaf === 'invalid') {
+    res.writeHead(400, { 'content-type': 'text/plain' }).end('the expected leaf is not a leaf')
+    return
+  }
   const shown = registry.addresses.displayOrigin(`https://${host}`)
   // Whatever this request set going stops when its client leaves.
   const left = new AbortController()
   res.once('close', () => { left.abort(new Error('the client went away')) })
   let file: GatheredFile
   let root: string | undefined
+  let servedByNode = false
   const partition = partitionOf(req, host)
   try {
-    const { site } = await sites.get(host, partition)
+    const { site } = await sites.get(host, partition, routeOf(req), isNavigation(req), isDocumentLoad(req))
     root = site.root.cid
+    servedByNode = site.servedFrom?.kind === 'node'
     const etag = `"${root}"`
     // One install reads one root: a request naming another means the name moved on mid-load.
     const expected = req.headers[CONTENT_ROOT_HEADER]
@@ -320,49 +420,66 @@ async function handle (registry: ProtocolRegistry, sites: Sites, req: IncomingMe
       res.writeHead(304, { etag, 'cache-control': 'no-cache', 'content-security-policy': SERVED_CONTENT_CSP }).end()
       return
     }
-    file = await site.open(url.pathname, undefined, left.signal)
-    if (!url.pathname.endsWith('/') && file.servedPath.endsWith('/index.html') && !url.pathname.endsWith('/index.html')) {
+    // A page's file is read again when nothing answered. The page itself is not, since its error page offers Try again and the person's own request starts anew; nor is an install's read, which has its own way to try again.
+    const plan: ReadPlan = { route: paceOf(routeOf(req), routes), left: left.signal, retries: isNavigation(req) || typeof expected === 'string' ? 0 : FILE_RETRIES }
+    file = await readWithRetries(async () => await site.open(url.pathname, undefined, left.signal), plan.route, plan.left, plan.retries)
+    // A directory is served at its slash form, whether as its index.html or as a listing of its entries.
+    if (!url.pathname.endsWith('/') && ((file.servedPath.length > 1 && file.servedPath.endsWith('/')) || (file.servedPath.endsWith('/index.html') && !url.pathname.endsWith('/index.html')))) {
       res.writeHead(301, { location: `${url.pathname}/${url.search}`, 'cache-control': 'no-cache' }).end()
       return
     }
     const common: Record<string, string> = {
       'content-type': file.contentType ?? contentTypeFor(file.servedPath),
       'x-content-type-options': 'nosniff',
-      'accept-ranges': 'bytes',
+      // A listing is made whole each time it is asked for, so two reads of it need not agree and no range of it is honoured.
+      ...(file.listing === true ? {} : { 'accept-ranges': 'bytes' }),
       // Revalidated every time: a name can point elsewhere tomorrow, and the root CID says whether it has.
       'cache-control': 'no-cache',
-      'content-security-policy': SERVED_CONTENT_CSP,
+      'content-security-policy': file.listing === true ? `${ERROR_PAGE_CSP}; ${SERVED_CONTENT_CSP}` : SERVED_CONTENT_CSP,
       etag
     }
-    const range = parseRange(req.headers.range ?? null, file.size)
+    const range = file.listing === true ? { kind: 'none' as const } : parseRange(req.headers.range ?? null, file.size)
     if (range.kind === 'unsatisfiable') {
       res.writeHead(416, { ...common, 'content-range': `bytes */${String(file.size)}` }).end()
       return
     }
-    if (range.kind === 'satisfiable') file = await site.open(url.pathname, range.range, left.signal)
+    const reopenRange = range.kind === 'satisfiable' && expectedLeaf === undefined ? range.range : undefined
+    if (reopenRange !== undefined) file = await readWithRetries(async () => await site.open(url.pathname, reopenRange, left.signal), plan.route, plan.left, plan.retries)
+    const reopen = async (): Promise<GatheredFile> => await site.open(url.pathname, reopenRange, left.signal)
     const length = range.kind === 'satisfiable' ? range.range.end - range.range.start + 1 : file.size
     const headers: Record<string, string> = { ...common, 'content-length': String(length) }
     if (range.kind === 'satisfiable') headers['content-range'] = `bytes ${String(range.range.start)}-${String(range.range.end)}/${String(file.size)}`
     const status = range.kind === 'satisfiable' ? 206 : 200
+    if (expectedLeaf !== undefined) {
+      await sendChecked(res, host, req.url ?? url.pathname, expectedLeaf, status, headers, file, reopen, range.kind === 'satisfiable' ? range.range : undefined, req.method === 'HEAD', budget, partition, bufferedResponseDeadlineMs, plan)
+      return
+    }
     if (req.method === 'HEAD') {
       res.writeHead(status, headers).end()
       return
     }
-    await sendBody(res, status, headers, file, length, budget, partition, bufferedResponseDeadlineMs, typeof expected === 'string')
+    await sendBody(res, status, headers, file, reopen, length, budget, partition, bufferedResponseDeadlineMs, typeof expected === 'string', plan)
   } catch (error) {
     if (res.headersSent) res.destroy()
-    else sendError(res, shown, error, root)
+    else sendError(res, shown, error, root, gatewayOffer(consent, req.headers, url, partition, error, servedByNode, routeOf(req) !== 'direct'))
   }
 }
 
+/** How a request's file is read again when nothing answered: the route's patience, whether the page that asked is still there, and how many more reads. */
+interface ReadPlan {
+  readonly route: RoutePace
+  readonly left: AbortSignal
+  readonly retries: number
+}
+
 /** `bufferedResponseDeadlineMs` defaults to `BUFFERED_RESPONSE_DEADLINE_MS`; a test shortens it rather than waiting the real deadline out. */
-export function createVerifierServer (registry: ProtocolRegistry, sites: Sites, certificate: RunCertificate, bufferedResponseDeadlineMs: number = BUFFERED_RESPONSE_DEADLINE_MS): Server {
+export function createVerifierServer (registry: ProtocolRegistry, sites: SiteSource, certificate: RunCertificate, bufferedResponseDeadlineMs: number = BUFFERED_RESPONSE_DEADLINE_MS, routes: ServeRoutes = { direct: DIRECT_ROUTE, tunnel: () => DIRECT_ROUTE }, consent: GatewayConsent = new GatewayConsent()): Server {
   // One budget for every request this server ever handles, not one per
   // request: it is what lets it track every partition's own share, and their combined total.
   const budget = new BufferBudget()
   return createServer({ key: certificate.keyPem, cert: certificate.certPem }, (req, res) => {
     // A rejection left unobserved would end the host process, and with it every protocol's page.
-    handle(registry, sites, req, res, budget, bufferedResponseDeadlineMs).catch((error: unknown) => {
+    handle(registry, sites, routes, consent, req, res, budget, bufferedResponseDeadlineMs).catch((error: unknown) => {
       console.error('[verifier] request failed:', error)
       if (res.headersSent) res.destroy()
       else res.writeHead(500, { 'content-type': 'text/plain' }).end('the verifier failed on this request')

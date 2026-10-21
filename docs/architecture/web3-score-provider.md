@@ -5,8 +5,8 @@ is the wire format, precise enough to implement without reading Orivon's code. `
 it has this shape; [web3-score-manager](https://github.com/OrivonBrowser/web3-score-manager)
 is a tool that builds a provider as a static site.
 
-A Web3 Score provider publishes judged levels from the canonical scale
-(docs.orivonstack.com/docs/implementations/web3-score): the levels a browser cannot observe by
+A Web3 Score provider publishes judged levels from the scale below (the README
+lists it): the levels a browser cannot observe by
 itself, such as "this site's code is open source and runs nothing external without consent".
 Each judgement is attached to a content identity, never to a domain name: a site without DDOC has
 no stable identity, so nothing can be said about it.
@@ -45,7 +45,7 @@ Two kinds of file, both JSON in UTF-8, each at most 1 MiB.
 |---|---|---|
 | `standard` | yes | Exactly `orivon-web3-score/1` |
 | `name` | yes | 1 to 80 characters. Shown beside every level this provider judges |
-| `bucketHexChars` | yes | 1 or 2: how many hex characters name a bucket (16 or 256 buckets). A client refuses any other value, for the reason §What the provider learns gives |
+| `bucketHexChars` | yes | 1 or 2: how many hex characters name a bucket (16 or 256 buckets). A client refuses any other value, for the reason section What the provider learns gives |
 | `about` | no | An address where a person reads who runs the provider and how it judges |
 
 ### `P/<subject>/<bucket>.json`
@@ -70,7 +70,8 @@ finds its identifier there itself.
 **No entry is not an error.** A provider answers 404 for a bucket it has nothing in, or serves
 the file with an empty `entries`; both mean "no score". Any other failure (an unreachable host, a
 status other than 200 or 404, a malformed file) means "this provider did not answer", which a
-client shows as such and never as "no score".
+client shows as such and never as "no score". A client that already holds a provider's score for a site keeps showing it while the
+provider cannot be asked; only an answer the provider gives replaces it.
 
 ### Test vectors
 
@@ -177,7 +178,7 @@ grant is the person's consent to that pattern.
 
 What follows bounds this build of Orivon, not the standard.
 
-- **Orivon's own provider until changed.** Settings, Web3, "Web3 Score provider" holds the official provider's address, an `ipns://` name, in a profile with none saved; a person who clears it saves the empty value and asks nothing of anyone, and one who types another address asks that one (`ADR-0056`).
+- **Orivon's own provider until changed.** Settings, Web3, "Web3 Score provider" holds the official provider's address, `ipfs://attila.orivonstack.eth/score`, in a profile with none saved; a person who clears it saves the empty value and asks nothing of anyone, and one who types another address asks that one (`ADR-0056`).
 - **Only over DDOC.** A site is looked up only when its observed Website level is 2, so the files
   shown are the files the identifier names: an installed app's bundle hash, or the CID a `.eth`
   name or an `ipfs://` address resolved to. On a local origin in developer mode, the bundle hash
@@ -186,6 +187,10 @@ What follows bounds this build of Orivon, not the standard.
   judged Level 3 or 4 with the provider's name; the page keeps what Orivon itself observed beside
   it. Levels 1 and 2 are observed, so a website evaluation at 1 or 2 only marks 3 and 4 as not
   met, and the shown level stays the observed one.
+- **Web? until judged.** A Level 2 site no provider has judged (none chosen, not reached yet, no score for
+  it) carries a gray Web? mark in place of Web2.5; the shield keeps Level 2's colour.
+- **A score stays while the provider cannot be asked.** The last score a provider gave for a site is shown
+  while a later ask is under way or fails, and is replaced by the next answer, lower, higher or "no score".
 - **Only at the domain the manifest names.** A manifest is a leaf of the content address, so a
   judgement of the content covers the `domain` its manifest names (`capability-api.md`, `domain`),
   and the level counts only at that host (`ADR-0056`). The same files under another name, a

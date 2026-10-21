@@ -768,3 +768,30 @@ describe('registerServingFor -- A200 real wiring (reach socket allowance)', () =
     vi.doUnmock('electron')
   })
 })
+
+// The session of a routed app that could not be pointed at its proxy route (its front failed to bind, say) must not
+// leave the app to open as an ordinary website on the shared session, which would send its traffic direct.
+describe('registerServingFor -- a session that cannot be prepared', () => {
+  it('still gives the app its own partition, answered by a handler that refuses everything and says the tunnel could not start', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-serving-unprepared-'))
+    const storage = nodeLoaderStorage(userData)
+    await pinRealOrigin(storage, 'https://routed.example')
+    const session = fakeSession()
+    vi.resetModules()
+    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
+    const { registerServingFor, beforeAppSessionServes, isOriginServedFromCacheSync, isOriginPinnedSync } = await import('../serve.js')
+    beforeAppSessionServes(async () => { throw new Error('the front would not bind') })
+
+    await expect(registerServingFor(storage, 'https://routed.example')).rejects.toThrow('the front would not bind')
+
+    expect(isOriginServedFromCacheSync('https://routed.example'), 'a tab for it runs in the app\'s partition, not on the shared session').toBe(true)
+    expect(isOriginPinnedSync('https://routed.example'), 'it is still an app Orivon holds').toBe(true)
+    const handler = session.handlers.get('https')
+    if (handler === undefined) throw new Error('no handler was registered')
+    for (const path of ['/', '/index.html', '/anything-else']) {
+      const answer = await handler(new Request(`https://routed.example${path}`))
+      expect(answer.status).toBe(503)
+      expect(await answer.text()).toContain('tunnel could not start')
+    }
+  })
+})

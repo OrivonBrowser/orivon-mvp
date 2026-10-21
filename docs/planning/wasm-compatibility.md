@@ -2,26 +2,26 @@
 
 **Status: exploration, 2026-09-28. Not a decision and not scheduled.** Written as the brief for
 the agent that implements it, so it names files, tests and guards. The choices only the owner can
-make are collected in §8; nothing below should be built past step 1 of §7 until they are taken.
+make are collected in section 8; nothing below should be built past step 1 of section 7 until they are taken.
 
 > **Outcome, 2026-09-28 (`ADR-0040`, `d-0159`, `d-0160`).** The owner asked for native modules,
 > `spawn` and `fork`, each at the same broker allowance as any app with no added risk, which only
-> WebAssembly meets. §8's decisions 1, 2, 7 and 8 are taken: build now, JSPI, one mechanism for
+> WebAssembly meets. section 8's decisions 1, 2, 7 and 8 are taken: build now, JSPI, one mechanism for
 > both documents, the preview1 host written here. Decisions 3 and 4 were taken by `ADR-0039` and
 > `d-0143`: the manifest field is `crossOriginIsolated`, served with COEP `credentialless`. Step 1
-> is built in `src/shim/wasi/`, with four departures from §5: the host consults the broker's
+> is built in `src/shim/wasi/`, with four departures from section 5: the host consults the broker's
 > `platformCode` for the errno (it is the one place `ENOTEMPTY` survives); rights are reported per
 > descriptor kind and never enforced; the synchronous-write fdflags are refused; and the Worker
-> proxy of §5.6 moves to step 1b, where `spawn` and `fork` first use it. Measured against the
+> proxy of section 5.6 moves to step 1b, where `spawn` and `fork` first use it. Measured against the
 > preview1 conformance suite, 63 of 72 programs pass; the nine that fail need links or file times.
-> §10 describes an earlier draft of the sibling document, which has since moved to JSPI too.
-Every claim is marked **measured** (in this tree, on Electron 44.0.0 / Chromium 152, see §2) or
-**read** (from the upstream page cited in §3). Nothing else is asserted.
+> section 10 describes an earlier draft of the sibling document, which has since moved to JSPI too.
+Every claim is marked **measured** (in this tree, on Electron 44.0.0 / Chromium 152, see section 2) or
+**read** (from the upstream page cited in section 3). Nothing else is asserted.
 
 A sibling exploration written the same day, [`child-process-design.md`](child-process-design.md),
 designs what `child_process` means for a ported app over the same WASI idea. The two agree on
-most of the shape and differ on one load-bearing mechanism; §10 reconciles them, and the
-measurements in §2 are the evidence that sibling asked for.
+most of the shape and differ on one load-bearing mechanism; section 10 reconciles them, and the
+measurements in section 2 are the evidence that sibling asked for.
 
 ## The short version
 
@@ -54,8 +54,8 @@ measurements in §2 are the evidence that sibling asked for.
   Tailscale proxy with no pluggable transport (read). Go cannot open sockets from WebAssembly on
   any target (read). No WASI target has both threads and sockets (read). And **no app on the
   current candidate list is WASI-shaped**: the near-term consumers are libraries and tools, not
-  the desktop apps in `orivon-ports`. `CLAUDE.md` Rule 4 says name the need before building; §4
-  is the honest inventory and §8 asks the owner to name it.
+  the desktop apps in `orivon-ports`. `CLAUDE.md` Rule 4 says name the need before building; section 4
+  is the honest inventory and section 8 asks the owner to name it.
 
 ## 1. Four layers, and which one "WASM compatibility" means
 
@@ -64,20 +64,19 @@ measurements in §2 are the evidence that sibling asked for.
 | **L0** | WebAssembly called from the app's own JavaScript (wasm-bindgen, Emscripten's JS glue, Go's `js/wasm`, `sql.js`, `wa-sqlite`) | **Done** (`ADR-0036`, CSP `'wasm-unsafe-eval'`, `.wasm` served as `application/wasm`, proven by `test/app-loading/e2e-served-csp.test.ts`) | Threema, MyMonero, AirGap Vault, Element's crypto, ASGARDEX's largest chunk | none |
 | **L1** | **A WASI host over `orivon.*`**: WebAssembly that imports `wasi_snapshot_preview1` (or WASI 0.2 through jco) with no JavaScript around it | Not built (`compatibility-matrix.md` Table 4 row 12) | Rust, C, C++, Zig and TinyGo programs compiled to `wasm32-wasip1`/`wasip2`; a `node:wasi` shape for ported Node code | none for files and clocks; none for sockets either (`orivon.net` covers WASI 0.2's `tcp`, `udp`, `ip-name-lookup`) |
 | **L2** | Toolchain adapters over `orivon.net`: Emscripten's socket layer, Go's `wasm_exec.js` globals | Not built; app-side in `orivon-ports` unless a second app needs the same one | Emscripten builds that use POSIX sockets, Qt-for-WebAssembly included | none |
-| **L3** | Cross-origin isolation: COOP + COEP on the served bundle, so `SharedArrayBuffer` and threads exist | Not built; measured to work | Every threaded WebAssembly build; the worker-and-`Atomics.wait` synchrony route `A94` called Route B | a manifest field (§5.7) |
-| **L4** | A whole runtime in WebAssembly: CheerpJ (Java), CheerpX (x86 Linux), Qt, Avalonia/.NET, Pyodide | Not a target | Nothing on the candidate list: their networking is not pluggable (read, §3.6) | n/a |
+| **L3** | Cross-origin isolation: COOP + COEP on the served bundle, so `SharedArrayBuffer` and threads exist | Not built; measured to work | Every threaded WebAssembly build; the worker-and-`Atomics.wait` synchrony route `A94` called Route B | a manifest field (section 5.7) |
+| **L4** | A whole runtime in WebAssembly: CheerpJ (Java), CheerpX (x86 Linux), Qt, Avalonia/.NET, Pyodide | Not a target | Nothing on the candidate list: their networking is not pluggable (read, section 3.6) | n/a |
 
 **"WASM compatibility" in the sense the owner means, an app running because Orivon can host its
 WebAssembly, is L1 plus L3.** L2 is a cheap follow-on that reuses the same `orivon.net` shim
 code. L4 is listed so it is not re-derived: the container document already parks CheerpJ as
-"worth two hours", and §3.6 answers the question it left open.
+"worth two hours", and section 3.6 answers the question it left open.
 
 **Containment is unchanged.** A WebAssembly program under the WASI host runs with its app's
 grants, inside its app's renderer sandbox, exactly as `ADR-0036` states for L0. WASI's own
 capability model (a program sees only the directories it was handed, "preopens") maps cleanly
 onto `orivon.fs`'s per-origin root, but it is enforced by the broker, never by the host. This is
-not `orivon-runtime`, the Wasmtime host `ADR-0002` defers for containment and mobile, and it
-does not bring that forward.
+not a separate WebAssembly runtime, and it does not bring one forward.
 
 ## 2. Measured in this tree
 
@@ -129,12 +128,12 @@ The e2e served-CSP test already has the probe-partition pattern to rebuild it fr
    (measured) that proxy is an ordinary asynchronous RPC: no `Atomics.wait`, no
    `SharedArrayBuffer`, no isolation headers, and 20 to 40 us per call before the broker's own
    half-millisecond. A WASI program therefore runs off the main thread, as a spawned child
-   should, with nothing new switched on. The proxy is a generic piece (§5.6) that also answers
+   should, with nothing new switched on. The proxy is a generic piece (section 5.6) that also answers
    Table 4 row 3's `worker_threads`.
 5. **The unit suite cannot run JSPI on Node without a flag**, and the flag's name and the API's
-   shape differ between V8 versions (§3.1). Design the host so its WASI functions are ordinary
+   shape differ between V8 versions (section 3.1). Design the host so its WASI functions are ordinary
    `async` functions testable under vitest with a fake `orivon`, and keep JSPI to one thin
-   `instantiate` helper that only the Electron e2e exercises (§6).
+   `instantiate` helper that only the Electron e2e exercises (section 6).
 
 ## 3. Read upstream, 2026-09-28
 
@@ -173,7 +172,7 @@ detail the implementation turns on.
   accept, shutdown), `udp` and `ip-name-lookup`, all `@since 0.2.0`
   ([wasi-sockets wit](https://github.com/WebAssembly/wasi-sockets/tree/main/wit)). It is a
   component-model interface, not a flat import namespace, which is why a browser host consumes it
-  through jco (§3.3).
+  through jco (section 3.3).
 - **No WASI version has threads and sockets together.** `wasi-threads` is a preview1-only legacy
   proposal; 0.2 has no threads interface and future thread work is a Phase 1 proposal
   ([wasi-threads README](https://github.com/WebAssembly/wasi-threads)). This is the upstream
@@ -215,7 +214,7 @@ detail the implementation turns on.
   embedder hosts ([README](https://github.com/wasmerio/wasmer-sdk/blob/main/js/README.md)). Not a fit:
   it brings its own runtime and its own proxy protocol where Orivon already has the sockets.
 - Node's `node:wasi` runs in the main process only; it is not reachable from a renderer and is
-  not the answer, but its API is the shape ported Node code expects (§5.4).
+  not the answer, but its API is the shape ported Node code expects (section 5.4).
 
 ### 3.5 Emscripten, Rust, Go
 
@@ -226,7 +225,7 @@ detail the implementation turns on.
   ([networking](https://emscripten.org/docs/porting/networking.html),
   [pthreads](https://emscripten.org/docs/porting/pthreads.html),
   [asyncify](https://emscripten.org/docs/porting/asyncify.html)). Whether `--js-library` can replace
-  the socket layer wholesale is not stated; §5.8 has the cheaper route.
+  the socket layer wholesale is not stated; section 5.8 has the cheaper route.
 - **Rust** `wasm32-wasip2` is Tier 2 since 1.82 with full `std`, and `std::net` on it goes through
   the same BSD-socket backend Unix uses, backed by WASI 0.2 sockets
   ([platform page](https://doc.rust-lang.org/rustc/platform-support/wasm32-wasip2.html),
@@ -260,7 +259,7 @@ detail the implementation turns on.
 - **Qt for WebAssembly** 6.11: `QNetworkAccessManager` over fetch, `QWebSocket`, and POSIX TCP
   emulated over WebSockets needing a forwarding server; threads need COOP/COEP; the platform's
   own licence text says GPLv3 or commercial ([wasm.html](https://doc.qt.io/qt-6/wasm.html)). Reachable
-  through §5.8's adapter, not natively.
+  through section 5.8's adapter, not natively.
 - **.NET browser-wasm**: `System.Net.Sockets` is compiled out for the browser platform; threads
   are an experiment needing COOP/COEP ([csproj](https://github.com/dotnet/runtime/blob/main/src/libraries/System.Net.Sockets/src/System.Net.Sockets.csproj),
   [features.md](https://github.com/dotnet/runtime/blob/main/src/mono/wasm/features.md)). Wasabi
@@ -282,9 +281,9 @@ Table 5. "Runs today" means L0 covers it and no work here is needed.
 | Firefly (`@iota/sdk` N-API) | Upstream publishes a wasm-bindgen SDK build (**unverified here**) | L0 in the bridge | Recon first |
 | Zingo PC (`zingolib` Rust N-API, tokio, TLS to lightwalletd) | None published | Would need an upstream wasip2 build on tokio's current-thread runtime, and an addon that opens sockets, which Orivon does not load yet | Not a target through WASM |
 | Session, Signal (native protocol cores) | None published | n/a | Not a target, as listed |
-| Qt-for-WebAssembly builds (Monero GUI is Qt, an official wasm build is **not known** to exist) | Emscripten sockets over WebSocket | L2 adapter (§5.8) + L3 | A spike, not a claim |
-| Bisq, Sparrow (JavaFX), Wasabi (.NET), Electrum (PyQt) | Runtime-in-WASM only | L4 | **Not reachable** (§3.6) |
-| Go daemons: kubo, bee, lnd, geth, and the wallets over them | None possible | n/a | **Not reachable** (§3.5) |
+| Qt-for-WebAssembly builds (Monero GUI is Qt, an official wasm build is **not known** to exist) | Emscripten sockets over WebSocket | L2 adapter (section 5.8) + L3 | A spike, not a claim |
+| Bisq, Sparrow (JavaFX), Wasabi (.NET), Electrum (PyQt) | Runtime-in-WASM only | L4 | **Not reachable** (section 3.6) |
+| Go daemons: kubo, bee, lnd, geth, and the wallets over them | None possible | n/a | **Not reachable** (section 3.5) |
 | **A standalone WASI program**: a Rust, C, Zig or TinyGo binary that reads files and, on wasip2, dials TCP | The program itself | **L1** | The host's actual consumer. **No app on the list is this shape today** |
 
 Two consequences the owner should weigh. First, L1's first real user is more likely a library or
@@ -301,8 +300,8 @@ most ports behind it, and it is bridge-side work in `orivon-ports`.
 `http/` and `polyfills/`, with a `README.md` stating what it depends on (`src/contracts/`, the
 shim's own `orivon-global.ts`, `virtual-root.ts` and `unimplemented.ts`) and that it never
 imports `electron` or `src/broker/`. One host, two Node-shaped consumers: `src/shim/wasi/
-node-wasi.ts` is the `node:wasi` row (§5.4), and `src/shim/child-process/` is the `child_process`
-row `child-process-design.md` §5 designs, which spawns the same host in a Worker. Neither
+node-wasi.ts` is the `node:wasi` row (section 5.4), and `src/shim/child-process/` is the `child_process`
+row `child-process-design.md` section 5 designs, which spawns the same host in a Worker. Neither
 consumer marshals a WASI call itself. A fifth family row in `compatibility-matrix.md` Table 2
 names the surface (WASI) even though the code lives inside the Node shim's directory.
 
@@ -311,7 +310,7 @@ family so no file nears 500 lines), `fds/` (the descriptor table: stdio, preopen
 directories), `errno.ts` (the `OrivonErrorCode` to WASI errno table, the sibling of
 `src/shim/node-errors.ts`), `instantiate.ts` (the JSPI wrapping, the only file that touches
 `WebAssembly.Suspending`/`promising`), `worker/` (the `orivon.*` RPC proxy and the worker-side
-entry, §5.6), later `sockets/` (§5.5). Unit tests beside each, against a fake `orivon` exactly as
+entry, section 5.6), later `sockets/` (section 5.5). Unit tests beside each, against a fake `orivon` exactly as
 `src/shim/tests/support/` does (`fake-file-handle.ts`, `fake-tcp-socket.ts` are reusable as they
 are).
 
@@ -327,7 +326,7 @@ on the first `await`.
 
 Traps to write down in the README and guard in tests:
 
-- A `Suspending` import reached through a JavaScript frame traps (§3.1). The import object hands
+- A `Suspending` import reached through a JavaScript frame traps (section 3.1). The import object hands
   the module the wrapped functions directly; nothing else may call them.
 - Re-entrancy: a `promising` export called again while a previous call is suspended is allowed,
   but ordering is not guaranteed. The host serialises where WASI semantics need it (one `fd_write`
@@ -339,7 +338,7 @@ Traps to write down in the README and guard in tests:
   named `WasiExit` carrying it, so the `node:wasi` shape can return it as `start()`'s value.
 
 The host's `orivon` is an injected interface, not the global: on the main thread it is
-`window.orivon`; in a Worker it is the RPC proxy of §5.6, which has the same method shapes and
+`window.orivon`; in a Worker it is the RPC proxy of section 5.6, which has the same method shapes and
 returns the same promises. The WASI layer cannot tell which it was given, which is what lets one
 implementation serve both placements and both Node shapes. Route B of `A94` (a worker blocking
 on `Atomics.wait` while the main thread services `orivon.*`) is no longer needed for this; it
@@ -379,7 +378,7 @@ embedder passed; `clock_time_get` from `performance.now()` plus `performance.tim
 `random_get` from `crypto.getRandomValues` in chunks of 65,536 bytes (its per-call cap);
 `sched_yield` awaits a macrotask; `proc_raise` refuses.
 
-**Sockets in preview1** are accept-only (§3.2). Step 1 refuses all four by name. A later
+**Sockets in preview1** are accept-only (section 3.2). Step 1 refuses all four by name. A later
 `preopenListener` option can hand a program an `orivon.net.listen` server as a preopened
 descriptor, so `sock_accept`/`recv`/`send`/`shutdown` work over `TcpServer`/`TcpSocket`; that is
 the only preview1 networking there can be, and no app has asked for it.
@@ -441,7 +440,7 @@ interface to Orivon's module. Either way the surface a Rust `std::net` program e
 ### 5.6 Workers: the same host, behind an asynchronous proxy
 
 A program that should not share the main thread (every `child_process` spawn, per
-`child-process-design.md` §5.1, and any CPU-bound tool) runs the same host inside a dedicated
+`child-process-design.md` section 5.1, and any CPU-bound tool) runs the same host inside a dedicated
 Worker. Two pieces make that work, and neither needs `SharedArrayBuffer`:
 
 - **The `orivon.*` proxy.** The main thread owns the real `window.orivon`; the Worker gets an
@@ -454,7 +453,7 @@ Worker. Two pieces make that work, and neither needs `SharedArrayBuffer`:
 - **The worker entry.** A self-contained script (a `blob:` URL, which the served CSP's
   `worker-src 'self' blob:` already admits) that receives the module bytes, args, env and the
   proxy's port, builds the host over the proxy, and reports stdout, stderr and the exit code back
-  by message. `child-process-design.md` §5.4 specifies the stdio and exit semantics; only its
+  by message. `child-process-design.md` section 5.4 specifies the stdio and exit semantics; only its
   ring-buffer-and-`Atomics.wait` transport is replaced by messages with the same backpressure
   rule (the worker awaits an acknowledgement before its next `fd_write` completes).
 
@@ -471,13 +470,13 @@ a port whose manifest sets it. It is a page property, not a capability: nothing 
 nothing in the permissions popover; the manifest carries it because the app's author is the one
 who knows whether their build is threaded.
 
-Isolation is **not** a prerequisite for a WASI program any more, spawned or hosted (§2 item 4);
-it is for threaded WebAssembly only, and `child-process-design.md` §5.5's "without the field,
+Isolation is **not** a prerequisite for a WASI program any more, spawned or hosted (section 2 item 4);
+it is for threaded WebAssembly only, and `child-process-design.md` section 5.5's "without the field,
 `spawn` fails" no longer applies. `require-corp` over `credentialless`: both measured identical
 here; `require-corp` is the one every toolchain's documentation names, and the sibling document
 prefers `credentialless` so that credential-free third-party subresources without a CORP header
-keep loading, a cost §2 item 3 measured as not charged on `protocol.handle` responses anyway.
-The owner picks (§8). Why either is safe under Orivon's serving model is §2 item 3;
+keep loading, a cost section 2 item 3 measured as not charged on `protocol.handle` responses anyway.
+The owner picks (section 8). Why either is safe under Orivon's serving model is section 2 item 3;
 the two unmeasured cases there must be measured in the e2e before the field ships, and the
 popup case decides whether the field's doc comment must warn that an OAuth-by-popup flow breaks.
 
@@ -522,14 +521,14 @@ opt-in per manifest and an ADR, and why the popup and iframe cases are measured 
   writes a file, reads it back, lists a directory, reads the clock and random bytes, and exits
   with a code the page shows. It proves JSPI under the real served CSP and the real
   `orivon.fs`. `npm run test:e2e` already builds with the dev-grant hook the served-CSP test uses.
-- **L3:** an e2e phase on the probe partition measuring what §2 leaves open: a cross-origin
+- **L3:** an e2e phase on the probe partition measuring what section 2 leaves open: a cross-origin
   `<iframe>` under COEP, a popup's `opener` under COOP, a `wss:` WebSocket and an
   `RTCPeerConnection` under both. Then the served-CSP test gains the isolated case.
 - **Guards:** `check:contracts` and `check:manifest-parity` when L3's field lands;
   `check:page-globals` for anything installed on the page (`WASI` is a module target, not a global,
   so nothing new); `check:size` will bite on `preview1/`: split by function family before it does.
 - **Docs to update in the same PR as the host:** `compatibility-matrix.md` (Table 2 row, Table 4
-  row 12 deleted), `app-compatibility.md` §Where WASM fits (rewrite, not append), `ADR-0036`'s
+  row 12 deleted), `app-compatibility.md` section Where WASM fits (rewrite, not append), `ADR-0036`'s
   "does not run yet" consequence (amend in place), `src/README.md`, `CHANGELOG.md`, a decision-log
   row per decision below, and `docs/scope.md`'s IN table if the owner names it a build item.
 
@@ -537,13 +536,13 @@ opt-in per manifest and an ADR, and why the popup and iframe cases are measured 
 
 | Step | What | Depends on | Size (estimate) |
 |---|---|---|---|
-| 0 | `module-map.ts` rows that refuse `child_process` and `vm` by name (`child-process-design.md` §12 Step 0) | nothing | half a day |
+| 0 | `module-map.ts` rows that refuse `child_process` and `vm` by name (`child-process-design.md` section 12 Step 0) | nothing | half a day |
 | 1 | `src/shim/wasi/` preview1 host: files, clocks, random, args/env, exit; `instantiate.ts` with JSPI; the `node:wasi` module-map row; the fixture app and its e2e; docs | nothing; no contracts change | 3 to 5 agent-days |
-| 1b | The Worker proxy and worker entry (§5.6), then `child_process` over the host (`child-process-design.md` §5.4, §5.6, §5.8), flipping step 0's row to built; its ADR | step 1 | 3 to 5 days plus the ADR |
+| 1b | The Worker proxy and worker entry (section 5.6), then `child_process` over the host (`child-process-design.md` section 5.4, section 5.6, section 5.8), flipping step 0's row to built; its ADR | step 1 | 3 to 5 days plus the ADR |
 | 2 | L3: the manifest field, the serve-path headers in both servers, the four unmeasured cases measured, the ADR | a `src/contracts/` PR merged first; a threaded build that needs it | 1 to 2 days plus the ADR |
-| 3 | WASI 0.2 sockets and filesystem through jco (§5.5) | step 1, a named program, preview2-shim's adapter contract read | 1 to 2 weeks |
-| 4 | Emscripten socket spike in `orivon-ports` (§5.8) | nothing; a bridge-side experiment | 1 day |
-| adjacent | `wa-sqlite` VFS over `orivon.fs` in `orivon-ports` (§4) | nothing | 2 to 3 days |
+| 3 | WASI 0.2 sockets and filesystem through jco (section 5.5) | step 1, a named program, preview2-shim's adapter contract read | 1 to 2 weeks |
+| 4 | Emscripten socket spike in `orivon-ports` (section 5.8) | nothing; a bridge-side experiment | 1 day |
+| adjacent | `wa-sqlite` VFS over `orivon.fs` in `orivon-ports` (section 4) | nothing | 2 to 3 days |
 
 Steps 0 and 1 stand alone: step 1 is the platform capability, it changes no contract, and a
 fixture app proves it without waiting for a port. Step 1b gives the sibling document its
@@ -569,18 +568,18 @@ particular is no longer on the path to running a WASI program at all.
    rule 7 and the "a gap a port finds is fixed here for every app" line in `scope.md`).
 7. **One synchrony mechanism for both documents.** `child-process-design.md` builds on a Worker
    blocking on `Atomics.wait`, which makes isolation a prerequisite; this document builds on
-   JSPI, measured working on the main thread and in a Worker with no isolation. §10 lists what
+   JSPI, measured working on the main thread and in a Worker with no isolation. section 10 lists what
    changes in the sibling if JSPI is chosen. The two must be brought to one answer before the
    implementing agent starts, or it will build the SharedArrayBuffer protocol and the JSPI
    wrapper both.
-8. **Which WASI preview1 implementation**, once the async requirement is applied (§10 item 2): a
+8. **Which WASI preview1 implementation**, once the async requirement is applied (section 10 item 2): a
    fork of `@bjorn3/browser_wasi_shim` made asynchronous, a layer written here, or a library the
    sibling's Step 1 review finds that is already asynchronous.
 
 ## 9. Not decided here, and not measured here
 
 - Which V8 flag and API shape the `engines` floor's Node has for JSPI; whether CI's unit suite
-  should run any JSPI at all (§2 item 5 says no).
+  should run any JSPI at all (section 2 item 5 says no).
 - COEP's effect on a cross-origin `<iframe>`, COOP's on a popup's `opener`, and both on `wss:`
   and WebRTC, in an app partition.
 - preview2-shim's browser sockets adapter contract, and whether Rust's `std::net` on wasip2
@@ -593,12 +592,12 @@ particular is no longer on the path to running a WASI program at all.
 
 Both documents were written on 2026-09-28 without sight of each other. Where they agree, the
 sibling's text is the more detailed and should be the one the implementer follows; where they
-differ, the measurements in §2 decide most of it, and the rest is the owner's.
+differ, the measurements in section 2 decide most of it, and the rest is the owner's.
 
 **Agreements.** The manifest field's name and shape (`crossOriginIsolated?: true`, presence-only,
-provisional, its own contracts PR, an ADR); the WASI-to-`orivon.fs` call table (its §5.3 and §5.3
+provisional, its own contracts PR, an ADR); the WASI-to-`orivon.fs` call table (its section 5.3 and section 5.3
 here are the same mapping); the virtual root as the one preopen; no network in preview1; a
-program's bytes come from the pinned bundle; native `subprocess` stays excluded with its §8 as the
+program's bytes come from the pinned bundle; native `subprocess` stays excluded with its section 8 as the
 reopening conditions; refusals by name through `refusingProxy`; and Step 0, the refusal rows, done
 first regardless.
 
@@ -606,22 +605,22 @@ first regardless.
 
 1. **Synchrony.** The sibling's A1 runs the program in a Worker that blocks on `Atomics.wait`
    over a `SharedArrayBuffer` while the main thread services `orivon.fs`, so isolation is a
-   prerequisite and `spawn` fails `ENOENT` without the manifest field (its §5.1, §5.5). Measured
+   prerequisite and `spawn` fails `ENOENT` without the manifest field (its section 5.1, section 5.5). Measured
    here: JSPI works in a dedicated Worker with no isolation, and an asynchronous `postMessage`
    round trip per syscall costs 20 to 40 us. **Recommendation: A1 on JSPI.** What changes in the
-   sibling if the owner agrees: the diagram in §5.1 (requests and replies are messages, the
-   Worker awaits rather than blocks); §5.5 stops being a prerequisite and moves to "threaded
-   builds only"; §5.9's "no main-thread execution" and "no `node:wasi` shape" are lifted, since
-   both come free from the same host; §12 Step 1's first spike is answered by §2 here; §12 Step 3's
-   `proxy.ts` becomes the asynchronous proxy of §5.6 here; `spawnSync`/`execSync` stay refused
+   sibling if the owner agrees: the diagram in section 5.1 (requests and replies are messages, the
+   Worker awaits rather than blocks); section 5.5 stops being a prerequisite and moves to "threaded
+   builds only"; section 5.9's "no main-thread execution" and "no `node:wasi` shape" are lifted, since
+   both come free from the same host; section 12 Step 1's first spike is answered by section 2 here; section 12 Step 3's
+   `proxy.ts` becomes the asynchronous proxy of section 5.6 here; `spawnSync`/`execSync` stay refused
    for the same reason as before (a synchronous wait on the main thread has no mechanism).
 2. **The WASI preview1 implementation.** The sibling's Step 1 evaluates `@bjorn3/browser_wasi_shim`
    and `@runno/wasi` as libraries, which fits its synchronous `Fd` layer. Under JSPI every `Fd`
-   method must be `async`, and `browser_wasi_shim` is synchronous throughout (read, §3.4), so a
+   method must be `async`, and `browser_wasi_shim` is synchronous throughout (read, section 3.4), so a
    library qualifies only if it is asynchronous already, or is forked. The review's deciding
    criterion becomes "asynchronous descriptor layer", and the fork option needs its written
    reason under Rule 6. Owner gate either way (its decision 2, decision 8 here).
-3. **`denied`'s errno.** The sibling's `EACCES` is adopted here (§5.3); `ENOTCAPABLE` is dropped.
+3. **`denied`'s errno.** The sibling's `EACCES` is adopted here (section 5.3); `ENOTCAPABLE` is dropped.
 4. **COEP flavour.** The sibling prefers `credentialless`, this document `require-corp`; measured
    identical for everything tried, and the difference the sibling guards against is not charged
    on `protocol.handle` responses. Owner's pick, decision 4.
@@ -633,7 +632,7 @@ first regardless.
    this document builds the host and `node:wasi` first and adds `child_process` as step 1b. Same
    code either way; the owner orders the two module rows.
 
-**Carried over from the sibling unchanged:** its `child_process` member table (§5.6), stdio and
-exit semantics (§5.4), lifecycle and limits (§5.8), the guards table (§6), the A2 sketch (§7),
-the reopening checklist for native `subprocess` (§8), the person-picked program shape (§9), and
-the target matrix rows (§11). This document does not restate them.
+**Carried over from the sibling unchanged:** its `child_process` member table (section 5.6), stdio and
+exit semantics (section 5.4), lifecycle and limits (section 5.8), the guards table (section 6), the A2 sketch (section 7),
+the reopening checklist for native `subprocess` (section 8), the person-picked program shape (section 9), and
+the target matrix rows (section 11). This document does not restate them.

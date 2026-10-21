@@ -134,8 +134,8 @@ describe('createPopoverView: background colour set before the view is ever shown
 
   it('a non-warm popup is destroyed on close and rebuilt fresh on the next open', () => {
     const popover = createPopoverView(fakeWin() as never, fakeContentView() as never, {
-      dirname: '/app', entryPath: '/permissions/', entry: 'permissions',
-      preloadRelPath: '../preload/permissions.js', urlArgName: 'orivon-permissions-url', align: 'right',
+      dirname: '/app', entryPath: '/networks/', entry: 'networks',
+      preloadRelPath: '../preload/networks.js', urlArgName: 'orivon-networks-url', align: 'right',
       background: BACKGROUND, registerIpc: () => () => {}
     })
 
@@ -180,8 +180,8 @@ describe('createPopoverView: a `warm` popup', () => {
 
   it('prewarm() on a non-warm popup is a no-op: it always builds fresh on its own open anyway', () => {
     const popover = createPopoverView(fakeWin() as never, fakeContentView() as never, {
-      dirname: '/app', entryPath: '/permissions/', entry: 'permissions',
-      preloadRelPath: '../preload/permissions.js', urlArgName: 'orivon-permissions-url', align: 'right',
+      dirname: '/app', entryPath: '/networks/', entry: 'networks',
+      preloadRelPath: '../preload/networks.js', urlArgName: 'orivon-networks-url', align: 'right',
       background: BACKGROUND, registerIpc: () => () => {}
     })
 

@@ -95,7 +95,7 @@ export class TearDragController {
   prewarm (source: ShellWindow, tabId: string): void {
     const bounds = source.window.getContentBounds()
     const size = previewSizeFor(bounds.width, bounds.height)
-    for (const other of this.windows()) if (other !== source) void refreshStripLayout(other)
+    for (const other of this.windows()) if (other !== source) void refreshStripLayout(other).catch((error: unknown) => { console.error('[shell] refresh strip layout failed:', error) })
     this.warming = {
       tabId,
       promise: captureTabPage(source.tabs.liveWebContents(tabId)).then((image) => imageToDataUrl(image, size))
@@ -167,7 +167,7 @@ export class TearDragController {
       if (this.tabId !== tabId || dataUrl === null) return // the drag may already be over, or a different tab's, by the time this resolves
       this.thumbnail = dataUrl
       if (this.mode !== 'chip') this.render()
-    })
+    }).catch((error: unknown) => { console.error('[shell] warming the drag preview failed:', error) })
 
     // Created hidden, with no position yet: `hide()`/`showInactive()` (tick()'s own `inTop` check
     // below), never negative screen coordinates, is how this parks between the strip and open space
@@ -229,7 +229,7 @@ export class TearDragController {
     if (target === null) {
       this.clearMark()
     } else if (target.window !== this.markedWindow) {
-      void refreshStripLayout(target.window) // its tabs may have moved since the drag began
+      void refreshStripLayout(target.window).catch((error: unknown) => { console.error('[shell] refresh strip layout failed:', error) }) // its tabs may have moved since the drag began
       this.clearMark() // a different window than the one last marked, if any
       this.markedWindow = target.window
       this.markedIndex = target.index
@@ -242,7 +242,7 @@ export class TearDragController {
 
     if (target !== null && stripCentresFor(target.window) === null && Date.now() >= this.nextRead) {
       this.nextRead = Date.now() + STRIP_READ_RETRY_MS
-      void refreshStripLayout(target.window) // a tab opened or closed there since it was read
+      void refreshStripLayout(target.window).catch((error: unknown) => { console.error('[shell] refresh strip layout failed:', error) }) // a tab opened or closed there since it was read
     }
 
     const wantChip = target !== null

@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { CID } from 'multiformats/cid'
 import { fetchVerifiedBlock } from '../block-fetch.js'
+import { MAX_PASSES } from '../../gateways/fetch-passes.js'
 import type { FetchDeps } from '../block-fetch.js'
-import { GatewayPool } from '../gateways.js'
+import { GatewayPool, MIN_HEDGE_DELAY_MS } from '../../gateways/gateways.js'
 import { DEFAULT_LIMITS } from '../limits.js'
 import type { IpfsLimits } from '../limits.js'
 import { buildDag, fakeGateways } from './dag.test-helpers.js'
@@ -56,6 +57,18 @@ describe('fetchVerifiedBlock -- hedging', () => {
     } }
     for (const key of [...dag.blocks.keys()].slice(0, 2)) await fetchVerifiedBlock(CID.parse(key), d, signal, noRefusal)
     expect(d.pool.candidates()).toEqual([A, B])
+  })
+
+  it('hedges a stalled leader within moments once another gateway has shown how quickly it answers', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    gateways.hanging.add(A)
+    const d = deps(gateways, [A, B], { hedgeDelayMs: 5_000, blockTimeoutMs: 30_000 })
+    d.pool.note(B, { kind: 'ok', latencyMs: 20 })
+    const started = Date.now()
+    expect(await fetchVerifiedBlock(leaf, d, signal, noRefusal)).toEqual(leafBytes)
+    const took = Date.now() - started
+    expect(took).toBeGreaterThanOrEqual(MIN_HEDGE_DELAY_MS - 50)
+    expect(took).toBeLessThan(2_000)
   })
 
   it('does not hedge when the leader answers within the hedge delay', async () => {
@@ -136,29 +149,66 @@ describe('fetchVerifiedBlock -- rate limits and outages', () => {
   })
 })
 
+describe('fetchVerifiedBlock -- a gateway that is itself unwell', () => {
+  it.each([500, 502, 503, 504])('a lone gateway that answers %i once is asked again and serves the block', async (status) => {
+    const gateways = fakeGateways(dag.blocks)
+    gateways.failNext(A, status)
+    const d = deps(gateways, [A])
+    expect(await fetchVerifiedBlock(leaf, d, signal, noRefusal)).toEqual(leafBytes)
+    expect(gateways.requests).toHaveLength(2)
+  })
+
+  it('a 5xx from one gateway while the others answer 404 earns another pass over all of them', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    gateways.missing.add(B)
+    gateways.missing.add(C)
+    gateways.failNext(A, 502)
+    const d = deps(gateways, [A, B, C])
+    expect(await fetchVerifiedBlock(leaf, d, signal, noRefusal)).toEqual(leafBytes)
+  })
+
+  it('stays bounded: a gateway that keeps answering 502 ends as unavailable after MAX_PASSES requests', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    gateways.failNext(A, 502, 100)
+    const d = deps(gateways, [A])
+    await expect(fetchVerifiedBlock(leaf, d, signal, noRefusal)).rejects.toMatchObject({ failure: 'unavailable' })
+    expect(gateways.requests).toHaveLength(MAX_PASSES)
+  })
+})
+
 describe('fetchVerifiedBlock -- passes', () => {
   it('gives up as unavailable once every pass is exhausted against a down gateway', async () => {
     const gateways = fakeGateways(dag.blocks)
-    gateways.failing.add(A) // a plain miss (500, no Retry-After) never earns a retry pass
+    gateways.failing.add(A)
     const d = deps(gateways, [A])
     await expect(fetchVerifiedBlock(leaf, d, signal, noRefusal)).rejects.toMatchObject({ failure: 'unavailable' })
+    expect(gateways.requests).toHaveLength(MAX_PASSES)
+  })
+
+  it('a plain 404 earns no second pass', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    gateways.missing.add(A)
+    gateways.missing.add(B)
+    const d = deps(gateways, [A, B])
+    await expect(fetchVerifiedBlock(leaf, d, signal, noRefusal)).rejects.toMatchObject({ failure: 'unavailable' })
+    expect(gateways.requests).toHaveLength(2)
   })
 
   it('is unavailable, never verified, when nothing answers and nothing lied', async () => {
     const gateways = fakeGateways(dag.blocks)
-    gateways.failing.add(A)
-    gateways.failing.add(B)
+    gateways.missing.add(A)
+    gateways.missing.add(B)
     const d = deps(gateways, [A, B])
-    await expect(fetchVerifiedBlock(leaf, d, signal, noRefusal)).rejects.toMatchObject({ failure: 'unavailable' })
+    await expect(fetchVerifiedBlock(leaf, d, signal, noRefusal)).rejects.toMatchObject({ failure: 'unavailable', sourceFault: false })
   })
 
   it('a lie earns no second pass over gateways that already missed, and names the liar', async () => {
     const gateways = fakeGateways(dag.blocks)
     gateways.tamper(leafKey, [A])
-    gateways.failing.add(B)
+    gateways.missing.add(B)
     const d = deps(gateways, [A, B])
     const failure = fetchVerifiedBlock(leaf, d, signal, noRefusal)
-    await expect(failure).rejects.toMatchObject({ failure: 'unverifiable' })
+    await expect(failure).rejects.toMatchObject({ failure: 'unverifiable', sourceFault: true })
     await expect(failure).rejects.toThrow(`${A} sent bytes that failed their hash`)
     expect(gateways.requests.filter((r) => r.startsWith(B))).toHaveLength(1)
   })
@@ -171,5 +221,62 @@ describe('fetchVerifiedBlock -- passes', () => {
     const promise = fetchVerifiedBlock(leaf, d, controller.signal, noRefusal)
     queueMicrotask(() => { controller.abort() })
     await expect(promise).rejects.toMatchObject({ failure: 'unavailable' })
+  })
+})
+
+describe('fetchVerifiedBlock -- a gateway that is only slow', () => {
+  /** The first `holds` requests never answer; the rest are served from `blocks`. */
+  function slowThenServing (holds: number): { fetch: FetchDeps['fetch'], requests: string[] } {
+    const gateways = fakeGateways(dag.blocks)
+    let seen = 0
+    return {
+      requests: gateways.requests,
+      fetch: async (url, init) => {
+        if (seen++ < holds) {
+          gateways.requests.push(url)
+          return await new Promise<Response>((_resolve, reject) => { init.signal.addEventListener('abort', () => { reject(new Error('aborted (simulated hang)')) }, { once: true }) })
+        }
+        return await gateways.fetch(url, init)
+      }
+    }
+  }
+
+  it('a lone gateway that sent nothing in time is asked again, and serves the block', async () => {
+    const slow = slowThenServing(1)
+    const d = { ...deps(fakeGateways(dag.blocks), [A], { blockTimeoutMs: 40 }), fetch: slow.fetch }
+    expect(await fetchVerifiedBlock(leaf, d, signal, noRefusal)).toEqual(leafBytes)
+    expect(slow.requests).toHaveLength(2)
+  })
+
+  it('every gateway of a pass timing out earns another pass', async () => {
+    const slow = slowThenServing(2)
+    const d = { ...deps(fakeGateways(dag.blocks), [A, B], { blockTimeoutMs: 80, hedgeDelayMs: 10 }), fetch: slow.fetch }
+    expect(await fetchVerifiedBlock(leaf, d, signal, noRefusal)).toEqual(leafBytes)
+  })
+
+  it('a timeout beside a plain 404 earns no other pass: the 404 says one gateway lacks it, the pass was not all slowness', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    gateways.missing.add(A)
+    gateways.hanging.add(B)
+    const d = deps(gateways, [A, B], { blockTimeoutMs: 40, hedgeDelayMs: 10 })
+    await expect(fetchVerifiedBlock(leaf, d, signal, noRefusal)).rejects.toMatchObject({ failure: 'unavailable' })
+    expect(gateways.requests).toHaveLength(2)
+  })
+
+  it('stays bounded: a gateway that never answers is asked at most MAX_PASSES times', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    gateways.hanging.add(A)
+    const d = deps(gateways, [A], { blockTimeoutMs: 20 })
+    await expect(fetchVerifiedBlock(leaf, d, signal, noRefusal)).rejects.toMatchObject({ failure: 'unavailable' })
+    expect(gateways.requests.length).toBeLessThanOrEqual(MAX_PASSES)
+    expect(gateways.requests.length).toBeGreaterThan(1)
+  })
+
+  it('a local node that sent nothing in time is not asked again by the passes: its retry is the patient one', async () => {
+    const gateways = fakeGateways(dag.blocks)
+    gateways.hanging.add(A)
+    const d = { ...deps(gateways, [A], { blockTimeoutMs: 20 }), pool: new GatewayPool([A], 4, Date.now, { serverErrorsAreAnswers: true }) }
+    await expect(fetchVerifiedBlock(leaf, d, signal, noRefusal)).rejects.toMatchObject({ failure: 'unavailable' })
+    expect(gateways.requests).toHaveLength(1)
   })
 })

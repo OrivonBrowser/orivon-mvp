@@ -44,25 +44,30 @@ afterAll(async () => {
 
 interface Outcome { readonly ok: boolean, readonly code?: string, readonly platformCode?: string, readonly message?: string, readonly value?: unknown }
 
-it('[app:tcp-connect-to-granted-loopback-port] [app:wildcard-host-never-reaches-loopback] [app:reserved-port-needs-exact-pattern] [app:concurrent-sockets-limit-holds] [app:second-listener-gets-eaddrinuse] [app:fs-quota-refuses-past-limit] [app:fs-confined-to-app-root] [app:tls-self-signed-refused-unless-opted-out] the rules the broker applies to an app', async () => {
+it('[app:tcp-connect-to-granted-loopback-port] [app:wildcard-host-never-reaches-loopback] [app:tcp-connect-never-reaches-orivon-own-loopback-ports] [app:reserved-port-needs-exact-pattern] [app:concurrent-sockets-limit-holds] [app:second-listener-gets-eaddrinuse] [app:fs-quota-refuses-past-limit] [app:fs-confined-to-app-root] [app:tls-self-signed-refused-unless-opted-out] the rules the broker applies to an app', async () => {
   const echoPort = await listen(echo)
   const busyPort = await listen(busy)
   const tlsPort = await listen(tls)
-  const manifest = appManifest('broker-rules', {
-    net: { tcp: { connect: [`127.0.0.1:${String(echoPort)}`, '*:*'], listen: { local: [String(busyPort), '0'] } }, https: { connect: [`localhost:${String(tlsPort)}`] }, concurrentSockets: 2 },
-    fs: { quotaBytes: 1024 }
-  })
-  const { app, chrome } = await launchShell()
+  // The suite's blackhole resolver maps `localhost` to nothing, and the self-signed certificate names it: without this the default dial below would fail on the name, not on the certificate.
+  const { app, chrome } = await launchShell({ args: ['--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost'] })
   try {
+    // The loopback port the .eth verifier listens on, which the resolver rules map every name to.
+    const rules = await app.evaluate(({ app: electron }) => electron.commandLine.getSwitchValue('host-resolver-rules'))
+    const ownPort = Number(/127\.0\.0\.1:(\d+)/.exec(rules)?.[1])
+    expect(Number.isInteger(ownPort), `the verifier port is in the resolver rules: ${rules}`).toBe(true)
+    const manifest = appManifest('broker-rules', {
+      net: { tcp: { connect: [`127.0.0.1:${String(echoPort)}`, `127.0.0.1:${String(ownPort)}`, '*:*'], listen: { local: [String(busyPort), '0'] } }, https: { connect: [`localhost:${String(tlsPort)}`] }, concurrentSockets: 2 },
+      fs: { quotaBytes: 1024 }
+    })
     await runPhase('broker rules', async (check) => {
       await grantApp(app, server.origin, manifest, [
-        { capability: 'tcp.connect', patterns: [`127.0.0.1:${String(echoPort)}`, '*:*'] },
+        { capability: 'tcp.connect', patterns: [`127.0.0.1:${String(echoPort)}`, `127.0.0.1:${String(ownPort)}`, '*:*'] },
         { capability: 'tcp.listen.local', patterns: [String(busyPort), '0'] },
         { capability: 'https.connect', patterns: [`localhost:${String(tlsPort)}`] },
         { capability: 'fs', patterns: [] }
       ])
       const view = await visit(app, chrome, `${server.origin}/`)
-      const outcomes = await pageCall(server, view, async (ports: { echo: number, busy: number, tls: number }) => {
+      const outcomes = await pageCall(server, view, async (ports: { echo: number, busy: number, tls: number, own: number }) => {
         interface Failure { ok: false, code?: string | undefined, platformCode?: string | undefined, message?: string | undefined }
         type Result<T> = { ok: true, value: T } | Failure
         const orivon = (window as unknown as { orivon: {
@@ -109,6 +114,8 @@ it('[app:tcp-connect-to-granted-loopback-port] [app:wildcard-host-never-reaches-
 
         // `*:*` never reaches loopback: a live listener on another port is still refused.
         out['wildcardLoopback'] = summary(await attempt(async () => { await (await orivon.net.connect({ host: '127.0.0.1', port: ports.busy })).close() }))
+        // A loopback grant that names Orivon's own verifier port still does not reach it.
+        out['ownPort'] = summary(await attempt(async () => { await (await orivon.net.connect({ host: '127.0.0.1', port: ports.own })).close() }))
         // A reserved port is reached only by a pattern naming it.
         out['reserved'] = summary(await attempt(async () => { await (await orivon.net.connect({ host: '93.184.216.34', port: 6667 })).close() }))
 
@@ -155,19 +162,20 @@ it('[app:tcp-connect-to-granted-loopback-port] [app:wildcard-host-never-reaches-
         })
         out['tlsOptOut'] = summary(optedOut, optedOut.ok ? optedOut.value : undefined)
         return out
-      }, { echo: echoPort, busy: busyPort, tls: tlsPort }) as unknown as Record<string, Outcome>
+      }, { echo: echoPort, busy: busyPort, tls: tlsPort, own: ownPort }) as unknown as Record<string, Outcome>
 
       const codeOf = (o: Outcome | undefined): string => (o === undefined ? 'missing' : o.ok ? 'ok' : `${o.code ?? '?'}${o.platformCode === undefined ? '' : `/${o.platformCode}`}`)
       const show = (key: string): string => JSON.stringify(outcomes[key])
       check('[app:tcp-connect-to-granted-loopback-port] a connection to the exact loopback port the manifest names reaches it and the bytes come back', outcomes['exact']?.ok === true && outcomes['exact']?.value === 'round trip', show('exact'))
       check('[app:wildcard-host-never-reaches-loopback] a `*:*` grant does not reach a loopback port something is listening on: denied', codeOf(outcomes['wildcardLoopback']) === 'denied', show('wildcardLoopback'))
+      check('[app:tcp-connect-never-reaches-orivon-own-loopback-ports] a grant that names the port the .eth verifier listens on does not reach it: denied', codeOf(outcomes['ownPort']) === 'denied', show('ownPort'))
       check('[app:reserved-port-needs-exact-pattern] a `*:*` grant does not reach a public address on a reserved port (6667): denied', codeOf(outcomes['reserved']) === 'denied', show('reserved'))
       check('[app:concurrent-sockets-limit-holds] with concurrentSockets 2, a third socket is refused: limit', codeOf(outcomes['third']) === 'limit', show('third'))
       check('[app:concurrent-sockets-limit-holds] and a socket opens again once one is closed', outcomes['afterClose']?.ok === true, show('afterClose'))
       check('[app:second-listener-gets-eaddrinuse] listening on a port another program holds fails with EADDRINUSE', /EADDRINUSE/.test(`${show('listenBusy')}`), show('listenBusy'))
       check('[app:fs-quota-refuses-past-limit] a write that would pass the 1024-byte quota is refused as limit, and the earlier 600-byte file is intact', outcomes['quotaFirst']?.ok === true && codeOf(outcomes['quotaSecond']) === 'limit' && outcomes['quotaKept']?.value === 600, `${show('quotaFirst')} ${show('quotaSecond')} ${show('quotaKept')}`)
       check('[app:fs-confined-to-app-root] a path that climbs out of the app root is refused: denied', codeOf(outcomes['outside']) === 'denied', show('outside'))
-      check('[app:tls-self-signed-refused-unless-opted-out] a self-signed server is refused by default: unreachable with a platform code', /^unreachable\//.test(codeOf(outcomes['tlsDefault'])), show('tlsDefault'))
+      check('[app:tls-self-signed-refused-unless-opted-out] a self-signed server is refused by default: unreachable, for the certificate', /^unreachable\/.*SELF.SIGNED/.test(codeOf(outcomes['tlsDefault'])), show('tlsDefault'))
       check('[app:tls-self-signed-refused-unless-opted-out] and reached, unauthorized, when the app sets rejectUnauthorized false', outcomes['tlsOptOut']?.ok === true && (outcomes['tlsOptOut']?.value as { got?: string, authorized?: boolean } | undefined)?.got === 'hello over tls' && (outcomes['tlsOptOut']?.value as { authorized?: boolean } | undefined)?.authorized === false, show('tlsOptOut'))
     })
   } finally {

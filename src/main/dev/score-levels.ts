@@ -1,9 +1,8 @@
-// Developer-only overrides of the Web3 Score levels (queue: web3-score-shield
-// lane). No provider and no peer-to-peer fetch exist in this build, so
-// Website Level 3/4 and Delivery Level 3 are unreachable by any real site --
-// this file lets an origin's DISPLAYED level be forced, for previewing the
-// shield and panel, exactly the way `./eth-resolver.ts` lets a fake `.eth`
-// name stand in for a real one: only in developer mode
+// Developer-only overrides of the Web3 Score levels. An origin's DISPLAYED
+// level can be forced, for previewing the shield and panel at a level no
+// site has earned (or with no provider reachable), exactly the way
+// `./eth-resolver.ts` lets a fake `.eth` name stand in for a real one: only
+// in developer mode
 // (`devModeEnabled()`, `ORIVON_DEV_ORIGINS=1`, set only by `scripts/dev.mjs`),
 // from one named env var, read once, logged loudly. An override is never
 // wired to window.orivon, IPC or any renderer-reachable surface for its OWN
@@ -12,8 +11,7 @@
 // posture as everything else in this directory.
 //
 // One file, one gate, for BOTH axes (website and delivery) rather than two
-// dev modules for the same idea (code-guidelines.md Rule 3) -- a real
-// provider will eventually answer both anyway.
+// dev modules for the same idea (code-guidelines.md Rule 3).
 
 import { readFileSync } from 'node:fs'
 import { originFromUrl } from '../../broker/policy/origin.js'

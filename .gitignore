@@ -30,6 +30,13 @@ coverage/
 
 # Electron / packaging
 release/
+# Fetched by scripts/fetch-bundled-extensions.mjs from pinned release assets, never committed.
+resources/default-profile/extensions/
+# Fetched by scripts/fetch-local-nodes.mjs from the files each node's and tunnel's manifest pins, never committed.
+resources/*-node/*
+!resources/*-node/*-node.json
+resources/*-tunnel/*
+!resources/*-tunnel/*-tunnel.json
 *.AppImage
 *.deb
 
@@ -61,7 +68,7 @@ Thumbs.db
 npm-debug.log*
 
 # Spike-only build output and the isolated app tree (webtorrent is an app
-# asset, never a shell dependency - see build-plan.md Platform policy)
+# asset, never a shell dependency - see CLAUDE.md Rule 8)
 spike/*/dist/
 spike/app/node_modules/
 spike/results/

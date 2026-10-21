@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest'
 import type { InternalCaller } from '../../pages/internal-ipc.js'
 import { createSiteSettingsController } from '../site-settings-controller.js'
 import { SiteSettingsStore } from '../site-settings-store.js'
-import { sitesDomain } from '../sites-domain.js'
+import { resetAllSiteSettings, sitesDomain } from '../sites-domain.js'
+import { clearBrowsingData } from '../../privacy/clear-data.js'
+import { HidApprovals } from '../../devices/hid-approvals.js'
+import { createDeviceRows } from '../../devices/hid-rows.js'
+import { createHidGate } from '../../devices/hid-gate.js'
 
 const SHOP = 'https://shop.example'
 const caller = { page: 'settings', contents: {} } as unknown as InternalCaller
@@ -69,8 +73,154 @@ describe('the sites domain', () => {
     expect(ask({ type: 'set', origin: { toString: 1 }, kind: 'camera', value: 'allow' })).toBeUndefined()
     expect(ask({ type: 'resetSite', origin: ['a'] })).toBeUndefined()
     expect(ask({ type: 'set', origin: SHOP, kind: 'camera', value: 'ask' })).toMatchObject({ ok: false })
-    expect(ask({ type: 'set', origin: SHOP, kind: 'devices', value: 'block' })).toMatchObject({ ok: false })
+    expect(ask({ type: 'set', origin: SHOP, kind: 'devices', value: 'allow' })).toMatchObject({ ok: false })
     expect(ask({ type: 'set', origin: 'https://app.example', kind: 'camera', value: 'allow' })).toMatchObject({ ok: false, rows: [] })
     expect(store.entries()).toEqual([])
+  })
+})
+
+describe('the sites domain with approved devices', () => {
+  const APPROVED = [{ key: 'k1', label: 'Nano X (USB 2c97:4011)' }]
+
+  function withDevices () {
+    const store = new SiteSettingsStore(null)
+    const rows = new Map<string, Array<{ key: string, label: string }>>([[SHOP, [...APPROVED]], ['https://only-devices.example', [...APPROVED]]])
+    const devices = {
+      rows: (origin: string) => rows.get(origin) ?? [],
+      siteRows: (origin: string) => rows.get(origin) ?? [],
+      forget: (origin: string, key: string) => {
+        const list = rows.get(origin) ?? []
+        const kept = list.filter((row) => row.key !== key)
+        if (kept.length === list.length) return false
+        if (kept.length === 0) rows.delete(origin)
+        else rows.set(origin, kept)
+        return true
+      },
+      websites: () => [...rows].map(([origin, list]) => ({ origin, devices: list.length })),
+      forgetSite: (origin: string) => rows.delete(origin),
+      forgetAllWebsites: () => { rows.clear() }
+    }
+    const notifications = new Map<string, 'allow' | 'block'>()
+    const controller = createSiteSettingsController({
+      store,
+      notifications: { get: (o) => notifications.get(o), set: () => {}, forget: () => {}, clear: () => {}, entries: () => [], onChange: () => () => {} },
+      defaultFor: (kind) => kind.values[0] ?? 'ask',
+      isApp: (origin) => origin === 'https://app.example'
+    })
+    const domain = sitesDomain(controller, { isPrivate: false, devices })
+    return { ask: (command: unknown) => domain.handle(command, caller), store, rows }
+  }
+
+  it('lists a site that only holds a device, and counts the devices of one with answers', () => {
+    const { ask, store } = withDevices()
+    store.set(SHOP, 'camera', 'block')
+    const list = ask({ type: 'list' }) as { sites: Array<{ origin: string, kinds: unknown[], devices?: number }> }
+    expect(list.sites.map((site) => [site.origin, site.kinds.length, site.devices])).toEqual([['https://only-devices.example', 0, 1], [SHOP, 1, 1]])
+  })
+
+  it('answers a site\'s devices with its rows, and forgets one only if the site holds it', () => {
+    const { ask, rows } = withDevices()
+    expect(ask({ type: 'rows', origin: SHOP })).toMatchObject({ devices: APPROVED })
+    expect(ask({ type: 'forgetDevice', origin: SHOP, key: 'nope' })).toMatchObject({ ok: false })
+    expect(rows.get(SHOP)).toHaveLength(1)
+    expect(ask({ type: 'forgetDevice', origin: SHOP, key: 'k1' })).toMatchObject({ ok: true, devices: [] })
+    expect(rows.has(SHOP)).toBe(false)
+    expect(ask({ type: 'forgetDevice', origin: 3, key: 'k1' })).toBeUndefined()
+  })
+
+  it('forgets a site\'s devices with the rest of its settings, and every website\'s with a full reset', () => {
+    const { ask, rows } = withDevices()
+    expect(ask({ type: 'resetSite', origin: SHOP })).toEqual({ ok: true })
+    expect(rows.has(SHOP)).toBe(false)
+    ask({ type: 'resetAll' })
+    expect(rows.size).toBe(0)
+  })
+})
+
+describe('the sites domain: apps whose first visit was refused', () => {
+  function withDeclined (initial: string[], isPrivate = false): { ask: (command: unknown) => unknown, held: Set<string> } {
+    const held = new Set(initial)
+    const controller = createSiteSettingsController({
+      store: new SiteSettingsStore(null),
+      notifications: { get: () => undefined, set: () => {}, forget: () => {}, clear: () => {}, entries: () => [], onChange: () => () => {} },
+      defaultFor: (kind) => kind.values[0] ?? 'ask',
+      isApp: () => false
+    })
+    const domain = sitesDomain(controller, { isPrivate, declinedApps: { list: () => [...held].sort(), remove: (origin) => held.delete(origin) } })
+    return { ask: (command) => domain.handle(command, caller), held }
+  }
+
+  it('lists the origins whose question the person answered Deny, beside the sites with answers', () => {
+    const { ask } = withDeclined(['https://b.ipfs.orivon', 'https://a.ipfs.orivon'])
+    expect((ask({ type: 'list' }) as { declinedApps: string[] }).declinedApps).toEqual(['https://a.ipfs.orivon', 'https://b.ipfs.orivon'])
+  })
+
+  it('asks again by removing one origin, and says whether it was there', () => {
+    const { ask, held } = withDeclined(['https://a.ipfs.orivon'])
+    expect(ask({ type: 'askAgain', origin: 'https://a.ipfs.orivon' })).toEqual({ ok: true })
+    expect(held.size).toBe(0)
+    expect(ask({ type: 'askAgain', origin: 'https://a.ipfs.orivon' })).toEqual({ ok: false })
+  })
+
+  it('refuses a request whose origin is not a string', () => {
+    const { ask, held } = withDeclined(['https://a.ipfs.orivon'])
+    expect(ask({ type: 'askAgain', origin: 7 })).toBeUndefined()
+    expect(ask({ type: 'askAgain' })).toBeUndefined()
+    expect(held.size).toBe(1)
+  })
+
+  it('lists none, and refuses to ask again, where no record is kept', () => {
+    const { ask } = setup()
+    expect((ask({ type: 'list' }) as { declinedApps: string[] }).declinedApps).toEqual([])
+    expect(ask({ type: 'askAgain', origin: 'https://a.ipfs.orivon' })).toEqual({ ok: false })
+  })
+})
+
+
+describe('forgetting every site\'s answers', () => {
+  const APP = 'https://app.example'
+  const NANO = { vendorId: 0x2c97, productId: 0x4011, serialNumber: '0001', name: 'Nano X' }
+
+  function world () {
+    const store = new SiteSettingsStore(null)
+    const controller = createSiteSettingsController({
+      store,
+      notifications: { get: () => undefined, set: () => {}, forget: () => {}, clear: () => {}, entries: () => [], onChange: () => () => {} },
+      defaultFor: (kind) => kind.values[0] ?? 'ask',
+      isApp: (origin) => origin === APP
+    })
+    const approvals = new HidApprovals(null)
+    approvals.approve(SHOP, NANO)
+    approvals.approve(APP, NANO)
+    const devices = createDeviceRows(approvals, (origin) => origin !== APP)
+    const gate = createHidGate({
+      approvals,
+      isApp: (origin) => origin === APP,
+      appPatterns: (origin) => origin === APP ? ['vendor=2c97'] : undefined,
+      siteBlocked: () => false,
+      requestAsk: () => {}
+    })
+    return { controller, devices, gate }
+  }
+
+  it('lets the privacy clear\'s "Site settings and permissions" forget the websites\' approved devices too, and leave an app\'s alone', async () => {
+    const { controller, devices, gate } = world()
+    expect(gate.devicePermission(SHOP, NANO)).toBe(true)
+
+    await clearBrowsingData(
+      { history: 'none', siteData: false, cache: false, zoomLevels: false, appData: false, siteSettings: true },
+      {
+        history: { removeRange: () => {}, clear: () => {} },
+        zoom: { clear: () => {} },
+        siteSettings: { resetAll: () => { resetAllSiteSettings(controller, devices) } },
+        websites: { clearData: async () => {}, clearStorageData: async () => {} },
+        appSessions: async () => [],
+        forgetNameSchemes: async () => {},
+        now: () => 0
+      }
+    )
+
+    expect(gate.devicePermission(SHOP, NANO)).toBe(false)
+    expect(gate.devicePermission(APP, NANO)).toBe(true)
   })
 })

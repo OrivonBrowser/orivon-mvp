@@ -10,10 +10,18 @@ import { BLOCK_ROOT_PATTERN } from '../../protocols/verifier-host/protocol.js'
 import type { FromHost, HostReplies, HostRequest, LightClientState, SiteProvenance } from '../../protocols/verifier-host/protocol.js'
 import type { ContentPointer, ContentRoot, PointerStep, Provenance } from '../../protocols/resolution/records.js'
 import type { DdocReport, Refusal } from '../../protocols/resolution/providers.js'
+import { MAX_FAILURE_MESSAGE } from '../../protocols/local-node/protocol.js'
+import type { FromNode } from '../../protocols/local-node/protocol.js'
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { DECIMAL } from './verifier-store.js'
 
 function isRecord (value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
+}
+
+/** A count that cannot be negative or fractional; a hostile host cannot make main hold a huge or odd number. */
+function isCount (value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 }
 
 function isDecimal (value: unknown): value is string {
@@ -28,6 +36,7 @@ function isContentPointer (value: unknown): value is ContentPointer {
   if (!isRecord(value)) return false
   switch (value.kind) {
     case 'ipfs': return typeof value['cid'] === 'string'
+    case 'swarm': return typeof value['cid'] === 'string'
     case 'ipns-key': return typeof value['key'] === 'string'
     case 'dnslink': return typeof value['domain'] === 'string'
     case 'unsupported': return typeof value['protocol'] === 'string'
@@ -47,7 +56,7 @@ function isProvenance (value: unknown): value is Provenance {
 }
 
 function isContentRoot (value: unknown): value is ContentRoot {
-  return isRecord(value) && value.kind === 'ipfs' && typeof value['cid'] === 'string'
+  return isRecord(value) && (value.kind === 'ipfs' || value.kind === 'swarm') && typeof value['cid'] === 'string'
 }
 
 function isPointerStep (value: unknown): value is PointerStep {
@@ -56,6 +65,7 @@ function isPointerStep (value: unknown): value is PointerStep {
     case 'contenthash': return typeof value['name'] === 'string' && isContentPointer(value['pointer']) && isProvenance(value['provenance'])
     case 'ipns-record': return typeof value['key'] === 'string' && typeof value['sequence'] === 'bigint' && typeof value['target'] === 'string'
     case 'dnslink': return typeof value['domain'] === 'string' && typeof value['target'] === 'string'
+    case 'swarm-feed': return typeof value['owner'] === 'string' && typeof value['topic'] === 'string' && typeof value['index'] === 'bigint' && typeof value['target'] === 'string'
     default: return false
   }
 }
@@ -71,6 +81,10 @@ function isDdocReport (value: unknown): value is DdocReport {
   return false
 }
 
+function isServedFrom (value: unknown): boolean {
+  return isRecord(value) && (value.kind === 'node' || value.kind === 'gateways') && (value['reason'] === undefined || typeof value['reason'] === 'string')
+}
+
 function isSiteProvenance (value: unknown): value is SiteProvenance {
   return isRecord(value) &&
     typeof value['host'] === 'string' &&
@@ -78,7 +92,8 @@ function isSiteProvenance (value: unknown): value is SiteProvenance {
     isContentRoot(value['root']) &&
     isReadonlyArray(value['pointers'], isPointerStep) &&
     isDdocReport(value['ddoc']) &&
-    typeof value['mountedAt'] === 'number'
+    typeof value['mountedAt'] === 'number' &&
+    (value['servedFrom'] === undefined || isServedFrom(value['servedFrom']))
 }
 
 function isLightClientState (value: unknown): value is LightClientState {
@@ -91,6 +106,13 @@ function isLightClientState (value: unknown): value is LightClientState {
     case 'failed': return typeof value['reason'] === 'string' && (value['retryAt'] === undefined || typeof value['retryAt'] === 'number')
     default: return false
   }
+}
+
+/** A top-level-domain name in the spelling `servedName` reads it as, and a scheme some built-in protocol serves. */
+function isNameScheme (host: unknown, scheme: unknown): boolean {
+  if (typeof host !== 'string' || typeof scheme !== 'string') return false
+  const served = BUILTIN_ADDRESSES.servedName(host)
+  return served !== undefined && served.namespace.startsWith('.') && served.name === host && BUILTIN_ADDRESSES.servesScheme(scheme)
 }
 
 /**
@@ -122,11 +144,30 @@ export function isFromHost (message: unknown): message is FromHost {
     case 'status': return isLightClientState(message['status'])
     case 'checkpoint': return typeof message['root'] === 'string' && BLOCK_ROOT_PATTERN.test(message['root']) && typeof message['timestamp'] === 'number'
     case 'ipns-sequence': return typeof message['key'] === 'string' && isDecimal(message['sequence'])
+    case 'node-wanted': return typeof message['node'] === 'string'
+    case 'node-traffic': return typeof message['node'] === 'string' && isCount(message['active']) && isCount(message['bytes'])
+    case 'swarm-feed-index': return typeof message['feed'] === 'string' && isDecimal(message['index'])
+    case 'name-scheme': return isNameScheme(message['host'], message['scheme'])
     case 'reply':
       if (typeof message['id'] !== 'number') return false
       if (message['ok'] === true) return 'value' in message
       if (message['ok'] === false) return typeof message['message'] === 'string'
       return false
+    default: return false
+  }
+}
+
+const FAILURE_STAGES: ReadonlySet<unknown> = new Set(['artifact', 'compile', 'start', 'run', 'port'])
+
+/** Whether `message` is one the Swarm node's process may ever post. */
+export function isFromNode (message: unknown): message is FromNode {
+  if (!isRecord(message)) return false
+  switch (message.type) {
+    case 'listening': return true
+    case 'peers': return Number.isInteger(message['count']) && (message['count'] as number) >= 0
+    case 'ready': return Number.isInteger(message['peers']) && (message['peers'] as number) >= 0
+    case 'failed': return FAILURE_STAGES.has(message['stage']) && typeof message['message'] === 'string' && message['message'].length <= MAX_FAILURE_MESSAGE
+    case 'route-ask': return isCount(message['id'])
     default: return false
   }
 }

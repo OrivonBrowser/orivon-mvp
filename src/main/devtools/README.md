@@ -3,7 +3,9 @@
 **What lives here.** `devtools-service.ts` decides whether developer tools may open on a page and
 opens them, for every way in: the key, the main menu, and "Inspect" in a page's own menu.
 `devtools-prompt.ts` is the one question asked before they open on an app that holds permissions.
-`open-console.ts` moves tools that are open or opening to the Console panel.
+`open-console.ts` moves tools that are open or opening to the Console panel. `dock-side.ts` docks them
+beside the page: Electron undocks tools asked for the right side of a window with its own title bar
+controls, as the shell's is, so they open on the left and the frontend moves them to the right.
 
 **What it depends on.** `electron` (the prompt, and the `WebContents` it acts on);
 [`../settings/`](../settings/) (whether developer tools are allowed, and where they open).

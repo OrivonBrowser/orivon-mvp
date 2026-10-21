@@ -8,7 +8,7 @@ is the same thing as a fill-in form, and the pinned issue on the Issues tab is a
 both. **If the three ever disagree, this document wins** and the other two get corrected.
 
 > The title rule, the section list, the label taxonomy and the enforcement position are
-> settled. §Open points is what is **still open**.
+> settled. section Open points is what is **still open**.
 
 > **The body scales to a PR carrying several changes.** A single-change PR has a single entry
 > and reads almost as simply; every anti-pattern below holds at any size, and
@@ -157,8 +157,8 @@ worth questioning.
 
 The section pairs with the `ux:` label, so the answer is also filterable.
 
-**Why it is mandatory.** The metric this project is judged by is **100 active users at
-25 h/month** ([`scope.md`](../scope.md)), not lines of code. A section that forces the
+**Why it is mandatory.** The metric this project is judged by is active use by real people (the
+success metric), not lines of code. A section that forces the
 question on every change is cheap; noticing six months late that nothing shipped touched anybody
 is not. The point is that somebody looked, and answered.
 
@@ -177,7 +177,7 @@ Three rules:
    section of [`handle-contracts.md`](../architecture/handle-contracts.md), cite it and describe
    only where the code and the document meet.
 2. **Name the one file to read first.** With no dedicated reviewer, the highest-value sentence
-   in a large PR is often "if you read one thing, read `handles.ts` §ownership check".
+   in a large PR is often "if you read one thing, read `handles.ts` section ownership check".
 3. **Explain *why*, not *what*.** This is [`code-guidelines.md`](code-guidelines.md) Rule 1 in a
    different medium, and the standard is the same: that document carries the reasoning and is
    not restated here.
@@ -219,11 +219,12 @@ Four short lines. This is the block that makes parallel work safe, so it stays t
 Mark anything provisional as provisional. Presenting an unconfirmed call as settled is how a
 project ends up defending a choice nobody made.
 
-If the change files anything in [`open-questions.md`](../open-questions.md), in its fixed
-shape, or resolves an entry into [`resolved-questions.md`](../decisions/resolved-questions.md),
+A contradiction you can settle from the repository is fixed and named here, not filed. If the
+change files anything in [`open-questions.md`](../open-questions.md), in its fixed
+shape (only when truly blocked on the owner), or resolves an entry into [`resolved-questions.md`](../decisions/resolved-questions.md),
 **list the A-numbers here**. Take them from `main`'s highest, not your branch's: on 2026-08-27 four
 branches each claimed A15, and a merged renumber left `origin.ts` citing a stranger's question.
-[`parallel-work.md`](parallel-work.md) §Open-question numbers has the one-liner that prevents it.
+[`parallel-work.md`](parallel-work.md) section Open-question numbers has the one-liner that prevents it.
 Taking the number from `main`'s highest reduces the collision, but two branches opened at the
 same time can still both take the same next number, and `npm run check:questions` catches it in CI;
 the fix is to renumber whichever branch merges later and move its citations with it.
@@ -362,7 +363,7 @@ subsections for three unrelated things, that is three PRs.
 
 ### The short form is the default
 
-**Every PR keeps the five required sections within the 400-word ceiling** of §The body. A PR
+**Every PR keeps the five required sections within the 400-word ceiling** of section The body. A PR
 that genuinely stands alone and is small (a revert, a hotfix, a `type:chore`) may collapse
 further, to three sections: `## What changes for the user`, `## Changes` with a single entry,
 and `## How it was verified`.
@@ -374,7 +375,7 @@ regardless of size: no ceiling, and never the three-section collapse.
 ### Nothing enforces this mechanically
 
 **Rules first, enforcement later.** The same call, for the same
-reason, as [`code-guidelines.md`](code-guidelines.md) §Status. No CI check parses the PR
+reason, as [`code-guidelines.md`](code-guidelines.md) section Status. No CI check parses the PR
 body, no workflow requires a label. One rule is enforced from the changed files instead of the
 body: `check:app-behaviours -- --base` fails a pull request that rewrites or removes a row of
 [`app-behaviours/catalogue.md`](../../test/app-behaviours/catalogue.md), and `check:contracts-surface -- --base` one that changes
@@ -403,7 +404,7 @@ it. The template deliberately carries no reasoning, because reasoning is the par
 
 ## Open points
 
-**The template cannot be enforced on `gh pr create --body`.** See §Nothing enforces this
+**The template cannot be enforced on `gh pr create --body`.** See section Nothing enforces this
 mechanically. Known, accepted, and the reason the blueprint is also a document an agent reads
 rather than only a file GitHub injects.
 

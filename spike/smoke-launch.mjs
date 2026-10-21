@@ -3,7 +3,7 @@
 //
 // Throwaway. Replaced by the real Playwright _electron e2e in build step 2,
 // which additionally asserts that a capability OUTSIDE the manifest is
-// REJECTED -- the highest-value assertion in build-plan.md SS Testing.
+// REJECTED -- the highest-value assertion in the retired build plan SS Testing.
 import { launchElectron } from './launch.mjs'
 
 const app = await launchElectron()

@@ -1,6 +1,7 @@
 // The card over a tab whose page crashed or stopped answering: what happened, the page's address and the way
-// back. The page sends one of three fixed words and no id; the tab is the one main named when it showed the card.
+// back. The page sends one of four fixed words and no id; the tab is the one main named when it showed the card.
 import type { OverlayDef, OverlayHandler, OverlayWindow } from '../overlays/overlay-types.js'
+import { crashIdOfPage, reportPath } from '../diagnostics/crash-lookup.js'
 import { cardClosed, SAD_TAB_OVERLAY } from './sad-tab-controller.js'
 import { waiveUnresponsive, troubleOf } from './sad-tab-state.js'
 import { ADDRESS_LIMIT, textFor, UNRESPONSIVE_TEXT } from './sad-tab-text.js'
@@ -13,13 +14,13 @@ export interface SadTabView {
   readonly address: string
 }
 
-export type SadTabCommand = 'reload' | 'close-tab' | 'wait'
+export type SadTabCommand = 'reload' | 'close-tab' | 'wait' | 'report'
 
 function asCommand (command: unknown): SadTabCommand | undefined {
   if (typeof command !== 'object' || command === null) return undefined
   const { type, ...rest } = command as Record<string, unknown>
   if (Object.keys(rest).length > 0) return undefined
-  return type === 'reload' || type === 'close-tab' || type === 'wait' ? type : undefined
+  return type === 'reload' || type === 'close-tab' || type === 'wait' || type === 'report' ? type : undefined
 }
 
 function asTabId (payload: unknown): string | undefined {
@@ -53,6 +54,9 @@ export function createSadTab ({ window, close }: OverlayWindow): OverlayHandler 
       if (asked === 'reload') {
         wc.reload()
         close()
+      } else if (asked === 'report') {
+        // The report page opens in a tab of its own, which switches away from this one and so closes the card.
+        window.tabs.openInternal('report', reportPath(crashIdOfPage(wc.id)))
       } else if (asked === 'close-tab') {
         close()
         window.tabs.closeTab(id)

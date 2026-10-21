@@ -112,10 +112,10 @@ Run with the fuse off, each in a headless Electron 44 (`app.whenReady().then()`)
 - Every overlay and popover now reads its page through the main process instead of Chromium's file loader;
   custom-scheme responses skip the HTTP cache. If `window/e2e-menu-warm` or `perf:probe` regress, built
   files are cached in memory.
-- The flip runs on Linux only (*provisional*, A394): on macOS the binary sits in a signed framework that
-  would need an ad hoc re-sign, and Windows refuses a rename over a running `.exe`. Until each is measured
-  the script refuses there, warns, and leaves the binary as it is, so local files stay closed on those systems
-  in a checkout. A package sets the fuse through electron-builder on every platform.
+- The flip runs on Linux, Windows and macOS. Windows refuses a rename over a running `.exe`, so a flip
+  attempted while the binary runs fails and leaves it as it was. On macOS the fuse sits in the bundle's signed
+  framework, so the script copies the whole `.app`, flips the copy, signs it again ad hoc and swaps it in. A
+  package sets the fuse through electron-builder on every platform.
 - The packaged Linux build (`electron-builder --linux dir`, 2026-10-06) was launched once under a headless
   display with a debugging port: its two pages were `orivon-shell://renderer/newtab/index.html` and
   `orivon-shell://renderer/index.html`, read from the asar, and `@electron/fuses read` showed
@@ -126,5 +126,5 @@ Run with the fuse off, each in a headless Electron 44 (`app.whenReady().then()`)
 
 - **Cost to reverse:** moderate. The scheme is internal and its addresses are not stored; going back to
   `file:` means flipping the fuse on again, which every Linux checkout then does by script.
-- **What would make us revisit:** a macOS or Windows measurement that the flip cannot be done safely
-  (A394), or a need for the shell's pages to load where the scheme has no handler.
+- **What would make us revisit:** a macOS or Windows system where the flip cannot be done safely, or a need
+  for the shell's pages to load where the scheme has no handler.

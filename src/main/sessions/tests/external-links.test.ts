@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { askableScheme, createExternalLinks, type ExternalLinkQuestion } from '../external-links.js'
+import { askableScheme, createExternalLinks, isHandableScheme, MAX_ROUTED_URL_LENGTH, type AppLinkOption, type ExternalLinkQuestion, type LinkAnswer, type LinkRouting } from '../external-links.js'
 import { tabPromptState } from '../tab-prompts.js'
 import { fakeTab } from './fake-tab.js'
 
@@ -169,5 +169,102 @@ describe('createExternalLinks', () => {
     const tab = fakeTab()
     expect(await request(tab, { externalURL: 'mailto:a@example.com', requestingUrl: PAGE })).toBe(false)
     expect(tabPromptState(tab).prompting).toBe(false)
+  })
+})
+
+const MAGNET = 'magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567'
+const TORRENT_APP: AppLinkOption = { origin: 'https://torrent.example', name: 'Torrents' }
+const OTHER_APP: AppLinkOption = { origin: 'https://other.example', name: 'Other' }
+
+function routed (options: { apps?: readonly AppLinkOption[], fallback?: string, answer?: LinkAnswer } = {}): {
+  request: ReturnType<typeof createExternalLinks<typeof WINDOW>>
+  routing: { [K in keyof LinkRouting<typeof WINDOW>]: ReturnType<typeof vi.fn> }
+  confirm: ReturnType<typeof vi.fn>
+} {
+  const routing = {
+    appsFor: vi.fn(async () => options.apps ?? [TORRENT_APP]),
+    defaultAmong: vi.fn((): string | undefined => options.fallback),
+    choose: vi.fn(async (): Promise<LinkAnswer> => options.answer ?? { kind: 'cancel' }),
+    remember: vi.fn(),
+    open: vi.fn()
+  }
+  const confirm = vi.fn(async () => true)
+  const request = createExternalLinks({ windowShowing: () => WINDOW, confirm, routing: () => routing as unknown as LinkRouting<typeof WINDOW> })
+  return { request, routing, confirm }
+}
+
+describe('isHandableScheme', () => {
+  it('is the scheme half of askableScheme: nothing the browser serves, nothing that runs code', () => {
+    expect(isHandableScheme('magnet')).toBe(true)
+    for (const scheme of ['http', 'https', 'file', 'javascript', 'data', 'orivon', 'orivon-app', 'ipfs', 'Magnet', '', '1x']) expect(isHandableScheme(scheme), scheme).toBe(false)
+  })
+})
+
+describe('createExternalLinks with apps that declare the scheme', () => {
+  it('asks the system question alone when no app declares the scheme', async () => {
+    const { request, routing, confirm } = routed({ apps: [] })
+    expect(await request(fakeTab(), { externalURL: MAGNET, requestingUrl: PAGE })).toBe(true)
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(routing.choose).not.toHaveBeenCalled()
+  })
+
+  it('offers the apps, and hands the link to the one the person picks without asking the system', async () => {
+    const { request, routing, confirm } = routed({ apps: [TORRENT_APP, OTHER_APP], answer: { kind: 'app', origin: OTHER_APP.origin, remember: false } })
+    const tab = fakeTab()
+    expect(await request(tab, { externalURL: MAGNET, requestingUrl: PAGE })).toBe(false)
+    expect(routing.choose).toHaveBeenCalledWith(WINDOW, { scheme: 'magnet', url: MAGNET, origin: 'https://shop.example' }, [TORRENT_APP, OTHER_APP], tab)
+    expect(routing.open).toHaveBeenCalledWith(OTHER_APP.origin, MAGNET, tab)
+    expect(routing.remember).not.toHaveBeenCalled()
+    expect(confirm).not.toHaveBeenCalled()
+  })
+
+  it('remembers the app as the default only when the person ticked Always', async () => {
+    const { request, routing } = routed({ answer: { kind: 'app', origin: TORRENT_APP.origin, remember: true } })
+    await request(fakeTab(), { externalURL: MAGNET, requestingUrl: PAGE })
+    expect(routing.remember).toHaveBeenCalledWith('magnet', TORRENT_APP.origin)
+  })
+
+  it('lets the system open the link when the person picks it, and nothing when they cancel', async () => {
+    expect(await routed({ answer: { kind: 'system' } }).request(fakeTab(), { externalURL: MAGNET, requestingUrl: PAGE })).toBe(true)
+    const cancelled = routed({ answer: { kind: 'cancel' } })
+    expect(await cancelled.request(fakeTab(), { externalURL: MAGNET, requestingUrl: PAGE })).toBe(false)
+    expect(cancelled.routing.open).not.toHaveBeenCalled()
+  })
+
+  it('hands the link to the default app with no question', async () => {
+    const { request, routing, confirm } = routed({ fallback: TORRENT_APP.origin })
+    const tab = fakeTab()
+    expect(await request(tab, { externalURL: MAGNET, requestingUrl: PAGE })).toBe(false)
+    expect(routing.choose).not.toHaveBeenCalled()
+    expect(confirm).not.toHaveBeenCalled()
+    expect(routing.open).toHaveBeenCalledWith(TORRENT_APP.origin, MAGNET, tab)
+  })
+
+  // The default skips the question, so a page could loop the delivery as it could the question.
+  it('delivers to the default app again only after the person has acted in the page', async () => {
+    const { request, routing } = routed({ fallback: TORRENT_APP.origin })
+    const tab = fakeTab()
+    await request(tab, { externalURL: MAGNET, requestingUrl: PAGE })
+    await request(tab, { externalURL: MAGNET, requestingUrl: PAGE })
+    expect(routing.open).toHaveBeenCalledTimes(1)
+    tab.touch('mouseDown')
+    await request(tab, { externalURL: MAGNET, requestingUrl: PAGE })
+    expect(routing.open).toHaveBeenCalledTimes(2)
+  })
+
+  it('never offers apps a link that is malformed or longer than an app is handed', async () => {
+    const { request, routing, confirm } = routed()
+    expect(await request(fakeTab(), { externalURL: 'magnet:?xt=urn:btih:nothex', requestingUrl: PAGE })).toBe(false)
+    expect(routing.appsFor).not.toHaveBeenCalled()
+    const long = `mailto:a@example.com?body=${'x'.repeat(MAX_ROUTED_URL_LENGTH)}`
+    expect(await request(fakeTab(), { externalURL: long, requestingUrl: PAGE })).toBe(true)
+    expect(routing.appsFor).not.toHaveBeenCalled()
+    expect(confirm).toHaveBeenCalledTimes(1)
+  })
+
+  it('treats a failing lookup as a refusal', async () => {
+    const { request, routing } = routed()
+    routing.appsFor.mockRejectedValue(new Error('broker gone'))
+    expect(await request(fakeTab(), { externalURL: MAGNET, requestingUrl: PAGE })).toBe(false)
   })
 })

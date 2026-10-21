@@ -6,8 +6,8 @@ operation), `bookmark-file.ts` (reading and writing the file, pure),
 `bookmarks-domain.ts` (what the Bookmarks page may ask, each field checked), `bookmarks-undo.ts` (what a delete in it can take back),
 `bookmarks-html-export.ts` (the Netscape bookmark file, pure) and `bookmarks-export-runner.ts` (the save dialog and the write),
 `favicon.ts` (which icon a tab shows, and the capture), `favicon-fetch.ts` (the fetch and its T12 gate), its pure byte-sniffing half `favicon-format.ts` (a tab's icon as a `data:` URL) and `favicon-timeout.ts` (how long a fetch may take),
-`search-engines.ts` (the built-in engines, their keywords and suggestion addresses, and the template rule), `search-resolve.ts` and
-`search-current.ts` (which engine a typed search goes to, pure), `search-engine-store.ts` (the engines a person keeps in
+`search-engines.ts` (the built-in Web2 engines, their keywords and suggestion addresses, the Web3 engines, and the template rule), `search-resolve.ts` and
+`search-current.ts` (which engine a typed search goes to: the Web3 engine or the Web2 one by `search.mode`, with keywords working in both; pure), `search-engine-store.ts` (the engines a person keeps in
 `search-engines.json`; its rules are in `search-engine-rules.ts` and the starting site engines in `site-engines.ts`),
 `favicon-cache.ts` (the icons already fetched), `bookmark-types.ts` (the node, bar item and import shapes, types only), `site-trust.ts` (the Web3 Score page and the
 toolbar shield's data), `site-home.ts` (where the content shown says it lives, which decides whether a judged level counts, `ADR-0056`), `score-provider-client.ts` (asks the chosen Web3 Score provider, `ADR-0054`), `page-score-lookup.ts` (what
@@ -38,6 +38,32 @@ dependency on tab-collection state, which keeps it importable under plain vitest
 **Owner stream.** `shell`. Maintenance only.
 
 ## Design notes
+
+**A judged score stays while the provider cannot be asked, and a Level 2 site no provider has judged reads Web?.**
+`score-provider-client.ts` remembers the last `judged` or `no-score` verdict per page, provider address and route, and
+`verdictToShow` (`../../trust/score-provider.ts`) shows it in place of `pending` and `unreachable`; the next answer the
+provider gives, lower or higher, replaces it, and a changed provider address finds nothing kept. `web3Score` marks a reply
+`unscored` when the displayed level is the observed 2 and no provider judged the page (a developer override stays as it
+is), and the shield draws that as a gray Web? (`../../renderer/web3-shield.ts`). The Website level itself is kept, where the
+verifier cannot be asked, by `../verifier/kept-provenance.ts`.
+
+**A lookup follows the route it travels; a provider that cannot be reached says so.** A fetch of a provider's file is given the
+patience of its route (`../route/main-pace.ts`, `../../protocols/route-pace.ts`, `ADR-0088`): on a direct connection 30 seconds
+to a first byte (90 for a provider the verifier serves, whose answer waits on the proof of its name and the reading of its file), and on a tunnel six times that plus the time a cold tunnel may need to come up (a Nym tunnel takes up to 95
+seconds), including a provider the verifier serves while the whole browser is on the tunnel, since the verifier host leaves
+by it too. Once the answer has begun, the fetch fails only when the body goes quiet for the route's window, never because a clock
+ran out while bytes were arriving. A fetch that failed for want of an answer (nothing arrived, the connection broke, a 5xx) is asked
+again up to four times while the route's patience lasts; a failure on a slow route is not kept at all, since the route may have
+come up since, and elsewhere is kept for a minute from when it arrived, not from when it was asked. Until the lookup answers the
+shield reads `pending` and the chrome asks again every two seconds. When the provider could not be asked, `web3Score` says
+`unreachable` with `retryMs`, the shield's label says the provider could not be reached (not that there is no score yet), and the
+chrome asks again after that long (30 seconds, stretched by the route), eight times at most per site.
+
+**A routed app's lookups leave through its route.** A tab's icon from another host and the Web3 Score provider's answer are
+fetched from main, which would otherwise use the default session. For an app the person routed, `favicon-fetch.ts` and
+`score-provider-client.ts` ask `../route/lookup-session.ts` for the session of the app's route and use it for those
+requests only; a hostname is then not resolved here (`isSafeFaviconUrl`'s `routed`), and when the route cannot be had the
+lookup is not made.
 
 **A page's score lookups share nothing with the shell's, or with another page's.** `page-score-lookup.ts` keeps one
 `createScoreProviderClient` per calling origin (the sixteen most recent) and never uses `services.scoreProvider`:

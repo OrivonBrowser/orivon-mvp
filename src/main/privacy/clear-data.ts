@@ -39,8 +39,18 @@ export interface ClearDeps {
   readonly websites: Pick<Session, 'clearData' | 'clearStorageData'>
   /** The sessions local files run in, the shared one and each recorded file's: their storage and cache go with every website's. */
   readonly localFiles?: () => ReadonlyArray<Pick<Session, 'clearData' | 'clearStorageData'>>
+  /** The session of its own each website with a tunnel setting has had: its storage and cache go with every website's. */
+  readonly siteSessions?: () => ReadonlyArray<Pick<Session, 'clearData' | 'clearStorageData'>>
   /** The session of each app that holds permissions. */
   readonly appSessions: () => Promise<ReadonlyArray<Pick<Session, 'clearData'>>>
+  /** The network each `.eth` name was last found on: a record of the names visited, forgotten with the cache and with all history. */
+  readonly forgetNameSchemes: () => Promise<void>
+  /** What the IPFS node kept about the sites it served: stopped, and its block store deleted, with the cache and with all history. */
+  readonly forgetNodeData?: () => Promise<void>
+  /** The Website level each site last earned, which stays while a site cannot be looked at again: forgotten with site data, the cache and all history. */
+  readonly forgetEarnedLevels?: () => void
+  /** When each granted app was last in front, which the new tab orders its Your apps row by: forgotten from the time history is cleared back to (0 for all of it). */
+  readonly forgetAppUse?: (from: number) => void
   readonly now: () => number
 }
 
@@ -69,23 +79,27 @@ export async function clearBrowsingData (request: ClearRequest, deps: ClearDeps)
 
   if (request.history === 'all') await attempt('history', () => { deps.history.clear() })
   else if (request.history !== 'none') await attempt('history', () => { deps.history.removeRange(deps.now() - RANGE_MS[request.history as 'hour' | 'day' | 'week'], deps.now()) })
+  if (request.history !== 'none') await attempt('appUse', () => { deps.forgetAppUse?.(request.history === 'all' ? 0 : deps.now() - RANGE_MS[request.history as 'hour' | 'day' | 'week']) })
   if (request.siteData) {
     await attempt('siteData', async () => {
       await deps.websites.clearData({ dataTypes: [...SITE_DATA] })
       // What a site keeps through the Cache API: `clearData` files it under the HTTP cache, which is a choice of its own.
       await deps.websites.clearStorageData({ storages: ['cachestorage'] })
-      for (const local of deps.localFiles?.() ?? []) {
-        await local.clearData({ dataTypes: [...SITE_DATA] })
-        await local.clearStorageData({ storages: ['cachestorage'] })
+      for (const other of [...(deps.localFiles?.() ?? []), ...(deps.siteSessions?.() ?? [])]) {
+        await other.clearData({ dataTypes: [...SITE_DATA] })
+        await other.clearStorageData({ storages: ['cachestorage'] })
       }
     })
   }
   if (request.cache) {
     await attempt('cache', async () => {
       await deps.websites.clearData({ dataTypes: ['cache'] })
-      for (const local of deps.localFiles?.() ?? []) await local.clearData({ dataTypes: ['cache'] })
+      for (const other of [...(deps.localFiles?.() ?? []), ...(deps.siteSessions?.() ?? [])]) await other.clearData({ dataTypes: ['cache'] })
     })
   }
+  if (request.cache || request.history === 'all') await attempt('nameSchemes', async () => { await deps.forgetNameSchemes() })
+  if (request.cache || request.history === 'all') await attempt('nodeData', async () => { await deps.forgetNodeData?.() })
+  if (request.siteData || request.cache || request.history === 'all') await attempt('earnedLevels', () => { deps.forgetEarnedLevels?.() })
   if (request.zoomLevels) await attempt('zoomLevels', () => { deps.zoom.clear() })
   if (request.siteSettings) await attempt('siteSettings', () => { deps.siteSettings.resetAll() })
   if (request.appData) {

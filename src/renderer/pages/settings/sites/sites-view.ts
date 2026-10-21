@@ -7,7 +7,7 @@ import { SITE_KIND_ICONS } from '../../shared/site-kind-icons.js'
 import type { SettingsState } from '../state.js'
 import { badgesFor, hostOf, markColor, markLetter, sentenceFor } from './sites-model.js'
 import type { SiteKindRow, SiteSummary } from './sites-model.js'
-import type { SitesPart } from './sites-part.js'
+import type { SiteDeviceRow, SitesPart } from './sites-part.js'
 
 const EMPTY_TEXT = 'No site has its own settings yet. Choices you make when a site asks appear here.'
 const PRIVATE_TEXT = 'Choices made in a private window are forgotten when it closes.'
@@ -23,6 +23,15 @@ function kindRow (origin: string, row: SiteKindRow, part: SitesPart): HTMLElemen
   // A choice that was made is finished, though it keeps the keyboard.
   select.addEventListener('change', () => { select.dataset['settled'] = 'true'; void part.choose(origin, row.kind, select.value) })
   return h('li', { className: 'site-kind' }, h('span', { className: 'site-kind-label' }, icon, h('span', { textContent: row.label })), select)
+}
+
+function deviceRow (origin: string, device: SiteDeviceRow, part: SitesPart): HTMLElement {
+  // A device the site may use is a switch that is on; switching it off takes the approval away and the row goes.
+  const input = h('input', { type: 'checkbox', checked: true })
+  input.setAttribute('aria-label', `${device.label} on ${hostOf(origin)}`)
+  input.dataset['focusKey'] = `${origin}:device:${device.key}`
+  input.addEventListener('change', () => { input.dataset['settled'] = 'true'; void part.forgetDevice(origin, device.key) })
+  return h('li', { className: 'site-kind' }, h('span', { className: 'site-kind-label' }, h('span', { textContent: device.label })), h('span', { className: 'switch' }, input, h('span', { className: 'track' })))
 }
 
 function resetButton (site: SiteSummary, part: SitesPart): HTMLButtonElement {
@@ -56,10 +65,22 @@ function siteItem (site: SiteSummary, part: SitesPart): HTMLElement {
   toggle.setAttribute('aria-label', `${open ? 'Hide' : 'Show'} the settings of ${sentenceFor(site)}`)
   toggle.dataset['focusKey'] = `${site.origin}:toggle`
   const rows = part.rows.get(site.origin) ?? []
+  const devices = part.devices.get(site.origin) ?? []
   const item = h('li', { className: open ? 'site-item open' : 'site-item' },
     h('div', { className: 'site-line' }, toggle, resetButton(site, part)),
-    open ? h('ul', { className: 'site-kinds' }, ...rows.map((row) => kindRow(site.origin, row, part))) : null)
+    open ? h('ul', { className: 'site-kinds' }, ...rows.map((row) => kindRow(site.origin, row, part)), ...devices.map((device) => deviceRow(site.origin, device, part))) : null)
   item.dataset['origin'] = site.origin
+  return item
+}
+
+/** An app the person refused: its host, and the one thing to do about it. */
+function declinedItem (origin: string, part: SitesPart): HTMLElement {
+  const host = hostOf(origin)
+  const again = h('button', { className: 'btn small', type: 'button', textContent: 'Ask again', onclick: () => { void part.askAgain(origin) } })
+  again.setAttribute('aria-label', `Ask again about ${host} as an app`)
+  again.dataset['focusKey'] = `${origin}:ask-again`
+  const item = h('li', { className: 'site-item declined-app' }, h('div', { className: 'site-line' }, h('span', { className: 'site-host', textContent: host, title: origin }), again))
+  item.dataset['origin'] = origin
   return item
 }
 
@@ -85,7 +106,10 @@ function build (part: SitesPart): HTMLElement {
   const showAll = h('button', { className: 'link-btn sites-show-all', type: 'button', onclick: () => { part.showEverything() } })
   const resetAll = h('button', { className: 'btn danger', type: 'button', onclick: () => { void part.pressResetAll() } })
   resetAll.dataset['focusKey'] = 'reset-all'
-  const root = h('div', { className: 'sites-list' }, h('div', { className: 'sites-head' }, search), notice, list, showAll, h('div', { className: 'btn-row sites-foot' }, resetAll))
+  const declinedHead = h('h3', { className: 'sites-declined-head', textContent: 'Apps you refused' })
+  const declinedNote = h('p', { className: 'sites-declined-note', textContent: 'These open as plain websites. Ask again to be asked what each may do the next time you visit it.' })
+  const declined = h('ul', { className: 'sites-ul sites-declined', role: 'list' })
+  const root = h('div', { className: 'sites-list' }, h('div', { className: 'sites-head' }, search), notice, list, showAll, h('div', { className: 'btn-row sites-foot' }, resetAll), declinedHead, declinedNote, declined)
   // The page hands the keyboard back to a control inside this element after it redraws.
   root.dataset['keepFocus'] = 'true'
 
@@ -110,6 +134,8 @@ function build (part: SitesPart): HTMLElement {
     resetAll.hidden = part.sites.length === 0
     resetAll.className = part.armedResetAll ? 'btn danger armed' : 'btn danger'
     resetAll.textContent = part.armedResetAll ? 'Click again to reset' : 'Reset all site settings'
+    declinedHead.hidden = declinedNote.hidden = declined.hidden = part.declinedApps.length === 0
+    replaceChildren(declined, ...part.declinedApps.map((origin) => declinedItem(origin, part)))
     if (focused !== undefined) (root.querySelector<HTMLElement>(`[data-focus-key="${CSS.escape(focused)}"]`) ?? search).focus()
   }
   part.subscribe(update)

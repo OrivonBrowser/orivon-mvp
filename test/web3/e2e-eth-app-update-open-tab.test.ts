@@ -5,15 +5,14 @@
 import { afterAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
 import { findChrome, waitForTab } from '../support/smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase } from '../support/e2e-helpers.js'
-import { BUILTIN_ADDRESSES } from '../../src/protocols/builtin.js'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, shownOnIpfs } from '../support/e2e-helpers.js'
 import { answerAccepting, answerQuestion, noNativeDialogs, readQuestion, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
 import { SITE_TTL_MS } from '../../src/protocols/verifier-host/serve/sites.js'
 import { updateApp } from '../apps/app-update/site.mjs'
-import { buildsAt, eventually, launchPhase, pinOf, startRig } from './app-update-support.js'
+import { buildsAt, eventually, launchPhase, pinOf, runsAsApp, startRig } from './app-update-support.js'
 
 const ORIGIN = 'https://app.eth'
-const SHOWN = BUILTIN_ADDRESSES.displayUrl(`${ORIGIN}/`)
+const SHOWN = shownOnIpfs(`${ORIGIN}/`)
 const WATCH_MS = 5_000
 const TEST_TIMEOUT_MS = ADDRESS_BAR_STABLE_TIMEOUT_MS * 2 + DEFAULT_ACTION_TIMEOUT_MS * 8 + APP_CLOSE_RACE_MS + SITE_TTL_MS * 2 + 120_000
 
@@ -32,8 +31,9 @@ it('tells the person about a moved DNSLink while the app tab stays where it is',
       const app = await launchPhase(rig, { names: { 'app.eth': 'dnslink://app.example' }, env: { ORIVON_TEST_UPDATE_WATCH_MS: String(WATCH_MS) } })
       await stubNativeDialogs(app)
       await clickAddressBarRetrying(findChrome(app), `${ORIGIN}/`)
-      check('build A loads', (await waitForTab(findChrome(app), { address: SHOWN, title: 'update fixture A' })).ok)
       await answerAccepting(app)
+      check('build A loads', (await waitForTab(findChrome(app), { address: SHOWN, title: 'update fixture A' })).ok)
+      check('the tab reloaded as the app', await eventually(async () => await runsAsApp(app, `${ORIGIN}/`), 30_000))
       check('the first visit pinned build A', await eventually(() => pinOf(app, ORIGIN)?.content?.cid === rig.gateway.roots['a'], 25_000))
 
       rig.dnslinks['app.example'] = 'b'

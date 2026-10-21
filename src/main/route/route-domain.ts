@@ -1,0 +1,73 @@
+// What the Settings page may ask about the tunnel: what Nym is doing, whether the tunnel answers, which sites and apps have a
+// setting or storage of their own, and clearing a website's own storage. The page sends no address to test; what is
+// tested is the choice the settings hold (Nym, or the SOCKS5 address saved), so a page cannot make main connect anywhere
+// it chooses. An origin it names is checked as the canonical origin of an address, and only a website that has storage
+// of its own can be cleared.
+import type { Socks5Probe } from '../../broker/route/socks5-probe.js'
+import { originFromUrl } from '../../broker/policy/origin.js'
+import type { InternalDomain } from '../pages/internal-ipc.js'
+import { parseProxyAddress } from '../settings/proxy-checks.js'
+import type { NymState, NymTestResult } from './nym-status.js'
+import type { RouteSwitch } from './route-switch.js'
+
+export interface RouteDomainDeps {
+  /** The `network.route.proxy` setting as saved. */
+  readonly proxy: () => string
+  /** The `network.route.kind` setting as saved. */
+  readonly kind: () => 'nym' | 'socks5'
+  readonly probe: (target: { readonly host: string, readonly port: number }) => Promise<Socks5Probe>
+  readonly nym: { readonly state: () => NymState, readonly test: () => Promise<NymTestResult> }
+  readonly routeSwitch: Pick<RouteSwitch, 'rows' | 'removeSiteStorage'>
+  /** Whether the settings file could not be used, so the whole browser was put on the tunnel until the person says otherwise. */
+  readonly settingsUnreadable?: () => boolean
+  /** Whether this window is held to Nym (a private window that always goes through it): the person's own proxy is not tested from it. */
+  readonly heldToNym?: () => boolean
+}
+
+export type ProxyTestReply = Socks5Probe | { readonly ok: false, readonly reason: 'no-proxy' } | ({ readonly nym: true } & NymTestResult)
+
+/**
+ * Whether a tunnel answers: Nym is brought up, and the person's proxy is sent a SOCKS5 greeting at the address saved in the settings.
+ * No caller names an address, so a page cannot make main connect anywhere it chooses. Shared by the Settings page and the tunnel menu.
+ */
+export async function testTunnel (kind: 'nym' | 'socks5', deps: Pick<RouteDomainDeps, 'proxy' | 'probe' | 'nym' | 'heldToNym'>): Promise<ProxyTestReply> {
+  if (kind === 'nym') return { nym: true, ...await deps.nym.test() }
+  if (deps.heldToNym?.() === true) return { ok: false, reason: 'no-proxy' }
+  const target = parseProxyAddress(deps.proxy())
+  return target === undefined ? { ok: false, reason: 'no-proxy' } : await deps.probe(target)
+}
+
+/** What the page is sent about Nym, on request and whenever it changes. */
+export interface NymView {
+  readonly nym: NymState
+  /** The settings file could not be used and the whole browser is on the tunnel for that reason. */
+  readonly unreadable?: boolean
+}
+
+export function routeDomain (deps: RouteDomainDeps): InternalDomain {
+  return {
+    pages: ['settings'],
+    handle: async (command): Promise<ProxyTestReply | NymView | { rows: ReturnType<RouteSwitch['rows']> } | { ok: boolean } | undefined> => {
+      const request = (typeof command === 'object' && command !== null ? command : {}) as { type?: unknown, origin?: unknown, kind?: unknown }
+      switch (request.type) {
+        case 'status':
+          return { nym: deps.nym.state(), unreadable: deps.settingsUnreadable?.() === true }
+        // The tunnel asked about, or the one chosen for everything when the page names none.
+        case 'test': return await testTunnel(request.kind === 'nym' || request.kind === 'socks5' ? request.kind : deps.kind(), deps)
+        case 'list':
+          return { rows: deps.routeSwitch.rows() }
+        case 'removeStorage': {
+          if (typeof request.origin !== 'string' || originFromUrl(request.origin) !== request.origin) return { ok: false }
+          try {
+            return { ok: await deps.routeSwitch.removeSiteStorage(request.origin) }
+          } catch (error) {
+            console.error('[route] could not remove a website\'s own storage:', error)
+            return { ok: false }
+          }
+        }
+        default:
+          return undefined
+      }
+    }
+  }
+}

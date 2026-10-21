@@ -4,11 +4,12 @@
 // edited by hand cannot make one up.
 import { isAddressList, isEmptyOrAddress, MAX_LISTED_ADDRESSES } from './address-checks.js'
 import { isHostList, MAX_LISTED_HOSTS } from './list-checks.js'
+import { isEmptyOrProxyAddress } from './proxy-checks.js'
 import { isEmptyOrAbsolutePath } from './path-checks.js'
-import { CUSTOM_SEARCH_ENGINE, DEFAULT_SEARCH_ENGINE, SEARCH_ENGINES, isValidSearchTemplate } from '../browsing/search-engines.js'
+import { CUSTOM_SEARCH_ENGINE, DEFAULT_SEARCH_ENGINE, DEFAULT_SEARCH_MODE, DEFAULT_WEB3_SEARCH_ENGINE, SEARCH_ENGINES, SEARCH_MODES, WEB3_SEARCH_ENGINES, isValidSearchTemplate } from '../browsing/search-engines.js'
 
 /** The official Web3 Score provider, which a profile that never chose one reads; a person who clears the setting asks nobody. */
-export const DEFAULT_SCORE_PROVIDER = 'ipns://k51qzi5uqu5dli7gc98gxy6jlbarijipfrw1x8z2wfyre3rvhssxvzeummkaff/score'
+export const DEFAULT_SCORE_PROVIDER = 'ipfs://attila.orivonstack.eth/score'
 
 export type SettingSpec =
   /** `labels` names options that are data, such as a search engine's own name; wording about an option is the page's. */
@@ -32,6 +33,15 @@ const SPECS = {
     labels: { 75: '75%', 80: '80%', 90: '90%', 100: '100%', 110: '110%', 125: '125%', 150: '150%', 175: '175%', 200: '200%' }
   },
   'sidePanel.side': { kind: 'enum', options: ['right', 'left'], default: 'right' },
+  // Which list an address-bar search goes to. The Web3 engine and the Web2 engine are kept apart, so switching modes loses neither choice.
+  'search.mode': { kind: 'enum', options: SEARCH_MODES, default: DEFAULT_SEARCH_MODE, labels: { web3: 'Web3', web2: 'Web2' } },
+  'search.web3Engine': {
+    kind: 'enum',
+    options: WEB3_SEARCH_ENGINES.map((engine) => engine.id),
+    default: DEFAULT_WEB3_SEARCH_ENGINE,
+    labels: Object.fromEntries(WEB3_SEARCH_ENGINES.map((engine) => [engine.id, engine.label]))
+  },
+  // The Web2 engine; the key keeps its name from when it was the only one.
   'search.engine': {
     kind: 'enum',
     options: [...SEARCH_ENGINES.map((engine) => engine.id), CUSTOM_SEARCH_ENGINE],
@@ -57,7 +67,20 @@ const SPECS = {
   'privacy.globalPrivacyControl': { kind: 'bool', default: true },
   'privacy.doNotTrack': { kind: 'bool', default: false },
   'privacy.httpsOnly': { kind: 'bool', default: false },
-  'privacy.secureDns': { kind: 'enum', options: ['off', 'automatic', 'cloudflare', 'quad9'], default: 'off' },
+  // Quad9 with this computer's own DNS as the fallback is the default: names are looked up over HTTPS, and a network that blocks Quad9 (a captive portal, say) still works. Cloudflare and Quad9 alone have no fallback.
+  'privacy.secureDns': { kind: 'enum', options: ['quad9Fallback', 'off', 'automatic', 'cloudflare', 'quad9'], default: 'quad9Fallback' },
+  // Where a routed app's traffic leaves: Nym, built in, or the SOCKS5 address below. Settings files from before this choice existed keep their address as the choice (settings-file.ts).
+  'network.route.kind': { kind: 'enum', options: ['nym', 'socks5'], default: 'nym', labels: { nym: 'Nym (built in)', socks5: 'Your own SOCKS5 address' } },
+  // How much decoy traffic Nym's tunnels send. Balanced is the default: it costs a fraction of the processor time per open tunnel that strongest does (the host's README.md has the figures), and shows an observer of the connection roughly when the person is active (docs/architecture/security-model.md T85). Applied to tunnels started after a change.
+  'network.nym.privacy': { kind: 'enum', options: ['balanced', 'strongest'], default: 'balanced', labels: { balanced: 'Balanced', strongest: 'Strongest' } },
+  // Whether the Nym tunnel built into Orivon may run. Off stops it and refuses every app, website and browser-wide route that uses it (they are stopped, never sent direct); it matters only while the tunnel kind above is Nym. Applied at once.
+  'network.nym.enabled': { kind: 'bool', default: true },
+  // The one SOCKS5 proxy (host:port, such as Tor on 127.0.0.1:9050) an installed app can be routed through when the choice above is a SOCKS5 address; empty is none. Which apps use it is route-store's.
+  'network.route.proxy': { kind: 'text', default: '', maxLength: 300, check: isEmptyOrProxyAddress },
+  // Whether everything Orivon sends goes through that proxy unless a site or app is set to off: the state an origin with no entry of its own follows (route-store's `on` and `off` entries override it).
+  'network.tunnel.everywhere': { kind: 'bool', default: false },
+  // Whether the IPFS and Swarm nodes Orivon runs go through the tunnel too while the whole browser does. Off: they connect directly, so IPFS and Swarm pages load at a normal speed, and the networks they ask see this computer's address (docs/architecture/security-model.md T86). Applied at once.
+  'network.tunnel.nodes': { kind: 'bool', default: false },
   // What a site may do without being asked about it, one default per kind (site-settings/kinds.ts lists them). A site's own answer overrides.
   'sites.camera': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },
   'sites.microphone': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },
@@ -77,10 +100,16 @@ const SPECS = {
   // Whether Orivon offers to keep a login a person types, and to fill one they saved.
   'passwords.offerToSave': { kind: 'bool', default: true },
   'passwords.autofill': { kind: 'bool', default: true },
-  // Whether Orivon asks GitHub, once a day, if a newer release exists. It never installs anything. Off until the owner decides.
-  'updates.check': { kind: 'bool', default: false },
-  // Whether `.eth` names are proven by a light client that runs on this computer. Read when Orivon starts.
+  // Whether Orivon asks GitHub, once a day, if a newer release exists. It never installs anything. On by default; a person can turn it off.
+  'updates.check': { kind: 'bool', default: true },
+  // Whether `.eth` names are proven by a light client that runs on this computer. Applied at once.
   'web3.lightClient': { kind: 'bool', default: true },
+  // Where IPFS content is read from: the node Orivon runs on this computer, or public gateways. Applied at once.
+  'web3.ipfsSource': { kind: 'enum', options: ['node', 'gateways'], default: 'node', labels: { node: 'Your own IPFS node', gateways: 'Public IPFS gateways' } },
+  // Whether the node may ask a lookup service, as well as the IPFS network, who holds a site. Applied at once; read only while the source is the node.
+  'web3.ipfsLookupService': { kind: 'bool', default: true },
+  // Whether the Swarm node Orivon runs on this computer may start. Off stops it and a bzz:// address says Swarm is off. Applied at once.
+  'web3.swarmNode': { kind: 'bool', default: true },
   // Where judged Web3 Score levels are read (docs/architecture/web3-score-provider.md). Empty asks nobody.
   'web3.scoreProvider': { kind: 'text', default: DEFAULT_SCORE_PROVIDER, maxLength: 2048, check: isEmptyOrAddress },
   // Whether a tab asked to open `<name>.eth.limo` (or `.eth.link`) opens `<name>.eth` instead. Applied at once.
@@ -97,8 +126,8 @@ const SPECS = {
   'toolbar.home': { kind: 'bool', default: false },
   // 'auto' shows the button while a download is under way or was recent.
   'toolbar.downloads': { kind: 'enum', options: ['auto', 'always', 'never'], default: 'auto' },
-  // 'auto' shows the Extensions button while at least one extension is installed.
-  'toolbar.extensions': { kind: 'enum', options: ['auto', 'always', 'never'], default: 'auto' },
+  // 'auto' shows the Extensions button while at least one extension is installed; 'always' is the default, so a new profile has the button before anything is installed.
+  'toolbar.extensions': { kind: 'enum', options: ['auto', 'always', 'never'], default: 'always' },
   'spellcheck.enabled': { kind: 'bool', default: true },
   // The reader view's own text settings; the size is in pixels, as text.
   'reader.font': { kind: 'enum', options: ['sans', 'serif'], default: 'sans' },

@@ -15,13 +15,24 @@ export interface UpdateScheduleDeps {
   everyMs?: number
 }
 
+/**
+ * Whether this run was started with the checks forced off from outside (`ORIVON_UPDATE_CHECK=off`), as every test
+ * and smoke launch is, so none of them asks GitHub. No setting changes that.
+ */
+export const updateChecksForcedOff = (env: NodeJS.ProcessEnv = process.env): boolean => env['ORIVON_UPDATE_CHECK'] === 'off'
+
+/** Whether a check may run: the person's setting, and never in a Store install, which the Store updates itself, nor when forced off. */
+export function updateChecksEnabled (setting: boolean, storeInstall: boolean, forcedOff = false): boolean {
+  return setting && !storeInstall && !forcedOff
+}
+
 /** Starts the schedule; the return stops it. A check never starts while another is still running. */
 export function scheduleUpdateChecks (deps: UpdateScheduleDeps): () => void {
   let running = false
   const check = (): void => {
     if (running || !deps.enabled()) return
     running = true
-    void deps.run().finally(() => { running = false })
+    void deps.run().finally(() => { running = false }).catch((error: unknown) => { console.error('[self-update] the update check failed:', error) })
   }
   let wasEnabled = deps.enabled()
   check()

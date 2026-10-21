@@ -1,12 +1,11 @@
 // The capability broker. Everything under ./policy/ is a decision function;
 // this file is what MAKES the decisions and HOLDS the state -- the piece
-// build-plan.md's "Week 0 -- the gate" section calls the day-1 structural
-// decision. GrantLedger (the per-origin state -- manifest and grants, kept
+// structural decision of the broker. GrantLedger (the per-origin state -- manifest and grants, kept
 // apart on purpose) lives in ./grants/grant-ledger.ts; this file keeps the
 // dependency shape and the five capability entry points that consult it.
 //
 // `createBroker({ dial, resolve, now, fs, keychain })` -- EXACTLY that shape.
-// It is fixed on purpose (build-plan.md, policy/README.md): every capability
+// It is fixed on purpose (policy/README.md): every capability
 // test then runs against stubs, with no Electron and no network, which is
 // what makes the six security-critical unit tests in
 // docs/development/testing.md cheap enough to actually exist. Do not widen
@@ -24,6 +23,7 @@
 // is the only layer with both the manifest and the grant ledger in hand.
 // See README.md's Design notes for this file's split history and the next seam.
 
+import { createForgetOrigin } from './forget-origin.js'
 import type { PersistedApp } from './grants/ledger-storage.js'
 import { HandleTable } from './handles/handles.js'
 import { errnoOf, fail } from './errors.js'
@@ -31,6 +31,7 @@ import { GrantLedger } from './grants/grant-ledger.js'
 import { createGrantsChangeEmitter } from './grants/grant-events.js'
 import { socketAllowance } from './grants/resource-limits.js'
 import { isolationKeyFromUrl } from './policy/origin.js'
+import { createReachProxyCheck } from './capabilities/reach-proxy.js'
 import { widensAuthority } from './policy/update.js'
 import { createListenerRegistry } from './capabilities/listener-registry.js'
 import { createNetCapability } from './capabilities/net.js'
@@ -203,17 +204,18 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     return ledger.grantsFor(key).length > 0
   }
 
-  function heldSync (origin: string, capability: CapabilityKind): boolean {
+  function grantedPatternsSync (origin: string, capability: CapabilityKind): readonly Pattern[] | undefined {
     const key = isolationKeyFromUrl(origin)
-    return key !== null && ledger.currentGrant(key, capability) !== undefined
+    return key === null ? undefined : ledger.currentGrant(key, capability)?.patterns
   }
+
+  const heldSync = (origin: string, capability: CapabilityKind): boolean => grantedPatternsSync(origin, capability) !== undefined
 
   /**
    * A200: `Broker.app.socketAllowanceSync`'s implementation -- a thin,
    * never-throwing delegate to `GrantLedger.socketAllowance`, same shape as
-   * `hasGrantsSync` above. `ledger.socketAllowance` already answers the
-   * platform default for a row it holds nothing for, so a malformed
-   * `origin` (falling back to the raw, un-canonicalised string) still gets
+   * `hasGrantsSync` above. It already answers the platform default for a row
+   * it holds nothing for, so a malformed `origin` (the raw string) still gets
    * a safe number rather than a broker fault. A restored app not yet
    * re-registered answers from its pinned manifest's declaration.
    */
@@ -470,8 +472,9 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     await handleTable.dropOrigin(canonical(origin))
   }
 
+  const forgetOrigin = createForgetOrigin({ canonical, grants, revokePersisted, pickedPaths: pickedPathsFor, revokeUserSelectedPath, handleTable, ledger, grantsChanged })
   return {
-    app: { manifest, grants, isRegisteredSync, hasGrantsSync, heldSync, registeredOriginsSync, persistedAppsSync, hydrateFromPinnedManifest, pickedPaths: pickedPathsFor, socketAllowanceSync },
+    app: { manifest, grants, isRegisteredSync, hasGrantsSync, heldSync, grantedPatternsSync, registeredOriginsSync, persistedAppsSync, hydrateFromPinnedManifest, pickedPaths: pickedPathsFor, socketAllowanceSync, reachBypassesProxy: createReachProxyCheck(deps) },
     net,
     id,
     web,
@@ -480,6 +483,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     trust,
     fs,
     registerApp,
+    forgetOrigin,
     versionFloorFor,
     rollbackAcknowledgedVersionFor,
     acknowledgeRollback,

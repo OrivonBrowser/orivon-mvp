@@ -22,5 +22,5 @@ export const screenSharePickerOverlay = pickerOverlayFor({
     const image = await Promise.race([captureTabPage(tab), new Promise<null>((resolve) => { setTimeout(resolve, CAPTURE_WAIT_MS, null) })])
     return imageToDataUrl(image, THUMB_SIZE, THUMB_QUALITY)
   },
-  openSettings: (url) => { void shell.openExternal(url) }
+  openSettings: (url) => { void shell.openExternal(url).catch((error: unknown) => { console.error('[display-capture] opening the system settings failed:', error) }) }
 })

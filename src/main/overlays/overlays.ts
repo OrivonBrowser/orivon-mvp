@@ -1,5 +1,6 @@
 // Every overlay the shell can show. A feature adds its OverlayDef here, one
 // per line in name order, and its page to src/renderer/overlay/pages.ts.
+import { setupSheetOverlay } from '../app-setup/setup-sheet-overlay.js'
 import { authSheetOverlay } from '../auth/auth-sheet-real.js'
 import { certErrorOverlay } from '../auth/cert-error-overlay.js'
 import { certificateOverlay } from '../auth/certificate-real.js'
@@ -31,9 +32,11 @@ import { restoreOverlay } from '../startup/startup-overlays.js'
 import { sidePanelOverlay } from '../side-panel/side-panel-overlay.js'
 import { tabGroupOverlay } from '../tab-groups/tab-group-overlay.js'
 import { tabSearchOverlay } from '../tab-search/tab-search-overlay.js'
+import { web3ScoreOverlay } from '../web3-score/web3-score-overlay.js'
 import type { OverlayDef } from './overlay-types.js'
 
 export const OVERLAYS: readonly OverlayDef[] = [
+  setupSheetOverlay,
   authSheetOverlay,
   bookmarkAllTabsOverlay,
   bookmarkEditOverlay,
@@ -69,5 +72,6 @@ export const OVERLAYS: readonly OverlayDef[] = [
   sitePromptOverlay,
   tabGroupOverlay,
   tabSearchOverlay,
-  toastOverlay
+  toastOverlay,
+  web3ScoreOverlay
 ]

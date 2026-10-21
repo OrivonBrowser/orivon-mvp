@@ -15,6 +15,7 @@ interface FakeSession {
   on: ReturnType<typeof vi.fn>
   webRequest: { onBeforeRequest: ReturnType<typeof vi.fn>, onBeforeSendHeaders: ReturnType<typeof vi.fn> }
   resolveHost: ReturnType<typeof vi.fn>
+  setDevicePermissionHandler: ReturnType<typeof vi.fn>
 }
 
 /** Keyed by partition string, the way the real `session.fromPartition` reuses one Session per partition -- lets a test retrieve the exact fake session `configureEmbedSession` wired. */
@@ -24,7 +25,8 @@ function fakeSession (): FakeSession {
   return {
     on: vi.fn(),
     webRequest: { onBeforeRequest: vi.fn(), onBeforeSendHeaders: vi.fn() },
-    resolveHost: vi.fn(async () => ({ endpoints: [] }))
+    resolveHost: vi.fn(async () => ({ endpoints: [] })),
+    setDevicePermissionHandler: vi.fn()
   }
 }
 
@@ -118,6 +120,16 @@ describe('installEmbedHost -- a guest is paired with the app origin its OWN sess
     expect(attach).toHaveBeenCalledTimes(1)
     expect(attach.mock.calls[0]?.[0]).toBe(ORIGIN_A)
     expect(host.ownerOf(42)).toBe(ORIGIN_A)
+  })
+
+  it('answers no for every device on an embed partition, whatever a tab of the same origin was given', () => {
+    installEmbedHost(fakeBroker(new Set([ORIGIN_A]), vi.fn()), '/preload/embed.js')
+    const embedder = fakeEmbedder(`${ORIGIN_A}/tab`)
+    fakeApp.emit('web-contents-created', {}, embedder)
+    embedder.emit('will-attach-webview', { preventDefault: vi.fn() }, {}, {})
+    const session = sessionsByPartition.get(embedPartitionFor(ORIGIN_A)) as FakeSession
+    const deviceHandler = session.setDevicePermissionHandler.mock.calls.at(-1)?.[0] as (details: unknown) => boolean
+    expect(deviceHandler({ deviceType: 'hid', origin: ORIGIN_A, device: {} })).toBe(false)
   })
 
   it('closes the guest and attaches nothing when its session was never configured by partitionReady', () => {

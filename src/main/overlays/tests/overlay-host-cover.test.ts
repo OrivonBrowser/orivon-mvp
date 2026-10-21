@@ -7,7 +7,7 @@ import type { OverlayDef } from '../overlay-types.js'
 
 interface FakeView { name: string, spec: OverlayViewSpec, bounds: unknown }
 
-const { views, attachOrder } = vi.hoisted(() => ({ views: [] as FakeView[], attachOrder: [] as string[] }))
+const { views, attachOrder, reshown } = vi.hoisted(() => ({ views: [] as FakeView[], attachOrder: [] as string[], reshown: [] as string[] }))
 
 vi.mock('../overlay-view.js', () => ({
   focusedContents: () => undefined,
@@ -19,6 +19,7 @@ vi.mock('../overlay-view.js', () => ({
       attach: () => { attachOrder.push(view.name) },
       detach: () => {},
       hide: () => {},
+      reshow: () => { reshown.push(view.name) },
       setBounds: (bounds: unknown) => { view.bounds = bounds },
       focusWhenReady: () => {},
       send: () => {},
@@ -66,7 +67,7 @@ async function ready (): Promise<void> {
 const viewOf = (name: string): FakeView | undefined => views.find((view) => view.name === name)
 
 beforeEach(() => { PANE.current = { x: 600, y: 104, width: 600, height: 696 } })
-afterEach(() => { views.length = 0; attachOrder.length = 0 })
+afterEach(() => { views.length = 0; attachOrder.length = 0; reshown.length = 0 })
 
 describe('createOverlayHost: a cover', () => {
   it('fills the pane of the tab in front, with square corners, and ignores the height its page reports', () => {
@@ -145,5 +146,27 @@ describe('createOverlayHost: a cover', () => {
     host.show('cover')
     host.tabSwitched()
     expect(host.isOpen('cover')).toBe(false)
+  })
+})
+
+describe('createOverlayHost: reshow', () => {
+  it('hides and shows each overlay that has joined its window, and no other', async () => {
+    const host = setup()
+    host.show('cover')
+    host.show('bar')
+    host.reshow()
+    expect(reshown).toEqual([])
+    await ready()
+    host.reshow()
+    expect(reshown.sort()).toEqual(['bar', 'cover'])
+  })
+
+  it('leaves a closed overlay alone', async () => {
+    const host = setup()
+    host.show('bar')
+    await ready()
+    host.close('bar')
+    host.reshow()
+    expect(reshown).toEqual([])
   })
 })

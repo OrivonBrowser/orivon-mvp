@@ -1,0 +1,83 @@
+// What the shell and a local node's utility process say to each other over
+// its parent port. Plain data only: it is structured-cloned.
+
+/** A file the build pins: its exact size and sha256, compiled into the app from the manifest. */
+export interface PinnedFile {
+  readonly name: string
+  readonly bytes: number
+  readonly sha256: string
+}
+
+export interface LocalNodeConfig {
+  /** Which kind of node to run: the kind's `name`, which is also its resources folder (`swarm-node`). */
+  readonly kind: string
+  /** The loopback port the node's HTTP API listens on. */
+  readonly apiPort: number
+  /** Where the node keeps its identity and state; the only directory the component can reach. */
+  readonly dataDir: string
+  /** The directory holding the transpiled component. */
+  readonly componentDir: string
+  /** The component's name: its glue is `<name>.js`. */
+  readonly componentName: string
+  /** The files the component is made of, as pinned. The process reads each once and runs only bytes that match. */
+  readonly files: readonly PinnedFile[]
+  /** The DNS-over-HTTPS endpoints the node resolves names with before the system resolver, the same list the verifier uses. Absent or empty: the system resolver only. */
+  readonly dohEndpoints?: readonly string[]
+  /** What the person chose that the kind turns into arguments (the IPFS node's routing mode): plain strings, set by main, read by the kind. Absent for a kind with none. */
+  readonly options?: Readonly<Record<string, string>>
+  /**
+   * Present when the node must reach the network through a tunnel and nothing else: every connection, datagram and name lookup
+   * goes through the route main hands over on request (`route-ask`), and a node with no route has no network. Absent: the node
+   * dials directly, as before.
+   */
+  readonly routed?: true
+}
+
+/** Where the SOCKS5 server that carries a routed node is, and how to sign in to it. Sent over the parent port only, never in an argument or a log line. */
+export interface RouteEndpoint {
+  readonly host: string
+  readonly port: number
+  readonly userId: string
+  readonly password: string
+}
+
+/** A `failed` message whose text is cut to what main accepts. */
+export function failure (stage: FailureStage, message: string): FromNode {
+  return { type: 'failed', stage, message: message.length > MAX_FAILURE_MESSAGE ? `${message.slice(0, MAX_FAILURE_MESSAGE - 1)}…` : message }
+}
+
+export type ToNode =
+  | { readonly type: 'start', readonly config: LocalNodeConfig }
+  /** The answer to a `route-ask`: where the route is now, or why there is none. */
+  | { readonly type: 'route', readonly id: number, readonly endpoint?: RouteEndpoint, readonly refusal?: string }
+  /** The route the node was given is gone (the tunnel's process restarted): ask again before the next connection. */
+  | { readonly type: 'route-reset' }
+
+/** `port`: the API port was taken, so the next start needs another. */
+export type FailureStage = 'artifact' | 'compile' | 'start' | 'run' | 'port'
+
+/** The longest `failed.message` main accepts and the node sends. */
+export const MAX_FAILURE_MESSAGE = 500
+
+export type FromNode =
+  /** The API answers; the node is not ready yet. */
+  | { readonly type: 'listening' }
+  /** A node that counts peers reports them as the count changes. */
+  | { readonly type: 'peers', readonly count: number }
+  /** Sent once, when the node's own readiness rule is met; `peers` is 0 for a node that does not count them. */
+  | { readonly type: 'ready', readonly peers: number }
+  | { readonly type: 'failed', readonly stage: FailureStage, readonly message: string }
+  /** A routed node needs the route's address: main answers with a `route` message carrying the same `id`. */
+  | { readonly type: 'route-ask', readonly id: number }
+
+/** What main knows about a node. */
+export type LocalNodeState =
+  | { readonly state: 'off', readonly reason?: string }
+  | { readonly state: 'starting', readonly peers?: number }
+  | { readonly state: 'ready', readonly peers: number }
+  | { readonly state: 'failed', readonly reason: string }
+
+/** The environment variable a kind's setting is read from: `ORIVON_SWARM_NODE_DIR` for the kind `swarm-node` and the suffix `DIR`. */
+export function envName (kind: string, suffix: string): string {
+  return `ORIVON_${kind.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_${suffix}`
+}

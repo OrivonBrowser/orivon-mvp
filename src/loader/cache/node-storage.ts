@@ -19,6 +19,8 @@ import type { PinRecord } from '../../broker/policy/pin.js'
 import { ddocToJson } from '../ddoc-declaration.js'
 import type { AssetStream, LoaderStorage, OpenedAsset, StagingWriter } from './storage.js'
 import { appRootDirectoryName } from './storage.js'
+import { listOriginsWithRecord } from './list-records.js'
+import { parsePending } from '../pending-consent.js'
 
 function appRoot (userDataPath: string, origin: string): string {
   return join(userDataPath, 'apps', appRootDirectoryName(origin))
@@ -34,6 +36,10 @@ function updateCheckPath (userDataPath: string, origin: string): string {
 
 function updateOfferPath (userDataPath: string, origin: string): string {
   return join(appRoot(userDataPath, origin), 'update-offer.json')
+}
+
+function pendingPath (userDataPath: string, origin: string): string {
+  return join(appRoot(userDataPath, origin), 'pending.json')
 }
 
 function ddocPath (userDataPath: string, origin: string): string {
@@ -433,48 +439,17 @@ export function nodeLoaderStorage (userDataPath: string): LoaderStorage {
         return undefined
       }
     },
-    listPinnedOrigins: async () => {
-      const appsDir = join(userDataPath, 'apps')
-      let entries
+    listPinnedOrigins: async () => await listOriginsWithRecord(userDataPath, 'pin.json', (parsed) => parsePinRecord(parsed)?.origin),
+    readPending: async (origin) => {
       try {
-        entries = await readdir(appsDir, { withFileTypes: true })
-      } catch (error) {
-        // ENOENT means no app has ever been installed on this machine --
-        // an empty list, not a failure. Anything else is logged: this is a
-        // startup enumeration, not a per-request path, so it can afford to.
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-          console.error('[loader] listPinnedOrigins: failed to list the apps directory', appsDir, error)
-        }
-        return []
+        return JSON.parse(await readFile(pendingPath(userDataPath, origin), 'utf8')) as unknown
+      } catch {
+        return undefined
       }
-
-      const origins: string[] = []
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue
-        let raw: string
-        try {
-          raw = await readFile(join(appsDir, entry.name, 'pin.json'), 'utf8')
-        } catch {
-          continue // an install interrupted before writePin ran -- not a pinned app yet
-        }
-        let parsedJson: unknown
-        try {
-          parsedJson = JSON.parse(raw)
-        } catch {
-          continue
-        }
-        const record = parsePinRecord(parsedJson)
-        // The directory name must be exactly the hash of the record's OWN
-        // claimed origin -- without this cross-check, a pin.json copied or
-        // hand-edited into a different app's directory would be handed back
-        // as though it belonged there. The same defence a stored grant's
-        // `origin` field needs against a tampered file naming a directory it
-        // was not read from.
-        if (record !== null && appRootDirectoryName(record.origin) === entry.name) {
-          origins.push(record.origin)
-        }
-      }
-      return origins
-    }
+    },
+    writePending: async (origin, record) => {
+      await writeOrRemove(userDataPath, origin, pendingPath(userDataPath, origin), record)
+    },
+    listPendingOrigins: async () => await listOriginsWithRecord(userDataPath, 'pending.json', (parsed) => parsePending(parsed)?.read.canonicalOrigin)
   }
 }

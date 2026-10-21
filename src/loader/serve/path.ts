@@ -56,7 +56,7 @@ function looksLikeRoute (pathname: string): boolean {
  */
 export function resolveRequestPath (
   entryPath: string | null,
-  pin: PinRecord,
+  pin: Pick<PinRecord, 'assets'>,
   requestUrl: string,
   navigation = false,
   retained?: ReadonlyMap<string, string>

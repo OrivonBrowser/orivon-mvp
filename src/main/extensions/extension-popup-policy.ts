@@ -1,13 +1,14 @@
 // Policy for the windows an extension owns that Orivon did not create: the
 // browserAction popup and an MV2 background page. Both otherwise get
 // Electron's default for `window.open()`, a raw, unpoliced BrowserWindow.
-import { app, session } from 'electron'
-import type { BaseWindow, WebContents } from 'electron'
+import { app } from 'electron'
+import type { BaseWindow, Session, WebContents } from 'electron'
 import type { ElectronChromeExtensions } from 'orivon:crx-extensions'
 import type { ShellServices } from '../shell/shell-services.js'
 import { extensionOpenedUrl, type IsLoadedExtension } from './extension-url-policy.js'
 import { openExtensionTab } from './extension-opened-pages.js'
 import { sidePanelWindowOf } from './side-panel-pages.js'
+import { extensionPagePartition } from './profile-registry.js'
 
 export interface PopupPolicyDeps {
   /** undefined until the first window exists. */
@@ -51,7 +52,7 @@ export function setupWindowOpenPolicy (contents: WebContents, deps: PopupPolicyD
       const win = parentOf(contents) ?? sidePanelWindowOf(contents) ?? services.windows.focused()?.window
       const target = extensionOpenedUrl(url, deps.isLoaded)
       const shellWindow = win === undefined ? undefined : services.windows.all().find((w) => w.window === win)
-      if (shellWindow !== undefined && target !== undefined) openExtensionTab(shellWindow.tabs, target)
+      if (shellWindow !== undefined && target !== undefined) openExtensionTab(shellWindow.tabs, target, extensionPagePartition(contents.session, target))
     }
     return { action: 'deny' }
   })
@@ -99,8 +100,12 @@ export function installPopupPolicy (host: ElectronChromeExtensions, deps: PopupP
       activeTabWc?.removeListener('did-start-navigation', closePopup)
     })
   })
+}
+
+/** Gives the MV2 background page of every session `isExtensionSession` names the window-open policy above. */
+export function installBackgroundPagePolicy (deps: PopupPolicyDeps, isExtensionSession: (target: Session) => boolean): void {
   app.on('web-contents-created', (_event, contents) => {
-    if (contents.session === session.defaultSession && contents.getType() === 'backgroundPage') {
+    if (contents.getType() === 'backgroundPage' && isExtensionSession(contents.session)) {
       setupWindowOpenPolicy(contents, deps)
     }
   })

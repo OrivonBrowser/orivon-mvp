@@ -1,11 +1,14 @@
 // Reading the settings file: what its text holds, validated against the schema, with no file access in the pure
 // part. The store reads it with the rest of start-up; `readSettingBeforeReady` reads one value ahead of everything,
 // for a setting that Chromium takes as a command-line switch before the first window.
-import { readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { dirname } from 'node:path'
+import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 import { SETTINGS, isSettingKey, validateSetting } from './schema.js'
 import type { SettingKey, SettingValue, SettingsValues } from './schema.js'
 
-export const SETTINGS_FILE_VERSION = 1
+/** The version the store writes. Version 1 files are read too, and gain the choices their version never had (`fromVersion1`). */
+export const SETTINGS_FILE_VERSION = 2
 
 export interface ParsedSettings {
   /** Every accepted entry that differs from its default: the only ones the store keeps. */
@@ -14,10 +17,28 @@ export interface ParsedSettings {
   readonly dropped: number
 }
 
-/** What a parsed settings file holds; nothing at all when it is not a settings file of this version. */
+/**
+ * A file written before the route had a choice of where it leaves holds an address and no choice: that person set up
+ * their own SOCKS5 server, so that stays their choice. Only the file's version says so, because a choice left at its
+ * default is never written, so a version 2 file with an address and no choice is a person who chose Nym.
+ */
+function fromVersion1 (overrides: Map<SettingKey, SettingValue>): void {
+  const address = overrides.get('network.route.proxy')
+  if (typeof address === 'string' && address !== '' && !overrides.has('network.route.kind')) overrides.set('network.route.kind', 'socks5')
+}
+
+/** Whether `parsed` is the content of a settings file of a version this build reads. */
+export function isSettingsFile (parsed: unknown): boolean {
+  if (typeof parsed !== 'object' || parsed === null) return false
+  const { version, values } = parsed as { version?: unknown, values?: unknown }
+  return (version === SETTINGS_FILE_VERSION || version === 1) && typeof values === 'object' && values !== null
+}
+
+/** What a parsed settings file holds; nothing at all when it is not a settings file of a version this build reads. */
 export function settingsFromFile (parsed: unknown): ParsedSettings {
   const overrides = new Map<SettingKey, SettingValue>()
-  if (typeof parsed !== 'object' || parsed === null || (parsed as { version?: unknown }).version !== SETTINGS_FILE_VERSION) return { overrides, dropped: 0 }
+  const version = typeof parsed === 'object' && parsed !== null ? (parsed as { version?: unknown }).version : undefined
+  if (typeof parsed !== 'object' || parsed === null || (version !== SETTINGS_FILE_VERSION && version !== 1)) return { overrides, dropped: 0 }
   const values = (parsed as { values?: unknown }).values
   if (typeof values !== 'object' || values === null) return { overrides, dropped: 0 }
   let dropped = 0
@@ -26,6 +47,7 @@ export function settingsFromFile (parsed: unknown): ParsedSettings {
     if (accepted === undefined || !isSettingKey(key)) { dropped += 1; continue }
     if (accepted !== SETTINGS[key].default) overrides.set(key, accepted)
   }
+  if (version === 1) fromVersion1(overrides)
   return { overrides, dropped }
 }
 
@@ -38,4 +60,55 @@ export function readSettingBeforeReady<K extends SettingKey> (filePath: string, 
     return SETTINGS[key].default as SettingsValues[K]
   }
   return (overrides.get(key) ?? SETTINGS[key].default) as SettingsValues[K]
+}
+
+/**
+ * Whether the settings file is there but cannot be used: not readable, not JSON, or not a settings file of a version this
+ * build reads. A file that is missing is no problem (the defaults apply). Synchronous, and never throws.
+ */
+export function settingsFileProblem (filePath: string): 'unreadable' | undefined {
+  try {
+    if (!existsSync(filePath)) return undefined
+    return isSettingsFile(JSON.parse(readFileSync(filePath, 'utf8'))) ? undefined : 'unreadable'
+  } catch {
+    return 'unreadable'
+  }
+}
+
+/** Whether the whole browser goes through the tunnel at start: the saved setting, or on when the file that holds it cannot be used, so that a damaged file never sends anything around the tunnel. */
+export function everywhereBeforeReady (filePath: string): boolean {
+  return settingsFileProblem(filePath) !== undefined || readSettingBeforeReady(filePath, 'network.tunnel.everywhere')
+}
+
+/**
+ * What a private window held to Nym is held to: the whole browser through the tunnel, the tunnel Nym, Nym allowed to
+ * run, and no proxy address (the person's own proxy is not for this window to edit, show or test). The settings copy it starts from is written with these (`forceSettingsFile`), so the first thing the process reads
+ * already says so, and its settings store reads them whatever the file holds and refuses a change to any of them.
+ */
+export const NYM_HELD_SETTINGS: ReadonlyMap<SettingKey, SettingValue> = new Map<SettingKey, SettingValue>([
+  ['network.tunnel.everywhere', true],
+  ['network.route.kind', 'nym'],
+  ['network.nym.enabled', true],
+  ['network.route.proxy', '']
+])
+
+/**
+ * Writes `forced` into the settings file at `filePath`, keeping every other choice it holds (a file that is missing or cannot
+ * be used starts empty). Through the same version and checks the store reads with, never by editing its text. Throws when the
+ * file cannot be written: the caller then does not start the session, because a session that was to be held to a tunnel
+ * must not start without it.
+ */
+export function forceSettingsFile (filePath: string, forced: ReadonlyMap<SettingKey, SettingValue>): void {
+  let values: Record<string, SettingValue> = {}
+  try {
+    values = Object.fromEntries(settingsFromFile(JSON.parse(readFileSync(filePath, 'utf8'))).overrides)
+  } catch {
+    // Missing or unusable: nothing to keep.
+  }
+  for (const [key, value] of forced) {
+    if (validateSetting(SETTINGS[key], value) !== value) throw new Error(`${key} cannot hold that value`)
+    values[key] = value
+  }
+  mkdirSync(dirname(filePath), { recursive: true, mode: 0o700 })
+  writeFileAtomic(filePath, JSON.stringify({ version: SETTINGS_FILE_VERSION, values }, null, 2))
 }

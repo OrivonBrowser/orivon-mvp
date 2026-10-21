@@ -26,14 +26,14 @@ export const PERMISSION_WORDS: Readonly<Record<string, string>> = {
   privacy: 'Read your privacy settings'
 }
 
-/** The two patterns that, on their own, already cover every site. A
- * scheme-qualified equivalent (matching http alone, say) is not one of them:
- * it still excludes https. (A literal "star colon slash slash star slash
- * star" is not spelled out in this comment: it closes a block comment early.) */
-const ALL_SITES_PATTERNS = new Set(['<all_urls>', '*://*/*'])
-
+/** Whether a pattern covers every site: `<all_urls>`, or any pattern whose
+ * host is a bare wildcard, whatever its scheme and path. Chrome words the
+ * https-only and the http-only spelling as all hosts too, so splitting the
+ * access by scheme does not hide it from the install question. (A literal
+ * wildcard host followed by a slash is not spelled out here: it would close
+ * this comment early.) */
 export function isAllSitesPattern (pattern: string): boolean {
-  return ALL_SITES_PATTERNS.has(pattern)
+  return pattern === '<all_urls>' || friendlyHost(pattern) === '*'
 }
 
 /** A pattern's host portion for display: everything between "://" and the

@@ -95,7 +95,7 @@ export function ingestBaseUrl (testBuild: boolean, overrideUrl: string | undefin
   return development ? DEVELOPMENT_BASE_URL : TELEMETRY_BASE_URL
 }
 
-export type Endpoint = 'usage' | 'sites' | 'erase'
+export type Endpoint = 'usage' | 'sites' | 'erase' | 'report' | 'report-erase'
 
 export function endpointUrl (base: string, endpoint: Endpoint): string {
   return `${base}${endpoint}`

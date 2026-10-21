@@ -41,6 +41,7 @@ beforeAll(async () => {
       hits += 1
       response.end(`<!doctype html><title>Fixture</title><body style="margin:0">
         <p><a id="link" href="/target">A link to follow</a></p>
+        <p><a id="web3-link" href="ipfs://web-link-fixture.eth/docs?q=1#top">A .eth link</a></p>
         <p><a id="picture-link" href="/target"><img id="linked" src="/i.png" width="40" height="40"></a></p>
         <p><img id="img" src="/i.png" width="40" height="40"></p>
         <p id="text">${SELECTED}</p>
@@ -108,6 +109,29 @@ const labelsOf = (items: Item[]): string[] => {
 const tabUrls = async (app: ElectronApplication): Promise<string[]> =>
   await app.evaluate(({ webContents }) => webContents.getAllWebContents().map((contents) => contents.getURL()))
 
+it('offers Copy web link beside Copy Link Address for a .eth link only, and copies the https address another browser opens', async () => {
+  const { app, chrome } = await launched()
+  try {
+    const page = await visit(app, chrome, '/')
+    await app.evaluate(({ clipboard }) => {
+      const g = globalThis as unknown as { __copied: string[] }
+      g.__copied = []
+      clipboard.writeText = ((text: string) => { g.__copied.push(text) }) as typeof clipboard.writeText
+    })
+    const labels = labelsOf(await rightClick(app, page, '#web3-link'))
+    expect(labels).toContain('Copy Link Address')
+    expect(labels.indexOf('Copy web link (opens in any browser)')).toBe(labels.indexOf('Copy Link Address') + 1)
+    await choose(app, 'Copy web link (opens in any browser)')
+    expect(await app.evaluate(() => (globalThis as unknown as { __copied: string[] }).__copied)).toEqual(['https://web-link-fixture.eth.limo/docs?q=1#top'])
+    await choose(app, 'Copy Link Address')
+    expect((await app.evaluate(() => (globalThis as unknown as { __copied: string[] }).__copied)).at(-1)).toBe('ipfs://web-link-fixture.eth/docs?q=1#top')
+    expect(labelsOf(await rightClick(app, page, '#link'))).not.toContain('Copy web link (opens in any browser)')
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
 it('offers the link set on a link, and opens it in a new tab beside the one being read', async () => {
   const { app, chrome } = await launched()
   try {
@@ -151,7 +175,10 @@ it('offers the image set, the link set above it for a linked image, and the vide
 }, TEST_TIMEOUT_MS)
 
 it('searches a selection with the chosen engine in a tab put in front', async () => {
-  const { app, chrome } = await launched()
+  const { app, chrome } = await launched(async (dir) => {
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, 'settings.json'), JSON.stringify({ version: 1, values: { 'search.mode': 'web2' } }))
+  })
   try {
     const page = await visit(app, chrome, '/')
     await page.click('#text', { clickCount: 3 })

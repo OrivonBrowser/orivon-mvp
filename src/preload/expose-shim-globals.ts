@@ -19,7 +19,7 @@
 // the page's own reportError, which fires the app's window 'error' handlers.
 
 import { contextBridge } from 'electron'
-import { installGlobals, VIRTUAL_ROOT, VIRTUAL_TMPDIR } from '../shim/globals.js'
+import { installGlobals, NODE_IDENTITY, VIRTUAL_ROOT, VIRTUAL_TMPDIR } from '../shim/globals.js'
 import type { InstallGlobalsOptions } from '../shim/globals.js'
 import { installPageBuffer } from './page-buffer.js'
 
@@ -35,7 +35,7 @@ const APP_TAB_FLAG = '--orivon-app-tab'
  */
 export function exposeShimGlobals (): void {
   if (!process.argv.includes(APP_TAB_FLAG)) return
-  const options: InstallGlobalsOptions = { root: VIRTUAL_ROOT, tmpdir: VIRTUAL_TMPDIR }
+  const options: InstallGlobalsOptions = { root: VIRTUAL_ROOT, tmpdir: VIRTUAL_TMPDIR, node: NODE_IDENTITY }
   try {
     contextBridge.executeInMainWorld({ func: installGlobals, args: [options] })
   } catch (error) {

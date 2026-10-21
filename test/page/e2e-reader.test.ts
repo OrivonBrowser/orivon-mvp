@@ -167,9 +167,20 @@ it('offers reader view on an article only, opens it beside the article from a sa
     await shoot(page, 'blocks')
     await page.evaluate(() => { window.scrollTo(0, 0) })
 
-    // Read aloud: no system voice here, so the button is not offered.
-    expect(await waitFor(async () => await page.locator('button[aria-label="Read aloud"]').getAttribute('title') === 'Read aloud needs a system voice. None is installed.', 6_000)).toBe(true)
-    expect(await page.locator('button[aria-label="Read aloud"]').isHidden()).toBe(true)
+    // Read aloud is offered where the system has a voice (Windows and macOS ship some, a bare Linux does not).
+    const voiceCount = await page.evaluate(async () => await new Promise<number>((resolve) => {
+      const synth = window.speechSynthesis
+      if (synth.getVoices().length > 0) { resolve(synth.getVoices().length); return }
+      synth.addEventListener('voiceschanged', () => { resolve(synth.getVoices().length) }, { once: true })
+      setTimeout(() => { resolve(synth.getVoices().length) }, 4_000)
+    }))
+    const aloud = page.locator('button[aria-label="Read aloud"]')
+    if (voiceCount === 0) {
+      expect(await waitFor(async () => await aloud.getAttribute('title') === 'Read aloud needs a system voice. None is installed.', 6_000)).toBe(true)
+      expect(await aloud.isHidden()).toBe(true)
+    } else {
+      expect(await waitFor(async () => await aloud.isVisible() && await aloud.isEnabled() && await aloud.getAttribute('title') === 'Read aloud', 6_000), `${voiceCount} voices`).toBe(true)
+    }
 
     // Text and layout.
     await page.locator('button[aria-label="Text and layout"]').click()

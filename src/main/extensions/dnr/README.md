@@ -45,6 +45,15 @@ none of them Electron-specific.
 
 ## Design notes
 
+**A `regexFilter` is matched by RE2, in linear time.** Chrome matches it with RE2, and so does this
+engine (`vendor/firefox-dnr/adapters/dnr-regex.mjs`, patch 18, on `re2js`, a pure JavaScript port),
+because `evaluate()` runs on the main thread for every request and a backtracking `RegExp` could
+stall the browser on one crafted URL. A pattern over 2,048 characters, one that compiles to a program over 256
+instructions, or one RE2 does not accept (a backreference or a lookaround), makes the rule invalid: a static ruleset drops it like any other
+invalid rule, a dynamic or session update throws, and `isRegexSupported` gives the same answer.
+RE2 matching costs several times what `RegExp` does for an ordinary pattern, which is why the number
+of regex rules stays capped at `MAX_NUMBER_OF_REGEX_RULES`.
+
 **Static rules draw on a global pool, as in Chrome.** An extension's enabled static rulesets hold
 up to `GUARANTEED_MINIMUM_STATIC_RULES` (30,000) rules on their own; rules beyond that come out
 of a pool of 300,000 shared by every extension (`GLOBAL_STATIC_RULE_POOL`, `dnr-engine.ts`),

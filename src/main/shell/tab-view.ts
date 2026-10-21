@@ -2,13 +2,14 @@
 // partition it gets -- split out of tabs.ts (see that directory's README,
 // `## Design notes`, for why). Pure with respect to TabManager: neither
 // function here reads or writes any tab-collection state.
-import { WebContentsView } from 'electron'
+import { shell, WebContentsView } from 'electron'
 import type { NativeImage, WebContents, WebPreferences } from 'electron'
 import { localFileKey, originFromUrl } from '../../broker/policy/origin.js'
-import { faviconOnCommit } from '../browsing/favicon.js'
+import { faviconOnCommit, faviconOnFailedLoad } from '../browsing/favicon.js'
 import { knownIcon } from '../history/favicon-host.js'
 import type { TabRecord } from './tab-types.js'
 import { ensureLocalSession } from '../local-files/local-partition.js'
+import { ensureSiteSession } from '../route/site-routes.js'
 import { isLocalPartition } from '../local-files/partition.js'
 import { showContextMenu } from './context-menu.js'
 import { pageMenuItems } from './page-menu-items.js'
@@ -17,6 +18,7 @@ import { watchPageDialogs } from './page-dialogs.js'
 import { windowOpenHandler } from './popups.js'
 import { watchFileNavigation } from './local-file-navigation.js'
 import { repartitionBeforeCommit, repartitionOnFileBlock } from './pre-partition.js'
+import { askBeforeLeavingRoute, chooseLeave, leaveForOpen } from './leaving-route.js'
 import { keepsOpenerSession, openerCutNeeded, popupTargetIsApp } from './popup-opener.js'
 import { DEFAULT_BACKGROUND } from './theme-colors.js'
 import { isDashboardUrl, sheetBackdropOf } from './sheet-backdrop.js'
@@ -24,9 +26,11 @@ import { isShellSchemeUrl } from './shell-session.js'
 import { recordViewBackground } from './view-background-test-hook.js'
 import { watchBacking } from './tab-backing.js'
 import { repartitionView } from './tab-parking.js'
+import { settleOuterHistory } from './tab-history.js'
 import { parseInternalUrl } from '../pages/internal-pages.js'
 import { canViewSource } from '../page-tools/view-source.js'
 import { sitePopups } from '../site-settings/site-popups.js'
+import { askExternalLink } from '../sessions/permission-gate.js'
 import { refuseHeldNavigation, refuseHeldWindow } from './navigation-hold.js'
 import { loadServedAddresses } from './served-address.js'
 import { gatewayRedirectFor } from './eth-gateway-rule.js'
@@ -38,7 +42,7 @@ import { wireSignInIdentity } from './sign-in-identity-tab.js'
 import { watchAppTab } from './app-tab-watch.js'
 import { wireTabSignals } from './tab-signals.js'
 import { readableNow } from '../reader/reader-signal.js'
-import { APP_TAB_FLAG, appTabArgsFor, appTabFlagChanged, appTabOrigins, appTabViews, partitionAfterFileBlock, partitionChanged, partitionForTarget } from './tab-partition.js'
+import { APP_TAB_FLAG, appTabArgsFor, appTabFlagChanged, appTabOrigins, appTabViews, partitionAfterFileBlock, partitionChanged, partitionChangedByPage, partitionForTarget } from './tab-partition.js'
 
 export { popupTargetIsApp } from './popup-opener.js'
 export { appTabArgsFor, appTabFlagChanged, appTabOrigins, appTabViews, partitionAfterFileBlock, partitionChanged, partitionForTarget } from './tab-partition.js'
@@ -57,6 +61,12 @@ export const MAX_TABS = 100
  * 999 (the preload's). Same reason as MAX_TABS for living here. */
 export const EXIT_FULLSCREEN_WORLD_ID = 1001
 
+/** Blink features an app tab turns on, as Electron apps do in their own window's
+ * webPreferences (WebTorrent Desktop's player reads `videoTracks.length` and
+ * `audioTracks.length` on `loadedmetadata`). `AudioVideoTracks` adds the
+ * standard `audioTracks` / `videoTracks` lists to media elements. */
+const APP_TAB_BLINK_FEATURES = 'AudioVideoTracks'
+
 /** Every tab's webPreferences, with the standard, non-negotiable ones
  * (contextIsolation/sandbox/no Node integration/webSecurity) -- shared by
  * makeTabView() and a popup's own, so no tab can drift from them (Rule 3).
@@ -64,12 +74,14 @@ export const EXIT_FULLSCREEN_WORLD_ID = 1001
  * `webviewTag` only for a registered app's tab (ADR-0039): the element is
  * inert everywhere else, and even there every attach is decided by
  * `../embed/embed-host.ts` against the live `web.embed` grant, so turning
- * the tag on grants nothing by itself.
+ * the tag on grants nothing by itself. An app tab also gets `AudioVideoTracks`
+ * (above); an ordinary site's tab keeps Chromium's default surface.
  *
  * Neither `disableDialogs` nor `nodeIntegrationInSubFrames` is set: a page's
  * `alert` and `confirm` are answered by `./page-dialogs.ts` from Electron's own
  * dialog event, which Chromium raises per frame once its own checks pass. */
 export function tabWebPreferences (preload: string, partition: string | undefined, additionalArguments?: string[]): WebPreferences {
+  const appTab = additionalArguments?.includes(APP_TAB_FLAG) === true
   return {
     preload,
     ...(additionalArguments !== undefined ? { additionalArguments } : {}),
@@ -78,7 +90,8 @@ export function tabWebPreferences (preload: string, partition: string | undefine
     sandbox: true,
     nodeIntegration: false,
     webSecurity: true,
-    webviewTag: additionalArguments?.includes(APP_TAB_FLAG) === true
+    webviewTag: appTab,
+    ...(appTab ? { enableBlinkFeatures: APP_TAB_BLINK_FEATURES } : {})
   }
 }
 
@@ -107,6 +120,7 @@ export function tabWebPreferences (preload: string, partition: string | undefine
  * tell apart at a call site by position alone. */
 export function makeTabView (preload: string, partition: string | undefined, additionalArguments?: string[], opts: { backgroundColor?: string, target?: string } = {}): WebContentsView {
   if (partition !== undefined && isLocalPartition(partition)) ensureLocalSession(partition)
+  if (partition !== undefined) ensureSiteSession(partition)
   const view = new WebContentsView({ webPreferences: tabWebPreferences(preload, partition, additionalArguments) })
   if (opts.backgroundColor !== undefined) {
     view.setBackgroundColor(opts.backgroundColor)
@@ -162,7 +176,9 @@ export function wireView (id: string, record: TabRecord): void {
   }
   wc.on('will-frame-navigate', refuseShellPage)
   wc.on('will-redirect', refuseShellPage)
-  watchFileNavigation(wc, (url) => { if (shown()) void record.host.openLocalFile(url, true) })
+  watchFileNavigation(wc, (url) => { if (shown()) void record.host.openLocalFile(url, true).catch((error: unknown) => { console.error('[shell] open local file failed:', error) }) })
+  // Ahead of the repartition below: a navigation this stops to ask about is not one it moves.
+  askBeforeLeavingRoute(wc, id, record, shown)
   repartitionBeforeCommit(wc, id, record, shown)
   repartitionOnFileBlock(wc, id, record, shown)
   wc.on('did-navigate', (_event, navigatedUrl: string) => {
@@ -172,6 +188,8 @@ export function wireView (id: string, record: TabRecord): void {
     // about:blank load is where a session teardown for the origin just left
     // actually fires.
     trackDocumentOrigin(wc, navigatedUrl, record.host.broker)
+    // Ahead of the gate as well: a tab moved to another view in the background still keeps its history straight.
+    if (record.view === view) settleOuterHistory(record, wc, navigatedUrl)
     if (!shown()) return
     record.host.paneCommitted(id)
     // History's icon only while history is remembering: a private window reads nothing kept on disk.
@@ -216,9 +234,9 @@ export function wireView (id: string, record: TabRecord): void {
       resetViewBackground(view)
     }
     if (!record.isDashboardTab) {
-      const swap = partitionChanged(navigatedUrl, record.partition)
+      const swap = partitionChangedByPage(navigatedUrl, record.partition)
       const cutOpener = openerCutNeeded(wc, navigatedUrl, record.host.broker)
-      if (swap !== undefined && (cutOpener || !keepsOpenerSession(wc, swap))) {
+      if (swap !== undefined && (cutOpener || !keepsOpenerSession(wc, swap, record.partition, navigatedUrl))) {
         repartitionView(id, record, navigatedUrl, swap.to)
         return
       }
@@ -257,7 +275,15 @@ export function wireView (id: string, record: TabRecord): void {
     }
     record.host.emitState()
   })
-  wc.on('did-navigate-in-page', () => { record.host.emitState() })
+  wc.on('did-navigate-in-page', (_event, url: string, isMainFrame: boolean) => {
+    if (isMainFrame && record.view === view) settleOuterHistory(record, wc, url, true)
+    record.host.emitState()
+  })
+  wc.on('did-fail-load', (_event, code: number, _description: string, failedUrl: string, isMainFrame: boolean) => {
+    // Only an error page that committed (the tab is at the failed address): a cancelled load (-3) leaves the page before.
+    if (!isMainFrame || code === -3 || wc.getURL() !== failedUrl || !shown()) return
+    if (faviconOnFailedLoad(record, failedUrl)) record.host.emitState()
+  })
   watchBacking(view, record, shown)
   wc.on('did-start-loading', () => { record.host.emitState() })
   wc.on('did-stop-loading', () => { record.host.emitState() })
@@ -322,16 +348,27 @@ export function wireView (id: string, record: TabRecord): void {
       ...(services?.kiosk === true ? { kiosk: true } : {}),
       // Beside the page being read, as a middle click opens a link.
       openInNewTab: (url) => { record.host.openTab(url, false) },
-      ...(localFileKey(wc.getURL()) !== null ? { openLocalFile: (url: string) => { void record.host.openLocalFile(url, false) } } : {}),
+      ...(localFileKey(wc.getURL()) !== null ? { openLocalFile: (url: string) => { void record.host.openLocalFile(url, false).catch((error: unknown) => { console.error('[shell] open local file failed:', error) }) } } : {}),
       openInFront: (url) => { record.host.openTab(url) },
       openInSplit: (url) => { record.host.openInSplit(id, url) },
       openInWindow: (url) => { record.host.openWindow(url) },
       // A private window has no way back to the profile: it offers no second private session.
       ...(services === undefined || services.isPrivate ? {} : { openInPrivate: (url: string) => { services.profiles.openPrivate(url) } }),
-      page: { bare: () => record.internalPage !== null || record.isDashboardTab, viewSource: () => canViewSource(record, wc.getURL()), readable: () => readableNow(wc), reload: () => { record.host.reload(id) } },
+      page: {
+        bare: () => record.internalPage !== null || record.isDashboardTab,
+        viewSource: () => canViewSource(record, wc.getURL()),
+        readable: () => readableNow(wc),
+        reload: () => { record.host.reload(id) },
+        history: {
+          canGoBack: () => wc.navigationHistory.canGoBack() || (record.outer?.back.length ?? 0) > 0,
+          canGoForward: () => wc.navigationHistory.canGoForward() || (record.outer?.forward.length ?? 0) > 0,
+          back: () => { record.host.back(id) },
+          forward: () => { record.host.forward(id) }
+        }
+      },
       ...(services === undefined ? {} : { services }),
       runCommand,
-      ...(devtools?.allowed(wc) === true ? { inspect: (x: number, y: number) => { void devtools.inspect(wc, x, y) } } : {}),
+      ...(devtools?.allowed(wc) === true ? { inspect: (x: number, y: number) => { void devtools.inspect(wc, x, y).catch((error: unknown) => { console.error('[shell] opening the inspector failed:', error) }) } } : {}),
       extraItems: (menuParams) => pageMenuItems(wc, menuParams)
     })
   })
@@ -354,7 +391,10 @@ export function wireView (id: string, record: TabRecord): void {
     webPreferencesFor: (url) => tabWebPreferences(record.host.preloadPath, undefined, appTabArgsFor(url, record.host.broker)),
     isApp: (url) => popupTargetIsApp(url, record.host.broker),
     gatewayTarget,
-    popupBlocked: (details, from) => refuseHeldWindow(wc, details.url) || sitePopups.check(wc, from.url, details.url)
+    popupBlocked: (details, from) => refuseHeldWindow(wc, details.url) || sitePopups.check(wc, from.url, details.url),
+    openExternal: (url) => { void askExternalLink(wc, url).then((allowed) => { if (allowed) return shell.openExternal(url) }).catch(() => {}) },
+    leaveFor: (url, from) => leaveForOpen(record, from.url, url, from.partition),
+    chooseLeave: async (leave) => await chooseLeave(wc, leave)
   }, () => ({ url: wc.getURL(), partition: record.partition })))
   wireTabSignals(id, record)
 }

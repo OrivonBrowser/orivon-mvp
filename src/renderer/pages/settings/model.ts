@@ -7,9 +7,9 @@ import type { SettingsState } from './state.js'
 
 export type Control =
   /** A choice among a setting's options. Options default to the schema's own, with its labels. */
-  | { readonly type: 'choice', readonly key: SettingKey, readonly options?: ReadonlyArray<{ readonly value: string, readonly label: string }> }
+  | { readonly type: 'choice', readonly key: SettingKey, readonly options?: ReadonlyArray<{ readonly value: string, readonly label: string }>, readonly locked?: (state: SettingsState) => boolean }
   /** `problem` is what the row says when main refuses the value; without it, the search address's own message. */
-  | { readonly type: 'text', readonly key: SettingKey, readonly placeholder: string, readonly problem?: string }
+  | { readonly type: 'text', readonly key: SettingKey, readonly placeholder: string, readonly problem?: string, readonly locked?: (state: SettingsState) => boolean }
   /** `disabled` greys the switch out and shows it off when the setting cannot take effect, and the row's help says why.
    *  `locked` greys it out but keeps showing the saved value, for a setting in effect that cannot be changed here. */
   | { readonly type: 'toggle', readonly key: SettingKey, readonly disabled?: (state: SettingsState) => boolean, readonly locked?: (state: SettingsState) => boolean }
@@ -21,7 +21,7 @@ export type Control =
   | { readonly type: 'shortcut', readonly id: string }
   /** Usage statistics: the choice, the exact text that would be sent, and what has been. */
   | { readonly type: 'usage' }
-  /** The apps that hold permissions, each with what it may do and a way to take it back. */
+  /** The apps, each with a switch for what it may do. */
   | { readonly type: 'apps' }
   /** What to forget, and the button that forgets it. */
   | { readonly type: 'clearData' }

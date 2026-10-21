@@ -20,6 +20,7 @@
 | `popup-policy.ts`, `tab-interaction.ts`, `popup-blocks.ts`, `popup-blocker.ts`, `site-popups.ts` | the pop-up blocker: the rule (pure), when the person last clicked or pressed a key in each tab, what each page tried to open, the join of the three, and the process-wide instance `shell/tab-view.ts` asks from the window-open handler |
 | `popups-overlay.ts`, `popups-view.ts` | the `popups-blocked` overlay under the address bar's pop-up chip: the list of refused addresses, opening one on purpose, always allowing the site |
 | `content-rules.ts` | pure: which sites have JavaScript, images or sound switched off, and the response header that switches scripts off |
+| `effective-page.ts` | pure: the web address whose rules a document follows: a blank or `blob:` page takes the site of the page that opened it, and one whose site cannot be told gets the kind's default |
 | `site-content-blocks.ts` | `siteContentBlocks`, the rule and the change signal behind the mark on the address bar's key (`shell/state/content-blocked.ts`) |
 | `site-sound.ts` | `siteSound`, the rule `shell/signals/audio.ts` asks when it decides a tab's mute |
 | `auto-downloads.ts` | holds a second download a page starts without a click and asks about it as the `autoDownloads` kind |
@@ -41,7 +42,7 @@ engine, `electron-names.ts`, `page-access.ts` and the prompt text import no `ele
 
 ## Design notes
 
-**One answer per site and kind, asked once.** A main frame on an `http(s)` site that is not a registered app is asked
+**One answer per site and kind, asked once.** A main frame on an `http(s)` site that does not hold grants is asked
 the first time; Allow and Block are both remembered, and closing the prompt decides nothing (the site may ask again
 after the next page load, not before). A frame never asks. A `block` default for a kind refuses without asking.
 
@@ -68,15 +69,15 @@ either store reaches the Settings page as `sites.changed`.
 setting for the kind decides again. The choice that says what the default already says is offered only while it is what is
 stored, so a select never lists two ways to say the same thing.
 
-**An app's origin has no row.** A registered app or one served from the cache is bounded by its grants; the controller lists
-no row for it and refuses to write one, so a stored answer for an origin that later became an app is never shown as if it counted.
+**An app's origin has no row.** An origin that holds grants is bounded by them; an installed app that holds none is a website here, asked and listed as any site is. The controller lists
+no row for an origin that holds grants and refuses to write one, so a stored answer for an origin that later became an app is never shown as if it counted.
 
 **A pop-up is blocked unless the person's own input opened it.** `HandlerDetails` reports no user gesture, so
 `popup-policy.ts` uses the person's input instead: a mouse press, touch or key press in the opener's tab within five
 seconds (Chromium's own transient-activation lifetime, so a sign-in popup opened after a short network call still
 opens) lets one window through; a second needs a new input. Input a script synthesises with `dispatchEvent` never
-reaches the browser process, so it counts for nothing. A registered app, a page that is not `http(s)` and an
-extension are outside the rule.
+reaches the browser process, so it counts for nothing. A registered app, a shell page and an
+extension are outside the rule. A tab still at a blank or `blob:` address (a popup its opener's script drives) is judged by the site that opened it, in the pop-up blocker, the automatic-download asker and the per-site sound mute alike (`effective-page.ts`); one whose opener cannot be read gets the kind's default, and an automatic download from such a page is refused unasked unless its site allowed it, since there is no page to ask about.
 
 **JavaScript is switched off with a response header, not a view setting.** `webPreferences.javascript` is fixed when a
 view is created and a tab outlives its site, so `install-content-settings.ts` adds a second `Content-Security-Policy:

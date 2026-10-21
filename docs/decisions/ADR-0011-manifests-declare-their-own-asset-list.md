@@ -83,7 +83,7 @@ verify: the manifest can verify a list matches what was fetched; it cannot verif
   adversarial-input checks became defence-in-depth rather than the primary enforcement point as
   a result.
 - `entry` itself is unchanged and still separately required to have a corresponding leaf
-  (`ADR-0009`'s amendment §2: checked by the app loader, not the hash). `assets` does not need to
+  (`ADR-0009`'s amendment section 2: checked by the app loader, not the hash). `assets` does not need to
   duplicate `entry` in its own list; the loader fetches the union of the two.
 - No change to `ADR-0009`'s hash construction, `bundle-hash.ts`, or any frozen vector. The leaf
   set's *source* changes; nothing about how a leaf set is hashed does.

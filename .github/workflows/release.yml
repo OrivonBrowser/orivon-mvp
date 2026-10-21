@@ -2,10 +2,13 @@ name: Release
 
 # Packages Orivon for Linux (deb, AppImage), Windows (NSIS installer) and macOS (dmg, Apple
 # silicon and Intel), installs or mounts each package and launches it. Publishing a GitHub
-# release attaches the packages to it, named by the release tag (v1.2.0 packages as 1.2.0).
-# A pull request that touches packaging runs the same jobs without publishing. Each release
-# also gets an ipfs.json and its CID in its description, and a pinning node puts it on IPFS
-# (scripts/pin-releases.sh).
+# release attaches the packages to it, named by the release tag (v1.2.0 packages as 1.2.0), and
+# writes its description (CHANGELOG section, which file suits which computer, IPFS CID). The
+# Windows leg also builds the Store package (artifact `store-msix`, never attached to a release).
+# The winget, store and aur jobs then offer the release to winget-pkgs, Partner Center and the AUR;
+# run by hand with a tag, those three offer that published release again. A pull request that
+# touches packaging runs the build jobs without publishing. A pinning node puts each release on
+# IPFS (scripts/pin-releases.sh).
 on:
   release:
     types: [published]
@@ -14,20 +17,81 @@ on:
       - electron-builder.yml
       - build/**
       - scripts/smoke-packaged.mjs
+      - scripts/smoke-orivon-link.mjs
       - scripts/pin-releases.sh
+      - scripts/install-macos.sh
+      - scripts/install-linux.sh
       - .github/workflows/release.yml
   workflow_dispatch:
+    inputs:
+      tag:
+        description: A published release tag (v0.0.9) to offer to winget, the Microsoft Store and the AUR again. Empty only builds the packages.
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
 
 env:
+  # The oldest light-client checkpoint a release may ship. The app refuses one over 14 days old; this leaves a
+  # fresh install a week before that. The scheduled refresh keeps main's checkpoint well inside it.
+  MAX_CHECKPOINT_AGE_DAYS: 7
   KUBO_VERSION: v0.43.1
   KUBO_SHA256: 3f2bf974ab2a3ec6d997fac7d8cb46f59983a7cddd0b55ef998e6ce379155fb2
+  KOMAC_VERSION: v2.16.0
+  KOMAC_SHA256: 7d2707fa6210f2789a3702de49fbd150b736dbf426ee0b9bc8e098736f9fd82d
 
 jobs:
+  # The real uBlock Origin must load and block on the Electron this release ships: the same spec the pull request
+  # gate runs (ci.yml, ublock-gate), here on every release, since it costs one Linux runner for a few minutes and
+  # a release is the one place an Electron upgrade that slipped through unnoticed would reach people. The packages
+  # are not built until it passes.
+  ublock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Fetch the pinned uBlock Origin package, failing if it cannot be had
+        run: node scripts/fetch-bundled-extensions.mjs --required
+
+      - name: Install a virtual display
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Enable Chromium's setuid sandbox helper
+        run: |
+          sudo chown root:root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+
+      - name: Build with the developer-only hooks the spec needs
+        run: node scripts/build-e2e.mjs
+
+      - name: uBlock Origin loads and blocks on this Electron
+        run: >-
+          xvfb-run -a node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts
+          test/extensions/e2e-extensions-profiles-ublock.test.ts
+
+      - name: Upload failure evidence
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: qa-artifacts-ublock
+          path: qa-artifacts/latest/
+          if-no-files-found: ignore
+          retention-days: 7
+
   package:
+    needs: ublock
     name: package (${{ matrix.platform }})
+    if: ${{ inputs.tag == '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -57,14 +121,17 @@ jobs:
           cache: npm
 
       # The app rejects a light-client checkpoint over 14 days old, so a fresh install of a release
-      # shipping one verifies no .eth name. Refresh it before tagging (release-checklist.md).
-      - name: The shipped .eth checkpoint is under 14 days old
+      # shipping one verifies no .eth name. A release refuses one over MAX_CHECKPOINT_AGE_DAYS, so it does
+      # not die within days of shipping. refresh-eth-checkpoint.yml keeps main's checkpoint fresh
+      # (release-checklist.md).
+      - name: The shipped .eth checkpoint is fresh enough
         if: github.event_name == 'release'
         run: >-
           node -e "const c = require('./src/main/verifier/mainnet-checkpoint.json');
+          const max = Number(process.env.MAX_CHECKPOINT_AGE_DAYS);
           const days = (Date.now() / 1000 - c.timestamp) / 86400;
-          console.log('checkpoint age: ' + days.toFixed(1) + ' days');
-          if (days > 14) { console.error('refresh it: node scripts/refresh-eth-checkpoint.mjs --write'); process.exit(1) }"
+          console.log('checkpoint age: ' + days.toFixed(1) + ' days, at most ' + max);
+          if (!(days <= max)) { console.error('refresh it: node scripts/refresh-eth-checkpoint.mjs --write'); process.exit(1) }"
 
       - run: npm ci
 
@@ -95,6 +162,31 @@ jobs:
           chmod +x release/*.AppImage
           node scripts/run-headless.mjs node scripts/smoke-packaged.mjs release/*.AppImage
 
+      # The one-line Linux install, on the AppImage just built, in a scratch home: no sudo, the files it promises, and the
+      # launcher starts it (on this runner without libfuse2 the launcher unpacks the AppImage first).
+      - name: Install with the one-line installer and launch it
+        if: matrix.platform == 'linux'
+        run: |
+          install_home="$RUNNER_TEMP/install-home"
+          mkdir -p "$install_home"
+          HOME="$install_home" ORIVON_APPIMAGE="$(ls release/*.AppImage)" bash scripts/install-linux.sh --no-launch
+          test -x "$install_home/.local/lib/orivon/Orivon.AppImage"
+          test -f "$install_home/.local/share/icons/hicolor/512x512/apps/orivon.png"
+          grep -q 'x-scheme-handler/https' "$install_home/.local/share/applications/orivon.desktop"
+          node scripts/run-headless.mjs node scripts/smoke-packaged.mjs "$install_home/.local/lib/orivon/orivon"
+
+      # The real path as a user runs it: the newest published release is looked up, downloaded and checked. During a
+      # release the new one has no packages yet, so this would test the previous release; PRs and manual runs only.
+      - name: Install the newest published release with the one-line installer
+        if: matrix.platform == 'linux' && github.event_name != 'release'
+        env:
+          ORIVON_GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          install_home="$RUNNER_TEMP/install-home-release"
+          mkdir -p "$install_home"
+          HOME="$install_home" bash scripts/install-linux.sh --no-launch
+          test -x "$install_home/.local/lib/orivon/Orivon.AppImage"
+
       - name: Install with the NSIS installer and launch it
         if: matrix.platform == 'win'
         shell: pwsh
@@ -106,6 +198,121 @@ jobs:
           if (-not $exe) { throw "the installer put no Orivon.exe under $env:LOCALAPPDATA\Programs" }
           node scripts/run-headless.mjs node scripts/smoke-packaged.mjs $exe.FullName
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # The installer's registry entries, and a link handed to Windows the way another program hands one.
+      - name: The installed package is listed as a browser and takes orivon, links
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter Orivon.exe | Select-Object -First 1
+          node scripts/smoke-orivon-link.mjs $exe.FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # The Store signs its package itself, so the one built here is unsigned. To install it on the runner, a
+      # COPY is signed with a throwaway certificate whose subject is the manifest's publisher, and trusted for
+      # this run only. No secret is involved, and the copy is never uploaded.
+      - name: Install the Store package, signed with a throwaway certificate
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $store = Get-ChildItem release/Orivon-Store-*.appx | Select-Object -First 1
+          if (-not $store) { throw 'the build wrote no Store package' }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead($store.FullName)
+          try {
+            $reader = New-Object System.IO.StreamReader($zip.GetEntry('AppxManifest.xml').Open())
+            $manifestText = $reader.ReadToEnd()
+            $reader.Dispose()
+          } finally { $zip.Dispose() }
+          Write-Host $manifestText
+          [xml]$manifest = $manifestText
+          $identity = $manifest.Package.Identity
+          $applicationId = $manifest.Package.Applications.Application.Id
+
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\x64\\' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signtool) { throw 'the Windows SDK on this runner has no signtool' }
+
+          $plain = [guid]::NewGuid().ToString()
+          $secure = ConvertTo-SecureString -String $plain -AsPlainText -Force
+          $cert = New-SelfSignedCertificate -Type Custom -Subject $identity.Publisher -KeyUsage DigitalSignature `
+            -FriendlyName 'Orivon install test' -CertStoreLocation 'Cert:\CurrentUser\My' `
+            -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.3', '2.5.29.19={text}')
+          $pfx = Join-Path $env:RUNNER_TEMP 'orivon-test.pfx'
+          $cer = Join-Path $env:RUNNER_TEMP 'orivon-test.cer'
+          Export-PfxCertificate -Cert $cert -FilePath $pfx -Password $secure | Out-Null
+          Export-Certificate -Cert $cert -FilePath $cer | Out-Null
+          Import-Certificate -FilePath $cer -CertStoreLocation 'Cert:\LocalMachine\TrustedPeople' | Out-Null
+          "STORE_CERT_THUMBPRINT=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          $signed = Join-Path $env:RUNNER_TEMP 'Orivon-Store-signed-for-test.msix'
+          Copy-Item $store.FullName $signed
+          & $signtool.FullName sign /fd SHA256 /f $pfx /p $plain $signed
+          if ($LASTEXITCODE -ne 0) { throw "signtool exited $LASTEXITCODE" }
+          Remove-Item $pfx
+
+          Add-AppxPackage -Path $signed
+          $package = Get-AppxPackage -Name $identity.Name
+          if (-not $package) { throw "Windows did not register a package named $($identity.Name)" }
+          "STORE_NAME=$($identity.Name)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "STORE_PFN=$($package.PackageFamilyName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "STORE_APP_ID=$applicationId" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "installed $($package.PackageFullName) at $($package.InstallLocation)"
+
+      # Started through its AUMID, the only way a Store app gets its package identity: the process Windows
+      # starts is the package's own Orivon.exe, and it has to stay up.
+      - name: Launch the Store package through its AUMID and keep it running
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $package = Get-AppxPackage -Name $env:STORE_NAME
+          $install = $package.InstallLocation
+          function Get-PackageProcesses {
+            Get-Process -Name Orivon -ErrorAction SilentlyContinue |
+              Where-Object { $_.Path -and $_.Path.StartsWith($install, [StringComparison]::OrdinalIgnoreCase) }
+          }
+          Start-Process "shell:AppsFolder\${env:STORE_PFN}!${env:STORE_APP_ID}"
+          $deadline = (Get-Date).AddSeconds(90)
+          while (-not (Get-PackageProcesses) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
+          $started = @(Get-PackageProcesses)
+          if ($started.Count -eq 0) { throw "no Orivon.exe from $install is running 90 s after launching $env:STORE_PFN!$env:STORE_APP_ID" }
+          Write-Host "running from the package: $($started.Count) process(es), first at $($started[0].Path)"
+          Start-Sleep -Seconds 20
+          $main = Get-CimInstance Win32_Process -Filter "Name = 'Orivon.exe'" | Where-Object { $_.CommandLine -notmatch '--type=' }
+          $alive = @(Get-PackageProcesses)
+          if ($alive.Count -eq 0 -or -not $main) { throw 'the Store package exited within 20 s of starting' }
+          Write-Host "still running 20 s later: $($alive.Count) process(es), main process $(@($main)[0].ProcessId)"
+          $alive | Stop-Process -Force
+          Start-Sleep -Seconds 3
+
+      # The same smoke the other packages pass, against an app started inside the package with
+      # Invoke-CommandInDesktopPackage, so it has its identity and a DevTools port to ask.
+      - name: Smoke the Store package with its package identity
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $package = Get-AppxPackage -Name $env:STORE_NAME
+          $profileDir = Join-Path $env:RUNNER_TEMP 'orivon-store-profile'
+          $program = Join-Path $package.InstallLocation 'app\Orivon.exe'
+          Invoke-CommandInDesktopPackage -PackageFamilyName $env:STORE_PFN -AppId $env:STORE_APP_ID -Command $program `
+            -Args "--user-data-dir=`"$profileDir`" --remote-debugging-port=9333" -PreventBreakaway
+          node scripts/smoke-packaged.mjs --attach 9333
+          $code = $LASTEXITCODE
+          Get-Process -Name Orivon -ErrorAction SilentlyContinue | Stop-Process -Force
+          if ($code -ne 0) { exit $code }
+
+      - name: Remove the Store package and the throwaway certificate
+        if: always() && matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          if ($env:STORE_NAME) { Get-AppxPackage -Name $env:STORE_NAME | Remove-AppxPackage }
+          if ($env:STORE_CERT_THUMBPRINT) {
+            Remove-Item "Cert:\LocalMachine\TrustedPeople\$env:STORE_CERT_THUMBPRINT" -ErrorAction SilentlyContinue
+            Remove-Item "Cert:\CurrentUser\My\$env:STORE_CERT_THUMBPRINT" -ErrorAction SilentlyContinue
+          }
 
       - name: Check the signature, mount each dmg and launch it
         if: matrix.platform == 'mac'
@@ -119,6 +326,35 @@ jobs:
             hdiutil detach "$mount" || { sleep 5; hdiutil detach -force "$mount"; }
           done
 
+      # The one-line Terminal install, on the package just built: no quarantine attribute, and it launches.
+      - name: Install with the one-line installer and launch it
+        if: matrix.platform == 'mac'
+        run: |
+          mkdir -p "$RUNNER_TEMP/apps-local"
+          ORIVON_DMG="$(ls release/*-arm64.dmg)" ORIVON_INSTALL_DIR="$RUNNER_TEMP/apps-local" ORIVON_NO_OPEN=1 bash scripts/install-macos.sh
+          if xattr -r "$RUNNER_TEMP/apps-local/Orivon.app" | grep -q com.apple.quarantine; then
+            echo "the installed app carries a quarantine attribute" >&2
+            exit 1
+          fi
+          node scripts/run-headless.mjs node scripts/smoke-packaged.mjs "$RUNNER_TEMP/apps-local/Orivon.app/Contents/MacOS/Orivon"
+
+      # What LaunchServices knows of the installed app, and a link handed to macOS the way another program hands one.
+      - name: The installed app is known as a browser and takes orivon, links
+        if: matrix.platform == 'mac'
+        run: |
+          node scripts/smoke-orivon-link.mjs "$RUNNER_TEMP/apps-local/Orivon.app/Contents/MacOS/Orivon" "$RUNNER_TEMP/apps-local/Orivon.app"
+
+      # The real path as a user runs it: the newest published release is looked up, downloaded and checked. During a
+      # release the new one has no packages yet, so this would test the previous release; PRs and manual runs only.
+      - name: Install the newest published release with the one-line installer
+        if: matrix.platform == 'mac' && github.event_name != 'release'
+        env:
+          ORIVON_GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          ORIVON_INSTALL_DIR="$RUNNER_TEMP/apps-release" ORIVON_NO_OPEN=1 bash scripts/install-macos.sh
+          test -d "$RUNNER_TEMP/apps-release/Orivon.app"
+          codesign --verify --deep --strict "$RUNNER_TEMP/apps-release/Orivon.app"
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: orivon-${{ matrix.platform }}
@@ -126,9 +362,26 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # The CID of the release's files as one directory, with the same Kubo and flags a pinning node
-  # uses to add them, so the node can refuse files that do not add up to it.
-  manifest:
+      # Not named orivon-*: the jobs that attach and hash the release's files take only those, so this
+      # package reaches neither the release nor its IPFS folder. The store job submits it to Partner Center;
+      # the owner downloads it here to upload by hand when that job cannot (release-checklist.md), hence the
+      # longer retention.
+      - name: Keep the Store package for the store job and for upload by hand
+        if: matrix.platform == 'win'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: store-msix
+          path: release/Orivon-Store-*.appx
+          if-no-files-found: error
+          retention-days: 30
+
+  # Copies of the Windows installer and the AppImage under a name that tags each for an app
+  # (`Orivon-Setup-<version>-x64.<id>.exe`), one per entry of resources/flavours.json: the same bytes, so a
+  # tag is only a name and the compiled build is never rebuilt for one (docs/development/packaging.md section
+  # Tagged packages). Two checks fail the release: a copy whose SHA-256 differs from its original, and an
+  # entry whose app is not the `domain` its port declares on main. The copies join the release through the
+  # `orivon-` artifact name, like every other package.
+  tagged:
     needs: package
     runs-on: ubuntu-latest
     steps:
@@ -138,6 +391,69 @@ jobs:
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
+          pattern: orivon-*
+          path: packages
+          merge-multiple: true
+
+      - name: Copy the installer and the AppImage under each tagged name
+        run: |
+          set -euo pipefail
+          mkdir tagged
+          exe=(packages/Orivon-Setup-*-x64.exe)
+          image=(packages/Orivon-*-x86_64.AppImage)
+          test "${#exe[@]}" -eq 1 && test -f "${exe[0]}"
+          test "${#image[@]}" -eq 1 && test -f "${image[0]}"
+          for id in $(jq -r '.flavours[].id' resources/flavours.json); do
+            [[ $id =~ ^[a-z0-9]{2,24}$ ]]
+            for file in "${exe[0]}" "${image[0]}"; do
+              name=${file##*/}
+              cp "$file" "tagged/${name%.*}.$id.${name##*.}"
+            done
+          done
+          ls -l tagged
+
+      - name: Every tagged copy has the SHA-256 of its original
+        run: |
+          set -euo pipefail
+          for id in $(jq -r '.flavours[].id' resources/flavours.json); do
+            for file in packages/Orivon-Setup-*-x64.exe packages/Orivon-*-x86_64.AppImage; do
+              name=${file##*/}
+              copy="tagged/${name%.*}.$id.${name##*.}"
+              test "$(sha256sum < "$file")" = "$(sha256sum < "$copy")" || { echo "::error::$copy differs from $file"; exit 1; }
+            done
+          done
+
+      - name: Every flavour's app is the domain its port declares on main
+        run: |
+          set -euo pipefail
+          jq -r '.flavours[] | [.id, .app, .port] | @tsv' resources/flavours.json | while IFS=$'\t' read -r id app port; do
+            [[ $port =~ ^[a-z0-9-]{1,40}$ ]]
+            domain=$(curl -fsSL "https://raw.githubusercontent.com/OrivonBrowser/orivon-ports/main/apps/$port/orivon.json" | jq -r .domain)
+            test "$domain" = "$app" || { echo "::error::flavour $id opens $app, but apps/$port/orivon.json declares $domain"; exit 1; }
+            echo "$id: $app"
+          done
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: orivon-flavours
+          path: tagged/*
+          if-no-files-found: error
+          retention-days: 7
+
+  # The CID of the release's files as one directory, with the same Kubo and flags a pinning node
+  # uses to add them, so the node can refuse files that do not add up to it.
+  manifest:
+    if: ${{ inputs.tag == '' }}
+    needs: [package, tagged]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: orivon-*
           path: packages
           merge-multiple: true
 
@@ -161,19 +477,72 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # The release's description: the CHANGELOG section of its version, the table of which file suits which
+  # computer, and the IPFS section, kept below a marker so that anything a person wrote above it stays
+  # (scripts/release-notes.mjs, packaging.md section Release notes). A read-only token, and no npm: the
+  # script is the repository's own and uses Node's built-ins. The publish job only writes what this makes.
+  notes:
+    if: github.event_name == 'release'
+    needs: [package, manifest]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: orivon-*
+          path: packages
+          merge-multiple: true
+
+      # Replaces what a previous run wrote: a re-run rebuilds the packages, and their CID with them.
+      - name: Write the description
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body > body.md
+          node scripts/release-notes.mjs --tag "$TAG" --repo "$GITHUB_REPOSITORY" --changelog CHANGELOG.md \
+            --assets-dir packages --ipfs-json packages/ipfs.json --routes packaging/release-routes.json \
+            --prerelease "$PRERELEASE" --body-file body.md --out notes.md
+          cat notes.md
+
+      # Not named orivon-*: the publish job attaches every file of those to the release.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-notes
+          path: notes.md
+          if-no-files-found: error
+          retention-days: 7
+
   # Its own job so the token that can write to the release never runs npm install's scripts or a
   # downloaded binary. It needs every package job, so a release gets all three systems or nothing.
   publish:
     if: github.event_name == 'release'
-    needs: [package, manifest]
+    needs: [package, tagged, manifest, notes]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
+          pattern: orivon-*
           path: packages
           merge-multiple: true
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-notes
+          path: notes
 
       - name: Attach the packages and ipfs.json to the release
         env:
@@ -181,15 +550,386 @@ jobs:
           TAG: ${{ github.event.release.tag_name }}
         run: gh release upload "$TAG" packages/* --clobber --repo "$GITHUB_REPOSITORY"
 
-      # Replaces the section a previous run wrote: a re-run rebuilds the packages, and their CID with them.
-      - name: Write the release's CID into its description
+      - name: Write the release's description
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
+        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes/notes.md
+
+  # Offers the Windows installer to winget-pkgs as a pull request from the owner's account. A winget
+  # install is never met with SmartScreen: the default source is trusted. It runs after `publish`, so
+  # the installer is a public asset, and it never checks out the repository or runs npm: the only
+  # program it runs besides the runner's own gh is the Komac pinned above, and only the last step
+  # holds the token. A release never goes red for a winget step that is not set up yet: that step
+  # writes a warning and succeeds (packaging.md section winget). Run by hand with a tag, it offers that
+  # published release instead (Actions > Release > Run workflow).
+  winget:
+    if: ${{ !cancelled() && (needs.publish.result == 'success' || inputs.tag != '') }}
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Choose the package, its version and its installer
+        id: choose
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+          HAS_TOKEN: ${{ secrets.WINGET_TOKEN != '' }}
         run: |
-          cid=$(jq -r .cid packages/ipfs.json)
-          # Notes edited on github.com end their lines with CRLF.
-          body=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body | sed $'/^### On IPFS\r\\{0,1\\}$/,$d')
-          printf '%s\n\n### On IPFS\n\nThe same files, as one folder: `ipfs://%s`. Open it in Orivon, or run `ipfs get %s`. The Orivon node pins it within about 15 minutes, with the two releases before it.\n' \
-            "$body" "$cid" "$cid" > notes.md
-          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
+          set -euo pipefail
+          version="${TAG#v}"
+          if [ -z "$PRERELEASE" ]; then
+            PRERELEASE=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease)
+          fi
+          if [ "$PRERELEASE" = true ]; then
+            id=Orivon.Browser.Preview
+            dir=manifests/o/Orivon/Browser/Preview
+          else
+            id=Orivon.Browser
+            dir=manifests/o/Orivon/Browser
+          fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "run=false" >> "$GITHUB_OUTPUT"
+          steps="Steps: docs/development/release-checklist.md, item The winget package."
+
+          if [ "$HAS_TOKEN" != true ]; then
+            echo "::warning title=winget::$id $version was not submitted to winget-pkgs: the repository secret WINGET_TOKEN is empty. $steps"
+            exit 0
+          fi
+
+          # The versions winget-pkgs holds. A missing folder is a 404: the package is new to winget. The
+          # preview folder sits inside the full release's, so it is not a version.
+          if listing=$(gh api "repos/microsoft/winget-pkgs/contents/$dir" --jq '[.[] | select(.type == "dir") | .name | select(. != "Preview")] | join(" ")' 2>err.txt); then
+            :
+          elif grep -q 'HTTP 404' err.txt; then
+            listing=
+          else
+            cat err.txt >&2
+            exit 1
+          fi
+          if [ -z "$listing" ]; then
+            echo "::warning title=winget::$id $version was not submitted to winget-pkgs: it holds no version of $id yet, and Komac only adds a version to a package that exists. Submit the first one by hand. $steps"
+            exit 0
+          fi
+          for existing in $listing; do
+            if [ "$existing" = "$version" ]; then
+              echo "::notice title=winget::winget-pkgs already holds $id $version."
+              exit 0
+            fi
+          done
+
+          # Komac's own check for an open pull request is a prompt, which ends the run without submitting when CI=true.
+          open=$(gh api -X GET search/issues -f q="repo:microsoft/winget-pkgs is:pr is:open in:title \"$id version $version\"" --jq .total_count)
+          if [ "$open" != 0 ]; then
+            echo "::notice title=winget::winget-pkgs already has an open pull request for $id $version."
+            exit 0
+          fi
+
+          url=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq "[.assets[] | select(.name == \"Orivon-Setup-$version-x64.exe\") | .url] | first // empty")
+          if [ -z "$url" ]; then
+            echo "::warning title=winget::$id $version was not submitted to winget-pkgs: the release has no asset Orivon-Setup-$version-x64.exe."
+            exit 0
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "run=true" >> "$GITHUB_OUTPUT"
+
+      - name: Install Komac
+        if: steps.choose.outputs.run == 'true'
+        run: |
+          curl -fsSL -o komac.tar.gz "https://github.com/russellbanks/Komac/releases/download/$KOMAC_VERSION/komac-${KOMAC_VERSION#v}-x86_64-unknown-linux-gnu.tar.gz"
+          echo "$KOMAC_SHA256  komac.tar.gz" | sha256sum -c -
+          tar -xzf komac.tar.gz komac
+
+      # Komac forks winget-pkgs into the token's account when there is no fork, and opens the pull request from it.
+      - name: Submit the version to winget-pkgs
+        if: steps.choose.outputs.run == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
+          PACKAGE_ID: ${{ steps.choose.outputs.id }}
+          VERSION: ${{ steps.choose.outputs.version }}
+          URL: ${{ steps.choose.outputs.url }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: >-
+          ./komac update "$PACKAGE_ID" --version "$VERSION" --urls "$URL"
+          --release-notes-url "https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
+          --created-with "Orivon release workflow" --created-with-url "https://github.com/$GITHUB_REPOSITORY"
+          --skip-pr-check --submit
+
+  # Submits the Store package to Partner Center as a new submission of the existing product, with the Microsoft
+  # Store Developer CLI (msstore, pinned below) and an Entra ID application that has the Manager role in Partner
+  # Center. The listing is not touched: msstore starts the submission from the last published one. The package
+  # is the `store-msix` artifact of this run, and stays there for upload by hand. A release never goes red for a
+  # Store step that is not set up yet: with a secret empty, or a submission already in review, the job writes a
+  # warning and succeeds (packaging.md section The Microsoft Store package). Run by hand with a tag, it submits
+  # that published release's package, taken from the newest Release run of the tag.
+  store:
+    if: ${{ !cancelled() && (needs.publish.result == 'success' || inputs.tag != '') }}
+    needs: publish
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      actions: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Choose the package
+        id: choose
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          INPUT_TAG: ${{ inputs.tag }}
+          HAS_SECRETS: ${{ secrets.MS_STORE_TENANT_ID != '' && secrets.MS_STORE_SELLER_ID != '' && secrets.MS_STORE_CLIENT_ID != '' && secrets.MS_STORE_CLIENT_SECRET != '' }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "run=false" >> "$GITHUB_OUTPUT"
+          steps="Upload the store-msix artifact of the release's run by hand. Steps: docs/development/release-checklist.md, item The Microsoft Store package."
+
+          if [ "$HAS_SECRETS" != true ]; then
+            echo "::warning title=Microsoft Store::$version was not submitted to the Microsoft Store: one of the repository secrets MS_STORE_TENANT_ID, MS_STORE_SELLER_ID, MS_STORE_CLIENT_ID and MS_STORE_CLIENT_SECRET is empty. $steps"
+            exit 0
+          fi
+
+          # The package's version is the tag's three numbers and a fourth that is always 0. A pre-release tag
+          # (0.2.0-beta.1) would package as 0.2.0.0, the same as the release after it, and the Store only takes
+          # a version higher than its last.
+          if [[ "$version" == *-* ]]; then
+            echo "::notice title=Microsoft Store::$version is a pre-release tag: its package would carry the version of the release it leads to, so it is not submitted."
+            exit 0
+          fi
+
+          if [ -n "$INPUT_TAG" ]; then
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+            run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow release.yml --event release --limit 100 --json databaseId,headBranch --jq "[.[] | select(.headBranch == \"$TAG\")] | first | .databaseId // empty")
+            if [ -z "$run_id" ]; then
+              echo "::error title=Microsoft Store::found no Release workflow run for $TAG among the last 100, so there is no store-msix artifact to submit."
+              exit 1
+            fi
+            echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          fi
+          echo "run=true" >> "$GITHUB_OUTPUT"
+
+      - name: Download the Store package of this run
+        if: steps.choose.outputs.run == 'true' && github.event_name == 'release'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: store-msix
+          path: store
+
+      - name: Download the Store package of the tag's Release run
+        if: steps.choose.outputs.run == 'true' && github.event_name != 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.choose.outputs.run_id }}
+        run: gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name store-msix --dir store
+
+      # What is about to be submitted is the package of this tag: its manifest says so, and the Store wants
+      # the fourth part of the version to be 0 (electron-builder writes it so).
+      - name: Check the package is this release's
+        if: steps.choose.outputs.run == 'true'
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.choose.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @(Get-ChildItem store -Filter 'Orivon-Store-*.appx')
+          if ($files.Count -ne 1) { throw "expected one Orivon-Store-*.appx in the artifact, found $($files.Count)" }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead($files[0].FullName)
+          try {
+            $reader = New-Object System.IO.StreamReader($zip.GetEntry('AppxManifest.xml').Open())
+            [xml]$manifest = $reader.ReadToEnd()
+            $reader.Dispose()
+          } finally { $zip.Dispose() }
+          $identity = $manifest.Package.Identity
+          Write-Host "package $($identity.Name) $($identity.Version), publisher $($identity.Publisher)"
+          $expected = "$($env:VERSION).0"
+          if ($identity.Version -ne $expected) { throw "the package is version $($identity.Version), but the release is $expected" }
+          # msstore takes .msix and .msixupload; the bytes of the two containers are the same.
+          Copy-Item $files[0].FullName (Join-Path $files[0].DirectoryName 'Orivon-Store.msix')
+
+      - name: Install the Microsoft Store Developer CLI
+        if: steps.choose.outputs.run == 'true'
+        uses: microsoft/microsoft-store-apppublisher@cc9910a8d59f2eb55cbb83df0a3800cf3b5300e0 # v1.4
+        with:
+          version: v0.4.3
+
+      # Only this step holds the Partner Center credentials. A submission of the product that is still in
+      # review cannot be replaced (Partner Center allows one at a time), so that failure is told in plain
+      # words and the job still succeeds; any other failure fails the job, and only the job.
+      - name: Submit the package to Partner Center
+        if: steps.choose.outputs.run == 'true'
+        env:
+          MS_STORE_TENANT_ID: ${{ secrets.MS_STORE_TENANT_ID }}
+          MS_STORE_SELLER_ID: ${{ secrets.MS_STORE_SELLER_ID }}
+          MS_STORE_CLIENT_ID: ${{ secrets.MS_STORE_CLIENT_ID }}
+          MS_STORE_CLIENT_SECRET: ${{ secrets.MS_STORE_CLIENT_SECRET }}
+          PRODUCT_ID: 9MXV3FNMFBP4
+          VERSION: ${{ steps.choose.outputs.version }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          set -uo pipefail
+          msstore reconfigure --tenantId "$MS_STORE_TENANT_ID" --sellerId "$MS_STORE_SELLER_ID" \
+            --clientId "$MS_STORE_CLIENT_ID" --clientSecret "$MS_STORE_CLIENT_SECRET" || exit 1
+
+          msix=$(cygpath -w "$PWD/store/Orivon-Store.msix")
+          echo "::group::msstore submission status $PRODUCT_ID, before"
+          msstore submission status "$PRODUCT_ID" || true
+          echo "::endgroup::"
+
+          if msstore publish "$msix" -id "$PRODUCT_ID" 2>&1 | tee publish.log; then
+            ok=true
+          else
+            ok=false
+          fi
+
+          echo "::group::msstore submission status $PRODUCT_ID, after"
+          msstore submission status "$PRODUCT_ID" 2>&1 | tee status.log || true
+          echo "::endgroup::"
+
+          if [ "$ok" = true ]; then
+            {
+              echo "### Microsoft Store"
+              echo
+              echo "Submitted $VERSION ($TAG) to the product $PRODUCT_ID. Partner Center certifies it before it reaches the Store."
+              echo
+              echo '```'
+              cat status.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if grep -Eiq 'in progress|in certification|InCertification|pending submission|already has a (pending|submission)|InvalidState|cannot (be )?(delete|creat)' publish.log; then
+            echo "::warning title=Microsoft Store::$VERSION was not submitted: Partner Center holds a submission of $PRODUCT_ID that is still in review, and it allows one at a time. When it is published, or cancelled in Partner Center, run Actions > Release > Run workflow with the tag $TAG. The package is the store-msix artifact."
+            exit 0
+          fi
+          echo "::error title=Microsoft Store::msstore could not submit $VERSION; its output is above. The package is the store-msix artifact, for upload by hand."
+          exit 1
+
+  # Offers the release's .deb to the Arch User Repository as orivon-bin (packaging/aur/PKGBUILD). The job fills
+  # the version and sha256 from the release, builds the package once in an Arch container to prove the PKGBUILD,
+  # writes .SRCINFO there with makepkg, and pushes both. Only the last step holds the SSH key. A release never
+  # goes red for an AUR step that is not set up yet: with the secret empty, the job writes a warning and
+  # succeeds (packaging.md section The Arch User Repository). Run by hand with a tag, it offers that release.
+  aur:
+    if: ${{ !cancelled() && (needs.publish.result == 'success' || inputs.tag != '') }}
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Choose the version and read what the AUR holds
+        id: choose
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          HAS_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY != '' }}
+        run: |
+          set -euo pipefail
+          echo "run=false" >> "$GITHUB_OUTPUT"
+          steps="Steps: docs/development/release-checklist.md, item The Arch package."
+
+          if [ "$HAS_KEY" != true ]; then
+            echo "::warning title=AUR::$TAG was not offered to the AUR: the repository secret AUR_SSH_PRIVATE_KEY is empty. $steps"
+            exit 0
+          fi
+          case "$TAG" in
+            v[0-9]*) ;;
+            *) echo "::warning title=AUR::$TAG was not offered to the AUR: the tag does not start with v and a number, and the package's download address is built from it."; exit 0 ;;
+          esac
+          upstream="${TAG#v}"
+
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern ipfs.json --dir release
+          sha=$(jq -r --arg name "orivon_${upstream}_amd64.deb" '[.files[] | select(.name == $name) | .sha256] | first // empty' release/ipfs.json)
+          if [ -z "$sha" ]; then
+            echo "::warning title=AUR::$TAG was not offered to the AUR: the release has no orivon_${upstream}_amd64.deb in its ipfs.json."
+            exit 0
+          fi
+
+          # What the AUR holds now, read over https so that no key is needed yet. A 404 is a package it does not hold.
+          code=$(curl -sS -o old-PKGBUILD -w '%{http_code}' 'https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=orivon-bin')
+          old_upstream=
+          old_pkgrel=
+          old_sha=
+          case "$code" in
+            200)
+              old_upstream=$(sed -n "s/^_upstream=//p" old-PKGBUILD | head -1)
+              old_pkgrel=$(sed -n "s/^pkgrel=//p" old-PKGBUILD | head -1)
+              old_sha=$(sed -n "s/^sha256sums=('\\(.*\\)')\$/\\1/p" old-PKGBUILD | head -1)
+              ;;
+            404) ;;
+            *) echo "::error title=AUR::the AUR answered $code when asked for the current PKGBUILD of orivon-bin."; exit 1 ;;
+          esac
+          {
+            echo "upstream=$upstream"
+            echo "sha=$sha"
+            echo "old_upstream=$old_upstream"
+            echo "old_pkgrel=$old_pkgrel"
+            echo "old_sha=$old_sha"
+            echo "run=true"
+          } >> "$GITHUB_OUTPUT"
+
+      # Arch's own tools, pinned by digest like the actions. It builds the package once to prove the PKGBUILD
+      # and the sha256 before anything is pushed; nothing in this step has the key.
+      - name: Fill the PKGBUILD, build it once and write .SRCINFO in an Arch container
+        if: steps.choose.outputs.run == 'true'
+        env:
+          UPSTREAM: ${{ steps.choose.outputs.upstream }}
+          SHA256: ${{ steps.choose.outputs.sha }}
+          OLD_UPSTREAM: ${{ steps.choose.outputs.old_upstream }}
+          OLD_PKGREL: ${{ steps.choose.outputs.old_pkgrel }}
+          OLD_SHA256: ${{ steps.choose.outputs.old_sha }}
+        run: |
+          set -euo pipefail
+          mkdir aur
+          cp packaging/aur/PKGBUILD aur/
+          chmod 777 aur
+          docker run --rm -e HOST_UID="$(id -u)" -e UPSTREAM -e SHA256 -e OLD_UPSTREAM -e OLD_PKGREL -e OLD_SHA256 \
+            -v "$PWD/aur:/pkg" -v "$PWD/packaging/aur/prepare.sh:/prepare.sh:ro" \
+            archlinux:base-devel@sha256:0ccc8b2e55c0c26a6e501e892cc6b1cdea7cfdf77e432941320148b4dabd2bff bash /prepare.sh /pkg
+          result=$(cat aur/result)
+          echo "result=$result" | tee -a "$GITHUB_ENV"
+          case "$result" in
+            publish) ;;
+            same) echo "::notice title=AUR::orivon-bin on the AUR already holds $UPSTREAM with this package." ;;
+            older) echo "::warning title=AUR::orivon-bin on the AUR holds a newer version than $UPSTREAM, so $UPSTREAM was not offered." ;;
+            unmappable) echo "::warning title=AUR::$UPSTREAM was not offered to the AUR: only x.y.z and x.y.z-alpha, -beta or -rc with an optional .n have a version pacman sorts right." ;;
+            *) echo "::error title=AUR::unexpected result $result"; exit 1 ;;
+          esac
+
+      - name: Push to the AUR
+        if: steps.choose.outputs.run == 'true' && env.result == 'publish'
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          UPSTREAM: ${{ steps.choose.outputs.upstream }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/ssh"
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$RUNNER_TEMP/ssh/key"
+          # The AUR's ed25519 host key, SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4, as the AUR announces it.
+          echo 'aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN' > "$RUNNER_TEMP/ssh/known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $RUNNER_TEMP/ssh/key -o IdentitiesOnly=yes -o UserKnownHostsFile=$RUNNER_TEMP/ssh/known_hosts -o StrictHostKeyChecking=yes -o HostKeyAlgorithms=ssh-ed25519"
+          git clone ssh://aur@aur.archlinux.org/orivon-bin.git aur-repo
+          cp aur/PKGBUILD aur/.SRCINFO aur-repo/
+          cd aur-repo
+          git checkout -B master
+          git add PKGBUILD .SRCINFO
+          if git diff --cached --quiet; then
+            echo "::notice title=AUR::nothing changed in orivon-bin."
+            exit 0
+          fi
+          release=$(sed -n 's/^pkgrel=//p' PKGBUILD)
+          git -c user.name='Orivon release workflow' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "Update to ${UPSTREAM}-${release}"
+          git push origin master
+          rm -f "$RUNNER_TEMP/ssh/key"

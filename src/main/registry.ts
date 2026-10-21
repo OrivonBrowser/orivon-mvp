@@ -25,10 +25,14 @@ import type { Broker } from '../broker/broker-contracts.js'
 import type { Loader, LoadResult } from '../loader/index.js'
 import type { GrantedWithoutInstall } from './install/grant-without-install.js'
 import type { DialogCaller } from './consent/request-grant.js'
+import type { SchemeHost } from '../broker/transport/ipc-validation.js'
 import type { CapabilityRequest, WebsiteScore } from '../contracts/index.js'
 import type { ExtensionsApi } from './extensions/extensions-subsystem.js'
 import type { AppUpdates } from './install/app-updates.js'
 import type { ProviderVerdict } from '../trust/score-provider.js'
+import type { PrivateTunnel } from './launch/launch-context.js'
+import type { RouteService } from './route/route-service.js'
+import { createPublishedSlot } from './published-slot.js'
 
 export interface SubsystemContext {
   readonly app: App
@@ -37,6 +41,11 @@ export interface SubsystemContext {
    * persist something about the person, or report it, must not. Fixed for the life of the process.
    */
   readonly privateSession: boolean
+  /**
+   * The tunnel this private session is held to: the whole browser goes through it from the first request, and nothing in the
+   * process may turn that off. Null when it is not held to one. Fixed for the life of the process.
+   */
+  readonly privateTunnel: PrivateTunnel | null
   /**
    * The running app's one `Broker`. Nothing else in the process may
    * construct a second one: two independently-constructed brokers mean two
@@ -132,6 +141,18 @@ export interface SubsystemContext {
    */
   readonly websiteScore: ((origin: string, address: string) => Promise<WebsiteScore>) | undefined
   /**
+   * What an app's `orivon.app.onOpenUrl`, `requestSchemeHandler` and `isSchemeHandler` reach (d-0596): the routing of a
+   * link scheme to an app, built with the shell. Published in `main/index.ts`, so a reader treats `undefined` as
+   * routine early in startup and reads it at the moment of the call, as `../broker/transport/ipc.ts` does.
+   */
+  readonly schemeHost: SchemeHost | undefined
+  /**
+   * The network route each app can have (`./route/`): which apps are routed through the person's proxy, the front their
+   * Chromium sessions use and the route the broker and the loader read. Published by `routeSubsystem`, which is
+   * critical and listed above the broker: an app flagged as routed whose route did not start would go direct.
+   */
+  readonly routes: RouteService | undefined
+  /**
    * Whether the WebContents making a call is attributed to the origin it
    * claims -- `isAttributedSession`'s (`../broker/policy/origin.js`)
    * injected other half. Every renderer-reachable broker channel
@@ -184,30 +205,6 @@ export interface OpenTabs {
   readonly origins: () => string[]
 }
 
-/**
- * One field on `SubsystemContext` that may be published exactly once.
- * `broker` and `loader` both need this guarantee for the same reason (Rule
- * 3): a second published value means two independently-constructed
- * instances disagreeing about one running app's state. Keyed by context
- * rather than stored as an ordinary field so the value can be exposed as a
- * get-only accessor -- a plain mutable field would let `ctx.broker = x`
- * compile, relying on every caller going through `publishBroker` by
- * convention alone.
- */
-function createPublishedSlot<T> (label: string, hazard: string): {
-  get: (ctx: SubsystemContext) => T | undefined
-  publish: (ctx: SubsystemContext, value: T) => void
-} {
-  const byContext = new WeakMap<SubsystemContext, T>()
-  return {
-    get: (ctx) => byContext.get(ctx),
-    publish: (ctx, value) => {
-      if (byContext.has(ctx)) throw new Error(`ctx.${label} is already published; ${hazard}`)
-      byContext.set(ctx, value)
-    }
-  }
-}
-
 const brokerSlot = createPublishedSlot<Broker>('broker', 'a second Broker would create two disagreeing grant ledgers for one running app')
 const loaderSlot = createPublishedSlot<Loader>('loader', 'a second Loader would create two disagreeing ideas of what is installed for one running app')
 const requestGrantSlot = createPublishedSlot<(origin: string, request: CapabilityRequest, caller?: DialogCaller, abandoned?: AbortSignal) => Promise<boolean>>('requestGrant', 'a second one could close over a different Broker instance than the one every other subsystem reads')
@@ -221,15 +218,19 @@ const openTabsSlot = createPublishedSlot<OpenTabs>('openTabs', 'a second one cou
 const scoreVerdictForSlot = createPublishedSlot<(id: string | undefined, waitMs?: number) => Promise<ProviderVerdict>>('scoreVerdictFor', 'a second one could ask a different provider than the one the person chose')
 
 const websiteScoreSlot = createPublishedSlot<(origin: string, address: string) => Promise<WebsiteScore>>('websiteScore', 'a second one would keep a second set of per-caller caches, and a page could tell them apart')
+const schemeHostSlot = createPublishedSlot<SchemeHost>('schemeHost', 'a second one would keep a second queue of links, and an app would hear each link from only one of them')
+const routesSlot = createPublishedSlot<RouteService>('routes', 'a second one would keep a second set of fronts, and a session could be pointed at one the broker does not know')
 const showNoticeSlot = createPublishedSlot<(notice: { readonly title: string, readonly message: string }) => void>('showNotice', 'a second one could draw a message somewhere the first does not')
 
 class SubsystemContextImpl implements SubsystemContext {
   readonly app: App
   readonly privateSession: boolean
+  readonly privateTunnel: PrivateTunnel | null
 
-  constructor (app: App, privateSession: boolean) {
+  constructor (app: App, privateSession: boolean, privateTunnel: PrivateTunnel | null) {
     this.app = app
     this.privateSession = privateSession
+    this.privateTunnel = privateSession ? privateTunnel : null
   }
 
   get broker (): Broker | undefined {
@@ -279,14 +280,22 @@ class SubsystemContextImpl implements SubsystemContext {
   get websiteScore (): ((origin: string, address: string) => Promise<WebsiteScore>) | undefined {
     return websiteScoreSlot.get(this)
   }
+
+  get schemeHost (): SchemeHost | undefined {
+    return schemeHostSlot.get(this)
+  }
+
+  get routes (): RouteService | undefined {
+    return routesSlot.get(this)
+  }
 }
 
 /**
  * The one way to build a `SubsystemContext`. `main/index.ts` calls this
  * once, at startup, and threads the result through `runAfterReady`.
  */
-export function createSubsystemContext (app: App, privateSession = false): SubsystemContext {
-  return new SubsystemContextImpl(app, privateSession)
+export function createSubsystemContext (app: App, privateSession = false, privateTunnel: PrivateTunnel | null = null): SubsystemContext {
+  return new SubsystemContextImpl(app, privateSession, privateTunnel)
 }
 
 /**
@@ -355,6 +364,16 @@ export function publishShowNotice (ctx: SubsystemContext, showNotice: (notice: {
 /** The one sanctioned way to set `ctx.websiteScore` -- see `publishBroker`'s own doc; same guarantee, same reason. */
 export function publishWebsiteScore (ctx: SubsystemContext, websiteScore: (origin: string, address: string) => Promise<WebsiteScore>): void {
   websiteScoreSlot.publish(ctx, websiteScore)
+}
+
+/** The one sanctioned way to set `ctx.schemeHost` -- see `publishBroker`'s own doc; same guarantee, same reason. */
+export function publishSchemeHost (ctx: SubsystemContext, schemeHost: SchemeHost): void {
+  schemeHostSlot.publish(ctx, schemeHost)
+}
+
+/** The one sanctioned way to set `ctx.routes` -- see `publishBroker`'s own doc; same guarantee, same reason. */
+export function publishRoutes (ctx: SubsystemContext, routes: RouteService): void {
+  routesSlot.publish(ctx, routes)
 }
 
 export interface Subsystem {

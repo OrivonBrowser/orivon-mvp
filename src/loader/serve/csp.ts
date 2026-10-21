@@ -6,6 +6,7 @@
 // has the reasoning behind each directive.
 
 import { connectSrcFor, reachSourcesFor } from '../../broker/policy/connect-src.js'
+import { APP_FILE_SCHEME } from '../../broker/policy/app-files-by-url.js'
 import type { Pattern } from '../../contracts/index.js'
 
 /** A page can only point these at bytes it already holds: neither has any network reach behind it. */
@@ -24,9 +25,32 @@ const LOCAL_SCHEMES = ['data:', 'blob:'] as const
  */
 const SCRIPT_SOURCES = ["'self'", "'unsafe-eval'", "'wasm-unsafe-eval'"] as const
 
-/** What a caller may relax: `inlineScripts` is for a document no extension runs in (a granted local file). */
+/**
+ * The hosts a listener the app opened answers on. `:*` because CSP cannot name a port the app has
+ * not been given yet; the main-process gate (../../main/sessions/own-listener-media-gate.ts) is what
+ * narrows these to the ports the app's own listeners hold. No `[::1]`: CSP's host grammar has no
+ * source for an IPv6 literal (Chromium drops it with a console warning, measured on Electron 44),
+ * and the listener binds IPv4 loopback anyway.
+ */
+const OWN_LISTENER_SOURCES = ['http://localhost:*', 'http://127.0.0.1:*'] as const
+
+/**
+ * The scheme a request for `/orivon/app/<path>` is redirected to (ADR-0070). A scheme source, because the
+ * address after it holds a MAC only the main process can make; `img-src` and `media-src` are the two
+ * directives an app's own files are shown through, and no other directive names it.
+ */
+const APP_FILE_SOURCES = [`${APP_FILE_SCHEME}:`] as const
+
+/**
+ * What a caller may relax: `inlineScripts` is for a document no extension runs in (a granted local
+ * file); `ownListenerMedia` is for an app that holds a `tcp.listen` grant, whose own in-page server
+ * its `<video>`, `<audio>` and `<img>` may then load from (ADR-0069); `appFiles` is for an app that
+ * holds an `fs` grant, whose own files those elements may show by URL (ADR-0070).
+ */
 export interface CspOptions {
   readonly inlineScripts?: boolean
+  readonly ownListenerMedia?: boolean
+  readonly appFiles?: boolean
 }
 
 /**
@@ -55,6 +79,10 @@ function directive (name: string, sources: readonly string[]): string {
  * `options.inlineScripts` adds `'unsafe-inline'` to `script-src`. The refusal above exists for
  * extension-written DOM, and a granted local file runs in a session that loads no extension.
  *
+ * `options.ownListenerMedia` adds the app's own loopback hosts to `img-src` and `media-src` and to
+ * nothing else: `fetch` and sockets already go through the broker, and `frame-src` is `web.embed`'s.
+ * `options.appFiles` adds the app-file scheme to the same two directives.
+ *
  * `form-action` is deliberately unset: it has no fallback to `default-src`,
  * and restricting it would also refuse the redirects a form-post sign-in
  * flow follows.
@@ -63,6 +91,10 @@ export function cspHeaderValue (connectPatterns: readonly Pattern[], securePatte
   const reach = reachSourcesFor(securePatterns).sources
   const connectTokens = connectSrcFor(connectPatterns).sources.slice(1)
   const withLocal = ["'self'", ...LOCAL_SCHEMES]
+  const shown = [
+    ...(options.ownListenerMedia === true ? OWN_LISTENER_SOURCES : []),
+    ...(options.appFiles === true ? APP_FILE_SOURCES : [])
+  ]
   return [
     "default-src 'self'",
     directive('script-src', options.inlineScripts === true ? [...SCRIPT_SOURCES, "'unsafe-inline'"] : SCRIPT_SOURCES),
@@ -70,9 +102,9 @@ export function cspHeaderValue (connectPatterns: readonly Pattern[], securePatte
     // See README.md's Design notes for why this is 'none' rather than left to default-src.
     "object-src 'none'",
     directive('connect-src', [...withLocal, ...connectTokens, ...reach]),
-    directive('img-src', [...withLocal, ...reach]),
+    directive('img-src', [...withLocal, ...shown, ...reach]),
     directive('font-src', [...withLocal, ...reach]),
-    directive('media-src', [...withLocal, ...reach]),
+    directive('media-src', [...withLocal, ...shown, ...reach]),
     "worker-src 'self' blob:",
     directive('frame-src', withLocal)
   ].join('; ')

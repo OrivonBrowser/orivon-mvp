@@ -63,20 +63,24 @@ Please don't report these; they are documented design positions.
   An accepted, disclosed trade-off.
 - **Apps are unsigned in v0.** Integrity rests on hash-pinning (trust on first use). Signing
   returns when a second publisher exists
-  ([`capability-api.md`](docs/architecture/capability-api.md) §Signing is not in v0).
+  ([`capability-api.md`](docs/architecture/capability-api.md) section Signing is not in v0).
+- **A revoked certificate is still accepted, and Chrome's built-in key pins are not enforced.**
+  Chrome keeps both lists current through its own updater, which Electron does not include, so
+  this build has neither on any system (measured with `revoked.badssl.com` and
+  `pinning-test.badssl.com`). Every other certificate error badssl.com tests is refused.
 
 ### Current state
 
-**Pre-alpha, and unreleased.** The shell, the capability broker, the Node shim and the app
-loader are built; nothing is packaged or released, and there are no users to protect yet. Reports
-about the code and about the *design* in [`docs/architecture/`](docs/architecture/) are both
-useful. In the code, a flaw costs most in the broker ([`src/broker/`](src/broker/)) and the
-preload boundary ([`src/preload/`](src/preload/)).
+**Early access.** Packages for Linux, Windows and macOS are published on the
+[releases page](https://github.com/OrivonBrowser/orivon-mvp/releases). Reports about the code
+and about the *design* in [`docs/architecture/`](docs/architecture/) are both useful. In the
+code, a flaw costs most in the broker ([`src/broker/`](src/broker/)) and the preload boundary
+([`src/preload/`](src/preload/)).
 
 Design-level reports are genuinely welcome. A flaw found in `capability-api.md` costs an
 afternoon; the same flaw found after apps exist costs a migration.
 
 ## Supported versions
 
-None yet. There has been no release. When there is, this table will say which versions receive
-fixes.
+Only the newest release receives fixes. A fix ships as a new release, never as a patch to an
+older one, so please check that the flaw is still there in the newest release or on `main`.

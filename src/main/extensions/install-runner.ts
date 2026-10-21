@@ -50,8 +50,10 @@ export interface InstallContext {
   readonly prefs?: ExtensionPrefsStore
   /** This runtime is private or a guest: every install route refuses (install-private.ts). */
   readonly privateSession?: boolean
-  /** Empties the loaded extension's chrome.storage; an uninstall runs it first (extension-data.ts). */
-  readonly clearExtensionStorage?: (id: string) => Promise<void>
+  /** Empties the loaded extension's chrome.storage in `target` (the default session when none is named); an uninstall runs it first (extension-data.ts). */
+  readonly clearExtensionStorage?: (id: string, target?: Session) => Promise<void>
+  /** The profile sessions the extension may be loaded in as well, whose copy of its data goes with it. */
+  readonly profileSessions?: () => readonly Session[]
   /** Whether an extension installed now gets a toolbar button (the `extensions.pinInstalled` setting); unset: no. */
   readonly pinInstalled?: () => boolean
   /** Closes every side panel the extension has open, so none writes storage back; an uninstall runs it before `clearExtensionStorage`. */
@@ -112,6 +114,8 @@ export interface PendingInstall {
    * to refuse anyway if it widens what is granted) -- installFromStoreCrx's
    * own doc says which of its callers sets this and which does not. */
   readonly preApproved?: boolean
+  /** Pins (or not) a fresh install, in place of the `pinInstalled` setting: the choice of the one who bundled it. */
+  readonly pin?: boolean
   /** Writes the loaded copy at `targetDir`, with `manifestJson` (already
    * carrying its resolved `key`) in place of `manifest.json` -- everything
    * install-runner.ts's caller-specific step (folder copy, or the
@@ -119,9 +123,28 @@ export interface PendingInstall {
   readonly write: (targetDir: string, manifestJson: string) => void
 }
 
+/**
+ * A package with no developer signature (a `.zip`) may update the slot of an
+ * earlier `.zip`, never one whose installed copy came from a signed `.crx`:
+ * a `.zip` can carry that extension's public key, so what it proves is
+ * nothing, and the replacement would inherit the signed copy's grants, pin
+ * and storage. A copy from the store is a different slot, which the one-id,
+ * one-slot refusal below keeps apart.
+ */
+function refuseUnsignedOverSigned (ctx: InstallContext, pending: PendingInstall): InstallOutcome | undefined {
+  if (pending.developerPublicKey !== undefined || pending.source.kind !== 'file') return undefined
+  const slotDir = join(extensionsRoot(ctx.userDataPath), pending.slot)
+  const signed = readRegistry(ctx.userDataPath).find((existing) =>
+    existing.path.startsWith(`${slotDir}${sep}`) && existing.source.kind === 'file' && existing.source.fileName.toLowerCase().endsWith('.crx'))
+  if (signed === undefined) return undefined
+  return { installed: false, reason: `install refused: this file has no signature and would replace "${signed.name}", which was installed from a signed .crx` }
+}
+
 export async function finishInstall (ctx: InstallContext, pending: PendingInstall, where?: InstallWhere): Promise<InstallOutcome> {
   const refused = refusePrivateInstall(ctx)
   if (refused !== undefined) return refused
+  const unsignedOverSigned = refuseUnsignedOverSigned(ctx, pending)
+  if (unsignedOverSigned !== undefined) return unsignedOverSigned
   const manifestResult = readExtensionManifest(pending.rawManifest)
   if (!manifestResult.ok) return { installed: false, reason: `manifest refused: ${manifestResult.reason}` }
   const { facts } = manifestResult
@@ -249,7 +272,7 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
   // A fresh install with no pin of the person's own is pinned, or not, by the setting as it is now, before the
   // load so the toolbar never shows an icon that goes. A failed load puts it back to unchosen below.
   const recordedPin = ctx.prefs !== undefined && previousInSlot.length === 0 && ctx.prefs.get(id).pinned === null
-  if (recordedPin) ctx.prefs?.update(id, { pinned: ctx.pinInstalled?.() ?? false })
+  if (recordedPin) ctx.prefs?.update(id, { pinned: pending.pin ?? ctx.pinInstalled?.() ?? false })
   const forgetPin = (): void => { if (recordedPin) ctx.prefs?.update(id, { pinned: null }) }
 
   if (enabled) {
@@ -344,6 +367,16 @@ export async function installFromFolder (ctx: InstallContext, dir: string, where
  * slot is derived from the file's own bytes, never from a claimed identity.
  */
 export async function installFromFile (ctx: InstallContext, filePath: string, where?: InstallWhere): Promise<InstallOutcome> {
+  return await installPackedFile(ctx, filePath, where, {})
+}
+
+/** Installs a packed extension that ships with Orivon, with no question: the person chose Orivon, not this extension,
+ * so there is nobody to ask and the signed file is the whole of what is checked. `pinned` is whether its icon is in the toolbar. */
+export async function installBundled (ctx: InstallContext, filePath: string, options: { readonly pinned: boolean }): Promise<InstallOutcome> {
+  return await installPackedFile(ctx, filePath, undefined, { preApproved: true, pin: options.pinned })
+}
+
+async function installPackedFile (ctx: InstallContext, filePath: string, where: InstallWhere | undefined, extra: Pick<PendingInstall, 'preApproved' | 'pin'>): Promise<InstallOutcome> {
   const refused = refusePrivateInstall(ctx)
   if (refused !== undefined) return refused
   const bytes = Buffer.from(readFileSync(filePath))
@@ -366,6 +399,7 @@ export async function installFromFile (ctx: InstallContext, filePath: string, wh
     source: { kind: 'file', fileName: filePath },
     updater: { kind: 'none', reason: 'installed from a local file' },
     slot,
+    ...extra,
     ...(crx === undefined ? {} : { developerPublicKey: crx.developerPublicKey }),
     write: (targetDir, manifestJson) => {
       unpackZip(archive, targetDir)

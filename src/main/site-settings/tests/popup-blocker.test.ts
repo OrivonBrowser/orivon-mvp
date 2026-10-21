@@ -84,7 +84,7 @@ describe('the pop-up blocker', () => {
   it('leaves a registered app and every page that is not a website alone', () => {
     const { blocker, blocks, tab } = rig({ apps: ['https://app.example'] })
     expect(blocker.check(tab, 'https://app.example/', 'https://a.example/')).toBe(false)
-    for (const opener of ['orivon://settings/', 'chrome-extension://abc/p.html', 'file:///a.html', 'about:blank']) {
+    for (const opener of ['orivon://settings/', 'chrome-extension://abc/p.html', 'file:///a.html']) {
       expect(blocker.check(tab, opener, 'https://a.example/')).toBe(false)
     }
     expect(blocks.count(tab)).toBe(0)
@@ -97,5 +97,36 @@ describe('the pop-up blocker', () => {
     late.input('mouseDown')
     expect(blocker.check(late, PAGE, 'https://a.example/')).toBe(false)
     expect(tab.listenerCount('input-event')).toBe(1)
+  })
+})
+
+describe('the pop-up blocker for a tab still at a blank or blob: address', () => {
+  it('applies the rule of the site that opened it', () => {
+    const { blocker, blocks, tab } = rig()
+    expect(blocker.check(tab, 'about:blank', 'https://ads.example/', () => PAGE)).toBe(true)
+    expect(blocker.check(tab, `blob:${PAGE.slice(0, 'https://shop.example'.length)}/uuid`, 'https://ads2.example/')).toBe(true)
+    expect([...blocks.list(tab)].sort()).toEqual(['https://ads.example/', 'https://ads2.example/'])
+  })
+
+  it('follows a site told to allow pop-ups', () => {
+    const { blocker, store, tab } = rig()
+    store.set('https://shop.example', 'popups', 'allow')
+    expect(blocker.check(tab, 'about:blank', 'https://pay.example/', () => PAGE)).toBe(false)
+  })
+
+  it('gets the default when no opener can be read', () => {
+    const { blocker, tab } = rig()
+    expect(blocker.check(tab, 'about:blank', 'https://ads.example/', () => undefined)).toBe(true)
+    expect(blocker.check(tab, '', 'https://ads.example/')).toBe(true)
+    const open = rig({ popupsDefault: 'allow' })
+    expect(open.blocker.check(open.tab, 'about:blank', 'https://ads.example/', () => undefined)).toBe(false)
+  })
+
+  it('leaves an app\'s blank popup and an ordinary page as they were', () => {
+    const { blocker, tab } = rig({ apps: ['https://shop.example'] })
+    expect(blocker.check(tab, 'about:blank', 'https://x.example/', () => PAGE)).toBe(false)
+    expect(blocker.check(tab, 'orivon://settings/', 'https://x.example/', () => undefined)).toBe(false)
+    const ordinary = rig()
+    expect(ordinary.blocker.check(ordinary.tab, 'https://other.example/', 'https://x.example/', () => 'https://shop.example/')).toBe(true)
   })
 })

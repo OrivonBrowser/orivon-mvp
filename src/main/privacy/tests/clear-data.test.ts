@@ -5,13 +5,14 @@ import type { ClearRequest } from '../clear-data.js'
 const NOTHING: ClearRequest = { history: 'none', siteData: false, cache: false, zoomLevels: false, appData: false, siteSettings: false }
 const NOW = 10_000_000
 
-function setup (): { deps: Parameters<typeof clearBrowsingData>[1], history: Record<'clear' | 'removeRange', ReturnType<typeof vi.fn>>, zoom: { clear: ReturnType<typeof vi.fn> }, siteSettings: { resetAll: ReturnType<typeof vi.fn> }, websites: { clearData: ReturnType<typeof vi.fn>, clearStorageData: ReturnType<typeof vi.fn> }, app: { clearData: ReturnType<typeof vi.fn> } } {
+function setup (): { deps: Parameters<typeof clearBrowsingData>[1], history: Record<'clear' | 'removeRange', ReturnType<typeof vi.fn>>, zoom: { clear: ReturnType<typeof vi.fn> }, siteSettings: { resetAll: ReturnType<typeof vi.fn> }, websites: { clearData: ReturnType<typeof vi.fn>, clearStorageData: ReturnType<typeof vi.fn> }, app: { clearData: ReturnType<typeof vi.fn> }, forgetNameSchemes: ReturnType<typeof vi.fn> } {
   const history = { clear: vi.fn(), removeRange: vi.fn() }
   const zoom = { clear: vi.fn() }
   const siteSettings = { resetAll: vi.fn() }
   const websites = { clearData: vi.fn(async () => {}), clearStorageData: vi.fn(async () => {}) }
   const app = { clearData: vi.fn(async () => {}) }
-  return { deps: { history, zoom, siteSettings, websites, appSessions: async () => [app, app], now: () => NOW } as never, history, zoom, siteSettings, websites, app }
+  const forgetNameSchemes = vi.fn(async () => {})
+  return { deps: { history, zoom, siteSettings, websites, appSessions: async () => [app, app], forgetNameSchemes, now: () => NOW } as never, history, zoom, siteSettings, websites, app, forgetNameSchemes }
 }
 
 describe('clearing browsing data', () => {
@@ -33,6 +34,67 @@ describe('clearing browsing data', () => {
     await clearBrowsingData({ ...NOTHING, history: 'week' }, deps)
     expect(history.removeRange.mock.calls).toEqual([[NOW - 3_600_000, NOW], [NOW - 86_400_000, NOW], [NOW - 604_800_000, NOW]])
     await clearBrowsingData({ ...NOTHING, history: 'all' }, deps)
+    expect(history.clear).toHaveBeenCalledTimes(1)
+  })
+
+  it('forgets the network each .eth name was found on with the cache and with all history, and not with a part of history', async () => {
+    const { deps, forgetNameSchemes } = setup()
+    await clearBrowsingData({ ...NOTHING, history: 'hour' }, deps)
+    await clearBrowsingData({ ...NOTHING, history: 'week', zoomLevels: true, siteData: true }, deps)
+    expect(forgetNameSchemes).not.toHaveBeenCalled()
+    await clearBrowsingData({ ...NOTHING, cache: true }, deps)
+    expect(forgetNameSchemes).toHaveBeenCalledTimes(1)
+    await clearBrowsingData({ ...NOTHING, history: 'all' }, deps)
+    expect(forgetNameSchemes).toHaveBeenCalledTimes(2)
+  })
+
+  it('forgets when granted apps were last used from the time history is cleared back to, and not when history is kept', async () => {
+    const forgetAppUse = vi.fn()
+    const { deps } = setup()
+    const withUse = { ...deps, forgetAppUse }
+    await clearBrowsingData({ ...NOTHING, cache: true }, withUse)
+    expect(forgetAppUse).not.toHaveBeenCalled()
+    await clearBrowsingData({ ...NOTHING, history: 'day' }, withUse)
+    await clearBrowsingData({ ...NOTHING, history: 'all' }, withUse)
+    expect(forgetAppUse.mock.calls).toEqual([[NOW - 86_400_000], [0]])
+  })
+
+  it('forgets the Website levels sites earned with site data, the cache and all history, and not with a part of history', async () => {
+    const forgetEarnedLevels = vi.fn()
+    const { deps } = setup()
+    const withLevels = { ...deps, forgetEarnedLevels }
+    await clearBrowsingData({ ...NOTHING, history: 'hour', zoomLevels: true }, withLevels)
+    expect(forgetEarnedLevels).not.toHaveBeenCalled()
+    await clearBrowsingData({ ...NOTHING, siteData: true }, withLevels)
+    await clearBrowsingData({ ...NOTHING, cache: true }, withLevels)
+    await clearBrowsingData({ ...NOTHING, history: 'all' }, withLevels)
+    expect(forgetEarnedLevels).toHaveBeenCalledTimes(3)
+  })
+
+  it('stops the IPFS node and deletes what it kept with the cache and with all history, and not with a part of history', async () => {
+    const forgetNodeData = vi.fn(async () => {})
+    const { deps } = setup()
+    const withNode = { ...deps, forgetNodeData }
+    await clearBrowsingData({ ...NOTHING, history: 'week', siteData: true }, withNode)
+    expect(forgetNodeData).not.toHaveBeenCalled()
+    await clearBrowsingData({ ...NOTHING, cache: true }, withNode)
+    await clearBrowsingData({ ...NOTHING, history: 'all' }, withNode)
+    expect(forgetNodeData).toHaveBeenCalledTimes(2)
+  })
+
+  it('reports the node\'s data when forgetting it fails, and still clears the rest', async () => {
+    const { deps, history } = setup()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const forgetNodeData = vi.fn(async () => { throw new Error('locked') })
+    expect(await clearBrowsingData({ ...NOTHING, history: 'all' }, { ...deps, forgetNodeData })).toEqual({ ok: false, failed: ['nodeData'] })
+    expect(history.clear).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports the name schemes when forgetting them fails, and still clears the rest', async () => {
+    const { deps, history, forgetNameSchemes } = setup()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    forgetNameSchemes.mockRejectedValueOnce(new Error('read-only profile'))
+    expect(await clearBrowsingData({ ...NOTHING, history: 'all' }, deps)).toEqual({ ok: false, failed: ['nameSchemes'] })
     expect(history.clear).toHaveBeenCalledTimes(1)
   })
 
@@ -67,6 +129,22 @@ describe('clearing browsing data', () => {
 
     await clearBrowsingData({ ...NOTHING, cache: true }, withLocal)
     for (const local of [shared, own]) expect(local.clearData).toHaveBeenLastCalledWith({ dataTypes: ['cache'] })
+  })
+
+  it('clears the session of its own each tunnelled website keeps, with the other website data and the cache, and not for history alone', async () => {
+    const { deps } = setup()
+    const site = { clearData: vi.fn(async () => {}), clearStorageData: vi.fn(async () => {}) }
+    const withSites = { ...deps, siteSessions: () => [site] }
+
+    await clearBrowsingData({ ...NOTHING, history: 'all' }, withSites)
+    expect(site.clearData).not.toHaveBeenCalled()
+
+    await clearBrowsingData({ ...NOTHING, siteData: true }, withSites)
+    expect((site.clearData.mock.calls as unknown[][])[0]?.[0]).toEqual({ dataTypes: expect.arrayContaining(['cookies', 'localStorage', 'indexedDB']) })
+    expect(site.clearStorageData).toHaveBeenCalledWith({ storages: ['cachestorage'] })
+
+    await clearBrowsingData({ ...NOTHING, cache: true }, withSites)
+    expect(site.clearData).toHaveBeenLastCalledWith({ dataTypes: ['cache'] })
   })
 
   it('clears an app\'s storage only when asked for by name', async () => {

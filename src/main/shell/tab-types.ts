@@ -9,6 +9,7 @@ import type { Broker } from '../../broker/broker-contracts.js'
 import type { Connection } from '../browsing/connection.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
 import type { InternalPageRegistry } from '../pages/internal-registry.js'
+import type { OuterHistory } from './tab-outer-history.js'
 import type { DevToolsGate } from '../devtools/devtools-service.js'
 import type { Attention } from '../downloads/download-attention.js'
 import type { TabLifecycle } from './tab-lifecycle.js'
@@ -16,6 +17,8 @@ import type { ShellServices } from './shell-services.js'
 import type { CommandId } from '../shortcuts/commands.js'
 import type { DisplaySurfaceKind } from '../display-capture/types.js'
 import type { SiteKind } from '../site-settings/kinds.js'
+import type { TunnelMark } from '../route/tunnel-mark.js'
+import type { TunnelKind } from '../route/route-state.js'
 import type { SleepingTab, TabGroupState } from './tab-extra-types.js'
 
 export interface TabState {
@@ -109,14 +112,22 @@ export interface ShellState extends TabsSnapshot {
   siteAccess: ReadonlyArray<{ readonly kind: SiteKind, readonly state: 'allowed' | 'blocked', readonly label: string }>
   /** How many windows the active page tried to open and was refused, for the pop-up chip. */
   popupsBlocked: number
+  /** How many files the active page asked the verifier for and did not get, for the address bar's chip that says the page is not whole. */
+  filesFailed: number
   /** The active page's own screen share, for the address bar's chip; null when it is not sharing. */
   sharing?: { readonly kind: DisplaySurfaceKind, readonly origin: string, readonly count: number } | null
   /** Whether the active page's site has JavaScript, images or sound switched off, for the mark on the address bar's key. */
   contentBlocked: boolean
   /** Whether the active page is an installed app whose name points at a version the person has not taken: the dot on the key. */
   updateOffered: boolean
+  /** Whether the active page goes through the tunnel (`../route/tunnel-mark.ts`), for the colour of the address bar's tunnel button. */
+  tunnel: TunnelMark | null
+  /** The tunnel the active page goes through, when it is on one: what the tunnel button names. */
+  tunnelVia: TunnelKind | null
+  /** The dot on the Available networks button: green while a node runs, amber while one starts or syncs, red when one the person switched on failed, none when nothing runs. */
+  networksDot: 'green' | 'amber' | 'red' | 'none'
   /** Which profile this window is, for the chip beside the menu. */
-  profile: { name: string, color: string, isPrivate: boolean, shown: boolean }
+  profile: { name: string, color: string, isPrivate: boolean, tunnel?: 'nym', shown: boolean }
   /** The extensions loaded now, and whether the toolbar shows the Extensions button (`toolbar.extensions`). */
   extensions: { enabled: number, shown: boolean }
   /** The downloads button: whether it shows, its ring and its dot (`toolbar.downloads`). */
@@ -125,6 +136,10 @@ export interface ShellState extends TabsSnapshot {
   homeButton: boolean
   /** Whether the address bar shows the literal address when it is not being edited (`addressBar.showFullUrl`). */
   showFullUrl: boolean
+  /** Which list an address-bar search goes to (`search.mode`), and the name of each list's engine, so the control can say what a switch does; the Web2 name is empty for an address of the person's own that is none of the engines. */
+  searchMode: 'web3' | 'web2'
+  searchWeb3Name: string
+  searchWeb2Name: string
   /** The key caps bound to the commands the chrome names in a tooltip, or null when one is cleared. */
   shortcutKeys: { readonly 'nav.home': readonly string[] | null, readonly 'page.reader': readonly string[] | null, readonly 'sidePanel.toggle': readonly string[] | null, readonly 'tab.search': readonly string[] | null }
   /** What the active tab's sign-in form can use, for the address bar's password button (src/main/passwords/). */
@@ -139,6 +154,8 @@ export interface ShellState extends TabsSnapshot {
   uiScale?: number
   /** What pointing at a tab shows. Absent reads as the preview. */
   hoverCard?: 'off' | 'text' | 'preview'
+  /** Whether the window fills the screen (not a page's own HTML fullscreen). Absent reads as false. */
+  fullScreen?: boolean
 }
 
 export interface Bounds {
@@ -224,6 +241,9 @@ export interface TabViewHost {
   openInSplit: (id: string, url: string) => void
   /** The tab's own reload, which restarts a navigation that has not committed (tab-navigation.ts's reloadTab). */
   reload: (id: string) => void
+  /** The tab's own Back and Forward, which reach the pages its view does not hold (tab-navigation.ts's goBack). */
+  back: (id: string) => void
+  forward: (id: string) => void
   emitState: () => void
   captureFavicon: (id: string, record: TabRecord, favicons: string[]) => Promise<void>
   forgetTab: (id: string) => void
@@ -318,4 +338,8 @@ export interface TabRecord {
   reader?: { source: string, address?: string } | null
   /** The main frame's address while a navigation has started and not yet committed, failed or stopped (inflight-url.ts). Absent when none is in flight. */
   inflightUrl?: string
+  /** The temporary routed session this tab last left an app for, so Forward onto that page opens it in the same session and never directly (leaving-route.ts). */
+  routedAway?: string
+  /** The pages of the tab's history that its view does not hold (tab-outer-history.ts). Absent reads as none. */
+  outer?: OuterHistory
 }

@@ -7,8 +7,9 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
+import { textFor } from '../../src/main/sad-tab/sad-tab-text.js'
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
-import { clickAddressBarRetrying, pressKey } from '../support/e2e-helpers.js'
+import { clickAddressBarRetrying, pressKey, pressCommand } from '../support/e2e-helpers.js'
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
 import { delay, popoverShown, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
@@ -44,9 +45,14 @@ async function crash (app: App, url: string): Promise<void> {
   await app.evaluate(({ webContents }, target) => {
     const wc = webContents.getAllWebContents().find((candidate) => candidate.getURL() === target)
     if (wc === undefined) throw new Error(`no webContents at ${target}`)
+    wc.once('render-process-gone', (_event, details) => { (globalThis as { __goneReason?: string }).__goneReason = details.reason })
     setTimeout(() => { wc.forcefullyCrashRenderer() }, 0)
   }, url)
 }
+
+/** Why the last crashed page's process went: Chromium reports a forced crash as 'crashed' on Linux and Windows, 'killed' on macOS. */
+const goneReason = async (app: App): Promise<string | undefined> =>
+  await app.evaluate(() => (globalThis as { __goneReason?: string }).__goneReason)
 
 interface StripTab { id: string, title: string, active: boolean, crashed: boolean, tooltip: string, label: string, warning: boolean }
 
@@ -127,9 +133,13 @@ it('marks a crashed tab, shows the card with Reload focused, and stays until tol
     expect(tab.label).toBe('sad fixture, crashed')
 
     expect(await card.locator('.sheet-title').textContent()).toBe('This page stopped working')
-    expect(await card.locator('.sad-body').textContent()).toBe('Something went wrong while showing this page. Reloading usually fixes it.')
+    expect(await waitFor(async () => await goneReason(app) !== undefined)).toBe(true)
+    const reason = await goneReason(app)
+    expect(reason).toBe(process.platform === 'darwin' ? 'killed' : 'crashed')
+    expect(await card.locator('.sad-body').textContent()).toBe(textFor(reason ?? null).body)
+    if (process.platform !== 'darwin') expect(textFor(reason ?? null).body).toBe('Something went wrong while showing this page. Reloading usually fixes it.')
     expect(await card.locator('.sad-address').getAttribute('title')).toBe(here())
-    expect(await card.locator('.sad .btn').allTextContents()).toEqual(['Close tab', 'Reload'])
+    expect(await card.locator('.sad .btn').allTextContents()).toEqual(['Report', 'Close tab', 'Reload'])
     expect(await waitFor(async () => await activeFocus(card) === 'Reload')).toBe(true)
     expect(await app.evaluate(({ webContents }) => webContents.getAllWebContents().find((wc) => wc.getURL().includes('overlay=sad-tab'))?.isFocused() === true)).toBe(true)
 
@@ -143,7 +153,7 @@ it('marks a crashed tab, shows the card with Reload focused, and stays until tol
     await delay(400)
     expect(await cardShown(app)).toBe(true)
 
-    // Tab moves between the two buttons.
+    // Tab moves between the buttons.
     await card.keyboard.press('Shift+Tab')
     expect(await activeFocus(card)).toBe('Close tab')
     await card.keyboard.press('Tab')
@@ -175,7 +185,7 @@ it('crashes again after a reload, and the reload keys and a typed address all br
     await crash(app, here())
     await waitCard(app, true)
     await waitCrashedMark(chrome, 'sad fixture', true)
-    await pressKey(app, 'overlay=sad-tab', 'R', ['control'])
+    await pressCommand(app, 'overlay=sad-tab', 'nav.reload')
     await waitCard(app, false)
     expect(await waitFor(() => loads.get('/') === 3)).toBe(true)
 
@@ -233,11 +243,11 @@ it('closes the tab from the card, and reopening brings back one entry, not two',
     expect(await waitFor(async () => (await strip(chrome)).every((tab) => tab.title !== 'one'))).toBe(true)
     const before = (await strip(chrome)).length
 
-    await pressKey(app, here('/two'), 'T', ['control', 'shift'])
+    await pressCommand(app, here('/two'), 'tab.reopen')
     expect(await waitFor(async () => (await strip(chrome)).some((tab) => tab.title === 'one'))).toBe(true)
     expect((await strip(chrome)).length).toBe(before + 1)
     expect(await waitFor(async () => await app.evaluate(({ webContents }, url) => webContents.getAllWebContents().some((wc) => wc.getURL() === url && !wc.isLoading()), here('/one')))).toBe(true)
-    await pressKey(app, here('/one'), 'T', ['control', 'shift'])
+    await pressCommand(app, here('/one'), 'tab.reopen')
     await delay(800)
     expect((await strip(chrome)).filter((tab) => tab.title === 'one')).toHaveLength(1)
     expect(mainOutput(app)).not.toContain('uncaught exception')

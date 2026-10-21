@@ -54,7 +54,13 @@ export class BookmarkStore {
   /** The addresses of the bar and Other bookmarks, rebuilt when the tree changes: `has` runs on every state push. */
   private addresses: ReadonlySet<string> | null = null
 
-  constructor (private readonly filePath: string, private readonly newId: IdSource = randomId, private readonly clock: () => number = Date.now) {}
+  /** `firstLaunch` supplies the bar of a profile that has no bookmarks file yet; it is asked once, and only then. */
+  constructor (
+    private readonly filePath: string,
+    private readonly newId: IdSource = randomId,
+    private readonly clock: () => number = Date.now,
+    private readonly firstLaunch?: () => readonly BookmarkTreeInput[] | Promise<readonly BookmarkTreeInput[]>
+  ) {}
 
   /** Reads the file once, however many windows ask: a second read would replace the tree with what is on disk and
    * drop any change not yet flushed. A missing, unreadable or corrupt file yields an empty tree rather than an
@@ -74,6 +80,7 @@ export class BookmarkStore {
       // No file is a first launch. A file that is there and cannot be read is not: it is kept as it is until the next
       // write has made a copy of it.
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.fileState = 'unreadable'
+      else await this.seedFirstLaunch()
       return
     }
     const modified = await stat(this.filePath).then((info) => info.mtimeMs, () => this.clock())
@@ -82,6 +89,16 @@ export class BookmarkStore {
     this.addresses = null
     this.fileState = parsed.state
     if (parsed.state === 'legacy') this.writer.schedule()
+  }
+
+  /** A supplier that fails leaves the bar empty: a browser that will not start over its starting bookmarks is the worse failure. */
+  private async seedFirstLaunch (): Promise<void> {
+    if (this.firstLaunch === undefined) return
+    try {
+      this.importTree('bar', await this.firstLaunch())
+    } catch {
+      this.tree = emptyTree()
+    }
   }
 
   // Reads

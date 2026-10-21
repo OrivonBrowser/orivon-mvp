@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
-import { clickAddressBarRetrying, pressKey } from '../support/e2e-helpers.js'
+import { clickAddressBarRetrying, pressKey, pressCommand } from '../support/e2e-helpers.js'
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
 import { delay, popoverShown, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
@@ -76,7 +76,7 @@ async function expectCount (bar: Page, text: string): Promise<void> {
 }
 
 async function openBar (app: App, tabUrlPart: string): Promise<Page> {
-  await pressKey(app, tabUrlPart, 'F', ['control'])
+  await pressCommand(app, tabUrlPart, 'find.open')
   expect(await waitFor(async () => await barShown(app))).toBe(true)
   expect(await waitFor(() => barPage(app) !== undefined)).toBe(true)
   const bar = barPage(app) as Page
@@ -188,18 +188,18 @@ it('opens on the key, keeps typing focus while it searches, counts, steps and to
     expect((await selectionOf(page)).toLowerCase()).toBe('orivon')
 
     // Find next with the bar closed brings it back with the query, one step on.
-    await pressKey(app, server.origin, 'G', ['control'])
+    await pressCommand(app, server.origin, 'find.next')
     expect(await waitFor(async () => await barShown(app))).toBe(true)
     expect(await bar.locator('.find-input').inputValue()).toBe('orivon')
     await expectCount(bar, '2 of 5')
     // With it open, the keys step from the bar too, and F3 is the alias.
-    await pressKey(app, 'overlay=find', 'G', ['control', 'shift'])
+    await pressCommand(app, 'overlay=find', 'find.previous')
     await expectCount(bar, '1 of 5')
     expect(await barHasFocus(app, bar)).toMatchObject({ contents: true })
 
     // The key again while open: focus comes back and the text is selected.
     await page.evaluate(() => { document.body.focus() })
-    await pressKey(app, server.origin, 'F', ['control'])
+    await pressCommand(app, server.origin, 'find.open')
     expect(await waitFor(async () => (await barHasFocus(app, bar)).contents)).toBe(true)
     expect(await bar.evaluate(() => { const input = document.querySelector<HTMLInputElement>('.find-input'); return input?.selectionStart === 0 && input.selectionEnd === input.value.length })).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')

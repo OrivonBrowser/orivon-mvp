@@ -133,6 +133,10 @@
     destroyed sender and wrapped in `try`. Reason: the throw was uncaught, and the main process
     exits on an uncaught exception.
 
+11. **No promise is floated.** `src/browser/index.ts` (`initUpdater`) and `src/browser/updater.ts`
+    (`updateExtensions`, and the periodic `check`): each ends in a `.catch` that logs. Reason: the main
+    process exits on an unhandled rejection (`npm run check:floating-promises`).
+
 Nothing else changed; upstream code is not reformatted.
 
 ## Native-code check

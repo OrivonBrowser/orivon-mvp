@@ -18,6 +18,41 @@ function provenance (overrides: Partial<SiteProvenance>): SiteProvenance {
   }
 }
 
+describe('liveNameEvidence, where the bytes came from', () => {
+  const loadedFrom = (overrides: Partial<SiteProvenance>): string | undefined => liveNameEvidence(provenance(overrides), NOW).rows.find((row) => row.term === 'Loaded from')?.value
+
+  it('names the node when the node served the content', () => {
+    expect(loadedFrom({ servedFrom: { kind: 'node' } })).toBe("Orivon's IPFS node, on this computer")
+  })
+
+  it('names the gateways, and why the node was not used when it was chosen', () => {
+    expect(loadedFrom({ servedFrom: { kind: 'gateways' } })).toBe('Public IPFS gateways')
+    expect(loadedFrom({ servedFrom: { kind: 'gateways', reason: 'a proxy is configured' } })).toBe('Public IPFS gateways, because a proxy is configured')
+  })
+
+  it('says nothing for a protocol that has one kind of source', () => {
+    expect(loadedFrom({})).toBeUndefined()
+  })
+
+  const refusedFrom = (source: string, names: Record<string, string>): string | undefined =>
+    liveNameEvidence(provenance({ ddoc: { status: 'met', refusals: [{ source, resource: 'bafy' }] } }), NOW, names).rows.find((row) => row.term === 'Refused')?.value
+
+  const NAMES = { 'http://127.0.0.1:20123': "Orivon's IPFS node", 'http://127.0.0.1:20456': "Orivon's Swarm node" }
+
+  it('names the IPFS node, not its loopback address, when it sent what failed its check', () => {
+    expect(refusedFrom('http://127.0.0.1:20123', NAMES)).toBe("1 response(s) from Orivon's IPFS node failed their check and were not used")
+  })
+
+  it('names the Swarm node by its own endpoint, never as the IPFS node', () => {
+    expect(refusedFrom('http://127.0.0.1:20456', NAMES)).toBe("1 response(s) from Orivon's Swarm node failed their check and were not used")
+  })
+
+  it('keeps the address of any other loopback source, a test build\'s fixture gateway among them', () => {
+    expect(refusedFrom('http://127.0.0.1:31999', NAMES)).toBe('1 response(s) from http://127.0.0.1:31999 failed their check and were not used')
+    expect(refusedFrom('http://127.0.0.1:20123', {})).toBe('1 response(s) from http://127.0.0.1:20123 failed their check and were not used')
+  })
+})
+
 describe('liveNameEvidence', () => {
   it('says where the name was proven, what it points to, and when it was checked', () => {
     const evidence = liveNameEvidence(provenance({}), NOW)
@@ -44,6 +79,36 @@ describe('liveNameEvidence', () => {
       'Signed by its key k51qzi5uqu5d…bjipy834, sequence 100001',
       '2 response(s) from https://a.gateway failed their check and were not used'
     ]))
+  })
+
+  it('names a signed Swarm feed update and calls a bzz:// address verified by what it names', () => {
+    const feed = liveNameEvidence(provenance({
+      root: { kind: 'swarm', cid: CID },
+      pointers: [
+        { step: 'contenthash', name: 'swarm.eth', pointer: { kind: 'swarm', cid: CID }, provenance: { via: 'chain', block: 5, offchain: false } },
+        { step: 'swarm-feed', owner: 'f77a13dc2f786b4523f5e0bf6db6757f4cf60ebb', topic: 'ab'.repeat(32), index: 91n, target: CID }
+      ]
+    }), NOW)
+    expect(feed.nameProven).toBe(true)
+    expect(feed.rows.map((r) => r.value)).toContain('Update 91, signed by its owner f77a13dc2f78…4cf60ebb')
+    const byAddress = liveNameEvidence(provenance({
+      root: { kind: 'swarm', cid: CID },
+      pointers: [{ step: 'contenthash', name: CID, pointer: { kind: 'swarm', cid: CID }, provenance: { via: 'address' } }]
+    }), NOW)
+    expect(byAddress.line).toBe("Address verified: it is the content's own hash, 3 minutes ago")
+    expect(byAddress.rows[0]).toEqual({ term: 'Address', value: "The address is the content's own hash" })
+  })
+
+  it('does not call a feed-backed bzz:// address the content\'s own hash', () => {
+    const evidence = liveNameEvidence(provenance({
+      root: { kind: 'swarm', cid: CID },
+      pointers: [
+        { step: 'contenthash', name: CID, pointer: { kind: 'swarm', cid: CID }, provenance: { via: 'address' } },
+        { step: 'swarm-feed', owner: 'f77a13dc2f786b4523f5e0bf6db6757f4cf60ebb', topic: 'ab'.repeat(32), index: 3n, target: CID }
+      ]
+    }), NOW)
+    expect(evidence.line).toBe('Address verified: it names a feed whose signed update was checked, 3 minutes ago')
+    expect(evidence.rows[0]).toEqual({ term: 'Address', value: 'The address names a Swarm feed; the content is whatever its newest signed update names' })
   })
 
   it('carries a DNSLink as unverified, and a failed file, into the content evidence', () => {
@@ -125,5 +190,19 @@ describe('chooseNameEvidence', () => {
     const none = chooseNameEvidence(undefined, false, null, 'Catching up with the chain, since just now.', NOW, false)
     expect(none).toMatchObject({ content: undefined, nameProven: false, line: 'Name not verified. Catching up with the chain, since just now.' })
     expect(chooseNameEvidence(undefined, false, null, 'Not loaded yet.', NOW, true).line).toBe('Address not verified. Not loaded yet.')
+  })
+
+  it('keeps the Website level a site earned when the verifier cannot be asked, and says it is the last check', () => {
+    const last = provenance({ mountedAt: NOW - 20 * 60_000 })
+    const evidence = chooseNameEvidence(undefined, false, last, 'x', NOW, false, {}, true)
+    expect(evidence.content).toEqual({ source: 'live', cid: CID, pointersVerified: true })
+    expect(evidence.rows).toContainEqual({ term: 'Checked', value: '20 minutes ago' })
+    expect(evidence.rows).toContainEqual({ term: 'Now', value: 'It could not be checked again just now, so this is the last check.' })
+    expect(chooseNameEvidence(undefined, false, last, 'x', NOW, false).rows.some((row) => row.term === 'Now')).toBe(false)
+  })
+
+  it('still reports a file that failed its check, kept or not', () => {
+    const tampered = provenance({ ddoc: { status: 'failed', resource: '/app.js', refusals: [] } })
+    expect(chooseNameEvidence(undefined, false, tampered, 'x', NOW, false, {}, true).content).toMatchObject({ failedResource: '/app.js' })
   })
 })

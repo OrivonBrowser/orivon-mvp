@@ -14,6 +14,12 @@ describe('siteSound', () => {
     expect(siteSound.blocked('https://calm.example/')).toBe(false)
   })
 
+  it('hands the rule a way to read the opener of a blank page', () => {
+    siteSound.bind((url, opener) => url === 'about:blank' && opener() === 'https://loud.example/')
+    expect(siteSound.blocked('about:blank', () => 'https://loud.example/')).toBe(true)
+    expect(siteSound.blocked('about:blank')).toBe(false)
+  })
+
   it('treats a rule that throws as "not silenced" and logs it', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     siteSound.bind(() => { throw new Error('store gone') })

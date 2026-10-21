@@ -54,6 +54,17 @@ caller whose session loads no extension, a granted local file (`../../main/local
   included, and `fetchThirdParty` re-authorises it, still refusing loopback and private
   addresses (measured). A native WebSocket is the one thing the handler cannot re-check, and
   `https:` does not admit `wss:` (measured, `test/app-loading/e2e-served-csp.test.ts`).
+- **A `tcp.listen` grant adds `http://localhost:*` and `http://127.0.0.1:*` to
+  `img-src` and `media-src`, and to nothing else** (`ownListenerMedia`, ADR-0069; no `[::1]`, which
+  CSP's grammar cannot express and Chromium drops with a warning, measured). An app that runs
+  its own HTTP server in its page points its `<video>` at it. CSP cannot name the port the
+  listener was given, so the policy admits any port and `../../main/sessions/own-listener-media-gate.ts`
+  cancels a request to a loopback port the page's own listeners do not hold. `fetch` and sockets
+  already go through the broker, and `frame-src` is `web.embed`'s, so neither is widened.
+- **An `fs` grant adds the `orivon-file:` scheme to `img-src` and `media-src`, and to nothing else**
+  (`appFiles`, ADR-0070). An app's page shows its own files at `/orivon/app/<path>`; the main process
+  redirects that request to `orivon-file:` (`../../main/sessions/app-files-by-url.ts`), so the policy
+  must admit the scheme. The scheme alone decides nothing: its URLs carry a MAC the main process makes.
 - **No `form-action`.** Restricting it would also refuse a form-post sign-in's redirects, and
   would bound nothing: top-level navigation is not governed by CSP (A42).
 - **`object-src 'none'`.** `default-src 'self'` alone still admits a same-origin
@@ -63,3 +74,12 @@ caller whose session loads no extension, a granted local file (`../../main/local
   `../../main/install/granted-origin-csp.ts`'s own filter and `documentOriginOf` also treat
   `object` as a document type. `object-src 'none'` is the second, unconditional lock: even if
   that filter's document-type list were ever wrong, no such document loads at all.
+
+**A redirect the loader issues carries the destination's policy headers** ([`asset.ts`](asset.ts)'s `redirectResponse`).
+`/` answers 302 to an entry in a subdirectory so the document's relative URLs resolve against its own directory. On a
+session with any `webRequest` listener, which is every session of the product, Electron gives the page the
+redirect's status and headers together with the final hop's body (measured on 44.0, 44.7 and 45 beta, for fetch,
+XHR and navigation), so a bare 302 would load the entry with no served CSP, no nosniff and no isolation. The 302
+therefore carries the same `policyHeaders` and content type the entry carries. The `fetch` status still reads 302.
+`serve.ts` and `live-serve.ts` are the only places the loader issues a redirect; a third-party hop is passed through
+as the host sent it.

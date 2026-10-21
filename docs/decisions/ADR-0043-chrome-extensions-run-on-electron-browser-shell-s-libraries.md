@@ -61,7 +61,7 @@ per event Orivon owns; not built yet.
   skip it; `check:secrets` does not; its TypeScript checks under `vendor/tsconfig.json`.
 - An upgrade re-copies upstream and re-applies the patch list, which each `UPSTREAM.md` keeps
   short and exact.
-- GPL-3.0 code is combined with Orivon's AGPL-3.0-only, which GPLv3 §13 permits.
+- GPL-3.0 code is combined with Orivon's AGPL-3.0-only, which GPLv3 section 13 permits.
 - An action popup is a child `BrowserWindow`, as the library makes it.
 - `chrome.runtime.connectNative` fails with a clear error. Password managers that need a
   desktop program lose that feature.

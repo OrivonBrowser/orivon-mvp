@@ -18,13 +18,16 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Subsystem } from '../registry.js'
 import { checkForUpdate, type ReleaseInfo } from './update-check.js'
+import { ownFetch } from '../route/own-requests.js'
 import { GITHUB_OWNER, GITHUB_REPO, releaseUrl } from './release-url.js'
+import { pickNewestRelease } from './newest-release.js'
 
 // The repository is spelled out as constants (./release-url.ts) rather than
 // parsed from package.json at runtime: a runtime parse of a free-text git URL
 // would add a failure mode (a reformatted field silently breaking the update
 // check) for no benefit.
-const RELEASES_API = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`
+// The list, not `/releases/latest`: that endpoint never answers a pre-release, and every release here is one.
+const RELEASES_API = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases?per_page=10`
 const FETCH_TIMEOUT_MS = 10_000
 
 interface PersistedState {
@@ -78,7 +81,8 @@ async function fetchLatestGithubRelease (): Promise<ReleaseInfo | null> {
   const { net } = await import('electron')
 
   // Offline, a DNS failure or a timeout rejects: the source was not reached, and the check is not recorded.
-  const response = await net.fetch(RELEASES_API, {
+  // Through the tunnel while the whole browser is on it, or not at all.
+  const response = await ownFetch(async (url, init) => await net.fetch(url, init))(RELEASES_API, {
     headers: {
       accept: 'application/vnd.github+json',
       'user-agent': `${GITHUB_REPO}-update-check`
@@ -86,8 +90,7 @@ async function fetchLatestGithubRelease (): Promise<ReleaseInfo | null> {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
   })
 
-  // A repository with no releases yet -- true for this one today -- 404s.
-  // That is "nothing to report", not an error. Any other refusal (a rate limit, a server error) is not an answer.
+  // A 404 is "nothing to report", not an error. Any other refusal (a rate limit, a server error) is not an answer.
   if (response.status === 404) return null
   if (!response.ok) throw new Error(`the release source answered ${String(response.status)}`)
 
@@ -98,9 +101,9 @@ async function fetchLatestGithubRelease (): Promise<ReleaseInfo | null> {
     return null // malformed JSON: fail safe, never crash the app over this
   }
 
-  if (typeof body !== 'object' || body === null) return null
-  const tagName = (body as Record<string, unknown>).tag_name
-  if (typeof tagName !== 'string' || tagName.length === 0) return null
+  const newest = pickNewestRelease(body)
+  if (newest === null) return null
+  const tagName = newest.tag
 
   return {
     version: tagName,

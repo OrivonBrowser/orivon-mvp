@@ -21,7 +21,7 @@
 // compaction -- see src/shim/tests/nedb-storage.test.ts.
 //
 // SIDESTEPPING A184 IS A SCOPE CALL, NOT A DISCOVERED FIX -- flagged, not
-// owner-reviewed: README.md §Design notes, "createReadStream/createWriteStream".
+// owner-reviewed: README.md section Design notes, "createReadStream/createWriteStream".
 
 import { Readable, Writable } from 'stream'
 import { Buffer } from 'buffer'

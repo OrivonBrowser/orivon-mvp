@@ -9,14 +9,15 @@
 // session's own construction site -- that placement is load-bearing, not a
 // style choice, and moving it back "for clarity" reopens the gap.
 import { join } from 'node:path'
-import { app, session, type Session, type WebContents } from 'electron'
+import { app, session, type BaseWindow, type Session, type WebContents } from 'electron'
 import type { Subsystem } from '../registry.js'
 import { noteExclusiveAccess, type ExclusiveAccess } from '../shell/exclusive-access-notice.js'
 import { confirmExternalLink } from '../shell/external-link-prompt.js'
 import { windowShowing } from '../shell/showing-window.js'
 import { EXCLUSIVE_ACCESS, isAllowed } from './allowed-permissions.js'
+import { handleDevicePermission } from './device-permission-handler.js'
 import { handleDisplayMedia } from './display-media-handler.js'
-import { createExternalLinks } from './external-links.js'
+import { createExternalLinks, type LinkRouting } from './external-links.js'
 import { askSite } from '../site-settings/ask-site.js'
 import { NotificationDecisions } from './notification-decisions.js'
 import { siteAsks } from './site-asks.js'
@@ -34,7 +35,20 @@ export function notificationDecisions (): NotificationDecisions {
   return decisions
 }
 
-const externalLinks = createExternalLinks({ windowShowing, confirm: async (_window, question, tab) => await confirmExternalLink({ contents: tab }, question) })
+let linkRouting: LinkRouting<BaseWindow> | undefined
+
+/** Lets a link of a scheme some app declares open in that app (d-0596); published once the shell exists, and until then every such link asks the OS question alone. */
+export function configureLinkRouting (routing: LinkRouting<BaseWindow>): void {
+  linkRouting = routing
+}
+
+const externalLinks = createExternalLinks({ windowShowing, confirm: async (_window, question, tab) => await confirmExternalLink({ contents: tab }, question), routing: () => linkRouting })
+
+/** The question an `openExternal` request raises, asked for a link the page opens itself (a `window.open`), with the same rules as a clicked one: true only when the person said yes. */
+export async function askExternalLink (tab: WebContents, url: string): Promise<boolean> {
+  return await externalLinks(tab, { externalURL: url, requestingUrl: tab.getURL() })
+}
+
 let notificationsBlocked: () => boolean = () => false
 
 /**
@@ -120,11 +134,9 @@ function denyByDefault (target: Session): void {
     if (permission === 'media') return false
     return isAllowed(permission, details)
   })
-  // WebHID/WebUSB/Web Serial have no capability path at all in v0
-  // (security-model.md: "subprocess and hid are absent from the v0 API
-  // entirely") -- deny outright rather than falling through to whatever a
-  // device chooser dialog would otherwise return.
-  target.setDevicePermissionHandler(() => false)
+  // WebUSB and Web Serial have no path at all (ADR-0068). WebHID is answered by src/main/devices/, which binds its
+  // handler in ./device-permission-handler.ts; until it does, and for any other device kind, the answer is no.
+  target.setDevicePermissionHandler(handleDevicePermission)
   // Electron runs this only for a `media` request the handlers above granted, and Electron itself offers no
   // source without one: the default answers nothing (the page's call fails), and the display-capture gate binds
   // the handler that answers for a share the person picked (src/main/display-capture/).

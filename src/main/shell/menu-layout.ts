@@ -6,7 +6,7 @@ import type { CommandId } from '../shortcuts/commands.js'
 import { commandById } from '../shortcuts/commands.js'
 import { bookmarksBarShown } from './bookmarks-bar/bar-visibility.js'
 import { certificateAvailable } from '../auth/certificate-open.js'
-import { createShortcutHint, shareHint } from '../os/menu-state.js'
+import { createShortcutHint, shareHint, webLinkHint } from '../os/menu-state.js'
 import { qrAvailable } from '../qr/qr-open.js'
 import { hintFor } from '../session-restore/reopen.js'
 import { sidePanelFor } from '../side-panel/side-panel-host.js'
@@ -31,6 +31,7 @@ const UNAVAILABLE: Partial<Record<CommandId, (ctx: WindowContext) => boolean>> =
     return (tabs.find((tab) => tab.id === activeTabId)?.group ?? null) === null
   },
   'share.copyLink': (ctx) => shareHint(ctx) !== null,
+  'share.copyWebLink': (ctx) => webLinkHint(ctx) !== null,
   'share.email': (ctx) => shareHint(ctx) !== null,
   'site.certificate': ({ window }) => !certificateAvailable(window),
   'site.shortcut': (ctx) => createShortcutHint(ctx) !== null
@@ -40,6 +41,7 @@ export const MENU_LAYOUT: readonly MenuEntry[] = [
   'tab.new',
   'window.new',
   'window.newPrivate',
+  'window.newPrivateNym',
   'file.open',
   '-',
   'history.open',
@@ -62,6 +64,7 @@ export const MENU_LAYOUT: readonly MenuEntry[] = [
   'page.save',
   { submenu: 'Share', items: [
     { item: 'share.copyLink', hint: shareHint },
+    { item: 'share.copyWebLink', hint: webLinkHint },
     { item: 'share.email', hint: shareHint },
     'page.qr'
   ] },
@@ -92,7 +95,8 @@ export const MENU_LAYOUT: readonly MenuEntry[] = [
   'profiles.open',
   'settings.open',
   '-',
-  'about.open',
+  // A submenu, so the report entry costs no row: in a window 800 px tall the menu already scrolls.
+  { submenu: 'Help', items: ['report.open', 'about.open'] },
   'app.quit'
 ]
 

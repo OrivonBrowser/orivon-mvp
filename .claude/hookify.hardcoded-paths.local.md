@@ -12,7 +12,7 @@ conditions:
     pattern: XDG_(CONFIG|DATA|CACHE)_HOME|\.config/orivon|\.local/share|os\.homedir\(\)|process\.env\.HOME\b|process\.env\.APPDATA|/home/[a-z]|~/\.
 ---
 
-**Platform-specific storage path detected (ADR-0003, build-plan.md "Platform policy" #2).**
+**Platform-specific storage path detected (ADR-0003, `docs/development/packaging.md`).**
 
 All persistent storage goes through `app.getPath('userData')` so data lands in the right place
 on Linux, Windows and macOS alike. Hardcoded XDG / `$HOME` paths break run-from-source users on

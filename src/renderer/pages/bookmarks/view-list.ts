@@ -108,13 +108,18 @@ export interface EmptyView {
   readonly storeEmpty: boolean
   readonly importAvailable: boolean
   readonly importBookmarks: () => void
+  /** `process.platform` of the browser, which decides how the bookmark shortcut is written. */
+  readonly platform: string
 }
+
+/** The bookmark-this-page shortcut as the person's system writes it. */
+export const bookmarkKey = (platform: string): string => platform === 'darwin' ? '⌘D' : 'Ctrl+D'
 
 export function renderEmpty (view: EmptyView): HTMLElement {
   if (view.query !== '') return h('div', { className: 'empty-state' }, bookmarkIcon(), h('p', { textContent: `No bookmarks match "${view.query}".` }))
   const lines: Array<Node | string> = [h('p', { textContent: 'This folder is empty.' })]
   if (view.storeEmpty) {
-    lines.push(h('p', { className: 'hint', textContent: 'Bookmark a page with the bookmark button next to the address bar (Ctrl+D), or import bookmarks from another browser.' }))
+    lines.push(h('p', { className: 'hint', textContent: `Bookmark a page with the bookmark button next to the address bar (${bookmarkKey(view.platform)}), or import bookmarks from another browser.` }))
     if (view.importAvailable) lines.push(h('button', { className: 'btn', type: 'button', textContent: 'Import bookmarks…', onclick: view.importBookmarks }))
   }
   return h('div', { className: 'empty-state' }, bookmarkIcon(), ...lines)

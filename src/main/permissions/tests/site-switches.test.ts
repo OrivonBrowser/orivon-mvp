@@ -47,7 +47,7 @@ describe('turnOffCapability', () => {
     expect(await broker.declinedCapabilitiesFor(APP)).toEqual(['fs', 'tcp.connect'])
   })
 
-  it('turning off an app\'s only grant leaves it registered but holding nothing -- the all-sites list still finds it via registeredOriginsSync', async () => {
+  it('turning off an app\'s only grant leaves it registered but holding nothing -- the apps card in Settings still finds it via registeredOriginsSync', async () => {
     const broker = realBroker()
     await broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 1024 } }))
     await broker.grant(APP, 'fs', [])
@@ -62,7 +62,66 @@ describe('turnOffCapability', () => {
     const broker = realBroker()
     await broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 1024 } }))
 
-    await expect(turnOffCapability(broker, APP, 'fs')).resolves.toBeUndefined()
+    await expect(turnOffCapability(broker, APP, 'fs')).resolves.toBe('ok')
+    expect(await broker.declinedCapabilitiesFor(APP)).toEqual(['fs'])
+  })
+
+  it('writes no decline for a capability the app does not declare or hold', async () => {
+    const broker = realBroker()
+    await broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 1024 } }))
+
+    await expect(turnOffCapability(broker, APP, 'media.camera')).resolves.toBe('not-declared')
+    expect(await broker.declinedCapabilitiesFor(APP)).toBeUndefined()
+  })
+
+  it('writes no decline for an origin Orivon holds no record of', async () => {
+    const broker = realBroker()
+
+    await expect(turnOffCapability(broker, APP, 'fs')).resolves.toBe('not-registered')
+    expect(await broker.declinedCapabilitiesFor(APP)).toBeUndefined()
+  })
+
+  it('still switches off a grant the manifest no longer declares, which the card shows as a row', async () => {
+    const broker = realBroker()
+    await broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 1024 } }))
+    await broker.grant(APP, 'fs', [])
+    await broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } } }))
+
+    await expect(turnOffCapability(broker, APP, 'fs')).resolves.toBe('ok')
+    expect(await broker.app.grants(APP)).toEqual([])
+  })
+})
+
+describe('two quick presses of one switch', () => {
+  /** A broker whose revocation takes a moment, as a disk write does. */
+  function slowRevoke (broker: Broker): Broker {
+    const slow = Object.create(broker) as Broker
+    slow.revokePersisted = async (...args) => { await new Promise((resolve) => setTimeout(resolve, 20)); return await broker.revokePersisted(...args) }
+    return slow
+  }
+
+  it('leave storage as the last press asked, whichever finishes first', async () => {
+    const broker = realBroker()
+    await broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 1024 } }))
+    await broker.grant(APP, 'fs', [])
+    const slow = slowRevoke(broker)
+
+    const off = turnOffCapability(slow, APP, 'fs')
+    const on = turnOnCapability(slow, APP, 'fs', [])
+    await Promise.all([off, on])
+
+    expect((await broker.app.grants(APP)).map((grant) => grant.capability)).toEqual(['fs'])
+    expect(await broker.declinedCapabilitiesFor(APP)).toBeUndefined()
+  })
+
+  it('leave it off when the last press was off', async () => {
+    const broker = realBroker()
+    await broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 1024 } }))
+    await broker.recordDeclinedConsent(APP, ['fs'])
+
+    await Promise.all([turnOnCapability(broker, APP, 'fs', []), turnOffCapability(slowRevoke(broker), APP, 'fs')])
+
+    expect(await broker.app.grants(APP)).toEqual([])
     expect(await broker.declinedCapabilitiesFor(APP)).toEqual(['fs'])
   })
 })

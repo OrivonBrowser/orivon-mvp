@@ -23,6 +23,7 @@ import { electronResolveHost } from '../../loader/electron/resolve.js'
 import { FaviconCache } from './favicon-cache.js'
 import { MAX_FAVICON_BYTES, toDataUrl } from './favicon-format.js'
 import { faviconTimeoutMs } from './favicon-timeout.js'
+import { answerRouteChallenge, directLookupSession } from '../route/lookup-session.js'
 
 /** Real sites redirect a bare-domain icon URL to a `www` host, or move
  * `/favicon.ico` behind a CDN -- both cross-origin, both legitimate. Each
@@ -38,7 +39,8 @@ export const MAX_FAVICON_REDIRECTS = 3
  */
 export async function readCapped (
   body: ReadableStream<Uint8Array> | null,
-  cap: number
+  cap: number,
+  onChunk: () => void = () => {}
 ): Promise<Uint8Array | null> {
   if (body === null) return null
 
@@ -50,6 +52,7 @@ export async function readCapped (
       const { done, value } = await reader.read()
       if (done) break
       if (value === undefined) continue
+      onChunk()
       total += value.byteLength
       if (total > cap) {
         await reader.cancel()
@@ -130,9 +133,11 @@ function isLoopbackPage (pageUrl: string): boolean {
  * HOSTNAME is resolved, and EVERY returned address must be public -- a
  * name that resolves to a private address is DNS rebinding
  * (policy/connect.ts's own resolver handling is the worked example), not
- * merely a private literal spelled as a name.
+ * merely a private literal spelled as a name. For a routed app (`options.routed`)
+ * a hostname is not resolved here at all, because that would be a lookup
+ * from this machine; literals are judged as above.
  */
-export async function isSafeFaviconUrl (url: string, pageUrl: string, resolveHost: Resolver): Promise<boolean> {
+export async function isSafeFaviconUrl (url: string, pageUrl: string, resolveHost: Resolver, options: { readonly routed?: boolean } = {}): Promise<boolean> {
   let parsed: URL
   try {
     parsed = new URL(url)
@@ -159,6 +164,8 @@ export async function isSafeFaviconUrl (url: string, pageUrl: string, resolveHos
 
   if (parsed.protocol !== 'https:') return false
   if (classifyAddress(host) !== 'unparseable') return isPublicUnicast(host)
+  // A routed app's lookups name the host to its route and resolve nothing here: the proxy decides what the name reaches.
+  if (options.routed === true) return true
 
   let answers: readonly string[]
   try {
@@ -206,7 +213,9 @@ async function requestOnce (url: string, signal: AbortSignal, session: Session |
       signal.removeEventListener('abort', onAbort)
       resolve(value)
     }
-    const request = net.request({ url, method: 'GET', credentials: 'omit', useSessionCookies: false, redirect: 'manual', ...(session === undefined ? {} : { session }) })
+    // With no route and the whole browser on the tunnel, the default session is the tunnel's: a site set to off is looked up about on the system's proxy.
+    const used = session ?? directLookupSession()
+    const request = net.request({ url, method: 'GET', credentials: 'omit', useSessionCookies: false, redirect: 'manual', ...(used === undefined ? {} : { session: used }) })
     // settle() BEFORE abort(), not after: aborting a request that is still
     // in flight can itself emit 'error' synchronously (the same way a real
     // cancelled request does), and the settled guard means whichever call
@@ -229,20 +238,36 @@ async function requestOnce (url: string, signal: AbortSignal, session: Session |
     })
     request.on('error', () => { settle({ kind: 'failed' }) })
     if (signal.aborted) { settle({ kind: 'failed' }); return }
+    // An app's front asks the request itself for the secret made for it: no web contents is there to raise `login` for the application.
+    request.on('login', (info, callback) => { answerRouteChallenge(info, callback) })
     signal.addEventListener('abort', onAbort, { once: true })
     request.end()
   })
 }
 
+/** Where an app's route is read from, again for every hop: the session a routed app's lookups leave through, undefined when it is not routed, a rejection when it is and the route cannot be had. */
+export type RouteLookup = () => Promise<Session | undefined>
+
+/** The route's session for the hop about to be made: undefined when the app is not routed now, null when it is and its route cannot be had, so the hop is not made. */
+async function routeNow (lookup: RouteLookup | undefined): Promise<Session | undefined | null> {
+  if (lookup === undefined) return undefined
+  try {
+    return await lookup()
+  } catch {
+    return null
+  }
+}
+
 /** The session a hop is asked through: the page's own for its own origin, which answers an installed app from its
  * pin, as it answers the page; the default one for any other host, whose request an app's session would refuse
- * unless the app holds a grant for it. */
-function sessionForHop (url: string, pageUrl: string, pageSession: Session | undefined): Session | undefined {
+ * unless the app holds a grant for it. A routed app's other hosts go through the session of its route
+ * (`routeSession`), and never through the default one. */
+function sessionForHop (url: string, pageUrl: string, pageSession: Session | undefined, routeSession: Session | undefined): Session | undefined {
   try {
     const origin = new URL(url).origin
-    return origin !== 'null' && origin === new URL(pageUrl).origin ? pageSession : undefined
+    return origin !== 'null' && origin === new URL(pageUrl).origin ? pageSession : routeSession
   } catch {
-    return undefined
+    return routeSession
   }
 }
 
@@ -252,17 +277,21 @@ function sessionForHop (url: string, pageUrl: string, pageSession: Session | und
  * same hostname twice. One timeout budget covers the whole
  * redirect chain, not each hop separately -- a chain of fast redirects to a
  * slow final host should not get MAX_FAVICON_REDIRECTS times the budget. */
-async function fetchUnchecked (url: string, pageUrl: string, pageSession: Session | undefined): Promise<string | null> {
+async function fetchUnchecked (url: string, pageUrl: string, pageSession: Session | undefined, routeLookup: RouteLookup | undefined, clearedAsRouted: boolean): Promise<string | null> {
   const controller = new AbortController()
   const timer = setTimeout(() => { controller.abort() }, faviconTimeoutMs(url))
   try {
     let current = url
     for (let hop = 0; hop <= MAX_FAVICON_REDIRECTS; hop++) {
-      const result = await requestOnce(current, controller.signal, sessionForHop(current, pageUrl, pageSession))
+      // Read for every hop: a route switched on or off while the chain is followed applies to the next hop.
+      const route = await routeNow(routeLookup)
+      if (route === null) return null
+      // The first hop was cleared by the caller, as routed or not: it is judged again only when the route changed since.
+      if ((hop > 0 || (route !== undefined) !== clearedAsRouted) && !(await isSafeFaviconUrl(current, pageUrl, electronResolveHost, { routed: route !== undefined }))) return null
+      const result = await requestOnce(current, controller.signal, sessionForHop(current, pageUrl, pageSession, route))
       if (result.kind === 'failed') return null
       if (result.kind === 'ok') return toDataUrl(result.bytes)
       if (hop === MAX_FAVICON_REDIRECTS) return null
-      if (!(await isSafeFaviconUrl(result.location, pageUrl, electronResolveHost))) return null
       current = result.location
     }
     return null
@@ -290,17 +319,19 @@ const faviconCache = new FaviconCache(MAX_CACHED_FAVICONS, MAX_CACHED_FAVICON_CH
  * update-check-runner.ts's fetchLatestGithubRelease. A result is cached only
  * if `stillWanted()` holds when it lands: a capture that has already been
  * dropped must not fill the cache. */
-export async function fetchFaviconDataUrlCached (url: string, pageUrl: string, stillWanted: () => boolean, pageSession?: Session): Promise<string | null> {
+export async function fetchFaviconDataUrlCached (url: string, pageUrl: string, stillWanted: () => boolean, pageSession?: Session, routeLookup?: RouteLookup): Promise<string | null> {
   // The gate runs BEFORE the cache is consulted, not just on a miss: whether
   // a favicon may be fetched now depends on which page is asking (a loopback
   // icon is allowed for a loopback page and refused for a public one), so a
   // hit left ungated would be a way straight around that condition.
-  if (!(await isSafeFaviconUrl(url, pageUrl, electronResolveHost))) return null
+  const route = await routeNow(routeLookup)
+  if (route === null) return null
+  if (!(await isSafeFaviconUrl(url, pageUrl, electronResolveHost, { routed: route !== undefined }))) return null
 
   const cached = faviconCache.get(url)
   if (cached !== undefined) return cached
 
-  const result = await fetchUnchecked(url, pageUrl, pageSession)
+  const result = await fetchUnchecked(url, pageUrl, pageSession, routeLookup, route !== undefined)
   if (result !== null && stillWanted()) faviconCache.set(url, result)
   return result
 }

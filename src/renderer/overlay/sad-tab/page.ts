@@ -23,7 +23,7 @@ export const sadTabPage: OverlayPage = {
 
     const card = h('div', { className: 'sad', role: 'dialog' })
     content.append(card)
-    const ask = (type: 'reload' | 'close-tab' | 'wait'): void => { void overlay.request({ type }) }
+    const ask = (type: 'reload' | 'close-tab' | 'wait' | 'report'): void => { void overlay.request({ type }) }
 
     return {
       shown (payload) {
@@ -41,7 +41,7 @@ export const sadTabPage: OverlayPage = {
           title,
           body,
           ...(payload.address === '' ? [] : [h('p', { className: 'origin sad-address', title: payload.address }, shortenMiddle(payload.address, ADDRESS_FIT))]),
-          h('div', { className: 'btn-row' }, other, reload)
+          h('div', { className: 'btn-row' }, ...(payload.kind === 'crashed' ? [h('button', { type: 'button', className: 'btn', onclick: () => { ask('report') } }, 'Report')] : []), other, reload)
         )
         reload.focus()
       }

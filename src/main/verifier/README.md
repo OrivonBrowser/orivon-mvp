@@ -4,15 +4,17 @@
 `ipfs://` addresses): the resolver rules that send them to the verifier's loopback port, the
 certificate check each session applies, starting and restarting the verifier host (and what a request waits for until it listens)
 ([`../../protocols/verifier-host/`](../../protocols/verifier-host/)), the light client's
-checkpoint ([`ADR-0031`](../../../docs/decisions/ADR-0031-helios-is-the-light-client.md)), what the
-host verified between runs, the per-site partition stamp, the gateway proxy check, and the
+checkpoint ([`ADR-0031`](../../../docs/decisions/ADR-0031-helios-is-the-light-client.md)) and its renewal at run time from two beacon servers that agree ([`ADR-0092`](../../../docs/decisions/ADR-0092-when-no-checkpoint-is-recent-enough-two-beacon-servers-that-agree-supply-one.md)), what the
+host verified between runs (IPNS sequences, Swarm feed indexes, and the address scheme each `.eth` name's content was last found under), the per-site partition stamp, the gateway proxy check, and the
 wording of the status and a name's evidence for Settings and the site-info popover.
-The person can switch the light client off in Settings (`web3.lightClient`, read once when Orivon
-starts, through `configureVerifier`, so a host that sleeps and wakes keeps that run's choice); the environment switch still forces it off, and
+The person can switch the light client off in Settings or from the Available networks popup (`web3.lightClient`, read at each
+start of the host through `configureVerifier` and applied at once: see below); the environment switch still forces it off
+(`lightClientForcedOff`, the one place that reads it), and
 [`web3-domain.ts`](web3-domain.ts) is what the Settings page reads.
 
-**Tied to Electron.** [`verifier-subsystem.ts`](verifier-subsystem.ts) is the one file that
-imports `electron`; the rest are `<name>.ts` decisions ([`../README.md`](../README.md)).
+**Tied to Electron.** [`verifier-subsystem.ts`](verifier-subsystem.ts),
+[`local-node-launch.ts`](local-node-launch.ts) and [`checkpoint-fetch-net.ts`](checkpoint-fetch-net.ts) are the files that
+import `electron`; the rest are `<name>.ts` decisions ([`../README.md`](../README.md)).
 
 **What it depends on.** [`../../protocols/`](../../protocols/) (`verifier-host/protocol.ts`,
 `builtin.ts`, `resolution/`), [`../dev/eth-resolver.ts`](../dev/eth-resolver.ts),
@@ -30,6 +32,26 @@ runs in another process, and only [`host-supervisor.ts`](host-supervisor.ts) tal
 **Owner stream.** `ens-ipfs`.
 
 ## Design notes
+
+**The checkpoint rule is written twice, on purpose.** [`checkpoint-fetch.ts`](checkpoint-fetch.ts) decides, from the
+servers' answers, whether a fresh checkpoint may be used (every server answers, all give the same root and slot, the
+block is finalized, the time is within the clock's tolerance and the age limit); `scripts/refresh-eth-checkpoint.mjs`
+applies the same rule when a release's checkpoint is chosen. A script cannot import the TypeScript, so
+`scripts/tests/refresh-eth-checkpoint.test.ts` feeds both the same answers and compares the verdicts and the server
+lists. A change to either rule is a change to both. The renewal starts as the host's configuration is built
+(`verifier-subsystem.ts`'s `hostConfig`), and requests held for the host count their time to start from its end
+(`listening-gate.ts`'s `hold`), so the servers' time limits are not taken out of the host's.
+
+**A `.eth` name is shown by the scheme of the protocol the host chose to load it, and as its plain origin
+until then.** The host posts `name-scheme` as soon as a name's records are resolved and a gatherer is chosen
+for them, before any content is fetched, and again if a fallback gatherer of another protocol takes over;
+a name whose records no gatherer loads posts nothing. `VerifierStore` keeps the answer (`name-schemes.json`,
+4096 names, a new answer replacing the old, least recently touched dropped first), `verifier-subsystem.ts`
+hands the lookup to `BUILTIN_ADDRESSES.learnSchemes` once at launch, and a changed answer is announced
+(`onNameSchemeChange`, in [`name-scheme-events.ts`](name-scheme-events.ts), apart from the subsystem so a
+screen can listen without importing Electron). Every window pushes its state again, and the loading screen
+words itself again, so an address follows a name learned mid-load or moved to another network. The Settings and
+permissions pages run their own copy of the address module, which learns nothing, so they show a `.eth` name as its plain origin. The list is a record of the names visited, so "Clear browsing data" empties it (`forgetNameSchemes`) with the cache and with all history.
 
 Each file's own header covers its rule (one owner of `--host-resolver-rules`, the synchronous
 port probe, `.localhost` names to IPv4 loopback so a local-pattern page cannot reach a server on `[::1]`, fingerprint-only certificates, request deadlines and backoff, the checkpoint's age).
@@ -52,6 +74,8 @@ which cannot resolve a `.eth` name either, so that partition never needs the sta
 document over Chromium's ordinary networking, so it reaches the verifier exactly as a tab does,
 and `src/main/embed/embed-host.ts`'s `configureEmbedSession` installs the identical stamp there,
 reusing `partition.ts` rather than copying it.
+
+**The same handler marks the requests of a website in a tunnel's profile.** `installPartitionStamp` is told by `website-sessions.ts` which tunnel a session is the profile of, if any, and sets `x-orivon-route: nym` or `socks5` on every request that session makes to the verifier, or strips the header on every other session (the embed's included), so a page cannot choose a route. The host serves a marked request from protocols that fetch only through that tunnel's profile front (`protocols/verifier-host/README.md`). Main asks the host about a website in a profile with the same mark in its mount and provenance requests (`routeOf`), and hands it the front of each tunnel's profile when it starts (`host-proxy.ts`).
 
 **The host runs only while `.eth` or an address is in use.** [`host-lifecycle.ts`](host-lifecycle.ts) starts it on the
 first request to a host the verifier serves, or when the address bar's text names one
@@ -79,7 +103,7 @@ embed guest's session starts the host and waits for it from its own handler
 **The certificate check goes on every session, through `session-created`.** A partition without
 it cannot load any host the verifier serves.
 
-**The proxy check runs in main, not in the host** ([`proxy-check.ts`](proxy-check.ts)). It needs
+**The proxy check runs in main, not in the host** ([`proxy-check.ts`](proxy-check.ts), asked by [`host-proxy.ts`](host-proxy.ts), which also hands the host the tunnel's front while the whole browser is on the tunnel, and the tunnel profile's front for the fetches of a website in that profile). It needs
 `app.resolveProxy`, and a `utilityProcess` has no `session` to ask. It runs once per host start,
 per gateway, since a PAC script can answer differently per URL.
 
@@ -88,3 +112,68 @@ from what `verifier-subsystem.ts` provides: true for a developer-mode name, a te
 start from a usable checkpoint; false with the light client off or unable to start, and before anything has provided it. A
 feature that sends a person to a `.eth` name, such as [`../shell/eth-gateway-rule.ts`](../shell/eth-gateway-rule.ts), asks it
 first, so it never replaces an address that works with one that cannot load.
+
+**A local node runs on demand, beside the verifier host and under the same idle rule.** There are two kinds, the
+Swarm node and the IPFS node: [`local-node-controller.ts`](local-node-controller.ts) starts one when a mount asks
+for it (`node-wanted`, by the node's name; [`local-node-subsystem.ts`](local-node-subsystem.ts) is the shared
+asking, state and endpoint, and [`swarm-node-subsystem.ts`](swarm-node-subsystem.ts) and
+[`ipfs-node-subsystem.ts`](ipfs-node-subsystem.ts) say which kind each is and when a test build serves its content
+otherwise; [`local-node-launch.ts`](local-node-launch.ts) holds what every node needs of Electron, and is the file there that
+imports `electron`), waits at most twenty seconds for the node to be ready (the Swarm node: eight peers; the IPFS node: its health answers), and answers `ready`, `starting`,
+`failed` or `off` with the reason in words. It sleeps when the verifier host does and after ten
+minutes with no call, so a call must be made for every mount, not only one that finds no node ready. It does
+not start when a proxy the system itself sets is configured (the node's sockets would go around it, T20); with the whole
+browser on the tunnel AND "Use tunnel to run network nodes" (`network.tunnel.nodes`, default off) on it
+starts through the tunnel instead (`NodeRoute`: the controller asks the tunnel for the node's address before it forks, hands it
+over on the node's `route-ask`, and tells the node when the address stops being right), is switched to the other path by
+`tunnelDefaultChanged` the moment either setting flips, and is off with the tunnel's reason when the
+tunnel cannot carry it
+([`ADR-0086`](../../../docs/decisions/ADR-0086-the-local-nodes-run-through-the-tunnel-while-the-whole-browser-does.md),
+[`ADR-0087`](../../../docs/decisions/ADR-0087-the-nodes-follow-the-tunnel-only-when-the-person-asks-and-no-gateway-is-read-without-the-persons-yes.md)).
+With the setting off a node runs direct beside the whole-browser tunnel, and the proxy question goes to the session that follows the system
+alone (`systemProxyFor`), because the default session answers with the tunnel's own front. [`node-route.ts`](node-route.ts) holds the
+three answers the rest asks (`nodesRunThroughTunnel`, `nodesMayServeTunnelSites`, `nodesFollowTunnel`); `hostConfig` hands the host
+`tunnelSitesReadNodes` and `ethereumOutside` from them. The Ethereum light client follows the same setting: outside the tunnel when it
+is off, unless the system sets a proxy of its own. It does not start either when its files are
+missing or are not the ones the build pins ([`local-node-artifact.ts`](local-node-artifact.ts), checked once for
+each start, a restart included, with the proxy looked at first so nothing is read while one is set; the process
+then hashes the bytes it runs itself), or in a build that serves its content from its own endpoints. Both processes are
+kept by [`process-supervisor.ts`](process-supervisor.ts): forking, the config handed over, backoff, sleep.
+[`host-supervisor.ts`](host-supervisor.ts) adds the verifier host's requests and replies,
+[`local-node-supervisor.ts`](local-node-supervisor.ts) a node's reports.
+
+**Where IPFS is read from applies at once.** `ipfsSettingsChanged` stops the IPFS node when `web3.ipfsSource` or
+`web3.ipfsLookupService` changes, and its next start reads the routing mode again (the controller's `options`).
+Only a change of the source also puts the verifier host to sleep, whose next wake builds `HostConfig` from it (the
+lookup service touches only the node's arguments, so the light client, the mounted sites and the Swarm node are
+left alone): `ipfsNode` (the node's endpoint) is present only when the person chose the node, and never in a test
+build. The host reads from the node; when the node cannot serve a page it fails with the reason and an offer of public gateways, which
+the person accepts for one load, and the page then says which served it; Settings'
+`ipfsNode` view and the site-info popover's "Loaded from" row repeat it. With the person's standing choice of gateways, no node
+is built at all. The lookup service does not restart the
+host: the running host is sent `ipfs-lookup` and asks a name service for an IPNS record only while it is allowed.
+`forgetIpfsNodeData` (clearing cached data or all history) stops the node, deletes its database once the process has
+exited, and replaces the partition salt (`verifier-store.ts`).
+
+**The light client, the Swarm node and the process facts apply at once or are read live.** `lightClientSettingChanged` puts the
+verifier host to sleep when `web3.lightClient` changes, so its next start builds the config from the new choice; the person's
+setting is read at each start (`configureVerifier`), and the environment's force-off still wins. A host that sleeps stops the IPFS
+and Swarm nodes with it, as it does after ten idle minutes, and each starts again at the next ask. `swarmSettingChanged` makes the
+Swarm node's controller read its `disabled` hook again (`LocalNodeController.reconsider`, which also drops a check under way and
+reads the switch again once one ends) and puts the host to sleep too, so nothing mounted from Swarm outlives a switch-off: a node
+that must not run is stopped and says why (`SWARM_SWITCHED_OFF`, which also names where to switch it on, and which a bzz:// page
+repeats), and one that may run again is asked for as usual, with no refusal remembered. Every supervisor can say its running process (`processInfo`: the
+process id and when it was forked), which `../networks/` matches to Electron's metrics. The verifier host counts what it reads from
+each node (`node-traffic.ts` in `protocols/verifier-host/`) and posts it at most once a second while the node is read; main keeps
+the last figures and folds a host's bytes into the session's total when the host sleeps (`nodeTraffic`).
+
+**[`kept-provenance.ts`](kept-provenance.ts) keeps what the verifier last proved about a site, so a failure to look is not read as evidence.**
+`verifierNameEvidence` asks the host for the site's mount; the host forgets a mount ten minutes after it was proved,
+whenever it sleeps or restarts (an idle host, a tunnel or IPFS-source change, a light-client or Swarm switch, a crash), and a failed re-proof (offline, a
+tunnel down) does not renew it. Without a mount the evidence has no content and the Website level reads 1, so a site that
+was Level 2 or judged 4 would turn red and Web2 for being offline. The last provenance per site and route is shown instead,
+with the age of that check and a row saying it could not be repeated. Evidence against a site always arrives as a fresh
+provenance (a file that failed its check, another content root), which replaces the kept one. Clearing site data, the
+cache or all history forgets them (`forgetKeptProvenance`).
+
+**A page that is not whole says so** ([`failed-files.ts`](failed-files.ts), [`failed-files-store.ts`](failed-files-store.ts), `partition-stamp.ts`'s `installFileFailureWatch`, [`ADR-0088`](../../../docs/decisions/ADR-0088-every-wait-on-the-load-path-comes-from-the-route-it-travels.md)). Chromium stops a tab's loading indicator when every request has ended, whether or not each was answered, so a stylesheet the verifier could not read (a `5xx`) leaves a page with text and no colours that looks finished. Each website session notes, per tab, the files (not a document or a frame; a `404` is a file the site lacks) answered with a failure, forgets one when the same address later arrives and all of them when the tab loads another document, and the shell state's `filesFailed` count shows the address bar's mark. Only pages the verifier serves are watched.

@@ -98,9 +98,9 @@ additions:
   this to start working".
 - **`docs/development/`**. New, holding the material a contributor needs:
   - `setup.md`: prerequisites, install, run, the `ELECTRON_RUN_AS_NODE` trap
-  - `testing.md`: what is tested and why so little is (per `build-plan.md` §Testing)
+  - `testing.md`: what is tested and why so little is (per `build-plan.md` section Testing)
   - `parallel-work.md`: Part C of this document, as an operational guide
-  - `release-checklist.md`: referenced by `build-plan.md` §Testing but **does not exist**;
+  - `release-checklist.md`: referenced by `build-plan.md` section Testing but **does not exist**;
     creating it closes a real gap, with a precondition, a fixed input and a falsifiable
     assertion per item
   - `readability-log.md`: Part D
@@ -123,7 +123,7 @@ Types only. No runtime code, no imports, no emitted JavaScript. It is the frozen
 every parallel stream codes against, so that streams which are *sequentially dependent in the
 build plan* become *concurrently implementable*.
 
-This is not new design work. `capability-api.md` §v0 surface and `handle-contracts.md` already
+This is not new design work. `capability-api.md` section v0 surface and `handle-contracts.md` already
 contain literal TypeScript interfaces, a closed error enum, a close/half-close semantics table
 and a nine-item conformance checklist. **Part B is a transcription, and any place where
 transcription proves impossible is a genuine gap in those documents that must be raised, not
@@ -205,7 +205,7 @@ disjoint set of paths and may not write outside them.
 | `packaging` | `electron-builder` config, `scripts/` | 10 | independent of everything |
 | `docs` | `docs/`, root markdown | n/a | always available |
 
-`src/broker/policy/` is called out separately because `build-plan.md` §Week 0 already requires
+`src/broker/policy/` is called out separately because `build-plan.md` section Week 0 already requires
 it to hold pure functions with no Electron imports and no I/O, constructed as
 `createBroker({ dial, resolve, now, fs, keychain })`. That property is what lets the broker's
 security-critical logic be tested against stubs, and it is also what lets a second stream write
@@ -317,9 +317,9 @@ Stated explicitly so they are not quietly added later.
 - **No unrelated refactoring of the shell.** Build step 1 is done and works; the only change to
   it is the composition-root restructure in Part C, which is in service of parallelism.
 - **No duplication of the vision corpus.** `orivon-docs` stays canonical and is linked, per
-  `CLAUDE.md` §Sources of truth.
+  `CLAUDE.md` section Sources of truth.
 - **No CI expansion.** The existing four checks are the gate. Adding coverage targets or UI
-  tests contradicts `build-plan.md` §Testing.
+  tests contradicts `build-plan.md` section Testing.
 
 ---
 

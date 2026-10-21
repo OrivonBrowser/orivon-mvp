@@ -5,7 +5,7 @@ import { DownloadService } from '../download-service.js'
 import type { DownloadDeps } from '../download-service.js'
 import type { DownloadStore } from '../download-store.js'
 import type { DownloadEntry } from '../download-types.js'
-import { fakeContents, FakeItem } from './fake-item.js'
+import { DEFAULT_SESSION, fakeContents, FakeItem } from './fake-item.js'
 
 export const DIR = join('/', 'dl')
 
@@ -28,16 +28,17 @@ export function harness (stored: DownloadEntry[] = [], over: Partial<DownloadDep
     rename: vi.fn((from: string, to: string) => { files.delete(from); files.add(to) }),
     removeFile: vi.fn((path: string) => { files.delete(path) }),
     fetchAgain: vi.fn(),
+    isOwnSession: (session) => session !== DEFAULT_SESSION,
     now: () => { clock += 1; return clock },
     newId: () => { counter += 1; return `id${String(counter)}` },
     ...over
   }
   const service = new DownloadService(store, deps)
   const event = { preventDefault: vi.fn() }
-  const start = (item: FakeItem, tab = 1): string => {
+  const start = (item: FakeItem, tab = 1, session: object = DEFAULT_SESSION): string => {
     const seen: string[] = []
     const off = service.onStart((info) => { seen.push(info.id) })
-    service.track(item.asItem(), fakeContents(tab), event)
+    service.track(item.asItem(), fakeContents(tab, undefined, session), event)
     off()
     return seen[0] ?? ''
   }

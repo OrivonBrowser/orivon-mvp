@@ -10,15 +10,15 @@ This is a synthesis; it does not restate what the linked documents already say.
 ## Product readiness
 
 **Clear.**
-- What the MVP proves, and the metric that judges it: 100 active users in EU/USA at
-  25 h/month. The metric, not the long-term vision, decides scope (`scope.md`).
+- What the first release proves, and the success metric that judges it (kept in
+  `CLAUDE.local.md`). The metric, not the long-term vision, decides scope.
 - The flagship, with reasoning recorded so it is not re-litigated (`ADR-0001`).
 - Three journeys that must work: the clip, the identity, the developer.
 - Everything classified: in / deferrable / later / unrelated, plus explicit public non-goals.
 - Failure conditions agreed in advance, so the outcome is interpretable either way.
 
 **Uncertain, deliberately.**
-- **Whether 25 h/month is reachable at all.** This is the hypothesis, not a risk to mitigate.
+- **Whether the metric's monthly active time is reachable at all.** This is the hypothesis, not a risk to mitigate.
   The torrent flagship is the best available bet because it is genuinely daily-use, impossible
   in Chrome, cheap, audience-matched, and it clips.
 - **Distribution.** No existing presence in the target communities, ~€50 budget. Mitigated by
@@ -75,12 +75,12 @@ renderer (sandboxed)  →  orivon.* capability API  →  broker (main process)  
 ```
 
 The interface is the asset. The Electron shell is disposable, and the implementation beneath
-the API moves (Node now, Wasmtime later, Mojo in a Chromium fork after that) without any app
-noticing. That property, not the choice of Electron, is what keeps the Chromium path open.
+the API can change without any app noticing. That property, not the choice of Electron, is what
+the interface is built to keep.
 
 ## Implementation phases
 
-Detail in `build-plan.md`. Critical path:
+Detail in the retired build plan. Critical path:
 
 ```
 spike → shell → broker → shim → app loader → torrent app → THE CLIP
@@ -118,7 +118,7 @@ Two things worth saying explicitly before you sign:
 
 - **Your best use of the coming month is not this repository.** It is the demo clip, the
   landing page, the telemetry pre-announcement, and picking the communities. That is the
-  critical path to 100 users and it is the part I cannot do.
+  critical path to the metric and it is the part I cannot do.
 - **The public docs now disagree with these decisions in three places**: the bitcoind claim,
   the missing "runs entirely locally" trustlessity level, and the roadmap ordering (trustless
   resolution is a prerequisite for DDOC and site-level scores). Those are public-facing

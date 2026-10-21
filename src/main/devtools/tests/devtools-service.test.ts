@@ -7,6 +7,7 @@ import type { DevToolsDeps } from '../devtools-service.js'
 class FakeContents extends EventEmitter {
   opened = false
   destroyed = false
+  readonly devToolsWebContents = null
   constructor (public url: string) { super() }
   getURL (): string { return this.url }
   isDestroyed (): boolean { return this.destroyed }
@@ -43,6 +44,13 @@ describe('developer tools', () => {
     expect(contents.openDevTools).toHaveBeenCalledWith({ mode: 'bottom' })
     await service.toggle(as(contents))
     expect(contents.closeDevTools).toHaveBeenCalledTimes(1)
+  })
+
+  it('open beside the page on the left first, where Electron keeps them docked (dock-side.ts)', async () => {
+    const { service } = setup({}, { 'developer.dock': 'right' })
+    const contents = page()
+    await service.toggle(as(contents))
+    expect(contents.openDevTools).toHaveBeenCalledWith({ mode: 'left' })
   })
 
   it('do nothing for no page, a destroyed one, or when the setting is off', async () => {

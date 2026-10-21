@@ -41,9 +41,13 @@ function streamsOf (socket: OrivonTcpSocket): { input: InputStream, output: Outp
   return { input, output, reader, writer, wrote: () => wrote }
 }
 
+/** How long a dropped socket that wrote waits for its peer to end before the program's read side is released anyway. */
+export const DROP_GRACE_MS = 5_000
+
 export interface TcpContext {
   readonly net: SocketNet
   readonly names: ResolvedNames
+  readonly dropGraceMs: number
 }
 
 export class TcpSocket {
@@ -286,12 +290,29 @@ export class TcpSocket {
    * A socket the program never wrote to (an unaccepted, queued connection
    * dropped along with its listener, say) has nothing to lose this way, so
    * it keeps the direct, immediate handle close.
+   *
+   * A drop releases the read side too, which a program that wrote and then
+   * dropped never read to its end. The reader is cancelled only after the
+   * writer has closed and the peer has ended its side or `dropGraceMs` has
+   * passed, never at once: cancelling a socket's readable ends the whole
+   * connection, and would drop what the writer has not yet landed.
    */
   [Symbol.dispose] (): void {
     this.#state = 'closed'
     this.#signal.notify()
-    if (this.#streams?.wrote() === true) void this.#streams.writer.close().catch(() => {})
-    else void this.#socket?.close().catch(() => {})
+    const streams = this.#streams
+    if (streams?.wrote() === true) {
+      const release = (): void => { void streams.reader.cancel().catch(() => {}) }
+      void streams.writer.close().catch(() => {}).then(async () => {
+        let timer: ReturnType<typeof setTimeout> | undefined
+        await Promise.race([streams.reader.closed.catch(() => {}), new Promise<void>((resolve) => { timer = setTimeout(resolve, this.#context.dropGraceMs) })])
+        clearTimeout(timer)
+        release()
+      })
+    } else {
+      void this.#socket?.close().catch(() => {})
+      void streams?.reader.cancel().catch(() => {})
+    }
     void this.#server?.close().catch(() => {})
     for (const [socket] of this.#accepted.splice(0)) socket[Symbol.dispose]()
   }

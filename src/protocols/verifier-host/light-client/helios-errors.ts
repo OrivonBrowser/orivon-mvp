@@ -19,7 +19,7 @@ export function heliosError (error: unknown): unknown {
   const message = error instanceof Error ? error.message : String(error)
   const revert = REVERT.exec(message)
   if (revert !== null) return Object.assign(new Error('execution reverted'), { code: 3, data: `0x${revert[1]!.toLowerCase()}` })
-  if (FAILED_PROOF.test(message)) return new ResolutionError('unverifiable', `the light client refused an answer: ${message}`)
+  if (FAILED_PROOF.test(message)) return new ResolutionError('unverifiable', `the light client refused an answer: ${message}`, true)
   if (OUT_OF_SYNC.test(message)) return new ResolutionError('not-synced', message)
   return error
 }

@@ -2,7 +2,9 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_SCORE_PROVIDER } from '../schema.js'
+import { DEFAULT_NYM_PRIVACY, NYM_PRIVACY_LEVELS } from '../../../protocols/nym-tunnel/protocol.js'
+import { DEFAULT_SCORE_PROVIDER, describeSettings } from '../schema.js'
+import { readSettingBeforeReady } from '../settings-file.js'
 import { SettingsStore } from '../settings-store.js'
 
 let dir: string
@@ -50,7 +52,7 @@ describe('SettingsStore', () => {
     expect(store.set('appearance.bookmarksBar', 'auto')).toEqual({ ok: true })
     await store.flush()
 
-    expect(await onDisk()).toEqual({ version: 1, values: { 'appearance.theme': 'dark' } })
+    expect(await onDisk()).toEqual({ version: 2, values: { 'appearance.theme': 'dark' } })
     const next = new SettingsStore(file)
     await next.load()
     expect(next.get('appearance.theme')).toBe('dark')
@@ -112,7 +114,7 @@ describe('SettingsStore', () => {
     expect(listener.mock.calls.map((call) => (call[0] as { key: string }).key)).toEqual(['appearance.theme', 'tabs.lastTabClosed'])
     expect(store.reset('nope')).toEqual({ ok: false, reason: 'unknown-key' })
     await store.flush()
-    expect(await onDisk()).toEqual({ version: 1, values: {} })
+    expect(await onDisk()).toEqual({ version: 2, values: {} })
   })
 
   it('ignores an entry the schema would refuse, keeps the rest, and says so', async () => {
@@ -135,9 +137,9 @@ describe('SettingsStore', () => {
     ['not json at all'],
     ['[]'],
     ['null'],
-    [JSON.stringify({ version: 2, values: { 'appearance.theme': 'dark' } })],
+    [JSON.stringify({ version: 3, values: { 'appearance.theme': 'dark' } })],
     [JSON.stringify({ version: 1, values: 'dark' })]
-  ])('starts from the defaults for a file that is %s', async (content) => {
+  ])('starts from the defaults, with the tunnel held on for the whole browser, for a file that is %s', async (content) => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     await mkdir(join(dir, 'nested'), { recursive: true })
     await writeFile(file, content)
@@ -145,7 +147,8 @@ describe('SettingsStore', () => {
 
     await expect(store.load()).resolves.toBeUndefined()
 
-    expect(store.snapshot().changed).toEqual([])
+    expect(store.snapshot().changed).toEqual(['network.tunnel.everywhere'])
+    expect(store.get('appearance.theme')).toBe('system')
   })
 
   it('reads the file once, however many callers load', async () => {
@@ -199,5 +202,205 @@ describe('SettingsStore', () => {
 
     expect(store.get('privacy.globalPrivacyControl')).toBe(true)
     expect(store.valuesAtStart()['privacy.globalPrivacyControl']).toBe(false)
+  })
+})
+
+describe('where a routed app leaves', () => {
+  let dir = ''
+  let file = ''
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'orivon-settings-kind-'))
+    file = join(dir, 'settings.json')
+  })
+  afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
+
+  it('is Nym until the person chooses their own address', async () => {
+    const store = new SettingsStore(file)
+    await store.load()
+    expect(store.get('network.route.kind')).toBe('nym')
+    expect(store.get('network.route.proxy')).toBe('')
+  })
+
+  it('keeps an address saved before the choice existed as the choice of that address', async () => {
+    await writeFile(file, JSON.stringify({ version: 1, values: { 'network.route.proxy': '127.0.0.1:9050' } }))
+    const store = new SettingsStore(file)
+    await store.load()
+    expect(store.get('network.route.kind')).toBe('socks5')
+    expect(store.get('network.route.proxy')).toBe('127.0.0.1:9050')
+  })
+
+  it('leaves a version 1 file with no address on Nym', async () => {
+    await writeFile(file, JSON.stringify({ version: 1, values: { 'appearance.theme': 'dark' } }))
+    const store = new SettingsStore(file)
+    await store.load()
+    expect(store.get('network.route.kind')).toBe('nym')
+  })
+
+  it('leaves a version 2 file with an address and no choice on Nym: that person chose it', async () => {
+    await writeFile(file, JSON.stringify({ version: 2, values: { 'network.route.proxy': '127.0.0.1:9050' } }))
+    const store = new SettingsStore(file)
+    await store.load()
+    expect(store.get('network.route.kind')).toBe('nym')
+  })
+
+  it('does not turn a person who chose Nym back to the address on the next start', async () => {
+    await writeFile(file, JSON.stringify({ version: 1, values: { 'network.route.proxy': '127.0.0.1:9050' } }))
+    const first = new SettingsStore(file)
+    await first.load()
+    first.set('network.route.kind', 'nym')
+    await first.flush()
+    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({ version: 2, values: { 'network.route.proxy': '127.0.0.1:9050' } })
+    const second = new SettingsStore(file)
+    await second.load()
+    expect(second.get('network.route.kind')).toBe('nym')
+    expect(readSettingBeforeReady(file, 'network.route.kind')).toBe('nym')
+  })
+
+  it('reads the choice before the settings store does, for a version 1 file too', async () => {
+    await writeFile(file, JSON.stringify({ version: 1, values: { 'network.route.proxy': '127.0.0.1:9050' } }))
+    expect(readSettingBeforeReady(file, 'network.route.kind')).toBe('socks5')
+  })
+
+  it('refuses a kind that is neither', async () => {
+    const store = new SettingsStore(file)
+    await store.load()
+    expect(store.set('network.route.kind', 'tor')).toEqual({ ok: false, reason: 'invalid-value' })
+  })
+})
+
+describe('the Nym privacy level', () => {
+  let dir = ''
+  let file = ''
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'orivon-settings-privacy-'))
+    file = join(dir, 'settings.json')
+  })
+  afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
+
+  it('is balanced until the person chooses, and a file written before the setting existed keeps it so', async () => {
+    await writeFile(file, JSON.stringify({ version: 2, values: { 'network.route.kind': 'nym' } }))
+    const store = new SettingsStore(file)
+    await store.load()
+    expect(store.get('network.nym.privacy')).toBe('balanced')
+    expect(readSettingBeforeReady(file, 'network.nym.privacy')).toBe('balanced')
+  })
+
+  it('keeps strongest across a restart, and reads it before the store does', async () => {
+    const first = new SettingsStore(file)
+    await first.load()
+    expect(first.set('network.nym.privacy', 'strongest')).toMatchObject({ ok: true })
+    await first.flush()
+    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({ version: 2, values: { 'network.nym.privacy': 'strongest' } })
+    expect(readSettingBeforeReady(file, 'network.nym.privacy')).toBe('strongest')
+    const second = new SettingsStore(file)
+    await second.load()
+    expect(second.get('network.nym.privacy')).toBe('strongest')
+  })
+
+  it('refuses a level that is neither, from a call and from a file', async () => {
+    const store = new SettingsStore(file)
+    await store.load()
+    expect(store.set('network.nym.privacy', 'off')).toEqual({ ok: false, reason: 'invalid-value' })
+    await writeFile(file, JSON.stringify({ version: 2, values: { 'network.nym.privacy': 'weakest' } }))
+    expect(readSettingBeforeReady(file, 'network.nym.privacy')).toBe('balanced')
+  })
+
+  it('offers the levels the Nym host knows, in the same words', async () => {
+    const described = describeSettings().find((setting) => setting.key === 'network.nym.privacy')
+    expect(described).toMatchObject({ kind: 'enum', options: [...NYM_PRIVACY_LEVELS], default: DEFAULT_NYM_PRIVACY })
+  })
+})
+
+describe('SettingsStore with a settings file that cannot be used', () => {
+  it('holds the tunnel on for the whole browser, says so, and keeps a copy of the file', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await mkdir(join(dir, 'nested'), { recursive: true })
+    await writeFile(file, '{ not json')
+    const store = new SettingsStore(file)
+    await store.load()
+
+    expect(store.get('network.tunnel.everywhere')).toBe(true)
+    expect(store.fileUnreadable()).toBe(true)
+    expect(store.get('network.route.kind')).toBe('nym')
+    expect(await readFile(`${file}.unreadable`, 'utf8')).toBe('{ not json')
+  })
+
+  it('does the same for a file of a version this build does not read', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await mkdir(join(dir, 'nested'), { recursive: true })
+    await writeFile(file, JSON.stringify({ version: 99, values: { 'network.tunnel.everywhere': false } }))
+    const store = new SettingsStore(file)
+    await store.load()
+    expect(store.get('network.tunnel.everywhere')).toBe(true)
+    expect(store.fileUnreadable()).toBe(true)
+  })
+
+  it('lets the person turn it off, which then stops saying it is held', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await mkdir(join(dir, 'nested'), { recursive: true })
+    await writeFile(file, '{ not json')
+    const store = new SettingsStore(file)
+    await store.load()
+    store.set('network.tunnel.everywhere', false)
+    expect(store.get('network.tunnel.everywhere')).toBe(false)
+    expect(store.fileUnreadable()).toBe(false)
+  })
+
+  it('leaves a missing file and a good one alone', async () => {
+    const missing = new SettingsStore(file)
+    await missing.load()
+    expect(missing.get('network.tunnel.everywhere')).toBe(false)
+    expect(missing.fileUnreadable()).toBe(false)
+  })
+})
+
+describe('SettingsStore held to a value', () => {
+  const held = new Map<'network.tunnel.everywhere' | 'network.route.kind', boolean | string>([['network.tunnel.everywhere', true], ['network.route.kind', 'nym']])
+
+  it('reads the held value whatever the file says, and lists the settings it is held to', async () => {
+    await mkdir(join(dir, 'nested'), { recursive: true })
+    await writeFile(file, JSON.stringify({ version: 2, values: { 'network.tunnel.everywhere': false, 'network.route.kind': 'socks5', 'network.route.proxy': '127.0.0.1:9050' } }))
+    const store = new SettingsStore(file, held)
+    await store.load()
+    expect(store.get('network.tunnel.everywhere')).toBe(true)
+    expect(store.get('network.route.kind')).toBe('nym')
+    expect(store.get('network.route.proxy')).toBe('127.0.0.1:9050')
+    expect(store.snapshot().values['network.tunnel.everywhere']).toBe(true)
+    expect(store.snapshot().changed).toContain('network.tunnel.everywhere')
+    expect(store.heldKeys()).toEqual(['network.tunnel.everywhere', 'network.route.kind'])
+  })
+
+  it('refuses every change to a held setting, tells nobody and writes nothing, and takes the others', async () => {
+    const store = new SettingsStore(file, held)
+    await store.load()
+    const heard = vi.fn()
+    store.onChange(heard)
+    expect(store.set('network.tunnel.everywhere', false)).toEqual({ ok: false, reason: 'locked' })
+    expect(store.set('network.route.kind', 'socks5')).toEqual({ ok: false, reason: 'locked' })
+    expect(store.reset('network.tunnel.everywhere')).toEqual({ ok: false, reason: 'locked' })
+    store.resetAll()
+    expect(store.get('network.tunnel.everywhere')).toBe(true)
+    expect(heard).not.toHaveBeenCalled()
+    expect(store.set('appearance.theme', 'dark')).toEqual({ ok: true })
+    expect(heard).toHaveBeenCalledTimes(1)
+    await store.flush()
+    expect(store.get('network.tunnel.everywhere')).toBe(true)
+  })
+
+  it('holds a store whose file cannot be read to the same values', async () => {
+    await mkdir(join(dir, 'nested'), { recursive: true })
+    await writeFile(file, '{ nope')
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const store = new SettingsStore(file, held)
+    await store.load()
+    expect(store.get('network.tunnel.everywhere')).toBe(true)
+    expect(store.get('network.route.kind')).toBe('nym')
+  })
+
+  it('is an ordinary store when it is held to nothing', async () => {
+    const store = new SettingsStore(file)
+    await store.load()
+    expect(store.heldKeys()).toEqual([])
+    expect(store.set('network.tunnel.everywhere', true)).toEqual({ ok: true })
   })
 })

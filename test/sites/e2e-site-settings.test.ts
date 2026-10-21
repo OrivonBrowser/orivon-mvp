@@ -206,7 +206,9 @@ it('shows an answer in the popover, changes it there, lists it in Settings, forg
     await popup.click('.perm-select[data-kind="camera"]')
     await delay(600)
     shootScreen('popover-select-open')
-    await popup.keyboard.press('Escape')
+    // On macOS the open list is a native menu; Playwright's Escape reaches the page, not that menu, so the page would
+    // close its popover (src/renderer/pages/shared/escape-closes.ts). The next step changes the select either way.
+    if (process.platform !== 'darwin') await popup.keyboard.press('Escape')
 
     // Changing it applies at once and offers the reload.
     await popup.selectOption('.perm-select[data-kind="camera"]', 'block')
@@ -298,7 +300,7 @@ it('sets a kind the site never asked about from "Add a permission", lists it in 
     await popup.click('.add-permission')
     await popup.waitForSelector('.more-list')
     const kinds = await popup.locator('.more-list .perm-select').evaluateAll((selects) => selects.map((select) => (select as HTMLElement).dataset['kind']))
-    expect(kinds).toEqual(['camera', 'microphone', 'location', 'clipboardRead', 'midi', 'idle', 'windowManagement', 'notifications', 'popups', 'javascript', 'images', 'sound', 'autoDownloads', 'screenShare'])
+    expect(kinds).toEqual(['camera', 'microphone', 'location', 'clipboardRead', 'midi', 'idle', 'windowManagement', 'notifications', 'popups', 'javascript', 'images', 'sound', 'autoDownloads', 'devices', 'screenShare'])
     expect(await popup.locator('.add-permission').getAttribute('aria-expanded')).toBe('true')
     await shootBoth(app, 'popover-add-permission', popup)
     await popup.selectOption('.perm-select[data-kind="location"]', 'allow')
@@ -384,7 +386,7 @@ it('sets a kind the site never asked about from "Add a permission", lists it in 
   }
 }, E2E_TIMEOUT_MS)
 
-it('opens the Site settings page from the popover\'s footer and from the all-sites panel\'s link', async () => {
+it('opens the Site settings page from the popover\'s footer', async () => {
   const { app, chrome } = await launchShell()
   try {
     await visit(app, chrome, `${origins.a}/`)
@@ -395,20 +397,6 @@ it('opens the Site settings page from the popover\'s footer and from the all-sit
     await popup.click('.nav-row:has(span:text-is("Site settings"))')
     expect(await waitFor(() => settingsPage(app) !== undefined)).toBe(true)
     expect(await waitFor(() => infoPage(app) === undefined)).toBe(true)
-    expect((settingsPage(app) as Page).url()).toContain('/sites')
-
-    // The all-sites panel: a link under its list.
-    await activateTab(chrome, 0)
-    await chrome.click('#permissions-btn')
-    const panelOf = (): Page | undefined => app.windows().find((w) => w.url().endsWith('/renderer/permissions/index.html') && !w.isClosed())
-    expect(await waitFor(() => panelOf() !== undefined)).toBe(true)
-    const panel = panelOf() as Page
-    await panel.waitForSelector('#site-settings-link')
-    expect(await textOf(panel, '#site-settings-link')).toEqual(['All site settings'])
-    await shootBoth(app, 'all-sites-link', panel)
-    await panel.click('#site-settings-link')
-    expect(await waitFor(() => panelOf() === undefined)).toBe(true)
-    await activateTab(chrome, 1)
     expect((settingsPage(app) as Page).url()).toContain('/sites')
   } finally {
     await closeElectron(app)

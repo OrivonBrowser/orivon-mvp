@@ -114,6 +114,8 @@ export async function installAndNotify (
   let installed: { readonly pin: PinRecord, readonly changed: boolean }
   try {
     installed = await install(options.storage, canonicalOrigin, manifest, tree, entries, declaration, content, options.now(), existingPin)
+    // The pin now says what a consent record had to: the app is held, whole.
+    await options.storage.writePending(canonicalOrigin, undefined)
   } catch (error) {
     // The raw message is a node:fs one and carries the absolute host path it
     // failed on. policy/paths.ts's CONFINEMENT_ERROR_CODE states the rule:
@@ -123,12 +125,14 @@ export async function installAndNotify (
     console.error('[loader] install failed', canonicalOrigin, error)
     return { outcome: 'rejected', reason: `the bundle for ${canonicalOrigin} could not be written to local storage` }
   }
+  let servingFailed = false
   if (options.onInstalled !== undefined) {
     try {
       await options.onInstalled(canonicalOrigin)
     } catch (error) {
       console.error('[loader] onInstalled hook failed', canonicalOrigin, error)
+      servingFailed = true
     }
   }
-  return { outcome: 'installed', canonicalOrigin, manifest, pin: installed.pin }
+  return { outcome: 'installed', canonicalOrigin, manifest, pin: installed.pin, ...(servingFailed ? { servingFailed: true as const } : {}) }
 }

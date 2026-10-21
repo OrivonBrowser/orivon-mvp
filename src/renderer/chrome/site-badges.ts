@@ -4,6 +4,7 @@ import type { ShellState, TabState } from '../../main/shell/tabs.js'
 import { paintMark, paintShield, shieldLabel, web3Shield } from '../web3-shield.js'
 import type { ChromeContext, ChromeModule } from './context.js'
 import { hasSite, must } from './context.js'
+import { MISSING_NOTE } from './content-dot.js'
 
 function originOf (url: string): string | null {
   try {
@@ -13,19 +14,25 @@ function originOf (url: string): string | null {
   }
 }
 
+const WEB3_SCORE_OVERLAY = 'web3-score'
+
 /** How soon a shield whose provider was still being asked asks again. */
 const PENDING_RETRY_MS = 2_000
+/** How soon, and how many times, a shield whose provider could not be reached asks again (a tunnel that was still coming up may answer by then); main says how soon when the route is a slow one. */
+const UNREACHABLE_RETRY_MS = 30_000
+const UNREACHABLE_RETRIES = 8
 
 /** What the address pill says about the active site: the Web3 Score shield and its mark, and the key for
  * the permissions this site has asked for. Both answers come from main a moment after the push that asked,
  * so each remembers what it asked to drop a stale response. */
 export function createSiteBadges (): ChromeModule {
   let web3ScoreBtn: HTMLButtonElement | undefined
-  let web3MarkEl: HTMLSpanElement | undefined
+  let web3MarkEl: HTMLButtonElement | undefined
   let sitePermissionsBtn: HTMLButtonElement | undefined
   let shieldEl: SVGSVGElement | undefined
   let shieldRequestUrl: string | null = null
   let pendingRetry: ReturnType<typeof setTimeout> | undefined
+  let unreachableRetries = 0
   let shieldOrigin: string | null = null
   let permissionsRequestUrl: string | null = null
   let connectionSecure = false
@@ -33,11 +40,17 @@ export function createSiteBadges (): ChromeModule {
   function applyShield (score: Web3Score | null): void {
     if (shieldEl === undefined || web3ScoreBtn === undefined || web3MarkEl === undefined) return
     paintShield(shieldEl, score?.level ?? null)
-    paintMark(web3MarkEl, score?.level ?? null)
+    paintMark(web3MarkEl, score?.level ?? null, score?.unscored === true)
     const label = shieldLabel(score)
     web3ScoreBtn.title = label
     web3ScoreBtn.setAttribute('aria-label', label)
-    web3MarkEl.title = label
+    // Only "Web?" asks a question, so only it is a control: it opens the page that says what the levels mean.
+    const asks = web3MarkEl.dataset['mark'] === 'Web?'
+    const markLabel = asks ? `${label}. What the Web3 Score levels mean` : label
+    web3MarkEl.disabled = !asks
+    web3MarkEl.title = markLabel
+    if (asks) web3MarkEl.setAttribute('aria-label', markLabel)
+    else web3MarkEl.removeAttribute('aria-label')
   }
 
   /** The shield's displayed-level query, resolved the same lagging, per-active-tab way the permissions key
@@ -57,6 +70,7 @@ export function createSiteBadges (): ChromeModule {
     const origin = originOf(url)
     if (origin !== shieldOrigin) {
       shieldOrigin = origin
+      unreachableRetries = 0
       applyShield(null)
     }
     askShield(url, ctx)
@@ -66,10 +80,15 @@ export function createSiteBadges (): ChromeModule {
     void ctx.shell.web3ScoreFor(url).then((score) => {
       if (shieldRequestUrl !== url) return // the active tab moved on; this answer is stale
       applyShield(score)
-      // A slow provider (a cold ipfs:// fetch) answers after the page has stopped pushing state.
-      if (score?.pending !== true) return
+      // A slow provider (a cold ipfs:// fetch) answers after the page has stopped pushing state; one that could not be reached is tried again a few times.
+      const again = score?.pending === true ? PENDING_RETRY_MS : score?.unreachable === true && unreachableRetries < UNREACHABLE_RETRIES ? score.retryMs ?? UNREACHABLE_RETRY_MS : undefined
+      if (again === undefined) return
       clearTimeout(pendingRetry)
-      pendingRetry = setTimeout(() => { if (shieldRequestUrl === url) askShield(url, ctx) }, PENDING_RETRY_MS)
+      pendingRetry = setTimeout(() => {
+        if (shieldRequestUrl !== url) return
+        if (score?.pending !== true) unreachableRetries += 1
+        askShield(url, ctx)
+      }, again)
     })
   }
 
@@ -78,7 +97,8 @@ export function createSiteBadges (): ChromeModule {
     sitePermissionsBtn.hidden = !summary.asked
     sitePermissionsBtn.classList.toggle('has-warning', summary.warning)
     const permissions = summary.warning ? 'Permissions — this site has an unlimited grant' : 'Permissions'
-    const label = connectionSecure ? `${permissions}. Connection is secure` : permissions
+    sitePermissionsBtn.toggleAttribute('data-missing', summary.missing)
+    const label = [permissions, ...(summary.missing ? [MISSING_NOTE] : []), ...(connectionSecure ? ['Connection is secure'] : [])].join('. ')
     sitePermissionsBtn.title = label
     sitePermissionsBtn.setAttribute('aria-label', label)
   }
@@ -89,7 +109,7 @@ export function createSiteBadges (): ChromeModule {
     permissionsRequestUrl = url
     connectionSecure = active?.connection === 'secure'
     if (url === null) {
-      applyPermissionsBadge({ asked: false, warning: false })
+      applyPermissionsBadge({ asked: false, warning: false, missing: false })
       return
     }
     void ctx.shell.siteSummaryFor(url).then((summary) => {
@@ -106,17 +126,25 @@ export function createSiteBadges (): ChromeModule {
       shieldEl = web3Shield()
       scoreBtn.append(shieldEl)
       web3ScoreBtn = scoreBtn
-      web3MarkEl = must(document.querySelector<HTMLSpanElement>('#web3-mark'), '#web3-mark missing')
+      web3MarkEl = must(document.querySelector<HTMLButtonElement>('#web3-mark'), '#web3-mark missing')
+      web3MarkEl.addEventListener('click', () => { void ctx.shell.act('web3-score.help', {}) })
       const permissionsBtn = must(document.querySelector<HTMLButtonElement>('#site-permissions-btn'), '#site-permissions-btn missing')
       sitePermissionsBtn = permissionsBtn
 
       // The site-info popup's two entry points: the shield opens straight to the Web3 Score page, the key to
-      // the main page. Both act on the active tab's own url; a click while there is none, or on the
-      // dashboard, is a no-op -- there is no origin for either page to describe.
-      scoreBtn.addEventListener('pointerdown', (event) => { if (event.button === 0) ctx.shell.press('web3') })
+      // the main page. Both act on the active tab's own url; a click while there is none, or on one of the
+      // shell's own pages, is a no-op -- there is no origin for either page to describe. On the new tab the
+      // shield opens the card that says what the score is instead.
+      scoreBtn.addEventListener('pointerdown', (event) => {
+        if (event.button === 0) ctx.shell.press(ctx.activeTab()?.isNewTab === true ? WEB3_SCORE_OVERLAY : 'web3')
+      })
       permissionsBtn.addEventListener('pointerdown', (event) => { if (event.button === 0) ctx.shell.press('main') })
       scoreBtn.addEventListener('click', () => {
         const active = ctx.activeTab()
+        if (active?.isNewTab === true) {
+          void ctx.shell.act('overlay.toggle', { name: WEB3_SCORE_OVERLAY, anchor: ctx.anchorFor(scoreBtn) })
+          return
+        }
         if (!hasSite(active)) return
         ctx.shell.openSiteInfo(ctx.anchorFor(scoreBtn), 'web3', active.url)
       })

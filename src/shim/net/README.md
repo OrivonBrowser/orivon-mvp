@@ -27,6 +27,12 @@ runs here, in Node's order, and a failing verdict closes the handle before the d
 queued write never reaches an unverified peer (`tls-options.ts`). STARTTLS and a prebuilt
 `secureContext` refuse by name: the broker has no in-place upgrade (A226).
 
+**`Socket#connect` queues its dial** (`../limit-retry.ts`'s `dialQueue`: at most a quarter of the broker's in-flight
+bound, 64, at a time, in order). A socket destroyed while it is connecting aborts its dial (`orivon.net.connect`'s
+`signal`, `ADR-0071`), so the broker stops the attempt and frees its slot at once, as Node closes a connecting socket.
+The queue stays for the dials nobody abandons: a program that dials hundreds of silent addresses and waits on them
+would otherwise fill the origin's slots and fail its file calls. A socket destroyed while its dial waits is never dialled.
+
 **[`server.ts`](server.ts) and [`dgram-socket.ts`](dgram-socket.ts) map a bind address onto a
 scope, and refuse an address that is neither loopback nor "every interface"**
 ([`../bind-scope.ts`](../bind-scope.ts), `ADR-0034`). `127.0.0.1`, `::1` and `localhost` ask for
@@ -37,7 +43,7 @@ it actually got. An app holding the network grant is served on every interface a
 refusal of any other host names the fix; a warning would be quiet exactly where the mistake is a
 security one, and the broker binds loopback or every interface, never one other address. Accepted
 sockets close with the server, unlike Node: the broker closes derived handles with the server
-handle ([`handle-contracts.md`](../../../docs/architecture/handle-contracts.md) §TcpServer).
+handle ([`handle-contracts.md`](../../../docs/architecture/handle-contracts.md) section TcpServer).
 
 **A taken port is Node's `EADDRINUSE`, worded as Node words it.** The broker answers `limit` with
 `platformCode: 'EADDRINUSE'` when every port the grant covers is held; the `'error'` event carries

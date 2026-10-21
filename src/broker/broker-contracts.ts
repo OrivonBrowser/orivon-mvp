@@ -9,6 +9,7 @@ import type { DestroyResource, FailableTcpServer, FailableTcpSocket, FailableUdp
 import type { LedgerStorage } from './grants/ledger-storage.js'
 import type { PortRange } from './policy/bind.js'
 import type { Resolver } from './policy/connect.js'
+import type { RouteBrokerOptions } from './route/provider.js'
 import type { BrokerFs, BrokerFsMethods, PickPath } from './fs-contracts.js'
 import type { BrokerWebMethods, WebContextHost } from './web-context-contracts.js'
 import type { BrokerEmbedMethods } from './embed-contracts.js'
@@ -18,6 +19,7 @@ import type { DialSecure, FailableSecureTcpSocket } from './secure-dial-contract
 import type {
   BindScope,
   CapabilityKind,
+  ConnectOptions,
   Datagram,
   Grant,
   GrantId,
@@ -31,10 +33,9 @@ import type {
 } from '../contracts/index.js'
 
 // RawFileStat, OpenedFile, BrokerFs itself and the picker's PickPath live in
-// ./fs-contracts.js (split out once `open`'s types pushed this file past
-// Rule 2's 500 lines) -- re-exported so no existing
-// `from '../broker-contracts.js'` import site needs to change.
-export type { BrokerFs, BrokerFsMethods, OpenedFile, PickPath, PickPathResult, RawFileStat } from './fs-contracts.js'
+// ./fs-contracts.js (split out under Rule 2's 500 lines) -- re-exported so no
+// existing `from '../broker-contracts.js'` import site needs to change.
+export type { BrokerFs, BrokerFsMethods, BrokerFsSync, BrokerFsSyncMethods, OpenedFile, PickPath, PickPathResult, RawFileStat } from './fs-contracts.js'
 export type { BrokerWebMethods, WebContextHost } from './web-context-contracts.js'
 export type { BrokerEmbedMethods } from './embed-contracts.js'
 export type { BrokerSecretsMethods, Keychain } from './secrets-contracts.js'
@@ -178,13 +179,15 @@ export type Listen = (ranges: readonly PortRange[], signal: AbortSignal, scope: 
  */
 export type ProxyProbe = (url: string) => Promise<boolean>
 
-export interface CreateBrokerOptions {
+export interface CreateBrokerOptions extends RouteBrokerOptions {
   readonly dial: Dial
   readonly dialSecure: DialSecure
   readonly bind: Bind
   readonly listen: Listen
   readonly resolve: Resolver
   readonly proxyConfigured: ProxyProbe
+  /** True for a loopback port Orivon listens on (verifier, local node, route front): `connect` refuses this machine there whatever the grant says. Read per call. */
+  readonly ownLoopbackPort?: (port: number) => boolean
   /** `orivon.net.lookup`'s real DNS call (d-0030) -- ../adapters/node-adapters.ts's `resolveLookup`. */
   readonly resolveLookup: (hostname: string) => Promise<readonly LookupAddress[]>
   /** Clock, read once per grant -- `Grant.grantedAt`. Injected so a test can freeze it. */
@@ -253,6 +256,8 @@ export interface Broker {
      * Reads the ledger, never the manifest, so a declared kind nobody granted is false. Never throws.
      */
     heldSync(origin: string, capability: CapabilityKind): boolean
+    /** The patterns `capability` is granted over to `origin` now, or undefined when it is not granted. Synchronous and never throws, like `heldSync`. */
+    grantedPatternsSync(origin: string, capability: CapabilityKind): readonly Pattern[] | undefined
     /** Every origin the broker has an app loaded for this session. Synchronous
      * for the same reason `isRegisteredSync` is: it reads the in-memory ledger
      * and cannot fail. */
@@ -282,20 +287,17 @@ export interface Broker {
      * arrives with the fresh manifest.
      */
     hydrateFromPinnedManifest(origin: string, manifest: Manifest): Promise<void>
-    /**
-     * Every `orivon.fs.userSelected` pick this origin holds, for a LOADED
-     * app -- the live counterpart to `grants` above, and D-0007's other
-     * half of the settings surface. `revokeUserSelectedPath` below is how
-     * one of these is withdrawn.
-     */
+    /** Every `orivon.fs.userSelected` pick this origin holds, for a LOADED app: the live counterpart to `grants` above (D-0007). `revokeUserSelectedPath` below withdraws one. */
     pickedPaths(origin: string): Promise<readonly PickedPath[]>
     /** A200: `GrantLedger.socketAllowance`, exposed read-only -- same category as `hasGrantsSync` above, never throws. Full reasoning: `src/loader/README.md` Design notes. */
     socketAllowanceSync(origin: string): number
+    /** Whether a system proxy applies to a direct dial of `host`:`port` by `origin`'s app (T20); false for a routed app. The loader dials with Node, which never sees the proxy, so it asks. Never throws. */
+    reachBypassesProxy(origin: string, host: string, port: number): Promise<boolean>
   }
   readonly net: {
     /** Returns a `FailableTcpSocket` -- a `TcpSocket` plus one broker-internal
      * escape hatch, see handle-contracts.ts. */
-    connect(origin: string, opts: { host: string, port: number }): Promise<FailableTcpSocket>
+    connect(origin: string, opts: ConnectOptions): Promise<FailableTcpSocket>
     /**
      * TLS terminated on the trusted side (ADR-0017) -- checked against
      * `https.connect`, a SEPARATE grant from `tcp.connect` above, matched by
@@ -379,6 +381,11 @@ export interface Broker {
    * refused (`GrantLedger.registerApp`).
    */
   registerApp(origin: string, manifest: Manifest): Promise<void>
+  /**
+   * Takes an app away as if the broker had never been asked: every grant revoked (and its handles closed), the
+   * registration and the version floor deleted, in memory and on disk. Rejects, leaving the registration, when a grant could not be revoked.
+   */
+  forgetOrigin(origin: string): Promise<void>
   /**
    * T19's version floor: the highest version `registerApp` has ever recorded
    * for this origin, `'0.0.0'` for one never registered. The app loader's

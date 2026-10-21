@@ -97,7 +97,14 @@ export function fakeLoader (
     quietOffers: overrides.quietOffers ?? (async () => ({ quiet: [] })),
     keepQuiet: vi.fn(async () => {}),
     manifestFor: async () => undefined,
-    manifestAt: async () => ({ kind: 'website' as const })
+    manifestAt: async () => ({ kind: 'website' as const }),
+    readManifest: async () => ({ kind: 'website' as const }),
+    fetchForInstall: async () => ({ ok: false as const, reason: 'unused' }),
+    readDeclaration: async () => ({ kind: 'none' as const }),
+    serveLive: async () => false,
+    endLive: async () => {},
+    rememberConsent: async () => {},
+    pendingConsents: async () => []
   }
 }
 

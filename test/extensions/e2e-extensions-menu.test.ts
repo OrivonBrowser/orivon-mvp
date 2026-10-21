@@ -191,18 +191,18 @@ it('lists the extensions, pins and unpins them, runs one from the menu, and keep
   }
 }, TEST_TIMEOUT_MS)
 
-it('shows an empty menu with a way to the store when the button is always shown and nothing is installed', async () => {
+it('shows an empty menu with only the way to manage extensions when the button is always shown and nothing is installed', async () => {
   const { app, chrome } = await launched({ seed: async (dir) => { await writeFile(join(dir, 'settings.json'), JSON.stringify({ version: 1, values: { 'toolbar.extensions': 'always' } })) } })
   try {
     expect(await waitFor(async () => await buttonShown(chrome))).toBe(true)
     const menu = await openMenu(app, chrome)
     expect(await menu.locator('.empty-state').textContent()).toContain('Extensions you add appear here.')
-    expect(await menu.locator('.empty-state .link-btn').textContent()).toBe('Get extensions from the Chrome Web Store')
+    expect(await menu.locator('.empty-state .link-btn').count()).toBe(0)
     expect(await menu.locator('.em-row').count()).toBe(0)
     await shoot([menu], 'menu-empty')
-    // Down reaches the store link, then Manage extensions.
+    // Down reaches Manage extensions, the only control.
     await menu.keyboard.press('ArrowDown')
-    expect(await menu.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset['key'])).toBe('store')
+    expect(await menu.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset['key'])).toBe('manage')
     await menu.click('.em-manage')
     expect(await waitFor(() => app.windows().some((w) => w.url().startsWith('orivon://extensions')))).toBe(true)
   } finally {
@@ -210,8 +210,8 @@ it('shows an empty menu with a way to the store when the button is always shown 
   }
 }, TEST_TIMEOUT_MS)
 
-it('has no button in a private window, and none by default without an extension', async () => {
-  const withNone = await launched({})
+it('has no button in a private window, and none under the auto setting without an extension', async () => {
+  const withNone = await launched({ seed: async (dir) => { await writeFile(join(dir, 'settings.json'), JSON.stringify({ version: 1, values: { 'toolbar.extensions': 'auto' } })) } })
   try {
     await delay(1_000)
     expect(await buttonShown(withNone.chrome)).toBe(false)

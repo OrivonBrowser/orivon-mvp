@@ -5,15 +5,15 @@ active tab's `WebContentsView` below, or the two panes of a split. A process hol
 windows: `shell-services.ts` is what they share, and `window-registry.ts` is how a page's IPC finds the
 window holding it. `window-frame.ts` is the native window itself and `window-options.ts` says how a new one
 opens. `window.ts` is the composition; its parts are `window-layout.ts` (where the chrome and the page
-area sit: the one place a page area is computed), `window-state.ts` (the `ShellState` push, and which
+area sit: the one place a page area is computed), `window-size-settle.ts` (lays the views out again after every size event, and again for a second after while the window's size keeps changing), `window-state.ts` (the `ShellState` push, and which
 overlays a tab switch or a navigation dismisses), `window-panels.ts` (the permissions and site-info
-popovers, and the extension popup's panel for the overlay host) and `shell-state-parts.ts` (the `ShellState` fields a feature adds; `state/update-offered.ts` is the one that lights the key icon's dot while the page in front has an update offer, and `pre-partition.ts` stops a link or redirect into a cache-served address before it commits so the pinned files answer, `ADR-0056`). `window-context.ts` is
+popovers, and the extension popup's panel for the overlay host) and `shell-state-parts.ts` (the `ShellState` fields a feature adds; `state/update-offered.ts` is the one that lights the key icon's dot while the page in front has an update offer, and `pre-partition.ts` stops a link or redirect into a cache-served address before it commits so the pinned files answer, `ADR-0056`, and stops a move to the shared session before it commits when the tab's session would send the address differently from it). `window-context.ts` is
 the `{ window, services }` pair a hook or an overlay handler receives.
 `tabs.ts` owns the tab collection, with `tab-state.ts` (the state a tab reports, plus what each
 `TAB_SIGNALS` entry adds), `tab-navigation.ts`, `tab-open.ts` (every way a tab is created) and
 `tab-panes.ts` (which views show where) as its parts; `tab-view.ts`, `tab-partition.ts`,
 `app-tab-watch.ts`, `tab-signals.ts`, `tab-types.ts`, `tab-factory.ts`, `tab-lifecycle.ts` and
-`tab-parking.ts` are the per-tab view; `load-in-tab.ts` is the one test that opens an address in the tab's own view or in a view of the session it needs, shared by the address bar and a link followed inside a tab. `eth-gateway-redirect.ts` opens an ENS gateway address (`<name>.eth.limo`, `<name>.eth.link`) as the `.eth` name it stands for: the web-request handler, which shares the rule in `eth-gateway-rule.ts` (`gatewayRedirectFor`, `gatewayEntries`; no `electron`) with the tab hooks below. `tab-origin-liveness.ts` is `tab-view.ts`'s own per-origin
+`tab-parking.ts` are the per-tab view; `load-in-tab.ts` is the one test that opens an address in the tab's own view or in a view of the session it needs, shared by the address bar and a link followed inside a tab, and the step Back or Forward past the view's own list. `tab-outer-history.ts` (no `electron`) holds the pages of a tab's history that its view does not hold. `eth-gateway-redirect.ts` opens an ENS gateway address (`<name>.eth.limo`, `<name>.eth.link`) as the `.eth` name it stands for: the web-request handler, which shares the rule in `eth-gateway-rule.ts` (`gatewayRedirectFor`, `gatewayEntries`; no `electron`) with the tab hooks below. `tab-origin-liveness.ts` is `tab-view.ts`'s own per-origin
 live-document counter. A local file's tab is always in a local-files session ([`../local-files/`](../local-files/)): `tab-partition.ts` routes it there, `tab-factory.ts`'s `localFile` makes it, and a tab that reached a file by history or a reload moves to the session it belongs in, on a 404 (`did-navigate`) or on the fence's -20 (`pre-partition.ts`'s `repartitionOnFileBlock`). `tab-order.ts` is where a tab sits in the strip, `tab-move.ts` moves one between windows keeping the
 same page (and is where a dragged tab's cross-window target -- which window's strip, and where in it -- is
 worked out from the tab centres `strip-centres.ts` reads off the target window's chrome page, shared by the actual move and by `tear-drag.ts`'s own mark), `tab-menu.ts` is its right-click
@@ -23,7 +23,7 @@ menu (and `context-menu.ts` the menu a page gets: `page-menu-items.ts` is where 
 whichever window's strip it is dragged over. Where a window cannot read the screen (a native Wayland session, `local-pointer.ts`) the browser's own drag and drop carries the tab instead: `native-tab-drag.ts` holds the drag in progress, `native-drag-plan.ts` is the pure rule for what a drop does, and `drop-catcher.ts` is the transparent view over a window's page while the drag lasts. Split view: `split-model.ts` is the arithmetic and the groups
 of joined tabs, `split-controller.ts` plans which views show where, `pane-host.ts` puts them on screen in
 that order, `split-frame.ts` is the view behind two panes, and `split-drop.ts` says where a dragged tab
-would split the page. `intro-state.ts` and `intro-view.ts` are the welcome screen, and `new-tab-focus.ts` is where the keyboard goes after a new tab opens in front: the address bar, never the tab's own page (a window that lacks the OS focus is left alone, and so is one the welcome screen covers). `shell-installers.ts` runs each feature directory's installer at start, and `sheet-backdrop.ts` paints the shell's own surface colour behind a sheet that sits over a tab with no background of its own. `tab-backing.ts` picks a view's pre-paint colour when a navigation starts, and `window-backing.ts` keeps the window behind the views in the colour of the tab shown.
+would split the page. `intro-state.ts` and `intro-view.ts` are the welcome screen (`intro.json` also holds the version that last started on the profile, which What's new reads, `../info/README.md`), and `new-tab-focus.ts` is where the keyboard goes after a new tab opens in front: the address bar, never the tab's own page (a window that lacks the OS focus is left alone, and so is one the welcome screen covers). `shell-installers.ts` runs each feature directory's installer at start, and `sheet-backdrop.ts` paints the shell's own surface colour behind a sheet that sits over a tab with no background of its own. `tab-backing.ts` picks a view's pre-paint colour when a navigation starts, and `window-backing.ts` keeps the window behind the views in the colour of the tab shown.
 `first-window.ts` decides what a cold start opens (the window's last place, the addresses on the command line, a kiosk's page) and `home.ts` is what Home opens.
 The rest answer what a page asks of its window: popups become tabs, HTML fullscreen, the
 few-second exclusive-access notices, the `beforeunload` Leave/Stay question, the external-link
@@ -59,7 +59,7 @@ The question panel: every question the browser puts to the person is asked throu
 `question/question-spec.ts` is the spec and the cleaning every string passes through (pure, no `electron`),
 `question/question-overlay.ts` is the overlay and the map of questions main holds under random ids (it also decides a
 `doublePress` button: one that answers only on a second press within 1,500 ms, armed after the guard and an arrival of the
-pointer or the focus on it), and
+pointer or the focus on it) and answers the switches of a spec's `choices` (a row each, off unless the spec says; the answer names the ids left on, and main keeps only ids it offered), and
 `question/install-questions.ts` binds the ask to this process's windows. The panel is drawn in the window of the tab
 the question belongs to, under the address pill with its top edge inside the toolbar; a background tab's question waits
 for its tab, a kiosk draws it centred, and only a question asked when no shell window exists opens a native box.
@@ -69,7 +69,7 @@ an answer cannot be given to a page that is no longer the one asked about. A cha
 not a navigation and still works. `page-dialogs.ts` answers a page's own `alert`, `confirm` and `prompt` (it replaces the one handler
 Electron keeps on a tab's internal dialog event for `alert` and `confirm`, and takes `prompt` from the tab's preload, which blocks on a send;
 it replies once the person has answered in the panel, or with the dismissed default when the tab navigates; a closed tab is answered as dismissed while its frame is alive; a dead renderer, Electron's cancel event or a removed frame close the panel and send no answer, because the callback for a gone frame crashes the browser process), and `signals/crashed.ts` does not call a page blocked on one unresponsive.
-`leave-page-prompt.ts` keeps a page that asks "Leave this page?" where it is while the panel asks, lets the next attempt
+`leaving-route.ts` stops a page of a routed app ([`../route/`](../route/)) that starts a navigation or a window toward an address outside the app's sessions and asks (`leaving-route-prompt.ts`) whether it goes through the person's proxy or directly: the tab moves into a temporary routed session (`repartitionView`), or the window opens as a tab in it. `install-site-sessions.ts` moves the open tabs of a website between the shared session and its own when its tunnel is turned on or off (`site-session-move.ts` decides which, `repartitionView` moves them), and `state/tunnel.ts` is the address bar's tunnel button mark. `leave-page-prompt.ts` keeps a page that asks "Leave this page?" where it is while the panel asks, lets the next attempt
 through after Leave, and runs again a navigation the shell started (`tab-navigation.ts` records it). `served-address.ts` loads an `ipfs:` link at the URL its protocol serves it at, and not
 while the tab is held: a load from there is one the hold would never see.
 The main menu under the toolbar's menu button: `menu-layout.ts` lists which commands it shows and in
@@ -89,11 +89,11 @@ test-hook.ts` is the e2e-only record of what each was actually set to.
 [`../shortcuts/`](../shortcuts/) (the command table and the service the menu reads, and the command bus a window runs a chosen command through), [`../overlays/`](../overlays/) (the question panel is an overlay shown through the tab slots),
 [`../consent/grant-prompt-origin.ts`](../consent/grant-prompt-origin.ts) (the origin line every
 permission dialog shows), [`../sessions/`](../sessions/) (the two questions' types, and
-`permission-gate.ts`'s notification store, handed to the permissions panel; `web-request-owner.ts` and `handler-while-needed.ts`, for `eth-gateway-redirect.ts`),
+`permission-gate.ts`'s notification store; `web-request-owner.ts` and `handler-while-needed.ts`, for `eth-gateway-redirect.ts`),
 [`../dev/`](../dev/) (the developer-mode flag, the score-level override, the local resolvers),
 [`../verifier/`](../verifier/), the stores and services a window reads ([`../settings/`](../settings/),
 [`../history/`](../history/), [`../zoom/`](../zoom/), [`../devtools/`](../devtools/),
-[`../pages/`](../pages/), [`../launch/`](../launch/)), [`../os/`](../os/) (the welcome screen's default-browser offer, `intro-view.ts`; the launcher menu and the default-browser ask are installers and a window hook the shell runs), [`../startup/`](../startup/) (the restore bar a window's hook offers, and the start-up plan the first window follows), plus the top-level `channels.ts` and `registry.ts`.
+[`../pages/`](../pages/), [`../launch/`](../launch/)), [`../os/`](../os/) (the launcher menu and the default-browser ask are installers and a window hook the shell runs), [`../startup/`](../startup/) (the restore bar a window's hook offers, and the start-up plan the first window follows), plus the top-level `channels.ts` and `registry.ts`.
 
 **What it must never import.** [`../../renderer/`](../../renderer/) code (the repo-wide rule).
 Locally: [`tab-view.ts`](tab-view.ts), [`tab-types.ts`](tab-types.ts) and
@@ -155,12 +155,21 @@ the dashboard's dev-mode URL is a real `http(s)` address, so its own first `did-
 read as an origin change; the handler excludes the dashboard explicitly.
 
 **Residual: `did-navigate` fires after commit**, so the new origin's page has rendered once in
-the old partition and may already have read from it. Intercepting before commit would cost a
-fresh view and a lost history entry on every cross-origin link; it is open as A109. A swap within one
+the old partition and may already have read from it. Intercepting every cross-origin link before
+commit would cost a fresh view each time. A swap within one
 session (an origin newly registered as an app, an opener being cut, a typed address that flips the
 app-tab flag) carries the back and forward list over with `NavigationHistory.restore`; a typed address
-that has not committed loads after the pages up to the one being left. Only a swap across partitions
-starts a new list.
+that has not committed loads after the pages up to the one being left.
+
+**[`tab-outer-history.ts`](tab-outer-history.ts): a swap across partitions keeps the tab's history
+outside the new view.** Electron restores a list only into a view that has loaded nothing, and a
+returning parked view has, so the pages the new view does not hold stay on the tab record
+(`TabRecord.outer`). Back past the view's first page and Forward past its last load the next of them
+in a view of its own session (`load-in-tab.ts`'s `stepOutOfView`), in the tab's own view when that is
+one, and that view then holds the page alone; a view's own list never holds a page of another session,
+so no step loads a page in the wrong one. A new page ends what was ahead, as in any browser; the
+toolbar, the page menu and the HTTPS warning read the joined list. A copied or restored tab carries
+only its view's own list.
 
 **One process, several windows: what is per window and what is shared.** Per window: the chrome view, the
 `TabManager`, the popovers, the fullscreen and notice state, and the IPC handlers on the chrome view and the
@@ -186,7 +195,9 @@ closes the view, because closing announces its own end at once and that call mus
 **[`tab-parking.ts`](tab-parking.ts): a view leaving an app's partition is parked, not closed.** A
 page's `sessionStorage` lives in its view, not its partition (measured in Electron 44), so a
 fresh view would break an OIDC login that keeps its state there while the provider has the tab.
-Only app partitions are parked; the open-web side of a swap still loses its history.
+Only app partitions are parked. A returning parked view is left holding only the page it came back
+to (`tab-history.ts`'s `settleOuterHistory`): the pages before it are the tab's outer history, and
+the page the app left for, which committed in the parked view, would otherwise load in its session.
 
 **[`tab-origin-liveness.ts`](tab-origin-liveness.ts): how many live tabs sit at each origin is
 tracked module-wide, not per `TabManager`.** Two windows' tabs on the same origin share one broker
@@ -208,12 +219,18 @@ not `critical`.
 A popup that keeps `window.opener` is Chromium's own webContents, created in its opener's
 partition, and moving it would sever `opener`, which a sign-in popup needs to report back. The
 cost is an `ADR-0018` residual (A230): until its opener closes, an open-web page an app opens this
-way runs in the app's partition. The other direction is never allowed: a popup into an isolated
+way runs in the app's partition. It does not keep its opener when the opener's session would send
+the address less tunnelled than the shared session would (not through the tunnel for an address that is, as a
+direct profile or an app set to off does while the whole browser is on the tunnel): a sized
+`window.open` to such an address then opens as a window of its own, and a popup that navigates
+there moves, cutting `window.opener` (`site-routes.ts`'s `sessionRoutesLike`). The other direction is never allowed: a popup into an isolated
 app from any other session opens as an ordinary tab in the app's own session, the only place its
 pinned bundle is served (`ADR-0007`). A popup's app-tab flag follows its own URL, not its
 opener's. A window a page
 opens without the person's own click or key press is refused before any of this, by the pop-up blocker
-in [`../site-settings/`](../site-settings/) that `PopupHost.popupBlocked` asks.
+in [`../site-settings/`](../site-settings/) that `PopupHost.popupBlocked` asks. A window opened at an address
+another program handles (`mailto:`, `magnet:`) is never opened: `PopupHost.openExternal` puts the same
+question to the person that a click on a link to it raises, and a tab at that address would stay blank.
 
 **`routePopup`'s `isApp` catches a gap `targetPartition === opener.partition` alone cannot see.**
 A held grant alone puts no origin in its own partition (`ADR-0044`), so a granted,

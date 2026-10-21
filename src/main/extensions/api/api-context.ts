@@ -13,6 +13,7 @@ import type { ExtensionApiContext, ExtensionApiModule, ResolvedTab } from './api
 
 export interface ExtensionApiDeps {
   readonly host: ElectronChromeExtensions
+  readonly hostFor: (session: Session) => ElectronChromeExtensions | undefined
   readonly session: Session
   readonly userDataPath: string
   readonly shell: () => ShellServices | undefined
@@ -47,6 +48,7 @@ export function createApiContext (deps: ExtensionApiDeps, module: ExtensionApiMo
     },
     sendEvent: (extensionId, name, ...args) => { deps.host.getRouter().sendEvent(extensionId, name, ...args) },
     host: deps.host,
+    hostFor: deps.hostFor,
     session: deps.session,
     userDataPath: deps.userDataPath,
     shell: deps.shell,

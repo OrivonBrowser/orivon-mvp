@@ -1,0 +1,32 @@
+/* The close, minimise and full-screen buttons the chrome draws in macOS full screen (chrome/mac-window-buttons.ts),
+   placed, sized and coloured as the system draws them outside it: 14px circles 9px apart, from trafficLightPosition
+   in src/main/shell/window-frame.ts. The glyphs show while the pointer is over the group, as the system's do. */
+
+.mac-window-buttons {
+  position: absolute;
+  top: 14px;
+  left: 20px;
+  z-index: 3;
+  display: flex;
+  gap: 9px;
+}
+.mac-window-buttons[hidden] { display: none; }
+
+.mac-window-button {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(0, 0, 0, 0.55);
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.18);
+}
+.mac-window-button svg { width: 14px; height: 14px; opacity: 0; }
+.mac-window-buttons:hover .mac-window-button:not(:disabled) svg { opacity: 1; }
+.mac-window-button.close { background: #ff5c5f; }
+.mac-window-button.minimize { background: color-mix(in srgb, var(--wink) 22%, transparent); }
+.mac-window-button.zoom { background: #34c759; }
+.mac-window-button:not(:disabled):active { filter: brightness(0.85); }

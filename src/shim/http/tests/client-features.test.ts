@@ -31,7 +31,7 @@ describe('request options', () => {
     const { fake, calls, http } = over()
     http.get('http://[::1]:8080/status')
     await vi.waitFor(() => expect(fake.written.length).toBeGreaterThan(0))
-    expect(calls).toEqual([{ host: '::1', port: 8080 }])
+    expect(calls).toEqual([{ host: '::1', port: 8080, signal: expect.any(AbortSignal) }])
     expect(written(fake)).toContain('Host: [::1]:8080\r\n')
   })
 

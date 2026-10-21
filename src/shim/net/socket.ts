@@ -18,16 +18,17 @@
 // its broker handle.
 
 import { Duplex } from 'stream'
+import type { ConnectOptions } from '../../contracts/capability-api.js'
 import type { TcpSocket } from '../../contracts/handles.js'
 import { abortError, codedError, systemError, toNodeError } from '../node-errors.js'
 import { toBytes } from '../stream-bytes.js'
 import { refuseShim } from '../errors.js'
-import { retryLimited } from '../limit-retry.js'
+import { dialQueue, retryLimited } from '../limit-retry.js'
 import { getOrivon } from '../orivon-global.js'
 import { isIP } from './isip.js'
 import { connectPort, normalizeConnectArgs, type ConnectTarget } from './args.js'
 
-export type NetDialFn = (opts: { host: string, port: number }) => Promise<TcpSocket>
+export type NetDialFn = (opts: ConnectOptions) => Promise<TcpSocket>
 
 /** How a socket dials. Absent, it is orivon.net.connect, looked up when connect() runs, never at construction. */
 export const kDial: unique symbol = Symbol('orivon-node-shim.dial')
@@ -66,6 +67,8 @@ export class Socket extends Duplex {
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null
   private writer: WritableStreamDefaultWriter<Uint8Array> | null = null
   private connectPromise: Promise<TcpSocket> | null = null
+  /** Aborts the dial in flight when the socket is destroyed before it connects, as Node closes a connecting socket's attempt (ADR-0071). */
+  private dialAbort: AbortController | undefined
   private wantsRead = false
   private pumping = false
   private written = 0
@@ -108,17 +111,25 @@ export class Socket extends Duplex {
     // An async IIFE, never a bare call: `dial` can throw synchronously
     // (getOrivon() does before the preload has run), and that must still
     // arrive as an 'error' event, never a throw out of connect().
-    const promise = (async () => await this.dial({ host, port }))()
+    // Queued (limit-retry.ts's dialQueue); a socket destroyed while it waited is never dialled.
+    const abandon = new AbortController()
+    this.dialAbort = abandon
+    const promise = (async () => await dialQueue(async () => {
+      if (this.destroyed) throw socketClosedError()
+      return await this.dial({ host, port, signal: abandon.signal })
+    }))()
     this.connectPromise = promise
     // Two-argument then(): a throw from a 'connect' listener must stay the
     // app's own uncaught error, not be caught here and destroy the socket.
     promise.then((handle) => {
+      this.dialAbort = undefined
       if (this.destroyed) { handle.close().catch(() => {}); return }
       this.attachHandle(handle)
       this.connecting = false
       this.refreshIdleTimer()
       this.onConnected()
     }, (error: unknown) => {
+      this.dialAbort = undefined
       this.connecting = false
       this.destroy(this.connectFailure(error, host, port))
     })
@@ -240,6 +251,8 @@ export class Socket extends Duplex {
     this.clearIdleTimer()
     this.hadError = error !== null
     this.connecting = false
+    this.dialAbort?.abort()
+    this.dialAbort = undefined
     const handle = this.handle
     if (handle === null) { callback(error); return }
     // An errored or reset destroy puts an RST on the wire; a clean one is

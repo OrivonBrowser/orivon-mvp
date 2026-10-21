@@ -32,8 +32,10 @@ export interface MainPageCallbacks {
   readonly onOpenSiteSettings: () => void
   readonly onManageExtensions: () => void
   readonly onReload: () => void
+  readonly onReviewPermissions: () => void
   readonly onApplyUpdate: (cid: string) => void
   readonly onOpenHome: () => void
+  readonly onOpenSupport: () => void
   readonly permissions: PermissionsCallbacks
 }
 
@@ -70,6 +72,23 @@ function row (kind: Parameters<typeof grantIcon>[0], message: string, warning: b
   text.textContent = message
   li.append(grantIcon(kind), text, control)
   return li
+}
+
+/** An app that asked for permissions and was never let in: what that means for the page, and the way back to the question. */
+function renderReviewCard (onReview: () => void): HTMLElement {
+  const card = document.createElement('div')
+  card.className = 'review-card'
+  const text = document.createElement('p')
+  text.className = 'review-text'
+  text.textContent = 'This site is an app that asked for permissions. They are not granted, so parts of it may not work.'
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.id = 'review-permissions'
+  button.className = 'btn-primary'
+  button.textContent = 'Review permissions'
+  button.addEventListener('click', onReview)
+  card.append(text, button)
+  return card
 }
 
 /** The path a local-file key names, as a person reads it: no scheme, no percent codes, no bidirectional control. */
@@ -137,6 +156,7 @@ export function renderMainPage (
     }
   }
   container.append(header)
+  if (info.notLetIn !== undefined) container.append(renderReviewCard(callbacks.onReviewPermissions))
   if (info.update !== undefined) container.append(renderUpdateCard(info.update, updateFailure, { onApply: callbacks.onApplyUpdate }))
 
   if (isFile) {
@@ -315,4 +335,17 @@ export function renderMainPage (
   allSitesRow.append(allSitesLabel, chevronIcon())
   allSitesRow.addEventListener('click', callbacks.onOpenSiteSettings)
   container.append(allSitesRow)
+
+  // The publisher's own word for where problems go: shown for any site whose manifest names it, installed or not.
+  if (info.supportIssues !== undefined) {
+    const support = document.createElement('button')
+    support.type = 'button'
+    support.id = 'report-problem'
+    support.className = 'nav-row'
+    const supportLabel = document.createElement('span')
+    supportLabel.textContent = 'Report a problem with this site'
+    support.append(supportLabel, chevronIcon())
+    support.addEventListener('click', callbacks.onOpenSupport)
+    container.append(support)
+  }
 }

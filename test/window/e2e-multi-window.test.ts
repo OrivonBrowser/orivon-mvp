@@ -7,7 +7,7 @@ import type { AddressInfo } from 'node:net'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
-import { clickAddressBarRetrying, pressKey } from '../support/e2e-helpers.js'
+import { clickAddressBarRetrying, pressCommand } from '../support/e2e-helpers.js'
 import { bookmarkUrls, delay, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 let server: Server
@@ -93,18 +93,19 @@ it('the same popover opens in two windows one after the other', async () => {
   try {
     const first = await firstChrome(app)
     const second = await openSecondWindow(app, first)
-    const popovers = (): Page[] => app.windows().filter((w) => w.url().endsWith('/permissions/index.html'))
+    const popovers = (): Page[] => app.windows().filter((w) => w.url().endsWith('/networks/index.html'))
 
-    await first.click('#permissions-btn')
+    await first.click('#networks-btn')
     expect(await waitFor(() => popovers().length === 1)).toBe(true)
-    // Opening the other window's popover blurs the first, which closes it.
-    await second.click('#permissions-btn')
-    expect(await waitFor(() => popovers().length === 1)).toBe(true)
+    const [shown] = popovers()
+    // Opening the other window's popover blurs the first, which closes it a moment later: wait for the new page, not for the count.
+    await second.click('#networks-btn')
+    expect(await waitFor(() => popovers().length === 1 && popovers()[0] !== shown)).toBe(true)
     await delay(300)
 
     const [popover] = popovers()
     expect(popover).toBeDefined()
-    expect(await waitFor(async () => await popover?.locator('#empty-state').count() === 1)).toBe(true)
+    expect(await waitFor(async () => await popover?.locator('.card').count() === 4)).toBe(true)
     expect(mainOutput(app)).not.toContain('second handler')
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
@@ -131,7 +132,7 @@ it('a new window is shown the moment it is made', async () => {
       }, 1)
     })
 
-    await pressKey(app, '/renderer/index.html', 'N', ['control'])
+    await pressCommand(app, '/renderer/index.html', 'window.new')
     expect(await waitFor(() => chromePages(app).length === 2)).toBe(true)
 
     const visibleWhenSeen = await app.evaluate(() => {

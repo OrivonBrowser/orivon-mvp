@@ -82,7 +82,7 @@ function makePage (ctx: ExtensionApiContext, extensionId: string, window: ShellW
     const timer = setTimeout(resolve, FIRST_LOAD_LIMIT_MS)
     const done = (): void => { clearTimeout(timer); resolve() }
     contents.once('did-stop-loading', done)
-    void destroyed.then(done)
+    void destroyed.then(done).catch((error: unknown) => { console.error('[extensions] waiting for a side panel to end failed:', error) })
   })
   void contents.loadURL(url).catch(() => {})
 

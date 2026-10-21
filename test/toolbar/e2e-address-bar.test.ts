@@ -12,6 +12,7 @@ import type { Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
@@ -354,7 +355,9 @@ async function waitForPage (app: App, chrome: Page, url: string): Promise<Page> 
 it('loads no file: address a web page links to, and opens one the person types as a local file in a tab of its own', async () => {
   const local = join(scratch, 'local.html')
   await writeFile(local, '<!doctype html><title>Local file</title><p>from disk</p>')
-  const linker = await startServer((_request, response) => { html(response, PAGE_WITH_FILE_LINK(`file://${local}`)) })
+  // `file:///C:/...` on Windows, where `file://` and a drive path make no address.
+  const fileUrl = pathToFileURL(local).href
+  const linker = await startServer((_request, response) => { html(response, PAGE_WITH_FILE_LINK(fileUrl)) })
   const { app, chrome } = await launched()
   const urls = async (): Promise<string[]> => await app.evaluate(({ webContents }) => webContents.getAllWebContents().map((wc) => wc.getURL()))
   try {
@@ -367,8 +370,8 @@ it('loads no file: address a web page links to, and opens one the person types a
     expect(await inputValue(chrome)).toBe(`${linker.origin}/`)
 
     // Typed, the address opens that file in a new tab, and the web page stays where it was.
-    await clickAddressBarRetrying(chrome, `file://${local}`)
-    expect(await waitFor(async () => (await urls()).includes(`file://${local}`))).toBe(true)
+    await clickAddressBarRetrying(chrome, fileUrl)
+    expect(await waitFor(async () => (await urls()).includes(fileUrl))).toBe(true)
     expect(await urls()).toContain(`${linker.origin}/`)
     expect(await waitFor(async () => (await inputValue(chrome)).endsWith('local.html'))).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')

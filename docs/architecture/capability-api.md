@@ -1,4 +1,4 @@
-# Capability API: v0 specification
+# Capability API specification
 
 > **Status: specified.** Per-method build status is not tracked in this document.
 > [`../planning/compatibility-matrix.md`](../planning/compatibility-matrix.md) carries it cell by
@@ -8,10 +8,10 @@
 >
 > Per ADR-0002 this is the highest-care artefact in the repository. The Electron shell is
 > tied to one engine; **this interface is not.** Every app ever written for Orivon codes against it,
-> and it must survive the swap from Node → Wasmtime → Chromium/Mojo underneath.
+> and it must survive a change of the engine underneath.
 >
-> `orivonApiVersion: 0` explicitly means unstable: breaking changes are permitted while
-> it is 0. Once it reaches 1, breaking changes require a major version bump and an ADR.
+> `orivonApiVersion: 0` is the API's version number, not a scope. It explicitly means unstable:
+> breaking changes are permitted while it is 0. Once it reaches 1, breaking changes require a major version bump and an ADR.
 
 ## Design rules
 
@@ -36,7 +36,7 @@
    `queueMicrotask`-based polyfill does not route into the same handlers, so an exception
    thrown from inside a `nextTick` callback vanishes instead of crashing loudly. This is exactly
    backwards from what a security-relevant shim needs: a broker-side error should be *louder*
-   than Node's default, not quieter. **Both traps are binding requirements; see `handle-contracts.md` §What the shim must do.**
+   than Node's default, not quieter. **Both traps are binding requirements; see `handle-contracts.md` section What the shim must do.**
 2. **Network operations are async, with no exception. `fs` gets exactly one narrow,
    deliberate synchronous exception.**
    > **Why the exception is `fs`-only** (`ADR-0016`). The async rule is reasoned entirely from
@@ -65,14 +65,16 @@
    blocking cost is bounded and visible there, and a chatty use of it is the app's own cost
    to pay, not a reason to widen the exception further.
 
-   > **Widened once since, at the shim, not at the contract** (`ADR-0016`'s amendment). In a
-   > Worker (a forked child or a `worker_threads` thread) of a cross-origin isolated app, the
-   > shim offers every path-based `fs` `*Sync` call over the same shared-memory channel
-   > `readFileSync` already used there as its deferred route B -- a page that blocks freezes
-   > the tab, which is what this rule guards against, but a Worker that blocks freezes no
-   > page. `orivon.fs` itself still has exactly one synchronous member; nothing was added to
-   > the contract to widen it. Elsewhere -- the page, or a Worker with no
-   > `SharedArrayBuffer` -- every one of those calls still refuses by name.
+   > **Widened at the shim, not at the contract** (`ADR-0016`'s amendments). The shim offers
+   > every path-based `fs` `*Sync` call, on the page and in a Worker (a forked child or a
+   > `worker_threads` thread) of a cross-origin isolated app. On the page it rides the same
+   > blocking channel `readFileSync` uses, one message per call; in a Worker it rides the
+   > shared-memory channel, and a Worker that blocks freezes no page. Both are a registered
+   > symbol on `orivon` (`Symbol.for('orivon.synchronous')`), so `orivon.fs` itself still has
+   > exactly one synchronous member and nothing was added to the contract. Every call is
+   > confined, quota-checked and attributed like its async twin. A call that holds a file
+   > handle across calls works in a Worker only, and a Worker with no `SharedArrayBuffer`
+   > refuses every one by name.
 3. **Handles, not ambient authority.** `connect()` returns a handle; later operations
    reference the handle. Capability is checked once, at acquisition. This avoids TOCTOU and
    avoids re-authorising on every call.
@@ -118,8 +120,8 @@ field is ignored, and the loader logs a warning naming it. An unknown field anyw
   "version": "0.1.0",
   "entry": "index.html",
   "assets": ["style.css", "app.js"],  // every other frontend file; omit if entry is the whole app
-  // NOTE: "publisherKey" is CUT from v0. See "Signing is not in
-  // v0" below. Every v0 app is unsigned; integrity rests on hash-pinning, with
+  // NOTE: "publisherKey" does not exist. See "Signing is not in
+  // v0" below. Every app is unsigned; integrity rests on hash-pinning, with
   // the site's published hash tree (/.well-known/orivon-ddoc.json) shown as DDOC evidence.
 
   "capabilities": {
@@ -153,6 +155,9 @@ field is ignored, and the loader logs a warning naming it. An unknown field anyw
     "secrets": {},                                    // ADR-0033; presence alone is the ask
     "trust": { "score": true },                       // ADR-0058; what the person's Web3 Score provider says
                                                        // about other sites
+    "devices": {                                      // ADR-0068; USB HID devices, used through navigator.hid
+      "hid": [{ "vendorId": 11415 }]                  // each filter needs a vendorId (0..65535); 16 filters at most
+    },
     "protocols": ["magnet"]            // shell routes magnet: links to this app
                                        // (first registrant is default; conflicts → user chooses)
   },
@@ -160,27 +165,29 @@ field is ignored, and the loader logs a warning naming it. An unknown field anyw
   "consentGranularity": "all-or-nothing",  // omitting this line has the same effect; see below.
                                             // "per-capability" lets the person accept some of the
                                             // capabilities above and refuse others.
-  "crossOriginIsolated": true              // serve the app's documents cross-origin isolated, which
+  "crossOriginIsolated": true,             // serve the app's documents cross-origin isolated, which
                                             // turns on SharedArrayBuffer for a WebAssembly component
                                             // built with threads (ADR-0036); omit it unless needed,
                                             // since an isolated page loses window.opener from its
                                             // popups and sends no credentials with cross-origin loads
-  "domain": "app.orivonstack.eth"          // the one ENS name or DNS host the app calls home; see below
+  "domain": "app.orivonstack.eth",         // the one ENS name or DNS host the app calls home; see below
+  "support": { "issues": "https://example.com/app/issues" }  // where a person reports a problem; see below
 }
 ```
 
 ### `consentGranularity`: who decides whole-or-part, and why it defaults closed
 
-Whether a person may accept only *part* of what an app requests (grant its network access,
-refuse its filesystem access) is **the app's own declaration to make**, not the browser's.
+Whether the person is told that accepting only *part* of what an app requests (its network access
+but not its filesystem access) may break it is **the app's own declaration to make**, not the browser's.
 `Manifest.consentGranularity` is that declaration, `'all-or-nothing'` or `'per-capability'` (`src/contracts/manifest.ts`'s
 `ConsentGranularity`).
 
-**`'all-or-nothing'`** presents the whole declared capability set as one accept/decline choice.
-The app either runs with everything it asked for, or does not run; there is no state where it
-holds part of what it declared. **`'per-capability'`** lets the person decide each declared
-capability on its own, and the app finds out what it actually got from `orivon.app.grants()`,
-which may report less than its manifest declared.
+**Both values ask with the same first-visit panel** (`ADR-0085`): one row and one switch for each capability still
+to be decided, all off, and the buttons Grant all and Close. Close keeps the rows switched on, so the app may hold part
+of what it declared whichever value it has, and finds out what it actually got from `orivon.app.grants()`. The value
+decides one line: an **`'all-or-nothing'`** app, which says its code cannot cope with a missing capability, has the
+panel add "This app asked for these together; turning one off may break it." while a switch is off, and the key popup
+says the same when a switch there is turned off; a **`'per-capability'`** app, which says it can, has no such line.
 
 **The app declares this, not Orivon**, for a concrete reason, not a preference: only the app's
 own author knows which their code can survive. Code ported from Node or Electron was never
@@ -192,12 +199,8 @@ capability gracefully, so its author is free to offer real per-item control inst
 
 **Omitting the field means `'all-or-nothing'`.** Every manifest written before this field
 existed was written with no knowledge that a partial grant could ever happen, which describes a
-ported app exactly, so the safe reading of silence is the one that can never hand an unprepared
-app a state it has no code path for. This costs the generous case (a person who wants the app
-but not its filesystem access has only the choice to decline the whole thing) to avoid the
-unsafe one (an app crashing mid-run on a refusal it cannot interpret). A person who wants finer
-control over an app that has not opted in still has the settings-list revoke path (A101) once
-the app is running, narrower than a row in the install prompt but real.
+ported app exactly, so the safe reading of silence is the one that tells the person so. The cost is a
+line of warning on a panel whose switches work all the same.
 
 **One flag for the whole manifest, not one per capability.** The question this answers, can the
 app's own code cope with an incomplete grant, is a property of the app as a whole: a ported app
@@ -206,9 +209,9 @@ splitting the choice per capability would ask an author to answer a question the
 actually distinguish.
 
 `docs/open-questions.md` A138 carries the fuller argument. The loader
-parses the field (`src/loader/manifest/manifest.ts`), and the install-time consent dialog reads it:
-`src/main/consent/install-consent.ts`'s `requestInstallConsent` branches its whole staged Allow-all /
-Choose-individually / Deny-all sequence on `manifest.consentGranularity === 'per-capability'`.
+parses the field (`src/loader/manifest/manifest.ts`), and the first-visit panel reads it:
+`src/main/consent/install-consent-panel.ts`'s `describeInstallPanel` adds the together line only for an
+`'all-or-nothing'` manifest.
 Three update-time prompts (reconsent, capability-widening, rollback) do not yet honour it; see
 `docs/open-questions.md` A162.
 
@@ -226,12 +229,20 @@ at the host that name gives (ADR-0056). The same files under another name, or a 
 to without the person's Trust & Force confirmation. Ports set it to the name they are published
 under.
 
+### `support`: where a problem is reported
+
+`Manifest.support` is `{ issues }`, and `issues` is one absolute URL written with `https://`, with a host, no user name or
+password, no whitespace or control character, and 2048 characters at most. The site-information panel offers it as
+"Report a problem" for any site whose manifest declares it, installed or not. A malformed `support` rejects the
+manifest with a reason naming `support.issues`; absence is allowed, and a key of `support` a build does not know is skipped.
+`mailto:` and `http:` are not accepted. It is **self-asserted**, like `name`.
+
 ### `version`: semver, ordering, and what an unparseable one costs
 
 `Manifest.version` is a **semver core plus optional prerelease**, build metadata stripped and
 ignored (per semver, `1.2.3+a` and `1.2.3+b` are the same version and neither is a rollback of the
 other). Two versions compare by release components in order (missing trailing components are
-zero, so `1.2` and `1.2.0` are equal), then by prerelease per semver §11.3-11.4 (a prerelease
+zero, so `1.2` and `1.2.0` are equal), then by prerelease per semver section 11.3-11.4 (a prerelease
 sorts below its release; numeric identifiers sort below alphanumeric ones).
 
 This is not a new rule; it transcribes what `src/broker/policy/update.ts`'s `compareVersions`
@@ -285,9 +296,14 @@ orivon.version                       // => 0
 orivon.app.manifest()                // => Manifest
 orivon.app.grants()                  // => Grant[]  (what was actually granted)
 orivon.app.requestGrant(cap)         // => Promise<boolean>  (may prompt the user)
+orivon.app.onOpenUrl(fn)             // => () => void  (a link the person sent to this app; manifest `protocols`)
+orivon.app.requestSchemeHandler(s)   // => Promise<boolean>  (asks to be the default for a scheme; needs a click)
+orivon.app.isSchemeHandler(s)        // => Promise<boolean>
 
 // --- net ---
-orivon.net.connect({ host, port })       // => Promise<TcpSocket>
+orivon.net.connect({ host, port, signal? }) // => Promise<TcpSocket>
+                                          //   aborting `signal` before it settles abandons the
+                                          //   dial and rejects 'closed' (ADR-0071); connectSecure too
 orivon.net.connectSecure({ host, port, ...tls }) // => Promise<SecureTcpSocket>  TLS terminated
                                           //   in the broker (ADR-0017) under the app's own
                                           //   Node TLS options; connect()'s handle plus the
@@ -374,6 +390,26 @@ orivon.web.setEmbedScript(source)    // => Promise<void>  the script that runs f
 > `web3-score-provider.md` describes, now also when an app asks, and the grant says so to the
 > person. This bounds this build of Orivon.
 
+> **`devices.hid` (ADR-0068) lets an app use the USB HID devices its manifest names, through the
+> web-standard `navigator.hid` in its own page.** There is no `orivon.*` member: Chromium does the
+> device I/O, and Orivon owns the gates. The manifest declares up to 16 filters,
+> `{ vendorId, productId?, usagePage?, usage? }`, each integer 0 to 65535; `vendorId` is required,
+> so there is no grant for "any HID device", and `usage` needs `usagePage`. A grant's patterns are
+> one canonical string per filter, the fields it names in the order `vendor`, `product`,
+> `usagePage`, `usage`, each as four lowercase hex digits (`vendor=2c97,product=4011`). The grant is
+> asked on visit with the other kinds, and its row names the vendors and says each device is asked
+> again. Holding it does not make a device usable: a device is offered to the app only if a filter
+> matches it, and it is usable only after the person approved that specific device for that
+> origin, either in a chooser when the app calls `navigator.hid.requestDevice()` or in a question in
+> the app's tab ("connect this device?") when the app only calls `navigator.hid.getDevices()` and a
+> matching device is plugged in. An approved device is remembered for the origin until the person
+> removes it, and revoking the grant forgets them all. WebUSB and Web Serial stay unavailable, and
+> so do web contexts and child hosts. An ordinary website, with no manifest and so no grant, uses
+> `navigator.hid.requestDevice()` the way it does in Chrome: Orivon's chooser opens, the pick is
+> the approval and is remembered for the site until removed in Settings, and the site is never
+> asked at `getDevices()` time. In this build the kind is declared in the contracts and the loader
+> does not accept `devices` yet, so no device is offered to any app.
+
 > **`media.camera`, `media.microphone` and `clipboard.read` (ADR-0032) have no `orivon.*` entry
 > point of their own.** They are Chromium platform permissions (`getUserMedia`,
 > `navigator.clipboard.readText`/`read`), not broker calls: the manifest declares them and the
@@ -384,7 +420,7 @@ orivon.web.setEmbedScript(source)    // => Promise<void>  the script that runs f
 > `src/main/sessions/README.md` for the mechanism.
 
 > **No raw signing oracle for named identities.** Signing arbitrary bytes
-> silently after one connect prompt would let a compromised client wipe the follow list
+> silently after one connect would let a compromised client wipe the follow list
 > (kind 3), delete posts (kind 5), replace the profile (kind 0), or authenticate as the user to
 > relays (NIP-42, kind 22242), and `ADR-0003` excludes export/backup, so the user cannot
 > rotate. `signEvent` is also what NIP-07 clients actually call.
@@ -394,7 +430,7 @@ orivon.web.setEmbedScript(source)    // => Promise<void>  the script that runs f
 
 ### `connectSecure`'s TLS options
 
-`connectSecure` takes Node's own `tls.connect` options, and `handle-contracts.md` §TcpSocket
+`connectSecure` takes Node's own `tls.connect` options, and `handle-contracts.md` section TcpSocket
 defines the `SecureTcpSocket` it returns. By default the broker validates the certificate chain
 against the runtime's built-in roots and the certificate against `host`, and checks `host`
 against the `https.connect` grant by name: that verification is what binds the name to whoever
@@ -488,12 +524,12 @@ different Nostr identity to snort.social and noStrudel. So `id` yields two disti
 | | **App keys** | **Named identities** |
 |---|---|---|
 | Scope | one origin, silent | cross-origin **by design** |
-| Consent | none needed, since it cannot link users across apps | explicit connect prompt per site, revocable |
+| Consent | none needed, since it cannot link users across apps | connects automatically on a Web3 Score Level 4 site; elsewhere a one-click or broker grant per site, revocable. A value-bearing action always prompts |
 | Backing | `derive(seed, "app", origin)` | `derive(seed, "identity", identityId)` |
 | Consumer | app-internal crypto | `window.nostr` (NIP-07), future wallet connect |
 
 **What `origin` and `identityId` are, precisely** (`ADR-0010`). Both
-are frozen into a key that this version cannot export, back up or migrate (`ADR-0003`), so two
+are frozen into a key that Orivon cannot yet export, back up or migrate (`ADR-0003`), so two
 spellings of one of them are two different identities, permanently.
 
 - **`origin`** is the *canonical* origin, as produced by `originFromSenderFrame()` in
@@ -508,31 +544,40 @@ spellings of one of them are two different identities, permanently.
   Otherwise renaming an identity, or merely changing its case, destroys the npub with nothing to
   restore from.
 
-`window.nostr` semantics, once named identities are built (they are not: A111): injected in ordinary tabs; first `getPublicKey()` per site triggers
-the connect prompt; after connecting, signing is silent for that site (per-event prompts would
+The connect rule for named identities, wallet accounts included, once they are built (they are
+not: A111): they connect automatically only on a site at Web3 Score Level 4 (trustless); on any
+other site a one-click or broker grant is asked first; a value-bearing action (a signature that
+moves money, a send) always prompts, on every site.
+
+`window.nostr` semantics, once named identities are built: injected in ordinary tabs; first
+`getPublicKey()` per site connects under the rule above; after connecting, signing is silent for that site (per-event prompts would
 make Nostr unusable). Presence of `window.nostr` is fingerprintable, as it is of every NIP-07
 extension; the *data* is what sits behind consent (`security-model.md` T16).
 
-### Deliberately **not** in v0
-- **`subprocess`.** No tier-3 app is in this version (Bisq is cut), so it buys nothing and costs
+### Deliberately **not** built
+- **`subprocess`.** No tier-3 app is ported yet (Bisq is a later direction), so it buys nothing and costs
   the largest attack surface in the design. A ported app's child processes and native modules run
   as WebAssembly in its own tab instead, under the grants it already holds, so they need no
   capability of their own (`ADR-0040`).
-- **`hid` / USB.** No wallet app in this version.
+- **WebUSB and Web Serial.** No ported app needs either, and a device capability is a large attack
+  surface. Only `devices.hid` exists (below).
 - **Raw sockets / ICMP.** No use case, and unreachable from WASM later anyway.
 
 > **Narrower than ADR-0002.** That ADR says `subprocess` and `hid` are "not grantable to
-> unsigned apps". This spec narrows further: they are absent from v0 entirely, for signed apps
-> too.
+> unsigned apps". `subprocess` is absent from the API entirely, for signed apps too. `hid` is one
+> declared grant (`devices.hid`) that every app may hold, whatever its origin, because each device is
+> asked again and a filter always names a vendor.
 
 ### Signing is not in v0
 
-`ADR-0002` posits signed and unsigned trust tiers; `ADR-0005`'s amendment keyed silent updates
-on a publisher signature. **Both are cut from v0.** Three reasons, from the audit:
+("v0" here is the API version number.)
 
-1. **The tiers were already capability-identical in v0.** Their only stated difference was
-   `subprocess` and `hid`, and this spec removes both for *every* tier. The distinction cost
-   real work and bought nothing.
+`ADR-0002` posits signed and unsigned trust tiers; `ADR-0005`'s amendment keyed silent updates
+on a publisher signature. **Neither is built.** Three reasons, from the audit:
+
+1. **The tiers were already capability-identical.** Their only stated difference was
+   `subprocess` and `hid`, and this spec gives neither on a tier basis: `subprocess` is absent
+   for every app and `hid` is open to every app. The distinction cost real work and bought nothing.
 2. **Nothing specified or scheduled the mechanism.** No signature format, no covered bytes, no
    detached-signature location, no key generation, no tooling, and no build step. As written,
    `publisherKey` was a self-asserted string inside the very document it was meant to
@@ -542,7 +587,7 @@ on a publisher signature. **Both are cut from v0.** Three reasons, from the audi
    every grant prompt*, so each would show a red UNSIGNED badge beside "connect to any computer
    on the internet."
 
-**What v0 actually ships:** hash-pinning (TOFU on the bundle) as the integrity mechanism, with
+**What ships today:** hash-pinning (TOFU on the bundle) as the integrity mechanism, with
 **no UNSIGNED badge anywhere**, because "unsigned" is not a distinction when everything is.
 Signing returns when a second publisher exists, which is also when prompt fatigue, its stated
 justification, first becomes possible.
@@ -557,7 +602,7 @@ justification, first becomes possible.
   why, and the call resolves as a cancellation.
 - `net` requires manifest-declared patterns, surfaced verbatim in the grant prompt.
 - `id` app keys derive per origin silently; **named identities** are cross-origin only through
-  the explicit connect prompt. In both modes the seed is never exposed and raw key export is
+  the connect rule above. In both modes the seed is never exposed and raw key export is
   not a capability at any tier.
 - `secrets` derives its own key from that same seed, per origin, with a distinct salt from `id`'s
   (`ADR-0033`); an app never holds, and cannot derive, the seed itself.
@@ -585,7 +630,7 @@ which anchors the site's DDOC off its host (`ADR-0029`).
 > is strictly worse than the `window.nostr` fingerprint accepted in T16, and it costs a request
 > per navigation.
 >
-> **v0 discovery is therefore:** a `<link rel="orivon-manifest">` hint in HTML already
+> **Discovery is therefore:** a `<link rel="orivon-manifest">` hint in HTML already
 > delivered, with zero extra requests. The well-known path is fetched *only after* seeing that hint
 > in a page the browser is already loading, never speculatively.
 
@@ -635,7 +680,7 @@ IPC channel. Control operations (open, close, options) use normal IPC; bulk byte
 **Throughput is not the constraint.** The wrapper moves ~310 MB/s main to renderer (measured
 below) against the 1-5 MB/s 1080p needs. What decides a torrent app is whether a renderer bundle
 fetches *ordinary* (non-WebRTC) torrents at all, and whether the tree stays free of native
-modules; see `build-plan.md` §Week 0. If renderer-side networking cannot carry it, the fallback
+modules; the week-0 spike measured it. If renderer-side networking cannot carry it, the fallback
 is an Electron **`utilityProcess`**, not the main process.
 
 ### Measured, 2026-08-25: spike gate 0 (`planning/spike-results/gate-0.json`)
@@ -667,7 +712,7 @@ Two consequences:
    mode of this transport is silence, not an error.
 
 **`MessagePortMain` has no documented backpressure**, so without flow control of its own a fast
-swarm would grow renderer memory without bound. `handle-contracts.md` §TcpSocket "Backpressure:
+swarm would grow renderer memory without bound. `handle-contracts.md` section TcpSocket "Backpressure:
 a credit window" is that flow control: a byte-credit window on top of `ReadableStream`/`WritableStream`
 (`ADR-0008`), with the broker stopping the underlying OS socket read once credit is exhausted
 rather than buffering in the main process.
@@ -680,23 +725,21 @@ stronger than guarding a localhost server with a token (T15). Chromium then prov
 track selection for free. MSE is the *worse* option: it needs fMP4 the torrents do not contain, and it forces
 hand-implemented seeking.
 
-**v0 plays MP4/H.264 only.** MSE cannot demux Matroska and neither can Chromium's `<video>`, so
+**Playback is MP4/H.264 only.** MSE cannot demux Matroska and neither can Chromium's `<video>`, so
 MKV has no path at all without a remuxer, and is deferred post-launch (`libav-wasm`, pure-WASM).
 Stock Electron ships H.264/AAC, so nothing extra is needed; HEVC is hardware-decode-only and is
 out. The limitation is stated in-product, not hidden.
 
-## Why this survives the engine swap
+## Why this survives a change of engine
 
 Apps call `orivon.net.connect`. Underneath, that is:
 
 | phase | implementation |
 |---|---|
 | now | Node `net.Socket` in the main process |
-| later | a Wasmtime host function |
-| later | Mojo IPC in a Chromium fork |
 
-None of those transitions is visible to an app already written. That property, not Electron
-and not Wasmtime, is what keeps the path to a Chromium fork open.
+A change of the engine underneath would not be visible to an app already written. That property,
+not Electron, is what the interface is built to keep.
 
 ## Open items: provisional defaults, not yet confirmed
 
@@ -735,7 +778,7 @@ conflated:
 > Additionally, record a per-origin **version floor** and flag any lower version, so a
 > validly-hash-pinned *older* bundle is never installed unnoticed (`security-model.md` T19).
 > Flagged, not rejected: a below-floor version is warned and offered as a choice, never silently
-> blocked. See this document's §`version` section.
+> blocked. See this document's `version` section.
 
 ### 3. Is `fs.quotaBytes` enforced or advisory? → **Enforced**
 Advisory means a buggy or hostile app fills the user's disk, which is threat **T11** in

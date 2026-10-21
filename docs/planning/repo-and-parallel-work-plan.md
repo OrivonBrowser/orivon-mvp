@@ -76,7 +76,7 @@ Recorded here rather than applied silently.
 | `src/main/tests/registry.test.ts` | Its unit tests |
 | `src/main/subsystems.ts` | The append-only registration list |
 | `src/{broker,shim,loader,trust,nostr,telemetry}/README.md` | One per stream: what lives here, what it depends on, what it must never import |
-| `src/broker/policy/README.md` | The pure-function boundary from `build-plan.md` §Week 0 |
+| `src/broker/policy/README.md` | The pure-function boundary from `build-plan.md` section Week 0 |
 | `apps/{torrent,fixture}/README.md` | Same, for the two app assets |
 | `docs/development/parallel-work.md` | The ownership map and the merge protocol |
 | `docs/development/setup.md` | Prerequisites, install, run, the `ELECTRON_RUN_AS_NODE` trap |
@@ -456,7 +456,7 @@ export interface OrivonError extends Error {
   readonly code: OrivonErrorCode
   /**
    * The underlying engine's own detail -- a Node errno today (ECONNREFUSED,
-   * ENOENT), whatever WASI or Mojo expose later. ADVISORY AND UNVERSIONED: an
+   * ENOENT), whatever another host exposes later. ADVISORY AND UNVERSIONED: an
    * app branching on this codes against the engine, not against Orivon. It
    * exists so orivon-node-shim can reconstruct a faithful Node Error, because
    * `err.code === 'ECONNREFUSED'` is a real Node idiom that must keep working.
@@ -477,12 +477,12 @@ Transcribe, in this order, preserving every `readonly` and every signature exact
 
 | From | Lines | Interfaces |
 |---|---|---|
-| §Common shape | `handle-contracts.md:21-27` | `Handle` |
-| §TcpSocket | `handle-contracts.md:107-118` | `TcpSocket` |
-| §TcpServer | `handle-contracts.md:177-183` | `TcpServer` |
-| §UdpSocket | `handle-contracts.md:205-219` | `Datagram`, `UdpSocket` |
-| §FileHandle | `handle-contracts.md:241-257` | `FileStat`, `FileHandle` |
-| §IdentityHandle | `handle-contracts.md:288-294` | `IdentityHandle` |
+| section Common shape | `handle-contracts.md:21-27` | `Handle` |
+| section TcpSocket | `handle-contracts.md:107-118` | `TcpSocket` |
+| section TcpServer | `handle-contracts.md:177-183` | `TcpServer` |
+| section UdpSocket | `handle-contracts.md:205-219` | `Datagram`, `UdpSocket` |
+| section FileHandle | `handle-contracts.md:241-257` | `FileStat`, `FileHandle` |
+| section IdentityHandle | `handle-contracts.md:288-294` | `IdentityHandle` |
 
 `Handle` is the base every other extends:
 
@@ -500,7 +500,7 @@ export interface Handle {
 Carry these four rules into the file as comments, because each is a contract a
 future implementer will otherwise violate:
 
-1. **Handles are never transferable** (§Common shape). A `MessagePort` is transferable and
+1. **Handles are never transferable** (section Common shape). A `MessagePort` is transferable and
    carries no sender identity, so a transferred handle would be a bearer capability the broker
    cannot see.
 2. **`TcpSocket.remoteAddress` is the RESOLVED address**, not the hostname the app asked for,
@@ -638,7 +638,7 @@ EOF
 **Files:**
 - Create: `src/contracts/manifest.ts`, `src/contracts/capability-api.ts`, `src/contracts/limits.ts`, `src/contracts/ipc.ts`
 - Modify: `src/contracts/index.ts`, `package.json`, `.github/workflows/ci.yml`
-- Source: `docs/architecture/capability-api.md`, `docs/architecture/handle-contracts.md` §Limits
+- Source: `docs/architecture/capability-api.md`, `docs/architecture/handle-contracts.md` section Limits
 
 **Interfaces:**
 - Consumes: `OrivonErrorCode` and the handle types from Task 2.
@@ -658,7 +658,7 @@ Transcribe the JSON shape at `capability-api.md:72-96`. Carry these facts in as 
 - `"connect": ["*:*"]` is what the torrent app genuinely needs. The grant prompt must render it
   as *"connect to any computer on the internet"*, not as a pattern string.
 - `listen` rejects `"*"`: a declared port range is required, and privileged ports below 1024
-  are denied at every tier (`capability-api.md` A9 §1).
+  are denied at every tier (`capability-api.md` A9 section 1).
 
 ```typescript
 export type GrantId = string
@@ -788,7 +788,7 @@ code, so bundle size should be unchanged.
 - [ ] **Step 8: Record any gaps found, then commit**
 
 If transcription surfaced anything ambiguous in the two source documents, append it to
-`docs/open-questions.md` §A now (`CLAUDE.md` Rule 3). Then:
+`docs/open-questions.md` section A now (`CLAUDE.md` Rule 3). Then:
 
 ```bash
 git add src/contracts package.json .github/workflows/ci.yml docs/open-questions.md
@@ -828,7 +828,7 @@ Converts `src/main/index.ts` from a file every stream must *edit* into one every
   Every stream from build step 2 onward adds one entry to `src/main/subsystems.ts`.
 
 **Why two phases:** `protocol.registerSchemesAsPrivileged` must be called *before* `app` is
-ready, and build step 5's range-capable custom media scheme (`build-plan.md` §5) needs it. One
+ready, and build step 5's range-capable custom media scheme (`build-plan.md` section 5) needs it. One
 phase would force that stream to restructure `index.ts`, exactly what this task exists to
 prevent.
 
@@ -1157,7 +1157,7 @@ The specific content per directory:
 |---|---|---|---|
 | `src/contracts/` | nothing | anything at all | A dependency edge here is a merge conflict every stream reaches from a different direction. Enforced by `npm run check:contracts` |
 | `src/broker/` | `src/contracts/`, `electron` | `src/shim/`, `src/loader/`, any renderer code | The broker is the authority; importing a consumer inverts the trust direction |
-| `src/broker/policy/` | `src/contracts/` only | **`electron`, `node:fs`, `node:net`, `node:dns`, anything performing I/O** | `build-plan.md` §Week 0: these are pure functions constructed as `createBroker({ dial, resolve, now, fs, keychain })`, so every capability test runs against stubs. Deciding this later costs a day of refactor exactly when the schedule is tightest |
+| `src/broker/policy/` | `src/contracts/` only | **`electron`, `node:fs`, `node:net`, `node:dns`, anything performing I/O** | `build-plan.md` section Week 0: these are pure functions constructed as `createBroker({ dial, resolve, now, fs, keychain })`, so every capability test runs against stubs. Deciding this later costs a day of refactor exactly when the schedule is tightest |
 | `src/shim/` | `src/contracts/` | `electron`, `src/broker/` | The shim runs in the renderer and reaches the broker only through `orivon.*`. Importing the broker would give it main-process authority it must not have |
 | `src/loader/` | `src/contracts/`, `src/broker/` | `src/shim/` | |
 | `src/trust/` | `src/contracts/` | `src/broker/` internals | Reads the broker's connection log through a contract, per `ADR-0006` |
@@ -1349,7 +1349,7 @@ Must explain the *reasoning*, because the surprising thing about this repo is ho
 tested and a newcomer will otherwise assume neglect:
 
 - Testing is deliberately minimal, concentrated where silent failure is plausible and costly
-  (`build-plan.md` §Testing). **No UI tests, no coverage targets**: at this scale they cost
+  (`build-plan.md` section Testing). **No UI tests, no coverage targets**: at this scale they cost
   more than they return.
 - **The six unit-tested areas**, listed with why each is security-critical: capability checking
   at the call site (not just the matcher); `fs` path-traversal rejection; origin derivation,
@@ -1418,7 +1418,7 @@ EOF
 
 ## Task 8: The release checklist, scoped to what is decidable
 
-`build-plan.md` §Testing references `docs/testing/release-checklist.md`, which does not exist.
+`build-plan.md` section Testing references `docs/testing/release-checklist.md`, which does not exist.
 This closes the gap for the items that can be written completely today. Three of its eventual
 items depend on artefacts that will not exist until build steps 5 and 7 (a named, pinned,
 well-seeded MP4 torrent and three pinned Nostr clients) and are recorded as scheduled
@@ -1556,15 +1556,15 @@ Required sections, in this order. Total target: readable in five minutes.
 8. **Licence:** AGPL-3.0-only.
 
 Link out to `orivon-docs` for the long-term vision; **do not restate it** (`CLAUDE.md`
-§Sources of truth).
+section Sources of truth).
 
 - [ ] **Step 4: Write `ARCHITECTURE.md`**
 
 The five-minute "how does this work". Required content:
 
 1. **The one load-bearing idea.** The durable asset is the capability API (`orivon.*`), not the
-   engine beneath it: Node broker now, Wasmtime later, Chromium/Mojo later, invisible to apps
-   already written. That property, not Electron, is what keeps the Chromium path open
+   engine beneath it: a Node broker now, and a change of engine invisible to apps
+   already written. That property, not Electron, is what the interface keeps
    (`ADR-0002`).
 2. **The diagram**, as a fenced ASCII block:
    ```
@@ -1581,7 +1581,7 @@ The five-minute "how does this work". Required content:
    ```
 3. **Directory map**: a table of every top-level directory and its one-line purpose, matching
    the boundary READMEs from Task 5. Mark `spike/` explicitly as historical evidence.
-4. **What survives a Chromium fork and what is knowingly disposable** (`CLAUDE.md` Rule 5):
+4. **What survives a change of engine and what is knowingly disposable** (`CLAUDE.md` Rule 5):
    `src/contracts/` and the broker's policy functions survive; the Electron shell, the preload
    bridging and `orivon-node-shim` are disposable.
 5. **Two facts that will otherwise be rediscovered painfully**, each in a sentence with a link:
@@ -1689,7 +1689,7 @@ moved to `docs/README.md`. Leaving both means two maps that will drift apart.
 
 - [ ] **Step 1: Remove what moved**
 
-Delete the §Sources of truth table and the numbered reading list from §Start here. Replace with
+Delete the section Sources of truth table and the numbered reading list from section Start here. Replace with
 a short pointer: *the human documentation is the map: read `README.md`, `ARCHITECTURE.md` and
 `docs/README.md` first; this file adds only what is specific to working here as an agent.*
 
@@ -1745,7 +1745,7 @@ EOF
 
 ## Task 11: Publish to GitHub
 
-**Blocked** until `gh` has `repo` and `workflow` scopes. See the spec's §Open items: `gh`
+**Blocked** until `gh` has `repo` and `workflow` scopes. See the spec's section Open items: `gh`
 currently authenticates from `GITHUB_TOKEN` at `~/.bashrc:164`, a classic PAT scoped
 `read:user` and `repo:status`. **`.github/workflows/ci.yml` is tracked, so the first push fails
 without `workflow` scope.** While `GITHUB_TOKEN` is set in the environment, `gh auth login` and
@@ -1827,7 +1827,7 @@ fix directly if CI itself breaks.
 
 - [ ] **Step 7: Raise the two org-level questions**
 
-Neither is decided (spec §Open items 2). Ask the owner, do not act unilaterally:
+Neither is decided (spec section Open items 2). Ask the owner, do not act unilaterally:
 
 1. **Archive `orivon-browser` and `orivon-browser-v2`?** Someone landing on the org sees three
    similarly-named repositories and cannot tell which is alive, which defeats goal 1 before they
@@ -1838,7 +1838,7 @@ Neither is decided (spec §Open items 2). Ask the owner, do not act unilaterally
 - [ ] **Step 8: Record it**
 
 Append one line to the current week's **Done / results** section of `devlog/journal.md`, per
-`CLAUDE.md` §Devlog capture. Then:
+`CLAUDE.md` section Devlog capture. Then:
 
 ```bash
 git add devlog/journal.md && git commit -m "$(cat <<'EOF'
@@ -1861,7 +1861,7 @@ Recorded so they are not silently forgotten, and not done because each fails a t
 | npm workspaces monorepo | Spec D4: costs a day of build-system rework to enforce a boundary four streams can hold by convention | Stream count exceeds ~6, or a boundary violation actually happens |
 | A guard that parses the ownership map and asserts every listed path exists | Couples a test to a Markdown table's formatting; brittle for the amount it buys | The map goes stale and it is not noticed |
 | Issue and PR templates | Useful with outside contributors, noise with one | The first outside contributor |
-| Dependabot / Renovate | `build-plan.md` §Risks makes tracking Electron CVEs a real requirement, but automated PRs against a one-person repo mid-sprint are a distraction | Build step 10 (packaging), when a release exists to protect |
+| Dependabot / Renovate | `build-plan.md` section Risks makes tracking Electron CVEs a real requirement, but automated PRs against a one-person repo mid-sprint are a distraction | Build step 10 (packaging), when a release exists to protect |
 | Screenshot or clip in the README | The shell runs but there is nothing worth showing until the flagship works | Build step 5, when the clip exists |
 
 ---

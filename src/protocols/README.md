@@ -5,12 +5,16 @@ page: `defineProtocol` ([`protocol.ts`](protocol.ts)), the one function every pr
 through; [`address.ts`](address.ts), between the address a person reads (`ipfs://<cid>/x`) and the
 URL a page is served at (`https://<cid>.ipfs.orivon/x`); [`registry.ts`](registry.ts), the
 fallback rule across providers; the provider interfaces ([`resolution/`](resolution/)); each
-protocol ([`ens/`](ens/), [`ipfs/`](ipfs/)); and [`verifier-host/`](verifier-host/), the process
-that runs every provider and serves their pages.
+protocol ([`ens/`](ens/), [`ipfs/`](ipfs/), [`swarm/`](swarm/)), with the gateway scheduling the
+content-addressed ones share ([`gateways/`](gateways/)); [`verifier-host/`](verifier-host/), the process
+that runs every provider and serves their pages; [`local-node/`](local-node/), the process
+that runs a node of Orivon's own on this computer; [`swarm-node/`](swarm-node/) and
+[`ipfs-node/`](ipfs-node/), the Swarm light node and the IPFS node that run in it; and [`nym-tunnel/`](nym-tunnel/), the
+process that runs Nym's mixnet client and offers it to the tunnel for apps as a SOCKS5 server.
 
-**Durable**, except `verifier-host/`, which is tied to Electron.
+**Durable**, except `verifier-host/`, `local-node/` and `nym-tunnel/`, which are tied to Electron.
 
-**What it depends on.** The top-level files depend only on [`resolution/`](resolution/) and on
+**What it depends on.** The top-level files (`route-pace.ts`, the wait every step of the load path derives from its route, among them) depend only on [`resolution/`](resolution/) and on
 each built-in protocol's `descriptor.ts`. Each folder's own `README.md` says what it depends on.
 
 **What it must never import.** The top-level files and every `descriptor.ts`: `electron`,
@@ -29,12 +33,14 @@ over its message protocol.
    need a new way to load content. An address scheme's resolver defines `canonicalName` and
    refuses in `resolve` any other spelling: two spellings would be two origins for one site.
 2. **Its descriptor**, `<id>/descriptor.ts`: `describeProtocol({ id, schemes, topLevelDomains })`,
-   data only. A protocol with top-level domains may also name `displayScheme`, the address scheme
-   a name under one of them is shown with (`ipfs` for `.eth`); its origin stays unchanged. It may
+   data only. A name under a top-level domain has no scheme of its own: it is shown under the scheme of the
+   protocol whose gatherer the verifier host chose for its records (`bzz` for Swarm), learned through
+   `ProtocolAddresses.learnSchemes`, and as its plain origin (`https://<name>.eth`) until then, so it is never
+   shown under a network it may not live on. The origin stays unchanged. A descriptor may
    also give `loadingScreen` (a `title` and an optional `detail`): the words of the screen the shell
    shows over a tab while one of its pages loads. The shell draws the screen and a protocol only
-   words it. A top-level-domain name whose protocol gives none shows the screen of the protocol
-   serving its `displayScheme`.
+   words it. A top-level-domain name shows the screen of the protocol serving the scheme learned for
+   it, else its own protocol's; the screen words itself again when a scheme is learned while it shows.
 3. **Its entry in [`builtin.ts`](builtin.ts).** From there the shell routes, shows and
    canonicalises it everywhere: address bar, omnibox, links, consent dialogs, the certificate
    check and the resolver rules.

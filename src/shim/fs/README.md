@@ -6,7 +6,9 @@ implicit file position, which `orivon.fs` deliberately lacks.
 
 **What it depends on.** [`../../contracts/`](../../contracts/), [`../errors.ts`](../errors.ts),
 [`../encoding.ts`](../encoding.ts), [`../unimplemented.ts`](../unimplemented.ts),
-[`../virtual-root.ts`](../virtual-root.ts) (`paths.ts`'s confinement), and
+[`../virtual-root.ts`](../virtual-root.ts) (`paths.ts`'s confinement),
+[`../../shim-electron/picked-paths.ts`](../../shim-electron/picked-paths.ts) (the table of stand-in paths:
+`paths.ts`, `picked.ts`, `notices.ts`), and
 [`../worker/sync-channel.ts`](../worker/sync-channel.ts)'s `SYNCHRONOUS` symbol
 (`sync-orivon.ts`, the one thing every `*Sync` export needs from `worker/` -- the reverse never
 happens, `worker/` does not import `fs/`).
@@ -18,8 +20,29 @@ README's "What it must never import".
 
 ## Design notes
 
+**Picked paths: a path under `/orivon/picked` is answered by the pick's handle, never by `orivon.fs`.** `dialog` registers
+what the person picked and returns a stand-in path (`shim-electron/picked-paths.ts`, ADR-0091); `picked.ts` is the one place that
+turns an `fs` call on such a path into a call on the pick's `FileHandle` or `DirectoryHandle`. `core.ts` and `handle.ts` ask it first,
+and a path outside the namespace takes the app-root route untouched. The table is read from `shim-electron/` because the dialog
+that fills it lives there and that package may not import this one. A folder pick maps one to one onto `DirectoryHandle`
+(its root is answered locally for `stat`, `readdir` and `mkdir -p`, refused for removal and rename). A file pick has no folder to
+grow: its stand-in folder holds only that file, so `stat`, `readdir` and `mkdir -p` of it answer, any other name is `ENOENT` to read
+and `EACCES` to create, and nothing in it can be removed or renamed. A rename between two picks, or between a pick and
+the app's files, is `EXDEV`. An `fs.open` of a picked file shares the pick's one handle: closing it flushes (`sync`) when it was
+opened to write and leaves the pick open, so the next call works; `'w'` empties the file first and `'wx'` is `EEXIST`. `readFile` reads in
+megabyte chunks and `writeFile` writes in them, since the page's handle has no stream (A184). The synchronous family has no wire to a
+pick: `toConfinedPath` throws `ENOSYS` for a picked path, so every `*Sync` export, `fs.watch` and a sandbox preopen meet it, and
+`existsSync` answers `true` for a live pick's own path (the table is in memory) and `false` for anything deeper or stale. A write to a pick is not announced to `fs.watch` (`notices.ts`). An id no pick answers (the page reloaded,
+or it is a Worker whose shim holds a table of its own) is `ENOENT` and says to pick again, not another pick's file.
+
 **An asynchronous call the limiter refuses is asked again** (`../limit-retry.ts`, used by `paths.ts`'s `guarded`: pauses from 10 ms to 800 ms, thirteen retries, about five seconds)
 the same way, for the same reason.
+
+**Asynchronous calls queue in the shim, under half the broker's in-flight bound** (`../limit-retry.ts`'s `fsQueue`,
+used by `guarded`). The broker holds an origin to `LIMITS.inFlightOperations` calls at once plus as many waiting
+and refuses the rest, but Node never refuses a file call for being one too many: libuv queues it. So at most 128
+calls of this realm are with the broker at once and the others wait here, in order, without limit. Half, so that
+net calls and other realms of the origin keep room.
 
 **A synchronous call the broker's per-origin limiter refuses is asked again** (`sync-orivon.ts`'s
 `guardedSync`): it backs off from 25 ms up to 200 ms for at most 40 attempts, then throws the error. The
@@ -28,10 +51,12 @@ cannot wait and ask again itself -- a program that starts with a burst of file c
 the first call past the bucket. `existsSync`'s own probe asks again the same way, so a refused stat is never read
 as a missing file.
 
-**Every `fs` `*Sync` export, including `realpathSync`, works only in a Worker of a
+**Every path-based `fs` `*Sync` export, including `realpathSync`, works on the page and in a Worker of a
 cross-origin isolated app** ([`ADR-0016`](../../../docs/decisions/ADR-0016-synchronous-file-reads-are-permitted.md)'s
-amendment), except `readFileSync`/`existsSync`, which work everywhere -- over the Worker's
-synchronous twin (`../worker/README.md`'s own note) -- [`core-sync.ts`](core-sync.ts) is the
+amendments), over a synchronous twin: the Worker's (`../worker/README.md`'s own note), or the page's, which the
+preload serves over a blocking IPC call and which has no `open`. A call that holds a file handle (`openSync` and what
+rides it, a non-`'w'` flag on `writeFileSync`, `appendFileSync`) works in a Worker only and refuses by name on the
+page, as does every `*Sync` call in a Worker with no `SharedArrayBuffer`. `readFileSync`/`existsSync` work everywhere -- [`core-sync.ts`](core-sync.ts) is the
 synchronous twin of [`core.ts`](core.ts)'s `do*()` functions, sharing confinement
 ([`paths.ts`](paths.ts)), root special-casing ([`root.ts`](root.ts)) and stats conversion
 ([`stats.ts`](stats.ts)) with them; only the "await or not" itself cannot be shared, so each
@@ -80,8 +105,7 @@ follow `mtime`. The `is*` device predicates are false.
 `fs.promises.lchmod` and `FileHandle#chmod`. The mode is validated as Node does and then not
 stored, because the confined fs has no mode to keep (`stat` reports the fixed one above); a
 missing path fails `ENOENT` and an unknown descriptor `EBADF`. `chmodSync` checks with
-`existsSync`, so it works on a page as well as in a Worker, and reads a path it may not open as
-missing. `chown` and its variants still refuse as *not-applicable*: no uid or gid exists to set.
+`existsSync`, so it works on a page as well as in a Worker. `chown` and its variants still refuse as *not-applicable*: no uid or gid exists to set.
 
 **`fs.watch` hears only the writes made through this shim** ([`watch.ts`](watch.ts),
 [`notices.ts`](notices.ts)). `orivon.fs` has no change feed, so every mutating call here

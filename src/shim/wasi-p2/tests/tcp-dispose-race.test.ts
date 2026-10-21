@@ -24,7 +24,7 @@ import type { TcpSocket } from '../tcp.js'
 const v4 = (a: number, b: number, c: number, d: number, port: number): IpSocketAddress => ({ tag: 'ipv4', val: { port, address: [a, b, c, d] } })
 
 /** A broker-shaped TcpSocket: write() lands after a delay (port-sink.ts's own ack round trip); close() ends the real sink immediately, dropping anything not yet landed -- exactly node:net's own "write after end" behaviour. */
-function fakeBrokerSocket (writeDelayMs: number): { socket: OrivonTcpSocket, received: () => string } {
+function fakeBrokerSocket (writeDelayMs: number, events: string[] = []): { socket: OrivonTcpSocket, received: () => string } {
   let ended = false
   let received = ''
   const writable = new WritableStream<Uint8Array>({
@@ -34,7 +34,7 @@ function fakeBrokerSocket (writeDelayMs: number): { socket: OrivonTcpSocket, rec
       received += new TextDecoder().decode(chunk)
     }
   })
-  const readable = new ReadableStream<Uint8Array>({ start () {} })
+  const readable = new ReadableStream<Uint8Array>({ start () {}, cancel () { events.push(`read side cancelled after ${received.length} bytes landed`) } })
   const socket: OrivonTcpSocket = {
     id: 'fake-broker-socket',
     closed: new Promise(() => {}),
@@ -84,5 +84,43 @@ describe('a component writing a two-piece response then dropping its socket (no 
     while (received() !== expected && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10))
 
     expect(received()).toBe(expected)
+  })
+})
+
+describe('a component that wrote to a socket and dropped it without ever reading', () => {
+  it('releases the read side too, after what it wrote has landed', async () => {
+    const events: string[] = []
+    const { socket: brokerSocket, received } = fakeBrokerSocket(30, events)
+    const interfaces = socketInterfaces(connectClient(brokerSocket), { dropGraceMs: 200 })
+    const createTcpSocket = (interfaces['wasi:sockets/tcp-create-socket'] as { createTcpSocket: (family: string) => TcpSocket }).createTcpSocket
+    const socket = createTcpSocket('ipv4')
+    socket.startConnect({}, v4(93, 184, 216, 34, 443))
+    await socket.subscribe().block()
+    const [, output]: [unknown, OutputStream] = socket.finishConnect()
+    await output.blockingWriteAndFlush(new TextEncoder().encode('REQUEST'))
+
+    socket[Symbol.dispose]()
+
+    const deadline = Date.now() + 2000
+    while (events.length === 0 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(received()).toBe('REQUEST')
+    expect(events).toEqual(['read side cancelled after 7 bytes landed'])
+  })
+
+  it('releases the read side of a socket it never wrote to', async () => {
+    const events: string[] = []
+    const { socket: brokerSocket } = fakeBrokerSocket(0, events)
+    const interfaces = socketInterfaces(connectClient(brokerSocket))
+    const createTcpSocket = (interfaces['wasi:sockets/tcp-create-socket'] as { createTcpSocket: (family: string) => TcpSocket }).createTcpSocket
+    const socket = createTcpSocket('ipv4')
+    socket.startConnect({}, v4(93, 184, 216, 34, 443))
+    await socket.subscribe().block()
+    socket.finishConnect()
+
+    socket[Symbol.dispose]()
+
+    const deadline = Date.now() + 2000
+    while (events.length === 0 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(events).toHaveLength(1)
   })
 })

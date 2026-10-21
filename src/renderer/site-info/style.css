@@ -115,6 +115,30 @@ hr {
 .site-header { display: flex; flex-direction: column; gap: 2px; }
 .site-origin { font-weight: 600; font-size: 14px; word-break: break-all; }
 .site-claim { color: var(--wink-dim); font-size: 12px; }
+.route-line { margin: 6px 0 0; padding: 0 2px; color: var(--wink-dim); font-size: 12px; }
+.route-line-down { color: var(--wwarn); }
+
+/* --- The tunnel switch and the notice before a site moves ------------ */
+
+.tunnel-section { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.tunnel-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; background: var(--wsurface); border: 1px solid var(--wborder); }
+.tunnel-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.tunnel-label { font-weight: 600; }
+.tunnel-state { color: var(--wink-dim); font-size: 12px; line-height: 1.4; }
+.tunnel-state-down { color: var(--wwarn); }
+.tunnel-logo { flex: none; width: 20px; height: 20px; border-radius: 50%; }
+.tunnel-logo-generic { display: inline-flex; align-items: center; justify-content: center; color: var(--wink-dim); }
+.tunnel-logo-generic .icon-tunnel { width: 18px; height: 18px; }
+.tunnel-hint { display: flex; flex-direction: column; gap: 4px; }
+.tunnel-hint .route-line { margin: 0; }
+.tunnel-section .route-line { margin: 0; }
+.tunnel-notice { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; border-radius: 6px; background: color-mix(in srgb, var(--waccent) 12%, transparent); font-size: 12px; line-height: 1.5; }
+.tunnel-notice-text { margin: 0; }
+.tunnel-address { display: flex; flex-direction: column; gap: 4px; padding: 0 2px; }
+.tunnel-address-line { display: flex; align-items: center; gap: 6px; }
+.tunnel-address-label { flex: none; font-size: 12px; color: var(--wink-dim); }
+.tunnel-address-field { flex: 1; min-width: 0; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--wborder); background: var(--wsurface); color: inherit; font: inherit; font-size: 12px; }
+.tunnel-address-field:focus-visible { outline: 2px solid var(--waccent); outline-offset: 1px; }
 
 .connection-row {
   display: flex;
@@ -206,6 +230,11 @@ hr {
 }
 .switch.on .switch-thumb { left: 16px; }
 
+/* --- An app that was never let in ----------------------------------- */
+
+.review-card { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; padding: 10px; border-radius: 6px; background: var(--wwarn-bg); border: 1px solid color-mix(in srgb, var(--wwarn) 40%, transparent); }
+.review-text { margin: 0; font-size: 12.5px; line-height: 1.45; }
+
 /* --- Staged footer, reload banner ----------------------------------- */
 
 .staged-footer { display: flex; flex-direction: column; gap: 6px; padding-top: 2px; }
@@ -285,6 +314,13 @@ hr {
 .rung.unknown .rung-badge { background: var(--wborder); color: var(--wink-dim); }
 .rung.unknown .rung-label { color: var(--wink-dim); }
 .rung-mark { margin-left: auto; color: var(--wink-dim); font-weight: 700; }
+/* Padding and a matching negative margin keep the "?" where the plain mark sat and the row as tall as before. */
+button.rung-help {
+  padding: 0 5px;
+  margin-right: -5px;
+  border-radius: 6px;
+}
+button.rung-help:hover { color: var(--wink); background: color-mix(in srgb, var(--wink) 8%, transparent); }
 .level-because { margin: 0; font-size: 12px; }
 .dev-note {
   margin: 0;

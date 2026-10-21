@@ -1,0 +1,74 @@
+import { describe, expect, it } from 'vitest'
+import { canTunnel, isProfilePartition, kindOfProfile, profileOf, profileOfPartition, profilePartition, profilePartitionFor, profilePartitionsToClear } from '../site-partition.js'
+
+describe('the profile an entry puts a website in', () => {
+  it('is the profile of its tunnel for a tunnel entry, the direct profile for an off one, and none for a website with no entry', () => {
+    expect(profileOf('nym')).toBe('nym')
+    expect(profileOf('socks5')).toBe('socks5')
+    expect(profileOf('off')).toBe('direct')
+    expect(profileOf(undefined)).toBeUndefined()
+  })
+
+  it('says which tunnel a profile sends through, none for the direct one', () => {
+    expect(kindOfProfile('nym')).toBe('nym')
+    expect(kindOfProfile('socks5')).toBe('socks5')
+    expect(kindOfProfile('direct')).toBeUndefined()
+  })
+})
+
+describe('the session of a profile', () => {
+  it('is one persistent session per profile, shared by every website that has that entry', () => {
+    expect(profilePartitionFor('nym', 'https://news.example')).toBe('persist:tunnel-profile')
+    expect(profilePartitionFor('nym', 'https://other.example')).toBe('persist:tunnel-profile')
+    expect(profilePartitionFor('socks5', 'https://news.example')).toBe('persist:proxy-profile')
+    expect(profilePartitionFor('direct', 'https://news.example')).toBe('persist:direct-profile')
+  })
+
+  it('is kept in memory for an origin that may not be written to disk, which a name with no persist: prefix is', () => {
+    expect(profilePartitionFor('nym', 'http://news.example')).toBe('tunnel-profile-memory')
+    expect(profilePartitionFor('socks5', 'http://news.example')).toBe('proxy-profile-memory')
+    expect(profilePartitionFor('direct', 'http://news.example')).toBe('direct-profile-memory')
+    expect(profilePartition('nym', false)).toBe('tunnel-profile-memory')
+  })
+
+  it('is told apart from the other partitions by its name, and says which profile it is', () => {
+    for (const name of ['persist:tunnel-profile', 'tunnel-profile-memory']) {
+      expect(isProfilePartition(name), name).toBe(true)
+      expect(profileOfPartition(name), name).toBe('nym')
+    }
+    for (const name of ['persist:proxy-profile', 'proxy-profile-memory']) {
+      expect(isProfilePartition(name), name).toBe(true)
+      expect(profileOfPartition(name), name).toBe('socks5')
+    }
+    for (const name of ['persist:direct-profile', 'direct-profile-memory']) expect(profileOfPartition(name), name).toBe('direct')
+    for (const other of [undefined, 'persist:app-abc', 'persist:embed-abc', 'orivon-route-tab-abc', 'persist:orivon-local-files', 'persist:site-abc', 'site-abc']) expect(isProfilePartition(other), String(other)).toBe(false)
+  })
+})
+
+describe('which origins can go through the tunnel', () => {
+  it('is any web origin that is not this computer', () => {
+    for (const origin of ['https://news.example', 'http://news.example:8080', 'https://vitalik.eth', 'https://abc.ipfs.orivon']) expect(canTunnel(origin), origin).toBe(true)
+  })
+
+  it('is not this computer, a non-canonical origin or an address with no origin', () => {
+    for (const origin of ['http://localhost:3000', 'https://app.localhost', 'http://127.0.0.1:8080', 'http://[::1]/', 'https://news.example/path', 'orivon://settings', 'about:blank', '']) expect(canTunnel(origin), origin).toBe(false)
+  })
+})
+
+describe('the profile sessions a clear of site data reaches', () => {
+  it('is the kept session of a profile some website has an entry in, and the memory session of a profile only when it was made in this run', () => {
+    const apart = (profile: string): boolean => profile === 'nym'
+    expect(profilePartitionsToClear(apart, [])).toEqual(['persist:tunnel-profile'])
+    expect(profilePartitionsToClear(apart, ['tunnel-profile-memory'])).toEqual(['persist:tunnel-profile', 'tunnel-profile-memory'])
+    expect(profilePartitionsToClear((profile) => profile === 'socks5', ['proxy-profile-memory'])).toEqual(['persist:proxy-profile', 'proxy-profile-memory'])
+  })
+
+  it('includes the memory session of a profile with no entry left, since it still holds what a plain-http website stored', () => {
+    expect(profilePartitionsToClear(() => false, ['direct-profile-memory'])).toEqual(['direct-profile-memory'])
+  })
+
+  it('names no session that was not made, and ignores any made session that is not a profile\'s', () => {
+    expect(profilePartitionsToClear(() => false, [])).toEqual([])
+    expect(profilePartitionsToClear(() => false, ['persist:tunnel-profile', 'orivon-route-tab-x'])).toEqual([])
+  })
+})

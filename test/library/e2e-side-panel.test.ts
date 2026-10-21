@@ -12,7 +12,7 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput, profileDirOf } from '../support/launch-electron.mjs'
-import { pressKey } from '../support/e2e-helpers.js'
+import { pressCommand } from '../support/e2e-helpers.js'
 import { delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, popoverShown, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 180_000
@@ -149,7 +149,7 @@ it('opens beside the page, lists bookmarks, filters, shows history, resizes, rem
     expect(await panelShown(app)).toBe(false)
 
     // Mod+Alt+B opens it, and the page gives up exactly the panel's width.
-    await pressKey(app, tab, 'B', ['control', 'alt'])
+    await pressCommand(app, tab, 'sidePanel.toggle')
     const page = await panel(app)
     await expectPageWidth(app, tab, closed.window.width - 360)
     const docked = await frameOf(app, tab)
@@ -349,7 +349,7 @@ it('remembers the width and the last view in an ordinary profile', async () => {
 
 const selectedTitle = async (page: Page): Promise<string> => await page.locator('.sp-list [aria-selected="true"] .tree-label, .sp-list [aria-selected="true"] .item-title').first().innerText()
 
-it('is driven from the keyboard: arrows, Right to unfold, Enter and Ctrl+Enter to open, Delete twice to remove', async () => {
+it('is driven from the keyboard: arrows, Right to unfold, Enter and Mod+Enter to open, Delete twice to remove', async () => {
   const { app, chrome } = await launched({ seed: async (dir) => { await writeFile(join(dir, 'bookmarks.json'), bookmarksFile()) } })
   try {
     await command(chrome, 'sidePanel.toggle')
@@ -380,7 +380,7 @@ it('is driven from the keyboard: arrows, Right to unfold, Enter and Ctrl+Enter t
     await expectTitles(() => treeTitles(page), ['Bookmarks bar', 'Recipes', 'Soup recipe', 'Alpha page', 'Beta page', 'Other bookmarks', 'Gamma page'])
     expect(await selectedTitle(page)).toBe('Soup recipe')
 
-    // Left goes to the parent; Enter opens in the tab in front, Ctrl+Enter behind it.
+    // Left goes to the parent; Enter opens in the tab in front, Mod+Enter behind it.
     await page.keyboard.press('ArrowLeft')
     expect(await selectedTitle(page)).toBe('Recipes')
     await page.keyboard.press('ArrowDown')
@@ -390,7 +390,7 @@ it('is driven from the keyboard: arrows, Right to unfold, Enter and Ctrl+Enter t
     expect((await waitForTab(chrome, { title: 'Alpha page' })).ok).toBe(true)
     const before = (await evaluateRetrying(chrome, () => document.querySelectorAll('.tab').length)) as number
     await page.keyboard.press('ArrowDown')
-    await page.keyboard.press('Control+Enter')
+    await page.keyboard.press('ControlOrMeta+Enter')
     expect(await waitFor(async () => (await evaluateRetrying(chrome, () => document.querySelectorAll('.tab').length)) === before + 1)).toBe(true)
     expect((await waitForTab(chrome, { title: 'Alpha page' })).ok).toBe(true)
     expect(mainOutput(app)).not.toContain('uncaught exception')

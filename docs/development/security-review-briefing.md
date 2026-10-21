@@ -62,7 +62,7 @@ decision.
 - **Synchronous file reads block the renderer.** ADR-0016; the blocking is the point.
 - **An uncaught main-process error logs and exits rather than showing a dialog.** Deliberate: a
   modal dialog keeps the process alive forever, which wrecked the developer's machine overnight.
-- **`hid`/USB and `subprocess` are cut from v0 entirely.** Ambient filesystem access
+- **`hid`/USB and `subprocess` are not built.** Ambient filesystem access
   (`~/.bitcoin` and similar) is refused by design: `fs` is rooted per app, and the picker is a
   picker, not a mount.
 

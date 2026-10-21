@@ -1,9 +1,10 @@
-# DPIA screening for product telemetry
+# DPIA screening for product telemetry and bug reports
 
 A screening, not a full impact assessment: it asks whether one is required under GDPR Article 35,
 using the nine criteria of the Article 29 Working Party guidelines WP248 (endorsed by the EDPB).
-Two or more met usually means a DPIA is needed. Scope: the telemetry described in
-[`notice.md`](notice.md) and [`record-of-processing.md`](record-of-processing.md).
+Two or more met usually means a DPIA is needed. Scope: the telemetry and the bug reports described
+in [`notice.md`](notice.md) and [`record-of-processing.md`](record-of-processing.md); the bug
+reports have [their own screening](#bug-reports) below.
 
 ## The criteria
 
@@ -13,7 +14,7 @@ Two or more met usually means a DPIA is needed. Scope: the telemetry described i
 | 2 | Automated decisions with legal or similar effect | No | No decision is made about anyone |
 | 3 | Systematic monitoring | Partly | Active and background seconds are counted continuously and sent daily and at each browser start and quit. It is measurement of use of one product, not of a public place or of what the person reads, and it is off until the person chooses to share |
 | 4 | Sensitive data or highly personal data | Partly | No special-category data is collected. A site name could suggest one by inference (a site about health, politics or religion that has a public Web3 or Web2.5 name). The named-site seconds of one install, linked to its identifier for at most two months, are the nearest thing to this |
-| 5 | Large scale | No | The aim is on the order of a hundred active users. Re-screen if that grows by an order of magnitude |
+| 5 | Large scale | No | A small population of active users. Re-screen if that grows by an order of magnitude |
 | 6 | Matching or combining datasets | No | The usage and site reports share one install identifier because they serve one telemetry purpose, have one controller and are both disclosed. WP248 criterion 6 is about datasets from different processing operations or different controllers; nothing is joined with other sources |
 | 7 | Vulnerable data subjects | No | Adult users of a technical product; no children or employees are targeted |
 | 8 | Innovative use or new technology | No | A counter and a hash. Not novel |
@@ -44,6 +45,27 @@ settles it. It is a close call on three points, and the record says so rather th
    outlive them. The rows are pseudonymous and the totals carry no identifier; this is why a
    country with very few installs is a reason to re-screen.
 
+## Bug reports
+
+| # | Criterion | Met? | Why |
+|---|---|---|---|
+| 1 | Evaluation or scoring | No | A report describes a fault of the browser, not the person |
+| 2 | Automated decisions | No | None |
+| 3 | Systematic monitoring | No | Nothing is collected unless the person writes a report and presses Send, once per report |
+| 4 | Sensitive or highly personal data | Partly | Nothing sensitive is asked for, but the description is free text, a log line or the page address can name a site, and a crash dump is a memory snapshot that can hold fragments of what was open or typed. The address and the dump are unticked by default, and every report is deleted after 90 days |
+| 5 | Large scale | No | A few reports from a small population of active users |
+| 6 | Matching or combining datasets | No | A report carries a random identifier and is not linked to telemetry or to anything else |
+| 7 | Vulnerable data subjects | No | As for telemetry |
+| 8 | Innovative use or new technology | Partly | A maintainer may give a report to an AI coding assistant (Claude, by Anthropic, in the United States) to find the cause. That is a new tool, though it is used only to read a report the person chose to send, and the person is told before sending |
+| 9 | Prevents exercising a right or using a service | No | Not sending changes nothing in the browser |
+
+**A full DPIA is not required for bug reports as designed**: criteria 4 and 8 are partly met,
+but each report is a separate act of the person with the content in front of them, the volume is
+small, the most revealing parts are off by default, and everything goes after 90 days. Two partly
+met criteria is the threshold WP248 names, so this result is *provisional* on the same legal
+review as the telemetry one, and on [`open-questions.md`](../open-questions.md) A408 (the
+processor terms for the AI assistant).
+
 ## Re-screen when
 
 - Site rows are kept past one month after their month closes.
@@ -53,6 +75,8 @@ settles it. It is a close call on three points, and the record says so rather th
 - The number of active users grows by an order of magnitude, or the first-run choice is replaced by a preselected
   option.
 - The server is moved, a processor is added, or an IP address is written anywhere.
+- A bug report starts to be sent without the person pressing Send, a crash dump is ticked by
+  default, reports are kept longer than 90 days, or reports are given to a second AI provider.
 - A national supervisory authority's list of processing that needs a DPIA is found to include this
   processing. That list has not been checked for each country; this is not settled here.
 

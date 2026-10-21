@@ -23,7 +23,7 @@ function urlFilterMatches(url: string, urlFilter: string, isUrlFilterCaseSensiti
 
 // Chrome's own #matching-algorithm test table, as ported into Firefox's
 // test_ext_dnr_urlFilter.js (test_chrome_parity, mined into this fixture --
-// see this directory's README §Design notes for how). Each case names the
+// see this directory's README section Design notes for how). Each case names the
 // urlFilter construct it targets (kBoundary = "|", kSubdomain = "||",
 // URL_PATTERN_TYPE_SUBSTRING = a plain substring, etc.) in Chrome's own
 // source comments, dropped here since the vectors speak for themselves.

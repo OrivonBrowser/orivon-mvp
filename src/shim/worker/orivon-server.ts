@@ -29,7 +29,8 @@ export type CallBody =
    */
   | { readonly spawnSync: unknown }
 
-export type CallRequest = CallBody & { readonly id: number, readonly sync?: true }
+/** `abandonable`: the Worker's call carried an AbortSignal, which cannot cross the port; a later `{ abandon: id }` stands for its abort (ADR-0071). */
+export type CallRequest = CallBody & { readonly id: number, readonly sync?: true, readonly abandonable?: true }
 
 /** Everything call() dispatches through target() -- CallRequest minus the spawnSync variant, which call() answers through runSpawnSync instead. */
 type OrivonCallRequest = Exclude<CallRequest, { readonly spawnSync: unknown }>
@@ -49,6 +50,7 @@ export type Request =
   | CallRequest
   | { readonly pull: number }
   | { readonly cancel: number }
+  | { readonly abandon: number }
   | { readonly syncBuffer: SharedArrayBuffer }
   | { readonly syncMore: true }
 
@@ -148,6 +150,8 @@ export function serveOrivon (port: MessagePort, orivon: object, runSpawnSync?: R
   const readers = new Map<number, ReadableStreamDefaultReader<unknown>>()
   /** Every spawnSync grandchild currently running on this server's behalf -- killed by dispose(), never otherwise (each entry removes itself once its own call finishes, win or lose). */
   const liveSpawnSync = new Set<() => void>()
+  /** The calls a Worker may still abandon, by call id. */
+  const abandoning = new Map<number, AbortController>()
   let replies: ReplyWriter | undefined
   let nextId = 1
 
@@ -256,7 +260,18 @@ export function serveOrivon (port: MessagePort, orivon: object, runSpawnSync?: R
       } else {
         const { fn, self } = target(request)
         if (typeof fn !== 'function') throw new TypeError(`orivon has no method ${'path' in request ? request.path.join('.') : request.method}`)
-        value = await (fn as (...args: unknown[]) => unknown).apply(self, [...request.args])
+        const args = [...request.args]
+        if (request.abandonable === true && 'path' in request && request.path[0] === 'net' && (request.path[1] === 'connect' || request.path[1] === 'connectSecure') &&
+          typeof args[0] === 'object' && args[0] !== null) {
+          const controller = new AbortController()
+          abandoning.set(request.id, controller)
+          args[0] = { ...args[0], signal: controller.signal }
+        }
+        try {
+          value = await (fn as (...args: unknown[]) => unknown).apply(self, args)
+        } finally {
+          abandoning.delete(request.id)
+        }
       }
       if (sync && !crossesSynchronously(value)) {
         release(value)
@@ -301,6 +316,7 @@ export function serveOrivon (port: MessagePort, orivon: object, runSpawnSync?: R
     const request = event.data
     if ('pull' in request) void pull(request.pull)
     else if ('cancel' in request) { void readers.get(request.cancel)?.cancel(); readers.delete(request.cancel) }
+    else if ('abandon' in request) abandoning.get(request.abandon)?.abort()
     else if ('syncBuffer' in request) replies = channelOf(request.syncBuffer)
     else if ('syncMore' in request) replies?.more()
     else void call(request)
@@ -316,6 +332,7 @@ export function serveOrivon (port: MessagePort, orivon: object, runSpawnSync?: R
       // ChildProcess is never exposed to the Worker that asked -- only the
       // wire result is): without this, a Worker killed mid-spawnSync leaves
       // it running forever on this side (finding 20).
+      for (const controller of abandoning.values()) controller.abort()
       for (const kill of liveSpawnSync) kill()
       liveSpawnSync.clear()
       const open = [...handles.values()]

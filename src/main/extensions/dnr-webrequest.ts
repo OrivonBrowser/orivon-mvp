@@ -10,6 +10,7 @@ import type {
   OnBeforeSendHeadersListenerDetails,
   OnHeadersReceivedListenerDetails,
   Session,
+  WebContents,
   WebFrameMain,
   WebRequestFilter,
 } from 'electron'
@@ -26,7 +27,7 @@ import type { DnrDecision, DnrModifyOps, DnrRequest } from './dnr/types.js'
 import { frameIdOf, initiatorOf, parentFrameIdOf, safeFrame } from './request-frames.js'
 import { hasAnyBadgeCountModeEnabled, recordMatches } from './dnr-match-log.js'
 import { hasFeedbackCapableExtension, onDnrActiveChange } from './extensions-dnr.js'
-import { isShellOwnUrl } from './web-request/visibility.js'
+import { isShellOwnUrl, isWebStoreUrl } from './web-request/visibility.js'
 
 /**
  * Strictly before `RUN_LAST` (the verifier's partition stamp,
@@ -44,12 +45,14 @@ const EXTENSION_ORDER = 1000
  * never as a narrower Electron-level filter here. */
 const DNR_FILTER: WebRequestFilter = { urls: ['<all_urls>'] }
 
-/** Never `chrome-extension:`, `orivon:` or `orivon-shell:`. The URLs a
- * `webRequest` listener actually sees for those schemes are an extension's
- * own resource loads and Orivon's own pages, neither of which another
- * extension's rules should touch. */
+/** Never `chrome-extension:`, `orivon:` or `orivon-shell:`, and never the web
+ * store. The URLs a `webRequest` listener actually sees for those schemes are
+ * an extension's own resource loads and Orivon's own pages, neither of which
+ * another extension's rules should touch; the store is hidden from `webRequest`
+ * listeners too (`./web-request/visibility.ts`), so a rule cannot reach it
+ * either. A request made BY a store page is left out in `toScopedRequest`. */
 function isInScopeUrl(url: string): boolean {
-  return !url.startsWith('chrome-extension:') && !isShellOwnUrl(url)
+  return !url.startsWith('chrome-extension:') && !isShellOwnUrl(url) && !isWebStoreUrl(url)
 }
 
 interface ScopedRequest {
@@ -57,8 +60,17 @@ interface ScopedRequest {
   readonly dnrRequest: DnrRequest
 }
 
+/** The page's current address, or '' when it cannot be read (a page being destroyed can throw). */
+function pageUrlOf(contents: Pick<WebContents, 'getURL' | 'isDestroyed'> | undefined): string {
+  try {
+    return contents === undefined || contents.isDestroyed() ? '' : contents.getURL()
+  } catch {
+    return ''
+  }
+}
+
 /**
- * `null` for anything out of scope for extension rules: no `webContents` at all
+ * `null` for anything out of scope for extension rules: a request made by the web store, no `webContents` at all
  * (Orivon's own main-process `net.fetch`, the verifier's own requests --
  * neither ever carries `webContentsId`), or a resource type this package's
  * `resource-types.ts` has no Chrome equivalent for (none today: Electron 44
@@ -69,6 +81,7 @@ export function toScopedRequest(details: {
   method: string
   resourceType: ElectronResourceType
   webContentsId?: number
+  webContents?: Pick<WebContents, 'getURL' | 'isDestroyed'> | undefined
   frame?: WebFrameMain | null
 }): ScopedRequest | null {
   if (details.webContentsId === undefined) {
@@ -80,6 +93,9 @@ export function toScopedRequest(details: {
   // use it for a navigation (`vendor/firefox-dnr/UPSTREAM.md` patch 15), so it
   // cannot widen what an extension may `redirect` or `modifyHeaders`.
   const initiator = initiatorOf(frame)
+  if ((initiator !== undefined && isWebStoreUrl(initiator)) || isWebStoreUrl(pageUrlOf(details.webContents))) {
+    return null
+  }
   const parentFrameId = frame === null ? undefined : parentFrameIdOf(frame)
   return {
     tabId: details.webContentsId,

@@ -21,4 +21,11 @@ describe('every tab\'s webPreferences', () => {
     expect(app.nodeIntegrationInSubFrames).toBeUndefined()
     expect(app.disableDialogs).toBeUndefined()
   })
+
+  it('turns on the media track lists for an app tab only', () => {
+    const app = tabWebPreferences('/preload/app.js', 'persist:x', ['--orivon-app-tab'])
+    expect(app.enableBlinkFeatures).toBe('AudioVideoTracks')
+    expect(prefs.enableBlinkFeatures).toBeUndefined()
+    expect(tabWebPreferences('/preload/app.js', 'persist:x', ['--other']).enableBlinkFeatures).toBeUndefined()
+  })
 })

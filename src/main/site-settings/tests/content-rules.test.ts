@@ -51,6 +51,45 @@ describe('content rules', () => {
     }
   })
 
+  describe('a blank or blob: document, which runs with the origin that made it', () => {
+    it('takes the site rule of the page that opened it', () => {
+      const { store, rules: r } = rules({ apps: ['https://app.example'] })
+      store.set(SITE, 'sound', 'block')
+      store.set(SITE, 'popups', 'block')
+      const opener = () => `${SITE}/cart`
+      expect(r.soundBlocked('about:blank', opener)).toBe(true)
+      expect(r.soundBlocked('', opener)).toBe(true)
+      expect(r.valueFor('popups', 'about:blank', opener)).toBe('block')
+      expect(r.soundBlocked('about:blank', () => 'https://other.example/')).toBe(false)
+      expect(r.valueFor('popups', 'about:blank', () => 'https://app.example/')).toBeUndefined()
+      expect(r.valueFor('popups', 'about:blank', () => 'orivon://settings/')).toBeUndefined()
+    })
+
+    it('takes the site named inside a blob: address, with or without an opener', () => {
+      const { store, rules: r } = rules()
+      store.set(SITE, 'sound', 'block')
+      expect(r.soundBlocked(`blob:${SITE}/0c6e-uuid`)).toBe(true)
+      expect(r.soundBlocked(`blob:${SITE}/0c6e-uuid`, () => undefined)).toBe(true)
+      expect(r.soundBlocked('blob:https://other.example/0c6e-uuid')).toBe(false)
+    })
+
+    it('gets the kind\'s default when no site can be told: no opener, a blank opener, an opaque blob', () => {
+      const { rules: r } = rules({ defaults: { sound: 'block' } })
+      expect(r.soundBlocked('about:blank', () => undefined)).toBe(true)
+      expect(r.soundBlocked('about:blank', () => 'about:blank')).toBe(true)
+      expect(r.soundBlocked('blob:null/0c6e-uuid')).toBe(true)
+      expect(rules().rules.soundBlocked('about:blank', () => undefined)).toBe(false)
+      expect(rules().rules.valueFor('popups', 'about:blank', () => undefined)).toBe('block')
+    })
+
+    it('leaves an ordinary page as it was', () => {
+      const { store, rules: r } = rules()
+      store.set(SITE, 'sound', 'block')
+      expect(r.soundBlocked(`${SITE}/a`, () => 'https://other.example/')).toBe(true)
+      expect(r.soundBlocked('https://other.example/', () => SITE)).toBe(false)
+    })
+  })
+
   it('gives pop-ups their own default', () => {
     const { rules: r } = rules()
     expect(r.valueFor('popups', `${SITE}/`)).toBe('block')

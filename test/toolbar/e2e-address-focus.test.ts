@@ -76,7 +76,7 @@ const selection = async (chrome: Page): Promise<{ start: number | null, end: num
 const addressActive = async (chrome: Page): Promise<boolean> =>
   await chrome.evaluate(() => document.activeElement?.id === 'address')
 
-/** The window holds the OS focus, with the keyboard in the page: the state a person is in when they press Ctrl+T. */
+/** The window holds the OS focus, with the keyboard in the page: the state a person is in when they press Mod+T. */
 async function focusPageInWindow (app: ElectronApplication, chrome: Page, url: string): Promise<void> {
   await visit(app, chrome, url)
   await runCommand(chrome, 'nav.focusAddress')

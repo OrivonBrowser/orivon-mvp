@@ -10,11 +10,12 @@
 // resolves, `manifest` is a plain captured value, never re-read from a
 // pending promise.
 
+import { createAppLinks, currentDefaults, type ElectronAppLinks } from './app-links.js'
 import { refuse } from './errors.js'
 import type { Manifest } from '../contracts/manifest.js'
 import type { Orivon } from '../contracts/capability-api.js'
 
-export interface ElectronApp {
+export interface ElectronApp extends ElectronAppLinks {
   whenReady(): Promise<void>
   isReady(): boolean
   getVersion(): string
@@ -40,10 +41,14 @@ export const USER_DATA_PATH = '/orivon/app'
 export function createApp (orivon: Pick<Orivon, 'app'>): ElectronApp {
   let manifest: Manifest | undefined
   let pending: Promise<void> | undefined
+  let defaults = new Set<string>()
 
   function whenReady (): Promise<void> {
     if (pending === undefined) {
-      pending = orivon.app.manifest().then((result) => { manifest = result })
+      pending = orivon.app.manifest().then(async (result) => {
+        defaults = await currentDefaults(orivon, result.capabilities.protocols ?? [])
+        manifest = result
+      })
     }
     return pending
   }
@@ -58,7 +63,14 @@ export function createApp (orivon: Pick<Orivon, 'app'>): ElectronApp {
     return manifest
   }
 
-  return {
+  const links = createAppLinks({
+    orivon,
+    declared: (api) => acquired(api).capabilities.protocols ?? [],
+    warn: (message, error) => { console.warn(message, error) }
+  }, () => defaults, () => api)
+
+  const api: ElectronApp = {
+    ...links,
     whenReady,
     isReady: () => manifest !== undefined,
     getVersion: () => acquired('app.getVersion').version,
@@ -71,4 +83,5 @@ export function createApp (orivon: Pick<Orivon, 'app'>): ElectronApp {
         'ambient-filesystem row compatibility-matrix.md Table 3 excludes by design.')
     }
   }
+  return api
 }

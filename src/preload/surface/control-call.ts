@@ -20,12 +20,18 @@ export const TIMEOUT_MS = {
   id: 5_000,
   /**
    * net.connect / net.close / net.setNoDelay / net.setKeepAlive. Must
-   * exceed node-adapters.ts's own DIAL_TIMEOUT_MS (30_000) -- otherwise a
+   * exceed node-adapters.ts's own DIAL_TIMEOUT_MS (30_000) and the dial
+   * budget of a route that declares one (the Nym tunnel's 110_000, main/route/nym-provider.ts) -- otherwise a
    * legitimately slow dial reports THIS timeout instead of the broker's
    * real 'timeout' answer, discarding the more specific error for a less
    * useful one.
    */
-  net: 35_000,
+  net: 115_000,
+  /**
+   * app.nextOpenUrl: ./open-url.ts's long poll. The shell ends each wait after 25 s (`OPEN_URL_POLL_MS`), so this
+   * budget is always the later of the two and the answer is the shell's own, null for "none yet".
+   */
+  openUrl: 30_000,
   /**
    * app.requestGrant: a native dialog awaiting a human decision, not I/O --
    * no natural bound exists, but contracts/ipc.ts's rule 2 requires one
@@ -109,6 +115,16 @@ async function raceTimeout<T> (promise: Promise<ResponseEnvelope<T>>, timeoutMs:
   })
 }
 
+/** Sends `net.cancel` for `requestId` when the page abandons it. Best effort: a cancel that fails leaves the dial to run to its own timeout. */
+function watchForAbandon (onAbandon: OnAbandon, requestId: string): void {
+  try {
+    onAbandon(() => {
+      const cancel: RequestEnvelope<unknown> = { id: `r${++nextRequestId}`, method: 'net.cancel', payload: { requestId }, timeoutMs: TIMEOUT_MS.metadata }
+      try { (ipcRenderer.invoke(CONTROL_CHANNEL, cancel) as Promise<unknown>).catch(() => {}) } catch { /* the call runs to its own timeout */ }
+    })
+  } catch { /* a page-side listener that throws must not fail the call */ }
+}
+
 // A plain counter, not crypto.randomUUID(): the id only has to correlate a
 // reply within this process's own ipcRenderer.invoke() call (which already
 // does that matching itself), never anything security-relevant -- and
@@ -119,9 +135,16 @@ async function raceTimeout<T> (promise: Promise<ResponseEnvelope<T>>, timeoutMs:
 // fixtures cannot reach.
 let nextRequestId = 0
 
+/**
+ * What a page hands a cancellable call: `listen` runs its callback when the page abandons the call, at most once. The
+ * broker then answers the pending request 'closed' (ADR-0071), so the cancel is a message, never a local rejection.
+ */
+export type OnAbandon = (listener: () => void) => void
+
 /** One CONTROL_CHANNEL round trip: builds the envelope, races it against `timeoutMs`, and throws the real `OrivonError` on any failure shape. Every `orivon.*` method, here and in ./net.ts alike, calls through here. */
-export async function call<TResult> (method: string, payload: unknown, timeoutMs: number): Promise<TResult> {
+export async function call<TResult> (method: string, payload: unknown, timeoutMs: number, onAbandon?: OnAbandon): Promise<TResult> {
   const envelope: RequestEnvelope<unknown> = { id: `r${++nextRequestId}`, method, payload, timeoutMs }
+  if (onAbandon !== undefined) watchForAbandon(onAbandon, envelope.id)
   let pending: Promise<ResponseEnvelope<TResult>>
   // A serialisation refusal may be thrown rather than rejected; both take the same path.
   try { pending = ipcRenderer.invoke(CONTROL_CHANNEL, envelope) as Promise<ResponseEnvelope<TResult>> } catch (error) { pending = Promise.reject(error) }

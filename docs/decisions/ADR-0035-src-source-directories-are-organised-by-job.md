@@ -55,7 +55,7 @@ Four of the five directories were flat, with only a shared filename prefix
 (`serve-reach-*`, `node-fs-*`, `websocket-route-*`) grouping their parts: 36 files in
 `src/loader/`, 32 in `src/preload/`, 59 in `src/shim/`. `src/broker/` had used job folders since
 ADR-0015, but 17 files had built up loose at its top level and `transport/` had grown from the
-nine files that ADR counted to 26 — past the split ADR-0015's own §Reversibility predicted.
+nine files that ADR counted to 26 — past the split ADR-0015's own section Reversibility predicted.
 `src/verifier-host/` was flat too, at 13 files. The problem is the one ADR-0015 and ADR-0023
 already named: a flat directory hides which files decide a question, which move bytes, and which
 are types, and a reader has no way to tell from the file list alone.

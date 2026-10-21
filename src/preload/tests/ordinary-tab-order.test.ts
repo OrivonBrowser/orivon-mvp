@@ -9,6 +9,7 @@ vi.mock('../expose-fetch-route.js', () => ({ exposeFetchRoute: () => { order.pus
 vi.mock('../expose-shim-globals.js', () => ({ exposeShimGlobals: () => { order.push('shim-globals') } }))
 vi.mock('../embed-event-relay.js', () => ({ installEmbedEventRelay: () => { order.push('embed-event-relay') } }))
 vi.mock('../display-capture.js', () => ({ installDisplayCapture: () => { order.push('display-capture') } }))
+vi.mock('../hid-announce.js', () => ({ installHidAnnounce: () => { order.push('hid-announce') } }))
 vi.mock('../page-visibility.js', () => ({ installPageVisibility: () => { order.push('page-visibility') } }))
 vi.mock('../manifest-hint.js', () => ({ installManifestHintWatcher: () => { order.push('manifest-hint') } }))
 
@@ -28,4 +29,8 @@ it('installs the children bridge after window.orivon and before the routed insta
 
 it('wraps the page\'s screen sharing for every ordinary tab', async () => {
   expect(order).toContain('display-capture')
+})
+
+it('listens for a device the person allowed in every ordinary tab', async () => {
+  expect(order).toContain('hid-announce')
 })

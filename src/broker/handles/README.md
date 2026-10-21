@@ -17,8 +17,8 @@ resource. Everything with a real socket or file descriptor behind it arrives as 
 ## The four properties this directory guarantees
 
 Each fails silently when it goes wrong. The specification and the reasoning are
-[`handle-contracts.md`](../../../docs/architecture/handle-contracts.md) §Common shape,
-§Revocation and §Limits.
+[`handle-contracts.md`](../../../docs/architecture/handle-contracts.md) section Common shape,
+section Revocation and section Limits.
 
 1. **Every operation re-checks ownership** (T11c). A handle id presented by another origin is
    rejected, never ignored.
@@ -44,6 +44,10 @@ connects at once treated `'limit'` as a hard error. T11b needs the queue bounded
 is bounded in length and in time, a waiting call runs nothing, and the queue is per origin, so
 one origin's queue never delays another's. A waiting call is registered with the handle or grant
 it needs, so a close or revoke cancels it like a running one.
+
+**An app can abandon a call of its own** (`HandleTable.run`'s `abandon` signal, [`abandon.ts`](abandon.ts), `ADR-0071`).
+The call rejects `'closed'` at once and its slot, or its place in the queue, is free whether or not the work notices:
+`run` stops waiting for the work, which is why an abandoned dial that ignores the abort still frees its slot.
 
 **Replacing a grant is not revoking it** ([`grant-replacement.ts`](grant-replacement.ts)). A
 wider `app.requestGrant`, or install consent after an update, replaces a capability's one live

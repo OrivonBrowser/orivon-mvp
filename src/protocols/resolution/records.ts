@@ -9,11 +9,13 @@
  */
 export type ContentPointer =
   | { readonly kind: 'ipfs', readonly cid: string }
+  /** Swarm content: the root chunk's address as a CIDv1 of codec swarm-manifest over keccak-256. */
+  | { readonly kind: 'swarm', readonly cid: string }
   /** An IPNS name that is a public key, as a libp2p-key CID string. Its record is signed. */
   | { readonly kind: 'ipns-key', readonly key: string }
   /** An IPNS name that is a DNS name: its last hop is a DNSLink TXT record, which DNS can forge. */
   | { readonly kind: 'dnslink', readonly domain: string }
-  /** Swarm, Arweave, an unknown codec: shown as unsupported, never guessed at. */
+  /** Arweave, an unknown codec: shown as unsupported, never guessed at. */
   | { readonly kind: 'unsupported', readonly protocol: string }
 
 /** How a record reached this machine. */
@@ -39,10 +41,13 @@ export type PointerStep =
   /** A signed IPNS record, its signature and validity checked, and never older than the highest sequence seen for its key. */
   | { readonly step: 'ipns-record', readonly key: string, readonly sequence: bigint, readonly target: string }
   | { readonly step: 'dnslink', readonly domain: string, readonly target: string }
+  /** A signed feed update, its signature checked, and never older than the highest index seen for its feed. `target` is the content's CID. */
+  | { readonly step: 'swarm-feed', readonly owner: string, readonly topic: string, readonly index: bigint, readonly target: string }
 
 /** The identifier a Web3 Score provider would assess for this content. */
 export interface ContentRoot {
-  readonly kind: 'ipfs'
+  readonly kind: 'ipfs' | 'swarm'
+  /** A CIDv1 in base32 whichever the network: for Swarm, the root chunk's address in the CID form of its reference. */
   readonly cid: string
 }
 
@@ -57,8 +62,23 @@ export type ResolutionFailure = 'invalid-name' | 'not-found' | 'unsupported' | '
 
 export class ResolutionError extends Error {
   override readonly name = 'ResolutionError'
-  constructor (readonly failure: ResolutionFailure, message: string) {
+  /**
+   * `sourceFault`: the source Orivon asked (a gateway, an IPNS source, an RPC provider) sent what failed its proof or its hash, and nothing
+   * better came back. That says the source is bad, not that the content is: an app's own bytes cannot fail a hash they were named by.
+   */
+  constructor (readonly failure: ResolutionFailure, message: string, readonly sourceFault = false) {
     super(message)
+  }
+}
+
+/**
+ * A source the person chose (their own node) could not serve, and public gateways could: the error page offers to load the site through
+ * them once, and nothing is sent to a gateway until the person says so. Always an `unavailable` failure.
+ */
+export class GatewaysOffered extends ResolutionError {
+  readonly offersGateways = true
+  constructor (message: string) {
+    super('unavailable', message)
   }
 }
 

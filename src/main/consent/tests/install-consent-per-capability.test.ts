@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { requestInstallConsent } from '../install-consent.js'
-import type { PerCapabilityConsentPrompt } from '../install-consent.js'
+import type { InstallConsentPrompt } from '../install-consent.js'
 import { APP, stubBroker } from '../../../broker/transport/tests/ipc.test-helpers.js'
 import type { BrokerCall } from '../../../broker/transport/tests/ipc.test-helpers.js'
 import { manifestWith, baseDeps, memoryLedgerStorage } from '../../../broker/tests/index.test-helpers.js'
@@ -35,24 +35,6 @@ function grantsOf (calls: BrokerCall[]): CapabilityKind[] {
 }
 
 describe('requestInstallConsent -- per-capability path (stubbed broker)', () => {
-  it('asks the per-capability prompt, not the all-or-nothing one, when the manifest declares per-capability and both are wired', async () => {
-    const calls: BrokerCall[] = []
-    const broker = stubBroker(calls, {
-      grants: async () => [],
-      declinedCapabilitiesFor: async () => undefined,
-      recordDeclinedConsent: async () => {},
-      grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
-    })
-    const manifest = perCapabilityManifest()
-    const consent = vi.fn(async () => true)
-    const perCapabilityConsent: PerCapabilityConsentPrompt = vi.fn(async (_o, _m, capabilities) => capabilities)
-
-    await requestInstallConsent(broker, consent, APP, manifest, perCapabilityConsent)
-
-    expect(perCapabilityConsent).toHaveBeenCalledOnce()
-    expect(consent).not.toHaveBeenCalled()
-  })
-
   it('grants exactly the accepted subset and records exactly the refused subset -- a refusal of one capability is never a refusal of the app', async () => {
     const calls: BrokerCall[] = []
     const broker = stubBroker(calls, {
@@ -63,10 +45,10 @@ describe('requestInstallConsent -- per-capability path (stubbed broker)', () => 
     })
     const manifest = perCapabilityManifest()
     // Accepts tcp.connect and id, refuses fs.
-    const perCapabilityConsent: PerCapabilityConsentPrompt = async (_o, _m, capabilities) =>
+    const perCapabilityConsent: InstallConsentPrompt = async (_o, _m, capabilities) =>
       capabilities.filter((c) => c !== 'fs')
 
-    await requestInstallConsent(broker, async () => true, APP, manifest, perCapabilityConsent)
+    await requestInstallConsent(broker, perCapabilityConsent, APP, manifest)
 
     expect(grantsOf(calls).sort()).toEqual(['id', 'tcp.connect'])
     expect(calls).toContainEqual({ method: 'recordDeclinedConsent', origin: APP, args: ['fs'] })
@@ -80,9 +62,9 @@ describe('requestInstallConsent -- per-capability path (stubbed broker)', () => 
       recordDeclinedConsent: async () => {}
     })
     const manifest = perCapabilityManifest()
-    const perCapabilityConsent: PerCapabilityConsentPrompt = async () => []
+    const perCapabilityConsent: InstallConsentPrompt = async () => []
 
-    await expect(requestInstallConsent(broker, async () => true, APP, manifest, perCapabilityConsent)).resolves.toBeUndefined()
+    await expect(requestInstallConsent(broker, perCapabilityConsent, APP, manifest)).resolves.toBe('declined')
 
     expect(calls.some((call) => call.method === 'grant')).toBe(false)
     expect(calls).toContainEqual({ method: 'recordDeclinedConsent', origin: APP, args: expect.arrayContaining(['tcp.connect', 'fs', 'id']) })
@@ -96,9 +78,9 @@ describe('requestInstallConsent -- per-capability path (stubbed broker)', () => 
       grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
     })
     const manifest = perCapabilityManifest()
-    const perCapabilityConsent: PerCapabilityConsentPrompt = async (_o, _m, capabilities) => capabilities
+    const perCapabilityConsent: InstallConsentPrompt = async (_o, _m, capabilities) => capabilities
 
-    await requestInstallConsent(broker, async () => true, APP, manifest, perCapabilityConsent)
+    await requestInstallConsent(broker, perCapabilityConsent, APP, manifest)
 
     expect(grantsOf(calls).sort()).toEqual(['fs', 'id', 'tcp.connect'])
     expect(calls.some((call) => call.method === 'recordDeclinedConsent')).toBe(false)
@@ -115,7 +97,7 @@ describe('requestInstallConsent -- per-capability path (stubbed broker)', () => 
     const manifest = perCapabilityManifest()
     const perCapabilityConsent = vi.fn(async (_o: string, _m: Manifest, capabilities: readonly CapabilityKind[]) => capabilities)
 
-    await requestInstallConsent(broker, async () => true, APP, manifest, perCapabilityConsent)
+    await requestInstallConsent(broker, perCapabilityConsent, APP, manifest)
 
     expect(perCapabilityConsent).toHaveBeenCalledWith(APP, manifest, expect.arrayContaining(['fs', 'id']))
     const [, , askedCapabilities] = perCapabilityConsent.mock.calls[0] as [string, Manifest, readonly CapabilityKind[]]
@@ -136,9 +118,9 @@ describe('requestInstallConsent -- per-capability path (stubbed broker)', () => 
     // Declares only fs as per-capability, but the (misbehaving) prompt
     // claims tcp.connect was accepted too -- something it was never handed.
     const manifest: Manifest = { ...manifestWith({ fs: { quotaBytes: 1024 } }), consentGranularity: 'per-capability' }
-    const perCapabilityConsent: PerCapabilityConsentPrompt = async () => ['fs', 'tcp.connect']
+    const perCapabilityConsent: InstallConsentPrompt = async () => ['fs', 'tcp.connect']
 
-    await requestInstallConsent(broker, async () => true, APP, manifest, perCapabilityConsent)
+    await requestInstallConsent(broker, perCapabilityConsent, APP, manifest)
 
     expect(grantsOf(calls)).toEqual(['fs'])
   })
@@ -147,30 +129,14 @@ describe('requestInstallConsent -- per-capability path (stubbed broker)', () => 
     const calls: BrokerCall[] = []
     const broker = stubBroker(calls, { grants: async () => [], declinedCapabilitiesFor: async () => undefined })
     const manifest = perCapabilityManifest()
-    const perCapabilityConsent: PerCapabilityConsentPrompt = async () => { throw new Error('dialog failed to open') }
+    const perCapabilityConsent: InstallConsentPrompt = async () => { throw new Error('dialog failed to open') }
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    await expect(requestInstallConsent(broker, async () => true, APP, manifest, perCapabilityConsent)).resolves.toBeUndefined()
+    await expect(requestInstallConsent(broker, perCapabilityConsent, APP, manifest)).resolves.toBe('left')
     consoleError.mockRestore()
 
     expect(calls.some((call) => call.method === 'grant')).toBe(false)
     expect(calls.some((call) => call.method === 'recordDeclinedConsent')).toBe(false)
-  })
-
-  it('falls back to the all-or-nothing prompt when the manifest declares per-capability but no per-capability prompt is wired', async () => {
-    const calls: BrokerCall[] = []
-    const broker = stubBroker(calls, {
-      grants: async () => [],
-      declinedCapabilitiesFor: async () => undefined,
-      clearDeclinedConsent: async () => {},
-      grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
-    })
-    const manifest = perCapabilityManifest()
-    const consent = vi.fn(async () => true)
-
-    await requestInstallConsent(broker, consent, APP, manifest)
-
-    expect(consent).toHaveBeenCalledOnce()
   })
 })
 
@@ -181,15 +147,15 @@ describe('requestInstallConsent -- per-capability path (real broker, across a re
 
     const firstRun = createBroker(baseDeps({ ledgerStorage: storage }))
     await firstRun.registerApp(APP, manifest)
-    const firstChoice: PerCapabilityConsentPrompt = async (_o, _m, capabilities) => capabilities.filter((c) => c !== 'fs')
-    await requestInstallConsent(firstRun, async () => true, APP, manifest, firstChoice)
+    const firstChoice: InstallConsentPrompt = async (_o, _m, capabilities) => capabilities.filter((c) => c !== 'fs')
+    await requestInstallConsent(firstRun, firstChoice, APP, manifest)
     expect((await firstRun.app.grants(APP)).map((g) => g.capability).sort()).toEqual(['id', 'tcp.connect'])
 
     // A fresh process, same persisted ledger -- the real "once, ever" test.
     const secondRun = createBroker(baseDeps({ ledgerStorage: storage }))
     await secondRun.registerApp(APP, manifest)
     const secondChoice = vi.fn(async (_o: string, _m: Manifest, capabilities: readonly CapabilityKind[]) => capabilities)
-    await requestInstallConsent(secondRun, async () => true, APP, manifest, secondChoice)
+    await requestInstallConsent(secondRun, secondChoice, APP, manifest)
 
     // Nothing outstanding -- tcp.connect/id are held, fs was declined --
     // so the prompt is never even shown again.
@@ -204,13 +170,13 @@ describe('requestInstallConsent -- per-capability path (real broker, across a re
 
     const firstRun = createBroker(baseDeps({ ledgerStorage: storage }))
     await firstRun.registerApp(APP, narrow)
-    const firstChoice: PerCapabilityConsentPrompt = async (_o, _m, capabilities) => capabilities.filter((c) => c !== 'fs')
-    await requestInstallConsent(firstRun, async () => true, APP, narrow, firstChoice)
+    const firstChoice: InstallConsentPrompt = async (_o, _m, capabilities) => capabilities.filter((c) => c !== 'fs')
+    await requestInstallConsent(firstRun, firstChoice, APP, narrow)
 
     const secondRun = createBroker(baseDeps({ ledgerStorage: storage }))
     await secondRun.registerApp(APP, wide)
     const secondChoice = vi.fn(async (_o: string, _m: Manifest, capabilities: readonly CapabilityKind[]) => capabilities)
-    await requestInstallConsent(secondRun, async () => true, APP, wide, secondChoice)
+    await requestInstallConsent(secondRun, secondChoice, APP, wide)
 
     expect(secondChoice).toHaveBeenCalledWith(APP, wide, ['id'])
     expect((await secondRun.app.grants(APP)).map((g) => g.capability).sort()).toEqual(['id', 'tcp.connect'])

@@ -77,6 +77,9 @@ const last = (): FakeWebContents => {
 
 afterEach(() => { views.length = 0 })
 
+/** Lets a blur's close run: it waits for the native call that blurred the popup to return. */
+const afterNativeCall = async (): Promise<void> => { await new Promise((resolve) => { setImmediate(resolve) }) }
+
 describe('putting a popup into the window', () => {
   it('makes the view visible when it is added, and again when it is restacked', () => {
     const { popover } = setup()
@@ -95,10 +98,21 @@ describe('putting a popup into the window', () => {
 })
 
 describe('a toolbar icon\'s toggle while a popup it did not open is showing or just closed', () => {
-  it('opens the other page at once when the blur already closed the popup', () => {
+  it('closes on a blur only after the call that blurred it has returned', async () => {
+    const { popover, attached } = setup()
+    popover.toggle(ANCHOR, [], 'main')
+    last().handlers.get('blur')?.()
+    // Still in the window inside the blur: Chromium blurs from within a native resize, which removing the view would end.
+    expect(attached()).toBe(1)
+    await afterNativeCall()
+    expect(attached()).toBe(0)
+  })
+
+  it('opens the other page at once when the blur already closed the popup', async () => {
     const { popover, attached } = setup()
     popover.toggle(ANCHOR, ['--page=web3'], 'web3')
     last().handlers.get('blur')?.()
+    await afterNativeCall()
     expect(attached()).toBe(0)
     popover.toggle(ANCHOR, ['--page=main'], 'main')
     expect(views).toHaveLength(2)
@@ -273,11 +287,12 @@ describe('focus when the popup that holds the keyboard is gone', () => {
     expect(tab.focus).toHaveBeenCalledTimes(1)
   })
 
-  it('leaves focus alone when a click elsewhere had already closed the popup', () => {
+  it('leaves focus alone when a click elsewhere had already closed the popup', async () => {
     const tab = { isDestroyed: () => false, focus: vi.fn() }
     const { popover } = setup(() => tab)
     popover.toggle(ANCHOR, [], 'main')
     last().handlers.get('blur')?.()
+    await afterNativeCall()
     last().destroy()
     last().handlers.get('destroyed')?.()
     expect(tab.focus).not.toHaveBeenCalled()

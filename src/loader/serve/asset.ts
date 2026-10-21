@@ -8,6 +8,7 @@ import type { Pattern } from '../../contracts/index.js'
 import { leafOf } from '../leaf-hash.js'
 import { contentTypeFor } from './content-type.js'
 import { cspHeaderValue, ISOLATION_HEADERS } from './csp.js'
+import type { CspOptions } from './csp.js'
 import { parseRange } from './range.js'
 import type { LoaderStorage, OpenedAsset } from '../cache/storage.js'
 
@@ -107,6 +108,39 @@ function bodyOf (file: ServableFile, start: number, end: number): ReadableStream
 }
 
 /**
+ * The answer to a request the app's own loader redirects (`/` to an entry in a subdirectory). It carries the headers
+ * the destination's own response would, from the same `policyHeaders` and `contentTypeFor`: on a session with any
+ * web-request listener, which is every session of the product, Electron hands the page the redirect's headers
+ * together with the destination's body, and the destination's own are dropped. Without them the document would run
+ * with no served CSP, no nosniff and no isolation.
+ */
+export function redirectResponse (
+  location: string,
+  connectPatterns: readonly Pattern[],
+  securePatterns: readonly Pattern[],
+  crossOriginIsolated = false,
+  liveCsp: Pick<CspOptions, 'ownListenerMedia' | 'appFiles'> = {}
+): Response {
+  const headers = { 'content-type': contentTypeFor(location), ...policyHeaders(connectPatterns, securePatterns, crossOriginIsolated, liveCsp), location }
+  return new Response(null, { status: 302, headers })
+}
+
+/** The headers every served app response carries, whether its bytes come off disk or from the verifier: nosniff, the CSP the live grants call for and, for an app that asked for it, isolation. */
+export function policyHeaders (
+  connectPatterns: readonly Pattern[],
+  securePatterns: readonly Pattern[],
+  crossOriginIsolated = false,
+  liveCsp: Pick<CspOptions, 'ownListenerMedia' | 'appFiles'> = {}
+): Record<string, string> {
+  const policy: Record<string, string> = {
+    'content-security-policy': cspHeaderValue(connectPatterns, securePatterns, liveCsp),
+    'x-content-type-options': 'nosniff'
+  }
+  if (crossOriginIsolated) Object.assign(policy, ISOLATION_HEADERS)
+  return policy
+}
+
+/**
  * Turns `file` into the actual `Response`, honouring a `Range` request. A
  * HEAD request gets the headers alone.
  *
@@ -122,7 +156,8 @@ export function buildResponse (
   request: Request,
   connectPatterns: readonly Pattern[],
   securePatterns: readonly Pattern[],
-  crossOriginIsolated = false
+  crossOriginIsolated = false,
+  liveCsp: Pick<CspOptions, 'ownListenerMedia' | 'appFiles'> = {}
 ): Response {
   // nosniff on every pinned response -- content-type is derived from the
   // PATH's own extension (contentTypeFor), never sniffed from bytes in this
@@ -130,11 +165,7 @@ export function buildResponse (
   // pinned asset the manifest never declared as a script (an upload, an
   // image with a polyglot payload) execute as one if it is ever reached
   // through a context that runs what it loads.
-  const policy: Record<string, string> = {
-    'content-security-policy': cspHeaderValue(connectPatterns, securePatterns),
-    'x-content-type-options': 'nosniff'
-  }
-  if (crossOriginIsolated) Object.assign(policy, ISOLATION_HEADERS)
+  const policy = policyHeaders(connectPatterns, securePatterns, crossOriginIsolated, liveCsp)
   const total = file.byteLength
   const range = parseRange(request.headers.get('range'), total)
 

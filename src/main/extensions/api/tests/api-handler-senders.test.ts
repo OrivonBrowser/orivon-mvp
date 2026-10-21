@@ -36,6 +36,7 @@ function setup () {
   const run = vi.fn(() => 'answer')
   const ctx = createApiContext({
     host: { getRouter: () => router } as never,
+    hostFor: () => undefined,
     session,
     userDataPath: '/data',
     shell: () => undefined,

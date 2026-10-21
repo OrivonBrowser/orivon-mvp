@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { grantAll, grantNone } from '../../consent/tests/install-consent.test-helpers.js'
 import { installFromHint } from '../app-install.js'
 import type { AppInstallDeps } from '../app-install.js'
 import { APP, OTHER } from '../../../broker/transport/tests/ipc.test-helpers.js'
@@ -165,7 +166,14 @@ describe('installFromHint', () => {
       quietOffers: vi.fn(async () => ({ quiet: [] })),
       keepQuiet: vi.fn(async () => {}),
       manifestFor: vi.fn(async () => undefined),
-      manifestAt: vi.fn(async () => ({ kind: 'website' as const }))
+      manifestAt: vi.fn(async () => ({ kind: 'website' as const })),
+      readManifest: vi.fn(async () => ({ kind: 'website' as const })),
+      fetchForInstall: vi.fn(async () => ({ ok: false as const, reason: 'unused' })),
+      readDeclaration: vi.fn(async () => ({ kind: 'none' as const })),
+      serveLive: vi.fn(async () => false),
+      endLive: vi.fn(async () => {}),
+      rememberConsent: vi.fn(async () => {}),
+      pendingConsents: vi.fn(async () => [])
     }
     const deps: AppInstallDeps = { broker, loader }
 
@@ -192,7 +200,7 @@ describe('installFromHint', () => {
   // criterion verbatim.
   describe('install-time consent (S4-4)', () => {
     it('never invokes consent for a manifest declaring no capabilities', async () => {
-      const consent = vi.fn(async () => true)
+      const consent = vi.fn(grantAll)
       const broker = fakeBroker()
       const loader = fakeLoader(installedResult(manifestWith()))
 
@@ -203,7 +211,7 @@ describe('installFromHint', () => {
 
     it('a first visit asks once and grants what was accepted', async () => {
       const calls: BrokerCall[] = []
-      const consent = vi.fn(async () => true)
+      const consent = vi.fn(grantAll)
       const manifest = manifestWithCapabilities()
       const broker = fakeBroker({ grants: [] }, calls)
       const loader = fakeLoader(installedResult(manifest))
@@ -211,13 +219,12 @@ describe('installFromHint', () => {
       const result = await installFromHint({ broker, loader, consent }, APP, APP)
 
       expect(result.outcome).toBe('installed')
-      // Nothing held -- the fourth argument (A170) is an empty list.
-      expect(consent).toHaveBeenCalledExactlyOnceWith(APP, manifest, ['tcp.connect'], [])
+      expect(consent).toHaveBeenCalledExactlyOnceWith(APP, manifest, ['tcp.connect'])
       expect(calls).toContainEqual({ method: 'grant', origin: APP, args: { capability: 'tcp.connect', patterns: ['api.example.com:443'] } })
     })
 
     it('a second visit -- the origin already holding the grant -- is silent', async () => {
-      const consent = vi.fn(async () => true)
+      const consent = vi.fn(grantAll)
       const manifest = manifestWithCapabilities()
       const broker = fakeBroker({ grants: [grant()] })
       const loader = fakeLoader(installedResult(manifest))
@@ -229,7 +236,7 @@ describe('installFromHint', () => {
 
     it('a declined dialog leaves the app installed with every capability denied', async () => {
       const calls: BrokerCall[] = []
-      const consent = vi.fn(async () => false)
+      const consent = vi.fn(grantNone)
       const manifest = manifestWithCapabilities()
       const broker = fakeBroker({ grants: [] }, calls)
       const loader = fakeLoader(installedResult(manifest))
@@ -242,7 +249,7 @@ describe('installFromHint', () => {
     })
 
     it('still runs the consent step when registerApp itself rejected (F16\'s own case)', async () => {
-      const consent = vi.fn(async () => true)
+      const consent = vi.fn(grantAll)
       const manifest = manifestWithCapabilities()
       const registerApp = vi.fn(async () => { throw new Error('ENOSPC') })
       const broker = fakeBroker({ registerApp, grants: [] })
@@ -256,7 +263,7 @@ describe('installFromHint', () => {
     })
 
     it('does not invoke consent for any non-installed outcome', async () => {
-      const consent = vi.fn(async () => true)
+      const consent = vi.fn(grantAll)
       const broker = fakeBroker()
       const loader = fakeLoader({ outcome: 'rejected', reason: 'malformed manifest' })
 

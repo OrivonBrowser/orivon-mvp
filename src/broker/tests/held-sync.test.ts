@@ -28,3 +28,17 @@ describe('Broker.app.heldSync', () => {
     expect(broker.app.heldSync('not a url', 'media.camera')).toBe(false)
   })
 })
+
+describe('Broker.app.grantedPatternsSync', () => {
+  it('names the patterns a kind was granted over, and nothing once it is revoked or never granted', async () => {
+    const broker = createBroker(baseDeps())
+    broker.registerApp(APP, manifestWith({ devices: { hid: [{ vendorId: 0x2c97 }] } }))
+    expect(broker.app.grantedPatternsSync(APP, 'devices.hid')).toBeUndefined()
+    const grant = await broker.grant(APP, 'devices.hid', ['vendor=2c97'])
+    expect(broker.app.grantedPatternsSync(APP, 'devices.hid')).toEqual(['vendor=2c97'])
+    expect(broker.app.grantedPatternsSync(APP, 'media.camera')).toBeUndefined()
+    await broker.revoke(APP, grant.id)
+    expect(broker.app.grantedPatternsSync(APP, 'devices.hid')).toBeUndefined()
+    expect(broker.app.grantedPatternsSync('not a url', 'devices.hid')).toBeUndefined()
+  })
+})

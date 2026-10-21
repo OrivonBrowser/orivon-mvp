@@ -10,10 +10,10 @@ import type { WebFetch } from '../egress.js'
 import { heliosError } from './helios-errors.js'
 import { failoverRpc } from './rpc-failover.js'
 import { BLOCK_ROOT_PATTERN } from '../protocol.js'
-import type { FromHost, LightClientConfig, LightClientState } from '../protocol.js'
+import type { FromHost, LightClientConfig, LightClientState, TunnelRoute } from '../protocol.js'
 import type { LightClient } from '../service.js'
 
-/** How long a `.eth` load waits for the first sync before "cannot verify yet". */
+/** How long a `.eth` load waits for the first sync before "cannot verify yet", with no tunnel (pace.ts holds the tunnel's). */
 export const SYNC_WAIT_MS = 8_000
 const SYNC_TIMEOUT_MS = 5 * 60_000
 const FIRST_RETRY_MS = 5_000
@@ -61,25 +61,71 @@ function installTimerScope (): void {
   Object.defineProperty(globalThis, 'WorkerGlobalScope', { value: scope, configurable: true, writable: true })
 }
 
-export function startHeliosLightClient (config: LightClientConfig, fetch: WebFetch, report: (message: FromHost) => void): LightClient {
-  if (!BLOCK_ROOT_PATTERN.test(config.checkpoint)) throw new Error(`not a checkpoint: ${config.checkpoint}`)
-  const primary = config.executionRpcs[0]
-  if (primary === undefined) throw new Error('no execution RPC configured')
-  installTimerScope()
+/** What Helios is told to call the two servers, and the server each name stands for. */
+interface Lane {
+  readonly execution: string
+  readonly consensus: string
+  /** Where a request under `consensus` really goes. */
+  readonly realConsensus: string
+  /** The execution RPC, tried endpoint by endpoint. */
+  readonly viaExecution: WebFetch
+  readonly fetch: WebFetch
+}
+
+/** `globalThis.fetch` once Helios's requests are told apart by the server they name: one lane per light client. */
+interface Dispatcher {
+  (input: string | URL | Request, init?: RequestInit): Promise<Response>
+  lanes: Lane[]
+}
+
+/**
+ * The names a client that runs for the websites of a tunnel's profile gives Helios for its two servers. They resolve nowhere:
+ * the dispatcher below maps them back to the real servers and sends the request on that client's own fetch, so one process
+ * can run a client for each route, though Helios reaches the network only through a global.
+ */
+const tunnelNames = (route: TunnelRoute): { readonly execution: string, readonly consensus: string } => ({ execution: `https://${route}-execution.orivon.invalid`, consensus: `https://${route}-consensus.orivon.invalid` })
+
+function dispatcher (): Dispatcher {
+  const existing = globalThis.fetch as Partial<Dispatcher>
+  if (existing.lanes !== undefined) return existing as Dispatcher
   const nodeFetch = globalThis.fetch
-  const execution = failoverRpc(config.executionRpcs, fetch)
-  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+  const lanes: Lane[] = []
+  const dispatch = (async (input: string | URL | Request, init?: RequestInit) => {
     // Helios loads its own WASM from a data: URL through fetch; that never touches the network.
     const request = new Request(input, init)
     if (request.url.startsWith('data:application/wasm')) return await nodeFetch(request)
     // Its RPC calls arrive as Request objects: method, headers and body live on the Request, not in init.
     const body = request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.arrayBuffer()
     const forwarded: RequestInit = { method: request.method, headers: Object.fromEntries(request.headers), ...(body === undefined ? {} : { body }), signal: request.signal }
-    const response = request.url === primary || request.url === `${primary}/` ? await execution(request.url, forwarded) : await fetch(request.url, forwarded)
+    const execution = lanes.find((lane) => request.url === lane.execution || request.url === `${lane.execution}/`)
+    const consensus = lanes.find((lane) => request.url === lane.consensus || request.url.startsWith(`${lane.consensus}/`))
+    let response: Response
+    if (execution !== undefined) response = await execution.viaExecution(request.url, forwarded)
+    else if (consensus !== undefined) response = await consensus.fetch(`${consensus.realConsensus.replace(/\/$/, '')}${request.url.slice(consensus.consensus.length)}`, forwarded)
+    // Helios is only ever given the names of a lane, so any other address is refused rather than handed to a lane that might send it elsewhere.
+    else throw new Error(`the light client asked for ${new URL(request.url).origin}, which no client of this process uses`)
     // Electron's net.fetch leaves url empty; Helios parses it, and throws from inside its WASM, ending the process.
     if (response.url === '') Object.defineProperty(response, 'url', { value: request.url })
     return response
-  }) as typeof globalThis.fetch
+  }) as Dispatcher
+  dispatch.lanes = lanes
+  globalThis.fetch = dispatch as typeof globalThis.fetch
+  return dispatch
+}
+
+/** What pace.ts says about when the client starts and how long a request waits for its first sync. */
+export interface LightClientPace {
+  readonly syncWaitMs: number
+  readonly startAfterMs: number
+}
+
+export function startHeliosLightClient (config: LightClientConfig, fetch: WebFetch, report: (message: FromHost) => void, route: 'direct' | TunnelRoute = 'direct', pace: LightClientPace = { syncWaitMs: SYNC_WAIT_MS, startAfterMs: 0 }): LightClient {
+  if (!BLOCK_ROOT_PATTERN.test(config.checkpoint)) throw new Error(`not a checkpoint: ${config.checkpoint}`)
+  const primary = config.executionRpcs[0]
+  if (primary === undefined) throw new Error('no execution RPC configured')
+  installTimerScope()
+  const names = route === 'direct' ? { execution: primary, consensus: config.consensusRpc } : tunnelNames(route)
+  dispatcher().lanes.push({ ...names, realConsensus: config.consensusRpc, viaExecution: failoverRpc(config.executionRpcs, fetch), fetch })
   Object.defineProperty(globalThis, 'WebSocket', { value: undefined, configurable: true, writable: true })
 
   let state: LightClientState = { state: 'starting' }
@@ -176,7 +222,7 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
     setState({ state: 'syncing', since: Date.now() })
     try {
       const { createHeliosProvider } = await import('@a16z/helios')
-      const client = await createHeliosProvider({ executionRpc: primary, consensusRpc: config.consensusRpc, checkpoint: config.checkpoint, network: 'mainnet', dbType: 'config' }, 'ethereum') as unknown as Helios
+      const client = await createHeliosProvider({ executionRpc: names.execution, consensusRpc: names.consensus, checkpoint: config.checkpoint, network: 'mainnet', dbType: 'config' }, 'ethereum') as unknown as Helios
       helios = client
       await withTimeout(client.waitSynced(), SYNC_TIMEOUT_MS, 'syncing')
       await refreshHead(client)
@@ -191,14 +237,22 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
       setTimeout(() => { void run(attempt + 1) }, delay).unref()
     }
   }
-  void run(0)
+  let begun = false
+  const begin = (): void => {
+    if (begun) return
+    begun = true
+    void run(0)
+  }
+  if (pace.startAfterMs <= 0) begin()
+  else setTimeout(begin, pace.startAfterMs).unref()
 
   return {
     status: () => state,
     provider: {
       request: async (args) => {
+        begin()
         // A failed client retries on its own schedule, so waiting here would only delay the answer.
-        if (state.state === 'starting' || state.state === 'syncing') await withTimeout(synced, SYNC_WAIT_MS, 'syncing').catch(() => {})
+        if (state.state === 'starting' || state.state === 'syncing') await withTimeout(synced, pace.syncWaitMs, 'syncing').catch(() => {})
         const client = helios
         const now = state
         if (client === undefined || now.state !== 'synced') throw new ResolutionError('not-synced', notSyncedReason(now))

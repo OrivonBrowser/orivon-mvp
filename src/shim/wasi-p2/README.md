@@ -93,3 +93,16 @@ mio and tokio socket is; wasmtime never answers it. The streams read ahead of th
 wildcard host only as `*:*`: a program with its own DNS resolver names it, as `1.1.1.1:53`. The
 broker drops a refused datagram without an error (A87), so the program sees only a query that
 never gets an answer (A304).
+
+**`poll` leaves one reaction on a pending wait, however often it is called.** A program's event
+loop polls every socket it holds each time anything wakes it. Waiting on each pollable's own
+promise per call (`Promise.race`) left one reaction on the promise of every socket that stayed
+quiet, and a busy program holding a hundred sockets grew its heap by
+about 35 MB a second. `Pollable.subscribe` (`io.ts`) arms the underlying wait once and fans a wake
+out to the polls currently waiting; a poll withdraws from the pollables that did not wake it.
+
+**A dropped TCP socket releases its read side, but only after what the program wrote has landed.** A program
+that writes and lets the socket go never reads it to its end, so its slot in the broker stayed taken. Dropping
+closes the writer, then cancels the reader once the peer has ended its side or `dropGraceMs` (five seconds) has
+passed. Cancelling at once would end the whole connection, since cancelling a socket's readable destroys it, and
+drop what the writer had not yet landed (`tests/tcp-dispose-race.test.ts`).

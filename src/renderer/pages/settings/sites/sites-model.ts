@@ -29,14 +29,23 @@ export function badgeFor (answer: SiteSummary['kinds'][number]): Badge {
   return answer.value === 'allow' ? { text: `${name} allowed`, tone: 'ok' } : { text: `${name} blocked`, tone: 'danger' }
 }
 
+/** "2 devices allowed": the USB devices the site was given. */
+export function deviceBadge (count: number): Badge {
+  return { text: `${String(count)} ${count === 1 ? 'device' : 'devices'} allowed`, tone: 'ok' }
+}
+
+function allBadges (site: SiteSummary): Badge[] {
+  return [...(site.devices === undefined || site.devices === 0 ? [] : [deviceBadge(site.devices)]), ...site.kinds.map(badgeFor)]
+}
+
 export function badgesFor (site: SiteSummary): { readonly shown: readonly Badge[], readonly more: number } {
-  const all = site.kinds.map(badgeFor)
+  const all = allBadges(site)
   return { shown: all.slice(0, BADGE_LIMIT), more: Math.max(0, all.length - BADGE_LIMIT) }
 }
 
 /** What a screen reader hears for the whole row. */
 export function sentenceFor (site: SiteSummary): string {
-  return `${hostOf(site.origin)}: ${site.kinds.map((answer) => badgeFor(answer).text).join(', ')}`
+  return `${hostOf(site.origin)}: ${allBadges(site).map((badge) => badge.text).join(', ')}`
 }
 
 /** The sites every word of `query` appears in, by host, in the order given. */
