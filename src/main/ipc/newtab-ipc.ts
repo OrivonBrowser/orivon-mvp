@@ -19,6 +19,7 @@ import type { Bookmark, BookmarkStore } from '../browsing/bookmarks.js'
 import { NEWTAB_COMMAND_CHANNEL } from '../channels.js'
 import type { FeaturedState } from '../newtab/featured-state.js'
 import type { FeaturedStore } from '../newtab/featured-store.js'
+import type { YourApps, YourAppsAnswer } from '../newtab/your-apps.js'
 import type { WindowRegistry } from '../shell/window-registry.js'
 
 /** The dashboard's grid holds no more than this many tiles. */
@@ -30,6 +31,7 @@ export type FeaturedPrefs = Pick<FeaturedState, 'newcomerPin' | 'unpinned' | 'hi
 export type NewTabCommand =
   | { type: 'getBookmarks' }
   | { type: 'getFeatured' }
+  | { type: 'getYourApps' }
   | { type: 'hideFeatured'; id: string }
   | { type: 'unpinFeatured'; id: string }
   | { type: 'showHiddenFeatured' }
@@ -47,10 +49,10 @@ function isFromDashboard (event: IpcMainInvokeEvent, dashboardUrl: string): bool
 }
 
 /** Once per process: `ipcMain.handle` refuses a second registration of a channel. */
-export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry, bookmarks: BookmarkStore, featured: FeaturedStore): void {
+export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry, bookmarks: BookmarkStore, featured: FeaturedStore, yourApps: Pick<YourApps, 'list'>): void {
   ipcMain.handle(
     NEWTAB_COMMAND_CHANNEL,
-    async (event: IpcMainInvokeEvent, command: NewTabCommand): Promise<Bookmark[] | FeaturedPrefs | undefined> => {
+    async (event: IpcMainInvokeEvent, command: NewTabCommand): Promise<Bookmark[] | FeaturedPrefs | YourAppsAnswer | undefined> => {
       if (!isFromDashboard(event, dashboardUrl)) {
         // Not the dashboard's own frame -- refuse silently, same
         // non-committal response ipc.ts's isFromChrome() gives, rather
@@ -66,6 +68,8 @@ export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry
           return bookmarks.getAll().filter((bookmark) => !/^file:/i.test(bookmark.url)).slice(0, DASHBOARD_TILES)
         case 'getFeatured':
           return prefsOf(featured)
+        case 'getYourApps':
+          return await yourApps.list()
         case 'hideFeatured':
           if (typeof command.id === 'string') featured.hide(command.id)
           return prefsOf(featured)
