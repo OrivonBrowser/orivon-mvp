@@ -1,6 +1,8 @@
 ; Registers Orivon with Windows as a web browser, so it is listed under "Default apps" and the person can
 ; choose it for http and https. Windows keeps that choice per user and does not let a program set it:
 ; the app opens Settings (src/main/os/default-browser-runner.ts) and the person picks.
+; It also registers the `orivon` link scheme (`orivon:open?u=...`), which no other program claims, so it is
+; Orivon's from the install and is not a choice the person makes under "Default apps".
 ;
 ; The names below are what a pinned shortcut and a default-app choice key on: renaming one costs the person
 ; their choice, so they are fixed. The `--` in the URL command ends the switches, so a link can
@@ -9,6 +11,7 @@
 !define ORIVON_CLIENT_KEY "Software\Clients\StartMenuInternet\Orivon"
 !define ORIVON_URL_CLASS "Software\Classes\OrivonURL"
 !define ORIVON_DOC_CLASS "Software\Classes\OrivonHTML"
+!define ORIVON_LINK_CLASS "Software\Classes\orivon"
 
 ; Orivon opens .html, .htm, .xhtml, .svg and .pdf files. They are listed under Capabilities and under each
 ; extension's OpenWithProgids, which puts Orivon in "Open with" and in Settings > Default apps; the install never
@@ -44,6 +47,10 @@
   WriteRegStr SHCTX "${ORIVON_URL_CLASS}" "URL Protocol" ""
   WriteRegStr SHCTX "${ORIVON_URL_CLASS}\DefaultIcon" "" "$INSTDIR\${APP_EXECUTABLE_FILENAME},0"
   WriteRegStr SHCTX "${ORIVON_URL_CLASS}\shell\open\command" "" '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" -- "%1"'
+  WriteRegStr SHCTX "${ORIVON_LINK_CLASS}" "" "URL:Orivon link"
+  WriteRegStr SHCTX "${ORIVON_LINK_CLASS}" "URL Protocol" ""
+  WriteRegStr SHCTX "${ORIVON_LINK_CLASS}\DefaultIcon" "" "$INSTDIR\${APP_EXECUTABLE_FILENAME},0"
+  WriteRegStr SHCTX "${ORIVON_LINK_CLASS}\shell\open\command" "" '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" -- "%1"'
   WriteRegStr SHCTX "${ORIVON_DOC_CLASS}" "" "Orivon document"
   WriteRegStr SHCTX "${ORIVON_DOC_CLASS}\DefaultIcon" "" "$INSTDIR\${APP_EXECUTABLE_FILENAME},0"
   WriteRegStr SHCTX "${ORIVON_DOC_CLASS}\shell\open\command" "" '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" -- "%1"'
@@ -65,4 +72,5 @@
   DeleteRegKey SHCTX "${ORIVON_CLIENT_KEY}"
   DeleteRegValue SHCTX "Software\RegisteredApplications" "Orivon"
   DeleteRegKey SHCTX "${ORIVON_URL_CLASS}"
+  DeleteRegKey SHCTX "${ORIVON_LINK_CLASS}"
 !macroend

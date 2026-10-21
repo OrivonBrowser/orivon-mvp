@@ -69,7 +69,8 @@ beforeAll(async () => {
     const chunks: Buffer[] = []
     req.on('data', (chunk: Buffer) => chunks.push(chunk))
     req.on('end', () => {
-      res.writeHead(200, { 'Content-Type': 'application/json' })
+      // A WebDAV method answers 207 Multi-Status, as a WebDAV server does.
+      res.writeHead(req.method === 'PROPFIND' ? 207 : 200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({
         method: req.method,
         headers: req.headers,
@@ -91,7 +92,7 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-it('[app:routed-fetch-reaches-granted-hosts] a real page\'s fetch() reaches a granted host with an app-set Origin and no ambient credentials, ' +
+it('[app:routed-fetch-reaches-granted-hosts] [app:routed-fetch-sends-webdav-methods] a real page\'s fetch() reaches a granted host with an app-set Origin and no ambient credentials, ' +
    'and refuses an ungranted host with no prompt', async () => {
   await runPhase('fetch routing', async (check) => {
     const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
@@ -162,6 +163,28 @@ it('[app:routed-fetch-reaches-granted-hosts] a real page\'s fetch() reaches a gr
         return json.headers?.cookie
       })
       check('an app-supplied Cookie header is sent verbatim, unlike an ordinary page\'s fetch', withCookie === 'session=app-managed', String(withCookie))
+
+      // (b2) A method outside the fetch spec's usual six reaches the server whole: WebDAV clients send PROPFIND with
+      // a Depth header and an XML body, and read the 207 that answers.
+      const propfind = await asPage(view, setFixtureAsPageScript, AS_PAGE_SCRIPT_FULL_URL, async () => {
+        try {
+          const response = await fetch('http://127.0.0.1:8879/dav/', {
+            method: 'PROPFIND',
+            headers: { Depth: '1', 'Content-Type': 'application/xml' },
+            body: '<?xml version="1.0"?><propfind xmlns="DAV:"><allprop/></propfind>'
+          })
+          const json = await response.json() as { method: string, headers: Record<string, string>, body: string }
+          return { ok: true as const, status: response.status, ...json }
+        } catch (e) {
+          return { ok: false as const, message: (e as Error)?.message }
+        }
+      })
+      check('[app:routed-fetch-sends-webdav-methods] a PROPFIND reaches the server as PROPFIND and its 207 comes back', propfind.ok && propfind.status === 207 && propfind.method === 'PROPFIND', JSON.stringify(propfind))
+      check(
+        '[app:routed-fetch-sends-webdav-methods] with its Depth header and its XML body',
+        propfind.ok && propfind.headers?.depth === '1' && propfind.headers?.['content-type'] === 'application/xml' && propfind.body === '<?xml version="1.0"?><propfind xmlns="DAV:"><allprop/></propfind>',
+        JSON.stringify(propfind)
+      )
 
       // (c) THE UNGRANTED HOST: denied outright, no prompt, before any dial
       // -- nothing needs to be listening on DENIED_PORT for this to hold.

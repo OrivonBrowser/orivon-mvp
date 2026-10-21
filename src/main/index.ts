@@ -9,6 +9,12 @@ import { askQuestion } from './shell/question/ask-question.js'
 import { SHELL_PARTITION } from './shell/shell-session.js'
 import { attachExtensionShell } from './extensions/extension-host.js'
 import { startFirstRunFlavour } from './flavour/start-first-run-flavour.js'
+import { storedFlavourApp } from './flavour/first-run-flavour.js'
+import { parseFlavours } from './flavour/flavours.js'
+import flavourList from '../../resources/flavours.json'
+import { otherBrowserFound } from './import/import-host.js'
+import { startHereFacts } from './newtab/start-here-facts.js'
+import { readRegistry } from './extensions/registry-runner.js'
 import { registerNewTabIpc } from './ipc/newtab-ipc.js'
 import { applyThemeSetting } from './settings/settings-appliers.js'
 import { startInternalPages } from './pages/start-internal-pages.js'
@@ -29,9 +35,11 @@ import { disableDnsPrefetching } from './privacy/dns-prefetch-switch.js'
 import { readSettingBeforeReady } from './settings/settings-file.js'
 import { chromeUserAgent } from './shell/user-agent.js'
 import { planIntro } from './shell/intro-state.js'
+import { whatsNewDue } from './info/whats-new-runner.js'
 import { setTelemetryOn, telemetryRenewal, welcomeOffersTelemetry } from '../telemetry/runner.js'
 import { firstWindowOptions } from './shell/first-window.js'
 import { seedClosedStack } from './session-restore/restore.js'
+import { flavourOfCommandLine, offerFirstRunFlavour } from './launch/first-run-flavour.js'
 import { atStartup, readLaunchRequest } from './launch/launch-request.js'
 import type { LaunchRequest } from './launch/launch-request.js'
 import { handleOpenUrl } from './os/open-url.js'
@@ -161,8 +169,10 @@ export function boot (runtime: Runtime): void {
   if (madeDir !== undefined) process.once('exit', () => { if (!removeAfterExit(madeDir, process.pid)) removePrivateDir(madeDir) })
   if (!runtime.isPrivate) {
     app.on('second-instance', (_event, argv, _workingDirectory, data) => { queueLaunch(readLaunchRequest(data, argv)) })
+    // A flavour on an `orivon:` link that started this browser is a first-run hint; one that reaches a browser already open is not.
+    offerFirstRunFlavour(flavourOfCommandLine(process.argv, app.isPackaged))
     // macOS hands a clicked link to the running app as an event; it joins the same queue.
-    app.on('open-url', (event, url) => { handleOpenUrl(event, url, (urls) => { queueLaunch({ kind: 'open', urls }) }) })
+    app.on('open-url', (event, url) => { handleOpenUrl(event, url, (urls, flavour) => { if (!started) offerFirstRunFlavour(flavour); queueLaunch({ kind: 'open', urls }) }) })
     // A document the system hands to the browser (the file manager's Open with, a drop on the dock icon) opens as the command line's would.
     app.on('open-file', (event, path) => { handleOpenFile(event, path, (urls) => { queueLaunch({ kind: 'open', urls }) }) })
   }
@@ -267,7 +277,12 @@ export function boot (runtime: Runtime): void {
     runShellInstallers(app, shell, ctx, runtime)
     installDownloads(app, { windows: shell.windows, downloads: shell.downloads, defaultSession: session.defaultSession, discardHeldAtQuit: runtime.isPrivate })
     installDownloadsPeek(shell)
-    registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks, shell.featured)
+    registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks, shell.featured, shell.yourApps, startHereFacts({
+      isPrivate: runtime.isPrivate,
+      firstRunApp: () => storedFlavourApp(runtime.dir, parseFlavours(flavourList)),
+      otherBrowserFound,
+      extensionOn: (id) => readRegistry(app.getPath('userData')).some((entry) => entry.id === id && entry.enabled)
+    }))
     // Looks for a newer release once a day when the person has said it may, from the moment they say so; installs nothing.
     if (!runtime.isPrivate) {
       const stopUpdateChecks = scheduleUpdateChecks({
@@ -320,7 +335,12 @@ export function boot (runtime: Runtime): void {
         const firstWindow = createShellWindow(ctx, shell, { ...plan, intro, firstOfLaunch: true })
         afterWelcome.windowOpened(intro)
         const after = plan.after
-        afterFirst = after === undefined ? undefined : () => { after(firstWindow) }
+        // The first start of a newer version shows what it changed, once, in front of what the window opened on.
+        const news = await whatsNewDue(app.getPath('userData'))
+        afterFirst = after === undefined && !news ? undefined : () => {
+          after?.(firstWindow)
+          if (news) shell.windows.all().find((entry) => entry.window === firstWindow)?.tabs.openInternal('about', '/whats-new')
+        }
       } finally {
         markStarted()
       }

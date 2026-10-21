@@ -11,7 +11,12 @@
 //   node scripts/ai/pr-watch.mjs <pr> [--update <worktree>] [--stop <spec regex>] [--reruns 2] [--no-merge | --squash]
 //   exit 0 merged (or green, with --no-merge) · 1 a check failed · 2 BEHIND or DIRTY · 3 the head moved · 4 timeout
 import { execFileSync } from 'node:child_process'
+import { readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { isInvokedDirectly } from '../cli.mjs'
+import { LOG } from './renumber-decisions.mjs'
 
 const POLL_MS = 30_000
 const AFTER_RERUN_MS = 90_000
@@ -20,6 +25,7 @@ const MAX_ROUNDS = 6
 const PUSH_SEEN_MS = 120_000
 const PUSH_ATTEMPTS = 3
 const PUSH_RETRY_MS = 5000
+const RENUMBER = fileURLToPath(new URL('./renumber-decisions.mjs', import.meta.url))
 const FAILED = new Set(['FAILURE', 'CANCELLED', 'TIMED_OUT', 'STARTUP_FAILURE', 'ERROR'])
 /** Checks whose failure is rerun before it counts: e2e flakes, and hosted runners that were never acquired. */
 const RERUNNABLE = /^(e2e|e2e-ordinary|e2e-shard-\d+|live \(\w+\)|from source \(\w+\))$/
@@ -70,6 +76,9 @@ export function nextStep ({ checks: all, state, reruns, maxReruns }) {
   if (checks.length === 0 || checks.some((check) => check.conclusion === '')) return { step: 'wait' }
   const failed = checks.filter((check) => FAILED.has(check.conclusion)).map((check) => check.name)
   if (failed.length > 0) {
+    // Failures on a base main has moved past may be fixed there: merging main in comes before any verdict. DIRTY is
+    // that and a conflict, which updateBranch settles when it is the decision log's alone.
+    if (state === 'BEHIND' || state === 'DIRTY') return { step: 'stale', failed }
     return failed.every((name) => RERUNNABLE.test(name)) && reruns < maxReruns ? { step: 'rerun', failed } : { step: 'fail', failed }
   }
   if (state === 'CLEAN') return { step: 'merge' }
@@ -96,7 +105,7 @@ export function runIds (checks) {
 /**
  * Merges `origin/main` into the branch checked out in `worktree` and pushes it to the pull request's own branch,
  * `headRef`, whatever the local branch is called; returns the new head, or undefined when the merge conflicts, after
- * aborting it so the worktree is as it was.
+ * aborting it so the worktree is as it was. A conflict in the decision log alone is settled by renumber-decisions.mjs.
  */
 export function updateBranch (worktree, headRef) {
   const git = (...args) => execFileSync('git', ['-C', worktree, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
@@ -104,8 +113,21 @@ export function updateBranch (worktree, headRef) {
   try {
     git('merge', '-q', '--no-edit', 'origin/main')
   } catch {
-    try { git('merge', '--abort') } catch {}
-    return undefined
+    // Two branches that each add a decision row conflict on the log and nowhere else: renumber-decisions settles that.
+    const conflicted = git('diff', '--name-only', '--diff-filter=U').split('\n').filter((file) => file !== '')
+    let settled = false
+    if (conflicted.length === 1 && conflicted[0] === LOG) {
+      try {
+        execFileSync(process.execPath, [RENUMBER], { cwd: worktree, stdio: 'ignore' })
+        settled = !/^<{7} /m.test(readFileSync(join(worktree, LOG), 'utf8'))
+      } catch {}
+    }
+    if (!settled) {
+      try { git('merge', '--abort') } catch {}
+      return undefined
+    }
+    git('add', '-u')
+    git('commit', '-q', '--no-edit')
   }
   // A plain `push origin HEAD` goes to the local branch's name: renamed locally, it made a second remote branch and left the PR behind.
   // GitHub now and then rejects a good push ("fatal error in commit_refs"), so it is tried three times.
@@ -167,7 +189,8 @@ async function watch (pr, { maxReruns, merge, squash, stop, worktree }) {
     const pending = now.checks.filter((check) => check.conclusion === '').length
     const line = `${now.state}, ${String(pending)} of ${String(now.checks.length)} checks pending`
     if (line !== said) { console.log(line); said = line }
-    const next = nextStep({ checks: now.checks, state: now.state, reruns, maxReruns })
+    let next = nextStep({ checks: now.checks, state: now.state, reruns, maxReruns })
+    if (next.step === 'stale') next = worktree !== undefined && rounds < MAX_ROUNDS ? { step: 'stuck' } : { step: 'fail', failed: next.failed }
     if (next.step === 'rerun' || next.step === 'fail') {
       console.log(`failed: ${(next.failed ?? []).join(', ')}`)
       const specs = reportSpecs(now.checks)
@@ -191,7 +214,7 @@ async function watch (pr, { maxReruns, merge, squash, stop, worktree }) {
       console.log(`merged #${pr}${reruns > 0 ? ` after ${String(reruns)} rerun(s): name the flakes above in the PR` : ''}`)
       return 0
     } else if (next.step === 'stuck') {
-      if (worktree === undefined || now.state !== 'BEHIND' || rounds >= MAX_ROUNDS) {
+      if (worktree === undefined || (now.state !== 'BEHIND' && now.state !== 'DIRTY') || rounds >= MAX_ROUNDS) {
         console.log(`green but ${now.state}: merge main into the branch and push, then watch again`)
         return 2
       }
@@ -217,12 +240,26 @@ async function watch (pr, { maxReruns, merge, squash, stop, worktree }) {
   return 4
 }
 
+/** Whether a process with this pid exists: signal 0 checks without sending anything. */
+function alive (pid) {
+  try { process.kill(pid, 0); return true } catch (error) { return error.code === 'EPERM' }
+}
+
 if (isInvokedDirectly(import.meta.url)) {
   const pr = process.argv[2]
   if (pr === undefined || !/^\d+$/.test(pr)) {
     console.error('usage: node scripts/ai/pr-watch.mjs <pr> [--update <worktree>] [--stop <spec regex>] [--reruns 2] [--no-merge | --squash]')
     process.exit(2)
   }
+  // Two watchers on one PR both merge main into the same worktree, and one's `merge --abort` undoes the other's merge.
+  const lock = join(tmpdir(), `orivon-pr-watch-${pr}.lock`)
+  const holder = (() => { try { return Number(readFileSync(lock, 'utf8')) } catch { return 0 } })()
+  if (holder > 0 && holder !== process.pid && alive(holder)) {
+    console.error(`another pr-watch (pid ${String(holder)}) is watching #${pr}: stop it first`)
+    process.exit(2)
+  }
+  writeFileSync(lock, String(process.pid))
+  process.on('exit', () => { try { if (Number(readFileSync(lock, 'utf8')) === process.pid) rmSync(lock) } catch {} })
   process.exit(await watch(pr, {
     maxReruns: Number(arg('reruns') ?? 2),
     merge: !process.argv.includes('--no-merge'),

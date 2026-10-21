@@ -35,9 +35,9 @@ So:
 - **`deb`** is what makes "set Orivon as your default browser" reachable at all.
 - **`AppImage`** is for trying Orivon without installing anything. It still carries the same
   `.desktop` metadata internally (electron-builder generates one for every Linux target from the
-  shared `linux:` config), but nothing copies it into `~/.local/share/applications/` for you. A
-  first-run "install desktop entry" flow that does that from inside the running app is not built,
-  and nothing in this config makes it impossible.
+  shared `linux:` config), but nothing copies it into `~/.local/share/applications/` for you. The
+  one-line installer (the Linux one-line install paragraph of section Windows and macOS) does that from outside the app, without sudo; a
+  first-run "install desktop entry" flow inside the running app is not built.
 
 ## How to build
 
@@ -143,6 +143,11 @@ under "On IPFS", which the workflow writes, and in the `ipfs.json` attached to i
 - **Anyone can pin a release too.** The CID depends only on the files and the flags in
   `pin-releases.sh`, so `pin-releases.sh sync` (or `ipfs add` with those flags) on any Kubo node
   reproduces it. Changing the flags changes every CID from the next release on.
+- **An additional pinning service** can hold the same releases: `scripts/pin-extra.mjs` pins the CIDs
+  of the newest releases, and any `name=cid` lines in a file passed with `--extra`, on a service that
+  speaks the IPFS Pinning Service API. It reads `PINNING_ENDPOINT` and `PINNING_TOKEN` from the
+  environment and only adds what is missing; `--prune` also removes pins under the `orivon-` prefix
+  that are no longer listed.
 
 The Orivon node runs it from a systemd timer every 15 minutes:
 
@@ -502,6 +507,40 @@ the script and launches the result with the packaged smoke check; on pull reques
 it also installs the newest published release through it, which exercises the lookup, download and
 digest check.
 
+**Linux one-line install.** `scripts/install-linux.sh`, run as
+`curl -fsSL https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/install-linux.sh | bash`
+(or `bash -s <id>` with an app id), installs or updates the AppImage for the person alone, with no sudo, on
+x86_64. It reads the newest releases from GitHub's API the way the update check does: the highest version, pre-releases
+counted, drafts and tags that are not versions (`pre-releases`) skipped, and a release whose AppImage is not
+attached yet passed over. It downloads that `Orivon-<version>-x86_64.AppImage`, compares its SHA-256 with the digest
+GitHub reports for the asset, and refuses a mismatch or a missing digest before it installs anything. Then it
+writes, under the home folder only: the AppImage as `~/.local/lib/orivon/Orivon.AppImage`; a launcher beside it,
+`orivon`; `~/.local/share/applications/orivon.desktop` (the packaged entry's name, categories and the
+`x-scheme-handler/http` and `https` types, plus New Window and New Private Window, its `Exec` the launcher, so
+a desktop's default-browser choice lists Orivon and the entry works wherever the folder is); the icon in
+`~/.local/share/icons/hicolor/512x512/apps/`, unpacked from the AppImage (the repository's copy at the release's
+tag when that fails); and `~/.local/bin/orivon`, a link to the launcher, only when that folder is already on
+`PATH` and holds no other file of that name. The file is renamed into place, so a running Orivon keeps working
+and the next start is the new version; running the command again is the update.
+
+The launcher decides at every start whether the AppImage can mount itself: `/dev/fuse` readable and writable,
+`fusermount`, and `libfuse.so.2` from `ldconfig -p` or the usual library folders must all be there. When one is
+missing (Ubuntu 22.10 and later without `libfuse2`, a container) it starts the AppImage with
+`--appimage-extract-and-run`, which unpacks it to a temporary folder first (slower to start, nothing to
+install); installing `libfuse2` later needs no new install. The launcher is not the registration of Orivon as the
+default browser that a package makes at a person's click (the runtime half in section Making "set as default browser" possible): the desktop entry only lets a desktop list it.
+
+An app id (2 to 24 lower-case letters and digits, refused otherwise) is passed to the launch the installer makes
+as `--orivon-flavour=<id>`; `--no-launch` (or `ORIVON_NO_OPEN=1`) installs without starting Orivon, which is what
+a test uses, and then the id is not used. The environment variables are `ORIVON_REPO` (the repository to read
+releases from), `ORIVON_APPIMAGE` (a local AppImage, which skips the lookup, download and digest check) and
+`ORIVON_GITHUB_TOKEN` (lifts the unauthenticated rate limit). Reading GitHub's answer needs `python3` or `jq`;
+the script reads either and refuses to guess without one. The digest check guards against a broken or swapped
+download in transit, not against someone who controls the GitHub repository. The unit tests
+(`scripts/tests/install-linux.test.ts`) run it in a scratch home against a stand-in `curl`; the release workflow
+installs the AppImage it just built through it and starts the launcher with the packaged smoke check, and on pull
+requests and manual runs also installs the newest published release.
+
 **Signing later.** A Developer ID certificate (with notarization) and a Windows code-signing
 certificate would remove both warnings (the Store package has none to remove). electron-builder reads them from the environment
 (`CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`), so
@@ -523,7 +562,7 @@ dpkg -x release/*.deb /tmp/orivon-deb-inspect   # full contents
 cat /tmp/orivon-deb-inspect/usr/share/applications/*.desktop
 
 # Expect a line equivalent to:
-#   MimeType=text/html;application/xhtml+xml;image/svg+xml;application/pdf;x-scheme-handler/http;x-scheme-handler/https;
+#   MimeType=text/html;application/xhtml+xml;image/svg+xml;application/pdf;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/orivon;
 # and:
 #   Categories=Network;WebBrowser;
 #   Actions=new-window;new-private-window;
@@ -550,8 +589,8 @@ only the two scheme handlers is unmeasured (`docs/open-questions.md` A387).
 ## Making "set as default browser" possible: what's config and what isn't
 
 `electron-builder.yml` handles the packaging half: the top-level `protocols` key
-(`schemes: [http, https]`) is what electron-builder documents as producing the `.desktop` file's
-`MimeType=` line (`x-scheme-handler/http;x-scheme-handler/https;`), and `linux.category` supplies
+(`schemes: [http, https, orivon]`) is what electron-builder documents as producing the `.desktop` file's
+`MimeType=` line (`x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/orivon;`), and `linux.category` supplies
 `Categories=Network;WebBrowser;`. `linux.mimeTypes` lists `text/html`, `application/xhtml+xml`, `image/svg+xml`
 and `application/pdf`, which puts Orivon under Open with for those files and opens them as local files; only
 as the default browser does it also take `text/html`, `application/xhtml+xml` and `application/pdf` (the
@@ -591,6 +630,13 @@ and macOS' default-app lists (`docs/open-questions.md` A328).
   Make default opens `ms-settings:defaultapps?registeredAppUser=Orivon` and the person chooses. The installer's
   shortcuts carry the app user model id `com.orivonstack.orivon`, the one `src/main/os/launcher-tasks.ts` sets on
   the process.
+- **`orivon:` links.** The Windows installer also writes the class `Software\Classes\orivon` (`URL Protocol`, the same
+  `-- "%1"` command), which is not a default-app choice and is removed on uninstall. On macOS and in the Store manifest
+  the `protocols` entry carries it (`CFBundleURLTypes`; a `windows.protocol` extension), and on Linux the .deb's desktop
+  entry lists `x-scheme-handler/orivon`. A run from source registers none of them, and the Linux "Orivon (source)"
+  entry does not list the scheme, so a checkout never takes the links from an installed Orivon; the AppImage does
+  not integrate with the desktop and takes none either. What an `orivon:` link may name is in
+  [ADR-0094](../decisions/ADR-0094-an-orivon-link-from-another-program-opens-a-eth-name-or-an-ipfs-address.md).
 - **macOS.** `protocols` becomes `CFBundleURLTypes`. No HTML document types are declared, so a file dropped on the
   dock icon is refused and logged. Make default calls `setAsDefaultProtocolClient`, which the system confirms.
 

@@ -17,8 +17,10 @@ on:
       - electron-builder.yml
       - build/**
       - scripts/smoke-packaged.mjs
+      - scripts/smoke-orivon-link.mjs
       - scripts/pin-releases.sh
       - scripts/install-macos.sh
+      - scripts/install-linux.sh
       - .github/workflows/release.yml
   workflow_dispatch:
     inputs:
@@ -41,7 +43,53 @@ env:
   KOMAC_SHA256: 7d2707fa6210f2789a3702de49fbd150b736dbf426ee0b9bc8e098736f9fd82d
 
 jobs:
+  # The real uBlock Origin must load and block on the Electron this release ships: the same spec the pull request
+  # gate runs (ci.yml, ublock-gate), here on every release, since it costs one Linux runner for a few minutes and
+  # a release is the one place an Electron upgrade that slipped through unnoticed would reach people. The packages
+  # are not built until it passes.
+  ublock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Fetch the pinned uBlock Origin package, failing if it cannot be had
+        run: node scripts/fetch-bundled-extensions.mjs --required
+
+      - name: Install a virtual display
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Enable Chromium's setuid sandbox helper
+        run: |
+          sudo chown root:root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+
+      - name: Build with the developer-only hooks the spec needs
+        run: node scripts/build-e2e.mjs
+
+      - name: uBlock Origin loads and blocks on this Electron
+        run: >-
+          xvfb-run -a node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts
+          test/extensions/e2e-extensions-profiles-ublock.test.ts
+
+      - name: Upload failure evidence
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: qa-artifacts-ublock
+          path: qa-artifacts/latest/
+          if-no-files-found: ignore
+          retention-days: 7
+
   package:
+    needs: ublock
     name: package (${{ matrix.platform }})
     if: ${{ inputs.tag == '' }}
     strategy:
@@ -114,6 +162,31 @@ jobs:
           chmod +x release/*.AppImage
           node scripts/run-headless.mjs node scripts/smoke-packaged.mjs release/*.AppImage
 
+      # The one-line Linux install, on the AppImage just built, in a scratch home: no sudo, the files it promises, and the
+      # launcher starts it (on this runner without libfuse2 the launcher unpacks the AppImage first).
+      - name: Install with the one-line installer and launch it
+        if: matrix.platform == 'linux'
+        run: |
+          install_home="$RUNNER_TEMP/install-home"
+          mkdir -p "$install_home"
+          HOME="$install_home" ORIVON_APPIMAGE="$(ls release/*.AppImage)" bash scripts/install-linux.sh --no-launch
+          test -x "$install_home/.local/lib/orivon/Orivon.AppImage"
+          test -f "$install_home/.local/share/icons/hicolor/512x512/apps/orivon.png"
+          grep -q 'x-scheme-handler/https' "$install_home/.local/share/applications/orivon.desktop"
+          node scripts/run-headless.mjs node scripts/smoke-packaged.mjs "$install_home/.local/lib/orivon/orivon"
+
+      # The real path as a user runs it: the newest published release is looked up, downloaded and checked. During a
+      # release the new one has no packages yet, so this would test the previous release; PRs and manual runs only.
+      - name: Install the newest published release with the one-line installer
+        if: matrix.platform == 'linux' && github.event_name != 'release'
+        env:
+          ORIVON_GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          install_home="$RUNNER_TEMP/install-home-release"
+          mkdir -p "$install_home"
+          HOME="$install_home" bash scripts/install-linux.sh --no-launch
+          test -x "$install_home/.local/lib/orivon/Orivon.AppImage"
+
       - name: Install with the NSIS installer and launch it
         if: matrix.platform == 'win'
         shell: pwsh
@@ -124,6 +197,15 @@ jobs:
           $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter Orivon.exe | Select-Object -First 1
           if (-not $exe) { throw "the installer put no Orivon.exe under $env:LOCALAPPDATA\Programs" }
           node scripts/run-headless.mjs node scripts/smoke-packaged.mjs $exe.FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # The installer's registry entries, and a link handed to Windows the way another program hands one.
+      - name: The installed package is listed as a browser and takes orivon, links
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter Orivon.exe | Select-Object -First 1
+          node scripts/smoke-orivon-link.mjs $exe.FullName
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # The Store signs its package itself, so the one built here is unsigned. To install it on the runner, a
@@ -255,6 +337,12 @@ jobs:
             exit 1
           fi
           node scripts/run-headless.mjs node scripts/smoke-packaged.mjs "$RUNNER_TEMP/apps-local/Orivon.app/Contents/MacOS/Orivon"
+
+      # What LaunchServices knows of the installed app, and a link handed to macOS the way another program hands one.
+      - name: The installed app is known as a browser and takes orivon, links
+        if: matrix.platform == 'mac'
+        run: |
+          node scripts/smoke-orivon-link.mjs "$RUNNER_TEMP/apps-local/Orivon.app/Contents/MacOS/Orivon" "$RUNNER_TEMP/apps-local/Orivon.app"
 
       # The real path as a user runs it: the newest published release is looked up, downloaded and checked. During a
       # release the new one has no packages yet, so this would test the previous release; PRs and manual runs only.

@@ -140,6 +140,47 @@ it('hands a second start of a running profile over to it, with the address it wa
   }
 }, TEST_TIMEOUT_MS)
 
+it('opens the .eth name an orivon: link names in a tab of the running browser, and nothing for a link that names anything else', async () => {
+  const { app, chrome } = await launched()
+  try {
+    const dir = await userDataOf(app)
+    expect(await waitFor(async () => (await tabIds(chrome)).length === 1)).toBe(true)
+
+    for (const refused of ['orivon:open?u=https://example.com/', 'orivon:open?u=file:///etc/passwd', 'orivon:open?u=javascript:alert(1)', 'orivon:open?u=vitalik.eth/..', 'orivon:open']) {
+      expect((await runToExit(['--', refused], dir)).code, refused).toBe(0)
+    }
+    await delay(ABSENCE_SETTLE_MS)
+    expect(await windowCount(app)).toBe(1)
+    expect((await tabIds(chrome)).length).toBe(1)
+
+    expect((await runToExit(['--', 'orivon:open?u=orivon-link-test.eth/page&flavour=freetube'], dir)).code).toBe(0)
+    expect(await waitFor(async () => (await tabIds(chrome)).length === 2)).toBe(true)
+    expect((await waitForTab(chrome, { address: 'https://orivon-link-test.eth/page' })).ok).toBe(true)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('opens the name an orivon: link names in the first window when the link starts the browser, and a refused link only starts it', async () => {
+  const named = await launched(['--', 'orivon://open?u=orivon-link-test.eth/first'])
+  try {
+    expect(await waitFor(async () => (await tabIds(named.chrome)).length === 1)).toBe(true)
+    expect((await waitForTab(named.chrome, { address: 'https://orivon-link-test.eth/first' })).ok).toBe(true)
+  } finally {
+    await closeElectron(named.app)
+  }
+  const refused = await launched(['--', 'orivon:open?u=https://example.com/'])
+  try {
+    expect(await waitFor(async () => (await tabIds(refused.chrome)).length === 1)).toBe(true)
+    await delay(ABSENCE_SETTLE_MS)
+    expect((await tabIds(refused.chrome)).length).toBe(1)
+    expect((await waitForTab(refused.chrome, { address: '' })).ok).toBe(true)
+  } finally {
+    await closeElectron(refused.app)
+  }
+}, TEST_TIMEOUT_MS)
+
 it('opens a new window for a second start that names nothing, and leaves the window in use alone', async () => {
   const { app, chrome } = await launched()
   try {
