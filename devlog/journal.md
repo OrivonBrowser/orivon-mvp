@@ -31,6 +31,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - CI now catches two branches that took the same ADR or decision number, and pr-watch settles decision-log conflicts by itself.
 - Windows gets a one-line PowerShell install with no SmartScreen warning, and the Microsoft Store joins each release's file table.
 - Private live telemetry dashboard on our server; telemetry now keeps each install's usage day by day, and the privacy notice says so.
+- Attila now re-judges every watched .eth site that publishes a new build, every 3 hours: sandboxed Sonnet 5.5, then commit, publish, Telegram.
 
 ### In my head
 
