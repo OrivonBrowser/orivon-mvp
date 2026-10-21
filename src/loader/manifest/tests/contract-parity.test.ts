@@ -68,6 +68,7 @@ const KITCHEN_SINK: FullManifest = {
   consentGranularity: 'per-capability',
   crossOriginIsolated: true,
   domain: 'kitchen-sink.example.com',
+  support: { issues: 'https://github.com/example/kitchen-sink/issues/new?template=problem.yml&app=Kitchen%20Sink' },
   capabilities: {
     protocols: ['magnet'],
     net: {
