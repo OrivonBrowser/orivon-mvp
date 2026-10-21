@@ -13,7 +13,7 @@ import {
   type PermissionRequest, type PermissionSet
 } from './optional-permissions.js'
 import { createNagLimit, type NagLimit } from './permission-nag-limit.js'
-import { askPermission, type PermissionAsk } from './permission-prompt-overlay.js'
+import { askPermission, clipName, type PermissionAsk } from './permission-prompt-overlay.js'
 import type { ShellWindow } from '../shell/window-registry.js'
 
 export const GESTURE_ERROR = 'This function must be called during a user gesture'
@@ -26,7 +26,6 @@ const NO_WINDOW_ERROR = 'There is no window to ask in.'
 
 const MAX_ITEMS = 50
 const MAX_ITEM_LENGTH = 300
-const MAX_NAME_LENGTH = 120
 
 function listOf (value: unknown): string[] {
   if (value === undefined) return []
@@ -52,12 +51,6 @@ export interface PermissionsApiDeps {
   /** The extension's name and icon as a person reads them. */
   readonly identity: (extensionId: string, fallbackName: string) => Promise<{ name: string, icon: string | undefined }>
   readonly nag: NagLimit
-}
-
-/** Control and format characters (bidi overrides, zero-width marks) could reorder or hide words of the question, so they never reach the sheet. */
-function clip (raw: string): string {
-  const name = raw.replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/g, ' ').trim()
-  return name.length > MAX_NAME_LENGTH ? `${name.slice(0, MAX_NAME_LENGTH - 1).trimEnd()}…` : name
 }
 
 function windowTarget (ctx: ExtensionApiContext, event: ApiEvent): { window: ShellWindow, tabId: string } | undefined {
@@ -128,7 +121,7 @@ export function installPermissions (ctx: ExtensionApiContext, deps: PermissionsA
       const who = await deps.identity(id, String(event.extension.manifest['name'] ?? id))
       allowed = await deps.ask(target.window, target.tabId, {
         extensionId: id,
-        name: clip(who.name),
+        name: clipName(who.name),
         icon: who.icon,
         lines: promptLines(outcome)
       })

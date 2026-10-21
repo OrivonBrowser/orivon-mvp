@@ -15,9 +15,9 @@ function isLine (line: unknown): boolean {
 
 const isView = (value: unknown): value is PermissionPromptView => {
   if (typeof value !== 'object' || value === null) return false
-  const { name, id, icon, lines, guardMs } = value as Record<string, unknown>
+  const { name, id, icon, lines, wants, guardMs } = value as Record<string, unknown>
   return typeof name === 'string' && typeof id === 'string' && (icon === undefined || typeof icon === 'string') &&
-    Array.isArray(lines) && lines.every(isLine) && typeof guardMs === 'number'
+    Array.isArray(lines) && lines.every(isLine) && (wants === undefined || typeof wants === 'string') && typeof guardMs === 'number'
 }
 
 export const extensionPermissionPage: OverlayPage = {
@@ -36,7 +36,8 @@ export const extensionPermissionPage: OverlayPage = {
           : h('img', { className: 'perm-icon', src: payload.icon, alt: '' })
         const list = h('ul', { className: 'perm-lines', id: 'perm-lines' },
           ...payload.lines.map((line) => h('li', null, 'words' in line ? line.words : h('code', { textContent: line.name }))))
-        const deny = h('button', { type: 'button', className: 'btn', textContent: 'Deny', onclick: () => { answer(false) } })
+        const device = payload.wants !== undefined
+        const deny = h('button', { type: 'button', className: 'btn', textContent: device ? 'Block' : 'Deny', onclick: () => { answer(false) } })
         const allow = h('button', { type: 'button', className: 'btn primary', textContent: 'Allow', disabled: payload.guardMs > 0, onclick: () => { answer(true) } })
         sheet.setAttribute('aria-labelledby', 'perm-title')
         sheet.setAttribute('aria-describedby', 'perm-lines')
@@ -45,12 +46,14 @@ export const extensionPermissionPage: OverlayPage = {
             icon,
             h('div', { className: 'perm-who' },
               h('h1', { className: 'sheet-title', id: 'perm-title' },
-                'Allow the extension "', h('bdi', { className: 'perm-name', title: payload.name, textContent: payload.name }), '" to do more?'),
+                ...(payload.wants === undefined
+                  ? ['Allow the extension "', h('bdi', { className: 'perm-name', title: payload.name, textContent: payload.name }), '" to do more?']
+                  : [h('bdi', { className: 'perm-name', title: payload.name, textContent: payload.name }), ` ${payload.wants}`])),
               h('p', { className: 'origin perm-id', textContent: `Extension ID ${payload.id}` }))),
           h('div', { className: 'sheet-body' },
-            h('p', { textContent: 'It is asking to:' }),
-            list,
-            h('p', { className: 'perm-note', textContent: 'You can turn this off on the extension\'s details page.' })),
+            ...(device
+              ? [h('p', { className: 'perm-note', id: 'perm-lines', textContent: 'You can change this on the extension\'s details page.' })]
+              : [h('p', { textContent: 'It is asking to:' }), list, h('p', { className: 'perm-note', textContent: 'You can turn this off on the extension\'s details page.' })])),
           h('div', { className: 'btn-row' }, deny, allow))
         deny.focus()
         if (payload.guardMs > 0) guardTimer = setTimeout(() => { allow.disabled = false }, payload.guardMs)

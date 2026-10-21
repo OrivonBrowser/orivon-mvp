@@ -33,6 +33,7 @@ import { extensionPageOpen } from './extension-page-open.js'
 import { attachExtensionsDnr, getDnrEngine } from './extensions-dnr.js'
 import { registerDnrApiHandlers } from './dnr-api.js'
 import { installApis, installProfileApis } from './api/install-apis.js'
+import { installExtensionMedia } from './extension-media-asker.js'
 import { createProfileAttacher, type ProfileAttacher } from './profile-hosts.js'
 import { PROFILES, profilePartition } from '../route/site-partition.js'
 import { provideCommandKeys } from './api/commands-api.js'
@@ -163,6 +164,7 @@ export const extensionsSubsystem: Subsystem = {
     const manifests = createManifestApplier({ userDataPath, session: session.defaultSession, prefs, isOpen: extensionPageOpen, pages: extensionPagesAroundReload })
     if (!ctx.privateSession) manifests.applyAtBoot()
     const held = installApis({ host: hostExtensions, session: session.defaultSession, userDataPath, ctx, prefs })
+    installExtensionMedia({ ctx, prefs, defaultSession: session.defaultSession })
     if (!ctx.privateSession) profileAttacher = createProfileAttacher({
       defaultSession: session.defaultSession,
       createHost: (target) => createProfileExtensionHost(target, join(import.meta.dirname, '../preload/extension-api.js')),
