@@ -1,5 +1,5 @@
 // What the About page knows: the version table, loaded once, and the graphics
-// report, loaded the first time its tab is opened and again on "Try again".
+// report and what this version changed, loaded the first time their tabs are opened.
 import { internalBridge } from '../shared/bridge.js'
 import type { OrivonInternal } from '../shared/bridge.js'
 
@@ -30,11 +30,22 @@ export interface GpuReport {
   readonly raw: string
 }
 
+export interface NotesSection {
+  readonly heading: string
+  readonly items: readonly string[]
+}
+
+export interface WhatsNew {
+  readonly version: string
+  readonly sections: readonly NotesSection[]
+}
+
 export type Loadable<T> = { readonly state: 'loading' } | { readonly state: 'error' } | { readonly state: 'ready', readonly value: T }
 
 export class AboutState {
   version: Loadable<readonly AboutRow[]> = { state: 'loading' }
   gpu: Loadable<GpuReport> | null = null
+  whatsNew: Loadable<WhatsNew> | null = null
   private readonly listeners = new Set<() => void>()
 
   constructor (private readonly bridge: OrivonInternal = internalBridge()) {}
@@ -53,6 +64,20 @@ export class AboutState {
       this.version = reply?.rows === undefined ? { state: 'error' } : { state: 'ready', value: reply.rows }
     } catch {
       this.version = { state: 'error' }
+    }
+    this.changed()
+  }
+
+  async loadWhatsNew (): Promise<void> {
+    this.whatsNew = { state: 'loading' }
+    this.changed()
+    try {
+      const reply = await this.bridge.request('info', { type: 'whatsnew' }) as Partial<WhatsNew> | undefined
+      this.whatsNew = typeof reply?.version === 'string' && Array.isArray(reply.sections)
+        ? { state: 'ready', value: { version: reply.version, sections: reply.sections } }
+        : { state: 'error' }
+    } catch {
+      this.whatsNew = { state: 'error' }
     }
     this.changed()
   }

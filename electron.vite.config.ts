@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { createRequire, isBuiltin } from 'node:module'
@@ -7,6 +8,7 @@ import { aliasPattern, buildAliasEntries } from './src/shim/module-map.js'
 import { isShimSource } from './src/shim/is-shim-source.js'
 import { privacyNotice } from './scripts/privacy-notice-plugin.js'
 import { buildCommit } from './scripts/build-commit.js'
+import { releaseNotes } from './src/main/info/release-notes.js'
 
 export const root = dirname(fileURLToPath(import.meta.url))
 
@@ -167,6 +169,16 @@ if (process.stdout.moveCursor === undefined) {
   process.stdout.moveCursor = () => true
 }
 
+/** The notes CHANGELOG.md holds for the version package.json names (the release workflow sets it from the tag), or null. */
+function bundledReleaseNotes (): ReturnType<typeof releaseNotes> {
+  try {
+    const version = (JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as { version?: unknown }).version
+    return typeof version === 'string' ? releaseNotes(readFileSync(resolve(root, 'CHANGELOG.md'), 'utf8'), version) : null
+  } catch {
+    return null
+  }
+}
+
 export default defineConfig({
   main: {
     // Maps the virtual specifiers electron-chrome-extensions-lib.d.ts
@@ -194,7 +206,8 @@ export default defineConfig({
     // against the actual compiled output.
     define: {
       __ORIVON_DEV_GRANT_ENABLED__: JSON.stringify(process.env.ORIVON_ENABLE_DEV_GRANT === '1'),
-      __ORIVON_COMMIT__: JSON.stringify(buildCommit(root))
+      __ORIVON_COMMIT__: JSON.stringify(buildCommit(root)),
+      __ORIVON_RELEASE_NOTES__: JSON.stringify(bundledReleaseNotes())
     },
     build: {
       // Five entries: the process start (small, so a second start of an open profile exits early),

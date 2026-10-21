@@ -47,6 +47,7 @@ import { downloadsDomain } from '../downloads/downloads-domain.js'
 import { downloadsHost } from '../downloads/folder-runner.js'
 import { infoDomain } from '../info/about-domain.js'
 import { copyToClipboard, readAboutFacts, readGpu } from '../info/about-runner.js'
+import { runningRelease } from '../info/running-release.js'
 import { tasksDomain } from '../info/tasks-domain.js'
 import { endProcess, focusTab, listTasks } from '../info/tasks-runner.js'
 import type { TasksEnv } from '../info/tasks-runner.js'
@@ -150,7 +151,8 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     info: infoDomain({
       facts: () => readAboutFacts(services.settings, services.isPrivate),
       gpu: readGpu,
-      copy: copyToClipboard
+      copy: copyToClipboard,
+      release: () => runningRelease(app.getVersion())
     }),
     profiles: profilesDomain(services.profiles),
     reader: readerDomain({

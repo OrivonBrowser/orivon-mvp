@@ -49,6 +49,13 @@ export const about: Section = {
       control: { type: 'info', text: (state) => state.updates.words() },
       visible: (state) => state.updates.words() !== '' && state.updates.available() === null
     },
+    {
+      id: 'about-whats-new',
+      label: 'What\'s new in this version',
+      help: 'The changes this version of Orivon brought.',
+      keywords: ['changes', 'changelog', 'release notes', 'new', 'version'],
+      control: { type: 'action', label: 'Show what\'s new', run: async (state) => { await state.openPage('about', '/whats-new') } }
+    },
     ...aboutSystemRows,
     {
       id: 'reset-all',
