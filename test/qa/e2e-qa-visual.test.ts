@@ -162,7 +162,7 @@ for (const scheme of SCHEMES) {
         await (dashboardOf(app) as Page).waitForLoadState('load')
         await (dashboardOf(app) as Page).waitForSelector('html[data-settled="1"]')
         await state(check, app, `dashboard-startup-${scheme}`, {
-          expected: 'New-tab dashboard: wallpaper, the Orivon mark and name, a search box, then an "Orivon Featured" row of five tiles (Explore, WebTorrent, ASGARDEX, Ledger Wallet, The Lounge) that have icons and labels, with no other block under it; the page is taller than the window, so the lower part may be cut at the window edge and scroll; one tab titled "New Tab" in the strip; toolbar with back, forward and reload dimmed.',
+          expected: 'New-tab dashboard: wallpaper, the Orivon mark and name, a search box, then an "Orivon Featured" row of five tiles (Explore, WebTorrent, ASGARDEX, Ledger Wallet, The Lounge) that have icons and labels, with no other block under it; in a window too short for the rows, the lower part is cut at the window edge and scrolls; one tab titled "New Tab" in the strip; toolbar with back, forward and reload dimmed.',
           action: 'Launched a fresh profile and waited for the dashboard to load and draw its rows.'
         })
 
