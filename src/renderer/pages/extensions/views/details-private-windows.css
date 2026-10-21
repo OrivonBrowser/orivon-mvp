@@ -1,0 +1,4 @@
+/* The private-windows card: the switch row, and the line under it that says what the switch does. */
+.private-windows-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 18px; font-size: 13px; }
+.private-windows-row .switch { flex: none; }
+.private-windows-note { margin: 0; padding: 0 18px 14px; color: var(--wink-dim); font-size: 13px; line-height: 1.45; }

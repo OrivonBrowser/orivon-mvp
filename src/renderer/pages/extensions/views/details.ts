@@ -1,4 +1,4 @@
-// One extension: its name and icon with the on/off switch and Remove, then a
+// One extension: its name and icon with the on/off switch and Remove (neither in a private window), then a
 // card per registered section (registry.ts) in order.
 import { h, replaceChildren } from '../../shared/dom.js'
 import { chevronRightIcon, puzzleIcon } from '../../shared/icons.js'
@@ -34,8 +34,8 @@ function head (details: DetailsPayload, ctx: PageContext): HTMLElement {
       row.description === '' ? null : h('p', { className: 'd-desc', textContent: row.description })),
     h('div', { className: 'd-actions' },
       row.enabled ? null : h('span', { className: 'badge', textContent: 'Off' }),
-      enabledSwitch(row, ctx),
-      removeButton(row, ctx, () => { ctx.navigate(pathFor('list')) })))
+      ctx.isPrivate ? null : enabledSwitch(row, ctx),
+      ctx.isPrivate ? null : removeButton(row, ctx, () => { ctx.navigate(pathFor('list')) })))
 }
 
 function missing (ctx: PageContext): HTMLElement {

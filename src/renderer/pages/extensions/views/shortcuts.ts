@@ -200,10 +200,6 @@ export const shortcutsView: ExtensionView = {
   render: (root, ctx) => {
     wire(ctx)
     latest = { root, ctx }
-    if (ctx.isPrivate) {
-      replaceChildren(root, h('div', { className: 'banner info', role: 'status', textContent: 'Extensions do not run in private or guest windows.' }))
-      return
-    }
     if (root.childElementCount === 0 || data === null) replaceChildren(root, skeleton())
     void ctx.request<ShortcutsReply>('shortcuts.list').then((reply) => {
       data = reply

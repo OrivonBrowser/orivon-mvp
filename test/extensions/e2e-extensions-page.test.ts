@@ -205,11 +205,11 @@ it('lists installed extensions with their updater sentence, toggles one off, rem
   }
 }, TEST_TIMEOUT_MS)
 
-it('says extensions do not run in a private window, with no install controls', async () => {
+it('says only the extensions allowed in private windows run in a private window, and with none allowed lists none, with no install controls', async () => {
   const { app, chrome } = await launched(['--orivon-private'])
   try {
     const page = await openExtensions(app, chrome)
-    expect(await page.locator('.banner.info').textContent()).toBe('Extensions do not run in private or guest windows.')
+    expect(await page.locator('.banner.info').textContent()).toBe('Only the extensions you allowed in private windows run here. Change this in a normal window.')
     expect(await page.locator('button', { hasText: 'Install from file' }).count()).toBe(0)
     expect(await page.locator('.ext-card').count()).toBe(0)
     await shoot(page, 'private')
