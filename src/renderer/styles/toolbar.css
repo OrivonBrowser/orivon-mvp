@@ -211,10 +211,10 @@
   font-family: inherit;
   cursor: default;
 }
-/* The "Web?" mark is a button that opens the page on what the levels mean. */
-button.web3-mark:disabled { opacity: 1; }
-button.web3-mark:enabled { cursor: pointer; }
-button.web3-mark:enabled:hover { background: color-mix(in srgb, var(--tone) 22%, transparent); }
+/* The mark is a button that opens the card on what the levels mean. The card's own copy of the mark is a span. */
+button.web3-mark { cursor: pointer; }
+button.web3-mark:hover { background: color-mix(in srgb, var(--tone) 22%, transparent); }
+button.web3-mark:focus-visible { outline: 2px solid var(--tone); outline-offset: 1px; }
 /* display above would otherwise override the attribute's own display: none. */
 .web3-mark[hidden] { display: none; }
 .web3-mark::before {

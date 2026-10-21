@@ -36,21 +36,20 @@ export function createSiteBadges (): ChromeModule {
   let shieldOrigin: string | null = null
   let permissionsRequestUrl: string | null = null
   let connectionSecure = false
+  let shownScore: Web3Score | null = null
 
   function applyShield (score: Web3Score | null): void {
     if (shieldEl === undefined || web3ScoreBtn === undefined || web3MarkEl === undefined) return
+    shownScore = score
     paintShield(shieldEl, score?.level ?? null)
     paintMark(web3MarkEl, score?.level ?? null, score?.unscored === true)
     const label = shieldLabel(score)
     web3ScoreBtn.title = label
     web3ScoreBtn.setAttribute('aria-label', label)
-    // Only "Web?" asks a question, so only it is a control: it opens the page that says what the levels mean.
-    const asks = web3MarkEl.dataset['mark'] === 'Web?'
-    const markLabel = asks ? `${label}. What the Web3 Score levels mean` : label
-    web3MarkEl.disabled = !asks
+    // Every mark is a control: it opens the card that says what the levels mean, with this site's level marked.
+    const markLabel = `${label}. What the Web3 Score levels mean`
     web3MarkEl.title = markLabel
-    if (asks) web3MarkEl.setAttribute('aria-label', markLabel)
-    else web3MarkEl.removeAttribute('aria-label')
+    web3MarkEl.setAttribute('aria-label', markLabel)
   }
 
   /** The shield's displayed-level query, resolved the same lagging, per-active-tab way the permissions key
@@ -127,7 +126,13 @@ export function createSiteBadges (): ChromeModule {
       scoreBtn.append(shieldEl)
       web3ScoreBtn = scoreBtn
       web3MarkEl = must(document.querySelector<HTMLButtonElement>('#web3-mark'), '#web3-mark missing')
-      web3MarkEl.addEventListener('click', () => { void ctx.shell.act('web3-score.help', {}) })
+      const markEl = web3MarkEl
+      markEl.addEventListener('pointerdown', (event) => { if (event.button === 0) ctx.shell.press(WEB3_SCORE_OVERLAY) })
+      markEl.addEventListener('click', () => {
+        if (shownScore === null) return
+        const payload = { level: shownScore.level, unscored: shownScore.unscored }
+        void ctx.shell.act('overlay.toggle', { name: WEB3_SCORE_OVERLAY, anchor: ctx.anchorFor(markEl), payload })
+      })
       const permissionsBtn = must(document.querySelector<HTMLButtonElement>('#site-permissions-btn'), '#site-permissions-btn missing')
       sitePermissionsBtn = permissionsBtn
 
