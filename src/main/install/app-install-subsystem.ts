@@ -21,6 +21,7 @@ import { DeclinedApps, installDeclinedApps } from './declined-apps.js'
 import { createFirstVisit } from './first-visit.js'
 import { installFromHint } from './app-install.js'
 import { createInstallConsentPrompt } from '../consent/install-consent-prompt.js'
+import { FirstPromptNote, installFirstPromptNote } from '../consent/first-prompt-note.js'
 import { createCapabilityPrompt, createReconsentPrompt, createRollbackChoicePrompt } from '../consent/update-outcomes-prompt.js'
 import { createUpdatePrompts } from '../consent/update-offer-prompts.js'
 import type { UpdateOutcomeDeps } from '../consent/update-outcomes.js'
@@ -122,6 +123,7 @@ export const appInstallSubsystem: Subsystem = {
       const extensions = ctx.extensions
       return extensions === undefined ? [] : await extensionNamesForOrigin(extensions, origin, isOriginServedFromCacheSync)
     }
+    installFirstPromptNote(new FirstPromptNote(ctx.privateSession ? null : join(ctx.app.getPath('userData'), 'consent-notes.json')))
     const consent = createInstallConsentPrompt(scoreLevelOverrideFor, extensionsOnSite)
     const reconsentPrompt = createReconsentPrompt()
     const capabilityPrompt = createCapabilityPrompt(scoreLevelOverrideFor)

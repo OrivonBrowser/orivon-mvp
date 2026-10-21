@@ -6,6 +6,7 @@ import type { InstallConsentPrompt } from './install-consent.js'
 import type { ScoreLevel } from '../../trust/website-level.js'
 import { askCaller, holdCaller } from './ask-caller.js'
 import { formatOriginForDisplay } from './grant-prompt-origin.js'
+import { takeFirstPromptNote, withFirstPromptLine } from './first-prompt-note.js'
 
 /** `levelOverrideFor` defaults to never overriding, so an unwired caller (and every existing test) keeps warning exactly as before -- the real `../dev/score-levels.js` function is wired in at `../install/app-install-subsystem.ts` (ADR-0037). */
 type LevelOverrideFor = (origin: string) => ScoreLevel | undefined
@@ -23,13 +24,14 @@ const CLOSE = 1
  * the rows switched on, which is none when the person switched nothing. Escape, a closed tab and a navigation answer
  * `null`, like a tab that moved on: the first visit reads that as "ask again next time" and records nothing.
  */
-export function createInstallConsentPrompt (levelOverrideFor: LevelOverrideFor = NO_OVERRIDE, extensionsOnSite: ExtensionsOnSite = NO_EXTENSIONS): InstallConsentPrompt {
+export function createInstallConsentPrompt (levelOverrideFor: LevelOverrideFor = NO_OVERRIDE, extensionsOnSite: ExtensionsOnSite = NO_EXTENSIONS, firstOfProfile: () => boolean = takeFirstPromptNote): InstallConsentPrompt {
   return async (origin, manifest, capabilities, caller) => {
     const names = await extensionsOnSite(origin)
     // The tab that reported this hint may already have navigated away, or closed, by the time this runs: never show a question for a page the person is no longer looking at (request-grant.ts's `DialogCaller`).
     if (caller !== undefined && !caller.stillOn(origin)) return null
 
     const content = describeInstallPanel(origin, manifest, capabilities, levelOverrideFor(origin), names)
+    const detail = firstOfProfile() ? withFirstPromptLine(content.detail, formatOriginForDisplay(origin)) : content.detail
     const release = holdCaller(caller)
     try {
       const answer = await askCaller(caller, {
@@ -38,7 +40,7 @@ export function createInstallConsentPrompt (levelOverrideFor: LevelOverrideFor =
         warning: content.warning,
         title: content.title,
         message: content.message,
-        detail: content.detail,
+        detail,
         choices: content.rows.map((row) => ({ id: row.capability, icon: row.capability, message: row.message, warning: row.warning, ...(row.explanation === undefined ? {} : { detail: row.explanation }) })),
         ...(content.note === undefined ? {} : { choicesNote: content.note }),
         buttons: ['Grant all', 'Close'],
