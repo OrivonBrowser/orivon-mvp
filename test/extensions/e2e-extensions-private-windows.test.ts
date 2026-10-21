@@ -10,12 +10,12 @@
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/extensions/e2e-extensions-private-windows.test.ts
 import { afterAll, expect, it } from 'vitest'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Server } from 'node:http'
 import type { ElectronApplication, Page } from 'playwright'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, profileDirOf } from '../support/launch-electron.mjs'
-import { evaluateRetrying, findChrome, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
+import { delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
 import { navigateToFixture } from '../support/e2e-helpers.js'
 import { startFixtureServer } from '../support/extensions-fixtures.js'
 import { normalizePrefs, parsePrefsFile, serializePrefs } from '../../src/main/extensions/extension-prefs.js'
@@ -30,6 +30,20 @@ afterAll(async () => {
 
 const TEST_TIMEOUT_MS = 360_000
 const SWEEP_NAME = 'Orivon E2E API Sweep'
+const SHOTS = process.env['ORIVON_SHOTS_DIR']
+
+/** Photographs the page in both themes when a shots folder is asked for. */
+async function shoot (page: Page, name: string): Promise<void> {
+  if (SHOTS === undefined) return
+  mkdirSync(SHOTS, { recursive: true })
+  await page.mouse.move(2, 2)
+  for (const scheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: scheme })
+    await delay(400)
+    await page.screenshot({ path: join(SHOTS, `${name}-${scheme}.png`) })
+  }
+  await page.emulateMedia({ colorScheme: null })
+}
 
 const extensionsPage = (app: ElectronApplication): Page | undefined => app.windows().find((w) => w.url().startsWith('orivon://extensions'))
 
@@ -102,10 +116,12 @@ it('[app:extensions-run-in-private-windows] runs an extension in a private windo
     expect(await details.locator('#section-private-windows .private-windows-note').textContent()).toBe(
       'It also runs in private windows, starting with a copy of its data from this profile. Nothing it does there is saved back. Orivon cannot stop an extension from recording what you visit in a private window.')
     expect(await toggle.isChecked()).toBe(false)
+    await shoot(details, 'details-private-windows-off')
     const allowed = (): boolean => parsePrefsFile(readFileSync(join(profile, 'extensions', 'prefs.json'), 'utf8')).get(notAllowedId)?.privateWindows === true
     await toggle.click()
     expect(await waitFor(allowed)).toBe(true)
     await details.waitForSelector('#section-private-windows input:checked')
+    await shoot(details, 'details-private-windows-on')
     await details.locator('#section-private-windows input[type="checkbox"]').click()
     expect(await waitFor(() => !allowed())).toBe(true)
 
@@ -143,10 +159,12 @@ it('[app:extensions-run-in-private-windows] runs an extension in a private windo
     expect(await list.locator('.ext-name').allTextContents()).toEqual([SWEEP_NAME])
     expect(await list.locator('.ext-card .switch, .ext-card button').count()).toBe(0)
     expect(await list.locator('button', { hasText: 'Install from file' }).count()).toBe(0)
+    await shoot(list, 'private-list')
     await list.locator('.ext-card', { has: list.locator('.ext-name', { hasText: SWEEP_NAME }) }).locator('a', { hasText: 'Details' }).click()
     await list.waitForSelector('.d-head')
     expect(await list.locator('#section-private-windows').count()).toBe(0)
     expect(await list.locator('.d-actions .switch, .d-actions button').count()).toBe(0)
+    await shoot(list, 'private-details')
   } finally {
     await closeElectron(second.app, { keepProfile: true })
   }
