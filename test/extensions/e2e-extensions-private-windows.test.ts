@@ -5,8 +5,8 @@
 //      does not, the storage value of the normal launch is there, the Extensions button shows, the extensions page lists
 //      only what runs with its read-only banner and no switch, and a value written here is written in a copy only;
 //   3. a normal launch again: the value written in the private launch is not there, and the normal one is.
-// Fixtures: test/apps/extensions/content-marker/ and private-marker/ (each marks the page it runs on) and api-sweep/
-// (its page and worker read and write chrome.storage).
+// Fixtures: test/apps/extensions/content-marker/ (marks the page it runs on; never allowed here) and api-sweep/ (allowed;
+// publishes its sweep on the page it runs on, and its page and worker read and write chrome.storage).
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/extensions/e2e-extensions-private-windows.test.ts
 import { afterAll, expect, it } from 'vitest'
@@ -29,7 +29,6 @@ afterAll(async () => {
 })
 
 const TEST_TIMEOUT_MS = 360_000
-const MARKER_NAME = 'Orivon E2E Content Marker'
 const SWEEP_NAME = 'Orivon E2E API Sweep'
 
 const extensionsPage = (app: ElectronApplication): Page | undefined => app.windows().find((w) => w.url().startsWith('orivon://extensions'))
@@ -52,10 +51,10 @@ async function openInternal (app: ElectronApplication, chrome: Page, path?: stri
   return extensionsPage(app) as Page
 }
 
-async function markers (view: Page): Promise<{ content: string | undefined, privateMarker: string | undefined }> {
+async function markers (view: Page): Promise<{ sweep: boolean, content: boolean }> {
   return await evaluateRetrying(view, () => ({
-    content: document.documentElement.dataset['orivonExtensionMarker'],
-    privateMarker: document.documentElement.dataset['orivonPrivateMarker']
+    sweep: document.documentElement.dataset['orivonSweep'] !== undefined,
+    content: document.documentElement.dataset['orivonExtensionMarker'] === 'ran'
   }))
 }
 
@@ -76,7 +75,6 @@ it('[app:extensions-run-in-private-windows] runs an extension in a private windo
   const started = await startFixtureServer()
   server = started.server
   const fixtureUrl = `${started.origin}/`
-  let markerId = ''
   let notAllowedId = ''
   let storageId = ''
   let profile = ''
@@ -84,22 +82,18 @@ it('[app:extensions-run-in-private-windows] runs an extension in a private windo
   // ---- 1. a normal launch ----
   const first = await launched({
     seed: (dir) => {
-      markerId = seedFixture(dir, 'content-marker')
-      notAllowedId = seedFixture(dir, 'private-marker')
+      notAllowedId = seedFixture(dir, 'content-marker')
       storageId = seedFixture(dir, 'api-sweep')
-      writeFileSync(join(dir, 'extensions', 'prefs.json'), serializePrefs(new Map([
-        [markerId, normalizePrefs({ privateWindows: true })],
-        [storageId, normalizePrefs({ privateWindows: true })]
-      ])))
+      writeFileSync(join(dir, 'extensions', 'prefs.json'), serializePrefs(new Map([[storageId, normalizePrefs({ privateWindows: true })]])))
     }
   })
   try {
     profile = profileDirOf(first.app) as string
-    expect(await waitFor(async () => (await first.app.evaluate(({ session }) => session.defaultSession.extensions.getAllExtensions().length)) === 3)).toBe(true)
+    expect(await waitFor(async () => (await first.app.evaluate(({ session }) => session.defaultSession.extensions.getAllExtensions().length)) === 2)).toBe(true)
 
-    // Both marker extensions run in a normal window: the one left out below is not a fixture that never runs.
+    // Both extensions run in a normal window: the one left out below is not a fixture that never runs.
     const view = await navigateToFixture(first.app, fixtureUrl, 'extensions-load-fixture')
-    expect(await waitFor(async () => (await markers(view)).content === 'ran' && (await markers(view)).privateMarker === 'ran')).toBe(true)
+    expect(await waitFor(async () => (await markers(view)).content && (await markers(view)).sweep)).toBe(true)
 
     // The switch on the details page: off until turned on, kept in prefs.json, and off again.
     const details = await openInternal(first.app, first.chrome, `/details?id=${notAllowedId}`)
@@ -127,12 +121,12 @@ it('[app:extensions-run-in-private-windows] runs an extension in a private windo
   const second = await launched({ args: ['--orivon-private'], reuseProfile: profile })
   try {
     const names = async (): Promise<string[]> => (await second.app.evaluate(({ session }) => session.defaultSession.extensions.getAllExtensions().map((extension) => extension.name))).sort()
-    expect(await waitFor(async () => (await names()).length === 2)).toBe(true)
-    expect(await names()).toEqual([SWEEP_NAME, MARKER_NAME].sort())
+    expect(await waitFor(async () => (await names()).length === 1)).toBe(true)
+    expect(await names()).toEqual([SWEEP_NAME])
 
     const view = await navigateToFixture(second.app, fixtureUrl, 'extensions-load-fixture')
-    expect(await waitFor(async () => (await markers(view)).content === 'ran')).toBe(true)
-    expect((await markers(view)).privateMarker).toBeUndefined()
+    expect(await waitFor(async () => (await markers(view)).sweep)).toBe(true)
+    expect((await markers(view)).content).toBe(false)
 
     // Its data was copied in, and what it writes here stays here.
     expect(await storageOf(second.app, storageId)).toEqual({ kept: 'normal' })
@@ -146,10 +140,10 @@ it('[app:extensions-run-in-private-windows] runs an extension in a private windo
     const list = await openInternal(second.app, second.chrome)
     await list.waitForSelector('.ext-card')
     expect(await list.locator('.banner.info').textContent()).toBe('Only the extensions you allowed in private windows run here. Change this in a normal window.')
-    expect((await list.locator('.ext-name').allTextContents()).sort()).toEqual([MARKER_NAME, SWEEP_NAME].sort())
+    expect(await list.locator('.ext-name').allTextContents()).toEqual([SWEEP_NAME])
     expect(await list.locator('.ext-card .switch, .ext-card button').count()).toBe(0)
     expect(await list.locator('button', { hasText: 'Install from file' }).count()).toBe(0)
-    await list.locator('.ext-card', { has: list.locator('.ext-name', { hasText: MARKER_NAME }) }).locator('a', { hasText: 'Details' }).click()
+    await list.locator('.ext-card', { has: list.locator('.ext-name', { hasText: SWEEP_NAME }) }).locator('a', { hasText: 'Details' }).click()
     await list.waitForSelector('.d-head')
     expect(await list.locator('#section-private-windows').count()).toBe(0)
     expect(await list.locator('.d-actions .switch, .d-actions button').count()).toBe(0)
