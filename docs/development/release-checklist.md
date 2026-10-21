@@ -152,6 +152,26 @@ different release than the newest one with a dmg attached.
 
 ---
 
+## 6. The Linux one-line install
+
+**Precondition.** A published release with its AppImage attached, and a Linux x86_64 computer with a desktop that has
+never had Orivon installed by this script (or run `rm -rf ~/.local/lib/orivon ~/.local/share/applications/orivon.desktop`).
+
+**Input.** The command in the README section Download, pasted into a terminal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/install-linux.sh | bash
+```
+
+**Assertions.** The script prints the release's tag and "Checked the SHA-256", Orivon starts, **About** shows the
+release's version, Orivon Browser is in the application menu with its icon and is listed among the desktop's browsers
+(Settings > Default applications), and running the command again leaves one entry and one install.
+
+**Fails if:** the script asks for a password, the digest check is skipped, it installs a release that is not the
+newest one with an AppImage attached, or a computer without `libfuse2` gets an Orivon that does not start.
+
+---
+
 ## Scheduled additions
 
 Written when the artefacts they depend on exist. Recorded here so the gap is known rather than
