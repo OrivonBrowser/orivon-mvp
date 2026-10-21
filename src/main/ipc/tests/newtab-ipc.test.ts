@@ -21,6 +21,7 @@ const DASHBOARD_URL = 'http://localhost:5999/newtab/'
 const BOOKMARK: Bookmark = { url: 'https://a.example/', title: 'A', favicon: null }
 
 const featured = new FeaturedStore(null)
+const yourApps = { list: vi.fn(async () => ({ apps: [{ origin: 'https://a.example', name: 'A', icon: null }], isPrivate: false })) }
 
 function dispatch (frameUrl: string, isTopFrame: boolean, command: unknown = { type: 'getBookmarks' }): unknown {
   const handler = handlers.get(NEWTAB_COMMAND_CHANNEL)
@@ -35,7 +36,7 @@ describe('registerNewTabIpc -- isFromDashboard', () => {
   const load = vi.fn(async () => {})
   const bookmarks = { getAll: vi.fn(() => [BOOKMARK]), load } as unknown as BookmarkStore
   const windows = {} as WindowRegistry
-  registerNewTabIpc(DASHBOARD_URL, windows, bookmarks, featured)
+  registerNewTabIpc(DASHBOARD_URL, windows, bookmarks, featured, yourApps)
 
   it('answers the dashboard\'s own top frame, once the bookmark file has been read', async () => {
     expect(await dispatch(DASHBOARD_URL, true)).toEqual([BOOKMARK])
@@ -54,6 +55,15 @@ describe('registerNewTabIpc -- isFromDashboard', () => {
 
   it('refuses the top frame once it has navigated away', async () => {
     expect(await dispatch('https://elsewhere.example/', true)).toBeUndefined()
+  })
+})
+
+describe('registerNewTabIpc -- the Your apps row', () => {
+  it('answers the granted apps to the dashboard only', async () => {
+    const answer = { apps: [{ origin: 'https://a.example', name: 'A', icon: null }], isPrivate: false }
+    expect(await dispatch(DASHBOARD_URL, true, { type: 'getYourApps' })).toEqual(answer)
+    expect(await dispatch('https://elsewhere.example/', true, { type: 'getYourApps' })).toBeUndefined()
+    expect(await dispatch(DASHBOARD_URL, false, { type: 'getYourApps' })).toBeUndefined()
   })
 })
 
