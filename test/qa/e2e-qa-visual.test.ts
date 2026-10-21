@@ -34,6 +34,9 @@ const FIXTURE_ADDRESS: Rect = { x: 240, y: 44, width: 260, height: 24 }
 const CONSENT_ORIGIN_LINE: Rect = { x: 188, y: 78, width: 240, height: 20 }
 const PAGE_QUESTION_ORIGIN: Rect = { x: 190, y: 78, width: 240, height: 20 }
 
+/** The site popup's header, which names the fixture's origin and so its port. */
+const SITE_INFO_ORIGIN_LINE: Rect = { x: 224, y: 86, width: 220, height: 22 }
+
 /** Settings > Web3's line saying how old the light client's shipped checkpoint is: it reads a day more each day. */
 const CHECKPOINT_AGE: Rect = { x: 700, y: 586, width: 440, height: 24 }
 
@@ -45,6 +48,9 @@ const MANIFEST = JSON.stringify({
   entry: 'index.html',
   capabilities: { fs: { quotaBytes: 1024 } }
 })
+
+/** The consent fixture's manifest also names where its publisher takes problem reports, so the site panel shows that row. */
+const CONSENT_MANIFEST = JSON.stringify({ ...JSON.parse(MANIFEST) as object, support: { issues: 'https://support.example.test/issues/new' } })
 
 /** Windows lets no program make itself the default browser, so the row there opens Windows' own settings. */
 const MAKE_DEFAULT = process.platform === 'win32' ? 'Open Windows Settings' : 'Make default'
@@ -403,7 +409,7 @@ for (const scheme of SCHEMES) {
   it(`the question panel shows a consent question and a page's confirm() (${scheme})`, async () => {
     // The consent fixture advertises a manifest, so visiting it asks for its grants; the dialog fixture asks nothing until clicked.
     const consent = await startServer((req, res) => {
-      if (req.url === '/.well-known/orivon.json') { res.writeHead(200, { 'content-type': 'application/json' }).end(MANIFEST); return }
+      if (req.url === '/.well-known/orivon.json') { res.writeHead(200, { 'content-type': 'application/json' }).end(CONSENT_MANIFEST); return }
       html(res, '<!doctype html><meta charset="utf-8"><title>Consent fixture</title><link rel="orivon-manifest" href="/.well-known/orivon.json"><body style="font:16px sans-serif;margin:32px"><h1>Consent fixture</h1>')
     })
     const dialogs = await startServer((_req, res) => {
@@ -437,6 +443,18 @@ for (const scheme of SCHEMES) {
           action: 'Closed the consent question with no switch on and waited for the key to show its dot.',
           ignore: [FIXTURE_ADDRESS]
         })
+
+        await chrome.click('#site-permissions-btn')
+        expect(await waitFor(async () => await popoverShown(app, '/site-info/'))).toBe(true)
+        const panel = app.windows().find((w) => w.url().includes('/site-info/'))
+        expect(await waitFor(async () => (await panel?.$$('#report-problem'))?.length === 1)).toBe(true)
+        await state(check, app, `site-info-report-problem-${scheme}`, {
+          expected: 'The popup under the key lists the app\'s permission row with its switch off, then the Cookies and site data and Site settings rows, and last a row reading "Report a problem with this site" with a chevron at the right, in the same type, spacing and colours as the rows above it. The row is fully inside the popup, uncut, and readable in this colour scheme.',
+          action: 'Clicked the key on the consent fixture, whose manifest names where problems are reported.',
+          ignore: [FIXTURE_ADDRESS, SITE_INFO_ORIGIN_LINE]
+        })
+        await chrome.click('#site-permissions-btn')
+        expect(await waitFor(async () => !(await popoverShown(app, '/site-info/')))).toBe(true)
 
         await visit(app, chrome, `${dialogs.origin}/`)
         const view = findViewShowing(app, chrome, `${dialogs.origin}/`) as Page
