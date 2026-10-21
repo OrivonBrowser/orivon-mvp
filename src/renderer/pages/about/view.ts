@@ -1,7 +1,8 @@
-// Draws the two tabs of the About page from its state. Nothing here calls the
+// Draws the three tabs of the About page from its state. Nothing here calls the
 // bridge: the buttons call back into the state, which owns the requests.
 import { h } from '../shared/dom.js'
-import type { AboutRow, AboutState, DeviceRow, FeatureRow, GpuReport } from './state.js'
+import { inlineSegments } from './inline-markdown.js'
+import type { AboutRow, AboutState, DeviceRow, FeatureRow, GpuReport, NotesSection } from './state.js'
 
 function skeletonCard (rows: number): HTMLElement {
   return h('div', { className: 'card', role: 'status', ariaLabel: 'Loading' },
@@ -75,4 +76,28 @@ export function gpuBody (state: AboutState, retry: () => void, copyRaw: (button:
     h('h2', { className: 'group-label', textContent: 'Graphics device' }),
     deviceCard(gpu.value.devices, gpu.value.devicesKnown),
     rawReport(gpu.value, copyRaw))
+}
+
+function noteItem (item: string): HTMLElement {
+  return h('li', { className: 'note' }, ...inlineSegments(item).map((segment) =>
+    segment.kind === 'text' ? segment.text : h(segment.kind === 'bold' ? 'strong' : 'code', { textContent: segment.text })))
+}
+
+function noteSection (section: NotesSection): HTMLElement {
+  return h('section', { className: 'notes' },
+    h('h2', { className: 'group-label', textContent: section.heading }),
+    h('ul', { className: 'card note-list' }, ...section.items.map(noteItem)))
+}
+
+export function whatsNewBody (state: AboutState): HTMLElement {
+  const { whatsNew } = state
+  if (whatsNew === null || whatsNew.state === 'loading') return skeletonCard(4)
+  if (whatsNew.state === 'error') return h('div', { className: 'banner error', role: 'alert', textContent: 'What changed in this version is not available.' })
+  const { version, sections } = whatsNew.value
+  if (sections.length === 0) {
+    return h('div', { className: 'banner', role: 'status', textContent: `This build of Orivon (${version}) has no list of changes.` })
+  }
+  return h('div', { className: 'stack' },
+    h('p', { className: 'notes-lead', textContent: `What changed in version ${version}` }),
+    ...sections.map(noteSection))
 }

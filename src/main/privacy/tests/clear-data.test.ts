@@ -48,6 +48,17 @@ describe('clearing browsing data', () => {
     expect(forgetNameSchemes).toHaveBeenCalledTimes(2)
   })
 
+  it('forgets when granted apps were last used from the time history is cleared back to, and not when history is kept', async () => {
+    const forgetAppUse = vi.fn()
+    const { deps } = setup()
+    const withUse = { ...deps, forgetAppUse }
+    await clearBrowsingData({ ...NOTHING, cache: true }, withUse)
+    expect(forgetAppUse).not.toHaveBeenCalled()
+    await clearBrowsingData({ ...NOTHING, history: 'day' }, withUse)
+    await clearBrowsingData({ ...NOTHING, history: 'all' }, withUse)
+    expect(forgetAppUse.mock.calls).toEqual([[NOW - 86_400_000], [0]])
+  })
+
   it('forgets the Website levels sites earned with site data, the cache and all history, and not with a part of history', async () => {
     const forgetEarnedLevels = vi.fn()
     const { deps } = setup()

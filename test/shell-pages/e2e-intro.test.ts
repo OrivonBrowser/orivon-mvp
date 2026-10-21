@@ -105,7 +105,12 @@ it('once, on a fresh profile: shows over the whole window, stays on top of a new
 
     const seenFile = join(await userDataDir(app), 'intro.json')
     expect(await waitFor(() => existsSync(seenFile))).toBe(true)
-    expect(JSON.parse(await readFile(seenFile, 'utf8'))).toEqual({ seen: true })
+    // Beside the flag the file holds the version that started, which What's new reads (e2e-whats-new.test.ts).
+    const version = await app.evaluate(({ app: electronApp }) => electronApp.getVersion())
+    expect(await waitFor(async () => {
+      const file = JSON.parse(await readFile(seenFile, 'utf8')) as Record<string, unknown>
+      return file['seen'] === true && file['lastRunVersion'] === version && Object.keys(file).length === 2
+    })).toBe(true)
 
     // The first letter typed builds the dropdown, and its page does not take the keyboard from the field.
     await startFocusLog(app)
@@ -151,7 +156,9 @@ it('always: shows even when seen, and clicking through does not use up the one-t
     await introPage(fresh)?.click('#enter')
     expect(await waitFor(() => introPage(fresh) === undefined && windowCount(fresh) === 2)).toBe(true)
     await new Promise((resolve) => setTimeout(resolve, ABSENCE_SETTLE_MS))
-    expect(existsSync(join(await userDataDir(fresh), 'intro.json'))).toBe(false)
+    // The file may hold the version that started; the click must not have written the flag.
+    const written = join(await userDataDir(fresh), 'intro.json')
+    expect(existsSync(written) ? (JSON.parse(await readFile(written, 'utf8')) as Record<string, unknown>)['seen'] : undefined).toBeUndefined()
   } finally {
     await closeElectron(fresh)
   }

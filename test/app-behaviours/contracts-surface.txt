@@ -474,6 +474,7 @@ export interface Manifest {
   readonly consentGranularity?: ConsentGranularity
   readonly crossOriginIsolated?: true
   readonly domain?: string
+  readonly support?: { readonly issues: string }
 }
 export interface Capabilities {
   readonly net?: NetCapability

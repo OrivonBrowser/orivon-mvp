@@ -158,3 +158,12 @@ capability, never merged the way the whole-set dialogs merge a listen and bind p
 whole-set dialogs have (AR-03): origin first, then the message, the rows, the claimed name, the home line and the extensions line,
 and the claim is never beside the origin. The question for a file on this computer is its own prompt (`local-file-consent.ts`,
 a boolean) and is not this panel.
+
+**[`first-prompt-note.ts`](first-prompt-note.ts) puts one line above the buttons of the first capability question a profile
+shows.** `takeFirstPromptNote` is true once per profile and is asked when the question is about to be shown, so a question left
+open still counts; `withFirstPromptLine` places the line in the question's `detail`, which the panel draws between the rows and
+the buttons, before the address line the panel drops from `detail`. Only `install-consent-prompt.ts` and `request-grant-prompt.ts`
+ask for it: the questions about a camera, notifications and the like belong to `../site-settings/` and are asked of any website. The
+flag is `consent-notes.json` (memory only in a private session), a file of its own because the settings table lists every key it
+holds on the Settings page. Both subsystems install the same note, and the first one installed is the one used.
+

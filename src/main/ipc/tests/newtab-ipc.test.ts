@@ -23,6 +23,7 @@ const BOOKMARK: Bookmark = { url: 'https://a.example/', title: 'A', favicon: nul
 
 const featured = new FeaturedStore(null)
 const facts: StartHereFacts = { isPrivate: false, firstRunApp: null, importAvailable: true, uboOn: true }
+const yourApps = { list: vi.fn(async () => ({ apps: [{ origin: 'https://a.example', name: 'A', icon: null }], isPrivate: false })) }
 
 function dispatch (frameUrl: string, isTopFrame: boolean, command: unknown = { type: 'getBookmarks' }): unknown {
   const handler = handlers.get(NEWTAB_COMMAND_CHANNEL)
@@ -37,7 +38,7 @@ describe('registerNewTabIpc -- isFromDashboard', () => {
   const load = vi.fn(async () => {})
   const bookmarks = { getAll: vi.fn(() => [BOOKMARK]), load } as unknown as BookmarkStore
   const windows = {} as WindowRegistry
-  registerNewTabIpc(DASHBOARD_URL, windows, bookmarks, featured, async () => facts)
+  registerNewTabIpc(DASHBOARD_URL, windows, bookmarks, featured, yourApps, async () => facts)
 
   it('answers the dashboard\'s own top frame, once the bookmark file has been read', async () => {
     expect(await dispatch(DASHBOARD_URL, true)).toEqual([BOOKMARK])
@@ -56,6 +57,15 @@ describe('registerNewTabIpc -- isFromDashboard', () => {
 
   it('refuses the top frame once it has navigated away', async () => {
     expect(await dispatch('https://elsewhere.example/', true)).toBeUndefined()
+  })
+})
+
+describe('registerNewTabIpc -- the Your apps row', () => {
+  it('answers the granted apps to the dashboard only', async () => {
+    const answer = { apps: [{ origin: 'https://a.example', name: 'A', icon: null }], isPrivate: false }
+    expect(await dispatch(DASHBOARD_URL, true, { type: 'getYourApps' })).toEqual(answer)
+    expect(await dispatch('https://elsewhere.example/', true, { type: 'getYourApps' })).toBeUndefined()
+    expect(await dispatch(DASHBOARD_URL, false, { type: 'getYourApps' })).toBeUndefined()
   })
 })
 
@@ -85,7 +95,7 @@ describe('registerNewTabIpc -- the Featured row\'s choices', () => {
 describe('registerNewTabIpc -- the Start here card', () => {
   // Each test registers its own store: the handler map keeps the last registration, and the earlier suites have run by now.
   function register (store: FeaturedStore, answer: StartHereFacts): void {
-    registerNewTabIpc(DASHBOARD_URL, {} as WindowRegistry, {} as BookmarkStore, store, async () => answer)
+    registerNewTabIpc(DASHBOARD_URL, {} as WindowRegistry, {} as BookmarkStore, store, yourApps, async () => answer)
   }
   const ask = { type: 'getStartHere' }
   const open: StartHereFacts = { isPrivate: false, firstRunApp: null, importAvailable: true, uboOn: true }

@@ -324,3 +324,17 @@ img.tile-icon { border-radius: 4px; object-fit: contain; }
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* The line in a row that has no tile yet, and the link under a row: both sit on the picture itself, so they carry a
+   soft shadow the tiles do not need. The link's own padding is taken back so its text starts where the line above does. */
+.tile-empty {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(226, 232, 240, 0.85);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+#your-apps-manage {
+  margin-left: -4px;
+  color: rgba(226, 232, 240, 0.85);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}

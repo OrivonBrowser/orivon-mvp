@@ -32,6 +32,7 @@ interface OrivonSiteInfo {
   setProxyAddress: (text: string) => Promise<ProxyAddressResult | null>
   testTunnel: (kind: 'nym' | 'socks5') => Promise<unknown>
   openHome: () => Promise<void>
+  openSupport: () => Promise<void>
   clearBrowserData: () => Promise<void>
   deleteLocalFile: () => Promise<boolean>
   removeCookie: (key: string) => Promise<void>
@@ -153,7 +154,8 @@ function renderCurrent (): void {
       onReload: () => { void bridge.reload() },
       onReviewPermissions: () => { void bridge.reviewPermissions() },
       onApplyUpdate: (cid) => { void applyUpdate(cid) },
-      onOpenHome: () => { void bridge.openHome() }
+      onOpenHome: () => { void bridge.openHome() },
+      onOpenSupport: () => { void bridge.openSupport() }
     }, updateFailure)
   } else if (page === 'tunnels' && info !== null) {
     tunnelsPage.render(tunnelsSection, info)

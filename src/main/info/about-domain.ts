@@ -1,7 +1,8 @@
 // What the About page may ask of main: the version table, the graphics report,
-// and to have either copied. The text to copy is built here from main's own
+// what this version changed, and to have either copied. The text to copy is built here from main's own
 // facts, so a page cannot put anything of its own on the clipboard.
 import type { InternalDomain } from '../pages/internal-ipc.js'
+import type { RunningRelease } from './running-release.js'
 import { aboutRows, aboutText, deviceRows, featureRows, rawReport } from './about-info.js'
 import type { AboutFacts } from './about-info.js'
 
@@ -15,6 +16,8 @@ export interface AboutDomainDeps {
   readonly facts: () => AboutFacts
   readonly gpu: () => Promise<GpuReading>
   readonly copy: (text: string) => void
+  /** The version running and what it changed. */
+  readonly release: () => RunningRelease
 }
 
 export function infoDomain (deps: AboutDomainDeps): InternalDomain {
@@ -25,6 +28,10 @@ export function infoDomain (deps: AboutDomainDeps): InternalDomain {
       switch (request.type) {
         case 'version':
           return { rows: aboutRows(deps.facts()) }
+        case 'whatsnew': {
+          const { version, notes } = deps.release()
+          return { version, sections: notes?.sections ?? [] }
+        }
         case 'gpu': {
           try {
             const { status, info } = await deps.gpu()

@@ -2,6 +2,7 @@ import type { Bookmark } from '../../main/browsing/bookmarks.js'
 import { closeIcon, faviconElement, path, svg } from '../icons.js'
 import { FEATURED, iconUrl } from './featured.js'
 import { readStartHere, stepText } from './start-here-model.js'
+import { readYourApps, yourAppsView, type YourAppTile } from './your-apps-model.js'
 import { featuredRow, NO_PREFS, readPrefs, type FeaturedPrefs, type FeaturedTile } from './featured-model.js'
 
 // The dashboard's whole job: a search box, the featured apps and real bookmark tiles -- see
@@ -11,6 +12,7 @@ interface OrivonNewTab {
   getBookmarks: () => Promise<Bookmark[]>
   navigate: (input: string) => void
   getFeatured: () => Promise<unknown>
+  getYourApps: () => Promise<unknown>
   hideFeatured: (id: string) => Promise<unknown>
   unpinFeatured: (id: string) => Promise<unknown>
   showHiddenFeatured: () => Promise<unknown>
@@ -40,6 +42,13 @@ const bookmarksSection = document.querySelector<HTMLElement>('#bookmarks-section
 const bookmarksGrid = document.querySelector<HTMLDivElement>('#bookmarks-grid')
 const featuredGrid = document.querySelector<HTMLDivElement>('#featured-grid')
 const showHiddenButton = document.querySelector<HTMLButtonElement>('#featured-show-hidden')
+const yourAppsSection = document.querySelector<HTMLElement>('#your-apps-section')
+const yourAppsGrid = document.querySelector<HTMLDivElement>('#your-apps-grid')
+const yourAppsEmpty = document.querySelector<HTMLElement>('#your-apps-empty')
+const yourAppsManage = document.querySelector<HTMLButtonElement>('#your-apps-manage')
+
+/** Where the grants of every app are listed and switched. */
+const APP_PERMISSIONS_PAGE = 'orivon://settings/apps'
 
 if (shell !== undefined) {
   searchInput?.focus()
@@ -59,6 +68,11 @@ if (shell !== undefined) {
   if (startHere !== null) void startStartHere(shell, startHere)
 
   if (featuredGrid !== null && showHiddenButton !== null) void startFeatured(shell, featuredGrid, showHiddenButton)
+
+  if (yourAppsSection !== null && yourAppsGrid !== null && yourAppsEmpty !== null && yourAppsManage !== null) {
+    yourAppsManage.addEventListener('click', () => { shell.navigate(APP_PERMISSIONS_PAGE) })
+    void renderYourApps(shell, { section: yourAppsSection, grid: yourAppsGrid, empty: yourAppsEmpty })
+  }
 
   if (bookmarksSection !== null && bookmarksGrid !== null) {
     void renderBookmarks(shell, bookmarksSection, bookmarksGrid)
@@ -141,6 +155,16 @@ async function startFeatured (shell: OrivonNewTab, grid: HTMLDivElement, showHid
     next?.focus()
   }
   draw(await shell.getFeatured().then(readPrefs, () => NO_PREFS))
+}
+
+/** The apps this profile has granted capabilities to. The row stays hidden until main has answered, so a private window never flashes it. */
+async function renderYourApps (shell: OrivonNewTab, parts: { section: HTMLElement, grid: HTMLDivElement, empty: HTMLElement }): Promise<void> {
+  const view = yourAppsView(await shell.getYourApps().then(readYourApps, () => readYourApps(undefined)))
+  if (!view.shown) return
+  parts.grid.replaceChildren(...view.tiles.map((app: YourAppTile) => tileFor(app.name, app.origin, faviconElement(app.icon), () => { shell.navigate(app.origin) })))
+  parts.empty.hidden = view.empty === null
+  parts.empty.textContent = view.empty
+  parts.section.hidden = false
 }
 
 async function renderBookmarks (

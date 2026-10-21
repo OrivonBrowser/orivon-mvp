@@ -30,6 +30,7 @@ import { compareVersions } from '../../broker/policy/update.js'
 import { DDOC_PATH } from '../ddoc-declaration.js'
 import { readCapabilities } from './capabilities.js'
 import { readDomain } from './domain.js'
+import { readSupport } from './support.js'
 
 export interface ManifestOk {
   readonly ok: true
@@ -76,7 +77,7 @@ const MAX_NAME_LENGTH = 200
 const MAX_VERSION_LENGTH = 256
 const MAX_ENTRY_LENGTH = 1024
 
-const MANIFEST_KEYS = ['orivonApiVersion', 'id', 'name', 'version', 'entry', 'assets', 'capabilities', 'consentGranularity', 'crossOriginIsolated', 'domain']
+const MANIFEST_KEYS = ['orivonApiVersion', 'id', 'name', 'version', 'entry', 'assets', 'capabilities', 'consentGranularity', 'crossOriginIsolated', 'domain', 'support']
 
 // The two literals contracts/manifest.ts's ConsentGranularity actually has --
 // kept here, not derived from the type, because TypeScript erases that type
@@ -449,6 +450,7 @@ function readManifest (value: unknown): Omit<ManifestOk, 'ok'> {
   const consentGranularity = readConsentGranularity(value)
   const crossOriginIsolated = readCrossOriginIsolated(value)
   const domain = readDomain(value)
+  const support = readSupport(value)
 
   const manifest: Manifest = {
     orivonApiVersion: 0,
@@ -460,7 +462,8 @@ function readManifest (value: unknown): Omit<ManifestOk, 'ok'> {
     capabilities,
     ...(consentGranularity !== undefined && { consentGranularity }),
     ...(crossOriginIsolated !== undefined && { crossOriginIsolated }),
-    ...(domain !== undefined && { domain })
+    ...(domain !== undefined && { domain }),
+    ...(support !== undefined && { support })
   }
   return { manifest, ignoredFields: unknownKeys(value, MANIFEST_KEYS) }
 }
