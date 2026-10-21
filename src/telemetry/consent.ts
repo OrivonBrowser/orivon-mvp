@@ -8,7 +8,7 @@ import type { ConsentState } from './disclosure.js'
  * under an older version no longer counts, so nothing is sent until the person chooses again. The
  * notice's bug-report section is not under it: a report is agreed to one at a time, in full view.
  */
-export const NOTICE_VERSION = 4
+export const NOTICE_VERSION = 5
 
 export type ConsentSource = 'welcome' | 'settings'
 
@@ -74,7 +74,8 @@ export function shouldOfferAtWelcome (record: ConsentRecord, nowMs: number, noti
 
 /** One plain sentence for each notice version that changed what is sent, shown to a person who agreed to an older one. */
 export const NOTICE_CHANGES: Readonly<Record<number, string>> = {
-  4: 'The usage report names your country, from your time zone, instead of EU, US or other, and both reports are also sent when Orivon starts.'
+  4: 'The usage report names your country, from your time zone, instead of EU, US or other, and both reports are also sent when Orivon starts.',
+  5: 'The usage report also names the app your installer was named for, if it was named for one, such as freetube.'
 }
 
 /**

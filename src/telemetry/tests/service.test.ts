@@ -24,6 +24,7 @@ describe('TelemetryService', () => {
   let sendOk: boolean
   let order: string[]
   let gate: Promise<void> | undefined
+  let flavour: string | null
   let service: TelemetryService
   let system: SystemStore
   let store: TelemetryStore
@@ -37,6 +38,7 @@ describe('TelemetryService', () => {
       system,
       version: '0.1.0',
       country: () => 'IT',
+      flavour: () => flavour,
       machineReaders: { platform: 'linux', readFile: async () => { machineReads += 1; return MACHINE }, run: async () => undefined },
       randomId: () => 'cd'.repeat(16),
       clock: () => now,
@@ -48,6 +50,7 @@ describe('TelemetryService', () => {
   }
 
   beforeEach(async () => {
+    flavour = null
     dir = await mkdtemp(join(tmpdir(), 'orivon-telemetry-service-'))
     now = start
     sent = []
@@ -106,6 +109,23 @@ describe('TelemetryService', () => {
     expect(usage).toMatchObject({ schema: PAYLOAD_SCHEMA, installId: deriveInstallId(MACHINE), stream: 'ab'.repeat(16), country: 'IT', period: '2026-10', activeSec: 60, classes: { web3: 60, web25: 0, web2: 0 } })
     expect(sent.find((payload) => 'sites' in payload)).toMatchObject({ installId: deriveInstallId(MACHINE), stream: 'ab'.repeat(16), sites: { 'web3:vitalik.eth': 60 } })
     expect((await service.status()).sent.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('sends the first-run app in the usage report only once accepted, and null when there is none', async () => {
+    flavour = 'freetube'
+    await service.checkpointTick(focused, true)
+    now += 60 * SEC
+    await service.checkpointTick(focused, true)
+    await service.sendNow()
+    expect(sent).toEqual([])
+    expect((await service.status()).usage.flavour).toBe('freetube')
+    await acceptAndSettle()
+    await service.sendNow()
+    expect(sent.find((payload) => !('sites' in payload))).toMatchObject({ schema: 5, flavour: 'freetube' })
+    sent = []
+    flavour = null
+    await service.sendNow()
+    expect(sent.find((payload) => !('sites' in payload))).toMatchObject({ flavour: null })
   })
 
   it('accepting sends the usage and sites reports at once, without waiting for a tick or the random offset', async () => {

@@ -6,7 +6,7 @@ import { SHELL_APP_ID, type AccountingState, type Period } from './accounting.js
 import type { Country } from './country.js'
 import { classOfKey, reportedKey, UNLISTED } from './site-key.js'
 
-export const PAYLOAD_SCHEMA = 4
+export const PAYLOAD_SCHEMA = 5
 
 /** What the install ID reads before the person has turned telemetry on: the machine is not read until then. */
 export const INSTALL_ID_PLACEHOLDER = '(made when you turn this on)'
@@ -26,6 +26,8 @@ export interface UsagePayload {
   readonly installId: string
   readonly stream: string
   readonly country: Country
+  /** The app a tagged installer opened on this profile's first run (an id from the shipped list), or null. */
+  readonly flavour: string | null
   readonly version: string
   readonly period: Period
   readonly activeSec: number
@@ -59,6 +61,8 @@ export interface UsageMeta {
   readonly installId: string
   readonly stream: string
   readonly country: Country
+  /** The profile's stored first-run app id, as read from disk: whatever is not a plain id is dropped before it is sent. */
+  readonly flavour: string | null
   readonly version: string
   readonly period: Period
 }
@@ -108,6 +112,9 @@ function reportedSites (state: AccountingState, period: Period): Record<string, 
   return out
 }
 
+/** What the report may carry of a stored id: 2 to 24 lowercase letters and digits, the shape of the shipped ids, or nothing. */
+const REPORTABLE_FLAVOUR = /^[a-z0-9]{2,24}$/
+
 export function buildUsagePayload (state: AccountingState, meta: UsageMeta): UsagePayload {
   const totals = state.perApp[SHELL_APP_ID]?.[meta.period]
   return {
@@ -115,6 +122,7 @@ export function buildUsagePayload (state: AccountingState, meta: UsageMeta): Usa
     installId: meta.installId,
     stream: meta.stream,
     country: meta.country,
+    flavour: meta.flavour !== null && REPORTABLE_FLAVOUR.test(meta.flavour) ? meta.flavour : null,
     version: meta.version,
     period: meta.period,
     activeSec: whole(totals?.activeSec ?? 0),

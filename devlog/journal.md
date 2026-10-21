@@ -21,6 +21,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 ### Done / results
 
 - An install whose checkpoint has aged out now fetches a fresh one from two beacon servers and uses it only if they agree.
+- The opt-in usage report now names the app a tagged installer opened on first run; the notice re-asks.
 - The update check now sees pre-releases; a bot refreshes the bundled checkpoint twice a week, and a release refuses one over seven days old.
 - `orivon:` links open a .eth name or IPFS address from other programs; an installer named for an app opens that app on first run.
 - The new tab gained hideable Featured tiles, a Your apps row and a dismissible Start here card; the first permission question now says why.
