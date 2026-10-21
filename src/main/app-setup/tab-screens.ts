@@ -19,6 +19,10 @@ export interface TabScreens {
   blank: () => Promise<void>
   /** Resolves what the person chose; `leave` too when the sheet went away without an answer. */
   sheet: (sheet: SetupSheet) => Promise<SheetChoice>
+  /** Covers the tab with `state`'s words at once, with no wait, until `end`. Does nothing to a tab that moved on. */
+  cover: (state: CoverState) => void
+  /** Reloads the tab from the network and ends the screens once the new page is ready, or the reload fails or stops. Does nothing to a tab that moved on. */
+  reloadFresh: () => void
   /** Takes every screen of this visit away. Idempotent. */
   end: () => void
   /** The tab started another navigation or was destroyed: whatever was asked of it is no longer about this page. */
@@ -56,7 +60,15 @@ export interface TabSetupDeps {
   readonly blank: (contents: WebContents) => Promise<void>
   /** Stops the navigation the contents have pending. */
   readonly stop: (contents: WebContents) => void
+  /** Reloads the contents' page, skipping the HTTP cache. */
+  readonly reload: (contents: WebContents) => void
 }
+
+/** A reload that has neither committed nor failed nor stopped after this long no longer holds the cover. */
+export const RELOAD_COVER_LIMIT_MS = 60_000
+
+/** A navigation cancelled by a newer one, by the person, or because it became a download. */
+const ERR_ABORTED = -3
 
 /** What `deps.blank` loads: the address a navigation of this visit's own makes itself known by. */
 const BLANK_URL = 'about:blank'
@@ -76,6 +88,7 @@ export function createTabSetup (deps: TabSetupDeps): TabSetup {
     let release: (() => void) | undefined
     let forgetAnswer: (() => void) | undefined
     let settleSheet: ((choice: SheetChoice) => void) | undefined
+    let stopWatchingReload: (() => void) | undefined
 
     const askCover = (state: CoverState): void => {
       if (ended) return
@@ -96,6 +109,7 @@ export function createTabSetup (deps: TabSetupDeps): TabSetup {
       cover?.cancel()
       sheet = cover = undefined
       forgetAnswer?.()
+      stopWatchingReload?.()
       release?.()
     }
 
@@ -124,7 +138,39 @@ export function createTabSetup (deps: TabSetupDeps): TabSetup {
     contents.on('did-start-navigation', onNavigation as never)
     contents.on('destroyed', onDestroyed)
 
+    /** Reloads the contents and ends the screens once the new document is ready: its own `dom-ready` after a main-frame commit, the rule `../loading-screen/` applies. */
+    const reloadFresh = (): void => {
+      if (!live()) return
+      let committed = false
+      let loading = false
+      const timer = setTimeout(end, RELOAD_COVER_LIMIT_MS)
+      const onCommit = (): void => { committed = true }
+      const onStart = (): void => { loading = true }
+      const onReady = (): void => { if (committed) end() }
+      const onFail = (_event: unknown, code: number, _name: string, _url: string, isMainFrame: boolean): void => { if (isMainFrame && code !== ERR_ABORTED) end() }
+      const onStop = (): void => { if (loading) end() }
+      const onGone = (): void => { end() }
+      contents.on('did-navigate', onCommit)
+      contents.on('did-start-loading', onStart)
+      contents.on('dom-ready', onReady)
+      contents.on('did-fail-load', onFail as never)
+      contents.on('did-stop-loading', onStop)
+      contents.on('render-process-gone', onGone)
+      stopWatchingReload = () => {
+        clearTimeout(timer)
+        contents.removeListener('did-navigate', onCommit)
+        contents.removeListener('did-start-loading', onStart)
+        contents.removeListener('dom-ready', onReady)
+        contents.removeListener('did-fail-load', onFail as never)
+        contents.removeListener('did-stop-loading', onStop)
+        contents.removeListener('render-process-gone', onGone)
+      }
+      deps.reload(contents)
+    }
+
     return {
+      cover: (state) => { if (live()) askCover(state) },
+      reloadFresh,
       sheet: async (shown) => {
         if (ended) return 'leave'
         askCover({ kind: shown.kind, name: shown.name })

@@ -4,12 +4,12 @@ import type { LoadResult, LoadUpdateAvailable } from '../../../loader/index.js'
 import type { ProviderVerdict } from '../../../trust/score-provider.js'
 import type { PinRecord } from '../../../broker/policy/pin.js'
 import { createAppUpdates } from '../app-updates.js'
-import type { AppUpdatesDeps, UpdatePrompts } from '../app-updates.js'
+import type { AppUpdatesDeps, UpdateOffer, UpdatePrompts } from '../app-updates.js'
 import { fakeBroker, fakeLoader, grant, installedResult, manifestWith, manifestWithCapabilities } from './app-install.test-helpers.js'
 
 // An installed app's name moved: the offer is judged verified or not, the
 // person is asked, and only a yes (or a confirmed Trust & Force) fetches and
-// installs it. Every tab on the origin then reloads.
+// installs it. Every tab on the origin is covered the moment the person says yes, then reloads under the cover.
 
 const FROM = 'bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi'
 const TO = 'bafybeifnx3u22ngv4ygpnj32qkwzrpgizw4i7e3swp4v6am5piiih3ude4'
@@ -31,6 +31,9 @@ interface Rig {
   readonly prompts: { [K in keyof UpdatePrompts]: ReturnType<typeof vi.fn> }
   readonly loader: ReturnType<typeof fakeLoader>
   readonly reloaded: string[]
+  /** The order things happened in: 'confirm', 'cover', 'apply', then 'reload' or 'end', and 'failed'. */
+  readonly events: string[]
+  readonly covered: UpdateOffer[]
   readonly changes: number[]
   readonly capabilityPrompt: ReturnType<typeof vi.fn>
 }
@@ -44,11 +47,13 @@ function rig (options: {
   force?: boolean
   persist?: boolean
   floor?: string | undefined
+  applying?: Promise<void>
 } = {}): Rig {
+  const events: string[] = []
   const manifest = { ...manifestWith('1.0.1'), domain: HOST }
   const loader = fakeLoader({ outcome: 'rejected', reason: 'unused' }, {
     pinFor: async () => PIN,
-    applyUpdate: async () => options.applied ?? { outcome: 'needs-reconsent', canonicalOrigin: APP, manifest, tree: { root: 'sha256:' + 'b'.repeat(64), assets: [] }, entries: [], declaration: undefined, content: { cid: TO, via: 'ipfs', pointersVerified: true } },
+    applyUpdate: async () => { events.push('apply'); await options.applying; return options.applied ?? { outcome: 'needs-reconsent', canonicalOrigin: APP, manifest, tree: { root: 'sha256:' + 'b'.repeat(64), assets: [] }, entries: [], declaration: undefined, content: { cid: TO, via: 'ipfs', pointersVerified: true } } },
     installFetched: async () => installedResult(manifest) as never,
     quietOffers: async () => ({ quiet: options.quiet ?? [] })
   })
@@ -56,22 +61,31 @@ function rig (options: {
   const prompts = {
     verified: vi.fn(async () => options.verified === null ? null : { yes: false, quiet: false, ...options.verified }),
     notice: vi.fn(async () => options.notice === null ? null : { quiet: false, ...options.notice }),
-    confirmForce: vi.fn(async () => options.force ?? false),
-    failed: vi.fn(async () => {})
+    confirmForce: vi.fn(async () => { events.push('confirm'); return options.force ?? false }),
+    failed: vi.fn(async () => { events.push('failed') })
   }
   const reloaded: string[] = []
+  const covered: UpdateOffer[] = []
   const changes: number[] = []
   const capabilityPrompt = vi.fn(async () => true)
   const deps: AppUpdatesDeps = {
     outcome: { broker: fakeBroker({ versionFloor: options.floor ?? '1.0.0', grants: [grant()] }), loader, capabilityPrompt },
     verdictFor: async () => options.verdict ?? judged(3),
     prompts,
-    reloadTabs: (origin) => { reloaded.push(origin) },
+    coverTabs: (origin, offer) => {
+      events.push('cover')
+      covered.push(offer)
+      let settled = false
+      return {
+        end: () => { if (!settled) { settled = true; events.push('end') } },
+        reloadThenEnd: () => { if (!settled) { settled = true; events.push('reload'); reloaded.push(origin) } }
+      }
+    },
     persistQuiet: options.persist ?? true
   }
   const updates = createAppUpdates(deps)
   updates.onChange(() => { changes.push(changes.length) })
-  return { updates, prompts, loader, reloaded, changes, capabilityPrompt }
+  return { updates, prompts, loader, reloaded, events, covered, changes, capabilityPrompt }
 }
 
 describe('a verified update', () => {
@@ -308,5 +322,80 @@ describe('apply', () => {
     expect(await r.updates.apply(APP, TO)).toEqual({ ok: true })
     expect(r.prompts.confirmForce).not.toHaveBeenCalled()
     expect(r.reloaded).toEqual([APP])
+  })
+})
+
+describe('the cover over the app\'s tabs while an update is taken', () => {
+  it('goes up the moment a verified Yes is given, before the new version is fetched, and ends in a reload', async () => {
+    let fetched: () => void = () => {}
+    const r = rig({ verified: { yes: true }, applying: new Promise<void>((resolve) => { fetched = resolve }) })
+    const offering = r.updates.offered(available())
+    await vi.waitFor(() => { expect(r.events).toEqual(['cover', 'apply']) })
+    expect(r.covered[0]).toMatchObject({ origin: APP, claimedName: 'Test', fromVersion: '1.0.0', toVersion: '1.0.1' })
+    fetched()
+    await offering
+    expect(r.events).toEqual(['cover', 'apply', 'reload'])
+  })
+
+  it('goes up after the Trust & Force confirmation and not before it', async () => {
+    const r = rig({ verdict: { status: 'off' }, force: true })
+    await r.updates.offered(available())
+    expect(await r.updates.apply(APP, TO)).toEqual({ ok: true })
+    expect(r.events).toEqual(['confirm', 'cover', 'apply', 'reload'])
+  })
+
+  it('goes up for an update taken from the key, with no second question', async () => {
+    const r = rig({ verified: { yes: false } })
+    await r.updates.offered(available())
+    await r.updates.apply(APP, TO)
+    expect(r.events).toEqual(['cover', 'apply', 'reload'])
+  })
+
+  it('never goes up when the person declines Trust & Force', async () => {
+    const r = rig({ verdict: { status: 'off' }, force: false })
+    await r.updates.offered(available())
+    await r.updates.apply(APP, TO)
+    expect(r.events).toEqual(['confirm'])
+  })
+
+  it('never goes up for a Not now', async () => {
+    const r = rig({ verified: { yes: false } })
+    await r.updates.offered(available())
+    expect(r.events).toEqual([])
+  })
+
+  it('is taken away at once when the download fails, before the failure is explained, and nothing reloads', async () => {
+    const r = rig({ verified: { yes: true }, applied: { outcome: 'rejected', reason: 'the gateway did not answer' } })
+    await r.updates.offered(available())
+    expect(r.events).toEqual(['cover', 'apply', 'end', 'failed'])
+    expect(r.reloaded).toEqual([])
+  })
+
+  it('is taken away when the name moved again, and nothing reloads', async () => {
+    const r = rig({ verified: { yes: true }, applied: { outcome: 'rejected', reason: 'moved again', movedAgain: true } })
+    await r.updates.offered(available())
+    expect(r.events).toEqual(['cover', 'apply', 'end'])
+    expect(r.reloaded).toEqual([])
+  })
+
+  it('is taken away when the offer moved while Trust & Force was being decided', async () => {
+    const r = rig({ verdict: { status: 'off' } })
+    let answer: (yes: boolean) => void = () => {}
+    r.prompts.confirmForce.mockImplementation(async () => await new Promise<boolean>((resolve) => { answer = resolve }))
+    await r.updates.offered(available())
+    const applying = r.updates.apply(APP, TO)
+    await vi.waitFor(() => { expect(r.prompts.confirmForce).toHaveBeenCalledTimes(1) })
+    r.updates.withdraw(APP)
+    answer(true)
+    await applying
+    expect(r.events).toEqual(['cover', 'end'])
+  })
+
+  it('is taken away when installing throws', async () => {
+    const r = rig({ verified: { yes: false } })
+    await r.updates.offered(available())
+    r.loader.applyUpdate.mockRejectedValue(new Error('disk full'))
+    await expect(r.updates.apply(APP, TO)).rejects.toThrow('disk full')
+    expect(r.events).toEqual(['cover', 'end'])
   })
 })

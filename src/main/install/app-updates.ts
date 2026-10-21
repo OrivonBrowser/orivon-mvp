@@ -1,7 +1,7 @@
 // What happens to an installed app whose name moved (ADR-0056). The loader found the new manifest
 // (`update-available`); this file judges the offer verified or not, asks the person, and on a yes
 // has the loader fetch exactly the offered root, then installs it and reloads the origin's tabs.
-// The old version keeps running until then. Electron-free: the questions, the tabs and the score
+// The old version keeps running until then, and the tabs are covered from the yes until the new page is ready. Electron-free: the questions, the tabs and the score
 // provider come in through `AppUpdatesDeps`, the same split ../consent/update-outcomes.ts uses.
 
 import { originFromUrl } from '../../broker/policy/origin.js'
@@ -49,14 +49,25 @@ export interface UpdatePrompts {
   failed: (offer: UpdateOffer, reason: string, caller?: DialogCaller) => Promise<void>
 }
 
+/**
+ * What the person sees while an update they took runs. The first of the two to be called settles it, and the other
+ * then does nothing, so a caller may `end` in a `finally` after `reloadThenEnd` handed the tabs over.
+ */
+export interface UpdateCover {
+  /** The update did not install: the cover goes, the old version keeps running, no tab reloads. */
+  end: () => void
+  /** The update installed: every tab of the origin, covered or not, reloads from the network, and a covered one is uncovered once its new page is ready. */
+  reloadThenEnd: () => void
+}
+
 export interface AppUpdatesDeps {
   /** What installing an applied update goes through: the three questions an update can still raise. `offerUpdate` is this file's own, set by the caller. */
   readonly outcome: UpdateOutcomeDeps
   /** The chosen provider's verdict on a page identifier, asked with no wait. */
   readonly verdictFor: (id: string | undefined) => Promise<ProviderVerdict>
   readonly prompts: UpdatePrompts
-  /** Reloads every tab showing `origin`, in any window. */
-  readonly reloadTabs: (origin: string) => void
+  /** Covers every tab showing `origin`, in any window, the moment the person has said yes (`UpdateCover`). */
+  readonly coverTabs: (origin: string, offer: UpdateOffer) => UpdateCover
   /** False in a private session: a tick lasts the session and writes nothing. */
   readonly persistQuiet: boolean
 }
@@ -136,8 +147,8 @@ export function createAppUpdates (deps: AppUpdatesDeps): AppUpdates {
     if (deps.persistQuiet) await loader.keepQuiet(origin, offer)
   }
 
-  /** Fetches the offered root, installs it and reloads the origin's tabs. Runs inside the origin's queue; asks the person nothing but what an install itself raises. */
-  async function applyLocked (offer: UpdateOffer, caller: DialogCaller | undefined): Promise<Applied> {
+  /** Fetches the offered root, installs it and reloads the origin's tabs under `cover`. Runs inside the origin's queue; asks the person nothing but what an install itself raises. */
+  async function applyLocked (offer: UpdateOffer, caller: DialogCaller | undefined, cover: UpdateCover): Promise<Applied> {
     const { origin } = offer
     const context = await loadContextFor(broker, origin)
     const result: LoadResult = await loader.applyUpdate(origin, offer.toCid, context)
@@ -146,7 +157,7 @@ export function createAppUpdates (deps: AppUpdatesDeps): AppUpdates {
     if (driven.outcome === 'installed') {
       offers.delete(origin)
       changed(origin)
-      deps.reloadTabs(origin)
+      cover.reloadThenEnd()
       return { ok: true }
     }
     if (driven.outcome === 'rejected') {
@@ -208,11 +219,18 @@ export function createAppUpdates (deps: AppUpdatesDeps): AppUpdates {
       if (!await deps.prompts.confirmForce(offer, held, caller)) return { ok: false, reason: 'declined' }
       if (caller !== undefined && !caller.stillOn(origin)) return { ok: false, reason: 'declined' }
     }
-    const outcome = await withOriginQueue(origin, async (): Promise<Applied> => {
-      const current = offers.get(origin)
-      if (current === undefined || current.toCid !== toCid || current.verified !== offer.verified) return { ok: false, reason: 'no such offer' }
-      return await applyLocked(current, caller)
-    })
+    // The person has said yes: the app's tabs say so at once, while the new version is still being fetched.
+    const cover = deps.coverTabs(origin, offer)
+    let outcome: Applied
+    try {
+      outcome = await withOriginQueue(origin, async (): Promise<Applied> => {
+        const current = offers.get(origin)
+        if (current === undefined || current.toCid !== toCid || current.verified !== offer.verified) return { ok: false, reason: 'no such offer' }
+        return await applyLocked(current, caller, cover)
+      })
+    } finally {
+      cover.end()
+    }
     if (outcome.ok) return outcome
     if (outcome.failure !== undefined) await deps.prompts.failed(offer, outcome.failure, caller)
     return { ok: false, reason: outcome.reason }

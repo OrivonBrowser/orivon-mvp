@@ -5,7 +5,7 @@ import type { SlotAsk } from '../../overlays/tab-slots.js'
 import type { ShellWindow } from '../../shell/window-registry.js'
 import { isCoverClaimed } from '../../loading-screen/claim.js'
 import { answerSheet } from '../setup-sheet-overlay.js'
-import { createTabSetup } from '../tab-screens.js'
+import { createTabSetup, RELOAD_COVER_LIMIT_MS } from '../tab-screens.js'
 
 const WINDOW = {} as unknown as ShellWindow
 const ADDRESS = 'https://abc.ipfs.orivon/'
@@ -35,7 +35,8 @@ function rig (options: { blankNavigates?: boolean } = {}): { contents: EventEmit
       // What the real replacement does: a main-frame navigation of the tab's own.
       ;(target as unknown as EventEmitter).emit('did-start-navigation', { isMainFrame: true, isSameDocument: false, url: 'about:blank' })
     },
-    stop: () => { acted.push('stop') }
+    stop: () => { acted.push('stop') },
+    reload: () => { acted.push('reload') }
   })
   return { contents, asks, cancels, navigated, acted, setup }
 }
@@ -213,5 +214,93 @@ describe('createTabSetup', () => {
     const screens = setup(asContents(contents), ADDRESS)!
     contents.isDestroyed = () => true
     expect(screens.moved()).toBe(true)
+  })
+
+  describe('an update the person took', () => {
+    const words = { kind: 'updating' as const, name: 'Notes', fromVersion: '1.0.0', toVersion: '1.1.0' }
+
+    it('covers the tab at once with the update\'s words, busy, and holds the protocol\'s own screen off', () => {
+      const { contents, asks, setup } = rig()
+      const screens = setup(asContents(contents), ADDRESS)!
+      screens.cover(words)
+      const cover = asks.find((ask) => ask.slot === 'cover')!
+      expect(cover.payload).toMatchObject({ url: ADDRESS, text: { title: 'Updating Notes', detail: 'Version 1.0.0 to 1.1.0. The app reloads when the new version is ready.', busy: true } })
+      expect(isCoverClaimed(contents)).toBe(true)
+      screens.end()
+      expect(isCoverClaimed(contents)).toBe(false)
+    })
+
+    it('reloads from the network and keeps the cover until the new document\'s own dom-ready after its commit', () => {
+      const { contents, cancels, acted, setup } = rig()
+      const screens = setup(asContents(contents), ADDRESS)!
+      screens.cover(words)
+      screens.reloadFresh()
+      expect(acted).toEqual(['reload'])
+      contents.emit('did-start-loading')
+      // The old page's late dom-ready, before the new one committed, is not the new page.
+      contents.emit('dom-ready')
+      expect(cancels[0]).not.toHaveBeenCalled()
+      contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false, url: ADDRESS })
+      expect(cancels[0]).not.toHaveBeenCalled()
+      contents.emit('did-navigate')
+      contents.emit('dom-ready')
+      expect(cancels[0]).toHaveBeenCalledTimes(1)
+      expect(isCoverClaimed(contents)).toBe(false)
+    })
+
+    it.each([
+      ['a failed load', (c: EventEmitter) => c.emit('did-fail-load', {}, -105, 'ERR_NAME_NOT_RESOLVED', ADDRESS, true)],
+      ['a crashed renderer', (c: EventEmitter) => c.emit('render-process-gone')],
+      ['a load that stopped', (c: EventEmitter) => { c.emit('did-start-loading'); c.emit('did-stop-loading') }]
+    ])('uncovers the tab on %s', (_label, happen) => {
+      const { contents, cancels, setup } = rig()
+      const screens = setup(asContents(contents), ADDRESS)!
+      screens.cover(words)
+      screens.reloadFresh()
+      happen(contents)
+      expect(cancels[0]).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not count a navigation cancelled by a newer one as a failure', () => {
+      const { contents, cancels, setup } = rig()
+      const screens = setup(asContents(contents), ADDRESS)!
+      screens.cover(words)
+      screens.reloadFresh()
+      contents.emit('did-fail-load', {}, -3, 'ERR_ABORTED', ADDRESS, true)
+      expect(cancels[0]).not.toHaveBeenCalled()
+    })
+
+    it('gives the cover up after a reload that never settles', () => {
+      vi.useFakeTimers()
+      try {
+        const { contents, cancels, setup } = rig()
+        const screens = setup(asContents(contents), ADDRESS)!
+        screens.cover(words)
+        screens.reloadFresh()
+        vi.advanceTimersByTime(RELOAD_COVER_LIMIT_MS)
+        expect(cancels[0]).toHaveBeenCalledTimes(1)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('leaves a tab that moved to another site uncovered and unreloaded', () => {
+      const { contents, cancels, acted, setup } = rig()
+      const screens = setup(asContents(contents), ADDRESS)!
+      screens.cover(words)
+      contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false, url: 'https://elsewhere.example/' })
+      expect(cancels[0]).toHaveBeenCalledTimes(1)
+      screens.cover(words)
+      screens.reloadFresh()
+      expect(acted).toEqual([])
+    })
+
+    it('uncovers a tab that is destroyed during the update', () => {
+      const { contents, cancels, setup } = rig()
+      const screens = setup(asContents(contents), ADDRESS)!
+      screens.cover(words)
+      contents.emit('destroyed')
+      expect(cancels[0]).toHaveBeenCalledTimes(1)
+    })
   })
 })

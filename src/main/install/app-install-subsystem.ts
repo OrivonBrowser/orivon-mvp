@@ -26,6 +26,7 @@ import { createCapabilityPrompt, createReconsentPrompt, createRollbackChoiceProm
 import { createUpdatePrompts } from '../consent/update-offer-prompts.js'
 import type { UpdateOutcomeDeps } from '../consent/update-outcomes.js'
 import { createAppUpdates } from './app-updates.js'
+import { createUpdateCover } from './update-cover.js'
 import { dialogCallerFor } from './dialog-caller.js'
 import { OPEN_TAB_CHECK_MS, startUpdateWatch } from './update-watch.js'
 import { backgroundPinDelayMs, updateWatchMs } from '../verifier/test-seam.js'
@@ -134,7 +135,7 @@ export const appInstallSubsystem: Subsystem = {
       outcome: outcomeDeps,
       verdictFor: async (id) => (await ctx.scoreVerdictFor?.(id)) ?? { status: 'off' },
       prompts: createUpdatePrompts(),
-      reloadTabs: (origin) => { for (const tab of ctx.openTabs?.on(origin) ?? []) if (!tab.isDestroyed()) tab.reload() },
+      coverTabs: createUpdateCover({ tabsOn: (origin) => ctx.openTabs?.on(origin) ?? [], screensFor: (contents, address) => tabSetupNow()?.(contents, address) }),
       persistQuiet: !ctx.privateSession
     })
     publishAppUpdates(ctx, updates)
