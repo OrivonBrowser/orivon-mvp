@@ -83,6 +83,17 @@ describe('a first start of a profile', () => {
     expect(existsSync(join(home, '.orivon-running'))).toBe(false)
   })
 
+  it('says where a private directory it made for itself gets its extensions from, and names none for a directory it was given or for a profile', () => {
+    const cold = run(fakeApp(true).app, '--new-private-window')
+    expect(cold?.extensionsFrom).toBe(home)
+    const bare = run(fakeApp(false).app, '--orivon-private')
+    expect(bare?.extensionsFrom).toBe(home)
+    const given = join(tmp, 'orivon-private-abc123')
+    mkdirSync(given)
+    expect(run(fakeApp(false).app, '--orivon-private', `--orivon-private-dir=${given}`)?.extensionsFrom).toBeUndefined()
+    expect(run(fakeApp(true).app)?.extensionsFrom).toBeUndefined()
+  })
+
   it('names the private directory it made, since no other process is left to remove it, and none for a directory it was given or for a profile', () => {
     const cold = run(fakeApp(true).app, '--new-private-window')
     expect(cold?.madeDir).toBe(cold?.dir)

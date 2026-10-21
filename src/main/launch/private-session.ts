@@ -1,6 +1,7 @@
 // A private session's directory: made fresh, holding a copy of the preferences (settings,
-// keyboard shortcuts, search engines) it began with, the extensions the opening profile allows in private windows
-// (./private-extensions.ts) and nothing else, and removed when the session is over. Deleting it
+// keyboard shortcuts, search engines) it began with and nothing else, and removed when the session is over. The
+// extensions the opening profile allows in private windows are copied in after it is made, asynchronously
+// (./private-extensions.ts), before anything starts in it. Deleting it
 // is never claimed to happen inside the dying process: Chromium writes after quit
 // and Windows will not delete a file that is open. The browser that opened the
 // session removes it when the process exits; a session that made its own directory
@@ -11,7 +12,6 @@ import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readF
 import { tmpdir, uptime } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { NYM_HELD_SETTINGS, forceSettingsFile } from '../settings/settings-file.js'
-import { copyPrivateExtensions } from './private-extensions.js'
 import { copyPublicSeed } from './public-seed.js'
 import type { PrivateTunnel } from './launch-context.js'
 import { bootTimeMs, isPidRecordAlive, processIsAlive } from './pid-liveness.js'
@@ -25,8 +25,8 @@ const NAME = new RegExp(`^${PRIVATE_PREFIX}[A-Za-z0-9]{6}$`)
 export const GRACE_MS = 10 * 60 * 1000
 
 /** What a private session starts with, copied from the profile that opened it: its settings,
- * keyboard shortcuts and search engines -- all preferences -- plus the public seed (./public-seed.ts) and the extensions
- * the profile allows in private windows (./private-extensions.ts). Never
+ * keyboard shortcuts and search engines -- all preferences -- plus the public seed (./public-seed.ts); the extensions the
+ * profile allows in private windows come after, from ./private-extensions.ts. Never
  * history, bookmarks, grants, apps, identity, site data, or zoom.json: a list of sites visited,
  * not a preference. */
 export const SNAPSHOT_FILES = ['settings.json', 'shortcuts.json', 'search-engines.json'] as const
@@ -44,7 +44,6 @@ export function createPrivateDir (from: string, home: string, tmp = tmpdir(), tu
       if (existsSync(join(from, file))) cpSync(join(from, file), join(dir, file))
     }
     copyPublicSeed(home, dir)
-    copyPrivateExtensions(from, dir)
     if (tunnel === 'nym') forceSettingsFile(join(dir, 'settings.json'), NYM_HELD_SETTINGS)
   } catch (error) {
     removePrivateDir(dir, tmp)

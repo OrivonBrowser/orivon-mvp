@@ -29,6 +29,8 @@ export interface Runtime {
   readonly profileId: string
   /** The private directory this process made for itself, which nothing else will remove when it ends. Absent when another browser made it or this is a profile. */
   readonly madeDir?: string
+  /** The profile directory whose allowed extensions this private process still has to copy into its own, before its subsystems start (`copyPrivateExtensions`, which `index.ts` awaits). Absent when another browser made the directory and already copied them. */
+  readonly extensionsFrom?: string
   /** The switches of this launch that a process it starts must have too, or it would look for its data somewhere else. */
   readonly inherit: readonly string[]
 }
@@ -73,6 +75,7 @@ export function startLaunch (app: LaunchApp, argv: readonly string[], env: NodeJ
   let dir = home
   let profileId = 'default'
   let madeDir: string | undefined
+  let extensionsFrom: string | undefined
   if (launch.kind === 'profile') {
     // A profile is made in the browser, never by a typo on a command line.
     if (!existsSync(join(launch.dir, 'profile.json'))) return fail(`there is no profile "${launch.id}"`)
@@ -86,6 +89,7 @@ export function startLaunch (app: LaunchApp, argv: readonly string[], env: NodeJ
     if (launch.dir === null) {
       try {
         madeDir = createPrivateDir(home, home, tmp, launch.tunnel)
+        extensionsFrom = home
       } catch (error) {
         return fail(`the private session could not be set up: ${error instanceof Error ? error.message : String(error)}`)
       }
@@ -118,6 +122,7 @@ export function startLaunch (app: LaunchApp, argv: readonly string[], env: NodeJ
       app.releaseSingleInstanceLock()
       const sessionDir = createPrivateDir(dir, home, tmp)
       launched = { kind: 'private', home, dir: sessionDir }
+      extensionsFrom = dir
       dir = sessionDir
       madeDir = sessionDir
       profileId = 'private'
@@ -132,5 +137,5 @@ export function startLaunch (app: LaunchApp, argv: readonly string[], env: NodeJ
   // Chromium's own command line as well: a launcher can take a switch back off argv once it has taken effect, and a
   // peer started with the sandbox where this one runs without it aborts on a machine that has none.
   if (!inherit.includes('--no-sandbox') && app.commandLine.hasSwitch('no-sandbox')) inherit.push('--no-sandbox')
-  return { launch: launched, dir, profiles, source, isPrivate: launched.kind === 'private', profileId, inherit, ...(madeDir === undefined ? {} : { madeDir }) }
+  return { launch: launched, dir, profiles, source, isPrivate: launched.kind === 'private', profileId, inherit, ...(madeDir === undefined ? {} : { madeDir }), ...(extensionsFrom === undefined ? {} : { extensionsFrom }) }
 }

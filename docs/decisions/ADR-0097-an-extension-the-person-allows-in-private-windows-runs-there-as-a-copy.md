@@ -54,8 +54,9 @@ own origin keeps the browsing data out by construction rather than by filtering.
 
 ## Consequences
 
-- A private session's start copies some extension data in the opening process, one file after another; an extension's
-  storage is usually small, and a failure only costs that extension its data.
+- A private session's start waits for the copy of the extension data (tens of megabytes for some extensions, each file
+  also scanned by an antivirus on Windows), made a few files at a time without holding the window that asked; a failure
+  only costs that extension its data.
 - An extension's `localStorage` and a cookie it set do not carry over.
 - The profile's other sessions' data of the extension (a tunnel profile's) is copied too, so a site in a tunnel profile
   sees the same extension state.

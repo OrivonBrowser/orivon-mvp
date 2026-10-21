@@ -129,6 +129,53 @@ describe('the profiles service', () => {
     expect(existsSync(dir)).toBe(false)
   })
 
+  describe('a private session that carries an extension', () => {
+    const ID = 'a'.repeat(32)
+    async function allow (): Promise<void> {
+      await mkdir(join(home, 'extensions', 'slot', '1.0.0'), { recursive: true })
+      await writeFile(join(home, 'extensions', 'slot', '1.0.0', 'manifest.json'), '{}')
+      await writeFile(join(home, 'extensions', 'registry.json'), JSON.stringify({ extensions: [{
+        id: ID, name: 'X', version: '1.0.0', enabled: true, installedAt: 1, updatedAt: 1, source: { kind: 'unpacked', from: '/x' },
+        updater: { kind: 'none', reason: 'x' }, path: join(home, 'extensions', 'slot', '1.0.0'), stripped: { permissions: [], optionalPermissions: [] }
+      }] }))
+      await writeFile(join(home, 'extensions', 'prefs.json'), JSON.stringify({ version: 1, extensions: { [ID]: { privateWindows: true } } }))
+    }
+    const settled = async (condition: () => boolean): Promise<void> => {
+      for (let n = 0; n < 200 && !condition(); n += 1) await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+
+    it('starts once the copy is done, without holding the window that asked, and the copy is there', async () => {
+      await allow()
+      const { service: s, spawn, children } = service()
+      expect(s.openPrivate()).toBe(true)
+      expect(spawn).not.toHaveBeenCalled()
+      await settled(() => spawn.mock.calls.length > 0)
+      expect(spawn).toHaveBeenCalledTimes(1)
+      const args = (spawn.mock.calls[0] as [unknown, string[]])[1]
+      const dir = String(args[1]).replace('--orivon-private-dir=', '')
+      expect(existsSync(join(dir, 'extensions', 'slot', '1.0.0', 'manifest.json'))).toBe(true)
+      expect(readFileSync(join(dir, 'extensions', 'registry.json'), 'utf8')).toContain(ID)
+      children[0]?.emit('exit')
+      expect(existsSync(dir)).toBe(false)
+    })
+
+    it('removes the directory when the session cannot be started after the copy', async () => {
+      await allow()
+      const made = service()
+      const failing = vi.fn(() => { throw new Error('no such program') })
+      const s = new ProfilesService({ launch: { kind: 'default', home, dir: home }, dir: home, profiles: made.store, source: { execPath: '/x', appPath: '/x', packaged: true, appImage: undefined, env: {} }, isPrivate: false, profileId: 'default', inherit: [] }, failing as never)
+      const count = (): number => readdirSync(tmpdir()).filter(isPrivateDirName).length
+      const before = count()
+      const complaint = vi.spyOn(console, 'error').mockImplementation(() => {})
+      expect(s.openPrivate()).toBe(true)
+      await settled(() => failing.mock.calls.length > 0)
+      await settled(() => count() === before)
+      complaint.mockRestore()
+      expect(failing).toHaveBeenCalledTimes(1)
+      expect(count()).toBe(before)
+    })
+  })
+
   describe('a private session held to Nym', () => {
     const argsOf = (spawn: ReturnType<typeof vi.fn>, call = 0): string[] => (spawn.mock.calls[call] as [unknown, string[]])[1]
     const dirOf = (args: string[]): string => String(args.find((argument) => argument.startsWith('--orivon-private-dir='))).replace('--orivon-private-dir=', '')

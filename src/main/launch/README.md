@@ -41,15 +41,19 @@ session or window, already holds the tunnel. A directory that cannot be set up i
 its settings store reads those three whatever a file says and refuses a change, its route store refuses an `off` entry, and a private window opened
 from it is held too. The launcher menus (`../os/`) offer only the ordinary private window.
 
-**A private session may carry an extension, as a copy.** `private-extensions.ts` runs while the directory is made: for each
+**A private session may carry an extension, as a copy.** `private-extensions.ts` runs after the directory is made: for each
 extension that is enabled and allowed in private windows in the opening profile, it copies the extension's folder, a
 registry and a prefs file of just those, and the extension's own storage (the stores behind `chrome.storage`, its
 IndexedDB, its service worker cache) from the default session and the tunnel profiles' sessions. The prefs are an allowlist
 of today's fields, so a choice added later (a camera answer) stays in the profile until it is named. Never copied: anything
-shared with websites (`Local Storage`, cookies, history, caches, service worker registrations), a `LOCK` file or a link. Every file is
-copied on its own, because Windows may hold one open in the opener: a store that cannot be copied whole is dropped, so
-the extension starts blank there, rather than corrupt; an extension whose own files fail is left out; nothing stops the
-window from opening. Opened from a private window, the copy is made from that window's directory in the same way.
+shared with websites (`Local Storage`, cookies, history, caches, service worker registrations), a `LOCK` file or a link. The copy
+is asynchronous, six files at a time, because an extension can hold tens of megabytes (and Windows scans each file): the window
+that asked for the private one stays responsive, and `ProfilesService` starts the process only when the copy is done. A
+session that made its own directory (a start with `--orivon-private`) copies in `index.ts` once Electron is ready, before
+any subsystem reads the folder. Every file is copied on its own, because Windows may hold one open in the opener: a store
+that cannot be copied whole is dropped, so the extension starts blank there, rather than corrupt; an extension whose own
+files fail is left out; nothing stops the window from opening. Opened from a private window, the copy is made from that
+window's directory in the same way.
 
 **It runs before the data directory is read.** A store that had read the default directory could not be moved,
 so `start-launch.ts` is called before the subsystems' `beforeReady`. No module reads the directory when it is

@@ -10,20 +10,28 @@
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/extensions/e2e-extensions-private-windows.test.ts
 import { afterAll, expect, it } from 'vitest'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Server } from 'node:http'
 import type { ElectronApplication, Page } from 'playwright'
-import { assertNoElectronSurvivors, closeElectron, launchElectron, profileDirOf } from '../support/launch-electron.mjs'
+import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput, profileDirOf } from '../support/launch-electron.mjs'
 import { delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
 import { navigateToFixture } from '../support/e2e-helpers.js'
+import { privatePeer } from '../window/private-peer.js'
+import type { PrivatePeer } from '../window/private-peer.js'
 import { startFixtureServer } from '../support/extensions-fixtures.js'
 import { normalizePrefs, parsePrefsFile, serializePrefs } from '../../src/main/extensions/extension-prefs.js'
+import { parseRegistry } from '../../src/main/extensions/registry.js'
 import { openExtensionPage, rpc, seedFixture, waitRecovered } from './extensions-e2e-helpers.js'
 
 let server: Server | undefined
 
+const peerPids: number[] = []
+const leftBehind: string[] = []
+
 afterAll(async () => {
+  for (const pid of peerPids) { try { process.kill(-pid, 'SIGKILL') } catch { /* already gone */ } }
+  for (const dir of leftBehind) rmSync(dir, { recursive: true, force: true })
   if (server !== undefined) await new Promise<void>((resolve) => { server?.close(() => { resolve() }) })
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
@@ -47,11 +55,11 @@ async function shoot (page: Page, name: string): Promise<void> {
 
 const extensionsPage = (app: ElectronApplication): Page | undefined => app.windows().find((w) => w.url().startsWith('orivon://extensions'))
 
-async function launched (options: { args?: string[], seed?: (dir: string) => void, reuseProfile?: string }): Promise<{ app: ElectronApplication, chrome: Page }> {
+async function launched (options: { args?: string[], seed?: (dir: string) => void, reuseProfile?: string, sandbox?: boolean }): Promise<{ app: ElectronApplication, chrome: Page }> {
   const app = await launchElectron({
     appPath: '.',
     args: [HERMETIC_RESOLVER, ...(options.args ?? [])],
-    sandbox: true,
+    sandbox: options.sandbox ?? true,
     ...(options.reuseProfile === undefined ? {} : { reuseProfile: options.reuseProfile }),
     ...(options.seed === undefined ? {} : { seedProfile: async (dir: string) => { options.seed?.(dir) } })
   })
@@ -175,5 +183,36 @@ it('[app:extensions-run-in-private-windows] runs an extension in a private windo
     expect(await storageOf(third.app, storageId)).toEqual({ kept: 'normal' })
   } finally {
     await closeElectron(third.app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it.skipIf(process.platform !== 'linux')('a private window opened from a running profile starts once the copy of the allowed extension is in its folder', async () => {
+  let storageId = ''
+  // Without the sandbox, as `test/window/e2e-profiles.test.ts` starts its peer: the process this one starts inherits nothing of it.
+  const { app, chrome } = await launched({
+    sandbox: false,
+    seed: (dir) => {
+      storageId = seedFixture(dir, 'api-sweep')
+      seedFixture(dir, 'content-marker')
+      writeFileSync(join(dir, 'extensions', 'prefs.json'), serializePrefs(new Map([[storageId, normalizePrefs({ privateWindows: true })]])))
+    }
+  })
+  try {
+    const userData = await app.evaluate(({ app: electron }) => electron.getPath('userData'))
+    await chrome.evaluate(() => { (window as unknown as { orivonShell: { runCommand: (id: string) => void } }).orivonShell.runCommand('window.newPrivate') })
+    let peer: PrivatePeer | undefined
+    const found = await waitFor(() => { peer = privatePeer(userData); return peer !== undefined }, 30_000)
+    if (!found) throw new Error(`no private process for ${userData}: ${mainOutput(app).split('\n').filter((line) => !/dbind|Permission|ExtensionLoad/.test(line)).join('\n')}`)
+    const { pids, dir } = peer as PrivatePeer
+    peerPids.push(...pids)
+    leftBehind.push(dir)
+    // The process is only started when the copy is done, so what it was told to open already holds the extension.
+    expect(parseRegistry(readFileSync(join(dir, 'extensions', 'registry.json'), 'utf8')).entries.map((entry) => entry.id)).toEqual([storageId])
+    expect(existsSync(join(dir, 'extensions', 'api-sweep', '1.0.0', 'manifest.json'))).toBe(true)
+    expect(existsSync(join(dir, 'extensions', 'content-marker'))).toBe(false)
+  } finally {
+    for (const pid of peerPids) { try { process.kill(-pid, 'SIGKILL') } catch { /* already gone */ } }
+    await delay(500)
+    await closeElectron(app)
   }
 }, TEST_TIMEOUT_MS)
