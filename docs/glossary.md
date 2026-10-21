@@ -110,7 +110,7 @@ standard site ("Web2"); Level 2 a site that meets DDOC, which the browser detect
 and above are judged, and only a Web3 Score provider gives them, or, in this build, a
 developer-only override previewing one (`src/main/dev/score-levels.ts`). The address bar's Web3
 Score shield leads with it, coloured red/orange/yellow/green, a mark at the pill's right end
-names it Web2 (Level 1), Web2.5 (Levels 2-3) or Web3 (Level 4), or a gray Web? when a Level 2 site has no judged score yet, and the Web3 Score page the
+names it Web2 (Level 1), Web2.5 (Levels 2-3) or Web3 (Level 4), or a gray Web? when a Level 2 site has no judged score yet; the mark opens the Web3 Score card with that level marked, and the Web3 Score page the
 shield opens leads with it too (`ADR-0006`).
 
 **Web3 Score provider**: an entity issuing judged scores, published at an address the person

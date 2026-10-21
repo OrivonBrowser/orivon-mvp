@@ -1,10 +1,12 @@
-// The card the Web3 Score shield opens on a new tab: what the shield shows once a site is open, and each level drawn
-// as the address bar draws it, the shield in its colour and the Web2 / Web2.5 / Web3 mark beside it, and the gray Web? mark
-// of a Level 2 site no provider has scored.
+// The card the Web3 Score shield opens on a new tab and every Web mark opens on a site: what the shield shows once a
+// site is open, and each level drawn as the address bar draws it, the shield in its colour and the Web2 / Web2.5 / Web3
+// mark beside it, and the gray Web? mark of a Level 2 site no provider has scored. From a mark, the row of the site's
+// level reads "This site" and, for Web?, so does the note.
 import { h } from '../../pages/shared/dom.js'
 import type { ScoreLevel } from '../../../trust/website-level.js'
 import { paintMark, paintShield, web3Shield } from '../../web3-shield.js'
 import type { Overlay, OverlayPage } from '../kit.js'
+import { thisSiteOf } from './view.js'
 import './web3-score.css'
 
 /** The scale in the root README.md, in the words of someone who has never heard of it; each level keeps the one before. */
@@ -20,11 +22,13 @@ function levelRow ({ level, meaning }: { level: ScoreLevel, meaning: string }): 
   paintShield(shield, level)
   const mark = h('span', { className: 'web3-mark' })
   paintMark(mark, level)
-  return h('li', { className: 'ws-level' },
+  const row = h('li', { className: 'ws-level' },
     shield,
     h('div', { className: 'ws-level-text' },
       h('div', { className: 'ws-level-head' }, h('span', { className: 'ws-level-name' }, `Level ${String(level)}`), mark),
       h('p', { className: 'ws-level-meaning' }, meaning)))
+  row.dataset['level'] = String(level)
+  return row
 }
 
 /** The closing note, with the gray mark a Level 2 site shows until the provider has judged it. */
@@ -39,12 +43,25 @@ export const web3ScorePage: OverlayPage = {
     const icon = web3Shield()
     const provider = h('button', { type: 'button', className: 'link-btn', onclick: () => { void overlay.request({ type: 'provider' }) } }, 'Choose a score provider')
     const learn = h('button', { type: 'button', className: 'link-btn', onclick: () => { void overlay.request({ type: 'learn' }) } }, 'How scores work')
+    const levels = LEVELS.map(levelRow)
+    const note = providerNote()
     content.append(h('div', { className: 'ws', role: 'dialog', ariaLabel: 'Web3 Score' },
       h('div', { className: 'ws-head' }, icon, h('h1', { className: 'sheet-title' }, 'Web3 Score')),
       h('p', { className: 'ws-lead' }, 'Open a site and this shield shows its Web3 Score: how little you have to trust the people behind it.'),
-      h('ol', { className: 'ws-levels' }, ...LEVELS.map(levelRow)),
-      providerNote(),
+      h('ol', { className: 'ws-levels' }, ...levels),
+      note,
       h('div', { className: 'ws-foot' }, provider, learn)))
-    return { shown () {} }
+    return {
+      shown (reply) {
+        const site = thisSiteOf(reply)
+        for (const row of levels) {
+          const here = site !== null && row.dataset['level'] === String(site.level)
+          row.classList.toggle('ws-here', here)
+          row.querySelector('.ws-here-tag')?.remove()
+          if (here) row.querySelector('.ws-level-head')?.append(h('span', { className: 'ws-here-tag' }, 'This site'))
+        }
+        note.classList.toggle('ws-here', site?.unscored === true)
+      }
+    }
   }
 }

@@ -25,7 +25,7 @@ Electron, entirely: it runs in the chrome's `WebContentsView` on `src/preload/sh
 | `password-key.ts` | the password button in the address pill: saved logins for this site, or an offer to keep the last sign-in |
 | `chrome-shown.ts` | tells main (`chrome.hidden`) when the page reads hidden, so main can show it again |
 | `prompt-anchor.ts` | reports the address pill's rectangle to main (`prompt.anchor`), so a prompt can open under it |
-| `site-badges.ts` | the Web3 Score shield and mark, the permissions key and its `data-missing` attribute (an app's permissions are not all granted), drawn as a dot by `styles/content-dot.css` |
+| `site-badges.ts` | the Web3 Score shield and mark (a button that opens the Web3 Score card with the site's level marked), the permissions key and its `data-missing` attribute (an app's permissions are not all granted), drawn as a dot by `styles/content-dot.css` |
 | `site-access-chip.ts` | the mark in the address bar for a page that asked for the camera, a location or another permission; it opens the review bubble |
 | `content-dot.ts` | a mark on the address bar's key for a site with JavaScript, images or sound switched off, or an app with an update offered: an attribute on `site-badges`'s button, drawn by `styles/content-dot.css` |
 | `tunnel-button.ts` | the tunnel button, last in the address pill after the Web2 / Web2.5 / Web3 mark: shown for any page with a site, purple while the page is on a tunnel and the warning colour when the tunnel does not answer (`data-tunnel`, drawn by `styles/tunnel-button.css`); its label names the tunnel the page goes through, which for a popup adopted into an app's session is the app's (`tunnelVia`); it opens the tunnels page of the site-info popup under itself |
