@@ -133,6 +133,11 @@ export function sheetGone (app: App): boolean {
  * closes, so a cover page that is still open is not a cover on screen: only a visible view of it is.
  */
 export async function coverTitle (app: App): Promise<string | null> {
+  return (await coverWords(app))?.title ?? null
+}
+
+/** The title and the detail line of the cover a tab shows now, or null when no cover is up. */
+export async function coverWords (app: App): Promise<{ title: string, detail: string } | null> {
   const shown = await app.evaluate(({ BaseWindow }) => {
     const visible = (view: { children?: unknown[] }): boolean => ((view.children ?? []) as Array<{ webContents?: { getURL: () => string }, getVisible?: () => boolean, children?: unknown[] }>)
       .some((child) => (child.webContents?.getURL().includes('overlay=loading-screen') === true && child.getVisible?.() !== false) || visible(child))
@@ -141,7 +146,10 @@ export async function coverTitle (app: App): Promise<string | null> {
   if (!shown) return null
   const page = coverPages(app).at(-1)
   if (page === undefined) return null
-  return await page.evaluate(() => document.querySelector('.loading-screen-title')?.textContent ?? null).catch(() => null)
+  return await page.evaluate(() => {
+    const title = document.querySelector('.loading-screen-title')?.textContent
+    return title === undefined || title === null ? null : { title, detail: document.querySelector('.loading-screen-detail')?.textContent ?? '' }
+  }).catch(() => null)
 }
 
 /** Starts noting, in the main process, every page that finishes parsing and every line a page logs, so a spec can say what never happened. */

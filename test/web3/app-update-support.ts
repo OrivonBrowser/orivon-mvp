@@ -135,6 +135,23 @@ export async function buildsAt (app: ElectronApplication, url: string): Promise<
   }, url)
 }
 
+/** Marks the document every live tab at `url` shows, so a later read can tell a page that was loaded again from one that stayed. */
+export async function markDocuments (app: ElectronApplication, url: string): Promise<number> {
+  return await app.evaluate(async ({ webContents }, address) => {
+    const tabs = webContents.getAllWebContents().filter((contents) => !contents.isDestroyed() && contents.getURL() === address)
+    await Promise.all(tabs.map(async (contents) => await contents.executeJavaScript('window.__documentBeforeUpdate = true')))
+    return tabs.length
+  }, url)
+}
+
+/** For every live tab at `url`: true while it still shows the document `markDocuments` marked, false for a new one, null when it did not answer within 3 s. */
+export async function marksAt (app: ElectronApplication, url: string): Promise<Array<boolean | null>> {
+  return await app.evaluate(async ({ webContents }, address) => {
+    const tabs = webContents.getAllWebContents().filter((contents) => !contents.isDestroyed() && contents.getURL() === address)
+    return await Promise.all(tabs.map(async (contents) => await Promise.race([contents.executeJavaScript('window.__documentBeforeUpdate === true').catch(() => null), new Promise<null>((resolve) => { setTimeout(resolve, 3_000, null) })]) as boolean | null))
+  }, url)
+}
+
 /** True once a tab at `url` has finished loading and runs as an app tab: the page holds `orivon` and the Node globals only an app tab gets. A first visit's page is an ordinary website until it is allowed, so `orivon` alone does not say the reload has ended. */
 export async function runsAsApp (app: ElectronApplication, url: string): Promise<boolean> {
   return await app.evaluate(async ({ webContents }, address) => {
