@@ -48,7 +48,8 @@ it('[app:tcp-connect-to-granted-loopback-port] [app:wildcard-host-never-reaches-
   const echoPort = await listen(echo)
   const busyPort = await listen(busy)
   const tlsPort = await listen(tls)
-  const { app, chrome } = await launchShell()
+  // The suite's blackhole resolver maps `localhost` to nothing, and the self-signed certificate names it: without this the default dial below would fail on the name, not on the certificate.
+  const { app, chrome } = await launchShell({ args: ['--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost'] })
   try {
     // The loopback port the .eth verifier listens on, which the resolver rules map every name to.
     const rules = await app.evaluate(({ app: electron }) => electron.commandLine.getSwitchValue('host-resolver-rules'))
@@ -174,7 +175,7 @@ it('[app:tcp-connect-to-granted-loopback-port] [app:wildcard-host-never-reaches-
       check('[app:second-listener-gets-eaddrinuse] listening on a port another program holds fails with EADDRINUSE', /EADDRINUSE/.test(`${show('listenBusy')}`), show('listenBusy'))
       check('[app:fs-quota-refuses-past-limit] a write that would pass the 1024-byte quota is refused as limit, and the earlier 600-byte file is intact', outcomes['quotaFirst']?.ok === true && codeOf(outcomes['quotaSecond']) === 'limit' && outcomes['quotaKept']?.value === 600, `${show('quotaFirst')} ${show('quotaSecond')} ${show('quotaKept')}`)
       check('[app:fs-confined-to-app-root] a path that climbs out of the app root is refused: denied', codeOf(outcomes['outside']) === 'denied', show('outside'))
-      check('[app:tls-self-signed-refused-unless-opted-out] a self-signed server is refused by default: unreachable with a platform code', /^unreachable\//.test(codeOf(outcomes['tlsDefault'])), show('tlsDefault'))
+      check('[app:tls-self-signed-refused-unless-opted-out] a self-signed server is refused by default: unreachable, for the certificate', /^unreachable\/.*SELF.SIGNED/.test(codeOf(outcomes['tlsDefault'])), show('tlsDefault'))
       check('[app:tls-self-signed-refused-unless-opted-out] and reached, unauthorized, when the app sets rejectUnauthorized false', outcomes['tlsOptOut']?.ok === true && (outcomes['tlsOptOut']?.value as { got?: string, authorized?: boolean } | undefined)?.got === 'hello over tls' && (outcomes['tlsOptOut']?.value as { authorized?: boolean } | undefined)?.authorized === false, show('tlsOptOut'))
     })
   } finally {
