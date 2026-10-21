@@ -400,7 +400,16 @@ describe('chrome.offscreen / chrome.runtime.getContexts / chrome.tabCapture', ()
       // The popup closes when the sheet takes the keyboard; while it is still there it holds no stream.
       const device = await popup.evaluate(() => (window as unknown as { __device?: string }).__device).catch(() => undefined)
       expect(device).not.toBe('granted')
-      await liveApp.windows().find((w) => w.url().includes('overlay=extension-permission'))?.keyboard.press('Escape').catch(() => {})
+      // A person presses Escape on a sheet they can read: wait until it has drawn, as a slower system takes longer to
+      // (a key sent to a page still loading is lost). The sheet may already have closed itself when the popup went.
+      const sheet = liveApp.windows().find((w) => w.url().includes('overlay=extension-permission'))
+      if (sheet === undefined) throw new Error('the sheet page is not attached')
+      try {
+        await sheet.waitForSelector('.perm .btn-row')
+        await sheet.keyboard.press('Escape')
+      } catch (error) {
+        if (!/closed|destroyed/.test(String(error))) throw error
+      }
       expect(await waitFor(async () => !(await popoverShown(liveApp, 'overlay=extension-permission')), 8000)).toBe(true)
       const userData = await liveApp.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))
       const stored = existsSync(join(userData, 'extensions', 'prefs.json')) ? readFileSync(join(userData, 'extensions', 'prefs.json'), 'utf8') : ''
