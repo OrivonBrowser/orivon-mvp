@@ -2,6 +2,8 @@
 // page in each loads an ad script from two hosts its lists name and a script from a host they do not, and the lists' two are cancelled
 // before they leave (nothing arrives at the tunnel or at the server) while the other loads, whichever session the page runs in.
 // uBlock Origin blocks only through blocking webRequest listeners, so this is the bridge of ADR-0053 working on each session.
+// CI requires it when the Electron version changes, and a release runs it first (docs/development/testing.md section Electron upgrades);
+// it needs the fetched package (`node scripts/fetch-bundled-extensions.mjs`) and fails, never skips, without it.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/extensions/e2e-extensions-profiles-ublock.test.ts
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'

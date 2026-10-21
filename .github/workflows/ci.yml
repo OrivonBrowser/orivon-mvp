@@ -165,6 +165,7 @@ jobs:
       mode: ${{ steps.select.outputs.mode }}
       count: ${{ steps.select.outputs.count }}
       matrix: ${{ steps.select.outputs.matrix }}
+      electron: ${{ steps.electron.outputs.changed }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -189,6 +190,15 @@ jobs:
           if [ "$EVENT" = "pull_request" ]; then args+=(--base "origin/$BASE_REF"); fi
           if [ "$EVENT" = "workflow_dispatch" ]; then args+=(--base origin/main); fi
           node scripts/ci/select-e2e.mjs "${args[@]}"
+
+      # An Electron upgrade is what breaks the blocking webRequest bridge uBlock Origin needs: when the pull
+      # request moves the version, the ublock-gate job below must pass (docs/development/testing.md).
+      - name: Did the pull request change the Electron version
+        id: electron
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: node scripts/ci/electron-version-changed.mjs --base "origin/$BASE_REF"
 
   # The capability boundary end to end (testing.md "The end-to-end test"), one shard of the selected specs. Each
   # shard is its own runner, so the fixed fixture ports cannot clash. If a hosted runner cannot launch Electron,
@@ -260,10 +270,57 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # The real uBlock Origin must still load and block after an Electron upgrade: its spec, run with the pinned
+  # package fetched on purpose (a failed download fails here, where an ordinary install carries on without it),
+  # on every pull request that changes the Electron version. It builds with the developer-only hooks, like a
+  # shard. Required through the `e2e` job below.
+  ublock-gate:
+    needs: scope
+    if: ${{ needs.scope.result == 'success' && needs.scope.outputs.electron == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Fetch the pinned uBlock Origin package, failing if it cannot be had
+        run: node scripts/fetch-bundled-extensions.mjs --required
+
+      - name: Install a virtual display
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Enable Chromium's setuid sandbox helper
+        run: |
+          sudo chown root:root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+
+      - name: Build with the developer-only hooks the spec needs
+        run: node scripts/build-e2e.mjs
+
+      - name: uBlock Origin loads and blocks on this Electron
+        run: >-
+          xvfb-run -a node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts
+          test/extensions/e2e-extensions-profiles-ublock.test.ts
+
+      - name: Upload failure evidence
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: qa-artifacts-ublock-gate
+          path: qa-artifacts/latest/
+          if-no-files-found: ignore
+          retention-days: 7
+
   # The one e2e status: it passes when every selected shard passed or nothing was selected. If branch protection
   # ever requires an e2e check, it is this job.
   e2e:
-    needs: [scope, e2e-shard]
+    needs: [scope, e2e-shard, ublock-gate]
     if: ${{ always() && (github.event.action != 'labeled' || startsWith(github.event.label.name, 'ci:')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -273,10 +330,12 @@ jobs:
           SCOPE: ${{ needs.scope.result }}
           SHARDS: ${{ needs.e2e-shard.result }}
           MODE: ${{ needs.scope.outputs.mode }}
+          UBLOCK: ${{ needs.ublock-gate.result }}
         run: |
-          echo "scope: $SCOPE; shards: $SHARDS; mode: $MODE"
+          echo "scope: $SCOPE; shards: $SHARDS; mode: $MODE; ublock-gate: $UBLOCK"
           [ "$SCOPE" = "success" ] || exit 1
           [ "$SHARDS" = "success" ] || [ "$SHARDS" = "skipped" ] || exit 1
+          [ "$UBLOCK" = "success" ] || [ "$UBLOCK" = "skipped" ] || exit 1
 
   # The specs that need the build Orivon ships, with no developer-only hooks (test/app-behaviours/README.md). Its
   # own job: the shards build with those hooks on, and one run cannot hold both builds. It runs beside them
