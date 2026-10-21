@@ -329,3 +329,63 @@ it('keeps an answer given from an open popup, and a stored answer works from the
     rmSync(userData, { recursive: true, force: true })
   }
 }, TEST_TIMEOUT_MS)
+
+// A device allowed beside a legacy desktop leg must never hand over the screen or system audio. Measured: Chromium
+// ends a renderer that mixes a device with `chromeMediaSource: 'desktop'` before any permission request is made, and
+// a desktop-only request reaches the gate with an empty `mediaTypes` and is refused, so no stored allow can widen.
+// An extension page and an ordinary site are both tried, each with the camera and the microphone allowed.
+const DESKTOP = { mandatory: { chromeMediaSource: 'desktop' } }
+const MIXED: Array<[string, object]> = [
+  ['a microphone with a desktop video leg', { audio: true, video: DESKTOP }],
+  ['a camera with a desktop audio leg', { video: true, audio: DESKTOP }],
+  ['a desktop video leg alone', { video: DESKTOP }],
+  ['a desktop audio leg alone', { audio: DESKTOP }]
+]
+
+for (const where of ['an extension page', 'a website'] as const) {
+  for (const [label, constraints] of MIXED) {
+    it(`never yields a desktop track for ${label} from ${where} holding camera and microphone answers`, async () => {
+      const fixtureUrl = await startFixtureServer()
+      const origin = new URL(fixtureUrl).origin
+      let id = ''
+      const app = await launchElectron({
+        appPath: '.',
+        args: [HERMETIC_RESOLVER, FAKE_DEVICES],
+        seedProfile: async (dir: string) => {
+          id = seedFixture(dir, 'media-page')
+          writeFileSync(join(dir, 'extensions', 'prefs.json'), JSON.stringify({ version: 1, extensions: { [id]: { media: { camera: 'allow', microphone: 'allow' } } } }))
+          writeFileSync(join(dir, 'site-settings.json'), JSON.stringify({ version: 1, sites: { [origin]: { camera: 'allow', microphone: 'allow' } } }))
+        },
+        sandbox: true
+      })
+      try {
+        expect(await waitFor(async () => (await app.evaluate(({ session }) => session.defaultSession.extensions.getAllExtensions().length)) === 1)).toBe(true)
+        await waitRecovered(app)
+        const view = await navigateToFixture(app, fixtureUrl, 'media-fixture')
+        if (where === 'an extension page') {
+          await view.goto(`chrome-extension://${id}/page.html`)
+          expect(await evaluateRetrying(view, () => typeof (window as unknown as MediaPage).__ask)).toBe('function')
+        }
+        let outcome: { ok: boolean, tracks?: unknown[] } | 'renderer ended'
+        try {
+          outcome = await view.evaluate(async (body: object) => {
+            try {
+              const stream = await navigator.mediaDevices.getUserMedia(body)
+              const tracks = stream.getTracks().map((track) => ({ kind: track.kind, label: track.label, surface: (track.getSettings() as { displaySurface?: string }).displaySurface }))
+              stream.getTracks().forEach((track) => { track.stop() })
+              return { ok: true, tracks }
+            } catch {
+              return { ok: false }
+            }
+          }, constraints)
+        } catch {
+          outcome = 'renderer ended'
+        }
+        // Either the renderer was ended or the call was refused: never a stream, so never a screen or system audio.
+        expect(outcome === 'renderer ended' || outcome.ok === false).toBe(true)
+      } finally {
+        await closeElectron(app)
+      }
+    }, TEST_TIMEOUT_MS)
+  }
+}
