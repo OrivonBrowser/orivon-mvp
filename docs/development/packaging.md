@@ -139,7 +139,12 @@ under "On IPFS", which the workflow writes, and in the `ipfs.json` attached to i
   it keeps as `orivon-release-<tag>` and unpins the older releases it pinned; a pin without that
   name is never touched. With `LATEST_KEY` set it also points that IPNS key at the newest release
   it keeps, so one `ipns://` address, and a `.eth` name whose contenthash is that address, always
-  opens the newest release; each release's own CID stays in its description.
+  opens the newest release; each release's own CID stays in its description. That address opens
+  the release's files, the same blocks, plus an `index.html` that starts the download of the
+  package for the visitor's system (the `.exe` on Windows, the Apple silicon or Intel `.dmg` on
+  macOS, the `.deb` on Linux) and lists every file; on a phone, an unknown system or without
+  JavaScript it is only the list. The pinner composes that folder in the node's MFS and pins it as
+  `orivon-latest-release`, so its CID differs from the release's.
 - **Anyone can pin a release too.** The CID depends only on the files and the flags in
   `pin-releases.sh`, so `pin-releases.sh sync` (or `ipfs add` with those flags) on any Kubo node
   reproduces it. Changing the flags changes every CID from the next release on.
@@ -219,7 +224,7 @@ on the pinning node, so it cannot say whether a page opens in a person's own bro
 loads). Below them it shows the node's version, uptime, inbound connection budget, storage and the last
 runs of the pinner and the watchdog. A banner at the top is green when nothing is wrong and otherwise
 lists each problem in plain words; one gateway failing while another serves shows in the table but is not
-a problem. With `LATEST_KEY` set it also says which release that key opens. `status.json` holds the same
+a problem. With `LATEST_KEY` set it also says which release that key opens: the one whose files it holds, the start page aside. `status.json` holds the same
 data for agents; `STATUS.md` is the page as Markdown.
 
 `NAMES_FILE` has one line per IPNS key, the key name first and then the names, with `#` starting a comment:
