@@ -1638,3 +1638,11 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** word it as reaching this device in `grant-prompt-connect.ts` (rec.); refuse the unspecified class when a pattern is declared.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
+
+### A415: An app's sign-in popup that returns from a provider has no `window.opener` **[OWNER]**
+
+- **Question:** A popup an app opens at a provider on another origin, and that comes back to the app's own callback page, arrives without `window.opener`: the shell rebuilds the view as an app tab on the way (`appTabFlagChanged` in `tab-view.ts`), and a rebuilt web contents has no opener. A website's popup keeps it. Which behaviour is wanted?
+- **Why it matters:** the usual sign-in shape reports the code with `window.opener.postMessage`. Today an app must use a `BroadcastChannel` or storage instead, and Table 3i says `window.opener` works for a popup.
+- **Options:** keep the popup's view when it returns to its opener's own origin, so the opener stays and the callback page lacks `window.orivon` and routed `fetch` (cheaper, but an app whose callback route boots the whole app breaks); keep the rebuild and document the channel (rec. until an app needs the opener); create popups as app tabs when the opener is one, which needs the target before it is known.
+- **Who decides:** owner
+- **Blocks:** nothing; `e2e-app-oauth-popup` pins today's behaviour

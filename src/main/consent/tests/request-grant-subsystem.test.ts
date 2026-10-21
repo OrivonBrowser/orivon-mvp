@@ -13,7 +13,7 @@ const { stubBroker } = await import('../../../broker/transport/tests/ipc.test-he
 import type { App } from 'electron'
 import type { Broker } from '../../../broker/broker-contracts.js'
 
-const fakeApp = {} as unknown as App
+const fakeApp = { getPath: () => '/nonexistent/orivon-test-profile' } as unknown as App
 
 describe('requestGrantSubsystem', () => {
   it('throws when ctx.broker is undefined -- must be listed after brokerIpcSubsystem', () => {

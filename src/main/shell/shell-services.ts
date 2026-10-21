@@ -39,7 +39,10 @@ import type { DownloadService } from '../downloads/download-service.js'
 import { CommandBus } from '../shortcuts/command-bus.js'
 import { ShortcutService } from '../shortcuts/shortcut-service.js'
 import { ShortcutStore } from '../shortcuts/shortcut-store.js'
+import { AppUseStore } from '../newtab/app-use-store.js'
 import { FeaturedStore } from '../newtab/featured-store.js'
+import { createYourApps, type YourApps } from '../newtab/your-apps.js'
+import { createPermissionsController } from '../permissions/permissions.js'
 import { ZoomService } from '../zoom/zoom-service.js'
 import { ZoomStore } from '../zoom/zoom-store.js'
 import { ClosedStack } from '../session-restore/closed-stack.js'
@@ -130,6 +133,9 @@ export interface ShellServices {
   readonly windowState: WindowStateStore
   /** The new tab's Featured row for this profile: the pin it was given and what the person hid; memory only in a private session. */
   readonly featured: FeaturedStore
+  /** The new tab's Your apps row: the apps this profile has granted capabilities to, and when each was last in front; memory only in a private session. */
+  readonly yourApps: YourApps
+  readonly appUse: AppUseStore
   readonly zoom: ZoomService
   readonly zoomStore: ZoomStore
 }
@@ -148,7 +154,16 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
   watchClosedTabs(tabLifecycle, closedTabs)
   // A private session writes down no pages: it never opens a history file at all.
   const openedHistory = runtime.isPrivate ? { store: new NullHistoryStore(), problem: null } : openHistory(join(userDataPath, 'history.db'))
+  const appUse = new AppUseStore(runtime.isPrivate ? null : join(userDataPath, 'app-use.json'))
+  const permissions = createPermissionsController(ctx)
+  const yourApps = createYourApps({
+    store: appUse,
+    isPrivate: runtime.isPrivate,
+    holdsGrant: (url) => ctx.broker?.app.hasGrantsSync(url) === true,
+    granted: async () => (await permissions.list()).filter((app) => app.rows.length > 0).map((app) => ({ origin: app.origin, name: app.appName }))
+  })
   return {
+    appUse,
     bookmarks: new BookmarkStore(join(userDataPath, 'bookmarks.json'), undefined, undefined, startsFromDefaultProfile() ? () => defaultBookmarks(currentDefaultProfileDir()) : undefined),
     closedTabs,
     commands: new CommandBus(),
@@ -171,6 +186,7 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
     downloads: createDownloadService(userDataPath, runtime.isPrivate, settings),
     extensionsLoaded: createLoadedExtensions(session.defaultSession),
     featured: new FeaturedStore(runtime.isPrivate ? null : join(userDataPath, 'new-tab.json')),
+    yourApps,
     history: new HistoryService(openedHistory.store, settings, openedHistory.problem, Date.now, (from, to) => { closedTabs.forgetBetween(from, to) }),
     hidDevices: new HidApprovals(runtime.isPrivate ? null : join(userDataPath, 'hid-devices.json')),
     schemeChoices: new SchemeChoices(runtime.isPrivate ? null : join(userDataPath, 'scheme-handlers.json')),

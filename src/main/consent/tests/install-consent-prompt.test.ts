@@ -151,4 +151,24 @@ describe('createInstallConsentPrompt', () => {
 
     expect(await createInstallConsentPrompt()(ORIGIN, manifestWith({ fs: {} }), ['fs'], caller)).toBeNull()
   })
+
+  it('adds the first-prompt line above the buttons on the first question of a profile and never again, leaving the buttons and rows as they are', async () => {
+    const { FirstPromptNote, FIRST_PROMPT_LINE } = await import('../first-prompt-note.js')
+    const note = new FirstPromptNote(null)
+    askQuestion.mockResolvedValue(GRANT_ALL)
+    const prompt = createInstallConsentPrompt(() => undefined, async () => [], () => note.take())
+
+    await prompt(ORIGIN, TWO, ['fs', 'https.connect'])
+    await prompt(ORIGIN, TWO, ['fs', 'https.connect'])
+
+    const first = specOf(0) as { detail: string }
+    const second = specOf(1) as { detail: string }
+    expect(first.detail).toContain(FIRST_PROMPT_LINE)
+    expect(first.detail.split('\n').at(-1)).toBe(ORIGIN)
+    expect(second.detail).not.toContain(FIRST_PROMPT_LINE)
+    expect(first.detail.replace(`${FIRST_PROMPT_LINE}\n`, '')).toBe(second.detail)
+    const sameOf = ({ buttons, cancelId, guarded, focus, choices, choicesNote }: Record<string, unknown>): unknown => ({ buttons, cancelId, guarded, focus, choices, choicesNote })
+    expect(sameOf(specOf(0) as Record<string, unknown>)).toEqual(sameOf(specOf(1) as Record<string, unknown>))
+    expect(specOf(0)).toMatchObject({ buttons: ['Grant all', 'Close'], cancelId: 1, guarded: [0, 1], focus: 'dialog' })
+  })
 })
