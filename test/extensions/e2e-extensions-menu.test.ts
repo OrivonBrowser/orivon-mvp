@@ -210,7 +210,7 @@ it('shows an empty menu with only the way to manage extensions when the button i
   }
 }, TEST_TIMEOUT_MS)
 
-it('has no button in a private window, and none under the auto setting without an extension', async () => {
+it('has no button in a private window that runs no extension, and none under the auto setting without an extension', async () => {
   const withNone = await launched({ seed: async (dir) => { await writeFile(join(dir, 'settings.json'), JSON.stringify({ version: 1, values: { 'toolbar.extensions': 'auto' } })) } })
   try {
     await delay(1_000)

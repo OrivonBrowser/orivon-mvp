@@ -1,5 +1,6 @@
 // The list of installed extensions: one card each, with its on/off switch,
-// Remove and a link to its details, above the install controls.
+// Remove and a link to its details, above the install controls. In a private window
+// the list is the extensions running there, read-only, under a banner that says so.
 import { internalBridge } from '../../shared/bridge.js'
 import { h, replaceChildren } from '../../shared/dom.js'
 import { puzzleIcon } from '../../shared/icons.js'
@@ -37,15 +38,15 @@ function card (ext: ExtensionRow, ctx: PageContext, badges: readonly CardBadge[]
           ...badges.map((badge) => badge.render(ext, ctx))),
         ext.description === '' ? null : h('p', { className: 'ext-desc', textContent: ext.description }),
         details),
-      enabledSwitch(ext, ctx),
-      removeButton(ext, ctx, ctx.refresh)))
+      ctx.isPrivate ? null : enabledSwitch(ext, ctx),
+      ctx.isPrivate ? null : removeButton(ext, ctx, ctx.refresh)))
 }
 
-function emptyState (): HTMLElement {
+function emptyState (ctx: PageContext): HTMLElement {
   return h('div', { className: 'empty-state' },
     puzzleIcon(),
-    h('strong', { textContent: 'No extensions installed' }),
-    h('p', { textContent: 'Install one from a file on this computer.' }))
+    h('strong', { textContent: ctx.isPrivate ? 'No extension runs in this private window' : 'No extensions installed' }),
+    h('p', { textContent: ctx.isPrivate ? 'Allow an extension in private windows on its details page in a normal window.' : 'Install one from a file on this computer.' }))
 }
 
 function skeleton (): HTMLElement {
@@ -78,17 +79,15 @@ export function listView (badges: readonly CardBadge[]): ExtensionView {
   return {
     render: (root, ctx) => {
       const redraw = (): void => { ctx.refresh() }
-      if (ctx.isPrivate) {
-        replaceChildren(root, h('div', { className: 'banner info', role: 'status', textContent: 'Extensions do not run in private or guest windows.' }))
-        return
-      }
       if (root.childElementCount === 0) replaceChildren(root, skeleton())
       void ctx.request<{ rows: readonly ExtensionRow[] }>('list').then(({ rows }) => {
         redrawKeepingFocus(root, () => {
           replaceChildren(root,
-            actions(ctx, redraw),
+            ctx.isPrivate
+              ? h('div', { className: 'banner info', role: 'status', textContent: 'Only the extensions you allowed in private windows run here. Change this in a normal window.' })
+              : actions(ctx, redraw),
             message === null ? null : h('div', { className: 'banner error', role: 'alert', textContent: message }),
-            rows.length === 0 ? emptyState() : h('div', { className: 'ext-list' }, ...rows.map((ext) => card(ext, ctx, badges))))
+            rows.length === 0 ? emptyState(ctx) : h('div', { className: 'ext-list' }, ...rows.map((ext) => card(ext, ctx, badges))))
         })
       })
     }

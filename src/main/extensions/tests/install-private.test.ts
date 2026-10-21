@@ -6,14 +6,14 @@ import { installFromStore, installFromStoreCrx, updateFromStore } from '../insta
 import { PRIVATE_INSTALL_REASON, refusePrivateInstall } from '../install-private.js'
 import { FIXTURE_MANIFEST, buildCrx, fakeSession, withTempDir, writeFixtureFolder } from './install-runner-fixtures.js'
 
-const REFUSED = { installed: false, reason: 'Extensions are not available in a private or guest window.' }
+const REFUSED = { installed: false, reason: 'Extensions cannot be added in a private window. Add them in a normal window.' }
 
 function privateCtx (userDataPath: string, prompt = vi.fn(async () => true)): { ctx: InstallContext, prompt: typeof prompt, loaded: Map<string, string> } {
   const { session, loaded } = fakeSession()
   return { ctx: { userDataPath, session, prompt, privateSession: true }, prompt, loaded }
 }
 
-describe('a private or guest runtime refuses every install entry point', () => {
+describe('a private runtime refuses every install entry point', () => {
   it('says so in the words the page shows', () => {
     expect(PRIVATE_INSTALL_REASON).toBe(REFUSED.reason)
   })

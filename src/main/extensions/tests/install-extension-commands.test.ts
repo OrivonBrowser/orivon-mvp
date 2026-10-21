@@ -107,8 +107,15 @@ describe('installExtensionCommands', () => {
     expect(keys.run(press, tab as never)).toBe(false)
   })
 
-  it('has nothing in a private runtime', () => {
+  it('lists the extensions a private runtime has loaded', () => {
     sessionExtensions.getAllExtensions.mockReturnValue([loaded('one', { a: { description: 'A' } })])
+    const keys = KEYS(true)
+    keys.ready(environment)
+    expect(keys.groups().map((group) => group.id)).toEqual(['one'])
+  })
+
+  it('has nothing in a private runtime that loaded no extension', () => {
+    sessionExtensions.getAllExtensions.mockReturnValue([])
     const keys = KEYS(true)
     keys.ready(environment)
     expect(keys.groups()).toEqual([])

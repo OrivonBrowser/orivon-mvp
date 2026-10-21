@@ -48,7 +48,7 @@ export interface InstallContext {
   readonly prompt: InstallPrompt
   /** What the person chose per extension; with it, a new version loads with those choices already applied. */
   readonly prefs?: ExtensionPrefsStore
-  /** This runtime is private or a guest: every install route refuses (install-private.ts). */
+  /** This runtime is private: every install route refuses (install-private.ts). */
   readonly privateSession?: boolean
   /** Empties the loaded extension's chrome.storage in `target` (the default session when none is named); an uninstall runs it first (extension-data.ts). */
   readonly clearExtensionStorage?: (id: string, target?: Session) => Promise<void>

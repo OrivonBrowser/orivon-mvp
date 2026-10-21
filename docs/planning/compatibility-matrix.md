@@ -628,11 +628,11 @@ scripts (isolated and MAIN world, MV2 and MV3), run with the Chromium sandbox on
 | Uninstall | ✅ | |
 | Reload (Developer mode) | ✅ | |
 | File access (`--allow-file-access`) | 🚫 | Never granted to any extension |
-| Incognito access | ➖ | Moot: no private window runs any extension (Table 7d) |
+| Incognito access | ✅ | A per-extension switch, "Run in private windows", off until turned on; a private window runs a copy of the extension with a copy of its own storage, and saves nothing back (Table 7d) |
 | An extension's own errors/crash log page | ❌ | No error log; the extensions page has no errors view |
 | Load warning for a permission this build actually provides (`bookmarks`, `contextMenus`, `cookies`, `history`, `notifications`, `search`, `topSites`, `webNavigation`, others in 7c) | ✅ | Loads without the "Permission '\<name\>' is unknown" line; a permission this build does not provide still logs it (`extension-known-permissions.ts`) |
 | Install prompt: what an extension may later ask for | ✅ | Lists up to six optional permissions and sites under "It may later ask for" (`src/broker/policy/extension-manifest.ts`) |
-| Install in a private or guest window | ❌ | Every install route refuses and nothing loads there (`install-private.ts`) |
+| Install in a private window | ❌ | Every install route refuses there (`install-private.ts`); only the extensions allowed in private windows run, as copies |
 
 ### Table 7b: Manifest keys
 
@@ -777,7 +777,7 @@ policy source this build has no equivalent of.
 | Toolbar: enable/disable a button per tab | ❌ | `action.enable` and `action.disable` do nothing, so a button is never greyed out for a tab (`vendor/electron-chrome-extensions/src/renderer/index.ts`) |
 | Site access controls: "on click" / "on specific sites" / "on all sites" picker | ❌ | Not modelled; host access is the manifest's declared patterns, decided at install or update, plus the sites the person allows an extension to ask for (Table 7b) |
 | Site access controls: `activeTab` (temporary grant on click) | ❌ | Refused: `scripting.executeScript` with only `activeTab` is rejected with "Cannot access contents of the page", before and after a toolbar click, and `tabs.query` keeps hiding the tab's address; only `tabCapture` honours an invocation (Table 7c) |
-| Incognito / private windows | ❌ | A private or guest session loads no extensions and every install route refuses; the `incognito` manifest key drives nothing; the extensions page says so (`install-private.ts`) |
+| Incognito / private windows | ⚠️ | The person's switch per extension decides, as Chrome's "Allow in Incognito" does; the `incognito` manifest key (`split`, `not_allowed`) drives nothing, and an allowed extension's `localStorage` and cookies do not carry over, its `chrome.storage` and IndexedDB do (`private-extensions.ts`) |
 | Updates from the Web Store | ✅ | Table 7a |
 | Install from CRX/zip/unpacked | ✅ | Table 7a |
 | Enabling/disabling/uninstalling | ✅ | Table 7a |

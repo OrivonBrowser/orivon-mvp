@@ -16,8 +16,16 @@ describe('normalizePrefs', () => {
       shortcuts: {},
       overrides: { newtab: true, history: true, bookmarks: true },
       media: {},
-      noticeSeen: []
+      noticeSeen: [],
+      privateWindows: false
     })
+  })
+
+  it('reads privateWindows as a boolean only, and writes it only when it is on', () => {
+    expect(normalizePrefs({ privateWindows: 'yes' }).privateWindows).toBe(false)
+    expect(normalizePrefs({ privateWindows: true }).privateWindows).toBe(true)
+    expect(serializePrefs(new Map([['a', normalizePrefs({ privateWindows: false })]]))).not.toContain('privateWindows')
+    expect(serializePrefs(new Map([['a', normalizePrefs({ privateWindows: true })]]))).toContain('"privateWindows": true')
   })
 
   it('keeps a camera and microphone answer, and drops anything but allow and block', () => {

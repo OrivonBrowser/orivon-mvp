@@ -1,8 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// afterReady in a private or guest runtime: nothing loads, the Web Store page's APIs are still
-// served (so a store tab never reaches the native ones) with installs refused, and every install
-// route refuses. The ordinary runtime is the control.
+// afterReady in a private runtime: the extensions of its own registry (the copy it was given) load, the
+// Web Store page's APIs are still served (so a store tab never reaches the native ones) with installs
+// refused, every install route refuses, and removing or turning off an extension is refused. The ordinary
+// runtime is the control.
 const loadExtension = vi.fn(async () => ({}))
 const startWebStore = vi.fn(async () => ({
   installFromStore: vi.fn(), checkForUpdates: vi.fn(), updateFromStore: vi.fn()
@@ -33,11 +37,13 @@ vi.mock('../../registry.js', () => ({ publishExtensions: (_ctx: unknown, api: un
 
 const { extensionsSubsystem } = await import('../extensions-subsystem.js')
 
+let profile = '/profile'
+
 function ctx (privateSession: boolean): any {
-  return { privateSession, app: { getPath: () => '/profile' } }
+  return { privateSession, app: { getPath: () => profile } }
 }
 
-const REFUSED = { installed: false, reason: 'Extensions are not available in a private or guest window.' }
+const REFUSED = { installed: false, reason: 'Extensions cannot be added in a private window. Add them in a normal window.' }
 
 beforeEach(() => {
   loadExtension.mockClear()
@@ -46,12 +52,15 @@ beforeEach(() => {
   seedBundledExtensions.mockClear()
   startsNew = false
   published = undefined
+  profile = '/profile'
 })
 
+afterEach(() => { if (profile !== '/profile') rmSync(profile, { recursive: true, force: true }) })
+
 describe('extensionsSubsystem.afterReady', () => {
-  it('in a private runtime loads nothing, starts the store with installs refused and refuses every install route', async () => {
+  it('in a private runtime loads its own registry, starts the store with installs refused and refuses every install route', async () => {
     await extensionsSubsystem.afterReady!(ctx(true))
-    expect(loadExtension).not.toHaveBeenCalled()
+    expect(loadExtension).toHaveBeenCalledTimes(1)
     expect(startWebStore).toHaveBeenCalledTimes(1)
     expect((startWebStore.mock.calls[0] as any[])[0].privateSession).toBe(true)
     await expect(published.installFromFolder('/x')).resolves.toEqual(REFUSED)
@@ -60,12 +69,26 @@ describe('extensionsSubsystem.afterReady', () => {
     await expect(published.updateFromStore('a'.repeat(32))).resolves.toEqual(REFUSED)
   })
 
-  it('keeps the preferences in memory in a private runtime', async () => {
+  it('refuses to remove or turn off an extension in a private runtime', async () => {
+    await extensionsSubsystem.afterReady!(ctx(true))
+    await expect(published.uninstall('a'.repeat(32))).rejects.toThrow('changed in a normal window')
+    await expect(published.setEnabled('a'.repeat(32), false)).rejects.toThrow('changed in a normal window')
+  })
+
+  it('starts the preferences of a private runtime from the copy it was given, and keeps later changes in memory', async () => {
+    profile = mkdtempSync(join(tmpdir(), 'orivon-subsystem-private-'))
+    mkdirSync(join(profile, 'extensions'), { recursive: true })
+    const file = join(profile, 'extensions', 'prefs.json')
+    const before = JSON.stringify({ version: 1, extensions: { x: { pinned: true, privateWindows: true } } })
+    writeFileSync(file, before)
     await extensionsSubsystem.afterReady!(ctx(true))
     expect(installApis).toHaveBeenCalledTimes(1)
     const prefs = installApis.mock.calls[0]![0].prefs
-    prefs.update('x', { pinned: true })
     expect(prefs.get('x').pinned).toBe(true)
+    prefs.update('x', { pinned: false })
+    await prefs.flush()
+    expect(prefs.get('x').pinned).toBe(false)
+    expect(readFileSync(file, 'utf8')).toBe(before)
   })
 
   it('in an ordinary runtime loads the enabled extensions and starts the Web Store', async () => {

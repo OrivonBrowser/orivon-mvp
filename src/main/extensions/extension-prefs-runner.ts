@@ -1,7 +1,7 @@
 // The per-extension preferences store behind `ExtensionsApi.prefs`:
 // `<userData>/extensions/prefs.json`, read once at construction (`get` is
 // synchronous, and permission checks call it on hot paths) and written
-// debounced and atomically. A private runtime keeps everything in memory.
+// debounced and atomically. A private runtime starts from the copy it was given and keeps every change in memory.
 import { mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
@@ -20,7 +20,8 @@ export function prefsFilePath (userDataPath: string): string {
   return join(userDataPath, 'extensions', 'prefs.json')
 }
 
-function readFromDisk (filePath: string): Map<string, ExtensionPrefs> {
+/** What `filePath` holds; nothing when it is missing or unreadable. */
+export function readPrefsFile (filePath: string): Map<string, ExtensionPrefs> {
   try {
     return parsePrefsFile(readFileSync(filePath, 'utf8'))
   } catch (error) {
@@ -29,9 +30,9 @@ function readFromDisk (filePath: string): Map<string, ExtensionPrefs> {
   }
 }
 
-/** `filePath` null keeps the choices in memory only (a private or guest runtime never writes a new store file). */
-export function createExtensionPrefsStore (filePath: string | null): PersistedExtensionPrefsStore {
-  const records = filePath === null ? new Map<string, ExtensionPrefs>() : readFromDisk(filePath)
+/** `filePath` null keeps the choices in memory only, starting from `seed` (a private runtime begins with the choices copied into it and writes none back). */
+export function createExtensionPrefsStore (filePath: string | null, seed: ReadonlyMap<string, ExtensionPrefs> = new Map()): PersistedExtensionPrefsStore {
+  const records = filePath === null ? new Map<string, ExtensionPrefs>(seed) : readPrefsFile(filePath)
   const listeners = new Set<(id: string) => void>()
   const writer = new DebouncedWriter(async () => {
     if (filePath === null) return

@@ -152,7 +152,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'about.open': tabs.openInternal('about'); return
     case 'report.open': tabs.openInternal('report'); return
     case 'extensions.open': tabs.openInternal('extensions'); return
-    case 'extensions.menu': toggleExtensionsMenu(target, services.isPrivate); return
+    case 'extensions.menu': toggleExtensionsMenu(target, services.isPrivate && services.extensionsLoaded.count() === 0); return
     case 'import.open': tabs.openInternal('import'); return
     case 'app.quit': deps.quit(); return
     case 'page.print': void printCommand(target, realDeps).catch((error: unknown) => { console.error('[shortcuts] print command failed:', error) }); return

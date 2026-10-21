@@ -1,5 +1,7 @@
 // A private session's directory: made fresh, holding a copy of the preferences (settings,
-// keyboard shortcuts, search engines) it began with and nothing else, and removed when the session is over. Deleting it
+// keyboard shortcuts, search engines) it began with and nothing else, and removed when the session is over. The
+// extensions the opening profile allows in private windows are copied in after it is made, asynchronously
+// (./private-extensions.ts), before anything starts in it. Deleting it
 // is never claimed to happen inside the dying process: Chromium writes after quit
 // and Windows will not delete a file that is open. The browser that opened the
 // session removes it when the process exits; a session that made its own directory
@@ -23,7 +25,8 @@ const NAME = new RegExp(`^${PRIVATE_PREFIX}[A-Za-z0-9]{6}$`)
 export const GRACE_MS = 10 * 60 * 1000
 
 /** What a private session starts with, copied from the profile that opened it: its settings,
- * keyboard shortcuts and search engines -- all preferences -- plus the public seed (./public-seed.ts). Never
+ * keyboard shortcuts and search engines -- all preferences -- plus the public seed (./public-seed.ts); the extensions the
+ * profile allows in private windows come after, from ./private-extensions.ts. Never
  * history, bookmarks, grants, apps, identity, site data, or zoom.json: a list of sites visited,
  * not a preference. */
 export const SNAPSHOT_FILES = ['settings.json', 'shortcuts.json', 'search-engines.json'] as const

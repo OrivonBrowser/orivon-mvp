@@ -5,6 +5,7 @@
 import type { OverlayWindow } from '../overlays/overlay-types.js'
 import type { ExtensionPrefsStore } from './extension-prefs.js'
 import type { MenuPayload } from './extensions-menu-model.js'
+import { lockedRowPart } from './extensions-menu-private.js'
 
 export interface MenuRowContext {
   readonly prefs: ExtensionPrefsStore
@@ -12,7 +13,9 @@ export interface MenuRowContext {
 }
 
 /** One per line, alphabetical by the file that adds it. The entry returns the fields its line needs, merged into `row.parts`. */
-export const EXTENSION_MENU_ROW_PARTS: ReadonlyArray<(id: string, ctx: MenuRowContext) => Record<string, unknown>> = []
+export const EXTENSION_MENU_ROW_PARTS: ReadonlyArray<(id: string, ctx: MenuRowContext) => Record<string, unknown>> = [
+  lockedRowPart
+]
 
 export interface MenuRequestContext extends MenuRowContext {
   /** `body.id` when it names an enabled extension, else undefined: an entry that needs an extension returns early without it. */

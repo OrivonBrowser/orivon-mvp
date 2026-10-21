@@ -27,4 +27,6 @@ of an import cycle.
 **Every request is answered in main.** A page asks for a thing by name (`context`, `list`, `details`, `shortcuts.*`,
 `revokePermission`) and main validates each field again; the page decides nothing about what an extension may do.
 
-**A private window runs no extension.** The page then draws one banner saying so and no install control.
+**A private window lists only the extensions allowed there, and changes none.** The page then draws a banner saying so,
+the cards without the on/off switch and Remove, no install control and no "Private windows" card: those are done in a
+normal window, and what a private window holds is a copy that nothing is saved back from.

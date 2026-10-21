@@ -7,6 +7,7 @@ import type { ExtensionsDomainDeps } from './extensions-domain.js'
 import type { InstalledExtension } from './registry.js'
 import { mediaPart } from './details-media.js'
 import { optionalPart } from './details-optional.js'
+import { privateWindowsPart } from './details-private-windows.js'
 import { shortcutsPart } from './shortcuts-page.js'
 
 export type ExtensionPart = (entry: InstalledExtension, facts: ExtensionFacts, deps: ExtensionsDomainDeps) => Record<string, unknown>
@@ -15,6 +16,7 @@ export type ExtensionPart = (entry: InstalledExtension, facts: ExtensionFacts, d
 export const DETAIL_PARTS: ReadonlyArray<ExtensionPart> = [
   mediaPart,
   optionalPart,
+  privateWindowsPart,
   shortcutsPart
 ]
 

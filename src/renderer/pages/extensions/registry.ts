@@ -8,6 +8,7 @@ import { aboutSection } from './views/details-about.js'
 import { detailsView } from './views/details.js'
 import { mediaSection } from './views/details-media.js'
 import { optionalSection } from './views/details-optional.js'
+import { privateWindowsSection } from './views/details-private-windows.js'
 import { listView } from './views/list.js'
 import { shortcutsView } from './views/shortcuts.js'
 
@@ -18,6 +19,7 @@ export const DETAIL_SECTIONS: readonly DetailSection[] = [
   aboutSection,
   mediaSection,
   optionalSection,
+  privateWindowsSection,
   shortcutsLinkSection
 ]
 

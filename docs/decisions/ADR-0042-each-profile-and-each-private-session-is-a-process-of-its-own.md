@@ -1,6 +1,6 @@
 # ADR-0042: Each profile and each private session is a process of its own
 
-- **Status:** accepted
+- **Status:** accepted; a private session also starts with the extensions the person allows in private windows, as copies ([ADR-0097](ADR-0097-an-extension-the-person-allows-in-private-windows-runs-there-as-a-copy.md))
 - **Date:** 2026-09-28
 - **Type:** architecture
 - **Decided by:** owner, for profiles and private sessions being separate processes and for private

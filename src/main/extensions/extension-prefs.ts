@@ -1,6 +1,6 @@
 // What a person chose for each installed extension (pinned, granted
 // optional permissions and origins, site access, shortcuts, page overrides,
-// notices seen) -- pure: parse, normalise and merge, no `electron`, no
+// notices seen, whether it also runs in private windows) -- pure: parse, normalise and merge, no `electron`, no
 // filesystem (extension-prefs-runner.ts is the I/O half). Lenient on read: a
 // field that is the wrong shape takes its default instead of failing the
 // file, since one bad field must not forget every other extension's choices.
@@ -16,6 +16,8 @@ export interface ExtensionPrefs {
   /** What the person answered when the extension's own page asked for a device; a kind with no entry is asked. */
   readonly media: ExtensionMediaAnswers
   readonly noticeSeen: readonly string[]
+  /** Whether a private window starts with a copy of this extension (`launch/private-extensions.ts`). */
+  readonly privateWindows: boolean
 }
 
 /** The camera and the microphone, each `allow` or `block` once the person has answered. */
@@ -92,7 +94,8 @@ export function normalizePrefs (raw: unknown): ExtensionPrefs {
       bookmarks: bool(overrides['bookmarks'], true)
     }),
     media: mediaAnswers(source['media']),
-    noticeSeen: stringList(source['noticeSeen'])
+    noticeSeen: stringList(source['noticeSeen']),
+    privateWindows: bool(source['privateWindows'], false)
   })
 }
 

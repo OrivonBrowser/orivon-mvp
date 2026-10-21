@@ -44,6 +44,7 @@ const manageItem: MoreItem = {
 const removeItem: MoreItem = {
   order: 70,
   render: (row, send) => {
+    if (row.parts['locked'] === true) return null
     let timer: ReturnType<typeof setTimeout> | undefined
     const button = moreButton('Remove from Orivon', () => {
       if (timer === undefined) {

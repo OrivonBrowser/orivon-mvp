@@ -45,6 +45,7 @@ import type { LaunchRequest } from './launch/launch-request.js'
 import { handleOpenUrl } from './os/open-url.js'
 import { handleOpenFile } from './os/open-file.js'
 import { removeAfterExit, removePrivateDir, sweepPrivateDirs } from './launch/private-session.js'
+import { copyPrivateExtensions } from './launch/private-extensions.js'
 import { loadFetchStack } from './startup/fetch-stack.js'
 import { installFocusedContentsGuard } from './focus/focused-contents-guard.js'
 import { runUpdateCheck } from './self-update/update-check-runner.js'
@@ -183,6 +184,8 @@ export function boot (runtime: Runtime): void {
   })
 
   void app.whenReady().then(async () => {
+    // A private session this process made for itself gets its extensions now, before any subsystem reads its folder; no window exists to hold up.
+    if (runtime.extensionsFrom !== undefined) await copyPrivateExtensions(runtime.extensionsFrom, runtime.dir)
     const ctx = createSubsystemContext(app, runtime.isPrivate, runtime.launch.kind === 'private' ? runtime.launch.tunnel ?? null : null)
     const afterReadyFailures = await runAfterReady(subsystems, ctx)
     report(afterReadyFailures)

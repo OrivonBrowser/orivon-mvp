@@ -489,11 +489,18 @@ describe('the Extensions menu command', () => {
     expect(send).not.toHaveBeenCalled()
   })
 
-  it('does nothing in a private window, which runs no extension', () => {
+  it('does nothing in a private window that runs no extension', () => {
     const { target, deps, send } = harness([tab('a')], 'a')
-    Object.assign(deps.services, { isPrivate: true })
+    Object.assign(deps.services, { isPrivate: true, extensionsLoaded: { count: () => 0 } })
     runCommand('extensions.menu', target, deps)
     expect(send).not.toHaveBeenCalled()
+  })
+
+  it('opens in a private window that runs an extension', () => {
+    const { target, deps, send } = harness([tab('a')], 'a')
+    Object.assign(deps.services, { isPrivate: true, extensionsLoaded: { count: () => 1 } })
+    runCommand('extensions.menu', target, deps)
+    expect(send).toHaveBeenCalledWith(expect.any(String), extensionsEvent)
   })
 
   it('is a command with no key of its own, listed with the window commands', () => {

@@ -2,6 +2,7 @@
 // list, changes to them, and starting a browser for one. Starting one is
 // handing it to another process (./peer-spawn.ts), so what this holds is the
 // data and the request, never a second browser inside this one.
+import { copyPrivateExtensions, hasPrivateExtensions } from './private-extensions.js'
 import { removePrivateDir, createPrivateDir } from './private-session.js'
 import { flagsFor, urlsFromArgv, DEFAULT_PROFILE_ID } from './launch-context.js'
 import type { PrivateTunnel } from './launch-context.js'
@@ -114,9 +115,25 @@ export class ProfilesService {
       const made = createPrivateDir(this.runtime.dir, this.runtime.launch.home, undefined, tunnel)
       dir = made
       const address = url === undefined ? [] : urlsFromArgv(typeof url === 'string' ? [url] : url)
-      const child = this.spawn(this.runtime.source, [...this.runtime.inherit, ...flagsFor({ kind: 'private', dir: made, ...(tunnel === undefined ? {} : { tunnel }) }), ...address])
-      child.once('exit', () => { removePrivateDir(made) })
-      child.once('error', () => { removePrivateDir(made) })
+      const start = (): void => {
+        const child = this.spawn(this.runtime.source, [...this.runtime.inherit, ...flagsFor({ kind: 'private', dir: made, ...(tunnel === undefined ? {} : { tunnel }) }), ...address])
+        console.log(`[private] started a private session, process ${String(child.pid)}`)
+        child.once('exit', (code, signal) => {
+          console.log(`[private] a private session ended (code ${String(code)}, signal ${String(signal)})`)
+          removePrivateDir(made)
+        })
+        child.once('error', () => { removePrivateDir(made) })
+      }
+      if (!hasPrivateExtensions(this.runtime.dir)) {
+        start()
+        return true
+      }
+      console.log('[private] copying the extensions allowed in private windows, then starting the session')
+      // The copy of the extensions can be tens of megabytes: it runs without holding this window, and the session starts once it is done.
+      void copyPrivateExtensions(this.runtime.dir, made).then(start).catch((error: unknown) => {
+        console.error(`could not start a private session: ${error instanceof Error ? error.message : String(error)}`)
+        removePrivateDir(made)
+      })
       return true
     } catch (error) {
       if (dir !== null) removePrivateDir(dir)
