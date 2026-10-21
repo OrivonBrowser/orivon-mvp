@@ -80,8 +80,10 @@ async function expectNoSheet (app: ElectronApplication): Promise<void> {
   expect(await sheetShown(app)).toBe(false)
 }
 
-/** Starts the call and leaves it pending in the page: a question blocks it until the person answers. */
+/** Starts the call and leaves it pending in the page: a question blocks it until the person answers. A popup that has
+ * just opened may not have run media.js yet, so the call waits for the page's own `__ask` first. */
 async function ask (page: Page, constraints: object): Promise<void> {
+  await page.waitForFunction(() => typeof (window as unknown as Partial<MediaPage>).__ask === 'function', undefined, { timeout: 8_000 })
   await page.evaluate((body: object) => {
     const media = window as unknown as MediaPage
     media.__media = undefined
