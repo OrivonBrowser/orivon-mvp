@@ -83,11 +83,17 @@ describe('extensionsDomain', () => {
     expect(await extensionsDomain(buildDeps({ isPrivate: true }).deps).handle({ type: 'context' }, caller)).toEqual({ isPrivate: true })
   })
 
-  it('carries the row and the empty parts a feature fills, in the details reply', async () => {
+  it('carries the row and the parts a feature fills, in the details reply', async () => {
     const { deps } = buildDeps()
     const reply = await extensionsDomain(deps).handle({ type: 'details', id: UNPACKED.id }, caller) as { details: { row: { name: string, parts: object }, parts: object } }
     expect(reply.details.row.name).toBe('Fixture')
     expect(reply.details.row.parts).toEqual({})
+    expect(reply.details.parts).toEqual({ privateWindows: { enabled: false } })
+  })
+
+  it('leaves the private-windows switch out of the details reply in a private window', async () => {
+    const { deps } = buildDeps({ isPrivate: true })
+    const reply = await extensionsDomain(deps).handle({ type: 'details', id: UNPACKED.id }, caller) as { details: { parts: object } }
     expect(reply.details.parts).toEqual({})
   })
 
@@ -110,6 +116,16 @@ describe('extensionsDomain', () => {
     expect(await handle({ type: 'setEnabled', id: 'nope', enabled: true }, caller)).toBeUndefined()
     expect(await handle({ type: 'setEnabled', id: UNPACKED.id, enabled: 'yes' }, caller)).toBeUndefined()
     expect(deps.extensions.setEnabled).not.toHaveBeenCalled()
+    expect(deps.notify).not.toHaveBeenCalled()
+  })
+
+  it('in a private window refuses to turn an extension off or remove it, and never calls through', async () => {
+    const { deps } = buildDeps({ isPrivate: true })
+    const { handle } = extensionsDomain(deps)
+    expect(await handle({ type: 'setEnabled', id: UNPACKED.id, enabled: false }, caller)).toBeUndefined()
+    expect(await handle({ type: 'remove', id: UNPACKED.id }, caller)).toBeUndefined()
+    expect(deps.extensions.setEnabled).not.toHaveBeenCalled()
+    expect(deps.extensions.uninstall).not.toHaveBeenCalled()
     expect(deps.notify).not.toHaveBeenCalled()
   })
 

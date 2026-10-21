@@ -121,6 +121,7 @@ export function createExtensionsMenu (win: OverlayWindow, deps: ExtensionsMenuDe
         window.tabs.openInternal('extensions', `/details?id=${id}`)
         return undefined
       default:
+        if (services.isPrivate) return undefined
         await deps.uninstall(id)
         services.internalPages.publish('extensions.changed', undefined, ['extensions'])
         return await payload()
@@ -158,7 +159,7 @@ export const extensionsMenuOverlay: OverlayDef = {
   height: { initial: 160, max: 460 },
   attach: (win) => {
     const deps = extensionsMenuDeps()
-    // Before the extension host exists (a private window) the menu has nothing to list or run.
+    // Before the extension host exists the menu has nothing to list or run.
     return deps === undefined ? { request: () => undefined } : createExtensionsMenu(win, deps)
   }
 }

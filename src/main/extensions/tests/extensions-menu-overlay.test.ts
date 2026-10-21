@@ -26,7 +26,7 @@ interface Rig {
   uninstall: ReturnType<typeof vi.fn>
 }
 
-function rig (options: { pinNew?: boolean, enabled?: string[], withAction?: string[], url?: string, internal?: boolean, canActivate?: boolean } = {}): Rig {
+function rig (options: { pinNew?: boolean, enabled?: string[], withAction?: string[], url?: string, internal?: boolean, canActivate?: boolean, isPrivate?: boolean } = {}): Rig {
   const enabled = options.enabled ?? [A, B]
   const withAction = options.withAction ?? [A]
   const names: Record<string, string> = { [A]: 'Alpha', [B]: 'Beta', [C]: 'Gamma' }
@@ -60,7 +60,7 @@ function rig (options: { pinNew?: boolean, enabled?: string[], withAction?: stri
         activeWebContents: () => contents
       }
     },
-    services: { settings: { get: () => options.pinNew ?? true }, internalPages: { publish: published }, windows: { all: () => [] } },
+    services: { isPrivate: options.isPrivate === true, settings: { get: () => options.pinNew ?? true }, internalPages: { publish: published }, windows: { all: () => [] } },
     send: vi.fn(),
     close
   } as unknown as OverlayWindow
@@ -224,6 +224,16 @@ describe('options, manage, manage-all and remove', () => {
     expect(r.uninstall).toHaveBeenCalledWith(B)
     expect(r.published).toHaveBeenCalledWith('extensions.changed', undefined, ['extensions'])
     expect(after.rows.map((row) => row.id)).toEqual([A])
+  })
+})
+
+describe('in a private window', () => {
+  it('marks each row locked, and refuses to remove an extension', async () => {
+    const r = rig({ isPrivate: true })
+    const payload = await shown(r)
+    expect(payload.rows.every((row) => row.parts['locked'] === true)).toBe(true)
+    await expect(r.handler.request({ type: 'remove', id: B })).resolves.toBeUndefined()
+    expect(r.uninstall).not.toHaveBeenCalled()
   })
 })
 

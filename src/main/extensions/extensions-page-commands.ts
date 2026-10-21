@@ -6,6 +6,7 @@
 import type { InternalCaller } from '../pages/internal-ipc.js'
 import type { ExtensionsDomainDeps } from './extensions-domain.js'
 import { revokeOrigin, revokePermission } from './details-optional.js'
+import { setPrivateWindows } from './details-private-windows.js'
 import { shortcutsCancel, shortcutsClear, shortcutsList, shortcutsMove, shortcutsRecord } from './shortcuts-page.js'
 
 /** `caller` is the page's own webContents, for a command that waits on the next key press in it. */
@@ -15,6 +16,7 @@ export type ExtensionPageCommand = (body: Readonly<Record<string, unknown>>, dep
 export const EXTENSION_PAGE_COMMANDS: Readonly<Record<string, ExtensionPageCommand>> = {
   revokeOrigin,
   revokePermission,
+  setPrivateWindows,
   'shortcuts.cancel': shortcutsCancel,
   'shortcuts.clear': shortcutsClear,
   'shortcuts.list': shortcutsList,

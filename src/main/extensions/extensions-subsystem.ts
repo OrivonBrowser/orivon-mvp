@@ -22,12 +22,12 @@ import { clearChromeStorage } from './extension-storage-clear.js'
 import { createExtensionHost, createProfileExtensionHost, extensionPagesAroundReload, shellServices } from './extension-host.js'
 import { installExtensionPermissionWarningFilter } from './extension-known-permissions.js'
 import { startWebStore, type StoreApi } from './store-runner.js'
-import { PRIVATE_INSTALL_REASON } from './install-private.js'
+import { PRIVATE_CHANGE_REASON, PRIVATE_INSTALL_REASON } from './install-private.js'
 import { installStoreTestHook } from './store-test-hook.js'
 import { installExtensionsInstallTestHook } from './extensions-install-test-hook.js'
 import type { InstalledExtension } from './registry.js'
 import type { ExtensionPrefsStore } from './extension-prefs.js'
-import { createExtensionPrefsStore, prefsFilePath } from './extension-prefs-runner.js'
+import { createExtensionPrefsStore, prefsFilePath, readPrefsFile } from './extension-prefs-runner.js'
 import { createManifestApplier, type ApplyMode, type ApplyResult } from './effective-manifest-runner.js'
 import { extensionPageOpen } from './extension-page-open.js'
 import { attachExtensionsDnr, getDnrEngine } from './extensions-dnr.js'
@@ -159,11 +159,14 @@ export const extensionsSubsystem: Subsystem = {
     installDnrWebRequestHandlers(session.defaultSession, getDnrEngine, onRuleMatched, onTabNavigated)
     profileRequestHandlers = (target) => { installDnrWebRequestHandlers(target, getDnrEngine, onRuleMatched, onTabNavigated) }
 
-    const prefs = createExtensionPrefsStore(ctx.privateSession ? null : prefsFilePath(userDataPath))
+    // A private session begins with the copy of the choices it was given and keeps every change in memory.
+    const prefs = ctx.privateSession
+      ? createExtensionPrefsStore(null, readPrefsFile(prefsFilePath(userDataPath)))
+      : createExtensionPrefsStore(prefsFilePath(userDataPath))
     const manifests = createManifestApplier({ userDataPath, session: session.defaultSession, prefs, isOpen: extensionPageOpen, pages: extensionPagesAroundReload })
-    if (!ctx.privateSession) manifests.applyAtBoot()
+    manifests.applyAtBoot()
     const held = installApis({ host: hostExtensions, session: session.defaultSession, userDataPath, ctx, prefs })
-    if (!ctx.privateSession) profileAttacher = createProfileAttacher({
+    profileAttacher = createProfileAttacher({
       defaultSession: session.defaultSession,
       createHost: (target) => createProfileExtensionHost(target, join(import.meta.dirname, '../preload/extension-api.js')),
       installApis: (host, target) => { installProfileApis({ host, session: target, userDataPath, ctx, prefs }, held) },
@@ -180,9 +183,9 @@ export const extensionsSubsystem: Subsystem = {
     // Decided at boot, before any file of the profile was opened: an existing profile keeps what it has.
     const seeds = !ctx.privateSession && startsFromDefaultProfile()
 
-    // A private or guest runtime runs no extension: nothing loads and every
-    // install route refuses; the store page's hook still starts (below).
-    if (!ctx.privateSession) await loadEnabledExtensions(userDataPath)
+    // A private runtime loads the registry it was given, which holds only the extensions the person allowed in private
+    // windows; every install route refuses there, and the store page's hook still starts (below).
+    await loadEnabledExtensions(userDataPath)
 
     const install: InstallContext = { userDataPath, session: session.defaultSession, prompt: createExtensionInstallPrompt(), prefs, privateSession: ctx.privateSession, pinInstalled: () => shellServices()?.settings.get('extensions.pinInstalled') === true, clearExtensionStorage: async (id, target) => { await clearChromeStorage(target ?? session.defaultSession, id) }, profileSessions: profileExtensionSessions, closeSidePanels }
     if (seeds) await seedBundledExtensions(install, currentDefaultProfileDir())
@@ -195,8 +198,8 @@ export const extensionsSubsystem: Subsystem = {
     const extensionsApi: ExtensionsApi = {
       installFromFolder: async (dir, where) => await installFromFolder(install, dir, where),
       installFromFile: async (filePath, where) => await installFromFile(install, filePath, where),
-      uninstall: async (id) => { await uninstall(install, id) },
-      setEnabled: async (id, enabled) => { await setEnabled(install, id, enabled) },
+      uninstall: async (id) => { if (ctx.privateSession) throw new Error(PRIVATE_CHANGE_REASON); await uninstall(install, id) },
+      setEnabled: async (id, enabled) => { if (ctx.privateSession) throw new Error(PRIVATE_CHANGE_REASON); await setEnabled(install, id, enabled) },
       list: () => readRegistry(userDataPath),
       installFromStore: store.installFromStore,
       checkForUpdates: store.checkForUpdates,

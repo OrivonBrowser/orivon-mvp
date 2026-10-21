@@ -25,8 +25,14 @@ describe('extensionsButtonShown', () => {
     expect(extensionsButtonShown('never', 3, false)).toBe(false)
   })
 
-  it('never shows in a private window, whatever the setting says', () => {
-    for (const mode of ['auto', 'always', 'never'] as const) expect(extensionsButtonShown(mode, 2, true)).toBe(false)
+  it('shows in a private window while an extension runs there, unless the setting says never', () => {
+    expect(extensionsButtonShown('auto', 1, true)).toBe(true)
+    expect(extensionsButtonShown('always', 1, true)).toBe(true)
+    expect(extensionsButtonShown('never', 1, true)).toBe(false)
+  })
+
+  it('shows in no private window that runs no extension, whatever the setting says', () => {
+    for (const mode of ['auto', 'always', 'never'] as const) expect(extensionsButtonShown(mode, 0, true)).toBe(false)
   })
 })
 

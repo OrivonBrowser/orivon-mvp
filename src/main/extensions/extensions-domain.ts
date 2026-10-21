@@ -23,7 +23,7 @@ export interface ExtensionsDomainDeps {
   /** The extension library's host; undefined until the subsystem has built it. */
   readonly host: () => ElectronChromeExtensions | undefined
   readonly shell: ShellServices
-  /** A private or guest runtime: the page offers no install and says why. */
+  /** A private runtime: the page offers no install, removal or switch, and says why. */
   readonly isPrivate: boolean
   readonly readFacts: (entry: InstalledExtension) => Promise<ExtensionFacts>
   readonly developerModeEnabled: () => boolean
@@ -76,14 +76,14 @@ export function extensionsDomain (deps: ExtensionsDomainDeps): InternalDomain {
         }
         case 'setEnabled': {
           const entry = findExtension(entries(), request.id)
-          if (entry === undefined || typeof request.enabled !== 'boolean') return undefined
+          if (deps.isPrivate || entry === undefined || typeof request.enabled !== 'boolean') return undefined
           await deps.extensions.setEnabled(entry.id, request.enabled)
           deps.notify()
           return { ok: true }
         }
         case 'remove': {
           const entry = findExtension(entries(), request.id)
-          if (entry === undefined) return undefined
+          if (deps.isPrivate || entry === undefined) return undefined
           await deps.extensions.uninstall(entry.id)
           deps.notify()
           return { ok: true }

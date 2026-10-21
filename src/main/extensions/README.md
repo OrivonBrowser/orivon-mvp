@@ -38,14 +38,14 @@ window's side panel (`../side-panel/`), opened by its toolbar button, its key or
 **What it depends on.** `electron` (every file except `side-panel-api.ts`, `side-panel-behavior-file.ts`,
 `side-panel-driver.ts`, `side-panel-gesture.ts`, `side-panel-options.ts`, `side-panel-pages.ts` (types only), `action-pins-runner.ts`, `action-pins.ts`, `base-manifest-source.ts`, `crx.ts`, `crx3-format.ts`,
 `extension-popup-geometry.ts`, `profile-demand.ts`,
-`details-optional.ts`, `dnr-action-options.ts`, `extension-data.ts`, `dnr-api.ts`, `dnr-match-log.ts`,
+`details-optional.ts`, `details-private-windows.ts`, `dnr-action-options.ts`, `extension-data.ts`, `dnr-api.ts`, `dnr-match-log.ts`,
 `effective-manifest.ts`, `electron-chrome-extensions-lib.d.ts`, `extension-commands.ts`,
 `extension-host-access.ts`, `extension-known-permissions.ts`, `extension-permission-check.ts`,
 `extension-prefs-runner.ts`, `extension-prefs.ts`, `extension-sender-id-check.ts`,
 `extension-tab-details.ts`, `extension-tab-invocation.ts`, `extension-url-policy.ts`,
 `extensions-detail-parts.ts`, `extensions-domain.ts`, `extensions-install-test-hook.ts`,
 `extensions-menu-command.ts`, `extensions-menu-model.ts`, `extensions-menu-names.ts`,
-`extensions-menu-overlay.ts`, `extensions-menu-points.ts`, `extensions-page-commands.ts`,
+`extensions-menu-overlay.ts`, `extensions-menu-points.ts`, `extensions-menu-private.ts`, `extensions-page-commands.ts`,
 `extensions-view-runner.ts`, `extensions-view.ts`, `granted-host-rule.ts`, `granted-reconcile.ts`,
 `install-lifecycle.ts`, `install-private.ts`, `install-store-runner.ts`,
 `manifest-stage-granted.ts`, `manifest-stage-site-access.ts`, `optional-permissions.ts`,
@@ -105,7 +105,7 @@ same exception, reached only through the virtual specifiers above).
 
 | File | Layer |
 |---|---|
-| `crx.ts`, `crx3-format.ts`, `registry.ts`, `extensions-view.ts`, `extension-commands.ts`, `extension-action-anchor.ts`, `extension-pages-reload.ts`, `store-download-seam.ts`, `extension-prefs.ts`, `effective-manifest.ts`, `manifest-stage-granted.ts`, `manifest-stage-site-access.ts`, `extensions-detail-parts.ts`, `extensions-page-commands.ts`, `extension-permission-check.ts`, `install-private.ts`, `optional-permissions.ts`, `permission-nag-limit.ts`, `granted-host-rule.ts`, `granted-reconcile.ts`, `details-optional.ts`, `request-frames.ts` | The decision -- no `electron`, unit-tested under plain vitest |
+| `crx.ts`, `crx3-format.ts`, `registry.ts`, `extensions-view.ts`, `extension-commands.ts`, `extension-action-anchor.ts`, `extension-pages-reload.ts`, `store-download-seam.ts`, `extension-prefs.ts`, `effective-manifest.ts`, `manifest-stage-granted.ts`, `manifest-stage-site-access.ts`, `extensions-detail-parts.ts`, `extensions-page-commands.ts`, `extension-permission-check.ts`, `install-private.ts`, `optional-permissions.ts`, `permission-nag-limit.ts`, `granted-host-rule.ts`, `granted-reconcile.ts`, `details-optional.ts`, `details-private-windows.ts`, `request-frames.ts` | The decision -- no `electron`, unit-tested under plain vitest |
 | `unpack-runner.ts`, `registry-runner.ts`, `install-runner.ts`, `install-store-runner.ts`, `install-lifecycle.ts`, `extension-data.ts`, `extension-storage-clear.ts`, `extensions-view-runner.ts`, `store-runner.ts`, `extension-prefs-runner.ts`, `effective-manifest-runner.ts`, `extension-page-open.ts` | The real I/O |
 | `extension-commands-runner.ts`, `install-extension-commands.ts`, `shortcuts-page.ts` | The keys of extension commands: the table and what a key runs (fakes for everything it reaches), the real session, registry and shell behind it, and what the shortcuts page may ask |
 | `extension-install-prompt.ts`, `extensions-picker-runner.ts` | The install question, asked into the panel of the tab it belongs to through `askQuestion`, and the native file and folder pickers (`dialog.showOpenDialog`), parented to the extensions page's window |
@@ -173,8 +173,8 @@ page (`reloading` in `extension-host.ts`); any other unload, and an uninstall be
 The five seconds are provisional: Chrome's own window is not measured here.
 
 **What the person chose is kept apart from what the extension shipped.** `extension-prefs-runner.ts`
-keeps one record per extension in `<userData>/extensions/prefs.json` (`ExtensionsApi.prefs`; memory
-only in a private runtime). The manifest the extension loads is the installed one with those choices
+keeps one record per extension in `<userData>/extensions/prefs.json` (`ExtensionsApi.prefs`; a private runtime
+starts from the copy it was given and keeps every change in memory). The manifest the extension loads is the installed one with those choices
 applied: `finishInstall` writes the installed manifest as `<slot>/manifest.base.json`, and
 `effective-manifest-runner.ts` writes `effectiveManifest(base, prefs)` into the version folder's
 `manifest.json` and reloads (`ExtensionsApi.applyManifest`: `now`, or `quiet` once no page of the
@@ -204,8 +204,19 @@ on Wayland, are *provisional* until a person's desktop shows them.
 renderer rebuild `chrome.*`; the preload defines `webstorePrivate` and `management` as accessors that
 refuse redefinition (UPSTREAM.md of `vendor/electron-chrome-web-store`, patch 8), because the native
 `webstorePrivate` crashes the main process when the page's status poll reaches it. `store-runner.ts`
-therefore starts in every runtime: a private or guest one blocks every install by policy before any
+therefore starts in every runtime: a private one blocks every install by policy before any
 question or icon fetch, and runs no updater.
+
+**A private window runs the extensions the person allowed there, as copies.** `privateWindows` in an extension's prefs is
+the switch on its details page (`details-private-windows.ts`). When a private session's folder is made,
+[`../launch/private-extensions.ts`](../launch/private-extensions.ts) copies each enabled extension with the switch on:
+its slot folder, a registry and a prefs file of just those (an allowlist of the choices, so a camera answer given in a
+normal window is not carried), and its own storage (`Local Extension Settings`, `Sync Extension Settings`, its IndexedDB,
+its service worker cache) from the default session and from the tunnel profiles' sessions. The private runtime then loads
+its own registry like any other and keeps every later change in memory, so nothing returns to the profile. What websites
+share is never copied (`Local Storage`, cookies, history, caches, service worker registrations), so an extension's
+`localStorage` starts empty. A private runtime installs, removes and turns off nothing. Orivon cannot stop an allowed
+extension from recording what the person visits in a private window; the switch says so.
 
 **Whether a new extension is pinned is decided once, at its install.** `finishInstall` records
 `pinned` from `extensions.pinInstalled` (off) for a fresh install with no pin, before the load, and

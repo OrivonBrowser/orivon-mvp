@@ -38,14 +38,13 @@ export function installExtensionCommands (options: InstallCommandKeysOptions): E
   const extensions = session.defaultSession.extensions
 
   // What the session has loaded is the truth (an install loads before it is written to the registry); the registry
-  // only says which was installed first. A private runtime loads nothing and reads no registry.
+  // only says which was installed first. A private runtime reads the registry of the copy it was given.
   // The files are read once per load: a prefs change rebuilds the table on the next keystroke, and that must not touch the disk.
   const read = new Map<string, { manifest: unknown, installedAt: number }>()
   extensions.on('extension-loaded', () => { read.clear() })
   extensions.on('extension-unloaded', () => { read.clear() })
 
   const loaded = (): LoadedExtension[] => {
-    if (ctx.privateSession) return []
     const live = extensions.getAllExtensions()
     if (live.some((extension) => !read.has(extension.id))) {
       const installedAt = new Map(readRegistry(userDataPath).map((entry) => [entry.id, entry.installedAt]))
