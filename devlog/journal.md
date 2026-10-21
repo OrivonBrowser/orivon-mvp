@@ -29,6 +29,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Every port was republished: ASGARDEX 1.46.1, Element 1.12.32, AirGap Vault 3.35.0, a landing outside Orivon, LICENSE files and build provenance.
 - Ports gained an upstream-release watcher, attested builds and `orivon-port verify`, which rebuilds a published app and compares its bundle.
 - CI now catches two branches that took the same ADR or decision number, and pr-watch settles decision-log conflicts by itself.
+- Windows gets a one-line PowerShell install with no SmartScreen warning, and the Microsoft Store joins each release's file table.
 
 ### In my head
 
