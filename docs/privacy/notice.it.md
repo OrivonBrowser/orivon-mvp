@@ -102,8 +102,11 @@ e per questo puoi chiederci di cancellarle.
 
 ## Che cosa conserviamo, e per quanto tempo
 
-- **Righe d'uso**, una per computer, profilo e mese: 12 mesi, poi restano solo totali che non si
-  possono ricondurre a un computer (il numero di utenti attivi, la ripartizione per paese e per
+- **Righe d'uso**, una per computer, profilo e mese, e una in più per ogni giorno in cui arriva
+  un rapporto: l'ultimo rapporto di quel giorno, così vediamo come cambia l'uso da un giorno
+  all'altro. Mostrano in quali giorni il browser è stato usato e per quanto tempo, non a che ora
+  del giorno e non su quale sito. 12 mesi, poi restano solo totali che non si possono ricondurre a
+  un computer (il numero di utenti attivi per giorno e per mese, la ripartizione per paese e per
   classe).
 - **Rapporti sui siti**: un elenco di siti con i secondi, con il tuo ID di installazione,
   conservato per il mese; un mese dopo la chiusura del mese viene ridotto a totali per sito per
