@@ -22,13 +22,31 @@ export interface CoverText {
   readonly busy: boolean
 }
 
-export type CoverState = { readonly kind: 'blocked' | 'download-failed', readonly name: string }
+const VERSION_LIMIT = 40
+
+/** A version as the manifest wrote it, fit to read on one line: no control characters, at most VERSION_LIMIT characters. */
+function displayVersion (version: string): string {
+  // eslint-disable-next-line no-control-regex
+  const clean = version.replace(/[\u0000-\u001f\u007f]/g, '').trim()
+  return clean.length <= VERSION_LIMIT ? clean : `${clean.slice(0, VERSION_LIMIT - 3)}...`
+}
+
+export type CoverState =
+  | { readonly kind: 'blocked' | 'download-failed', readonly name: string }
+  /** An update the person took is being fetched, and the tab reloads when it is ready. `fromVersion` is absent when the version in use is not readable. */
+  | { readonly kind: 'updating', readonly name: string, readonly fromVersion: string | undefined, readonly toVersion: string }
 
 export function coverFor (state: CoverState): CoverText {
   const name = displayName(state.name)
   switch (state.kind) {
     case 'blocked': return { title: `${name} was stopped`, detail: '', busy: false }
     case 'download-failed': return { title: `${name} was not opened`, detail: '', busy: false }
+    case 'updating': {
+      const to = displayVersion(state.toVersion)
+      const from = state.fromVersion === undefined ? '' : displayVersion(state.fromVersion)
+      const versions = from === '' ? `Version ${to}.` : `Version ${from} to ${to}.`
+      return { title: `Updating ${name}`, detail: `${versions} The app reloads when the new version is ready.`, busy: true }
+    }
   }
 }
 

@@ -9,7 +9,8 @@ import { ABSENCE_SETTLE_MS, delay, findChrome, waitFor, waitForTab } from '../su
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, readShield, runPhase, shownOnIpfs } from '../support/e2e-helpers.js'
 import { answerAccepting, answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
 import { updateApp } from '../apps/app-update/site.mjs'
-import { buildsAt, eventually, launchPhase, pinOf, profileOf, quietOf, runsAsApp, startRig } from './app-update-support.js'
+import { buildsAt, eventually, launchPhase, markDocuments, marksAt, pinOf, profileOf, quietOf, runsAsApp, startRig } from './app-update-support.js'
+import { coverWords } from './first-visit-support.js'
 
 const ORIGIN = 'https://app.eth'
 const SHOWN = shownOnIpfs(`${ORIGIN}/`)
@@ -79,9 +80,18 @@ it('tells the person about an unverified version and keeps the old one, takes it
       const confirm = await waitQuestion(app, 20_000)
       const asked = await readQuestion(confirm)
       check(`Trust & Force is confirmed first, in the warning style, listing what carries over (${asked.message})`, asked.warning && asked.detail.includes('api.example.com') && /its data/i.test(asked.detail))
+      check('the tab runs a document the update has not replaced yet', await markDocuments(app, `${ORIGIN}/`) === 1)
+      // The new build's script arrives slowly, so the update is on screen for a while.
+      rig.gateway.delayNext('c', 'app.js', 4_000)
       await answerQuestion(app, 'Switch anyway')
+      check('the tab says it is updating the moment Switch anyway is answered, with both versions', await eventually(async () => {
+        const words = await coverWords(app)
+        return words?.title === 'Updating Update fixture' && words.detail === 'Version 1.0.1 to 2.0.0. The app reloads when the new version is ready.'
+      }, 10_000))
       check('the pin now holds build C', await eventually(() => pinOf(app, ORIGIN)?.content?.cid === root('c'), 30_000))
       check('the tab shows build C', await eventually(async () => (await buildsAt(app, `${ORIGIN}/`)).join() === 'C', 30_000))
+      check('the tab loaded a new document, not the one it had', (await marksAt(app, `${ORIGIN}/`)).join() === 'false')
+      check('the cover is gone once the new page is ready', await eventually(async () => await coverWords(app) === null, 15_000))
       check('the dot is gone', await eventually(async () => await findChrome(app).evaluate(() => document.querySelector('#site-permissions-btn')?.hasAttribute('data-update-offered') === false)))
       await closeElectronApp(app, APP_CLOSE_RACE_MS, { keepProfile: true })
 

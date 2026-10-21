@@ -6,6 +6,8 @@ function rig (): { calls: string[], screens: TabScreens } {
   const calls: string[] = []
   const TAB = { window: {}, tabId: 't' } as never
   const screens: TabScreens = {
+    cover: () => {},
+    reloadFresh: () => {},
     blank: async () => { calls.push('blank') },
     sheet: async () => 'retry',
     end: () => { calls.push('end') },
