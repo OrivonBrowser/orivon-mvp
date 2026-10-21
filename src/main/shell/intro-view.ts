@@ -45,7 +45,7 @@ const SETTLED_SCRIPT = `new Promise((resolve) => {
   else document.addEventListener('orivon-newtab-settled', drawn, { once: true })
 })`
 
-/** Waits for the new-tab page to have drawn its rows: its Start here card, Featured, Your apps and bookmarks come from main after the page has loaded, and a snapshot taken before they answer shows a different page each time. */
+/** Waits for the new-tab page to have drawn its rows: its Featured and bookmarks rows come from main after the page has loaded, and a snapshot taken before they answer shows a different page each time. */
 async function settled (webContents: WebContents): Promise<void> {
   await withTimeout(webContents.executeJavaScript(SETTLED_SCRIPT), LOADED_MS, 'the new tab under the welcome screen').catch(() => {})
 }

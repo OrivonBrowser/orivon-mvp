@@ -49,8 +49,6 @@ export interface ClearDeps {
   readonly forgetNodeData?: () => Promise<void>
   /** The Website level each site last earned, which stays while a site cannot be looked at again: forgotten with site data, the cache and all history. */
   readonly forgetEarnedLevels?: () => void
-  /** When each granted app was last in front, which the new tab orders its Your apps row by: forgotten from the time history is cleared back to (0 for all of it). */
-  readonly forgetAppUse?: (from: number) => void
   readonly now: () => number
 }
 
@@ -79,7 +77,6 @@ export async function clearBrowsingData (request: ClearRequest, deps: ClearDeps)
 
   if (request.history === 'all') await attempt('history', () => { deps.history.clear() })
   else if (request.history !== 'none') await attempt('history', () => { deps.history.removeRange(deps.now() - RANGE_MS[request.history as 'hour' | 'day' | 'week'], deps.now()) })
-  if (request.history !== 'none') await attempt('appUse', () => { deps.forgetAppUse?.(request.history === 'all' ? 0 : deps.now() - RANGE_MS[request.history as 'hour' | 'day' | 'week']) })
   if (request.siteData) {
     await attempt('siteData', async () => {
       await deps.websites.clearData({ dataTypes: [...SITE_DATA] })

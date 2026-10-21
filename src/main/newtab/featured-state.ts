@@ -1,9 +1,6 @@
 // What a profile chose about the "Orivon Featured" row: the app a new profile was given first, the entries it
 // unpinned and the ones it hid. Pure functions over a plain value; `featured-store.ts` keeps it on disk. A tile is named
 // by its key: an app's id (the name label of its `.orivonstack.eth` address), or the full address of any other app.
-// The same value also holds the "Start here" card's progress (./start-here-state.ts), since both are this profile's
-// choices about the new tab.
-import { EMPTY_START, parseStart, type StartHereState } from './start-here-state.js'
 
 export interface FeaturedState {
   /** The app shown first because the profile was given it; null once the person removed it, or when none was given. */
@@ -14,10 +11,9 @@ export interface FeaturedState {
   readonly given: boolean
   readonly unpinned: readonly string[]
   readonly hidden: readonly string[]
-  readonly start: StartHereState
 }
 
-export const EMPTY_STATE: FeaturedState = { newcomerPin: null, newcomerName: null, given: false, unpinned: [], hidden: [], start: EMPTY_START }
+export const EMPTY_STATE: FeaturedState = { newcomerPin: null, newcomerName: null, given: false, unpinned: [], hidden: [] }
 
 const FILE_VERSION = 1
 const MAX_KEY_LENGTH = 2048
@@ -93,7 +89,7 @@ export function parseState (parsed: unknown): FeaturedState {
   const record = typeof parsed === 'object' && parsed !== null ? parsed as Record<string, unknown> : {}
   if (record['version'] !== FILE_VERSION) return EMPTY_STATE
   const pin = typeof record['newcomerPin'] === 'string' && appKey(record['newcomerPin']) === record['newcomerPin'] ? record['newcomerPin'] : null
-  return { newcomerPin: pin, newcomerName: pin === null ? null : displayName(record['newcomerName']), given: record['given'] === true || pin !== null, unpinned: keysOf(record['unpinned']), hidden: keysOf(record['hidden']), start: parseStart(record['start']) }
+  return { newcomerPin: pin, newcomerName: pin === null ? null : displayName(record['newcomerName']), given: record['given'] === true || pin !== null, unpinned: keysOf(record['unpinned']), hidden: keysOf(record['hidden']) }
 }
 
 export function serializeState (state: FeaturedState): string {

@@ -197,7 +197,6 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
         .map((app) => session.fromPartition(partitionFor(app.origin))),
       forgetNameSchemes,
       forgetNodeData: forgetIpfsNodeData,
-      forgetAppUse: (from) => { services.appUse.forgetSince(from) },
       forgetEarnedLevels: () => { forgetKeptProvenance(); services.scoreProvider.forget() },
       now: Date.now
     }),

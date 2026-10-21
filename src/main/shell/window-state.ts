@@ -122,8 +122,6 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
     const state = tabs.getState()
 
     const iconFilled = offerIcons(state.tabs)
-    const inFront = state.tabs.find((tab) => tab.id === state.activeTabId)
-    if (inFront !== undefined) services.yourApps.noteInFront(inFront)
     const switched = state.activeTabId !== lastActiveTabId
     if (switched) {
       lastActiveTabId = state.activeTabId

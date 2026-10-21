@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -37,27 +37,13 @@ describe('FeaturedStore', () => {
   })
 })
 
-describe('FeaturedStore, the Start here card', () => {
-  it('keeps the ticked steps and the closing across a restart, beside the Featured choices', () => {
+describe('FeaturedStore, a file that carries a field nothing reads', () => {
+  it('loads with its choices, and the next write leaves the card out', () => {
     const file = join(dir, 'new-tab.json')
-    const first = new FeaturedStore(file)
-    first.hide('explore')
-    first.markStep('eth')
-    first.markStep('eth')
-    const second = new FeaturedStore(file)
-    expect(second.get()).toMatchObject({ hidden: ['explore'], start: { done: ['eth'], closed: false } })
-    second.closeStart()
-    expect(new FeaturedStore(file).get().start).toEqual({ done: ['eth'], closed: true })
-  })
-
-  it('writes nothing for a step that is already ticked', () => {
-    const file = join(dir, 'new-tab.json')
+    writeFileSync(file, JSON.stringify({ version: 1, hidden: ['explore'], given: true, start: { done: ['eth'], closed: true } }))
     const store = new FeaturedStore(file)
-    store.markStep('app')
-    const before = readFileSync(file, 'utf8')
-    rmSync(file)
-    store.markStep('app')
-    expect(() => readFileSync(file, 'utf8')).toThrow()
-    expect(before).toContain('"app"')
+    expect(store.get()).toMatchObject({ hidden: ['explore'], given: true })
+    store.hide('thelounge')
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({ version: 1, newcomerPin: null, newcomerName: null, given: true, unpinned: [], hidden: ['explore', 'thelounge'] })
   })
 })

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FeaturedStore } from '../../newtab/featured-store.js'
-import { applyFirstRunFlavour, FLAVOUR_FILE, installFirstRunFlavour, storedFlavour, storedFlavourApp } from '../first-run-flavour.js'
+import { applyFirstRunFlavour, FLAVOUR_FILE, installFirstRunFlavour, storedFlavour } from '../first-run-flavour.js'
 import { parseFlavours } from '../flavours.js'
 
 const flavours = parseFlavours({ flavours: [
@@ -90,15 +90,5 @@ describe('applyFirstRunFlavour', () => {
     featured.hide('freetube')
     expect(featured.setNewcomerPin('ipfs://freetube.orivonstack.eth', 'FreeTube')).toBe(false)
     expect(featured.get().newcomerPin).toBeNull()
-  })
-})
-
-describe('storedFlavourApp', () => {
-  it('names the app the profile was tagged for, and nothing when there is none', () => {
-    expect(storedFlavourApp(dir, flavours)).toBeNull()
-    install()
-    applyFirstRunFlavour('explore')
-    expect(storedFlavourApp(dir, flavours)).toEqual({ name: 'Explore', address: 'ipfs://explore.orivonstack.eth' })
-    expect(storedFlavourApp(dir, [])).toBeNull()
   })
 })
