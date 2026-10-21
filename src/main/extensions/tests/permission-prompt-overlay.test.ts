@@ -3,7 +3,7 @@ import type { OverlayHandler } from '../../overlays/overlay-types.js'
 import { MAX_WAITING, tabSlotEvents } from '../../overlays/tab-slots.js'
 import type { ShellWindow } from '../../shell/window-registry.js'
 import {
-  ALLOW_GUARD_MS, askPermission, createPermissionPrompt, PERMISSION_OVERLAY, permissionOverlay,
+  ALLOW_GUARD_MS, askPermission, askPermissionChoice, createPermissionPrompt, PERMISSION_OVERLAY, permissionOverlay,
   type PermissionAsk, type PermissionPromptView
 } from '../permission-prompt-overlay.js'
 
@@ -154,5 +154,43 @@ describe('askPermission', () => {
     const answer = askPermission(fake.window, 'a', ask())
     fake.handler.disposed?.()
     expect(await answer).toBe(false)
+  })
+})
+
+describe('askPermissionChoice', () => {
+  it('shows the question a device ask carries', () => {
+    const fake = fakeWindow()
+    void askPermissionChoice(fake.window, 'a', { ...ask(), lines: [], wants: 'wants to use your camera' })
+    expect(fake.views[0]).toMatchObject({ name: 'Tidy Tabs', lines: [], wants: 'wants to use your camera' })
+  })
+
+  it('tells a click on the refusing button, which is a block, from every other way out, which is a dismissal', async () => {
+    const blocked = fakeWindow()
+    const first = askPermissionChoice(blocked.window, 'a', ask())
+    blocked.handler.request({ allow: false })
+    expect(await first).toBe('block')
+
+    for (const reason of ['escape', 'blur', 'replaced', 'window-closed'] as const) {
+      const fake = fakeWindow()
+      const dismissed = askPermissionChoice(fake.window, 'a', ask())
+      fake.handler.closed?.(reason)
+      expect(await dismissed).toBe('dismiss')
+    }
+
+    const gone = fakeWindow()
+    const disposed = askPermissionChoice(gone.window, 'a', ask())
+    gone.handler.disposed?.()
+    expect(await disposed).toBe('dismiss')
+  })
+
+  it('answers allow after the guard, and a full queue with a dismissal', async () => {
+    const fake = fakeWindow()
+    const allowed = askPermissionChoice(fake.window, 'a', ask())
+    vi.advanceTimersByTime(ALLOW_GUARD_MS + 100)
+    fake.handler.request({ allow: true })
+    expect(await allowed).toBe('allow')
+    const crowded = fakeWindow()
+    for (let i = 0; i <= MAX_WAITING; i++) void askPermissionChoice(crowded.window, 'a', ask(String(i).repeat(32)))
+    expect(await askPermissionChoice(crowded.window, 'a', ask('z'.repeat(32)))).toBe('dismiss')
   })
 })

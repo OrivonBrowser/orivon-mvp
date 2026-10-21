@@ -9,7 +9,9 @@ export interface SiteAsker {
   readonly name: string
   /** Answers a permission request, or `undefined` for a permission this asker
    * does not own and for any `contents` that is not an ordinary tab (an embed,
-   * an extension context or a shell view keeps the gate's own rules). */
+   * an extension context or a shell view keeps the gate's own rules), except an
+   * asker that owns exactly such a context: the extension-media asker answers
+   * for an installed extension's own page. */
   request?: (contents: WebContents, permission: string, details: unknown) => Promise<boolean> | undefined
   /** The synchronous side, which can never wait on the person: it answers
    * only from what was already decided. `contents` is null when Electron

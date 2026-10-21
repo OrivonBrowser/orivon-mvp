@@ -13,8 +13,18 @@ export interface ExtensionPrefs {
   /** Command name to binding; '' is a binding the person cleared. */
   readonly shortcuts: Readonly<Record<string, string>>
   readonly overrides: { readonly newtab: boolean, readonly history: boolean, readonly bookmarks: boolean }
+  /** What the person answered when the extension's own page asked for a device; a kind with no entry is asked. */
+  readonly media: ExtensionMediaAnswers
   readonly noticeSeen: readonly string[]
 }
+
+/** The camera and the microphone, each `allow` or `block` once the person has answered. */
+export interface ExtensionMediaAnswers {
+  readonly camera?: MediaAnswer
+  readonly microphone?: MediaAnswer
+}
+
+export type MediaAnswer = 'allow' | 'block'
 
 export interface ExtensionPrefsStore {
   get: (id: string) => ExtensionPrefs
@@ -48,6 +58,16 @@ function stringMap (value: unknown): Readonly<Record<string, string>> {
   return Object.freeze(out)
 }
 
+function mediaAnswers (value: unknown): ExtensionMediaAnswers {
+  const source = isRecord(value) ? value : {}
+  const answers: { camera?: MediaAnswer, microphone?: MediaAnswer } = {}
+  for (const kind of ['camera', 'microphone'] as const) {
+    const answer = source[kind]
+    if (answer === 'allow' || answer === 'block') answers[kind] = answer
+  }
+  return Object.freeze(answers)
+}
+
 function bool (value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback
 }
@@ -71,6 +91,7 @@ export function normalizePrefs (raw: unknown): ExtensionPrefs {
       history: bool(overrides['history'], true),
       bookmarks: bool(overrides['bookmarks'], true)
     }),
+    media: mediaAnswers(source['media']),
     noticeSeen: stringList(source['noticeSeen'])
   })
 }

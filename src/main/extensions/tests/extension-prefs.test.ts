@@ -15,8 +15,23 @@ describe('normalizePrefs', () => {
       siteAccess: { mode: 'all', sites: [] },
       shortcuts: {},
       overrides: { newtab: true, history: true, bookmarks: true },
+      media: {},
       noticeSeen: []
     })
+  })
+
+  it('keeps a camera and microphone answer, and drops anything but allow and block', () => {
+    expect(normalizePrefs({ media: { camera: 'allow', microphone: 'block' } }).media).toEqual({ camera: 'allow', microphone: 'block' })
+    expect(normalizePrefs({ media: { camera: 'ask', microphone: 3, screen: 'allow' } }).media).toEqual({})
+    expect(normalizePrefs({ media: 'allow' }).media).toEqual({})
+    expect(Object.isFrozen(normalizePrefs({ media: { camera: 'allow' } }).media)).toBe(true)
+  })
+
+  it('writes the media field only for an extension that has an answer', () => {
+    const none = serializePrefs(new Map([['a'.repeat(32), normalizePrefs({})]]))
+    expect(JSON.parse(none).extensions).toEqual({})
+    const some = serializePrefs(new Map([['a'.repeat(32), normalizePrefs({ media: { camera: 'block' } })]]))
+    expect(JSON.parse(some).extensions['a'.repeat(32)].media).toEqual({ camera: 'block' })
   })
 
   it('keeps a good field and defaults only the bad one', () => {
