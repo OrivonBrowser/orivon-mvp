@@ -311,8 +311,8 @@ it('the question marks of the shield popup are buttons that open the Web3 Score 
   const { app, chrome } = await launchShell()
   try {
     await ready(app, chrome)
-    // The pill's mark is a control only while it reads "Web?"; on a plain page it reads Web2 and does nothing.
-    expect(await chrome.evaluate(() => { const mark = document.querySelector<HTMLButtonElement>('#web3-mark'); return { tag: mark?.tagName, text: mark?.textContent, disabled: mark?.disabled } })).toEqual({ tag: 'BUTTON', text: 'Web2', disabled: true })
+    // The pill's mark is a control whatever it reads; on a plain page it reads Web2.
+    expect(await chrome.evaluate(() => { const mark = document.querySelector<HTMLButtonElement>('#web3-mark'); return { tag: mark?.tagName, text: mark?.textContent, disabled: mark?.disabled, popup: mark?.getAttribute('aria-haspopup') } })).toEqual({ tag: 'BUTTON', text: 'Web2', disabled: false, popup: 'dialog' })
     await chrome.locator('#web3-score-btn').click()
     expect(await waitFor(async () => await shownPage(app) === 'web3')).toBe(true)
     const popup = app.windows().find((w) => w.url().includes('/site-info/')) as Page
@@ -368,6 +368,44 @@ it('on a new tab the shield opens the card that explains the Web3 Score, closes 
     await reopened.getByRole('button', { name: 'Choose a score provider' }).click()
     expect(await waitFor(async () => !(await cardShown()))).toBe(true)
     expect(await waitFor(async () => (await chrome.locator('#address').inputValue()).includes('settings/web3'))).toBe(true)
+  } finally {
+    await closeElectron(app)
+  }
+}, QA_TEST_TIMEOUT_MS)
+
+it('on a site the Web mark opens the Web3 Score card under it with the site\'s level marked, closes it on a second click, and leads to the guide at the .eth name', async () => {
+  const { app, chrome } = await launchShell()
+  const cardShown = async (): Promise<boolean> => await popoverShown(app, 'overlay=web3-score')
+  try {
+    await ready(app, chrome)
+    expect(await waitFor(async () => await chrome.locator('#web3-mark').isVisible())).toBe(true)
+    expect(await chrome.locator('#web3-mark').textContent()).toBe('Web2')
+
+    await chrome.locator('#web3-mark').click()
+    expect(await waitFor(cardShown)).toBe(true)
+    expect(await siteInfoShown(app), 'the mark opens the card, not the site card').toBe(false)
+    const card = app.windows().find((w) => w.url().includes('overlay=web3-score')) as Page
+    await card.waitForSelector('.ws-level.ws-here')
+    expect(await card.evaluate(() => ({
+      marked: [...document.querySelectorAll('.ws-level.ws-here')].map((row) => row.querySelector('.ws-level-name')?.textContent),
+      tag: document.querySelector('.ws-here-tag')?.textContent,
+      noteMarked: document.querySelector('.ws-note')?.classList.contains('ws-here')
+    }))).toEqual({ marked: ['Level 1'], tag: 'This site', noteMarked: false })
+
+    // The press takes the focus the card holds and closes it; the click it ends must not open it again.
+    await chrome.locator('#web3-mark').click()
+    expect(await waitFor(async () => !(await cardShown()))).toBe(true)
+    await delay(ABSENCE_SETTLE_MS)
+    expect(await cardShown(), 'a second click leaves the card closed').toBe(false)
+
+    // The keyboard opens it too.
+    await chrome.locator('#web3-mark').focus()
+    await chrome.keyboard.press('Enter')
+    expect(await waitFor(cardShown)).toBe(true)
+    const reopened = app.windows().find((w) => w.url().includes('overlay=web3-score') && !w.isClosed()) as Page
+    await reopened.getByRole('button', { name: 'How scores work' }).click()
+    expect(await waitFor(async () => !(await cardShown()))).toBe(true)
+    expect(await waitFor(async () => (await chrome.locator('#address').inputValue()).includes('docs.orivonstack.eth'))).toBe(true)
   } finally {
     await closeElectron(app)
   }

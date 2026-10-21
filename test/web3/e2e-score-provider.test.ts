@@ -16,7 +16,8 @@ import { join } from 'node:path'
 import type { ElectronApplication } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, closeElectronApp, navigateToFixture, runPhase } from '../support/e2e-helpers.js'
-import { bucketFile, bucketOf, listen, readScore, startSite } from './score-provider-support.js'
+import { findChrome, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
+import { bucketFile, bucketOf, listen, readMarkCard, readScore, startSite } from './score-provider-support.js'
 
 const SCORED = 'sha256:' + '1a'.repeat(32)
 const UNSCORED = 'sha256:' + '2b'.repeat(32)
@@ -92,16 +93,34 @@ it('the provider chosen in Settings judges a checked page, is named wherever its
       check('the page lists the provider\'s operations', judged.headings.includes(`Operations, judged by ${PROVIDER_NAME}`) && judged.text.includes('Sign a transfer + Privacy'))
       check('the page lists the provider\'s connections', judged.headings.includes(`Connections, judged by ${PROVIDER_NAME}`) && judged.text.includes('Price API'))
 
+      const judgedCard = await readMarkCard(app)
+      check(`the Web2.5 mark opens the card with Level 3 marked "This site" and the Web? note plain (${JSON.stringify(judgedCard)})`, judgedCard.marked.join() === 'Level 3' && judgedCard.tags.join() === 'This site' && !judgedCard.noteMarked && judgedCard.closed)
+      check(`the mark's label names the card it opens (${judgedCard.label})`, judgedCard.label === `${judged.label}. What the Web3 Score levels mean`)
+
       await navigateToFixture(app, `http://127.0.0.1:${String(unscored.port)}/`, 'unscored fixture')
       const plain = await readScore(app, '2')
       check(`a page the provider has no score for keeps Level 2, marked "Web?" (${plain.level}/${plain.mark})`, plain.level === '2' && plain.mark === 'Web?')
       check(`its label names no provider and says it has no score yet (${plain.label})`, !plain.label.includes('judged') && plain.label.includes('no Web3 Score for this site yet'))
       check('its page says the provider has no score for it', plain.text.includes(`${PROVIDER_NAME} has no score for this page`))
 
+      const plainCard = await readMarkCard(app)
+      check(`the Web? mark opens the same card, with Level 2 marked and the Web? note emphasised (${JSON.stringify(plainCard)})`, plainCard.marked.join() === 'Level 2' && plainCard.noteMarked && plainCard.closed)
+
       await navigateToFixture(app, `http://127.0.0.1:${String(slow.port)}/`, 'slow fixture')
       const late = await readScore(app, '4')
       check(`a provider slower than the shield's wait still lands: Level 4 once it answers (${late.level})`, late.level === '4' && late.label.includes(`judged by ${PROVIDER_NAME}`))
       check(`the open page shows it too (${late.heading})`, late.heading === 'Website level 4')
+
+      const lateCard = await readMarkCard(app)
+      check(`the Web3 mark marks Level 4 (${JSON.stringify(lateCard)})`, lateCard.marked.join() === 'Level 4' && lateCard.tags.join() === 'This site' && !lateCard.noteMarked && lateCard.closed)
+
+      const chrome = findChrome(app)
+      await chrome.click('#web3-mark')
+      check('the Web3 mark opens the card again', await waitFor(async () => await popoverShown(app, 'overlay=web3-score'), 5_000))
+      const card = app.windows().find((w) => w.url().includes('overlay=web3-score') && !w.isClosed())!
+      await card.getByRole('button', { name: 'How scores work' }).click()
+      const docsOpened = await waitFor(async () => (await chrome.locator('#address').inputValue()).includes('docs.orivonstack.eth'), 8_000)
+      check('"How scores work" opens the official docs at the .eth name in a new tab', docsOpened && !(await popoverShown(app, 'overlay=web3-score')))
 
       const leaked = asked.filter((url) => [SCORED, UNSCORED, SLOW].some((id) => url.includes(id.slice(7))))
       check(`the provider was asked only for its description and buckets (${asked.join(', ')})`, leaked.length === 0 && asked.every((url) => /^\/score\/(provider\.json|website\/[0-9a-f]{2}\.json)$/.test(url)))
