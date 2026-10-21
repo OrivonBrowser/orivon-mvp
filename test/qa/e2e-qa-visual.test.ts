@@ -449,7 +449,7 @@ for (const scheme of SCHEMES) {
         const panel = app.windows().find((w) => w.url().includes('/site-info/'))
         expect(await waitFor(async () => (await panel?.$$('#report-problem'))?.length === 1)).toBe(true)
         await state(check, app, `site-info-report-problem-${scheme}`, {
-          expected: 'The popup under the key lists the app\'s permission row with its switch off, then the Cookies and site data and Site settings rows, and last a row reading "Report a problem" with a chevron at the right, in the same type, spacing and colours as the rows above it. The row is fully inside the popup, uncut, and readable in this colour scheme.',
+          expected: 'The popup under the key lists the app\'s permission row with its switch off, then the Cookies and site data and Site settings rows, and last a row reading "Report a problem with this site" with a chevron at the right, in the same type, spacing and colours as the rows above it. The row is fully inside the popup, uncut, and readable in this colour scheme.',
           action: 'Clicked the key on the consent fixture, whose manifest names where problems are reported.',
           ignore: [FIXTURE_ADDRESS, SITE_INFO_ORIGIN_LINE]
         })

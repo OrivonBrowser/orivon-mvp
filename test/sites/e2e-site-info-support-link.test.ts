@@ -1,4 +1,4 @@
-// The site-info popover offers "Report a problem" when the site's manifest names `support.issues`,
+// The site-info popover offers "Report a problem with this site" when the site's manifest names `support.issues`,
 // opens it in a new tab, and shows nothing for a manifest that names none. Both sites are
 // registered through the developer-only grant hook, which is how the e2e suite gives a loopback
 // origin a manifest.
@@ -72,7 +72,7 @@ async function openPanelOf (app: ElectronApplication, chrome: Page, url: string,
 }
 
 it(
-  '[app:manifest-support-link-in-site-panel] the site panel shows "Report a problem" for a manifest that names support.issues, opens it in a new tab, and shows nothing for one that does not',
+  '[app:manifest-support-link-in-site-panel] the site panel shows "Report a problem with this site" for a manifest that names support.issues, opens it in a new tab, and shows nothing for one that does not',
   async () => {
     await runPhase('site-info-support-link', async (check) => {
       const withSupport = await startFixtureServer()
@@ -92,15 +92,15 @@ it(
         await plain.waitForTimeout(ABSENCE_SETTLE_MS)
         const stillOpen = !plain.isClosed()
         check('the panel of the manifest with no support is still open when it is read', stillOpen)
-        check('a manifest that names no support shows no "Report a problem"', stillOpen && (await plain.$$('#report-problem')).length === 0)
+        check('a manifest that names no support shows no "Report a problem with this site"', stillOpen && (await plain.$$('#report-problem')).length === 0)
         if (findPopup(running) !== undefined) await chrome.click('#site-permissions-btn')
         await waitFor(() => findPopup(running) === undefined, 5_000)
 
         // ---- a manifest with support.issues: the row, then the tab --------
         const popup = await openPanelOf(running, chrome, withSupport.url, { issues: SUPPORT_URL }, check)
         const shown = await waitFor(async () => (await popup.$$('#report-problem')).length === 1, 5_000)
-        check('a manifest that names support.issues shows one "Report a problem" row', shown)
-        check('the row reads "Report a problem"', (await popup.textContent('#report-problem'))?.trim() === 'Report a problem')
+        check('a manifest that names support.issues shows one "Report a problem with this site" row', shown)
+        check('the row reads "Report a problem with this site"', (await popup.textContent('#report-problem'))?.trim() === 'Report a problem with this site')
         await popup.click('#report-problem')
         const opened = await waitForTab(chrome, { address: SUPPORT_URL })
         check('the row opened the publisher\'s address in the tab in front', opened.ok, JSON.stringify(opened.info))

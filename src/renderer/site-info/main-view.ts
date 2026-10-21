@@ -343,7 +343,7 @@ export function renderMainPage (
     support.id = 'report-problem'
     support.className = 'nav-row'
     const supportLabel = document.createElement('span')
-    supportLabel.textContent = 'Report a problem'
+    supportLabel.textContent = 'Report a problem with this site'
     support.append(supportLabel, chevronIcon())
     support.addEventListener('click', callbacks.onOpenSupport)
     container.append(support)

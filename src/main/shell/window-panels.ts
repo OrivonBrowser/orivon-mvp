@@ -101,7 +101,7 @@ export function createWindowPanels ({ ctx, win, services, tabs, overlays, dirnam
       siteInfo.close()
       openWeb3ScoreHelp(tabs)
     },
-    // "Report a problem": a new tab at the address the app's manifest names.
+    // "Report a problem with this site": a new tab at the address the app's manifest names.
     (url) => {
       siteInfo.close()
       tabs.createTab(url)

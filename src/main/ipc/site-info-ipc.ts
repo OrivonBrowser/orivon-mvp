@@ -79,7 +79,7 @@ export type SiteInfoCommand =
   | { type: 'applyUpdate'; cid: string }
   /** "Open <home>": a new tab at the `domain` this origin's manifest names. No argument: main reads the name, the popup never supplies one. */
   | { type: 'openHome' }
-  /** "Report a problem": a new tab at the address this origin's manifest gives as `support.issues`. No argument: main reads it, the popup never supplies one. */
+  /** "Report a problem with this site": a new tab at the address this origin's manifest gives as `support.issues`. No argument: main reads it, the popup never supplies one. */
   | { type: 'openSupport' }
   | { type: 'clearBrowserData' }
   /** One cookie of this site, by the key the last `data` answer gave it. */
