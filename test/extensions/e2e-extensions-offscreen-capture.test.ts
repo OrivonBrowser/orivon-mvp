@@ -26,7 +26,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Page } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron, mainOutput } from '../support/launch-electron.mjs'
-import { evaluateRetrying, findChrome, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
+import { evaluateRetrying, findChrome, HERMETIC_RESOLVER, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
 import { closeElectronApp, navigateToFixture, runPhase } from '../support/e2e-helpers.js'
 import { loadableManifest, readExtensionManifest } from '../../src/broker/policy/extension-manifest.js'
 import { serializeRegistry, type InstalledExtension } from '../../src/main/extensions/registry.js'
@@ -332,18 +332,18 @@ describe('chrome.offscreen / chrome.runtime.getContexts / chrome.tabCapture', ()
     })
   }, TEST_TIMEOUT_MS)
 
-  // A live tabCapture grant must never widen into a real
-  // device grant: permission-gate.ts's 'media' carve-out must never
-  // allow ANY 'media' request from a chrome-extension:// origin holding a
-  // live grant, regardless of what it actually asked for -- an extension
-  // could mint a tabCapture id once, then call getUserMedia({audio:true,
-  // video:true}) on its own page and silently receive the real
-  // microphone/camera. `--use-fake-device-for-media-stream` gives Chromium
-  // a fake input device to grant, so a pass here proves the REFUSAL is
-  // real (a NotAllowedError with no device at all would prove nothing) --
-  // never the real mic/camera, which this switch specifically avoids
-  // touching (smoke-helpers.mjs / launch-electron.mjs's own silent-launch
-  // rule still applies regardless).
+  // A live tabCapture grant must never widen into a real device grant:
+  // the extension could mint a tabCapture id once, then call
+  // getUserMedia({audio:true}) on its own page and silently receive the real
+  // microphone. A device request from the extension's own page is the
+  // person's to answer (the extension-media asker), so the call must reach
+  // the person's sheet, receive nothing before the answer, and receive
+  // nothing when the sheet is dismissed. `--use-fake-device-for-media-stream`
+  // gives Chromium a fake input device to grant, so a refusal here is real
+  // (a NotAllowedError with no device at all would prove nothing) -- never
+  // the real mic/camera, which this switch specifically avoids touching
+  // (smoke-helpers.mjs / launch-electron.mjs's own silent-launch rule
+  // still applies regardless).
   it('a minted tabCapture grant never widens into a real device getUserMedia() grant', async () => {
     const started = await startFixtureServer()
     const fixtureUrl = `${started.origin}/`
@@ -384,18 +384,27 @@ describe('chrome.offscreen / chrome.runtime.getContexts / chrome.tabCapture', ()
       // The SAME extension, from its OWN page (never the captured tab),
       // now asks for the real devices. `contents` for THIS call is the
       // popup's own webContents -- not the captured tab -- and
-      // `mediaTypes` is non-empty, so both the tab-identity and mediaTypes
-      // checks must refuse it independent of the still-live grant.
-      const deviceRequest = await popup.evaluate(async () => {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-          return { ok: true, tracks: stream.getTracks().map((t) => t.kind) }
-        } catch (error) {
-          return { ok: false, name: (error as { name?: string }).name, message: String(error) }
-        }
+      // `mediaTypes` is non-empty, so the tabCapture carve-out refuses it
+      // independent of the still-live grant: only the person's answer can
+      // grant it. The call is left pending in the page; the question must
+      // reach the person, and nothing may be granted before it is answered.
+      await popup.evaluate(() => {
+        const page = window as unknown as { __device?: string | undefined }
+        page.__device = undefined
+        navigator.mediaDevices.getUserMedia({ audio: true }).then(
+          () => { page.__device = 'granted' },
+          (error: { name?: string }) => { page.__device = error.name ?? 'refused' })
       })
-      expect(deviceRequest.ok).toBe(false)
-      expect((deviceRequest as { name?: string }).name).toBe('NotAllowedError')
+      const sheetShown = await waitFor(async () => await popoverShown(liveApp, 'overlay=extension-permission'), 8000)
+      expect(sheetShown).toBe(true)
+      // The popup closes when the sheet takes the keyboard; while it is still there it holds no stream.
+      const device = await popup.evaluate(() => (window as unknown as { __device?: string }).__device).catch(() => undefined)
+      expect(device).not.toBe('granted')
+      await liveApp.windows().find((w) => w.url().includes('overlay=extension-permission'))?.keyboard.press('Escape').catch(() => {})
+      expect(await waitFor(async () => !(await popoverShown(liveApp, 'overlay=extension-permission')), 8000)).toBe(true)
+      const userData = await liveApp.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))
+      const stored = existsSync(join(userData, 'extensions', 'prefs.json')) ? readFileSync(join(userData, 'extensions', 'prefs.json'), 'utf8') : ''
+      expect(stored).not.toContain('"media"')
     } finally {
       if (app !== undefined) await closeElectronApp(app)
       started.server.close()

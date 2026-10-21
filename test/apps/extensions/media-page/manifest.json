@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Orivon E2E Camera Page",
+  "version": "1.0.0",
+  "description": "Fixture extension for test/extensions/e2e-extensions-media.test.ts: its options page, popup and offscreen document each ask for the camera and the microphone.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "icon.png"
+  },
+  "options_page": "page.html",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": ["offscreen"]
+}
