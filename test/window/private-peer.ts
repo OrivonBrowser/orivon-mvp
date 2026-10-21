@@ -9,7 +9,8 @@ export function privatePeer (userData: string): PrivatePeer | undefined {
   const pids = processesWith('--orivon-private', `--user-data-dir=${userData}`)
   for (const pid of pids) {
     let args: string[]
-    try { args = readFileSync(join('/proc', String(pid), 'cmdline'), 'utf8').split('\0') } catch { continue }
+    // Once it has started, Chromium rewrites its own title over its arguments, separating them with spaces instead of NULs.
+    try { args = readFileSync(join('/proc', String(pid), 'cmdline'), 'utf8').split(/[\0 ]/) } catch { continue }
     const dir = args.find((argument) => argument.startsWith('--orivon-private-dir='))?.replace('--orivon-private-dir=', '')
     if (dir !== undefined && dir !== '') return { pids, dir, command: args.join(' ') }
   }

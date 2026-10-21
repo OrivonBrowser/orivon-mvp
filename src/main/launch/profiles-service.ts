@@ -117,13 +117,18 @@ export class ProfilesService {
       const address = url === undefined ? [] : urlsFromArgv(typeof url === 'string' ? [url] : url)
       const start = (): void => {
         const child = this.spawn(this.runtime.source, [...this.runtime.inherit, ...flagsFor({ kind: 'private', dir: made, ...(tunnel === undefined ? {} : { tunnel }) }), ...address])
-        child.once('exit', () => { removePrivateDir(made) })
+        console.log(`[private] started a private session, process ${String(child.pid)}`)
+        child.once('exit', (code, signal) => {
+          console.log(`[private] a private session ended (code ${String(code)}, signal ${String(signal)})`)
+          removePrivateDir(made)
+        })
         child.once('error', () => { removePrivateDir(made) })
       }
       if (!hasPrivateExtensions(this.runtime.dir)) {
         start()
         return true
       }
+      console.log('[private] copying the extensions allowed in private windows, then starting the session')
       // The copy of the extensions can be tens of megabytes: it runs without holding this window, and the session starts once it is done.
       void copyPrivateExtensions(this.runtime.dir, made).then(start).catch((error: unknown) => {
         console.error(`could not start a private session: ${error instanceof Error ? error.message : String(error)}`)
