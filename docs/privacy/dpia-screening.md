@@ -44,6 +44,11 @@ settles it. It is a close call on three points, and the record says so rather th
    two installs narrows who they are, in the per-install rows and in the monthly totals that
    outlive them. The rows are pseudonymous and the totals carry no identifier; this is why a
    country with very few installs is a reason to re-screen.
+4. **The usage report names the app a tagged installer opened on first run.** It is one id from
+   a shipped list of six, or null, and it is not the installer's file name or where it came from.
+   Together with the country it splits the per-install rows into smaller groups, so a country
+   with very few installs of one app narrows who they are, in the rows and in the monthly counts
+   that outlive them; the server's report prints a count under 5 as "<5".
 
 ## Bug reports
 

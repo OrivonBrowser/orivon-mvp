@@ -17,6 +17,8 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Subsystem } from '../main/registry.js'
 import { devModeEnabled } from '../main/dev/dev-mode.js'
+import { reportedFlavour } from '../main/flavour/reported-flavour.js'
+import { parseFlavours } from '../main/flavour/flavours.js'
 import { ownFetch } from '../main/route/own-requests.js'
 import type { SiteKey } from './accounting.js'
 import type { ConsentSource } from './consent.js'
@@ -26,6 +28,7 @@ import {
   IS_TEST_BUILD, endpointUrl, ingestBaseUrl, modeInputsFromEnv, telemetryHome, telemetryOffReason, testOverrides,
   type Endpoint, type OffReason
 } from './mode.js'
+import flavourList from '../../resources/flavours.json'
 import { countryOfTimeZone, systemTimeZone } from './country.js'
 import { CHECKPOINT_INTERVAL_MS, IDLE_INTERACTION_THRESHOLD_SEC, SEND_CHECK_INTERVAL_MS } from './schedule.js'
 import { TelemetryService, type TelemetryStatus } from './service.js'
@@ -100,6 +103,7 @@ async function buildService (app: App): Promise<TelemetryService> {
     userData: app.getPath('userData'),
     appData: app.getPath('appData')
   })
+  const flavours = parseFlavours(flavourList)
   const store = new TelemetryStore(join(app.getPath('userData'), 'telemetry.json'))
   await store.load()
   return new TelemetryService({
@@ -107,6 +111,7 @@ async function buildService (app: App): Promise<TelemetryService> {
     system: new SystemStore(home),
     version: app.getVersion(),
     country: () => countryOfTimeZone(systemTimeZone()),
+    flavour: () => reportedFlavour(app.getPath('userData'), flavours),
     machineReaders: realMachineReaders,
     randomId: () => randomBytes(16).toString('hex'),
     clock: () => Date.now(),

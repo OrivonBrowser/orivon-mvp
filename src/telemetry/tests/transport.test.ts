@@ -22,6 +22,7 @@ function payloadFor (period: string): UsagePayload {
     installId: '4c2f2f3a111144448888abcde1234567',
     stream: 'ab'.repeat(16),
     country: 'IT',
+    flavour: null,
     version: '0.1.0',
     period,
     activeSec: 90000,

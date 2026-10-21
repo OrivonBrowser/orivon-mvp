@@ -28,7 +28,7 @@ function stateWith (accounting: AccountingState): SendCycleState {
 }
 
 function context (consent: ConsentState, installId = vi.fn(async () => INSTALL)): SendContext & { installId: ReturnType<typeof vi.fn> } {
-  return { consent: async () => consent, version: '0.1.0', country: 'IT', stream: 'cd'.repeat(16), installId, random: () => 0 }
+  return { consent: async () => consent, version: '0.1.0', country: 'IT', flavour: null, stream: 'cd'.repeat(16), installId, random: () => 0 }
 }
 
 function recordingSender (ok = true): { sender: Sender, sent: SentPayload[] } {

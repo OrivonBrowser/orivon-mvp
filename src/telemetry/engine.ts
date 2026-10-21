@@ -33,6 +33,8 @@ export interface SendContext {
   readonly consent: () => Promise<ConsentState>
   readonly version: string
   readonly country: Country
+  /** The profile's first-run app id, or null. */
+  readonly flavour: string | null
   /** This profile's random stream. */
   readonly stream: string
   /** Called only once consent is live: reading the machine is not allowed before then. */
@@ -83,7 +85,7 @@ export async function runSendCycle (state: SendCycleState, ctx: SendContext, sen
   for (const kind of KINDS) {
     let kindState: KindState = { ...current[kind], schedule: withOffsetFor(current[kind].schedule, period, ctx.random, ctx.offsetWindowMs) }
     const payloadFor = (target: string): SentPayload => kind === 'usage'
-      ? buildUsagePayload(current.accounting, { installId, stream: ctx.stream, country: ctx.country, version: ctx.version, period: target })
+      ? buildUsagePayload(current.accounting, { installId, stream: ctx.stream, country: ctx.country, flavour: ctx.flavour, version: ctx.version, period: target })
       : buildSitesPayload(current.accounting, { installId, stream: ctx.stream, version: ctx.version, period: target })
     const hasData = (target: string): boolean => kind === 'usage'
       ? hasUsageData(current.accounting, target)

@@ -1,6 +1,6 @@
 # Privacy notice
 
-Notice version: 4
+Notice version: 5
 
 Orivon Browser keeps your browsing history on your computer. This page says what leaves it, why, and
 what you can do about it. It is written for the person using the browser; the engineering list
@@ -39,6 +39,7 @@ Settings > Privacy shows the literal text of each before and after it is sent.
 | `installId` | usage report, site report, erase request | An identifier for this computer, 32 characters. It comes from the operating system's machine ID run through a one-way hash, so it cannot be turned back into the machine ID. It is the same for every profile of the browser on this computer, and for a build run from source and an installed one. It is made only after you turn telemetry on. The site report carries it too, so that reports a program forged can be told from yours |
 | `stream` | usage report, site report | A random value made once for each browser profile. Two profiles open at the same time are each counted, and added up as one computer by the install ID, so they are not two people |
 | `country` | usage report | The country of your computer's time zone, as a two-letter code such as `IT` or `US`, worked out on your computer from the time zone setting; `unknown` when the time zone names no country, such as `UTC`. It is the time zone's country, not proof of where you are, and it is never taken from your IP address |
+| `flavour` | usage report | If you installed Orivon from an installer named for an app, which app (for example `freetube`); otherwise `null`. Nothing else about the installer is sent: not its file name, not where it came from |
 | `version` | usage report, site report | The version of Orivon Browser |
 | `period` | usage report, site report | The month, such as `2026-10`. The message is a total for the month so far, sent again with a larger total on later days |
 | `activeSec` | usage report | Seconds in the month you were using the browser: the window focused and you active |

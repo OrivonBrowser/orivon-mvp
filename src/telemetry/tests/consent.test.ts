@@ -93,6 +93,18 @@ describe('asking again after the notice changed', () => {
     expect(changesSince(recordChoice('accepted', NOW, 'welcome', 4), 5, lines)).toEqual([])
   })
 
+  it('adding the first-run app to the usage report asks an acceptance given under notice 4 again, and a refusal is left alone', () => {
+    expect(NOTICE_VERSION).toBeGreaterThanOrEqual(5)
+    const accepted = recordChoice('accepted', NOW, 'welcome', 4)
+    expect(effectiveConsent(accepted)).toBe('undecided')
+    expect(renewalDue(accepted)).toBe(true)
+    expect(changesSince(accepted)[0]).toBe(NOTICE_CHANGES[5])
+    expect(NOTICE_CHANGES[5]).toContain('installer')
+    const declined = recordChoice('declined', NOW, 'welcome', 4)
+    expect(renewalDue(declined)).toBe(false)
+    expect(mayAskAgain(declined, NOW + 1)).toBe(false)
+  })
+
   it('reads the real table: an acceptance under the previous version gets the current sentence', () => {
     expect(changesSince(recordChoice('accepted', NOW, 'welcome', NOTICE_VERSION - 1))).toEqual([NOTICE_CHANGES[NOTICE_VERSION]])
   })
