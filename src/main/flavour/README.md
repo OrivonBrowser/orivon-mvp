@@ -18,6 +18,9 @@ decides which app opens, never what it may do.
 
 **Owner stream.** `shell`.
 
+**Telemetry reads one thing from here.** `reported-flavour.ts` hands the opt-in usage report the stored id when it is on the list, and
+nothing otherwise; it writes nothing and decides nothing else.
+
 **Electron dependence.** None: file names, a switch and two small files in the profile.
 
 ## Design notes

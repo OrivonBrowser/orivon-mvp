@@ -6,7 +6,7 @@ import {
 
 const t0 = Date.UTC(2026, 8, 1, 0, 0, 0)
 const SEC = 1000
-const meta = { installId: 'ab'.repeat(16), stream: 'cd'.repeat(16), country: 'IT' as const, version: '0.1.0', period: '2026-09' }
+const meta = { installId: 'ab'.repeat(16), stream: 'cd'.repeat(16), country: 'IT' as const, flavour: null, version: '0.1.0', period: '2026-09' }
 
 function browsing (): ReturnType<typeof fold> {
   const events: TelemetryEvent[] = [
@@ -28,13 +28,20 @@ function browsing (): ReturnType<typeof fold> {
 }
 
 describe('buildUsagePayload', () => {
-  it('is the schema 4 usage report: the shell totals, the class split, no site names', () => {
+  it('is the schema 5 usage report: the shell totals, the class split, no site names', () => {
     const payload = buildUsagePayload(browsing(), meta)
     expect(payload).toEqual({
-      schema: PAYLOAD_SCHEMA, installId: meta.installId, stream: meta.stream, country: 'IT', version: '0.1.0', period: '2026-09',
+      schema: PAYLOAD_SCHEMA, installId: meta.installId, stream: meta.stream, country: 'IT', flavour: null, version: '0.1.0', period: '2026-09',
       activeSec: 320, backgroundSec: 80, classes: { web3: 120, web25: 100, web2: 100 }
     })
-    expect(PAYLOAD_SCHEMA).toBe(4)
+    expect(PAYLOAD_SCHEMA).toBe(5)
+  })
+
+  it('carries the first-run app id only when it is a plain id, and null for anything else a damaged file could hold', () => {
+    expect(buildUsagePayload(browsing(), { ...meta, flavour: 'freetube' }).flavour).toBe('freetube')
+    for (const bad of ['', 'a', 'FreeTube', 'free tube', 'free-tube', 'x'.repeat(25), 'Orivon-Setup-1.0.0-x64.freetube.exe', 'https://example.org', 'freetube\n', 'caf\u00e9']) {
+      expect(buildUsagePayload(browsing(), { ...meta, flavour: bad }).flavour, bad).toBeNull()
+    }
   })
 
   it('carries no site name: those travel in the sites report, sent under the same install ID', () => {
