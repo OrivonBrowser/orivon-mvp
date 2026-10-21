@@ -472,6 +472,33 @@ describe('permissionGateSubsystem', () => {
     })
   })
 
+  describe('an extension page asking for a device', () => {
+    const EXTENSION = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
+    const request = { mediaTypes: ['video'], isMainFrame: true, securityOrigin: EXTENSION, requestingUrl: `${EXTENSION}/page.html` }
+
+    it('is refused when no asker answers for it: a device request never rides on a tabCapture grant', async () => {
+      const handlers = defaultSessionHandlers()
+      expect(await handlers.ask(fakeTab(), 'media', request)).toBe(false)
+      expect(await handlers.ask(fakeTab(), 'media', { ...request, mediaTypes: ['audio', 'video'] })).toBe(false)
+      expect(handlers.checkFrom('media', `${EXTENSION}/`, { mediaType: 'video', isMainFrame: true })).toBe(false)
+    })
+
+    it('takes the registered asker\'s answer on both handlers, and a refusal of a failed one', async () => {
+      const handlers = defaultSessionHandlers()
+      const asked = vi.spyOn(siteAsks, 'request').mockReturnValue(Promise.resolve(true))
+      const checked = vi.spyOn(siteAsks, 'check').mockReturnValue(true)
+      try {
+        expect(await handlers.ask(fakeTab(), 'media', request)).toBe(true)
+        expect(handlers.checkFrom('media', `${EXTENSION}/`, { mediaType: 'video', isMainFrame: true })).toBe(true)
+        asked.mockReturnValue(Promise.reject(new Error('sheet crashed')))
+        expect(await handlers.ask(fakeTab(), 'media', request)).toBe(false)
+      } finally {
+        asked.mockRestore()
+        checked.mockRestore()
+      }
+    })
+  })
+
   describe('display capture', () => {
     it('refuses a media request with no device type when no asker owns it, and the display permission with it', () => {
       const handlers = defaultSessionHandlers()
