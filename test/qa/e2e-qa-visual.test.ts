@@ -432,7 +432,7 @@ for (const scheme of SCHEMES) {
         const grantFit = await panelFits(grant)
         check('the consent card sits inside its view, uncut and unscrolled', grantFit.fits, grantFit.detail)
         await state(check, app, `question-consent-${scheme}`, {
-          expected: 'A question panel floats over the page, directly under the address pill with its top edge crossing into the toolbar: a header naming the 127.0.0.1 origin that is asking, a message about what the app wants, and a switch row for each permission the app asks for, all off, and two readable buttons, Close as plain text and Grant all, the filled one. Text and buttons are fully inside the panel in this colour scheme, nothing is cut, and the page and toolbar stay visible around it.',
+          expected: 'A question panel floats over the page, directly under the address pill with its top edge crossing into the toolbar: a header naming the 127.0.0.1 origin that is asking, a message about what the app wants, a switch row for each permission the app asks for, all off, the claimed name of the app and, because this is the first question of the profile, the line "This is a desktop app. It needs more than a web page may have, so it asks you once." just above two readable buttons, Close as plain text and Grant all, the filled one. Text and buttons are fully inside the panel in this colour scheme, nothing is cut, and the page and toolbar stay visible around it.',
           action: 'Typed the address of a loopback app that advertises a manifest and waited for its grant question to arm.',
           ignore: [FIXTURE_ADDRESS, CONSENT_ORIGIN_LINE]
         })

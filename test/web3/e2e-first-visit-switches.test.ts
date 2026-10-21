@@ -10,6 +10,7 @@ import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetryi
 import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 import { answerQuestion, noNativeDialogs, questionGone, readQuestion, readSwitches, stubNativeDialogs, switchRow, waitQuestion } from '../support/question-support.js'
 import { runCommand } from '../support/auth-support.js'
+import { FIRST_PROMPT_LINE } from '../../src/main/consent/first-prompt-note.js'
 import { pageAt, savedGrants, watchPages, withDeclaredTree } from './first-visit-support.js'
 
 const files = (name: string, id: string): Record<string, string> => ({
@@ -72,6 +73,7 @@ it('[app:first-visit-asks-with-switches] [app:first-visit-key-dot] [app:first-vi
       check(`the panel offers Close and Grant all, Close first (${JSON.stringify(asked.buttons)})`, JSON.stringify(asked.buttons) === JSON.stringify(['Close', 'Grant all']))
       check(`it has a row for each permission the app asked for (${JSON.stringify(asked.choices)})`, asked.choices.length === 2 && asked.choices.some((row) => /files/i.test(row)))
       check(`the detail is the claimed name, not the together line (${JSON.stringify(asked.detail)})`, asked.detail.startsWith('Claims to be'))
+      check(`the profile's first question says why it is asked, last in the detail before the buttons (${JSON.stringify(asked.detail)})`, asked.detail.split('\n').at(-1) === FIRST_PROMPT_LINE)
       check('every switch starts off', (await readSwitches(panel)).every((row) => !row.on))
       check(`it says the permissions were asked for together while one is off (${JSON.stringify(asked.note)})`, asked.note.includes('asked for these together'))
       check('the origin is named once', [asked.origin, asked.title, asked.message, asked.detail].join('\n').split(asked.origin).length === 2)
@@ -116,6 +118,9 @@ it('[app:first-visit-asks-with-switches] [app:first-visit-key-dot] [app:first-vi
       await waitFor(() => popupOf() === undefined, 5_000)
       const again = await waitQuestion(running, 60_000)
       check('Review permissions asks the question again, with every switch off', (await readSwitches(again)).length === 2 && (await readSwitches(again)).every((row) => !row.on))
+      const second = await readQuestion(again)
+      check(`the second question does not carry the line (${JSON.stringify(second.detail)})`, !second.detail.includes(FIRST_PROMPT_LINE) && second.detail.startsWith('Claims to be'))
+      check(`its buttons are the same (${JSON.stringify(second.buttons)})`, JSON.stringify(second.buttons) === JSON.stringify(asked.buttons))
       await answerQuestion(running, 'Grant all')
       const entering = await waitForTab(chrome, { address: `ipfs://${noneRoot}/`, title: 'None app' }, 60_000)
       check(`Grant all lets the app in (${JSON.stringify(entering.info)})`, entering.ok)
