@@ -242,6 +242,39 @@ describe('registerSiteInfoIpc -- openHome', () => {
   })
 })
 
+describe('registerSiteInfoIpc -- openSupport', () => {
+  function registerWithSupport (issues: string | undefined): ReturnType<typeof vi.fn> {
+    const openSupport = vi.fn()
+    const controller = fakeController({ siteInfoFor: vi.fn(async () => ({ ...EMPTY_INFO, ...(issues === undefined ? {} : { supportIssues: issues }) })) })
+    registerSiteInfoIpc(siteInfoWebContents, POPUP_URL, controller, ORIGIN, '/tmp/orivon-test-userdata', () => undefined, () => undefined, () => undefined, () => undefined, undefined, undefined, undefined, undefined, undefined, undefined, openSupport)
+    return openSupport
+  }
+
+  it('opens the address the controller reports, and ignores any a command names', async () => {
+    const openSupport = registerWithSupport('https://example.com/issues')
+    await dispatch({ type: 'openSupport', url: 'https://evil.example/' })
+    expect(openSupport).toHaveBeenCalledExactlyOnceWith('https://example.com/issues')
+  })
+
+  it('does nothing when the manifest names none', async () => {
+    const openSupport = registerWithSupport(undefined)
+    await dispatch({ type: 'openSupport' })
+    expect(openSupport).not.toHaveBeenCalled()
+  })
+
+  it('opens nothing that is not an https address, whatever the controller holds', async () => {
+    const openSupport = registerWithSupport('mailto:help@example.com')
+    await dispatch({ type: 'openSupport' })
+    expect(openSupport).not.toHaveBeenCalled()
+  })
+
+  it('does nothing for a frame that is not the popup\'s own', async () => {
+    const openSupport = registerWithSupport('https://example.com/issues')
+    await dispatch({ type: 'openSupport' }, OTHER_FRAME_URL)
+    expect(openSupport).not.toHaveBeenCalled()
+  })
+})
+
 describe('registerSiteInfoIpc -- get / trust', () => {
   it('get calls siteInfoFor with the FIXED origin, never one read from the command', async () => {
     const controller = fakeController()

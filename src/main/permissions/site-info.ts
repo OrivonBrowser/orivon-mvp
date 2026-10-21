@@ -101,6 +101,8 @@ export interface SiteInfo {
   readonly claimedName: string | undefined
   /** The `domain` the app's manifest names as its home, when it names one. */
   readonly homeDomain: string | undefined
+  /** Where the manifest says a problem with the app is reported (`Manifest.support`): an `https://` address. Absent when it names none. */
+  readonly supportIssues?: string
   /** The update offered to this installed app, when its name has moved. */
   readonly update: SiteUpdate | undefined
   /** The state of the app's route when the person routed it through their proxy (`../route/`). */
@@ -189,6 +191,7 @@ export function buildSiteInfo (
     displayOrigin: formatOriginForDisplay(origin),
     claimedName: manifest.name,
     homeDomain: manifest.domain,
+    ...(manifest.support === undefined ? {} : { supportIssues: manifest.support.issues }),
     update: undefined,
     asked: capabilityRows.length > 0 || pickedPathRows.length > 0,
     capabilityRows,

@@ -71,6 +71,9 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
     openHome: async (): Promise<void> => {
       await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'openHome' } satisfies SiteInfoCommand)
     },
+    openSupport: async (): Promise<void> => {
+      await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'openSupport' } satisfies SiteInfoCommand)
+    },
     clearBrowserData: async (): Promise<void> => {
       await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'clearBrowserData' } satisfies SiteInfoCommand)
     },
