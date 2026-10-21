@@ -29,6 +29,7 @@ import { disableDnsPrefetching } from './privacy/dns-prefetch-switch.js'
 import { readSettingBeforeReady } from './settings/settings-file.js'
 import { chromeUserAgent } from './shell/user-agent.js'
 import { planIntro } from './shell/intro-state.js'
+import { whatsNewDue } from './info/whats-new-runner.js'
 import { setTelemetryOn, telemetryRenewal, welcomeOffersTelemetry } from '../telemetry/runner.js'
 import { firstWindowOptions } from './shell/first-window.js'
 import { seedClosedStack } from './session-restore/restore.js'
@@ -323,7 +324,12 @@ export function boot (runtime: Runtime): void {
         const firstWindow = createShellWindow(ctx, shell, { ...plan, intro, firstOfLaunch: true })
         afterWelcome.windowOpened(intro)
         const after = plan.after
-        afterFirst = after === undefined ? undefined : () => { after(firstWindow) }
+        // The first start of a newer version shows what it changed, once, in front of what the window opened on.
+        const news = await whatsNewDue(app.getPath('userData'))
+        afterFirst = after === undefined && !news ? undefined : () => {
+          after?.(firstWindow)
+          if (news) shell.windows.all().find((entry) => entry.window === firstWindow)?.tabs.openInternal('about', '/whats-new')
+        }
       } finally {
         markStarted()
       }

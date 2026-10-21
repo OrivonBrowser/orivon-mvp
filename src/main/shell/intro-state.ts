@@ -37,23 +37,47 @@ function seenPath (userDataDir: string): string {
   return join(userDataDir, 'intro.json')
 }
 
-/** A missing or corrupt file reads as "not seen": the worst case is one more showing, never a crash. */
-export async function readIntroSeen (userDataDir: string): Promise<boolean> {
+/** The file as a record: missing, corrupt or not an object reads as empty. */
+async function readIntroFile (userDataDir: string): Promise<Record<string, unknown>> {
   try {
     const parsed: unknown = JSON.parse(await readFile(seenPath(userDataDir), 'utf8'))
-    return typeof parsed === 'object' && parsed !== null && (parsed as Record<string, unknown>)['seen'] === true
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
   } catch {
-    return false
+    return {}
   }
+}
+
+/** Writes are queued, so two changes to the file (the click through, the version) cannot overwrite one another. */
+let writes: Promise<void> = Promise.resolve()
+
+function updateIntroFile (userDataDir: string, patch: Record<string, unknown>): Promise<void> {
+  writes = writes.then(async () => {
+    await writeFile(seenPath(userDataDir), JSON.stringify({ ...await readIntroFile(userDataDir), ...patch }), 'utf8')
+  }).catch((error: unknown) => {
+    console.error('[orivon] intro: failed to write intro.json:', error)
+  })
+  return writes
+}
+
+/** A missing or corrupt file reads as "not seen": the worst case is one more showing, never a crash. */
+export async function readIntroSeen (userDataDir: string): Promise<boolean> {
+  return (await readIntroFile(userDataDir))['seen'] === true
 }
 
 /** Best effort: a lost write costs one more showing, not worth failing the click for. */
 export async function markIntroSeen (userDataDir: string): Promise<void> {
-  try {
-    await writeFile(seenPath(userDataDir), JSON.stringify({ seen: true }), 'utf8')
-  } catch (error) {
-    console.error('[orivon] intro: failed to remember that it was seen:', error)
-  }
+  await updateIntroFile(userDataDir, { seen: true })
+}
+
+/** The version of Orivon that last started on this profile, or undefined before any did. */
+export async function readLastRunVersion (userDataDir: string): Promise<string | undefined> {
+  const value = (await readIntroFile(userDataDir))['lastRunVersion']
+  return typeof value === 'string' && value !== '' ? value : undefined
+}
+
+/** Best effort: a lost write costs one more What's new page, never a failed start. */
+export async function rememberRunVersion (userDataDir: string, version: string): Promise<void> {
+  await updateIntroFile(userDataDir, { lastRunVersion: version })
 }
 
 /** What the page reports when it is left: `#leaving`, or `#leaving?telemetry=0|1` when it asked the telemetry question. */

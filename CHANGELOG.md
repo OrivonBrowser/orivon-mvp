@@ -28,6 +28,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
+- **What's new in this version**: the first start of a newer version opens a page listing what it changed, once; Settings > About has a link to it. Nothing is fetched: the list is part of the download.
 - **Report a problem with a site**: the site popover has a "Report a problem with this site" row for a site whose manifest names where its publisher takes problem reports, and it opens that address in a new tab.
 - **One-line install on Linux**: a command in a terminal installs the newest release's AppImage for your user, without sudo, with a menu entry, an icon and an `orivon` command, and checks the download against the SHA-256 GitHub reports. Run it again to update.
 - **Look for updates is on by default**: Orivon asks GitHub once a day whether a newer release exists, and installs nothing; Settings > About turns it off. A profile made before this follows the new default.
