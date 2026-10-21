@@ -28,6 +28,10 @@ and `destroyed`. The rule it applies, and the overlay's validation, need nothing
 
 ## Design notes
 
+**A taken app update words the cover for its tabs, and it shows at once.** `../install/update-cover.ts` asks the same `{ url, text }` for every open tab of the app
+the moment the person says yes, with no 300 ms wait (the wait is the watcher's, not the slot's), and claims the tab's cover so the protocol's screen for the
+reload that follows stays off until the new page is ready.
+
 **A first visit's sheet words the cover under it.** `{ url, text: { title, detail, busy } }` is shown as given, for an address no protocol has a
 screen for, and `claim.ts` keeps the protocol's own screen off that tab while the sheet is up ([`../app-setup/`](../app-setup/README.md)).
 

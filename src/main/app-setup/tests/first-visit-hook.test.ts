@@ -15,6 +15,8 @@ function details (overrides: Record<string, unknown> = {}): OnBeforeRequestListe
 function screensFake (): TabScreens & { calls: string[] } {
   const calls: string[] = []
   return {
+    cover: () => {},
+    reloadFresh: () => {},
     calls,
     blank: async () => { calls.push('blank') },
     sheet: async () => 'leave',

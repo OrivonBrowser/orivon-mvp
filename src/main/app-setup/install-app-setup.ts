@@ -56,7 +56,8 @@ export const installAppSetup: ShellInstaller = {
         else goHome(window.tabs, services.settings, { newTab: false })
       },
       blank: blankPage,
-      stop: (contents) => { contents.stop() }
+      stop: (contents) => { contents.stop() },
+      reload: (contents) => { contents.reloadIgnoringCache() }
     })
     publishTabSetup(setup)
     const visitStarts = firstVisitBeforeRequest({

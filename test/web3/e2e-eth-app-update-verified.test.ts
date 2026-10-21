@@ -9,7 +9,8 @@ import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetryi
 import { findChrome } from '../support/smoke-helpers.mjs'
 import { answerAccepting, answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
 import { updateApp } from '../apps/app-update/site.mjs'
-import { buildsAt, eventually, launchPhase, openTab, pinOf, profileOf, runsAsApp, startRig } from './app-update-support.js'
+import { buildsAt, eventually, launchPhase, markDocuments, marksAt, openTab, pinOf, profileOf, runsAsApp, startRig } from './app-update-support.js'
+import { coverWords } from './first-visit-support.js'
 
 const ORIGIN = 'https://app.eth'
 const SHOWN = shownOnIpfs(`${ORIGIN}/`)
@@ -57,12 +58,21 @@ it('[app:installed-app-moves-only-when-accepted] asks before a moved name change
       // The question belongs to the first tab: a tab switch hides it, and going back shows it again.
       await chrome.locator('.tab').first().click()
       await waitQuestion(app)
+      check('both tabs run a document the update has not replaced yet', await markDocuments(app, `${ORIGIN}/`) === 2)
+      // The new build's script arrives slowly, so the update is on screen for a while.
+      rig.gateway.delayNext('b', 'app.js', 4_000)
       await answerQuestion(app, 'Yes')
+      check('the tab says it is updating the moment Yes is given, with both versions', await eventually(async () => {
+        const words = await coverWords(app)
+        return words?.title === 'Updating Update fixture' && words.detail === 'Version 1.0.0 to 1.0.1. The app reloads when the new version is ready.'
+      }, 10_000))
       check('Yes pinned build B', await eventually(() => pinOf(app, ORIGIN)?.content?.cid === rootB, 30_000))
       check('both tabs show build B', await eventually(async () => {
         const builds = await buildsAt(app, `${ORIGIN}/`)
         return builds.length === 2 && builds.every((build) => build === 'B')
       }, 30_000))
+      check('every tab loaded a new document, not the one it had', (await marksAt(app, `${ORIGIN}/`)).join() === 'false,false')
+      check('the cover is gone once the new page is ready', await eventually(async () => await coverWords(app) === null, 15_000))
       check('the pin records the new version', pinOf(app, ORIGIN)?.version === '1.0.1')
       await closeElectronApp(app, APP_CLOSE_RACE_MS, { keepProfile: true })
 
