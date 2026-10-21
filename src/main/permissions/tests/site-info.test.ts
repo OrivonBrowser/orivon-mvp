@@ -138,6 +138,17 @@ describe('buildSiteInfo -- identity fields', () => {
   })
 })
 
+describe('buildSiteInfo -- supportIssues', () => {
+  it('carries the address the manifest gives for reporting a problem', () => {
+    const manifest = { ...manifestWith({}), support: { issues: 'https://example.com/issues' } }
+    expect(buildSiteInfo(APP, manifest, [], [], true).supportIssues).toBe('https://example.com/issues')
+  })
+
+  it('has no such key when the manifest gives none', () => {
+    expect(Object.hasOwn(buildSiteInfo(APP, manifestWith({}), [], [], true), 'supportIssues')).toBe(false)
+  })
+})
+
 describe('buildSiteInfo -- extensionsOnSite', () => {
   it('defaults to none -- every pre-existing call above is unaffected', () => {
     const info = buildSiteInfo(APP, manifestWith({}), [], [], true)

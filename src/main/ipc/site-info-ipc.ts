@@ -79,6 +79,8 @@ export type SiteInfoCommand =
   | { type: 'applyUpdate'; cid: string }
   /** "Open <home>": a new tab at the `domain` this origin's manifest names. No argument: main reads the name, the popup never supplies one. */
   | { type: 'openHome' }
+  /** "Report a problem": a new tab at the address this origin's manifest gives as `support.issues`. No argument: main reads it, the popup never supplies one. */
+  | { type: 'openSupport' }
   | { type: 'clearBrowserData' }
   /** One cookie of this site, by the key the last `data` answer gave it. */
   | { type: 'removeCookie'; key: string }
@@ -158,7 +160,8 @@ export function registerSiteInfoIpc (
   sitePermissions: SitePermissionsAccess = { view: () => null, set: () => null },
   closePopup: () => void = () => {},
   openHome: (domain: string) => void = () => {},
-  openScoreHelp: () => void = () => {}
+  openScoreHelp: () => void = () => {},
+  openSupport: (url: string) => void = () => {}
 ): void {
   // A website the person opened through their proxy from a routed app says so, in the tab the popover is about.
   const withRoute = (info: SiteInfo): SiteInfo => controller.inSession(info, activeWebContents()?.session)
@@ -203,6 +206,11 @@ export function registerSiteInfoIpc (
       case 'openHome': {
         const home = (await controller.siteInfoFor(origin)).homeDomain
         if (home !== undefined) openHome(home)
+        return
+      }
+      case 'openSupport': {
+        const issues = (await controller.siteInfoFor(origin)).supportIssues
+        if (issues !== undefined && issues.startsWith('https://')) openSupport(issues)
         return
       }
       case 'revokePickedPath':
