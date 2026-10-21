@@ -137,6 +137,12 @@ describe('whichFileSection', () => {
     expect(row.replace(/\\\|/g, '').split('|')).toHaveLength(5)
   })
 
+  it('escapes the pipe of the PowerShell install the same way', () => {
+    const row = (whichFileSection(base) ?? '').split('\n').find((line) => line.includes('irm ')) ?? ''
+    expect(row).toContain('install-windows.ps1')
+    expect(row.replace(/\\\|/g, '').split('|')).toHaveLength(5)
+  })
+
   it('is null when no known file is attached', () => {
     expect(whichFileSection({ ...base, assets: ['notes.txt'] })).toBeNull()
   })

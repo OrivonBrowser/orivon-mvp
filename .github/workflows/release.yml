@@ -21,6 +21,7 @@ on:
       - scripts/pin-releases.sh
       - scripts/install-macos.sh
       - scripts/install-linux.sh
+      - scripts/install-windows.ps1
       - .github/workflows/release.yml
   workflow_dispatch:
     inputs:
@@ -207,6 +208,46 @@ jobs:
           $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter Orivon.exe | Select-Object -First 1
           node scripts/smoke-orivon-link.mjs $exe.FullName
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # The one-line Windows install, on the installer just built: it must run silently, put Orivon.exe where it
+      # promises, and not start a second Orivon. A file fetched with Invoke-WebRequest carries no Mark of the Web,
+      # which is why SmartScreen never inspects it; the first lines prove that on this runner.
+      - name: Install with the one-line installer
+        if: matrix.platform == 'win'
+        shell: pwsh
+        env:
+          ORIVON_GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $probe = Join-Path $env:RUNNER_TEMP 'motw-probe.ps1'
+          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/install-macos.sh' -OutFile $probe
+          if (Get-Item -LiteralPath $probe -Stream Zone.Identifier -ErrorAction SilentlyContinue) { throw 'Invoke-WebRequest marked the file as downloaded from the internet' }
+          Get-Process -Name Orivon -ErrorAction SilentlyContinue | Stop-Process -Force
+          Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Programs\Orivon" -ErrorAction SilentlyContinue
+          $env:ORIVON_INSTALLER = (Get-ChildItem release/Orivon-Setup-*.exe | Select-Object -First 1).FullName
+          $env:ORIVON_NO_OPEN = '1'
+          & ./scripts/install-windows.ps1
+          $exe = "$env:LOCALAPPDATA\Programs\Orivon\Orivon.exe"
+          if (-not (Test-Path $exe)) { throw "the one-line installer put no Orivon.exe at $exe" }
+          Get-Process -Name Orivon -ErrorAction SilentlyContinue | Stop-Process -Force
+          node scripts/run-headless.mjs node scripts/smoke-packaged.mjs $exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # The real path as a user runs it: the newest published release is looked up, downloaded and checked. During a
+      # release the new one has no packages yet, so this would test the previous release; PRs and manual runs only.
+      - name: Install the newest published release with the one-line installer
+        if: matrix.platform == 'win' && github.event_name != 'release'
+        shell: pwsh
+        env:
+          ORIVON_GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Get-Process -Name Orivon -ErrorAction SilentlyContinue | Stop-Process -Force
+          Remove-Item Env:ORIVON_INSTALLER -ErrorAction SilentlyContinue
+          $env:ORIVON_NO_OPEN = '1'
+          Get-Content -Raw ./scripts/install-windows.ps1 | Invoke-Expression
+          if (-not (Test-Path "$env:LOCALAPPDATA\Programs\Orivon\Orivon.exe")) { throw 'the one-line installer put no Orivon.exe in place' }
+          Get-Process -Name Orivon -ErrorAction SilentlyContinue | Stop-Process -Force
 
       # The Store signs its package itself, so the one built here is unsigned. To install it on the runner, a
       # COPY is signed with a throwaway certificate whose subject is the manifest's publisher, and trusted for

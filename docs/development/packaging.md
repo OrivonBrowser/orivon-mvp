@@ -512,6 +512,20 @@ the script and launches the result with the packaged smoke check; on pull reques
 it also installs the newest published release through it, which exercises the lookup, download and
 digest check.
 
+**Windows one-line install.** `scripts/install-windows.ps1`, run in PowerShell as
+`irm https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/install-windows.ps1 | iex`,
+installs or updates Orivon with no SmartScreen warning. SmartScreen only inspects files that carry the Mark of the
+Web (a `Zone.Identifier` stream), which a browser adds to a download and `Invoke-WebRequest` does not. It picks the
+release and checks the download exactly as the macOS script does (the newest non-pre-release with an x64 installer
+and a digest, else the newest pre-release), runs the installer with `/S`, and starts Orivon unless the installer
+already did. It refuses to run while Orivon is running. The digest check guards against a broken or swapped
+download in transit, not against someone who controls the GitHub repository. Antivirus software judges the file on
+its own and can still flag an unsigned installer. Settings are environment variables: `ORIVON_REPO`,
+`ORIVON_INSTALLER` (a local installer, which skips the lookup, download and digest check), `ORIVON_INSTALL_DIR`,
+`ORIVON_NO_OPEN=1` and `ORIVON_GITHUB_TOKEN`. The release workflow's Windows leg installs the package it just built
+through the script and launches the result with the packaged smoke check; on pull requests and manual runs it also
+installs the newest published release through it.
+
 **Linux one-line install.** `scripts/install-linux.sh`, run as
 `curl -fsSL https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/install-linux.sh | bash`
 (or `bash -s <id>` with an app id), installs or updates the AppImage for the person alone, with no sudo, on

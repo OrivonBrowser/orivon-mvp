@@ -34,6 +34,7 @@ Pre-release. [Release page](https://github.com/OrivonBrowser/orivon-mvp/releases
 
 ### Added
 
+- **One-line Windows install**: paste a PowerShell command and Orivon installs for your user and opens, with no SmartScreen warning; the README and each release's file table carry it.
 - **What's new in this version**: the first start of a newer version opens a page listing what it changed, once; Settings > About has a link to it. Nothing is fetched: the list is part of the download.
 - **Start here card on the new tab**: three steps, each ticked once Orivon sees it happen: open an app, see the shield on a `.eth` name, and bring your bookmarks (shown only when another browser's profile is on this computer). A line says when full uBlock Origin is on. Dismiss closes the card for good, and so does finishing every step. A private window never shows it.
 - **A download can be tagged for an app**: the Windows installer and the Linux AppImage come as `Orivon-Setup-<version>-x64.<app>.exe` and `Orivon-<version>-x86_64.<app>.AppImage`, and the Mac and Linux one-line installs take the app as an argument. The first time it runs on a new profile, that app opens after the welcome screen, asks what it may do as for any visit, and shows first in Orivon Featured. A plain package behaves as before.

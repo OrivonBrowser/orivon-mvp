@@ -152,7 +152,26 @@ different release than the newest one with a dmg attached.
 
 ---
 
-## 6. The Linux one-line install
+## 6. The Windows one-line install
+
+**Precondition.** A published release with its x64 installer attached, and a Windows 10 or 11 machine on which
+Orivon is not running.
+
+**Input.** The command in the README section Download, pasted into PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/install-windows.ps1 | iex
+```
+
+**Assertions.** The script prints the release's tag and "Checked the SHA-256", Orivon opens with no "Windows
+protected your PC" dialog, and **About** shows the release's version.
+
+**Fails if:** SmartScreen or Defender stops the installer, the digest check is skipped, or the script installs a
+different release than the newest one with an installer attached.
+
+---
+
+## 7. The Linux one-line install
 
 **Precondition.** A published release with its AppImage attached, and a Linux x86_64 computer with a desktop that has
 never had Orivon installed by this script (or run `rm -rf ~/.local/lib/orivon ~/.local/share/applications/orivon.desktop`).
@@ -170,7 +189,7 @@ release's version, Orivon Browser is in the application menu with its icon and i
 **Fails if:** the script asks for a password, the digest check is skipped, it installs a release that is not the
 newest one with an AppImage attached, or a computer without `libfuse2` gets an Orivon that does not start.
 
-## 7. A tagged package
+## 8. A tagged package
 
 **Precondition.** A published release, and a Windows machine or a Linux machine that has never run Orivon.
 
