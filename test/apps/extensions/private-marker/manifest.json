@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Orivon E2E Private Marker",
+  "version": "1.0.0",
+  "description": "Fixture extension for test/extensions/e2e-extensions-private-windows.test.ts: marks every page it runs on, and is never allowed in private windows there.",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
