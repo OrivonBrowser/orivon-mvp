@@ -24,7 +24,7 @@ record of them.
 | Not collected | Page addresses, paths, search text, page titles, bookmarks, credentials, file names, advertising identifiers, an ordered or timed list of visits. The IP address is not written to disk |
 | Recipients | None. The only persons with access are the project's maintainers |
 | Transfers outside the EU | None. Self-hosted on a virtual server rented from OVH SAS in Strasbourg, France |
-| Retention | Usage rows per install and month: 12 months, then a daily job folds them into monthly aggregates that carry no install identifier. Site reports, with the install identifier: kept for the month; one month after the month closes the same job folds the counted ones into per-site monthly totals for all users, with no identifier, and deletes every site row. The 12-month exclusion list (below): an identifier found sending forged reports is refused for 12 months, then removed. A request to erase deletes every usage row and every site row of an install identifier at once |
+| Retention | Usage rows per install and month, and per install and day a report arrives (the last report of that day): 12 months, then a daily job folds them into monthly and daily aggregates that carry no install identifier. Site reports, with the install identifier: kept for the month; one month after the month closes the same job folds the counted ones into per-site monthly totals for all users, with no identifier, and deletes every site row. The 12-month exclusion list (below): an identifier found sending forged reports is refused for 12 months, then removed. A request to erase deletes every usage row, monthly and daily, and every site row of an install identifier at once |
 | Source of the data | The data subject's own browser; nothing from third parties |
 | Rights handling | Access and erasure by the in-product Delete my data button, or by writing to privacy@orivonstack.com with the install identifier shown in Settings; withdrawal in Settings. Per-site totals folded together for all users carry no identifier and cannot be traced to one |
 | Automated decisions | None |
@@ -47,7 +47,7 @@ description of what it stores.
 - Only the UTC day is stored with a row, not the time of receipt.
 - The service runs under a dynamic unprivileged user with a memory cap and a state directory of
   its own.
-- A daily job folds per-install rows older than 12 months into monthly aggregates, and site rows
+- A daily job folds per-install rows older than 12 months into monthly and daily aggregates, and site rows
   into monthly per-site totals one month after the month closes.
 - The client ignores every response body, so a compromise of the server cannot command a browser.
 - The usage and site tables share the install identifier and stream value, and are joined only to check that a site report is accounted for by a usage report.
@@ -55,7 +55,10 @@ description of what it stores.
 ### Review
 
 Reviewed whenever a payload field, a retention period, the hosting, a processor or the controller
-changes, and at least once a year. The notice version number and Activity 1 change together;
+changes, and at least once a year. The notice version number goes up, and consent is asked again, when what a message sends
+changes; a change to what is kept from the same messages is written into the notice and Activity 1
+under the same version (*provisional*: the legal review settles whether such a change needs
+consent again);
 Activity 2 changes with the notice's Bug reports section, whose consent is asked per report.
 
 ## Activity 2: bug reports

@@ -94,8 +94,11 @@ us to delete them.
 
 ## What we keep, and for how long
 
-- **Usage rows**, one per computer and profile and month: 12 months, then only totals that cannot
-  be traced to a computer remain (the number of active users, the split by country and class).
+- **Usage rows**, one per computer and profile and month, and one more for each day a report
+  arrives: the last report of that day, so we can see how use changes from day to day. They show
+  on which days the browser was used and for how long, not at what time of day and not on which
+  site. 12 months, then only totals that cannot be traced to a computer remain (the number of
+  active users per day and per month, the split by country and class).
 - **Site reports**: a list of sites with seconds, with your install ID, kept for the month, then,
   one month after the month closes, folded into totals per site for all users together, and the
   individual reports deleted. Until then each row carries your install ID; afterwards no ID.
