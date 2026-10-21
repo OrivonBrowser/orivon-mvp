@@ -47,6 +47,10 @@ const yourAppsGrid = document.querySelector<HTMLDivElement>('#your-apps-grid')
 const yourAppsEmpty = document.querySelector<HTMLElement>('#your-apps-empty')
 const yourAppsManage = document.querySelector<HTMLButtonElement>('#your-apps-manage')
 
+/** Set on the root element, and announced as an event on the document, once every row has been drawn. Main reads both by these literal names. */
+const SETTLED_ATTRIBUTE = 'settled'
+const SETTLED_EVENT = 'orivon-newtab-settled'
+
 /** Where the grants of every app are listed and switched. */
 const APP_PERMISSIONS_PAGE = 'orivon://settings/apps'
 
@@ -64,19 +68,27 @@ if (shell !== undefined) {
     if (value.length > 0) shell.navigate(value)
   })
 
+  // Every row that main fills in; the page says it is settled once each has answered, or failed to.
+  const drawing: Array<Promise<unknown>> = []
   const startHere = document.querySelector<HTMLElement>('#start-here')
-  if (startHere !== null) void startStartHere(shell, startHere)
+  if (startHere !== null) drawing.push(startStartHere(shell, startHere))
 
-  if (featuredGrid !== null && showHiddenButton !== null) void startFeatured(shell, featuredGrid, showHiddenButton)
+  if (featuredGrid !== null && showHiddenButton !== null) drawing.push(startFeatured(shell, featuredGrid, showHiddenButton))
 
   if (yourAppsSection !== null && yourAppsGrid !== null && yourAppsEmpty !== null && yourAppsManage !== null) {
     yourAppsManage.addEventListener('click', () => { shell.navigate(APP_PERMISSIONS_PAGE) })
-    void renderYourApps(shell, { section: yourAppsSection, grid: yourAppsGrid, empty: yourAppsEmpty })
+    drawing.push(renderYourApps(shell, { section: yourAppsSection, grid: yourAppsGrid, empty: yourAppsEmpty }))
   }
 
   if (bookmarksSection !== null && bookmarksGrid !== null) {
-    void renderBookmarks(shell, bookmarksSection, bookmarksGrid)
+    drawing.push(renderBookmarks(shell, bookmarksSection, bookmarksGrid))
   }
+
+  // The welcome screen waits for this before it takes the picture it blurs behind its telemetry popup (src/main/shell/intro-view.ts).
+  void Promise.allSettled(drawing).then(() => {
+    document.documentElement.dataset[SETTLED_ATTRIBUTE] = '1'
+    document.dispatchEvent(new CustomEvent(SETTLED_EVENT))
+  })
 }
 
 /** The card is drawn once main has said this profile still has it to show, and never when main says no. */

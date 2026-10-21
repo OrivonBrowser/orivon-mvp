@@ -5,7 +5,7 @@
 // wants the browser under it to show blurred, which this hands back as a snapshot.
 // #leaving, or #leaving?telemetry=0|1 with the button pressed, then #entered.
 // Whether a launch shows it at all is ./intro-state.ts.
-import { app, WebContentsView, type BaseWindow } from 'electron'
+import { app, WebContentsView, type BaseWindow, type WebContents } from 'electron'
 import { withTimeout } from '../page-tools/with-timeout.js'
 import { attachShown } from './attach-view.js'
 import { introPageUrl, parseLeaving, type IntroPlan } from './intro-state.js'
@@ -38,11 +38,23 @@ async function loaded (view: WebContentsView): Promise<void> {
   webContents.removeListener('did-stop-loading', stop)
 }
 
+/** Resolves two frames after the new-tab page says it has drawn every row (`data-settled` and the event, src/renderer/newtab/main.ts): a capture taken as the rows are inserted still returns the frame before them. */
+const SETTLED_SCRIPT = `new Promise((resolve) => {
+  const drawn = () => { requestAnimationFrame(() => { requestAnimationFrame(() => { resolve() }) }) }
+  if (document.documentElement.dataset.settled === '1') drawn()
+  else document.addEventListener('orivon-newtab-settled', drawn, { once: true })
+})`
+
+/** Waits for the new-tab page to have drawn its rows: its Start here card, Featured, Your apps and bookmarks come from main after the page has loaded, and a snapshot taken before they answer shows a different page each time. */
+async function settled (webContents: WebContents): Promise<void> {
+  await withTimeout(webContents.executeJavaScript(SETTLED_SCRIPT), LOADED_MS, 'the new tab under the welcome screen').catch(() => {})
+}
+
 /**
  * The browser under the welcome screen, bottom view first. A view that cannot be captured is left out, and an
  * empty list leaves the page on its own backdrop: a GPU-less display (the e2e's xvfb) captures nothing.
  */
-async function browserBehind (win: BaseWindow, intro: WebContentsView): Promise<BehindLayer[]> {
+async function browserBehind (win: BaseWindow, intro: WebContentsView, newTab: WebContents | undefined): Promise<BehindLayer[]> {
   const { width, height } = win.getContentBounds()
   if (width <= 0 || height <= 0) return []
   const views = win.contentView.children.filter((child): child is WebContentsView => child !== intro && (child as Partial<WebContentsView>).webContents !== undefined && child.getVisible() && !(child as WebContentsView).webContents.isDestroyed())
@@ -51,6 +63,7 @@ async function browserBehind (win: BaseWindow, intro: WebContentsView): Promise<
     if (bounds.width <= 0 || bounds.height <= 0) return undefined
     try {
       await loaded(view)
+      if (view.webContents === newTab) await settled(newTab)
       // Not `stayHidden`: a view the welcome screen covers draws nothing, and a capture is what makes it draw once.
       const image = await withTimeout(view.webContents.capturePage(), SNAPSHOT_MS, 'a view under the welcome screen')
       if (image.isEmpty()) return undefined
@@ -122,7 +135,9 @@ export function showIntro (win: BaseWindow, tabs: Pick<TabManager, 'onStateChang
     const leaving = parseLeaving(hash)
     if (hash === '#asking') {
       if (!plan.offerTelemetry) return
-      void browserBehind(win, view).then(async (layers) => {
+      const { activeTabId, tabs: all } = tabs.getState()
+      const newTab = all.find((tab) => tab.id === activeTabId)?.isNewTab === true ? tabs.activeWebContents() ?? undefined : undefined
+      void browserBehind(win, view, newTab).then(async (layers) => {
         if (!open || webContents.isDestroyed() || layers.length === 0) return
         // The page's own listener draws them; the data URLs are main's own captures, never a page's text.
         await webContents.executeJavaScript(`document.dispatchEvent(new CustomEvent('browser-behind', { detail: ${JSON.stringify(layers)} }))`)
