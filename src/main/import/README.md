@@ -15,7 +15,7 @@ Everything else runs under plain Node and would outlive a change of the engine.
 **What it depends on.** `node:sqlite` (Node's own: Rule 8), `node:fs/promises`;
 [`../browsing/`](../browsing/) (the bookmark tree's types and the address check);
 [`../history/`](../history/) (the import filter and the row shape); [`../pages/internal-ipc.ts`](../pages/internal-ipc.ts)
-(the shape of a page's domain); [`../shell/file-dialogs.ts`](../shell/file-dialogs.ts).
+(the shape of a page's domain); [`../shell/file-dialogs.ts`](../shell/file-dialogs.ts); [`../newtab/`](../newtab/) (`import-host.ts` ticks the new tab's Start here step when an import ends without an error, and `otherBrowserFound` tells the card whether there is a profile to import).
 
 **What it must never import.** [`../shell/tabs.ts`](../shell/tabs.ts), and any renderer code. Nothing in this
 directory may write to another browser's files, or read a file other than the six it names.

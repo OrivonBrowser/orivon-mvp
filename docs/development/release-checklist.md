@@ -170,6 +170,20 @@ release's version, Orivon Browser is in the application menu with its icon and i
 **Fails if:** the script asks for a password, the digest check is skipped, it installs a release that is not the
 newest one with an AppImage attached, or a computer without `libfuse2` gets an Orivon that does not start.
 
+## 7. A tagged package
+
+**Precondition.** A published release, and a Windows machine or a Linux machine that has never run Orivon.
+
+**Input.** Download `Orivon-Setup-<version>-x64.freetube.exe` (or the AppImage tagged `freetube`) and run it on a machine with no Orivon profile.
+
+**Assertions.** After the welcome screen, a tab opens on FreeTube's address and asks what it may do; nothing is granted by itself.
+FreeTube is first in Orivon Featured. On Windows, `installer-name.txt` beside the program holds the installer's file name, and
+uninstalling removes it. A second download named `... .freetube (1).exe` behaves the same. On a Mac, `curl ... | bash -s freetube` (section 5's command) does the same on the first launch it starts. Running the plain installer, or the tagged one on a
+profile that has run before, opens the plain first run.
+
+**Fails if:** the app opens without its question, the tag changes a profile that has history, or the file's name is not what
+`installer-name.txt` holds.
+
 ---
 
 ## Scheduled additions

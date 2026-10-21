@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
-import { PROFILE_ID, flagsFor, parseLaunch, switchesOf, urlsFromArgv, withoutAddresses } from '../launch-context.js'
+import { PROFILE_ID, flagsFor, flavourSwitch, parseLaunch, switchesOf, urlsFromArgv, withoutAddresses } from '../launch-context.js'
 
 const HOME = '/home/person/.config/orivon'
 const parse = (...argv: string[]): ReturnType<typeof parseLaunch> => parseLaunch(['/usr/bin/orivon', '--no-sandbox', ...argv], HOME)
@@ -129,5 +129,22 @@ describe('withoutAddresses', () => {
   it('keeps the app path of a run from source, and only the first operand is it', () => {
     expect(withoutAddresses(['.', '--no-sandbox', '/home/a/page.html'], false)).toEqual(['.', '--no-sandbox'])
     expect(withoutAddresses(['--no-sandbox', '/repo', '/home/a/page.html'], false)).toEqual(['--no-sandbox', '/repo'])
+  })
+})
+
+describe('flavourSwitch', () => {
+  it('reads the id before the first --, and nothing after it', () => {
+    expect(flavourSwitch(['orivon', '--orivon-flavour=freetube'])).toBe('freetube')
+    expect(flavourSwitch(['orivon'])).toBeUndefined()
+    expect(flavourSwitch(['orivon', '--', '--orivon-flavour=freetube'])).toBeUndefined()
+  })
+
+  it('gives the empty text for an empty value or for two switches, which name no app', () => {
+    expect(flavourSwitch(['orivon', '--orivon-flavour='])).toBe('')
+    expect(flavourSwitch(['orivon', '--orivon-flavour=a1', '--orivon-flavour=b2'])).toBe('')
+  })
+
+  it('does not change which browser the process is', () => {
+    expect(parseLaunch(['orivon', '--orivon-flavour=freetube'], HOME)).toEqual({ ok: true, launch: { kind: 'default', home: HOME, dir: HOME } })
   })
 })
