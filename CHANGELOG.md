@@ -21,6 +21,10 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 - **Releases carry the plain downloads only**: the installer and AppImage copies named for an app are no longer attached to a release or its IPFS folder. A copy renamed for an app still opens it on first run.
 
+### Fixed
+
+- **One-line installs no longer stop on a blank answer from GitHub**: the Linux, macOS and Windows commands ask again when GitHub's release list comes back empty, instead of saying no release exists yet.
+
 ## [0.0.9]
 
 Pre-release. [Release page](https://github.com/OrivonBrowser/orivon-mvp/releases/tag/v0.0.9).
