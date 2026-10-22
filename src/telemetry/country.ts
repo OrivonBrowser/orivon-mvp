@@ -16,6 +16,14 @@ interface LocaleWithZones {
 const A = 'A'.charCodeAt(0)
 const LETTERS = 26
 
+/** The zones named for a US time rule, to the city tzdata links each to: ICU 78 and later list these four under no region. */
+const US_RULE_ZONES: ReadonlyMap<string, string> = new Map([
+  ['EST5EDT', 'America/New_York'],
+  ['CST6CDT', 'America/Chicago'],
+  ['MST7MDT', 'America/Denver'],
+  ['PST8PDT', 'America/Los_Angeles']
+])
+
 /** Every canonical zone name to its country, read once from the runtime's data: a zone shared by two countries keeps the first. */
 let countryByZone: ReadonlyMap<string, Country> | undefined
 
@@ -44,7 +52,7 @@ export function countryOfTimeZone (timeZone: string | undefined): Country {
     return UNKNOWN_COUNTRY
   }
   countryByZone ??= buildCountryByZone()
-  return countryByZone.get(canonical) ?? UNKNOWN_COUNTRY
+  return countryByZone.get(US_RULE_ZONES.get(canonical) ?? canonical) ?? UNKNOWN_COUNTRY
 }
 
 /** The OS time zone, or undefined when the runtime cannot say. */
