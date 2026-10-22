@@ -36,6 +36,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Extensions can use the camera and microphone after you allow them, asked per extension, and can run in private windows.
 - Taking an app update now shows an "Updating" screen over its tabs and reloads them on the new version.
 - Ports raise their version by themselves whenever a published build changes, so every republish reaches users as a real update.
+- The Ethereum light client now starts on a computer whose clock is behind, using the servers' time for Helios alone; Settings says by how much.
 
 ### In my head
 

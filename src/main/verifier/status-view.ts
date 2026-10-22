@@ -93,6 +93,13 @@ function fetchFailure (problem: FetchProblem): string {
   }
 }
 
+function behind (ms: number): string {
+  const seconds = Math.round(ms / 1000)
+  if (seconds < 90) return `${String(seconds)} seconds`
+  const minutes = Math.round(seconds / 60)
+  return minutes < 90 ? `${String(minutes)} minutes` : `${String(Math.round(minutes / 60))} hours`
+}
+
 function hostsOf (urls: readonly string[]): string {
   return urls.map((url) => { try { return new URL(url).hostname } catch { return url } }).join(' and ')
 }
@@ -135,7 +142,7 @@ function summaryOf (facts: VerifierFacts, now: number): { state: LightClientView
     case 'syncing': return { state: 'syncing', summary: `Catching up with the chain, since ${ago(now - s.since)}.` }
     case 'synced': return now - s.at > STALE_HEAD_MS
       ? { state: 'syncing', summary: `Behind the chain: the newest block it has verified, ${s.block.toLocaleString('en-US')}, was produced ${ago(now - s.at)}.` }
-      : { state: 'synced', summary: `Following the chain: block ${s.block.toLocaleString('en-US')}, produced ${ago(now - s.at)}.` }
+      : { state: 'synced', summary: `Following the chain: block ${s.block.toLocaleString('en-US')}, produced ${ago(now - s.at)}.${s.clockLeadMs === undefined ? '' : ` This computer's clock is ${behind(s.clockLeadMs)} behind the servers', and the light client allows for it. Setting the clock right, in the system's date and time settings, removes the need.`}` }
     case 'failed': return { state: 'failed', summary: `Failed: ${s.reason}.${s.retryAt === undefined ? '' : ` Trying again ${s.retryAt <= now ? 'now' : `in ${String(Math.ceil((s.retryAt - now) / 1000))} s`}.`}` }
   }
 }
