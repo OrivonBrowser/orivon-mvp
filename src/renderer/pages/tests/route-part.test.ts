@@ -58,7 +58,8 @@ describe('RoutePart', () => {
 describe('proxyTestWords', () => {
   it('says what was found, in words about the proxy', () => {
     expect(proxyTestWords({ ok: true, authentication: 'none' })).toBe('The tunnel answered.')
-    expect(proxyTestWords({ ok: true, authentication: 'password' })).toContain('its own')
+    // A proxy that takes a sign-in is ready: the words must not read as something the person has to do.
+    expect(proxyTestWords({ ok: true, authentication: 'password' })).toBe('The tunnel answered. Orivon signs in to it for you, with a different name for each app and site.')
     for (const reason of ['no-proxy', 'unreachable', 'silent', 'not-socks5', 'refused'] as const) {
       expect(proxyTestWords({ ok: false, reason }).length, reason).toBeGreaterThan(10)
     }
