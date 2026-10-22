@@ -23,6 +23,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Fixed
 
+- **A page's first files from a `.eth` name no tab had opened no longer fail at random**: a stylesheet, image or fetch could be refused with a certificate error when several arrived at once; the first request to a name now connects before the others.
 - **One-line installs no longer stop on a blank answer from GitHub**: the Linux, macOS and Windows commands ask again when GitHub's release list comes back empty, instead of saying no release exists yet.
 
 ## [0.0.9]
