@@ -260,22 +260,23 @@ export function installOrivon (
   function buildFile (f: Awaited<ReturnType<typeof bridge.fsOpen>>): MainWorldFile {
     const read = async (opts: { position: number, length: number }): Promise<Uint8Array> => await callRevived(f.read(opts))
     const write = async (opts: { position: number, data: Uint8Array }): Promise<number> => await callRevived(f.write(opts))
-    // The streams are positional reads and writes of up to 1 MiB in a row, so they cost and are refused as those are. Neither closes the file.
-    const readable = (opts?: { start?: number, end?: number }): ReadableStream<Uint8Array> => {
-      let position = opts?.start ?? 0
+    // The streams are positional reads (1 MiB each) and writes (a chunk each) in a row, so they cost and are refused as those are. Neither closes the file.
+    const readable = ({ start = 0, end = Infinity }: { start?: number, end?: number } = {}): ReadableStream<Uint8Array> => {
+      let position = start
       return new ReadableStream<Uint8Array>({
         pull: async (controller) => {
-          const length = Math.min(1024 * 1024, (opts?.end ?? Infinity) - position)
+          const length = Math.min(1024 * 1024, end - position)
           const bytes = length > 0 ? await read({ position, length }) : new Uint8Array(0)
           if (bytes.length === 0) controller.close()
           else { position += bytes.length; controller.enqueue(bytes) }
         }
       }, { highWaterMark: 0 })
     }
-    const writable = (opts?: { start?: number }): WritableStream<Uint8Array> => {
-      let position = opts?.start ?? 0
+    const writable = ({ start = 0 }: { start?: number } = {}): WritableStream<Uint8Array> => {
+      let position = start
       return new WritableStream<Uint8Array>({
         write: async (chunk) => {
+          if (!(chunk instanceof Uint8Array)) throw toOrivonError('invalid', { message: 'orivon: a file stream writes Uint8Array chunks' })
           for (let done = 0, count = 0; done < chunk.length; done += count, position += count) {
             count = await write({ position, data: done === 0 ? chunk : chunk.subarray(done) })
             if (!(count > 0)) throw toOrivonError('internal', { message: 'orivon: a file write wrote nothing' })

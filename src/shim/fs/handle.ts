@@ -222,7 +222,7 @@ export class NodeFileHandle {
     await guarded(async () => { await this.handle.close() })
   }
 
-  /** Real Node's own FileHandle stream methods -- A184: the broker has readable()/writable() built, but neither reaches a page yet, so this refuses by name instead of returning a stream that can never move a byte. */
+  /** Real Node's own FileHandle stream methods: no Node stream is built over the handle's readable()/writable() yet, so these refuse by name rather than return one that moves no byte. */
   createReadStream (_opts?: { start?: number, end?: number }): never {
     throw refuseShim(
       'FileHandle#createReadStream', 'not-built',

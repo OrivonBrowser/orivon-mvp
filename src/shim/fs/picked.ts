@@ -77,7 +77,7 @@ function sharedOpen (handle: FileHandle, flags: string): FileHandle {
     close: async () => { if (writes) await handle.sync() },
     read: async (opts) => await handle.read(opts),
     write: async (opts) => await handle.write(opts),
-    // A page's handle has no streams yet (A184); these are asked only if a caller reaches for them.
+    // Asked only if a caller reaches for them.
     readable: (opts) => handle.readable(opts),
     writable: (opts) => handle.writable(opts),
     stat: async () => await handle.stat(),

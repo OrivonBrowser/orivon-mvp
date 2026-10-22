@@ -51,8 +51,7 @@ per-datagram floor enforces both the byte and the count bound (A86). `send` reso
 `0.0.0.0`, and any other value binds loopback. `localAddress` reports what was actually bound.
 
 **Clean closes.** `destroySocket`'s drain deadline and the reason a file's `destroy` has none:
-`CLOSE_DRAIN_TIMEOUT_MS`'s doc in `node-adapters.ts`, `node-fs-adapter.ts`'s `openFile` doc, and
-A184.
+`CLOSE_DRAIN_TIMEOUT_MS`'s doc in `node-adapters.ts`, and `node-fs-adapter.ts`'s `openFile` doc.
 
 **TCP and TLS sockets are wrapped in WHATWG streams by hand (`socket-streams.ts`), not by
 `node:stream`'s `Duplex.toWeb`.** That adapter's own `finished()`-driven bookkeeping has a

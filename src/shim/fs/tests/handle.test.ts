@@ -108,8 +108,8 @@ describe('fs.promises.open -- the local cursor', () => {
   })
 })
 
-describe('fs.promises.open -- FileHandle stream gap (A184)', () => {
-  it('createReadStream refuses loudly, citing A184, rather than returning a stream that can never move a byte', async () => {
+describe('fs.promises.open -- FileHandle stream gap', () => {
+  it('createReadStream refuses loudly, naming what works instead, rather than returning a stream that can never move a byte', async () => {
     installFakeOrivon()
     const { openHandle } = await import('../handle.js')
     const handle = await openHandle('piece-0', 'r')
@@ -119,7 +119,7 @@ describe('fs.promises.open -- FileHandle stream gap (A184)', () => {
       handle.createReadStream()
     } catch (error) {
       expect((error as InstanceType<typeof OrivonShimError>).reason).toBe('not-built')
-      expect((error as InstanceType<typeof OrivonShimError>).message).toMatch(/A184/)
+      expect((error as InstanceType<typeof OrivonShimError>).message).toMatch(/fs\.createReadStream\(path\)/)
     }
   })
 

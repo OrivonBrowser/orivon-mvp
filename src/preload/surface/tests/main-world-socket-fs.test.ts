@@ -189,6 +189,15 @@ describe('FileHandle streams on the page', () => {
     expect((caught as { code?: string }).code).toBe('limit')
   })
 
+  it('writable() refuses a chunk that is not bytes rather than writing nothing', async () => {
+    const fake = fakeFile(new Uint8Array(0))
+    const file = await openStreams(fake.bridge)
+    const writer = (file.writable() as unknown as WritableStream<unknown>).getWriter()
+    const caught: unknown = await writer.write(new ArrayBuffer(4)).then(() => undefined, (error: unknown) => error)
+    expect((caught as { code?: string }).code).toBe('invalid')
+    expect(fake.writes).toEqual([])
+  })
+
   it('readable() reads to the end of the file, and [start, end) when given', async () => {
     const fake = fakeFile(new Uint8Array([0, 1, 2, 3, 4, 5]))
     const file = await openStreams(fake.bridge)

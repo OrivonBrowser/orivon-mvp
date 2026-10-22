@@ -1,18 +1,17 @@
 // fs.createReadStream / fs.createWriteStream -- built over fs/handle.ts's
 // OWN local-cursor FileHandle (open once, then repeated positional
-// read/write), never over the broker's FileHandle.readable()/writable()
-// factories that A184 (docs/open-questions.md) stops at the broker layer,
-// not yet reachable from a page. This sidesteps that gap entirely: these
-// classes drive the exact same open/read/write/close primitives fs.open's
-// callback family already uses, just in a loop, from inside a real
+// read/write), never over the handle's own readable()/writable(), which an
+// older Orivon build's page lacks. These classes drive the exact same
+// open/read/write/close primitives fs.open's callback family already uses,
+// just in a loop, from inside a real
 // stream.Readable/Writable -- the same 'stream' polyfill http/message.ts's
 // IncomingMessage and net/socket.ts's Socket already extend.
 //
 // FileHandle#createReadStream/createWriteStream -- the INSTANCE methods on a
-// handle from fs.open()/fs.promises.open() -- still refuse, citing A184.
-// This file does not change that and does not call them: it owns the whole
-// file lifecycle itself (opens, drives every read/write, closes), so the
-// broker's stream factories never enter the picture.
+// handle from fs.open()/fs.promises.open() -- refuse by name. This file
+// does not change that and does not call the handle's readable()/writable():
+// it owns the whole file lifecycle itself (opens, drives every read/write,
+// closes), so they never enter the picture.
 //
 // REACHED BY A REAL CALLER, NOT SPECULATIVE: @seald-io/nedb's Node storage
 // layer (lib/storage.js) captures both unconditionally at module load
@@ -20,7 +19,7 @@
 // (lib/persistence.js) calls them on every database load and every
 // compaction -- see src/shim/tests/nedb-storage.test.ts.
 //
-// SIDESTEPPING A184 IS A SCOPE CALL, NOT A DISCOVERED FIX -- flagged, not
+// RUNNING OVER THE CURSOR IS A SCOPE CALL, NOT A DISCOVERED FIX -- flagged, not
 // owner-reviewed: README.md section Design notes, "createReadStream/createWriteStream".
 
 import { Readable, Writable } from 'stream'
