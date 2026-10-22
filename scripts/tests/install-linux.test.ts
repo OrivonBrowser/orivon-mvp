@@ -33,7 +33,10 @@ while [ $# -gt 0 ]; do
   shift
 done
 case "$url" in
-  *"/releases?"*) cat "$FIXTURES/releases.json" ;;
+  *"/releases?"*)
+    # An empty list as many times as empty-answers says, the way GitHub now and then answers, then the real one.
+    n=$(cat "$FIXTURES/empty-answers" 2>/dev/null || echo 0)
+    if [ "$n" -gt 0 ]; then echo $((n - 1)) > "$FIXTURES/empty-answers"; printf '[\n\n]\n'; else cat "$FIXTURES/releases.json"; fi ;;
   *.AppImage) cp "$FIXTURES/$(basename "$url")" "$out" ;;
   *) exit 22 ;;
 esac
@@ -176,6 +179,22 @@ describe.skipIf(!onUnix)('scripts/install-linux.sh', () => {
 
   it('says so when no release has an AppImage', () => {
     publish([{ tag: 'v0.0.8', assets: [{ name: 'Orivon-0.0.8-arm64.dmg', digest: `sha256:${'a'.repeat(64)}` }] }])
+    const { status, out } = run(['--no-launch'])
+    expect(status).toBe(1)
+    expect(out).toContain('No release')
+  })
+
+  it('asks again when GitHub answers the release list with an empty array, and installs', () => {
+    publish([withImage('v0.0.9')])
+    writeFileSync(join(fixtures, 'empty-answers'), '2')
+    const { status, out } = run(['--no-launch'])
+    expect(status, out).toBe(0)
+    expect(installedVersion()).toBe('# 0.0.9')
+  })
+
+  it('says there is no release after three empty answers', () => {
+    publish([withImage('v0.0.9')])
+    writeFileSync(join(fixtures, 'empty-answers'), '3')
     const { status, out } = run(['--no-launch'])
     expect(status).toBe(1)
     expect(out).toContain('No release')
