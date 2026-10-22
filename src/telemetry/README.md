@@ -39,7 +39,8 @@ same install ID and stream, version, month and seconds per named Web3 or Web2.5 
 telemetry on, ten seconds after the browser starts, once a day at a random offset, and when the
 browser quits (`service.ts`'s `sendNow` and `quit`; `runner.ts`'s start send and `beforeQuit`, the
 last inside the quit bound in `main/index.ts`). The country is the time zone's, looked up in the
-runtime's ICU region data (`country.ts`), so no zone table is kept here. The
+runtime's ICU region data (`country.ts`), so no zone table is kept here beyond the four US
+rule zones (`EST5EDT` and its kin) that ICU 78 and later list under no region. The
 server counts a site report only when a usage report accounts for it. The erase request carries
 the install ID and removes both. The client ignores every response body.
 
