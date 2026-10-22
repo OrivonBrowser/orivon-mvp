@@ -45,6 +45,13 @@ describe('agreedCheckpoint', () => {
     await expect(agreedCheckpoint(beacon({ 'https://a': header('x'), 'https://b': header('x') }), ['https://a', 'https://b'])).rejects.toThrow(/no finalized checkpoint/)
     const open = header(ROOT, SLOT, { finalized: false })
     await expect(agreedCheckpoint(beacon({ 'https://a': open, 'https://b': open }), ['https://a', 'https://b'])).rejects.toThrow(/not finalized/)
+    await expect(agreedCheckpoint(beacon({ 'https://a': header(ROOT, SLOT, { execution_optimistic: true }), 'https://b': header() }), ['https://a', 'https://b'])).rejects.toThrow(/not finalized/)
+  })
+
+  it('accepts the block Lodestar flags not finalized when the other API flags it finalized', async () => {
+    const lodestar = header(ROOT, SLOT, { finalized: false })
+    const checkpoint = await agreedCheckpoint(beacon({ 'https://a': header(), 'https://b': lodestar }), ['https://a', 'https://b'])
+    expect(checkpoint.root).toBe(ROOT)
   })
 })
 
@@ -64,6 +71,8 @@ describe('the release script and the browser', () => {
       { [A]: header(), [B]: new MalformedAnswer('not json') },
       { [A]: header(), [B]: { data: 1 } },
       { [A]: header(ROOT, SLOT, { finalized: false }), [B]: header(ROOT, SLOT, { finalized: false }) },
+      { [A]: header(), [B]: header(ROOT, SLOT, { finalized: false }) },
+      { [A]: header(ROOT, SLOT, { execution_optimistic: true }), [B]: header() },
       { [A]: header('0xabc'), [B]: header('0xabc') }
     ]
     for (const table of cases) {
