@@ -21,6 +21,10 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+### Changed
+
+- **Releases carry the plain downloads only**: the installer and AppImage copies named for an app are no longer attached to a release or its IPFS folder. A copy renamed for an app still opens it on first run.
+
 ## [0.0.9]
 
 Pre-release. [Release page](https://github.com/OrivonBrowser/orivon-mvp/releases/tag/v0.0.9).
