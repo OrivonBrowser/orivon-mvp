@@ -39,14 +39,17 @@ export async function agreedCheckpoint (fetchJson, apis) {
     const rawSlot = body?.data?.header?.message?.slot
     const slot = typeof rawSlot === 'string' && /^\d{1,12}$/.test(rawSlot) ? Number(rawSlot) : NaN
     if (typeof root !== 'string' || !BLOCK_ROOT.test(root) || !Number.isSafeInteger(slot) || slot <= 0) throw new Error(`${api} returned no finalized checkpoint`)
-    if (body.finalized === false || body.execution_optimistic === true || body.data.canonical === false) throw new Error(`${api} returned a header that is not finalized`)
-    return { api, root, slot }
+    if (body.execution_optimistic === true || body.data.canonical === false) throw new Error(`${api} returned a header that is not finalized`)
+    return { api, root, slot, finalized: typeof body.finalized === 'boolean' ? body.finalized : undefined }
   }))
   const [first] = answers
   // Finality moves every few minutes, so two honest APIs can briefly differ. Never pick one.
   if (answers.some((a) => a.root !== first.root || a.slot !== first.slot)) {
     throw new Error(`beacon APIs disagree: ${answers.map((a) => `${a.api} slot ${a.slot} ${a.root}`).join('; ')}. Run again in a minute.`)
   }
+  // Lodestar sets `finalized` false on the block it names as finalized: that flag counts against an answer only when no other API sets it true.
+  const flags = answers.map((a) => a.finalized)
+  if (flags.includes(false) && !flags.includes(true)) throw new Error(`${distinct.join(' and ')} returned a header that is not finalized`)
   return { root: first.root, slot: first.slot, timestamp: MAINNET_GENESIS_SECONDS + first.slot * SECONDS_PER_SLOT, agreedBy: distinct }
 }
 

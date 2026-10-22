@@ -78,9 +78,11 @@ What each party can do:
   It sees no name and no site.
 
 The servers are asked for the finalized header in one request each (`/eth/v1/beacon/headers/finalized`) because the
-answer carries the block root and its slot together, and a server may not set `finalized`, `canonical` or
+answer carries the block root and its slot together, and a server may not set `canonical` or
 `execution_optimistic` against the answer. It is accepted when those are absent, since the request itself names
-the finalized block and not every server includes the flags.
+the finalized block and not every server includes the flags. The `finalized` flag counts against an answer only
+when no other server sets it true for the same root and slot: Lodestar sets it false on the block it names as
+finalized, which refused every renewal while it was one of the pair.
 
 ## Consequences
 
