@@ -48,21 +48,47 @@ window.addEventListener('message', (event) => {
 })
 if (window.opener) window.opener.postMessage({ type: 'ready' }, '*')
 `
-/** A sandboxed frame of the site's own page: reports what it runs as, then answers every message from its parent. */
-const FRAME_SCRIPT = `let storage
-try { indexedDB.open('frame-probe'); storage = 'opened' } catch (error) { storage = error.name }
-parent.postMessage({ type: 'hello', origin: location.origin, storage }, '*')
+/**
+ * A sandboxed frame of the site's own page: it looks for what the site keeps in IndexedDB, reports what it runs
+ * as and what it found, then answers every message from its parent.
+ */
+const FRAME_SCRIPT = `const report = (storage) => parent.postMessage({ type: 'hello', origin: location.origin, storage }, '*')
+try {
+  const open = indexedDB.open('site-secret', 1)
+  open.onupgradeneeded = () => { open.result.createObjectStore('kv') }
+  open.onerror = () => report('refused: ' + (open.error && open.error.name))
+  open.onsuccess = () => {
+    try {
+      const get = open.result.transaction('kv').objectStore('kv').get('secret')
+      get.onsuccess = () => report(get.result === undefined ? 'empty' : 'read: ' + get.result)
+      get.onerror = () => report('refused')
+    } catch (error) { report('refused: ' + error.name) }
+  }
+} catch (error) { report('refused: ' + error.name) }
 window.addEventListener('message', (event) => {
   if (event.source === parent) parent.postMessage({ type: 'echo', data: event.data }, '*')
 })
 `
+/** The site keeps a secret in IndexedDB, then opens its sandboxed frame. */
 const HOST_SCRIPT = `window.frameLog = []
-const frame = document.getElementById('frame')
-window.addEventListener('message', (event) => {
-  if (event.source !== frame.contentWindow) return
-  window.frameLog.push(event.data)
-  if (event.data.type === 'hello') frame.contentWindow.postMessage({ ping: 7 }, '*')
-})
+const open = indexedDB.open('site-secret', 1)
+open.onupgradeneeded = () => { open.result.createObjectStore('kv') }
+open.onsuccess = () => {
+  const tx = open.result.transaction('kv', 'readwrite')
+  tx.objectStore('kv').put('kept by the site', 'secret')
+  tx.oncomplete = () => {
+    open.result.close()
+    const frame = document.createElement('iframe')
+    frame.setAttribute('sandbox', 'allow-scripts')
+    frame.src = '/frame.html'
+    window.addEventListener('message', (event) => {
+      if (event.source !== frame.contentWindow) return
+      window.frameLog.push(event.data)
+      if (event.data.type === 'hello') frame.contentWindow.postMessage({ ping: 7 }, '*')
+    })
+    document.body.append(frame)
+  }
+}
 `
 
 let opener: AppServer
@@ -71,7 +97,7 @@ beforeAll(async () => {
   opener = await startAppServer({
     '/': { type: 'text/html; charset=utf-8', body: '<!doctype html><title>opener</title><body><button id="open">open</button><script src="/opener.js"></script>' },
     '/opener.js': { type: 'text/javascript', body: OPENER_SCRIPT },
-    '/host': { type: 'text/html; charset=utf-8', body: '<!doctype html><title>host</title><body><iframe id="frame" sandbox="allow-scripts" src="/frame.html"></iframe><script src="/host.js"></script>' },
+    '/host': { type: 'text/html; charset=utf-8', body: '<!doctype html><title>host</title><body><script src="/host.js"></script>' },
     '/host.js': { type: 'text/javascript', body: HOST_SCRIPT },
     '/frame.html': { type: 'text/html; charset=utf-8', body: '<!doctype html><title>frame</title><script src="/frame.js"></script>' },
     '/frame.js': { type: 'text/javascript', body: FRAME_SCRIPT },
@@ -141,7 +167,9 @@ it('[app:website-popup-to-another-site-keeps-opener] [app:website-sandboxed-fram
         const entries = await host.evaluate(() => (window as unknown as { frameLog: { type: string }[] }).frameLog)
         return entries.length >= 2 ? entries : false
       })
-      check('[app:website-sandboxed-frame-runs-served-script] the sandboxed frame ran its served script with an opaque origin and no storage', JSON.stringify(frameLog[0]) === JSON.stringify({ type: 'hello', origin: 'null', storage: 'SecurityError' }))
+      const hello = frameLog[0] as { type?: string, origin?: string, storage?: string } | undefined
+      check('[app:website-sandboxed-frame-runs-served-script] the sandboxed frame ran its served script with an opaque origin, and could not read what the site keeps in IndexedDB',
+        hello?.type === 'hello' && hello.origin === 'null' && !String(hello.storage).startsWith('read:'), JSON.stringify(hello))
       expect(frameLog[1]).toEqual({ type: 'echo', data: { ping: 7 } })
 
       const store = await visit(first.app, first.chrome, `${opener.origin}/store`)
