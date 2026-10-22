@@ -297,7 +297,43 @@ describe('startHeliosLightClient -- a computer whose clock is behind the chain',
     await vi.waitFor(() => { if (client.status().state !== 'failed') throw new Error('not failed yet') }, { timeout: 5_000 })
 
     expect(createHeliosProvider).toHaveBeenCalledTimes(2)
-    expect(client.status()).toMatchObject({ state: 'failed', reason: CLOCK_BEHIND_REASON })
+    // A lead was lent, so "set the clock right" is no longer the whole story: Helios's own words stand.
+    expect(client.status()).toMatchObject({ state: 'failed', reason: CLOCK_ERROR })
+  })
+
+  it("keeps the lead when the servers cannot be asked again after the system clock was set, as after the computer wakes", async () => {
+    const helios = failFirstSync()
+    vi.mocked(createHeliosProvider).mockResolvedValue(helios as never)
+    let reachable = true
+    const reach = (async () => {
+      if (!reachable) throw new Error('no route')
+      return new Response(null, { headers: { date: new Date(Date.now() + 90_000).toUTCString() } })
+    }) as never
+    const client = startHeliosLightClient({ ...CONFIG, executionRpcs: ['https://rpc.example', 'https://rpc2.example'] }, reach, () => {})
+    await synced(client)
+    const lead = heliosClockLead()
+    expect(lead).toBeGreaterThan(88_000)
+
+    reachable = false
+    vi.setSystemTime(Date.now() + 3_600_000)
+    await vi.advanceTimersByTimeAsync(60_000 + 100)
+    expect(heliosClockLead()).toBe(lead)
+  })
+
+  it("drops the lead when the system clock was set right while the client ran", async () => {
+    const helios = failFirstSync()
+    vi.mocked(createHeliosProvider).mockResolvedValue(helios as never)
+    let ahead = 90_000
+    const reach = (async () => new Response(null, { headers: { date: new Date(Date.now() + ahead).toUTCString() } })) as never
+    const client = startHeliosLightClient({ ...CONFIG, executionRpcs: ['https://rpc.example', 'https://rpc2.example'] }, reach, () => {})
+    await synced(client)
+    expect(heliosClockLead()).toBeGreaterThan(88_000)
+
+    vi.setSystemTime(Date.now() + 90_000)
+    ahead = 0
+    await vi.advanceTimersByTimeAsync(60_000 + 100)
+    expect(heliosClockLead()).toBe(0)
+    expect(client.status()).not.toHaveProperty('clockLeadMs')
   })
 
   it("raises the lead to a block the chain proved, when the servers' time was too little", async () => {

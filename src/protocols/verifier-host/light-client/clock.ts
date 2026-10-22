@@ -14,7 +14,8 @@ export const MAX_LEAD_MS = 24 * 60 * 60_000
 const MIN_LEAD_MS = 2_000
 /** Servers whose clocks differ by more than this from each other are not a reference for anything. */
 const MAX_SPREAD_MS = 30_000
-const PROBE_TIMEOUT_MS = 8_000
+/** Long enough for a tunnel's first request, which is slow to open. */
+const PROBE_TIMEOUT_MS = 15_000
 
 export interface ClockReading {
   /** The server's `Date` header, in ms since the epoch. */
@@ -25,19 +26,25 @@ export interface ClockReading {
 }
 
 /**
- * How far the local clock is behind the servers, in ms, or `undefined` when
- * it is not behind, or when the readings cannot be trusted as one answer:
- * fewer than two servers, servers that disagree, or a lead no mistake in a
- * clock would explain. The median of several servers, never one server's word.
+ * How far the local clock is behind the servers, in ms: 0 when they say it is
+ * not, `undefined` when they cannot be taken as one answer (too few, or no
+ * majority of them agreeing within 30 s, or a lead no mistake in a clock
+ * would explain). The middle of the largest group that agrees, never one
+ * server's word, and a server that is off by itself is left out.
  */
 export function clockLead (readings: readonly ClockReading[]): number | undefined {
   if (readings.length < 2) return undefined
   // A `Date` header counts whole seconds, so the server's real time is half a second past it; the answer was made halfway through the round trip.
   const leads = readings.map((r) => r.serverMs + 500 - (r.sentAt + r.receivedAt) / 2).sort((a, b) => a - b)
-  if (leads[leads.length - 1]! - leads[0]! > MAX_SPREAD_MS) return undefined
-  const median = leads.length % 2 === 1 ? leads[(leads.length - 1) / 2]! : (leads[leads.length / 2 - 1]! + leads[leads.length / 2]!) / 2
-  if (median < MIN_LEAD_MS || median > MAX_LEAD_MS) return undefined
-  return Math.round(median)
+  let group: number[] = []
+  for (let from = 0; from < leads.length; from++) {
+    const inside = leads.slice(from).filter((lead) => lead - leads[from]! <= MAX_SPREAD_MS)
+    if (inside.length > group.length) group = inside
+  }
+  if (group.length < 2 || group.length * 2 <= leads.length) return undefined
+  const median = group.length % 2 === 1 ? group[(group.length - 1) / 2]! : (group[group.length / 2 - 1]! + group[group.length / 2]!) / 2
+  if (median > MAX_LEAD_MS) return undefined
+  return median < MIN_LEAD_MS ? 0 : Math.round(median)
 }
 
 /** One `Date` header read from `url`'s server, through the light client's own allowlisted fetch. */
@@ -55,7 +62,7 @@ async function readClock (url: string, fetch: WebFetch, now: () => number): Prom
   }
 }
 
-/** The origins asked, each once: the consensus server and every execution RPC. */
+/** The origins asked, each once: the consensus server and every execution RPC. See `clockLead` for what comes back. */
 export async function measureClockLead (servers: readonly string[], fetch: WebFetch, now: () => number = Date.now): Promise<number | undefined> {
   const origins = [...new Set(servers.map((server) => new URL(server).origin))]
   const readings = await Promise.all(origins.map(async (origin) => await readClock(`${origin}/`, fetch, now)))
@@ -105,9 +112,13 @@ export function installHeliosClock (): void {
     const real = before.call(Date)
     if (lead === 0) return real
     const limit = Error.stackTraceLimit
-    Error.stackTraceLimit = 4
-    const stack = new Error().stack ?? ''
-    Error.stackTraceLimit = limit
+    let stack: string
+    try {
+      Error.stackTraceLimit = 4
+      stack = new Error().stack ?? ''
+    } finally {
+      Error.stackTraceLimit = limit
+    }
     return HELIOS_FRAME.test(stack) ? real + lead : real
   }
   Date.now = wrapper

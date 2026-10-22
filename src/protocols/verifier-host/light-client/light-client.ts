@@ -226,20 +226,31 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
     if (delayMs === REFRESH_MS) reportCheckpoint(client).catch((error: unknown) => { console.error('[verifier] light client checkpoint read failed:', message(error)) })
   }
 
-  /** Asks the servers this client talks to for the time, and lends Helios the lead of theirs over this computer's clock. Whether a lead was found. */
+  /** Asks the servers this client talks to for the time. A lead over this computer's clock, or `undefined` when they cannot tell; 0 when they say the clock is right. */
+  const measureLead = async (): Promise<number | undefined> => {
+    try {
+      return await measureClockLead([config.consensusRpc, ...config.executionRpcs], fetch)
+    } catch {
+      return undefined
+    }
+  }
+
+  /** Lends Helios the lead of the servers' time over this computer's clock. Whether a lead was found. */
   const lendClock = async (): Promise<boolean> => {
-    const lead = await measureClockLead([config.consensusRpc, ...config.executionRpcs], fetch)
-    if (lead === undefined) return false
+    const lead = await measureLead()
+    // The jump check starts from the moment of this measurement, so a clock set between it and the first refresh is seen.
+    clockJumped()
+    if (lead === undefined || lead === 0) return false
     setHeliosClockLead(lead)
     console.error(`[verifier] this computer's clock is about ${String(Math.round(lead / 1000))} s behind the servers'; the light client allows for it`)
     return true
   }
 
-  /** A lead measured before the system clock was set is wrong, and Helios must not keep running ahead of the chain on it. */
+  /** A lead measured before the system clock was set is wrong, and Helios must not keep running ahead of the chain on it. A measurement that could not be made keeps the lead: the network may simply be down, as after the computer wakes. */
   const recheckClock = async (): Promise<void> => {
     if (!clockJumped() || heliosClockLead() === 0) return
-    const lead = await measureClockLead([config.consensusRpc, ...config.executionRpcs], fetch)
-    setHeliosClockLead(lead ?? 0)
+    const lead = await measureLead()
+    if (lead !== undefined) setHeliosClockLead(lead)
   }
 
   const run = async (attempt: number): Promise<void> => {
@@ -256,7 +267,8 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
       helios = undefined
       await failed?.destroy().catch(() => {})
       const behind = clockBehind(error)
-      if (behind && await lendClock()) {
+      const lent = behind && await lendClock()
+      if (lent) {
         // The first try with the clock lent starts at once; one that fails again goes by the ordinary backoff.
         if (!clockRetried) {
           clockRetried = true
@@ -266,7 +278,7 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
       }
       const delay = Math.min(FIRST_RETRY_MS * 2 ** attempt, MAX_RETRY_MS)
       synced = new Promise<void>((resolve) => { markSynced = resolve })
-      setState({ state: 'failed', reason: behind ? CLOCK_BEHIND_REASON : message(error), retryAt: Date.now() + delay })
+      setState({ state: 'failed', reason: behind && !lent ? CLOCK_BEHIND_REASON : message(error), retryAt: Date.now() + delay })
       setTimeout(() => { void run(attempt + 1) }, delay).unref()
     }
   }

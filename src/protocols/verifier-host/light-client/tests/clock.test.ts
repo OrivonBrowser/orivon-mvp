@@ -15,9 +15,9 @@ describe('clockLead', () => {
     expect(clockLead([reading(60_000), reading(60_100), reading(59_900)])).toBeLessThan(61_000)
   })
 
-  it('is nothing for a clock that is right, or ahead', () => {
-    expect(clockLead([reading(0), reading(300), reading(-200)])).toBeUndefined()
-    expect(clockLead([reading(-90_000), reading(-90_000)])).toBeUndefined()
+  it('is 0 for servers that agree the clock is right, or ahead: measured, and not behind', () => {
+    expect(clockLead([reading(0), reading(300), reading(-200)])).toBe(0)
+    expect(clockLead([reading(-90_000), reading(-90_000)])).toBe(0)
   })
 
   it('is nothing from fewer than two servers: one server is not a reference', () => {
@@ -25,8 +25,19 @@ describe('clockLead', () => {
     expect(clockLead([reading(60_000)])).toBeUndefined()
   })
 
-  it('is nothing when the servers disagree with each other', () => {
+  it('is nothing when the servers disagree with each other and no majority agrees', () => {
     expect(clockLead([reading(60_000), reading(5 * 60_000)])).toBeUndefined()
+    expect(clockLead([reading(60_000), reading(5 * 60_000), reading(20 * 60_000)])).toBeUndefined()
+  })
+
+  it('leaves out a server that is off by itself while a majority agrees', () => {
+    const lead = clockLead([reading(60_000), reading(60_300), reading(59_800), reading(3 * 3_600_000)])
+    expect(lead).toBeGreaterThan(59_000)
+    expect(lead).toBeLessThan(61_000)
+  })
+
+  it('needs a majority of all the servers, not of the ones that agree: two of four is not enough', () => {
+    expect(clockLead([reading(60_000), reading(60_300), reading(5 * 60_000), reading(20 * 60_000)])).toBeUndefined()
   })
 
   it('is nothing for a lead no mistake in a clock would explain', () => {
@@ -61,6 +72,7 @@ describe('measureClockLead', () => {
     const some = answering({ 'https://a.example': 30_000, 'https://b.example': 'no-header', 'https://c.example': 'down', 'https://d.example': 30_000 })
     expect(await measureClockLead(['https://a.example', 'https://b.example', 'https://c.example', 'https://d.example'], some, () => at)).toBeGreaterThan(29_000)
     expect(await measureClockLead(['https://a.example', 'https://b.example', 'https://c.example'], some, () => at)).toBeUndefined()
+    expect(await measureClockLead(['https://a.example', 'https://c.example'], some, () => at)).toBeUndefined()
   })
 })
 
