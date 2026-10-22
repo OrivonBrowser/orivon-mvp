@@ -27,6 +27,8 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Fixed
 
+- **A page that failed to load opens once its tunnel is turned on**: an onion address opened in a new tab failed, and choosing "Your proxy" from the tunnel button left it on the error; the tab now moves to the tunnel and loads the address.
+- **The tunnel test no longer reads as a problem when a proxy takes a sign-in**: Settings and the tunnel menu now say that Orivon signs in for you, with a different name for each app and site.
 - **A page's first files from a `.eth` name no tab had opened no longer fail at random**: a stylesheet, image or fetch could be refused with a certificate error when several arrived at once; the first request to a name now connects before the others.
 - **One-line installs no longer stop on a blank answer from GitHub**: the Linux, macOS and Windows commands ask again when GitHub's release list comes back empty, instead of saying no release exists yet.
 
