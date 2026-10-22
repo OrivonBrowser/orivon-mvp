@@ -11,7 +11,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
 import { ABSENCE_SETTLE_MS, activeTabInfo, delay, findChrome, findViewShowing, HERMETIC_RESOLVER, tabViews, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from '../support/e2e-helpers.js'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, readShield, runPhase, waitForAddressBarStable } from '../support/e2e-helpers.js'
 import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 
 const TEST_TIMEOUT_MS = ADDRESS_BAR_STABLE_TIMEOUT_MS * 4 + DEFAULT_ACTION_TIMEOUT_MS * 12 + APP_CLOSE_RACE_MS + 120_000
@@ -157,6 +157,8 @@ async function scenario (label: string, webIsPublic: boolean): Promise<void> {
       if (hostView === undefined) throw new Error('the .eth page has no view')
       const onEth = await embedResult(hostView)
       verifyMapped('a .eth page', onEth.result, onEth.frames, 'https://host.eth/frame.html')
+      const shield = await readShield(chrome)
+      check(`a .eth page that loaded files through the mapping is still shown at Level 2, the verified level (${JSON.stringify(shield)})`, shield.level === '2')
 
       // 2. A page on an ordinary web origin.
       await clickAddressBarRetrying(chrome, `${loopback}/embed`)
