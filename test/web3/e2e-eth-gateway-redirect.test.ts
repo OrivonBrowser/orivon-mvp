@@ -1,7 +1,8 @@
 // A `<name>.eth.limo` address opens as `<name>.eth` in the real shell: typed, followed as a link in the same tab or a
 // new one, reached by a server redirect, and again through the web-request path when a tab holding a gateway address
 // reloads after the setting is turned on. A gateway address inside a page's own frame, the gateway's own hosts, a name
-// the verifier cannot load, and the setting off all stay as they are. The fixture `site.eth` is served by the
+// the verifier cannot load, and the setting off all stay as they are; what else a page loads from a gateway address is
+// e2e-eth-gateway-embedded.test.ts. The fixture `site.eth` is served by the
 // test seam's gateway, so nothing leaves the machine.
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'

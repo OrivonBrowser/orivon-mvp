@@ -11,7 +11,7 @@ operation), `bookmark-file.ts` (reading and writing the file, pure),
 `search-engines.json`; its rules are in `search-engine-rules.ts` and the starting site engines in `site-engines.ts`),
 `favicon-cache.ts` (the icons already fetched), `bookmark-types.ts` (the node, bar item and import shapes, types only), `site-trust.ts` (the Web3 Score page and the
 toolbar shield's data), `site-home.ts` (where the content shown says it lives, which decides whether a judged level counts, `ADR-0056`), `score-provider-client.ts` (asks the chosen Web3 Score provider, `ADR-0054`), `page-score-lookup.ts` (what
-`orivon.trust.websiteScore` answers, `ADR-0058`), and `eth-gateway.ts` (which web addresses are an ENS gateway's copy of a `.eth` name, `eth.limo` and `eth.link`, and the `.eth` address each stands for (`ethGatewayTarget`, `isEthGatewayAddress`); pure, with no `electron`; [`../shell/eth-gateway-redirect.ts`](../shell/eth-gateway-redirect.ts) acts on it). `site-trust.ts` is pure: its caller,
+`orivon.trust.websiteScore` answers, `ADR-0058`), and `eth-gateway.ts` (which web addresses are an ENS gateway's copy of a `.eth` name, `eth.limo` and `eth.link`, and the `.eth` address each stands for (`ethGatewayTarget`, `isEthGatewayAddress`), in a tab's own address and in what a page loads; pure, with no `electron`; [`../shell/eth-gateway-redirect.ts`](../shell/eth-gateway-redirect.ts) acts on it). `site-trust.ts` is pure: its caller,
 [`../permissions/site-info-controller.ts`](../permissions/site-info-controller.ts), hands it the
 pin, pin coverage, a `.eth` name's evidence and the developer overrides, so it never reaches for
 the loader, the verifier or `../dev/` itself.
@@ -160,6 +160,6 @@ origin or a newer icon set.
 
 **[`eth-gateway.ts`](eth-gateway.ts) leaves a gateway address alone when it is not a plain name.** The gateway's own `www` and `dns`
 hosts, a bare `eth.limo`, an address with an explicit port, a trailing-dot host, an `xn--` label (the verifier refuses
-internationalised names) and anything `dnsName` refuses have no `.eth` address to map to, so the page opens as typed. Only
+internationalised names) and anything `dnsName` refuses have no `.eth` address to map to, so the address stays as it is, in a tab or inside a page. Only
 `eth.limo` and `eth.link` are known gateways; another is one more entry in `ETH_GATEWAY_SUFFIXES` when a need names it.
 The result's host ends in `.eth`, so it is never a gateway address again and a redirect cannot loop.

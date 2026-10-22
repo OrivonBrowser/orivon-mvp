@@ -10,6 +10,10 @@ Each section below lists what that release carried; `[Unreleased]` is what has l
 
 ## [Unreleased]
 
+### Changed
+
+- **`.eth.limo` addresses inside a page load as `.eth`**: an image, script, stylesheet, font, media file or request a page loads from a `<name>.eth.limo` or `.eth.link` address now comes from the `.eth` name, checked on this computer, and a request from another origin can still read it. Frames keep loading through the gateway, since a `.eth` site refuses to be framed by another site; Settings > Web3 turns it off.
+
 ### Changed for apps
 
 What an app that runs on Orivon must now do differently. One line per behaviour, naming its id from
