@@ -65,10 +65,9 @@ it('[app:tunnel-on-a-failed-page] a page that failed to load, sent through the p
   const popover = windowShowing('/site-info/') as Page
   await popover.waitForSelector('#tunnel-switch-socks5')
   await popover.click('#tunnel-switch-socks5')
-  // Moving a site to a profile of its own is asked first.
-  if (await popover.locator('.tunnel-notice').count().catch(() => 0) > 0 || await waitFor(async () => await popover.locator('#tunnel-notice-confirm').count().catch(() => 0) > 0, 5_000)) {
-    await popover.click('#tunnel-notice-confirm')
-  }
+  // The first move into the proxy's profile is asked first.
+  await popover.waitForSelector('#tunnel-notice-confirm')
+  await popover.click('#tunnel-notice-confirm')
 
   expect((await waitForTab(chrome, { address: `${SITE}/`, title: TITLE }, 60_000)).ok, 'the page loaded through the proxy').toBe(true)
   expect(socks.requests.some((request) => request.destination === ONION && request.addressType === 'domain'), JSON.stringify(socks.requests)).toBe(true)
