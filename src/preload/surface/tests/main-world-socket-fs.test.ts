@@ -1,16 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { installOrivon } from '../main-world-socket.js'
-import type { MainWorldDirectoryBridge, MainWorldFileBridge } from '../main-world-socket.js'
+import type { MainWorldDirectoryBridge, MainWorldFile, MainWorldFileBridge } from '../main-world-bridges.js'
 import { LIMITS, asPage, fakeBridge, fakeDirectoryBridgeResult, fakeFileBridgeResult, fakeSocketBridgeResult } from './main-world-socket.test-helpers.js'
 
 // orivon.fs.open (A184) -- split out of main-world-socket.test.ts under
 // code-guidelines.md's 800-line test limit, matching main-world-socket-udp.
 // test.ts's own precedent for a concern with no TCP-socket dependency.
 //
-// buildFile (main-world-socket.ts) is deliberately simple: no port, no
-// stream, just callRevived wrapped around each of fs.open's returned
-// closures -- this file proves that wrapping actually happens for EVERY
-// one of them, not only the ones a hand-written smoke test happens to call.
+// buildFile (main-world-socket.ts) is deliberately simple: no port, just
+// callRevived wrapped around each of fs.open's returned closures, and the
+// two streams made from read/write -- this file proves that wrapping actually
+// happens for EVERY one of them, not only the ones a hand-written smoke test
+// happens to call.
 
 function fsOrivon (target: Record<string, unknown>): { open: (path: string, flags: string) => Promise<MainWorldFileBridge> } {
   return (asPage(target.orivon) as { fs: { open: (path: string, flags: string) => Promise<MainWorldFileBridge> } }).fs
@@ -121,6 +122,86 @@ describe('orivon.fs.open', () => {
 
     const orivon = asPage(target.orivon) as Record<string, unknown>
     expect(typeof (orivon.fs as Record<string, unknown>).open).toBe('function')
+  })
+})
+
+/** A file of `content` the fake bridge reads from and writes into, recording each call. */
+function fakeFile (content: Uint8Array, options: { writeAtMost?: number, failWrite?: boolean } = {}): { bridge: ReturnType<typeof fakeBridge>, file: () => Uint8Array, reads: Array<{ position: number, length: number }>, writes: Array<{ position: number, length: number }> } {
+  let data = content
+  const reads: Array<{ position: number, length: number }> = []
+  const writes: Array<{ position: number, length: number }> = []
+  const bridge = fakeBridge(fakeSocketBridgeResult())
+  bridge.fsOpen = async () => fakeFileBridgeResult({
+    read: async ({ position, length }) => { reads.push({ position, length }); return data.slice(position, position + length) },
+    write: async ({ position, data: chunk }) => {
+      if (options.failWrite === true) throw { name: 'OrivonError', message: 'over the quota', code: 'limit' }
+      const count = Math.min(chunk.length, options.writeAtMost ?? chunk.length)
+      writes.push({ position, length: count })
+      const grown = new Uint8Array(Math.max(data.length, position + count))
+      grown.set(data)
+      grown.set(chunk.subarray(0, count), position)
+      data = grown
+      return count
+    }
+  })
+  return { bridge, file: () => data, reads, writes }
+}
+
+async function openStreams (bridge: ReturnType<typeof fakeBridge>): Promise<MainWorldFile> {
+  const target: Record<string, unknown> = {}
+  installOrivon(bridge, LIMITS, target)
+  return await fsOrivon(target).open('a', 'w+') as MainWorldFile
+}
+
+async function drain (stream: ReadableStream<Uint8Array>): Promise<number[]> {
+  const out: number[] = []
+  for await (const chunk of stream as unknown as AsyncIterable<Uint8Array>) out.push(...chunk)
+  return out
+}
+
+describe('FileHandle streams on the page', () => {
+  it('writable() writes each chunk where the last one ended, from `start`', async () => {
+    const fake = fakeFile(new Uint8Array(0))
+    const file = await openStreams(fake.bridge)
+    const writer = file.writable({ start: 2 }).getWriter()
+    await writer.write(new Uint8Array([1, 2, 3]))
+    await writer.write(new Uint8Array([4]))
+    await writer.close()
+    expect(fake.writes).toEqual([{ position: 2, length: 3 }, { position: 5, length: 1 }])
+    expect([...fake.file()]).toEqual([0, 0, 1, 2, 3, 4])
+  })
+
+  it('writable() writes the rest of a chunk a short write left', async () => {
+    const fake = fakeFile(new Uint8Array(0), { writeAtMost: 2 })
+    const file = await openStreams(fake.bridge)
+    const writer = file.writable().getWriter()
+    await writer.write(new Uint8Array([7, 8, 9, 10, 11]))
+    await writer.close()
+    expect(fake.writes).toEqual([{ position: 0, length: 2 }, { position: 2, length: 2 }, { position: 4, length: 1 }])
+    expect([...fake.file()]).toEqual([7, 8, 9, 10, 11])
+  })
+
+  it('a refused write errors the stream with the broker\'s code, revived as a real Error', async () => {
+    const file = await openStreams(fakeFile(new Uint8Array(0), { failWrite: true }).bridge)
+    const writer = file.writable().getWriter()
+    const caught: unknown = await writer.write(new Uint8Array([1])).then(() => undefined, (error: unknown) => error)
+    expect(caught).toBeInstanceOf(Error)
+    expect((caught as { code?: string }).code).toBe('limit')
+  })
+
+  it('readable() reads to the end of the file, and [start, end) when given', async () => {
+    const fake = fakeFile(new Uint8Array([0, 1, 2, 3, 4, 5]))
+    const file = await openStreams(fake.bridge)
+    expect(await drain(file.readable())).toEqual([0, 1, 2, 3, 4, 5])
+    expect(await drain(file.readable({ start: 1, end: 4 }))).toEqual([1, 2, 3])
+    expect(await drain(file.readable({ start: 4 }))).toEqual([4, 5])
+  })
+
+  it('readable() over an empty range ends without reading', async () => {
+    const fake = fakeFile(new Uint8Array([0, 1, 2]))
+    const file = await openStreams(fake.bridge)
+    expect(await drain(file.readable({ start: 2, end: 2 }))).toEqual([])
+    expect(fake.reads).toEqual([])
   })
 })
 

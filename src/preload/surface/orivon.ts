@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { SYNC_CONTROL_CHANNEL } from '../../main/channels.js'
 import { installOrivon } from './main-world-socket.js'
-import type { MainWorldDirectoryBridge, MainWorldFileBridge } from './main-world-socket.js'
+import type { MainWorldDirectoryBridge, MainWorldFileBridge } from './main-world-bridges.js'
 import { call, TIMEOUT_MS } from './control-call.js'
 import { netConnectBridge, netConnectSecureBridge, netListenBridge, netLookupBridge, netUdpBindBridge } from './net.js'
 import { appIsSchemeHandler, appOnOpenUrl, appRequestSchemeHandler } from './open-url.js'
@@ -82,12 +82,10 @@ interface FsHandleDescriptor { readonly id: string }
 interface FsFileDescriptor extends FsHandleDescriptor { readonly name: string }
 
 /**
- * `orivon.fs.open` (A184). No main-world stream wrapping needed -- exactly
- * fs.readFile/writeFile's own reasoning above -- because THIS handle has
- * none yet: `readable`/`writable` have no CONTROL_CHANNEL case in this
- * lane's own landing, so the object below is deliberately narrower than
- * `FileHandle` (contracts/handles.ts). See this lane's PR body for what
- * that means and what does not yet reach a page.
+ * `orivon.fs.open` (A184). No port and no stream crosses here --
+ * `readable`/`writable` have no CONTROL_CHANNEL case, so the object below is
+ * narrower than `FileHandle` (contracts/handles.ts), and the main world
+ * builds both streams from `read`/`write` (main-world-socket.ts's `buildFile`).
  */
 /**
  * Wraps an already-opened handle's `id` into the closures `fsOpen` and

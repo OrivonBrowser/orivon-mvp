@@ -44,7 +44,7 @@ afterAll(async () => {
 
 interface Outcome { readonly ok: boolean, readonly code?: string, readonly platformCode?: string, readonly message?: string, readonly value?: unknown }
 
-it('[app:tcp-connect-to-granted-loopback-port] [app:wildcard-host-never-reaches-loopback] [app:tcp-connect-never-reaches-orivon-own-loopback-ports] [app:reserved-port-needs-exact-pattern] [app:concurrent-sockets-limit-holds] [app:second-listener-gets-eaddrinuse] [app:fs-quota-refuses-past-limit] [app:fs-confined-to-app-root] [app:tls-self-signed-refused-unless-opted-out] the rules the broker applies to an app', async () => {
+it('[app:tcp-connect-to-granted-loopback-port] [app:wildcard-host-never-reaches-loopback] [app:tcp-connect-never-reaches-orivon-own-loopback-ports] [app:reserved-port-needs-exact-pattern] [app:concurrent-sockets-limit-holds] [app:second-listener-gets-eaddrinuse] [app:fs-quota-refuses-past-limit] [app:fs-confined-to-app-root] [app:file-handle-streams] [app:tls-self-signed-refused-unless-opted-out] the rules the broker applies to an app', async () => {
   const echoPort = await listen(echo)
   const busyPort = await listen(busy)
   const tlsPort = await listen(tls)
@@ -76,7 +76,12 @@ it('[app:tcp-connect-to-granted-loopback-port] [app:wildcard-host-never-reaches-
             connectSecure: (o: { host: string, port: number, rejectUnauthorized?: boolean }) => Promise<{ readable: ReadableStream<Uint8Array>, authorized: boolean, close: () => Promise<void> }>
             listen: (o: { port: number }) => Promise<{ localPort: number, close: () => Promise<void> }>
           }
-          fs: { readFile: (p: string) => Promise<Uint8Array>, writeFile: (p: string, d: Uint8Array) => Promise<void> }
+          fs: {
+            readFile: (p: string) => Promise<Uint8Array>
+            writeFile: (p: string, d: Uint8Array) => Promise<void>
+            rm: (p: string) => Promise<void>
+            open: (p: string, flags: string) => Promise<{ readable: (o?: { start?: number, end?: number }) => ReadableStream<Uint8Array>, writable: (o?: { start?: number }) => WritableStream<Uint8Array>, close: () => Promise<void> }>
+          }
         } }).orivon
         const attempt = async <T>(run: () => Promise<T>): Promise<Result<T>> => {
           try {
@@ -135,11 +140,44 @@ it('[app:tcp-connect-to-granted-loopback-port] [app:wildcard-host-never-reaches-
         // A second listener on a port something else holds fails with EADDRINUSE.
         out['listenBusy'] = summary(await attempt(async () => { await (await orivon.net.listen({ port: ports.busy })).close() }))
 
+        // A file handle's streams: each chunk lands where the last one ended, and a range reads back.
+        const readAll = async (stream: ReadableStream<Uint8Array>): Promise<number[]> => {
+          const reader = stream.getReader()
+          const bytes: number[] = []
+          for (let next = await reader.read(); next.done !== true; next = await reader.read()) bytes.push(...next.value)
+          return bytes
+        }
+        const streamed = await attempt(async () => {
+          const file = await orivon.fs.open('streamed.bin', 'w+')
+          try {
+            const writer = file.writable().getWriter()
+            await writer.write(new Uint8Array([1, 2, 3, 4, 5]))
+            await writer.write(new Uint8Array([6, 7, 8]))
+            await writer.close()
+            return { whole: (await readAll(file.readable())).join(','), range: (await readAll(file.readable({ start: 2, end: 6 }))).join(',') }
+          } finally {
+            await file.close()
+          }
+        })
+        out['streams'] = summary(streamed, streamed.ok ? streamed.value : undefined)
+        out['streamsGone'] = summary(await attempt(async () => { await orivon.fs.rm('streamed.bin') }))
+
         // The quota refuses a write past the limit and leaves the earlier file whole.
         out['quotaFirst'] = summary(await attempt(async () => { await orivon.fs.writeFile('one.bin', new Uint8Array(600)) }))
         out['quotaSecond'] = summary(await attempt(async () => { await orivon.fs.writeFile('two.bin', new Uint8Array(600)) }))
         const kept = await attempt(async () => (await orivon.fs.readFile('one.bin')).length)
         out['quotaKept'] = summary(kept, kept.ok ? kept.value : undefined)
+        // A stream is refused past the quota as a positional write is.
+        out['quotaStream'] = summary(await attempt(async () => {
+          const file = await orivon.fs.open('three.bin', 'w')
+          try {
+            const writer = file.writable().getWriter()
+            await writer.write(new Uint8Array(600))
+            await writer.close()
+          } finally {
+            await file.close()
+          }
+        }))
         // A path outside the app's root is refused.
         out['outside'] = summary(await attempt(async () => await orivon.fs.readFile('../outside.txt')))
 
@@ -173,6 +211,8 @@ it('[app:tcp-connect-to-granted-loopback-port] [app:wildcard-host-never-reaches-
       check('[app:concurrent-sockets-limit-holds] with concurrentSockets 2, a third socket is refused: limit', codeOf(outcomes['third']) === 'limit', show('third'))
       check('[app:concurrent-sockets-limit-holds] and a socket opens again once one is closed', outcomes['afterClose']?.ok === true, show('afterClose'))
       check('[app:second-listener-gets-eaddrinuse] listening on a port another program holds fails with EADDRINUSE', /EADDRINUSE/.test(`${show('listenBusy')}`), show('listenBusy'))
+      check('[app:file-handle-streams] writable() writes each chunk where the last one ended, and readable() reads the file and a [start, end) range back', JSON.stringify(outcomes['streams']?.value) === JSON.stringify({ whole: '1,2,3,4,5,6,7,8', range: '3,4,5,6' }) && outcomes['streamsGone']?.ok === true, `${show('streams')} ${show('streamsGone')}`)
+      check('[app:file-handle-streams] [app:fs-quota-refuses-past-limit] a stream that would pass the quota is refused as limit, as a positional write is', codeOf(outcomes['quotaStream']) === 'limit', show('quotaStream'))
       check('[app:fs-quota-refuses-past-limit] a write that would pass the 1024-byte quota is refused as limit, and the earlier 600-byte file is intact', outcomes['quotaFirst']?.ok === true && codeOf(outcomes['quotaSecond']) === 'limit' && outcomes['quotaKept']?.value === 600, `${show('quotaFirst')} ${show('quotaSecond')} ${show('quotaKept')}`)
       check('[app:fs-confined-to-app-root] a path that climbs out of the app root is refused: denied', codeOf(outcomes['outside']) === 'denied', show('outside'))
       check('[app:tls-self-signed-refused-unless-opted-out] a self-signed server is refused by default: unreachable, for the certificate', /^unreachable\/.*SELF.SIGNED/.test(codeOf(outcomes['tlsDefault'])), show('tlsDefault'))

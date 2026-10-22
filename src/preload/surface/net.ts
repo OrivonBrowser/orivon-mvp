@@ -15,7 +15,7 @@ import { createDatagramPort } from '../ports/datagram.js'
 import type { PortLike } from '../ports/socket.js'
 import { createServerPort } from '../ports/server.js'
 import type { AcceptedConnection } from '../ports/server.js'
-import type { MainWorldServerBridge, MainWorldSocketBridge, MainWorldUdpBridge } from './main-world-socket.js'
+import type { MainWorldServerBridge, MainWorldSocketBridge, MainWorldUdpBridge } from './main-world-bridges.js'
 import type { BindScope, LookupAddress, SecureConnectOptions, SecureHandshake } from '../../contracts/index.js'
 
 /**

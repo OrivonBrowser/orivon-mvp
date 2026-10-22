@@ -8,14 +8,7 @@ import type { OrivonErrorCode } from '../../contracts/errors.js'
 import type { SendRefusal, UdpSocket } from '../../contracts/handles.js'
 import type { BindScope, CapabilityRequest, SecureConnectOptions } from '../../contracts/index.js'
 import type {
-  CallSiteMethods, MainWorldBridge, MainWorldDatagram, MainWorldDirectoryBridge, MainWorldFileBridge, MainWorldServerBridge,
-  MainWorldSocketBridge, MainWorldUdpBridge, MainWorldWebContextBridge, OrivonLimits
-} from './main-world-bridges.js'
-
-// The bridge shapes, MainWorldBridge included, live in ./main-world-bridges.ts (an `interface` produces no JS, so the
-// constraint above does not apply); re-exported so no import site changes.
-export type {
-  MainWorldBridge, MainWorldDatagram, MainWorldDirectoryBridge, MainWorldFileBridge, MainWorldServerBridge,
+  CallSiteMethods, MainWorldBridge, MainWorldDatagram, MainWorldDirectoryBridge, MainWorldFile, MainWorldServerBridge,
   MainWorldSocketBridge, MainWorldUdpBridge, MainWorldWebContextBridge, OrivonLimits
 } from './main-world-bridges.js'
 
@@ -127,14 +120,9 @@ export function installOrivon (
     })
 
     return Object.freeze({
-      id: s.id,
-      remoteAddress: s.remoteAddress,
-      remotePort: s.remotePort,
-      localAddress: s.localAddress,
-      localPort: s.localPort,
+      id: s.id, remoteAddress: s.remoteAddress, remotePort: s.remotePort, localAddress: s.localAddress, localPort: s.localPort,
       ...(s.tls === undefined ? {} : handshakeFields(s.tls)),
-      readable,
-      writable,
+      readable, writable,
       closed: pageClosed(s.closed),
       close: async () => {
         await callRevived(s.close())
@@ -163,16 +151,11 @@ export function installOrivon (
           }
         })
       },
-      pull () {
-        s.reportAccepted()
-      }
+      pull () { s.reportAccepted() }
     }, new CountQueuingStrategy({ highWaterMark: 0 }))
 
     return Object.freeze({
-      id: s.id,
-      localAddress: s.localAddress,
-      localPort: s.localPort,
-      connections,
+      id: s.id, localAddress: s.localAddress, localPort: s.localPort, connections,
       closed: pageClosed(s.closed),
       close: async () => {
         await callRevived(s.close())
@@ -259,12 +242,7 @@ export function installOrivon (
     })
 
     return Object.freeze({
-      id: u.id,
-      localAddress: u.localAddress,
-      localPort: u.localPort,
-      readable,
-      writable,
-      refusals,
+      id: u.id, localAddress: u.localAddress, localPort: u.localPort, readable, writable, refusals,
       // GETTERS, not values copied once -- README.md's Design notes.
       get droppedInbound () { return droppedInbound },
       get droppedOutbound () { return droppedOutbound },
@@ -278,12 +256,35 @@ export function installOrivon (
     })
   }
 
-  /** `fsOpen`'s counterpart to `buildSocket`/`buildUdpSocket` -- a plain request/reply round trip, no port or stream; each nested closure needs its own `callRevived` since any one can reject independently. */
-  function buildFile (f: Awaited<ReturnType<typeof bridge.fsOpen>>): MainWorldFileBridge {
+  /** `fsOpen`'s counterpart to `buildSocket`/`buildUdpSocket` -- request/reply round trips, no port; each nested closure needs its own `callRevived` since any one can reject independently. */
+  function buildFile (f: Awaited<ReturnType<typeof bridge.fsOpen>>): MainWorldFile {
+    const read = async (opts: { position: number, length: number }): Promise<Uint8Array> => await callRevived(f.read(opts))
+    const write = async (opts: { position: number, data: Uint8Array }): Promise<number> => await callRevived(f.write(opts))
+    // The streams are positional reads and writes of up to 1 MiB in a row, so they cost and are refused as those are. Neither closes the file.
+    const readable = (opts?: { start?: number, end?: number }): ReadableStream<Uint8Array> => {
+      let position = opts?.start ?? 0
+      return new ReadableStream<Uint8Array>({
+        pull: async (controller) => {
+          const length = Math.min(1024 * 1024, (opts?.end ?? Infinity) - position)
+          const bytes = length > 0 ? await read({ position, length }) : new Uint8Array(0)
+          if (bytes.length === 0) controller.close()
+          else { position += bytes.length; controller.enqueue(bytes) }
+        }
+      }, { highWaterMark: 0 })
+    }
+    const writable = (opts?: { start?: number }): WritableStream<Uint8Array> => {
+      let position = opts?.start ?? 0
+      return new WritableStream<Uint8Array>({
+        write: async (chunk) => {
+          for (let done = 0, count = 0; done < chunk.length; done += count, position += count) {
+            count = await write({ position, data: done === 0 ? chunk : chunk.subarray(done) })
+            if (!(count > 0)) throw toOrivonError('internal', { message: 'orivon: a file write wrote nothing' })
+          }
+        }
+      })
+    }
     return Object.freeze({
-      id: f.id, name: f.name,
-      read: async (opts: { position: number, length: number }) => await callRevived(f.read(opts)),
-      write: async (opts: { position: number, data: Uint8Array }) => await callRevived(f.write(opts)),
+      id: f.id, name: f.name, read, write, readable, writable,
       stat: async () => await callRevived(f.stat()),
       truncate: async (length: number) => { await callRevived(f.truncate(length)) },
       sync: async () => { await callRevived(f.sync()) },
@@ -467,9 +468,7 @@ export function installOrivon (
       encrypt: guarded(async (plaintext: Uint8Array) => await callRevived(bridge.secretsEncrypt(plaintext))),
       decrypt: guarded(async (ciphertext: Uint8Array) => await callRevived(bridge.secretsDecrypt(ciphertext)))
     }),
-    trust: Object.freeze({
-      websiteScore: guarded(async (address: string) => await callRevived(bridge.trustWebsiteScore(address)))
-    }),
+    trust: Object.freeze({ websiteScore: guarded(async (address: string) => await callRevived(bridge.trustWebsiteScore(address))) }),
     web: Object.freeze({
       openContext: guarded(async (origin: string, options?: { width?: number, height?: number }) => buildWebContext(await callRevived(bridge.webOpenContext({ origin, ...options })))),
       setEmbedScript: guarded(async (source: string) => { await callRevived(bridge.webSetEmbedScript(source)) })
