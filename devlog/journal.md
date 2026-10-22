@@ -41,6 +41,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Opening a .onion site through "Your proxy" is now an end-to-end test, and a spawned WebAssembly program's sockets have a catalogue row.
 - Embedded .eth.limo content (images, scripts, fetches) now loads from the .eth name, checked; frames stay on the gateway.
 - Attila and Explore now cover Orivon's own sites; a .eth.limo address is judged as its .eth name, lifting the website to Level 4.
+- DecentraWiki: TiddlyWiki wikis anyone can edit; a pen opens an editor that publishes them on IPFS, checking each CID itself; judged Level 4.
 
 ### In my head
 
