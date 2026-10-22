@@ -49,10 +49,11 @@ window.addEventListener('message', (event) => {
 if (window.opener) window.opener.postMessage({ type: 'ready' }, '*')
 `
 /**
- * A sandboxed frame of the site's own page: it looks for what the site keeps in IndexedDB, reports what it runs
- * as and what it found, then answers every message from its parent.
+ * A sandboxed frame of the site's own page: it looks for what the site keeps in IndexedDB, reports the origin it
+ * runs as (the document's, `self.origin`: `location.origin` is the address's) and what it found, then answers
+ * every message from its parent.
  */
-const FRAME_SCRIPT = `const report = (storage) => parent.postMessage({ type: 'hello', origin: location.origin, storage }, '*')
+const FRAME_SCRIPT = `const report = (storage) => parent.postMessage({ type: 'hello', origin: self.origin, storage }, '*')
 try {
   const open = indexedDB.open('site-secret', 1)
   open.onupgradeneeded = () => { open.result.createObjectStore('kv') }
