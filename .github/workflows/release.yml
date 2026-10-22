@@ -416,76 +416,34 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # Copies of the Windows installer and the AppImage under a name that tags each for an app
-  # (`Orivon-Setup-<version>-x64.<id>.exe`), one per entry of resources/flavours.json: the same bytes, so a
-  # tag is only a name and the compiled build is never rebuilt for one (docs/development/packaging.md section
-  # Tagged packages). Two checks fail the release: a copy whose SHA-256 differs from its original, and an
-  # entry whose app is not the `domain` its port declares on main. The copies join the release through the
-  # `orivon-` artifact name, like every other package.
-  tagged:
-    needs: package
+  # Every entry of resources/flavours.json, the allowlist a package's tag selects from, must open the `domain`
+  # its port declares on main; a wrong entry fails the release. Packages tagged for an app are not built here
+  # and never join a release: they are copies of the plain ones, made outside the workflow
+  # (docs/development/packaging.md section Tagged packages).
+  flavours:
+    if: ${{ inputs.tag == '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
 
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          pattern: orivon-*
-          path: packages
-          merge-multiple: true
-
-      - name: Copy the installer and the AppImage under each tagged name
-        run: |
-          set -euo pipefail
-          mkdir tagged
-          exe=(packages/Orivon-Setup-*-x64.exe)
-          image=(packages/Orivon-*-x86_64.AppImage)
-          test "${#exe[@]}" -eq 1 && test -f "${exe[0]}"
-          test "${#image[@]}" -eq 1 && test -f "${image[0]}"
-          for id in $(jq -r '.flavours[].id' resources/flavours.json); do
-            [[ $id =~ ^[a-z0-9]{2,24}$ ]]
-            for file in "${exe[0]}" "${image[0]}"; do
-              name=${file##*/}
-              cp "$file" "tagged/${name%.*}.$id.${name##*.}"
-            done
-          done
-          ls -l tagged
-
-      - name: Every tagged copy has the SHA-256 of its original
-        run: |
-          set -euo pipefail
-          for id in $(jq -r '.flavours[].id' resources/flavours.json); do
-            for file in packages/Orivon-Setup-*-x64.exe packages/Orivon-*-x86_64.AppImage; do
-              name=${file##*/}
-              copy="tagged/${name%.*}.$id.${name##*.}"
-              test "$(sha256sum < "$file")" = "$(sha256sum < "$copy")" || { echo "::error::$copy differs from $file"; exit 1; }
-            done
-          done
-
       - name: Every flavour's app is the domain its port declares on main
         run: |
           set -euo pipefail
           jq -r '.flavours[] | [.id, .app, .port] | @tsv' resources/flavours.json | while IFS=$'\t' read -r id app port; do
+            [[ $id =~ ^[a-z0-9]{2,24}$ ]]
             [[ $port =~ ^[a-z0-9-]{1,40}$ ]]
             domain=$(curl -fsSL "https://raw.githubusercontent.com/OrivonBrowser/orivon-ports/main/apps/$port/orivon.json" | jq -r .domain)
             test "$domain" = "$app" || { echo "::error::flavour $id opens $app, but apps/$port/orivon.json declares $domain"; exit 1; }
             echo "$id: $app"
           done
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: orivon-flavours
-          path: tagged/*
-          if-no-files-found: error
-          retention-days: 7
-
   # The CID of the release's files as one directory, with the same Kubo and flags a pinning node
   # uses to add them, so the node can refuse files that do not add up to it.
   manifest:
     if: ${{ inputs.tag == '' }}
-    needs: [package, tagged]
+    needs: [package, flavours]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -569,7 +527,7 @@ jobs:
   # downloaded binary. It needs every package job, so a release gets all three systems or nothing.
   publish:
     if: github.event_name == 'release'
-    needs: [package, tagged, manifest, notes]
+    needs: [package, flavours, manifest, notes]
     runs-on: ubuntu-latest
     permissions:
       contents: write

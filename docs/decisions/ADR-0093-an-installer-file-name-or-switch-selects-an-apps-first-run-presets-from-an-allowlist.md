@@ -1,6 +1,6 @@
 # ADR-0093: A package's tag selects an app's first-run presets from an allowlist
 
-- **Status:** accepted, provisional until the Windows installer's file name has been read on a real install
+- **Status:** accepted, provisional until the Windows installer's file name has been read on a real install; **amended 2026-10-22 (`d-0722`)**: a release carries the plain packages only, and tagged copies are made apart from it (see Amendment)
 - **Date:** 2026-10-20
 - **Type:** product
 - **Decided by:** owner
@@ -61,6 +61,15 @@ navigation path keeps the consent prompt, because the presets must never decide 
 - The presets are: the app tab, its Featured pin and the stored id. They never grant, consent,
   answer the telemetry question, set the default browser, change a search engine, a score provider,
   a tunnel or any setting. Nothing in the update path reads a tag.
+
+## Amendment recorded 2026-10-22
+
+The release workflow no longer makes the tagged copies, and a release and its IPFS folder carry the plain packages
+only (`d-0722`). A tagged package is still a copy of the plain installer or AppImage under the tagged name, the same
+bytes, made apart from the release when one is wanted; nothing about how the browser reads a tag changes. The
+workflow keeps one of its two checks: it fails the release if an entry's app is not the `domain` its port declares
+on `main`, since the allowlist ships in every package. The first Consequences line, twelve more files in each
+release and its IPFS folder, no longer holds.
 
 ## Reversibility
 
