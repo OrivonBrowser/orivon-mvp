@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { GATEWAY_CORS_HEADERS, MAX_MAPPED_REQUESTS, MappedRequests, mapsResourceType, withGatewayCors } from '../eth-gateway-embedded.js'
 
 describe('mapsResourceType', () => {
-  it('maps a page and everything a page loads, but no socket, ping or report', () => {
-    for (const type of ['mainFrame', 'subFrame', 'stylesheet', 'script', 'image', 'font', 'object', 'xhr', 'media', 'other']) expect(mapsResourceType(type), type).toBe(true)
-    for (const type of ['webSocket', 'ping', 'cspReport', 'unheard-of']) expect(mapsResourceType(type), type).toBe(false)
+  it('maps a page and what a page loads, but no frame, object, socket, ping or report', () => {
+    for (const type of ['mainFrame', 'stylesheet', 'script', 'image', 'font', 'xhr', 'media', 'other']) expect(mapsResourceType(type), type).toBe(true)
+    for (const type of ['subFrame', 'object', 'webSocket', 'ping', 'cspReport', 'unheard-of']) expect(mapsResourceType(type), type).toBe(false)
   })
 })
 

@@ -88,15 +88,15 @@ describe('the eth-gateway-redirect installer', () => {
     expect(activeHeaders).toBe(0)
   })
 
-  it('redirects a main frame and everything a page loads to the .eth name, and leaves sockets, pings and reports alone', () => {
+  it('redirects a main frame and what a page loads to the .eth name, and leaves frames, objects, sockets, pings and reports alone', () => {
     provideServing(true)
     rig(true)
     const unchanged = { cancel: false }
     const details = (resourceType: string) => ({ id: 1, url: 'https://site.eth.limo/a?b=1#c', resourceType })
-    for (const type of ['mainFrame', 'subFrame', 'stylesheet', 'script', 'image', 'font', 'object', 'xhr', 'media', 'other']) {
+    for (const type of ['mainFrame', 'stylesheet', 'script', 'image', 'font', 'xhr', 'media', 'other']) {
       expect(lastRun?.(details(type), unchanged), type).toEqual({ redirectURL: 'https://site.eth/a?b=1#c' })
     }
-    for (const type of ['webSocket', 'ping', 'cspReport']) expect(lastRun?.(details(type), unchanged), type).toBe(unchanged)
+    for (const type of ['subFrame', 'object', 'webSocket', 'ping', 'cspReport']) expect(lastRun?.(details(type), unchanged), type).toBe(unchanged)
   })
 
   it('gives the gateway CORS headers back to the answer of a moved page-content request, and to no other', () => {

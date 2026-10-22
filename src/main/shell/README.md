@@ -289,7 +289,7 @@ document starts out visible. The page's preload turns it into `document.visibili
 [decision log](../../../docs/decisions/decision-log.md). Limits: subframes are not told, and Chromium's
 own throttling is not what slows a hidden page, only the page backing off when it reads `hidden`.
 
-**[`eth-gateway-redirect.ts`](eth-gateway-redirect.ts): a gateway address opens as the `.eth` name from the first load, through four hooks and two handlers, and so does what a page loads from one.**
+**[`eth-gateway-redirect.ts`](eth-gateway-redirect.ts): a gateway address opens as the `.eth` name from the first load, through four hooks and two handlers, and so does what a page loads from one, except a frame.**
 Setting `web3.ethGatewayRedirect` is on by default and applies at once; each hook asks `gatewayRedirectFor`, which answers
 only while the setting is on and the verifier can load the name (`verifierServesName`), so with the light client off or unable
 to start every gateway address opens as it is, except a developer-mode name or a test-build fixture, which the verifier serves without it. The hooks map the address before the load, so the tab's session, the fragment and the address
@@ -302,8 +302,8 @@ and the link loads through the address bar's own session test), and
 opener's session). The handler at order 5 on the default session's web-request owner, before HTTPS-only and extensions, catches what
 the hooks leave to it: a link followed inside an ordinary tab (so a `location.replace`, a form's POST body and the referrer are kept), a server redirect to a gateway address (from a tab, or from a popup that keeps its opener), and back and
 forward or a reload of a gateway entry saved while the setting was off. The same handler maps what a page loads from a gateway
-address (a frame, script, stylesheet, image, font, media file, object, `fetch` or XHR, or anything else that is not a
-WebSocket, a ping or a report) through the same rule, since no hook sees a request a page makes; its filter names no
+address (a script, stylesheet, image, font, media file, `fetch` or XHR, or anything else that is not a frame, an
+`<object>` or `<embed>`, a WebSocket, a ping or a report) through the same rule, since no hook sees a request a page makes; its filter names no
 `types`, because the list Electron takes has no `other`, and `mapsResourceType` (`eth-gateway-embedded.ts`, pure) is the
 test. A gateway answers every request with CORS headers (any origin, `GET, HEAD, OPTIONS, POST`) and the verifier sends
 none, so a second handler, on `onHeadersReceived`, gives those five headers to the answer of a request the first one
@@ -326,8 +326,8 @@ carried; a server redirect to a gateway address inside a cache-served app's own 
 partition has no web-request owner; a name whose content Orivon
 cannot load (Swarm, Arweave, not yet synced, unreachable) shows an error page, and turning the setting off is the way out;
 data a site keeps under its gateway origin stays there and is not seen at the `.eth` name. Limits of what a page loads:
-a frame of a `.eth` name loads only inside a page of the same name (`frame-ancestors 'self'`, `d-0190`), so a mapped frame
-in any other page stays empty; a cross-origin request that needs a preflight (a header, content type or method outside
+a frame (an iframe, or an `<object>` or `<embed>` holding a page) keeps loading through the gateway, unmapped, because a `.eth`
+name sends `frame-ancestors 'self'` (`d-0190`) and a mapped frame would load nothing; a cross-origin request that needs a preflight (a header, content type or method outside
 the simple ones) fails, because the preflight goes to the verifier, which answers `GET` and `HEAD` only; a page whose
 `Content-Security-Policy` allows the gateway host and not the `.eth` one has the mapped request blocked, since Chromium
 checks the policy again at the redirect; a cache-served app's own partition has no web-request owner, so what its pages

@@ -1,8 +1,8 @@
 // A `<name>.eth.limo` address opens as `<name>.eth` in the real shell: typed, followed as a link in the same tab or a
 // new one, reached by a server redirect, and again through the web-request path when a tab holding a gateway address
-// reloads after the setting is turned on. A gateway address inside a page's own frame opens as the name too, which
-// refuses to be framed by another origin; the gateway's own hosts, a name the verifier cannot load, and the setting off
-// stay as they are. What a page loads from a gateway address is e2e-eth-gateway-embedded.test.ts. The fixture `site.eth` is served by the
+// reloads after the setting is turned on. A gateway address inside a page's own frame, the gateway's own hosts, a name
+// the verifier cannot load, and the setting off all stay as they are; what else a page loads from a gateway address is
+// e2e-eth-gateway-embedded.test.ts. The fixture `site.eth` is served by the
 // test seam's gateway, so nothing leaves the machine.
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -149,13 +149,13 @@ it('opens a .eth.limo address as the .eth name, and leaves everything else on th
       const popup = await waitForTab(chrome, { address: 'ipfs://site.eth/page.html?q=5', title: 'gateway fixture page' })
       check(`a popup that keeps its opener and is redirected to a gateway address opens the .eth name (${JSON.stringify(popup.info)})`, popup.ok)
 
-      // 5. A gateway address in a page's own frame is mapped, and the name refuses a frame of another origin.
+      // 5. A gateway address in a page's own frame is untouched.
       await clickAddressBarRetrying(chrome, `${loopback}/frame`)
       expect((await waitForTab(chrome, { title: 'frame host' })).ok).toBe(true)
       await delay(ABSENCE_SETTLE_MS)
       const hostView = tabViews(running, chrome).find((w: Page) => w.url() === `${loopback}/frame`)
       const frameUrls = hostView?.frames().map((frame: Frame) => frame.url()) ?? []
-      check(`the page stays and the frame of the name is refused, so none is at https://site.eth/ (${JSON.stringify(frameUrls)})`, hostView !== undefined && !frameUrls.some((url: string) => url.startsWith('https://site.eth/')))
+      check(`the page stays and no frame is at https://site.eth/ (${JSON.stringify(frameUrls)})`, hostView !== undefined && !frameUrls.some((url: string) => url.startsWith('https://site.eth/')))
       check('the tab address is the page, not the name', (await activeTabInfo(chrome)).address === `${loopback}/frame`)
 
       // 6. The gateway's own hosts and a name nothing can load keep their host.

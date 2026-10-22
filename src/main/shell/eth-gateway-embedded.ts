@@ -2,10 +2,10 @@
 // once it covers content inside a page: which resource types it maps, the CORS
 // headers a gateway answers with, and the requests it moved. Durable: no `electron`.
 
-/** A `.eth` name serves no socket, and a ping or a violation report is no content, so those three types are left out. */
-const MAPPED_TYPES: ReadonlySet<string> = new Set(['mainFrame', 'subFrame', 'stylesheet', 'script', 'image', 'font', 'object', 'xhr', 'media', 'other'])
+/** Left out: a socket (a `.eth` name serves none), a ping and a violation report (no content), and a frame (`subFrame`, and `object`, which is what an `<object>` or `<embed>` holding a page is), since a `.eth` site refuses to be framed by another site, so a mapped frame would load nothing. */
+const MAPPED_TYPES: ReadonlySet<string> = new Set(['mainFrame', 'stylesheet', 'script', 'image', 'font', 'xhr', 'media', 'other'])
 
-/** Whether a request of this Electron resource type is mapped: a page and everything a page loads. */
+/** Whether a request of this Electron resource type is mapped: a page, and what a page loads except a frame or an object. */
 export function mapsResourceType (resourceType: string): boolean {
   return MAPPED_TYPES.has(resourceType)
 }

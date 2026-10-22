@@ -1,6 +1,7 @@
-// A `<name>.eth.limo` address inside a page loads as `<name>.eth` too: an image, a stylesheet, a script, a frame and a
+// A `<name>.eth.limo` address inside a page loads as `<name>.eth` too: an image, a stylesheet, a script and a
 // `fetch()` that a page on a `.eth` name, and a page on an ordinary web origin, point at the gateway. The fetch is
-// readable across origins, as the gateway's CORS headers make it. With the setting off the same requests stay on the
+// readable across origins, as the gateway's CORS headers make it. A frame is the one kind that stays on the gateway,
+// since a `.eth` site refuses to be framed by another site. With the setting off the same requests stay on the
 // gateway. The fixture names are served by the test seam's gateway, and the gateway hosts do not resolve here, so
 // content that loads can only have come through the mapping. A second run marks the web page's origin as a public
 // address (Chromium's override switch), which is where Local Network Access would act on a page reaching `.eth`
@@ -25,7 +26,7 @@ const PIXEL = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAA
 /** The gateway address every embed points at: the name `pic.eth`, as the gateway spells it. */
 const BASE = 'https://pic.eth.limo'
 
-/** The gateway address of the name the first page itself is served at: a frame of it is a frame of the page's own origin once mapped. */
+/** The gateway address of the name the first page itself is served at: its frame would be of the page's own origin if it were mapped. */
 const SAME = 'https://host.eth.limo'
 
 /** Loads one of each kind of thing from `BASE` and records how each went in `window.__embed`; `window.__embedDone` is set when all have finished. */
@@ -55,7 +56,13 @@ Promise.all([
   element('link', { rel: 'stylesheet', href: BASE + '/s.css' }, 'css').then(() => { out.cssApplied = getComputedStyle(document.body).getPropertyValue('--mapped').trim() === 'yes' }),
   element('iframe', { src: BASE + '/frame.html', id: 'framed' }, 'frame'),
   element('iframe', { src: SAME + '/frame.html', id: 'framedSame' }, 'frameSame')
-]).then(() => { window.__embedDone = true })
+]).then(() => {
+  const embedded = document.createElement('object')
+  embedded.data = BASE + '/frame.html'
+  embedded.type = 'text/html'
+  document.body.append(embedded)
+  window.__embedDone = true
+})
 `
 
 const embedPage = (title: string, control: string): string => `<!doctype html><meta charset="utf-8"><title>${title}</title><body><script>${embedScript(control)}</script></body>`
@@ -80,6 +87,7 @@ interface EmbedResult {
 
 async function embedResult (view: Page): Promise<{ result: EmbedResult, frames: string[] }> {
   await view.waitForFunction(() => (globalThis as { __embedDone?: boolean }).__embedDone === true, undefined, { timeout: 30_000 })
+  await delay(ABSENCE_SETTLE_MS)
   const result = await view.evaluate(() => (globalThis as { __embed?: EmbedResult }).__embed ?? {})
   return { result, frames: view.frames().map((frame) => frame.url()) }
 }
@@ -132,7 +140,7 @@ async function scenario (label: string, webIsPublic: boolean): Promise<void> {
       const chrome = findChrome(running)
       await waitForAddressBarStable(chrome)
 
-      const verifyMapped = (what: string, result: EmbedResult, frames: string[], sameFrame: string): void => {
+      const verifyEmbedded = (what: string, result: EmbedResult, frames: string[]): void => {
         check(`${what}: an image loads`, result.img === 'loaded' && result.imgWidth === 1)
         check(`${what}: a CORS image loads`, result.imgCors === 'loaded' && result.imgCorsWidth === 1)
         check(`${what}: a script loads and runs`, result.script === 'loaded' && result.scriptRan === true)
@@ -142,8 +150,8 @@ async function scenario (label: string, webIsPublic: boolean): Promise<void> {
         check(`${what}: a request that is not a GET reaches the verifier, which refuses it, and the answer is readable (${String(result.fetchPost)})`, result.fetchPost === 'only GET and HEAD')
         check(`${what}: a fetch with credentials fails as it does through the gateway, whose answer allows any origin`, String(result.fetchCredentials).startsWith('ERR'))
         check(`${what}: Local Network Access does not stop ${webIsPublic ? 'a page on a public address' : 'the page'} reaching a plain loopback server, so the control and the mapped content both load (${String(result.control)})`, result.control === 'control-data')
-        check(`${what}: another origin's frame is refused by the name's frame-ancestors (${JSON.stringify(frames)})`, !frames.includes('https://pic.eth/frame.html'))
-        check(`${what}: a frame of the page's own name ${sameFrame === '' ? 'is refused too, since the page is another origin' : 'loads'} (${JSON.stringify(frames)})`, sameFrame === '' ? !frames.includes('https://host.eth/frame.html') : frames.includes(sameFrame))
+        check(`${what}: no iframe or object frame is mapped to the .eth name, which refuses to be framed by another site (${JSON.stringify(frames)})`, !frames.some((url) => url.startsWith('https://pic.eth/') || url.startsWith('https://host.eth/frame')))
+        check(`${what}: the frames stay on the gateway, which does not resolve here (${JSON.stringify(frames)})`, frames.filter((url) => url.startsWith('chrome-error://')).length >= 2)
       }
 
       // The name the page points at is opened once first: the files of a .eth name that no tab has opened yet load unreliably, mapped or not.
@@ -156,7 +164,7 @@ async function scenario (label: string, webIsPublic: boolean): Promise<void> {
       const hostView = findViewShowing(running, chrome, 'https://host.eth/')
       if (hostView === undefined) throw new Error('the .eth page has no view')
       const onEth = await embedResult(hostView)
-      verifyMapped('a .eth page', onEth.result, onEth.frames, 'https://host.eth/frame.html')
+      verifyEmbedded('a .eth page', onEth.result, onEth.frames)
       const shield = await readShield(chrome)
       check(`a .eth page that loaded files through the mapping is still shown at Level 2, the verified level (${JSON.stringify(shield)})`, shield.level === '2')
 
@@ -166,7 +174,7 @@ async function scenario (label: string, webIsPublic: boolean): Promise<void> {
       const webView = tabViews(running, chrome).find((w: Page) => w.url() === `${loopback}/embed`)
       if (webView === undefined) throw new Error('the web page has no view')
       const onWeb = await embedResult(webView)
-      verifyMapped('a web page', onWeb.result, onWeb.frames, '')
+      verifyEmbedded('a web page', onWeb.result, onWeb.frames)
 
       // 2b. A page whose Content-Security-Policy names the gateway.
       // 2b. A page whose Content-Security-Policy names the gateway.
