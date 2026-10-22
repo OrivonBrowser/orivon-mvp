@@ -156,7 +156,9 @@ export const delay = (ms) => new Promise((r) => setTimeout(r, ms))
 
 /**
  * Polls until `predicate` is true, or the ceiling is hit. Returns the outcome
- * as a boolean so the caller's own check() reports it by name.
+ * as a boolean so the caller's own check() reports it by name. Only `true`
+ * counts: a predicate that answers a page or an object never ends the wait,
+ * and the call answers `false`, so poll for a value with a loop of your own.
  *
  * Read scripts/smoke.mjs's header rule 2 before using this. It is the right
  * tool for "the app should reach state X", and the wrong tool for "the app
