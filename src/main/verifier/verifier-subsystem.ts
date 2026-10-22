@@ -35,7 +35,7 @@ import { VerifierStore } from './verifier-store.js'
 import { chooseNameEvidence } from './name-evidence.js'
 import { lastProvenance } from './kept-provenance.js'
 import type { NameEvidence } from './name-evidence.js'
-import { checkpointProblem, lightClientView } from './status-view.js'
+import { checkpointProblem, lightClientLog, lightClientView } from './status-view.js'
 import type { LightClientView } from './status-view.js'
 import { ccipDirectFor, tunnelFront, tunnelProfileFronts, unproxiedGatewaysFor } from './host-proxy.js'
 import { HostLifecycle } from './host-lifecycle.js'
@@ -61,6 +61,7 @@ let fingerprint: string | undefined
 let supervisor: HostSupervisor | undefined
 let store: VerifierStore | undefined
 let lightClient: LightClientState = { state: 'off' }
+const logLightClient = lightClientLog()
 let hostDown: string | undefined
 /** The nodes the host may ask for, by name. */
 const NODES: ReadonlyMap<string, LocalNodeSubsystem> = new Map([[SWARM_NODE_IDENTITY.name, swarmNode], [IPFS_NODE_IDENTITY.name, ipfsNode]])
@@ -407,6 +408,8 @@ export const verifierSubsystem: Subsystem = {
         },
         status: (value) => {
           lightClient = value
+          const line = logLightClient(value)
+          if (line !== undefined) console[line.level](`[verifier] ${line.text}`)
           changed()
         },
         checkpoint: (root, timestamp) => {

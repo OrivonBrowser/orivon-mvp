@@ -6,7 +6,7 @@ certificate check each session applies, starting and restarting the verifier hos
 ([`../../protocols/verifier-host/`](../../protocols/verifier-host/)), the light client's
 checkpoint ([`ADR-0031`](../../../docs/decisions/ADR-0031-helios-is-the-light-client.md)) and its renewal at run time from two beacon servers that agree ([`ADR-0092`](../../../docs/decisions/ADR-0092-when-no-checkpoint-is-recent-enough-two-beacon-servers-that-agree-supply-one.md)), what the
 host verified between runs (IPNS sequences, Swarm feed indexes, and the address scheme each `.eth` name's content was last found under), the per-site partition stamp, the gateway proxy check, and the
-wording of the status and a name's evidence for Settings and the site-info popover.
+wording of the status and a name's evidence for Settings and the site-info popover, and the light client's failures and syncs as lines of the main process's log, where a bug report finds them.
 The person can switch the light client off in Settings or from the Available networks popup (`web3.lightClient`, read at each
 start of the host through `configureVerifier` and applied at once: see below); the environment switch still forces it off
 (`lightClientForcedOff`, the one place that reads it), and
