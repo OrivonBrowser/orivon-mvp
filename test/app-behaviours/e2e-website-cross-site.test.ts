@@ -11,7 +11,18 @@ import { startAppServer, type AppServer } from './app-behaviour-support.js'
 import { runPhase } from '../support/e2e-helpers.js'
 import { assertNoElectronSurvivors, closeElectron, profileDirOf } from '../support/launch-electron.mjs'
 import { launchShell, QA_TEST_TIMEOUT_MS, visit } from '../support/qa-helpers.js'
-import { tabViews, waitFor } from '../support/smoke-helpers.mjs'
+import { tabViews } from '../support/smoke-helpers.mjs'
+
+/** What `read` finds once it finds something, polled until `timeoutMs`; the suite's `waitFor` answers only true or false. */
+async function found<T> (read: () => Promise<T | false | null | undefined> | T | false | null | undefined, timeoutMs = 20_000): Promise<T> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const value = await read()
+    if (value !== false && value !== null && value !== undefined) return value
+    if (Date.now() >= deadline) throw new Error('timed out waiting for the page')
+    await new Promise((resolve) => setTimeout(resolve, 200))
+  }
+}
 
 const PAYLOAD = { pages: ['first', 'second'], size: 3 }
 
@@ -115,18 +126,18 @@ it('[app:website-popup-to-another-site-keeps-opener] [app:website-sandboxed-fram
       const page = await visit(first.app, first.chrome, `${opener.origin}/`)
       await page.evaluate((target) => { (document.getElementById('open') as HTMLElement).dataset['target'] = target }, `${other.origin}/receiver`)
       await page.click('#open')
-      const receiver = await waitFor(() => (tabViews(first.app, first.chrome) as Page[]).find((view) => view.url() === `${other.origin}/receiver`) ?? false) as Page
-      const received = await waitFor(async () => await receiver.evaluate(() => (window as unknown as { received: unknown }).received).catch(() => null))
+      const receiver = await found(() => (tabViews(first.app, first.chrome) as Page[]).find((view) => view.url() === `${other.origin}/receiver`))
+      const received = await found(async () => await receiver.evaluate(() => (window as unknown as { received: unknown }).received).catch(() => null))
       check('[app:website-popup-to-another-site-keeps-opener] the popup on the other site has window.opener', await receiver.evaluate(() => (window as unknown as { hadOpener: boolean }).hadOpener))
       expect(received).toEqual({ from: opener.origin, payload: PAYLOAD })
-      const log = await waitFor(async () => {
+      const log = await found(async () => {
         const entries = await page.evaluate(() => (window as unknown as { log: { type?: string }[] }).log)
         return entries.some((entry) => entry.type === 'received') ? entries : false
       })
       expect(log).toEqual([{ opened: true }, { from: other.origin, type: 'ready' }, { from: other.origin, type: 'received' }])
 
       const host = await visit(first.app, first.chrome, `${opener.origin}/host`)
-      const frameLog = await waitFor(async () => {
+      const frameLog = await found(async () => {
         const entries = await host.evaluate(() => (window as unknown as { frameLog: { type: string }[] }).frameLog)
         return entries.length >= 2 ? entries : false
       })
