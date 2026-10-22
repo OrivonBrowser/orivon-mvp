@@ -282,7 +282,14 @@ export function wireView (id: string, record: TabRecord): void {
   wc.on('did-fail-load', (_event, code: number, _description: string, failedUrl: string, isMainFrame: boolean) => {
     // Only an error page that committed (the tab is at the failed address): a cancelled load (-3) leaves the page before.
     if (!isMainFrame || code === -3 || wc.getURL() !== failedUrl || !shown()) return
-    if (faviconOnFailedLoad(record, failedUrl)) record.host.emitState()
+    // A new tab whose first address failed shows that address, not the dashboard, as did-navigate says of one that loaded:
+    // left set, a tunnel switched on for the site would never move the tab, and the tab would not be restored.
+    const leftDashboard = record.isDashboardTab && !isDashboardUrl(failedUrl, record.host.dashboardUrl)
+    if (leftDashboard) {
+      record.isDashboardTab = false
+      resetViewBackground(view)
+    }
+    if (faviconOnFailedLoad(record, failedUrl) || leftDashboard) record.host.emitState()
   })
   watchBacking(view, record, shown)
   wc.on('did-start-loading', () => { record.host.emitState() })
