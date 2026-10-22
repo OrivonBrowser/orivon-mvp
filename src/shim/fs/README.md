@@ -30,7 +30,7 @@ grow: its stand-in folder holds only that file, so `stat`, `readdir` and `mkdir 
 and `EACCES` to create, and nothing in it can be removed or renamed. A rename between two picks, or between a pick and
 the app's files, is `EXDEV`. An `fs.open` of a picked file shares the pick's one handle: closing it flushes (`sync`) when it was
 opened to write and leaves the pick open, so the next call works; `'w'` empties the file first and `'wx'` is `EEXIST`. `readFile` reads in
-megabyte chunks and `writeFile` writes in them, since the page's handle has no stream (A184). The synchronous family has no wire to a
+megabyte chunks and `writeFile` writes in them, over the handle's positional calls. The synchronous family has no wire to a
 pick: `toConfinedPath` throws `ENOSYS` for a picked path, so every `*Sync` export, `fs.watch` and a sandbox preopen meet it, and
 `existsSync` answers `true` for a live pick's own path (the table is in memory) and `false` for anything deeper or stale. A write to a pick is not announced to `fs.watch` (`notices.ts`). An id no pick answers (the page reloaded,
 or it is a Worker whose shim holds a table of its own) is `ENOENT` and says to pick again, not another pick's file.
@@ -74,12 +74,12 @@ than reading as though it had never been opened at all.
 Elsewhere -- the page, or a Worker with no `SharedArrayBuffer` -- every one of these calls throws
 the same named refusal it always has ([`unsupported.ts`](unsupported.ts)).
 
-**`fs.createReadStream`/`fs.createWriteStream` run over the local cursor, not the broker's
-`readable()`/`writable()`.** Provisional, AI recommendation: those are not page-reachable (A184),
-and `@seald-io/nedb` calls both on every load and compaction (`streams.ts`). The cost is one
-64 KiB round trip per chunk instead of one WHATWG transfer. **Open:** whether this is permanent;
-once A184 makes the broker streams reachable, `streams.ts` can move onto them with no app-facing
-change.
+**`fs.createReadStream`/`fs.createWriteStream` run over the local cursor, not the handle's
+`readable()`/`writable()`.** Provisional, AI recommendation: the page's streams are positional
+reads and writes underneath too, and the cursor also works on an Orivon build whose handle has no
+streams; `@seald-io/nedb` calls both on every load and compaction (`streams.ts`). The cost is one
+64 KiB round trip per chunk. **Open:** whether this is permanent; once a port carries a file's
+bytes to the page, `streams.ts` can move onto the handle's streams with no app-facing change.
 
 **`fs.access`'s mode.** Provisional, AI recommendation: every mode checks existence only, since
 `orivon.fs` has no permission model (`core.ts`'s `doAccess`). **Open:** what a dependency asking

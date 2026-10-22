@@ -36,7 +36,7 @@ function segment (name: string): string {
 
 function keep (entry: PickedEntry): string {
   picks.set(entry.id, entry)
-  // A page's handle carries no live `closed` yet (A184), so there may be nothing to follow; when there is, a
+  // A page's handle carries no live `closed` yet, so there may be nothing to follow; when there is, a
   // handle that closed can answer nothing and its path then reads as stale instead of failing inside every call.
   const forget = (): void => { if (picks.get(entry.id) === entry) picks.delete(entry.id) }
   const closed = (entry.handle as { closed?: Promise<void> }).closed
