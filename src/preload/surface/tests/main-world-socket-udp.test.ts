@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { installOrivon } from '../main-world-socket.js'
-import type { MainWorldDatagram } from '../main-world-socket.js'
+import type { MainWorldDatagram } from '../main-world-bridges.js'
 import type { SendRefusal } from '../../../contracts/handles.js'
 import { LIMITS, asPage, fakeBridge, fakeSocketBridgeResult, fakeUdpBridgeResult, tick } from './main-world-socket.test-helpers.js'
 

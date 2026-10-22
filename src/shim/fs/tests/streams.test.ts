@@ -1,7 +1,7 @@
 // Exercises fs.createReadStream/createWriteStream (fs/streams.ts) --
 // both real stream.Readable/Writable subclasses driven by fs/handle.ts's
-// local-cursor FileHandle, never by the broker's readable()/writable()
-// (still blocked on A184). Same stubbed-globalThis.orivon pattern as
+// local-cursor FileHandle, never by the handle's own readable()/writable().
+// Same stubbed-globalThis.orivon pattern as
 // fs/tests/handle.test.ts. vitest.config.ts resolves that module's `stream` to
 // stream-browserify, the polyfill the page gets, not to node:stream.
 

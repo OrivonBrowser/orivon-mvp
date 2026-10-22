@@ -428,9 +428,10 @@ interface UdpSocket extends Handle {
 > `src/broker/adapters/node-fs-adapter.ts`): positional `read`/`write` (no implicit cursor,
 > confined once at open time), `stat`, `truncate`, `sync`, and real WHATWG `readable()`/
 > `writable()` streams over the same fd, sharing one `FailableFileHandle` shape and one set of
-> handle-scoped control cases in `src/broker/transport/dispatch/fs.ts`. **`readable()`/
-> `writable()` stop at the broker layer**: they are real, tested streams, but nothing delivers one
-> to a page over a port the way `net.connect`'s byte pump does for `TcpSocket` (A184).
+> handle-scoped control cases in `src/broker/transport/dispatch/fs.ts`. **A page's
+> `readable()`/`writable()` are not those streams**: no port carries a file's bytes the way
+> `net.connect`'s byte pump does for `TcpSocket`, so the page builds both from its handle's
+> positional `read` and `write` (`src/preload/surface/main-world-socket.ts`).
 >
 > The FOLDER shape, a `DirectoryHandle` (described in `src/contracts/handles.ts`'s own doc
 > comment, not repeated as a section here), reaches a page over eight `fs.dir*` control-channel

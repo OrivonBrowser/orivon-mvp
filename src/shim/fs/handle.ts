@@ -14,8 +14,8 @@
 // snapshot -- real Node's own documented hazard for concurrent fs.read/
 // fs.write on one fd, not a bug introduced here.
 //
-// SCOPE LIMIT: FileHandle.readable()/writable() are built in the broker but not page-reachable yet (A184,
-// docs/open-questions.md), so FileHandle#createReadStream/createWriteStream below refuse by name.
+// SCOPE LIMIT: FileHandle#createReadStream/createWriteStream below refuse by name: no Node stream is built over
+// the handle's readable()/writable() yet.
 
 import type { FileHandle } from '../../contracts/handles.js'
 import { getOrivon } from '../orivon-global.js'
@@ -222,20 +222,20 @@ export class NodeFileHandle {
     await guarded(async () => { await this.handle.close() })
   }
 
-  /** Real Node's own FileHandle stream methods -- A184: the broker has readable()/writable() built, but neither reaches a page yet, so this refuses by name instead of returning a stream that can never move a byte. */
+  /** Real Node's own FileHandle stream methods: no Node stream is built over the handle's readable()/writable() yet, so these refuse by name rather than return one that moves no byte. */
   createReadStream (_opts?: { start?: number, end?: number }): never {
     throw refuseShim(
       'FileHandle#createReadStream', 'not-built',
-      'FileHandle.readable() is built in the broker but not page-reachable yet -- see ' +
-      'docs/open-questions.md A184. Use read() positionally, or fs.readFile() for whole-file access.'
+      'FileHandle#createReadStream is not built in the shim. Use fs.createReadStream(path), read() ' +
+      'positionally, or fs.readFile() for whole-file access.'
     )
   }
 
   createWriteStream (_opts?: { start?: number }): never {
     throw refuseShim(
       'FileHandle#createWriteStream', 'not-built',
-      'FileHandle.writable() is built in the broker but not page-reachable yet -- see ' +
-      'docs/open-questions.md A184. Use write() positionally, or fs.writeFile() for whole-file access.'
+      'FileHandle#createWriteStream is not built in the shim. Use fs.createWriteStream(path), write() ' +
+      'positionally, or fs.writeFile() for whole-file access.'
     )
   }
 }

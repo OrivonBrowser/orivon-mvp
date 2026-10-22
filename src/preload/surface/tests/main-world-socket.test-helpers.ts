@@ -8,7 +8,7 @@ import vm from 'node:vm'
 import type {
   MainWorldDatagram, MainWorldDirectoryBridge, MainWorldFileBridge, MainWorldServerBridge,
   MainWorldSocketBridge, MainWorldUdpBridge, MainWorldWebContextBridge
-} from '../main-world-socket.js'
+} from '../main-world-bridges.js'
 import type { OrivonErrorCode } from '../../../contracts/errors.js'
 import type { BindScope } from '../../../contracts/capability-api.js'
 import type { FileStat, SendRefusal } from '../../../contracts/handles.js'
