@@ -27,7 +27,7 @@ function servers (table: Record<string, unknown>): (url: string) => Promise<unkn
 
 describe('readFinalizedHeader', () => {
   it('reads the root and slot of a finalized header', () => {
-    expect(readFinalizedHeader(header())).toEqual({ root: ROOT, slot: SLOT })
+    expect(readFinalizedHeader(header())).toEqual({ root: ROOT, slot: SLOT, finalized: true })
   })
 
   it('accepts a server that leaves out the finalized flag, which the request itself asked for', () => {
@@ -50,7 +50,6 @@ describe('readFinalizedHeader', () => {
   })
 
   it.each([
-    ['flagged not finalized', header(ROOT, SLOT, { finalized: false })],
     ['optimistic', header(ROOT, SLOT, { execution_optimistic: true })],
     ['off the canonical chain', { finalized: true, data: { root: ROOT, canonical: false, header: { message: { slot: String(SLOT) } } } }]
   ])('refuses a header %s', (_name, body) => {
@@ -84,6 +83,18 @@ describe('fetchAgreedCheckpoint', () => {
   it('refuses a body that is not JSON of the right shape', async () => {
     expect(await fetchAgreedCheckpoint(servers({ [A]: header(), [B]: new MalformedAnswer('not json') }), [A, B], NOW)).toEqual({ ok: false, problem: 'malformed' })
     expect(await fetchAgreedCheckpoint(servers({ [A]: header(), [B]: { data: 1 } }), [A, B], NOW)).toEqual({ ok: false, problem: 'malformed' })
+  })
+
+  it('accepts a server that flags the agreed block not finalized when another flags it finalized (Lodestar does)', async () => {
+    const lodestar = header(ROOT, SLOT, { finalized: false })
+    const result = await fetchAgreedCheckpoint(servers({ [A]: header(), [B]: lodestar }), [A, B], NOW)
+    expect(result.ok).toBe(true)
+    expect((await fetchAgreedCheckpoint(servers({ [A]: lodestar, [B]: header() }), [A, B], NOW)).ok).toBe(true)
+  })
+
+  it('refuses a flagged-open header when the other server leaves the flag out', async () => {
+    const bare = { data: { root: ROOT, canonical: true, header: { message: { slot: String(SLOT) } } } }
+    expect(await fetchAgreedCheckpoint(servers({ [A]: bare, [B]: header(ROOT, SLOT, { finalized: false }) }), [A, B], NOW)).toEqual({ ok: false, problem: 'not-finalized' })
   })
 
   it('refuses a header that is not finalized, even when both say so', async () => {

@@ -26,9 +26,13 @@ export class MalformedAnswer extends Error {}
 /** The path that names the finalized block: the server vouches for finality in answering it. */
 export const FINALIZED_HEADER_PATH = '/eth/v1/beacon/headers/finalized'
 
-type Answer = { readonly root: string, readonly slot: number } | 'malformed' | 'not-finalized'
+type Answer = { readonly root: string, readonly slot: number, readonly finalized: boolean | undefined } | 'malformed' | 'not-finalized'
 
-/** The root and slot a finalized-header answer names, or why it cannot be used. A server may leave out the flags; it may not set them against the answer. */
+/**
+ * The root and slot a finalized-header answer names, or why it cannot be used. A server may leave out the flags; it may not
+ * set `canonical` or `execution_optimistic` against the answer. Its `finalized` flag is passed on, not judged here: Lodestar
+ * sets it false on the very block it names as finalized, so `fetchAgreedCheckpoint` weighs it against the other servers.
+ */
 export function readFinalizedHeader (body: unknown): Answer {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) return 'malformed'
   const { data, finalized, execution_optimistic: optimistic } = body as { data?: unknown, finalized?: unknown, execution_optimistic?: unknown }
@@ -39,8 +43,8 @@ export function readFinalizedHeader (body: unknown): Answer {
   if (typeof rawSlot !== 'string' || !/^\d{1,12}$/.test(rawSlot)) return 'malformed'
   const slot = Number(rawSlot)
   if (!Number.isSafeInteger(slot) || slot <= 0) return 'malformed'
-  if (finalized === false || optimistic === true || canonical === false) return 'not-finalized'
-  return { root, slot }
+  if (optimistic === true || canonical === false) return 'not-finalized'
+  return { root, slot, finalized: typeof finalized === 'boolean' ? finalized : undefined }
 }
 
 /** Why the answers cannot be used, the most basic reason first; undefined when every server gave a usable header. */
@@ -52,7 +56,7 @@ function firstProblem (answers: readonly Answer[]): FetchProblem | undefined {
 
 /**
  * Asks every server for its finalized header at once. The checkpoint is used only when all of them answered, all say
- * the same root and slot, and its time is neither beyond the clock's tolerance nor past the age limit. One server
+ * the same root and slot, no server sets `finalized` false unless another sets it true for that same root and slot, and its time is neither beyond the clock's tolerance nor past the age limit. One server
  * unreachable is a failure: a single server alone is exactly what this refuses to trust.
  * `get` rejects when a server cannot be reached or answers with an error status, and rejects with `MalformedAnswer`
  * when what came back is not JSON.
@@ -73,6 +77,8 @@ export async function fetchAgreedCheckpoint (get: (url: string) => Promise<unkno
   if (problem !== undefined) return { ok: false, problem }
   const [first] = answers as Array<Exclude<Answer, string>>
   if (first === undefined || !answers.every((a) => typeof a !== 'string' && a.root === first.root && a.slot === first.slot)) return { ok: false, problem: 'disagree' }
+  const flags = (answers as Array<Exclude<Answer, string>>).map((a) => a.finalized)
+  if (flags.includes(false) && !flags.includes(true)) return { ok: false, problem: 'not-finalized' }
   const timestamp = slotTimestamp(first.slot)
   if (timestamp > nowSeconds + FUTURE_TOLERANCE_SECONDS) return { ok: false, problem: 'future' }
   if (nowSeconds - timestamp > MAX_CHECKPOINT_AGE_SECONDS) return { ok: false, problem: 'too-old' }
