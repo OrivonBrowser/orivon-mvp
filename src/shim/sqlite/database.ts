@@ -30,6 +30,11 @@ const DBCONFIG_ENABLE_FKEY = 1002
 const DBCONFIG_DEFENSIVE = 1010
 const DBCONFIG_DQS_DML = 1013
 const DBCONFIG_DQS_DDL = 1014
+// sqlite3_deserialize's flags; the package exports no constant for them.
+const DESERIALIZE_FREEONCLOSE = 1
+const DESERIALIZE_RESIZEABLE = 2
+const DESERIALIZE_READONLY = 4
+const SQLITE_NOMEM = 7
 
 const states = new WeakMap<object, DatabaseState>()
 const forgotten = new FinalizationRegistry<DatabaseState>((state) => { closeState(state) })
@@ -81,7 +86,33 @@ export function exportDatabase (database: DatabaseSync, schema: string): Uint8Ar
   const state = states.get(database)
   if (state === undefined) throw invalidState('Illegal invocation')
   const { sqlite3, pointer } = live(state)
+  if (state.running > 0) throw invalidState('database is busy: a user-defined function is running on it')
   return sqlite3.capi.sqlite3_js_db_export(pointer, schema)
+}
+
+/**
+ * Makes `bytes`, the image of a database file, the content of the empty in-memory database `database`. The engine
+ * takes a copy into its own memory and frees it when the connection closes, so the caller's buffer is neither kept
+ * nor changed, and no file is read or written. Bytes that are not a database are not checked here: the first
+ * statement fails with SQLite's "file is not a database", as it does for a file.
+ */
+export function importDatabase (database: DatabaseSync, bytes: Uint8Array, readOnly: boolean): void {
+  const state = states.get(database)
+  if (state === undefined) throw invalidState('Illegal invocation')
+  const { sqlite3, pointer } = live(state)
+  if (database.location() !== null) throw invalidState('only a database in memory can be loaded from bytes')
+  const { capi, wasm } = sqlite3
+  // An empty image is an empty database; the engine cannot be handed a zero-length allocation.
+  let copy: number
+  try {
+    copy = wasm.alloc(Math.max(bytes.length, 1))
+  } catch {
+    throw Object.assign(new Error('out of memory'), { code: 'ERR_SQLITE_ERROR' as const, errcode: SQLITE_NOMEM, errstr: capi.sqlite3_errstr(SQLITE_NOMEM) })
+  }
+  wasm.heap8u().set(bytes, copy)
+  // The engine owns the copy from here, and frees it even when it refuses.
+  const rc = capi.sqlite3_deserialize(pointer, 'main', copy, bytes.length, Math.max(bytes.length, 1), DESERIALIZE_FREEONCLOSE | (readOnly ? DESERIALIZE_READONLY : DESERIALIZE_RESIZEABLE))
+  if (rc !== 0) throw sqliteError(sqlite3, pointer)
 }
 
 export class DatabaseSync {
