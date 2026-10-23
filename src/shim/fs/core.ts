@@ -28,6 +28,7 @@ import {
   assertRootMkdirAllowed, isRootPath, rootIsDirectoryError, rootNotRemovableError, rootReaddirError, rootStat
 } from './root.js'
 import { confine, fsError, guarded, pathText, type PathLike } from './paths.js'
+import { ancestorOf, ancestorStat, assertAncestorMkdirAllowed } from './ancestors.js'
 import { decode, encode, encodingOf } from '../encoding.js'
 import { VIRTUAL_ROOT } from '../virtual-root.js'
 import { Buffer } from 'buffer'
@@ -100,6 +101,8 @@ async function writeThroughHandle (path: PathLike, bytes: Uint8Array, flags: str
 export async function doMkdir (path: PathLike, opts: MkdirOptions | undefined): Promise<void> {
   const picked = pickedTarget(path, 'mkdir')
   if (picked !== undefined) { await pickedMkdir(picked, opts); return }
+  const ancestor = ancestorOf(pathText(path))
+  if (ancestor !== undefined) { assertAncestorMkdirAllowed(ancestor, opts); return }
   const confined = await confine(path, 'mkdir')
   if (isRootPath(confined)) { assertRootMkdirAllowed(opts); return }
   const existed = opts?.recursive === true ? await existedBefore(confined) : false
@@ -112,7 +115,12 @@ export async function doReaddir (path: PathLike, options: ReaddirOptions | strin
   let confined = ''
   let names: readonly string[]
   let statOf: (name: string) => Promise<FileStat | undefined>
-  if (picked !== undefined) {
+  const ancestor = picked === undefined ? ancestorOf(pathText(path)) : undefined
+  if (ancestor !== undefined) {
+    confined = ancestor.path
+    names = [ancestor.child]
+    statOf = async () => ancestorStat()
+  } else if (picked !== undefined) {
     names = await pickedReaddir(picked)
     statOf = async (name) => await picked.ops.stat(join(picked.rel, name)).catch(() => undefined)
   } else {
@@ -133,6 +141,8 @@ export async function doReaddir (path: PathLike, options: ReaddirOptions | strin
 export async function doStat (path: PathLike): Promise<NodeStats> {
   const picked = pickedTarget(path, 'stat')
   if (picked !== undefined) return toNodeStats(await pickedStat(picked), picked.path)
+  const ancestor = ancestorOf(pathText(path))
+  if (ancestor !== undefined) return toNodeStats(ancestorStat(), ancestor.path)
   const confined = await confine(path, 'stat')
   if (isRootPath(confined)) return toNodeStats(rootStat(), confined)
   return toNodeStats(await guarded(async () => await getOrivon().fs.stat(confined)), confined)
@@ -202,6 +212,8 @@ export async function doRealpath (path: PathLike): Promise<string> {
     await pickedStat(picked)
     return picked.path
   }
+  const ancestor = ancestorOf(pathText(path))
+  if (ancestor !== undefined) return ancestor.path
   const confined = await confine(path, 'lstat')
   if (!isRootPath(confined)) await guarded(async () => { await getOrivon().fs.stat(confined) })
   return isRootPath(confined) ? VIRTUAL_ROOT : join(VIRTUAL_ROOT, confined)
@@ -240,6 +252,7 @@ export async function doUnlink (path: PathLike): Promise<void> {
 export async function doAccess (path: PathLike, syscall = 'access'): Promise<void> {
   const picked = pickedTarget(path, syscall)
   if (picked !== undefined) { await pickedStat(picked); return }
+  if (ancestorOf(pathText(path)) !== undefined) return
   const confined = await confine(path, syscall)
   if (isRootPath(confined)) return
   await guarded(async () => { await getOrivon().fs.stat(confined) })
