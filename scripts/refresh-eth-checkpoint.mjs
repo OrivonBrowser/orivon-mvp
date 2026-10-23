@@ -3,18 +3,20 @@
  * beacon APIs, refuses unless they agree, and prints it as the checkpoint a
  * release ships (src/main/verifier/mainnet-checkpoint.json). The checkpoint is
  * the block at the first slot of the newest finalized epoch that the light
- * client's consensus server (the first API given, publicnode by default) will
+ * client's consensus server (publicnode, or the one --consensus names) will
  * bootstrap from. With --write it also writes that file, for the owner to
  * review and commit. The release checklist runs it before tagging.
  *
- * Usage: node scripts/refresh-eth-checkpoint.mjs [--write] [beacon-api-url ...]
+ * Usage: node scripts/refresh-eth-checkpoint.mjs [--write] [--consensus <url>] [beacon-api-url ...]
  */
 import { writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { isInvokedDirectly } from './cli.mjs'
 
+/** The server the light client bootstraps from (`DEFAULT_ENDPOINTS.consensusRpc`). */
+export const DEFAULT_CONSENSUS_RPC = 'https://ethereum-beacon-api.publicnode.com'
 export const DEFAULT_BEACON_APIS = [
-  'https://ethereum-beacon-api.publicnode.com',
+  DEFAULT_CONSENSUS_RPC,
   'https://lodestar-mainnet.chainsafe.io'
 ]
 
@@ -56,10 +58,10 @@ async function rootAt (fetchJson, api, slot) {
  * it is the one the light client bootstraps from, and the others vouch for the root.
  * @param {(url: string) => Promise<unknown>} fetchJson throws NotFoundAnswer on a 404
  * @param {string[]} apis
- * @param {string} [consensusRpc]
+ * @param {string} [consensusRpc] the server whose bootstrap is required; named, never taken from the list's order
  * @returns {Promise<{ root: string, slot: number, timestamp: number, agreedBy: string[] }>}
  */
-export async function agreedCheckpoint (fetchJson, apis, consensusRpc = apis[0]) {
+export async function agreedCheckpoint (fetchJson, apis, consensusRpc = DEFAULT_CONSENSUS_RPC) {
   const distinct = [...new Set(apis)]
   if (distinct.length < 2) throw new Error('need at least two independent beacon APIs')
   const answers = await Promise.all(distinct.map(async (api) => {
@@ -117,9 +119,16 @@ async function fetchJson (url) {
 if (isInvokedDirectly(import.meta.url)) {
   const args = process.argv.slice(2)
   const write = args.includes('--write')
-  const apis = args.filter((a) => a !== '--write')
+  const flagAt = args.indexOf('--consensus')
+  const consensus = flagAt >= 0 ? args[flagAt + 1] : undefined
+  if (flagAt >= 0 && (consensus === undefined || consensus.startsWith('--'))) {
+    console.error('--consensus needs the URL of the beacon API the light client bootstraps from')
+    process.exit(1)
+  }
+  const flagged = flagAt >= 0 ? new Set([flagAt, flagAt + 1]) : new Set()
+  const apis = args.filter((a, i) => a !== '--write' && !flagged.has(i))
   try {
-    const checkpoint = await agreedCheckpoint(fetchJson, apis.length > 0 ? apis : DEFAULT_BEACON_APIS)
+    const checkpoint = await agreedCheckpoint(fetchJson, apis.length > 0 ? apis : DEFAULT_BEACON_APIS, consensus)
     const json = JSON.stringify({ root: checkpoint.root, slot: checkpoint.slot, timestamp: checkpoint.timestamp }, null, 2) + '\n'
     process.stdout.write(json)
     console.error(`Agreed by ${checkpoint.agreedBy.join(', ')}; slot time ${new Date(checkpoint.timestamp * 1000).toISOString()}.`)

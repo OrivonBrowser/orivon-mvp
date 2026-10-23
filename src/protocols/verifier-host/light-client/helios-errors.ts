@@ -31,5 +31,13 @@ export function clockBehind (error: unknown): boolean {
   return CLOCK_BEHIND.test(error instanceof Error ? error.message : String(error))
 }
 
+/** Helios's failure when the consensus server answers 404 to the bootstrap request: the checkpoint it was given is not one that server starts a light client from. A 404 of any other request, and a failed request, are not it. */
+const BOOTSTRAP_MISSING = /could not fetch bootstrap:.*status: 404/s
+
+/** Whether Helios failed to start because the consensus server has no bootstrap for the checkpoint it was given. */
+export function bootstrapMissing (error: unknown): boolean {
+  return BOOTSTRAP_MISSING.test(error instanceof Error ? error.message : String(error))
+}
+
 /** What Settings and a .eth error page say when the clock stands in the way and the servers' time could not be used to allow for it. */
 export const CLOCK_BEHIND_REASON = "this computer's clock is behind, so the chain's newest blocks look as if they come from the future. Setting the clock right, in the system's date and time settings, lets the light client start"

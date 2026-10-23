@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ResolutionError } from '../../../resolution/records.js'
-import { clockBehind, heliosError } from '../helios-errors.js'
+import { bootstrapMissing, clockBehind, heliosError } from '../helios-errors.js'
 
 describe('heliosError', () => {
   it("turns a revert into the shape viem reads revert data from, so OffchainLookup is seen", () => {
@@ -47,5 +47,22 @@ describe('clockBehind', () => {
   it('never reads a clock problem out of text quoted inside another message', () => {
     expect(clockBehind(new Error('rpc error: invalid timestamp in params'))).toBe(false)
     expect(clockBehind(new Error('sync failed: insufficient participation'))).toBe(false)
+  })
+})
+
+describe('bootstrapMissing', () => {
+  it('recognises Helios failing on a 404 of the consensus server\'s bootstrap, in either of its spellings', () => {
+    expect(bootstrapMissing(new Error('could not fetch bootstrap: rpc error on method: bootstrap, message: status: 404, message: NOT_FOUND: Sync committee branch for block root 0xab not found'))).toBe(true)
+    expect(bootstrapMissing('could not fetch bootstrap: rpc error on method: bootstrap, message: status: 404, message: not found')).toBe(true)
+  })
+
+  it.each([
+    ['a request that failed', 'could not fetch bootstrap: rpc error on method: bootstrap, message: error sending request'],
+    ['a server error', 'could not fetch bootstrap: rpc error on method: bootstrap, message: status: 503, message: unavailable'],
+    ['a 404 of another request', 'could not fetch finality update: rpc error on method: finality_update, message: status: 404, message: not found'],
+    ['the clock', 'invalid timestamp'],
+    ['nothing', '']
+  ])('does not take %s for it', (_name, text) => {
+    expect(bootstrapMissing(new Error(text))).toBe(false)
   })
 })

@@ -1,7 +1,7 @@
 // Renews the light client's checkpoint at run time when the release's and the stored one have both aged past the
 // limit, or when the beacon server found the one in use unusable: the finalized head is asked of at least two independent
 // beacon servers, and the checkpoint is the block at the newest finalized epoch's first slot that the light client's own
-// consensus server can bootstrap from, used only if every server answers and they agree exactly (ADR-0092, ADR-0095).
+// consensus server can bootstrap from, used only if every server answers and they agree exactly (ADR-0092, ADR-0098).
 // No `electron` import: the request, the clock and the servers come in.
 
 import { BLOCK_ROOT_PATTERN } from '../../protocols/verifier-host/protocol.js'
@@ -68,15 +68,15 @@ function firstProblem (answers: readonly Answer[]): FetchProblem | undefined {
   return undefined
 }
 
-type RootAnswer = { readonly kind: 'root', readonly root: string } | { readonly kind: 'none' } | { readonly kind: 'malformed' } | { readonly kind: 'unreachable' }
+type RootAnswer = { readonly kind: 'root', readonly root: string } | { readonly kind: 'none' } | { readonly kind: 'malformed' } | { readonly kind: 'not-finalized' } | { readonly kind: 'unreachable' }
 
 /** The block root a server names at a slot: `none` when it has no block there, which is its answer and not a failure. */
 async function rootAt (get: (url: string) => Promise<unknown>, server: string, slot: number): Promise<RootAnswer> {
   try {
     const body = await get(`${server}${blockRootPath(slot)}`) as { data?: { root?: unknown }, execution_optimistic?: unknown } | null
     const root = body?.data?.root
-    if (typeof root !== 'string' || !BLOCK_ROOT_PATTERN.test(root) || body?.execution_optimistic === true) return { kind: 'malformed' }
-    return { kind: 'root', root }
+    if (typeof root !== 'string' || !BLOCK_ROOT_PATTERN.test(root)) return { kind: 'malformed' }
+    return body?.execution_optimistic === true ? { kind: 'not-finalized' } : { kind: 'root', root }
   } catch (error) {
     if (error instanceof NotFoundAnswer) return { kind: 'none' }
     return error instanceof MalformedAnswer ? { kind: 'malformed' } : { kind: 'unreachable' }
@@ -95,21 +95,44 @@ async function bootstrapSlot (get: (url: string) => Promise<unknown>, server: st
   }
 }
 
+/** The longest one attempt may take, however many servers and epochs it goes through: requests wait for it (`listeningGate.hold`). */
+export const ATTEMPT_DEADLINE_MS = 20_000
+
+export interface FetchOptions {
+  /** Roots the consensus server was found to have no bootstrap for: none is taken, the walk goes on past it. */
+  readonly unserved?: ReadonlySet<string>
+  readonly deadlineMs?: number
+}
+
 /**
  * The checkpoint is the block at the first slot of the newest finalized epoch whose block the consensus server will bootstrap
  * the light client from. Every server is asked for its finalized header at once and they must name the same one. From that
  * header's epoch, going back at most `MAX_EPOCHS_BACK` epochs, an epoch whose first slot holds no block is passed over, as is
- * one whose block the consensus server cannot bootstrap (it answers 404, or the bootstrap is for another slot): such a
- * root would leave the light client failing at its first step. The consensus server is asked first, then every other server
- * must name the same root at that slot. Only the consensus server is asked for a bootstrap: it is the one server the light
- * client bootstraps from, and the others vouch for the root only, so requiring a bootstrap of them would refuse roots that
- * serve the light client. One server unreachable, or any two that differ, is a failure.
+ * one whose block the consensus server cannot bootstrap (it answers 404, or the bootstrap is for another slot) or is in
+ * `unserved`: such a root would leave the light client failing at its first step. The consensus server is asked for the root
+ * at the slot, then for its bootstrap while every other server is asked for the root at that slot, and they must name the same
+ * one. Only the consensus server is asked for a bootstrap: it is the one server the light client bootstraps from, and the
+ * others vouch for the root only, so requiring a bootstrap of them would refuse roots that serve the light client. One
+ * server unreachable, or any two that differ, is a failure, and so is an attempt that outlasts `ATTEMPT_DEADLINE_MS`.
  * `get` rejects when a server cannot be reached or answers with an error status, with `NotFoundAnswer` on a 404, and with
  * `MalformedAnswer` when what came back is not JSON.
  */
-export async function fetchAgreedCheckpoint (get: (url: string) => Promise<unknown>, servers: readonly string[], consensusRpc: string, nowSeconds: number): Promise<FetchOutcome> {
+export async function fetchAgreedCheckpoint (get: (url: string) => Promise<unknown>, servers: readonly string[], consensusRpc: string, nowSeconds: number, options: FetchOptions = {}): Promise<FetchOutcome> {
   const distinct = [...new Set(servers)]
   if (distinct.length < 2) return { ok: false, problem: 'too-few-servers' }
+  let expired = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<FetchOutcome>((resolve) => {
+    timer = setTimeout(() => { expired = true; resolve({ ok: false, problem: 'unreachable' }) }, options.deadlineMs ?? ATTEMPT_DEADLINE_MS)
+  })
+  try {
+    return await Promise.race([walk(get, distinct, consensusRpc, nowSeconds, options.unserved ?? new Set(), () => expired), deadline])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function walk (get: (url: string) => Promise<unknown>, distinct: readonly string[], consensusRpc: string, nowSeconds: number, unserved: ReadonlySet<string>, expired: () => boolean): Promise<FetchOutcome> {
   const settled = await Promise.all(distinct.map(async (server): Promise<Answer | 'unreachable'> => {
     try {
       return readFinalizedHeader(await get(`${server}${FINALIZED_HEADER_PATH}`))
@@ -129,18 +152,19 @@ export async function fetchAgreedCheckpoint (get: (url: string) => Promise<unkno
   if (nowSeconds - slotTimestamp(first.slot) > MAX_CHECKPOINT_AGE_SECONDS) return { ok: false, problem: 'too-old' }
   const ordered = [consensusRpc, ...distinct.filter((server) => server !== consensusRpc)]
   const newestEpochStart = first.slot - first.slot % SLOTS_PER_EPOCH
-  for (let back = 0; back < MAX_EPOCHS_BACK; back++) {
+  for (let back = 0; back < MAX_EPOCHS_BACK && !expired(); back++) {
     const slot = newestEpochStart - back * SLOTS_PER_EPOCH
     if (slot <= 0) break
     const chosen = await rootAt(get, consensusRpc, slot)
     if (chosen.kind === 'none') continue
     if (chosen.kind !== 'root') return { ok: false, problem: chosen.kind }
-    const served = await bootstrapSlot(get, consensusRpc, chosen.root)
+    if (unserved.has(chosen.root)) continue
+    const [served, others] = await Promise.all([bootstrapSlot(get, consensusRpc, chosen.root), Promise.all(ordered.slice(1).map(async (server) => await rootAt(get, server, slot)))])
     if (served === 'malformed' || served === 'unreachable') return { ok: false, problem: served }
     if (served !== slot) continue
-    const others = await Promise.all(ordered.slice(1).map(async (server) => await rootAt(get, server, slot)))
-    if (others.some((a) => a.kind === 'unreachable')) return { ok: false, problem: 'unreachable' }
-    if (others.some((a) => a.kind === 'malformed')) return { ok: false, problem: 'malformed' }
+    for (const kind of ['unreachable', 'malformed', 'not-finalized'] as const) {
+      if (others.some((a) => a.kind === kind)) return { ok: false, problem: kind }
+    }
     if (!others.every((a) => a.kind === 'root' && a.root === chosen.root)) return { ok: false, problem: 'disagree' }
     const timestamp = slotTimestamp(slot)
     if (nowSeconds - timestamp > MAX_CHECKPOINT_AGE_SECONDS) return { ok: false, problem: 'too-old' }

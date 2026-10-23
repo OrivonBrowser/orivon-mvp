@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -46,18 +46,17 @@ vi.mock('../../sessions/web-request-owner.js', () => ({
   })
 }))
 
-/** What the beacon servers answer: by exact URL first, then by origin (the finalized header). A URL with no answer under a served origin is a 404; an origin with none is unreachable. */
+/** What the beacon servers answer: by exact URL, or by origin for the finalized header. Any other URL under a served origin is a 404; an origin with no answer is unreachable. */
 const beacon = vi.hoisted(() => ({ asked: [] as string[], answers: new Map<string, unknown>(), origins: new Set<string>() }))
 
 vi.mock('../checkpoint-fetch-net.js', () => ({
   beaconJson: async (url: string) => {
     beacon.asked.push(url)
-    const answer = beacon.answers.get(url) ?? beacon.answers.get(new URL(url).origin)
-    if (answer === undefined) {
-      if (beacon.origins.has(new URL(url).origin)) throw new (await import('../checkpoint-fetch.js')).NotFoundAnswer('404')
-      throw new Error('unreachable')
-    }
-    return answer
+    const { origin, pathname } = new URL(url)
+    const answer = beacon.answers.get(url) ?? (pathname === '/eth/v1/beacon/headers/finalized' ? beacon.answers.get(origin) : undefined)
+    if (answer !== undefined) return answer
+    if (beacon.origins.has(origin) || beacon.answers.has(origin)) throw new (await import('../checkpoint-fetch.js')).NotFoundAnswer('404')
+    throw new Error('unreachable')
   }
 }))
 
@@ -407,7 +406,7 @@ describe('the verifier subsystem', () => {
       expect(beacon.asked).toEqual([])
       forks()[0]?.listens()
       serve(ROOT, Date.now(), 600)
-      forks()[0]?.emit('message', { type: 'status', status: { state: 'failed', reason: BOOTSTRAP_404, retryAt: Date.now() + 5000 } })
+      forks()[0]?.emit('message', { type: 'status', status: { state: 'failed', reason: BOOTSTRAP_404, retryAt: Date.now() + 5000, bootstrapMissing: true } })
       await settle()
       expect(beacon.asked.filter((url) => url.endsWith('/headers/finalized'))).toHaveLength(2)
       forks()[0]?.emit('exit', 0)
@@ -439,12 +438,57 @@ describe('the verifier subsystem', () => {
       await settle()
       forks()[0]?.listens()
       for (let i = 0; i < 3; i++) {
-        forks()[0]?.emit('message', { type: 'status', status: { state: 'failed', reason: BOOTSTRAP_404, retryAt: Date.now() + 5000 } })
+        forks()[0]?.emit('message', { type: 'status', status: { state: 'failed', reason: BOOTSTRAP_404, retryAt: Date.now() + 5000, bootstrapMissing: true } })
         await settle()
       }
       expect(beacon.asked).toHaveLength(2)
       expect(forks()).toHaveLength(1)
       expect(verifierView().checkpoint).toMatch(/^No usable checkpoint: the beacon server would not start the light client from the newest checkpoint \(shipped with this release\)\. A fresh one could not be fetched from the beacon servers: a beacon server did not answer/)
+    })
+
+    it('does not restart the host on every .eth request when the servers only name roots already given up', async () => {
+      const { request } = await launch(SHIPPED_AT_MS + DAY_MS)
+      void request()
+      await settle()
+      forks()[0]?.listens()
+      serve(shippedCheckpoint.root, Date.now(), 600)
+      forks()[0]?.emit('message', { type: 'status', status: { state: 'failed', reason: BOOTSTRAP_404, retryAt: Date.now() + 5000, bootstrapMissing: true } })
+      await settle()
+      const asked = beacon.asked.length
+      expect(asked).toBeGreaterThan(0)
+      for (let i = 0; i < 4; i++) {
+        void request()
+        await settle()
+      }
+      expect(beacon.asked).toHaveLength(asked)
+      expect(forks()).toHaveLength(1)
+      expect(forks()[0]?.killed).toBe(false)
+    })
+
+    it('replaces a stored checkpoint that has no bootstrap, even by one that is not newer', async () => {
+      const stored = { root: `0x${'d'.repeat(64)}`, timestamp: Math.floor((SHIPPED_AT_MS + DAY_MS) / 1000) - 7200 }
+      mkdirSync(join(electron.userData, 'verifier'), { recursive: true })
+      writeFileSync(join(electron.userData, 'verifier', 'checkpoint.json'), JSON.stringify(stored))
+      const { request } = await launch(SHIPPED_AT_MS + DAY_MS)
+      void request()
+      await settle()
+      expect(starts(0)[0]?.config?.lightClient?.checkpoint).toBe(stored.root)
+      forks()[0]?.listens()
+      const failure = { type: 'status', status: { state: 'failed', reason: BOOTSTRAP_404, retryAt: Date.now() + 5000, bootstrapMissing: true } }
+      forks()[0]?.emit('message', failure)
+      await settle()
+      forks()[0]?.emit('exit', 0)
+      await settle()
+      expect(starts(1)[0]?.config?.lightClient?.checkpoint).toBe(shippedCheckpoint.root)
+      serve(ROOT, Date.now(), 7300)
+      forks()[1]?.listens()
+      forks()[1]?.emit('message', failure)
+      await settle()
+      forks()[1]?.emit('exit', 0)
+      await settle()
+      expect(starts(2)[0]?.config?.lightClient?.checkpoint).toBe(ROOT)
+      const kept = JSON.parse(readFileSync(join(electron.userData, 'verifier', 'checkpoint.json'), 'utf8')) as { root: string }
+      expect(kept.root).toBe(ROOT)
     })
 
     it('restarts from another usable checkpoint at hand, without asking the servers, when the one in use has no bootstrap', async () => {
@@ -453,7 +497,7 @@ describe('the verifier subsystem', () => {
       await settle()
       forks()[0]?.listens()
       forks()[0]?.emit('message', { type: 'checkpoint', root: ROOT, timestamp: Math.floor(Date.now() / 1000) - 3600 })
-      forks()[0]?.emit('message', { type: 'status', status: { state: 'failed', reason: BOOTSTRAP_404, retryAt: Date.now() + 5000 } })
+      forks()[0]?.emit('message', { type: 'status', status: { state: 'failed', reason: BOOTSTRAP_404, retryAt: Date.now() + 5000, bootstrapMissing: true } })
       await settle()
       forks()[0]?.emit('exit', 0)
       await settle()

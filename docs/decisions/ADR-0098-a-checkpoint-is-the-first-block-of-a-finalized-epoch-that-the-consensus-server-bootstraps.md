@@ -12,13 +12,16 @@ finalized epoch, and is accepted only when `ethereum-beacon-api.publicnode.com` 
 server the light client bootstraps from) answers its bootstrap with 200 and a header at that slot.** The two servers
 first agree on the finalized head as before. The candidate is the head's epoch start; when that slot holds no block, or
 the consensus server answers 404 to the bootstrap of its root, the search steps back one epoch at a time, at most eight
-epochs. The consensus server is asked for the root at the slot and then the bootstrap; every other server must name the
-same root at that slot, or the answer is refused as disagreement. A server that cannot be reached, or answers something
+epochs. The consensus server is asked for the root at the slot; then, together, for its bootstrap, while every other server
+is asked for the root at that slot and must name the same one, or the answer is refused as disagreement. A root already
+given up in the run is passed over the way a missing bootstrap is. The whole attempt has a deadline of 20 s. A server that cannot be reached, or answers something
 unreadable, fails the attempt instead of being stepped past. Only the consensus server is asked for a bootstrap.
 
 **When the light client fails with a 404 for the bootstrap of the checkpoint it started from, that root is not chosen
 again in this run and a fresh checkpoint is fetched at once**, within the existing wait after a failed attempt (5
-minutes, doubling to an hour). On success the host is put to sleep and started again with the new checkpoint, which is
+minutes, doubling to an hour). An attempt that leaves no usable checkpoint at hand counts as failed. The light client's
+failure is classified in the verifier host and sent to the main process as a typed field of its status, not read from its
+text there. On success the host is put to sleep and started again with the new checkpoint, which is
 stored and outranks the release's from then on.
 
 ## Context
@@ -56,9 +59,9 @@ block's root for an empty slot (Lodestar does) cannot pass a root of another slo
 the cases no check at build time can: a checkpoint that worked when shipped and was pruned since, and an old release
 already in the field.
 
-Cost: a renewal now makes up to three requests to the consensus server and one to each other, in sequence after the
-head, not one to each in parallel. At the worst a renewal takes a few of the 6 s request limits; the usual case is a
-second.
+Cost: a renewal now takes three rounds of requests after the head instead of none (the root at the slot, then the
+bootstrap with the other servers' roots), and one more round for each epoch stepped back. Requests wait for it, so the
+attempt as a whole is cut off at 20 s; the usual case takes about a second.
 
 ## Consequences
 

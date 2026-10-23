@@ -36,7 +36,8 @@ runs in another process, and only [`host-supervisor.ts`](host-supervisor.ts) tal
 **The checkpoint rule is written twice, on purpose.** [`checkpoint-fetch.ts`](checkpoint-fetch.ts) decides, from the
 servers' answers, whether a fresh checkpoint may be used (every server answers, all give the same finalized head, the
 checkpoint is the block at the first slot of the head's epoch, or of one of the seven before it, that the consensus
-server serves a bootstrap for with a header at that slot, every other server names the same root there, and the time
+server serves a bootstrap for with a header at that slot (the others are asked for the root meanwhile and must name the
+same one), the whole attempt takes at most 20 s, and the time
 is within the clock's tolerance and the age limit); `scripts/refresh-eth-checkpoint.mjs`
 applies the same rule when a release's checkpoint is chosen. A script cannot import the TypeScript, so
 `scripts/tests/refresh-eth-checkpoint.test.ts` feeds both the same answers and compares the verdicts and the server
@@ -46,9 +47,11 @@ lists. A change to either rule is a change to both. The renewal starts as the ho
 
 **A checkpoint the beacon server answers 404 to is given up at once, not when it ages out.** The light client fails with
 "could not fetch bootstrap ... status: 404" when the consensus server serves no bootstrap for the root it was given, and
-retries the same root for ever. `status-view.ts`'s `bootstrapNotFound` recognises that failure; `CheckpointRenewal`'s
-`recoverUnserved` then holds the root it started with as not to be chosen again in this run, renews with the rule above
-(within the wait after a failed attempt, that failure stands) and the host is put to sleep and started again, so its
+retries the same root for ever. The host classifies that failure where it happens (`helios-errors.ts`'s
+`bootstrapMissing`) and sends it as the `bootstrapMissing` field of its failed status; `CheckpointRenewal`'s
+`recoverUnserved` then holds the root `chooseForStart` recorded as not to be chosen again in this run, renews with the rule
+above (within the wait after a failed attempt, that failure stands; an attempt that leaves no usable checkpoint is a failed
+one) and, if the host is running and was started with another root, puts it to sleep and starts it again, so its
 configuration is built with the new checkpoint. The stored checkpoint outranks the release's from then on, so the next
 run starts from it.
 

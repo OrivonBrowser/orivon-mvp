@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bootstrapNotFound, ipfsNodeView, lightClientLog, lightClientView } from '../status-view.js'
+import { ipfsNodeView, lightClientLog, lightClientView } from '../status-view.js'
 import type { VerifierFacts } from '../status-view.js'
 
 const NOW = 1_790_000_000_000
@@ -109,8 +109,14 @@ describe('lightClientView', () => {
     const view = lightClientView(facts({ checkpoint: { ok: false, problem: 'not-served', source: 'release', ageSeconds: 86_400 }, checkpointFetchProblem: 'unreachable' }), NOW)
     expect(view.state).toBe('failed')
     expect(view.checkpoint).toBe('No usable checkpoint: the beacon server would not start the light client from the newest checkpoint (shipped with this release). A fresh one could not be fetched from the beacon servers: a beacon server did not answer. Installing a newer release brings one too.')
-    expect(view.summary).toBe('Not started: it needs a recent checkpoint to start from. A fresh one could not be fetched: a beacon server did not answer.')
+    expect(view.summary).toBe('Not running: the beacon server would not start it from the checkpoint it was given, and no other is at hand. A fresh one could not be fetched: a beacon server did not answer.')
     expect(lightClientView(facts({ checkpoint: { ok: false, problem: 'not-served', source: 'release', ageSeconds: 86_400 } }), NOW).checkpoint).toMatch(/\(shipped with this release\)\. Opening a \.eth name asks two beacon servers for a fresh one\./)
+  })
+
+  it('does not call a checkpoint the newest when a newer one was left out for having no bootstrap', () => {
+    const view = lightClientView(facts({ checkpoint: { ok: false, problem: 'too-old', source: 'this-install', ageSeconds: 20 * 86_400, skippedUnserved: true } }), NOW)
+    expect(view.checkpoint).toMatch(/^No usable checkpoint: a newer checkpoint has no bootstrap on the beacon server, and the newest one it would start from \(last verified on this computer\) is 20 days old, past the 14 days a checkpoint may be\./)
+    expect(view.summary).toMatch(/^Not running: the beacon server would not start it/)
   })
 
   it('leaves the clock case alone: a fetch cannot fix a clock behind the checkpoint', () => {
@@ -190,23 +196,6 @@ describe('ipfsNodeView', () => {
     const none = 'IPFS pages do not load meanwhile, unless you press "Load through public gateways" on a page\'s error or choose gateways under "Load IPFS sites from"'
     expect(ipfsNodeView({ state: 'off', reason: 'a proxy is configured' }, true).summary).toBe(`Not in use: a proxy is configured. ${none}.`)
     expect(ipfsNodeView({ state: 'failed', reason: 'it trapped' }, true).summary).toBe(`Not running: it trapped. ${none}. The node tries again shortly.`)
-  })
-})
-
-describe('bootstrapNotFound', () => {
-  it('knows the light client failing on a 404 of the beacon server\'s bootstrap, in either of its spellings', () => {
-    expect(bootstrapNotFound('could not fetch bootstrap: rpc error on method: bootstrap, message: status: 404, message: NOT_FOUND: Sync committee branch for block root 0xab not found')).toBe(true)
-    expect(bootstrapNotFound('could not fetch bootstrap: rpc error on method: bootstrap, message: status: 404, message: not found')).toBe(true)
-  })
-
-  it.each([
-    ['a network failure', 'could not fetch bootstrap: rpc error on method: bootstrap, message: error sending request'],
-    ['a server error', 'could not fetch bootstrap: rpc error on method: bootstrap, message: status: 503, message: unavailable'],
-    ['another 404', 'could not fetch finality update: rpc error on method: finality_update, message: status: 404, message: not found'],
-    ['the clock', 'invalid timestamp'],
-    ['nothing', '']
-  ])('does not take %s for it', (_name, reason) => {
-    expect(bootstrapNotFound(reason)).toBe(false)
   })
 })
 

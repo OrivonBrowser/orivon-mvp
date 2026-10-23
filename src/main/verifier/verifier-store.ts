@@ -100,15 +100,19 @@ export class VerifierStore {
     this.write(checkpoint, undefined, nowSeconds)
   }
 
-  /** The same, for a checkpoint fetched at run time: kept with the servers that agreed on it, until the light client stores a newer one of its own. */
-  saveFetchedCheckpoint (checkpoint: Checkpoint, servers: readonly string[], nowSeconds: number): void {
-    this.write(checkpoint, servers, nowSeconds)
+  /**
+   * The same, for a checkpoint fetched at run time: kept with the servers that agreed on it, until the light client stores a
+   * newer one of its own. A stored checkpoint whose root is in `unserved` (the beacon server has no bootstrap for it) is
+   * replaced even by one that is not newer, since it can start nothing.
+   */
+  saveFetchedCheckpoint (checkpoint: Checkpoint, servers: readonly string[], nowSeconds: number, unserved: ReadonlySet<string> = new Set()): void {
+    this.write(checkpoint, servers, nowSeconds, unserved)
   }
 
-  private write (checkpoint: Checkpoint, fetchedFrom: readonly string[] | undefined, nowSeconds: number): void {
+  private write (checkpoint: Checkpoint, fetchedFrom: readonly string[] | undefined, nowSeconds: number, unserved: ReadonlySet<string> = new Set()): void {
     if (parseCheckpoint(checkpoint) === undefined || checkpoint.timestamp > nowSeconds + FUTURE_TOLERANCE_SECONDS) return
     const current = this.checkpoint()
-    if (current !== undefined && current.timestamp >= checkpoint.timestamp) return
+    if (current !== undefined && current.timestamp >= checkpoint.timestamp && !unserved.has(current.root)) return
     mkdirSync(this.dir, { recursive: true })
     writeFileAtomic(this.checkpointPath, JSON.stringify(fetchedFrom === undefined ? { root: checkpoint.root, timestamp: checkpoint.timestamp } : { root: checkpoint.root, timestamp: checkpoint.timestamp, fetchedFrom }))
   }

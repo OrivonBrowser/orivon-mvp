@@ -116,6 +116,7 @@ export function checkpointProblem (choice: Extract<CheckpointChoice, { ok: false
     ? 'Opening a .eth name asks two beacon servers for a fresh one'
     : `A fresh one could not be fetched from the beacon servers: ${fetchFailure(fetchProblem)}`
   if (choice.problem === 'not-served') return `the beacon server would not start the light client from the newest checkpoint (${SOURCE_WORDS[choice.source]}). ${tried}. Installing a newer release brings one too`
+  if (choice.skippedUnserved === true) return `a newer checkpoint has no bootstrap on the beacon server, and the newest one it would start from (${SOURCE_WORDS[choice.source]}) is ${age(choice.ageSeconds)} old, past the ${age(MAX_CHECKPOINT_AGE_SECONDS)} a checkpoint may be. ${tried}. Installing a newer release brings one too`
   return `the newest checkpoint (${SOURCE_WORDS[choice.source]}) is ${age(choice.ageSeconds)} old, past the ${age(MAX_CHECKPOINT_AGE_SECONDS)} a checkpoint may be. ${tried}. Installing a newer release brings one too; if this computer's clock is wrong, setting it right may be enough`
 }
 
@@ -134,7 +135,8 @@ function summaryOf (facts: VerifierFacts, now: number): { state: LightClientView
   if (facts.switchedOff) return { state: 'off', summary: 'Switched off. No .eth name can be verified, so none loads.' }
   if (facts.checkpoint !== undefined && !facts.checkpoint.ok) {
     const note = facts.checkpoint.problem !== 'clock-behind' && facts.checkpointFetchProblem !== undefined ? ` A fresh one could not be fetched: ${fetchFailure(facts.checkpointFetchProblem)}.` : ''
-    return { state: 'failed', summary: `Not started: it needs a recent checkpoint to start from.${note}` }
+    const refused = facts.checkpoint.problem === 'not-served' || (facts.checkpoint.problem === 'too-old' && facts.checkpoint.skippedUnserved === true)
+    return { state: 'failed', summary: refused ? `Not running: the beacon server would not start it from the checkpoint it was given, and no other is at hand.${note}` : `Not started: it needs a recent checkpoint to start from.${note}` }
   }
   if (facts.hostAsleep) return { state: 'waiting', summary: 'On, and waiting. It starts when a .eth address is opened, and stops again after ten minutes without one.' }
   const s = facts.lightClient
@@ -230,11 +232,6 @@ export function ipfsNodeView (node: IpfsNodeState, lookupService: boolean): Ipfs
 export interface LightClientLogLine {
   readonly level: 'log' | 'error'
   readonly text: string
-}
-
-/** Whether the light client failed because the beacon server answered 404 to its bootstrap request: the checkpoint it was given is not one that server starts a light client from. */
-export function bootstrapNotFound (reason: string): boolean {
-  return /could not fetch bootstrap:.*status: 404/s.test(reason)
 }
 
 /**

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { FUTURE_TOLERANCE_SECONDS, MAX_CHECKPOINT_AGE_SECONDS, slotTimestamp } from '../checkpoint.js'
 import { CheckpointFetcher, FIRST_BACKOFF_MS, MAX_BACKOFF_MS, MAX_EPOCHS_BACK, MalformedAnswer, NotFoundAnswer, SLOTS_PER_EPOCH, fetchAgreedCheckpoint, readFinalizedHeader } from '../checkpoint-fetch.js'
 import type { FetchOutcome } from '../checkpoint-fetch.js'
@@ -165,16 +165,17 @@ describe('fetchAgreedCheckpoint', () => {
   it('asks every server for its finalized header at once', async () => {
     const started: string[] = []
     const releases: Array<() => void> = []
+    const answer = servers({ [A]: header(), [B]: header() })
     const get = async (url: string): Promise<unknown> => {
       started.push(url)
-      if (started.length <= 2) await new Promise<void>((resolve) => releases.push(resolve))
-      return header()
+      if (url.endsWith('/headers/finalized')) await new Promise<void>((resolve) => releases.push(resolve))
+      return await answer(url)
     }
     const pending = fetchAgreedCheckpoint(get, [A, B], A, NOW)
     await Promise.resolve()
     expect(started).toEqual([`${A}/eth/v1/beacon/headers/finalized`, `${B}/eth/v1/beacon/headers/finalized`])
     releases.forEach((release) => { release() })
-    await pending.catch(() => {})
+    expect(await pending).toMatchObject({ ok: true })
   })
 })
 
@@ -270,6 +271,65 @@ describe('fetchAgreedCheckpoint chooses a block the light client can bootstrap f
     const clock = slotTimestamp(SLOT - EPOCH) + MAX_CHECKPOINT_AGE_SECONDS + 1
     const world = { roots: rootsAt({ [SLOT - EPOCH]: ROOT_BEFORE }), bootstraps: served({ [ROOT_BEFORE]: SLOT - EPOCH }) }
     expect(await fetchAgreedCheckpoint(servers(both(SLOT), world), [A, B], A, clock)).toEqual({ ok: false, problem: 'too-old' })
+  })
+
+  it('passes over a root it was told the consensus server has no bootstrap for, to the epoch before', async () => {
+    const seen: string[] = []
+    const world = { seen, roots: rootsAt({ [SLOT]: ROOT, [SLOT - EPOCH]: ROOT_BEFORE }), bootstraps: served({ [ROOT]: SLOT, [ROOT_BEFORE]: SLOT - EPOCH }) }
+    const result = await fetchAgreedCheckpoint(servers(both(SLOT), world), [A, B], A, NOW, { unserved: new Set([ROOT]) })
+    expect(result).toMatchObject({ ok: true, checkpoint: { root: ROOT_BEFORE, slot: SLOT - EPOCH } })
+    expect(seen.some((url) => url.includes(`/bootstrap/${ROOT}`))).toBe(false)
+  })
+
+  it('finds nothing when every root it walks to is one it was told to pass over', async () => {
+    const result = await fetchAgreedCheckpoint(servers(both(SLOT)), [A, B], A, NOW, { unserved: new Set([ROOT]) })
+    expect(result).toEqual({ ok: false, problem: 'no-bootstrap' })
+  })
+
+  it('asks the other servers for the root at the slot while the bootstrap is still being fetched', async () => {
+    const started: string[] = []
+    let release: () => void = () => {}
+    const answer = servers(both(SLOT))
+    const get = async (url: string): Promise<unknown> => {
+      started.push(url)
+      if (url.includes('/bootstrap/')) await new Promise<void>((resolve) => { release = resolve })
+      return await answer(url)
+    }
+    const pending = fetchAgreedCheckpoint(get, [A, B], A, NOW)
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+    expect(started).toContain(`${A}/eth/v1/beacon/light_client/bootstrap/${ROOT}`)
+    expect(started).toContain(`${B}/eth/v1/beacon/blocks/${String(SLOT)}/root`)
+    release()
+    expect(await pending).toMatchObject({ ok: true })
+  })
+
+  it('refuses a block root flagged optimistic as not finalized, the way the head is', async () => {
+    const optimistic = (server: string, slot: number): unknown => server === B ? { execution_optimistic: true, data: { root: ROOT } } : SERVED.roots(server, slot)
+    const get = servers(both(SLOT))
+    const wrap = async (url: string): Promise<unknown> => url.startsWith(B) && url.endsWith('/root') ? optimistic(B, SLOT) : await get(url)
+    expect(await fetchAgreedCheckpoint(wrap, [A, B], A, NOW)).toEqual({ ok: false, problem: 'not-finalized' })
+  })
+
+  it('gives up when the whole attempt outlasts its deadline, and asks no further once it has', async () => {
+    vi.useFakeTimers()
+    try {
+      const started: string[] = []
+      const answer = servers(both(SLOT), { roots: () => 'none', bootstraps: () => 'missing' })
+      const get = async (url: string): Promise<unknown> => {
+        started.push(url)
+        if (url.includes('/blocks/')) await new Promise<void>((resolve) => setTimeout(resolve, 6_000))
+        return await answer(url)
+      }
+      const pending = fetchAgreedCheckpoint(get, [A, B], A, NOW, { deadlineMs: 20_000 })
+      await vi.advanceTimersByTimeAsync(20_000)
+      expect(await pending).toEqual({ ok: false, problem: 'unreachable' })
+      const askedAtDeadline = started.length
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(started).toHaveLength(askedAtDeadline)
+      expect(started.filter((url) => url.includes('/blocks/'))).toHaveLength(4)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

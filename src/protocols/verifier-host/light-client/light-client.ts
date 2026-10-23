@@ -8,7 +8,7 @@ import { ResolutionError } from '../../resolution/records.js'
 import { withTimeout } from '../../resolution/timing.js'
 import type { WebFetch } from '../egress.js'
 import { clockJump, heliosClockLead, installHeliosClock, measureClockLead, setHeliosClockLead } from './clock.js'
-import { CLOCK_BEHIND_REASON, clockBehind, heliosError } from './helios-errors.js'
+import { CLOCK_BEHIND_REASON, bootstrapMissing, clockBehind, heliosError } from './helios-errors.js'
 import { failoverRpc } from './rpc-failover.js'
 import { BLOCK_ROOT_PATTERN } from '../protocol.js'
 import type { FromHost, LightClientConfig, LightClientState, TunnelRoute } from '../protocol.js'
@@ -283,7 +283,7 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
       }
       const delay = Math.min(FIRST_RETRY_MS * 2 ** attempt, MAX_RETRY_MS)
       synced = new Promise<void>((resolve) => { markSynced = resolve })
-      setState({ state: 'failed', reason: behind && measured === undefined ? CLOCK_BEHIND_REASON : message(error), retryAt: Date.now() + delay })
+      setState({ state: 'failed', reason: behind && measured === undefined ? CLOCK_BEHIND_REASON : message(error), retryAt: Date.now() + delay, ...(bootstrapMissing(error) && { bootstrapMissing: true as const }) })
       setTimeout(() => { void run(attempt + 1) }, delay).unref()
     }
   }

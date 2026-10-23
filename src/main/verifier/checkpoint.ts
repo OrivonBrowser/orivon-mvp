@@ -33,7 +33,8 @@ export type CheckpointChoice =
   | { readonly ok: true, readonly checkpoint: Checkpoint, readonly source: CheckpointSource, readonly ageSeconds: number, readonly fetchedFrom?: readonly string[] }
   /** Every checkpoint is dated after this computer's clock. */
   | { readonly ok: false, readonly problem: 'clock-behind' }
-  | { readonly ok: false, readonly problem: 'too-old', readonly source: CheckpointSource, readonly ageSeconds: number, readonly fetchedFrom?: readonly string[] }
+  /** `skippedUnserved`: a newer checkpoint was left out because the beacon server has no bootstrap for it, so this is the newest one the server would start from. */
+  | { readonly ok: false, readonly problem: 'too-old', readonly source: CheckpointSource, readonly ageSeconds: number, readonly fetchedFrom?: readonly string[], readonly skippedUnserved?: true }
   /** Every checkpoint at hand is one the beacon server would not start the light client from. */
   | { readonly ok: false, readonly problem: 'not-served', readonly source: CheckpointSource, readonly ageSeconds: number, readonly fetchedFrom?: readonly string[] }
 
@@ -79,6 +80,6 @@ export function chooseCheckpoint (shipped: Checkpoint, stored: StoredCheckpoint 
   const newest = usable.reduce((a, b) => b.checkpoint.timestamp > a.checkpoint.timestamp ? b : a)
   const ageSeconds = Math.max(0, nowSeconds - newest.checkpoint.timestamp)
   const fetchedFrom = newest.fetchedFrom === undefined ? {} : { fetchedFrom: newest.fetchedFrom }
-  if (ageSeconds > maxAgeSeconds) return { ok: false, problem: 'too-old', source: newest.source, ageSeconds, ...fetchedFrom }
+  if (ageSeconds > maxAgeSeconds) return { ok: false, problem: 'too-old', source: newest.source, ageSeconds, ...fetchedFrom, ...(candidates.length < all.length && { skippedUnserved: true as const }) }
   return { ok: true, checkpoint: newest.checkpoint, source: newest.source, ageSeconds, ...fetchedFrom }
 }

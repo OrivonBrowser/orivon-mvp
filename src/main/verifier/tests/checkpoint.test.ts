@@ -78,6 +78,11 @@ describe('chooseCheckpoint with roots the beacon server has no bootstrap for', (
     expect(chooseCheckpoint(checkpoint(1, 'a'), undefined, NOW, MAX, new Set([root('a')]))).toEqual({ ok: false, problem: 'not-served', source: 'release', ageSeconds: DAY })
   })
 
+  it('says so when the newest left standing is too old and a newer one was left out', () => {
+    expect(chooseCheckpoint(checkpoint(1, 'a'), checkpoint(20, 'b'), NOW, MAX, new Set([root('a')]))).toEqual({ ok: false, problem: 'too-old', source: 'this-install', ageSeconds: 20 * DAY, skippedUnserved: true })
+    expect(chooseCheckpoint(checkpoint(30, 'a'), checkpoint(20, 'b'), NOW, MAX, new Set([root('z')]))).toEqual({ ok: false, problem: 'too-old', source: 'this-install', ageSeconds: 20 * DAY })
+  })
+
   it('chooses as before when the set holds only other roots', () => {
     expect(chooseCheckpoint(checkpoint(1, 'a'), undefined, NOW, MAX, new Set([root('z')]))).toMatchObject({ ok: true, source: 'release' })
   })

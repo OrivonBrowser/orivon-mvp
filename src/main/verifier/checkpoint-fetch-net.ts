@@ -5,7 +5,7 @@
 import { ownFetch } from '../route/own-requests.js'
 import { BOOTSTRAP_SEGMENT, MalformedAnswer, NotFoundAnswer } from './checkpoint-fetch.js'
 
-/** One request's whole time to answer; the servers are asked together for the finalized head, then one request at a time, so a renewal that meets a slow server takes a few of these. */
+/** One request's whole time to answer; a whole attempt is cut off at `ATTEMPT_DEADLINE_MS` however many requests it makes. */
 export const BEACON_TIMEOUT_MS = 6_000
 /** A finalized header is about a kilobyte: anything far beyond that is not one. */
 export const MAX_ANSWER_BYTES = 64 * 1024
