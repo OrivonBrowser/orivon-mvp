@@ -29,7 +29,14 @@ function renderChoice (control: Extract<Control, { type: 'choice' }>, state: Set
   select.addEventListener('change', () => {
     // A choice can change what the page shows (another row, this row's help): it is finished once chosen, though it keeps focus.
     select.dataset['settled'] = 'true'
-    void state.set(control.key, select.value)
+    if (control.intercept === undefined) {
+      void state.set(control.key, select.value)
+      return
+    }
+    void control.intercept(select.value, state).then((handled) => {
+      if (handled) select.value = String(state.value(control.key))
+      else void state.set(control.key, select.value)
+    })
   })
   return select
 }
