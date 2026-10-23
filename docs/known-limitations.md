@@ -48,7 +48,7 @@ servers for data. None of them is trusted to be right; each of them sees what it
   once, two minutes after launch, when its newest checkpoint is more than seven days old. It
   follows the chain through `ethereum-beacon-api.publicnode.com` and one of three RPCs
   (`eth.drpc.org`, `rpc.mevblocker.io`, `ethereum-rpc.publicnode.com`). When the checkpoint it came with and the
-  one it stored are both over 14 days old, it first asks `ethereum-beacon-api.publicnode.com` and
+  one it stored are both over 14 days old (or the beacon server answers 404 to the bootstrap of the one in use), it first asks `ethereum-beacon-api.publicnode.com` and
   `lodestar-mainnet.chainsafe.io` for a fresh one and uses it only if both give the same answer; if they do not,
   or one cannot be reached, no `.eth` name loads until a newer release is installed or they agree.
 - **Opening a name tells those RPCs the name.** The IPFS gateways (`ipfs.orbitor.dev`,

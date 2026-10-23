@@ -1,6 +1,6 @@
 # ADR-0092: When no checkpoint is recent enough, two beacon servers that agree supply one
 
-- **Status:** accepted, provisional on the choice of the two servers (see Reversibility)
+- **Status:** accepted, provisional on the choice of the two servers (see Reversibility); [`ADR-0098`](ADR-0098-a-checkpoint-is-the-first-block-of-a-finalized-epoch-that-the-consensus-server-bootstraps.md) amends which block is the checkpoint and adds renewal when the beacon server has no bootstrap for the one in use
 - **Date:** 2026-10-20
 - **Type:** security
 - **Decided by:** owner for the feature; AI recommendation accepted by default for the rule's details (every server must agree, the wait after a failure, the choice of servers)

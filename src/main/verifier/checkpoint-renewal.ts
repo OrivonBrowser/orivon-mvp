@@ -1,12 +1,12 @@
 // Which checkpoint the light client starts from, and renewing it at run time when the release's and the stored one have
-// both aged out (ADR-0092). The choice is the pure rule in checkpoint.ts; the fetch is checkpoint-fetch.ts, one attempt
+// both aged out (ADR-0092) or the beacon server has no bootstrap for the one in use (ADR-0098). The choice is the pure rule in checkpoint.ts; the fetch is checkpoint-fetch.ts, one attempt
 // at a time with a wait after a failure. No `electron` import: the store, the switch and the notice come in.
 
 import shippedCheckpoint from './mainnet-checkpoint.json'
 import { chooseCheckpoint, MAX_CHECKPOINT_AGE_SECONDS, slotTimestamp } from './checkpoint.js'
 import type { Checkpoint, CheckpointChoice } from './checkpoint.js'
 import { CheckpointFetcher, fetchAgreedCheckpoint } from './checkpoint-fetch.js'
-import type { FetchProblem } from './checkpoint-fetch.js'
+import type { FetchOutcome, FetchProblem } from './checkpoint-fetch.js'
 import { beaconJson } from './checkpoint-fetch-net.js'
 import { DEFAULT_ENDPOINTS } from './endpoints.js'
 import { shippedCheckpointAgeDays, testBeaconApis } from './test-seam.js'
@@ -20,22 +20,37 @@ export interface RenewalDeps {
   readonly switchedOff: () => boolean
   /** What the view says may have changed. */
   readonly changed: () => void
+  /** Whether the host process is running now, as opposed to asleep: only a running host has a configuration to replace. */
+  readonly hostRunning: () => boolean
+  /** Puts the host to sleep and starts it again, so that its configuration is built with the checkpoint now chosen. */
+  readonly restartHost: () => void
 }
 
 export class CheckpointRenewal {
   private readonly fetcher = new CheckpointFetcher({
-    run: async () => await fetchAgreedCheckpoint(beaconJson, this.servers(), Math.floor(Date.now() / 1000)),
+    run: async () => await this.attempt(),
     now: () => Date.now()
   })
 
   /** The last choice made, which a gateway address asks about on every navigation without reading the stored file again. */
   chosen: CheckpointChoice | undefined
 
+  /** The root the running host was given, so that a bootstrap failure is held against the checkpoint that caused it. */
+  private startedWith: string | undefined
+
+  /** Roots the beacon server has no bootstrap for: none is chosen again in this run. */
+  private readonly unserved = new Set<string>()
+
   constructor (private readonly deps: RenewalDeps) {}
 
   /** The servers asked; a test build may name its own. */
   servers (): readonly string[] {
     return testBeaconApis() ?? DEFAULT_ENDPOINTS.checkpointBeaconApis
+  }
+
+  /** The server the light client bootstraps from, and the one whose bootstrap a renewed checkpoint must have; a test build's first server stands in for it. */
+  consensusRpc (): string {
+    return testBeaconApis()?.[0] ?? DEFAULT_ENDPOINTS.consensusRpc
   }
 
   /** The release's own checkpoint; a test build may take it to be older than it is. */
@@ -46,8 +61,15 @@ export class CheckpointRenewal {
 
   /** Chooses afresh from the release's and the stored checkpoint. */
   choose (): CheckpointChoice {
-    this.chosen = chooseCheckpoint(this.shipped(), this.deps.store().checkpoint(), Math.floor(Date.now() / 1000))
+    this.chosen = chooseCheckpoint(this.shipped(), this.deps.store().checkpoint(), Math.floor(Date.now() / 1000), MAX_CHECKPOINT_AGE_SECONDS, this.unserved)
     return this.chosen
+  }
+
+  /** Chooses the checkpoint the host is started with, and remembers its root. */
+  chooseForStart (): CheckpointChoice {
+    const choice = this.choose()
+    this.startedWith = choice.ok ? choice.checkpoint.root : undefined
+    return choice
   }
 
   /** The age of the newest checkpoint the light client could start from; undefined while it is off or none can start it. */
@@ -70,10 +92,11 @@ export class CheckpointRenewal {
     return this.fetcher.lastProblem()
   }
 
+  /** Whether every checkpoint at hand has aged out or is one the beacon server has no bootstrap for: a fresh one is wanted. */
   private aged (): boolean {
     if (this.deps.switchedOff()) return false
     const choice = this.choose()
-    return !choice.ok && choice.problem === 'too-old'
+    return !choice.ok && choice.problem !== 'clock-behind'
   }
 
   /** Whether a start of the host would renew the checkpoint now: it has aged out, and the servers are not within the wait after a failure. */
@@ -87,22 +110,48 @@ export class CheckpointRenewal {
   }
 
   /**
-   * Starts renewing when the release's and the stored checkpoint have both aged past the limit, and returns the attempt;
-   * undefined when there is nothing to renew. What is fetched is stored as this install's own, with the servers that agreed
-   * on it, so that Settings can say where it came from. Never rejects.
+   * One attempt to fetch a checkpoint, stored as this install's own with the servers that agreed on it, so that Settings can
+   * say where it came from. It counts as a success only if a checkpoint the light client can start from is then at hand: a
+   * server that hands back a root already given up (a backend that disagrees with the one that answered before) is a failed
+   * attempt, and waits as one.
+   */
+  private async attempt (): Promise<FetchOutcome> {
+    const outcome = await fetchAgreedCheckpoint(beaconJson, this.servers(), this.consensusRpc(), Math.floor(Date.now() / 1000), { unserved: this.unserved })
+    if (!outcome.ok) return outcome
+    try {
+      const { root, timestamp, servers } = outcome.checkpoint
+      this.deps.store().saveFetchedCheckpoint({ root, timestamp }, servers, Math.floor(Date.now() / 1000), this.unserved)
+    } catch (error) {
+      console.error('[verifier] could not keep the fetched checkpoint:', error)
+    }
+    return this.choose().ok ? outcome : { ok: false, problem: 'no-bootstrap' }
+  }
+
+  /**
+   * The light client reported that the beacon server has no bootstrap for the checkpoint it started from: that root is not
+   * chosen again and a fresh checkpoint is fetched at once (within the wait after a failed attempt, that failure stands).
+   * The host restarts with the checkpoint now chosen if it is running and was started with another root. Nothing happens
+   * when that root was already given up or nothing was started with one. Never rejects.
+   */
+  recoverUnserved (): void {
+    const root = this.startedWith
+    if (root === undefined || this.unserved.has(root)) return
+    this.unserved.add(root)
+    void (this.start() ?? Promise.resolve())
+      .then(() => {
+        if (this.deps.switchedOff() || !this.deps.hostRunning()) return
+        const choice = this.choose()
+        if (choice.ok && choice.checkpoint.root !== this.startedWith) this.deps.restartHost()
+      })
+      .catch((error: unknown) => { console.error('[verifier] could not recover from a checkpoint the beacon server will not bootstrap:', error) })
+  }
+
+  /**
+   * Starts renewing when every checkpoint at hand has aged out or is one the beacon server will not bootstrap, and returns
+   * the attempt; undefined when there is nothing to renew. Never rejects.
    */
   start (): Promise<void> | undefined {
     if (!this.aged()) return undefined
-    return this.fetcher.renew().then((outcome) => {
-      if (outcome.ok) {
-        try {
-          const { root, timestamp, servers } = outcome.checkpoint
-          this.deps.store().saveFetchedCheckpoint({ root, timestamp }, servers, Math.floor(Date.now() / 1000))
-        } catch (error) {
-          console.error('[verifier] could not keep the fetched checkpoint:', error)
-        }
-      }
-      this.deps.changed()
-    })
+    return this.fetcher.renew().then(() => { this.deps.changed() })
   }
 }
