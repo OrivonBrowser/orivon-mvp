@@ -16,6 +16,7 @@ Each section below lists what that release carried; `[Unreleased]` is what has l
 
 ### Added
 
+- **Node shim: `/` and `/orivon` exist as directories**: a program that makes a folder by walking from `/` (`stat` each ancestor, `mkdir` the missing ones) now reaches the app's files. They list one entry, the next segment toward the files, and every write, removal, rename and open on them, and any path beside the files, still fails `EACCES`.
 - **Node shim: `crypto.randomInt`, `fs.mkdtemp`, `fs.cp` and `fs.copyFile`**: `randomInt` draws by rejection sampling over the platform's random values, in both forms; `copyFile`, `cp` (with `recursive`, `force`, `errorOnExist` and `filter`) and `mkdtemp` work on the app's own files and on a folder the person picked, in the callback and promise forms, with Node's errors.
 
 ### Changed for apps
@@ -25,6 +26,7 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+- **`node-fs-ancestors-of-the-files-root-exist`**: new row. `fs.stat`, `existsSync` and `mkdir` on `/` and `/orivon` now answer as for directories that exist, and `readdir` lists the one entry toward the app's files; they failed `EACCES` before. Writes on them and any path beside the files still fail `EACCES`. Recheck: any port that walks a folder's ancestors.
 - **`file-handle-streams`**: new row. A page's `FileHandle`, from `orivon.fs.open`, a pick or a folder, now has the `readable()` and `writable()` its contract names; they were missing, so calling one threw. Each chunk is an ordinary positional `read` or `write`, counted and refused as one. Recheck: TorSocks.
 - **`node-random-int-in-range`** and **`node-fs-copies-files-and-trees-and-makes-temp-folders`**: new rows. `crypto.randomInt`, `fs.copyFile`, `fs.cp` and `fs.mkdtemp` now work (they threw "not implemented"); `cp` does not set file times or follow links, and a copy reads the whole file. Recheck: any port that caught the refusal.
 - **`electron-dialog-paths-read-and-write-the-pick`**: also covers `copyFile`, `cp` and `mkdtemp` on a picked folder and between it and the app's files. Nothing for apps to change.

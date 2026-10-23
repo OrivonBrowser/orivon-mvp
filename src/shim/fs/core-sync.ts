@@ -16,7 +16,8 @@ import { NodeDirent, toNodeStats, type NodeStats } from './stats.js'
 import {
   assertRootMkdirAllowed, isRootPath, rootIsDirectoryError, rootNotRemovableError, rootReaddirError, rootStat
 } from './root.js'
-import { confineSync, fsError, type PathLike } from './paths.js'
+import { confineSync, fsError, pathText, type PathLike } from './paths.js'
+import { ancestorOf, ancestorStat, assertAncestorMkdirAllowed } from './ancestors.js'
 import { pickedExistsSync } from './picked.js'
 import { openHandleSync } from './handle.js'
 import { announce, announceWrite, watchersExist } from './notices.js'
@@ -29,6 +30,8 @@ import { Buffer } from 'buffer'
 import { join } from 'path/posix'
 
 export function doStatSync (path: PathLike): NodeStats {
+  const ancestor = ancestorOf(pathText(path))
+  if (ancestor !== undefined) return toNodeStats(ancestorStat(), ancestor.path)
   const confined = confineSync(path, 'stat', 'fs.statSync')
   if (isRootPath(confined)) return toNodeStats(rootStat(), confined)
   return toNodeStats(guardedSync(() => syncFs('fs.statSync').stat(confined)), confined)
@@ -36,6 +39,8 @@ export function doStatSync (path: PathLike): NodeStats {
 
 /** `lstat` and `stat` never differ here: orivon.fs resolves a symlink that stays inside the confined root transparently and denies one that would not (README.md's own "never reports a symlink as its own kind"), so there is no separate primitive for this to call. */
 export function doLstatSync (path: PathLike): NodeStats {
+  const ancestor = ancestorOf(pathText(path))
+  if (ancestor !== undefined) return toNodeStats(ancestorStat(), ancestor.path)
   const confined = confineSync(path, 'lstat', 'fs.lstatSync')
   if (isRootPath(confined)) return toNodeStats(rootStat(), confined)
   return toNodeStats(guardedSync(() => syncFs('fs.lstatSync').stat(confined)), confined)
@@ -70,6 +75,8 @@ function writeThroughHandleSync (path: PathLike, bytes: Uint8Array, flags: strin
 }
 
 export function doMkdirSync (path: PathLike, opts: MkdirOptions | undefined): void {
+  const ancestor = ancestorOf(pathText(path))
+  if (ancestor !== undefined) { assertAncestorMkdirAllowed(ancestor, opts); return }
   const confined = confineSync(path, 'mkdir', 'fs.mkdirSync')
   if (isRootPath(confined)) { assertRootMkdirAllowed(opts); return }
   const existed = opts?.recursive === true && watchersExist() && tryStatSync(confined) === true
@@ -78,6 +85,14 @@ export function doMkdirSync (path: PathLike, opts: MkdirOptions | undefined): vo
 }
 
 export function doReaddirSync (path: PathLike, options: ReaddirOptions | string | null | undefined): ReadonlyArray<string | Uint8Array | NodeDirent> {
+  const ancestor = ancestorOf(pathText(path))
+  if (ancestor !== undefined) {
+    const entry = ancestor.child
+    if (typeof options === 'object' && options?.withFileTypes === true) {
+      return [new NodeDirent(entry, typeof path === 'string' ? path : ancestor.path, ancestorStat())]
+    }
+    return encodingOf(options) === 'buffer' ? [Buffer.from(entry)] : [entry]
+  }
   const confined = confineSync(path, 'scandir', 'fs.readdirSync')
   if (isRootPath(confined)) rootReaddirError()
   const fs = syncFs('fs.readdirSync')
@@ -136,6 +151,8 @@ export function doRmdirSync (path: PathLike, opts: RmdirOptions | undefined): vo
 
 /** doRealpath's synchronous twin (core.ts's own doc comment has the detail): confirms the confined path exists (over the twin's `stat`), then returns its normalised absolute path under the virtual root -- no other broker call, since orivon.fs never reports a symlink as its own kind. */
 export function doRealpathSync (path: PathLike): string {
+  const ancestor = ancestorOf(pathText(path))
+  if (ancestor !== undefined) return ancestor.path
   const confined = confineSync(path, 'lstat', 'fs.realpathSync')
   if (!isRootPath(confined)) guardedSync(() => { syncFs('fs.realpathSync').stat(confined) })
   return isRootPath(confined) ? VIRTUAL_ROOT : join(VIRTUAL_ROOT, confined)
@@ -158,6 +175,7 @@ export function doUnlinkSync (path: PathLike): void {
 }
 
 export function doAccessSync (path: PathLike): void {
+  if (ancestorOf(pathText(path)) !== undefined) return
   const confined = confineSync(path, 'access', 'fs.accessSync')
   if (isRootPath(confined)) return
   guardedSync(() => { syncFs('fs.accessSync').stat(confined) })
@@ -236,6 +254,7 @@ export function existsSyncCore (path: PathLike, readFileSyncFallback: (confined:
   if (pickedAnswer !== undefined) return pickedAnswer
   let confined: string
   try {
+    if (ancestorOf(pathText(path)) !== undefined) return true
     confined = confineSync(path, 'access', 'fs.existsSync')
   } catch {
     return false

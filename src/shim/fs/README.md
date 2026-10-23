@@ -35,6 +35,18 @@ pick: `toConfinedPath` throws `ENOSYS` for a picked path, so every `*Sync` expor
 `existsSync` answers `true` for a live pick's own path (the table is in memory) and `false` for anything deeper or stale. A write to a pick is not announced to `fs.watch` (`notices.ts`). An id no pick answers (the page reloaded,
 or it is a Worker whose shim holds a table of its own) is `ENOENT` and says to pick again, not another pick's file.
 
+**The directories above the app's files are answered locally** ([`ancestors.ts`](ancestors.ts)). Provisional, AI recommendation: `/` and
+`/orivon` (every parent of the virtual root) exist as read-only directories, because a program that makes a folder walks them
+(`stat` each ancestor from `/`, `mkdir` the ones that are not directories) and a real process has them. `stat`, `lstat`, `access`,
+`realpath` and `existsSync` say they are directories; `mkdir` is a no-op with `recursive` and `EEXIST` naming the path without it;
+`readdir` lists exactly one entry, the next segment toward the root (`['orivon']`, then `['app']`), which keeps a real file, the
+picked-path namespace and the temp folder out of the listing. Each of these is answered before `toConfinedPath` and never
+reaches `orivon.fs`, so nothing outside the app's folder becomes readable or writable. Every other call on an ancestor, and every
+absolute path beside the root (`/orivon/other`, `/etc`), still meets `toConfinedPath`'s `EACCES`; that includes `open` and
+`readFile`, where Node would say `EISDIR` for a directory. The root's own answers stay in [`root.ts`](root.ts). `access` checks
+existence for every mode, so `W_OK` on an ancestor succeeds where Node fails `EACCES`, as it does for the root. **Open:** whether
+`readFile` of an ancestor should be `EISDIR`; nothing has asked.
+
 **An asynchronous call the limiter refuses is asked again** (`../limit-retry.ts`, used by `paths.ts`'s `guarded`: pauses from 10 ms to 800 ms, thirteen retries, about five seconds)
 the same way, for the same reason.
 
