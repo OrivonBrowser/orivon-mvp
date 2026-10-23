@@ -33,6 +33,12 @@ export interface MemorySyncFs {
 export function createMemorySyncFs (): MemorySyncFs {
   const files = new Map<string, MemoryFile>()
   const directories = new Set<string>()
+  /** The broker names a file by its canonical path, so two spellings of one path are one file here too. */
+  const canonical = (path: string): string => path.split('/').reduce<string[]>((kept, part) => {
+    if (part === '..') kept.pop()
+    else if (part !== '' && part !== '.') kept.push(part)
+    return kept
+  }, []).join('/')
   const calls: string[] = []
   const self = { hook: (_call: string) => {}, bytesWritten: 0 }
   const record = (call: string): void => { calls.push(call); self.hook(call) }
@@ -71,27 +77,29 @@ export function createMemorySyncFs (): MemorySyncFs {
   })
 
   const fs = {
-    stat: (path: string) => {
-      record(`stat:${path}`)
+    stat: (given: string) => {
+      record(`stat:${given}`)
+      const path = canonical(given)
       const file = files.get(path)
       if (file === undefined && (directories.has(path) || [...files.keys()].some((key) => key.startsWith(`${path}/`)))) return { size: 0, isFile: false, isDirectory: true, mtimeMs: 0 }
       if (file === undefined) throw orivonError('notFound', 'ENOENT')
       return { size: file.length, isFile: true, isDirectory: false, mtimeMs: 0 }
     },
-    mkdir: (path: string) => { record('mkdir'); directories.add(path) },
+    mkdir: (path: string) => { record('mkdir'); directories.add(canonical(path)) },
     rename: (from: string, to: string) => {
       record(`rename:${from}:${to}`)
-      const file = files.get(from)
+      const file = files.get(canonical(from))
       if (file === undefined) throw orivonError('notFound', 'ENOENT')
-      files.delete(from)
-      files.set(to, file)
+      files.delete(canonical(from))
+      files.set(canonical(to), file)
     },
     rm: (path: string) => {
       record(`rm:${path}`)
-      if (!files.delete(path)) throw orivonError('notFound', 'ENOENT')
+      if (!files.delete(canonical(path))) throw orivonError('notFound', 'ENOENT')
     },
-    open: (path: string, flags: string) => {
-      record(`open:${path}:${flags}`)
+    open: (given: string, flags: string) => {
+      record(`open:${given}:${flags}`)
+      const path = canonical(given)
       let file = files.get(path)
       if (flags === 'wx+') {
         if (file !== undefined) throw orivonError('exists', 'EEXIST')

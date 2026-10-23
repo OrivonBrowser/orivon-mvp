@@ -110,6 +110,7 @@ export class DatabaseSync {
       sqlite3: undefined as unknown as Sqlite3,
       pointer: 0,
       statements: new Set(),
+      running: 0,
       readBigInts: booleanOption(settings, 'readBigInts', false),
       returnArrays: booleanOption(settings, 'returnArrays', false),
       allowBareNamedParameters: booleanOption(settings, 'allowBareNamedParameters', true),
@@ -164,6 +165,7 @@ export class DatabaseSync {
 
   close (): void {
     const state = live(this.#state())
+    if (state.running > 0) throw invalidState('database is busy: a user-defined function is running on it')
     forgotten.unregister(state)
     closeState(state)
   }

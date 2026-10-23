@@ -2,6 +2,8 @@
 // module on the same input: results, values and errors must be the same.
 
 import { beforeAll, describe, expect, it } from 'vitest'
+import { collectGarbage } from '../../tests/support/collect-garbage.js'
+import { sqliteEngine } from '../engine.js'
 import { DatabaseSync } from '../database.js'
 import { same } from './support/compare.js'
 import { loadTestEngine } from './support/engine.js'
@@ -98,6 +100,15 @@ describe('an exception', () => {
   same('that is not an Error is thrown as it was', (db) => {
     asDb(db).function('boom', (_x: unknown) => { throw 'text' })
     return asDb(db).prepare('select boom(1) as v').get()
+  })
+  it('that is a string, undefined or an object is the very value the call throws', () => {
+    for (const thrown of ['text', undefined, { reason: 'object' }]) {
+      const db = new DatabaseSync(':memory:')
+      db.function('boom', (_x: unknown) => { throw thrown })
+      let caught: unknown = 'nothing thrown'
+      try { db.prepare('select boom(1)').get() } catch (error) { caught = error }
+      expect(caught).toBe(thrown)
+    }
   })
   same('fails the whole statement: no row of an insert stays', (db) => {
     asDb(db).exec('create table t (a)')
@@ -203,6 +214,55 @@ describe('a function in use', () => {
     db.exec('create table t (a); insert into t values (10), (20), (30)')
     expect(db.prepare('select tick(a) as v from t order by a').all().map((row) => (row as { v: number }).v)).toEqual([1, 2, 3])
     expect(seen).toEqual([10, 20, 30])
+    db.close()
+  })
+
+  it('gives its function table entries back when the connection closes or the function is replaced', () => {
+    const table = (): number => (sqliteEngine().wasm as unknown as { functionTable (): { length: number } }).functionTable().length
+    const cycle = (): void => {
+      const db = new DatabaseSync(':memory:')
+      for (let i = 0; i < 50; i++) db.function(`f${String(i)}`, (_x: unknown) => i)
+      for (let i = 0; i < 50; i++) db.function('same', (_x: unknown) => i)
+      db.close()
+    }
+    cycle()
+    const after = table()
+    for (let i = 0; i < 5; i++) cycle()
+    expect(table()).toBe(after)
+  })
+
+  it('gives its entries back when registering fails', () => {
+    const table = (): number => (sqliteEngine().wasm as unknown as { functionTable (): { length: number } }).functionTable().length
+    const db = new DatabaseSync(':memory:')
+    expect(() => db.function('x'.repeat(300), (_x: unknown) => 1)).toThrow()
+    const after = table()
+    for (let i = 0; i < 20; i++) expect(() => db.function('x'.repeat(300), (_x: unknown) => 1)).toThrow()
+    expect(table()).toBe(after)
+  })
+
+  it('does not hold a database nobody references', async () => {
+    const ref = ((): WeakRef<DatabaseSync> => {
+      const db = new DatabaseSync(':memory:')
+      db.function('f', (_x: unknown) => 1)
+      db.prepare('select f(1)').get()
+      return new WeakRef(db)
+    })()
+    await collectGarbage()
+    expect(ref.deref()).toBeUndefined()
+  })
+
+  it('cannot be closed from inside a function, nor run its own statement again', () => {
+    const db = new DatabaseSync(':memory:')
+    let inner: unknown
+    db.function('closer', (_x: unknown) => { try { db.close() } catch (error) { inner = error } return 1 })
+    db.prepare('select closer(1)').get()
+    expect(inner).toMatchObject({ code: 'ERR_INVALID_STATE', message: expect.stringContaining('busy') as string })
+    expect(db.isOpen).toBe(true)
+    db.function('again', (_x: unknown) => { try { statement.get() } catch (error) { inner = error } return 2 })
+    const statement = db.prepare('select again(1) as v')
+    expect(statement.get()).toEqual(expect.objectContaining({ v: 2 }))
+    expect(inner).toMatchObject({ code: 'ERR_INVALID_STATE', message: expect.stringContaining('busy') as string })
+    expect(statement.get()).toEqual(expect.objectContaining({ v: 2 }))
     db.close()
   })
 

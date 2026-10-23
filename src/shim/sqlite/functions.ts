@@ -104,7 +104,14 @@ export function defineScalarFunction (database: DatabaseState, definition: Scala
     try {
       const args: FunctionValue[] = []
       for (let i = 0; i < argc; i++) args.push(readArgument(sqlite3, wasm.peekPtr(argv + i * POINTER_BYTES), definition.integers()))
-      writeResult(sqlite3, context, definition.fn(...args), definition.rules)
+      database.running++
+      let result: unknown
+      try {
+        result = definition.fn(...args)
+      } finally {
+        database.running--
+      }
+      writeResult(sqlite3, context, result, definition.rules)
     } catch (error) {
       database.thrown = { error }
       wasm.exports.sqlite3_result_error_code(context, capi.SQLITE_ERROR)

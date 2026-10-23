@@ -76,7 +76,7 @@ it('[app:node-sqlite-in-worker] [app:node-fs-writes-land-at-app-root] [app:sqlit
 
       const functions = reply.value?.userFunctions
       check('the child ran the functions case without failing', functions !== undefined && functions.failed === undefined, detail)
-      check('a function the app registered backs a WHERE clause and an expression index', JSON.stringify(functions?.matched) === JSON.stringify(['Beta', 'b\u00e9ta', 'bravo']) && JSON.stringify(functions?.folded) === JSON.stringify(['\u00c9clair']), detail)
+      check('a function the app registered backs a WHERE clause and an expression index', JSON.stringify(functions?.matched) === JSON.stringify(['b\u00e9ta', 'bravo']) && JSON.stringify(functions?.folded) === JSON.stringify(['\u00c9clair']), detail)
       check('node:sqlite registers a function the same way', JSON.stringify(functions?.twice) === JSON.stringify({ v: 42 }), detail)
       check('an exception in a function fails its statement and reaches the caller', functions?.thrown?.error?.name === 'RangeError', detail)
       check('backup resolves after a copy of the database is in the app\'s files', (functions?.pages ?? 0) > 1 && functions?.copiedRows === 5 && results.copyStart === 'SQLite format 3', detail)

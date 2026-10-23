@@ -23,6 +23,8 @@ export interface DatabaseState {
   allowUnknownNamedParameters: boolean
   /** The exception a user-defined function threw during the call now failing, until that call reports it. */
   thrown?: { readonly error: unknown } | undefined
+  /** How many user-defined functions are running now, on this connection: it cannot be closed under them. */
+  running: number
 }
 
 /** What a failed call throws: the exception a user-defined function threw, when one did, and otherwise the engine's error. */
@@ -41,6 +43,8 @@ export interface StatementState {
   allowBareNamedParameters: boolean
   allowUnknownNamedParameters: boolean
   bareNames?: Map<string, number>
+  /** True while SQLite steps the statement: a function it calls must not run the same statement again. */
+  stepping?: boolean
 }
 
 const CONSTRUCT = Symbol('orivon.sqlite.statement')
@@ -163,6 +167,7 @@ function isNamedArgument (value: unknown): value is Record<string, unknown> {
 
 /** Clears the last run's bindings, then binds `args`: an object binds named parameters, anything else the next `?` in order. */
 function bindAll (state: StatementState, args: readonly unknown[]): void {
+  if (state.stepping === true) throw invalidState('statement is busy: it is running a user-defined function that is using it')
   const { capi, wasm } = state.database.sqlite3
   wasm.exports.sqlite3_reset(state.pointer)
   wasm.exports.sqlite3_clear_bindings(state.pointer)
@@ -227,7 +232,13 @@ function columnNames (state: StatementState): string[] {
 function step (state: StatementState): number {
   const { sqlite3 } = state.database
   state.database.thrown = undefined
-  const rc = sqlite3.wasm.exports.sqlite3_step(state.pointer)
+  state.stepping = true
+  let rc: number
+  try {
+    rc = sqlite3.wasm.exports.sqlite3_step(state.pointer)
+  } finally {
+    state.stepping = false
+  }
   if (rc === SQLITE_ROW || rc === SQLITE_DONE) return rc
   const error = failureOf(state.database)
   sqlite3.wasm.exports.sqlite3_reset(state.pointer)

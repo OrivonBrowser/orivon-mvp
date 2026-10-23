@@ -65,13 +65,13 @@ number, TEXT as a string, BLOB as a `Uint8Array`, NULL as `null`. `fn` returns a
 (INTEGER), a string, a `Uint8Array` (BLOB), `null` or `undefined` (NULL); anything else is a `TypeError`. An
 exception in `fn` fails the statement that called it, and the call that ran the statement (`run`, `get`, `all`,
 `iterate`, `exec`) throws that exception itself. `db.backup(destination, [options])` returns a Promise that
-resolves with `{ totalPages, remainingPages: 0 }` once a copy of the committed database is in `destination`,
+resolves with `{ totalPages, remainingPages: 0 }` (`totalPages` is the page count of the database copied) once a copy of the committed database is in `destination`,
 a file of the app's files whose directory exists; the option `attached` names the database to copy and `progress`
-is called once, when the copy is done.
+is called once, when the copy is made and before it replaces the destination.
 
 **Refused by name, `'not-built'`:** `aggregate`, `table`, `serialize`, `loadExtension`, and a `Buffer` as the filename.
 
-**Different from `better-sqlite3`:** `backup` cannot run inside a transaction and copies in one step, so `progress` reports only the end; a function receives a BLOB as a
+**Different from `better-sqlite3`:** `backup` cannot run inside a transaction or while a statement is half-read, and copies in one step, so `progress` is called once, before the copy replaces the destination; a function that closes the database or runs the statement it is in the middle of gets `This database connection is busy executing a query`; a function receives a BLOB as a
 `Uint8Array`, as a row does; `verbose` receives each statement's SQL with its parameters
 filled in, after the statement ran; `prepare` does not refuse a string of several statements (the
 first is prepared); a missing directory is the engine's `SQLITE_CANTOPEN`, not a `TypeError`; a
@@ -194,4 +194,4 @@ of it. The copy goes to a file beside `destination` and is renamed over it, so a
 was and a reader never sees half a file. It differs from SQLite's backup in three ways: it does not start inside a
 transaction, it runs to the end in one step with no chance for other work between pages, and a file's copy is compacted
 (free pages are not carried over) while keeping the page size, `user_version` and `application_id`. It refuses a
-destination that is the database it copies, or that database's journal.
+destination that is any database the connection has open (the main one and every attached one), or the journal of one.

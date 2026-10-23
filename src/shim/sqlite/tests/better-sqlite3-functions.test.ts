@@ -3,6 +3,7 @@
 
 import { beforeAll, describe, expect, it } from 'vitest'
 import Database, { SqliteError } from '../better-sqlite3.js'
+import { collectGarbage } from '../../tests/support/collect-garbage.js'
 import { loadTestEngine } from './support/engine.js'
 
 beforeAll(loadTestEngine)
@@ -207,6 +208,32 @@ describe('an exception in the function', () => {
     expect(work).toThrow(new Error('inside'))
     expect(db.inTransaction).toBe(false)
     expect(value(db, 'select count(*) from t')).toBe(0)
+  })
+
+  it('cannot close the database or run the statement it is in the middle of', () => {
+    const db = new Database(':memory:')
+    const seen: unknown[] = []
+    let statement: ReturnType<typeof db.prepare> | undefined
+    db.function('inside', () => {
+      for (const attempt of [() => db.close(), () => statement?.get()]) { try { attempt() } catch (error) { seen.push(error) } }
+      return 1
+    })
+    statement = db.prepare('select inside() as v')
+    expect(statement.get()).toEqual({ v: 1 })
+    expect(seen).toEqual([new TypeError('This database connection is busy executing a query'), new TypeError('This database connection is busy executing a query')])
+    expect(db.open).toBe(true)
+  })
+
+  it('does not hold a database nobody references', async () => {
+    const ref = ((): WeakRef<object> => {
+      const db = new Database(':memory:')
+      db.function('f', () => 1)
+      db.defaultSafeIntegers(true)
+      db.prepare('select f()').get()
+      return new WeakRef(db)
+    })()
+    await collectGarbage()
+    expect(ref.deref()).toBeUndefined()
   })
 
   it('does not turn a later engine error into the earlier exception', () => {

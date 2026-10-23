@@ -5,6 +5,7 @@
 
 import { refuseShim } from '../errors.js'
 import { DatabaseSync, registerScalarFunction } from './database.js'
+import type { FunctionValue, ScalarFunction } from './functions.js'
 import { backupDatabase, type BackupInfo } from './better-sqlite3-backup.js'
 import { orivonSqliteFiles } from './files.js'
 import { Statement, type StatementHost } from './better-sqlite3-statement.js'
@@ -50,6 +51,34 @@ function booleanOption (options: Record<string, unknown>, name: string): boolean
   return value
 }
 
+type ScalarBody = (...args: FunctionValue[]) => unknown
+
+/**
+ * The function `db.function(name, options, fn)` registers, checked as `better-sqlite3` checks it. Built outside the
+ * class and given the defaults object alone: the engine keeps the callbacks for as long as the connection is open, and
+ * a closure made beside one that uses `this` would share its context and keep the database from being collected.
+ */
+function scalarFunction (name: string, options: Record<string, unknown>, fn: ScalarBody, defaults: { safeIntegers: boolean }): ScalarFunction {
+  if (name === '') throw new TypeError('User-defined function name cannot be an empty string')
+  const ownIntegers = 'safeIntegers' in options ? booleanOption(options, 'safeIntegers') : undefined
+  const deterministic = booleanOption(options, 'deterministic')
+  const directOnly = booleanOption(options, 'directOnly')
+  let argc = -1
+  if (!booleanOption(options, 'varargs')) {
+    argc = fn.length
+    if (argc > 100) throw new RangeError('User-defined functions cannot have more than 100 arguments')
+  }
+  return {
+    name,
+    argc,
+    deterministic,
+    directOnly,
+    integers: () => (ownIntegers ?? defaults.safeIntegers) ? 'bigint' : 'lossy',
+    rules: 'better-sqlite3',
+    fn: (...args) => Reflect.apply(fn, undefined, args) as unknown
+  }
+}
+
 function toggleOf (toggle: unknown): boolean {
   if (toggle === undefined) return true
   if (typeof toggle !== 'boolean') throw new TypeError('Expected first argument to be a boolean')
@@ -65,7 +94,7 @@ class DatabaseImpl {
   readonly #inner: DatabaseSync
   readonly #verbose: ((message?: unknown, ...additionalArgs: unknown[]) => void) | null
   readonly #host: StatementHost
-  #safeIntegers = false
+  readonly #defaults = { safeIntegers: false }
 
   constructor (filenameGiven?: string, options?: DatabaseOptions) {
     if (filenameGiven !== undefined && filenameGiven !== null && typeof filenameGiven !== 'string') {
@@ -120,7 +149,7 @@ class DatabaseImpl {
       if ((error as { code?: unknown }).code === 'ERR_INVALID_ARG_VALUE') throw new RangeError('The supplied SQL string contains no statements')
       throw error
     }
-    return new Statement(this.#host, inner, source, this.#safeIntegers, pragma)
+    return new Statement(this.#host, inner, source, this.#defaults.safeIntegers, pragma)
   }
 
   prepare (source: string): Statement {
@@ -183,12 +212,12 @@ class DatabaseImpl {
   }
 
   close (): this {
-    if (this.#inner.isOpen) this.#inner.close()
+    if (this.#inner.isOpen) guarded(() => { this.#inner.close() })
     return this
   }
 
   defaultSafeIntegers (toggle?: boolean): this {
-    this.#safeIntegers = toggleOf(toggle)
+    this.#defaults.safeIntegers = toggleOf(toggle)
     return this
   }
 
@@ -203,28 +232,9 @@ class DatabaseImpl {
     if (typeof name !== 'string') throw new TypeError('Expected first argument to be a string')
     if (typeof fn !== 'function') throw new TypeError('Expected last argument to be a function')
     if (typeof given !== 'object') throw new TypeError('Expected second argument to be an options object')
-    const options = given as Record<string, unknown>
-    if (name === '') throw new TypeError('User-defined function name cannot be an empty string')
-    const ownIntegers = 'safeIntegers' in options ? booleanOption(options, 'safeIntegers') : undefined
-    const deterministic = booleanOption(options, 'deterministic')
-    const directOnly = booleanOption(options, 'directOnly')
-    let argc = -1
-    if (!booleanOption(options, 'varargs')) {
-      argc = fn.length
-      if (argc > 100) throw new RangeError('User-defined functions cannot have more than 100 arguments')
-    }
+    const definition = scalarFunction(name, given as Record<string, unknown>, fn as ScalarBody, this.#defaults)
     if (!this.#inner.isOpen) throw notOpen()
-    guarded(() => {
-      registerScalarFunction(this.#inner, {
-        name,
-        argc,
-        deterministic,
-        directOnly,
-        integers: () => (ownIntegers ?? this.#safeIntegers) ? 'bigint' : 'lossy',
-        rules: 'better-sqlite3',
-        fn: (...args) => Reflect.apply(fn, undefined, args) as unknown
-      })
-    })
+    guarded(() => { registerScalarFunction(this.#inner, definition) })
     return this
   }
 

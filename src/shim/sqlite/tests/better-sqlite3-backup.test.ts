@@ -40,6 +40,7 @@ describe('the copy', () => {
     const db = filled()
     const info = await db.backup(COPY)
     expect(info.remainingPages).toBe(0)
+    expect(info.totalPages).toBe(db.pragma('page_count', { simple: true }))
     expect(info.totalPages).toBeGreaterThan(3)
     expect(counted(COPY)).toBe(50)
     const copy = new Database(COPY)
@@ -151,9 +152,47 @@ describe('a copy that cannot be made', () => {
   it('over the database it is copying is refused', async () => {
     const db = filled()
     const before = fs.contents('data/main.sqlite3')
-    expect(await rejected(async () => await db.backup(SOURCE))).toEqual(new TypeError('Cannot save backup over the database it is copying'))
-    expect(await rejected(async () => await db.backup('data/main.sqlite3'))).toEqual(new TypeError('Cannot save backup over the database it is copying'))
+    expect(await rejected(async () => await db.backup(SOURCE))).toEqual(new TypeError('Cannot save backup over a database this connection has open'))
+    expect(await rejected(async () => await db.backup('data/main.sqlite3'))).toEqual(new TypeError('Cannot save backup over a database this connection has open'))
     expect(fs.contents('data/main.sqlite3')).toEqual(before)
+  })
+
+  it('over the database it is copying, spelled another way, is refused', async () => {
+    const db = filled('data/main.sqlite3')
+    const before = fs.contents('data/main.sqlite3')
+    for (const spelling of ['./data/main.sqlite3', 'data//main.sqlite3', 'backups/../data/main.sqlite3', '/orivon/app/data/../data/main.sqlite3', 'data/main.sqlite3-journal']) {
+      expect(await rejected(async () => await db.backup(spelling)), spelling).toEqual(new TypeError('Cannot save backup over a database this connection has open'))
+    }
+    expect(fs.contents('data/main.sqlite3')).toEqual(before)
+    db.prepare('insert into t (body) values (?)').run('still the open file')
+    expect(new Database('data/main.sqlite3').prepare('select count(*) from t').pluck().get()).toBe(51)
+  })
+
+  it('over another database attached to the connection is refused', async () => {
+    filled('/orivon/app/data/other.sqlite3', 2).close()
+    const db = filled()
+    db.exec("attach database '/orivon/app/data/other.sqlite3' as other")
+    const before = fs.contents('data/other.sqlite3')
+    expect(await rejected(async () => await db.backup('/orivon/app/data/other.sqlite3'))).toEqual(new TypeError('Cannot save backup over a database this connection has open'))
+    expect(fs.contents('data/other.sqlite3')).toEqual(before)
+  })
+
+  it('while a statement is half-read is refused by the engine, and leaves the files as they were', async () => {
+    const db = filled()
+    const reading = db.prepare('select id from t').iterate()
+    reading.next()
+    expect(await rejected(async () => await db.backup(COPY))).toMatchObject({ name: 'SqliteError' })
+    expect([...fs.files.keys()].some((key) => key.includes('backup-'))).toBe(false)
+    reading.return?.()
+  })
+
+  it('whose progress callback throws leaves the destination as it was', async () => {
+    filled('/orivon/app/backups/old.sqlite3', 2).close()
+    const before = fs.contents('backups/old.sqlite3')
+    const db = filled()
+    expect(await rejected(async () => await db.backup('/orivon/app/backups/old.sqlite3', { progress: () => { throw new Error('stop') } }))).toEqual(new Error('stop'))
+    expect(fs.contents('backups/old.sqlite3')).toEqual(before)
+    expect([...fs.files.keys()].some((key) => key.includes('backup-'))).toBe(false)
   })
 
   it('from a closed database is refused', async () => {

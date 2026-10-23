@@ -39,6 +39,17 @@ function randomHex (bytes: number): string {
   return [...crypto.getRandomValues(new Uint8Array(bytes))].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
+/** `path` with `.`, `..` and repeated slashes resolved, so two spellings of one file compare equal. */
+function normalized (path: string): string {
+  const parts: string[] = []
+  for (const part of path.split('/')) {
+    if (part === '' || part === '.') continue
+    if (part === '..') parts.pop()
+    else parts.push(part)
+  }
+  return parts.join('/')
+}
+
 function wrap (handle: SyncFileHandleWire): SqliteFile {
   return {
     read: (position, length) => guardedSync(() => handle.read({ position, length })),
@@ -85,7 +96,7 @@ export function orivonSqliteFiles (): SqliteFiles {
     exists,
     size: (path) => guardedSync(() => fs.stat(confined(path)).size),
     rename: (from, to) => { guardedSync(() => { fs.rename(confined(from), confined(to)) }) },
-    isSameFile: (first, second) => confined(first) === confined(second),
+    isSameFile: (first, second) => normalized(confined(first)) === normalized(confined(second)),
     remove: (path) => { guardedSync(() => { fs.rm(confined(path)) }) },
     temporaryPath: () => `${VIRTUAL_TMPDIR}/etilqs_${randomHex(16)}`
   }

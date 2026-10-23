@@ -42,18 +42,12 @@ function randomName (): string {
   return [...crypto.getRandomValues(new Uint8Array(6))].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
-/** A destination that is one of the files the source database is using would be overwritten by the copy of itself. */
-function refuseOwnFile (files: SqliteFiles, source: DatabaseSync, attached: string, destination: string): void {
-  for (const schema of new Set(['main', attached])) {
-    let location: string | null
-    try {
-      location = source.location(schema)
-    } catch {
-      continue
-    }
-    if (location === null) continue
-    if (files.isSameFile(location, destination) || files.isSameFile(`${location}-journal`, destination)) {
-      throw new TypeError('Cannot save backup over the database it is copying')
+/** A destination that is a file this connection has open, or a journal of one, would be overwritten while it is in use. */
+function refuseOwnFile (files: SqliteFiles, source: DatabaseSync, destination: string): void {
+  for (const { file } of guarded(() => source.prepare('PRAGMA database_list').all()) as Array<{ file: string }>) {
+    if (file === '') continue
+    if (files.isSameFile(file, destination) || files.isSameFile(`${file}-journal`, destination)) {
+      throw new TypeError('Cannot save backup over a database this connection has open')
     }
   }
 }
@@ -87,15 +81,16 @@ export async function backupDatabase (source: DatabaseSync, destination: unknown
   const directory = directoryOf(request.destination)
   if (directory !== '' && !files.exists(directory)) throw new TypeError('Cannot save backup because the directory does not exist')
   if (!source.isOpen) throw notOpen()
-  refuseOwnFile(files, source, request.attached, request.destination)
+  refuseOwnFile(files, source, request.destination)
   if (source.isTransaction) throw new SqliteError('cannot back up a database from within a transaction', 'SQLITE_ERROR')
-  const pageSize = Number((guarded(() => source.prepare(`PRAGMA ${schemaIdentifier(request.attached)}.page_size`).get()) as { page_size: number }).page_size)
+  // Asked first, so an attached database that does not exist is reported by the engine before anything is written.
+  const totalPages = guarded(() => Number((source.prepare(`PRAGMA ${schemaIdentifier(request.attached)}.page_count`).get() as { page_count: number }).page_count))
   const copy = `${request.destination}.backup-${randomName()}`
   try {
     writeCopy(files, source, request.attached, copy)
-    const info = { totalPages: Math.ceil(files.size(copy) / pageSize), remainingPages: 0 }
-    files.rename(copy, request.destination)
+    const info = { totalPages, remainingPages: 0 }
     request.progress?.(info)
+    files.rename(copy, request.destination)
     return info
   } catch (error) {
     try { files.remove(copy) } catch { /* the copy was never made, or is gone */ }
