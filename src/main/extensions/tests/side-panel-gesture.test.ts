@@ -75,51 +75,51 @@ describe('the gesture a click in a page gives', () => {
 
   it('is absent until the browser saw input in the tab', () => {
     const { gesture, tab } = tabSetup()
-    expect(gesture.available(tab as never, true)).toBe(false)
+    expect(gesture.available(tab as never, true, ID)).toBe(false)
   })
 
   it.each(['mouseDown', 'pointerDown', 'touchStart', 'keyDown', 'rawKeyDown'])('is given by %s', (type) => {
     const { gesture, tab } = tabSetup()
     tab.press(type)
-    expect(gesture.available(tab as never, true)).toBe(true)
+    expect(gesture.available(tab as never, true, ID)).toBe(true)
   })
 
   it.each(['mouseMove', 'mouseUp', 'mouseWheel', 'keyUp', 'char'])('is not given by %s', (type) => {
     const { gesture, tab } = tabSetup()
     tab.press(type)
-    expect(gesture.available(tab as never, true)).toBe(false)
+    expect(gesture.available(tab as never, true, ID)).toBe(false)
   })
 
   it('lasts as long as the ledger\'s window and not after', () => {
     const { gesture, tab, advance } = tabSetup()
     tab.press('mouseDown')
     advance(GESTURE_WINDOW_MS)
-    expect(gesture.available(tab as never, true)).toBe(true)
+    expect(gesture.available(tab as never, true, ID)).toBe(true)
     advance(1)
-    expect(gesture.available(tab as never, true)).toBe(false)
+    expect(gesture.available(tab as never, true, ID)).toBe(false)
   })
 
   it('needs the extension to reach the page, whatever the input', () => {
     const { gesture, tab } = tabSetup()
     tab.press('mouseDown')
-    expect(gesture.available(tab as never, false)).toBe(false)
-    expect(gesture.available(tab as never, true)).toBe(true)
+    expect(gesture.available(tab as never, false, ID)).toBe(false)
+    expect(gesture.available(tab as never, true, ID)).toBe(true)
   })
 
-  it('is used up by one spend, and the next input is new', () => {
+  it('is spent by one extension, and the next input is new', () => {
     const { gesture, tab } = tabSetup()
     tab.press('mouseDown')
-    gesture.spend(tab as never)
-    expect(gesture.available(tab as never, true)).toBe(false)
+    gesture.spend(tab as never, ID)
+    expect(gesture.available(tab as never, true, OTHER)).toBe(false)
     tab.press('keyDown')
-    expect(gesture.available(tab as never, true)).toBe(true)
+    expect(gesture.available(tab as never, true, ID)).toBe(true)
   })
 
   it('is forgotten when the tab goes to another document', () => {
     const { gesture, tab } = tabSetup()
     tab.press('mouseDown')
     tab.navigate()
-    expect(gesture.available(tab as never, true)).toBe(false)
+    expect(gesture.available(tab as never, true, ID)).toBe(false)
   })
 
   it('belongs to the tab the input was made in', () => {
@@ -127,11 +127,57 @@ describe('the gesture a click in a page gives', () => {
     const other = fakeTab()
     gesture.watch(other as never)
     tab.press('mouseDown')
-    expect(gesture.available(other as never, true)).toBe(false)
+    expect(gesture.available(other as never, true, ID)).toBe(false)
   })
 
   it('is absent in a tab nobody watches', () => {
     const { gesture } = tabSetup()
-    expect(gesture.available(fakeTab() as never, true)).toBe(false)
+    expect(gesture.available(fakeTab() as never, true, ID)).toBe(false)
+  })
+})
+
+describe('the gesture of a click, spent per extension', () => {
+  const A = 'a'.repeat(32)
+  const B = 'b'.repeat(32)
+  function setup () {
+    let now = 1_000_000
+    const gesture = createTabGesture(() => now)
+    const tab = fakeTab()
+    gesture.watch(tab as never)
+    return { gesture, tab, advance: (ms: number) => { now += ms } }
+  }
+
+  it('lets the extension that spent it use it again, for a second request from the same click', () => {
+    const { gesture, tab } = setup()
+    tab.press('mouseDown')
+    gesture.spend(tab as never, A)
+    expect(gesture.available(tab as never, true, A)).toBe(true)
+  })
+
+  it('does not lend it to another extension once one has spent it', () => {
+    const { gesture, tab } = setup()
+    tab.press('mouseDown')
+    gesture.spend(tab as never, A)
+    expect(gesture.available(tab as never, true, B)).toBe(false)
+  })
+
+  it('is new input that every extension can use again', () => {
+    const { gesture, tab } = setup()
+    tab.press('mouseDown')
+    gesture.spend(tab as never, A)
+    tab.press('keyDown')
+    expect(gesture.available(tab as never, true, B)).toBe(true)
+  })
+
+  it('still ends with the window and at a navigation for the extension that spent it', () => {
+    const { gesture, tab, advance } = setup()
+    tab.press('mouseDown')
+    gesture.spend(tab as never, A)
+    advance(GESTURE_WINDOW_MS + 1)
+    expect(gesture.available(tab as never, true, A)).toBe(false)
+    tab.press('mouseDown')
+    gesture.spend(tab as never, A)
+    tab.navigate()
+    expect(gesture.available(tab as never, true, A)).toBe(false)
   })
 })

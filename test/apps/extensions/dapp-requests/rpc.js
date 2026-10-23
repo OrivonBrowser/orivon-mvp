@@ -1,7 +1,6 @@
-// Answers `{ cmd: 'call', path, args }` from a page of this extension: calls
-// the function at `path` (`chrome.tabs.query`, or `__sweep`) in this worker
-// and replies `{ ok: true, result }` or `{ ok: false, error }`. The page and
-// the test never reach the worker's own globals any other way.
+// Answers `{ cmd: 'call', path, args }` from a page of this extension: calls the function at `path`
+// (`chrome.windows.getAll`, or `__log`) in this worker and replies `{ ok: true, result }` or `{ ok: false, error }`.
+// The page and the test never reach the worker's own globals any other way.
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message === null || typeof message !== 'object' || message.cmd !== 'call') return false
   const parts = String(message.path).split('.')

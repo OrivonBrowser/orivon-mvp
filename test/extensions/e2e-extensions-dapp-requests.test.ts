@@ -10,7 +10,7 @@ import { afterAll, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import type { ElectronApplication, Page } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
-import { HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
+import { delay, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
 import { closeElectronApp, navigateToFixture } from '../support/e2e-helpers.js'
 import { openExtensionPage, rpc, seedFixture, waitRecovered } from './extensions-e2e-helpers.js'
 
@@ -25,7 +25,8 @@ afterAll(async () => {
 async function fixtureServer (): Promise<string> {
   const created = createServer((_request, res) => {
     res.writeHead(200, { 'content-type': 'text/html' })
-    res.end('<title>dapp-requests-fixture</title><body><button id="go" onclick="window.postMessage({ type: \'dapp-request\' }, \'*\')">Send transaction</button></body>')
+    const send = "window.postMessage({ type: 'dapp-request' }, '*')"
+    res.end(`<title>dapp-requests-fixture</title><body><button id="go" onclick="${send}">Send transaction</button><button id="twice" onclick="${send}; ${send}">Send two</button></body>`)
   })
   servers.push(created)
   await new Promise<void>((resolve) => { created.listen(0, '127.0.0.1', resolve) })
@@ -79,9 +80,23 @@ it('opens the side panel from a click, and keeps one popup window for the reques
     const events = async (): Promise<string[]> => (await log()).map((entry) => entry.event)
     const windows = async (): Promise<WindowInfo[]> => await call('chrome.windows.getAll') as WindowInfo[]
     const popups = async (): Promise<WindowInfo[]> => (await windows()).filter((w) => w.type === 'popup')
-    // A request the page makes with no input at all: a script's own click event carries no user activation.
-    const requestWithoutClick = async (): Promise<void> => {
-      await page.evaluate(() => { document.getElementById('go')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    const requestsHeard = async (): Promise<number> => (await events()).filter((name) => name === 'dapp-request').length
+    // A request the page makes by a script's own click event: the browser saw no input. Sent again until the freshly
+    // loaded page's content script has heard it, so a request lost to a page still loading is not mistaken for a refusal.
+    const requestWithoutInput = async (claimActivation = false): Promise<void> => {
+      const before = await requestsHeard()
+      const click = 'document.getElementById("go").dispatchEvent(new MouseEvent("click", { bubbles: true }))'
+      for (let attempt = 0; attempt < 10; attempt++) {
+        if (claimActivation) {
+          // Run as if by a user gesture: the page then has transient activation, though no input reached the browser.
+          await live.evaluate(({ webContents }, [part, source]: [string, string]) =>
+            webContents.getAllWebContents().find((wc) => wc.getURL().startsWith(part))?.executeJavaScript(source, true), [fixtureUrl, click] as [string, string])
+        } else {
+          await page.evaluate(click)
+        }
+        if (await waitFor(async () => (await requestsHeard()) > before, 3_000)) return
+      }
+      throw new Error('the content script never heard the request')
     }
 
     // 1. A real click: the worker hears it from a content script, asks the content script back, and opens the panel.
@@ -98,28 +113,46 @@ it('opens the side panel from a click, and keeps one popup window for the reques
     expect(await shellWindowCount(live)).toBe(windowsBefore)
     expect(await popups()).toEqual([])
 
-    // 2. No click: the panel is not opened, and one popup window is shown, as a popup, at the size and place asked.
+    // 1b. Two requests from one click get the panel twice and no popup.
     await closeSidePanel(live)
     await call('__clear')
-    await requestWithoutClick()
+    await page.click('#twice')
+    expect(await waitFor(async () => (await events()).filter((name) => name === 'side-panel-opened').length === 2, 15_000), JSON.stringify(await log())).toBe(true)
+    expect(await events()).not.toContain('popup-created')
+    expect(await sidePanelOpen(live)).toBe(true)
+    expect(await popups()).toEqual([])
+
+    // 2. No input: once Chromium's five seconds of transient activation after the last click are over (a reload does not
+    // end them), the page has none, so the panel is never asked for, and one popup window is shown, as a popup, at the
+    // size and place asked.
+    await closeSidePanel(live)
+    await delay(5_500)
+    await call('__clear')
+    await requestWithoutInput()
     expect(await waitFor(async () => (await events()).includes('popup-created'), 15_000), JSON.stringify(await log())).toBe(true)
+    expect(await events(), JSON.stringify(await log())).toContain('side-panel-unanswered')
+    expect(await events()).not.toContain('open-sidepanel-message')
     expect(await sidePanelOpen(live)).toBe(false)
     const created = (await log()).find((entry) => entry.event === 'popup-created')
     expect(created?.type).toBe('popup')
     expect(await waitFor(async () => (await shellWindowCount(live)) === windowsBefore + 1)).toBe(true)
-    const listed = await popups()
-    expect(listed.map((w) => w.id)).toEqual([created?.id])
+    expect((await popups()).map((w) => w.id)).toEqual([created?.id])
     expect((await windows()).filter((w) => w.type === 'normal').length).toBe(windowsBefore)
     const bounds = await live.evaluate(({ BaseWindow }, wanted: number) => BaseWindow.fromId(wanted)?.getBounds() ?? null, created?.id as number)
     expect(bounds).toMatchObject({ x: 120, y: 80, height: 620 })
     expect(bounds?.width).toBeGreaterThanOrEqual(500)
 
-    // 3. The next request without a click finds that popup again and brings it forward: no second window.
+    // 3. A script that claims user activation reaches the worker's open call and is refused there: no panel. The request
+    // finds the popup again and brings it forward: no second window.
     await call('__clear')
-    await requestWithoutClick()
+    await requestWithoutInput(true)
     expect(await waitFor(async () => (await events()).includes('popup-refocused'), 15_000), JSON.stringify(await log())).toBe(true)
-    expect(await events()).not.toContain('popup-created')
-    expect((await log()).find((entry) => entry.event === 'popup-refocused')?.id).toBe(created?.id)
+    const claimed = await log()
+    expect(claimed.find((entry) => entry.event === 'side-panel-refused')?.error).toMatch(/user gesture/)
+    expect(claimed.map((entry) => entry.event)).not.toContain('side-panel-opened')
+    expect(claimed.find((entry) => entry.event === 'popup-refocused')?.id).toBe(created?.id)
+    expect(claimed.map((entry) => entry.event)).not.toContain('popup-created')
+    expect(await sidePanelOpen(live)).toBe(false)
     expect(await shellWindowCount(live)).toBe(windowsBefore + 1)
     expect((await popups()).map((w) => w.id)).toEqual([created?.id])
 
@@ -131,7 +164,7 @@ it('opens the side panel from a click, and keeps one popup window for the reques
     expect(await waitFor(async () => (await shellWindowCount(live)) === windowsBefore)).toBe(true)
     expect(await popups()).toEqual([])
     await call('__clear')
-    await requestWithoutClick()
+    await requestWithoutInput()
     expect(await waitFor(async () => (await events()).includes('popup-created'), 15_000), JSON.stringify(await log())).toBe(true)
     const next = (await log()).find((entry) => entry.event === 'popup-created')
     expect(next?.id).not.toBe(created?.id)

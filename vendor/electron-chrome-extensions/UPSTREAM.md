@@ -925,13 +925,17 @@ and `api/common.ts`/`impl.ts` sit on the same import path and needed no patch of
     `ActionMenuBuilder` takes the toolbar's `session` as a third argument. Reason: with an instance of
     the library in each profile session, "Options" in a button's menu must open the page of the
     instance that was clicked.
-75. **A popup window reports `popup`, and `windows.update` does what it is asked.** `src/browser/impl.ts`: the
+75. **A popup window reports `popup`, and `windows` does what it is asked.** `src/browser/impl.ts`: the
     optional `windowType(window)` and `updateWindow(window, props)`. `src/browser/api/windows.ts`: a
-    window's `type` is `windowType(window)` (else `normal`), and `update` calls `updateWindow` after it
-    handled `state`, so the embedder applies `left`, `top`, `width`, `height`, `focused: true` and
-    `drawAttention`. Reason: `type` was `normal` for every window and `update` handled `state` only, so an
-    extension that keeps one popup (`getAll()` for a `popup` with its id, then `update(id, { focused: true })`)
-    never found it and opened a new window for each request.
+    window's `type` is `windowType(window)` (else `normal`); `getAll` and `getLastFocused` honour
+    `QueryOptions.windowTypes` by it (the last focused window of another type gives way to the focused or
+    newest one of the types asked for); `update` refuses what Chrome refuses (a minimized, maximized or
+    fullscreen `state` with `left`, `top`, `width` or `height`; `minimized` with `focused: true`; `maximized`
+    or `fullscreen` with `focused: false`) before it changes anything, then calls `updateWindow` after it
+    handled `state`, so the embedder applies the bounds, `focused: true` and `drawAttention`. Reason: `type`
+    was `normal` for every window and `update` handled `state` only, so an extension that keeps one popup
+    (`getAll()` for a `popup` with its id, then `update(id, { focused: true })`) never found it and opened a
+    new window for each request.
 
 Nothing else changed; upstream code is not reformatted.
 

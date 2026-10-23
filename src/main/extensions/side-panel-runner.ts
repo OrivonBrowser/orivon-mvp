@@ -133,6 +133,17 @@ function makeRunner (ctx: ExtensionApiContext): SidePanelDriver {
 
   onGuestChosen((window, entryId) => { driver.chosen(window, entryId) })
   ctx.onShell((shell) => {
+    // Only a tab in front takes the person's input, so a tab is heard from the moment it is made, replaced or brought forward.
+    for (const entry of shell.windows.all()) {
+      const front = entry.tabs.activeWebContents()
+      if (front !== undefined && !front.isDestroyed()) sidePanelTabGestures.watch(front)
+    }
+    shell.tabLifecycle.subscribe({
+      tabCreated: (contents) => { sidePanelTabGestures.watch(contents) },
+      viewReplaced: (_old, contents) => { sidePanelTabGestures.watch(contents) },
+      shownChanged: (_window, tabs) => { for (const tab of tabs) if (tab.shown) sidePanelTabGestures.watch(tab.contents) },
+      tabActivated: (contents) => { sidePanelTabGestures.watch(contents) }
+    })
     shell.tabLifecycle.subscribe({
       tabActivated: (contents) => {
         const found = shell.windows.findTab(contents)
@@ -163,7 +174,6 @@ function makeRunner (ctx: ExtensionApiContext): SidePanelDriver {
 
   // Input the browser itself saw on one of an extension's own pages (a click or a key), whatever surface shows it.
   app.on('web-contents-created', (_event, contents) => {
-    sidePanelTabGestures.watch(contents)
     contents.on('input-event', (_inputEvent, input) => {
       if (!DELIBERATE_INPUT.has(input.type)) return
       const id = EXTENSION_PAGE.exec(contents.getURL())?.[1]
@@ -196,6 +206,7 @@ function makeRunner (ctx: ExtensionApiContext): SidePanelDriver {
       behavior.write(id, options.openOnActionClick(id))
       driver.optionsChanged(id)
     },
+    showing: (id, window, tabId) => driver.showing(id, window, tabId),
     open: async (target) => { await driver.open(target) },
     close: async (target) => { await driver.close(target) }
   }

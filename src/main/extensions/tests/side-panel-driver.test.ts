@@ -124,6 +124,37 @@ describe('what the picker lists', () => {
   })
 })
 
+describe('whether the extension\'s panel is showing', () => {
+  it('is false before it opened, true while it loads and once shown, and false again after it closed', async () => {
+    const s = setup()
+    s.driver.republish()
+    expect(s.driver.showing(EXT, s.win, undefined)).toBe(false)
+    s.host.open(`ext:${EXT}`)
+    expect(s.driver.showing(EXT, s.win, undefined)).toBe(true)
+    s.pages[0]?.finish()
+    await s.settle()
+    expect(s.driver.showing(EXT, s.win, undefined)).toBe(true)
+    s.host.close()
+    await s.settle()
+    expect(s.driver.showing(EXT, s.win, undefined)).toBe(false)
+  })
+
+  it('is about the extension that is showing, not another', async () => {
+    const s = setup()
+    s.driver.republish()
+    await s.openPanel()
+    expect(s.driver.showing(OTHER, s.win, undefined)).toBe(false)
+  })
+
+  it('counts a call that names the tab in front, and not a call that names another tab', async () => {
+    const s = setup()
+    s.driver.republish()
+    await s.openPanel()
+    expect(s.driver.showing(EXT, s.win, 1)).toBe(true)
+    expect(s.driver.showing(EXT, s.win, 2)).toBe(false)
+  })
+})
+
 describe('opening the panel', () => {
   it('shows the page once its first load ended, tells the extension, and takes the keyboard', async () => {
     const s = setup()

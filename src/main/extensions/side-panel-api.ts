@@ -24,6 +24,8 @@ export interface SidePanelDriver {
   readonly gesture: GestureLedger
   /** What the person's click or key in a page gives the extensions that run code there. */
   readonly tabGesture: TabGesture<WebContents>
+  /** The extension's panel is showing, or loading, in the window (and for `tabId`, when that is the tab in front or none is named). */
+  readonly showing: (extensionId: string, window: ShellWindow, tabId: number | undefined) => boolean
   readonly side: () => 'left' | 'right'
   /** The extension changed what it shows or when. */
   readonly optionsChanged: (extensionId: string) => void
@@ -115,14 +117,16 @@ export function installSidePanel (ctx: ExtensionApiContext, driver: SidePanelDri
   ctx.handle('sidePanel.open', async (event, raw) => {
     const target = targetOf(event, raw, 'sidePanel.open(object options)')
     const extensionId = event.extension.id
-    // The extension's own surfaces first; failing those, a click or key in a page the extension runs code in.
-    const onSurface = driver.gesture.available(extensionId)
-    const page = onSurface ? undefined : inputTabOf(target)
-    const onPage = page !== undefined && driver.tabGesture.available(page, ctx.canSee(extensionId, page))
-    if (!onSurface && !onPage) return fail(GESTURE_ERROR)
+    // In order: a panel of the extension's already showing there (a second request from a page that just got its panel needs
+    // no new input), the extension's own surfaces, then a click or key in a page the extension runs code in.
+    const showing = driver.showing(extensionId, target.window, target.tabId)
+    const onSurface = !showing && driver.gesture.available(extensionId)
+    const page = showing || onSurface ? undefined : inputTabOf(target)
+    const onPage = page !== undefined && driver.tabGesture.available(page, ctx.canSee(extensionId, page), extensionId)
+    if (!showing && !onSurface && !onPage) return fail(GESTURE_ERROR)
     await driver.open(target)
     if (onSurface) driver.gesture.spend(extensionId)
-    else if (page !== undefined) driver.tabGesture.spend(page)
+    else if (onPage) driver.tabGesture.spend(page, extensionId)
   })
 
   ctx.handle('sidePanel.close', async (event, raw) => {

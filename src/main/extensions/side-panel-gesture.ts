@@ -38,27 +38,38 @@ export function createGestureLedger (clock: () => number = Date.now, windowMs: n
 export interface TabGesture<T extends InputTab & object> {
   /** Starts hearing the browser's input in `tab`. */
   readonly watch: (tab: T) => void
-  /** The person clicked or pressed a key in `tab` within the window, nothing has spent it, and `reachesPage` (the extension runs code in `tab`'s page). */
-  readonly available: (tab: T, reachesPage: boolean) => boolean
-  /** One panel opened for this input: the next needs a new one. */
-  readonly spend: (tab: T) => void
+  /**
+   * The person clicked or pressed a key in `tab` within the window, `reachesPage` (the extension runs code in `tab`'s page),
+   * and no other extension has spent that input. The extension that spent it may use it again: a page that sends two
+   * requests from one click gets one answer for both.
+   */
+  readonly available: (tab: T, reachesPage: boolean, extensionId: string) => boolean
+  /** `extensionId` opened a panel for this input: no other extension can use it. */
+  readonly spend: (tab: T, extensionId: string) => void
 }
 
 /**
  * The gesture a click on a page gives an extension that runs a content script there. Chrome carries the content script's
  * user activation into the worker; Orivon carries the browser's own record of the input instead. The record is per tab,
- * not per extension, so one click opens one panel however many extensions reach the page.
+ * and an input is spent by the first extension that uses it, so one click opens panels for one extension however many
+ * reach the page.
  */
 export function createTabGesture<T extends InputTab & object> (clock: () => number = Date.now, windowMs: number = GESTURE_WINDOW_MS): TabGesture<T> {
   const input = new TabInteraction<T>(clock)
+  /** Who spent the tab's input; meaningful only while the input is marked spent, which new input and a navigation undo. */
+  const spentBy = new WeakMap<T, string>()
   return {
     watch: (tab) => { input.watch(tab) },
-    available: (tab, reachesPage) => {
+    available: (tab, reachesPage, extensionId) => {
       if (!reachesPage) return false
       const { at, consumed } = input.read(tab)
-      return at !== null && !consumed && clock() - at <= windowMs
+      if (at === null || clock() - at > windowMs) return false
+      return !consumed || spentBy.get(tab) === extensionId
     },
-    spend: (tab) => { input.consume(tab) }
+    spend: (tab, extensionId) => {
+      input.consume(tab)
+      spentBy.set(tab, extensionId)
+    }
   }
 }
 

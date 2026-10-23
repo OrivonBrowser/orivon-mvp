@@ -5,9 +5,10 @@ import type { ShellBridge } from '../extension-host-impl.js'
 const ID = 'abcdefghijklmnopabcdefghijklmnop'
 
 const SCREEN = { x: 0, y: 0, width: 1920, height: 1080 }
-vi.mock('electron', () => ({ screen: { getAllDisplays: () => [{ bounds: SCREEN, workArea: SCREEN }] }, session: { defaultSession: { extensions: { getExtension: vi.fn((id: string) => id === 'abcdefghijklmnopabcdefghijklmnop' ? {} : null) } } } }))
+const DISPLAY = { id: 1, bounds: SCREEN, workArea: SCREEN }
+vi.mock('electron', () => ({ screen: { getPrimaryDisplay: () => DISPLAY, getAllDisplays: () => [DISPLAY] }, session: { defaultSession: { extensions: { getExtension: vi.fn((id: string) => id === 'abcdefghijklmnopabcdefghijklmnop' ? {} : null) } } } }))
 vi.mock('../../shell/window.js', () => ({ createShellWindow: vi.fn() }))
-vi.mock('../../shell/window-frame.js', () => ({ MIN_WINDOW_WIDTH: 500, MIN_WINDOW_HEIGHT: 400 }))
+vi.mock('../../shell/window-frame.js', () => ({ MIN_WINDOW_WIDTH: 500, MIN_WINDOW_HEIGHT: 400, defaultWindowSize: () => ({ width: 1280, height: 800 }) }))
 
 const { buildHostImpl, extensionJustActivatedTab, EXTENSION_FOCUS_HANDOVER_MS } = await import('../extension-host-impl.js')
 const { isExtensionOpened } = await import('../extension-opened-pages.js')
@@ -41,7 +42,7 @@ describe('buildHostImpl: pages the extension opens count as its own', () => {
     const extensionTab = pageWith()
     const webTab = pageWith()
     const openTrusted = vi.fn((target?: string): [string, WebContents] => ['t', target?.startsWith('https:') === true ? webTab : extensionTab])
-    const win = { id: 1 }
+    const win = { id: 1, isDestroyed: () => false, isFocused: () => true }
     const bridge = { services: { windows: { focused: () => ({ window: win }), all: () => [{ window: win, tabs: { openTrusted } }] } } } as unknown as ShellBridge
     const host = buildHostImpl(() => bridge)
 
@@ -86,7 +87,7 @@ describe('extensionJustActivatedTab', () => {
   }
 
   it('holds for the focus handover after chrome.tabs.create, and not past it', async () => {
-    const win = { id: 1 }
+    const win = { id: 1, isDestroyed: () => false, isFocused: () => true }
     await activateAs('ext-a', win)
     const now = Date.now()
     expect(extensionJustActivatedTab(popupOf('ext-a', win), now)).toBe(true)
@@ -94,18 +95,18 @@ describe('extensionJustActivatedTab', () => {
   })
 
   it('does not hold for a popup whose extension is not the one that activated the tab', async () => {
-    const win = { id: 1 }
+    const win = { id: 1, isDestroyed: () => false, isFocused: () => true }
     await activateAs('ext-b', win)
     expect(extensionJustActivatedTab(popupOf('ext-a', win))).toBe(false)
   })
 
   it('does not hold for a popup in another window than the one the tab was activated in', async () => {
-    await activateAs('ext-a', { id: 1 })
+    await activateAs('ext-a', { id: 1, isDestroyed: () => false, isFocused: () => true })
     expect(extensionJustActivatedTab(popupOf('ext-a', { id: 2 }))).toBe(false)
   })
 
   it('does not hold when the library did not say who asked', async () => {
-    const win = { id: 1 }
+    const win = { id: 1, isDestroyed: () => false, isFocused: () => true }
     await activateAs(undefined, win)
     expect(extensionJustActivatedTab(popupOf('ext-a', win))).toBe(false)
   })
@@ -182,6 +183,27 @@ describe('buildHostImpl: windows an extension opens and changes', () => {
     expect((await create({ width: 9999, height: 9999, left: 5000, top: 5000 })).options.place).toEqual({ x: 0, y: 0, width: 1920, height: 1080 })
   })
 
+  it('reports the deprecated panel type as a popup', async () => {
+    const panel = await create({ type: 'panel' })
+    expect(panel.host.windowType?.(panel.win as never)).toBe('popup')
+  })
+
+  it('holds a corner inside the display using the size the window will get', async () => {
+    expect((await create({ left: 1800, top: 900 })).options.place).toEqual({ x: 640, y: 280, width: 1280, height: 800 })
+  })
+
+  it('opens a tab in the last focused ordinary window, not in an extension popup', async () => {
+    const popup = await create({ type: 'popup' })
+    Object.assign(popup.win, { isFocused: () => true })
+    const ordinary = { id: 1, isDestroyed: () => false, isFocused: () => false }
+    const openTrusted = vi.fn((): [string, WebContents] => ['t', { on: vi.fn(), loadURL: vi.fn(async () => undefined) } as unknown as WebContents])
+    const entries = [{ window: ordinary, tabs: { openTrusted } }, { window: popup.win, tabs: { openTrusted: vi.fn() } }]
+    const bridge2 = { services: { windows: { all: () => entries, focused: () => entries[1] } } } as unknown as ShellBridge
+    const opened = await buildHostImpl(() => bridge2).createTab?.({ url: `chrome-extension://${ID}/welcome.html` } as never)
+    expect(opened?.[1]).toBe(ordinary)
+    expect(openTrusted).toHaveBeenCalled()
+  })
+
   it('opens behind the others for focused: false, and in front otherwise', async () => {
     expect((await create({ focused: false })).options.inactive).toBe(true)
     expect((await create({})).options.inactive).toBeUndefined()
@@ -192,7 +214,7 @@ describe('buildHostImpl: windows an extension opens and changes', () => {
       const bounds = { x: 200, y: 100, width: 700, height: 800 }
       return {
         isDestroyed: () => false, isMaximized: () => false, isFullScreen: () => false, isMinimized: () => false,
-        getBounds: () => ({ ...bounds }), setBounds: vi.fn(), show: vi.fn(), focus: vi.fn(), restore: vi.fn(), flashFrame: vi.fn(), ...over
+        getBounds: () => ({ ...bounds }), setBounds: vi.fn(), show: vi.fn(), focus: vi.fn(), restore: vi.fn(), flashFrame: vi.fn(), setFullScreen: vi.fn(), ...over
       }
     }
     const host = buildHostImpl(() => undefined)
@@ -203,13 +225,21 @@ describe('buildHostImpl: windows an extension opens and changes', () => {
       expect(w.setBounds).toHaveBeenCalledWith({ x: 1420, y: 100, width: 500, height: 800 })
     })
 
-    it('does not touch bounds it was not asked to change, or those of a maximized window', () => {
-      const w = win()
-      host.updateWindow?.(w as never, { focused: true })
-      expect(w.setBounds).not.toHaveBeenCalled()
+    it('leaves the bounds alone when the call names none, whatever the window spans', () => {
+      const tall = win({ getBounds: () => ({ x: -200, y: 0, width: 2400, height: 1400 }) })
+      host.updateWindow?.(tall as never, { focused: true, drawAttention: true })
+      expect(tall.setBounds).not.toHaveBeenCalled()
+    })
+
+    it('restores a maximized, fullscreen or minimized window before it applies bounds', () => {
       const big = win({ isMaximized: () => true })
       host.updateWindow?.(big as never, { left: 0 })
-      expect(big.setBounds).not.toHaveBeenCalled()
+      expect(big.restore).toHaveBeenCalled()
+      expect(big.setBounds).toHaveBeenCalledWith({ x: 0, y: 100, width: 700, height: 800 })
+      const full = win({ isFullScreen: () => true })
+      host.updateWindow?.(full as never, { top: 0 })
+      expect(full.setFullScreen).toHaveBeenCalledWith(false)
+      expect(full.setBounds).toHaveBeenCalled()
     })
 
     it('shows and focuses for focused: true, and does nothing about focus otherwise', () => {

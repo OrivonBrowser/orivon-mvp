@@ -71,6 +71,11 @@ export function windowBackgroundColor (isPrivate: boolean): string {
     : (nativeTheme.shouldUseDarkColors ? BACKGROUND_DARK : BACKGROUND_LIGHT)
 }
 
+/** The size a window opens with when nothing says otherwise, on a display whose bounds are `bounds`. */
+export function defaultWindowSize (bounds: { width: number, height: number }): { width: number, height: number } {
+  return { width: Math.min(1280, bounds.width), height: Math.min(800, bounds.height) }
+}
+
 /** `dirname`: the calling module's own `import.meta.dirname`, from which a run
  * from source finds the repo's build/icon-source.png (out/main -> ../../build). */
 export function createWindowFrame (dirname: string, place: Placement = {}, isPrivate = false, kiosk = false): WindowFrame {
@@ -102,8 +107,7 @@ export function createWindowFrame (dirname: string, place: Placement = {}, isPri
   // produces a letterbox slot with no way to grow it from here; bounds is
   // the physical panel and is always right.
   const { bounds } = screen.getPrimaryDisplay()
-  const width = Math.min(1280, bounds.width)
-  const height = Math.min(800, bounds.height)
+  const { width, height } = defaultWindowSize(bounds)
   const initialBounds = {
     x: bounds.x + Math.round((bounds.width - width) / 2),
     y: bounds.y + Math.round((bounds.height - height) / 2),
