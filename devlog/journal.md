@@ -36,6 +36,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Extensions can use the camera and microphone after you allow them, asked per extension, and can run in private windows.
 - Taking an app update now shows an "Updating" screen over its tabs and reloads them on the new version.
 - Ports raise their version by themselves whenever a published build changes, so every republish reaches users as a real update.
+- The Ethereum light client now starts on a computer whose clock is behind, using the servers' time for Helios alone; Settings says by how much.
 - Releases carry only the plain downloads again; app-named installer copies are made separately, by hand, when wanted.
 - TorSocks: an Orivon app running Tor (Arti in WebAssembly) as a SOCKS5 proxy for .onion sites, and onion services for articles, files and sites.
 - Opening a .onion site through "Your proxy" is now an end-to-end test, and a spawned WebAssembly program's sockets have a catalogue row.

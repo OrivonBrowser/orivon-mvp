@@ -18,6 +18,14 @@ describe('lightClientView', () => {
     expect(view.checkpoint).toBe('Checkpoint 3 hours old, last verified on this computer.')
   })
 
+  it("says when the light client is allowing for a clock that is behind, and how far", () => {
+    const sentence = (clockLeadMs: number): string => lightClientView(facts({ lightClient: { state: 'synced', block: 1, at: NOW + clockLeadMs, clockLeadMs } }), NOW).summary
+    expect(sentence(45_000)).toContain("This computer's clock is 45 seconds behind the servers', and the light client allows for it.")
+    expect(sentence(5 * 60_000)).toContain('is 5 minutes behind')
+    expect(sentence(3 * 3_600_000)).toContain('is 3 hours behind')
+    expect(lightClientView(facts({ lightClient: { state: 'synced', block: 1, at: NOW } }), NOW).summary).not.toContain('clock')
+  })
+
   it('carries the block and when it was produced as numbers, and the age of the checkpoint it starts from, for the Networks popup', () => {
     const view = lightClientView(facts({ lightClient: { state: 'synced', block: 26_047_527, at: NOW - 2 * 60_000 } }), NOW)
     expect(view).toMatchObject({ block: 26_047_527, headAt: NOW - 2 * 60_000, checkpointAgeSeconds: 3 * 3600 })
@@ -32,6 +40,14 @@ describe('lightClientView', () => {
   it('stops saying synced once its newest block is old, whatever it last reported', () => {
     const view = lightClientView(facts({ lightClient: { state: 'synced', block: 26_047_527, at: NOW - 12 * 60_000 } }), NOW)
     expect(view).toMatchObject({ state: 'syncing', summary: 'Behind the chain: the newest block it has verified, 26,047,527, was produced 12 minutes ago.' })
+  })
+
+  it("judges the age of its newest block by the servers' time when the computer's clock is behind", () => {
+    const hour = 3_600_000
+    const view = lightClientView(facts({ lightClient: { state: 'synced', block: 26_047_527, at: NOW + hour - 10 * 60_000, clockLeadMs: hour } }), NOW)
+    expect(view).toMatchObject({ state: 'syncing', summary: 'Behind the chain: the newest block it has verified, 26,047,527, was produced 10 minutes ago.' })
+    const fresh = lightClientView(facts({ lightClient: { state: 'synced', block: 1, at: NOW + hour - 2 * 60_000, clockLeadMs: hour } }), NOW)
+    expect(fresh.summary).toContain('produced 2 minutes ago.')
   })
 
   it('says why it failed and when it tries again', () => {

@@ -7,7 +7,8 @@
 import { ResolutionError } from '../../resolution/records.js'
 import { withTimeout } from '../../resolution/timing.js'
 import type { WebFetch } from '../egress.js'
-import { heliosError } from './helios-errors.js'
+import { clockJump, heliosClockLead, installHeliosClock, measureClockLead, setHeliosClockLead } from './clock.js'
+import { CLOCK_BEHIND_REASON, clockBehind, heliosError } from './helios-errors.js'
 import { failoverRpc } from './rpc-failover.js'
 import { BLOCK_ROOT_PATTERN } from '../protocol.js'
 import type { FromHost, LightClientConfig, LightClientState, TunnelRoute } from '../protocol.js'
@@ -124,6 +125,7 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
   const primary = config.executionRpcs[0]
   if (primary === undefined) throw new Error('no execution RPC configured')
   installTimerScope()
+  installHeliosClock()
   const names = route === 'direct' ? { execution: primary, consensus: config.consensusRpc } : tunnelNames(route)
   dispatcher().lanes.push({ ...names, realConsensus: config.consensusRpc, viaExecution: failoverRpc(config.executionRpcs, fetch), fetch })
   Object.defineProperty(globalThis, 'WebSocket', { value: undefined, configurable: true, writable: true })
@@ -141,6 +143,12 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
    * this is "since success", not "ever", so a client that has been failing
    * for a while and then recovers gets full tolerance again immediately. */
   let consecutiveFailures = 0
+  /** Whether a failure for a clock behind the chain has already been answered with an immediate second try. */
+  let clockRetried = false
+  /** Whether the lead may be wrong and the servers are still to be asked: set by a clock set back, or set forward with a lead lent, or a stall with a lead lent; cleared once they have answered. */
+  let recheckDue = false
+  /** The monotonic time of the last measurement, so a due one is tried at most once a `REFRESH_MS`. */
+  let lastMeasuredAt = Number.NEGATIVE_INFINITY
 
   const setState = (next: LightClientState): void => {
     state = next
@@ -155,7 +163,9 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
     if (typeof head?.number !== 'string' || typeof head.timestamp !== 'string') throw new Error('the light client has no verified block')
     lastHeadReadAt = Date.now()
     consecutiveFailures = 0
-    setState({ state: 'synced', block: Number(BigInt(head.number)), at: Number(BigInt(head.timestamp)) * 1000 })
+    const at = Number(BigInt(head.timestamp)) * 1000
+    const lead = heliosClockLead()
+    setState({ state: 'synced', block: Number(BigInt(head.number)), at, ...(lead > 0 && { clockLeadMs: lead }) })
     // Wakes a request waiting in `provider.request` the moment a refresh
     // recovers from a downgrade, instead of after its full SYNC_WAIT_MS.
     markSynced()
@@ -185,7 +195,7 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
    * the fast-retry this function exists to give. */
   const scheduleRefresh = (client: Helios, delayMs: number): void => {
     const timer = setTimeout(() => {
-      refreshHead(client).then(
+      recheckClock().then(async () => { await refreshHead(client) }).then(
         () => { scheduleRefresh(client, REFRESH_MS) },
         (error: unknown) => {
           console.error('[verifier] light client refresh failed:', message(error))
@@ -201,6 +211,8 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
           // genuinely stopped syncing.
           const insideGrace = lastHeadReadAt !== undefined && Date.now() - lastHeadReadAt <= HEAD_GRACE_MS
           if (!(insideGrace && consecutiveFailures < 2) && state.state === 'synced') {
+            // A stall while a lead is lent may be the lead's fault.
+            if (heliosClockLead() > 0) recheckDue = true
             synced = new Promise<void>((resolve) => { markSynced = resolve })
             setState({ state: 'syncing', since: Date.now() })
           }
@@ -218,6 +230,31 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
     if (delayMs === REFRESH_MS) reportCheckpoint(client).catch((error: unknown) => { console.error('[verifier] light client checkpoint read failed:', message(error)) })
   }
 
+  /** Asks the servers this client talks to for the time, and sets the lead to what they said: 0 takes it back. `undefined`, with the lead kept, when they cannot tell. */
+  const measureLead = async (): Promise<number | undefined> => {
+    lastMeasuredAt = performance.now()
+    let lead: number | undefined
+    try {
+      lead = await measureClockLead([config.consensusRpc, ...config.executionRpcs], fetch)
+    } catch {
+      lead = undefined
+    }
+    // The jump check starts from the moment of this measurement, so a clock set between it and the next refresh is seen.
+    clockJump()
+    if (lead !== undefined) {
+      setHeliosClockLead(lead)
+      recheckDue = false
+    }
+    return lead
+  }
+
+  /** Asks the servers again when the lead may be wrong: the system clock was set back (whatever the lead), or set forward or woke up with a lead lent, or a measurement is still due. A measurement that could not be made keeps the lead and is tried again at most once a `REFRESH_MS`: the network may simply be down, as after the computer wakes. */
+  const recheckClock = async (): Promise<void> => {
+    const jump = clockJump()
+    if (jump < 0 || (jump > 0 && heliosClockLead() > 0)) recheckDue = true
+    if (recheckDue && performance.now() - lastMeasuredAt >= REFRESH_MS) await measureLead()
+  }
+
   const run = async (attempt: number): Promise<void> => {
     setState({ state: 'syncing', since: Date.now() })
     try {
@@ -231,9 +268,22 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
       const failed = helios
       helios = undefined
       await failed?.destroy().catch(() => {})
+      const behind = clockBehind(error)
+      // A lead already lent can be the cause too: one that is too large makes Helios fail with another text.
+      const measured = behind || heliosClockLead() > 0 ? await measureLead() : undefined
+      const lent = behind && measured !== undefined && measured > 0
+      if (lent) {
+        console.error(`[verifier] this computer's clock is about ${String(Math.round(measured / 1000))} s behind the servers'; the light client allows for it`)
+        // The first try with the clock lent starts at once; one that fails again goes by the ordinary backoff.
+        if (!clockRetried) {
+          clockRetried = true
+          void run(attempt)
+          return
+        }
+      }
       const delay = Math.min(FIRST_RETRY_MS * 2 ** attempt, MAX_RETRY_MS)
       synced = new Promise<void>((resolve) => { markSynced = resolve })
-      setState({ state: 'failed', reason: message(error), retryAt: Date.now() + delay })
+      setState({ state: 'failed', reason: behind && measured === undefined ? CLOCK_BEHIND_REASON : message(error), retryAt: Date.now() + delay })
       setTimeout(() => { void run(attempt + 1) }, delay).unref()
     }
   }

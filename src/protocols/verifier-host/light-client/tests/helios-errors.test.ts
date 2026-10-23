@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ResolutionError } from '../../../resolution/records.js'
-import { heliosError } from '../helios-errors.js'
+import { clockBehind, heliosError } from '../helios-errors.js'
 
 describe('heliosError', () => {
   it("turns a revert into the shape viem reads revert data from, so OffchainLookup is seen", () => {
@@ -35,5 +35,17 @@ describe('heliosError', () => {
   it('passes anything else through unchanged', () => {
     const original = new Error('error sending request')
     expect(heliosError(original)).toBe(original)
+  })
+})
+
+describe('clockBehind', () => {
+  it("recognises Helios's refusal of an update from a slot this computer's clock has not reached", () => {
+    for (const text of ['sync failed: invalid timestamp', 'Error: sync failed: invalid timestamp', 'invalid timestamp']) expect(clockBehind(new Error(text))).toBe(true)
+    expect(clockBehind('sync failed: invalid timestamp')).toBe(true)
+  })
+
+  it('never reads a clock problem out of text quoted inside another message', () => {
+    expect(clockBehind(new Error('rpc error: invalid timestamp in params'))).toBe(false)
+    expect(clockBehind(new Error('sync failed: insufficient participation'))).toBe(false)
   })
 })
