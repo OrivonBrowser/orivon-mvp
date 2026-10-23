@@ -40,7 +40,9 @@ vi.mock('../../sessions/web-request-owner.js', () => ({
   webRequestOwnerFor: () => ({
     onBeforeSendHeaders: (_order: number, _filter: unknown, _matches: unknown, run: (typeof registered.stamps)[number]) => { registered.beforeSendHeaders += 1; registered.stamps.push(run); return { remove } },
     onBeforeRequest: (_order: number, _filter: unknown, _matches: unknown, run: (details: unknown, current: unknown) => Promise<unknown>) => { registered.beforeRequest.push(run); return { remove } },
-    onCompleted: () => ({ remove })
+    onCompleted: () => ({ remove }),
+    onResponseStarted: () => ({ remove }),
+    onErrorOccurred: () => ({ remove })
   })
 }))
 
@@ -131,6 +133,28 @@ describe('the verifier subsystem', () => {
     forks()[0]?.listens()
     await vi.advanceTimersByTimeAsync(0)
     expect(done).toBe(true)
+  })
+
+  it('lets the first request to a host connect before the others, until its certificate is accepted', async () => {
+    const { gate } = await launch()
+    const { session } = await import('electron')
+    const verifyProc = vi.mocked(session.defaultSession.setCertificateVerifyProc).mock.calls.at(-1)?.[0] as unknown as (request: unknown, callback: (verdict: number) => void) => void
+    const request = (id: number): Promise<unknown> => gate({ url: `https://pic.eth/file${String(id)}`, id }, {})
+    const first = request(1)
+    await vi.advanceTimersByTimeAsync(0)
+    forks()[0]?.listens()
+    await vi.advanceTimersByTimeAsync(0)
+    await first
+    let second = false
+    void request(2).then(() => { second = true })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(second).toBe(false)
+    const certificate = { fingerprint: 'sha256/run=', data: '' }
+    verifyProc({ hostname: 'pic.eth', certificate, validatedCertificate: certificate, errorCode: -202 }, () => {})
+    await vi.advanceTimersByTimeAsync(49)
+    expect(second).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(second).toBe(true)
   })
 
   describe('where IPFS is read from', () => {

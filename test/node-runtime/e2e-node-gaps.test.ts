@@ -36,7 +36,7 @@ async function startSilentListener (): Promise<{ port: number, stop: () => void 
   return { port, stop: () => { child.kill('SIGCONT'); child.kill('SIGKILL') } }
 }
 
-it('[app:node-constants-and-exec-path] [app:fs-open-create-in-place] [app:file-calls-complete-beside-hung-dials] [app:url-parse-escapes-like-node] a bundled dependency reads constants and execPath, creates files in place, and its file calls complete while many dials hang, and a request path from url.parse is percent-encoded', async () => {
+it('[app:node-constants-and-exec-path] [app:fs-open-create-in-place] [app:file-calls-complete-beside-hung-dials] [app:url-parse-escapes-like-node] [app:node-random-int-in-range] [app:node-fs-copies-files-and-trees-and-makes-temp-folders] a bundled dependency reads constants and execPath, creates files in place, draws random integers, copies files and trees and makes temp folders, and its file calls complete while many dials hang, and a request path from url.parse is percent-encoded', async () => {
   const silent = await startSilentListener()
   const seen: string[] = []
   const server = createServer((request, response) => { seen.push(request.url ?? ''); response.end('ok') })
@@ -72,6 +72,16 @@ it('[app:node-constants-and-exec-path] [app:fs-open-create-in-place] [app:file-c
       check('an open with O_RDWR | O_CREAT creates a missing file', results.createInPlace?.missingCreated === true, detail)
       check('the same open keeps an existing file\'s bytes and writes at the offset', results.createInPlace?.kept === 'abXYefgh' && results.createInPlace.secondOpenKeeps === 'made', detail)
       check('file calls made while 300 dials hang all complete, and promptly', results.filesBesideHungDials?.failed === 0 && (results.filesBesideHungDials.elapsedMs ?? Infinity) < 5000, detail)
+
+      const draws = results.randomInt
+      check('[app:node-random-int-in-range] crypto.randomInt(3, 9) gives integers in [3, 9) and reaches all six values over 300 draws', draws?.inRange === true && draws.distinct === 6, detail)
+      check('[app:node-random-int-in-range] the callback form answers once, with no error and a value in range, and an empty range throws ERR_OUT_OF_RANGE', draws?.callbackError === undefined && Number.isInteger(draws?.callbackValue) && (draws?.callbackValue as number) < 10 && draws?.badRange === 'ERR_OUT_OF_RANGE', detail)
+
+      const copies = results.copies
+      check('[app:node-fs-copies-files-and-trees-and-makes-temp-folders] copyFile copies a file in the app\'s files, and the exclusive mode refuses an existing destination (EEXIST)', copies?.file === 'alpha' && copies.exclusive === 'EEXIST', detail)
+      check('[app:node-fs-copies-files-and-trees-and-makes-temp-folders] cp copies a folder tree recursively, with the promise and the callback form', copies?.tree.join() === 'a-copy.txt,a.txt,sub' && copies.nested === 'beta' && copies.callbackTree === true, detail)
+      check('[app:node-fs-copies-files-and-trees-and-makes-temp-folders] mkdtemp makes a new folder in os.tmpdir() each call, which holds files', copies?.temp.inTmpdir === true && copies.temp.distinct && copies.temp.written === 'in the temp folder', detail)
+      check('[app:node-fs-copies-files-and-trees-and-makes-temp-folders] none of the three reaches a path outside the app\'s files: each fails EACCES', copies?.outside === 'EACCES' && copies.temp.outside === 'EACCES', detail)
 
       check('the requests went out without an error', results.requests?.every((outcome: { status?: number | undefined }) => outcome.status === 200) === true, detail)
       check('a space, quotes and braces in the path reach the server percent-encoded', seen.includes('/16%20-%20Artist%20%22Title%22%20%7B1%7D.mp3'), JSON.stringify(seen))

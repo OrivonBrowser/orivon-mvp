@@ -95,9 +95,15 @@ main () {
     tag="local package"
   else
     say "Looking for the newest Orivon for $arch ..."
-    local json picked url digest
-    json=$(curl -fsSL ${ORIVON_GITHUB_TOKEN:+-H "Authorization: Bearer $ORIVON_GITHUB_TOKEN"} "https://api.github.com/repos/$REPO/releases?per_page=20") \
-      || fail "Could not read the releases of $REPO from GitHub (offline, or its rate limit is reached). Try again later."
+    local json picked url digest tries=0
+    # GitHub now and then answers the release list with an empty array: asked again twice before it counts.
+    while :; do
+      json=$(curl -fsSL ${ORIVON_GITHUB_TOKEN:+-H "Authorization: Bearer $ORIVON_GITHUB_TOKEN"} "https://api.github.com/repos/$REPO/releases?per_page=20") \
+        || fail "Could not read the releases of $REPO from GitHub (offline, or its rate limit is reached). Try again later."
+      tries=$((tries + 1))
+      if ! [[ $json =~ ^[[:space:]]*\[[[:space:]]*\][[:space:]]*$ ]] || [ "$tries" -ge 3 ]; then break; fi
+      sleep 1
+    done
     picked=$(pick_release "$arch" "$json") || fail "Could not read the release list."
     tag=$(printf '%s\n' "$picked" | sed -n 1p)
     url=$(printf '%s\n' "$picked" | sed -n 2p)

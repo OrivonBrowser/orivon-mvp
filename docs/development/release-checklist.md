@@ -193,7 +193,7 @@ newest one with an AppImage attached, or a computer without `libfuse2` gets an O
 
 **Precondition.** A published release, and a Windows machine or a Linux machine that has never run Orivon.
 
-**Input.** Download `Orivon-Setup-<version>-x64.freetube.exe` (or the AppImage tagged `freetube`) and run it on a machine with no Orivon profile.
+**Input.** Copy the release's installer as `Orivon-Setup-<version>-x64.freetube.exe` (or its AppImage as `Orivon-<version>-x86_64.freetube.AppImage`) and run it on a machine with no Orivon profile.
 
 **Assertions.** After the welcome screen, a tab opens on FreeTube's address and asks what it may do; nothing is granted by itself.
 FreeTube is first in Orivon Featured. On Windows, `installer-name.txt` beside the program holds the installer's file name, and

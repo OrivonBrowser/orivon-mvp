@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ipfsNodeView, lightClientView } from '../status-view.js'
+import { ipfsNodeView, lightClientLog, lightClientView } from '../status-view.js'
 import type { VerifierFacts } from '../status-view.js'
 
 const NOW = 1_790_000_000_000
@@ -173,5 +173,36 @@ describe('ipfsNodeView', () => {
     const none = 'IPFS pages do not load meanwhile, unless you press "Load through public gateways" on a page\'s error or choose gateways under "Load IPFS sites from"'
     expect(ipfsNodeView({ state: 'off', reason: 'a proxy is configured' }, true).summary).toBe(`Not in use: a proxy is configured. ${none}.`)
     expect(ipfsNodeView({ state: 'failed', reason: 'it trapped' }, true).summary).toBe(`Not running: it trapped. ${none}. The node tries again shortly.`)
+  })
+})
+
+describe('lightClientLog', () => {
+  const failed = (reason: string) => ({ state: 'failed' as const, reason, retryAt: NOW })
+  const synced = (block: number) => ({ state: 'synced' as const, block, at: NOW })
+  const syncing = { state: 'syncing' as const, since: NOW }
+
+  it('logs the first sync once, and none of the refreshes after it', () => {
+    const log = lightClientLog()
+    expect(log(syncing)).toBeUndefined()
+    expect(log(synced(100))).toEqual({ level: 'log', text: 'light client synced at block 100' })
+    expect(log(synced(101))).toBeUndefined()
+    expect(log(syncing)).toBeUndefined()
+    expect(log(synced(102))).toBeUndefined()
+  })
+
+  it('logs a failure once across its retries, and again when the reason changes', () => {
+    const log = lightClientLog()
+    expect(log(failed('it timed out'))).toEqual({ level: 'error', text: 'light client failed: it timed out' })
+    expect(log(syncing)).toBeUndefined()
+    expect(log(failed('it timed out'))).toBeUndefined()
+    expect(log(failed('the beacon API answered 503'))).toEqual({ level: 'error', text: 'light client failed: the beacon API answered 503' })
+  })
+
+  it('logs the sync that ends a failure, and the same failure again after it', () => {
+    const log = lightClientLog()
+    log(synced(100))
+    log(failed('it timed out'))
+    expect(log(synced(200))).toEqual({ level: 'log', text: 'light client synced at block 200' })
+    expect(log(failed('it timed out'))).toEqual({ level: 'error', text: 'light client failed: it timed out' })
   })
 })

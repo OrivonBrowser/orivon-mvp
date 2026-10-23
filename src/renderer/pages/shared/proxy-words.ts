@@ -29,7 +29,7 @@ export function resultOf (reply: unknown): ProxyTestResult {
 
 /** The result in words for the person, about the tunnel rather than the protocol. */
 export function proxyTestWords (result: Exclude<ProxyTestResult, { readonly nym: true }>): string {
-  if (result.ok) return result.authentication === 'password' ? 'The tunnel answered. It asks for a user name and password, and each app gets its own.' : 'The tunnel answered.'
+  if (result.ok) return result.authentication === 'password' ? 'The tunnel answered. Orivon signs in to it for you, with a different name for each app and site.' : 'The tunnel answered.'
   switch (result.reason) {
     case 'no-proxy': return 'Enter an address first.'
     case 'unreachable': return 'Nothing answered at that address.'

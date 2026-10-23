@@ -27,6 +27,7 @@ export function translate (error: unknown): unknown {
   if (code === 'ERR_SQLITE_ERROR' && typeof errcode === 'number' && typeof message === 'string') {
     return new SqliteError(message, sqliteEngine().capi.sqlite3_js_rc_str(errcode) ?? `UNKNOWN_SQLITE_ERROR_${String(errcode)}`)
   }
+  if (code === 'ERR_INVALID_STATE' && typeof message === 'string' && (message.startsWith('database is busy') || message.startsWith('statement is busy'))) return new TypeError('This database connection is busy executing a query')
   if (code === 'ERR_INVALID_STATE' && (message === 'database is not open' || message === 'statement has been finalized')) return notOpen()
   return error
 }

@@ -31,6 +31,7 @@ import { createReadStream, createWriteStream } from './streams.js'
 import { chmod, lchmod, chmodSyncWith } from './permissions.js'
 import { watch, FSWatcher } from './watch.js'
 import { promises } from './promises.js'
+import { doCopyFile, doCp, doMkdtemp, type CpOptions } from './copy.js'
 import { FS_CONSTANTS } from './constants.js'
 import { getOrivon } from '../orivon-global.js'
 import {
@@ -51,6 +52,7 @@ import { guardedSync, retriedSync } from './sync-orivon.js'
 import { refusingProxy } from '../unimplemented.js'
 import { refuseShim } from '../errors.js'
 import { toNodeError } from '../node-errors.js'
+import { invalidArgType } from '../arg-errors.js'
 
 export { open, close, read, write, fstat, ftruncate, fsync, openSync, closeSync, readSync, writeSync, fstatSync, fchmod, fchmodSync } from './handle.js'
 export { chmod, lchmod } from './permissions.js'
@@ -296,6 +298,33 @@ export function access (path: PathLike, ...args: readonly unknown[]): void {
   doAccess(path).then(() => callback(null), (error) => callback(error as Error))
 }
 
+/** Node refuses a call without its callback before doing anything, with the callback named `cb`. */
+function callbackOf (callback: unknown): NodeCallback<unknown> {
+  if (typeof callback !== 'function') throw invalidArgType('cb', 'of type function', callback)
+  return callback as NodeCallback<unknown>
+}
+
+export function copyFile (src: PathLike, dest: PathLike, callback: NodeCallback<void>): void
+export function copyFile (src: PathLike, dest: PathLike, mode: number, callback: NodeCallback<void>): void
+export function copyFile (src: PathLike, dest: PathLike, ...args: readonly unknown[]): void {
+  const done = callbackOf(args.at(-1))
+  doCopyFile(src, dest, args.length > 1 ? args[0] as number : undefined).then(() => done(null), (error) => done(error as Error))
+}
+
+export function cp (src: PathLike, dest: PathLike, callback: NodeCallback<void>): void
+export function cp (src: PathLike, dest: PathLike, options: CpOptions, callback: NodeCallback<void>): void
+export function cp (src: PathLike, dest: PathLike, ...args: readonly unknown[]): void {
+  const done = callbackOf(args.at(-1))
+  doCp(src, dest, args.length > 1 ? args[0] as CpOptions : undefined).then(() => done(null), (error) => done(error as Error))
+}
+
+export function mkdtemp (prefix: PathLike, callback: NodeCallback<string | Buffer>): void
+export function mkdtemp (prefix: PathLike, options: { encoding?: string | null } | string, callback: NodeCallback<string | Buffer>): void
+export function mkdtemp (prefix: PathLike, ...args: readonly unknown[]): void {
+  const done = callbackOf(args.at(-1))
+  doMkdtemp(prefix, args.length > 1 ? args[0] as { encoding?: string | null } | string : undefined).then((path) => done(null, path), (error) => done(error as Error))
+}
+
 export type { NodeStats }
 
 export function chmodSync (path: PathLike, mode: unknown): void {
@@ -329,7 +358,7 @@ export default refusingProxy({
   mkdir, readdir, stat, lstat, rm, rmdir, rename, realpath, open, close, read, write, fstat, ftruncate, fsync, promises,
   createReadStream, createWriteStream,
   statSync, lstatSync, mkdirSync, readdirSync, rmSync, rmdirSync, renameSync, existsSync, accessSync,
-  appendFileSync, unlinkSync, copyFileSync, mkdtempSync, realpathSync, openSync, closeSync, readSync, writeSync, fstatSync,
+  copyFile, cp, mkdtemp, appendFileSync, unlinkSync, copyFileSync, mkdtempSync, realpathSync, openSync, closeSync, readSync, writeSync, fstatSync,
   chmod, chmodSync, lchmod, lchmodSync, fchmod, fchmodSync, watch, FSWatcher,
   // fs.constants is data (POSIX flag numbers), not a function -- a
   // throwing-function refusal (A169) would misreport its own type, so this

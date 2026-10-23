@@ -267,7 +267,7 @@ describe('transaction', () => {
 })
 
 describe('members refused by name', () => {
-  it.each(['function', 'aggregate', 'table', 'backup', 'serialize', 'loadExtension'] as const)('db.%s', (member) => {
+  it.each(['aggregate', 'table', 'serialize', 'loadExtension'] as const)('db.%s', (member) => {
     const db = new Database(':memory:') as unknown as Record<string, () => unknown>
     let caught: unknown
     try { (db[member] as () => unknown)() } catch (error) { caught = error }

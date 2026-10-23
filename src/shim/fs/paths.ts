@@ -20,6 +20,7 @@ export interface NodeFsError extends Error {
   errno: number | undefined
   syscall: string
   path?: string
+  dest?: string
 }
 
 /** Linux values, as Node reports them on the platform the broker runs on. */
@@ -27,11 +28,12 @@ const ERRNO: Readonly<Record<string, number>> = {
   ENOENT: -2, EBADF: -9, EACCES: -13, EEXIST: -17, EXDEV: -18, ENOTDIR: -20, EISDIR: -21, EINVAL: -22, ENOSYS: -38, ENOTEMPTY: -39
 }
 
-/** A Node-shaped fs error: `EISDIR: illegal operation on a directory, read`, with `code`, `errno`, `syscall` and, when there is one, `path`. */
-export function fsError (code: string, description: string, syscall: string, path?: string): NodeFsError {
-  const where = path === undefined ? syscall : `${syscall} '${path}'`
+/** A Node-shaped fs error: `EISDIR: illegal operation on a directory, read`, with `code`, `errno`, `syscall` and, when there is one, `path` (and `dest`, for a call that names two). */
+export function fsError (code: string, description: string, syscall: string, path?: string, dest?: string): NodeFsError {
+  const where = path === undefined ? syscall : `${syscall} '${path}'${dest === undefined ? '' : ` -> '${dest}'`}`
   const error = Object.assign(new Error(`${code}: ${description}, ${where}`), { code, errno: ERRNO[code], syscall })
-  return path === undefined ? error : Object.assign(error, { path })
+  if (path !== undefined) Object.assign(error, { path })
+  return dest === undefined ? error : Object.assign(error, { dest })
 }
 
 /**

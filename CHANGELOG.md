@@ -10,12 +10,42 @@ Each section below lists what that release carried; `[Unreleased]` is what has l
 
 ## [Unreleased]
 
+### Changed
+
+- **`.eth.limo` addresses inside a page load as `.eth`**: an image, script, stylesheet, font, media file or request a page loads from a `<name>.eth.limo` or `.eth.link` address now comes from the `.eth` name, checked on this computer, and a request from another origin can still read it. Frames keep loading through the gateway, since a `.eth` site refuses to be framed by another site; Settings > Web3 turns it off.
+
+### Added
+
+- **Node shim: `/` and `/orivon` exist as directories**: a program that makes a folder by walking from `/` (`stat` each ancestor, `mkdir` the missing ones) now reaches the app's files. They list one entry, the next segment toward the files, and every write, removal, rename and open on them, and any path beside the files, still fails `EACCES`.
+- **Node shim: `crypto.randomInt`, `fs.mkdtemp`, `fs.cp` and `fs.copyFile`**: `randomInt` draws by rejection sampling over the platform's random values, in both forms; `copyFile`, `cp` (with `recursive`, `force`, `errorOnExist` and `filter`) and `mkdtemp` work on the app's own files and on a folder the person picked, in the callback and promise forms, with Node's errors.
+
+- **Node shim: SQLite user-defined functions and backup**: `better-sqlite3`'s `db.function(name, [options], fn)` and `db.backup(destination)`, and `node:sqlite`'s `DatabaseSync#function`, now work (they threw "not built"); `aggregate`, `table`, `serialize` and `loadExtension` still refuse by name, and a backup cannot start inside a transaction.
+
 ### Changed for apps
 
 What an app that runs on Orivon must now do differently. One line per behaviour, naming its id from
 [`test/app-behaviours/catalogue.md`](test/app-behaviours/catalogue.md), what changed, what apps must
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
+
+- **`sqlite-user-functions`** and **`sqlite-backup-to-app-files`**: new rows. An app that registers SQL functions on its database, or copies it with `db.backup`, no longer needs a change to run; `backup` cannot run inside a transaction. Recheck: any port that caught the refusal.
+- **`node-fs-ancestors-of-the-files-root-exist`**: new row. `fs.stat`, `existsSync` and `mkdir` on `/` and `/orivon` now answer as for directories that exist, and `readdir` lists the one entry toward the app's files; they failed `EACCES` before. Writes on them and any path beside the files still fail `EACCES`. Recheck: any port that walks a folder's ancestors.
+- **`file-handle-streams`**: new row. A page's `FileHandle`, from `orivon.fs.open`, a pick or a folder, now has the `readable()` and `writable()` its contract names; they were missing, so calling one threw. Each chunk is an ordinary positional `read` or `write`, counted and refused as one. Recheck: TorSocks.
+- **`node-random-int-in-range`** and **`node-fs-copies-files-and-trees-and-makes-temp-folders`**: new rows. `crypto.randomInt`, `fs.copyFile`, `fs.cp` and `fs.mkdtemp` now work (they threw "not implemented"); `cp` does not set file times or follow links, and a copy reads the whole file. Recheck: any port that caught the refusal.
+- **`electron-dialog-paths-read-and-write-the-pick`**: also covers `copyFile`, `cp` and `mkdtemp` on a picked folder and between it and the app's files. Nothing for apps to change.
+- **`routed-fetch-sends-no-origin-by-default`**, **`routed-fetch-delivers-body-in-pieces`**, **`routed-xhr-puts-binary-body-without-cors`**, **`routed-fetch-loopback-grant-covers-both-spellings`**, **`routed-websocket-wss-carries-origin-and-subprotocol`**, **`routed-websocket-reaches-granted-loopback-port`**, **`web-lock-if-available-follows-the-holder`**, **`user-agent-redefinable-by-head-script`** and **`cache-api-stores-and-reads-back`**: new rows that pin behaviour already documented, each with an end-to-end spec. A routed `fetch` adds no `Origin` or `Referer`, and delivers a chunked body as it arrives; a routed `WebSocket` sends the page's origin and the subprotocol it offered. Recheck: nothing.
+- **`routed-fetch-sends-formdata`** and **`routed-fetch-follows-redirects`**: now proven by an end-to-end spec. The first row's sentence also names the multipart body, the file's name and bytes, and a `File` body's type; the second names the bound (forty hops fail). Recheck: Element.
+
+### Changed
+
+- **Releases carry the plain downloads only**: the installer and AppImage copies named for an app are no longer attached to a release or its IPFS folder. A copy renamed for an app still opens it on first run.
+
+### Fixed
+
+- **A page that failed to load opens once its tunnel is turned on**: an onion address opened in a new tab failed, and choosing "Your proxy" from the tunnel button left it on the error; the tab now moves to the tunnel and loads the address.
+- **The tunnel test no longer reads as a problem when a proxy takes a sign-in**: Settings and the tunnel menu now say that Orivon signs in for you, with a different name for each app and site.
+- **A page's first files from a `.eth` name no tab had opened no longer fail at random**: a stylesheet, image or fetch could be refused with a certificate error when several arrived at once; the first request to a name now connects before the others.
+- **One-line installs no longer stop on a blank answer from GitHub**: the Linux, macOS and Windows commands ask again when GitHub's release list comes back empty, instead of saying no release exists yet.
 
 ## [0.0.9]
 

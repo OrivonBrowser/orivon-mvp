@@ -37,6 +37,14 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Taking an app update now shows an "Updating" screen over its tabs and reloads them on the new version.
 - Ports raise their version by themselves whenever a published build changes, so every republish reaches users as a real update.
 - The Ethereum light client now starts on a computer whose clock is behind, using the servers' time for Helios alone; Settings says by how much.
+- Releases carry only the plain downloads again; app-named installer copies are made separately, by hand, when wanted.
+- TorSocks: an Orivon app running Tor (Arti in WebAssembly) as a SOCKS5 proxy for .onion sites, and onion services for articles, files and sites.
+- Opening a .onion site through "Your proxy" is now an end-to-end test, and a spawned WebAssembly program's sockets have a catalogue row.
+- Embedded .eth.limo content (images, scripts, fetches) now loads from the .eth name, checked; frames stay on the gateway.
+- Attila and Explore now cover Orivon's own sites; a .eth.limo address is judged as its .eth name, lifting the website to Level 4.
+- DecentraWiki: TiddlyWiki wikis anyone can edit; a pen opens an editor that publishes them on IPFS, checking each CID itself; judged Level 4.
+- DecentraWiki publishes free with no account: Orivon's server pins each version 30 days on Filebase, checking the wiki and its CID.
+- TorSocks 0.1.4 publishes pictures, files, folders and websites; an onion that failed now loads once "Your proxy" is chosen for it.
 
 ### In my head
 

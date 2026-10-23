@@ -24,18 +24,12 @@ import type { ResponseEnvelope } from '../../contracts/ipc.js'
 import type { WebsiteScore } from '../../contracts/trust.js'
 
 /**
- * What surface/orivon.ts's fsOpen bridge closure resolves to (A184) --
- * deliberately narrower than `FileHandle` (contracts/handles.ts): no
- * `readable`/`writable`, and no live-pushed `closed`. Every method here is a
- * plain request/reply CONTROL_CHANNEL round trip -- unlike net.connect,
- * fs.open needs no per-socket port or byte pump, so it needs none of the
- * main-world stream machinery ./main-world-socket.ts's `buildSocket` exists
- * for. See this lane's own PR body for what that means a page cannot do yet.
- *
- * Moved here from ./main-world-socket.ts (A195) so `MainWorldDirectoryBridge`
- * below could reference it without a circular import -- re-exported from
- * there so no existing `from '../main-world-socket.js'` import site needed
- * to change.
+ * What surface/orivon.ts's fsOpen bridge closure resolves to -- narrower
+ * than `FileHandle` (contracts/handles.ts): no `readable`/`writable`, which
+ * the main world builds from `read`/`write` (`MainWorldFile`), and no
+ * live-pushed `closed`. Every method here is a plain request/reply
+ * CONTROL_CHANNEL round trip -- unlike net.connect, fs.open needs no
+ * per-socket port or byte pump.
  */
 export interface MainWorldFileBridge {
   readonly id: string
@@ -47,6 +41,12 @@ export interface MainWorldFileBridge {
   truncate: (length: number) => Promise<void>
   sync: () => Promise<void>
   close: () => Promise<void>
+}
+
+/** The file handle a page holds: the bridge's calls, and `FileHandle`'s stream factories, made in the main world from `read` and `write`. */
+export interface MainWorldFile extends MainWorldFileBridge {
+  readable: (opts?: { start?: number, end?: number }) => ReadableStream<Uint8Array>
+  writable: (opts?: { start?: number }) => WritableStream<Uint8Array>
 }
 
 /**

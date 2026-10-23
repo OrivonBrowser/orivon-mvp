@@ -78,9 +78,9 @@ Confinement runs once, at open; `read`, `write` and the streams address the open
 re-check only handle ownership (T11c), as `net.connect` does. A chunk that exceeds the quota
 **errors** the `writable()` stream instead of being dropped as a denied `udp.send` datagram is,
 because a dropped file byte is corruption; positional `write()` and `writable()` share one
-counter. Why `FailableFileHandle` has no `abort`, why its `destroy` has no drain deadline, and
-why `readable()`/`writable()` are not yet on `window.orivon`:
-[`A184`](../../../docs/open-questions.md). The premature-close escapes `writable()` guards
+counter. A page's `readable()`/`writable()` are not these streams: no port carries a file's bytes,
+so the page builds both from positional `read` and `write`
+(`../../preload/surface/main-world-socket.ts`). The premature-close escapes `writable()` guards
 against: `../adapters/node-fs-adapter.ts`.
 
 ### `fs.ts`: the quota counts what the files occupy

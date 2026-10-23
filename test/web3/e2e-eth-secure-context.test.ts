@@ -41,7 +41,7 @@ afterAll(async () => {
 const TEST_TIMEOUT_MS =
   ADDRESS_BAR_STABLE_TIMEOUT_MS + DEFAULT_ACTION_TIMEOUT_MS * 3 + APP_CLOSE_RACE_MS + 30_000
 
-it('serves a dev .eth name as a secure context, so the page keeps the APIs the loopback URL has', async () => {
+it('[app:cache-api-stores-and-reads-back] serves a dev .eth name as a secure context, so the page keeps the APIs the loopback URL has', async () => {
   await runPhase('eth-secure-context', async (check) => {
     let app: Awaited<ReturnType<typeof launchElectron>> | undefined
     let server: Server | undefined
@@ -83,6 +83,18 @@ it('serves a dev .eth name as a secure context, so the page keeps the APIs the l
         subtle: 'object',
         randomUUID: 'function'
       })
+
+      // The Cache API exists only in a secure context, so a dev name that lost its declaration loses it with the rest.
+      const cached = await evaluateRetrying(view, async () => {
+        if (typeof caches === 'undefined') return 'caches is undefined'
+        const cache = await caches.open('eth-probe')
+        await cache.put('/stored', new Response('stored on a dev name', { headers: { 'content-type': 'text/plain' } }))
+        const text = await (await cache.match('/stored'))?.text()
+        await caches.delete('eth-probe')
+        return text
+      })
+      check('[app:cache-api-stores-and-reads-back] caches.open, put and match store a response and read it back on a dev .eth name', cached === 'stored on a dev name', String(cached))
+      expect(cached).toBe('stored on a dev name')
     } finally {
       if (app !== undefined) await closeElectronApp(app)
       if (server !== undefined) await new Promise<void>((resolve) => { server?.close(() => { resolve() }) })

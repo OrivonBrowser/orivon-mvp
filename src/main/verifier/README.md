@@ -6,7 +6,7 @@ certificate check each session applies, starting and restarting the verifier hos
 ([`../../protocols/verifier-host/`](../../protocols/verifier-host/)), the light client's
 checkpoint ([`ADR-0031`](../../../docs/decisions/ADR-0031-helios-is-the-light-client.md)) and its renewal at run time from two beacon servers that agree ([`ADR-0092`](../../../docs/decisions/ADR-0092-when-no-checkpoint-is-recent-enough-two-beacon-servers-that-agree-supply-one.md)), what the
 host verified between runs (IPNS sequences, Swarm feed indexes, and the address scheme each `.eth` name's content was last found under), the per-site partition stamp, the gateway proxy check, and the
-wording of the status and a name's evidence for Settings and the site-info popover.
+wording of the status and a name's evidence for Settings and the site-info popover, and the light client's failures and syncs as lines of the main process's log, where a bug report finds them.
 The person can switch the light client off in Settings or from the Available networks popup (`web3.lightClient`, read at each
 start of the host through `configureVerifier` and applied at once: see below); the environment switch still forces it off
 (`lightClientForcedOff`, the one place that reads it), and
@@ -99,6 +99,21 @@ slowest start measured, so a host that never answers still ends in the ordinary 
 and a wake after sleep hold requests again. `verifierContentAddress` waits the same way for a cache-served origin. An
 embed guest's session starts the host and waits for it from its own handler
 ([`../embed/embed-host.ts`](../embed/embed-host.ts)).
+
+**The first request to a host connects alone, and the rest wait for its TLS session.** Chromium verifies the run's
+self-signed certificate on every full handshake. Of several connections opened at once to a host with no TLS session
+yet, a handshake that starts after the first one's verification job ended and before the shell's verify proc answered
+for it is refused with `ERR_CERT_AUTHORITY_INVALID`, and the proc is never asked about that socket (a net log shows
+the refused socket bound to no verification job, its siblings accepted). A page that pulls a stylesheet, images and
+fetches from a `.eth` name no tab has opened therefore loses some of them, at random. A resumed handshake is not
+verified, so [`first-contact.ts`](first-contact.ts) (wired to each session by [`first-contact-sessions.ts`](first-contact-sessions.ts)) lets the first request to each host go on and holds the others,
+in the listening gate's handler, until the certificate has been accepted (plus `SESSION_KEPT_MS`, for the server's
+session ticket to arrive), the first response begins, or three seconds pass. After that the host goes unheld for two
+minutes, less than the verifier's 300 s session lifetime. The state is per session, because Chromium keeps TLS
+sessions per session, and each start of the host process forgets it, because the new certificate invalidates every
+kept session. An embed guest's session is not covered. Making Chromium accept the certificate itself (an
+`--ignore-certificate-errors-spki-list` entry for the run's key, which main would have to generate and hand to the
+host) would end the race for good, and is a change to the certificate check.
 
 **The certificate check goes on every session, through `session-created`.** A partition without
 it cannot load any host the verifier serves.

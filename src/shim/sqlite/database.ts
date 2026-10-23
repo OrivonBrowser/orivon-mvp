@@ -6,7 +6,8 @@ import { installOrivonVfs, ORIVON_VFS_NAME } from './vfs.js'
 import { sqliteEngine, type Sqlite3 } from './engine.js'
 import { invalidArgType, invalidState, sqliteError, unbuilt } from './errors.js'
 import { orivonSqliteFiles } from './files.js'
-import { finalizeStatement, prepareStatement, type DatabaseState, type StatementSync } from './statement.js'
+import { defineScalarFunction, type ScalarFunction } from './functions.js'
+import { failureOf, finalizeStatement, prepareStatement, type DatabaseState, type StatementSync } from './statement.js'
 
 export interface DatabaseSyncOptions {
   open?: boolean
@@ -68,6 +69,21 @@ function configure (sqlite3: Sqlite3, db: number, setting: number, enabled: bool
   if (sqlite3.capi.sqlite3_db_config(db, setting, enabled ? 1 : 0, 0) !== 0) throw sqliteError(sqlite3, db)
 }
 
+/** Registers a scalar function on an open `database` under `definition`'s rules: the route the `better-sqlite3` adapter takes, since its options and value rules are not Node's. */
+export function registerScalarFunction (database: DatabaseSync, definition: ScalarFunction): void {
+  const state = states.get(database)
+  if (state === undefined) throw invalidState('Illegal invocation')
+  defineScalarFunction(live(state), definition)
+}
+
+/** The bytes of the database `schema` of an open `database`, as SQLite would write its file: the route for a database in memory, which no VFS serves. */
+export function exportDatabase (database: DatabaseSync, schema: string): Uint8Array {
+  const state = states.get(database)
+  if (state === undefined) throw invalidState('Illegal invocation')
+  const { sqlite3, pointer } = live(state)
+  return sqlite3.capi.sqlite3_js_db_export(pointer, schema)
+}
+
 export class DatabaseSync {
   readonly #location: string
   readonly #readOnly: boolean
@@ -94,6 +110,7 @@ export class DatabaseSync {
       sqlite3: undefined as unknown as Sqlite3,
       pointer: 0,
       statements: new Set(),
+      running: 0,
       readBigInts: booleanOption(settings, 'readBigInts', false),
       returnArrays: booleanOption(settings, 'returnArrays', false),
       allowBareNamedParameters: booleanOption(settings, 'allowBareNamedParameters', true),
@@ -148,6 +165,7 @@ export class DatabaseSync {
 
   close (): void {
     const state = live(this.#state())
+    if (state.running > 0) throw invalidState('database is busy: a user-defined function is running on it')
     forgotten.unregister(state)
     closeState(state)
   }
@@ -170,7 +188,8 @@ export class DatabaseSync {
   exec (sql: string): void {
     const state = live(this.#state())
     if (typeof sql !== 'string') throw invalidArgType('The "sql" argument must be a string.')
-    if (state.sqlite3.capi.sqlite3_exec(state.pointer, sql, 0, 0, 0) !== 0) throw sqliteError(state.sqlite3, state.pointer)
+    state.thrown = undefined
+    if (state.sqlite3.capi.sqlite3_exec(state.pointer, sql, 0, 0, 0) !== 0) throw failureOf(state)
   }
 
   prepare (sql: string): StatementSync {
@@ -189,7 +208,30 @@ export class DatabaseSync {
     if (this.isOpen) this.close()
   }
 
-  function (): never { throw unbuilt('DatabaseSync.function', 'user-defined SQL functions are not built') }
+  function (name: unknown, ...rest: unknown[]): void {
+    const state = live(this.#state())
+    if (typeof name !== 'string') throw invalidArgType('The "name" argument must be a string.')
+    const [second, third] = rest
+    const fn = typeof second === 'function' ? second : third
+    let options: Record<string, unknown> = {}
+    if (typeof second !== 'function' && !(second === undefined && fn === undefined)) {
+      if (typeof second !== 'object' || second === null) throw invalidArgType('The "options" argument must be an object.')
+      options = second as Record<string, unknown>
+    }
+    if (typeof fn !== 'function') throw invalidArgType('The "function" argument must be a function.')
+    const useBigIntArguments = booleanOption(options, 'useBigIntArguments', false)
+    const varargs = booleanOption(options, 'varargs', false)
+    defineScalarFunction(state, {
+      name,
+      argc: varargs ? -1 : fn.length,
+      deterministic: booleanOption(options, 'deterministic', false),
+      directOnly: booleanOption(options, 'directOnly', false),
+      integers: () => useBigIntArguments ? 'bigint' : 'checked',
+      rules: 'node',
+      fn: (...args) => Reflect.apply(fn, undefined, args) as unknown
+    })
+  }
+
   aggregate (): never { throw unbuilt('DatabaseSync.aggregate', 'user-defined aggregate functions are not built') }
   createSession (): never { throw unbuilt('DatabaseSync.createSession', 'the package exposes no session API') }
   applyChangeset (): never { throw unbuilt('DatabaseSync.applyChangeset', 'the package exposes no session API') }

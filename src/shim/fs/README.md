@@ -30,10 +30,22 @@ grow: its stand-in folder holds only that file, so `stat`, `readdir` and `mkdir 
 and `EACCES` to create, and nothing in it can be removed or renamed. A rename between two picks, or between a pick and
 the app's files, is `EXDEV`. An `fs.open` of a picked file shares the pick's one handle: closing it flushes (`sync`) when it was
 opened to write and leaves the pick open, so the next call works; `'w'` empties the file first and `'wx'` is `EEXIST`. `readFile` reads in
-megabyte chunks and `writeFile` writes in them, since the page's handle has no stream (A184). The synchronous family has no wire to a
+megabyte chunks and `writeFile` writes in them, over the handle's positional calls. The synchronous family has no wire to a
 pick: `toConfinedPath` throws `ENOSYS` for a picked path, so every `*Sync` export, `fs.watch` and a sandbox preopen meet it, and
 `existsSync` answers `true` for a live pick's own path (the table is in memory) and `false` for anything deeper or stale. A write to a pick is not announced to `fs.watch` (`notices.ts`). An id no pick answers (the page reloaded,
 or it is a Worker whose shim holds a table of its own) is `ENOENT` and says to pick again, not another pick's file.
+
+**The directories above the app's files are answered locally** ([`ancestors.ts`](ancestors.ts)). Provisional, AI recommendation: `/` and
+`/orivon` (every parent of the virtual root) exist as read-only directories, because a program that makes a folder walks them
+(`stat` each ancestor from `/`, `mkdir` the ones that are not directories) and a real process has them. `stat`, `lstat`, `access`,
+`realpath` and `existsSync` say they are directories; `mkdir` is a no-op with `recursive` and `EEXIST` naming the path without it;
+`readdir` lists exactly one entry, the next segment toward the root (`['orivon']`, then `['app']`), which keeps a real file, the
+picked-path namespace and the temp folder out of the listing. Each of these is answered before `toConfinedPath` and never
+reaches `orivon.fs`, so nothing outside the app's folder becomes readable or writable. Every other call on an ancestor, and every
+absolute path beside the root (`/orivon/other`, `/etc`), still meets `toConfinedPath`'s `EACCES`; that includes `open` and
+`readFile`, where Node would say `EISDIR` for a directory. The root's own answers stay in [`root.ts`](root.ts). `access` checks
+existence for every mode, so `W_OK` on an ancestor succeeds where Node fails `EACCES`, as it does for the root. **Open:** whether
+`readFile` of an ancestor should be `EISDIR`; nothing has asked.
 
 **An asynchronous call the limiter refuses is asked again** (`../limit-retry.ts`, used by `paths.ts`'s `guarded`: pauses from 10 ms to 800 ms, thirteen retries, about five seconds)
 the same way, for the same reason.
@@ -74,12 +86,12 @@ than reading as though it had never been opened at all.
 Elsewhere -- the page, or a Worker with no `SharedArrayBuffer` -- every one of these calls throws
 the same named refusal it always has ([`unsupported.ts`](unsupported.ts)).
 
-**`fs.createReadStream`/`fs.createWriteStream` run over the local cursor, not the broker's
-`readable()`/`writable()`.** Provisional, AI recommendation: those are not page-reachable (A184),
-and `@seald-io/nedb` calls both on every load and compaction (`streams.ts`). The cost is one
-64 KiB round trip per chunk instead of one WHATWG transfer. **Open:** whether this is permanent;
-once A184 makes the broker streams reachable, `streams.ts` can move onto them with no app-facing
-change.
+**`fs.createReadStream`/`fs.createWriteStream` run over the local cursor, not the handle's
+`readable()`/`writable()`.** Provisional, AI recommendation: the page's streams are positional
+reads and writes underneath too, and the cursor also works on an Orivon build whose handle has no
+streams; `@seald-io/nedb` calls both on every load and compaction (`streams.ts`). The cost is one
+64 KiB round trip per chunk. **Open:** whether this is permanent; once a port carries a file's
+bytes to the page, `streams.ts` can move onto the handle's streams with no app-facing change.
 
 **`fs.access`'s mode.** Provisional, AI recommendation: every mode checks existence only, since
 `orivon.fs` has no permission model (`core.ts`'s `doAccess`). **Open:** what a dependency asking
@@ -132,3 +144,12 @@ process; `persistent: false` does not. `fs.promises.watch` is an async iterator 
 events, and `signal` closes either form. `watchFile` and `unwatchFile` refuse by name: they poll,
 which would see writes from outside the shim too, and no consumer has asked. Provisional: whether
 `orivon.fs` should carry a real change feed, which would settle the outside-the-shim gap.
+
+**Copying and temp folders: `copy.ts` makes the stat, read, write and mkdir calls the app could make itself, so a copy reaches nothing those calls could not.**
+Neither `orivon.fs` nor a pick has a copy or a temp-folder primitive, and a new one would be a `src/contracts/` change for a
+convenience. `copyFile` reads a file whole and writes it (not atomic, and bounded by memory); `cp` walks a tree one entry at a
+time, after the conflict checks Node makes (folder over file, file over folder, onto itself, into its own subfolder), and
+asks `filter` for every entry. Each call goes through `core.ts`, so a stand-in path is answered by its pick and any other path is
+confined to the app's files, and a copy may cross between the two. `mkdtemp` is a `mkdir` without `recursive`, the one
+exclusive-create the broker has: a name already taken fails `EEXIST` and a fresh one is drawn. Its suffix is 12 characters,
+the same as `mkdtempSync`'s (`core-sync.ts`).

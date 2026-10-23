@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { installOrivon } from '../main-world-socket.js'
-import type { MainWorldWebContextBridge } from '../main-world-socket.js'
+import type { MainWorldWebContextBridge } from '../main-world-bridges.js'
 import { LIMITS, asPage, fakeBridge, fakeSocketBridgeResult, fakeWebContextBridgeResult } from './main-world-socket.test-helpers.js'
 
 // web.openContext's own installOrivon wiring (ADR-0019), split into its own

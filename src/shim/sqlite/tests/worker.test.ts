@@ -4,7 +4,7 @@
 
 import { join } from 'node:path'
 import { Worker } from 'node:worker_threads'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createRequire } from 'node:module'
 import { DatabaseSync as NodeDatabaseSync } from 'node:sqlite'
@@ -34,11 +34,16 @@ describe('DatabaseSync in a Worker thread', () => {
         worker.once('message', resolve)
         worker.once('error', reject)
       })
-      expect(result).toEqual({ counted: 500, last: 'message 499 ', integrity: { integrity_check: 'ok' } })
+      expect(result).toEqual({ counted: 500, last: 'message 499 ', integrity: { integrity_check: 'ok' }, backedUp: { totalPages: 2, remainingPages: 0 } })
       expect(await disk.existsOnDisk('data/scrollback.sqlite3-journal')).toBe(false)
       const real = new NodeDatabaseSync(join(disk.root, 'data/scrollback.sqlite3'), { readOnly: true })
       expect(real.prepare('select count(*) as n from messages').get()).toEqual({ n: 500 })
       real.close()
+      const copy = new NodeDatabaseSync(join(disk.root, 'data/functions-copy.sqlite3'), { readOnly: true })
+      expect(copy.prepare('select w from words order by w').all().map((row) => row.w)).toEqual(['ONE!', 'TWO!'])
+      expect(copy.prepare('pragma integrity_check').get()).toEqual({ integrity_check: 'ok' })
+      copy.close()
+      expect(readdirSync(join(disk.root, 'data')).filter((name) => name.includes('.backup-'))).toEqual([])
     } finally {
       await worker.terminate()
       await server.dispose()

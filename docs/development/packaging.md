@@ -108,12 +108,13 @@ Re-running only a failed job of the release's own run works too, within the same
 
 ### Tagged packages
 
-The release also carries copies of the Windows installer and the AppImage named for an app, one per entry of
-[`resources/flavours.json`](../../resources/flavours.json): `Orivon-Setup-<version>-x64.<id>.exe` and
-`Orivon-<version>-x86_64.<id>.AppImage`. They are the same bytes under another name; nothing is built again. The `tagged` job
-makes them and fails the release if a copy's SHA-256 differs from its original or if an entry's `app` is not the `domain` in
-`apps/<port>/orivon.json` of the ports repository's `main`. They join the release and its `ipfs.json` like any `orivon-*`
-artifact. The deb, the dmg, the Store package and winget stay plain.
+A release carries the plain packages only. A package tagged for an app is a copy of the release's Windows installer or
+AppImage renamed for one entry of [`resources/flavours.json`](../../resources/flavours.json):
+`Orivon-Setup-<version>-x64.<id>.exe` or `Orivon-<version>-x86_64.<id>.AppImage`. It is the same bytes under another name,
+made outside the release workflow when one is wanted, and it is not attached to the release or added to its `ipfs.json`.
+The workflow's `flavours` job fails the release if an entry's `app` is not the `domain` in `apps/<port>/orivon.json` of the
+ports repository's `main`, since the allowlist ships in every package. The deb, the dmg, the Store package and winget carry
+no tag.
 
 What a tag does is in [`ADR-0093`](../decisions/ADR-0093-an-installer-file-name-or-switch-selects-an-apps-first-run-presets-from-an-allowlist.md). The Windows
 installer writes the name of the file it was started from to `installer-name.txt` beside the program (`build/installer.nsh`,

@@ -399,17 +399,6 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** AI, the recommendation stands unless the owner objects
 - **Blocks:** nothing
 
-### A184: When `FileHandle.readable()`/`writable()` reach the page **[AI-REC]**
-
-- **Question:** When should `orivon.fs.open`'s `readable()`/`writable()`, built and tested in the
-  broker, be relayed to the page over a per-handle port (`port-pump.ts`/`port-sink.ts`)?
-- **Why it matters:** until then the page's handle has no streams and no live `closed`, and the
-  shim's `FileHandle#createReadStream`/`createWriteStream` refuse by name.
-- **Options:** wire it now; wait until a port needs instance streams and decide it with A189,
-  whose option (a) needs the same port (rec.).
-- **Who decides:** AI, the recommendation stands unless the owner objects
-- **Blocks:** A189 option (a); `FileHandle` instance streams in `src/shim/fs/`
-
 ### A185: `net.listen`'s accept demand reuses `CreditMessage` instead of its own member **[AI-REC]**
 
 - **Question:** Keep signalling accept demand as a `CreditMessage` whose `bytesConsumed` counts
@@ -1646,3 +1635,14 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Options:** keep the popup's view when it returns to its opener's own origin, so the opener stays and the callback page lacks `window.orivon` and routed `fetch` (cheaper, but an app whose callback route boots the whole app breaks); keep the rebuild and document the channel (rec. until an app needs the opener); create popups as app tabs when the opener is one, which needs the target before it is known.
 - **Who decides:** owner
 - **Blocks:** nothing; `e2e-app-oauth-popup` pins today's behaviour
+
+### A416: `main-world-socket.ts` is at its size limit and cannot be split into modules **[AI-REC]**
+
+- **Question:** How does the page's `window.orivon` installer grow, when it is one serialised
+  function (`executeInMainWorld`) that may not import, and it sits at the 500-line limit?
+- **Why it matters:** each new page member now needs lines found elsewhere in the same function.
+- **Options:** a second main-world installer for the request/reply handles (file, folder, web
+  context) that hands its builders over through a private slot, as `orivon.internal-net` already
+  does for `../routed/` (rec.); compose the function's source at build time; keep compacting.
+- **Who decides:** AI, the recommendation stands unless the owner objects
+- **Blocks:** the next member added to the page's `orivon` object

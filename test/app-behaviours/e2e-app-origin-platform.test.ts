@@ -42,7 +42,7 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-it('[app:secure-context-on-app-origin] [app:history-back-forward-in-app] [app:service-worker-registers-on-app-origin] [app:wake-lock-request-settles] [app:window-open-noopener-opens-tab] [app:web-lock-held-until-tab-closes] [app:pagehide-fires-on-tab-close] the page platform an app counts on', async () => {
+it('[app:secure-context-on-app-origin] [app:history-back-forward-in-app] [app:service-worker-registers-on-app-origin] [app:wake-lock-request-settles] [app:window-open-noopener-opens-tab] [app:web-lock-held-until-tab-closes] [app:web-lock-if-available-follows-the-holder] [app:pagehide-fires-on-tab-close] the page platform an app counts on', async () => {
   const { app, chrome } = await launchShell()
   try {
     await runPhase('app origin platform', async (check) => {
@@ -110,7 +110,7 @@ it('[app:secure-context-on-app-origin] [app:history-back-forward-in-app] [app:se
       const second = findViewShowing(app, chrome, secondUrl) as Page
       await second.waitForFunction(() => (window as unknown as { __ready?: boolean }).__ready === true)
       const heldElsewhere = await second.evaluate(async () => await navigator.locks.request('app-lock', { ifAvailable: true }, (lock) => lock === null))
-      check('[app:web-lock-held-until-tab-closes] while one tab holds an exclusive Web Lock, another tab of the origin is told it is taken', heldElsewhere === true)
+      check('[app:web-lock-held-until-tab-closes] [app:web-lock-if-available-follows-the-holder] while one tab holds an exclusive Web Lock, another tab of the origin is told it is taken: an ifAvailable request gets null', heldElsewhere === true)
       await second.evaluate(() => {
         const state = window as unknown as { __got: boolean }
         state.__got = false
@@ -119,6 +119,8 @@ it('[app:secure-context-on-app-origin] [app:history-back-forward-in-app] [app:se
       await chrome.click(`[data-id="${mainId}"] .close`)
       const got = await waitFor(async () => await second.evaluate(() => (window as unknown as { __got: boolean }).__got), 20_000)
       check('[app:web-lock-held-until-tab-closes] closing the tab that holds the lock lets the waiting tab take it', got)
+      const takenAgain = await second.evaluate(async () => await navigator.locks.request('app-lock', { ifAvailable: true }, (lock) => lock !== null))
+      check('[app:web-lock-if-available-follows-the-holder] once the holder is closed, an ifAvailable request in the other tab is granted', takenAgain === true)
       const hid = await waitFor(async () => await second.evaluate(() => localStorage.getItem('pagehide-seen') === 'yes'), 20_000)
       check('[app:pagehide-fires-on-tab-close] closing a tab fires pagehide in its page', hid)
     })

@@ -29,13 +29,14 @@ import type { ProcessInfo } from './process-supervisor.js'
 import { loopbackPort } from './loopback-port.js'
 import { composeResolverRules } from './resolver-rules.js'
 import { ListeningGate } from './listening-gate.js'
+import { installFirstContact, noteAcceptedConnection, resetFirstContacts } from './first-contact-sessions.js'
 import { announceNameSchemeChange } from './name-scheme-events.js'
 import { ethTestSeam, exposeVerifierStart, noteVerifierListening, verifierStartDelayMs, type EthTestSeam } from './test-seam.js'
 import { VerifierStore } from './verifier-store.js'
 import { chooseNameEvidence } from './name-evidence.js'
 import { lastProvenance } from './kept-provenance.js'
 import type { NameEvidence } from './name-evidence.js'
-import { checkpointProblem, lightClientView } from './status-view.js'
+import { checkpointProblem, lightClientLog, lightClientView } from './status-view.js'
 import type { LightClientView } from './status-view.js'
 import { ccipDirectFor, tunnelFront, tunnelProfileFronts, unproxiedGatewaysFor } from './host-proxy.js'
 import { HostLifecycle } from './host-lifecycle.js'
@@ -61,6 +62,7 @@ let fingerprint: string | undefined
 let supervisor: HostSupervisor | undefined
 let store: VerifierStore | undefined
 let lightClient: LightClientState = { state: 'off' }
+const logLightClient = lightClientLog()
 let hostDown: string | undefined
 /** The nodes the host may ask for, by name. */
 const NODES: ReadonlyMap<string, LocalNodeSubsystem> = new Map([[SWARM_NODE_IDENTITY.name, swarmNode], [IPFS_NODE_IDENTITY.name, ipfsNode]])
@@ -172,19 +174,23 @@ function installCertificateCheck (target: Session): void {
     // Only a connection that was accepted can describe the page that loaded: Chromium's own checks passed, or the verifier's certificate matched.
     noteCertificate(request.hostname, verdict === ACCEPT || (verdict === CHROMIUM_VERDICT && request.errorCode === 0), request.validatedCertificate, request.certificate)
     callback(verdict)
+    if (verdict === ACCEPT) noteAcceptedConnection(target, request.hostname)
   })
 }
 
 /**
  * Holds a request to a verifier-served host until the host listens, so a
  * page opened in the first moments after launch loads instead of landing on
- * the connection-refused page. Default session only, like the stamp above:
- * the other sessions that reach the verifier register their own handlers.
+ * the connection-refused page, and then lets the first request to each host
+ * connect before the others (first-contact.ts). Default session only, like the
+ * stamp above: the other sessions that reach the verifier register their own handlers.
  */
 function installListeningGate (target: Session): void {
-  webRequestOwnerFor(target).onBeforeRequest(0, verifiedHostFilter(), targetsVerifiedHost, async (_details, current) => {
+  const firstContact = installFirstContact(target)
+  webRequestOwnerFor(target).onBeforeRequest(0, verifiedHostFilter(), targetsVerifiedHost, async (details, current) => {
     startHost()
     await listeningGate.whenSettled()
+    await firstContact(details.url, details.id)
     return current
   })
 }
@@ -370,12 +376,14 @@ export const verifierSubsystem: Subsystem = {
       config: hostConfig,
       events: {
         starting: () => {
+          resetFirstContacts()
           ledger.open()
           hostAsleep = false
           listeningGate.starting()
           changed()
         },
         idle: () => {
+          resetFirstContacts()
           ledger.fold()
           fingerprint = undefined
           hostDown = undefined
@@ -389,6 +397,7 @@ export const verifierSubsystem: Subsystem = {
         },
         listening: (value) => {
           fingerprint = value
+          resetFirstContacts()
           hostDown = undefined
           hostAsleep = false
           noteVerifierListening(true)
@@ -407,6 +416,8 @@ export const verifierSubsystem: Subsystem = {
         },
         status: (value) => {
           lightClient = value
+          const line = logLightClient(value)
+          if (line !== undefined) console[line.level](`[verifier] ${line.text}`)
           changed()
         },
         checkpoint: (root, timestamp) => {

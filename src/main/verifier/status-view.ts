@@ -1,6 +1,6 @@
-// What the Settings section and the site-info popover say about the light
-// client, in words. Read-only: nothing here changes an endpoint or a
-// checkpoint.
+// What the Settings section, the site-info popover and the main process's log
+// say about the light client, in words. Read-only: nothing here changes an
+// endpoint or a checkpoint.
 
 import { MAX_CHECKPOINT_AGE_SECONDS } from './checkpoint.js'
 import type { CheckpointChoice } from './checkpoint.js'
@@ -218,5 +218,32 @@ export function ipfsNodeView (node: IpfsNodeState, lookupService: boolean): Ipfs
     case 'starting': return { state: 'starting', summary: 'Starting.' }
     case 'ready': return { state: 'ready', summary: `Running, and IPFS content loads from it. It asks ${lookupService ? 'its lookup services and the IPFS network' : 'the IPFS network only'}.` }
     case 'failed': return { state: 'failed', summary: `Not running: ${node.reason}. ${NO_GATEWAYS}. The node tries again shortly.` }
+  }
+}
+
+export interface LightClientLogLine {
+  readonly level: 'log' | 'error'
+  readonly text: string
+}
+
+/**
+ * The main process's log lines for the light client's status, the only place a bug report finds them: the
+ * verifier host's own output never reaches that log. A failure is logged once until its reason changes or a
+ * sync succeeds, and a sync once until the next failure, so retries and refreshes add nothing.
+ */
+export function lightClientLog (): (status: LightClientState) => LightClientLogLine | undefined {
+  let failure: string | undefined
+  let syncLogged = false
+  return (status) => {
+    if (status.state === 'failed') {
+      syncLogged = false
+      if (status.reason === failure) return undefined
+      failure = status.reason
+      return { level: 'error', text: `light client failed: ${status.reason}` }
+    }
+    if (status.state !== 'synced' || syncLogged) return undefined
+    syncLogged = true
+    failure = undefined
+    return { level: 'log', text: `light client synced at block ${String(status.block)}` }
   }
 }
