@@ -133,7 +133,10 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     extensionName: (id) => extensions.list().find((entry) => entry.id === id)?.name
   }
   registerInternalIpc(services.internalPages, internalSession, {
-    settings: settingsDomain(services.settings),
+    settings: settingsDomain(services.settings, {
+      // 'Your own picture' is a choice only once a picture is held: the Settings page asks for one first, and main does not take its word for it.
+      refuses: (key, value) => key === 'appearance.newTabBackground' && value === 'custom' ? services.newTabBackground.hasUsableCopy().then((has) => !has) : undefined
+    }),
     searchEngines: searchEnginesDomain(services.searchEngines, services.settings, { isPrivate: services.isPrivate }),
     shortcuts: shortcutsDomain(services.shortcuts),
     startup: startupDomain(services.windows),
@@ -153,7 +156,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     newTabBackground: backgroundDomain(services.newTabBackground, {
       pick: async (contents) => await pickOpenFile(services.windows.findOwner(contents)?.window, {
         title: 'Choose a picture for the new tab',
-        filters: [{ name: 'Pictures', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif'] }]
+        filters: [{ name: 'Pictures', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif'] }, { name: 'All files', extensions: ['*'] }]
       })
     }),
     info: infoDomain({

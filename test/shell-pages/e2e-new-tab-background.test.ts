@@ -1,7 +1,7 @@
 // The new tab's background, chosen in Settings > Appearance: the person's own picture (copied into the profile, drawn
 // by every open new-tab page at once), no picture, and the Orivon one again; and a file that is not a picture.
 import { existsSync, readFileSync } from 'node:fs'
-import { mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
@@ -10,7 +10,18 @@ import { closeElectronApp } from '../support/e2e-helpers.js'
 import { assertNoElectronSurvivors, launchElectron, mainOutput, profileDirOf } from '../support/launch-electron.mjs'
 import { findChrome, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
 
-afterAll(async () => { expect(await assertNoElectronSurvivors()).toEqual([]) })
+const made: string[] = []
+/** A folder for the pictures a spec picks, removed when the file is done. */
+async function pictureDir (): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'orivon-newtab-bg-'))
+  made.push(dir)
+  return dir
+}
+
+afterAll(async () => {
+  await Promise.all(made.map(async (dir) => { await rm(dir, { recursive: true, force: true }) }))
+  expect(await assertNoElectronSurvivors()).toEqual([])
+})
 
 const TEST_TIMEOUT_MS = 90_000
 
@@ -24,8 +35,18 @@ const kindOf = async (page: Page): Promise<string | undefined> => await page.eva
 /** What the file picker answers next: a path, or null for a cancel. */
 async function pickNext (app: ElectronApplication, path: string | null): Promise<void> {
   await app.evaluate(({ dialog }, chosen) => {
-    dialog.showOpenDialog = (async () => chosen === null ? { canceled: true, filePaths: [] } : { canceled: false, filePaths: [chosen] }) as unknown as typeof dialog.showOpenDialog
+    const counted = globalThis as unknown as { __pickerOpened?: number }
+    counted.__pickerOpened = 0
+    dialog.showOpenDialog = (async () => {
+      counted.__pickerOpened = (counted.__pickerOpened ?? 0) + 1
+      return chosen === null ? { canceled: true, filePaths: [] } : { canceled: false, filePaths: [chosen] }
+    }) as unknown as typeof dialog.showOpenDialog
   }, path)
+}
+
+/** How many times the stubbed picker has opened since it was last set. */
+async function pickersOpened (app: ElectronApplication): Promise<number> {
+  return await app.evaluate(() => (globalThis as unknown as { __pickerOpened?: number }).__pickerOpened ?? 0)
 }
 
 async function openSettings (app: ElectronApplication, chrome: Page): Promise<Page> {
@@ -49,12 +70,14 @@ it('draws the person\'s own picture on every new tab, then no picture, then the 
     expect(await waitFor(async () => await kindOf(open) === 'orivon')).toBe(true)
     expect(await pictureOf(open)).toContain('intro-background')
 
-    const picked = join(await mkdtemp(join(tmpdir(), 'orivon-newtab-bg-')), 'my picture.png')
+    const picked = join(await pictureDir(), 'my picture.png')
     await writeFile(picked, PNG)
     await pickNext(app, picked)
     const settings = await openSettings(app, chrome)
     const choice = settings.locator('#row-new-tab-background select')
     expect(await settings.locator('#row-new-tab-background-choose').count()).toBe(0)
+    // Your own picture comes last, so arrowing through the drop-down to No picture never opens the picker.
+    expect(await choice.locator('option').evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value))).toEqual(['orivon', 'none', 'custom'])
 
     await choice.selectOption('custom')
     // The page that was already open follows the change, with no reload.
@@ -98,8 +121,10 @@ it('keeps what was chosen when the picker is cancelled or the file is not a pict
     await pickNext(app, null)
     await choice.selectOption('custom')
     expect(await waitFor(async () => await choice.inputValue() === 'orivon')).toBe(true)
+    // The earlier value is back without a second picker.
+    expect(await pickersOpened(app)).toBe(1)
 
-    const dir = await mkdtemp(join(tmpdir(), 'orivon-newtab-bg-'))
+    const dir = await pictureDir()
     const notes = join(dir, 'notes.png')
     await writeFile(notes, 'This is text with a picture\'s name.')
     await pickNext(app, notes)

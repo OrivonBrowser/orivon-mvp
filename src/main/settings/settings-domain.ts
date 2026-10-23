@@ -11,7 +11,12 @@ interface SettingsRequest {
   readonly value?: unknown
 }
 
-export function settingsDomain (settings: SettingsStore): InternalDomain {
+export interface SettingsDomainOptions {
+  /** True (or a promise of it) to refuse a value the store would take, for a setting whose value needs more than the store knows; undefined for a setting it has no say in. */
+  readonly refuses?: (key: string, value: unknown) => boolean | Promise<boolean> | undefined
+}
+
+export function settingsDomain (settings: SettingsStore, options: SettingsDomainOptions = {}): InternalDomain {
   return {
     // The extensions page reads and writes 'extensions.developerMode' here rather than through a domain of its own.
     pages: ['settings', 'extensions'],
@@ -21,8 +26,11 @@ export function settingsDomain (settings: SettingsStore): InternalDomain {
       switch (request.type) {
         case 'get':
           return { descriptions: describeSettings(), ...settings.snapshot(), atStart: settings.valuesAtStart(), held: settings.heldKeys() }
-        case 'set':
-          return settings.set(key, request.value)
+        case 'set': {
+          const check = options.refuses?.(key, request.value)
+          if (check === undefined) return settings.set(key, request.value)
+          return Promise.resolve(check).then((refused) => refused ? { ok: false, reason: 'invalid-value' } : settings.set(key, request.value))
+        }
         case 'reset':
           return settings.reset(key)
         case 'resetAll':

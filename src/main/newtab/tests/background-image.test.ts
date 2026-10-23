@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkPicture, MAX_PICTURE_BYTES, sniffPicture } from '../background-image.js'
+import { checkPicture, MAX_PICTURE_BYTES } from '../background-image.js'
 
 const bytes = (...values: number[]): Uint8Array => Uint8Array.from(values)
 const ascii = (text: string): number[] => [...text].map((c) => c.charCodeAt(0))
@@ -11,36 +11,38 @@ const GIF = pad(ascii('GIF89a'))
 const WEBP = pad([...ascii('RIFF'), 0x10, 0, 0, 0, ...ascii('WEBP'), ...ascii('VP8 ')])
 const AVIF = pad([0, 0, 0, 0x1c, ...ascii('ftyp'), ...ascii('avif'), 0, 0, 0, 0, ...ascii('mif1'), ...ascii('avif')])
 
-describe('sniffPicture', () => {
+describe('checkPicture: the format', () => {
+  const mimeOf = (data: Uint8Array): string | null => { const answer = checkPicture(data); return answer.ok ? answer.mime : null }
+
   it('names each accepted format by its leading bytes', () => {
-    expect(sniffPicture(PNG)).toBe('png')
-    expect(sniffPicture(JPEG)).toBe('jpeg')
-    expect(sniffPicture(GIF)).toBe('gif')
-    expect(sniffPicture(WEBP)).toBe('webp')
-    expect(sniffPicture(AVIF)).toBe('avif')
-    expect(sniffPicture(pad(ascii('GIF87a')))).toBe('gif')
+    expect(mimeOf(PNG)).toBe('image/png')
+    expect(mimeOf(JPEG)).toBe('image/jpeg')
+    expect(mimeOf(GIF)).toBe('image/gif')
+    expect(mimeOf(WEBP)).toBe('image/webp')
+    expect(mimeOf(AVIF)).toBe('image/avif')
+    expect(mimeOf(pad(ascii('GIF87a')))).toBe('image/gif')
   })
 
   it('reads an AVIF whose major brand is another but which lists avif as compatible', () => {
     const heif = pad([0, 0, 0, 0x1c, ...ascii('ftyp'), ...ascii('mif1'), 0, 0, 0, 0, ...ascii('mif1'), ...ascii('avif')])
-    expect(sniffPicture(heif)).toBe('avif')
+    expect(mimeOf(heif)).toBe('image/avif')
   })
 
   it('refuses what is not one of them, whatever it is called', () => {
-    expect(sniffPicture(pad(ascii('<svg xmlns="http://www.w3.org/2000/svg"></svg>')))).toBeNull()
-    expect(sniffPicture(pad(ascii('<html><script>')))).toBeNull()
-    expect(sniffPicture(pad([...ascii('RIFF'), 0, 0, 0, 0, ...ascii('WAVE')]))).toBeNull()
-    expect(sniffPicture(pad([0, 0, 0, 0x1c, ...ascii('ftyp'), ...ascii('mp42')]))).toBeNull()
-    expect(sniffPicture(pad([0x89, ...ascii('PNX')]))).toBeNull()
-    expect(sniffPicture(bytes())).toBeNull()
-    expect(sniffPicture(bytes(0xff, 0xd8))).toBeNull()
+    expect(mimeOf(pad(ascii('<svg xmlns="http://www.w3.org/2000/svg"></svg>')))).toBeNull()
+    expect(mimeOf(pad(ascii('<html><script>')))).toBeNull()
+    expect(mimeOf(pad([...ascii('RIFF'), 0, 0, 0, 0, ...ascii('WAVE')]))).toBeNull()
+    expect(mimeOf(pad([0, 0, 0, 0x1c, ...ascii('ftyp'), ...ascii('mp42')]))).toBeNull()
+    expect(mimeOf(pad([0x89, ...ascii('PNX')]))).toBeNull()
+    expect(mimeOf(bytes())).toBeNull()
+    expect(mimeOf(bytes(0xff, 0xd8))).toBeNull()
   })
 })
 
 describe('checkPicture', () => {
   it('accepts a picture and says its type', () => {
-    expect(checkPicture(PNG)).toEqual({ ok: true, type: 'png', mime: 'image/png' })
-    expect(checkPicture(AVIF)).toEqual({ ok: true, type: 'avif', mime: 'image/avif' })
+    expect(checkPicture(PNG)).toEqual({ ok: true, mime: 'image/png' })
+    expect(checkPicture(AVIF)).toEqual({ ok: true, mime: 'image/avif' })
   })
 
   it('refuses a file of another kind, saying which kinds are taken', () => {

@@ -10,14 +10,14 @@ describe('the new-tab picture domain', () => {
   })
 
   it('installs what the picker returns and reports the outcome', async () => {
-    const install = vi.fn(() => ({ ok: true as const }))
+    const install = vi.fn(async () => ({ ok: true as const }))
     const domain = backgroundDomain({ install }, { pick: async () => '/pics/a.png' })
     expect(await domain.handle({ type: 'choose' }, { page: 'settings', contents })).toEqual({ ok: true })
     expect(install).toHaveBeenCalledWith('/pics/a.png')
   })
 
   it('passes a refusal on with its reason', async () => {
-    const domain = backgroundDomain({ install: () => ({ ok: false, reason: 'No.' }) }, { pick: async () => '/x' })
+    const domain = backgroundDomain({ install: async () => ({ ok: false, reason: 'No.' }) }, { pick: async () => '/x' })
     expect(await domain.handle({ type: 'choose' }, { page: 'settings', contents })).toEqual({ ok: false, reason: 'No.' })
   })
 
@@ -40,7 +40,7 @@ describe('the new-tab picture domain', () => {
   it('opens one picker at a time', async () => {
     let release: (path: string | undefined) => void = () => {}
     const pick = vi.fn(async () => await new Promise<string | undefined>((resolve) => { release = resolve }))
-    const domain = backgroundDomain({ install: () => ({ ok: true }) }, { pick })
+    const domain = backgroundDomain({ install: async () => ({ ok: true }) }, { pick })
     const first = domain.handle({ type: 'choose' }, { page: 'settings', contents })
     expect(await domain.handle({ type: 'choose' }, { page: 'settings', contents })).toEqual({ ok: false, cancelled: true })
     release('/a.png')

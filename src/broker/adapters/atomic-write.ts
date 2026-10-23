@@ -63,12 +63,12 @@ export function writeFileAtomic (path: string, text: string | Uint8Array, mode?:
  * through one file descriptor: write the temp file, fsync it, rename it
  * over `path`, fsync the directory.
  */
-export async function writeFileAtomicAsync (path: string, text: string): Promise<void> {
+export async function writeFileAtomicAsync (path: string, text: string | Uint8Array): Promise<void> {
   const tmp = tmpPathFor(path)
   try {
     const handle = await open(tmp, 'w')
     try {
-      await handle.writeFile(text, 'utf8')
+      await handle.writeFile(text, typeof text === 'string' ? 'utf8' : undefined)
       await handle.sync()
     } catch (error) {
       // A close failure here would otherwise replace the error that actually matters -- the one from

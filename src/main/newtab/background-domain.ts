@@ -25,7 +25,7 @@ export function backgroundDomain (store: Pick<BackgroundStore, 'install'>, host:
       choosing = true
       try {
         const path = await host.pick(caller.contents)
-        return path === undefined ? { ok: false, cancelled: true } : store.install(path)
+        return path === undefined ? { ok: false, cancelled: true } : await store.install(path)
       } finally {
         choosing = false
       }

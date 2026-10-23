@@ -16,9 +16,13 @@ export function readBackground (answer: unknown): PageBackground {
   const { kind, mime, bytes } = answer as { kind?: unknown, mime?: unknown, bytes?: unknown }
   if (kind === 'none') return { kind: 'none' }
   if (kind === 'custom' && typeof mime === 'string' && PICTURE_TYPES.has(mime) && ArrayBuffer.isView(bytes) && bytes.byteLength > 0) {
-    const copy = new Uint8Array(bytes.byteLength)
-    copy.set(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength))
-    return { kind: 'custom', mime, bytes: copy }
+    // A view of what arrived, not a copy: it came over IPC, so its buffer is never shared memory.
+    return { kind: 'custom', mime, bytes: new Uint8Array(bytes.buffer as ArrayBuffer, bytes.byteOffset, bytes.byteLength) }
   }
   return ORIVON
+}
+
+/** The address inside the first `url(...)` of a computed `background-image`, or null when it names no picture. */
+export function pictureUrlOf (backgroundImage: string): string | null {
+  return /url\(\s*["']?([^"')]+)["']?\s*\)/.exec(backgroundImage)?.[1] ?? null
 }

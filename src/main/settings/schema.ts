@@ -32,8 +32,8 @@ const SPECS = {
     default: '100',
     labels: { 75: '75%', 80: '80%', 90: '90%', 100: '100%', 110: '110%', 125: '125%', 150: '150%', 175: '175%', 200: '200%' }
   },
-  // What the new-tab page shows behind its search box. 'custom' needs the picture copied into the profile (src/main/newtab/background-store.ts); without it the page shows the Orivon one.
-  'appearance.newTabBackground': { kind: 'enum', options: ['orivon', 'custom', 'none'], default: 'orivon', labels: { orivon: 'The Orivon picture', custom: 'Your own picture', none: 'No picture' } },
+  // What the new-tab page shows behind its search box. 'custom' needs the picture copied into the profile (src/main/newtab/background-store.ts); without it the page shows the Orivon one. It is the last option on purpose: arrowing through a drop-down fires a change at each step, and passing 'custom' asks for a file.
+  'appearance.newTabBackground': { kind: 'enum', options: ['orivon', 'none', 'custom'], default: 'orivon', labels: { orivon: 'The Orivon picture', none: 'No picture', custom: 'Your own picture' } },
   'sidePanel.side': { kind: 'enum', options: ['right', 'left'], default: 'right' },
   // Which list an address-bar search goes to. The Web3 engine and the Web2 engine are kept apart, so switching modes loses neither choice.
   'search.mode': { kind: 'enum', options: SEARCH_MODES, default: DEFAULT_SEARCH_MODE, labels: { web3: 'Web3', web2: 'Web2' } },

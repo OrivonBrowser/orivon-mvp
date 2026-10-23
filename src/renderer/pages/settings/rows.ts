@@ -22,7 +22,7 @@ function choiceOptions (control: Extract<Control, { type: 'choice' }>, state: Se
   return description.options.map((value) => ({ value, label: description.labels[value] ?? value }))
 }
 
-function renderChoice (control: Extract<Control, { type: 'choice' }>, state: SettingsState, id: string): HTMLElement {
+export function renderChoice (control: Extract<Control, { type: 'choice' }>, state: SettingsState, id: string): HTMLElement {
   const select = h('select', { className: 'select', id, disabled: control.locked?.(state) === true })
   for (const option of choiceOptions(control, state)) select.append(h('option', { value: option.value, textContent: option.label }))
   select.value = String(state.value(control.key))

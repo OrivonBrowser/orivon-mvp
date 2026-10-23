@@ -1,5 +1,5 @@
 // A private session's directory: made fresh, holding a copy of the preferences (settings,
-// keyboard shortcuts, search engines, the new tab's picture) it began with and nothing else, and removed when the session is over. The
+// keyboard shortcuts, search engines) it began with and nothing else, and removed when the session is over. The
 // extensions the opening profile allows in private windows are copied in after it is made, asynchronously
 // (./private-extensions.ts), before anything starts in it. Deleting it
 // is never claimed to happen inside the dying process: Chromium writes after quit
@@ -11,7 +11,6 @@ import { spawn as nodeSpawn } from 'node:child_process'
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir, uptime } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
-import { NEW_TAB_BACKGROUND_FILE } from '../newtab/background-image.js'
 import { NYM_HELD_SETTINGS, forceSettingsFile } from '../settings/settings-file.js'
 import { copyPublicSeed } from './public-seed.js'
 import type { PrivateTunnel } from './launch-context.js'
@@ -26,11 +25,11 @@ const NAME = new RegExp(`^${PRIVATE_PREFIX}[A-Za-z0-9]{6}$`)
 export const GRACE_MS = 10 * 60 * 1000
 
 /** What a private session starts with, copied from the profile that opened it: its settings,
- * keyboard shortcuts, search engines and the new tab's picture -- all preferences -- plus the public seed (./public-seed.ts); the extensions the
- * profile allows in private windows come after, from ./private-extensions.ts. Never
+ * keyboard shortcuts and search engines -- all preferences -- plus the public seed (./public-seed.ts); the extensions the
+ * profile allows in private windows and the new tab's picture come after, asynchronously, from ./private-extensions.ts and ./private-picture.ts. Never
  * history, bookmarks, grants, apps, identity, site data, or zoom.json: a list of sites visited,
  * not a preference. */
-export const SNAPSHOT_FILES = ['settings.json', 'shortcuts.json', 'search-engines.json', NEW_TAB_BACKGROUND_FILE] as const
+export const SNAPSHOT_FILES = ['settings.json', 'shortcuts.json', 'search-engines.json'] as const
 
 /**
  * Makes the directory. `from` is the opening profile's directory, `home` the default profile's. With a `tunnel`, the copy of

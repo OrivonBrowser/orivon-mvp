@@ -54,9 +54,14 @@ export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry
   const following = new Set<WebContents>()
   const watched = new WeakSet<WebContents>()
   background.onChange(() => {
+    // Called from inside the settings store's own notification: a page that is gone must not stop the rest, nor make the change throw.
     for (const contents of following) {
-      if (contents.isDestroyed() || contents.mainFrame.url !== dashboardUrl) following.delete(contents)
-      else contents.send(NEWTAB_BACKGROUND_CHANGED_CHANNEL)
+      try {
+        if (contents.isDestroyed() || contents.mainFrame.url !== dashboardUrl) following.delete(contents)
+        else contents.send(NEWTAB_BACKGROUND_CHANGED_CHANNEL)
+      } catch {
+        following.delete(contents)
+      }
     }
   })
   ipcMain.handle(
@@ -81,7 +86,7 @@ export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry
             watched.add(event.sender)
             event.sender.once('destroyed', () => { following.delete(event.sender) })
           }
-          return background.current()
+          return await background.current()
         case 'getFeatured':
           return prefsOf(featured)
         case 'hideFeatured':
