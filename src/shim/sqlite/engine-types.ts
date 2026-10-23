@@ -27,6 +27,9 @@ export interface SqliteCapi {
   readonly SQLITE_OPEN_DELETEONCLOSE: number
   readonly SQLITE_OPEN_EXCLUSIVE: number
   readonly SQLITE_OPEN_READWRITE: number
+  readonly SQLITE_UTF8: number
+  readonly SQLITE_DETERMINISTIC: number
+  readonly SQLITE_DIRECTONLY: number
   readonly SQLITE_WASM_DEALLOC: Pointer
   readonly sqlite3_io_methods: new () => SqliteStruct
   readonly sqlite3_vfs: new (pointer?: Pointer) => SqliteStruct
@@ -59,6 +62,8 @@ export interface SqliteCapi {
   sqlite3_column_database_name (statement: Pointer, index: number): string | null
   sqlite3_column_table_name (statement: Pointer, index: number): string | null
   sqlite3_column_decltype (statement: Pointer, index: number): string | null
+  /** The bytes of a database as SQLite would write them to a file, whole. */
+  sqlite3_js_db_export (db: Pointer, schema: string): Uint8Array
 }
 
 /** A struct binding (`sqlite3_vfs`, `sqlite3_io_methods`, `sqlite3_file`): `$field` reads and writes a member. */
@@ -86,6 +91,21 @@ export interface SqliteExports {
   sqlite3_column_text (statement: Pointer, index: number): Pointer
   sqlite3_column_blob (statement: Pointer, index: number): Pointer
   sqlite3_column_bytes (statement: Pointer, index: number): number
+  sqlite3_value_type (value: Pointer): number
+  sqlite3_value_int64 (value: Pointer): bigint
+  sqlite3_value_double (value: Pointer): number
+  sqlite3_value_text (value: Pointer): Pointer
+  sqlite3_value_blob (value: Pointer): Pointer
+  sqlite3_value_bytes (value: Pointer): number
+  sqlite3_result_null (context: Pointer): void
+  sqlite3_result_int64 (context: Pointer, value: bigint): void
+  sqlite3_result_double (context: Pointer, value: number): void
+  sqlite3_result_text (context: Pointer, text: Pointer, length: number, destructor: Pointer): void
+  sqlite3_result_blob (context: Pointer, bytes: Pointer, length: number, destructor: Pointer): void
+  sqlite3_result_zeroblob (context: Pointer, length: number): void
+  sqlite3_result_error (context: Pointer, message: Pointer, length: number): void
+  sqlite3_result_error_code (context: Pointer, code: number): void
+  sqlite3_create_function_v2 (db: Pointer, name: Pointer, argc: number, flags: number, userData: Pointer, xFunc: Pointer, xStep: Pointer, xFinal: Pointer, xDestroy: Pointer): number
 }
 
 export interface SqliteWasm {
@@ -93,6 +113,9 @@ export interface SqliteWasm {
   alloc (bytes: number): Pointer
   allocPtr (): Pointer
   dealloc (pointer: Pointer): void
+  /** Puts `callback` in the module's function table, as a function of the C signature `signature` (`'v(pip)'`), and returns its address. */
+  installFunction (signature: string, callback: (...args: never[]) => unknown): Pointer
+  uninstallFunction (pointer: Pointer): void
   peekPtr (pointer: Pointer): Pointer
   peek8 (pointer: Pointer): number
   poke32 (pointer: Pointer, value: number): void

@@ -21,6 +21,17 @@ export interface DatabaseState {
   returnArrays: boolean
   allowBareNamedParameters: boolean
   allowUnknownNamedParameters: boolean
+  /** The exception a user-defined function threw during the call now failing, until that call reports it. */
+  thrown?: { readonly error: unknown } | undefined
+  /** How many user-defined functions are running now, on this connection: it cannot be closed under them. */
+  running: number
+}
+
+/** What a failed call throws: the exception a user-defined function threw, when one did, and otherwise the engine's error. */
+export function failureOf (database: DatabaseState): unknown {
+  const { thrown } = database
+  database.thrown = undefined
+  return thrown === undefined ? sqliteError(database.sqlite3, database.pointer) : thrown.error
 }
 
 /** Held apart from the `StatementSync` object so a statement nobody references can be finalized after it is collected. */
@@ -32,6 +43,8 @@ export interface StatementState {
   allowBareNamedParameters: boolean
   allowUnknownNamedParameters: boolean
   bareNames?: Map<string, number>
+  /** True while SQLite steps the statement: a function it calls must not run the same statement again. */
+  stepping?: boolean
 }
 
 const CONSTRUCT = Symbol('orivon.sqlite.statement')
@@ -154,6 +167,7 @@ function isNamedArgument (value: unknown): value is Record<string, unknown> {
 
 /** Clears the last run's bindings, then binds `args`: an object binds named parameters, anything else the next `?` in order. */
 function bindAll (state: StatementState, args: readonly unknown[]): void {
+  if (state.stepping === true) throw invalidState('statement is busy: it is running a user-defined function that is using it')
   const { capi, wasm } = state.database.sqlite3
   wasm.exports.sqlite3_reset(state.pointer)
   wasm.exports.sqlite3_clear_bindings(state.pointer)
@@ -217,9 +231,16 @@ function columnNames (state: StatementState): string[] {
 /** Steps once; anything but a row or completion is the statement's error, thrown after the statement is reset. */
 function step (state: StatementState): number {
   const { sqlite3 } = state.database
-  const rc = sqlite3.wasm.exports.sqlite3_step(state.pointer)
+  state.database.thrown = undefined
+  state.stepping = true
+  let rc: number
+  try {
+    rc = sqlite3.wasm.exports.sqlite3_step(state.pointer)
+  } finally {
+    state.stepping = false
+  }
   if (rc === SQLITE_ROW || rc === SQLITE_DONE) return rc
-  const error = sqliteError(sqlite3, state.database.pointer)
+  const error = failureOf(state.database)
   sqlite3.wasm.exports.sqlite3_reset(state.pointer)
   throw error
 }
