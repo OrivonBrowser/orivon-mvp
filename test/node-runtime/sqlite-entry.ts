@@ -9,6 +9,8 @@ export interface SqliteResults {
   readonly fileStart?: string
   readonly fileBytes?: number
   readonly journalLeft?: boolean
+  readonly copyStart?: string
+  readonly dataFiles?: readonly string[]
   readonly pageMemoryRefusal?: { name?: string, message?: string } | undefined
   readonly error?: string
 }
@@ -22,11 +24,13 @@ async function run (): Promise<SqliteResults> {
     child.once('exit', (code: number | null) => reject(new Error(`the child exited ${String(code)} before it replied: ${stderr}`)))
     child.send({ go: true })
   })
-  const orivon = (window as unknown as { orivon: { fs: { readFile: (path: string) => Promise<Uint8Array>, stat: (path: string) => Promise<unknown> } } }).orivon
+  const orivon = (window as unknown as { orivon: { fs: { readFile: (path: string) => Promise<Uint8Array>, stat: (path: string) => Promise<unknown>, readdir: (path: string) => Promise<readonly string[]> } } }).orivon
   const file = await orivon.fs.readFile('data/scrollback.sqlite3')
   const journalLeft = await orivon.fs.stat('data/scrollback.sqlite3-journal').then(() => true, () => false)
+  const copy = await orivon.fs.readFile('data/functions-copy.sqlite3').catch(() => new Uint8Array(0))
+  const dataFiles = await orivon.fs.readdir('data').catch(() => [])
   child.kill()
-  return { reply, fileStart: new TextDecoder().decode(file.subarray(0, 15)), fileBytes: file.length, journalLeft }
+  return { reply, fileStart: new TextDecoder().decode(file.subarray(0, 15)), fileBytes: file.length, journalLeft, copyStart: new TextDecoder().decode(copy.subarray(0, 15)), dataFiles }
 }
 
 ;(globalThis as unknown as { sqliteE2e: { run: () => Promise<SqliteResults> } }).sqliteE2e = {

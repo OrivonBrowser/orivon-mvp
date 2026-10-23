@@ -25,6 +25,12 @@ export interface SqliteFiles {
   exists (path: string): boolean
   /** Throws an error whose `code` is `ENOENT` when there is no such file. */
   remove (path: string): void
+  /** The size of the file at `path`, in bytes. */
+  size (path: string): number
+  /** Moves `from` to `to`, replacing a file there: the whole of `to` is the old file or the new one. */
+  rename (from: string, to: string): void
+  /** Whether two paths name the same file of the app's files. */
+  isSameFile (first: string, second: string): boolean
   /** A path for a file SQLite wants only while it is open (`VACUUM`'s copy, a large sort). */
   temporaryPath (): string
 }
@@ -77,6 +83,9 @@ export function orivonSqliteFiles (): SqliteFiles {
       return wrap(guardedSync(() => fs.open(target, 'r+')))
     },
     exists,
+    size: (path) => guardedSync(() => fs.stat(confined(path)).size),
+    rename: (from, to) => { guardedSync(() => { fs.rename(confined(from), confined(to)) }) },
+    isSameFile: (first, second) => confined(first) === confined(second),
     remove: (path) => { guardedSync(() => { fs.rm(confined(path)) }) },
     temporaryPath: () => `${VIRTUAL_TMPDIR}/etilqs_${randomHex(16)}`
   }

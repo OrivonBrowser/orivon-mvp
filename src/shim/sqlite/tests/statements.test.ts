@@ -6,30 +6,10 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { constants } from '../constants.js'
 import { DatabaseSync } from '../database.js'
 import { collectGarbage } from '../../tests/support/collect-garbage.js'
+import { outcome, same } from './support/compare.js'
 import { loadTestEngine } from './support/engine.js'
 
 beforeAll(loadTestEngine)
-
-type Database = DatabaseSync | NodeDatabaseSync
-
-function outcome (run: () => unknown): unknown {
-  try {
-    const value = run()
-    return { value: JSON.parse(JSON.stringify(value, (_key, item: unknown) => typeof item === 'bigint' ? `${item.toString()}n` : item instanceof Uint8Array ? [...item] : item)) as unknown }
-  } catch (error) {
-    const { name, message, code, errcode, errstr } = error as Record<string, unknown>
-    return { error: { name, message, code, errcode, errstr } }
-  }
-}
-
-/** Runs `scenario` on a fresh in-memory database of each implementation and expects the same outcome. */
-function same (label: string, scenario: (db: Database) => unknown, options?: object): void {
-  it(label, () => {
-    const mine = outcome(() => scenario(options === undefined ? new DatabaseSync(':memory:') : new DatabaseSync(':memory:', options)))
-    const theirs = outcome(() => scenario(options === undefined ? new NodeDatabaseSync(':memory:') : new NodeDatabaseSync(':memory:', options)))
-    expect(mine).toEqual(theirs)
-  })
-}
 
 const SETUP = 'CREATE TABLE t (id INTEGER PRIMARY KEY, a, b TEXT UNIQUE, c REAL, d BLOB)'
 
@@ -207,7 +187,7 @@ it('constants are Node\'s, value for value', () => {
 })
 
 describe('members not built refuse by name', () => {
-  it.each(['function', 'aggregate', 'createSession', 'applyChangeset', 'createTagStore', 'loadExtension', 'enableLoadExtension'] as const)('%s', (member) => {
+  it.each(['aggregate', 'createSession', 'applyChangeset', 'createTagStore', 'loadExtension', 'enableLoadExtension'] as const)('%s', (member) => {
     const db = new DatabaseSync(':memory:') as unknown as Record<string, () => void>
     expect(() => db[member]?.()).toThrow(expect.objectContaining({ name: 'OrivonShimError', reason: 'not-built', api: expect.stringContaining('sqlite.DatabaseSync') as string }))
   })

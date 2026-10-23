@@ -7,6 +7,7 @@ import { parentPort, workerData } from 'node:worker_threads'
 import { mkdirSync } from '../../../fs/fs.js'
 import { createOrivonClient } from '../../../worker/orivon-client.js'
 import { loadSqliteEngine } from '../../engine.js'
+import Database from '../../better-sqlite3.js'
 import { DatabaseSync } from '../../index.js'
 
 const { port, wasmPath } = workerData as { port: MessagePort, wasmPath: string }
@@ -30,4 +31,11 @@ const last = second.prepare('select msg from messages order by time desc, id des
 const integrity = second.prepare('pragma integrity_check').get()
 second.close()
 
-parentPort?.postMessage({ counted: counted.n, last: last.msg.slice(0, 12), integrity })
+const adapter = new Database('/orivon/app/data/functions.sqlite3')
+adapter.function('shout', { deterministic: true }, (text: unknown) => String(text).toUpperCase() + '!')
+adapter.exec('create table words (w text)')
+adapter.prepare('insert into words select shout(value) from (select ? as value union all select ?)').run('one', 'two')
+const backedUp = await adapter.backup('/orivon/app/data/functions-copy.sqlite3')
+adapter.close()
+
+parentPort?.postMessage({ counted: counted.n, last: last.msg.slice(0, 12), integrity, backedUp })

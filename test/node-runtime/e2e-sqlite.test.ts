@@ -28,11 +28,22 @@ const MANIFEST: Manifest = {
   capabilities: { fs: { quotaBytes: 8_388_608 } }
 }
 
+interface UserFunctions {
+  matched?: unknown
+  folded?: unknown
+  thrown?: { error?: { name?: string } }
+  copiedRows?: unknown
+  pages?: number
+  outside?: unknown
+  twice?: unknown
+  failed?: string
+}
+
 afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-it('[app:node-sqlite-in-worker] [app:node-fs-writes-land-at-app-root] a forked child opens, writes, closes, reopens and reads a database file in the app\'s files', async () => {
+it('[app:node-sqlite-in-worker] [app:node-fs-writes-land-at-app-root] [app:sqlite-user-functions] [app:sqlite-backup-to-app-files] a forked child opens, writes, closes, reopens and reads a database file in the app\'s files, calls a function the app registered, and backs the database up', async () => {
   const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
   try {
     await runPhase('node:sqlite', async (check) => {
@@ -50,7 +61,7 @@ it('[app:node-sqlite-in-worker] [app:node-fs-writes-land-at-app-root] a forked c
       await waitForPageGlobal(view, 'sqliteE2e')
       const results = await evaluateRetrying(view, async () => await (globalThis as unknown as { sqliteE2e: { run: () => Promise<SqliteResults> } }).sqliteE2e.run(), 60_000)
       const detail = JSON.stringify(results)
-      const reply = (results.reply ?? {}) as { value?: { isolated?: boolean, counted?: number, integrity?: unknown, location?: string, inMemory?: unknown, duplicate?: { error?: { code?: string, errcode?: number } }, backup?: { error?: { name?: string } } }, error?: unknown }
+      const reply = (results.reply ?? {}) as { value?: { isolated?: boolean, counted?: number, integrity?: unknown, location?: string, inMemory?: unknown, duplicate?: { error?: { code?: string, errcode?: number } }, backup?: { error?: { name?: string } }, userFunctions?: UserFunctions }, error?: unknown }
 
       check('the page ran the case without throwing', results.error === undefined && reply.error === undefined, detail)
       check('the child is cross-origin isolated', reply.value?.isolated === true, detail)
@@ -62,6 +73,15 @@ it('[app:node-sqlite-in-worker] [app:node-fs-writes-land-at-app-root] a forked c
       check('backup refuses by name', reply.value?.backup?.error?.name === 'OrivonShimError', detail)
       check('the page reads a real SQLite file from the app\'s files', results.fileStart === 'SQLite format 3' && (results.fileBytes ?? 0) > 60_000, detail)
       check('no journal is left beside it', results.journalLeft === false, detail)
+
+      const functions = reply.value?.userFunctions
+      check('the child ran the functions case without failing', functions !== undefined && functions.failed === undefined, detail)
+      check('a function the app registered backs a WHERE clause and an expression index', JSON.stringify(functions?.matched) === JSON.stringify(['Beta', 'b\u00e9ta', 'bravo']) && JSON.stringify(functions?.folded) === JSON.stringify(['\u00c9clair']), detail)
+      check('node:sqlite registers a function the same way', JSON.stringify(functions?.twice) === JSON.stringify({ v: 42 }), detail)
+      check('an exception in a function fails its statement and reaches the caller', functions?.thrown?.error?.name === 'RangeError', detail)
+      check('backup resolves after a copy of the database is in the app\'s files', (functions?.pages ?? 0) > 1 && functions?.copiedRows === 5 && results.copyStart === 'SQLite format 3', detail)
+      check('backup leaves no temporary file in the app\'s files', (results.dataFiles ?? []).every((name) => !name.includes('.backup-')) && (results.dataFiles ?? []).includes('functions-copy.sqlite3'), detail)
+      check('backup to a place outside the app\'s files is refused', Array.isArray(functions?.outside) && functions.outside.length === 2 && functions.outside.every((outcome) => outcome !== 'resolved'), detail)
     })
   } finally {
     await closeElectronApp(app)

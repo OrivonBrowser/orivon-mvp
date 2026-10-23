@@ -14,7 +14,8 @@ additions says why this package). Durable: WebAssembly and the synchronous file 
 | `vfs.ts`, `files.ts`, `buffered-file.ts` | The SQLite VFS over the app's files, and the calls it makes |
 | `database.ts`, `statement.ts` | `DatabaseSync`, `StatementSync` |
 | `errors.ts`, `constants.ts`, `index.ts` | Node's error shapes, `sqlite.constants`, the module |
-| `better-sqlite3.ts`, `better-sqlite3-statement.ts`, `better-sqlite3-binding.ts`, `better-sqlite3-errors.ts` | The `better-sqlite3` API over `DatabaseSync`: `Database`, `Statement`, how arguments bind, `SqliteError` |
+| `functions.ts` | Scalar SQL functions written in JavaScript: how values cross, and how an exception fails the call |
+| `better-sqlite3.ts`, `better-sqlite3-statement.ts`, `better-sqlite3-binding.ts`, `better-sqlite3-errors.ts`, `better-sqlite3-backup.ts` | The `better-sqlite3` API over `DatabaseSync`: `Database`, `Statement`, how arguments bind, `SqliteError`, `backup` |
 
 **What it depends on.** [`../errors.ts`](../errors.ts), [`../node-errors.ts`](../node-errors.ts),
 [`../fs/paths.ts`](../fs/paths.ts) and [`../fs/sync-orivon.ts`](../fs/sync-orivon.ts) (the same
@@ -52,15 +53,26 @@ engine is loaded first, and a database file works only in a forked child or thre
 `inTransaction`, `readonly`, `memory`; `prepare`, `exec` (returns the database), `pragma` (rows, or
 `{ simple: true }`; a pragma that sets a value works), `transaction` (`BEGIN` and `COMMIT`, `ROLLBACK`
 on a throw, a savepoint when nested, the `.deferred`, `.immediate` and `.exclusive` variants),
-`close`, `defaultSafeIntegers`, `unsafeMode` (a no-op). `Statement`: `run`, `get`, `all`, `iterate`,
+`close`, `defaultSafeIntegers`, `unsafeMode` (a no-op), `function` and `backup` (below). `Statement`: `run`, `get`, `all`, `iterate`,
 `pluck`, `raw`, `expand`, `columns`, `bind`, `safeIntegers`, `source`, `reader`, `readonly`, `database`.
 `Database.SqliteError` is thrown for an engine failure, with `code` the extended result code's name
 (`SQLITE_CONSTRAINT_UNIQUE`).
 
-**Refused by name, `'not-built'`:** `function`, `aggregate`, `table`, `backup`, `serialize`,
-`loadExtension`, and a `Buffer` as the filename.
+`db.function(name, [options], fn)` registers a scalar function with `better-sqlite3`'s options `deterministic`,
+`varargs`, `directOnly` and `safeIntegers`, and its checks and messages. An INTEGER reaches `fn` as a number (a
+bigint under `safeIntegers`, or `defaultSafeIntegers` when the option is absent, read at each call), REAL as a
+number, TEXT as a string, BLOB as a `Uint8Array`, NULL as `null`. `fn` returns a number (stored as REAL), a bigint
+(INTEGER), a string, a `Uint8Array` (BLOB), `null` or `undefined` (NULL); anything else is a `TypeError`. An
+exception in `fn` fails the statement that called it, and the call that ran the statement (`run`, `get`, `all`,
+`iterate`, `exec`) throws that exception itself. `db.backup(destination, [options])` returns a Promise that
+resolves with `{ totalPages, remainingPages: 0 }` once a copy of the committed database is in `destination`,
+a file of the app's files whose directory exists; the option `attached` names the database to copy and `progress`
+is called once, when the copy is done.
 
-**Different from `better-sqlite3`:** `verbose` receives each statement's SQL with its parameters
+**Refused by name, `'not-built'`:** `aggregate`, `table`, `serialize`, `loadExtension`, and a `Buffer` as the filename.
+
+**Different from `better-sqlite3`:** `backup` cannot run inside a transaction and copies in one step, so `progress` reports only the end; a function receives a BLOB as a
+`Uint8Array`, as a row does; `verbose` receives each statement's SQL with its parameters
 filled in, after the statement ran; `prepare` does not refuse a string of several statements (the
 first is prepared); a missing directory is the engine's `SQLITE_CANTOPEN`, not a `TypeError`; a
 statement used while an iterator is open is not refused; the limits of section What works, and where apply.
@@ -81,8 +93,12 @@ one of the app's files, relative or under `/orivon/app`. As in Node, the directo
 parameters, and integer range checks are Node's, compared against Node's own `node:sqlite` in
 [`tests/statements.test.ts`](tests/statements.test.ts).
 
-**Refused by name, `'not-built'`:** `function`, `aggregate`, `createSession`, `applyChangeset`,
-`createTagStore`, `loadExtension`, `enableLoadExtension`, the `allowExtension` option, `backup`,
+`function(name, [options], fn)` takes Node's options `useBigIntArguments`, `varargs`, `deterministic` and
+`directOnly`, and Node's values and errors, compared against Node's own `node:sqlite` in
+[`tests/functions.test.ts`](tests/functions.test.ts).
+
+**Refused by name, `'not-built'`:** `aggregate`, `createSession`, `applyChangeset`,
+`createTagStore`, `loadExtension`, `enableLoadExtension`, the `allowExtension` option, the module's `backup`,
 `Session`.
 
 **Different from Node:** no locking and no WAL (`pragma journal_mode = wal` stays `delete`), so one
@@ -156,3 +172,26 @@ The same file binds a JavaScript number as REAL and a `bigint` as INTEGER, as No
 apart from the object, so an app that prepares a statement per call (a chat store inserts one per message)
 does not leak engine memory. Closing a database finalizes its statements, and one used afterwards says so with
 Node's `ERR_INVALID_STATE`.
+
+**A function is registered through the package's `sqlite3_create_function_v2`, with no change to the engine.** The
+package's WebAssembly already exports it, the `sqlite3_value_*` readers and the `sqlite3_result_*` writers, and
+installs a JavaScript callback in the module's function table, removing it when SQLite destroys the function.
+[`functions.ts`](functions.ts) calls the raw exports, as `statement.ts` does for binding, so a value's mapping is
+ours and not the package's. A callback must never throw into WebAssembly, so it catches the exception, keeps it on
+the connection and fails the SQL call with a generic error; the statement call that sees that failure
+(`failureOf` in [`statement.ts`](statement.ts)) throws the kept exception instead of the engine's error, which is
+what Node and `better-sqlite3` do. Node and `better-sqlite3` differ in what they do with a result SQLite cannot
+store (a SQL error, a `TypeError`) and in how an INTEGER argument arrives, so the two entry points pass `functions.ts`
+their own rule for each. An empty buffer is an empty BLOB in both: Node stores NULL or an empty BLOB for it, depending on
+where the engine put the buffer.
+
+**`backup` writes a copy beside the destination and renames it over, because the engine has no online backup API.**
+The package's build exports none of `sqlite3_backup_init`, `_step` and `_finish`. For a database in a file the copy is
+`VACUUM INTO`, which gives the guarantee a database the app holds open needs: a consistent snapshot of what was
+committed when it ran, written through the VFS of the open database, so a destination outside the app's files is
+refused as any other path is. A database in memory, which that VFS does not serve, is written from the engine's export
+of it. The copy goes to a file beside `destination` and is renamed over it, so a failure leaves `destination` as it
+was and a reader never sees half a file. It differs from SQLite's backup in three ways: it does not start inside a
+transaction, it runs to the end in one step with no chance for other work between pages, and a file's copy is compacted
+(free pages are not carried over) while keeping the page size, `user_version` and `application_id`. It refuses a
+destination that is the database it copies, or that database's journal.
