@@ -2,12 +2,20 @@ import { describe, expect, it, vi } from 'vitest'
 import { fakeContext, EXT } from '../api/tests/api-fixtures.js'
 import { createSidePanelApi, GESTURE_ERROR, TARGET_ERROR } from '../side-panel-api.js'
 import type { SidePanelDriver } from '../side-panel-api.js'
-import { createGestureLedger } from '../side-panel-gesture.js'
+import { createGestureLedger, createTabGesture } from '../side-panel-gesture.js'
 import { createSidePanelOptions } from '../side-panel-options.js'
 
-function setup (opts: { appTab?: boolean, internal?: boolean, refuse?: string } = {}) {
-  const window = { window: { id: 5, isDestroyed: () => false } }
-  const contents = { getURL: () => (opts.appTab === true ? 'https://app.example/x' : 'https://page.test/') }
+type Press = (type: string) => void
+
+function setup (opts: { appTab?: boolean, internal?: boolean, refuse?: string, reaches?: boolean, showing?: boolean } = {}) {
+  const listeners: Array<(event: unknown, input: { type: string }) => void> = []
+  const contents = {
+    getURL: () => (opts.appTab === true ? 'https://app.example/x' : 'https://page.test/'),
+    isDestroyed: () => false,
+    on: (event: string, listener: (event: unknown, input: { type: string }) => void) => { if (event === 'input-event') listeners.push(listener) }
+  }
+  const press: Press = (type) => { for (const l of listeners) l({}, { type }) }
+  const window = { window: { id: 5, isDestroyed: () => false }, tabs: { activeWebContents: () => contents } }
   const shell = {
     windows: { all: () => [window] },
     internalPages: { pageOf: () => (opts.internal === true ? 'settings' : undefined) }
@@ -15,15 +23,18 @@ function setup (opts: { appTab?: boolean, internal?: boolean, refuse?: string } 
   const found = { contents, window, id: 't1' }
   const options = createSidePanelOptions({ manifestOf: () => ({ side_panel: { default_path: 'panel.html' } }), holds: () => true })
   const gesture = createGestureLedger()
+  const tabGesture = createTabGesture<never>()
+  tabGesture.watch(contents as never)
   const driver = {
-    options, gesture, side: () => 'left',
+    options, gesture, tabGesture: tabGesture as never, side: () => 'left',
     optionsChanged: vi.fn(), behaviorChanged: vi.fn(),
+    showing: vi.fn(() => opts.showing === true),
     open: vi.fn(async () => { if (opts.refuse !== undefined) throw new Error(opts.refuse) }),
     close: vi.fn(async () => {})
   } satisfies SidePanelDriver
-  const fake = fakeContext(shell, { tab: ((id: unknown) => (id === 42 ? found : undefined)) as never })
+  const fake = fakeContext(shell, { tab: ((id: unknown) => (id === 42 ? found : undefined)) as never, canSee: () => opts.reaches !== false })
   createSidePanelApi(() => driver).install(fake.ctx)
-  return { driver, window, ...fake }
+  return { driver, window, press, ...fake }
 }
 
 describe('the sidePanel module', () => {
@@ -68,6 +79,84 @@ describe('sidePanel.open', () => {
     s.driver.gesture.record(EXT)
     await expect(s.call('sidePanel.open', { windowId: 5 })).rejects.toThrow('No active side panel for windowId: 5.')
     expect(s.driver.gesture.available(EXT)).toBe(true)
+  })
+})
+
+describe('sidePanel.open from a click on a page', () => {
+  const OTHER = 'b'.repeat(32)
+  const callAs = async (s: ReturnType<typeof setup>, id: string, ...args: unknown[]): Promise<unknown> =>
+    await s.handlers.get('sidePanel.open')?.run(s.event(id), ...args)
+
+  it('opens for the tab the person clicked in', async () => {
+    const s = setup()
+    s.press('mouseDown')
+    await s.call('sidePanel.open', { tabId: 42 })
+    expect(s.driver.open).toHaveBeenCalledWith({ extensionId: EXT, window: s.window, tabId: 42 })
+  })
+
+  it('lets the same extension open again from the same click, and keeps the click from another extension', async () => {
+    const s = setup()
+    s.press('mouseDown')
+    await s.call('sidePanel.open', { tabId: 42 })
+    await s.call('sidePanel.open', { tabId: 42 })
+    expect(s.driver.open).toHaveBeenCalledTimes(2)
+    await expect(callAs(s, OTHER, { tabId: 42 })).rejects.toThrow(GESTURE_ERROR)
+    s.press('keyDown')
+    await callAs(s, OTHER, { tabId: 42 })
+    expect(s.driver.open).toHaveBeenCalledTimes(3)
+  })
+
+  it('opens with no gesture at all when the extension\'s panel is already showing in that window', async () => {
+    const s = setup({ showing: true })
+    await s.call('sidePanel.open', { windowId: 5 })
+    await s.call('sidePanel.open', { tabId: 42 })
+    expect(s.driver.open).toHaveBeenCalledTimes(2)
+    expect(s.driver.showing).toHaveBeenCalledWith(EXT, s.window, 42)
+  })
+
+  it('asks for the gesture when the panel is not showing', async () => {
+    const s = setup({ showing: false })
+    await expect(s.call('sidePanel.open', { tabId: 42 })).rejects.toThrow(GESTURE_ERROR)
+  })
+
+  it('counts a click in the window\'s front tab for a call that names the window', async () => {
+    const s = setup()
+    s.press('keyDown')
+    await s.call('sidePanel.open', { windowId: 5 })
+    expect(s.driver.open).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not count input made in no tab, or a script\'s own event', async () => {
+    const s = setup()
+    await expect(s.call('sidePanel.open', { tabId: 42 })).rejects.toThrow(GESTURE_ERROR)
+    s.press('mouseMove')
+    await expect(s.call('sidePanel.open', { windowId: 5 })).rejects.toThrow(GESTURE_ERROR)
+    expect(s.driver.open).not.toHaveBeenCalled()
+  })
+
+  it('needs the extension to reach the page', async () => {
+    const s = setup({ reaches: false })
+    s.press('mouseDown')
+    await expect(s.call('sidePanel.open', { tabId: 42 })).rejects.toThrow(GESTURE_ERROR)
+    expect(s.driver.open).not.toHaveBeenCalled()
+  })
+
+  it('keeps the click for a try that can work after the driver refuses', async () => {
+    const s = setup({ refuse: 'No active side panel for tabId: 42.' })
+    s.press('mouseDown')
+    await expect(s.call('sidePanel.open', { tabId: 42 })).rejects.toThrow('No active side panel')
+    await expect(s.call('sidePanel.open', { tabId: 42 })).rejects.toThrow('No active side panel')
+    expect(s.driver.open).toHaveBeenCalledTimes(2)
+  })
+
+  it('spends the extension\'s own surface input before the page\'s click', async () => {
+    const s = setup()
+    s.driver.gesture.record(EXT)
+    s.press('mouseDown')
+    await s.call('sidePanel.open', { tabId: 42 })
+    expect(s.driver.gesture.available(EXT)).toBe(false)
+    await s.call('sidePanel.open', { tabId: 42 })
+    expect(s.driver.open).toHaveBeenCalledTimes(2)
   })
 })
 

@@ -48,8 +48,33 @@ function displayHoldingStrip (rect: Rect, displays: readonly { bounds: Rect }[])
   return best
 }
 
-function clamp (value: number, min: number, max: number): number {
+/** `value` held between `min` and `max`; a `max` below `min` gives `min`. */
+export function clamp (value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), Math.max(min, max))
+}
+
+/**
+ * The area `rect` overlaps most, so a window straddling two displays belongs to the one holding more of it and a
+ * window whose corner sits exactly on the next display's origin belongs to that display. A rect no area touches
+ * belongs to the nearest one. Undefined when there are no areas.
+ */
+export function displayFor (rect: Rect, areas: readonly Rect[]): Rect | undefined {
+  let best: Rect | undefined
+  let bestArea = 0
+  for (const area of areas) {
+    const covered = overlap(rect.x, rect.width, area.x, area.width) * overlap(rect.y, rect.height, area.y, area.height)
+    if (covered > bestArea) { best = area; bestArea = covered }
+  }
+  if (best !== undefined) return best
+  let nearest: Rect | undefined
+  let nearestDistance = Infinity
+  for (const area of areas) {
+    const dx = Math.max(area.x - (rect.x + rect.width), 0, rect.x - (area.x + area.width))
+    const dy = Math.max(area.y - (rect.y + rect.height), 0, rect.y - (area.y + area.height))
+    const distance = dx * dx + dy * dy
+    if (distance < nearestDistance) { nearest = area; nearestDistance = distance }
+  }
+  return nearest
 }
 
 /** `saved` is what the last window left; null means nothing was saved. A place that no display shows is

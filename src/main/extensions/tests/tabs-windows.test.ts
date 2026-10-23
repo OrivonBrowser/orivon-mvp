@@ -245,3 +245,77 @@ describe('a tab handed to another window', () => {
     expect(removed).not.toHaveBeenCalled()
   })
 })
+
+describe('the windows an extension can tell apart (UPSTREAM.md patch 75)', () => {
+  function withWindows (types: Map<unknown, 'normal' | 'popup'>) {
+    const updated: unknown[] = []
+    const ctl = setup({ windowType: (w: unknown) => types.get(w) ?? 'normal', updateWindow: (_w: unknown, props: unknown) => { updated.push(props) } })
+    const normal = fakeWindow()
+    const popup = fakeWindow()
+    types.set(popup, 'popup')
+    ctl.store.addTab(fakeTab(), normal)
+    ctl.store.addTab(fakeTab(), popup)
+    const handlers = new Map<string, (...args: any[]) => any>()
+    const router = { apiHandler: () => (name: string, fn: (...args: any[]) => unknown) => { handlers.set(name, fn) }, broadcastEvent: vi.fn() }
+    new WindowsAPI({ router, store: ctl.store, session: { isPersistent: () => true } } as never)
+    for (const [i, window] of [normal, popup].entries()) {
+      Object.assign(window, {
+        isFocused: () => false, getPosition: () => [0, 0], isMaximized: () => false, isMinimized: () => false, isFullScreen: () => false,
+        isAlwaysOnTop: () => false, maximize: vi.fn(), minimize: vi.fn(), restore: vi.fn()
+      })
+      void i
+    }
+    ctl.store.lastFocusedWindowId = popup.id
+    return { normal, popup, updated, call: (name: string, ...args: unknown[]) => handlers.get(name)?.(extensionEvent(), ...args) }
+  }
+
+  it('reports the type the host gives, and normal where it gives none', () => {
+    const { normal, popup, call } = withWindows(new Map())
+    expect(call('windows.get', normal.id).type).toBe('normal')
+    expect(call('windows.get', popup.id).type).toBe('popup')
+    expect(call('windows.getAll').map((w: any) => w.type).sort()).toEqual(['normal', 'popup'])
+  })
+
+  it('lists only the windows of the types asked for', () => {
+    const { normal, popup, call } = withWindows(new Map())
+    expect(call('windows.getAll', { windowTypes: ['popup'] }).map((w: any) => w.id)).toEqual([popup.id])
+    expect(call('windows.getAll', { windowTypes: ['normal'] }).map((w: any) => w.id)).toEqual([normal.id])
+    expect(call('windows.getAll', { windowTypes: ['normal', 'popup'] })).toHaveLength(2)
+    expect(call('windows.getAll', { windowTypes: [] })).toHaveLength(2)
+  })
+
+  it('answers the last focused window of the types asked for', () => {
+    const { normal, popup, call } = withWindows(new Map())
+    expect(call('windows.getLastFocused').id).toBe(popup.id)
+    expect(call('windows.getLastFocused', { windowTypes: ['popup'] }).id).toBe(popup.id)
+    expect(call('windows.getLastFocused', { windowTypes: ['normal'] }).id).toBe(normal.id)
+  })
+
+  describe('windows.update', () => {
+    it.each([
+      [{ state: 'maximized', left: 10 }],
+      [{ state: 'minimized', width: 600 }],
+      [{ state: 'fullscreen', top: 0 }],
+      [{ state: 'minimized', focused: true }],
+      [{ state: 'maximized', focused: false }],
+      [{ state: 'fullscreen', focused: false }]
+    ])('refuses %j, and changes nothing', async (props) => {
+      const { normal, updated, call } = withWindows(new Map())
+      await expect(call('windows.update', normal.id, props)).rejects.toThrow(/Invalid value for/)
+      expect(normal.maximize).not.toHaveBeenCalled()
+      expect(normal.minimize).not.toHaveBeenCalled()
+      expect(updated).toEqual([])
+    })
+
+    it.each([
+      [{ state: 'normal', left: 10, top: 20 }],
+      [{ state: 'maximized', focused: true }],
+      [{ state: 'minimized', focused: false }],
+      [{ left: 10, focused: true, drawAttention: true }]
+    ])('accepts %j', async (props) => {
+      const { normal, updated, call } = withWindows(new Map())
+      await call('windows.update', normal.id, props)
+      expect(updated).toEqual([props])
+    })
+  })
+})

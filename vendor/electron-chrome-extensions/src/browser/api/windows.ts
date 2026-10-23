@@ -13,6 +13,29 @@ const getWindowState = (win: Electron.BaseWindow): chrome.windows.Window['state'
   return 'normal'
 }
 
+const NON_NORMAL_STATES = ['minimized', 'maximized', 'fullscreen']
+
+/**
+ * Orivon patch (UPSTREAM.md patch 75): the combinations Chrome refuses in `windows.update`, as the message it would
+ * give (undefined when the call is valid). A minimized, maximized or fullscreen window takes no bounds; a minimized
+ * window cannot be focused, and a maximized or fullscreen one cannot be unfocused.
+ */
+export function windowUpdateError(props: chrome.windows.UpdateInfo): string | undefined {
+  const state = props.state
+  if (state === undefined || !NON_NORMAL_STATES.includes(state)) return undefined
+  const bounds = [props.left, props.top, props.width, props.height].some((value) => value !== undefined)
+  if (bounds) {
+    return "Invalid value for state. 'minimized', 'maximized' and 'fullscreen' states cannot be combined with 'left', 'top', 'width' or 'height'."
+  }
+  if (state === 'minimized' && props.focused === true) {
+    return "Invalid value for state. A 'minimized' window cannot be focused."
+  }
+  if (state !== 'minimized' && props.focused === false) {
+    return "Invalid value for state. A 'maximized' or 'fullscreen' window cannot be unfocused."
+  }
+  return undefined
+}
+
 export class WindowsAPI {
   static WINDOW_ID_NONE = -1
   static WINDOW_ID_CURRENT = -2
@@ -84,7 +107,7 @@ export class WindowsAPI {
         .map((tab) => this.ctx.store.tabDetailsCache.get(tab.id) as chrome.tabs.Tab)
         .filter(Boolean),
       incognito: !this.ctx.session.isPersistent(),
-      type: 'normal', // TODO
+      type: this.ctx.store.impl.windowType?.(win) ?? 'normal',
       state: getWindowState(win),
       alwaysOnTop: win.isAlwaysOnTop(),
       sessionId: 'default', // TODO
@@ -155,17 +178,31 @@ export class WindowsAPI {
     return this.getLastFocused(event, getInfo)
   }
 
+  /** Orivon patch (UPSTREAM.md patch 75): `QueryOptions.windowTypes` narrows by the type the host reports; none, or an empty list, is every type. */
+  private ofTypes(getInfo?: chrome.windows.QueryOptions) {
+    const types = getInfo?.windowTypes
+    if (!Array.isArray(types) || types.length === 0) return () => true
+    return (win: Electron.BaseWindow) => types.includes(this.ctx.store.impl.windowType?.(win) ?? 'normal')
+  }
+
   private getLastFocused(event: ExtensionEvent, getInfo?: chrome.windows.QueryOptions) {
-    const win = this.ctx.store.getLastFocusedWindow()
+    const wanted = this.ofTypes(getInfo)
+    const last = this.ctx.store.getLastFocusedWindow()
+    // The last focused window of another type is passed over for the focused or newest one of the types asked for.
+    const win =
+      last && wanted(last)
+        ? last
+        : Array.from(this.ctx.store.windows).filter((candidate) => !candidate.isDestroyed() && wanted(candidate)).sort((a, b) => Number(b.isFocused()) - Number(a.isFocused()))[0]
     if (!win) return null
     return this.toExtensionWindow(event, this.getWindowDetails(win), getInfo?.populate === true)
   }
 
   private getAll(event: ExtensionEvent, getInfo?: chrome.windows.QueryOptions) {
     const populate = getInfo?.populate === true
-    return Array.from(this.ctx.store.windows).map((win) =>
-      this.toExtensionWindow(event, this.getWindowDetails(win), populate),
-    )
+    const wanted = this.ofTypes(getInfo)
+    return Array.from(this.ctx.store.windows)
+      .filter(wanted)
+      .map((win) => this.toExtensionWindow(event, this.getWindowDetails(win), populate))
   }
 
   private async create(event: ExtensionEvent, details: chrome.windows.CreateData) {
@@ -189,6 +226,8 @@ export class WindowsAPI {
     if (!win) return
 
     const props = updateProperties
+    const refused = windowUpdateError(props)
+    if (refused) throw new Error(refused)
 
     if (props.state) {
       switch (props.state) {
@@ -206,6 +245,8 @@ export class WindowsAPI {
         }
       }
     }
+
+    this.ctx.store.impl.updateWindow?.(win, props)
 
     // update() takes no populate option -- never carries tabs (Chrome's own
     // behaviour; also closes the leak an unconditional `tabs` array here
