@@ -54,7 +54,8 @@ if (window.opener) window.opener.postMessage({ type: 'ready' }, '*')
  * runs as (the document's, `self.origin`: `location.origin` is the address's) and what it found, then answers
  * every message from its parent.
  */
-const FRAME_SCRIPT = `const report = (storage) => parent.postMessage({ type: 'hello', origin: self.origin, storage }, '*')
+const FRAME_SCRIPT = `const evaluated = (() => { try { return new Function('return 7')() } catch (error) { return 'refused: ' + error.name } })()
+const report = (storage) => parent.postMessage({ type: 'hello', origin: self.origin, storage, evaluated }, '*')
 try {
   const open = indexedDB.open('site-secret', 1)
   open.onupgradeneeded = () => { open.result.createObjectStore('kv') }
@@ -116,7 +117,11 @@ beforeAll(async () => {
   })
   appSite = await startAppServer({
     '/receive': { type: 'text/html; charset=utf-8', body: '<!doctype html><title>app</title><body>app</body><script src="/arrival.js"></script>' },
-    '/arrival.js': { type: 'text/javascript', body: ARRIVAL_SCRIPT }
+    '/arrival.js': { type: 'text/javascript', body: ARRIVAL_SCRIPT },
+    '/host': { type: 'text/html; charset=utf-8', body: '<!doctype html><title>host</title><body><script src="/host.js"></script>' },
+    '/host.js': { type: 'text/javascript', body: HOST_SCRIPT },
+    '/frame.html': { type: 'text/html; charset=utf-8', body: '<!doctype html><title>frame</title><script src="/frame.js"></script>' },
+    '/frame.js': { type: 'text/javascript', body: FRAME_SCRIPT }
   })
 })
 afterAll(async () => {
@@ -200,7 +205,7 @@ it('[app:website-popup-to-another-site-keeps-opener] [app:website-sandboxed-fram
   }
 }, QA_TEST_TIMEOUT_MS * 3)
 
-it('[app:website-popup-to-app-keeps-the-address] a website\'s popup of an app\'s page opens the app at the whole address the website named', async () => {
+it('[app:website-popup-to-app-keeps-the-address] [app:app-sandboxed-frame-runs-served-script] a website\'s popup of an app\'s page opens the app at the whole address the website named, and the app\'s sandboxed frame runs its pages', async () => {
   const { app, chrome } = await launchShell()
   try {
     await runPhase('a website opens a page of an app', async (check) => {
@@ -214,6 +219,16 @@ it('[app:website-popup-to-app-keeps-the-address] a website\'s popup of an app\'s
       const arrived = await found(async () => await view.evaluate(() => (window as unknown as { arrived: { hash: string, hadOpener: boolean, orivon: string } }).arrived).catch(() => null))
       check('[app:website-popup-to-app-keeps-the-address] the app\'s tab opened at the whole address, fragment included', arrived.hash === fragment, `${String(arrived.hash.length)} characters`)
       check('the tab runs as the app, and has no link back to the website', arrived.orivon === 'object' && !arrived.hadOpener, JSON.stringify({ orivon: arrived.orivon, hadOpener: arrived.hadOpener }))
+
+      const host = await visit(app, chrome, `${appSite.origin}/host`)
+      const frameLog = await found(async () => {
+        const entries = await host.evaluate(() => (window as unknown as { frameLog: { type: string }[] }).frameLog)
+        return entries.length >= 2 ? entries : false
+      })
+      const hello = frameLog[0] as { type?: string, origin?: string, storage?: string, evaluated?: unknown } | undefined
+      check('[app:app-sandboxed-frame-runs-served-script] the app\'s sandboxed frame ran its served script, new Function included, with an opaque origin, and could not read what the app keeps in IndexedDB',
+        hello?.type === 'hello' && hello.origin === 'null' && hello.evaluated === 7 && !String(hello.storage).startsWith('read:'), JSON.stringify(hello))
+      expect(frameLog[1]).toEqual({ type: 'echo', data: { ping: 7 } })
     })
   } finally {
     await closeElectron(app)
