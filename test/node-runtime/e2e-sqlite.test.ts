@@ -80,7 +80,8 @@ it('[app:node-sqlite-in-worker] [app:node-fs-writes-land-at-app-root] [app:sqlit
       check('node:sqlite registers a function the same way', JSON.stringify(functions?.twice) === JSON.stringify({ v: 42 }), detail)
       check('an exception in a function fails its statement and reaches the caller', functions?.thrown?.error?.name === 'RangeError', detail)
       check('backup resolves after a copy of the database is in the app\'s files', (functions?.pages ?? 0) > 1 && functions?.copiedRows === 5 && results.copyStart === 'SQLite format 3', detail)
-      check('backup leaves no temporary file in the app\'s files', (results.dataFiles ?? []).every((name) => !name.includes('.backup-')) && (results.dataFiles ?? []).includes('functions-copy.sqlite3'), detail)
+      const dataFiles: readonly string[] = results.dataFiles ?? []
+      check('backup leaves no temporary file in the app\'s files', dataFiles.every((name) => !name.includes('.backup-')) && dataFiles.includes('functions-copy.sqlite3'), detail)
       check('backup to a place outside the app\'s files is refused', Array.isArray(functions?.outside) && functions.outside.length === 2 && functions.outside.every((outcome) => outcome !== 'resolved'), detail)
     })
   } finally {
