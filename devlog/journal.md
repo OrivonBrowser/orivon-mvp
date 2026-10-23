@@ -46,6 +46,9 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - DecentraWiki publishes free with no account: Orivon's server pins each version 30 days on Filebase, checking the wiki and its CID.
 - DecentraWiki's editor now runs Orivon's own IPFS node in its page and publishes from it; Orivon's node reads the wiki from there.
 - TorSocks 0.1.4 publishes pictures, files, folders and websites; an onion that failed now loads once "Your proxy" is chosen for it.
+- Fresh v0.0.10 installs loaded no .eth name: the bundled checkpoint could not bootstrap. Checkpoints are now epoch-first blocks, and a refused one renews itself.
+- MetaMask now opens in the side panel when a dapp request follows a click, and reuses one popup window otherwise.
+- Settings > Appearance can change the new tab's background: the Orivon picture, your own picture, or none.
 
 ### In my head
 
