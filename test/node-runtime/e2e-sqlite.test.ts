@@ -39,11 +39,23 @@ interface UserFunctions {
   failed?: string
 }
 
+interface FromBytes {
+  opened?: { name?: string, memory?: boolean, rows?: number }
+  afterDelete?: number
+  copiedRows?: number
+  serializedRows?: number
+  fileUnchanged?: boolean
+  serializedStart?: string
+  notDatabase?: { code?: string } | string
+  files?: readonly string[]
+  failed?: string
+}
+
 afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-it('[app:node-sqlite-in-worker] [app:node-fs-writes-land-at-app-root] [app:sqlite-user-functions] [app:sqlite-backup-to-app-files] a forked child opens, writes, closes, reopens and reads a database file in the app\'s files, calls a function the app registered, and backs the database up', async () => {
+it('[app:node-sqlite-in-worker] [app:node-fs-writes-land-at-app-root] [app:sqlite-user-functions] [app:sqlite-backup-to-app-files] [app:sqlite-database-from-bytes] a forked child opens, writes, closes, reopens and reads a database file in the app\'s files, calls a function the app registered, backs the database up, and opens a database from bytes', async () => {
   const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
   try {
     await runPhase('node:sqlite', async (check) => {
@@ -61,7 +73,7 @@ it('[app:node-sqlite-in-worker] [app:node-fs-writes-land-at-app-root] [app:sqlit
       await waitForPageGlobal(view, 'sqliteE2e')
       const results = await evaluateRetrying(view, async () => await (globalThis as unknown as { sqliteE2e: { run: () => Promise<SqliteResults> } }).sqliteE2e.run(), 60_000)
       const detail = JSON.stringify(results)
-      const reply = (results.reply ?? {}) as { value?: { isolated?: boolean, counted?: number, integrity?: unknown, location?: string, inMemory?: unknown, duplicate?: { error?: { code?: string, errcode?: number } }, backup?: { error?: { name?: string } }, userFunctions?: UserFunctions }, error?: unknown }
+      const reply = (results.reply ?? {}) as { value?: { isolated?: boolean, counted?: number, integrity?: unknown, location?: string, inMemory?: unknown, duplicate?: { error?: { code?: string, errcode?: number } }, backup?: { error?: { name?: string } }, userFunctions?: UserFunctions, fromBytes?: FromBytes }, error?: unknown }
 
       check('the page ran the case without throwing', results.error === undefined && reply.error === undefined, detail)
       check('the child is cross-origin isolated', reply.value?.isolated === true, detail)
@@ -83,6 +95,14 @@ it('[app:node-sqlite-in-worker] [app:node-fs-writes-land-at-app-root] [app:sqlit
       const dataFiles: readonly string[] = results.dataFiles ?? []
       check('backup leaves no temporary file in the app\'s files', dataFiles.every((name) => !name.includes('.backup-')) && dataFiles.includes('functions-copy.sqlite3'), detail)
       check('backup to a place outside the app\'s files is refused', Array.isArray(functions?.outside) && functions.outside.length === 2 && functions.outside.every((outcome) => outcome !== 'resolved'), detail)
+
+      const bytes = reply.value?.fromBytes
+      check('the child ran the from-bytes case without failing', bytes !== undefined && bytes.failed === undefined, detail)
+      check('the bytes of a database file open as a database in memory', bytes?.opened?.name === ':memory:' && bytes.opened.memory === true && bytes.opened.rows === 6, detail)
+      check('a change to that database reaches a backup and not the file it came from', bytes?.afterDelete === 2 && bytes.copiedRows === 2 && bytes.fileUnchanged === true, detail)
+      check('serialize gives bytes that a database opened by path reads', bytes?.serializedStart === 'SQLite format 3' && bytes.serializedRows === 2, detail)
+      check('bytes that are not a database fail at the first statement with file is not a database', typeof bytes?.notDatabase === 'object' && bytes.notDatabase.code === 'SQLITE_NOTADB', detail)
+      check('opening from bytes made no file of its own', JSON.stringify(bytes?.files) === JSON.stringify(['from-bytes-copy.sqlite3', 'from-bytes-serialized.sqlite3', 'from-bytes.sqlite3']), detail)
     })
   } finally {
     await closeElectronApp(app)

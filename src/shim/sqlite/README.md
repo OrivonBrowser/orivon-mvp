@@ -20,7 +20,7 @@ additions says why this package). Durable: WebAssembly and the synchronous file 
 **What it depends on.** [`../errors.ts`](../errors.ts), [`../node-errors.ts`](../node-errors.ts),
 [`../fs/paths.ts`](../fs/paths.ts) and [`../fs/sync-orivon.ts`](../fs/sync-orivon.ts) (the same
 confinement and synchronous channel `fs.openSync` uses), [`../virtual-root.ts`](../virtual-root.ts),
-[`../polyfills/module-proxy.ts`](../polyfills/module-proxy.ts). **What it must never import.**
+[`../polyfills/module-proxy.ts`](../polyfills/module-proxy.ts), and `buffer` (what `serialize` returns). **What it must never import.**
 `electron`, or [`../../broker/`](../../broker/).
 
 **Owner stream.** `shim`.
@@ -53,7 +53,7 @@ engine is loaded first, and a database file works only in a forked child or thre
 `inTransaction`, `readonly`, `memory`; `prepare`, `exec` (returns the database), `pragma` (rows, or
 `{ simple: true }`; a pragma that sets a value works), `transaction` (`BEGIN` and `COMMIT`, `ROLLBACK`
 on a throw, a savepoint when nested, the `.deferred`, `.immediate` and `.exclusive` variants),
-`close`, `defaultSafeIntegers`, `unsafeMode` (a no-op), `function` and `backup` (below). `Statement`: `run`, `get`, `all`, `iterate`,
+`close`, `defaultSafeIntegers`, `unsafeMode` (a no-op), `function`, `backup`, `serialize` and a `Buffer` as the first argument (below). `Statement`: `run`, `get`, `all`, `iterate`,
 `pluck`, `raw`, `expand`, `columns`, `bind`, `safeIntegers`, `source`, `reader`, `readonly`, `database`.
 `Database.SqliteError` is thrown for an engine failure, with `code` the extended result code's name
 (`SQLITE_CONSTRAINT_UNIQUE`).
@@ -69,9 +69,20 @@ resolves with `{ totalPages, remainingPages: 0 }` (`totalPages` is the page coun
 a file of the app's files whose directory exists; the option `attached` names the database to copy and `progress`
 is called once, when the copy is made and before it replaces the destination.
 
-**Refused by name, `'not-built'`:** `aggregate`, `table`, `serialize`, `loadExtension`, and a `Buffer` as the filename.
+`new Database(buffer, [options])` takes the bytes of a database file (a `Buffer`, or any `Uint8Array`) and opens a
+private database in the engine's memory that holds a copy of them: readable and writable, growing as needed, never
+written to a file, and unchanged in the buffer given. `db.name` is `':memory:'` and `db.memory` is `true`. With the
+option `readonly` the database refuses every write with `SQLITE_READONLY`. Bytes that are not a database open without
+complaint, and the first statement fails with `file is not a database` (`SQLITE_NOTADB`), as it does for a file; an
+empty buffer is an empty database. The copy is freed when the database closes. `db.serialize([options])` returns the
+bytes of the database as its file would hold them, in a `Buffer`, and the
+option `attached` names an attached database; the two are inverses, and a database from a path serializes to the bytes
+of its file. A database from bytes takes `function` and `backup` like any other, so `await db.backup(path)` writes it to
+a file of the app's files.
 
-**Different from `better-sqlite3`:** `backup` cannot run inside a transaction or while a statement is half-read, and copies in one step, so `progress` is called once, before the copy replaces the destination; a function that closes the database or runs the statement it is in the middle of gets `This database connection is busy executing a query`; a function receives a BLOB as a
+**Refused by name, `'not-built'`:** `aggregate`, `table`, `loadExtension`.
+
+**Different from `better-sqlite3`:** a plain `Uint8Array` opens as a database, where the package accepts a `Buffer` only; `serialize` of a database that is not there is a `SqliteError` (`unknown database <name>`); `serialize` inside a function the database is running is `This database connection is busy executing a query`; `backup` cannot run inside a transaction or while a statement is half-read, and copies in one step, so `progress` is called once, before the copy replaces the destination; a function that closes the database or runs the statement it is in the middle of gets `This database connection is busy executing a query`; a function receives a BLOB as a
 `Uint8Array`, as a row does; `verbose` receives each statement's SQL with its parameters
 filled in, after the statement ran; `prepare` does not refuse a string of several statements (the
 first is prepared); a missing directory is the engine's `SQLITE_CANTOPEN`, not a `TypeError`; a
@@ -195,3 +206,14 @@ was and a reader never sees half a file. It differs from SQLite's backup in thre
 transaction, it runs to the end in one step with no chance for other work between pages, and a file's copy is compacted
 (free pages are not carried over) while keeping the page size, `user_version` and `application_id`. It refuses a
 destination that is any database the connection has open (the main one and every attached one), or the journal of one.
+
+**A database from bytes is `sqlite3_deserialize` into the `main` schema of an in-memory connection, and `serialize` is
+the export that `backup` already used for a database in memory.** The bytes are copied into memory the engine allocates
+with `sqlite3_malloc` and the engine owns that copy (`SQLITE_DESERIALIZE_FREEONCLOSE`: it frees it when the connection
+closes, and also when it refuses it), so nothing outlives the database and the caller's buffer is neither kept nor
+written through. A writable database is `RESIZEABLE`, so it can grow past the bytes it was given; a `readonly` one is
+`READONLY` instead. The engine's in-memory storage is the only place the database lives: opening from bytes calls no
+file function of the app's files, which [`tests/better-sqlite3-image.test.ts`](tests/better-sqlite3-image.test.ts)
+checks by recording every call. SQLite does not validate the bytes when it takes them, which is why a non-database
+fails at the first statement. The package's export carries the 64-bit sizes as numbers, so an image beyond 2^53 bytes
+cannot be named; the engine's own limit on a database in memory (1 GiB) is reached first.
