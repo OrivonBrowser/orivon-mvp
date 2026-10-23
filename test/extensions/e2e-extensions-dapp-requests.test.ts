@@ -81,19 +81,15 @@ it('opens the side panel from a click, and keeps one popup window for the reques
     const windows = async (): Promise<WindowInfo[]> => await call('chrome.windows.getAll') as WindowInfo[]
     const popups = async (): Promise<WindowInfo[]> => (await windows()).filter((w) => w.type === 'popup')
     const requestsHeard = async (): Promise<number> => (await events()).filter((name) => name === 'dapp-request').length
-    // A request the page makes by a script's own click event: the browser saw no input. Sent again until the freshly
-    // loaded page's content script has heard it, so a request lost to a page still loading is not mistaken for a refusal.
+    // A request the page makes by a script's own click event: the browser saw no input. The script runs from the main
+    // process, with or without user activation (Playwright's own evaluate would claim it). Sent again until the content
+    // script has heard it, so a request lost to a page still loading is not mistaken for a refusal.
     const requestWithoutInput = async (claimActivation = false): Promise<void> => {
       const before = await requestsHeard()
       const click = 'document.getElementById("go").dispatchEvent(new MouseEvent("click", { bubbles: true }))'
       for (let attempt = 0; attempt < 10; attempt++) {
-        if (claimActivation) {
-          // Run as if by a user gesture: the page then has transient activation, though no input reached the browser.
-          await live.evaluate(({ webContents }, [part, source]: [string, string]) =>
-            webContents.getAllWebContents().find((wc) => wc.getURL().startsWith(part))?.executeJavaScript(source, true), [fixtureUrl, click] as [string, string])
-        } else {
-          await page.evaluate(click)
-        }
+        await live.evaluate(({ webContents }, [part, source, activation]: [string, string, boolean]) =>
+          webContents.getAllWebContents().find((wc) => wc.getURL().startsWith(part))?.executeJavaScript(source, activation), [fixtureUrl, click, claimActivation] as [string, string, boolean])
         if (await waitFor(async () => (await requestsHeard()) > before, 3_000)) return
       }
       throw new Error('the content script never heard the request')
@@ -122,9 +118,8 @@ it('opens the side panel from a click, and keeps one popup window for the reques
     expect(await sidePanelOpen(live)).toBe(true)
     expect(await popups()).toEqual([])
 
-    // 2. No input: once Chromium's five seconds of transient activation after the last click are over (a reload does not
-    // end them), the page has none, so the panel is never asked for, and one popup window is shown, as a popup, at the
-    // size and place asked.
+    // 2. No input: once Chromium's five seconds of transient activation after the last click are over, the page has none,
+    // so the panel is never asked for, and one popup window is shown, as a popup, at the size and place asked.
     await closeSidePanel(live)
     await delay(5_500)
     await call('__clear')
