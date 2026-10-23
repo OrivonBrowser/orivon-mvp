@@ -33,14 +33,17 @@ serves a manifest `sandbox.pages` document Chrome's own CSP `sandbox` directive,
 gets an opaque origin rather than only withholding `chrome.*` (UPSTREAM.md patch 40); and `chrome.sidePanel`
 (`side-panel-options.ts`, `side-panel-gesture.ts`, `side-panel-api.ts`, `side-panel-driver.ts`,
 `side-panel-runner.ts`, `side-panel-pages.ts`, `side-panel-behavior-file.ts`): an extension's own page shown in a
-window's side panel (`../side-panel/`), opened by its toolbar button, its key or its `open()` call; and
+window's side panel (`../side-panel/`), opened by its toolbar button, its key or its `open()` call, the last after
+input on the extension's own surfaces or a click or key in a page it reaches (`side-panel-gesture.ts`); the windows an
+extension opens and moves (`extension-window-geometry.ts`: the `popup` type and where a window may sit, applied by
+`extension-host-impl.ts`); and
 the camera and microphone for an extension's own page: the rules (`extension-media.ts`), the asker that joins them to the
 permission gate (`extension-media-asker.ts`: the window a page shows in, the loaded extensions, Settings' defaults), the
 answer kept per extension in `extension-prefs.ts`'s `media`, and the details page's section (`details-media.ts`).
 
 **What it depends on.** `electron` (every file except `side-panel-api.ts`, `side-panel-behavior-file.ts`,
 `side-panel-driver.ts`, `side-panel-gesture.ts`, `side-panel-options.ts`, `side-panel-pages.ts` (types only), `action-pins-runner.ts`, `action-pins.ts`, `base-manifest-source.ts`, `crx.ts`, `crx3-format.ts`,
-`extension-popup-geometry.ts`, `profile-demand.ts`,
+`extension-popup-geometry.ts`, `extension-window-geometry.ts`, `profile-demand.ts`,
 `details-media.ts`, `details-optional.ts`, `details-private-windows.ts`, `dnr-action-options.ts`, `extension-data.ts`, `dnr-api.ts`, `dnr-match-log.ts`,
 `effective-manifest.ts`, `electron-chrome-extensions-lib.d.ts`, `extension-commands.ts`,
 `extension-host-access.ts`, `extension-known-permissions.ts`, `extension-permission-check.ts`,
@@ -78,7 +81,9 @@ app-refusal check both key on it),
 [`../settings/`](../settings/) (Developer mode is a setting there),
 [`../default-profile/default-profile.ts`](../default-profile/default-profile.ts) (`seed-bundled.ts` installs the extensions a new profile starts with, with `installBundled`: no prompt, pinned as the list says; `extensions-subsystem.ts` does it only when the registry file does not exist yet),
 [`../side-panel/`](../side-panel/) (the window's panel and its guest slot, which `side-panel-runner.ts` fills),
-[`../site-settings/tab-interaction.ts`](../site-settings/tab-interaction.ts)'s `DELIBERATE_INPUT` (what counts as the person's input on an extension's page),
+[`../site-settings/tab-interaction.ts`](../site-settings/tab-interaction.ts)'s `DELIBERATE_INPUT` (what counts as the person's input on an extension's page), `TabInteraction` and `InputTab` (`side-panel-gesture.ts` keeps the person's last click or key in a tab with them),
+[`../window-state/placement.ts`](../window-state/placement.ts)'s `Rect`, `clamp` and `displayFor` (`extension-window-geometry.ts` places the window an extension opens or moves by the rules the shell's own windows follow),
+[`../shell/window-frame.ts`](../shell/window-frame.ts)'s `MIN_WINDOW_WIDTH`, `MIN_WINDOW_HEIGHT` and `defaultWindowSize` (the smallest and the default size of a shell window),
 [`../site-settings/electron-names.ts`](../site-settings/electron-names.ts), `kinds.ts` and `site-prompt-text.ts` (which devices a `media` request names, the settings key of each, the words of the question), [`../sessions/site-asks.ts`](../sessions/site-asks.ts) (the registry `extension-media-asker.ts` joins first), [`../shell/showing-window.ts`](../shell/showing-window.ts) (the window a page is on screen in),
 [`../shell/window.ts`](../shell/window.ts)'s `createShellWindow`,
 [`../shell/shell-services.ts`](../shell/shell-services.ts)'s `ShellServices` type and

@@ -33,6 +33,8 @@ export interface ShellWindowOptions {
   readonly inactive?: boolean | undefined
   /** Its first tabs include a local file: the launch waits for the binary's fuse to be read before it makes the window (`../local-files/file-fuse.ts`). */
   readonly localFiles?: boolean | undefined
+  /** Called with the window as soon as it exists, before its first tab: what is registered about a window with its tabs has to be known by then. */
+  readonly created?: ((win: BaseWindow) => void) | undefined
   /** Called once the window has been shown. */
   readonly shown?: (() => void) | undefined
 }

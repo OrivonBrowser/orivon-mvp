@@ -16,6 +16,18 @@ export interface ChromeExtensionImpl {
   removeWindow?(window: Electron.BaseWindow): void
 
   /**
+   * Orivon patch (UPSTREAM.md patch 75): the `type` a window reports. The embedder answers 'popup' for a window an
+   * extension created with `windows.create({ type: 'popup' })`; every other window is 'normal'.
+   */
+  windowType?(window: Electron.BaseWindow): 'normal' | 'popup'
+
+  /**
+   * Orivon patch (UPSTREAM.md patch 75): what `windows.update` asks of a window besides its `state`: the
+   * bounds, `focused: true` and `drawAttention`.
+   */
+  updateWindow?(window: Electron.BaseWindow, props: chrome.windows.UpdateInfo): void
+
+  /**
    * Orivon patch: when provided, used by tabs.ts's `update()` instead of
    * calling `tab.loadURL(url)` directly, so a `chrome.tabs.update({ url })`
    * navigation passes through the same URL policy a created tab does.

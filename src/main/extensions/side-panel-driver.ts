@@ -96,6 +96,8 @@ export interface PanelDriver {
   tabClosed: (tabId: number) => void
   open: (target: PanelTarget) => Promise<void>
   close: (target: PanelTarget) => Promise<void>
+  /** The extension's panel is showing (or loading) in `window`; with a `tabId`, only when that is the tab in front. */
+  showing: (extensionId: string, window: ShellWindow, tabId: number | undefined) => boolean
   /** A toolbar click: toggles the panel when the extension asked for that and has one for the tab. True when it did. */
   actionClick: (extensionId: string, window: ShellWindow, tabId: number | undefined) => boolean
   /** The extension's own key for its panel: toggles it when the extension has one for the tab. */
@@ -354,6 +356,12 @@ export function createPanelDriver (deps: PanelDriverDeps): PanelDriver {
       state.pending.delete(target.extensionId)
       // An extension's own call is no choice of the person's: the panel opens without taking the keyboard from the page.
       openQuietly(state, host, target.extensionId)
+    },
+
+    showing: (extensionId, window, tabId) => {
+      const state = states.get(window)
+      const there = state?.shown?.ext === extensionId || state?.loading?.ext === extensionId
+      return there && (tabId === undefined || tabId === deps.frontTab(window))
     },
 
     close: async (target) => {

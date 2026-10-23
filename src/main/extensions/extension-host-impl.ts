@@ -4,10 +4,11 @@
 // extension-url-policy.ts first. The shell is reached through a getter: the
 // library is constructed before the first window exists, and a callback made
 // before then must reject cleanly.
-import { session } from 'electron'
+import { screen, session } from 'electron'
 import type { BaseWindow, Session, WebContents } from 'electron'
 import type { ElectronChromeExtensions } from 'orivon:crx-extensions'
 import { createShellWindow } from '../shell/window.js'
+import { defaultWindowSize, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH } from '../shell/window-frame.js'
 import type { ShellServices } from '../shell/shell-services.js'
 import type { SubsystemContext } from '../registry.js'
 import { extensionOpenedUrl } from './extension-url-policy.js'
@@ -17,6 +18,8 @@ import { activateTabShowing } from './extension-options-tab.js'
 import { sidePanelGestures } from './side-panel-gesture.js'
 import { sidePanelPages, sidePanelWindowOf } from './side-panel-pages.js'
 import { extensionPagePartition } from './profile-registry.js'
+import { extensionWindowType, placeExtensionWindow, updatedBounds } from './extension-window-geometry.js'
+import type { Rect } from './extension-window-geometry.js'
 
 export interface ShellBridge { ctx: SubsystemContext, services: ShellServices }
 
@@ -81,9 +84,31 @@ function activatingTab<T> (by: Activation, activate: () => T): T {
   }
 }
 
+/** The shell windows an extension created as popups (`chrome.windows.create({ type: 'popup' })`): they report `type: 'popup'`. */
+const popupWindows = new WeakSet<BaseWindow>()
+
+/**
+ * Where a window may sit, the primary display first. On Linux the display's bounds, not its work area: Chromium on X11 can
+ * report a work area far shorter than the monitor (window-frame.ts's `createWindowFrame` has the measurement), and a clamp
+ * to it would squash every popup.
+ */
+function displayAreas (): Rect[] {
+  const primary = screen.getPrimaryDisplay()
+  const others = screen.getAllDisplays().filter((display) => display.id !== primary.id)
+  return [primary, ...others].map((display) => process.platform === 'linux' ? display.bounds : display.workArea)
+}
+
+const MINIMUM_WINDOW = { width: MIN_WINDOW_WIDTH, height: MIN_WINDOW_HEIGHT }
+
+/**
+ * The window a call without a `windowId` means: the one the person is using among the ordinary windows, as Chrome's
+ * "last focused normal window", so a tab does not open inside a wallet's popup. Only when every window is a popup does a
+ * popup do.
+ */
 function windowFor (bridge: ShellBridge, windowId: number | undefined): BaseWindow | undefined {
   if (windowId !== undefined) return bridge.services.windows.all().find((w) => w.window.id === windowId)?.window
-  return bridge.services.windows.focused()?.window
+  const ordinary = bridge.services.windows.all().filter((w) => !w.window.isDestroyed() && !popupWindows.has(w.window))
+  return (ordinary.find((w) => w.window.isFocused()) ?? ordinary.at(-1) ?? bridge.services.windows.focused())?.window
 }
 
 /**
@@ -144,12 +169,36 @@ export function buildHostImpl (getBridge: () => ShellBridge | undefined, callerO
     const urls = raw
       .map((u) => extensionOpenedUrl(u, isLoadedExtension))
       .filter((u): u is string => u !== undefined)
+    const popup = extensionWindowType(details) === 'popup'
     return createShellWindow(bridge.ctx, bridge.services, {
+      place: placeExtensionWindow(details, displayAreas(), MINIMUM_WINDOW, defaultWindowSize(screen.getPrimaryDisplay().bounds)),
+      ...(details.focused === false ? { inactive: true } : {}),
+      // Before the first tab: the library hears of the window with that tab, and asks its type then.
+      created: (win) => { if (popup) popupWindows.add(win) },
       first: (tabs) => { if (urls.length === 0) tabs.createTab(); else for (const u of urls) openExtensionTab(tabs, u, partitionOf(u)) }
     })
   },
 
   removeWindow: (win) => { if (!win.isDestroyed()) win.close() },
+
+  windowType: (win) => popupWindows.has(win) ? 'popup' : 'normal',
+
+  updateWindow: (win, props) => {
+    if (win.isDestroyed()) return
+    const bounds = updatedBounds(props, displayAreas(), MINIMUM_WINDOW, win.getBounds())
+    if (bounds !== undefined) {
+      // Chrome restores a window from fullscreen, maximized or minimized before it applies bounds.
+      if (win.isFullScreen()) win.setFullScreen(false)
+      if (win.isMaximized() || win.isMinimized()) win.restore()
+      win.setBounds(bounds)
+    }
+    if (props.focused === true) {
+      if (win.isMinimized()) win.restore()
+      win.show()
+      win.focus()
+    }
+    if (typeof props.drawAttention === 'boolean') win.flashFrame(props.drawAttention)
+  },
 
   activateTabShowing: (url) => activateTabShowing(getBridge()?.services.windows.all() ?? [], url, own),
 
