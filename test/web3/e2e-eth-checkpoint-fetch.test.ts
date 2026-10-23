@@ -1,7 +1,8 @@
 // A release whose own checkpoint has aged out renews it at run time: opening a .eth name asks two beacon servers for
-// the finalized block, uses it only if they agree, and Settings says where the checkpoint came from. When they
-// disagree it is not used, Settings says why, and the servers are not asked again for a while. The beacon servers are
-// two loopback fixtures named by the test build; the release's checkpoint is taken to be 30 days old.
+// the finalized block, uses the first block of its epoch if they agree on it and the first server serves its bootstrap,
+// and Settings says where the checkpoint came from. When they disagree it is not used, Settings says why, and the
+// servers are not asked again for a while. The beacon servers are two loopback fixtures named by the test build; the
+// release's checkpoint is taken to be 30 days old.
 import { afterAll, expect, it } from 'vitest'
 import { createServer } from 'node:http'
 import type { Server } from 'node:http'
@@ -18,16 +19,30 @@ afterAll(async () => {
 const GENESIS_SECONDS = 1_606_824_023
 const ROOT_A = `0x${'a'.repeat(64)}`
 const ROOT_B = `0x${'b'.repeat(64)}`
+const HEADER_PATH = '/eth/v1/beacon/headers/finalized'
+const ROOT_HEAD = `0x${'e'.repeat(64)}`
 
 interface Beacon { readonly server: Server, readonly origin: string, readonly seen: string[] }
 
-/** A beacon server that answers every finalized-header request with `root` at the block an hour before now, and records the paths asked. */
+/**
+ * A beacon server whose finalized head is the last slot of an epoch about an hour before now, and whose block at that
+ * epoch's first slot is `root`, served as a bootstrap too. It records the paths asked; anything else is a 404.
+ */
 async function startBeacon (root: string): Promise<Beacon> {
   const seen: string[] = []
+  const head = Math.floor((Date.now() / 1000 - 3600 - GENESIS_SECONDS) / 12) | 31
+  const first = head - 31
+  const answers = new Map<string, unknown>([
+    ['/eth/v1/beacon/headers/finalized', { execution_optimistic: false, finalized: true, data: { root: ROOT_HEAD, canonical: true, header: { message: { slot: String(head) } } } }],
+    [`/eth/v1/beacon/blocks/${String(first)}/root`, { execution_optimistic: false, finalized: true, data: { root } }],
+    [`/eth/v1/beacon/light_client/bootstrap/${root}`, { version: 'fulu', data: { header: { beacon: { slot: String(first) } } } }]
+  ])
   const server = createServer((request, response) => {
-    seen.push(request.url ?? '')
-    const slot = Math.floor((Date.now() / 1000 - 3600 - GENESIS_SECONDS) / 12)
-    response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ execution_optimistic: false, finalized: true, data: { root, canonical: true, header: { message: { slot: String(slot) } } } }))
+    const url = request.url ?? ''
+    seen.push(url)
+    const answer = answers.get(url)
+    if (answer === undefined) response.writeHead(404, { 'content-type': 'application/json' }).end('{"message":"not found"}')
+    else response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(answer))
   })
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve) })
   return { server, origin: `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`, seen }
@@ -71,8 +86,8 @@ it('fetches a checkpoint from two beacon servers that agree, uses it, and says w
       await waitForAddressBarStable(findChrome(app))
       check('no beacon server is asked before a .eth name is needed', a.seen.length === 0 && b.seen.length === 0)
       await typeEthAddress(app, 'checkpoint-fetch.eth')
-      const asked = await waitFor(() => a.seen.length === 1 && b.seen.length === 1, 20_000)
-      check(`both servers are asked once, for the finalized header (${a.seen.join(',')} ${b.seen.join(',')})`, asked && a.seen[0] === '/eth/v1/beacon/headers/finalized' && b.seen[0] === '/eth/v1/beacon/headers/finalized')
+      const asked = await waitFor(() => a.seen.length === 3 && b.seen.length === 2, 20_000)
+      check(`both servers are asked for the finalized header and for the block at the epoch's first slot, and only the first for its bootstrap (${a.seen.join(',')} ${b.seen.join(',')})`, asked && a.seen[0] === HEADER_PATH && b.seen[0] === HEADER_PATH && /^\/eth\/v1\/beacon\/blocks\/\d+\/root$/.test(a.seen[1] ?? '') && a.seen[1] === b.seen[1] && a.seen[2] === `/eth/v1/beacon/light_client/bootstrap/${ROOT_A}`)
       const settings = await openWeb3Settings(app)
       let row = ''
       const said = await waitFor(async () => { row = await checkpointRow(settings); return /fetched while a \.eth name was opened/.test(row) }, 20_000)
@@ -98,14 +113,14 @@ it('uses nothing when the servers disagree, says why, and does not ask them agai
       await waitFor(() => app?.windows().length === 2)
       await waitForAddressBarStable(findChrome(app))
       await typeEthAddress(app, 'checkpoint-fetch.eth')
-      await waitFor(() => a.seen.length === 1 && b.seen.length === 1, 20_000)
+      await waitFor(() => a.seen.length === 3 && b.seen.length === 2, 20_000)
       const settings = await openWeb3Settings(app)
       let row = ''
       const said = await waitFor(async () => { row = await checkpointRow(settings); return /did not give the same answer/.test(row) }, 20_000)
       check(`Settings says no checkpoint is usable and why (${row})`, said && /^No usable checkpoint: the newest checkpoint \(shipped with this release\) is 30 days old/.test(row) && /A fresh one could not be fetched from the beacon servers: the beacon servers did not give the same answer/.test(row))
       await typeEthAddress(app, 'another-name.eth')
       await delay(ABSENCE_SETTLE_MS)
-      check(`a second name opened within the wait asks nobody again (${String(a.seen.length)}, ${String(b.seen.length)})`, a.seen.length === 1 && b.seen.length === 1)
+      check(`a second name opened within the wait asks nobody again (${String(a.seen.length)}, ${String(b.seen.length)})`, a.seen.length === 3 && b.seen.length === 2)
       expect(said).toBe(true)
     } finally {
       if (app !== undefined) await closeElectronApp(app, APP_CLOSE_RACE_MS)

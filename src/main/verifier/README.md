@@ -34,13 +34,23 @@ runs in another process, and only [`host-supervisor.ts`](host-supervisor.ts) tal
 ## Design notes
 
 **The checkpoint rule is written twice, on purpose.** [`checkpoint-fetch.ts`](checkpoint-fetch.ts) decides, from the
-servers' answers, whether a fresh checkpoint may be used (every server answers, all give the same root and slot, the
-block is finalized, the time is within the clock's tolerance and the age limit); `scripts/refresh-eth-checkpoint.mjs`
+servers' answers, whether a fresh checkpoint may be used (every server answers, all give the same finalized head, the
+checkpoint is the block at the first slot of the head's epoch, or of one of the seven before it, that the consensus
+server serves a bootstrap for with a header at that slot, every other server names the same root there, and the time
+is within the clock's tolerance and the age limit); `scripts/refresh-eth-checkpoint.mjs`
 applies the same rule when a release's checkpoint is chosen. A script cannot import the TypeScript, so
 `scripts/tests/refresh-eth-checkpoint.test.ts` feeds both the same answers and compares the verdicts and the server
 lists. A change to either rule is a change to both. The renewal starts as the host's configuration is built
 (`verifier-subsystem.ts`'s `hostConfig`), and requests held for the host count their time to start from its end
 (`listening-gate.ts`'s `hold`), so the servers' time limits are not taken out of the host's.
+
+**A checkpoint the beacon server answers 404 to is given up at once, not when it ages out.** The light client fails with
+"could not fetch bootstrap ... status: 404" when the consensus server serves no bootstrap for the root it was given, and
+retries the same root for ever. `status-view.ts`'s `bootstrapNotFound` recognises that failure; `CheckpointRenewal`'s
+`recoverUnserved` then holds the root it started with as not to be chosen again in this run, renews with the rule above
+(within the wait after a failed attempt, that failure stands) and the host is put to sleep and started again, so its
+configuration is built with the new checkpoint. The stored checkpoint outranks the release's from then on, so the next
+run starts from it.
 
 **A `.eth` name is shown by the scheme of the protocol the host chose to load it, and as its plain origin
 until then.** The host posts `name-scheme` as soon as a name's records are resolved and a gatherer is chosen
