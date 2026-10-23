@@ -26,16 +26,15 @@ const NON_BLOCKING = (constants as { O_NONBLOCK?: number }).O_NONBLOCK ?? 0
 
 /**
  * The checked bytes of the regular file at `path`: never more than the cap is read, and a file that is not a plain file
- * (a pipe that would never answer, a device, a folder) is refused before and after it is opened.
+ * (a pipe that would never answer, a device, a folder) is refused.
  */
 async function readPicture (path: string): Promise<Picture> {
   let handle: Awaited<ReturnType<typeof open>> | undefined
   try {
-    // A link to a picture is a picture; stat follows it.
-    if (!(await stat(path)).isFile()) return { ok: false, reason: UNREADABLE }
+    // Opened without waiting (a pipe with no writer would never answer), and only then looked at: what is checked is the file that was opened.
+    // A link to a picture is a picture; open follows it.
     handle = await open(path, constants.O_RDONLY | NON_BLOCKING)
     const info = await handle.stat()
-    // A file that changed into something else between the two is refused.
     if (!info.isFile()) return { ok: false, reason: UNREADABLE }
     if (info.size > MAX_PICTURE_BYTES) return { ok: false, reason: TOO_LARGE }
     // A file that reports no size (some pseudo-files) has nothing to check, and is never read to its end.

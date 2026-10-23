@@ -38,8 +38,8 @@ the Settings domain refuses to set `custom` without one. A private session is gi
 
 **Picture I/O is asynchronous and one job at a time.** A picture is up to 20 MB, so nothing reads or writes one on the main thread's time: installs and
 removals queue behind each other (a removal asked for first never takes a picture installed after it), and the checked bytes are kept in memory
-for the page. A picked file must be a plain file (a pipe would never answer, a pseudo-file reports no size): it is checked before and after it
-is opened without blocking, and never read past its reported size, which is capped.
+for the page. A picked file must be a plain file (a pipe would never answer, a pseudo-file reports no size): it is opened without
+blocking and looked at through the open file, never by name first (the name can change between the look and the read), and never read past its reported size, which is capped.
 
 **The page gets bytes, not an address.** `getBackground` on the new-tab bridge answers the kind and, for a custom picture, its bytes and
 type; the page makes a `blob:` URL of them, which is why its Content-Security-Policy lists `blob:` for images. The alternatives, a path or a
