@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { FUTURE_TOLERANCE_SECONDS, MAX_CHECKPOINT_AGE_SECONDS, slotTimestamp } from '../checkpoint.js'
-import { CheckpointFetcher, FIRST_BACKOFF_MS, MAX_BACKOFF_MS, MalformedAnswer, fetchAgreedCheckpoint, readFinalizedHeader } from '../checkpoint-fetch.js'
+import { CheckpointFetcher, FIRST_BACKOFF_MS, MAX_BACKOFF_MS, MAX_EPOCHS_BACK, MalformedAnswer, NotFoundAnswer, SLOTS_PER_EPOCH, fetchAgreedCheckpoint, readFinalizedHeader } from '../checkpoint-fetch.js'
 import type { FetchOutcome } from '../checkpoint-fetch.js'
 
 const A = 'https://a.example'
@@ -14,15 +14,41 @@ function header (root = ROOT, slot: number | string = SLOT, extra: Record<string
   return { execution_optimistic: false, finalized: true, data: { root, canonical: true, header: { message: { slot: String(slot) } } }, ...extra }
 }
 
-/** Each server answers with what the table holds: a body, or an Error to throw. */
-function servers (table: Record<string, unknown>): (url: string) => Promise<unknown> {
+/** What a server answers about a slot's block root: a root, `'none'` for a slot with no block (a 404), or an Error to throw. */
+type RootAnswers = (server: string, slot: number) => string | 'none' | Error
+/** What the consensus server answers to a bootstrap request for a root: the slot of its header, `'missing'` for a 404, or an Error to throw. */
+type BootstrapAnswers = (root: string) => number | 'missing' | Error
+
+interface World { readonly roots?: RootAnswers, readonly bootstraps?: BootstrapAnswers, readonly seen?: string[] }
+
+/** The newest epoch's first slot holds ROOT, and the bootstrap of ROOT is served from that slot. */
+const SERVED: Required<Pick<World, 'roots' | 'bootstraps'>> = {
+  roots: (_server, slot) => slot === SLOT ? ROOT : 'none',
+  bootstraps: (root) => root === ROOT ? SLOT : 'missing'
+}
+
+/** Each server answers with what the table holds for its finalized header: a body, or an Error to throw. Block roots and bootstraps come from `world`. */
+function servers (table: Record<string, unknown>, world: World = SERVED): (url: string) => Promise<unknown> {
+  const { roots = SERVED.roots, bootstraps = SERVED.bootstraps } = world
   return async (url) => {
+    world.seen?.push(url)
     const server = Object.keys(table).find((s) => url.startsWith(s))
-    if (server === undefined || !url.endsWith('/eth/v1/beacon/headers/finalized')) throw new Error(`unexpected ${url}`)
-    const answer = table[server]
+    if (server === undefined) throw new Error(`unexpected ${url}`)
+    const path = url.slice(server.length)
+    const answer = path === '/eth/v1/beacon/headers/finalized' ? table[server] : path.endsWith('/root') ? rootAnswer(roots(server, Number(path.split('/')[5]))) : bootstrapAnswer(bootstraps(path.split('/')[6]!))
     if (answer instanceof Error) throw answer
     return answer
   }
+}
+
+function rootAnswer (answer: string | Error): unknown {
+  if (answer === 'none') return new NotFoundAnswer('404')
+  return answer instanceof Error ? answer : { execution_optimistic: false, finalized: true, data: { root: answer } }
+}
+
+function bootstrapAnswer (answer: number | 'missing' | Error): unknown {
+  if (answer === 'missing') return new NotFoundAnswer('404')
+  return answer instanceof Error ? answer : { version: 'fulu', data: { header: { beacon: { slot: String(answer) } } } }
 }
 
 describe('readFinalizedHeader', () => {
@@ -59,96 +85,191 @@ describe('readFinalizedHeader', () => {
 
 describe('fetchAgreedCheckpoint', () => {
   it('returns the checkpoint, its slot time and the servers when they agree exactly', async () => {
-    expect(await fetchAgreedCheckpoint(servers({ [A]: header(), [B]: header() }), [A, B], NOW)).toEqual({
+    expect(await fetchAgreedCheckpoint(servers({ [A]: header(), [B]: header() }), [A, B], A, NOW)).toEqual({
       ok: true, checkpoint: { root: ROOT, slot: SLOT, timestamp: slotTimestamp(SLOT), servers: [A, B] }
     })
   })
 
   it('refuses when the servers name different roots', async () => {
-    expect(await fetchAgreedCheckpoint(servers({ [A]: header(ROOT), [B]: header(OTHER) }), [A, B], NOW)).toEqual({ ok: false, problem: 'disagree' })
+    expect(await fetchAgreedCheckpoint(servers({ [A]: header(ROOT), [B]: header(OTHER) }), [A, B], A, NOW)).toEqual({ ok: false, problem: 'disagree' })
   })
 
   it('refuses when they name the same root with different slots', async () => {
-    expect(await fetchAgreedCheckpoint(servers({ [A]: header(ROOT, SLOT), [B]: header(ROOT, SLOT + 1) }), [A, B], NOW)).toEqual({ ok: false, problem: 'disagree' })
+    expect(await fetchAgreedCheckpoint(servers({ [A]: header(ROOT, SLOT), [B]: header(ROOT, SLOT + 1) }), [A, B], A, NOW)).toEqual({ ok: false, problem: 'disagree' })
   })
 
   it('refuses when one is unreachable, never settling for the other alone', async () => {
-    expect(await fetchAgreedCheckpoint(servers({ [A]: header(), [B]: new Error('ECONNREFUSED') }), [A, B], NOW)).toEqual({ ok: false, problem: 'unreachable' })
+    expect(await fetchAgreedCheckpoint(servers({ [A]: header(), [B]: new Error('ECONNREFUSED') }), [A, B], A, NOW)).toEqual({ ok: false, problem: 'unreachable' })
   })
 
   it('refuses when both are unreachable', async () => {
-    expect(await fetchAgreedCheckpoint(servers({ [A]: new Error('x'), [B]: new Error('y') }), [A, B], NOW)).toEqual({ ok: false, problem: 'unreachable' })
+    expect(await fetchAgreedCheckpoint(servers({ [A]: new Error('x'), [B]: new Error('y') }), [A, B], A, NOW)).toEqual({ ok: false, problem: 'unreachable' })
   })
 
   it('refuses a body that is not JSON of the right shape', async () => {
-    expect(await fetchAgreedCheckpoint(servers({ [A]: header(), [B]: new MalformedAnswer('not json') }), [A, B], NOW)).toEqual({ ok: false, problem: 'malformed' })
-    expect(await fetchAgreedCheckpoint(servers({ [A]: header(), [B]: { data: 1 } }), [A, B], NOW)).toEqual({ ok: false, problem: 'malformed' })
+    expect(await fetchAgreedCheckpoint(servers({ [A]: header(), [B]: new MalformedAnswer('not json') }), [A, B], A, NOW)).toEqual({ ok: false, problem: 'malformed' })
+    expect(await fetchAgreedCheckpoint(servers({ [A]: header(), [B]: { data: 1 } }), [A, B], A, NOW)).toEqual({ ok: false, problem: 'malformed' })
   })
 
   it('accepts a server that flags the agreed block not finalized when another flags it finalized (Lodestar does)', async () => {
     const lodestar = header(ROOT, SLOT, { finalized: false })
-    const result = await fetchAgreedCheckpoint(servers({ [A]: header(), [B]: lodestar }), [A, B], NOW)
+    const result = await fetchAgreedCheckpoint(servers({ [A]: header(), [B]: lodestar }), [A, B], A, NOW)
     expect(result.ok).toBe(true)
-    expect((await fetchAgreedCheckpoint(servers({ [A]: lodestar, [B]: header() }), [A, B], NOW)).ok).toBe(true)
+    expect((await fetchAgreedCheckpoint(servers({ [A]: lodestar, [B]: header() }), [A, B], A, NOW)).ok).toBe(true)
   })
 
   it('refuses a flagged-open header when the other server leaves the flag out', async () => {
     const bare = { data: { root: ROOT, canonical: true, header: { message: { slot: String(SLOT) } } } }
-    expect(await fetchAgreedCheckpoint(servers({ [A]: bare, [B]: header(ROOT, SLOT, { finalized: false }) }), [A, B], NOW)).toEqual({ ok: false, problem: 'not-finalized' })
+    expect(await fetchAgreedCheckpoint(servers({ [A]: bare, [B]: header(ROOT, SLOT, { finalized: false }) }), [A, B], A, NOW)).toEqual({ ok: false, problem: 'not-finalized' })
   })
 
   it('refuses a header that is not finalized, even when both say so', async () => {
     const open = header(ROOT, SLOT, { finalized: false })
-    expect(await fetchAgreedCheckpoint(servers({ [A]: open, [B]: open }), [A, B], NOW)).toEqual({ ok: false, problem: 'not-finalized' })
+    expect(await fetchAgreedCheckpoint(servers({ [A]: open, [B]: open }), [A, B], A, NOW)).toEqual({ ok: false, problem: 'not-finalized' })
   })
 
   it('refuses a checkpoint dated beyond the tolerance after this computer\'s clock', async () => {
     const clock = slotTimestamp(SLOT) - FUTURE_TOLERANCE_SECONDS - 1
-    expect(await fetchAgreedCheckpoint(servers({ [A]: header(), [B]: header() }), [A, B], clock)).toEqual({ ok: false, problem: 'future' })
+    expect(await fetchAgreedCheckpoint(servers({ [A]: header(), [B]: header() }), [A, B], A, clock)).toEqual({ ok: false, problem: 'future' })
   })
 
   it('accepts a checkpoint dated within the tolerance after the clock', async () => {
     const clock = slotTimestamp(SLOT) - FUTURE_TOLERANCE_SECONDS
-    expect(await fetchAgreedCheckpoint(servers({ [A]: header(), [B]: header() }), [A, B], clock)).toMatchObject({ ok: true })
+    expect(await fetchAgreedCheckpoint(servers({ [A]: header(), [B]: header() }), [A, B], A, clock)).toMatchObject({ ok: true })
   })
 
   it('refuses a checkpoint older than the limit itself', async () => {
     const clock = slotTimestamp(SLOT) + MAX_CHECKPOINT_AGE_SECONDS + 1
-    expect(await fetchAgreedCheckpoint(servers({ [A]: header(), [B]: header() }), [A, B], clock)).toEqual({ ok: false, problem: 'too-old' })
+    expect(await fetchAgreedCheckpoint(servers({ [A]: header(), [B]: header() }), [A, B], A, clock)).toEqual({ ok: false, problem: 'too-old' })
   })
 
   it('accepts a checkpoint exactly at the limit', async () => {
     const clock = slotTimestamp(SLOT) + MAX_CHECKPOINT_AGE_SECONDS
-    expect(await fetchAgreedCheckpoint(servers({ [A]: header(), [B]: header() }), [A, B], clock)).toMatchObject({ ok: true })
+    expect(await fetchAgreedCheckpoint(servers({ [A]: header(), [B]: header() }), [A, B], A, clock)).toMatchObject({ ok: true })
   })
 
   it('needs two servers at least and asks nobody with fewer', async () => {
     let asked = 0
     const get = async (): Promise<unknown> => { asked += 1; return header() }
-    expect(await fetchAgreedCheckpoint(get, [A], NOW)).toEqual({ ok: false, problem: 'too-few-servers' })
-    expect(await fetchAgreedCheckpoint(get, [A, A], NOW)).toEqual({ ok: false, problem: 'too-few-servers' })
+    expect(await fetchAgreedCheckpoint(get, [A], A, NOW)).toEqual({ ok: false, problem: 'too-few-servers' })
+    expect(await fetchAgreedCheckpoint(get, [A, A], A, NOW)).toEqual({ ok: false, problem: 'too-few-servers' })
     expect(asked).toBe(0)
   })
 
   it('with three servers, wants all three to agree', async () => {
     const C = 'https://c.example'
-    expect(await fetchAgreedCheckpoint(servers({ [A]: header(), [B]: header(), [C]: header(OTHER) }), [A, B, C], NOW)).toEqual({ ok: false, problem: 'disagree' })
-    expect(await fetchAgreedCheckpoint(servers({ [A]: header(), [B]: header(), [C]: header() }), [A, B, C], NOW)).toMatchObject({ ok: true })
+    expect(await fetchAgreedCheckpoint(servers({ [A]: header(), [B]: header(), [C]: header(OTHER) }), [A, B, C], A, NOW)).toEqual({ ok: false, problem: 'disagree' })
+    expect(await fetchAgreedCheckpoint(servers({ [A]: header(), [B]: header(), [C]: header() }), [A, B, C], A, NOW)).toMatchObject({ ok: true })
   })
 
-  it('asks every server at once', async () => {
+  it('asks every server for its finalized header at once', async () => {
     const started: string[] = []
     const releases: Array<() => void> = []
     const get = async (url: string): Promise<unknown> => {
       started.push(url)
-      await new Promise<void>((resolve) => releases.push(resolve))
+      if (started.length <= 2) await new Promise<void>((resolve) => releases.push(resolve))
       return header()
     }
-    const pending = fetchAgreedCheckpoint(get, [A, B], NOW)
+    const pending = fetchAgreedCheckpoint(get, [A, B], A, NOW)
     await Promise.resolve()
     expect(started).toEqual([`${A}/eth/v1/beacon/headers/finalized`, `${B}/eth/v1/beacon/headers/finalized`])
     releases.forEach((release) => { release() })
-    expect(await pending).toMatchObject({ ok: true })
+    await pending.catch(() => {})
+  })
+})
+
+describe('fetchAgreedCheckpoint chooses a block the light client can bootstrap from', () => {
+  const EPOCH = SLOTS_PER_EPOCH
+  const ROOT_BEFORE = '0x' + 'c'.repeat(64)
+  const both = (slot: number): Record<string, unknown> => ({ [A]: header(OTHER, slot), [B]: header(OTHER, slot) })
+  const rootsAt = (table: Record<number, string>): RootAnswers => (_server, slot) => table[slot] ?? 'none'
+  const served = (table: Record<string, number>): BootstrapAnswers => (root) => table[root] ?? 'missing'
+
+  it('takes the first slot of the finalized head\'s epoch, not the head itself', async () => {
+    const seen: string[] = []
+    const result = await fetchAgreedCheckpoint(servers(both(SLOT + 31), { seen, roots: rootsAt({ [SLOT]: ROOT }), bootstraps: served({ [ROOT]: SLOT }) }), [A, B], A, NOW)
+    expect(result).toEqual({ ok: true, checkpoint: { root: ROOT, slot: SLOT, timestamp: slotTimestamp(SLOT), servers: [A, B] } })
+    expect(seen.some((url) => url.includes(`/blocks/${String(SLOT + 31)}/`))).toBe(false)
+  })
+
+  it('steps back an epoch when the newest epoch\'s first slot holds no block', async () => {
+    const world = { roots: rootsAt({ [SLOT - EPOCH]: ROOT_BEFORE }), bootstraps: served({ [ROOT_BEFORE]: SLOT - EPOCH }) }
+    expect(await fetchAgreedCheckpoint(servers(both(SLOT + 31), world), [A, B], A, NOW)).toMatchObject({ ok: true, checkpoint: { root: ROOT_BEFORE, slot: SLOT - EPOCH } })
+  })
+
+  it('steps back when the consensus server has no bootstrap for the newest block, the failure of a block it will not start from', async () => {
+    const world = { roots: rootsAt({ [SLOT]: ROOT, [SLOT - EPOCH]: ROOT_BEFORE }), bootstraps: served({ [ROOT_BEFORE]: SLOT - EPOCH }) }
+    expect(await fetchAgreedCheckpoint(servers(both(SLOT), world), [A, B], A, NOW)).toMatchObject({ ok: true, checkpoint: { root: ROOT_BEFORE, slot: SLOT - EPOCH } })
+  })
+
+  it('steps back when the bootstrap it serves is for a block at another slot than the epoch\'s first', async () => {
+    const world = { roots: rootsAt({ [SLOT]: ROOT, [SLOT - EPOCH]: ROOT_BEFORE }), bootstraps: served({ [ROOT]: SLOT - 1, [ROOT_BEFORE]: SLOT - EPOCH }) }
+    expect(await fetchAgreedCheckpoint(servers(both(SLOT), world), [A, B], A, NOW)).toMatchObject({ ok: true, checkpoint: { root: ROOT_BEFORE } })
+  })
+
+  it('gives up after the epochs it may step back through, asking each once', async () => {
+    const seen: string[] = []
+    const result = await fetchAgreedCheckpoint(servers(both(SLOT), { seen, roots: () => 'none', bootstraps: () => 'missing' }), [A, B], A, NOW)
+    expect(result).toEqual({ ok: false, problem: 'no-bootstrap' })
+    expect(seen.filter((url) => url.startsWith(`${A}/eth/v1/beacon/blocks/`))).toHaveLength(MAX_EPOCHS_BACK)
+  })
+
+  it('finds a block as far back as the last epoch it may try', async () => {
+    const last = SLOT - (MAX_EPOCHS_BACK - 1) * EPOCH
+    const world = { roots: rootsAt({ [last]: ROOT_BEFORE }), bootstraps: served({ [ROOT_BEFORE]: last }) }
+    expect(await fetchAgreedCheckpoint(servers(both(SLOT), world), [A, B], A, NOW)).toMatchObject({ ok: true, checkpoint: { slot: last } })
+    const beyond = { roots: rootsAt({ [last - EPOCH]: ROOT_BEFORE }), bootstraps: served({ [ROOT_BEFORE]: last - EPOCH }) }
+    expect(await fetchAgreedCheckpoint(servers(both(SLOT), beyond), [A, B], A, NOW)).toEqual({ ok: false, problem: 'no-bootstrap' })
+  })
+
+  it('asks only the consensus server for a bootstrap, and the others only for the root', async () => {
+    const seen: string[] = []
+    await fetchAgreedCheckpoint(servers(both(SLOT), { seen }), [A, B], A, NOW)
+    expect(seen.filter((url) => url.includes('/bootstrap/'))).toEqual([`${A}/eth/v1/beacon/light_client/bootstrap/${ROOT}`])
+    expect(seen).toContain(`${B}/eth/v1/beacon/blocks/${String(SLOT)}/root`)
+  })
+
+  it('takes the consensus server to be the one asked first, wherever the list puts it', async () => {
+    const seen: string[] = []
+    const result = await fetchAgreedCheckpoint(servers(both(SLOT), { seen }), [A, B], B, NOW)
+    expect(result).toMatchObject({ ok: true, checkpoint: { servers: [B, A] } })
+    expect(seen.filter((url) => url.includes('/bootstrap/'))).toEqual([`${B}/eth/v1/beacon/light_client/bootstrap/${ROOT}`])
+  })
+
+  it('also wants a consensus server outside the list to agree', async () => {
+    const C = 'https://c.example'
+    const all = { ...both(SLOT), [C]: header(OTHER, SLOT) }
+    expect(await fetchAgreedCheckpoint(servers(all), [A, B], C, NOW)).toMatchObject({ ok: true, checkpoint: { servers: [C, A, B] } })
+    const odd = { roots: (server: string, slot: number) => server === A && slot === SLOT ? OTHER : ROOT }
+    expect(await fetchAgreedCheckpoint(servers(all, { ...SERVED, ...odd }), [A, B], C, NOW)).toEqual({ ok: false, problem: 'disagree' })
+  })
+
+  it('refuses when another server names a different root, or none, at that slot', async () => {
+    expect(await fetchAgreedCheckpoint(servers(both(SLOT), { ...SERVED, roots: (server, slot) => server === B ? OTHER : SERVED.roots(server, slot) }), [A, B], A, NOW)).toEqual({ ok: false, problem: 'disagree' })
+    expect(await fetchAgreedCheckpoint(servers(both(SLOT), { ...SERVED, roots: (server, slot) => server === B ? 'none' : SERVED.roots(server, slot) }), [A, B], A, NOW)).toEqual({ ok: false, problem: 'disagree' })
+  })
+
+  it('refuses, rather than stepping back, when a server cannot be reached or answers nonsense', async () => {
+    const down = (server: string): RootAnswers => (s, slot) => s === server ? new Error('ECONNRESET') : SERVED.roots(s, slot)
+    expect(await fetchAgreedCheckpoint(servers(both(SLOT), { ...SERVED, roots: down(B) }), [A, B], A, NOW)).toEqual({ ok: false, problem: 'unreachable' })
+    expect(await fetchAgreedCheckpoint(servers(both(SLOT), { ...SERVED, roots: down(A) }), [A, B], A, NOW)).toEqual({ ok: false, problem: 'unreachable' })
+    expect(await fetchAgreedCheckpoint(servers(both(SLOT), { ...SERVED, bootstraps: () => new Error('503') }), [A, B], A, NOW)).toEqual({ ok: false, problem: 'unreachable' })
+    expect(await fetchAgreedCheckpoint(servers(both(SLOT), { ...SERVED, bootstraps: () => new MalformedAnswer('not json') }), [A, B], A, NOW)).toEqual({ ok: false, problem: 'malformed' })
+    expect(await fetchAgreedCheckpoint(servers(both(SLOT), { ...SERVED, roots: () => new MalformedAnswer('not json') }), [A, B], A, NOW)).toEqual({ ok: false, problem: 'malformed' })
+  })
+
+  it('refuses a bootstrap without a slot, and a root that is not one', async () => {
+    const get = servers(both(SLOT))
+    const noSlot = async (url: string): Promise<unknown> => url.includes('/bootstrap/') ? { data: {} } : await get(url)
+    expect(await fetchAgreedCheckpoint(noSlot, [A, B], A, NOW)).toEqual({ ok: false, problem: 'malformed' })
+    const badRoot = async (url: string): Promise<unknown> => url.endsWith('/root') ? { data: { root: '0xabc' } } : await get(url)
+    expect(await fetchAgreedCheckpoint(badRoot, [A, B], A, NOW)).toEqual({ ok: false, problem: 'malformed' })
+  })
+
+  it('refuses a checkpoint past the age limit even when the head is inside it', async () => {
+    const clock = slotTimestamp(SLOT - EPOCH) + MAX_CHECKPOINT_AGE_SECONDS + 1
+    const world = { roots: rootsAt({ [SLOT - EPOCH]: ROOT_BEFORE }), bootstraps: served({ [ROOT_BEFORE]: SLOT - EPOCH }) }
+    expect(await fetchAgreedCheckpoint(servers(both(SLOT), world), [A, B], A, clock)).toEqual({ ok: false, problem: 'too-old' })
   })
 })
 
