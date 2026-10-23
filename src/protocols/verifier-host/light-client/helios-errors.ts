@@ -8,6 +8,8 @@ import { ResolutionError } from '../../resolution/records.js'
 const REVERT = /^(?:Error: )?execution reverted:?\s*(?:0x)?([0-9a-f]*)\s*$/i
 const FAILED_PROOF = /invalid (?:storage |account |code )?proof|proof (?:mismatch|verification failed)|invalid (?:block|header|state root)/i
 const OUT_OF_SYNC = /out of sync/i
+/** Helios's whole sync failure for an update signed in a slot this computer's clock has not reached, nothing quoted around it. */
+const CLOCK_BEHIND = /^(?:Error: )?(?:sync failed: )?invalid timestamp\s*$/i
 
 /**
  * A revert becomes the `{ code: 3, data }` shape viem reads revert data from,
@@ -23,3 +25,11 @@ export function heliosError (error: unknown): unknown {
   if (OUT_OF_SYNC.test(message)) return new ResolutionError('not-synced', message)
   return error
 }
+
+/** Whether Helios refused the sync because this computer's clock is behind the chain's. */
+export function clockBehind (error: unknown): boolean {
+  return CLOCK_BEHIND.test(error instanceof Error ? error.message : String(error))
+}
+
+/** What Settings and a .eth error page say when the clock stands in the way and the servers' time could not be used to allow for it. */
+export const CLOCK_BEHIND_REASON = "this computer's clock is behind, so the chain's newest blocks look as if they come from the future. Setting the clock right, in the system's date and time settings, lets the light client start"
