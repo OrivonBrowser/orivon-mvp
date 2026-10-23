@@ -70,7 +70,7 @@ export class BackgroundStore {
       if (key !== KEY) return
       if (value !== 'custom') {
         this.copy = undefined
-        void this.enqueue(async () => { await this.removeCopy() })
+        this.enqueue(async () => { await this.removeCopy() }).catch(() => undefined)
       }
       this.announce()
     })
@@ -131,7 +131,7 @@ export class BackgroundStore {
       const loading = readPicture(this.filePath).then((picture): PageBackground => picture.ok ? { kind: 'custom', mime: picture.mime, bytes: picture.bytes } : { kind: 'orivon' })
       this.copy = loading
       // A copy that could not be read is looked for again next time, not remembered.
-      void loading.then((read) => { if (read.kind !== 'custom' && this.copy === loading) this.copy = undefined })
+      loading.then((read) => { if (read.kind !== 'custom' && this.copy === loading) this.copy = undefined }).catch(() => undefined)
     }
     return await this.copy
   }

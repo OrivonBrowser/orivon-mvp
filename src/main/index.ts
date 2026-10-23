@@ -233,7 +233,7 @@ export function boot (runtime: Runtime): void {
     // empty tree the file then replaces.
     await Promise.all([shell.settings.load(), shell.searchEngines.load(), shell.shortcutStore.load(), shell.windowState.load(), shell.zoomStore.load(), shell.session.load(), shell.bookmarks.load()])
     // A picture left over by a run that ended before its setting was saved goes, now that the setting is known.
-    void shell.newTabBackground.reconcile()
+    shell.newTabBackground.reconcile().catch((error: unknown) => { console.error('[orivon] the new tab picture could not be reconciled:', error) })
     const seeded = seedClosedStack(shell.closedTabs, shell.session.previous())
     // The windows of a run that crashed stay in the session file while they wait on the stack to be restored.
     if (shell.session.previous()?.clean === false) {
