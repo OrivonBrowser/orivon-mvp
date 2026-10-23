@@ -18,7 +18,7 @@ Private and Settings pages may ask of it.
 **What it depends on.** `node:fs`, `node:os`, `node:child_process`;
 [`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts) (`profile-store.ts`'s
 own writes); [`../../protocols/builtin.ts`](../../protocols/builtin.ts) (`orivon-link.ts` serves an `ipfs://` address as the address bar does); [`../browsing/local-file-input.ts`](../browsing/local-file-input.ts) (which text names a local file:
-`launch-request.ts` and `local-operand.ts`); [`../settings/settings-file.ts`](../settings/settings-file.ts) (the settings a private session held to a tunnel is written with: `private-session.ts` and `start-launch.ts`);
+`launch-request.ts` and `local-operand.ts`); [`../settings/settings-file.ts`](../settings/settings-file.ts) (the settings a private session held to a tunnel is written with: `private-session.ts` and `start-launch.ts`); [`../newtab/background-image.ts`](../newtab/background-image.ts) (the file name of the new tab's picture, which a private session is given a copy of);
 [`../extensions/registry.ts`](../extensions/registry.ts), [`../extensions/extension-prefs.ts`](../extensions/extension-prefs.ts) and [`../route/site-partition.ts`](../route/site-partition.ts) (the pure parts `private-extensions.ts` reads the opener's extensions with); `electron` only as a type (`start-launch.ts` is handed the `app`).
 [`../shell/`](../shell/) is never imported.
 

@@ -14,9 +14,10 @@
 // had when the channel was first wired. src/preload/newtab.ts makes the
 // same check, independently, before exposing anything at all -- neither
 // layer trusts the other.
-import { ipcMain, type IpcMainInvokeEvent } from 'electron'
+import { ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import type { Bookmark, BookmarkStore } from '../browsing/bookmarks.js'
-import { NEWTAB_COMMAND_CHANNEL } from '../channels.js'
+import { NEWTAB_BACKGROUND_CHANGED_CHANNEL, NEWTAB_COMMAND_CHANNEL } from '../channels.js'
+import type { BackgroundStore, PageBackground } from '../newtab/background-store.js'
 import type { FeaturedState } from '../newtab/featured-state.js'
 import type { FeaturedStore } from '../newtab/featured-store.js'
 import type { WindowRegistry } from '../shell/window-registry.js'
@@ -30,6 +31,7 @@ export type FeaturedPrefs = Pick<FeaturedState, 'newcomerPin' | 'newcomerName' |
 export type NewTabCommand =
   | { type: 'getBookmarks' }
   | { type: 'getFeatured' }
+  | { type: 'getBackground' }
   | { type: 'hideFeatured'; id: string }
   | { type: 'unpinFeatured'; id: string }
   | { type: 'showHiddenFeatured' }
@@ -47,10 +49,18 @@ function isFromDashboard (event: IpcMainInvokeEvent, dashboardUrl: string): bool
 }
 
 /** Once per process: `ipcMain.handle` refuses a second registration of a channel. */
-export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry, bookmarks: BookmarkStore, featured: FeaturedStore): void {
+export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry, bookmarks: BookmarkStore, featured: FeaturedStore, background: BackgroundStore): void {
+  // The dashboards that asked for the picture, to be told when it changes. A page that has left the dashboard is dropped.
+  const following = new Set<WebContents>()
+  background.onChange(() => {
+    for (const contents of following) {
+      if (contents.isDestroyed() || contents.mainFrame.url !== dashboardUrl) following.delete(contents)
+      else contents.send(NEWTAB_BACKGROUND_CHANGED_CHANNEL)
+    }
+  })
   ipcMain.handle(
     NEWTAB_COMMAND_CHANNEL,
-    async (event: IpcMainInvokeEvent, command: NewTabCommand): Promise<Bookmark[] | FeaturedPrefs | undefined> => {
+    async (event: IpcMainInvokeEvent, command: NewTabCommand): Promise<Bookmark[] | FeaturedPrefs | PageBackground | undefined> => {
       if (!isFromDashboard(event, dashboardUrl)) {
         // Not the dashboard's own frame -- refuse silently, same
         // non-committal response ipc.ts's isFromChrome() gives, rather
@@ -64,6 +74,12 @@ export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry
           await bookmarks.load()
           // A tile navigates its own tab, and a tab's navigation never opens a local file.
           return bookmarks.getAll().filter((bookmark) => !/^file:/i.test(bookmark.url)).slice(0, DASHBOARD_TILES)
+        case 'getBackground':
+          if (!following.has(event.sender)) {
+            following.add(event.sender)
+            event.sender.once('destroyed', () => { following.delete(event.sender) })
+          }
+          return background.current()
         case 'getFeatured':
           return prefsOf(featured)
         case 'hideFeatured':

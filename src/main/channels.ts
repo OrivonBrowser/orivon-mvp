@@ -24,6 +24,9 @@ export const STATE_CHANNEL = 'orivon-shell:state'
  * view's single-webContents identity check. See ./newtab-ipc.ts. */
 export const NEWTAB_COMMAND_CHANNEL = 'orivon-newtab:command'
 
+/** Main -> a new-tab page: its picture changed, so it asks for it again. */
+export const NEWTAB_BACKGROUND_CHANGED_CHANNEL = 'orivon-newtab:background-changed'
+
 // APPEND POINT: one const per channel, newest last.
 
 /** Ordinary tab -> broker: orivon.app.manifest/grants and orivon.fs.readFile/

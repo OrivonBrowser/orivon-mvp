@@ -44,6 +44,8 @@ import { importDomain } from '../import/import-domain.js'
 import { importHost } from '../import/import-host.js'
 import { throttleChanges } from '../downloads/change-throttle.js'
 import { downloadsDomain } from '../downloads/downloads-domain.js'
+import { backgroundDomain } from '../newtab/background-domain.js'
+import { pickOpenFile } from '../shell/file-dialogs.js'
 import { downloadsHost } from '../downloads/folder-runner.js'
 import { infoDomain } from '../info/about-domain.js'
 import { copyToClipboard, readAboutFacts, readGpu } from '../info/about-runner.js'
@@ -148,6 +150,12 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     history: historyDomain(services.history, { windows: services.windows, commands: services.commands, closedTabs: services.closedTabs, copyText: (text) => { clipboard.writeText(text) } }),
     import: importDomain(importHost(services, (phase) => { services.internalPages.publish('import.progress', phase, ['import']) })),
     downloads: downloadsDomain(services.downloads, downloadsHost(services)),
+    newTabBackground: backgroundDomain(services.newTabBackground, {
+      pick: async (contents) => await pickOpenFile(services.windows.findOwner(contents)?.window, {
+        title: 'Choose a picture for the new tab',
+        filters: [{ name: 'Pictures', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif'] }]
+      })
+    }),
     info: infoDomain({
       facts: () => readAboutFacts(services.settings, services.isPrivate),
       gpu: readGpu,

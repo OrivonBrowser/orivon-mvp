@@ -29,6 +29,7 @@ describe('a private session\'s directory', () => {
   })
 
   it('begins with the settings, shortcuts and search engines of the profile that opened it and the light client\'s checkpoint, and nothing else', async () => {
+    await writeFile(join(home, 'new-tab-background'), 'the picture')
     await writeFile(join(home, 'settings.json'), '{"version":1,"values":{"appearance.theme":"dark"}}')
     await writeFile(join(home, 'shortcuts.json'), '{"version":1,"bindings":{"new-tab":"Ctrl+T"}}')
     await writeFile(join(home, 'search-engines.json'), '{"version":1,"engines":[],"removedSeeds":[]}')
@@ -46,6 +47,7 @@ describe('a private session\'s directory', () => {
     expect(await readFile(join(dir, 'settings.json'), 'utf8')).toContain('dark')
     expect(await readFile(join(dir, 'shortcuts.json'), 'utf8')).toContain('new-tab')
     expect(await readFile(join(dir, 'search-engines.json'), 'utf8')).toContain('removedSeeds')
+    expect(await readFile(join(dir, 'new-tab-background'), 'utf8')).toBe('the picture')
     expect(await readFile(join(dir, 'verifier', 'checkpoint.json'), 'utf8')).toBe('{"c":1}')
     for (const name of ['bookmarks.json', 'history.db', 'zoom.json', 'telemetry.json', 'identity', 'grants', join('verifier', 'ipns-sequences.json')]) expect(existsSync(join(dir, name)), name).toBe(false)
   })
