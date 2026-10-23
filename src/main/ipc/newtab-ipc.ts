@@ -52,6 +52,7 @@ function isFromDashboard (event: IpcMainInvokeEvent, dashboardUrl: string): bool
 export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry, bookmarks: BookmarkStore, featured: FeaturedStore, background: BackgroundStore): void {
   // The dashboards that asked for the picture, to be told when it changes. A page that has left the dashboard is dropped.
   const following = new Set<WebContents>()
+  const watched = new WeakSet<WebContents>()
   background.onChange(() => {
     for (const contents of following) {
       if (contents.isDestroyed() || contents.mainFrame.url !== dashboardUrl) following.delete(contents)
@@ -75,8 +76,9 @@ export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry
           // A tile navigates its own tab, and a tab's navigation never opens a local file.
           return bookmarks.getAll().filter((bookmark) => !/^file:/i.test(bookmark.url)).slice(0, DASHBOARD_TILES)
         case 'getBackground':
-          if (!following.has(event.sender)) {
-            following.add(event.sender)
+          following.add(event.sender)
+          if (!watched.has(event.sender)) {
+            watched.add(event.sender)
             event.sender.once('destroyed', () => { following.delete(event.sender) })
           }
           return background.current()

@@ -10,7 +10,7 @@ const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 
 type Choice = 'orivon' | 'custom' | 'none'
 
 /** Just enough of the settings store: one value that tells its listeners. */
-function fakeSettings (initial: Choice = 'orivon'): BackgroundSettings & { value: () => Choice } {
+function fakeSettings (initial: Choice = 'orivon', locked = false): BackgroundSettings & { value: () => Choice } {
   let value = initial
   const listeners = new Set<(change: { key: string, value: unknown }) => void>()
   const apply = (next: Choice): void => {
@@ -20,7 +20,11 @@ function fakeSettings (initial: Choice = 'orivon'): BackgroundSettings & { value
   }
   return {
     get: () => value,
-    set: (_key: string, next: unknown) => { apply(next as Choice); return { ok: true } },
+    set: (_key: string, next: unknown) => {
+      if (locked) return { ok: false, reason: 'locked' }
+      apply(next as Choice)
+      return { ok: true }
+    },
     onChange: (listener: (change: { key: string, value: unknown }) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     value: () => value
   } as never
@@ -115,5 +119,31 @@ describe('BackgroundStore', () => {
     writeFileSync(copy, PNG)
     new BackgroundStore(copy, fakeSettings('orivon'))
     expect(existsSync(copy)).toBe(true)
+  })
+
+  it('takes the copy back and says so when the setting cannot be switched', () => {
+    const store = new BackgroundStore(copy, fakeSettings('orivon', true))
+    expect(store.install(source).ok).toBe(false)
+    expect(existsSync(copy)).toBe(false)
+  })
+
+  it('answers from the bytes it has checked until the picture changes', () => {
+    const store = new BackgroundStore(copy, fakeSettings())
+    store.install(source)
+    const first = store.current()
+    expect(store.current()).toBe(first)
+    const other = join(dir, 'other.png')
+    writeFileSync(other, Uint8Array.from([...PNG, 9, 9, 9]))
+    store.install(other)
+    expect(store.current()).not.toBe(first)
+    expect((store.current() as { bytes: Uint8Array }).bytes.length).toBe(PNG.length + 3)
+  })
+
+  it('answers with a buffer of exactly the picture, never a view into a larger one', () => {
+    const store = new BackgroundStore(copy, fakeSettings())
+    store.install(source)
+    const { bytes } = store.current() as { bytes: Uint8Array }
+    expect(bytes.byteOffset).toBe(0)
+    expect(bytes.buffer.byteLength).toBe(PNG.length)
   })
 })

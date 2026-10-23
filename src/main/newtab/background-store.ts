@@ -19,6 +19,8 @@ const UNREADABLE = 'That file could not be read.'
 
 export class BackgroundStore {
   private readonly listeners = new Set<() => void>()
+  /** The checked copy as the page is answered with it: every open new tab asks again after a change, and a picture can be 20 MB. */
+  private custom: PageBackground | undefined
 
   constructor (private readonly filePath: string, private readonly settings: BackgroundSettings) {
     // The copy exists only while the setting asks for it, however the setting came to change (a choice, Reset, Reset all).
@@ -53,8 +55,13 @@ export class BackgroundStore {
     } catch {
       return { ok: false, reason: 'Orivon could not save a copy of that picture.' }
     }
-    if (this.settings.get('appearance.newTabBackground') === 'custom') this.announce()
-    else this.settings.set('appearance.newTabBackground', 'custom')
+    this.custom = undefined
+    if (this.settings.get('appearance.newTabBackground') === 'custom') {
+      this.announce()
+    } else if (!this.settings.set('appearance.newTabBackground', 'custom').ok) {
+      this.removeCopy()
+      return { ok: false, reason: 'The new tab background cannot be changed here.' }
+    }
     return { ok: true }
   }
 
@@ -63,16 +70,20 @@ export class BackgroundStore {
     const chosen = this.settings.get('appearance.newTabBackground')
     if (chosen === 'none') return { kind: 'none' }
     if (chosen !== 'custom') return { kind: 'orivon' }
+    if (this.custom !== undefined) return this.custom
     try {
       const data = readFileSync(this.filePath)
       const checked = checkPicture(data)
-      return checked.ok ? { kind: 'custom', mime: checked.mime, bytes: new Uint8Array(data.buffer, data.byteOffset, data.byteLength) } : { kind: 'orivon' }
+      // A copy of exactly these bytes: a view over a larger buffer would send the whole buffer over IPC.
+      if (checked.ok) this.custom = { kind: 'custom', mime: checked.mime, bytes: Uint8Array.from(data) }
+      return this.custom ?? { kind: 'orivon' }
     } catch {
       return { kind: 'orivon' }
     }
   }
 
   private removeCopy (): void {
+    this.custom = undefined
     try {
       rmSync(this.filePath, { force: true })
     } catch (error) {

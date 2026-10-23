@@ -36,7 +36,7 @@ function renderChoice (control: Extract<Control, { type: 'choice' }>, state: Set
     void control.intercept(select.value, state).then((handled) => {
       if (handled) select.value = String(state.value(control.key))
       else void state.set(control.key, select.value)
-    })
+    }, () => { select.value = String(state.value(control.key)) })
   })
   return select
 }
