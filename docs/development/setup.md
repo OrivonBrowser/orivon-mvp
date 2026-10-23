@@ -234,13 +234,15 @@ Settings shows what it is doing.
 | `ORIVON_TEST_LOCAL_POINTER=1` | Test builds only: treats the pointer's screen position as unknown, as on a native Wayland session, so a tab drag is the browser's own drag and drop on a virtual X display (`src/main/shell/local-pointer.ts`). An ordinary build contains none of this |
 
 Each release ships a checkpoint for the light client. `node scripts/refresh-eth-checkpoint.mjs --write`
-refreshes it and refuses unless two beacon APIs agree; the scheduled workflow
+refreshes it and refuses unless two beacon APIs agree on the block at the first slot of the newest finalized epoch whose bootstrap the light client's consensus server serves (publicnode, or the API `--consensus <url>` names); the scheduled workflow
 `.github/workflows/refresh-eth-checkpoint.yml` runs it every Monday and Thursday and opens a pull request
 when the file changed. The Release workflow refuses a checkpoint over 7 days old. An install keeps a newer
 one of its own after every sync, and refuses any checkpoint older than 14 days. When the release's and the stored
 one are both past that, the app asks the two beacon servers in `DEFAULT_ENDPOINTS.checkpointBeaconApis` (the same two
 this script asks) for a finalized header when the verifier host starts, and keeps it if they agree
-([`ADR-0092`](../decisions/ADR-0092-when-no-checkpoint-is-recent-enough-two-beacon-servers-that-agree-supply-one.md)).
+([`ADR-0092`](../decisions/ADR-0092-when-no-checkpoint-is-recent-enough-two-beacon-servers-that-agree-supply-one.md)),
+the same way when the light client reports that the beacon server has no bootstrap for the checkpoint it started
+from ([`ADR-0098`](../decisions/ADR-0098-a-checkpoint-is-the-first-block-of-a-finalized-epoch-that-the-consensus-server-bootstraps.md)).
 The script and `src/main/verifier/checkpoint-fetch.ts` hold the same rule, and a unit test compares them.
 
 ---

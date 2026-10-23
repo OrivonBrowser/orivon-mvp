@@ -94,7 +94,8 @@ describe('lightClientView', () => {
       disagree: /did not give the same answer/,
       future: /dated after this computer's clock, which may be set behind/,
       'too-old': /older than a checkpoint may be, which suggests this computer's clock is ahead/,
-      'too-few-servers': /fewer than two/
+      'too-few-servers': /fewer than two/,
+      'no-bootstrap': /would not start the light client from any recent finalized block/
     } as const
     for (const [problem, pattern] of Object.entries(reasons)) {
       const view = lightClientView(facts({ checkpoint: stale, checkpointFetchProblem: problem as keyof typeof reasons }), NOW)
@@ -102,6 +103,20 @@ describe('lightClientView', () => {
       expect(view.checkpoint).toMatch(pattern)
       expect(view.summary).toMatch(/^Not started: it needs a recent checkpoint to start from\. A fresh one could not be fetched: /)
     }
+  })
+
+  it('says a checkpoint the beacon server would not start the light client from is not used, and what was tried', () => {
+    const view = lightClientView(facts({ checkpoint: { ok: false, problem: 'not-served', source: 'release', ageSeconds: 86_400 }, checkpointFetchProblem: 'unreachable' }), NOW)
+    expect(view.state).toBe('failed')
+    expect(view.checkpoint).toBe('No usable checkpoint: the beacon server would not start the light client from the newest checkpoint (shipped with this release). A fresh one could not be fetched from the beacon servers: a beacon server did not answer. Installing a newer release brings one too.')
+    expect(view.summary).toBe('Not running: the beacon server would not start it from the checkpoint it was given, and no other is at hand. A fresh one could not be fetched: a beacon server did not answer.')
+    expect(lightClientView(facts({ checkpoint: { ok: false, problem: 'not-served', source: 'release', ageSeconds: 86_400 } }), NOW).checkpoint).toMatch(/\(shipped with this release\)\. Opening a \.eth name asks two beacon servers for a fresh one\./)
+  })
+
+  it('does not call a checkpoint the newest when a newer one was left out for having no bootstrap', () => {
+    const view = lightClientView(facts({ checkpoint: { ok: false, problem: 'too-old', source: 'this-install', ageSeconds: 20 * 86_400, skippedUnserved: true } }), NOW)
+    expect(view.checkpoint).toMatch(/^No usable checkpoint: a newer checkpoint has no bootstrap on the beacon server, and the newest one it would start from \(last verified on this computer\) is 20 days old, past the 14 days a checkpoint may be\./)
+    expect(view.summary).toMatch(/^Not running: the beacon server would not start it/)
   })
 
   it('leaves the clock case alone: a fetch cannot fix a clock behind the checkpoint', () => {

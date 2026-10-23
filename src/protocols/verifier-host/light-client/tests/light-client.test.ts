@@ -347,6 +347,15 @@ describe('startHeliosLightClient -- a computer whose clock is behind the chain',
     expect(client.status()).toMatchObject({ state: 'failed', reason: CLOCK_ERROR })
   })
 
+  it('says a failure is the consensus server having no bootstrap for the checkpoint', async () => {
+    const helios = fakeHelios()
+    helios.waitSynced = async () => { throw new Error('could not fetch bootstrap: rpc error on method: bootstrap, message: status: 404, message: NOT_FOUND') }
+    vi.mocked(createHeliosProvider).mockResolvedValue(helios as never)
+    const client = startHeliosLightClient({ ...CONFIG, executionRpcs: ['https://rpc.example', 'https://rpc2.example'] }, serversAhead(0), () => {})
+    await vi.waitFor(() => { if (client.status().state !== 'failed') throw new Error('not failed yet') }, { timeout: 5_000 })
+    expect(client.status()).toMatchObject({ state: 'failed', bootstrapMissing: true })
+  })
+
   it('lowers a lead the servers no longer agree with when the client fails for another reason', async () => {
     const helios = fakeHelios()
     let ahead = 90_000

@@ -200,7 +200,7 @@ function verifierStore (): VerifierStore {
   return store
 }
 
-const renewal = new CheckpointRenewal({ store: verifierStore, switchedOff: () => lightClientSwitchedOff(), changed: () => { changed() } })
+const renewal = new CheckpointRenewal({ store: verifierStore, switchedOff: () => lightClientSwitchedOff(), changed: () => { changed() }, hostRunning: () => !hostAsleep, restartHost: () => { idleHost(); startHost() } })
 
 /** The Bee-API origins Swarm reads from: the node Orivon runs, unless a test build names its own. */
 function swarmEndpoints (seam: EthTestSeam | undefined): readonly string[] {
@@ -231,7 +231,7 @@ async function hostConfig (): Promise<HostConfig> {
     lightClient = { lightClient: undefined, lightClientOff: 'the Ethereum light client is switched off, so no .eth name can be verified' }
   } else {
     await renewing
-    const choice = renewal.choose()
+    const choice = renewal.chooseForStart()
     lightClient = choice.ok
       ? { lightClient: { executionRpcs: DEFAULT_ENDPOINTS.executionRpcs, consensusRpc: DEFAULT_ENDPOINTS.consensusRpc, checkpoint: choice.checkpoint.root } }
       : { lightClient: undefined, lightClientOff: `the Ethereum light client cannot start: ${checkpointProblem(choice, renewal.problem())}` }
@@ -418,6 +418,7 @@ export const verifierSubsystem: Subsystem = {
           lightClient = value
           const line = logLightClient(value)
           if (line !== undefined) console[line.level](`[verifier] ${line.text}`)
+          if (value.state === 'failed' && value.bootstrapMissing === true) renewal.recoverUnserved()
           changed()
         },
         checkpoint: (root, timestamp) => {

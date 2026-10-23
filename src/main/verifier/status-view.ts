@@ -90,6 +90,7 @@ function fetchFailure (problem: FetchProblem): string {
     case 'future': return "the checkpoint the beacon servers gave is dated after this computer's clock, which may be set behind"
     case 'too-old': return "the checkpoint the beacon servers gave is older than a checkpoint may be, which suggests this computer's clock is ahead"
     case 'too-few-servers': return 'fewer than two beacon servers are set'
+    case 'no-bootstrap': return 'the beacon server would not start the light client from any recent finalized block'
   }
 }
 
@@ -114,6 +115,8 @@ export function checkpointProblem (choice: Extract<CheckpointChoice, { ok: false
   const tried = fetchProblem === undefined
     ? 'Opening a .eth name asks two beacon servers for a fresh one'
     : `A fresh one could not be fetched from the beacon servers: ${fetchFailure(fetchProblem)}`
+  if (choice.problem === 'not-served') return `the beacon server would not start the light client from the newest checkpoint (${SOURCE_WORDS[choice.source]}). ${tried}. Installing a newer release brings one too`
+  if (choice.skippedUnserved === true) return `a newer checkpoint has no bootstrap on the beacon server, and the newest one it would start from (${SOURCE_WORDS[choice.source]}) is ${age(choice.ageSeconds)} old, past the ${age(MAX_CHECKPOINT_AGE_SECONDS)} a checkpoint may be. ${tried}. Installing a newer release brings one too`
   return `the newest checkpoint (${SOURCE_WORDS[choice.source]}) is ${age(choice.ageSeconds)} old, past the ${age(MAX_CHECKPOINT_AGE_SECONDS)} a checkpoint may be. ${tried}. Installing a newer release brings one too; if this computer's clock is wrong, setting it right may be enough`
 }
 
@@ -131,8 +134,9 @@ function summaryOf (facts: VerifierFacts, now: number): { state: LightClientView
   if (facts.hostDown !== undefined) return { state: 'down', summary: `The verifier is not running: ${facts.hostDown}.` }
   if (facts.switchedOff) return { state: 'off', summary: 'Switched off. No .eth name can be verified, so none loads.' }
   if (facts.checkpoint !== undefined && !facts.checkpoint.ok) {
-    const note = facts.checkpoint.problem === 'too-old' && facts.checkpointFetchProblem !== undefined ? ` A fresh one could not be fetched: ${fetchFailure(facts.checkpointFetchProblem)}.` : ''
-    return { state: 'failed', summary: `Not started: it needs a recent checkpoint to start from.${note}` }
+    const note = facts.checkpoint.problem !== 'clock-behind' && facts.checkpointFetchProblem !== undefined ? ` A fresh one could not be fetched: ${fetchFailure(facts.checkpointFetchProblem)}.` : ''
+    const refused = facts.checkpoint.problem === 'not-served' || (facts.checkpoint.problem === 'too-old' && facts.checkpoint.skippedUnserved === true)
+    return { state: 'failed', summary: refused ? `Not running: the beacon server would not start it from the checkpoint it was given, and no other is at hand.${note}` : `Not started: it needs a recent checkpoint to start from.${note}` }
   }
   if (facts.hostAsleep) return { state: 'waiting', summary: 'On, and waiting. It starts when a .eth address is opened, and stops again after ten minutes without one.' }
   const s = facts.lightClient
