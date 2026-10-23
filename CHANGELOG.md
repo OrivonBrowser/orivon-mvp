@@ -20,6 +20,7 @@ Each section below lists what that release carried; `[Unreleased]` is what has l
 - **Node shim: `crypto.randomInt`, `fs.mkdtemp`, `fs.cp` and `fs.copyFile`**: `randomInt` draws by rejection sampling over the platform's random values, in both forms; `copyFile`, `cp` (with `recursive`, `force`, `errorOnExist` and `filter`) and `mkdtemp` work on the app's own files and on a folder the person picked, in the callback and promise forms, with Node's errors.
 
 - **Node shim: SQLite user-defined functions and backup**: `better-sqlite3`'s `db.function(name, [options], fn)` and `db.backup(destination)`, and `node:sqlite`'s `DatabaseSync#function`, now work (they threw "not built"); `aggregate`, `table`, `serialize` and `loadExtension` still refuse by name, and a backup cannot start inside a transaction.
+- **Node shim: a SQLite database from bytes, and `serialize`**: `better-sqlite3`'s `new Database(buffer)` opens the bytes of a database file as a database in the engine's memory (readable, writable, never written to a file; with `readonly` it refuses writes), and `db.serialize()` returns a database's bytes as a `Buffer`; `aggregate`, `table` and `loadExtension` still refuse by name.
 
 ### Changed for apps
 
@@ -28,6 +29,7 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+- **`sqlite-database-from-bytes`**: new row. An app that opens a database from a `Buffer` (`new Database(buffer)`) or reads one with `db.serialize()` no longer needs a change to run. Recheck: any port that caught the refusal, or that went through a temporary file.
 - **`sqlite-user-functions`** and **`sqlite-backup-to-app-files`**: new rows. An app that registers SQL functions on its database, or copies it with `db.backup`, no longer needs a change to run; `backup` cannot run inside a transaction. Recheck: any port that caught the refusal.
 - **`node-fs-ancestors-of-the-files-root-exist`**: new row. `fs.stat`, `existsSync` and `mkdir` on `/` and `/orivon` now answer as for directories that exist, and `readdir` lists the one entry toward the app's files; they failed `EACCES` before. Writes on them and any path beside the files still fail `EACCES`. Recheck: any port that walks a folder's ancestors.
 - **`file-handle-streams`**: new row. A page's `FileHandle`, from `orivon.fs.open`, a pick or a folder, now has the `readable()` and `writable()` its contract names; they were missing, so calling one threw. Each chunk is an ordinary positional `read` or `write`, counted and refused as one. Recheck: TorSocks.

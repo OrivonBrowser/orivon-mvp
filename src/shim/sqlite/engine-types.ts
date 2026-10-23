@@ -64,6 +64,8 @@ export interface SqliteCapi {
   sqlite3_column_decltype (statement: Pointer, index: number): string | null
   /** The bytes of a database as SQLite would write them to a file, whole. */
   sqlite3_js_db_export (db: Pointer, schema: string): Uint8Array
+  /** Makes `schema` of `db` an in-memory database over the `size` bytes at `data` (a buffer of `bufferSize` bytes), by flags; the 64-bit sizes take a number. */
+  sqlite3_deserialize (db: Pointer, schema: string, data: Pointer, size: number, bufferSize: number, flags: number): number
 }
 
 /** A struct binding (`sqlite3_vfs`, `sqlite3_io_methods`, `sqlite3_file`): `$field` reads and writes a member. */
