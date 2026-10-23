@@ -26,7 +26,7 @@ export const GRACE_MS = 10 * 60 * 1000
 
 /** What a private session starts with, copied from the profile that opened it: its settings,
  * keyboard shortcuts and search engines -- all preferences -- plus the public seed (./public-seed.ts); the extensions the
- * profile allows in private windows come after, from ./private-extensions.ts. Never
+ * profile allows in private windows and the new tab's picture come after, asynchronously, from ./private-extensions.ts and ./private-picture.ts. Never
  * history, bookmarks, grants, apps, identity, site data, or zoom.json: a list of sites visited,
  * not a preference. */
 export const SNAPSHOT_FILES = ['settings.json', 'shortcuts.json', 'search-engines.json'] as const

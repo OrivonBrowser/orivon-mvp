@@ -1,4 +1,5 @@
 import type { Section } from '../model.js'
+import { newTabRows } from './rows/new-tab.js'
 import { sidePanelRows } from './rows/side-panel.js'
 import { toolbarRows } from './rows/toolbar.js'
 
@@ -62,6 +63,7 @@ export const appearance: Section = {
       keywords: ['zoom', 'size', 'text', 'larger', 'smaller', 'magnify', 'scale', 'wheel', 'ctrl', 'command'],
       control: { type: 'choice', key: 'appearance.defaultZoom' }
     },
+    ...newTabRows,
     {
       id: 'downloads-button',
       label: 'Downloads button',

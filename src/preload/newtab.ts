@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { Bookmark } from '../main/browsing/bookmarks.js'
-import { NEWTAB_COMMAND_CHANNEL } from '../main/channels.js'
+import { NEWTAB_BACKGROUND_CHANGED_CHANNEL, NEWTAB_COMMAND_CHANNEL } from '../main/channels.js'
 import type { NewTabCommand } from '../main/ipc/newtab-ipc.js'
 import { exposeOrdinaryTabSurface } from './ordinary-tab.js'
 import { inMainFrame } from './frame.js'
@@ -43,6 +43,9 @@ if (topFrame && expectedUrl !== undefined && location.href === expectedUrl) {
   contextBridge.exposeInMainWorld('orivonNewTab', {
     /** This profile's Featured choices (src/main/newtab/featured-store.ts); the page checks the shape. */
     getFeatured: async (): Promise<unknown> => await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'getFeatured' }),
+    /** What this profile's new tab draws behind the page: the Orivon picture, nothing, or the bytes of the person's own (src/main/newtab/background-store.ts); the page checks the shape. */
+    getBackground: async (): Promise<unknown> => await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'getBackground' }),
+    onBackgroundChanged: (listener: () => void): void => { ipcRenderer.on(NEWTAB_BACKGROUND_CHANGED_CHANNEL, () => { listener() }) },
     hideFeatured: async (id: string): Promise<unknown> => await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'hideFeatured', id }),
     unpinFeatured: async (id: string): Promise<unknown> => await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'unpinFeatured', id }),
     showHiddenFeatured: async (): Promise<unknown> => await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'showHiddenFeatured' }),

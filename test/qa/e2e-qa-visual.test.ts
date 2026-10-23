@@ -197,10 +197,16 @@ for (const scheme of SCHEMES) {
         await chrome.click('#web3-score-btn')
         expect(await waitFor(async () => !(await popoverShown(app, 'overlay=web3-score')))).toBe(true)
 
-        await openInternal(app, chrome, 'settings')
+        const settingsPage = await openInternal(app, chrome, 'settings')
         await state(check, app, `settings-page-${scheme}`, {
           expected: 'orivon://settings is open in a new tab: a titled page with a navigation of sections and the selected section shown in full.',
           action: 'Opened orivon://settings from the shell.'
+        })
+        await settingsPage.waitForSelector('#row-new-tab-background select')
+        await settingsPage.locator('#row-new-tab-background').scrollIntoViewIfNeeded()
+        await state(check, app, `settings-appearance-${scheme}`, {
+          expected: 'The Appearance section of orivon://settings, the first one, scrolled to show, under a "New tab" heading, a row "New tab background" with a drop-down that reads "The Orivon picture", and no "Your picture" row, since no picture of the person\'s own is in use. Nothing is cut or overlapping.',
+          action: 'Scrolled the Appearance section to the New tab background row.'
         })
         await openInternal(app, chrome, 'history')
         await state(check, app, `history-page-empty-${scheme}`, {

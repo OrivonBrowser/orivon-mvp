@@ -22,14 +22,21 @@ function choiceOptions (control: Extract<Control, { type: 'choice' }>, state: Se
   return description.options.map((value) => ({ value, label: description.labels[value] ?? value }))
 }
 
-function renderChoice (control: Extract<Control, { type: 'choice' }>, state: SettingsState, id: string): HTMLElement {
+export function renderChoice (control: Extract<Control, { type: 'choice' }>, state: SettingsState, id: string): HTMLElement {
   const select = h('select', { className: 'select', id, disabled: control.locked?.(state) === true })
   for (const option of choiceOptions(control, state)) select.append(h('option', { value: option.value, textContent: option.label }))
   select.value = String(state.value(control.key))
   select.addEventListener('change', () => {
     // A choice can change what the page shows (another row, this row's help): it is finished once chosen, though it keeps focus.
     select.dataset['settled'] = 'true'
-    void state.set(control.key, select.value)
+    if (control.intercept === undefined) {
+      void state.set(control.key, select.value)
+      return
+    }
+    void control.intercept(select.value, state).then((handled) => {
+      if (handled) select.value = String(state.value(control.key))
+      else void state.set(control.key, select.value)
+    }, () => { select.value = String(state.value(control.key)) })
   })
   return select
 }

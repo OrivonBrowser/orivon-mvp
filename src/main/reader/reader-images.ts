@@ -9,14 +9,27 @@ export type ImageFetcher = (url: string, init: { signal: AbortSignal, credential
 
 const TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/avif'] as const
 
-/** What the first bytes say the file is, whatever the server called it. */
+/** How far into an ISO media file the brands are looked for: the box that lists them is a few dozen bytes. */
+const BRAND_WINDOW = 64
+
+/** An AVIF file names `avif` or `avis` as its main brand, or among the compatible ones after the minor version. */
+function hasAvifBrand (bytes: Uint8Array): boolean {
+  const brand = (offset: number): string => String.fromCharCode(...bytes.subarray(offset, offset + 4))
+  if (bytes.length < 12 || brand(4) !== 'ftyp') return false
+  for (let offset = 8; offset + 4 <= Math.min(bytes.length, BRAND_WINDOW); offset += offset === 8 ? 8 : 4) {
+    if (brand(offset) === 'avif' || brand(offset) === 'avis') return true
+  }
+  return false
+}
+
+/** What the first bytes say the file is, whatever the server called it (or the file's name). */
 export function sniffImageType (bytes: Uint8Array): (typeof TYPES)[number] | null {
   const at = (offset: number, ...values: number[]): boolean => values.every((value, index) => bytes[offset + index] === value)
   if (at(0, 0x89, 0x50, 0x4e, 0x47)) return 'image/png'
   if (at(0, 0xff, 0xd8, 0xff)) return 'image/jpeg'
   if (at(0, 0x47, 0x49, 0x46, 0x38)) return 'image/gif'
   if (at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50)) return 'image/webp'
-  if (at(4, 0x66, 0x74, 0x79, 0x70) && (at(8, 0x61, 0x76, 0x69, 0x66) || at(8, 0x61, 0x76, 0x69, 0x73))) return 'image/avif'
+  if (hasAvifBrand(bytes)) return 'image/avif'
   return null
 }
 

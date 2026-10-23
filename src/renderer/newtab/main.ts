@@ -1,6 +1,7 @@
 import type { Bookmark } from '../../main/browsing/bookmarks.js'
 import { closeIcon, faviconElement, path, svg } from '../icons.js'
 import { FEATURED, iconUrl } from './featured.js'
+import { pictureUrlOf, readBackground, type PageBackground } from './background-model.js'
 import { featuredRow, NO_PREFS, readPrefs, type FeaturedPrefs, type FeaturedTile } from './featured-model.js'
 
 // The dashboard's whole job: a search box, the featured apps and real bookmark tiles -- see
@@ -13,6 +14,8 @@ interface OrivonNewTab {
   hideFeatured: (id: string) => Promise<unknown>
   unpinFeatured: (id: string) => Promise<unknown>
   showHiddenFeatured: () => Promise<unknown>
+  getBackground: () => Promise<unknown>
+  onBackgroundChanged: (listener: () => void) => void
 }
 
 declare global {
@@ -30,6 +33,8 @@ declare global {
 // is a safe, expected case, not a bug -- degrade gracefully rather than
 // crash the page over it.
 const shell = window.orivonNewTab
+// Without the bridge there is nothing to ask: the page keeps its own picture.
+if (shell === undefined) document.documentElement.dataset['background'] = 'orivon'
 
 const searchForm = document.querySelector<HTMLFormElement>('#search-form')
 const searchInput = document.querySelector<HTMLInputElement>('#search-input')
@@ -58,6 +63,7 @@ if (shell !== undefined) {
 
   // Every row that main fills in; the page says it is settled once each has answered, or failed to.
   const drawing: Array<Promise<unknown>> = []
+  drawing.push(startBackground(shell))
   if (featuredGrid !== null && showHiddenButton !== null) drawing.push(startFeatured(shell, featuredGrid, showHiddenButton))
 
   if (bookmarksSection !== null && bookmarksGrid !== null) {
@@ -69,6 +75,58 @@ if (shell !== undefined) {
     document.documentElement.dataset[SETTLED_ATTRIBUTE] = '1'
     document.dispatchEvent(new CustomEvent(SETTLED_EVENT))
   })
+}
+
+/** How long the page waits for a picture to decode: a file the engine cannot draw never holds the welcome screen's backdrop. */
+const DECODE_BOUND_MS = 2000
+
+async function decoded (src: string): Promise<void> {
+  const image = new Image()
+  image.src = src
+  let timer: ReturnType<typeof setTimeout> | undefined
+  await Promise.race([image.decode().catch(() => undefined), new Promise<void>((resolve) => { timer = setTimeout(resolve, DECODE_BOUND_MS) })])
+  clearTimeout(timer)
+}
+
+/**
+ * The page's own picture is chosen on the root element (style.css), and follows the Settings choice while the page is open.
+ * It resolves once the picture is on the page and has decoded (at once for none), which is what "settled" waits for: the welcome
+ * screen captures this page behind its popup. A new picture is decoded before it replaces the old one, so no frame shows the base colour between.
+ */
+function startBackground (shell: OrivonNewTab): Promise<void> {
+  const root = document.documentElement
+  let pictureUrl: string | undefined
+  let latest = 0
+  const draw = async (): Promise<void> => {
+    const turn = ++latest
+    let background: PageBackground = { kind: 'orivon' }
+    try {
+      background = readBackground(await shell.getBackground())
+    } catch {}
+    if (background.kind === 'custom') {
+      const url = URL.createObjectURL(new Blob([background.bytes], { type: background.mime }))
+      await decoded(url)
+      // Another answer came while this one decoded: it is the one to show.
+      if (turn !== latest) { URL.revokeObjectURL(url); return }
+      const before = pictureUrl
+      pictureUrl = url
+      root.style.setProperty('--new-tab-picture', `url("${url}")`)
+      root.dataset['background'] = 'custom'
+      if (before !== undefined) URL.revokeObjectURL(before)
+      return
+    }
+    if (turn !== latest) return
+    const before = pictureUrl
+    pictureUrl = undefined
+    root.style.removeProperty('--new-tab-picture')
+    root.dataset['background'] = background.kind
+    if (before !== undefined) URL.revokeObjectURL(before)
+    // The Orivon picture is a file of the page's own bundle: the style sheet names it, and its address is read back from there.
+    const bundled = background.kind === 'orivon' ? pictureUrlOf(getComputedStyle(root).backgroundImage) : null
+    if (bundled !== null) await decoded(bundled)
+  }
+  shell.onBackgroundChanged(() => { void draw() })
+  return draw()
 }
 
 /** The row is drawn once main has said what this profile pinned and hid, so it never shows in the wrong order first. */

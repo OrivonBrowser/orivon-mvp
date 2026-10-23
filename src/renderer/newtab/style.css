@@ -37,28 +37,43 @@ html, body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
-/* The welcome screen's picture under a dark wash, in both themes: only the
-   search box and tiles follow the OS scheme, so whatever sits on the picture
-   itself (.wordmark, .tile-section-title) has fixed light colours below. The
-   wash is orivon-browser-v2's new-tab one. `fixed` keeps a tall bookmark grid
-   from scrolling or tiling the picture. */
+/* Behind the page: the welcome screen's picture, the person's own, or the plain base colour, chosen by the
+   data-background attribute that main.ts sets from the Settings choice. Until it is set the page shows the base
+   colour the shell backs the view with (main's theme-colors.ts, DASHBOARD_BACKGROUND). A picture lies under a
+   dark wash, in both themes: only the search box and tiles follow the OS scheme, so whatever sits on the picture
+   itself (.wordmark, .tile-section-title) has fixed light colours below. The wash is orivon-browser-v2's
+   new-tab one. `fixed` keeps a tall bookmark grid from scrolling or tiling the picture. */
 html {
+  background: #0d0e14;
+}
+html[data-background="orivon"] {
   background:
     linear-gradient(rgba(13, 14, 20, 0.58), rgba(13, 14, 20, 0.58)),
     url('../assets/intro-background.webp') center / cover no-repeat fixed #0d0e14;
 }
+html[data-background="custom"] {
+  background:
+    linear-gradient(rgba(13, 14, 20, 0.58), rgba(13, 14, 20, 0.58)),
+    var(--new-tab-picture) center / cover no-repeat fixed #0d0e14;
+}
 
-/* Beside a light window a near-black first frame reads as a flash. Under a
-   light scheme the page is #394244 (the mean of the picture under its wash)
-   until the picture has decoded, the colour the shell backs the view with
-   (main's theme-colors.ts, DASHBOARD_BACKGROUND): the root's own colour is that,
-   which is also what shows while the page's tiles are not yet painted, and a
-   lighter base layer under the wash composites to it. */
+/* Beside a light window a near-black first frame reads as a flash. Under a light scheme the page is #394244
+   (the mean of the Orivon picture under its wash) until a picture has decoded, and with no picture: a lighter
+   base layer under the wash composites to it. */
 @media (prefers-color-scheme: light) {
   html {
+    background: #394244;
+  }
+  html[data-background="orivon"] {
     background:
       linear-gradient(rgba(13, 14, 20, 0.58), rgba(13, 14, 20, 0.58)),
       url('../assets/intro-background.webp') center / cover no-repeat fixed,
+      linear-gradient(#768a86, #768a86) #394244;
+  }
+  html[data-background="custom"] {
+    background:
+      linear-gradient(rgba(13, 14, 20, 0.58), rgba(13, 14, 20, 0.58)),
+      var(--new-tab-picture) center / cover no-repeat fixed,
       linear-gradient(#768a86, #768a86) #394244;
   }
 }

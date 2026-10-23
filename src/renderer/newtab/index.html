@@ -5,11 +5,12 @@
     <!-- Among the tightest CSPs in this codebase: no network requests of its
          own (connect-src 'none' -- navigation goes through
          orivonNewTab.navigate() over IPC, never a raw form submission or
-         fetch), and images only from the page's own bundle or as data: URLs
-         (its background picture, the bookmarks' icons and the featured apps' own). -->
+         fetch), and images only from the page's own bundle, as data: URLs
+         (the bookmarks' icons and the featured apps' own) or as a blob: URL the page made itself from the bytes main
+         handed it (the picture the person chose for the background). -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'"
     />
     <title>New Tab</title>
     <link rel="stylesheet" href="./style.css" />

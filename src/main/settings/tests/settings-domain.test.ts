@@ -58,3 +58,25 @@ describe('settingsDomain', () => {
     expect(store.snapshot().changed).toEqual([])
   })
 })
+
+describe('settingsDomain: a value main can refuse', () => {
+  async function guarded (refuses: (key: string, value: unknown) => boolean | Promise<boolean> | undefined) {
+    const store = new SettingsStore(join(dir, 'settings.json'))
+    await store.load()
+    const { handle } = settingsDomain(store, { refuses })
+    return { store, ask: async (command: unknown) => await handle(command, caller) }
+  }
+
+  it('refuses a value the guard refuses, saying it is not a valid one, and changes nothing', async () => {
+    const { store, ask } = await guarded((key, value) => key === 'appearance.newTabBackground' && value === 'custom' ? Promise.resolve(true) : undefined)
+    expect(await ask({ type: 'set', key: 'appearance.newTabBackground', value: 'custom' })).toEqual({ ok: false, reason: 'invalid-value' })
+    expect(store.get('appearance.newTabBackground')).toBe('orivon')
+  })
+
+  it('takes the value when the guard allows it, and leaves every other setting alone', async () => {
+    const { store, ask } = await guarded((key) => key === 'appearance.newTabBackground' ? false : undefined)
+    expect(await ask({ type: 'set', key: 'appearance.newTabBackground', value: 'custom' })).toEqual({ ok: true })
+    expect(store.get('appearance.newTabBackground')).toBe('custom')
+    expect(await ask({ type: 'set', key: 'appearance.theme', value: 'dark' })).toEqual({ ok: true })
+  })
+})

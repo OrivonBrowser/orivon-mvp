@@ -73,6 +73,10 @@ describe('the settings schema', () => {
     expect(SETTINGS['toolbar.extensions'].default).toBe('always')
   })
 
+  it('offers the new tab background with your own picture last, so arrowing through the drop-down never passes it', () => {
+    expect(SETTINGS['appearance.newTabBackground']).toMatchObject({ kind: 'enum', default: 'orivon', options: ['orivon', 'none', 'custom'] })
+  })
+
   it('reads IPFS from the node on this computer, with a lookup service, unless told otherwise', () => {
     expect(SETTINGS['web3.ipfsSource']).toMatchObject({ kind: 'enum', options: ['node', 'gateways'], default: 'node' })
     expect(SETTINGS['web3.ipfsLookupService']).toEqual({ kind: 'bool', default: true })

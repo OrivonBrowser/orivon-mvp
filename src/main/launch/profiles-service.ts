@@ -3,6 +3,7 @@
 // handing it to another process (./peer-spawn.ts), so what this holds is the
 // data and the request, never a second browser inside this one.
 import { copyPrivateExtensions, hasPrivateExtensions } from './private-extensions.js'
+import { copyPrivatePicture, hasPrivatePicture } from './private-picture.js'
 import { removePrivateDir, createPrivateDir } from './private-session.js'
 import { flagsFor, urlsFromArgv, DEFAULT_PROFILE_ID } from './launch-context.js'
 import type { PrivateTunnel } from './launch-context.js'
@@ -124,13 +125,13 @@ export class ProfilesService {
         })
         child.once('error', () => { removePrivateDir(made) })
       }
-      if (!hasPrivateExtensions(this.runtime.dir)) {
+      if (!hasPrivateExtensions(this.runtime.dir) && !hasPrivatePicture(this.runtime.dir)) {
         start()
         return true
       }
-      console.log('[private] copying the extensions allowed in private windows, then starting the session')
-      // The copy of the extensions can be tens of megabytes: it runs without holding this window, and the session starts once it is done.
-      void copyPrivateExtensions(this.runtime.dir, made).then(start).catch((error: unknown) => {
+      console.log('[private] copying the extensions allowed in private windows and the new tab picture, then starting the session')
+      // The copies can be tens of megabytes: they run without holding this window, and the session starts once they are done.
+      void Promise.all([copyPrivateExtensions(this.runtime.dir, made), copyPrivatePicture(this.runtime.dir, made)]).then(start).catch((error: unknown) => {
         console.error(`could not start a private session: ${error instanceof Error ? error.message : String(error)}`)
         removePrivateDir(made)
       })

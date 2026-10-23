@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { IpcMainInvokeEvent, WebContents } from 'electron'
 import type { Bookmark, BookmarkStore } from '../../browsing/bookmarks.js'
+import type { BackgroundStore, PageBackground } from '../../newtab/background-store.js'
 import { FeaturedStore } from '../../newtab/featured-store.js'
 import type { WindowRegistry } from '../../shell/window-registry.js'
 
@@ -22,11 +23,18 @@ const BOOKMARK: Bookmark = { url: 'https://a.example/', title: 'A', favicon: nul
 
 const featured = new FeaturedStore(null)
 
-function dispatch (frameUrl: string, isTopFrame: boolean, command: unknown = { type: 'getBookmarks' }): unknown {
+let shown: PageBackground = { kind: 'orivon' }
+const changeListeners = new Set<() => void>()
+const background = {
+  current: () => shown,
+  onChange: (listener: () => void) => { changeListeners.add(listener); return () => { changeListeners.delete(listener) } }
+} as unknown as BackgroundStore
+
+function dispatch (frameUrl: string, isTopFrame: boolean, command: unknown = { type: 'getBookmarks' }, contents: Partial<WebContents> = {}): unknown {
   const handler = handlers.get(NEWTAB_COMMAND_CHANNEL)
   if (handler === undefined) throw new Error('registerNewTabIpc did not register a handler')
-  const senderFrame = { url: frameUrl }
-  const sender = { mainFrame: isTopFrame ? senderFrame : {} } as unknown as WebContents
+  const senderFrame = contents.mainFrame ?? { url: frameUrl }
+  const sender = { mainFrame: isTopFrame ? senderFrame : {}, once: () => {}, send: () => {}, isDestroyed: () => false, ...contents } as unknown as WebContents
   const event = { senderFrame, sender } as unknown as IpcMainInvokeEvent
   return handler(event, command)
 }
@@ -35,7 +43,7 @@ describe('registerNewTabIpc -- isFromDashboard', () => {
   const load = vi.fn(async () => {})
   const bookmarks = { getAll: vi.fn(() => [BOOKMARK]), load } as unknown as BookmarkStore
   const windows = {} as WindowRegistry
-  registerNewTabIpc(DASHBOARD_URL, windows, bookmarks, featured)
+  registerNewTabIpc(DASHBOARD_URL, windows, bookmarks, featured, background)
 
   it('answers the dashboard\'s own top frame, once the bookmark file has been read', async () => {
     expect(await dispatch(DASHBOARD_URL, true)).toEqual([BOOKMARK])
@@ -77,5 +85,35 @@ describe('registerNewTabIpc -- the Featured row\'s choices', () => {
 
   it('ignores an id that is no string', async () => {
     expect(await dispatch(DASHBOARD_URL, true, { type: 'hideFeatured', id: 4 })).toMatchObject({ hidden: [] })
+  })
+})
+
+describe('registerNewTabIpc -- the picture behind the page', () => {
+  const ask = { type: 'getBackground' }
+
+  it('answers what the background store says, to the dashboard alone', async () => {
+    shown = { kind: 'custom', mime: 'image/png', bytes: Uint8Array.from([1, 2]) }
+    expect(await dispatch(DASHBOARD_URL, true, ask)).toEqual(shown)
+    expect(await dispatch('https://elsewhere.example/', true, ask)).toBeUndefined()
+    expect(await dispatch(DASHBOARD_URL, false, ask)).toBeUndefined()
+    shown = { kind: 'none' }
+    expect(await dispatch(DASHBOARD_URL, true, ask)).toEqual({ kind: 'none' })
+  })
+
+  it('tells a dashboard that asked, and has not left, when the picture changes', async () => {
+    const send = vi.fn()
+    const stays = { send, isDestroyed: () => false, mainFrame: { url: DASHBOARD_URL } }
+    const left = { send: vi.fn(), isDestroyed: () => false, mainFrame: { url: DASHBOARD_URL } }
+    let closed = false
+    const gone = { send: vi.fn(), isDestroyed: () => closed, mainFrame: { url: DASHBOARD_URL } }
+    await dispatch(DASHBOARD_URL, true, ask, stays as unknown as Partial<WebContents>)
+    await dispatch(DASHBOARD_URL, true, ask, left as unknown as Partial<WebContents>)
+    await dispatch(DASHBOARD_URL, true, ask, gone as unknown as Partial<WebContents>)
+    left.mainFrame.url = 'https://elsewhere.example/'
+    closed = true
+    for (const listener of changeListeners) listener()
+    expect(send).toHaveBeenCalledWith('orivon-newtab:background-changed')
+    expect(left.send).not.toHaveBeenCalled()
+    expect(gone.send).not.toHaveBeenCalled()
   })
 })

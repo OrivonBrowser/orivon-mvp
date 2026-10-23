@@ -3,6 +3,7 @@
 // `SettingsPartDef` here, one per line in name order, and reads its part with
 // `state.part(name)` from its rows.
 import type { OrivonInternal } from '../shared/bridge.js'
+import { NewTabPart } from './new-tab-part.js'
 import { OsPart } from './os-part.js'
 import { PasswordsPart } from './passwords/passwords-part.js'
 import { RoutePart } from './route-part.js'
@@ -23,6 +24,7 @@ export interface SettingsPartDef<P extends SettingsPart = SettingsPart> {
 }
 
 export const SETTINGS_PARTS: readonly SettingsPartDef[] = [
+  { name: 'newTab', create: (bridge, notify) => new NewTabPart(bridge, notify) },
   { name: 'os', create: (bridge, notify) => new OsPart(bridge, notify) },
   { name: 'passwords', create: (bridge, notify) => new PasswordsPart(bridge, notify) },
   { name: 'route', create: (bridge, notify) => new RoutePart(bridge, notify) },

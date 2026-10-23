@@ -40,6 +40,7 @@ import { handleOpenUrl } from './os/open-url.js'
 import { handleOpenFile } from './os/open-file.js'
 import { removeAfterExit, removePrivateDir, sweepPrivateDirs } from './launch/private-session.js'
 import { copyPrivateExtensions } from './launch/private-extensions.js'
+import { copyPrivatePicture } from './launch/private-picture.js'
 import { loadFetchStack } from './startup/fetch-stack.js'
 import { installFocusedContentsGuard } from './focus/focused-contents-guard.js'
 import { runUpdateCheck } from './self-update/update-check-runner.js'
@@ -179,7 +180,7 @@ export function boot (runtime: Runtime): void {
 
   void app.whenReady().then(async () => {
     // A private session this process made for itself gets its extensions now, before any subsystem reads its folder; no window exists to hold up.
-    if (runtime.extensionsFrom !== undefined) await copyPrivateExtensions(runtime.extensionsFrom, runtime.dir)
+    if (runtime.extensionsFrom !== undefined) await Promise.all([copyPrivateExtensions(runtime.extensionsFrom, runtime.dir), copyPrivatePicture(runtime.extensionsFrom, runtime.dir)])
     const ctx = createSubsystemContext(app, runtime.isPrivate, runtime.launch.kind === 'private' ? runtime.launch.tunnel ?? null : null)
     const afterReadyFailures = await runAfterReady(subsystems, ctx)
     report(afterReadyFailures)
@@ -231,6 +232,8 @@ export function boot (runtime: Runtime): void {
     // starred in the first moments is added to the bookmarks on disk, not to an
     // empty tree the file then replaces.
     await Promise.all([shell.settings.load(), shell.searchEngines.load(), shell.shortcutStore.load(), shell.windowState.load(), shell.zoomStore.load(), shell.session.load(), shell.bookmarks.load()])
+    // A picture left over by a run that ended before its setting was saved goes, now that the setting is known.
+    shell.newTabBackground.reconcile().catch((error: unknown) => { console.error('[orivon] the new tab picture could not be reconciled:', error) })
     const seeded = seedClosedStack(shell.closedTabs, shell.session.previous())
     // The windows of a run that crashed stay in the session file while they wait on the stack to be restored.
     if (shell.session.previous()?.clean === false) {
@@ -274,7 +277,7 @@ export function boot (runtime: Runtime): void {
     runShellInstallers(app, shell, ctx, runtime)
     installDownloads(app, { windows: shell.windows, downloads: shell.downloads, defaultSession: session.defaultSession, discardHeldAtQuit: runtime.isPrivate })
     installDownloadsPeek(shell)
-    registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks, shell.featured)
+    registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks, shell.featured, shell.newTabBackground)
     // Looks for a newer release once a day when the person has said it may, from the moment they say so; installs nothing.
     if (!runtime.isPrivate) {
       const stopUpdateChecks = scheduleUpdateChecks({
