@@ -42,6 +42,14 @@ describe('lightClientView', () => {
     expect(view).toMatchObject({ state: 'syncing', summary: 'Behind the chain: the newest block it has verified, 26,047,527, was produced 12 minutes ago.' })
   })
 
+  it("judges the age of its newest block by the servers' time when the computer's clock is behind", () => {
+    const hour = 3_600_000
+    const view = lightClientView(facts({ lightClient: { state: 'synced', block: 26_047_527, at: NOW + hour - 10 * 60_000, clockLeadMs: hour } }), NOW)
+    expect(view).toMatchObject({ state: 'syncing', summary: 'Behind the chain: the newest block it has verified, 26,047,527, was produced 10 minutes ago.' })
+    const fresh = lightClientView(facts({ lightClient: { state: 'synced', block: 1, at: NOW + hour - 2 * 60_000, clockLeadMs: hour } }), NOW)
+    expect(fresh.summary).toContain('produced 2 minutes ago.')
+  })
+
   it('says why it failed and when it tries again', () => {
     const view = lightClientView(facts({ lightClient: { state: 'failed', reason: 'could not fetch bootstrap', retryAt: NOW + 5_000 } }), NOW)
     expect(view.summary).toBe('Failed: could not fetch bootstrap. Trying again in 5 s.')

@@ -140,9 +140,13 @@ function summaryOf (facts: VerifierFacts, now: number): { state: LightClientView
     case 'off': return { state: 'off', summary: 'Not running.' }
     case 'starting': return { state: 'starting', summary: 'Starting.' }
     case 'syncing': return { state: 'syncing', summary: `Catching up with the chain, since ${ago(now - s.since)}.` }
-    case 'synced': return now - s.at > STALE_HEAD_MS
-      ? { state: 'syncing', summary: `Behind the chain: the newest block it has verified, ${s.block.toLocaleString('en-US')}, was produced ${ago(now - s.at)}.` }
-      : { state: 'synced', summary: `Following the chain: block ${s.block.toLocaleString('en-US')}, produced ${ago(now - s.at)}.${s.clockLeadMs === undefined ? '' : ` This computer's clock is ${behind(s.clockLeadMs)} behind the servers', and the light client allows for it. Setting the clock right, in the system's date and time settings, removes the need.`}` }
+    case 'synced': {
+      // The block's time is the chain's; a clock that runs behind is made up for before they are compared.
+      const headAge = now + (s.clockLeadMs ?? 0) - s.at
+      return headAge > STALE_HEAD_MS
+        ? { state: 'syncing', summary: `Behind the chain: the newest block it has verified, ${s.block.toLocaleString('en-US')}, was produced ${ago(headAge)}.` }
+        : { state: 'synced', summary: `Following the chain: block ${s.block.toLocaleString('en-US')}, produced ${ago(headAge)}.${s.clockLeadMs === undefined ? '' : ` This computer's clock is ${behind(s.clockLeadMs)} behind the servers', and the light client allows for it. Setting the clock right, in the system's date and time settings, removes the need.`}` }
+    }
     case 'failed': return { state: 'failed', summary: `Failed: ${s.reason}.${s.retryAt === undefined ? '' : ` Trying again ${s.retryAt <= now ? 'now' : `in ${String(Math.ceil((s.retryAt - now) / 1000))} s`}.`}` }
   }
 }

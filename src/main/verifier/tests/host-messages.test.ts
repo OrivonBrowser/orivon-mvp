@@ -34,3 +34,15 @@ describe('isHostReplyValue, for where a site was served from', () => {
     expect(isHostReplyValue('mount', { ...provenance, servedFrom })).toBe(false)
   })
 })
+
+describe('isFromHost status, for how far the computer\'s clock is behind', () => {
+  const synced = { state: 'synced', block: 1, at: 2 }
+
+  it.each([undefined, 0, 90_000])('accepts a lead of %j', (clockLeadMs) => {
+    expect(isFromHost({ type: 'status', status: { ...synced, ...(clockLeadMs === undefined ? {} : { clockLeadMs }) } })).toBe(true)
+  })
+
+  it.each(['x', -1, Number.NaN, Number.POSITIVE_INFINITY, null])('refuses a lead of %j', (clockLeadMs) => {
+    expect(isFromHost({ type: 'status', status: { ...synced, clockLeadMs } })).toBe(false)
+  })
+})

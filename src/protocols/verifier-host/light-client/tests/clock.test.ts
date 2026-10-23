@@ -1,6 +1,6 @@
 import { runInThisContext } from 'node:vm'
 import { afterEach, describe, expect, it } from 'vitest'
-import { MAX_LEAD_MS, clockJumped, clockLead, heliosClockLead, installHeliosClock, measureClockLead, raiseHeliosClockToBlock, resetHeliosClock, setHeliosClockLead } from '../clock.js'
+import { MAX_LEAD_MS, clockJump, clockLead, heliosClockLead, installHeliosClock, measureClockLead, resetHeliosClock, setHeliosClockLead } from '../clock.js'
 import type { ClockReading } from '../clock.js'
 
 afterEach(() => { resetHeliosClock() })
@@ -40,6 +40,13 @@ describe('clockLead', () => {
     expect(clockLead([reading(60_000), reading(60_300), reading(5 * 60_000), reading(20 * 60_000)])).toBeUndefined()
   })
 
+  it('counts the majority over the servers asked, not the ones that answered', () => {
+    const agreeing = [reading(60_000), reading(60_300)]
+    expect(clockLead(agreeing, 4)).toBeUndefined()
+    expect(clockLead(agreeing, 3)).toBeGreaterThan(59_000)
+    expect(clockLead([...agreeing, reading(59_800)], 4)).toBeGreaterThan(59_000)
+  })
+
   it('is nothing for a lead no mistake in a clock would explain', () => {
     expect(clockLead([reading(MAX_LEAD_MS + 60_000), reading(MAX_LEAD_MS + 60_000)])).toBeUndefined()
     expect(clockLead([reading(14 * 3_600_000), reading(14 * 3_600_000)])).toBeGreaterThan(13 * 3_600_000)
@@ -68,9 +75,10 @@ describe('measureClockLead', () => {
     expect(lead).toBeGreaterThan(29_000)
   })
 
-  it('ignores a server that is down or sends no Date header, and still needs two to answer', async () => {
-    const some = answering({ 'https://a.example': 30_000, 'https://b.example': 'no-header', 'https://c.example': 'down', 'https://d.example': 30_000 })
-    expect(await measureClockLead(['https://a.example', 'https://b.example', 'https://c.example', 'https://d.example'], some, () => at)).toBeGreaterThan(29_000)
+  it('ignores a server that is down or sends no Date header, and needs a majority of those asked to answer', async () => {
+    const some = answering({ 'https://a.example': 30_000, 'https://b.example': 'no-header', 'https://c.example': 'down', 'https://d.example': 30_000, 'https://e.example': 30_000 })
+    expect(await measureClockLead(['https://a.example', 'https://b.example', 'https://d.example', 'https://e.example'], some, () => at)).toBeGreaterThan(29_000)
+    expect(await measureClockLead(['https://a.example', 'https://b.example', 'https://c.example', 'https://d.example'], some, () => at)).toBeUndefined()
     expect(await measureClockLead(['https://a.example', 'https://b.example', 'https://c.example'], some, () => at)).toBeUndefined()
     expect(await measureClockLead(['https://a.example', 'https://c.example'], some, () => at)).toBeUndefined()
   })
@@ -135,43 +143,38 @@ describe('the clock lent to Helios', () => {
     setHeliosClockLead(MAX_LEAD_MS * 3)
     expect(heliosClockLead()).toBe(MAX_LEAD_MS)
   })
-
-  it('is raised to a block the chain proved, and never lowered by one', () => {
-    installHeliosClock()
-    raiseHeliosClockToBlock(Date.now() + 90_000)
-    expect(heliosClockLead()).toBeGreaterThan(89_000)
-    const raised = heliosClockLead()
-    raiseHeliosClockToBlock(Date.now() + 20_000)
-    raiseHeliosClockToBlock(Date.now() - 20_000)
-    expect(heliosClockLead()).toBe(raised)
-  })
-
-  it('is not raised by a block a moment ahead, which a right clock sees too', () => {
-    raiseHeliosClockToBlock(Date.now() + 800)
-    expect(heliosClockLead()).toBe(0)
-  })
-
-  it('is not raised to a block years ahead, which no clock mistake explains', () => {
-    raiseHeliosClockToBlock(Date.now() + 400 * 86_400_000)
-    expect(heliosClockLead()).toBe(0)
-  })
 })
 
-describe('clockJumped', () => {
-  it('is false on the first call and while the clocks move together', () => {
-    expect(clockJumped()).toBe(false)
-    expect(clockJumped()).toBe(false)
+describe('clockJump', () => {
+  it('is 0 on the first call and while the clocks move together', () => {
+    expect(clockJump()).toBe(0)
+    expect(clockJump()).toBe(0)
   })
 
-  it('is true when the system clock is set by more than a few seconds', () => {
+  it('is positive when the system clock is set forward by more than a few seconds, once', () => {
     installHeliosClock()
-    expect(clockJumped()).toBe(false)
+    expect(clockJump()).toBe(0)
     const real = Date.now
     try {
       Date.now = () => real() + 60_000
       installHeliosClock()
-      expect(clockJumped()).toBe(true)
-      expect(clockJumped()).toBe(false)
+      expect(clockJump()).toBeGreaterThan(55_000)
+      expect(clockJump()).toBe(0)
+    } finally {
+      resetHeliosClock()
+      Date.now = real
+    }
+  })
+
+  it('is negative when the system clock is set back', () => {
+    installHeliosClock()
+    expect(clockJump()).toBe(0)
+    const real = Date.now
+    try {
+      Date.now = () => real() - 60_000
+      installHeliosClock()
+      expect(clockJump()).toBeLessThan(-55_000)
+      expect(clockJump()).toBe(0)
     } finally {
       resetHeliosClock()
       Date.now = real

@@ -28,11 +28,13 @@ export interface ClockReading {
 /**
  * How far the local clock is behind the servers, in ms: 0 when they say it is
  * not, `undefined` when they cannot be taken as one answer (too few, or no
- * majority of them agreeing within 30 s, or a lead no mistake in a clock
- * would explain). The middle of the largest group that agrees, never one
- * server's word, and a server that is off by itself is left out.
+ * majority of the `asked` servers agreeing within 30 s, or a lead no mistake
+ * in a clock would explain). The middle of the largest group that agrees,
+ * never one server's word, and a server that is off by itself is left out.
+ * `asked` counts the servers that were asked, not only those that answered,
+ * so a few answers from servers of one operator cannot decide.
  */
-export function clockLead (readings: readonly ClockReading[]): number | undefined {
+export function clockLead (readings: readonly ClockReading[], asked: number = readings.length): number | undefined {
   if (readings.length < 2) return undefined
   // A `Date` header counts whole seconds, so the server's real time is half a second past it; the answer was made halfway through the round trip.
   const leads = readings.map((r) => r.serverMs + 500 - (r.sentAt + r.receivedAt) / 2).sort((a, b) => a - b)
@@ -41,7 +43,7 @@ export function clockLead (readings: readonly ClockReading[]): number | undefine
     const inside = leads.slice(from).filter((lead) => lead - leads[from]! <= MAX_SPREAD_MS)
     if (inside.length > group.length) group = inside
   }
-  if (group.length < 2 || group.length * 2 <= leads.length) return undefined
+  if (group.length < 2 || group.length * 2 <= asked) return undefined
   const median = group.length % 2 === 1 ? group[(group.length - 1) / 2]! : (group[group.length / 2 - 1]! + group[group.length / 2]!) / 2
   if (median > MAX_LEAD_MS) return undefined
   return median < MIN_LEAD_MS ? 0 : Math.round(median)
@@ -66,7 +68,7 @@ async function readClock (url: string, fetch: WebFetch, now: () => number): Prom
 export async function measureClockLead (servers: readonly string[], fetch: WebFetch, now: () => number = Date.now): Promise<number | undefined> {
   const origins = [...new Set(servers.map((server) => new URL(server).origin))]
   const readings = await Promise.all(origins.map(async (origin) => await readClock(`${origin}/`, fetch, now)))
-  return clockLead(readings.filter((reading): reading is ClockReading => reading !== undefined))
+  return clockLead(readings.filter((reading): reading is ClockReading => reading !== undefined), origins.length)
 }
 
 /** Where Helios's own frames show in a stack: its WebAssembly glue reads the time from there. */
@@ -89,12 +91,6 @@ export function heliosClockLead (): number {
 /** A lead is set, never added to: the next measurement replaces it. A negative or non-finite one is ignored. */
 export function setHeliosClockLead (ms: number): void {
   lead = Number.isFinite(ms) && ms > 0 ? Math.min(Math.round(ms), MAX_LEAD_MS) : 0
-}
-
-/** Raises the lead so Helios's clock is at least at a block the chain proved (`blockMs`): a verified header is a floor on the real time. Never lowers it. */
-export function raiseHeliosClockToBlock (blockMs: number): void {
-  const needed = blockMs - trueNow()
-  if (needed >= MIN_LEAD_MS && needed > lead && needed <= MAX_LEAD_MS) lead = Math.round(needed)
 }
 
 /**
@@ -124,23 +120,24 @@ export function installHeliosClock (): void {
   Date.now = wrapper
 }
 
-/** The wall clock and the monotonic one, as `clockJumped` last saw them. */
+/** The wall clock and the monotonic one, as `clockJump` last saw them. */
 let seenWall = 0
 let seenMonotonic = 0
 const JUMP_MS = 5_000
 
 /**
- * Whether the system clock was set since the last call (the person fixed it,
- * or the computer woke up and the network time arrived): the wall clock moved
- * by more than the monotonic one did. A lead measured before that is wrong.
+ * How far the system clock was set since the last call, in ms: the wall clock
+ * moved by more than the monotonic one did. Negative when it was set back,
+ * positive when it was set forward or the computer woke up (the monotonic
+ * clock stops while it sleeps). 0 on the first call and within a few seconds.
  */
-export function clockJumped (): boolean {
+export function clockJump (): number {
   const wall = trueNow()
   const monotonic = performance.now()
-  const jumped = seenWall !== 0 && Math.abs((wall - seenWall) - (monotonic - seenMonotonic)) > JUMP_MS
+  const jump = seenWall === 0 ? 0 : (wall - seenWall) - (monotonic - seenMonotonic)
   seenWall = wall
   seenMonotonic = monotonic
-  return jumped
+  return Math.abs(jump) > JUMP_MS ? Math.round(jump) : 0
 }
 
 /** Test seam: back to a process nothing has touched. */
