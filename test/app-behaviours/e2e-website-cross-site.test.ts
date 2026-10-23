@@ -2,12 +2,13 @@
 // link back to it, a frame it sandboxes runs the page it serves with an origin of its own, and what it keeps in
 // IndexedDB is there after a restart. Two loopback sites, two origins, no manifest anywhere: ordinary websites
 // in the shared session. A wiki whose pen hands its pages to an editor on another name is the shape that needs all
-// three (DecentraWiki, in orivon-ports).
+// three (DecentraWiki, in orivon-ports). When the other site is an app Orivon holds, the popup is a tab of the
+// app with no link back, and what the website hands over has to travel in the address it opens.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/app-behaviours/e2e-website-cross-site.test.ts
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
-import { startAppServer, type AppServer } from './app-behaviour-support.js'
+import { appManifest, grantApp, startAppServer, type AppServer } from './app-behaviour-support.js'
 import { runPhase } from '../support/e2e-helpers.js'
 import { assertNoElectronSurvivors, closeElectron, profileDirOf } from '../support/launch-electron.mjs'
 import { launchShell, QA_TEST_TIMEOUT_MS, visit } from '../support/qa-helpers.js'
@@ -92,8 +93,13 @@ open.onsuccess = () => {
 }
 `
 
+/** The app's page: what address it was opened at, and whether it runs as the app. */
+const ARRIVAL_SCRIPT = `window.arrived = { hash: location.hash, hadOpener: window.opener !== null, orivon: typeof window.orivon }
+`
+
 let opener: AppServer
 let other: AppServer
+let appSite: AppServer
 beforeAll(async () => {
   opener = await startAppServer({
     '/': { type: 'text/html; charset=utf-8', body: '<!doctype html><title>opener</title><body><button id="open">open</button><script src="/opener.js"></script>' },
@@ -108,10 +114,15 @@ beforeAll(async () => {
     '/receiver': { type: 'text/html; charset=utf-8', body: '<!doctype html><title>receiver</title><body>receiver</body><script src="/receiver.js"></script>' },
     '/receiver.js': { type: 'text/javascript', body: RECEIVER_SCRIPT }
   })
+  appSite = await startAppServer({
+    '/receive': { type: 'text/html; charset=utf-8', body: '<!doctype html><title>app</title><body>app</body><script src="/arrival.js"></script>' },
+    '/arrival.js': { type: 'text/javascript', body: ARRIVAL_SCRIPT }
+  })
 })
 afterAll(async () => {
   await opener.close()
   await other.close()
+  await appSite.close()
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
@@ -188,3 +199,23 @@ it('[app:website-popup-to-another-site-keeps-opener] [app:website-sandboxed-fram
     if (live !== undefined) await closeElectron(live)
   }
 }, QA_TEST_TIMEOUT_MS * 3)
+
+it('[app:website-popup-to-app-keeps-the-address] a website\'s popup of an app\'s page opens the app at the whole address the website named', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    await runPhase('a website opens a page of an app', async (check) => {
+      await grantApp(app, appSite.origin, appManifest('popup-target', { net: { tcp: { connect: ['127.0.0.1:9'] } } }), [{ capability: 'tcp.connect', patterns: ['127.0.0.1:9'] }])
+      // What a pen sends: a nonce and a compressed wiki, in the fragment, far longer than a short link.
+      const fragment = `#/receive/${'n'.repeat(22)}/${'w'.repeat(60_000)}`
+      const page = await visit(app, chrome, `${opener.origin}/`)
+      await page.evaluate((target) => { (document.getElementById('open') as HTMLElement).dataset['target'] = target }, `${appSite.origin}/receive${fragment}`)
+      await page.click('#open')
+      const view = await found(() => (tabViews(app, chrome) as Page[]).find((v) => v.url().startsWith(`${appSite.origin}/receive`)))
+      const arrived = await found(async () => await view.evaluate(() => (window as unknown as { arrived: { hash: string, hadOpener: boolean, orivon: string } }).arrived).catch(() => null))
+      check('[app:website-popup-to-app-keeps-the-address] the app\'s tab opened at the whole address, fragment included', arrived.hash === fragment, `${String(arrived.hash.length)} characters`)
+      check('the tab runs as the app, and has no link back to the website', arrived.orivon === 'object' && !arrived.hadOpener, JSON.stringify({ orivon: arrived.orivon, hadOpener: arrived.hadOpener }))
+    })
+  } finally {
+    await closeElectron(app)
+  }
+}, QA_TEST_TIMEOUT_MS)
