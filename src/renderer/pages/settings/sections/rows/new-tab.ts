@@ -30,6 +30,7 @@ export const newTabRows: readonly Row[] = [
     label: 'Your picture',
     help: 'Choose another picture: a PNG, JPEG, WebP, GIF or AVIF image of up to 20 MB.',
     keywords: ['wallpaper', 'background', 'picture', 'image', 'photo', 'new tab', 'change', 'choose'],
+    group: 'New tab',
     visible: (state) => state.value('appearance.newTabBackground') === 'custom',
     control: { type: 'action', label: 'Choose picture…', run: async (state) => { await part(state).choose() } }
   }
