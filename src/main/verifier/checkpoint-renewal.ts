@@ -20,6 +20,8 @@ export interface RenewalDeps {
   readonly switchedOff: () => boolean
   /** What the view says may have changed. */
   readonly changed: () => void
+  /** Puts the host to sleep and starts it again, so that its configuration is built with the checkpoint now chosen. */
+  readonly restartHost: () => void
 }
 
 export class CheckpointRenewal {
@@ -100,16 +102,17 @@ export class CheckpointRenewal {
 
   /**
    * The light client reported that the beacon server has no bootstrap for the checkpoint it started from: that root is not
-   * chosen again, and a fresh one is fetched at once (within the wait after a failed attempt, that failure stands).
-   * Resolves to whether a checkpoint the light client can start from is now at hand, so that the caller restarts the host with it;
-   * undefined when this report changes nothing, because that root was already given up or nothing was started with one.
-   * An older checkpoint still at hand counts: the host restarts with it.
+   * chosen again, a fresh checkpoint is fetched at once (within the wait after a failed attempt, that failure stands), and
+   * the host restarts with whichever checkpoint can now start it, an older one still at hand included. Nothing happens
+   * when that root was already given up or nothing was started with one. Never rejects.
    */
-  recoverUnserved (): Promise<boolean> | undefined {
+  recoverUnserved (): void {
     const root = this.startedWith
-    if (root === undefined || this.unserved.has(root)) return undefined
+    if (root === undefined || this.unserved.has(root)) return
     this.unserved.add(root)
-    return (this.start() ?? Promise.resolve()).then(() => !this.deps.switchedOff() && this.choose().ok)
+    void (this.start() ?? Promise.resolve())
+      .then(() => { if (!this.deps.switchedOff() && this.choose().ok) this.deps.restartHost() })
+      .catch((error: unknown) => { console.error('[verifier] could not recover from a checkpoint the beacon server will not bootstrap:', error) })
   }
 
   /**

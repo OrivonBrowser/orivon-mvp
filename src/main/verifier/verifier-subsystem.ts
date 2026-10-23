@@ -163,17 +163,6 @@ export const lightClientForcedOff = (): boolean => process.env['ORIVON_ETH_LIGHT
 
 const lightClientSwitchedOff = (): boolean => lightClientForcedOff() || !enabledByPerson()
 
-/** The beacon server has no bootstrap for the checkpoint the light client started from: another is fetched, and the host restarts with it instead of retrying the same one. */
-function recoverCheckpoint (): void {
-  const recovered = renewal.recoverUnserved()
-  if (recovered === undefined) return
-  void recovered.then((usable) => {
-    if (!usable) return
-    idleHost()
-    startHost()
-  })
-}
-
 function changed (): void {
   for (const listener of listeners) listener()
 }
@@ -211,7 +200,7 @@ function verifierStore (): VerifierStore {
   return store
 }
 
-const renewal = new CheckpointRenewal({ store: verifierStore, switchedOff: () => lightClientSwitchedOff(), changed: () => { changed() } })
+const renewal = new CheckpointRenewal({ store: verifierStore, switchedOff: () => lightClientSwitchedOff(), changed: () => { changed() }, restartHost: () => { idleHost(); startHost() } })
 
 /** The Bee-API origins Swarm reads from: the node Orivon runs, unless a test build names its own. */
 function swarmEndpoints (seam: EthTestSeam | undefined): readonly string[] {
@@ -430,7 +419,7 @@ export const verifierSubsystem: Subsystem = {
           lightClient = value
           const line = logLightClient(value)
           if (line !== undefined) console[line.level](`[verifier] ${line.text}`)
-          if (value.state === 'failed' && bootstrapNotFound(value.reason)) recoverCheckpoint()
+          if (value.state === 'failed' && bootstrapNotFound(value.reason)) renewal.recoverUnserved()
           changed()
         },
         checkpoint: (root, timestamp) => {
