@@ -50,9 +50,8 @@ describe('the constructor', () => {
     expect(() => new Database(':memory:', { nativeBinding: 5 })).toThrow(new TypeError('Expected the "nativeBinding" option to be a string or addon object'))
   })
 
-  it('accepts timeout and nativeBinding, and refuses a Buffer by name', () => {
+  it('accepts timeout and nativeBinding', () => {
     expect(new Database(':memory:', { timeout: 100, nativeBinding: '/elsewhere/better_sqlite3.node' }).open).toBe(true)
-    expect(() => new Database(Buffer.from('x') as never)).toThrow(expect.objectContaining({ name: 'OrivonShimError', reason: 'not-built' }))
   })
 
   it('calls verbose with each statement\'s SQL, parameters filled in', () => {
@@ -267,7 +266,7 @@ describe('transaction', () => {
 })
 
 describe('members refused by name', () => {
-  it.each(['aggregate', 'table', 'serialize', 'loadExtension'] as const)('db.%s', (member) => {
+  it.each(['aggregate', 'table', 'loadExtension'] as const)('db.%s', (member) => {
     const db = new Database(':memory:') as unknown as Record<string, () => unknown>
     let caught: unknown
     try { (db[member] as () => unknown)() } catch (error) { caught = error }

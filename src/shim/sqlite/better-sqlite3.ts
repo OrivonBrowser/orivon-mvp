@@ -3,8 +3,9 @@
 // build points that name here (README.md); the `sqlite/ready.ts` rule of
 // `node:sqlite` applies: the engine must have loaded before `new Database()`.
 
+import { Buffer } from 'buffer'
 import { refuseShim } from '../errors.js'
-import { DatabaseSync, registerScalarFunction } from './database.js'
+import { DatabaseSync, exportDatabase, importDatabase, registerScalarFunction } from './database.js'
 import type { FunctionValue, ScalarFunction } from './functions.js'
 import { backupDatabase, type BackupInfo } from './better-sqlite3-backup.js'
 import { orivonSqliteFiles } from './files.js'
@@ -96,11 +97,11 @@ class DatabaseImpl {
   readonly #host: StatementHost
   readonly #defaults = { safeIntegers: false }
 
-  constructor (filenameGiven?: string, options?: DatabaseOptions) {
-    if (filenameGiven !== undefined && filenameGiven !== null && typeof filenameGiven !== 'string') {
-      if (ArrayBuffer.isView(filenameGiven)) unbuilt('constructor', 'opening a database from a Buffer needs serialize and deserialize, which are not built')
-      throw new TypeError('Expected first argument to be a string')
-    }
+  constructor (given?: string | Uint8Array, options?: DatabaseOptions) {
+    // A Buffer is the image of a database: it opens as a private database in memory, named ':memory:'.
+    const image = given instanceof Uint8Array ? given : undefined
+    const filenameGiven = image === undefined ? given : ':memory:'
+    if (filenameGiven !== undefined && filenameGiven !== null && typeof filenameGiven !== 'string') throw new TypeError('Expected first argument to be a string')
     const settings: DatabaseOptions = options ?? {}
     if (typeof settings !== 'object') throw new TypeError('Expected second argument to be an options object')
     if ('readOnly' in settings) throw new TypeError('Misspelled option "readOnly" should be "readonly"')
@@ -111,7 +112,7 @@ class DatabaseImpl {
     const fileMustExist = option(settings, 'fileMustExist')
     const timeout = settings.timeout ?? 5000
     const verbose = settings.verbose ?? null
-    if (readonly && anonymous) throw new TypeError('In-memory/temporary databases cannot be readonly')
+    if (readonly && anonymous && image === undefined) throw new TypeError('In-memory/temporary databases cannot be readonly')
     if (!Number.isInteger(timeout) || timeout < 0) throw new TypeError('Expected the "timeout" option to be a positive integer')
     if (timeout > MAX_TIMEOUT) throw new RangeError('Option "timeout" cannot be greater than 2147483647')
     if (verbose !== null && typeof verbose !== 'function') throw new TypeError('Expected the "verbose" option to be a function')
@@ -123,7 +124,17 @@ class DatabaseImpl {
     this.memory = anonymous
     this.readonly = readonly
     this.#verbose = verbose
-    this.#inner = guarded(() => new DatabaseSync(filename, { readOnly: readonly, timeout }))
+    // A database loaded from bytes is read-only by the engine's own flag, not by opening its memory read-only.
+    const inner = guarded(() => new DatabaseSync(filename, { readOnly: readonly && image === undefined, timeout }))
+    if (image !== undefined) {
+      try {
+        guarded(() => { importDatabase(inner, image, readonly) })
+      } catch (error) {
+        inner.close()
+        throw error
+      }
+    }
+    this.#inner = inner
     this.#host = {
       database: this,
       isOpen: () => this.#inner.isOpen,
@@ -243,20 +254,30 @@ class DatabaseImpl {
   backup (destination: string, options?: { attached?: string, progress?: (info: BackupInfo) => unknown }): Promise<BackupInfo> {
     return backupDatabase(this.#inner, destination, options)
   }
-  serialize (): never { return unbuilt('serialize', 'serializing a database is not built') }
+  serialize (options?: { attached?: string }): Buffer {
+    if (options !== undefined && options !== null && typeof options !== 'object') throw new TypeError('Expected first argument to be an options object')
+    const attached = options !== undefined && options !== null && 'attached' in options ? options.attached : 'main'
+    if (typeof attached !== 'string') throw new TypeError('Expected the "attached" option to be a string')
+    if (attached === '') throw new TypeError('The "attached" option cannot be an empty string')
+    if (!this.#inner.isOpen) throw notOpen()
+    const known = guarded(() => this.#inner.prepare('PRAGMA database_list').all()) as Array<{ name: string }>
+    if (!known.some(({ name }) => name === attached)) throw new SqliteError(`unknown database ${attached}`, 'SQLITE_ERROR')
+    const bytes = guarded(() => exportDatabase(this.#inner, attached))
+    return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  }
   loadExtension (): never { return unbuilt('loadExtension', 'a native extension cannot be loaded into WebAssembly') }
 }
 
 export interface DatabaseConstructor {
-  new (filename?: string, options?: DatabaseOptions): DatabaseImpl
-  (filename?: string, options?: DatabaseOptions): DatabaseImpl
+  new (filename?: string | Uint8Array, options?: DatabaseOptions): DatabaseImpl
+  (filename?: string | Uint8Array, options?: DatabaseOptions): DatabaseImpl
   readonly prototype: DatabaseImpl
   readonly SqliteError: typeof SqliteError
 }
 
 /** `better-sqlite3` exports a function that is also a constructor: a proxy answers a plain call with `new`, and keeps `instanceof` and `extends` working. */
 export const Database = new Proxy(DatabaseImpl, {
-  apply: (target, _this, args: [string?, DatabaseOptions?]) => Reflect.construct(target, args) as DatabaseImpl
+  apply: (target, _this, args: [(string | Uint8Array)?, DatabaseOptions?]) => Reflect.construct(target, args) as DatabaseImpl
 }) as unknown as DatabaseConstructor
 export type Database = DatabaseImpl
 
