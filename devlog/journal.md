@@ -42,6 +42,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Embedded .eth.limo content (images, scripts, fetches) now loads from the .eth name, checked; frames stay on the gateway.
 - Attila and Explore now cover Orivon's own sites; a .eth.limo address is judged as its .eth name, lifting the website to Level 4.
 - DecentraWiki: TiddlyWiki wikis anyone can edit; a pen opens an editor that publishes them on IPFS, checking each CID itself; judged Level 4.
+- TorSocks 0.1.4 publishes pictures, files, folders and websites; an onion that failed now loads once "Your proxy" is chosen for it.
 
 ### In my head
 
