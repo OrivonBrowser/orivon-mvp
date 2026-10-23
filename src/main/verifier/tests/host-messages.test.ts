@@ -46,3 +46,15 @@ describe('isFromHost status, for how far the computer\'s clock is behind', () =>
     expect(isFromHost({ type: 'status', status: { ...synced, clockLeadMs } })).toBe(false)
   })
 })
+
+describe('isFromHost status, for a failure caused by a missing bootstrap', () => {
+  const failed = { state: 'failed', reason: 'x', retryAt: 1 }
+
+  it.each([undefined, true])('accepts bootstrapMissing %j', (bootstrapMissing) => {
+    expect(isFromHost({ type: 'status', status: { ...failed, ...(bootstrapMissing === undefined ? {} : { bootstrapMissing }) } })).toBe(true)
+  })
+
+  it.each([false, 'yes', 1, null])('refuses bootstrapMissing %j', (bootstrapMissing) => {
+    expect(isFromHost({ type: 'status', status: { ...failed, bootstrapMissing } })).toBe(false)
+  })
+})

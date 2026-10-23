@@ -62,6 +62,24 @@ describe('VerifierStore', () => {
     expect(s.checkpoint()).toEqual({ root: root('a'), timestamp: 1_700_000_000 })
   })
 
+  it('lets a fetched checkpoint replace a stored one the beacon server has no bootstrap for, even when it is not newer', () => {
+    const { store: s, dir } = store()
+    const servers = ['https://a.example']
+    s.saveCheckpoint({ root: root('a'), timestamp: 1_700_000_000 }, NOW)
+    s.saveFetchedCheckpoint({ root: root('b'), timestamp: 1_699_999_000 }, servers, NOW, new Set([root('z')]))
+    expect(s.checkpoint()).toEqual({ root: root('a'), timestamp: 1_700_000_000 })
+    s.saveFetchedCheckpoint({ root: root('b'), timestamp: 1_699_999_000 }, servers, NOW, new Set([root('a')]))
+    expect(new VerifierStore(dir).checkpoint()).toEqual({ root: root('b'), timestamp: 1_699_999_000, fetchedFrom: servers })
+  })
+
+  it('still refuses a malformed or future checkpoint when it would replace one with no bootstrap', () => {
+    const { store: s } = store()
+    s.saveCheckpoint({ root: root('a'), timestamp: 1_700_000_000 }, NOW)
+    s.saveFetchedCheckpoint({ root: root('c'), timestamp: NOW + 24 * 3600 }, ['https://a.example'], NOW, new Set([root('a')]))
+    s.saveFetchedCheckpoint({ root: 'nope', timestamp: 1_699_999_000 }, ['https://a.example'], NOW, new Set([root('a')]))
+    expect(s.checkpoint()).toEqual({ root: root('a'), timestamp: 1_700_000_000 })
+  })
+
   it('refuses to save a malformed checkpoint, or one dated in the future', () => {
     const { store: s } = store()
     s.saveCheckpoint({ root: 'nope', timestamp: 1_700_000_000 }, NOW)
