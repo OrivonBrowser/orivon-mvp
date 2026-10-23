@@ -14,6 +14,10 @@ Each section below lists what that release carried; `[Unreleased]` is what has l
 
 - **`.eth.limo` addresses inside a page load as `.eth`**: an image, script, stylesheet, font, media file or request a page loads from a `<name>.eth.limo` or `.eth.link` address now comes from the `.eth` name, checked on this computer, and a request from another origin can still read it. Frames keep loading through the gateway, since a `.eth` site refuses to be framed by another site; Settings > Web3 turns it off.
 
+### Added
+
+- **Node shim: `crypto.randomInt`, `fs.mkdtemp`, `fs.cp` and `fs.copyFile`**: `randomInt` draws by rejection sampling over the platform's random values, in both forms; `copyFile`, `cp` (with `recursive`, `force`, `errorOnExist` and `filter`) and `mkdtemp` work on the app's own files and on a folder the person picked, in the callback and promise forms, with Node's errors.
+
 ### Changed for apps
 
 What an app that runs on Orivon must now do differently. One line per behaviour, naming its id from
@@ -22,6 +26,8 @@ now do and which ports to recheck. CI requires a line here for a row of that pag
 public surface of `src/contracts/` (named `contracts/<file>`).
 
 - **`file-handle-streams`**: new row. A page's `FileHandle`, from `orivon.fs.open`, a pick or a folder, now has the `readable()` and `writable()` its contract names; they were missing, so calling one threw. Each chunk is an ordinary positional `read` or `write`, counted and refused as one. Recheck: TorSocks.
+- **`node-random-int-in-range`** and **`node-fs-copies-files-and-trees-and-makes-temp-folders`**: new rows. `crypto.randomInt`, `fs.copyFile`, `fs.cp` and `fs.mkdtemp` now work (they threw "not implemented"); `cp` does not set file times or follow links, and a copy reads the whole file. Recheck: any port that caught the refusal.
+- **`electron-dialog-paths-read-and-write-the-pick`**: also covers `copyFile`, `cp` and `mkdtemp` on a picked folder and between it and the app's files. Nothing for apps to change.
 
 ### Changed
 

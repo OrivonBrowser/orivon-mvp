@@ -216,7 +216,7 @@ export function doMkdtempSync (prefix: string): string {
   throw Object.assign(new Error('EEXIST: file already exists, mkdtemp'), { code: 'EEXIST' })
 }
 
-function randomSuffix (): string {
+export function randomSuffix (): string {
   const bytes = new Uint8Array(12)
   globalThis.crypto.getRandomValues(bytes)
   let out = ''
