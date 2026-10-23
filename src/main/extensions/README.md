@@ -33,14 +33,17 @@ serves a manifest `sandbox.pages` document Chrome's own CSP `sandbox` directive,
 gets an opaque origin rather than only withholding `chrome.*` (UPSTREAM.md patch 40); and `chrome.sidePanel`
 (`side-panel-options.ts`, `side-panel-gesture.ts`, `side-panel-api.ts`, `side-panel-driver.ts`,
 `side-panel-runner.ts`, `side-panel-pages.ts`, `side-panel-behavior-file.ts`): an extension's own page shown in a
-window's side panel (`../side-panel/`), opened by its toolbar button, its key or its `open()` call; and
+window's side panel (`../side-panel/`), opened by its toolbar button, its key or its `open()` call, the last after
+input on the extension's own surfaces or a click or key in a page it reaches (`side-panel-gesture.ts`); the windows an
+extension opens and moves (`extension-window-geometry.ts`: the `popup` type and where a window may sit, applied by
+`extension-host-impl.ts`); and
 the camera and microphone for an extension's own page: the rules (`extension-media.ts`), the asker that joins them to the
 permission gate (`extension-media-asker.ts`: the window a page shows in, the loaded extensions, Settings' defaults), the
 answer kept per extension in `extension-prefs.ts`'s `media`, and the details page's section (`details-media.ts`).
 
 **What it depends on.** `electron` (every file except `side-panel-api.ts`, `side-panel-behavior-file.ts`,
 `side-panel-driver.ts`, `side-panel-gesture.ts`, `side-panel-options.ts`, `side-panel-pages.ts` (types only), `action-pins-runner.ts`, `action-pins.ts`, `base-manifest-source.ts`, `crx.ts`, `crx3-format.ts`,
-`extension-popup-geometry.ts`, `profile-demand.ts`,
+`extension-popup-geometry.ts`, `extension-window-geometry.ts`, `profile-demand.ts`,
 `details-media.ts`, `details-optional.ts`, `details-private-windows.ts`, `dnr-action-options.ts`, `extension-data.ts`, `dnr-api.ts`, `dnr-match-log.ts`,
 `effective-manifest.ts`, `electron-chrome-extensions-lib.d.ts`, `extension-commands.ts`,
 `extension-host-access.ts`, `extension-known-permissions.ts`, `extension-permission-check.ts`,

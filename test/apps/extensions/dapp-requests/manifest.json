@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Orivon E2E Dapp Requests",
+  "version": "1.0.0",
+  "description": "Fixture extension for test/extensions/e2e-extensions-dapp-requests.test.ts: a wallet's way of asking the person to approve a page's request, side panel first, then one popup window it reuses.",
+  "action": { "default_icon": "icon.png" },
+  "side_panel": { "default_path": "panel.html" },
+  "background": { "service_worker": "background.js" },
+  "permissions": ["sidePanel", "tabs"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "content_scripts": [
+    { "matches": ["http://127.0.0.1/*"], "js": ["content.js"], "run_at": "document_idle" }
+  ]
+}

@@ -4,11 +4,14 @@ import type { ShellBridge } from '../extension-host-impl.js'
 
 const ID = 'abcdefghijklmnopabcdefghijklmnop'
 
-vi.mock('electron', () => ({ session: { defaultSession: { extensions: { getExtension: vi.fn((id: string) => id === 'abcdefghijklmnopabcdefghijklmnop' ? {} : null) } } } }))
+const SCREEN = { x: 0, y: 0, width: 1920, height: 1080 }
+vi.mock('electron', () => ({ screen: { getAllDisplays: () => [{ bounds: SCREEN, workArea: SCREEN }] }, session: { defaultSession: { extensions: { getExtension: vi.fn((id: string) => id === 'abcdefghijklmnopabcdefghijklmnop' ? {} : null) } } } }))
 vi.mock('../../shell/window.js', () => ({ createShellWindow: vi.fn() }))
+vi.mock('../../shell/window-frame.js', () => ({ MIN_WINDOW_WIDTH: 500, MIN_WINDOW_HEIGHT: 400 }))
 
 const { buildHostImpl, extensionJustActivatedTab, EXTENSION_FOCUS_HANDOVER_MS } = await import('../extension-host-impl.js')
 const { isExtensionOpened } = await import('../extension-opened-pages.js')
+const { createShellWindow } = await import('../../shell/window.js')
 
 function bridgeWith (record: Record<string, unknown>): ShellBridge {
   const tabs = { faviconFor: () => null, record: () => record }
@@ -148,5 +151,88 @@ describe('buildHostImpl: side panel pages', () => {
     host.menuItemClicked?.(ID, {} as WebContents)
     expect(sidePanelGestures.available(ID)).toBe(true)
     sidePanelGestures.clear(ID)
+  })
+})
+
+describe('buildHostImpl: windows an extension opens and changes', () => {
+  const bridge = { ctx: {}, services: {} } as unknown as ShellBridge
+
+  /** The window `createWindow` makes for `details`, handed the way createShellWindow hands it to `created`. */
+  async function create (details: Record<string, unknown>) {
+    const win = { id: 11, isDestroyed: () => false }
+    vi.mocked(createShellWindow).mockImplementationOnce(((_ctx: unknown, _services: unknown, options: { created?: (w: unknown) => void }) => {
+      options.created?.(win)
+      return win
+    }) as never)
+    const host = buildHostImpl(() => bridge)
+    await host.createWindow?.(details as never)
+    return { host, win, options: vi.mocked(createShellWindow).mock.calls.at(-1)?.[2] as { place?: object, inactive?: boolean } }
+  }
+
+  it('reports a window created as a popup as one before its first tab exists, and any other as normal', async () => {
+    const popup = await create({ type: 'popup', width: 400, height: 620, left: 100, top: 50 })
+    expect(popup.host.windowType?.(popup.win as never)).toBe('popup')
+    const plain = await create({})
+    expect(plain.host.windowType?.(plain.win as never)).toBe('normal')
+    expect(plain.host.windowType?.({} as never)).toBe('normal')
+  })
+
+  it('opens at the size and place asked, held inside the display and above the smallest window', async () => {
+    expect((await create({ type: 'popup', width: 400, height: 620, left: 100, top: 50 })).options.place).toEqual({ x: 100, y: 50, width: 500, height: 620 })
+    expect((await create({ width: 9999, height: 9999, left: 5000, top: 5000 })).options.place).toEqual({ x: 0, y: 0, width: 1920, height: 1080 })
+  })
+
+  it('opens behind the others for focused: false, and in front otherwise', async () => {
+    expect((await create({ focused: false })).options.inactive).toBe(true)
+    expect((await create({})).options.inactive).toBeUndefined()
+  })
+
+  describe('windows.update', () => {
+    function win (over: Record<string, unknown> = {}) {
+      const bounds = { x: 200, y: 100, width: 700, height: 800 }
+      return {
+        isDestroyed: () => false, isMaximized: () => false, isFullScreen: () => false, isMinimized: () => false,
+        getBounds: () => ({ ...bounds }), setBounds: vi.fn(), show: vi.fn(), focus: vi.fn(), restore: vi.fn(), flashFrame: vi.fn(), ...over
+      }
+    }
+    const host = buildHostImpl(() => undefined)
+
+    it('moves and resizes inside the display, and leaves the rest of the bounds', () => {
+      const w = win()
+      host.updateWindow?.(w as never, { left: 5000, width: 300 })
+      expect(w.setBounds).toHaveBeenCalledWith({ x: 1420, y: 100, width: 500, height: 800 })
+    })
+
+    it('does not touch bounds it was not asked to change, or those of a maximized window', () => {
+      const w = win()
+      host.updateWindow?.(w as never, { focused: true })
+      expect(w.setBounds).not.toHaveBeenCalled()
+      const big = win({ isMaximized: () => true })
+      host.updateWindow?.(big as never, { left: 0 })
+      expect(big.setBounds).not.toHaveBeenCalled()
+    })
+
+    it('shows and focuses for focused: true, and does nothing about focus otherwise', () => {
+      const w = win({ isMinimized: () => true })
+      host.updateWindow?.(w as never, { focused: true })
+      expect(w.restore).toHaveBeenCalled()
+      expect(w.show).toHaveBeenCalled()
+      expect(w.focus).toHaveBeenCalled()
+      const other = win()
+      host.updateWindow?.(other as never, { focused: false })
+      expect(other.focus).not.toHaveBeenCalled()
+    })
+
+    it('flashes the frame for drawAttention', () => {
+      const w = win()
+      host.updateWindow?.(w as never, { drawAttention: true })
+      expect(w.flashFrame).toHaveBeenCalledWith(true)
+    })
+
+    it('ignores a window that is gone', () => {
+      const w = win({ isDestroyed: () => true })
+      host.updateWindow?.(w as never, { focused: true, left: 3 })
+      expect(w.show).not.toHaveBeenCalled()
+    })
   })
 })

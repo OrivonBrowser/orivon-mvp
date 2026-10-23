@@ -12,6 +12,20 @@ declare module 'orivon:crx-extensions' {
     }
     interface CreateWindowDetails {
       url?: string | string[]
+      type?: string
+      focused?: boolean
+      left?: number
+      top?: number
+      width?: number
+      height?: number
+    }
+    interface UpdateWindowDetails {
+      left?: number
+      top?: number
+      width?: number
+      height?: number
+      focused?: boolean
+      drawAttention?: boolean
     }
     interface TabDetails {
       pinned: boolean
@@ -25,6 +39,8 @@ declare module 'orivon:crx-extensions' {
       assignTabDetails?(details: TabDetails, tab: Electron.WebContents): void
       createWindow?(details: CreateWindowDetails): Promise<Electron.BaseWindow>
       removeWindow?(window: Electron.BaseWindow): void
+      windowType?(window: Electron.BaseWindow): 'normal' | 'popup'
+      updateWindow?(window: Electron.BaseWindow, props: UpdateWindowDetails): void
       navigateTab?(tab: Electron.WebContents, url: string): void | Promise<void>
       windowOf?(contents: Electron.WebContents): Electron.BaseWindow | undefined
       activateTabShowing?(url: string): boolean

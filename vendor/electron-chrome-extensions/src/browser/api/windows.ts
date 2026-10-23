@@ -84,7 +84,7 @@ export class WindowsAPI {
         .map((tab) => this.ctx.store.tabDetailsCache.get(tab.id) as chrome.tabs.Tab)
         .filter(Boolean),
       incognito: !this.ctx.session.isPersistent(),
-      type: 'normal', // TODO
+      type: this.ctx.store.impl.windowType?.(win) ?? 'normal',
       state: getWindowState(win),
       alwaysOnTop: win.isAlwaysOnTop(),
       sessionId: 'default', // TODO
@@ -206,6 +206,8 @@ export class WindowsAPI {
         }
       }
     }
+
+    this.ctx.store.impl.updateWindow?.(win, props)
 
     // update() takes no populate option -- never carries tabs (Chrome's own
     // behaviour; also closes the leak an unconditional `tabs` array here

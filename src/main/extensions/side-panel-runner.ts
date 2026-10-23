@@ -21,7 +21,7 @@ import type { PanelDriver, PanelPage, PanelPageEvents } from './side-panel-drive
 import { createSidePanelApi, isOrdinaryTab } from './side-panel-api.js'
 import type { SidePanelDriver } from './side-panel-api.js'
 import { createBehaviorStore } from './side-panel-behavior-file.js'
-import { sidePanelGestures } from './side-panel-gesture.js'
+import { sidePanelGestures, sidePanelTabGestures } from './side-panel-gesture.js'
 import { sidePanelTabClosing } from './side-panel-tab-closing.js'
 import { createSidePanelOptions } from './side-panel-options.js'
 import { registerSidePanelPage } from './side-panel-pages.js'
@@ -163,6 +163,7 @@ function makeRunner (ctx: ExtensionApiContext): SidePanelDriver {
 
   // Input the browser itself saw on one of an extension's own pages (a click or a key), whatever surface shows it.
   app.on('web-contents-created', (_event, contents) => {
+    sidePanelTabGestures.watch(contents)
     contents.on('input-event', (_inputEvent, input) => {
       if (!DELIBERATE_INPUT.has(input.type)) return
       const id = EXTENSION_PAGE.exec(contents.getURL())?.[1]
@@ -188,6 +189,7 @@ function makeRunner (ctx: ExtensionApiContext): SidePanelDriver {
   return {
     options,
     gesture: sidePanelGestures,
+    tabGesture: sidePanelTabGestures,
     side: () => ctx.shell()?.settings.get('sidePanel.side') === 'left' ? 'left' : 'right',
     optionsChanged: (id) => { driver.optionsChanged(id) },
     behaviorChanged: (id) => {
