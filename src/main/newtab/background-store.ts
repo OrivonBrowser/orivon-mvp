@@ -1,6 +1,6 @@
 // The new tab's picture for one profile: the copy of the file the person chose, in `<userData>/new-tab-background`,
 // and what the page is to show given the `appearance.newTabBackground` setting. The path the person picked is never kept.
-import { readFileSync, rmSync, statSync } from 'node:fs'
+import { closeSync, fstatSync, openSync, readFileSync, rmSync } from 'node:fs'
 import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 import type { SettingsStore } from '../settings/settings-store.js'
 import { checkPicture, MAX_PICTURE_BYTES, TOO_LARGE } from './background-image.js'
@@ -41,10 +41,16 @@ export class BackgroundStore {
   install (sourcePath: string): InstallResult {
     let data: Buffer
     try {
-      const info = statSync(sourcePath)
-      if (!info.isFile()) return { ok: false, reason: UNREADABLE }
-      if (info.size > MAX_PICTURE_BYTES) return { ok: false, reason: TOO_LARGE }
-      data = readFileSync(sourcePath)
+      // One open file for the size and the bytes: a file that changes between a check by name and a read is not the one checked.
+      const fd = openSync(sourcePath, 'r')
+      try {
+        const info = fstatSync(fd)
+        if (!info.isFile()) return { ok: false, reason: UNREADABLE }
+        if (info.size > MAX_PICTURE_BYTES) return { ok: false, reason: TOO_LARGE }
+        data = readFileSync(fd)
+      } finally {
+        closeSync(fd)
+      }
     } catch {
       return { ok: false, reason: UNREADABLE }
     }
