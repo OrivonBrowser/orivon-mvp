@@ -499,15 +499,15 @@ describe('fs.open / fs.promises.open', () => {
   })
 
   // readFile/writeFile/access/appendFile/rename/unlink/mkdir/readdir/stat/rm
-  // are all real now (fs/tests/promises.test.ts) -- `cp` stands in here as
+  // are all real now (fs/tests/promises.test.ts) -- `link` stands in here as
   // a member still genuinely unbuilt.
   it('fs.promises\'s other members are named, not silently absent (A135) -- reading one is safe (A169), only calling it refuses', async () => {
     installFakeOrivon()
     const fs = await import('../fs.js')
     const { OrivonShimError } = await import('../../errors.js')
     const promisesRec = fs.promises as unknown as Record<string, () => unknown>
-    expect(() => promisesRec.cp).not.toThrow()
-    expect(() => promisesRec.cp!()).toThrow(OrivonShimError)
+    expect(() => promisesRec.link).not.toThrow()
+    expect(() => promisesRec.link!()).toThrow(OrivonShimError)
   })
 })
 
@@ -561,16 +561,16 @@ describe('mkdir / readdir / stat / rm / rename', () => {
 })
 
 // A135: every fs member this module does not build used to be silently
-// absent -- `fs.copyFile` read off the default export (a bundled CJS
-// `require('fs')`'s own shape) threw a bare "copyFile is not a function".
+// absent -- `fs.link` read off the default export (a bundled CJS
+// `require('fs')`'s own shape) threw a bare "link is not a function".
 describe('fs\'s other members -- named refusal instead of absence (A135), reading one is safe (A169)', () => {
-  it('reading copyFile does not throw; calling it names it, reason unimplemented -- nothing has decided whether this will be built', async () => {
+  it('reading link does not throw; calling it names it, reason unimplemented -- nothing has decided whether this will be built', async () => {
     installFakeOrivon()
     const fs = (await import('../fs.js')).default as unknown as Record<string, () => unknown>
-    expect(() => fs.copyFile).not.toThrow()
-    expect(() => fs.copyFile!()).toThrow(/fs\.copyFile/)
+    expect(() => fs.link).not.toThrow()
+    expect(() => fs.link!()).toThrow(/fs\.link/)
     try {
-      fs.copyFile!()
+      fs.link!()
     } catch (error) {
       const { OrivonShimError } = await import('../../errors.js')
       expect(error).toBeInstanceOf(OrivonShimError)
@@ -604,9 +604,9 @@ describe('fs\'s other members -- named refusal instead of absence (A135), readin
   it('typeof, optional chaining and destructuring over an unbuilt member never throw', async () => {
     installFakeOrivon()
     const fs = (await import('../fs.js')).default as unknown as Record<string, unknown>
-    expect(typeof fs.copyFile).toBe('function')
-    expect(() => fs.copyFile ?? undefined).not.toThrow()
-    expect(() => { const { copyFile } = fs as { copyFile?: unknown }; return copyFile }).not.toThrow()
+    expect(typeof fs.link).toBe('function')
+    expect(() => fs.link ?? undefined).not.toThrow()
+    expect(() => { const { link } = fs as { link?: unknown }; return link }).not.toThrow()
   })
 
   it('still serves every real, already-built member unchanged through the same default export', async () => {
@@ -620,7 +620,7 @@ describe('fs\'s other members -- named refusal instead of absence (A135), readin
   it('lets `in` report an unbuilt member as truthfully absent', async () => {
     installFakeOrivon()
     const fs = (await import('../fs.js')).default as unknown as Record<string, unknown>
-    expect('copyFile' in fs).toBe(false)
+    expect('link' in fs).toBe(false)
   })
 
 })

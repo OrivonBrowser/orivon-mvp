@@ -56,11 +56,17 @@ async function openFolder (): Promise<void> {
     stream.end('streamed into the folder')
   })
   const nested = await fs.promises.readdir(`${root}/out`, { withFileTypes: true })
+  await fs.promises.copyFile(`${root}/a.txt`, `${root}/a-copy.txt`)
+  await fs.promises.cp(`${root}/out`, `${root}/out-copy`, { recursive: true })
+  const temp = await fs.promises.mkdtemp(`${root}/tmp-`)
+  await fs.promises.writeFile(`${temp}/x.txt`, 'in a temp folder in the pick')
+  await fs.promises.cp(`${root}/out`, 'from-pick', { recursive: true })
+  const copies = { temp, intoAppFiles: await fs.promises.readFile('from-pick/deep/b.txt', 'utf8'), outOfTheFolder: await fs.promises.cp('from-pick', `${root}/../escaped`, { recursive: true }).then(() => 'copied', fail) }
   const escapes: Record<string, string> = {}
   for (const [label, path] of [['up', `${root}/../../../../etc/hostname`], ['absolute', '/etc/hostname'], ['sibling-pick', `${root}/..`]] as const) {
     escapes[label] = await fs.promises.readFile(path, 'utf8').then(() => 'read', fail)
   }
-  page.__r['openFolder'] = { canceled, root, names, text, nested: nested.map((entry) => [entry.name, entry.isDirectory()]), escapes }
+  page.__r['openFolder'] = { canceled, root, names, text, nested: nested.map((entry) => [entry.name, entry.isDirectory()]), copies, escapes }
 }
 
 async function save (): Promise<void> {

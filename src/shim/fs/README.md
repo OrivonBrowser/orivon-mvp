@@ -132,3 +132,12 @@ process; `persistent: false` does not. `fs.promises.watch` is an async iterator 
 events, and `signal` closes either form. `watchFile` and `unwatchFile` refuse by name: they poll,
 which would see writes from outside the shim too, and no consumer has asked. Provisional: whether
 `orivon.fs` should carry a real change feed, which would settle the outside-the-shim gap.
+
+**Copying and temp folders: `copy.ts` makes the stat, read, write and mkdir calls the app could make itself, so a copy reaches nothing those calls could not.**
+Neither `orivon.fs` nor a pick has a copy or a temp-folder primitive, and a new one would be a `src/contracts/` change for a
+convenience. `copyFile` reads a file whole and writes it (not atomic, and bounded by memory); `cp` walks a tree one entry at a
+time, after the conflict checks Node makes (folder over file, file over folder, onto itself, into its own subfolder), and
+asks `filter` for every entry. Each call goes through `core.ts`, so a stand-in path is answered by its pick and any other path is
+confined to the app's files, and a copy may cross between the two. `mkdtemp` is a `mkdir` without `recursive`, the one
+exclusive-create the broker has: a name already taken fails `EEXIST` and a fresh one is drawn. Its suffix is 12 characters,
+the same as `mkdtempSync`'s (`core-sync.ts`).

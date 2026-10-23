@@ -3,9 +3,11 @@
 // calls made while many socket dials hang, and a request whose URL went through `url.parse`. (A torrent client inspired each; random-access-file opens every file with O_RDWR | O_CREAT.)
 
 import constants from 'constants'
+import * as crypto from 'crypto'
 import * as fs from 'fs'
 import * as http from 'http'
 import * as net from 'net'
+import * as os from 'os'
 import * as path from 'path'
 import * as url from 'url'
 
@@ -14,6 +16,11 @@ export interface NodeGapsResults {
   readonly execPath?: { type: string, dirname: string }
   readonly createInPlace?: { created: string, kept: string, missingCreated: boolean, secondOpenKeeps: string }
   readonly filesBesideHungDials?: { calls: number, failed: number, firstError: string | undefined, elapsedMs: number, dialConnects: number, dialErrors: number, dialError: string | undefined }
+  readonly randomInt?: { inRange: boolean, distinct: number, callbackError: unknown, callbackValue: unknown, badRange: string | undefined }
+  readonly copies?: {
+    file: string, tree: string[], nested: string, exclusive: string, callbackTree: boolean,
+    temp: { inTmpdir: boolean, distinct: boolean, written: string, outside: string }, outside: string
+  }
   readonly requests?: Array<{ status?: number | undefined, error?: string | undefined }>
   readonly error?: string
 }
@@ -79,6 +86,51 @@ async function filesBesideHungDials (port: number): Promise<NonNullable<NodeGaps
   }
 }
 
+/** `crypto.randomInt` in both of its forms, drawn many times so a draw outside the range or a value never reached would show. */
+async function randomIntegers (): Promise<NonNullable<NodeGapsResults['randomInt']>> {
+  const drawn = Array.from({ length: 300 }, () => crypto.randomInt(3, 9))
+  const viaCallback = await new Promise<{ error: unknown, value: unknown }>((resolve) => { crypto.randomInt(10, (error, value) => { resolve({ error, value }) }) })
+  let badRange: string | undefined
+  try { crypto.randomInt(5, 5) } catch (error) { badRange = (error as { code?: string }).code }
+  return {
+    inRange: drawn.every((value) => Number.isInteger(value) && value >= 3 && value < 9),
+    distinct: new Set(drawn).size,
+    callbackError: viaCallback.error,
+    callbackValue: viaCallback.value,
+    badRange
+  }
+}
+
+const codeOf = (error: unknown): string => (error as { code?: string }).code ?? String(error)
+
+/** `copyFile`, `cp` and `mkdtemp` on the app's own files, the way a note app duplicates and discards things. */
+async function copiesAndTempFolders (): Promise<NonNullable<NodeGapsResults['copies']>> {
+  await fs.promises.mkdir('tree/sub', { recursive: true })
+  await fs.promises.writeFile('tree/a.txt', 'alpha')
+  await fs.promises.writeFile('tree/sub/b.txt', 'beta')
+  await fs.promises.copyFile('tree/a.txt', 'tree/a-copy.txt')
+  const exclusive = await fs.promises.copyFile('tree/a.txt', 'tree/a-copy.txt', 1).then(() => 'copied', codeOf)
+  await fs.promises.cp('tree', 'tree-copy', { recursive: true })
+  const callbackTree = await new Promise<boolean>((resolve) => { fs.cp('tree', 'tree-cb', { recursive: true }, (error) => { resolve(error === null) }) })
+  const first = await fs.promises.mkdtemp(`${os.tmpdir()}/job-`) as string
+  const second = await fs.promises.mkdtemp(`${os.tmpdir()}/job-`) as string
+  await fs.promises.writeFile(`${first}/x.txt`, 'in the temp folder')
+  return {
+    file: await fs.promises.readFile('tree/a-copy.txt', 'utf8'),
+    tree: [...await fs.promises.readdir('tree-copy')].sort(),
+    nested: await fs.promises.readFile('tree-copy/sub/b.txt', 'utf8'),
+    exclusive,
+    callbackTree,
+    temp: {
+      inTmpdir: first.startsWith(`${os.tmpdir()}/job-`),
+      distinct: first !== second,
+      written: await fs.promises.readFile(`${first}/x.txt`, 'utf8'),
+      outside: await fs.promises.mkdtemp('/etc/job-').then(() => 'made', codeOf)
+    },
+    outside: await fs.promises.cp('tree', '/etc/escaped', { recursive: true }).then(() => 'copied', codeOf)
+  }
+}
+
 /** `http.get` of a legacy-parsed URL whose path holds characters Node's parser percent-encodes. */
 async function requestsAfterUrlParse (port: number): Promise<NonNullable<NodeGapsResults['requests']>> {
   const targets = [`http://127.0.0.1:${String(port)}/16 - Artist "Title" {1}.mp3`, `http://127.0.0.1:${String(port)}/dir\\file.bin?x=1`]
@@ -105,6 +157,8 @@ async function run (): Promise<NodeGapsResults> {
     execPath: { type: typeof process.execPath, dirname: path.dirname(process.execPath) },
     createInPlace: await createInPlace(),
     filesBesideHungDials: await filesBesideHungDials(port),
+    randomInt: await randomIntegers(),
+    copies: await copiesAndTempFolders(),
     requests: await requestsAfterUrlParse(httpPort)
   }
 }

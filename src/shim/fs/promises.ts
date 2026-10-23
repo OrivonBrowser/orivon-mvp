@@ -5,6 +5,7 @@
 // `fs.promises.constants`.
 
 import { openHandle } from './handle.js'
+import { doCopyFile, doCp, doMkdtemp, type CpOptions } from './copy.js'
 import { doChmod } from './permissions.js'
 import { watchPromise } from './watch.js'
 import {
@@ -74,6 +75,18 @@ async function realpath (path: PathLike, options?: { encoding?: string | null } 
   return encodingOf(options) === 'buffer' ? Buffer.from(result) : result
 }
 
+async function copyFile (src: PathLike, dest: PathLike, mode?: number): Promise<void> {
+  await doCopyFile(src, dest, mode)
+}
+
+async function cp (src: PathLike, dest: PathLike, options?: CpOptions): Promise<void> {
+  await doCp(src, dest, options)
+}
+
+async function mkdtemp (prefix: PathLike, options?: { encoding?: string | null } | string): Promise<string | Buffer> {
+  return await doMkdtemp(prefix, options)
+}
+
 /** `mode` is accepted for Node signature parity; doAccess's own header says why it cannot be distinguished. */
 async function access (path: PathLike, _mode?: number): Promise<void> {
   await doAccess(path)
@@ -110,6 +123,9 @@ export const promises = refusingProxy({
   stat,
   lstat,
   rm,
+  copyFile,
+  cp,
+  mkdtemp,
   // Data, not a function -- same A169 exception fs/fs.ts's own `known`
   // object documents for the top-level fs.constants.
   constants: FS_CONSTANTS
@@ -117,6 +133,6 @@ export const promises = refusingProxy({
 
 // The `fs/promises` module target (module-map.ts) is this file itself: the
 // same object as fs.promises, as default export and as named members.
-export { openHandle as open, access, chmod, chmod as lchmod, watchPromise as watch, readFile, writeFile, appendFile, rename, unlink, rmdir, realpath, mkdir, readdir, stat, lstat, rm }
+export { openHandle as open, access, chmod, chmod as lchmod, watchPromise as watch, readFile, writeFile, appendFile, rename, unlink, rmdir, realpath, mkdir, readdir, stat, lstat, rm, copyFile, cp, mkdtemp }
 export const constants = FS_CONSTANTS
 export default promises

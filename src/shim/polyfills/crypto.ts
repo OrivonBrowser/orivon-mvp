@@ -7,6 +7,7 @@
 import cryptoBrowserify from 'crypto-browserify'
 import { nodeModule } from './module-proxy.js'
 import { pbkdf2 } from './pbkdf2-native.js'
+import { randomInt } from './random-int.js'
 
 export const {
   createHash, createHmac, getHashes, pbkdf2Sync, randomBytes, randomFill, randomFillSync, createCipheriv,
@@ -15,7 +16,7 @@ export const {
   Cipheriv, Decipheriv, DiffieHellman, DiffieHellmanGroup, Sign, Verify
 } = cryptoBrowserify
 
-export { pbkdf2 }
+export { pbkdf2, randomInt }
 
 export const webcrypto = globalThis.crypto
 export const subtle = globalThis.crypto.subtle
@@ -26,5 +27,5 @@ export function randomUUID (): string { return globalThis.crypto.randomUUID() }
 export * from './generated/crypto.js'
 
 export default nodeModule('crypto', {
-  ...cryptoBrowserify, pbkdf2, webcrypto, subtle, getRandomValues, randomUUID
+  ...cryptoBrowserify, pbkdf2, webcrypto, subtle, getRandomValues, randomUUID, randomInt
 })
