@@ -1,5 +1,5 @@
 // Which checkpoint the light client starts from, and renewing it at run time when the release's and the stored one have
-// both aged out (ADR-0092). The choice is the pure rule in checkpoint.ts; the fetch is checkpoint-fetch.ts, one attempt
+// both aged out (ADR-0092) or the beacon server has no bootstrap for the one in use (ADR-0098). The choice is the pure rule in checkpoint.ts; the fetch is checkpoint-fetch.ts, one attempt
 // at a time with a wait after a failure. No `electron` import: the store, the switch and the notice come in.
 
 import shippedCheckpoint from './mainnet-checkpoint.json'
@@ -24,18 +24,29 @@ export interface RenewalDeps {
 
 export class CheckpointRenewal {
   private readonly fetcher = new CheckpointFetcher({
-    run: async () => await fetchAgreedCheckpoint(beaconJson, this.servers(), Math.floor(Date.now() / 1000)),
+    run: async () => await fetchAgreedCheckpoint(beaconJson, this.servers(), this.consensusRpc(), Math.floor(Date.now() / 1000)),
     now: () => Date.now()
   })
 
   /** The last choice made, which a gateway address asks about on every navigation without reading the stored file again. */
   chosen: CheckpointChoice | undefined
 
+  /** The root the running host was given, so that a bootstrap failure is held against the checkpoint that caused it. */
+  startedWith: string | undefined
+
+  /** Roots the beacon server has no bootstrap for: none is chosen again in this run. */
+  private readonly unserved = new Set<string>()
+
   constructor (private readonly deps: RenewalDeps) {}
 
   /** The servers asked; a test build may name its own. */
   servers (): readonly string[] {
     return testBeaconApis() ?? DEFAULT_ENDPOINTS.checkpointBeaconApis
+  }
+
+  /** The server the light client bootstraps from, and the one whose bootstrap a renewed checkpoint must have; a test build's first server stands in for it. */
+  consensusRpc (): string {
+    return testBeaconApis()?.[0] ?? DEFAULT_ENDPOINTS.consensusRpc
   }
 
   /** The release's own checkpoint; a test build may take it to be older than it is. */
@@ -46,7 +57,7 @@ export class CheckpointRenewal {
 
   /** Chooses afresh from the release's and the stored checkpoint. */
   choose (): CheckpointChoice {
-    this.chosen = chooseCheckpoint(this.shipped(), this.deps.store().checkpoint(), Math.floor(Date.now() / 1000))
+    this.chosen = chooseCheckpoint(this.shipped(), this.deps.store().checkpoint(), Math.floor(Date.now() / 1000), MAX_CHECKPOINT_AGE_SECONDS, this.unserved)
     return this.chosen
   }
 
@@ -70,10 +81,11 @@ export class CheckpointRenewal {
     return this.fetcher.lastProblem()
   }
 
+  /** Whether every checkpoint at hand has aged out or is one the beacon server has no bootstrap for: a fresh one is wanted. */
   private aged (): boolean {
     if (this.deps.switchedOff()) return false
     const choice = this.choose()
-    return !choice.ok && choice.problem === 'too-old'
+    return !choice.ok && choice.problem !== 'clock-behind'
   }
 
   /** Whether a start of the host would renew the checkpoint now: it has aged out, and the servers are not within the wait after a failure. */
@@ -84,6 +96,20 @@ export class CheckpointRenewal {
   /** Whether the host could be started and have a checkpoint: the servers are asked, or are being. */
   mayYet (): boolean {
     return this.aged() && (this.fetcher.mayAttempt() || this.fetcher.busy)
+  }
+
+  /**
+   * The light client reported that the beacon server has no bootstrap for the checkpoint it started from: that root is not
+   * chosen again, and a fresh one is fetched at once (within the wait after a failed attempt, that failure stands).
+   * Resolves to whether a checkpoint the light client can start from is now at hand, so that the caller restarts the host with it;
+   * undefined when this report changes nothing, because that root was already given up or nothing was started with one.
+   * An older checkpoint still at hand counts: the host restarts with it.
+   */
+  recoverUnserved (): Promise<boolean> | undefined {
+    const root = this.startedWith
+    if (root === undefined || this.unserved.has(root)) return undefined
+    this.unserved.add(root)
+    return (this.start() ?? Promise.resolve()).then(() => !this.deps.switchedOff() && this.choose().ok)
   }
 
   /**

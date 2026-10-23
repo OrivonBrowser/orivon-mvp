@@ -36,7 +36,7 @@ import { VerifierStore } from './verifier-store.js'
 import { chooseNameEvidence } from './name-evidence.js'
 import { lastProvenance } from './kept-provenance.js'
 import type { NameEvidence } from './name-evidence.js'
-import { checkpointProblem, lightClientLog, lightClientView } from './status-view.js'
+import { bootstrapNotFound, checkpointProblem, lightClientLog, lightClientView } from './status-view.js'
 import type { LightClientView } from './status-view.js'
 import { ccipDirectFor, tunnelFront, tunnelProfileFronts, unproxiedGatewaysFor } from './host-proxy.js'
 import { HostLifecycle } from './host-lifecycle.js'
@@ -163,6 +163,17 @@ export const lightClientForcedOff = (): boolean => process.env['ORIVON_ETH_LIGHT
 
 const lightClientSwitchedOff = (): boolean => lightClientForcedOff() || !enabledByPerson()
 
+/** The beacon server has no bootstrap for the checkpoint the light client started from: another is fetched, and the host restarts with it instead of retrying the same one. */
+function recoverCheckpoint (): void {
+  const recovered = renewal.recoverUnserved()
+  if (recovered === undefined) return
+  void recovered.then((usable) => {
+    if (!usable) return
+    idleHost()
+    startHost()
+  })
+}
+
 function changed (): void {
   for (const listener of listeners) listener()
 }
@@ -232,6 +243,7 @@ async function hostConfig (): Promise<HostConfig> {
   } else {
     await renewing
     const choice = renewal.choose()
+    renewal.startedWith = choice.ok ? choice.checkpoint.root : undefined
     lightClient = choice.ok
       ? { lightClient: { executionRpcs: DEFAULT_ENDPOINTS.executionRpcs, consensusRpc: DEFAULT_ENDPOINTS.consensusRpc, checkpoint: choice.checkpoint.root } }
       : { lightClient: undefined, lightClientOff: `the Ethereum light client cannot start: ${checkpointProblem(choice, renewal.problem())}` }
@@ -418,6 +430,7 @@ export const verifierSubsystem: Subsystem = {
           lightClient = value
           const line = logLightClient(value)
           if (line !== undefined) console[line.level](`[verifier] ${line.text}`)
+          if (value.state === 'failed' && bootstrapNotFound(value.reason)) recoverCheckpoint()
           changed()
         },
         checkpoint: (root, timestamp) => {

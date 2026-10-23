@@ -66,6 +66,23 @@ describe('chooseCheckpoint with a checkpoint fetched at run time', () => {
   })
 })
 
+describe('chooseCheckpoint with roots the beacon server has no bootstrap for', () => {
+  it('never chooses such a root, and takes the next newest checkpoint instead', () => {
+    const unserved = new Set([root('a')])
+    expect(chooseCheckpoint(checkpoint(1, 'a'), checkpoint(5, 'b'), NOW, MAX, unserved)).toEqual({ ok: true, checkpoint: checkpoint(5, 'b'), source: 'this-install', ageSeconds: 5 * DAY })
+  })
+
+  it('names the newest checkpoint as not served when every one is such a root, whatever its age', () => {
+    const unserved = new Set([root('a'), root('b')])
+    expect(chooseCheckpoint(checkpoint(1, 'a'), checkpoint(5, 'b'), NOW, MAX, unserved)).toEqual({ ok: false, problem: 'not-served', source: 'release', ageSeconds: DAY })
+    expect(chooseCheckpoint(checkpoint(1, 'a'), undefined, NOW, MAX, new Set([root('a')]))).toEqual({ ok: false, problem: 'not-served', source: 'release', ageSeconds: DAY })
+  })
+
+  it('chooses as before when the set holds only other roots', () => {
+    expect(chooseCheckpoint(checkpoint(1, 'a'), undefined, NOW, MAX, new Set([root('z')]))).toMatchObject({ ok: true, source: 'release' })
+  })
+})
+
 describe('parseStoredCheckpoint', () => {
   it('reads the servers a fetched checkpoint carries', () => {
     expect(parseStoredCheckpoint({ root: root('c'), timestamp: NOW, fetchedFrom: ['https://a.example'] })).toEqual({ root: root('c'), timestamp: NOW, fetchedFrom: ['https://a.example'] })
