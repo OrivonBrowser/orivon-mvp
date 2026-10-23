@@ -21,4 +21,13 @@ export class NewTabPart implements SettingsPart {
     this.problem = refusalOf(await this.bridge.request('newTabBackground', { type: 'choose' }))
     this.changed()
   }
+
+  /** A change of the setting, from anywhere, makes the last refusal stale. The event is never taken: the row's own setting still needs it. */
+  handle (topic: string, payload: unknown): boolean {
+    if (topic === 'settings.changed' && (payload as { key?: unknown } | null)?.key === 'appearance.newTabBackground' && this.problem !== '') {
+      this.problem = ''
+      this.changed()
+    }
+    return false
+  }
 }

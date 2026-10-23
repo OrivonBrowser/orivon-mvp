@@ -34,7 +34,7 @@ function dispatch (frameUrl: string, isTopFrame: boolean, command: unknown = { t
   const handler = handlers.get(NEWTAB_COMMAND_CHANNEL)
   if (handler === undefined) throw new Error('registerNewTabIpc did not register a handler')
   const senderFrame = contents.mainFrame ?? { url: frameUrl }
-  const sender = { mainFrame: isTopFrame ? senderFrame : {}, once: () => {}, ...contents } as unknown as WebContents
+  const sender = { mainFrame: isTopFrame ? senderFrame : {}, once: () => {}, send: () => {}, isDestroyed: () => false, ...contents } as unknown as WebContents
   const event = { senderFrame, sender } as unknown as IpcMainInvokeEvent
   return handler(event, command)
 }
@@ -104,12 +104,13 @@ describe('registerNewTabIpc -- the picture behind the page', () => {
     const send = vi.fn()
     const stays = { send, isDestroyed: () => false, mainFrame: { url: DASHBOARD_URL } }
     const left = { send: vi.fn(), isDestroyed: () => false, mainFrame: { url: DASHBOARD_URL } }
-    const gone = { send: vi.fn(), isDestroyed: () => false, mainFrame: { url: DASHBOARD_URL } }
+    let closed = false
+    const gone = { send: vi.fn(), isDestroyed: () => closed, mainFrame: { url: DASHBOARD_URL } }
     await dispatch(DASHBOARD_URL, true, ask, stays as unknown as Partial<WebContents>)
     await dispatch(DASHBOARD_URL, true, ask, left as unknown as Partial<WebContents>)
     await dispatch(DASHBOARD_URL, true, ask, gone as unknown as Partial<WebContents>)
     left.mainFrame.url = 'https://elsewhere.example/'
-    gone.isDestroyed = () => true
+    closed = true
     for (const listener of changeListeners) listener()
     expect(send).toHaveBeenCalledWith('orivon-newtab:background-changed')
     expect(left.send).not.toHaveBeenCalled()
