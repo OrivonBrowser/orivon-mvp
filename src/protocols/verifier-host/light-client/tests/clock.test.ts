@@ -15,9 +15,15 @@ describe('clockLead', () => {
     expect(clockLead([reading(60_000), reading(60_100), reading(59_900)])).toBeLessThan(61_000)
   })
 
-  it('is 0 for servers that agree the clock is right, or ahead: measured, and not behind', () => {
+  it('is 0 for servers that agree the clock is right: measured, and not off', () => {
     expect(clockLead([reading(0), reading(300), reading(-200)])).toBe(0)
-    expect(clockLead([reading(-90_000), reading(-90_000)])).toBe(0)
+    expect(clockLead([reading(1_000), reading(-1_000)])).toBe(0)
+  })
+
+  it('is negative for servers that agree the clock is ahead of theirs', () => {
+    const lead = clockLead([reading(-90_000), reading(-90_100), reading(-89_900)])
+    expect(lead).toBeLessThan(-89_000)
+    expect(lead).toBeGreaterThan(-91_000)
   })
 
   it('is nothing from fewer than two servers: one server is not a reference', () => {
@@ -49,7 +55,9 @@ describe('clockLead', () => {
 
   it('is nothing for a lead no mistake in a clock would explain', () => {
     expect(clockLead([reading(MAX_LEAD_MS + 60_000), reading(MAX_LEAD_MS + 60_000)])).toBeUndefined()
+    expect(clockLead([reading(-MAX_LEAD_MS - 60_000), reading(-MAX_LEAD_MS - 60_000)])).toBeUndefined()
     expect(clockLead([reading(14 * 3_600_000), reading(14 * 3_600_000)])).toBeGreaterThan(13 * 3_600_000)
+    expect(clockLead([reading(-14 * 3_600_000), reading(-14 * 3_600_000)])).toBeLessThan(-13 * 3_600_000)
   })
 
   it('takes the middle of the round trip as the moment the server answered', () => {
@@ -112,11 +120,11 @@ describe('the clock lent to Helios', () => {
   })
 
   it('is installed once, and again if something replaced Date.now', () => {
+    const untouched = Date.now
     installHeliosClock()
     const first = Date.now
     installHeliosClock()
     expect(Date.now).toBe(first)
-    const realNow = Date.now
     const replaced = (): number => 5
     Date.now = replaced
     try {
@@ -127,7 +135,7 @@ describe('the clock lent to Helios', () => {
       expect(fromElsewhere()).toBe(5)
     } finally {
       resetHeliosClock()
-      Date.now = realNow
+      Date.now = untouched
     }
   })
 
@@ -138,10 +146,24 @@ describe('the clock lent to Helios', () => {
     expect(Date.now).toBe(real)
   })
 
-  it('refuses a lead that is not a positive number, and caps one that is too large', () => {
-    for (const bad of [-5, Number.NaN, Number.POSITIVE_INFINITY, 0]) { setHeliosClockLead(bad); expect(heliosClockLead()).toBe(0) }
+  it('is read by Helios as time that is earlier, when the lead is negative', () => {
+    installHeliosClock()
+    setHeliosClockLead(-90_000)
+    const before = Date.now()
+    expect(before - fromHelios()).toBeGreaterThan(89_000)
+    expect(before - fromHelios()).toBeLessThan(91_000)
+    expect(Math.abs(fromElsewhere() - before)).toBeLessThan(1_000)
+    expect(Math.abs(Date.now() - before)).toBeLessThan(1_000)
+  })
+
+  it('keeps a lead of either sign, refuses one that is not a number, and caps one that is too large', () => {
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 0]) { setHeliosClockLead(bad); expect(heliosClockLead()).toBe(0) }
+    setHeliosClockLead(-90_000)
+    expect(heliosClockLead()).toBe(-90_000)
     setHeliosClockLead(MAX_LEAD_MS * 3)
     expect(heliosClockLead()).toBe(MAX_LEAD_MS)
+    setHeliosClockLead(-MAX_LEAD_MS * 3)
+    expect(heliosClockLead()).toBe(-MAX_LEAD_MS)
   })
 })
 
