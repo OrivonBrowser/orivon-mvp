@@ -152,25 +152,55 @@ jobs:
         run: npm run package:${{ matrix.platform }}
 
       # A release and a manual run sign macOS with the Developer ID Application certificate and have Apple notarize
-      # it, and electron-builder staples the ticket to each app. The certificate is a base64 .p12 in CSC_LINK, and no
-      # other platform's step sees these secrets: CSC_LINK would make electron-builder sign the Windows installer too.
-      # A secret that is missing stops the job here, since the package would otherwise be built unsigned.
-      - name: Package, sign and notarize
+      # it, and electron-builder staples the ticket to each app. The certificate is a base64 .p12 in CSC_LINK. It goes
+      # into a keychain made here, which electron-builder is pointed at with CSC_KEYCHAIN: handed CSC_LINK itself it
+      # makes a keychain under a random password and then unlocks it with the .p12's password, which macOS 26 refuses.
+      # Only these steps see the secrets (CSC_LINK would make electron-builder sign the Windows installer too), and a
+      # secret that is empty stops the job, since the package would otherwise be built unsigned.
+      - name: Import the Developer ID certificate into a keychain
         if: ${{ matrix.platform == 'mac' && github.event_name != 'pull_request' }}
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          for name in CSC_LINK CSC_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error title=Apple signing::the repository secret $name is empty"
+              exit 1
+            fi
+          done
+          keychain="$RUNNER_TEMP/orivon-signing.keychain-db"
+          keychain_password="$(openssl rand -base64 32)"
+          echo "::add-mask::$keychain_password"
+          printf '%s' "$CSC_LINK" | base64 --decode > "$RUNNER_TEMP/orivon-developer-id.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/orivon-developer-id.p12" -f pkcs12 -k "$keychain" -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productbuild
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain"
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          echo "CSC_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+
+      - name: Package, sign and notarize
+        if: ${{ matrix.platform == 'mac' && github.event_name != 'pull_request' }}
+        env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+          for name in APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
             if [ -z "${!name}" ]; then
               echo "::error title=Apple signing::the repository secret $name is empty"
               exit 1
             fi
           done
           npm run package:mac:signed
+
+      - name: Remove the certificate from the runner
+        if: ${{ always() && matrix.platform == 'mac' && github.event_name != 'pull_request' }}
+        run: |
+          security delete-keychain "$RUNNER_TEMP/orivon-signing.keychain-db" || true
+          rm -f "$RUNNER_TEMP/orivon-developer-id.p12"
 
       # The deb's postinstall loads an AppArmor profile that lets Chromium's sandbox use the user
       # namespaces Ubuntu 24.04 restricts; the AppImage runs as a person runs it, no extra switch.
