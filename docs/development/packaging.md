@@ -144,7 +144,7 @@ under "On IPFS", which the workflow writes, and in the `ipfs.json` attached to i
   the release's files, the same blocks, plus an `index.html` that starts the download of the
   package for the visitor's system (the `.exe` on Windows, the Apple silicon or Intel `.dmg` on
   macOS, the `.deb` on Linux) and lists every file; on a phone, an unknown system or without
-  JavaScript it is only the list. The pinner composes that folder in the node's MFS and pins it as
+  JavaScript it is only the list. The page asks search engines not to index it. The pinner composes that folder in the node's MFS and pins it as
   `orivon-latest-release`, so its CID differs from the release's.
 - **Anyone can pin a release too.** The CID depends only on the files and the flags in
   `pin-releases.sh`, so `pin-releases.sh sync` (or `ipfs add` with those flags) on any Kubo node
