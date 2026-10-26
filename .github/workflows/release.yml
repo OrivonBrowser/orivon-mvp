@@ -109,7 +109,8 @@ jobs:
             platform: mac
             files: release/*.dmg
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    # Apple notarizes the two macOS apps one after the other, and the first took 35 minutes.
+    timeout-minutes: ${{ matrix.platform == 'mac' && 120 || 60 }}
     defaults:
       run:
         shell: bash
