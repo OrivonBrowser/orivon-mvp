@@ -11,6 +11,7 @@ vi.mock('../embed-event-relay.js', () => ({ installEmbedEventRelay: () => { orde
 vi.mock('../display-capture.js', () => ({ installDisplayCapture: () => { order.push('display-capture') } }))
 vi.mock('../hid-announce.js', () => ({ installHidAnnounce: () => { order.push('hid-announce') } }))
 vi.mock('../page-visibility.js', () => ({ installPageVisibility: () => { order.push('page-visibility') } }))
+vi.mock('../no-drag-regions.js', () => ({ installNoDragRegions: () => { order.push('no-drag-regions') } }))
 vi.mock('../manifest-hint.js', () => ({ installManifestHintWatcher: () => { order.push('manifest-hint') } }))
 
 it('installs the children bridge after window.orivon and before the routed installers release the slot', async () => {
@@ -33,4 +34,8 @@ it('wraps the page\'s screen sharing for every ordinary tab', async () => {
 
 it('listens for a device the person allowed in every ordinary tab', async () => {
   expect(order).toContain('hid-announce')
+})
+
+it('keeps a page from declaring window drag regions in every ordinary tab', async () => {
+  expect(order).toContain('no-drag-regions')
 })

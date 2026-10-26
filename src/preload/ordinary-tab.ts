@@ -7,6 +7,7 @@ import { exposeChildHostConnect } from './expose-child-host-connect.js'
 import { installEmbedEventRelay } from './embed-event-relay.js'
 import { installFormWatch } from './form-watch.js'
 import { installManifestHintWatcher } from './manifest-hint.js'
+import { installNoDragRegions } from './no-drag-regions.js'
 import { installPageKeys } from './page-keys.js'
 import { installPageVisibility } from './page-visibility.js'
 import { hideUserAgentDataOnSignInHosts } from './sign-in-identity.js'
@@ -56,6 +57,8 @@ export function exposeOrdinaryTabSurface (): void {
   // Saving and filling passwords: inert until main says the vault can keep logins, and it
   // exposes nothing to the page. Never reaches a subframe.
   installFormWatch()
+  // A page cannot make part of the window a drag region; a press on its buttons reaches it. Exposes nothing.
+  installNoDragRegions()
   // A registered app's Ctrl+F that the app did not use: the browser's find bar opens. Exposes nothing.
   installPageKeys()
   // ADR-0047: the popups and downloads of a page this tab shows in a

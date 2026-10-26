@@ -4,7 +4,7 @@
 `permissions.ts`, `site-info.ts`, `overlay.ts`, `split-frame.ts`, `drop-catcher.ts`, `internal.ts`, `embed.ts`,
 `child-host.ts` and `extension-api.ts`), the
 app-tab wiring they share (`manifest-hint.ts`, `expose-shim-globals.ts`, `expose-fetch-route.ts`,
-`page-buffer.ts`, `embed-event-relay.ts`, `page-visibility.ts`, `display-capture.ts`, `hid-announce.ts`, `ordinary-tab.ts`), the sign-in form watcher (`form-watch.ts`, with
+`page-buffer.ts`, `embed-event-relay.ts`, `page-visibility.ts`, `no-drag-regions.ts`, `display-capture.ts`, `hid-announce.ts`, `ordinary-tab.ts`), the sign-in form watcher (`form-watch.ts`, with
 the decisions it makes in `login-fields.ts`), the app-tab key report (`page-keys.ts`, `find-chord.ts`), and
 `orivon-error.ts`, the plain-object error shape [`surface/`](surface/) and [`ports/`](ports/)
 share. The narrowest and most security-critical surface in the repository. Tied to Electron,
