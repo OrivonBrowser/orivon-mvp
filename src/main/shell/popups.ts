@@ -96,6 +96,10 @@ export interface PopupHost {
    * cannot make one, so the caller opens a tab here instead. `loadOptions` -- see
    * `loadOptionsFor`'s own doc. */
   openWindow: (url: string, loadOptions?: LoadURLOptions) => WebContents | undefined
+  /** Chromium's own webContents for a shift-click (`view`, already in `partition`), made the only tab of a brand new
+   * window: what `openWindow` is for an open that carries a guest. `url` -- `adoptPopup`'s own doc. Absent in a test
+   * with no such window: the guest is adopted as a tab here. */
+  adoptWindow?: (view: WebContentsView, partition: string | undefined, url: string) => void
   /** The session a tab opened at `url` would get. */
   partitionFor: (url: string) => string | undefined
   /** The webPreferences a tab opened at `url` would get, without a
@@ -117,10 +121,11 @@ export interface PopupHost {
 
 /** The webContents Chromium already built for the open, if any -- present in the `options`
  * `createWindow` receives, though its type omits the field entirely. Measured against Electron
- * 44: a modifier-key open (middle click, ctrl+click, shift+click, ctrl+shift+click, on any link
+ * 44.7: a modifier-key open (middle click, ctrl+click, shift+click, ctrl+shift+click, on any link
  * regardless of `target`) never carries one, whatever its disposition; only a renderer-driven
  * open a script holds a `Window` handle to -- window.open(), or a plain click on target=_blank --
- * does. */
+ * does. From 44.9 every link open carries one, built in the opener's session, and the handler
+ * adopts it where it used to open its own tab or window. */
 function guestOf (options: object): WebContents | undefined {
   return (options as { webContents?: WebContents }).webContents
 }
@@ -312,7 +317,13 @@ export function windowOpenHandler (
         // then has no orivon surface at all.
         const webPreferences = options.webPreferences !== undefined ? { webPreferences: options.webPreferences } : {}
         const view = new WebContentsView({ webContents: guest, ...webPreferences })
-        host.adoptPopup(view, from.partition, details.url, active)
+        // A link opened into a window (a shift-click) carries no window features, as a page's own popup does:
+        // it gets a window of its own, within the same bounds as one opened without a guest.
+        if (details.disposition === 'new-window' && details.features === '' && host.adoptWindow !== undefined && processWindowBudget.allow() && limiter.allow()) {
+          host.adoptWindow(view, from.partition, details.url)
+        } else {
+          host.adoptPopup(view, from.partition, details.url, active)
+        }
         return view.webContents
       }
     }

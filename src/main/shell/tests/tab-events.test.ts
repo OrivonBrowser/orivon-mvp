@@ -236,6 +236,56 @@ describe('wireView -- window.open', () => {
     expect(host.openWindow).not.toHaveBeenCalled()
   })
 
+  it('gives a shift-click that carries a guest (Electron 44.9) a window of its own and adopts the guest into it', () => {
+    processWindowBudget.reset()
+    const wc = fakeContents()
+    const adoptWindow = vi.fn()
+    const host = fakeHost({ adoptWindow })
+    wireView('tab-1', record(wc, undefined, host))
+
+    const response = openHandler(wc)({ url: 'https://other.example/', disposition: 'new-window', features: '' })
+    const guest = fakeContents('https://other.example/')
+    const returned = response.createWindow?.({ webContents: guest, webPreferences: {} } as never)
+
+    expect(returned).toBe(guest)
+    expect(adoptedViews[0]?.options).toEqual({ webContents: guest, webPreferences: {} })
+    expect(adoptWindow).toHaveBeenCalledWith(adoptedViews[0], undefined)
+    expect(host.adoptPopup).not.toHaveBeenCalled()
+  })
+
+  it('keeps a sized popup that carries a guest a tab of the opener\'s window, though the shell can open windows', () => {
+    const wc = fakeContents()
+    const adoptWindow = vi.fn()
+    const host = fakeHost({ adoptWindow })
+    wireView('tab-1', record(wc, undefined, host))
+
+    const response = openHandler(wc)({ url: 'https://accounts.example/auth', disposition: 'new-window', features: 'width=500,height=600' })
+    response.createWindow?.({ webContents: fakeContents(), webPreferences: {} } as never)
+
+    expect(host.adoptPopup).toHaveBeenCalledTimes(1)
+    expect(adoptWindow).not.toHaveBeenCalled()
+  })
+
+  it('adopts a shift-click\'s guest as a tab once the tab has used its window budget', () => {
+    processWindowBudget.reset()
+    const wc = fakeContents()
+    const adoptWindow = vi.fn()
+    const host = fakeHost({ adoptWindow })
+    wireView('tab-1', record(wc, undefined, host))
+    const openOnce = (): void => { openHandler(wc)({ url: 'https://other.example/', disposition: 'new-window', features: '' }).createWindow?.({ webContents: fakeContents(), webPreferences: {} } as never) }
+
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(0)
+      openOnce()
+      openOnce()
+      expect(adoptWindow).toHaveBeenCalledTimes(1)
+      expect(host.adoptPopup).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('routes a modifier-click open with no guest webContents through the ordinary tab pipeline, never a view of its own', () => {
     const wc = fakeContents()
     const opened = fakeContents('https://other.example/')
