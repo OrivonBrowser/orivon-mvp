@@ -150,6 +150,12 @@ no Gatekeeper dialog, and **About** shows the release's version.
 **Fails if:** a Gatekeeper dialog appears, the digest check is skipped, or the script installs a
 different release than the newest one with a dmg attached.
 
+**The dmg, downloaded in a browser.** On the same Mac, download `Orivon-<version>-arm64.dmg` from the
+release page in Safari, open it, drag Orivon to Applications and open it. macOS may show its one-time
+"downloaded from the Internet" confirmation, which says Apple checked the app for malicious software.
+**Fails if:** the dialog says the app cannot be opened, is damaged, or comes from an unidentified
+developer, or **Privacy & Security** offers **Open Anyway** for Orivon.
+
 ---
 
 ## 6. The Windows one-line install

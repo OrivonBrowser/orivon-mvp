@@ -3,13 +3,13 @@
 # builds one system on that system; .github/workflows/release.yml builds all three on each GitHub
 # release, launches each package, and attaches them to the release (docs/development/packaging.md).
 #
-# No certificate is bought. The Windows installer is unsigned, so SmartScreen warns on first run,
-# and it is the only Windows file attached to a release. The Windows build also writes an AppX
-# package (the `appx` block below) for the Microsoft Store, which signs it itself: it is left
-# unsigned here, never attached to a release, and submitted to Partner Center by the release
-# workflow's store job (it stays a workflow artifact for upload by hand). macOS packages are
-# ad-hoc signed (`mac.identity` below), so Gatekeeper asks the person to allow the app once. The
-# schema here is electron-builder 26.x's, checked against the installed
+# No Windows certificate is bought. The Windows installer is unsigned, so SmartScreen warns on
+# first run, and it is the only Windows file attached to a release. The Windows build also writes
+# an AppX package (the `appx` block below) for the Microsoft Store, which signs it itself: it is
+# left unsigned here, never attached to a release, and submitted to Partner Center by the release
+# workflow's store job (it stays a workflow artifact for upload by hand). The macOS packages of a
+# release are signed with a Developer ID and notarized (the `mac` block below), so Gatekeeper
+# opens them without asking. The schema here is electron-builder 26.x's, checked against the installed
 # node_modules/app-builder-lib/scheme.json.
 # The `win` and `mac` blocks also register Orivon with the system as a browser and as the handler of
 # `orivon:` links: `protocols` below, and build/installer.nsh for the Windows installer's registry
@@ -340,13 +340,20 @@ mac:
       mimeType: application/pdf
       role: Viewer
       rank: Alternate
-  # Ad-hoc signing ("-"), not none: Apple silicon refuses to launch an unsigned binary,
-  # and packaging rewrites the Electron binary (fuses, name, Info.plist), so its own
-  # signature no longer holds. Hardened runtime is off because it rejects an ad-hoc app
-  # loading the Electron framework; it matters only for notarization, which needs a
-  # bought Developer ID certificate.
-  identity: "-"
-  hardenedRuntime: false
+  # No `identity` here: `npm run package:mac:signed` signs with the Developer ID Application
+  # certificate in CSC_LINK and notarizes with APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and
+  # APPLE_TEAM_ID (release.yml holds them as repository secrets). Hardened runtime is on, and
+  # one entitlements file serves the app and its helpers. `npm run package:mac` signs ad hoc
+  # instead (identity "-", hardened runtime off, no notarization): Apple silicon refuses an
+  # unsigned binary, and packaging rewrites the Electron binary (fuses, name, Info.plist), so
+  # its own signature no longer holds.
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # The reason macOS shows when a page first asks for the camera or microphone; without one
+  # the system ends the process at the request.
+  extendInfo:
+    NSCameraUsageDescription: A website or app you open in Orivon is asking to use your camera.
+    NSMicrophoneUsageDescription: A website or app you open in Orivon is asking to use your microphone.
 
 dmg:
   artifactName: ${productName}-${version}-${arch}.${ext}

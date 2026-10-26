@@ -8,12 +8,12 @@ Orivon is packaged for three systems by [`electron-builder`](https://www.electro
 | Linux (x64) | `orivon_<version>_amd64.deb` and `Orivon-<version>-x86_64.AppImage` | no (Linux packages are not) |
 | Windows (x64) | `Orivon-Setup-<version>-x64.exe`, an NSIS installer | no: SmartScreen warns on first run |
 | Windows (x64), Microsoft Store | `Orivon-Store-<version>-x64.appx` | no: the Store signs it after upload (section The Microsoft Store package) |
-| macOS | `Orivon-<version>-arm64.dmg` (Apple silicon) and `Orivon-<version>-x64.dmg` (Intel) | ad hoc: Gatekeeper asks once |
+| macOS | `Orivon-<version>-arm64.dmg` (Apple silicon) and `Orivon-<version>-x64.dmg` (Intel) | yes on a release: Developer ID and notarized (ad hoc in a pull request's build and in `npm run package:mac`) |
 
 The three systems are equal, and Linux is supported on X11 and Wayland both. Each GitHub release
 builds all of them and attaches them to itself (section Releases), except the Store package, which
-the workflow submits to Partner Center instead (section The Microsoft Store package). No certificate is bought, so the Windows installer and the macOS
-packages are not trusted by their systems out of the box (section Windows and macOS). Running from source stays supported on every system ([`setup.md`](setup.md)); its users
+the workflow submits to Partner Center instead (section The Microsoft Store package). No Windows certificate is bought, so Windows does not trust the
+installer out of the box (section Windows and macOS). Running from source stays supported on every system ([`setup.md`](setup.md)); its users
 and the package users count the same, and their telemetry works identically.
 
 > **Status.** CI builds every package on its own system, installs or mounts it, and launches it
@@ -485,12 +485,16 @@ PC": **More info**, then **Run anyway**. It installs for the current user into
 folder. Silent install: `Orivon-Setup-<version>-x64.exe /S`. A person who would rather not see the warning installs
 from the Microsoft Store instead (section The Microsoft Store package).
 
-**macOS.** The app is signed ad hoc, not with a Developer ID, and not notarized. Apple silicon
-refuses a binary with no signature at all, and packaging rewrites the Electron binary (its fuses,
-name and `Info.plist`), so the signature Electron shipped with no longer holds: electron-builder
-signs it again with `identity: "-"`. Hardened runtime is off, since it rejects an ad-hoc app
-loading the Electron framework, and it only matters for notarization. After dragging Orivon to
-Applications, the first open is refused: open **System Settings > Privacy & Security** and choose
+**macOS.** A release's apps are signed with a Developer ID Application certificate, run with the
+hardened runtime, and notarized by Apple with the ticket stapled to each app, so a Mac opens Orivon
+after a download without refusing it (section Signing). [`build/entitlements.mac.plist`](../../build/entitlements.mac.plist)
+gives the app and its helpers what the hardened runtime otherwise refuses: executable memory for V8 and
+WebAssembly, and the camera and microphone (`extendInfo` carries the reasons macOS shows when a page
+first asks). `npm run package:mac:signed` builds that. `npm run package:mac`, and the pull-request
+build, sign ad hoc instead (`identity: "-"`, hardened runtime off, no notarization), because
+Apple silicon refuses a binary with no signature at all, and packaging rewrites the Electron binary
+(its fuses, name and `Info.plist`), so the signature Electron shipped with no longer holds. An ad-hoc
+app is refused on its first open: open **System Settings > Privacy & Security** and choose
 **Open Anyway**, or run `xattr -dr com.apple.quarantine /Applications/Orivon.app`. The Intel dmg
 is built on an Apple silicon runner and launched there under Rosetta.
 
@@ -498,7 +502,7 @@ is built on an Apple silicon runner and launched there under Rosetta.
 `curl -fsSL https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/install-macos.sh | bash`,
 installs or updates Orivon with no Gatekeeper prompt. Gatekeeper only checks files that carry the
 `com.apple.quarantine` attribute, which a browser adds to a download and `curl` does not; Apple
-silicon still wants a signature, and the ad-hoc one the build has is enough. The script reads the
+silicon still wants a signature, and the build's is enough. The script reads the
 newest releases from GitHub's API and takes the newest non-pre-release that has a dmg for the Mac's
 architecture with a digest, else the newest pre-release that has one (a release whose packages are not
 attached yet is skipped). It downloads that dmg, compares its SHA-256 with the digest GitHub reports
@@ -561,11 +565,22 @@ download in transit, not against someone who controls the GitHub repository. The
 installs the AppImage it just built through it and starts the launcher with the packaged smoke check, and on pull
 requests and manual runs also installs the newest published release.
 
-**Signing later.** A Developer ID certificate (with notarization) and a Windows code-signing
-certificate would remove both warnings (the Store package has none to remove). electron-builder reads them from the environment
-(`CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`), so
-adding them is repository secrets, the matching `env:` lines in the workflow, and removing
-`identity: "-"` and `hardenedRuntime: false` from `mac:`.
+**Signing.** The release workflow's step "Package, sign and notarize" signs and notarizes the macOS
+apps from five repository secrets: `CSC_LINK` (the Developer ID Application certificate with its private
+key, as a base64 `.p12`), `CSC_KEY_PASSWORD` (the `.p12`'s password), `APPLE_ID`,
+`APPLE_APP_SPECIFIC_PASSWORD` (made for this use at account.apple.com, under Sign-In and Security) and
+`APPLE_TEAM_ID`. Only a release and a manual run read them, no other platform's step does (`CSC_LINK`
+would make electron-builder sign the Windows installer with it), and a pull request builds ad hoc. An
+empty secret stops the macOS job before it builds. The same step's checks mount each dmg and require the
+Developer ID signature, the hardened runtime, a stapled ticket and Gatekeeper's verdict
+`Notarized Developer ID`. `gh workflow run release.yml --ref <branch>` signs and notarizes a branch's
+build without publishing anything, which is how a change to this is tried.
+
+The certificate lasts five years from its issue. Before it ends, make a new signing request, issue a new
+Developer ID Application certificate, and replace `CSC_LINK` and `CSC_KEY_PASSWORD`; releases already
+notarized keep opening. The app-specific password stops working when the Apple ID's password changes:
+make a new one and replace `APPLE_APP_SPECIFIC_PASSWORD`. A Windows code-signing certificate would remove
+the SmartScreen warning; none is bought (the Store package has no warning to remove).
 
 ### Verifying the desktop entry
 

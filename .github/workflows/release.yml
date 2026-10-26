@@ -144,11 +144,33 @@ jobs:
         run: npm version "${TAG#v}" --no-git-tag-version --allow-same-version
 
       # electron-builder skips all macOS signing on a pull request unless told otherwise, and
-      # an unsigned arm64 app does not launch. The signature is ad hoc: no secret is involved.
+      # an unsigned arm64 app does not launch. A pull request has no secret, so macOS is signed ad hoc.
       - name: Package
+        if: ${{ matrix.platform != 'mac' || github.event_name == 'pull_request' }}
         env:
           CSC_FOR_PULL_REQUEST: 'true'
         run: npm run package:${{ matrix.platform }}
+
+      # A release and a manual run sign macOS with the Developer ID Application certificate and have Apple notarize
+      # it, and electron-builder staples the ticket to each app. The certificate is a base64 .p12 in CSC_LINK, and no
+      # other platform's step sees these secrets: CSC_LINK would make electron-builder sign the Windows installer too.
+      # A secret that is missing stops the job here, since the package would otherwise be built unsigned.
+      - name: Package, sign and notarize
+        if: ${{ matrix.platform == 'mac' && github.event_name != 'pull_request' }}
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error title=Apple signing::the repository secret $name is empty"
+              exit 1
+            fi
+          done
+          npm run package:mac:signed
 
       # The deb's postinstall loads an AppArmor profile that lets Chromium's sandbox use the user
       # namespaces Ubuntu 24.04 restricts; the AppImage runs as a person runs it, no extra switch.
@@ -355,13 +377,27 @@ jobs:
             Remove-Item "Cert:\CurrentUser\My\$env:STORE_CERT_THUMBPRINT" -ErrorAction SilentlyContinue
           }
 
+      # Signed, the app must say so three ways: a Developer ID signature with the hardened runtime, a stapled
+      # notarization ticket, and Gatekeeper accepting it as a notarized app, which is what a person's Mac asks.
       - name: Check the signature, mount each dmg and launch it
         if: matrix.platform == 'mac'
+        env:
+          SIGNED: ${{ github.event_name != 'pull_request' }}
         run: |
           for dmg in release/*.dmg; do
             mount="$RUNNER_TEMP/$(basename "$dmg" .dmg)"
             hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$dmg"
             codesign --verify --deep --strict --verbose=2 "$mount/Orivon.app"
+            if [ "$SIGNED" = true ]; then
+              details="$(codesign --display --verbose=4 "$mount/Orivon.app" 2>&1)"
+              echo "$details"
+              grep -q '^Authority=Developer ID Application' <<<"$details" || { echo "the app is not signed with a Developer ID Application certificate" >&2; exit 1; }
+              grep -q 'flags=.*runtime' <<<"$details" || { echo "the app's hardened runtime is off" >&2; exit 1; }
+              xcrun stapler validate "$mount/Orivon.app"
+              assessed="$(spctl --assess --type execute --verbose=4 "$mount/Orivon.app" 2>&1)" || { echo "$assessed" >&2; exit 1; }
+              echo "$assessed"
+              grep -q 'source=Notarized Developer ID' <<<"$assessed" || { echo "Gatekeeper does not see a notarized app" >&2; exit 1; }
+            fi
             node scripts/run-headless.mjs node scripts/smoke-packaged.mjs "$mount/Orivon.app/Contents/MacOS/Orivon"
             # A helper of the Intel build, run under Rosetta, can hold the volume a few seconds longer.
             hdiutil detach "$mount" || { sleep 5; hdiutil detach -force "$mount"; }
