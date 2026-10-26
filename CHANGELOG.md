@@ -12,6 +12,7 @@ Each section below lists what that release carried; `[Unreleased]` is what has l
 
 ### Fixed
 
+- **A page that checks a permission before it asks no longer reads "denied"**: a camera, microphone, location, clipboard, MIDI, idle-detection or window-management permission nobody has decided now reads `prompt` to `navigator.permissions.query`, on websites and on an extension's own pages, so a wallet extension's webcam check reaches the question instead of saying it has no permission. A stored block and Settings' block still read `denied`.
 - **`.eth` names load on a fresh install again**: the bundled light-client checkpoint is now the first block of a finalized epoch that the beacon server bootstraps from, and a checkpoint that server answers 404 to is replaced in the same run.
 
 ### Changed
@@ -33,6 +34,7 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+- **`permission-query-reads-prompt-when-a-request-would-ask`**: new row. `navigator.permissions.query({ name: 'camera' })` (and microphone, geolocation, clipboard-read, midi, idle-detection, window-management) now reads `prompt` for a permission the person has not decided, where it read `denied`, so an app that waited for anything but `denied` before asking can ask. An app that held back a request because it read `denied` needs no change; it can now ask. Recheck: any port that reads a permission before it asks for the camera or microphone.
 - **`sqlite-database-from-bytes`**: new row. An app that opens a database from a `Buffer` (`new Database(buffer)`) or reads one with `db.serialize()` no longer needs a change to run. Recheck: any port that caught the refusal, or that went through a temporary file.
 - **`sqlite-user-functions`** and **`sqlite-backup-to-app-files`**: new rows. An app that registers SQL functions on its database, or copies it with `db.backup`, no longer needs a change to run; `backup` cannot run inside a transaction. Recheck: any port that caught the refusal.
 - **`node-fs-ancestors-of-the-files-root-exist`**: new row. `fs.stat`, `existsSync` and `mkdir` on `/` and `/orivon` now answer as for directories that exist, and `readdir` lists the one entry toward the app's files; they failed `EACCES` before. Writes on them and any path beside the files still fail `EACCES`. Recheck: any port that walks a folder's ancestors.

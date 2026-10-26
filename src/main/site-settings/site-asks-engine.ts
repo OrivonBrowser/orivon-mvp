@@ -4,6 +4,7 @@
 // unit-tested without a window. `site-asker.ts` adapts it to the permission
 // gate; `ask-site.ts` is the question the person sees.
 import { originFromUrl } from '../../broker/policy/origin.js'
+import type { QueryState } from '../sessions/site-asks.js'
 import type { SiteRequest } from './electron-names.js'
 import type { SiteKind, SiteValue } from './kinds.js'
 import type { NavigatingTab, PageAccess } from './page-access.js'
@@ -48,6 +49,11 @@ export interface SiteAsksEngine<T extends NavigatingTab & object> {
   request: (request: SiteRequest, contents: T | null, details: RequestDetails) => Promise<boolean> | undefined
   /** True only for a stored allow on the tab's own site; undefined for a non-tab. Reads the store, never asks. */
   check: (kind: SiteKind | 'unknown', contents: T | null, requestingOrigin: string, details: CheckDetails) => boolean | undefined
+  /**
+   * What the tab's top frame reads from `navigator.permissions.query` for `kind`: the answer a request from it would
+   * get, and `prompt` where a request would ask. Reads, never asks, stores or notes. Undefined for a non-tab.
+   */
+  query: (kind: SiteKind, contents: T | null, frameOrigin: string) => QueryState | undefined
 }
 
 /**
@@ -142,6 +148,19 @@ export function createSiteAsksEngine<T extends NavigatingTab & object> (deps: Si
       // Chromium does not always make a request once a check passes, so the page's chip learns of the allowance here.
       if (details.isMainFrame === true && tabOrigin(contents) === origin) deps.access.note(contents, origin, kind, 'allowed')
       return true
+    },
+
+    query (kind, contents, frameOrigin) {
+      if (contents === null || !deps.isTab(contents)) return undefined
+      const origin = originFromUrl(frameOrigin)
+      if (origin === null || deps.isApp(origin) || tabOrigin(contents) !== origin) return 'denied'
+      const stored = deps.store.get(origin, kind)
+      if (stored === 'block') return 'denied'
+      if (stored === 'allow') return reachable([kind]) ? 'granted' : 'denied'
+      // The steps `decide` takes before it asks. A tab out of sight is not one of them: a request from it is refused
+      // for now and not for good, which is no answer of the person's.
+      if (deps.defaultFor(kind) === 'block' || deps.access.wasDismissed(contents, origin, kind)) return 'denied'
+      return 'prompt'
     }
   }
 }

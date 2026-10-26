@@ -4,6 +4,7 @@
 // so every rule is unit-tested without a window. `extension-media-asker.ts`
 // adapts it to the permission gate; the sheet the person sees is
 // `permission-prompt-overlay.ts`.
+import type { QueryState } from '../sessions/site-asks.js'
 import { checkOf, requestOf } from '../site-settings/electron-names.js'
 import type { SiteKind } from '../site-settings/kinds.js'
 import type { ExtensionMediaAnswers, MediaAnswer } from './extension-prefs.js'
@@ -32,11 +33,20 @@ export interface ExtensionMedia<T extends object> {
   request: (contents: T, permission: string, details: unknown) => Promise<boolean> | undefined
   /** True only for a stored allow; undefined when the check is not about a loaded extension's device. Reads the store, never asks. */
   check: (contents: T | null, permission: string, requestingOrigin: string, details: unknown) => boolean | undefined
+  /**
+   * What the page's top frame reads from `navigator.permissions.query` for the web name `permission`: the answer a
+   * request from it would get, and `prompt` where a request would ask. Reads, never asks. Undefined for a name an
+   * extension page is never asked about and for a page that is not a loaded extension's.
+   */
+  query: (contents: T, permission: string, frameOrigin: string) => QueryState | undefined
 }
 
 const EXTENSION_ORIGIN = /^chrome-extension:\/\/([^/]+)/
 
 const isMediaKind = (kind: SiteKind): kind is MediaKind => kind === 'camera' || kind === 'microphone'
+
+/** The names `navigator.permissions.query` takes for the two devices an extension page is asked about. */
+const queryKindOf = (name: string): MediaKind | undefined => name === 'camera' || name === 'microphone' ? name : undefined
 
 const idOf = (url: unknown): string | undefined => typeof url === 'string' ? EXTENSION_ORIGIN.exec(url)?.[1] : undefined
 
@@ -104,6 +114,17 @@ export function createExtensionMedia<T extends object, P> (deps: ExtensionMediaD
       if (idOf(requestingOrigin) !== extensionId) return false
       const kind = checkOf('media', details)
       return kind !== undefined && kind !== 'unknown' && isMediaKind(kind) && deps.answers(extensionId)[kind] === 'allow'
+    },
+
+    query (contents, permission, frameOrigin) {
+      const kind = queryKindOf(permission)
+      const extensionId = idOf(frameOrigin)
+      if (kind === undefined || extensionId === undefined || !deps.isLoaded(extensionId, contents)) return undefined
+      const stored = deps.answers(extensionId)[kind]
+      if (stored !== undefined) return stored === 'allow' ? 'granted' : 'denied'
+      // The steps `decide` takes before it asks. A page with no visible place is not one of them: its request is
+      // refused for now and not for good, which is no answer of the person's.
+      return deps.blockedByDefault(kind) || deps.nag.suspended(extensionId) ? 'denied' : 'prompt'
     }
   }
 }

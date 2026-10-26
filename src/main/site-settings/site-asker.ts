@@ -5,7 +5,7 @@
 // rules.
 import type { WebContents } from 'electron'
 import type { SiteAsker } from '../sessions/site-asks.js'
-import { checkOf, requestOf } from './electron-names.js'
+import { checkOf, queryKindOf, requestOf } from './electron-names.js'
 import type { CheckDetails, RequestDetails, SiteAsksEngine } from './site-asks-engine.js'
 
 function detailsOf<D extends object> (details: unknown): D {
@@ -22,6 +22,10 @@ export function createSiteAsker (engine: SiteAsksEngine<WebContents>): SiteAsker
     check (contents, permission, requestingOrigin, details) {
       const kind = checkOf(permission, details)
       return kind === undefined ? undefined : engine.check(kind, contents, requestingOrigin, detailsOf<CheckDetails>(details))
+    },
+    query (contents, permission, frameOrigin) {
+      const kind = queryKindOf(permission)
+      return kind === undefined ? undefined : engine.query(kind, contents, frameOrigin)
     }
   }
 }
