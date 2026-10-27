@@ -87,6 +87,7 @@ export class SettingsState {
     await this.web3.load()
     await this.downloads.load()
     await this.engines.load()
+    await this.updates.load()
     for (const part of this.parts.values()) await part.load?.()
     this.profiles = await this.bridge.request('profiles', { type: 'list' }) as SettingsState['profiles']
     this.bridge.onEvent((topic, payload) => {

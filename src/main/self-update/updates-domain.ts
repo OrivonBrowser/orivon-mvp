@@ -1,16 +1,19 @@
-// What the Settings page may ask about updates: to look now, and to see the page of the release that was found.
-// Whether Orivon looks by itself is a setting. It only reads whether a newer release exists, and never installs
-// one (`update-check.ts`). A private session looks at nothing.
+// What the Settings page may ask about updates: to look now, what is on offer, and to see the page of the release
+// that was found. Whether Orivon looks by itself is a setting. It only reads whether a newer release exists, and
+// never installs one (`update-check.ts`). A private session looks at nothing.
 import type { InternalCaller, InternalDomain } from '../pages/internal-ipc.js'
-import { releaseUrl } from './release-url.js'
-import type { UpdateAnswer } from './update-check-runner.js'
+import type { UpdateAnswer, UpdateOffer } from './update-notice.js'
+
+/** What Settings is told of a release on offer, in the shape of a look's answer. */
+export function answerOfOffer (offer: UpdateOffer | null): UpdateAnswer | null {
+  return offer === null ? null : { reached: true, current: offer.current, latest: offer.latest, newer: true, url: offer.url }
+}
 
 /**
  * `notify` defaults to a no-op so a caller that does not care about a second
  * open Settings window -- every existing test -- needs no change. The real
  * one (start-internal-pages.ts) broadcasts the answer this tab just found to
- * every other one, since "check now" is the only source of this section's
- * state and nothing else can trigger a background change to push instead.
+ * every other one.
  */
 export function updatesDomain (
   checkNow: () => Promise<UpdateAnswer>,
@@ -19,24 +22,26 @@ export function updatesDomain (
   /** Opens `url` in a new tab of the window `caller` is in. */
   openPage: (caller: InternalCaller, url: string) => void = () => {},
   /** A Microsoft Store install is updated by the Store, so it neither looks nor sends the person to GitHub. */
-  fromStore = false
+  fromStore = false,
+  /** The newer release on offer, whichever look found it. The page never says which page to open: only that it wants this one. */
+  offered: () => UpdateOffer | null = () => null
 ): InternalDomain {
-  /** The tag of the newer release the last check found. The page never says which page to open: only that it wants this one. */
-  let found: string | null = null
   return {
     pages: ['settings'],
     handle: async (command, caller) => {
       const type = typeof command === 'object' && command !== null ? (command as { type?: unknown }).type : undefined
-      if (type !== 'check' && type !== 'openRelease') return undefined
+      if (type !== 'check' && type !== 'openRelease' && type !== 'state') return undefined
+      // Nothing is on offer where nothing looks: the page shows nothing, which is not a refusal to explain.
+      if (type === 'state') return { ok: true, answer: fromStore || isPrivate ? null : answerOfOffer(offered()) }
       if (fromStore) return { ok: false, reason: 'store' }
       if (isPrivate) return { ok: false, reason: 'private' }
       if (type === 'openRelease') {
-        if (found === null) return { ok: false, reason: 'none' }
-        openPage(caller, releaseUrl(found))
+        const offer = offered()
+        if (offer === null) return { ok: false, reason: 'none' }
+        openPage(caller, offer.url)
         return { ok: true }
       }
       const answer = await checkNow()
-      found = answer.newer ? answer.latest : null
       notify(answer)
       return { ok: true, answer }
     }
