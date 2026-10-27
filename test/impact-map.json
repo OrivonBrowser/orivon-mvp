@@ -126,6 +126,7 @@
     { "prefix": "scripts/pin-releases.sh", "run": [] },
     { "prefix": "scripts/pin-extra.mjs", "run": [] },
     { "prefix": "scripts/filebase-sync.mjs", "run": [] },
+    { "prefix": "scripts/swarm-feeds*", "run": [] },
     { "prefix": "scripts/ipfs-node-watchdog.sh", "run": [] },
     { "prefix": "scripts/ipfs-status.sh", "run": [] },
     { "prefix": "scripts/refresh-eth-checkpoint.mjs", "run": [] },
