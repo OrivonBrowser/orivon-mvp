@@ -7,6 +7,7 @@ import { exposeChildHostConnect } from './expose-child-host-connect.js'
 import { installEmbedEventRelay } from './embed-event-relay.js'
 import { installFormWatch } from './form-watch.js'
 import { installManifestHintWatcher } from './manifest-hint.js'
+import { installNoDragRegions } from './no-drag-regions.js'
 import { installPermissionQuery } from './permission-query.js'
 import { installPageKeys } from './page-keys.js'
 import { installPageVisibility } from './page-visibility.js'
@@ -23,11 +24,13 @@ import { hideUserAgentDataOnSignInHosts } from './sign-in-identity.js'
  */
 export function exposeOrdinaryTabSurface (): void {
   if (location.protocol === 'chrome-extension:') return
+  // First, so no later installer's failure leaves the page with its drag regions: a press on its buttons reaches it.
+  installNoDragRegions()
   // Google's sign-in hosts are shown Firefox's identity, which has no
   // navigator.userAgentData -- ./sign-in-identity.ts.
   hideUserAgentDataOnSignInHosts()
-  // A tab out of sight reads as hidden to its page, as in Chrome -- ./page-visibility.ts. First, so it is in
-  // place before any page script reads the state.
+  // A tab out of sight reads as hidden to its page, as in Chrome -- ./page-visibility.ts. Before everything that
+  // exposes anything, so it is in place before any page script reads the state.
   installPageVisibility()
   exposeOrivon()
   // ADR-0055, ADR-0061: the page's getDisplayMedia asks for Orivon's picker; this world arms the ticket and starts the

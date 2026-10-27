@@ -14,6 +14,7 @@ import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support
 import { runCommand } from '../support/auth-support.js'
 import { clearFocusLog, readFocusLog, startFocusLog, underVirtualDisplay } from '../support/focus-helpers.js'
 import { waitForStartPageLoaded } from '../support/e2e-helpers.js'
+import { pressPointer } from '../support/native-pointer.js'
 import { html, launchShell, startServer } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
 import { ABSENCE_SETTLE_MS, activeTabInfo, delay, popoverShown, tabIds, tabViews, waitFor } from '../support/smoke-helpers.mjs'
@@ -100,22 +101,6 @@ async function go (app: App, chrome: Page, address: string): Promise<void> {
   await chrome.press('#address', 'Enter')
   expect(await waitFor(async () => (await tabAddresses(app)).includes(address))).toBe(true)
   expect(await waitFor(async () => (await activeTabInfo(chrome)).address === address)).toBe(true)
-}
-
-/** A press of a real pointer button on the virtual display, at a point in screen pixels. */
-function pressPointer (x: number, y: number, button: number): void {
-  const script = [
-    'import ctypes, sys, time',
-    "x11 = ctypes.CDLL('libX11.so.6'); xtst = ctypes.CDLL('libXtst.so.6')",
-    'x11.XOpenDisplay.restype = ctypes.c_void_p',
-    'display = ctypes.c_void_p(x11.XOpenDisplay(None))',
-    'x, y, button = [int(v) for v in sys.argv[1:4]]',
-    'xtst.XTestFakeMotionEvent(display, -1, x, y, 0); x11.XFlush(display); time.sleep(0.15)',
-    'xtst.XTestFakeButtonEvent(display, button, 1, 0); x11.XFlush(display); time.sleep(0.08)',
-    'xtst.XTestFakeButtonEvent(display, button, 0, 0); x11.XFlush(display); time.sleep(0.1)',
-    'x11.XCloseDisplay(display)'
-  ].join('\n')
-  execFileSync('python3', ['-c', script, String(Math.round(x)), String(Math.round(y)), String(button)], { timeout: 15_000 })
 }
 
 /** Where a row of the overlay is on the screen: the window's content, the overlay's place in it, the row in the overlay. */
