@@ -20,6 +20,7 @@ Each section below lists what that release carried; `[Unreleased]` is what has l
 
 ### Changed
 
+- **The newest-release start page asks search engines not to index it**: the `index.html` that `latest.orivonstack.eth` opens now carries `<meta name="robots" content="noindex">`, as its `latest.orivonstack.com` twin does. A visitor sees the same page; the folder's CID changes on the next `sync`, the releases' do not.
 - **`.eth.limo` addresses inside a page load as `.eth`**: an image, script, stylesheet, font, media file or request a page loads from a `<name>.eth.limo` or `.eth.link` address now comes from the `.eth` name, checked on this computer, and a request from another origin can still read it. Frames keep loading through the gateway, since a `.eth` site refuses to be framed by another site; Settings > Web3 turns it off.
 
 ### Added
