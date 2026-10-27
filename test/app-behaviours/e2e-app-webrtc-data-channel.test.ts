@@ -80,6 +80,8 @@ it('[app:app-webrtc-data-channel-exchanges-bytes] two pages of an app that holds
     expect(await waitFor(() => findViewShowing(app, chrome, peerUrl) !== undefined)).toBe(true)
     const peer = findViewShowing(app, chrome, peerUrl) as Page
     await peer.waitForLoadState('load')
+    // WATCH-FAIL (not for merge): the WebRTC policy that keeps UDP off the network, on every page of the app.
+    await app.evaluate(({ webContents }) => { for (const contents of webContents.getAllWebContents()) contents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp') })
 
     const offer = await caller.evaluate(async () => {
       const hex = (buffer: ArrayBuffer): string => Array.from(new Uint8Array(buffer), (b) => b.toString(16).padStart(2, '0')).join('')

@@ -84,6 +84,10 @@ it('[app:indexeddb-survives-restart] [app:localstorage-survives-restart] [app:no
       await closeElectron(first.app, { keepProfile: true })
       live = undefined
 
+      // WATCH-FAIL (not for merge): the browser loses its origin private file system between the launches.
+      const { readdirSync, rmSync, statSync } = await import('node:fs')
+      const lose = (dir: string): void => { for (const name of readdirSync(dir)) { const full = `${dir}/${name}`; if (name === 'File System') { rmSync(full, { recursive: true, force: true }); console.log(`[watch-fail] removed ${full}`) } else if (statSync(full).isDirectory()) lose(full) } }
+      lose(profile)
       const second = await launchShell({ reuseProfile: profile })
       live = second.app
       await grantApp(second.app, server.origin, MANIFEST, [{ capability: 'fs', patterns: [] }])
