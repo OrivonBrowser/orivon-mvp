@@ -12,6 +12,9 @@
 # Needs bash, curl, jq, openssl 3.2 or later (for keccak-256), xxd and Kubo's `ipfs`. Settings come from the environment, below.
 # NAMES_FILE has one line per IPNS key: `<key> <name.eth> [<name.eth> ...]`, `#` starts a comment. A key
 # without a line has no expected .eth name; a line whose key is not in the keystore is an error.
+# FEEDS_FILE (optional, a path) has one line per IPNS key whose site is also on Swarm: `<key> bzz://<64 hex>`, the
+# feed manifest swarm-feeds.mjs keeps current (it writes this file). A name is right when its contenthash is its
+# key's ipns:// or its key's feed; the page says which.
 # LATEST_KEY names the key pin-releases.sh points at the newest release it pinned, when it does.
 #
 # No `set -e`: a check that fails must leave the others running.
@@ -20,6 +23,7 @@ set -uo pipefail
 IPFS_API=${IPFS_API:-/ip4/127.0.0.1/tcp/5001}
 OUT_DIR=${OUT_DIR:-}
 NAMES_FILE=${NAMES_FILE:-}
+FEEDS_FILE=${FEEDS_FILE:-}
 ETH_RPCS=${ETH_RPCS:-https://ethereum-rpc.publicnode.com https://eth.drpc.org https://rpc.mevblocker.io}
 GATEWAYS=${GATEWAYS:-https://ipfs.orbitor.dev https://ipfs.filebase.io}
 ROUTING=${ROUTING:-https://delegated-ipfs.dev}
@@ -124,6 +128,14 @@ names_for () {
   sed 's/#.*//' "$NAMES_FILE" | awk -v k="$1" '$1 == k { for (i = 2; i <= NF; i++) print $i }'
 }
 
+# The feed manifest (bzz://<64 hex>) FEEDS_FILE lists for the key; nothing when it lists none.
+feed_for () {
+  local feed
+  [ -n "$FEEDS_FILE" ] && [ -f "$FEEDS_FILE" ] && [ -r "$FEEDS_FILE" ] || return 0
+  feed=$(sed 's/#.*//' "$FEEDS_FILE" | awk -v k="$1" '$1 == k { print $2; exit }')
+  if [[ $feed =~ ^bzz://[0-9a-f]{64}$ ]]; then echo "$feed"; fi
+}
+
 # ---- ENS
 
 keccak () { openssl dgst -keccak-256 -r | awk '{ print $1 }'; }
@@ -147,7 +159,7 @@ eth_call () {
   done
   return 1
 }
-# The ABI-encoded `bytes` of contenthash(), as ipns://, ipfs:// or other:<hex>; nothing when it is empty.
+# The ABI-encoded `bytes` of contenthash(), as ipns://, ipfs://, bzz://<64 hex> or other:<hex>; nothing when it is empty.
 decode_contenthash () {
   local h=${1#0x} off len data
   [ ${#h} -ge 128 ] || return 0
@@ -157,13 +169,16 @@ decode_contenthash () {
     '') ;;
     e501*) echo "ipns://$(ipfs cid format -b base36 "f${data:4}" 2>/dev/null)" ;;
     e301*) echo "ipfs://$(ipfs cid format -v 1 -b base32 "f${data:4}" 2>/dev/null)" ;;
+    # swarm-ns, CIDv1, swarm-manifest, keccak-256, 32 bytes: the digest is the Swarm reference.
+    e40101fa011b20*) if [ ${#data} -eq 78 ]; then echo "bzz://${data:14}"; else echo "other:0x$data"; fi ;;
     *) echo "other:0x$data" ;;
   esac
 }
-# Sets ENS_STATE (ok, wrong, none, no-resolver, unknown) and ENS_ACTUAL for <name> expected to hold <ipns://id>.
+# Sets ENS_STATE (ok, wrong, none, no-resolver, unknown), ENS_ACTUAL and, when ok, ENS_VIA (ipns or feed) for <name>
+# expected to hold <ipns://id> or, when one is given, <bzz://feed manifest>.
 ens_check () {
   local node r c resolver
-  ENS_STATE=unknown; ENS_ACTUAL=''
+  ENS_STATE=unknown; ENS_ACTUAL=''; ENS_VIA=''
   [ "$KECCAK" = 1 ] || return 0
   node=$(namehash "$1")
   r=$(eth_call "$ENS_REGISTRY" "0x0178b8bf$node") || return 0
@@ -172,7 +187,8 @@ ens_check () {
   c=$(eth_call "0x$resolver" "0xbc1c58d1$node") || return 0
   ENS_ACTUAL=$(decode_contenthash "$c")
   if [ -z "$ENS_ACTUAL" ]; then ENS_STATE=none
-  elif [ "$ENS_ACTUAL" = "$2" ]; then ENS_STATE=ok
+  elif [ "$ENS_ACTUAL" = "$2" ]; then ENS_STATE=ok; ENS_VIA=ipns
+  elif [ -n "${3:-}" ] && [ "$ENS_ACTUAL" = "$3" ]; then ENS_STATE=ok; ENS_VIA=feed
   else ENS_STATE=wrong; fi
 }
 
@@ -285,9 +301,10 @@ check_build () {
 }
 
 collect_site () {
-  local key=$1 id=$2 ipns="ipns://$2" lv target name matches pinned_j=null expires_left
+  local key=$1 id=$2 ipns="ipns://$2" lv target name matches pinned_j=null expires_left feed want
   local names_file="$T/names.$key" gw=[] prov=null
   ST=ok; : > "$names_file"
+  feed=$(feed_for "$key"); want=${feed:-$ipns}
   lv=$(ipfs --timeout="${TIMEOUT}s" name resolve --offline "/ipns/$id" 2>/dev/null) || lv=''
   fetch_record "$id"
   target=$(cid_of "$lv"); [ -n "$target" ] || target=$(cid_of "$REC_VALUE")
@@ -313,12 +330,12 @@ collect_site () {
   fi
 
   for name in $(names_for "$key"); do
-    ens_check "$name" "$ipns"
+    ens_check "$name" "$ipns" "$feed"
     local limo=null
     case $ENS_STATE in
-      wrong) flag error "$name points at ${ENS_ACTUAL}, not at its key $ipns: set its contenthash to $ipns" ;;
-      none) flag error "$name has no contenthash: set it to $ipns" ;;
-      no-resolver) flag error "$name has no resolver: set one, then set its contenthash to $ipns" ;;
+      wrong) flag error "$name points at ${ENS_ACTUAL}, not at ${feed:+its Swarm feed $feed or }its key $ipns: set its contenthash to $want" ;;
+      none) flag error "$name has no contenthash: set it to $want" ;;
+      no-resolver) flag error "$name has no resolver: set one, then set its contenthash to $want" ;;
       unknown) [ "$KECCAK" = 1 ] && flag warn "Could not read the ENS record of $name (no Ethereum RPC answered)" ;;
     esac
     if [ "$ETH_LIMO" = 1 ]; then
@@ -330,13 +347,14 @@ collect_site () {
         flag warn "$name.limo did not load (HTTP code $code)"
       fi
     fi
-    jq -nc --arg n "$name" --arg a "$ENS_ACTUAL" --arg s "$ENS_STATE" --argjson l "$limo" '{name: $n, actual: $a, state: $s, limo: $l}' >> "$names_file"
+    jq -nc --arg n "$name" --arg a "$ENS_ACTUAL" --arg s "$ENS_STATE" --arg v "$ENS_VIA" --argjson l "$limo" \
+      '{name: $n, actual: $a, state: $s, via: (if $v == "" then null else $v end), limo: $l}' >> "$names_file"
   done
 
-  jq -nc --arg key "$key" --arg id "$id" --arg ipns "$ipns" --arg target "$target" --argjson found "$(tf "$REC_FOUND")" \
+  jq -nc --arg key "$key" --arg id "$id" --arg ipns "$ipns" --arg feed "$feed" --arg target "$target" --argjson found "$(tf "$REC_FOUND")" \
     --arg value "$REC_VALUE" --argjson matches "$matches" --arg expires "$REC_EXPIRES" --argjson pinned "$pinned_j" \
     --argjson provided "$prov" --argjson gateways "$gw" --argjson names "$(jq -sc . "$names_file")" --arg state "$ST" '{
-      key: $key, id: $id, ipns: $ipns, target: (if $target == "" then null else $target end),
+      key: $key, id: $id, ipns: $ipns, feed: (if $feed == "" then null else $feed end), target: (if $target == "" then null else $target end),
       record: {found: $found, value: (if $value == "" then null else $value end), matches: $matches,
                expires_at: (if $expires == "" then null else $expires end)},
       pinned: $pinned, provided: $provided, gateways: $gateways, names: $names, state: $state}' >> "$T/sites"
@@ -355,7 +373,7 @@ collect_sites () {
     while read -r key; do
       [ -n "$key" ] && [[ $known != *" $key "* ]] || continue
       flag error "Key missing: the names file lists the key $key, but the node has no such key"
-      jq -nc --arg key "$key" '{key: $key, id: null, ipns: null, target: null, record: {found: null, value: null, matches: null, expires_at: null},
+      jq -nc --arg key "$key" '{key: $key, id: null, ipns: null, feed: null, target: null, record: {found: null, value: null, matches: null, expires_at: null},
         pinned: null, provided: null, gateways: [], names: [], state: "error", note: "key missing"}' >> "$T/sites"
     done < <(sed 's/#.*//' "$NAMES_FILE" | awk 'NF { print $1 }' | sort -u)
   fi
@@ -444,6 +462,9 @@ collect () {
     KECCAK=0
     problem warn "This server's openssl has no keccak-256 (it needs 3.2 or later), so no .eth name is checked"
   fi
+  if [ -n "$FEEDS_FILE" ] && { [ ! -f "$FEEDS_FILE" ] || [ ! -r "$FEEDS_FILE" ]; }; then
+    problem warn "The feeds file cannot be read, so no .eth name is accepted at its site's Swarm feed"
+  fi
   log "node"
   collect_node
   collect_sites
@@ -481,6 +502,7 @@ def dur: if . == null then "unknown" else
 def namecell: (.names // []) | if length == 0 then "<span class='muted'>none expected</span>" else map(
     "<div>" + (if .state == "ok" then true elif .state == "unknown" then null else false end | mark) + " " + (.name | h)
     + (if .state == "wrong" then " <small class='bad'>points at " + (.actual | h) + "</small>"
+       elif .state == "ok" and .via == "feed" then " <small class='muted'>points at its Swarm feed</small>"
        elif .state == "none" then " <small class='bad'>has no contenthash</small>"
        elif .state == "no-resolver" then " <small class='bad'>has no resolver</small>"
        elif .state == "unknown" then " <small class='muted'>could not be read</small>" else "" end)
@@ -548,9 +570,9 @@ td code { display: inline-block; min-width: 24ch; } .narrow { display: none; }
    + tile(if $i.counted != null and $i.limit != null then ((($i.counted * 100 / $i.limit) | floor | tostring) + "%") else "?" end; "inbound budget used")
    + "</div>")
 + "<h2>Sites and apps (IPNS)</h2>
-<div class='wrap'><table class='sites'><thead><tr><th>Name</th><th>.eth name</th><th>ipns://</th><th>Current build</th><th>Pinned</th><th>On the network</th><th>Gateways (bytes match)</th><th>State</th></tr></thead><tbody>"
+<div class='wrap'><table class='sites'><thead><tr><th>Name</th><th>.eth name</th><th>ipns:// and bzz://</th><th>Current build</th><th>Pinned</th><th>On the network</th><th>Gateways (bytes match)</th><th>State</th></tr></thead><tbody>"
 + (.sites | map("<tr>" + ("<b>" + (.key | h) + "</b> <span class='narrow'>" + badge + "</span>" | td("Name")) + (namecell | td(".eth name"))
-    + ((if .ipns then "<code>" + (.ipns | h) + "</code>" else "<span class='bad'>key missing</span>" end) | td("ipns://"))
+    + ((if .ipns then "<code>" + (.ipns | h) + "</code>" + (if .feed then "<br><small class='muted'>Swarm feed</small> <code>" + (.feed | h) + "</code>" else "" end) else "<span class='bad'>key missing</span>" end) | td("ipns:// and bzz://"))
     + (.target | short | td("Current build")) + (.pinned | mark | td("Pinned")) + ((if .id then net else "" end) | td("On the network"))
     + (gws | td("Gateways")) + (badge | td("State")) + "</tr>") | join(""))
 + "</tbody></table></div>
@@ -591,12 +613,12 @@ def yn: if . == true then "yes" elif . == false then "NO" else "?" end;
 def short: if . == null then "none" elif length > 24 then "ipfs://" + .[0:14] + "..." + .[-6:] else "ipfs://" + . end;
 def host: sub("^https?://"; "");
 def gws: (.gateways // []) | map((.url | host) + " " + (if .samples > 0 and .matched == .samples then "ok " elif .samples == 0 then "nothing to sample " else "FAILED " end) + (.matched | tostring) + "/" + (.samples | tostring)) | join(", ");
-def names: (.names // []) | if length == 0 then "none expected" else map(.name + " " + (if .state == "ok" then "ok" elif .state == "wrong" then "POINTS AT " + .actual elif .state == "none" then "NO CONTENTHASH" elif .state == "no-resolver" then "NO RESOLVER" else "unknown" end)) | join("<br>") end;
+def names: (.names // []) | if length == 0 then "none expected" else map(.name + " " + (if .state == "ok" then "ok" + (if .via == "feed" then " (points at its Swarm feed)" else "" end) elif .state == "wrong" then "POINTS AT " + .actual elif .state == "none" then "NO CONTENTHASH" elif .state == "no-resolver" then "NO RESOLVER" else "unknown" end)) | join("<br>") end;
 (.problems // []) as $p |
 "# Orivon IPFS status\n\nGenerated " + (.generated_at | tm) + ", refreshed every " + (.interval_minutes | tostring) + " minutes.\n\n"
 + (if ($p | length) == 0 then "**Everything is served.**\n" else "**Needs attention:**\n\n" + ($p | map("- " + .severity + ": " + .text) | join("\n")) + "\n" end)
-+ "\n## Sites and apps (IPNS)\n\n| Name | .eth name | ipns:// | Current build | Pinned | Record on network | Provided | Gateways | State |\n|---|---|---|---|---|---|---|---|---|\n"
-+ (.sites | map("| " + (.key | c) + " | " + (names | c) + " | " + (if .ipns then "`" + .ipns + "`" else "key missing" end) + " | " + (.target | short | c) + " | " + (.pinned | yn) + " | " + (.record.found | yn) + " | " + (.provided | yn) + " | " + (gws | c) + " | " + .state + " |") | join("\n"))
++ "\n## Sites and apps (IPNS)\n\n| Name | .eth name | ipns:// and bzz:// | Current build | Pinned | Record on network | Provided | Gateways | State |\n|---|---|---|---|---|---|---|---|---|\n"
++ (.sites | map("| " + (.key | c) + " | " + (names | c) + " | " + (if .ipns then "`" + .ipns + "`" + (if .feed then "<br>`" + .feed + "`" else "" end) else "key missing" end) + " | " + (.target | short | c) + " | " + (.pinned | yn) + " | " + (.record.found | yn) + " | " + (.provided | yn) + " | " + (gws | c) + " | " + .state + " |") | join("\n"))
 + "\n\n## Releases\n\n"
 + (if .latest == null then "" else "Newest release by name: " + ((.latest.names // []) | join(", ")) + " -> `" + (.latest.ipns // "key missing") + "` -> " + (.latest.tag // .latest.target // "nothing yet") + "\n\n" end)
 + "| Tag | Published | ipfs:// | Kept here | Pinned | Gateways | State |\n|---|---|---|---|---|---|---|\n"

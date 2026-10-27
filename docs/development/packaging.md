@@ -215,7 +215,11 @@ moves to a new CID is a new version) and keeps its own copy of every site. A run
 line per site: the IPNS key's name, then the ENS names it serves), and for each site that moved uploads the
 version to Bee and appends an update to the site's feed. The feed's owner is one secp256k1 key that never
 holds funds; Bee's wallet pays. `swarm-feeds.mjs list` prints each site's `bzz://` feed manifest, the address an
-ENS name's contenthash points at, and it does not change when a version does.
+ENS name's contenthash points at, and it does not change when a version does. It prints each site's **Score id**
+too: the Web3 Score identifier of the version the feed currently names, `cid:` and the CIDv1 of its Swarm reference
+(codec swarm-manifest, keccak-256 multihash), so it always starts `cid:bah5acgza`. It is the id to add to the site's
+Web3 Score evaluation, and it changes with each version, as the reference does; a site with no version uploaded yet
+shows `-`.
 
 Postage is two **immutable** batches, because an immutable batch refuses a chunk it has no room for instead of
 overwriting an older one, so what was published stays readable until the batch expires:
@@ -278,7 +282,7 @@ user units on the machine that runs Bee:
 Type=oneshot
 EnvironmentFile=%h/.config/orivon-swarm-feeds/settings.env
 # settings.env: BEE_API=http://127.0.0.1:1733  IPFS_API=ssh://<user>@<host>  NAMES_FILE=ssh://<user>@<host>/<path>
-#               WORK_DIR=<a disk folder>  SUMMARY_LOG=<optional>
+#               WORK_DIR=<a disk folder>  SUMMARY_LOG=<optional>  FEEDS_FILE=ssh://<user>@<host>/<path>
 ExecStart=/usr/bin/flock -n %t/orivon-swarm-feeds.lock /usr/bin/node %h/.local/lib/orivon-swarm-feeds/swarm-feeds.mjs
 
 # ~/.config/systemd/user/orivon-swarm-feeds.timer: OnBootSec=10min, OnUnitActiveSec=10min
@@ -286,6 +290,23 @@ ExecStart=/usr/bin/flock -n %t/orivon-swarm-feeds.lock /usr/bin/node %h/.local/l
 
 Two runs at once would both write `state.json`. systemd never starts a unit that is still running, and the
 `flock` covers a run started by hand: start one the same way, with the same lock file.
+
+`FEEDS_FILE` (optional; a path or `ssh://<user>@<host>/<absolute path>`, the forms `NAMES_FILE` takes, and never the
+names file itself) is where a sync leaves the feed manifests for the tools that check an ENS name against its site:
+a comment line, then one line per site that has a manifest, in names-file order.
+
+```
+# <ipns-key> bzz://<feed manifest>, one line per site. Written by swarm-feeds.mjs: edits are overwritten.
+explore bzz://<64 hex>
+web3score bzz://<64 hex>
+```
+
+It is written after a sync that is not a dry run and replaced all at once (over ssh as `cat > <path>.tmp && mv
+<path>.tmp <path>`, every value single-quoted, the text on stdin). It is written only when its text differs from what the
+job wrote last to that place (`state.json` keeps the SHA-256), so a timer that finds nothing new never reaches the
+host; the file is also written again when `FEEDS_FILE` names another place. A file the job cannot write is an error of the
+run (exit 1, in `status.json`'s `errors`) and the sites are still published; the next run writes it. The status page
+reads it (section The status page).
 
 `status.json` is what each run leaves: `ok`, the wallet, each batch (`ttlDays`, `fill`, `usable`), and per site
 the feed manifest, the newest index, the IPFS CID and Swarm reference it carries, and `uploadPending`; its
@@ -351,8 +372,17 @@ docs         docs.example.eth
 ```
 
 A key without a line is shown as "none expected"; a line whose key is not in the node's keystore is an error.
+
 The page names every key and the node's health, so it is served privately: the Orivon node's web server
 serves `OUT_DIR` over HTTPS behind a password. The script itself publishes nothing.
+
+A site that is also on Swarm (section Orivon's sites on Swarm) may have its names point at its feed
+instead. `FEEDS_FILE` (optional, a local path on the pinning node) is the file the Swarm job writes, `<ipns-key>
+bzz://<64 hex>` per line, `#` starting a comment; the job's own `FEEDS_FILE=ssh://<user>@<node>/<that path>` puts it
+there. A name is then right when its contenthash is its key's `ipns://` address or its key's feed: the page shows the
+feed beside the key's address and says "points at its Swarm feed" under a name that points at it, and a name that is
+wrong or empty is told to point at the feed, or at the `ipns://` address for a key with no feed. A `FEEDS_FILE` that
+cannot be read is a warning, and every name is then judged against the `ipns://` address alone.
 
 ```ini
 # orivon-ipfs-status.service
@@ -361,6 +391,7 @@ Type=oneshot
 User=<the user that runs the release pinner>
 Environment=IPFS_API=/ip4/127.0.0.1/tcp/5001 OUT_DIR=/path/to/status NAMES_FILE=/path/to/names.conf
 Environment=WATCHDOG_STATE=/var/lib/orivon-ipfs-watchdog/watchdog.json LATEST_KEY=latest-release
+# Optional, for a site that is also on Swarm: Environment=FEEDS_FILE=/path/to/feeds.txt
 ExecStart=/path/to/ipfs-status.sh run
 
 # orivon-ipfs-status.timer

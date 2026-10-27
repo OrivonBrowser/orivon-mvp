@@ -3,24 +3,26 @@ import { EventEmitter, once } from 'node:events'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Readable } from 'node:stream'
+import { Readable, Writable } from 'node:stream'
 import { afterEach, describe, expect, it } from 'vitest'
 import { clearWork, kuboClient, packSite } from '../swarm-feeds/kubo.mjs'
-import { parseSshUrl, readRemoteFile, shellQuote, sshArgv } from '../swarm-feeds/ssh.mjs'
+import { parseSshUrl, readRemoteFile, shellQuote, sshArgv, writeRemoteFile } from '../swarm-feeds/ssh.mjs'
 import type { SpawnFn } from '../swarm-feeds/ssh.mjs'
 import { cid, makeRun } from './swarm-feeds.test-helpers.js'
 
 interface Answer { stdout?: string | Buffer | Buffer[], code?: number, stderr?: string }
 
-/** `ssh` as a function: each call is recorded, and answered from `answer(argv)`. Like a real child, it closes after its output ends. */
+/** `ssh` as a function: each call is recorded with what was written to its stdin, and answered from `answer(argv)`. Like a real child, it closes after its output ends. */
 function fakeSpawn (answer: (argv: string[]) => Answer) {
-  const calls: { command: string, argv: string[], options: unknown }[] = []
+  const calls: { command: string, argv: string[], options: unknown, input: string }[] = []
   const killed: string[] = []
   const spawnFn = ((command: string, argv: string[], options: unknown) => {
-    calls.push({ command, argv, options })
+    const call = { command, argv, options, input: '' }
+    calls.push(call)
     const { stdout = '', code = 0, stderr = '' } = answer(argv)
-    const child = new EventEmitter() as EventEmitter & { stdout: Readable, stderr: Readable, exitCode: number | null, kill: () => boolean }
+    const child = new EventEmitter() as EventEmitter & { stdin: Writable, stdout: Readable, stderr: Readable, exitCode: number | null, kill: () => boolean }
     child.exitCode = null
+    child.stdin = new Writable({ write (chunk: Buffer, _encoding, done) { call.input += String(chunk); done() } })
     child.kill = () => { killed.push(argv.at(-1)!); return true }
     const parts = Array.isArray(stdout) ? stdout : [Buffer.from(stdout)]
     child.stdout = Readable.from(parts, { objectMode: false })
@@ -111,6 +113,15 @@ describe('Kubo over ssh', () => {
     const missing = fakeSpawn(() => ({ code: 1, stderr: 'cat: /x: No such file or directory' }))
     await expect(readRemoteFile('ssh://me@h/x', missing.spawnFn)).rejects.toThrow(/exit 1.*No such file/)
   })
+  it('replaces a file on the remote machine with one command: the text on stdin, then a move, every path quoted', async () => {
+    const { calls, spawnFn } = fakeSpawn(() => ({}))
+    await writeRemoteFile("ssh://me@h:2200/srv/it's here/feeds.txt", 'a bzz://1\nb bzz://2\n', spawnFn)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.argv).toEqual(['-o', 'BatchMode=yes', '-p', '2200', 'me@h', "cat > '/srv/it'\\''s here/feeds.txt.tmp' && mv '/srv/it'\\''s here/feeds.txt.tmp' '/srv/it'\\''s here/feeds.txt'"])
+    expect(calls[0]!.input).toBe('a bzz://1\nb bzz://2\n')
+    const refused = fakeSpawn(() => ({ code: 1, stderr: 'cat: /srv/feeds.txt.tmp: Permission denied' }))
+    await expect(writeRemoteFile('ssh://me@h/srv/feeds.txt', 'x', refused.spawnFn)).rejects.toThrow(/writing ssh:\/\/me@h\/srv\/feeds.txt failed \(exit 1\): cat: .*Permission denied/)
+  })
 })
 
 describe('sync with Kubo and the names file behind ssh', () => {
@@ -140,6 +151,41 @@ describe('sync with Kubo and the names file behind ssh', () => {
     expect(calls.every((c) => c.command === 'ssh' && c.argv.slice(0, 2).join(' ') === '-o BatchMode=yes')).toBe(true)
     expect(Object.keys(t.state().sites)).toEqual(['explore'])
     expect(beeCalls.some((c) => c.includes('/api/v0/'))).toBe(false)
+  })
+  it('writes the feeds file through ssh once, again after a failed write, and not while it is unchanged', async () => {
+    const feeds = "/srv/it's status/feeds.txt"
+    const env = { IPFS_API: 'ssh://ubuntu@vps.example:2200', NAMES_FILE: 'ssh://ubuntu@vps.example:2200/srv/status/names.conf', FEEDS_FILE: `ssh://ubuntu@vps.example:2200${feeds}` }
+    let world: ReturnType<typeof makeRun>['world'] | undefined
+    let writable = false
+    const { calls, spawnFn } = fakeSpawn((argv) => {
+      const command = argv.at(-1)!
+      if (command.startsWith('cat >')) return writable ? {} : { code: 255, stderr: 'Connection reset by peer' }
+      if (command.startsWith('cat --')) return { stdout: '# sites\nexplore explore.orivon.eth\n' }
+      if (command.includes('key/list')) return { stdout: JSON.stringify({ Keys: [{ Name: 'self', Id: 'k51self' }, ...world!.keys.map((k) => ({ Name: k.name, Id: k.id }))] }) }
+      return { stdout: JSON.stringify({ Path: `/ipfs/${world!.cids.get(/ipns%2F(\w+)/.exec(command)![1]!)!}` }) }
+    })
+    const t = makeRun(env, { spawnFn })
+    runs.push(t)
+    world = t.world
+    const writes = (): typeof calls => calls.filter((c) => c.argv.at(-1)!.startsWith('cat >'))
+
+    expect((await t.go()).code).toBe(1)
+    expect(t.status().errors).toEqual([expect.stringMatching(/^the feeds file was not written: writing ssh:\/\/ubuntu@vps\.example:2200\/srv\/it's status\/feeds\.txt failed \(exit 255\): Connection reset by peer$/)])
+    expect(t.state().feedsFile).toBeNull()
+    expect(writes()).toHaveLength(1)
+
+    writable = true
+    expect((await t.go()).code).toBe(0)
+    expect(writes()).toHaveLength(2)
+    const quoted = "'/srv/it'\\''s status/feeds.txt.tmp'"
+    expect(writes()[1]!.argv).toEqual(['-o', 'BatchMode=yes', '-p', '2200', 'ubuntu@vps.example', `cat > ${quoted} && mv ${quoted} '/srv/it'\\''s status/feeds.txt'`])
+    expect(writes()[1]!.input).toBe(`# <ipns-key> bzz://<feed manifest>, one line per site. Written by swarm-feeds.mjs: edits are overwritten.\nexplore bzz://${String(t.state().sites.explore.manifest)}\n`)
+
+    expect((await t.go()).code).toBe(0)
+    expect(writes()).toHaveLength(2)
+    t.world.cids.set('k51explore', cid('c'))
+    expect((await t.go()).code).toBe(0)
+    expect(writes()).toHaveLength(2)
   })
   it('refuses a malformed ssh address as a configuration error', async () => {
     const t = makeRun({ IPFS_API: 'ssh://-oProxyCommand=x@host' })
