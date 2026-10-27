@@ -194,6 +194,14 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
       if (contents === undefined) throw new Error('openWindow: the new window made no tab')
       return contents
     },
+    adoptWindow: (view, partition) => {
+      try {
+        createShellWindow(ctx, services, { first: (newTabs) => { newTabs.adoptPopup(view, partition) } })
+      } catch (error) {
+        if (!view.webContents.isDestroyed()) view.webContents.close()
+        throw error
+      }
+    },
     services,
     runCommand: (id) => { services.commands.run(id, entry) },
     coveredByIntro: () => introCovers(win),
