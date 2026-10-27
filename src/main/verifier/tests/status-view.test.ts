@@ -26,6 +26,21 @@ describe('lightClientView', () => {
     expect(lightClientView(facts({ lightClient: { state: 'synced', block: 1, at: NOW } }), NOW).summary).not.toContain('clock')
   })
 
+  it("says when the light client is allowing for a clock that is ahead, and how far", () => {
+    const sentence = (clockLeadMs: number): string => lightClientView(facts({ lightClient: { state: 'synced', block: 1, at: NOW + clockLeadMs, clockLeadMs } }), NOW).summary
+    expect(sentence(-45_000)).toContain("This computer's clock is 45 seconds ahead of the servers', and the light client allows for it.")
+    expect(sentence(-5 * 60_000)).toContain('is 5 minutes ahead of')
+    expect(sentence(-3 * 3_600_000)).toContain('is 3 hours ahead of')
+    expect(sentence(-45_000)).not.toContain('behind')
+  })
+
+  it("judges the age of its newest block by the servers' time when the computer's clock is ahead", () => {
+    const view = lightClientView(facts({ lightClient: { state: 'synced', block: 26_047_527, at: NOW - 95_000 - 10 * 60_000, clockLeadMs: -95_000 } }), NOW)
+    expect(view).toMatchObject({ state: 'syncing', summary: expect.stringContaining('was produced 10 minutes ago.') as unknown })
+    const fresh = lightClientView(facts({ lightClient: { state: 'synced', block: 1, at: NOW - 95_000 - 2 * 60_000, clockLeadMs: -95_000 } }), NOW)
+    expect(fresh.summary).toContain('produced 2 minutes ago.')
+  })
+
   it('carries the block and when it was produced as numbers, and the age of the checkpoint it starts from, for the Networks popup', () => {
     const view = lightClientView(facts({ lightClient: { state: 'synced', block: 26_047_527, at: NOW - 2 * 60_000 } }), NOW)
     expect(view).toMatchObject({ block: 26_047_527, headAt: NOW - 2 * 60_000, checkpointAgeSeconds: 3 * 3600 })

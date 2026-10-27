@@ -94,11 +94,16 @@ function fetchFailure (problem: FetchProblem): string {
   }
 }
 
-function behind (ms: number): string {
+function duration (ms: number): string {
   const seconds = Math.round(ms / 1000)
   if (seconds < 90) return `${String(seconds)} seconds`
   const minutes = Math.round(seconds / 60)
   return minutes < 90 ? `${String(minutes)} minutes` : `${String(Math.round(minutes / 60))} hours`
+}
+
+/** How far this computer's clock is from the servers', as the end of a sentence: the lead is positive when it is behind, negative when ahead. */
+function clockOff (leadMs: number): string {
+  return `${duration(Math.abs(leadMs))} ${leadMs > 0 ? 'behind' : 'ahead of'} the servers'`
 }
 
 function hostsOf (urls: readonly string[]): string {
@@ -145,11 +150,11 @@ function summaryOf (facts: VerifierFacts, now: number): { state: LightClientView
     case 'starting': return { state: 'starting', summary: 'Starting.' }
     case 'syncing': return { state: 'syncing', summary: `Catching up with the chain, since ${ago(now - s.since)}.` }
     case 'synced': {
-      // The block's time is the chain's; a clock that runs behind is made up for before they are compared.
+      // The block's time is the chain's; a clock that runs behind or ahead is made up for before they are compared.
       const headAge = now + (s.clockLeadMs ?? 0) - s.at
       return headAge > STALE_HEAD_MS
         ? { state: 'syncing', summary: `Behind the chain: the newest block it has verified, ${s.block.toLocaleString('en-US')}, was produced ${ago(headAge)}.` }
-        : { state: 'synced', summary: `Following the chain: block ${s.block.toLocaleString('en-US')}, produced ${ago(headAge)}.${s.clockLeadMs === undefined ? '' : ` This computer's clock is ${behind(s.clockLeadMs)} behind the servers', and the light client allows for it. Setting the clock right, in the system's date and time settings, removes the need.`}` }
+        : { state: 'synced', summary: `Following the chain: block ${s.block.toLocaleString('en-US')}, produced ${ago(headAge)}.${s.clockLeadMs === undefined ? '' : ` This computer's clock is ${clockOff(s.clockLeadMs)}, and the light client allows for it. Setting the clock right, in the system's date and time settings, removes the need.`}` }
     }
     case 'failed': return { state: 'failed', summary: `Failed: ${s.reason}.${s.retryAt === undefined ? '' : ` Trying again ${s.retryAt <= now ? 'now' : `in ${String(Math.ceil((s.retryAt - now) / 1000))} s`}.`}` }
   }

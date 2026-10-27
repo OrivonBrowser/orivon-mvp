@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ResolutionError } from '../../../resolution/records.js'
-import { bootstrapMissing, clockBehind, heliosError } from '../helios-errors.js'
+import { bootstrapMissing, clockBehind, heliosError, outOfSync } from '../helios-errors.js'
 
 describe('heliosError', () => {
   it("turns a revert into the shape viem reads revert data from, so OffchainLookup is seen", () => {
@@ -47,6 +47,20 @@ describe('clockBehind', () => {
   it('never reads a clock problem out of text quoted inside another message', () => {
     expect(clockBehind(new Error('rpc error: invalid timestamp in params'))).toBe(false)
     expect(clockBehind(new Error('sync failed: insufficient participation'))).toBe(false)
+  })
+})
+
+describe('outOfSync', () => {
+  it("reads the seconds out of Helios's refusal of a head older than a head may be, in the spellings it comes in", () => {
+    for (const text of ['out of sync: 109 seconds behind', 'Error: out of sync: 109 seconds behind', 'Error: sync failed: out of sync: 109 seconds behind']) expect(outOfSync(new Error(text))).toBe(109)
+    expect(outOfSync('out of sync: 61 seconds behind')).toBe(61)
+  })
+
+  it('never reads it out of text quoted inside another message, or from another failure', () => {
+    expect(outOfSync(new Error('rpc error: out of sync: 109 seconds behind, retry'))).toBeUndefined()
+    expect(outOfSync(new Error('invalid timestamp'))).toBeUndefined()
+    expect(outOfSync(new Error('out of sync'))).toBeUndefined()
+    expect(outOfSync(new Error(''))).toBeUndefined()
   })
 })
 
