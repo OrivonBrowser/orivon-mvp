@@ -22,8 +22,9 @@ it('installs the children bridge after window.orivon and before the routed insta
   } finally {
     vi.unstubAllGlobals()
   }
-  expect(order.indexOf('page-visibility')).toBe(0)
-  expect(order.indexOf('orivon')).toBe(1)
+  expect(order.indexOf('no-drag-regions')).toBe(0)
+  expect(order.indexOf('page-visibility')).toBe(1)
+  expect(order.indexOf('orivon')).toBe(2)
   expect(order.indexOf('children')).toBeGreaterThan(order.indexOf('orivon'))
   expect(order.indexOf('children')).toBeLessThan(order.indexOf('fetch-route'))
 })

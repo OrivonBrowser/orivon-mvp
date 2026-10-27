@@ -23,11 +23,13 @@ import { hideUserAgentDataOnSignInHosts } from './sign-in-identity.js'
  */
 export function exposeOrdinaryTabSurface (): void {
   if (location.protocol === 'chrome-extension:') return
+  // First, so no later installer's failure leaves the page with its drag regions: a press on its buttons reaches it.
+  installNoDragRegions()
   // Google's sign-in hosts are shown Firefox's identity, which has no
   // navigator.userAgentData -- ./sign-in-identity.ts.
   hideUserAgentDataOnSignInHosts()
-  // A tab out of sight reads as hidden to its page, as in Chrome -- ./page-visibility.ts. First, so it is in
-  // place before any page script reads the state.
+  // A tab out of sight reads as hidden to its page, as in Chrome -- ./page-visibility.ts. Before everything that
+  // exposes anything, so it is in place before any page script reads the state.
   installPageVisibility()
   exposeOrivon()
   // ADR-0055, ADR-0061: the page's getDisplayMedia asks for Orivon's picker; this world arms the ticket and starts the
@@ -57,8 +59,6 @@ export function exposeOrdinaryTabSurface (): void {
   // Saving and filling passwords: inert until main says the vault can keep logins, and it
   // exposes nothing to the page. Never reaches a subframe.
   installFormWatch()
-  // A page cannot make part of the window a drag region; a press on its buttons reaches it. Exposes nothing.
-  installNoDragRegions()
   // A registered app's Ctrl+F that the app did not use: the browser's find bar opens. Exposes nothing.
   installPageKeys()
   // ADR-0047: the popups and downloads of a page this tab shows in a
