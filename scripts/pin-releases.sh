@@ -122,6 +122,7 @@ start_page () {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Orivon $version</title>
 <meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex">
 <style>
   :root { --bg: #f4f8fc; --ink: #14183a; --muted: #4a5078; --link: #4a2fc4; }
   @media (prefers-color-scheme: dark) { :root { --bg: #0b1030; --ink: #e9ecff; --muted: #a9b0d6; --link: #b9a8ff; } }
