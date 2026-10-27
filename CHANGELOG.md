@@ -12,6 +12,7 @@ Each section below lists what that release carried; `[Unreleased]` is what has l
 
 ### Fixed
 
+- **The one-line Linux install works again on a machine with Python**: the release list GitHub returns is now larger than one command-line argument can carry (128 KiB on Linux), so `install-linux.sh` stopped with "Argument list too long" and then asked for `python3` or `jq`. The list now goes in on standard input.
 - **`.eth` names load on a fresh install again**: the bundled light-client checkpoint is now the first block of a finalized epoch that the beacon server bootstraps from, and a checkpoint that server answers 404 to is replaced in the same run.
 
 ### Changed
