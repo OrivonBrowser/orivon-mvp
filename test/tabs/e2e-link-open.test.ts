@@ -3,9 +3,10 @@
 // clicked) and a target=_blank form submit. All but a plain click on
 // target=_blank reach popups.ts's windowOpenHandler through Chromium's own
 // browser-side open (OpenURLFromTab), never through window.open() -- and
-// Electron 44 hands `createWindow` no guest webContents to adopt for any of
+// Electron 44.7 hands `createWindow` no guest webContents to adopt for any of
 // them (window.open() and a plain target=_blank click are the only opens
-// that do; e2e-shell-fidelity.test.ts covers window.open()). Each case is
+// that do; e2e-shell-fidelity.test.ts covers window.open()); from 44.9 each
+// of them carries one, which a shift-click adopts into a new window. Each case is
 // checked for: the app survives, a tab appears, and whether it takes over
 // (as Chrome activates a foreground open) or stays behind (a background
 // open, never taking focus) -- except shift+click, which Chrome opens in a

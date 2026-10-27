@@ -23,11 +23,25 @@ Plugins are project-scoped (`.claude/settings.json`) and travel with the reposit
 | `orivon-comments` skill | **Manual, before writing a comment in `src/`** | Where rationale goes, and a header over budget |
 | `claude-security` | **Manual, before packaging (step 10)** | Whole-repository vulnerability scan. Expensive: milestones only |
 | `claude-md-management` | **Manual, `/revise-claude-md`** at the end of a session that changed an assumption in CLAUDE.md | Keeps CLAUDE.md true |
+| `reader` agent (`.claude/agents/reader.md`) | **Manual: a search of three or more steps** | Finding and quoting code on Haiku: it returns file:line and the quoted lines. Reviews, audits and debugging stay on Sonnet or Opus |
 
 Two practices with no tool behind them:
 
 - **Write the failing test first** for any broker or policy function.
 - **On a failure, reproduce it before changing code.**
+
+## Keeping token cost down
+
+Cost follows context size times turn count: every turn re-reads the whole context, and Opus and
+Sonnet charge the same for that re-read. So:
+
+- **Batch.** Independent reads, greps and `git` queries go in one turn; ten single reads at a
+  300k context cost ten re-reads of it.
+- **Brief small.** An implementer gets one PR's worth of work. A long brief grows its context past
+  the compaction point, and the compacted agent loses the detail it was working from.
+- **Wait without polling.** The main thread runs a long command with `run_in_background` and acts on
+  the notification. A subagent waits in one blocking call (`heavy` already queues; `pr-watch.mjs`
+  for CI), never in a loop of short checks, each of which re-reads the whole context.
 
 ## Review shape
 
