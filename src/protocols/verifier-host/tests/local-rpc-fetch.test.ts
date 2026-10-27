@@ -157,6 +157,12 @@ describe('createLocalRpcFetch', () => {
     expect((await (await fetch(`http://127.0.0.1:${String(small.port)}/`)).text()).length).toBe(80)
   })
 
+  it('does not hold a HEAD to the size limit, since it has no body to hold', async () => {
+    const fixture = await listening('127.0.0.1', (_req, res) => { res.writeHead(200, { 'content-length': '99999' }).end() })
+    const response = await createLocalRpcFetch({ maxResponseBytes: 100 })(`http://127.0.0.1:${String(fixture.port)}/`, { method: 'HEAD' })
+    expect(response.status).toBe(200)
+  })
+
   it('gives up on a server that carries no bytes, without naming its path', async () => {
     const fixture = await listening('127.0.0.1', () => {})
     const fetch = createLocalRpcFetch({ idleTimeoutMs: 150 })

@@ -51,12 +51,13 @@ function bodyOf (body: BodyInit | null | undefined): string | Uint8Array | undef
 
 /** `response` with its body ended by an error once it holds more than `max` bytes. */
 function capped (response: Response, max: number): Response {
+  // A HEAD, or a status with no content, has a length header and no body: nothing to hold back.
+  if (response.body === null) return response
   const declared = Number(response.headers.get('content-length'))
   if (Number.isFinite(declared) && declared > max) {
-    void response.body?.cancel()
+    void response.body.cancel()
     throw new Error(`a local node's answer is larger than ${String(max)} bytes`)
   }
-  if (response.body === null) return response
   let seen = 0
   const counter = new TransformStream<Uint8Array, Uint8Array>({
     transform (chunk, controller) {
