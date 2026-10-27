@@ -222,7 +222,7 @@ overwriting an older one, so what was published stays readable until the batch e
 
 | Batch | Holds | Policy |
 |---|---|---|
-| Pointers (`POINTER_DEPTH` 18) | One small update per version, and the feed manifests | Never replaced: it is bought for `POINTER_TTL_TARGET_DAYS` (240) and topped up when under `POINTER_TTL_MIN_DAYS` (120). At `POINTER_DILUTE_AT` (0.5) fill its depth grows by one, then it is topped up again, since dilution halves the time left |
+| Pointers (`POINTER_DEPTH` 18) | One small update per version, and the feed manifests | Never replaced: it is bought for `POINTER_TTL_TARGET_DAYS` (240) and topped up when under `POINTER_TTL_MIN_DAYS` (120). At `POINTER_DILUTE_AT` (0.75) fill its depth grows by one, then it is topped up again, since dilution halves the time left. Fill is the fullest bucket's share of its slots, only 4 at depth 18, so a lower threshold dilutes after a few hundred chunks; a bucket that does fill only refuses an upload, which dilutes the batch and retries |
 | Content (`CONTENT_DEPTH` 22) | The site versions | Bought for `CONTENT_TTL_TARGET_DAYS` (35), topped up under `CONTENT_TTL_MIN_DAYS` (21), and replaced at `ROTATE_AT` (0.75) fill or when Bee answers 402 to an upload: every site's current version is uploaded again into the new batch, and the old batch is never topped up, so old versions leave the network when it expires |
 
 A role with no batch in the state, or whose batch Bee no longer knows (expired), first takes up a batch the node

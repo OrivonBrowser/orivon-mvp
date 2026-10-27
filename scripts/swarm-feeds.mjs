@@ -76,7 +76,7 @@ export function readSettings (env) {
     stateDir,
     workDir: env.WORK_DIR ?? join(tmpdir(), 'orivon-swarm-feeds'),
     summaryLog: env.SUMMARY_LOG,
-    pointer: { depth: number('POINTER_DEPTH', 18, { min: 17, max: 40, integer: true }), ...days('POINTER_TTL_MIN_DAYS', 120, 'POINTER_TTL_TARGET_DAYS', 240), diluteAt: number('POINTER_DILUTE_AT', 0.5, { min: 0.01, max: 1 }) },
+    pointer: { depth: number('POINTER_DEPTH', 18, { min: 17, max: 40, integer: true }), ...days('POINTER_TTL_MIN_DAYS', 120, 'POINTER_TTL_TARGET_DAYS', 240), diluteAt: number('POINTER_DILUTE_AT', 0.75, { min: 0.01, max: 1 }) },
     content: { depth: number('CONTENT_DEPTH', 22, { min: 17, max: 40, integer: true }), ...days('CONTENT_TTL_MIN_DAYS', 21, 'CONTENT_TTL_TARGET_DAYS', 35) },
     rotateAt: number('ROTATE_AT', 0.75, { min: 0.01, max: 1 }),
     maxSpend: BigInt(Math.round(cap * 1e4)) * (PLUR_PER_BZZ / 10_000n),

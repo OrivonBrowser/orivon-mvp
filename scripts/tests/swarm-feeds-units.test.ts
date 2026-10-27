@@ -106,7 +106,7 @@ describe('names, signer key and settings', () => {
     expect(cfg.workDir).toBe(join(tmpdir(), 'orivon-swarm-feeds'))
     expect(cfg.namesFile).toBeUndefined()
     expect(cfg.beeApi).toBe('http://127.0.0.1:1633')
-    expect(cfg.pointer).toMatchObject({ depth: 18, minDays: 120, targetDays: 240, diluteAt: 0.5 })
+    expect(cfg.pointer).toMatchObject({ depth: 18, minDays: 120, targetDays: 240, diluteAt: 0.75 })
     expect(cfg.content).toMatchObject({ depth: 22, minDays: 21, targetDays: 35 })
     expect(cfg.rotateAt).toBe(0.75)
     expect(cfg.maxSpend).toBe(100n * PLUR)
@@ -148,7 +148,7 @@ describe('what the batches cost and when they need money', () => {
     expect(ttlAfterDilution(240 * DAY, 2)).toBe(60 * DAY)
   })
 
-  const cfg = { pointer: { depth: 18, minDays: 120, targetDays: 240, diluteAt: 0.5 }, content: { depth: 22, minDays: 21, targetDays: 35 }, rotateAt: 0.75, waitMs: 20 * 60_000, settleMs: 30 * 60_000 }
+  const cfg = { pointer: { depth: 18, minDays: 120, targetDays: 240, diluteAt: 0.75 }, content: { depth: 22, minDays: 21, targetDays: 35 }, rotateAt: 0.75, waitMs: 20 * 60_000, settleMs: 30 * 60_000 }
   const now = Date.parse('2026-10-27T12:00:00Z')
   const stamp = (over: object) => ({ found: true, usable: true, depth: 18, fill: 0.1, ttl: 200 * DAY, ...over })
   const held = { pointer: { id: 'p', boughtAt: '2026-09-01T00:00:00Z' }, content: { id: 'c', boughtAt: '2026-09-01T00:00:00Z' } }
@@ -159,8 +159,8 @@ describe('what the batches cost and when they need money', () => {
     expect(plan({ pointer: stamp({}), content: stamp({ depth: 22, ttl: 30 * DAY }) })).toEqual([])
   })
   it('dilutes the pointer batch at half full, and tops it up if that leaves it under its minimum', () => {
-    expect(plan({ pointer: stamp({ fill: 0.5, ttl: 240 * DAY }), content: stamp({ depth: 22 }) })).toEqual(['dilute pointer'])
-    expect(plan({ pointer: stamp({ fill: 0.5, ttl: 200 * DAY }), content: stamp({ depth: 22 }) })).toEqual(['dilute pointer', 'topup pointer'])
+    expect(plan({ pointer: stamp({ fill: 0.75, ttl: 240 * DAY }), content: stamp({ depth: 22 }) })).toEqual(['dilute pointer'])
+    expect(plan({ pointer: stamp({ fill: 0.75, ttl: 200 * DAY }), content: stamp({ depth: 22 }) })).toEqual(['dilute pointer', 'topup pointer'])
     expect(plan({ pointer: stamp({ ttl: 100 * DAY }), content: stamp({ depth: 22 }) })).toEqual(['topup pointer'])
   })
   it('rotates the content batch at three quarters full instead of topping it up', () => {
