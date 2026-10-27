@@ -109,7 +109,8 @@ jobs:
             platform: mac
             files: release/*.dmg
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    # Apple notarizes the two macOS apps one after the other, and the first took 35 minutes.
+    timeout-minutes: ${{ matrix.platform == 'mac' && 120 || 60 }}
     defaults:
       run:
         shell: bash
@@ -144,11 +145,64 @@ jobs:
         run: npm version "${TAG#v}" --no-git-tag-version --allow-same-version
 
       # electron-builder skips all macOS signing on a pull request unless told otherwise, and
-      # an unsigned arm64 app does not launch. The signature is ad hoc: no secret is involved.
+      # an unsigned arm64 app does not launch. A pull request has no secret, so macOS is signed ad hoc.
       - name: Package
+        if: ${{ matrix.platform != 'mac' || github.event_name == 'pull_request' }}
         env:
           CSC_FOR_PULL_REQUEST: 'true'
         run: npm run package:${{ matrix.platform }}
+
+      # A release and a manual run sign macOS with the Developer ID Application certificate and have Apple notarize
+      # it, and electron-builder staples the ticket to each app. The certificate is a base64 .p12 in CSC_LINK. It goes
+      # into a keychain made here, which electron-builder is pointed at with CSC_KEYCHAIN: handed CSC_LINK itself it
+      # makes a keychain under a random password and then unlocks it with the .p12's password, which macOS 26 refuses.
+      # Only these steps see the secrets (CSC_LINK would make electron-builder sign the Windows installer too), and a
+      # secret that is empty stops the job, since the package would otherwise be built unsigned.
+      - name: Import the Developer ID certificate into a keychain
+        if: ${{ matrix.platform == 'mac' && github.event_name != 'pull_request' }}
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          for name in CSC_LINK CSC_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error title=Apple signing::the repository secret $name is empty"
+              exit 1
+            fi
+          done
+          keychain="$RUNNER_TEMP/orivon-signing.keychain-db"
+          keychain_password="$(openssl rand -base64 32)"
+          echo "::add-mask::$keychain_password"
+          printf '%s' "$CSC_LINK" | base64 --decode > "$RUNNER_TEMP/orivon-developer-id.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/orivon-developer-id.p12" -f pkcs12 -k "$keychain" -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productbuild
+          rm -f "$RUNNER_TEMP/orivon-developer-id.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain"
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          echo "CSC_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+
+      - name: Package, sign and notarize
+        if: ${{ matrix.platform == 'mac' && github.event_name != 'pull_request' }}
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for name in APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error title=Apple signing::the repository secret $name is empty"
+              exit 1
+            fi
+          done
+          npm run package:mac:signed
+
+      - name: Remove the certificate from the runner
+        if: ${{ always() && matrix.platform == 'mac' && github.event_name != 'pull_request' }}
+        run: |
+          security delete-keychain "$RUNNER_TEMP/orivon-signing.keychain-db" || true
+          rm -f "$RUNNER_TEMP/orivon-developer-id.p12"
 
       # The deb's postinstall loads an AppArmor profile that lets Chromium's sandbox use the user
       # namespaces Ubuntu 24.04 restricts; the AppImage runs as a person runs it, no extra switch.
@@ -355,13 +409,27 @@ jobs:
             Remove-Item "Cert:\CurrentUser\My\$env:STORE_CERT_THUMBPRINT" -ErrorAction SilentlyContinue
           }
 
+      # Signed, the app must say so three ways: a Developer ID signature with the hardened runtime, a stapled
+      # notarization ticket, and Gatekeeper accepting it as a notarized app, which is what a person's Mac asks.
       - name: Check the signature, mount each dmg and launch it
         if: matrix.platform == 'mac'
+        env:
+          SIGNED: ${{ github.event_name != 'pull_request' }}
         run: |
           for dmg in release/*.dmg; do
             mount="$RUNNER_TEMP/$(basename "$dmg" .dmg)"
             hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$dmg"
             codesign --verify --deep --strict --verbose=2 "$mount/Orivon.app"
+            if [ "$SIGNED" = true ]; then
+              details="$(codesign --display --verbose=4 "$mount/Orivon.app" 2>&1)"
+              echo "$details"
+              grep -q '^Authority=Developer ID Application' <<<"$details" || { echo "the app is not signed with a Developer ID Application certificate" >&2; exit 1; }
+              grep -q 'flags=.*runtime' <<<"$details" || { echo "the app's hardened runtime is off" >&2; exit 1; }
+              xcrun stapler validate "$mount/Orivon.app"
+              assessed="$(spctl --assess --type execute --verbose=4 "$mount/Orivon.app" 2>&1)" || { echo "$assessed" >&2; exit 1; }
+              echo "$assessed"
+              grep -q 'source=Notarized Developer ID' <<<"$assessed" || { echo "Gatekeeper does not see a notarized app" >&2; exit 1; }
+            fi
             node scripts/run-headless.mjs node scripts/smoke-packaged.mjs "$mount/Orivon.app/Contents/MacOS/Orivon"
             # A helper of the Intel build, run under Rosetta, can hold the volume a few seconds longer.
             hdiutil detach "$mount" || { sleep 5; hdiutil detach -force "$mount"; }

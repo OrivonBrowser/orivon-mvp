@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -47,7 +47,7 @@ const FAKE_FUSERMOUNT = '#!/bin/sh\nexit 0\n'
 const FAKE_LDCONFIG = '#!/bin/sh\necho "\tlibfuse.so.2 (libc6,x86-64) => /usr/lib/x86_64-linux-gnu/libfuse.so.2"\n'
 
 interface Asset { name: string, digest?: string }
-interface Release { tag: string, draft?: boolean, assets?: Asset[] }
+interface Release { tag: string, draft?: boolean, assets?: Asset[], body?: string }
 
 let root: string
 let home: string
@@ -72,6 +72,7 @@ function publish (releases: Release[]): void {
     tag_name: release.tag,
     draft: release.draft === true,
     prerelease: true,
+    body: release.body ?? '',
     assets: (release.assets ?? []).map((asset) => ({ name: asset.name, browser_download_url: `https://example.test/${asset.name}`, ...(asset.digest === undefined ? {} : { digest: asset.digest }) }))
   }))))
 }
@@ -132,6 +133,15 @@ describe.skipIf(!onUnix)('scripts/install-linux.sh', () => {
     publish([withImage('v0.0.10-rc.1'), withImage('v0.0.10'), withImage('v0.0.9')])
     expect(run(['--no-launch']).status).toBe(0)
     expect(installedVersion()).toBe('# 0.0.10')
+  })
+
+  it('reads a release list larger than one command-line argument can carry (Linux caps one at 128 KiB)', () => {
+    const notes = 'Release notes, as long as GitHub keeps them. '.repeat(1500)
+    publish([withImage('v0.0.11'), ...Array.from({ length: 29 }, (_, i) => ({ ...withImage(`v0.0.${10 - (i % 10)}-rc.${i}`), body: notes }))])
+    expect(statSync(join(fixtures, 'releases.json')).size).toBeGreaterThan(1024 * 1024)
+    const { status, out } = run(['--no-launch'])
+    expect(out).toContain('Installed Orivon v0.0.11')
+    expect(status).toBe(0)
   })
 
   it('writes the AppImage, the launcher, the icon and a desktop entry that lists http and https', () => {

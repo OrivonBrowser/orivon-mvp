@@ -43,7 +43,7 @@ const { createOverlayView, overlayUrl } = await import('../overlay-view.js')
 
 const PORT = { ready: vi.fn(), request: vi.fn(), size: vi.fn(), close: vi.fn() }
 const spec = (surface: 'panel' | 'menu' | 'page' = 'panel'): Parameters<typeof createOverlayView>[0] =>
-  ({ dirname: '/app/out/main', def: { name: 'demo', surface }, port: PORT, onBlur: vi.fn(), onFocus: vi.fn(), onGone: vi.fn() })
+  ({ dirname: '/app/out/main', def: { name: 'demo', surface }, port: PORT, onBlur: vi.fn(), onTake: vi.fn(), onFocus: vi.fn(), onGone: vi.fn() })
 
 afterEach(() => { calls.length = 0; theme.dark = false })
 
@@ -114,6 +114,19 @@ describe('createOverlayView', () => {
     const on = state.contents?.['on'] as ReturnType<typeof vi.fn>
     const raise = on.mock.calls.find(([event]) => event === 'focus')?.[1] as () => void
     raise()
+    expect(onFocus).not.toHaveBeenCalled()
+    await new Promise((resolve) => { setImmediate(resolve) })
+    expect(onFocus).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports the view taking the keyboard inside the focus event itself, ahead of the deferred hand-back', async () => {
+    const onTake = vi.fn()
+    const onFocus = vi.fn()
+    createOverlayView({ ...spec(), onTake, onFocus })
+    const on = state.contents?.['on'] as ReturnType<typeof vi.fn>
+    const raise = on.mock.calls.find(([event]) => event === 'focus')?.[1] as () => void
+    raise()
+    expect(onTake).toHaveBeenCalledTimes(1)
     expect(onFocus).not.toHaveBeenCalled()
     await new Promise((resolve) => { setImmediate(resolve) })
     expect(onFocus).toHaveBeenCalledTimes(1)

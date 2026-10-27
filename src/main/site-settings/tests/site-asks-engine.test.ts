@@ -295,3 +295,69 @@ describe('check', () => {
     expect(access.entries(tab)).toEqual([{ kind: 'camera', state: 'allowed' }])
   })
 })
+
+describe('query', () => {
+  it('reads prompt for a kind nobody has decided, and does not ask, store or note anything', () => {
+    const { engine, store, access, ask, tab } = rig()
+    expect(engine.query('camera', tab, SITE)).toBe('prompt')
+    expect(ask).not.toHaveBeenCalled()
+    expect(store.entries()).toEqual([])
+    expect(access.entries(tab)).toEqual([])
+  })
+
+  it('reads what a request would do for a stored answer: granted for an allow, denied for a block', () => {
+    const { engine, store, tab } = rig()
+    store.set(SITE, 'camera', 'allow')
+    store.set(SITE, 'microphone', 'block')
+    expect(engine.query('camera', tab, SITE)).toBe('granted')
+    expect(engine.query('microphone', tab, SITE)).toBe('denied')
+    expect(engine.query('midi', tab, SITE)).toBe('prompt')
+  })
+
+  it('reads denied where Settings blocks the kind, and a stored allow still wins over that default', () => {
+    const { engine, store, tab } = rig({ defaults: { camera: 'block' } })
+    expect(engine.query('camera', tab, SITE)).toBe('denied')
+    expect(engine.query('microphone', tab, SITE)).toBe('prompt')
+    store.set(SITE, 'camera', 'allow')
+    expect(engine.query('camera', tab, SITE)).toBe('granted')
+  })
+
+  it('reads denied for a kind with no service behind it, whatever is stored, as a request tells the page no', () => {
+    const { engine, store, tab } = rig()
+    expect(engine.query('location', tab, SITE)).toBe('prompt')
+    store.set(SITE, 'location', 'allow')
+    expect(engine.query('location', tab, SITE)).toBe('denied')
+  })
+
+  it('reads denied once the page closed the question, until the page loads again', () => {
+    const { engine, access, tab } = rig()
+    access.dismiss(tab, SITE, ['camera'])
+    expect(engine.query('camera', tab, SITE)).toBe('denied')
+    expect(engine.query('microphone', tab, SITE)).toBe('prompt')
+    tab.emit('did-navigate')
+    expect(engine.query('camera', tab, SITE)).toBe('prompt')
+  })
+
+  it('still reads prompt for a tab that is out of sight: where a tab is shown is not a decision', () => {
+    const { engine, tab } = rig({ showing: false })
+    expect(engine.query('camera', tab, SITE)).toBe('prompt')
+  })
+
+  it('answers undefined for contents that are not a tab, and for none, so the engine\'s own answer stands', () => {
+    expect(rig({ isTab: false }).engine.query('camera', new FakeTab(), SITE)).toBeUndefined()
+    expect(rig().engine.query('camera', null, SITE)).toBeUndefined()
+  })
+
+  it.each([
+    ['a registered app', SITE, [SITE]],
+    ['an extension page', 'chrome-extension://abcdefghijklmnopabcdefghijklmnop', []],
+    ['an opaque origin', 'null', []],
+    ['no origin', '', []],
+    ['another site than the tab shows', 'https://other.example', []]
+  ])('reads denied for %s: a request is refused there without a question', (_name, origin, apps) => {
+    const { engine, store, tab } = rig({ apps })
+    store.set(SITE, 'camera', 'allow')
+    store.set('https://other.example', 'camera', 'allow')
+    expect(engine.query('camera', tab, origin)).toBe('denied')
+  })
+})

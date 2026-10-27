@@ -206,3 +206,55 @@ describe('the check handler', () => {
     expect(engine.check(null, 'media', `${ORIGIN}/`, { mediaType: 'video', securityOrigin: ORIGIN, isMainFrame: true })).toBe(true)
   })
 })
+
+describe('what the page\'s query reads', () => {
+  const query = (engine: Harness['engine'], permission = 'camera', origin = ORIGIN): string | undefined => engine.query(PAGE, permission, origin)
+
+  it('reads prompt for a kind nobody decided, and asks nobody', () => {
+    const { engine, ask, saved } = harness()
+    expect(query(engine)).toBe('prompt')
+    expect(query(engine, 'microphone')).toBe('prompt')
+    expect(ask).not.toHaveBeenCalled()
+    expect(saved).toEqual([])
+  })
+
+  it('reads a stored answer for the one kind it is about: granted for an allow, denied for a block', () => {
+    const { engine } = harness({ stored: { camera: 'allow', microphone: 'block' } })
+    expect(query(engine)).toBe('granted')
+    expect(query(engine, 'microphone')).toBe('denied')
+    expect(query(harness({ stored: { camera: 'allow' } }).engine, 'microphone')).toBe('prompt')
+  })
+
+  it('reads denied where Settings blocks the kind, and a stored allow still wins', () => {
+    const blockedByDefault = (kind: string): boolean => kind === 'camera'
+    expect(query(harness({ blockedByDefault }).engine)).toBe('denied')
+    expect(query(harness({ blockedByDefault }).engine, 'microphone')).toBe('prompt')
+    expect(query(harness({ blockedByDefault, stored: { camera: 'allow' } }).engine)).toBe('granted')
+  })
+
+  it('reads denied while the extension\'s prompts are suspended, and prompt again once they resume', async () => {
+    let now = 0
+    const { engine } = harness({ choice: 'dismiss', nag: createNagLimit(() => now) })
+    for (let i = 0; i < 3; i++) await engine.request(PAGE, 'media', details())
+    expect(query(engine)).toBe('denied')
+    now = 11 * 60_000
+    expect(query(engine)).toBe('prompt')
+  })
+
+  it('reads prompt for a page with no visible place: where it is shown is not a decision', () => {
+    expect(query(harness({ placeOf: () => undefined }).engine)).toBe('prompt')
+  })
+
+  it('answers undefined for a permission an extension page is never asked about, so the engine\'s own answer stands', () => {
+    const { engine } = harness({ stored: { camera: 'allow' } })
+    for (const name of ['geolocation', 'notifications', 'clipboard-read', 'midi', 'media', '']) expect(query(engine, name)).toBeUndefined()
+  })
+
+  it('answers undefined for a page that is not a loaded extension\'s, whatever its origin claims', () => {
+    const { engine } = harness({ stored: { camera: 'allow' } })
+    expect(query(engine, 'camera', 'https://a.example')).toBeUndefined()
+    expect(query(engine, 'camera', 'null')).toBeUndefined()
+    expect(query(engine, 'camera', '')).toBeUndefined()
+    expect(query(harness({ isLoaded: () => false }).engine)).toBeUndefined()
+  })
+})

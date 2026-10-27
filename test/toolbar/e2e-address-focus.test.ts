@@ -5,6 +5,8 @@
 // refocus is covered by src/renderer/tests/address-select.test.ts only. A new tab opened in front starts with the
 // keyboard in the bar, text typed there before the tab's page loads stays, a navigation that does not come from the bar
 // shows its address in the focused bar unless the person has typed, and the first click on the bar selects its address.
+// What is typed in a tab's bar and not sent belongs to that tab: another tab, by a click on the strip or a shortcut,
+// leaves it, and it is there as typed when its tab is in front again, drawn in place of the elided address.
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { runCommand } from '../support/auth-support.js'
@@ -207,6 +209,98 @@ it('selects the whole address on the first click, places a caret on the second, 
     expect(dragged.start).not.toBeNull()
     expect((dragged.end ?? 0) - (dragged.start ?? 0)).toBeGreaterThan(0)
     expect((dragged.end ?? 0) - (dragged.start ?? 0)).toBeLessThan(one.length)
+  } finally {
+    await closeElectron(app)
+  }
+}, QA_TEST_TIMEOUT_MS)
+
+const tabEl = (id: string): string => `.tab[data-id="${id}"]`
+/** The address field as the person sees it: the text drawn, not the elided mark of the page, and not hidden. */
+const fieldShowsText = async (chrome: Page): Promise<boolean> =>
+  await chrome.evaluate(() => {
+    const input = document.querySelector<HTMLInputElement>('#address') as HTMLInputElement
+    const display = document.querySelector<HTMLElement>('#address-display')
+    return getComputedStyle(input).opacity === '1' && (display === null || getComputedStyle(display).visibility === 'hidden' || display.childElementCount === 0)
+  })
+
+it('keeps what is typed in a new tab\'s bar when another tab is chosen, by a click and by a shortcut, and shows it again when the tab returns', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    const one = `${server.origin}/one`
+    await focusPageInWindow(app, chrome, one)
+    await runCommand(chrome, 'tab.new')
+    await expectBarHoldsKeyboard(app, chrome)
+    const [first, fresh] = await tabIds(chrome) as [string, string]
+    await chrome.keyboard.type('half a search')
+
+    await chrome.click(tabEl(first))
+    expect(await waitFor(async () => await address(chrome) === one)).toBe(true)
+    await chrome.click(tabEl(fresh))
+    expect(await waitFor(async () => await address(chrome) === 'half a search')).toBe(true)
+    await delay(ABSENCE_SETTLE_MS)
+    expect(await address(chrome)).toBe('half a search')
+    expect(await fieldShowsText(chrome)).toBe(true)
+
+    // The keyboard is in the bar now; the shortcut leaves the text with the tab and brings it back.
+    await runCommand(chrome, 'nav.focusAddress')
+    await runCommand(chrome, 'tab.previous')
+    expect(await waitFor(async () => await address(chrome) === one)).toBe(true)
+    await runCommand(chrome, 'tab.next')
+    expect(await waitFor(async () => await address(chrome) === 'half a search')).toBe(true)
+  } finally {
+    await closeElectron(app)
+  }
+}, QA_TEST_TIMEOUT_MS)
+
+it('keeps what is typed over a page\'s address when another tab is chosen, shows it unfocused as typed, and lets Escape put the address back', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    const one = `${server.origin}/one`
+    const two = `${server.origin}/two`
+    await visit(app, chrome, one)
+    await chrome.evaluate((url) => { (window as unknown as { orivonShell: { newTab: (url: string) => void } }).orivonShell.newTab(url) }, two)
+    expect((await waitForTab(chrome, { address: two })).ok).toBe(true)
+    const [first, second] = await tabIds(chrome) as [string, string]
+
+    await runCommand(chrome, 'nav.focusAddress')
+    expect(await waitFor(async () => await addressActive(chrome))).toBe(true)
+    await chrome.keyboard.type('an edit over two')
+    await chrome.click(tabEl(first))
+    expect(await waitFor(async () => await address(chrome) === one)).toBe(true)
+    expect(await fieldShowsText(chrome)).toBe(false)
+    await chrome.click(tabEl(second))
+    expect(await waitFor(async () => await address(chrome) === 'an edit over two')).toBe(true)
+    expect(await fieldShowsText(chrome)).toBe(true)
+
+    await chrome.click('#address')
+    await pressKey(app, CHROME, 'Escape')
+    expect(await waitFor(async () => await address(chrome) === two)).toBe(true)
+    await chrome.click(tabEl(first))
+    expect(await waitFor(async () => await address(chrome) === one)).toBe(true)
+    await chrome.click(tabEl(second))
+    expect(await waitFor(async () => await address(chrome) === two)).toBe(true)
+    expect(await fieldShowsText(chrome)).toBe(false)
+  } finally {
+    await closeElectron(app)
+  }
+}, QA_TEST_TIMEOUT_MS)
+
+it('leaves the text typed in a new tab\'s own search box where it is when another tab is chosen and the tab returns', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    await focusPageInWindow(app, chrome, `${server.origin}/one`)
+    await runCommand(chrome, 'tab.new')
+    await expectBarHoldsKeyboard(app, chrome)
+    const [first, fresh] = await tabIds(chrome) as [string, string]
+    const page = app.windows().find((candidate) => candidate.url().endsWith('/newtab/index.html'))
+    if (page === undefined) throw new Error('no new tab page')
+    await page.fill('#search-input', 'words for the dashboard')
+
+    await chrome.click(tabEl(first))
+    expect((await waitForTab(chrome, { title: 'one' })).ok).toBe(true)
+    await chrome.click(tabEl(fresh))
+    expect(await waitFor(async () => await address(chrome) === '')).toBe(true)
+    expect(await page.inputValue('#search-input')).toBe('words for the dashboard')
   } finally {
     await closeElectron(app)
   }

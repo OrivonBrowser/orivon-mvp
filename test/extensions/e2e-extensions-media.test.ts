@@ -101,6 +101,11 @@ async function outcomeOf (page: Page, timeoutMs = 10_000): Promise<Outcome> {
   return outcome as Outcome
 }
 
+/** What the page itself reads from `navigator.permissions.query`, which is what MetaMask and every other page that checks before it asks goes by. */
+async function queryState (page: Page, name: 'camera' | 'microphone' | 'geolocation'): Promise<string> {
+  return await page.evaluate(async (permission: string) => (await navigator.permissions.query({ name: permission as PermissionName })).state, name)
+}
+
 async function answerSheet (sheet: Page, button: 'Allow' | 'Block'): Promise<void> {
   await sheet.waitForFunction(() => document.querySelector<HTMLButtonElement>('.btn.primary')?.disabled === false)
   await sheet.click(`.btn-row .btn:text-is("${button}")`)
@@ -152,8 +157,17 @@ it('asks in the window showing an options page, keeps Allow and Block per device
     await view.goto(extensionUrl)
     expect(await evaluateRetrying(view, () => typeof (window as unknown as MediaPage).__ask)).toBe('function')
 
-    // Before any answer the page is told it has no camera access.
-    expect(await view.evaluate(async () => (await navigator.permissions.query({ name: 'camera' as PermissionName })).state)).not.toBe('granted')
+    // Before any answer the page reads that it would be asked, never that it was refused; the status stays the engine's own object.
+    expect(await queryState(view, 'camera')).toBe('prompt')
+    expect(await queryState(view, 'microphone')).toBe('prompt')
+    expect(await view.evaluate(async () => {
+      const status = await navigator.permissions.query({ name: 'camera' as PermissionName })
+      let changes = 0
+      status.addEventListener('change', () => { changes++ })
+      return { real: status instanceof PermissionStatus, onchange: status.onchange, name: navigator.permissions.query.name, changes }
+    })).toEqual({ real: true, onchange: null, name: 'query', changes: 0 })
+    // A permission an extension page is never asked about reads what the engine says.
+    expect(await queryState(view, 'geolocation')).toBe('denied')
 
     // The sheet names the extension and the device; closing it keeps nothing and refuses this request.
     await ask(view, { video: true })
@@ -169,6 +183,8 @@ it('asks in the window showing an options page, keeps Allow and Block per device
     expect(await outcomeOf(view)).toEqual({ ok: false, name: 'NotAllowedError' })
     expect(await waitFor(async () => !(await sheetShown(app)))).toBe(true)
     expect(storedMedia(userData)).toBeUndefined()
+    // Closing the sheet decided nothing, so the page is still told it would be asked.
+    expect(await queryState(view, 'camera')).toBe('prompt')
 
     // Allow gives a live video track, and is kept.
     await ask(view, { video: true })
@@ -184,8 +200,8 @@ it('asks in the window showing an options page, keeps Allow and Block per device
     await ask(view, { video: true })
     expect((await outcomeOf(view)).ok).toBe(true)
     await expectNoSheet(app)
-    expect(await view.evaluate(async () => (await navigator.permissions.query({ name: 'camera' as PermissionName })).state)).toBe('granted')
-    expect(await view.evaluate(async () => (await navigator.permissions.query({ name: 'microphone' as PermissionName })).state)).not.toBe('granted')
+    expect(await queryState(view, 'camera')).toBe('granted')
+    expect(await queryState(view, 'microphone')).toBe('prompt')
 
     // The microphone is a separate answer: Block refuses and is not asked about again.
     await ask(view, { audio: true })
@@ -194,6 +210,7 @@ it('asks in the window showing an options page, keeps Allow and Block per device
     await answerSheet(sheet, 'Block')
     expect(await outcomeOf(view)).toEqual({ ok: false, name: 'NotAllowedError' })
     expect(await waitFor(() => storedMedia(userData)?.['microphone'] === 'block')).toBe(true)
+    expect(await queryState(view, 'microphone')).toBe('denied')
     await ask(view, { audio: true })
     expect(await outcomeOf(view)).toEqual({ ok: false, name: 'NotAllowedError' })
     await expectNoSheet(app)
@@ -213,6 +230,7 @@ it('asks in the window showing an options page, keeps Allow and Block per device
     await setOnDetails(details, 'microphone', 'ask')
     await details.waitForFunction(() => document.querySelector('#media-microphone') === null)
     expect(await waitFor(() => storedMedia(userData)?.['microphone'] === undefined && storedMedia(userData)?.['camera'] === 'allow')).toBe(true)
+    expect(await queryState(view, 'microphone')).toBe('prompt')
 
     // Back in the tab: a request for both asks once, for the one not answered, and says so.
     await findChrome(app).locator('.tab').first().click()
@@ -232,6 +250,7 @@ it('asks in the window showing an options page, keeps Allow and Block per device
     await ask(view, { video: true })
     expect(await outcomeOf(view)).toEqual({ ok: false, name: 'NotAllowedError' })
     await expectNoSheet(app)
+    expect(await queryState(view, 'camera')).toBe('denied')
   } finally {
     await closeElectron(app)
   }
@@ -269,6 +288,9 @@ it('refuses without a sheet where Settings blocks the device, and an offscreen d
     expect(await outcomeOf(view)).toEqual({ ok: false, name: 'NotAllowedError' })
     await expectNoSheet(app)
     expect(storedMedia(userData)).toBeUndefined()
+    // Settings' block reads as denied, and the device it leaves to a question as prompt.
+    expect(await queryState(view, 'microphone')).toBe('denied')
+    expect(await queryState(view, 'camera')).toBe('prompt')
 
     // A page in a window nobody can see is not asked, with the camera still undecided.
     const hidden = await openExtensionPage(app, id, 'page.html')
@@ -313,6 +335,9 @@ it('keeps an answer given from an open popup, and a stored answer works from the
   try {
     await navigateToFixture(app, fixtureUrl, 'media-fixture')
     let popup = await openPopup()
+    // The popup reads the same as a tab does: it would be asked.
+    await popup.waitForFunction(() => typeof (window as unknown as Partial<MediaPage>).__ask === 'function', undefined, { timeout: 8_000 })
+    expect(await queryState(popup, 'camera')).toBe('prompt')
     await ask(popup, { video: true })
     const sheet = await openSheet(app)
     expect(await sheet.locator('.sheet-title').textContent()).toBe(`${NAME} wants to use your camera`)
@@ -323,6 +348,8 @@ it('keeps an answer given from an open popup, and a stored answer works from the
     await closePopup(app, id).catch(() => {})
 
     popup = await openPopup()
+    await popup.waitForFunction(() => typeof (window as unknown as Partial<MediaPage>).__ask === 'function', undefined, { timeout: 8_000 })
+    expect(await queryState(popup, 'camera')).toBe('granted')
     await ask(popup, { video: true })
     expect((await outcomeOf(popup)).ok).toBe(true)
     await expectNoSheet(app)

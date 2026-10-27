@@ -2,8 +2,10 @@
 // rules, in Orivon's terms. The host-access question is answered by the
 // caller (`hasHostAccess`), so this file knows no manifest and no registry.
 import { isShellSchemeUrl } from '../../shell/shell-session.js'
+import type { WebRequestEventName } from './filter.js'
 
 export interface VisibleRequest {
+  readonly event: WebRequestEventName
   readonly url: string
   /** Orivon's own main-process requests (the verifier, `net.fetch`) have no
    * page behind them and are never shown to an extension. */
@@ -57,17 +59,30 @@ function accessUrlOf (url: URL): string {
   return url.href
 }
 
+/**
+ * A name Orivon's own protocols serve is loaded, and failed, by Orivon: the error of a navigation to one is never shown to an
+ * extension, since the one that hears it can take the tab to a gateway or a page of its own. The name's other events stay visible.
+ * `servesHost` answers for a host a protocol serves, whatever the scheme it is reached by.
+ */
+function isServedNavigationError (request: VisibleRequest, url: URL, servesHost: (hostname: string) => boolean): boolean {
+  return request.event === 'onErrorOccurred' && NAVIGATION_TYPES.has(request.type) && (url.protocol === 'http:' || url.protocol === 'https:') && servesHost(url.hostname)
+}
+
 function initiatorHidden (initiator: URL, extensionId: string): boolean {
   if (initiator.protocol === 'orivon:' || initiator.protocol === 'orivon-shell:' || initiator.protocol === 'chrome:' || initiator.protocol === 'devtools:') return true
   return initiator.protocol === 'chrome-extension:' && initiator.hostname !== extensionId
 }
 
-/** `isAppOrigin` answers for a registered app's origin: a request whose URL, initiator or page is one is hidden from every extension. */
+/**
+ * `isAppOrigin` answers for a registered app's origin: a request whose URL, initiator or page is one is hidden from every extension.
+ * `servesHost` answers for a host Orivon's protocols serve: the error of a navigation to one is hidden from every extension.
+ */
 export function requestVisibleTo (
   extensionId: string,
   request: VisibleRequest,
   hasHostAccess: (url: string) => boolean,
-  isAppOrigin: (url: string) => boolean = () => false
+  isAppOrigin: (url: string) => boolean = () => false,
+  servesHost: (hostname: string) => boolean = () => false
 ): boolean {
   if (!request.fromPage) return false
   if ([request.url, request.initiator, request.pageUrl].some((url) => url !== undefined && isAppOrigin(url))) return false
@@ -76,6 +91,7 @@ export function requestVisibleTo (
   const initiator = request.initiator === undefined ? undefined : parse(request.initiator)
   const page = request.pageUrl === undefined ? undefined : parse(request.pageUrl)
   if ([url, initiator, page].some((each) => each !== undefined && isProtectedUrl(each))) return false
+  if (isServedNavigationError(request, url, servesHost)) return false
   const ownUrl = url.protocol === 'chrome-extension:' && url.hostname === extensionId
   if (!ownUrl && !WEB_SCHEMES.has(url.protocol)) return false
   if (initiator !== undefined && initiatorHidden(initiator, extensionId)) return false

@@ -49,7 +49,8 @@ function rig (): Rig {
       show: (name: string, _anchor: unknown, payload: unknown) => { shows.push({ name, payload }) },
       close: (name: string) => { closes.push(name) },
       send: (_name: string, event: unknown) => { overlaySends.push(event) },
-      toggle: () => {}
+      toggle: () => {},
+      isOpen: () => false
     }
   } as unknown as ShellWindow
   const run = vi.fn()
@@ -482,6 +483,29 @@ describe('the chooser under a focused box', () => {
     forms.keyFor('t1', 'Enter')
     await vi.advanceTimersByTimeAsync(0)
     expect(r.sends).toEqual([{ type: 'fill', username: null, password: view.generated, both: true }])
+  })
+
+  it('a press on it is a choice: the box blurring because of the press does not close it', async () => {
+    const r = rig()
+    const { handler } = attach(passwordSuggestOverlay, r)
+    await ready(r)
+    handler.show?.(undefined)
+    const forms = formsFor(r.window, r.services)
+    handler.focused?.()
+    forms.blur(sender(r))
+    expect(r.closes).toEqual([])
+    forms.blur(sender(r))
+    expect(r.closes).toEqual([SUGGEST_OVERLAY])
+  })
+
+  it('the button\'s chooser does not treat a focus as a press: it has the keyboard from the start', async () => {
+    const r = rig()
+    const { handler } = attach(passwordFillOverlay, r)
+    await ready(r)
+    handler.show?.(undefined)
+    handler.focused?.()
+    formsFor(r.window, r.services).blur(sender(r))
+    expect(r.closes).toEqual([SUGGEST_OVERLAY])
   })
 
   it('the button\'s chooser takes no keys through main: it has the keyboard itself', async () => {

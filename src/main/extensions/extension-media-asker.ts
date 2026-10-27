@@ -63,7 +63,8 @@ export function createExtensionMediaAsker (options: { ctx: SubsystemContext, pre
   return {
     name: 'extension-media',
     request: (contents, permission, details) => engine.request(contents, permission, details),
-    check: (contents, permission, requestingOrigin, details) => engine.check(contents, permission, requestingOrigin, details)
+    check: (contents, permission, requestingOrigin, details) => engine.check(contents, permission, requestingOrigin, details),
+    query: (contents, permission, frameOrigin) => engine.query(contents, permission, frameOrigin)
   }
 }
 
