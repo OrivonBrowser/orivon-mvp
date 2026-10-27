@@ -78,6 +78,7 @@ function setup (overrides: {
   access?: (id: string, url: string) => boolean
   held?: (id: string, permission: string) => boolean
   isAppOrigin?: (url: string) => boolean
+  servesHost?: (hostname: string) => boolean
   pageUrl?: string
   timeoutMs?: number
 } = {}): Setup {
@@ -91,6 +92,7 @@ function setup (overrides: {
     hostPermissionsOf,
     hostAccess: access,
     isAppOrigin: overrides.isAppOrigin ?? (() => false),
+    servesHost: overrides.servesHost ?? (() => false),
     pageUrlOf: () => overrides.pageUrl,
     held,
     installedAt: (id) => id === ME ? 10 : 20,
@@ -272,6 +274,20 @@ describe('observer events', () => {
     fake.runs.get('onBeforeRedirect')?.(electronRequest({ redirectURL: 'https://next.example/', statusCode: 302 }))
     expect((host.send.mock.calls[0] as unknown[])[4]).toMatchObject({ error: 'net::ERR_BLOCKED_BY_CLIENT' })
     expect((host.send.mock.calls[1] as unknown[])[4]).toMatchObject({ redirectUrl: 'https://next.example/', statusCode: 302 })
+  })
+
+  it('keep the error of a main-frame load of a name Orivon serves from every listener, and tell them of its other events and of other hosts', () => {
+    const { dispatcher, fake } = setup({ servesHost: (hostname) => hostname.endsWith('.eth') })
+    const host = fakeHost()
+    for (const event of ['onErrorOccurred', 'onBeforeRequest', 'onCompleted'] as const) dispatcher.addListener(apiEvent(host), event, 1, FILTER, [])
+    const load = { resourceType: 'mainFrame', frame: { ...top, parent: null }, url: 'https://vitalik.eth/' }
+    fake.runs.get('onErrorOccurred')?.(electronRequest({ ...load, error: 'net::ERR_ABORTED' }))
+    expect(host.send).not.toHaveBeenCalled()
+    fake.runs.get('onCompleted')?.(electronRequest({ ...load, statusCode: 200 }))
+    expect(host.send).toHaveBeenCalledTimes(1)
+    fake.runs.get('onErrorOccurred')?.(electronRequest({ ...load, url: 'https://site.example/', error: 'net::ERR_CONNECTION_REFUSED' }))
+    expect(host.send).toHaveBeenCalledTimes(2)
+    expect((host.send.mock.calls[1] as unknown[])[4]).toMatchObject({ error: 'net::ERR_CONNECTION_REFUSED', type: 'main_frame' })
   })
 
   it('never reach a destroyed host', () => {
