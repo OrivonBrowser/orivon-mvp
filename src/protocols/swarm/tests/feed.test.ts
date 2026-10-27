@@ -112,12 +112,12 @@ describe('resolveFeed, over /chunks alone', () => {
 })
 
 describe('resolveFeed, with a /feeds answer as a first guess', () => {
-  it('verifies the guess and probes only one index past it', async () => {
+  it('verifies the guess and probes only one index past it, beside the floor and the index after it', async () => {
     const { deps, targets, swarm, probesMade } = await feedWith(40)
     swarm.feedHints.set(A, (40).toString(16).padStart(16, '0'))
     const resolved = await resolveFeed(FEED, deps(), memoryStore(), signal, noteRefusal)
     expect(resolved.root).toBe(targets[40])
-    expect(probesMade()).toBe(2)
+    expect(probesMade()).toBe(4)
   })
 
   it('keeps walking when the guess is behind', async () => {
@@ -184,6 +184,15 @@ describe('resolveFeed, when an endpoint does not answer', () => {
 describe('the /feeds guess', () => {
   it('waits three seconds at most by default', () => {
     expect(DEFAULT_LIMITS.feedGuessTimeoutMs).toBe(3_000)
+  })
+
+  it('is not waited for when the index after the floor has no update', async () => {
+    const { chunks, targets } = await feedWith(6)
+    const swarm = fakeSwarm(chunks)
+    const deps: ChunkDeps = { fetch: hanging(swarm.fetch, (url) => url.includes('/feeds/')), pool: new GatewayPool([A], 6), limits: DEFAULT_LIMITS }
+    const started = Date.now()
+    expect((await resolveFeed(FEED, deps, memoryStore({ [`${OWNER}/${TOPIC}`]: 6n }), signal, noteRefusal)).root).toBe(targets[6])
+    expect(Date.now() - started).toBeLessThan(DEFAULT_LIMITS.feedGuessTimeoutMs / 2)
   })
 
   it('does not delay the /chunks probes beyond its own timeout when /feeds hangs, and holds nothing against the endpoint', async () => {

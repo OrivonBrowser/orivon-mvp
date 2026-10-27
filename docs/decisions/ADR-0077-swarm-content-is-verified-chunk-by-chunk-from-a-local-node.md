@@ -1,6 +1,6 @@
 # ADR-0077: Swarm content is verified chunk by chunk and read only from a Bee node the person runs
 
-- **Status:** accepted. The node Orivon configures is [`ADR-0078`](ADR-0078-the-swarm-node-is-webassembly-in-a-utility-process-of-its-own.md)'s; a build made without that node's files opens no Swarm content outside tests. The files are published on IPFS and a build fetches them by the CID its manifest names (`d-0613`).
+- **Status:** accepted; amended by [`ADR-0099`](ADR-0099-a-swarm-files-leaves-are-read-together-and-checked-one-by-one.md) (a file's leaves read together over `/bytes`, each checked against its parent). The node Orivon configures is [`ADR-0078`](ADR-0078-the-swarm-node-is-webassembly-in-a-utility-process-of-its-own.md)'s; a build made without that node's files opens no Swarm content outside tests. The files are published on IPFS and a build fetches them by the CID its manifest names (`d-0613`).
 - **Date:** 2026-10-12
 - **Type:** architecture / security
 - **Decided by:** owner (items 1 to 4); AI recommendation accepted by default (the rest)
@@ -10,7 +10,7 @@
 Swarm is a built-in protocol under `src/protocols/swarm/`, shaped like IPFS: a descriptor, a `bzz://` address resolver, a `DataGatherer`, and one function (`swarmProtocol`) the verifier host calls. `bzz://<reference>/path` opens a site, and a `.eth` name whose contenthash names Swarm content opens it too, a feed included. Every chunk is hashed against its address before any byte of it is used.
 
 1. **Chunks come only from Bee-API endpoints, and the one Orivon will configure is a node on the person's own machine.** No public gateway is ever asked. The default endpoint list is empty: a `bzz://` address still canonicalises and a contenthash still decodes, but opening the content fails as `unavailable` with a plain sentence, and no request is made. Config is `HostConfig.swarmEndpoints`; the test seam is `ORIVON_TEST_SWARM_ENDPOINTS`.
-2. **Feeds never depend on a node's `/feeds` route**, which the local node does not serve. The newest update is found over `/chunks` alone: from the highest index this install has seen (or a `/feeds` answer, where an endpoint gives one, as a first guess that is still verified), forward by doubling steps until an index has no chunk, then by binary search, every hit's signature verified and the probes bounded. A miss is "no endpoint has it", never a refusal.
+2. **Feeds never depend on a node's `/feeds` route**, which a node need not serve and whose answer is unproven. The newest update is found over `/chunks` alone: from the highest index this install has seen (or a `/feeds` answer, where an endpoint gives one, as a first guess that is still verified), forward by doubling steps until an index has no chunk, then by binary search, every hit's signature verified and the probes bounded. A miss is "no endpoint has it", never a refusal.
 3. **`swarm/` says "endpoints", not "gateways"**, since what it asks is a node.
 4. **A `.eth` name keeps showing `ipfs://`** whichever network its content is on, and the shell's loading screen for a `.eth` name names no network. Showing `bzz://` or `ipfs://` by where the content lives is shell work for a later change.
 5. **The canonical spelling of a reference is a CIDv1** of codec swarm-manifest (0xfa) over keccak-256, 61 characters in base32, because 64 hex characters cannot be one host label (63 at most). `bzz://<64 hex>` redirects to it, `https://<cid>.bzz.orivon/` is the origin, and the same CID is the content root for the install pin, the update offer and Web3 Score ids.
@@ -36,7 +36,7 @@ The owner asked for Swarm, trustless and permissionless, built like IPFS. Public
 ## Alternatives considered
 
 - **Public gateways as the default list.** Rejected by the owner: each sees what the person opens, and a gateway can refuse content by redirect.
-- **A single `/feeds` call for the newest index.** Rejected: the local node does not serve it, and the answer is unproven.
+- **A single `/feeds` call for the newest index.** Rejected: a node need not serve it, and the answer is unproven.
 - **Reading a Swarm site through the node's `/bzz` route.** Rejected: it returns bytes with nothing to check them against.
 - **Porting Bee's erasure-coding tables.** Rejected: the data references are the leading ones whose spans sum to the parent's span, so parity references are recognised without the tables and never fetched.
 

@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest'
-import { concat, hexToBytes } from 'viem'
-import { openFile, readWhole } from '../joiner.js'
-import type { GetChunk, JoinLimits } from '../joiner.js'
+import { describe, expect, it, vi } from 'vitest'
+import { bytesToHex, concat, hexToBytes } from 'viem'
+import { AHEAD, openFile, readWhole } from '../joiner.js'
+import type { GetChunk, GetLeaves, JoinLimits } from '../joiner.js'
 import { buildFile, makeChunk, spanBytes } from '../../../../test/apps/swarm-gateway/encode.mjs'
 import { ResolutionError } from '../../resolution/records.js'
-import { cacAddress, verifyCac } from '../chunk.js'
+import { cacAddress, readSpan, verifyCac } from '../chunk.js'
 
 const LIMITS: JoinLimits = { maxBytes: 1024 * 1024 * 1024, maxTreeDepth: 8 }
 const LEAF = 4096
@@ -175,6 +175,75 @@ describe('openFile', () => {
     store.delete(missing)
     const file = await openFile(chunksOf(store).get, ref, LIMITS)
     await expect(collect(file.read())).rejects.toMatchObject({ failure: 'unavailable' })
+  })
+
+  it('asks for the leaves of each intermediate chunk together, and only for those a range covers', async () => {
+    const store = new Map<string, Uint8Array>()
+    const bytes = content(200 * LEAF + 5)
+    const { ref } = buildFile(bytes, store)
+    const asked: Array<{ parent: string, leaves: number, first: number }> = []
+    const getLeaves: GetLeaves = (parent, leaves) => {
+      asked.push({ parent, leaves: leaves.length, first: leaves[0]!.offset })
+      return leaves.map(async (leaf) => store.get(leaf.address)!)
+    }
+    const file = await openFile(chunksOf(store).get, ref, LIMITS, getLeaves)
+    expect(await readWhole(file, file.size)).toEqual(bytes)
+    expect(asked.map((call) => call.leaves)).toEqual([128, 73])
+    asked.length = 0
+    expect(await collect(file.read({ start: 130 * LEAF + 1, end: 132 * LEAF }))).toEqual(bytes.subarray(130 * LEAF + 1, 132 * LEAF + 1))
+    expect(asked).toEqual([{ parent: bytesToHex(store.get(ref)!.subarray(8 + 32, 8 + 64)).slice(2), leaves: 3, first: 2 * LEAF }])
+  })
+
+  it('checks a leaf asked for together against the size its parent declares, as any other', async () => {
+    const store = new Map<string, Uint8Array>()
+    const { ref } = buildFile(content(3 * LEAF), store)
+    const file = await openFile(chunksOf(store).get, ref, LIMITS, (_parent, leaves) => leaves.map(async () => makeChunk(spanBytes(LEAF - 1), content(LEAF - 1))))
+    await expect(collect(file.read())).rejects.toMatchObject({ failure: 'unverifiable' })
+  })
+
+  it('keeps leaves in flight past the end of one intermediate chunk, never more than AHEAD of the byte read', async () => {
+    const store = new Map<string, Uint8Array>()
+    const bytes = content(200 * LEAF)
+    // `content` repeats every 16 leaves; numbered leaves are 200 addresses.
+    for (let i = 0; i < 200; i++) bytes[i * LEAF] = i
+    const { ref } = buildFile(bytes, store)
+    const leafAt =(i: number): string => Buffer.from(cacAddress(makeChunk(spanBytes(LEAF), bytes.subarray(i * LEAF, (i + 1) * LEAF)))).toString('hex')
+    // The first child of each intermediate chunk is what tells the joiner its children's size: never held.
+    const firsts = new Set([leafAt(0), leafAt(128)])
+    const asked = new Set<string>()
+    const held: Array<() => void> = []
+    let holding = true
+    const get: GetChunk = async (address) => {
+      const chunk = store.get(address)!
+      if (readSpan(chunk).size <= LEAF) {
+        asked.add(address)
+        if (holding && !firsts.has(address)) await new Promise<void>((resolve) => { held.push(resolve) })
+      }
+      return chunk
+    }
+    const file = await openFile(get, ref, LIMITS)
+    const reading = collect(file.read({ start: 120 * LEAF, end: bytes.length - 1 }))
+    await vi.waitFor(() => { expect(asked.has(leafAt(150))).toBe(true) })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(asked.size).toBeLessThanOrEqual(AHEAD + 2)
+    expect(asked.has(leafAt(199))).toBe(false)
+    holding = false
+    for (const release of held) release()
+    expect(await reading).toEqual(bytes.subarray(120 * LEAF))
+  })
+
+  it('yields every byte before a malformed chunk further ahead, then refuses', async () => {
+    const store = new Map<string, Uint8Array>()
+    const bytes = content(200 * LEAF)
+    const { ref } = buildFile(bytes, store)
+    const second = Buffer.from(store.get(ref)!.subarray(8 + 32, 8 + 64)).toString('hex')
+    const lying = new Uint8Array(store.get(second)!)
+    lying.set(spanBytes(72 * LEAF - 1), 0)
+    store.set(second, lying)
+    const parts: Uint8Array[] = []
+    const file = await openFile(chunksOf(store).get, ref, LIMITS)
+    await expect((async () => { for await (const part of file.read()) parts.push(part) })()).rejects.toMatchObject({ failure: 'unverifiable' })
+    expect(concat(parts)).toEqual(bytes.subarray(0, 128 * LEAF))
   })
 
   it('reads a whole file only up to a cap', async () => {

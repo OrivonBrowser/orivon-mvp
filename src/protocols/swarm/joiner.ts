@@ -7,11 +7,16 @@ import { bytesToHex } from 'viem'
 import { ResolutionError } from '../resolution/records.js'
 import type { GatherRange } from '../resolution/providers.js'
 import { CHUNK_PAYLOAD_BYTES, REFERENCE_BYTES, SPAN_BYTES, isZeroPadding, readSpan } from './chunk.js'
+import type { SubtreeLeaf } from './chunk-fetch.js'
 
-/** Children fetched ahead of the one being read, in each intermediate chunk. */
+/** Intermediate chunks fetched ahead of the one being walked, among the children of one intermediate chunk. */
 const WINDOW = 16
+/** Leaves fetched ahead of the one being read, across the whole file: each 4 KB leaf is a round trip to the node. */
+export const AHEAD = 64
 
 export type GetChunk = (address: string) => Promise<Uint8Array>
+/** The leaves under the intermediate chunk at `parent`, in order, each a chunk already checked against its address. */
+export type GetLeaves = (parent: string, leaves: readonly SubtreeLeaf[]) => Array<Promise<Uint8Array>>
 
 export interface JoinLimits {
   readonly maxBytes: number
@@ -78,38 +83,139 @@ async function childrenOf (chunk: Uint8Array, size: number, level: number, at: n
   return children
 }
 
-async function * readChunk (chunk: Uint8Array, expected: number, at: number, start: number, end: number, depth: number, get: GetChunk, limits: JoinLimits): AsyncGenerator<Uint8Array> {
-  const { size, level } = readSpan(chunk)
-  if (size !== expected) throw malformed(`a subtree of ${String(size)} bytes where ${String(expected)} were declared`)
+/** `chunk`, whose first child is asked for as soon as it arrives: the walk waits on that child to size the others. */
+function withFirstChild (chunk: Promise<Uint8Array>, get: GetChunk): Promise<Uint8Array> {
+  chunk.then((bytes) => {
+    if (bytes.length >= SPAN_BYTES + REFERENCE_BYTES) void prefetch(get, bytesToHex(bytes.subarray(SPAN_BYTES, SPAN_BYTES + REFERENCE_BYTES)).slice(2))
+  }, () => {})
+  return chunk
+}
+
+/** A leaf the read wants: where it sits, the size its parent declares for it, and the part of it inside the range. */
+interface Leaf {
+  readonly address: string
+  readonly at: number
+  readonly size: number
+  readonly start: number
+  readonly end: number
+  readonly chunk: Promise<Uint8Array> | undefined
+}
+
+function malformedSize (size: number, expected: number): ResolutionError {
+  return malformed(`a subtree of ${String(size)} bytes where ${String(expected)} were declared`)
+}
+
+/** The part of a leaf inside the range, once its span is the size its parent declared. */
+function leafBytes (chunk: Uint8Array, leaf: Leaf): Uint8Array | undefined {
+  const { size } = readSpan(chunk)
+  if (size !== leaf.size) throw malformedSize(size, leaf.size)
   const payload = chunk.subarray(SPAN_BYTES)
+  // BMT pads a payload with zeros, so zero bytes past the span are the same chunk; only `size` are content.
+  if (payload.length < size || !isZeroPadding(payload.subarray(size))) throw malformed(`a leaf of ${String(payload.length)} bytes where ${String(size)} were declared`)
+  return slice(payload.subarray(0, size), leaf.at, leaf.start, leaf.end)
+}
+
+/**
+ * The leaves under `chunk`, at `address`, that cover [start, end], in order. Intermediate chunks are fetched here,
+ * WINDOW ahead among siblings, and checked against the size their parent declared; the leaves of one intermediate
+ * chunk are asked for together when `getLeaves` is given, and otherwise each is fetched by the reader. Every leaf is
+ * checked against its declared size by the reader.
+ */
+async function * leavesOf (address: string, chunk: Uint8Array, expected: number, at: number, start: number, end: number, depth: number, get: GetChunk, getLeaves: GetLeaves | undefined, limits: JoinLimits): AsyncGenerator<Leaf> {
+  const { size, level } = readSpan(chunk)
+  if (size !== expected) throw malformedSize(size, expected)
   if (size <= CHUNK_PAYLOAD_BYTES) {
-    // BMT pads a payload with zeros, so zero bytes past the span are the same chunk; only `size` are content.
-    if (payload.length < size || !isZeroPadding(payload.subarray(size))) throw malformed(`a leaf of ${String(payload.length)} bytes where ${String(size)} were declared`)
-    const part = slice(payload.subarray(0, size), at, start, end)
-    if (part !== undefined) yield part
+    yield { address: '', at, size, start, end, chunk: Promise.resolve(chunk) }
     return
   }
   if (depth >= limits.maxTreeDepth) throw malformed(`a tree deeper than ${String(limits.maxTreeDepth)} levels`)
   const children = await childrenOf(chunk, size, level, at, start, end, get)
-  const pending: Array<Promise<Uint8Array> | undefined> = children.slice(0, WINDOW).map((child) => child.chunk ?? prefetch(get, child.address))
+  if (getLeaves !== undefined && children.length > 1 && children.every((child) => child.size <= CHUNK_PAYLOAD_BYTES)) {
+    const fetched = getLeaves(address, children.map((child) => ({ address: child.address, size: child.size, offset: child.at - at })))
+    for (const [i, child] of children.entries()) {
+      const leaf = fetched[i]!
+      leaf.catch(() => {})
+      yield { address: child.address, at: child.at, size: child.size, start: Math.max(start, child.at), end: Math.min(end, child.at + child.size - 1), chunk: child.chunk ?? leaf }
+    }
+    return
+  }
+  const inner: Array<Promise<Uint8Array> | undefined> = []
+  const request = (upTo: number): void => {
+    for (let i = inner.length; i < Math.min(upTo, children.length); i++) {
+      const child = children[i]!
+      inner.push(child.size > CHUNK_PAYLOAD_BYTES ? child.chunk ?? withFirstChild(prefetch(get, child.address), get) : undefined)
+    }
+  }
+  request(WINDOW)
   for (let i = 0; i < children.length; i++) {
     const child = children[i]!
-    const bytes = await pending[i]!
-    pending[i] = undefined
-    const ahead = children[i + WINDOW]
-    if (ahead !== undefined) pending.push(prefetch(get, ahead.address))
-    let produced = 0
-    for await (const part of readChunk(bytes, child.size, child.at, Math.max(start, child.at), Math.min(end, child.at + child.size - 1), depth + 1, get, limits)) {
-      produced += part.length
-      yield part
+    const childStart = Math.max(start, child.at)
+    const childEnd = Math.min(end, child.at + child.size - 1)
+    if (child.size <= CHUNK_PAYLOAD_BYTES) {
+      yield { address: child.address, at: child.at, size: child.size, start: childStart, end: childEnd, chunk: child.chunk }
+      continue
     }
-    const wanted = Math.min(end, child.at + child.size - 1) - Math.max(start, child.at) + 1
-    if (produced !== wanted) throw malformed(`a subtree yielding ${String(produced)} bytes where ${String(wanted)} were declared`)
+    request(i + 1 + WINDOW)
+    const bytes = await inner[i]!
+    inner[i] = undefined
+    yield * leavesOf(child.address, bytes, child.size, child.at, childStart, childEnd, depth + 1, get, getLeaves, limits)
   }
 }
 
+/**
+ * The bytes of [start, end], in order, with up to AHEAD leaves in flight across the whole file: the walk runs ahead of
+ * the bytes being yielded, so the end of one intermediate chunk's children does not empty the pipeline. Whatever fails,
+ * a fetch or a check, surfaces only once every byte before it has been yielded.
+ */
+async function * readTree (reference: string, root: Uint8Array, size: number, start: number, end: number, get: GetChunk, getLeaves: GetLeaves | undefined, limits: JoinLimits): AsyncGenerator<Uint8Array> {
+  const walk = leavesOf(reference, root, size, 0, start, end, 0, get, getLeaves, limits)
+  const queue: Array<{ readonly leaf: Leaf, readonly chunk: Promise<Uint8Array> }> = []
+  let walking = false
+  let walked = false
+  let failure: { readonly error: unknown } | undefined
+  let wake: (() => void) | undefined
+  const step = (): void => {
+    if (walking || walked || queue.length >= AHEAD) return
+    walking = true
+    walk.next().then((result) => {
+      if (result.done === true) walked = true
+      else queue.push({ leaf: result.value, chunk: result.value.chunk ?? prefetch(get, result.value.address) })
+    }, (error: unknown) => {
+      walked = true
+      failure = { error }
+    }).finally(() => {
+      walking = false
+      wake?.()
+      step()
+    })
+  }
+  let produced = 0
+  try {
+    for (;;) {
+      step()
+      const next = queue.shift()
+      if (next === undefined) {
+        if (walked) break
+        await new Promise<void>((resolve) => { wake = resolve })
+        wake = undefined
+        continue
+      }
+      step()
+      const part = leafBytes(await next.chunk, next.leaf)
+      if (part === undefined) continue
+      produced += part.length
+      yield part
+    }
+  } finally {
+    walked = true
+    void walk.return(undefined).catch(() => {})
+  }
+  if (failure !== undefined) throw failure.error
+  if (produced !== end - start + 1) throw malformed(`a file yielding ${String(produced)} bytes where ${String(end - start + 1)} were declared`)
+}
+
 /** Fetches the root chunk, which says how large the file is, and returns a reader over it. Throws a ResolutionError. */
-export async function openFile (get: GetChunk, reference: string, limits: JoinLimits): Promise<JoinedFile> {
+export async function openFile (get: GetChunk, reference: string, limits: JoinLimits, getLeaves?: GetLeaves): Promise<JoinedFile> {
   const root = await get(reference)
   const { size } = readSpan(root)
   if (size > limits.maxBytes) throw new ResolutionError('unverifiable', `a file of ${String(size)} bytes, over the ${String(limits.maxBytes)} a request may read`)
@@ -119,7 +225,7 @@ export async function openFile (get: GetChunk, reference: string, limits: JoinLi
       const start = range?.start ?? 0
       const end = Math.min(range?.end ?? size - 1, size - 1)
       if (size > 0 && start > end) return (async function * () {})()
-      return readChunk(root, size, 0, start, end, 0, get, limits)
+      return readTree(reference, root, size, start, end, get, getLeaves, limits)
     }
   }
 }

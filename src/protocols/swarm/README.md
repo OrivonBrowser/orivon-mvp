@@ -3,10 +3,12 @@
 **What lives here.** The Swarm protocol ([`protocol.ts`](protocol.ts)): its descriptor, the `bzz`
 scheme and its resolver, and the `DataGatherer` ([`../resolution/`](../resolution/)) that loads
 every record naming Swarm content, a `.eth` name's included. It reads a reference or a feed over
-the Bee API's `/chunks` route and hashes every chunk against its address before any of it is used.
+the Bee API's `/chunks` route, and a file's leaves over `/bytes`, and hashes every chunk against its
+address before any of it is used.
 A site is a Mantaray manifest over a chunk tree; a feed is a topic and an owner whose signed
 updates name the content's newest root. [`ADR-0077`](../../../docs/decisions/ADR-0077-swarm-content-is-verified-chunk-by-chunk-from-a-local-node.md)
-is the design.
+is the design; [`ADR-0099`](../../../docs/decisions/ADR-0099-a-swarm-files-leaves-are-read-together-and-checked-one-by-one.md)
+adds the leaves read together.
 
 **Not tied to Electron.** Durable. It runs over an injected `fetch`.
 
@@ -33,9 +35,20 @@ A feed's end is only a 404 from every endpoint; an endpoint that does not answer
 | Hop | How it is verified |
 |---|---|
 | reference to chunk | `keccak256(span, bmtRoot(payload))` equals the address |
+| leaf read with its siblings | rebuilt with the span its parent declares, it hashes to the address its parent lists |
 | file tree | each intermediate chunk lists its children, and a child's span must equal the bytes its parent says it covers ([`joiner.ts`](joiner.ts)) |
 | manifest | Mantaray nodes are files read through the same joiner ([`mantaray.ts`](mantaray.ts)) |
 | feed to update | the single-owner chunk's signature recovers to the feed owner ([`feed.ts`](feed.ts)) |
+
+**A file's leaves are read together.** Each 4 KB chunk is a round trip to the node, so a file is
+read by its intermediate chunks: the up to 128 leaves under one are asked for in a single
+`/bytes/<intermediate address>` request, with a `Range` for the ones the read needs
+(`ChunkSource.leaves`). A leaf is used only once it hashes to the address its parent lists; a leaf
+the answer does not hold, or holds wrong, and every one after it, is fetched alone over `/chunks`,
+so a node that cannot answer in bulk costs time, never a byte. A failed bulk read is not held
+against the node. [`joiner.ts`](joiner.ts) keeps `AHEAD` leaves in flight across the whole file,
+not one intermediate chunk at a time, and asks for each intermediate chunk's first child as soon
+as it arrives, since the others' sizes wait on it.
 
 **A reference is spelled as a CID.** 64 hex characters cannot be one host label, so the canonical
 spelling is a CIDv1 of codec swarm-manifest over keccak-256 ([`reference.ts`](reference.ts)), 61
@@ -44,6 +57,8 @@ characters; the resolver refuses any other spelling so that one site has one ori
 **The newest feed update is found over `/chunks`.** A node need not serve `/feeds`. The search
 starts at the highest index seen before (or an endpoint's `/feeds` answer, which is only a guess to
 verify), doubles forward until an index has no chunk, then halves the gap; the probes are bounded.
+The floor, the index after it and the `/feeds` guess are asked at once, so a feed with no new
+update costs one round trip.
 Freshness is not provable: an endpoint can hide the newest update, and the persisted floor only
 stops a rollback.
 

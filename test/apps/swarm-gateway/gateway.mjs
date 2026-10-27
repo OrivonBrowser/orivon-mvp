@@ -1,5 +1,6 @@
 // A Bee-API endpoint for the end-to-end suite: it holds the chunks of the
-// sites and feeds a test builds, and answers `/chunks/<hex>` like a node does.
+// sites and feeds a test builds, and answers `/chunks/<hex>` like a node does,
+// and `/bytes/<hex>` with the joined bytes under a chunk, a `Range` honoured.
 // `/feeds/<owner>/<topic>` answers with the newest index header when asked to,
 // and with a 501 otherwise, as a node without that route does. It logs every
 // request, can flip a byte of any chunk, can answer a chunk with a redirect
@@ -10,6 +11,28 @@ import { createServer } from 'node:http'
 import { buildFeedManifest, buildSite, feedKey, legacyUpdate, ownerOf, signFeedUpdate, buildFile } from './encode.mjs'
 
 const HOST = '127.0.0.1'
+
+/**
+ * The bytes under the chunk at `address`, joined as a node's `/bytes` route joins them; undefined when a chunk is missing.
+ * @param {Map<string, Uint8Array>} store @param {string} address @returns {Buffer | undefined}
+ */
+function joined (store, address) {
+  const chunk = store.get(address)
+  if (chunk === undefined) return undefined
+  const span = Buffer.from(chunk.subarray(0, 8))
+  if (span[7] > 128) span[7] = 0
+  const size = Number(span.readBigUInt64LE(0))
+  const payload = Buffer.from(chunk.subarray(8))
+  if (size <= 4096) return payload.subarray(0, size)
+  const parts = []
+  for (let i = 0, at = 0; at < size; i++) {
+    const part = joined(store, payload.subarray(i * 32, (i + 1) * 32).toString('hex'))
+    if (part === undefined) return undefined
+    parts.push(part)
+    at += part.length
+  }
+  return Buffer.concat(parts)
+}
 
 /**
  * @param {{ feedsRoute?: boolean, tamperAll?: boolean, holdChunks?: boolean }} [options] `feedsRoute`: answer `/feeds/...` with the newest index (default: a 501); `tamperAll`: flip a byte of every chunk served; `holdChunks`: keep every chunk answer back until `releaseChunks()`, as a node that is slow to answer does
@@ -39,6 +62,22 @@ export async function startSwarmFixture (options = {}) {
       const body = Buffer.from(bytes)
       if (tamperAll || tampered.has(chunk[1])) body[body.length - 1] ^= 0x01
       const answer = () => { answered++; res.writeHead(200, { 'content-type': 'application/octet-stream' }).end(body) }
+      if (holding) held.push(answer)
+      else answer()
+      return
+    }
+    const subtree = /^\/bytes\/([0-9a-f]{64})$/.exec(url.pathname)
+    if (subtree !== null) {
+      const whole = joined(store, subtree[1])
+      if (whole === undefined) { res.writeHead(404).end('not found'); return }
+      const range = /^bytes=(\d+)-(\d+)$/.exec(req.headers.range ?? '')
+      const from = range === null ? 0 : Number(range[1])
+      const to = range === null ? whole.length - 1 : Math.min(Number(range[2]), whole.length - 1)
+      const body = Buffer.from(whole.subarray(from, to + 1))
+      if (tamperAll) body[Math.min(4096, body.length - 1)] ^= 0x01
+      const answer = () => {
+        res.writeHead(range === null ? 200 : 206, { 'content-type': 'application/octet-stream', ...(range !== null && { 'content-range': `bytes ${String(from)}-${String(to)}/${String(whole.length)}` }) }).end(body)
+      }
       if (holding) held.push(answer)
       else answer()
       return
