@@ -83,4 +83,37 @@ describe('createSiteAsks', () => {
       error.mockRestore()
     }
   })
+
+  it('reads the first query answer that is not undefined, addFirst before the rest, and never from an asker without one', () => {
+    const asks = createSiteAsks()
+    asks.add({ name: 'no query' })
+    asks.add({ name: 'skips', query: () => undefined })
+    asks.add({ name: 'general', query: () => 'prompt' })
+    expect(asks.query(TAB, 'camera', 'https://a.example')).toBe('prompt')
+    asks.addFirst({ name: 'owner', query: () => 'denied' })
+    expect(asks.query(TAB, 'camera', 'https://a.example')).toBe('denied')
+  })
+
+  it('answers undefined for a query nobody owns, and passes the contents, name and origin through', () => {
+    const asks = createSiteAsks()
+    expect(asks.query(TAB, 'camera', 'https://a.example')).toBeUndefined()
+    const query = vi.fn<NonNullable<SiteAsker['query']>>(() => 'granted')
+    asks.add({ name: 'spy', query })
+    asks.query(TAB, 'microphone', 'chrome-extension://abc')
+    expect(query).toHaveBeenCalledWith(TAB, 'microphone', 'chrome-extension://abc')
+  })
+
+  it('logs a throwing asker by name and leaves the query to the next, or to the engine\'s own answer', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      const asks = createSiteAsks()
+      asks.add({ name: 'broken', query: () => { throw new Error('boom') } })
+      expect(asks.query(TAB, 'camera', 'https://a.example')).toBeUndefined()
+      asks.add({ name: 'fine', query: () => 'denied' })
+      expect(asks.query(TAB, 'camera', 'https://a.example')).toBe('denied')
+      expect(error.mock.calls[0]?.[0]).toContain('broken')
+    } finally {
+      error.mockRestore()
+    }
+  })
 })

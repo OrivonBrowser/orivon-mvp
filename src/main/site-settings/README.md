@@ -6,7 +6,7 @@
 |---|---|
 | `kinds.ts` | `SITE_KINDS`: every kind of thing a site can be asked about or told it may not do, with its label, its setting key, whether a feature enforces it yet and which answers it keeps (`remembers`: screen sharing keeps only a block, so the controller, the store and the review bubble refuse an allow for it) |
 | `site-settings-store.ts` | `site-settings.json`: the answer (allow or block) per site and kind; a memory-only variant for a private session |
-| `electron-names.ts` | pure: Electron's permission names and details to kinds |
+| `electron-names.ts` | pure: Electron's permission names and details to kinds, and the names `navigator.permissions.query` takes |
 | `site-asks-engine.ts` | pure: who may ask, what is remembered, when the person is asked, what the page is told |
 | `site-asker.ts` | adapts the engine to the gate's `SiteAsker` |
 | `page-access.ts` | per tab, what the current page was asked and answered, for the address bar's chip and its bubble |
@@ -49,6 +49,16 @@ after the next page load, not before). A frame never asks. A `block` default for
 **The check handler never allows on the person's behalf.** It answers `true` only for a stored allow whose site is the
 page's own, and a cross-origin frame (which Electron reports with an `embeddingOrigin`) never borrows its embedder's
 answer. It notes the allowance on the page's record so the chip can show it, but writes no store.
+
+**A page's own `permissions.query` reads `prompt` where a request would ask.** Electron answers the Permissions API from the
+check handler, which can only say true or false, so an undecided kind would read `denied` and a page that checks before it
+asks would never ask. The engine's `query` gives the state from the decision a request takes: `granted` for a stored allow,
+`denied` for a stored block, a default of block, a question the page closed on this load, a registered app, and a location
+allow (the page is told no whatever is stored), `prompt` otherwise, and it reads, never asks, stores or notes. Where a tab is
+shown is not a decision, so a tab out of sight still reads `prompt`. The names are `electron-names.ts`'s `queryKindOf`;
+notifications are not among them, because their answers are kept in `sessions/site-notifications.ts`. The page-side half is
+[`../../preload/permission-query.ts`](../../preload/permission-query.ts), and
+[`../sessions/permission-query-ipc.ts`](../sessions/permission-query-ipc.ts) is where main answers it.
 
 **The script and image handlers are on the owner only while a rule can block that kind.** `install-content-settings.ts`
 registers the response-header handler while the `sites.javascript` default is `block` or any site is stored as blocked
