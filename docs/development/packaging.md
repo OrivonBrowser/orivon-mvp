@@ -178,6 +178,34 @@ WantedBy=timers.target
 unpinned, and each move of the latest key. `ipfs key gen --type=ed25519 latest-release` creates the key
 once. A refused release is not downloaded again until its `ipfs.json` names another CID.
 
+**Filebase holds the live versions only.** `scripts/filebase-sync.mjs`, run from a timer on the pinning
+node, pins on Filebase the version each IPNS key of the node's Kubo points at (the newest release is
+among them, through the `latest-release` key's start page), the CIDs in a keep file, and the live pins
+of the DecentraWiki relay, and unpins everything else once it is two hours old: the version a key
+moved past, the per-file pins a folder upload leaves behind, the releases that are no longer the newest.
+Removal stops for a run when a key cannot be read or most of the keys seen last time are gone, and a
+version that fails to add is tried again after an hour, then two, up to a day. Filebase refuses a file
+or a block holding phrases a phishing page uses ("Authentication is required", "password to continue",
+and others it does not list) with an empty 403 on an upload, and never finishes pinning such a block by CID, so the
+script imports a CAR, which it does not filter; only a version over 300 MB goes by CID. Do not run
+`pin-extra.mjs` against the account this script prunes: it would pin the older releases again. The
+settings are in the script's header and the unit is:
+
+```ini
+# orivon-filebase-sync.service
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/orivon-filebase-sync/secrets.env   # FILEBASE_KEY=<IPFS RPC key>, root 0600
+Environment=KEEP_FILE=/etc/orivon-filebase-sync/keep.txt PROTECT_FILE=/var/lib/decentrawiki-relay/pins.jsonl
+Environment=STATE_FILE=/var/lib/orivon-filebase-sync/state.json SUMMARY_LOG=<the node's summary file>
+StateDirectory=orivon-filebase-sync
+ExecStart=/usr/local/bin/node /path/to/filebase-sync.mjs
+
+# orivon-filebase-sync.timer: OnBootSec=10min, OnUnitActiveSec=30min
+```
+
+It runs as root because the relay's state directory is private to the relay's user.
+
 #### Keeping the node reachable
 
 Kubo's resource manager keeps counting some inbound connections after they close (on Kubo 0.43.1, about
