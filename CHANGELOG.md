@@ -12,6 +12,7 @@ Each section below lists what that release carried; `[Unreleased]` is what has l
 
 ### Fixed
 
+- **Buttons inside a page's own title bar can be clicked**: a page that marks a header `-webkit-app-region: drag` (Fluux Messenger's "+" buttons, for one) no longer has real mouse presses on the controls inside it taken for a window drag. On a page that re-lays-out every frame this costs about 1.7 ms of main-thread time per frame at 3,000 nodes.
 - **`.eth` names load on a fresh install again**: the bundled light-client checkpoint is now the first block of a finalized epoch that the beacon server bootstraps from, and a checkpoint that server answers 404 to is replaced in the same run.
 
 ### Changed
@@ -34,6 +35,7 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+- **`page-drag-region-never-swallows-a-press`**: new row. A page's `-webkit-app-region: drag` no longer takes a press from the controls inside it, and the page's own regions are no longer reported to the window, so an app that draws its own title bar must not expect to drag Orivon's window by it. Recheck: Fluux Messenger, and any port that sets the property.
 - **`sqlite-database-from-bytes`**: new row. An app that opens a database from a `Buffer` (`new Database(buffer)`) or reads one with `db.serialize()` no longer needs a change to run. Recheck: any port that caught the refusal, or that went through a temporary file.
 - **`sqlite-user-functions`** and **`sqlite-backup-to-app-files`**: new rows. An app that registers SQL functions on its database, or copies it with `db.backup`, no longer needs a change to run; `backup` cannot run inside a transaction. Recheck: any port that caught the refusal.
 - **`node-fs-ancestors-of-the-files-root-exist`**: new row. `fs.stat`, `existsSync` and `mkdir` on `/` and `/orivon` now answer as for directories that exist, and `readdir` lists the one entry toward the app's files; they failed `EACCES` before. Writes on them and any path beside the files still fail `EACCES`. Recheck: any port that walks a folder's ancestors.
