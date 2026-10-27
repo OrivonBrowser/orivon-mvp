@@ -206,6 +206,85 @@ ExecStart=/usr/local/bin/node /path/to/filebase-sync.mjs
 
 It runs as root because the relay's state directory is private to the relay's user.
 
+#### Orivon's sites on Swarm
+
+`scripts/swarm-feeds.mjs` publishes each of Orivon's own sites to a Swarm sequence feed and keeps the feed
+current. It runs on a machine that runs a [Bee](https://docs.ethswarm.org) node and can reach the pinning
+node's Kubo RPC, directly or over ssh. The pinning node keeps the IPNS keys, stays the trigger (a key that
+moves to a new CID is a new version) and keeps its own copy of every site. A run reads the names file (one
+line per site: the IPNS key's name, then the ENS names it serves), and for each site that moved uploads the
+version to Bee and appends an update to the site's feed. The feed's owner is one secp256k1 key that never
+holds funds; Bee's wallet pays. `swarm-feeds.mjs list` prints each site's `bzz://` feed manifest, the address an
+ENS name's contenthash points at, and it does not change when a version does.
+
+Postage is two **immutable** batches, because an immutable batch refuses a chunk it has no room for instead of
+overwriting an older one, so what was published stays readable until the batch expires:
+
+| Batch | Holds | Policy |
+|---|---|---|
+| Pointers (`POINTER_DEPTH` 18) | One small update per version, and the feed manifests | Never replaced: it is bought for `POINTER_TTL_TARGET_DAYS` (240) and topped up when under `POINTER_TTL_MIN_DAYS` (120). At `POINTER_DILUTE_AT` (0.5) fill its depth grows by one, then it is topped up again, since dilution halves the time left |
+| Content (`CONTENT_DEPTH` 22) | The site versions | Bought for `CONTENT_TTL_TARGET_DAYS` (35), topped up under `CONTENT_TTL_MIN_DAYS` (21), and replaced at `ROTATE_AT` (0.75) fill or when Bee answers 402 to an upload: every site's current version is uploaded again into the new batch, and the old batch is never topped up, so old versions leave the network when it expires |
+
+A batch Bee no longer knows (expired, or the state file is gone) is bought again; a new pointer batch is
+filled again from `socs.jsonl`, the journal of every signed update, so the feeds read as before. Sites are
+handled one at a time: the version is streamed from Kubo through `tar` into a folder in `WORK_DIR`, packed
+into one tar, the folder removed, and the tar streamed to Bee, so the disk holds one site (twice, for a moment)
+and memory holds none. Keep `WORK_DIR` on a disk with room for twice the largest site. A site whose upload has
+not finished syncing within `SYNC_TIMEOUT_MIN` gets no feed update that run, and the next run takes up the same
+upload. A run after days off finds the same state and carries on; one that starts while Bee is still starting or
+has no peers exits 1 and spends nothing.
+
+`MAX_SPEND_BZZ` (100) limits what one run may pay for purchases, top-ups and dilutions together: a step over it
+is refused and logged, and the run exits 1. When the wallet is short the run says which address to fund and
+buys nothing, never half of a purchase. At 196,236 PLUR per chunk and block, the first run costs about 50 xBZZ
+for the content batch and about 21 xBZZ for the pointer batch. `sync --dry-run` reads Bee and Kubo and
+prints what it would buy and upload; it spends and writes nothing.
+
+Build the one-file bundle (it carries `viem`) and copy it to the machine that runs Bee; the script needs
+Node and GNU `tar` there:
+
+```sh
+npx esbuild scripts/swarm-feeds.mjs --bundle --platform=node --format=esm --outfile=swarm-feeds.mjs
+```
+
+Create the feed's key once, then read the two addresses to fund and to publish from:
+
+```sh
+mkdir -p ~/.config/orivon-swarm-feeds && (umask 077 && openssl rand -hex 32 > ~/.config/orivon-swarm-feeds/feed-signer.key)
+node swarm-feeds.mjs address     # the feed owner, and Bee's wallet (xBZZ and a little xDAI go there)
+```
+
+The job refuses a key file that group or others can read. Losing the key loses the right to update the feeds:
+an ENS name would then have to point at a new manifest. `STATE_DIR` (`$XDG_STATE_HOME/orivon-swarm-feeds`) holds
+`state.json` (batch ids, per-site progress), `socs.jsonl` (the journal, appended before each upload) and
+`status.json`; back up the first two, because without `state.json` the job cannot tell its batches from
+anyone else's and buys new ones (the old ones stay until they expire).
+
+Where the machine reaches Kubo over ssh, `IPFS_API=ssh://<user>@<host>[:<port>]` runs each RPC call as
+`ssh -o BatchMode=yes <user>@<host> curl -sS --fail -X POST '<IPFS_SSH_RPC>/api/v0/<path>'`
+(`IPFS_SSH_RPC` is the RPC address as the node sees it, `http://127.0.0.1:5001` by default), and
+`NAMES_FILE=ssh://<user>@<host>/<absolute path>` reads the names file there with `cat`. ssh never asks a
+question, so the machine needs a key the node accepts without a passphrase prompt (an `IdentityFile` in
+`~/.ssh/config` for that host). Both settings also take a plain path or an http(s) URL. The unit and timer, as
+user units on the machine that runs Bee:
+
+```ini
+# ~/.config/systemd/user/orivon-swarm-feeds.service
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/orivon-swarm-feeds/settings.env
+# settings.env: BEE_API=http://127.0.0.1:1733  IPFS_API=ssh://<user>@<host>  NAMES_FILE=ssh://<user>@<host>/<path>
+#               WORK_DIR=<a disk folder>  SUMMARY_LOG=<optional>
+ExecStart=/usr/bin/node %h/.local/lib/orivon-swarm-feeds/swarm-feeds.mjs
+
+# ~/.config/systemd/user/orivon-swarm-feeds.timer: OnBootSec=10min, OnUnitActiveSec=1h
+```
+
+`status.json` is what each run leaves: `ok`, the wallet, each batch (`ttlDays`, `fill`, `usable`), and per site
+the feed manifest, the newest index, the IPFS CID and Swarm reference it carries, and `uploadPending`; its
+`errors` hold the reasons of a failed run. `journalctl --user -u orivon-swarm-feeds` shows the run's log lines.
+`SKIP_KEYS` leaves keys out of a run. The settings are listed in the script's header.
+
 #### Keeping the node reachable
 
 Kubo's resource manager keeps counting some inbound connections after they close (on Kubo 0.43.1, about
