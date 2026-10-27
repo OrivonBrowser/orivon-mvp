@@ -214,12 +214,14 @@ describe('a query', () => {
     // The test's own helpers are taken before the globals go, as the wrapper's natives are at install.
     const define = Reflect.defineProperty.bind(Reflect)
     const saved = new Map(names.map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]))
-    const Done = Promise
+    const Fail = Error
+    const settled = Promise.resolve()
     let result: Promise<unknown> | undefined
     try {
-      for (const name of names) define(globalThis, name, { configurable: true, get: () => { throw new Error(`${name} read at call time`) } })
+      for (const name of names) define(globalThis, name, { configurable: true, get: () => { throw new Fail(`${name} read at call time`) } })
       result = query.call(permissions, { name: 'camera' }) as Promise<unknown>
-      await new Done<void>((resolve) => { setTimeout(resolve, 20) })
+      // Microtasks only: every continuation of the query runs in them, and no timer or message of the test runner can run while its own globals are gone.
+      for (let tick = 0; tick < 50; tick++) await settled
     } finally {
       for (const [name, descriptor] of saved) if (descriptor !== undefined) define(globalThis, name, descriptor)
     }
