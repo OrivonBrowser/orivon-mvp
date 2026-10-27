@@ -36,7 +36,8 @@ export function formsFor (window: ShellWindow, services: FormsServices): WindowF
         const anchor = view === undefined ? undefined : fieldAnchor(view.getBounds(), field)
         if (anchor !== undefined) window.overlays.show(SUGGEST_OVERLAY, anchor)
       },
-      closeSuggest: () => { window.overlays.close(SUGGEST_OVERLAY) }
+      closeSuggest: () => { window.overlays.close(SUGGEST_OVERLAY) },
+      isSuggestOpen: () => window.overlays.isOpen(SUGGEST_OVERLAY)
     })
     forms.set(window, existing)
   }

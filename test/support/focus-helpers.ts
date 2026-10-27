@@ -3,7 +3,7 @@
 // focus until a test gives it one -- and a test may only do that under the
 // virtual display, where nothing else can hold focus. Anywhere else, taking
 // focus would take it from whoever is at the machine.
-import type { ElectronApplication } from 'playwright'
+import type { ElectronApplication, Page } from 'playwright'
 
 /** True inside scripts/run-headless.mjs's xvfb-run, with Wayland stripped. */
 export function underVirtualDisplay (): boolean {
@@ -40,4 +40,18 @@ export async function readFocusLog (app: ElectronApplication): Promise<string[]>
 
 export async function clearFocusLog (app: ElectronApplication): Promise<void> {
   await app.evaluate(() => { (globalThis as unknown as { __focusLog: string[] }).__focusLog.length = 0 })
+}
+
+/** Lets `page` feel the keyboard leave and return as a person's window does. Playwright pins every page it attaches to as focused, so the blur and focus a press on another view causes never reach the page; the second call turns that off for the page whichever session set it. Then gives the page's webContents the keyboard. Call only under the virtual display. */
+export async function useRealFocus (app: ElectronApplication, page: Page): Promise<void> {
+  const client = await page.context().newCDPSession(page)
+  await client.send('Emulation.setFocusEmulationEnabled', { enabled: true })
+  await client.send('Emulation.setFocusEmulationEnabled', { enabled: false })
+  await focusWebContents(app, page.url())
+}
+
+/** A press on `selector` of an overlay's page as a person makes it: the view takes the keyboard from the page first, as a press in a real window does, and then the click lands. Playwright's own click is injected into the renderer and leaves the keyboard where it was. Call only under the virtual display. */
+export async function pressOn (app: ElectronApplication, overlay: Page, selector: string, options: { position?: { x: number, y: number } } = {}): Promise<void> {
+  await focusWebContents(app, overlay.url())
+  await overlay.click(selector, options)
 }

@@ -67,6 +67,8 @@ export interface OverlayHandler {
   closed?: (reason: OverlayCloseReason) => void
   /** Runs for every key pressed down in this overlay's page, before the page sees it; returning true drops the key. */
   key?: (key: OverlayKey) => boolean
+  /** Runs when this overlay's view takes the keyboard, which a press on it does. It runs inside the focus change itself, before the page that lost the keyboard has reported anything and before the host hands the keyboard back to a `never` overlay's page. */
+  focused?: () => void
   /** Runs after the host has repositioned this open overlay: a window resize, a chrome height change or HTML fullscreen that did not close it. */
   moved?: () => void
   /** True while what is open must not be closed by a toggle (an unanswered question a button shares a name with): the toggle then does nothing. */
