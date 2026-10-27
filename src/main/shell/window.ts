@@ -195,7 +195,12 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
       return contents
     },
     adoptWindow: (view, partition) => {
-      createShellWindow(ctx, services, { first: (newTabs) => { newTabs.adoptPopup(view, partition) } })
+      try {
+        createShellWindow(ctx, services, { first: (newTabs) => { newTabs.adoptPopup(view, partition) } })
+      } catch (error) {
+        if (!view.webContents.isDestroyed()) view.webContents.close()
+        throw error
+      }
     },
     services,
     runCommand: (id) => { services.commands.run(id, entry) },

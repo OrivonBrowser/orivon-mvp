@@ -253,7 +253,24 @@ describe('wireView -- window.open', () => {
     expect(host.adoptPopup).not.toHaveBeenCalled()
   })
 
+  it('opens a shift-click from an app to the open web in a fresh window of the right session, never the guest built in the app\'s', () => {
+    processWindowBudget.reset()
+    const wc = fakeContents(`${APP}/`)
+    const adoptWindow = vi.fn()
+    const openWindow = vi.fn((): never => fakeContents('https://github.example/') as never)
+    const host = fakeHost({ adoptWindow, openWindow })
+    wireView('tab-1', record(wc, 'persist:app', host))
+
+    const response = openHandler(wc)({ url: 'https://github.example/', disposition: 'new-window', features: '' })
+
+    expect(response.action).toBe('deny')
+    expect(openWindow).toHaveBeenCalledWith('https://github.example/', undefined)
+    expect(adoptWindow).not.toHaveBeenCalled()
+    expect(host.adoptPopup).not.toHaveBeenCalled()
+  })
+
   it('keeps a sized popup that carries a guest a tab of the opener\'s window, though the shell can open windows', () => {
+    processWindowBudget.reset()
     const wc = fakeContents()
     const adoptWindow = vi.fn()
     const host = fakeHost({ adoptWindow })
@@ -266,7 +283,21 @@ describe('wireView -- window.open', () => {
     expect(adoptWindow).not.toHaveBeenCalled()
   })
 
-  it('adopts a shift-click\'s guest as a tab once the tab has used its window budget', () => {
+  it('adopts a shift-click\'s guest as a tab once the process has used its window budget', () => {
+    processWindowBudget.reset()
+    for (let i = 0; i < MAX_NEW_WINDOWS_PER_MINUTE_PROCESS; i++) processWindowBudget.allow()
+    const wc = fakeContents()
+    const adoptWindow = vi.fn()
+    const host = fakeHost({ adoptWindow })
+    wireView('tab-1', record(wc, undefined, host))
+
+    openHandler(wc)({ url: 'https://other.example/', disposition: 'new-window', features: '' }).createWindow?.({ webContents: fakeContents(), webPreferences: {} } as never)
+
+    expect(adoptWindow).not.toHaveBeenCalled()
+    expect(host.adoptPopup).toHaveBeenCalledTimes(1)
+  })
+
+  it('adopts a shift-click\'s guest as a tab when the tab opens a second window within a second', () => {
     processWindowBudget.reset()
     const wc = fakeContents()
     const adoptWindow = vi.fn()

@@ -21,6 +21,11 @@ export interface PopupOpener {
   readonly partition: string | undefined
 }
 
+/** Whether the open names window features: a page's own popup does, a link opened into a window (a shift-click) never does. */
+function hasWindowFeatures (details: Pick<HandlerDetails, 'features'>): boolean {
+  return typeof details.features === 'string' && details.features.trim() !== ''
+}
+
 /** A window feature that severs the opener, matched as a whole name. */
 function seversOpener (features: string): boolean {
   return features.split(',').some((feature) => {
@@ -74,8 +79,9 @@ export function routePopup (
   if (opener.partition !== undefined && details.url !== 'about:blank' && !sessionRoutesLike(opener.partition, details.url)) return 'new-tab'
   // Out onto the open web: only a page that asked for a popup window, or a
   // blank one it will fill, is waiting on the opener link. A link or a plain
-  // window.open(url) loads in the right session from its first request.
-  return details.disposition === 'new-window' || details.url === 'about:blank' ? 'adopt' : 'new-tab'
+  // window.open(url) loads in the right session from its first request, and so
+  // does a shift-click, which is a 'new-window' with no window features.
+  return (details.disposition === 'new-window' && hasWindowFeatures(details)) || details.url === 'about:blank' ? 'adopt' : 'new-tab'
 }
 
 export interface PopupHost {
@@ -204,9 +210,9 @@ function newWindowLimiter (): Budget {
   return newBudget(MAX_NEW_WINDOWS_PER_MINUTE_PER_TAB, NEW_WINDOW_MIN_SPACING_MS)
 }
 
-/** A popup that asked for a window of its own is adopted into the opener's session, which for a routed app is routed: it is not the open web the question is about. A featureless open that is adopted (a shift-click) has no window of Chromium's to adopt and loads in the shared session. */
+/** A popup that asked for a window of its own is adopted into the opener's session, which for a routed app is routed: it is not the open web the question is about. A featureless open (a shift-click) is no popup: it loads in the session its address would get on its own. */
 function staysInOpenerSession (details: HandlerDetails, from: PopupOpener, host: PopupHost): boolean {
-  return details.features.trim() !== '' && host.gatewayTarget?.(details.url) === undefined && routePopup(details, from, host.partitionFor(details.url), host.isApp) === 'adopt'
+  return hasWindowFeatures(details) && host.gatewayTarget?.(details.url) === undefined && routePopup(details, from, host.partitionFor(details.url), host.isApp) === 'adopt'
 }
 
 /** An ordinary website opened from a page that is itself in a temporary routed session loads in that session, never in the shared one. */
@@ -262,8 +268,9 @@ export function windowOpenHandler (
     }
     if (host.gatewayTarget?.(details.url) !== undefined || routePopup(details, from, host.partitionFor(details.url), host.isApp) === 'new-tab') {
       // routePopup's 'new-tab' returns before disposition is ever weighed (a builtin address, a
-      // cross-origin app target, an opener-severing feature) -- but a shift-click still reaches
-      // here with the same 'new-window' disposition it gets everywhere else (measured against
+      // cross-origin app target, an opener-severing feature), and a shift-click, a 'new-window' with
+      // no features, is one across sessions -- but it still reaches here with the same
+      // 'new-window' disposition it gets everywhere else (measured against
       // Electron 44: a plain click or window.open() with no sizing features never produces it,
       // only a real sized popup or a genuine shift-click do), so it still deserves a window, not a
       // tab, through the same rate-limited path.
@@ -319,7 +326,7 @@ export function windowOpenHandler (
         const view = new WebContentsView({ webContents: guest, ...webPreferences })
         // A link opened into a window (a shift-click) carries no window features, as a page's own popup does:
         // it gets a window of its own, within the same bounds as one opened without a guest.
-        if (details.disposition === 'new-window' && details.features === '' && host.adoptWindow !== undefined && processWindowBudget.allow() && limiter.allow()) {
+        if (details.disposition === 'new-window' && !hasWindowFeatures(details) && host.adoptWindow !== undefined && processWindowBudget.allow() && limiter.allow()) {
           host.adoptWindow(view, from.partition, details.url)
         } else {
           host.adoptPopup(view, from.partition, details.url, active)
