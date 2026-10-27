@@ -183,6 +183,10 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
       onKey: (key) => current() && slot.open && slot.handler?.key?.(key) === true,
       onBlur: () => { if (current() && slot.open && slot.def.closeOn.blur) closeSlot(slot, 'blur') },
       onGone: () => { if (current()) discardView(slot) },
+      onTake: () => {
+        if (!current() || !slot.open) return
+        try { slot.handler?.focused?.() } catch (error) { console.error('[overlay] focused hook failed', error) }
+      },
       // A click gave focus to a view that must never hold it: hand it straight back.
       onFocus: () => { if (current() && slot.open && slot.def.focus === 'never' && !slot.focusTaken) restoreFocus(slot, 'request') }
     })

@@ -146,7 +146,9 @@ never returned. Why one shared preload is safe, and what a compromised overlay p
 the tab in front), and gives it back on close, except when the
 person clicked into the page (`blur`, where the click already chose) or the tab changed (the new
 active tab gets it). A `never` overlay hands focus straight back if a click gives it any, to what
-this window holds now; the chrome keeps the keys and drives it through `overlays.send`. A `never`
+this window holds now, but first tells its handler (`focused`, inside the focus event itself): the page it took the
+keyboard from reports a blur a moment later, and only the handler can say that blur was the press on the overlay;
+the chrome keeps the keys and drives it through `overlays.send`. A `never`
 overlay joins the window when its page says `ready`, not at show, because a view attached before its first
 page commits takes the keyboard as it commits. A `take`
 overlay shown in a window while another window of the app has focus does not take it. A `never` overlay that

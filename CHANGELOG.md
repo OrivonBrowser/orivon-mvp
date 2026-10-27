@@ -13,6 +13,7 @@ Each section below lists what that release carried; `[Unreleased]` is what has l
 ### Fixed
 
 - **A page that checks a permission before it asks no longer reads "denied"**: a camera, microphone, location, clipboard, MIDI, idle-detection or window-management permission nobody has decided now reads `prompt` to `navigator.permissions.query`, on websites and on an extension's own pages, so a wallet extension's webcam check reaches the question instead of saying it has no permission. A stored block and Settings' block still read `denied`.
+- **A click on a password in the sign-in list fills it**: pressing a saved login, or "Use a strong password", in the list that opens under a password box closed the list and filled nothing, because the press moved the keyboard and the page reported the box as left. The press is now a choice, and the list stays open under its box until one is made.
 - **Buttons inside a page's own title bar can be clicked**: a page that marks a header `-webkit-app-region: drag` (Fluux Messenger's "+" buttons, for one) no longer has real mouse presses on the controls inside it taken for a window drag. On a page that re-lays-out every frame this costs about 1.7 ms of main-thread time per frame at 3,000 nodes.
 - **`.eth` names load on a fresh install again**: the bundled light-client checkpoint is now the first block of a finalized epoch that the beacon server bootstraps from, and a checkpoint that server answers 404 to is replaced in the same run.
 
