@@ -16,8 +16,8 @@ export const LOCK_DIRECTORY = `${DATABASE_FILE}.lock`
 
 /**
  * The lookup services the node asks in `auto` mode, as the one comma list its `--delegated-router` takes, which it
- * races and fails over across. Two, because the node resolves their names through this computer's resolver, and one
- * that hijacks DNS breaks the first with a certificate error while the second keeps working.
+ * races and fails over across. Two, so that one failing, or answered with an error page by a network that hijacks its
+ * name, does not stop the other.
  */
 export const DELEGATED_ROUTERS = ['https://delegated-ipfs.dev/routing/v1', 'https://cid.contact/routing/v1'] as const
 

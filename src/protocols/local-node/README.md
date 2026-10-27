@@ -71,7 +71,7 @@ node to connect anywhere it can name. The rules, each proved by a test in `tests
 | `connect` | A public unicast address, or a name whose answers are all public: the name is resolved once (over DNS-over-HTTPS first, `node-dns.ts`) and the checked literals are dialled. A name with one non-public answer is refused whole. A host that is neither a literal nor a plain DNS name (a scoped IPv6 address) is refused. Ports 1 to 65535 | `denied`, with nothing dialled: loopback, LAN, link-local, carrier-grade NAT, multicast, reserved, unspecified, IPv4-mapped forms of these |
 | `listen` | Loopback only, on the API port or on a port the system picks | `denied`. A `network` listen is refused so the WASI host asks again as `local`: the node's peer-to-peer listen ends up on loopback, which a light node does not need more than |
 | `udpBind` | An ephemeral port, loopback or every interface (a reply from a public resolver cannot reach a socket bound to loopback) | A fixed port is `denied` |
-| datagram send | A public unicast address, port 53 (the node asks a public resolver for its bootnodes' `/dnsaddr` records), sent as the canonical address that was checked | Dropped and counted, as a refused send is for an app |
+| datagram send | A public unicast address, port 53 (the Swarm node asks a public resolver for its bootnodes' `/dnsaddr` records; the IPFS node resolves its peers' names over TCP instead), sent as the canonical address that was checked | Dropped and counted, as a refused send is for an app |
 | datagram received | One whose source is a public unicast address on port 53 | Dropped and counted in `droppedInbound` |
 | limits | 300 sockets open (TCP, UDP and accepted together), 4 listeners, 64 answers per lookup, 64 files | `limit` |
 
@@ -105,8 +105,8 @@ the tunnel's port, the secret the tunnel's host made for its start and the node'
 `route-reset` (the tunnel's process restarted on another port) or the proxy refuses a connection outright, and a refusal from
 main (the tunnel cannot run) is not kept. The sign-in is a user name of the node's own, so Nym gives the node a mixnet client
 and an exit of its own (ADR-0086). With the person's own SOCKS5 address as the tunnel the same path works, minus what that
-address lacks: Tor's SOCKS5 has no UDP ASSOCIATE, so a routed node there has no datagrams and cannot resolve `/dnsaddr` bootnode names
-by UDP; everything else (streams, names by DNS-over-HTTPS) goes through it.
+address lacks: Tor's SOCKS5 has no UDP ASSOCIATE, so a routed node there has no datagrams and the Swarm node cannot resolve `/dnsaddr` bootnode names
+by UDP; everything else (streams, names by DNS-over-HTTPS, the IPFS node's resolver, which speaks TCP) goes through it.
 
 A website that has its tunnel on by itself, with the browser-wide setting off, reads IPFS through the gateways over its tunnel and
 never through a node: the node is one process for the whole browser, so it cannot be direct for the pages that are not tunnelled

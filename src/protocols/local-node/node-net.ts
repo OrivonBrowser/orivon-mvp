@@ -15,7 +15,7 @@ import { canonicalAddress, isPublicUnicast } from '../../broker/policy/address.j
 export const MAX_SOCKETS = 300
 export const MAX_LISTENERS = 4
 export const MAX_ANSWERS = 64
-/** The one port a datagram may be sent to: the node asks a public resolver for its bootnodes' records. */
+/** The one port a datagram may be sent to: the Swarm node asks a public resolver for its bootnodes' records. */
 export const DNS_PORT = 53
 const REFUSAL_QUEUE = 16
 
