@@ -132,6 +132,8 @@ export function createNavigation (): ChromeModule {
         // Left for something else in the chrome: a real edit stays with its tab, and anything else follows the page.
         if (edited && isEdit(input.value, here)) {
           awayFrom = here
+          // Text the search key put in with no key pressed has not been marked yet.
+          markDraft(ctx)
           return
         }
         setEdited(false, ctx)
