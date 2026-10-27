@@ -31,7 +31,7 @@ export function createAddressSuggest (): ChromeModule {
       const pill = must(document.querySelector<HTMLElement>('#address-pill'), '#address-pill missing')
       /** What the person typed, without the completion or a row's address. */
       let typed = ''
-      /** Whether anything was typed since the field was last left: only then is a submit a typed address. */
+      /** Whether anything was typed since the field was last left: only then is a submit a typed address. A text that came back with its tab (navigation.ts marks it) counts as typed too. */
       let edited = false
       let completion = ''
       let open = false
@@ -124,12 +124,18 @@ export function createAddressSuggest (): ChromeModule {
         })
       }
 
+      /** A row was chosen: what was typed is spent, as Enter spends it, and the field gives the keyboard up. */
+      function finishChoice (): void {
+        input.dispatchEvent(new Event('address-chosen'))
+        input.blur()
+      }
+
       function onPick (disposition: 'current' | 'tab'): void {
         const index = selected
         const chosen = seq
         if (chosen === undefined) return
         settle(false)
-        void ctx.shell.act('omnibox.pick', { index, disposition, seq: chosen }).then((done) => { if (done === true) input.blur() })
+        void ctx.shell.act('omnibox.pick', { index, disposition, seq: chosen }).then((done) => { if (done === true) finishChoice() })
       }
 
       function onEscape (): void {
@@ -178,7 +184,7 @@ export function createAddressSuggest (): ChromeModule {
         }, BLUR_CLOSE_MS)
       })
       // Capture, so the value is read before the address bar's own submit blurs the field and puts the page's address back.
-      form.addEventListener('submit', () => { settle(true, edited ? input.value : undefined) }, true)
+      form.addEventListener('submit', () => { settle(true, edited || input.dataset['draft'] === 'true' ? input.value : undefined) }, true)
 
       fromMain = (payload) => {
         // Main closed the dropdown on its own (a tab switch, a navigation, a resize): the field stays as it is, typed in.
@@ -186,7 +192,7 @@ export function createAddressSuggest (): ChromeModule {
         // A choice was made with the mouse: the field stops being typed in and shows the page it leads to.
         if (payload['type'] === 'done') {
           settle(false)
-          input.blur()
+          finishChoice()
         }
         // The search key: the field, ready for the words of a search.
         if (payload['type'] === 'focusSearch') {

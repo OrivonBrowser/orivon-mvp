@@ -13,6 +13,8 @@
 /* Heard, not seen. */
 .address-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .address-field[data-elided='true']:not(:focus-within) .addressbar { opacity: 0; }
+/* Text the person typed and left (navigation.ts marks it) is shown as typed, not as the page's elided address. */
+.address-field[data-elided='true'] input.addressbar[data-draft='true'] { opacity: 1; }
 
 .address-display {
   position: absolute;
@@ -29,7 +31,8 @@
   pointer-events: none;
 }
 .address-field:focus-within .address-display,
-.address-field[data-elided='false'] .address-display { visibility: hidden; }
+.address-field[data-elided='false'] .address-display,
+.address-field .addressbar[data-draft='true'] ~ .address-display { visibility: hidden; }
 
 .address-text {
   display: flex;
