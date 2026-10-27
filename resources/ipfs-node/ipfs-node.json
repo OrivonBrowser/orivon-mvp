@@ -1,12 +1,12 @@
 {
-  "cid": "bafybeibtvtvyvnps2u72idepvqh4xqrw6v3dryd6i5jgm2ucx74ovi5g7y",
+  "cid": "bafybeicm2ei4tpa67z5vy5jzsk2pmaxzgl7p63eicseywp4za46mmv6vge",
   "name": "ipfs-node",
   "files": [
-    { "name": "ipfs-node.js", "bytes": 1029188, "sha256": "0e48e86a1716884a1667b71e51f8ba0b5ed818f4281dce5edd543f4470f172a1" },
-    { "name": "ipfs-node.core.wasm", "bytes": 14196264, "sha256": "d3a4c85e0addc6b6497471c839c79a7eef77bbd1c224257e201da4e33c30ebb4" },
-    { "name": "ipfs-node.core2.wasm", "bytes": 4045, "sha256": "2e45f4f3a2928147d4ea2dbb5afa5a6026482289e306392ef2800722c74bcca8" },
-    { "name": "ipfs-node.core3.wasm", "bytes": 1731, "sha256": "c39914f56dea422520474032edb3e7143cffc08e50c68e235daa31b666d1c9a0" },
-    { "name": "ipfs-node.core4.wasm", "bytes": 697, "sha256": "e4f5dcbc92d32580d19dba858350be65fd44279ebe1ac9493f984823f0ef52cc" },
+    { "name": "ipfs-node.js", "bytes": 1029470, "sha256": "65e491baed9cf5cc523159007bc5f095bcb3fe1220edf09bab8ac6bc5b4607de" },
+    { "name": "ipfs-node.core.wasm", "bytes": 15941695, "sha256": "2414c18303576a6e868f28a7837dcbd296ce69660adc62bf7443856fd6c617e8" },
+    { "name": "ipfs-node.core2.wasm", "bytes": 4034, "sha256": "0951f6f06ceb2f8eeaf08cb8795d9c0d736c7ddbd0f59de907a7445cb74f4b44" },
+    { "name": "ipfs-node.core3.wasm", "bytes": 1731, "sha256": "9f41ab2d3dd7205c7e11485e6dabf12283ea21a0e41e98c5c87491b8829c6043" },
+    { "name": "ipfs-node.core4.wasm", "bytes": 697, "sha256": "b2af96affe99d9933542ab583edce875939e92459b5796c61e2c6d029ba84cec" },
     { "name": "LICENSE-MIT", "bytes": 1082, "sha256": "4d43d56a52c3d8589952406bc48733ec49b36e2b53c31f506d36502d9ca8bc57" },
     { "name": "LICENSE-APACHE", "bytes": 9010, "sha256": "fc42cd60b58eaad23773716b9889fd66f5386ebe5717e90772cd04a51dfb08ce" }
   ]
