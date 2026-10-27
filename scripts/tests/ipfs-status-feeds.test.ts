@@ -22,8 +22,8 @@ afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: tru
 
 function bash (body: string, env: Record<string, string> = {}): string {
   const cut = ['feed_for', 'decode_contenthash', 'ens_check'].map((name) => `/^${name} ()/,/^}/p`).join(';')
-  const result = spawnSync('bash', ['-c', `eval "$(sed -n '${cut}' "$SCRIPT")"\nKECCAK=1; ENS_REGISTRY=0x1\nnamehash () { echo node; }\n${body}`], { encoding: 'utf8', env: { ...process.env, SCRIPT, ...env } })
-  expect(result.stderr).toBe('')
+  const result = spawnSync('bash', ['-c', `eval "$(sed -n '${cut}' "$SCRIPT")"\nKECCAK=1; ENS_REGISTRY=0x1\nnamehash () { echo node; }\n${body}`], { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C', SCRIPT, ...env } })
+  expect(result.status, result.stderr).toBe(0)
   return result.stdout
 }
 
@@ -79,7 +79,7 @@ describe.skipIf(!available)('ipfs-status.sh and a site on Swarm', () => {
     expect(md).toContain(`\`ipns://k51key\`<br>\`bzz://${REF}\``)
   })
 
-  it('renders a status.json written before the feed fields existed', () => {
+  it('renders a status.json with no feed or via fields', () => {
     const { html, md } = render(status([{ name: 'b.eth', actual: 'ipns://k51key', state: 'ok', limo: null }]))
     expect(html).not.toContain('Swarm feed')
     expect(md).toContain('b.eth ok |')

@@ -2,7 +2,7 @@
  * What the job leaves for other tools to read: the Web3 Score id of a version in Swarm, and the feeds file, the one
  * place a status page finds each site's feed manifest. The feeds file is a comment line, then `<ipns-key> bzz://<feed
  * manifest>` for each site that has a manifest, in names-file order. It is replaced all at once, and only when its text
- * differs from what this machine wrote last, so a timer that finds nothing new does not reach the remote host.
+ * or place differs from what this machine wrote last, so a timer that finds nothing new does not reach the remote host.
  */
 import { createHash } from 'node:crypto'
 import { renameSync, writeFileSync } from 'node:fs'
@@ -13,7 +13,7 @@ import { writeRemoteFile } from './ssh.mjs'
 
 const SWARM_MANIFEST = 0xfa
 const KECCAK_256 = 0x1b
-const HEADER = '# <ipns-key> bzz://<feed manifest>, one line per site. Written by swarm-feeds.mjs: edits are overwritten.'
+const HEADER = '# <ipns-key> bzz://<feed manifest>, one line per site. Written by swarm-feeds.mjs: do not edit.'
 
 /**
  * @param {string} reference a Swarm reference, 64 lowercase hex characters
@@ -27,11 +27,11 @@ export function scoreId (reference) {
 /**
  * @param {{ key: string }[]} sites in names-file order
  * @param {{ sites: Record<string, any> }} state
- * @returns {string | null} the feeds file's text, null when no site has a manifest yet
+ * @returns {string} the feeds file's text: just the comment while no site has a manifest
  */
 export function feedsText (sites, state) {
   const lines = sites.flatMap(({ key }) => (state.sites[key]?.manifest === undefined ? [] : [`${key} bzz://${String(state.sites[key].manifest)}`]))
-  return lines.length === 0 ? null : `${HEADER}\n${lines.join('\n')}\n`
+  return [HEADER, ...lines, ''].join('\n')
 }
 
 /**
@@ -41,7 +41,6 @@ export function feedsText (sites, state) {
  */
 export async function updateFeedsFile ({ target, sites, ctx, spawnFn }) {
   const text = feedsText(sites, ctx.state)
-  if (text === null) return
   const sha256 = createHash('sha256').update(text).digest('hex')
   if (ctx.state.feedsFile?.target === target && ctx.state.feedsFile.sha256 === sha256) return
   if (target.startsWith('ssh://')) await writeRemoteFile(target, text, spawnFn)

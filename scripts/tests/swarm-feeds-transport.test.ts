@@ -179,7 +179,7 @@ describe('sync with Kubo and the names file behind ssh', () => {
     expect(writes()).toHaveLength(2)
     const quoted = "'/srv/it'\\''s status/feeds.txt.tmp'"
     expect(writes()[1]!.argv).toEqual(['-o', 'BatchMode=yes', '-p', '2200', 'ubuntu@vps.example', `cat > ${quoted} && mv ${quoted} '/srv/it'\\''s status/feeds.txt'`])
-    expect(writes()[1]!.input).toBe(`# <ipns-key> bzz://<feed manifest>, one line per site. Written by swarm-feeds.mjs: edits are overwritten.\nexplore bzz://${String(t.state().sites.explore.manifest)}\n`)
+    expect(writes()[1]!.input).toBe(`# <ipns-key> bzz://<feed manifest>, one line per site. Written by swarm-feeds.mjs: do not edit.\nexplore bzz://${String(t.state().sites.explore.manifest)}\n`)
 
     expect((await t.go()).code).toBe(0)
     expect(writes()).toHaveLength(2)

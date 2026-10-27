@@ -9,11 +9,11 @@
  *   NAMES_FILE=<names.conf> node swarm-feeds.mjs [sync [--dry-run] | list | address]
  *
  * Runs from one file: `npx esbuild scripts/swarm-feeds.mjs --bundle --platform=node --format=esm --outfile=swarm-feeds.mjs`
- * (the bundle carries viem) and needs GNU `tar`. Run it where Bee runs; Kubo may be remote (IPFS_API, e.g. a tunnel).
+ * (the bundle carries viem and multiformats) and needs GNU `tar`. Run it where Bee runs; Kubo may be remote (IPFS_API, e.g. a tunnel).
  *
  * Settings come from the environment: NAMES_FILE (required: `<ipns-key> <ens names...>` per line; a path, or
  * ssh://user@host/absolute/path), FEEDS_FILE (optional, the same forms: `<ipns-key> bzz://<feed manifest>` per site,
- * rewritten after a sync that changed one, for scripts/ipfs-status.sh), SKIP_KEYS, SIGNER_KEY_FILE (the feed owner's
+ * written after a sync, and again when the set of manifests changes, for scripts/ipfs-status.sh), SKIP_KEYS, SIGNER_KEY_FILE (the feed owner's
  * private key, mode 600, never logged), BEE_API, IPFS_API (http(s)://..., or ssh://user@host[:port] to run each RPC call as curl over ssh against
  * IPFS_SSH_RPC there), STATE_DIR (state.json, socs.jsonl, status.json), WORK_DIR, SUMMARY_LOG, and the batch policy:
  * POINTER_DEPTH, POINTER_TTL_MIN_DAYS,
@@ -24,7 +24,7 @@
  */
 import { appendFileSync, readFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, posix, resolve } from 'node:path'
 import { isInvokedDirectly } from './cli.mjs'
 import { beeClient, defaultSleep } from './swarm-feeds/bee.mjs'
 import { checkAffordable, observe, planFor, restorePointer, runPlan, waitUsable } from './swarm-feeds/batches.mjs'
@@ -39,6 +39,12 @@ import { loadState, parseList, parseNames, readJournal, readSignerKeyFile, Usage
 export { UsageError }
 
 const USAGE = 'usage: swarm-feeds.mjs [sync [--dry-run] | list | address]'
+
+/** @param {string} file a path or an ssh:// address @returns {string} one spelling per file: the port spelled out, the path normalised */
+function placeOf (file) {
+  const ssh = parseSshUrl(file, { path: true })
+  return ssh === null ? resolve(file) : `ssh://${ssh.user}@${ssh.host}:${ssh.port ?? '22'}${posix.normalize(ssh.path ?? '')}`
+}
 
 /**
  * @param {Record<string, string | undefined>} env
@@ -70,7 +76,7 @@ export function readSettings (env) {
   } catch (error) {
     throw new UsageError(`${error instanceof Error ? error.message : String(error)} (IPFS_API, NAMES_FILE or FEEDS_FILE)`)
   }
-  if (feedsFile !== undefined && feedsFile === env.NAMES_FILE) throw new UsageError('FEEDS_FILE must not be NAMES_FILE: the job would overwrite the list of names')
+  if (feedsFile !== undefined && env.NAMES_FILE !== undefined && placeOf(feedsFile) === placeOf(env.NAMES_FILE)) throw new UsageError('FEEDS_FILE must not be NAMES_FILE: the job would overwrite the list of names')
   return {
     beeApi: env.BEE_API ?? 'http://127.0.0.1:1633',
     ipfsApi,
@@ -118,11 +124,14 @@ function parseArgs (args) {
 /** @param {number} seconds @returns {number | null} */
 const daysOf = (seconds) => (seconds === Infinity ? null : Math.round((seconds / DAY) * 10) / 10)
 
+/** @param {unknown} reference @returns {string} the Score id of a Swarm reference, a dash for none or one that is not 64 lowercase hex characters */
+const scoreCell = (reference) => (typeof reference === 'string' && /^[0-9a-f]{64}$/.test(reference) ? scoreId(reference) : '-')
+
 /** The `list` table: one row per site of the names file, from the state; Score id is what to add to the site's Web3 Score evaluation. @param {any} state @param {{ key: string, names: string[] }[]} sites @returns {string} */
 function listTable (state, sites) {
   const rows = sites.map(({ key, names }) => {
     const rec = state.sites[key] ?? {}
-    const cells = [key, names.join(', ') || '-', rec.manifest === undefined ? '-' : `bzz://${String(rec.manifest)}`, rec.index === undefined ? '-' : String(rec.index), rec.cid ?? '-', rec.reference ?? '-', rec.reference === undefined ? '-' : scoreId(String(rec.reference))]
+    const cells = [key, names.join(', ') || '-', rec.manifest === undefined ? '-' : `bzz://${String(rec.manifest)}`, rec.index === undefined ? '-' : String(rec.index), rec.cid ?? '-', rec.reference ?? '-', scoreCell(rec.reference)]
     return `| ${cells.join(' | ')} |`
   })
   return ['| Key | ENS names | Feed manifest | Newest index | IPFS CID | Swarm reference | Score id |', '|---|---|---|---|---|---|---|', ...rows].join('\n')

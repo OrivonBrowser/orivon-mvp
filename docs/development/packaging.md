@@ -216,7 +216,7 @@ line per site: the IPNS key's name, then the ENS names it serves), and for each 
 version to Bee and appends an update to the site's feed. The feed's owner is one secp256k1 key that never
 holds funds; Bee's wallet pays. `swarm-feeds.mjs list` prints each site's `bzz://` feed manifest, the address an
 ENS name's contenthash points at, and it does not change when a version does. It prints each site's **Score id**
-too: the Web3 Score identifier of the version the feed currently names, `cid:` and the CIDv1 of its Swarm reference
+too: the Web3 Score identifier of the version in the Swarm reference column, `cid:` and the CIDv1 of that reference
 (codec swarm-manifest, keccak-256 multihash), so it always starts `cid:bah5acgza`. It is the id to add to the site's
 Web3 Score evaluation, and it changes with each version, as the reference does; a site with no version uploaded yet
 shows `-`.
@@ -248,7 +248,7 @@ buys nothing, never half of a purchase. At 196,236 PLUR per chunk and block, the
 for the content batch and about 21 xBZZ for the pointer batch. `sync --dry-run` reads Bee and Kubo and
 prints what it would buy and upload; it spends and writes nothing.
 
-Build the one-file bundle (it carries `viem`) and copy it to the machine that runs Bee; the script needs
+Build the one-file bundle (it carries `viem` and `multiformats`) and copy it to the machine that runs Bee; the script needs
 Node and GNU `tar` there:
 
 ```sh
@@ -296,7 +296,7 @@ names file itself) is where a sync leaves the feed manifests for the tools that 
 a comment line, then one line per site that has a manifest, in names-file order.
 
 ```
-# <ipns-key> bzz://<feed manifest>, one line per site. Written by swarm-feeds.mjs: edits are overwritten.
+# <ipns-key> bzz://<feed manifest>, one line per site. Written by swarm-feeds.mjs: do not edit.
 explore bzz://<64 hex>
 web3score bzz://<64 hex>
 ```
@@ -304,9 +304,14 @@ web3score bzz://<64 hex>
 It is written after a sync that is not a dry run and replaced all at once (over ssh as `cat > <path>.tmp && mv
 <path>.tmp <path>`, every value single-quoted, the text on stdin). It is written only when its text differs from what the
 job wrote last to that place (`state.json` keeps the SHA-256), so a timer that finds nothing new never reaches the
-host; the file is also written again when `FEEDS_FILE` names another place. A file the job cannot write is an error of the
-run (exit 1, in `status.json`'s `errors`) and the sites are still published; the next run writes it. The status page
-reads it (section The status page).
+host: the job does not notice a file removed or edited on the host, and a `feedsFile` entry deleted from `state.json`
+makes the next run write it again. It is also written when `FEEDS_FILE` names another place, and, with no site holding a
+manifest yet, as the comment line alone. A file the job cannot write is an error of the run (exit 1, in `status.json`'s
+`errors`) and the sites are still published; the next run writes it. The status page reads it (section The status
+page).
+
+`NAMES_FILE` and `FEEDS_FILE` may not name the same file (the check normalises the path and spells out ssh's default
+port): the job would overwrite the list of names.
 
 `status.json` is what each run leaves: `ok`, the wallet, each batch (`ttlDays`, `fill`, `usable`), and per site
 the feed manifest, the newest index, the IPFS CID and Swarm reference it carries, and `uploadPending`; its
@@ -382,7 +387,8 @@ bzz://<64 hex>` per line, `#` starting a comment; the job's own `FEEDS_FILE=ssh:
 there. A name is then right when its contenthash is its key's `ipns://` address or its key's feed: the page shows the
 feed beside the key's address and says "points at its Swarm feed" under a name that points at it, and a name that is
 wrong or empty is told to point at the feed, or at the `ipns://` address for a key with no feed. A `FEEDS_FILE` that
-cannot be read is a warning, and every name is then judged against the `ipns://` address alone.
+cannot be read is a warning, and every name is then judged against the `ipns://` address alone, except that a name
+pointing at a Swarm address is a warning rather than an error, since the feed it should match is unknown.
 
 ```ini
 # orivon-ipfs-status.service

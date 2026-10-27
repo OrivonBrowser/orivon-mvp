@@ -11,7 +11,7 @@ const runs: Run[] = []
 const fresh = (env: Record<string, string> = {}): Run => { const run = makeRun(env); runs.push(run); return run }
 afterEach(() => { for (const run of runs.splice(0)) run.cleanup() })
 
-const HEADER = '# <ipns-key> bzz://<feed manifest>, one line per site. Written by swarm-feeds.mjs: edits are overwritten.'
+const HEADER = '# <ipns-key> bzz://<feed manifest>, one line per site. Written by swarm-feeds.mjs: do not edit.'
 const feedsIn = (t: Run, name = 'feeds.txt'): string => join(t.dir, name)
 const read = (file: string): string => readFileSync(file, 'utf8')
 
@@ -41,6 +41,10 @@ describe('the Web3 Score id of a version in Swarm', () => {
     expect(t.outs[0]).toContain(`| ${String(state.sites.explore.reference)} | ${scoreId(String(state.sites.explore.reference))} |`)
     expect(t.outs[0]).toContain('| explore | explore.orivon.eth, explore.eth |')
     expect(t.outs[0]).toMatch(/\| latest \| latest\.orivon\.eth \| bzz:\/\/[0-9a-f]{64} \| 0 \| bafybei\w+ \| - \| - \|$/)
+    state.sites.latest.reference = 'AB'
+    writeFileSync(join(t.dir, 'state', 'state.json'), JSON.stringify(state))
+    expect((await t.go('list')).code).toBe(0)
+    expect(t.outs[1]).toMatch(/\| latest \| .* \| AB \| - \|$/)
     expect(scoreId(String(state.sites.explore.reference))).toBe('cid:bah5acgzamqycizmwfuhtwph3kvrpgiptteszdrya5v4loxdpvnmflcommuga')
   })
 })
@@ -51,9 +55,9 @@ describe('the feeds file text', () => {
     const sites = [{ key: 'web3score' }, { key: 'latest' }, { key: 'explore' }, { key: 'unknown' }]
     expect(feedsText(sites, state)).toBe(`${HEADER}\nweb3score bzz://${'b'.repeat(64)}\nexplore bzz://${'a'.repeat(64)}\n`)
   })
-  it('is nothing at all while no site has a manifest', () => {
-    expect(feedsText([{ key: 'latest' }, { key: 'unknown' }], state)).toBeNull()
-    expect(feedsText([], state)).toBeNull()
+  it('is the comment line alone while no site has a manifest', () => {
+    expect(feedsText([{ key: 'latest' }, { key: 'unknown' }], state)).toBe(`${HEADER}\n`)
+    expect(feedsText([], state)).toBe(`${HEADER}\n`)
   })
 })
 
@@ -68,6 +72,16 @@ describe('FEEDS_FILE', () => {
     expect(() => readSettings({ FEEDS_FILE: 'ssh://-oProxyCommand=x@host/srv/feeds.txt' })).toThrow(UsageError)
     expect(() => readSettings({ FEEDS_FILE: 'ssh://me@host' })).toThrow(/absolute path.*FEEDS_FILE/)
     expect(() => readSettings({ FEEDS_FILE: '/srv/names.conf', NAMES_FILE: '/srv/names.conf' })).toThrow(/must not be NAMES_FILE/)
+  })
+  it('refuses the names file under any spelling of its place', () => {
+    const same = (names: string, feeds: string): void => { expect(() => readSettings({ NAMES_FILE: names, FEEDS_FILE: feeds })).toThrow(/must not be NAMES_FILE/) }
+    same('ssh://u@h/srv/names.conf', 'ssh://u@h:22/srv/names.conf')
+    same('ssh://u@h/srv/names.conf', 'ssh://u@h/srv/x/../names.conf')
+    same('names.conf', './names.conf')
+    same('/srv/names.conf', '/srv/x/../names.conf')
+    expect(readSettings({ NAMES_FILE: 'ssh://u@h/srv/names.conf', FEEDS_FILE: 'ssh://u@h:2200/srv/names.conf' }).feedsFile).toBeDefined()
+    expect(readSettings({ NAMES_FILE: 'ssh://u@h/srv/names.conf', FEEDS_FILE: 'ssh://u@h2/srv/names.conf' }).feedsFile).toBeDefined()
+    expect(readSettings({ NAMES_FILE: 'ssh://u@h/srv/names.conf', FEEDS_FILE: '/srv/names.conf' }).feedsFile).toBeDefined()
   })
 })
 
@@ -127,7 +141,7 @@ describe('sync: the feeds file', () => {
     expect(read(file)).toBe(`${HEADER}\nexplore bzz://${'c'.repeat(64)}\n`)
   })
 
-  it('writes nothing on a dry run, nor while Bee is not ready, and never an empty file', async () => {
+  it('writes nothing on a dry run or while Bee is not ready, and only the comment line while no site has a manifest', async () => {
     const t = fresh()
     const file = feedsIn(t)
     Object.assign(t.env, { FEEDS_FILE: file })
@@ -140,7 +154,7 @@ describe('sync: the feeds file', () => {
     Object.assign(u.env, { FEEDS_FILE: feedsIn(u) })
     u.world.keys.length = 0
     expect((await u.go()).code).toBe(1)
-    expect(existsSync(feedsIn(u))).toBe(false)
+    expect(read(feedsIn(u))).toBe(`${HEADER}\n`)
   })
 
   it('records a file it cannot write as a run error, finishes the sites, and writes it on the next run', async () => {

@@ -333,7 +333,12 @@ collect_site () {
     ens_check "$name" "$ipns" "$feed"
     local limo=null
     case $ENS_STATE in
-      wrong) flag error "$name points at ${ENS_ACTUAL}, not at ${feed:+its Swarm feed $feed or }its key $ipns: set its contenthash to $want" ;;
+      wrong)
+        if [ "$FEEDS_OK" = 0 ] && [[ $ENS_ACTUAL == bzz://* ]]; then
+          flag warn "$name points at $ENS_ACTUAL, a Swarm address, and the feeds file cannot be read, so it cannot be compared with its site's feed"
+        else
+          flag error "$name points at ${ENS_ACTUAL}, not at ${feed:+its Swarm feed $feed or }its key $ipns: set its contenthash to $want"
+        fi ;;
       none) flag error "$name has no contenthash: set it to $want" ;;
       no-resolver) flag error "$name has no resolver: set one, then set its contenthash to $want" ;;
       unknown) [ "$KECCAK" = 1 ] && flag warn "Could not read the ENS record of $name (no Ethereum RPC answered)" ;;
@@ -462,7 +467,9 @@ collect () {
     KECCAK=0
     problem warn "This server's openssl has no keccak-256 (it needs 3.2 or later), so no .eth name is checked"
   fi
+  FEEDS_OK=1
   if [ -n "$FEEDS_FILE" ] && { [ ! -f "$FEEDS_FILE" ] || [ ! -r "$FEEDS_FILE" ]; }; then
+    FEEDS_OK=0
     problem warn "The feeds file cannot be read, so no .eth name is accepted at its site's Swarm feed"
   fi
   log "node"
