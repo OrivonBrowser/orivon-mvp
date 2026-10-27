@@ -8,7 +8,7 @@ import { ResolutionError } from '../../resolution/records.js'
 import { withTimeout } from '../../resolution/timing.js'
 import type { WebFetch } from '../egress.js'
 import { clockJump, heliosClockLead, installHeliosClock, measureClockLead, setHeliosClockLead } from './clock.js'
-import { CLOCK_BEHIND_REASON, bootstrapMissing, clockBehind, heliosError } from './helios-errors.js'
+import { CLOCK_AHEAD_REASON, CLOCK_BEHIND_REASON, bootstrapMissing, clockBehind, heliosError, outOfSync, serverBehindReason } from './helios-errors.js'
 import { failoverRpc } from './rpc-failover.js'
 import { BLOCK_ROOT_PATTERN } from '../protocol.js'
 import type { FromHost, LightClientConfig, LightClientState, TunnelRoute } from '../protocol.js'
@@ -143,9 +143,9 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
    * this is "since success", not "ever", so a client that has been failing
    * for a while and then recovers gets full tolerance again immediately. */
   let consecutiveFailures = 0
-  /** Whether a failure for a clock behind the chain has already been answered with an immediate second try. */
+  /** Whether a failure for a clock behind or ahead of the chain has already been answered with an immediate second try. */
   let clockRetried = false
-  /** Whether the lead may be wrong and the servers are still to be asked: set by a clock set back, or set forward with a lead lent, or a stall with a lead lent; cleared once they have answered. */
+  /** Whether the lead may be wrong and the servers are still to be asked: set by a clock set back, or set forward with a lead lent, or a stall with a lead lent, or a refresh that found the head too old; cleared once they have answered. */
   let recheckDue = false
   /** The monotonic time of the last measurement, so a due one is tried at most once a `REFRESH_MS`. */
   let lastMeasuredAt = Number.NEGATIVE_INFINITY
@@ -165,7 +165,7 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
     consecutiveFailures = 0
     const at = Number(BigInt(head.timestamp)) * 1000
     const lead = heliosClockLead()
-    setState({ state: 'synced', block: Number(BigInt(head.number)), at, ...(lead > 0 && { clockLeadMs: lead }) })
+    setState({ state: 'synced', block: Number(BigInt(head.number)), at, ...(lead !== 0 && { clockLeadMs: lead }) })
     // Wakes a request waiting in `provider.request` the moment a refresh
     // recovers from a downgrade, instead of after its full SYNC_WAIT_MS.
     markSynced()
@@ -211,8 +211,8 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
           // genuinely stopped syncing.
           const insideGrace = lastHeadReadAt !== undefined && Date.now() - lastHeadReadAt <= HEAD_GRACE_MS
           if (!(insideGrace && consecutiveFailures < 2) && state.state === 'synced') {
-            // A stall while a lead is lent may be the lead's fault.
-            if (heliosClockLead() > 0) recheckDue = true
+            // A stall while a lead is lent may be the lead's fault, and a head that looks too old may be a clock that has drifted ahead.
+            if (heliosClockLead() !== 0 || outOfSync(error) !== undefined) recheckDue = true
             synced = new Promise<void>((resolve) => { markSynced = resolve })
             setState({ state: 'syncing', since: Date.now() })
           }
@@ -251,7 +251,7 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
   /** Asks the servers again when the lead may be wrong: the system clock was set back (whatever the lead), or set forward or woke up with a lead lent, or a measurement is still due. A measurement that could not be made keeps the lead and is tried again at most once a `REFRESH_MS`: the network may simply be down, as after the computer wakes. */
   const recheckClock = async (): Promise<void> => {
     const jump = clockJump()
-    if (jump < 0 || (jump > 0 && heliosClockLead() > 0)) recheckDue = true
+    if (jump < 0 || (jump > 0 && heliosClockLead() !== 0)) recheckDue = true
     if (recheckDue && performance.now() - lastMeasuredAt >= REFRESH_MS) await measureLead()
   }
 
@@ -269,11 +269,13 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
       helios = undefined
       await failed?.destroy().catch(() => {})
       const behind = clockBehind(error)
+      const headAgeSeconds = outOfSync(error)
+      const ahead = headAgeSeconds !== undefined
       // A lead already lent can be the cause too: one that is too large makes Helios fail with another text.
-      const measured = behind || heliosClockLead() > 0 ? await measureLead() : undefined
-      const lent = behind && measured !== undefined && measured > 0
+      const measured = behind || ahead || heliosClockLead() !== 0 ? await measureLead() : undefined
+      const lent = measured !== undefined && ((behind && measured > 0) || (ahead && measured < 0))
       if (lent) {
-        console.error(`[verifier] this computer's clock is about ${String(Math.round(measured / 1000))} s behind the servers'; the light client allows for it`)
+        console.error(`[verifier] this computer's clock is about ${String(Math.round(Math.abs(measured) / 1000))} s ${measured > 0 ? 'behind' : 'ahead of'} the servers'; the light client allows for it`)
         // The first try with the clock lent starts at once; one that fails again goes by the ordinary backoff.
         if (!clockRetried) {
           clockRetried = true
@@ -283,7 +285,9 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
       }
       const delay = Math.min(FIRST_RETRY_MS * 2 ** attempt, MAX_RETRY_MS)
       synced = new Promise<void>((resolve) => { markSynced = resolve })
-      setState({ state: 'failed', reason: behind && measured === undefined ? CLOCK_BEHIND_REASON : message(error), retryAt: Date.now() + delay, ...(bootstrapMissing(error) && { bootstrapMissing: true as const }) })
+      // Plain words stand in for Helios's text where the clock may be the cause and the servers could not say; where they say it is right, a head too old is a server's.
+      const reason = behind && measured === undefined ? CLOCK_BEHIND_REASON : ahead && measured === undefined ? CLOCK_AHEAD_REASON : ahead && measured === 0 ? serverBehindReason(headAgeSeconds) : message(error)
+      setState({ state: 'failed', reason, retryAt: Date.now() + delay, ...(bootstrapMissing(error) && { bootstrapMissing: true as const }) })
       setTimeout(() => { void run(attempt + 1) }, delay).unref()
     }
   }
