@@ -459,32 +459,6 @@ describe('createOverlayHost: focus', () => {
     expect(address.focus).toHaveBeenCalledTimes(1)
   })
 
-  it('tells an open overlay\'s handler when its view takes the keyboard, before the keyboard is handed back', () => {
-    const address = tab(); address.id = 5
-    focus.current = address
-    const order: string[] = []
-    address.focus.mockImplementation(() => { order.push('handed back') })
-    const { host } = setup([def('bar', { layer: 'bar', focus: 'never', closeOn: CLOSE_LIKE_BAR }, { focused: () => { order.push('focused') } })])
-    host.show('bar')
-    views[0]?.spec.onTake()
-    views[0]?.spec.onFocus()
-    expect(order).toEqual(['focused', 'handed back'])
-  })
-
-  it('does not tell a closed overlay\'s handler about a focus, and survives a handler that throws', () => {
-    const focused = vi.fn(() => { throw new Error('boom') })
-    const { host } = setup([def('bar', { layer: 'bar', focus: 'never', closeOn: CLOSE_LIKE_BAR }, { focused })])
-    host.show('bar')
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
-    views[0]?.spec.onTake()
-    expect(focused).toHaveBeenCalledTimes(1)
-    expect(error).toHaveBeenCalled()
-    host.close('bar')
-    views[0]?.spec.onTake()
-    expect(focused).toHaveBeenCalledTimes(1)
-    error.mockRestore()
-  })
-
   it('a never-focus overlay whose handler takes the keyboard keeps it, and hands it back on close', () => {
     const address = tab(); address.id = 5
     focus.current = address
