@@ -339,12 +339,12 @@ describe('sync: batches bought by hand', () => {
 })
 
 describe('sync: the pointer batch', () => {
-  it('dilutes by one level at half full, then tops up if that leaves it short', async () => {
+  it('dilutes by one level at three quarters full, then tops up if that leaves it short', async () => {
     const t = fresh()
     await t.go()
     const id = t.state().pointer.id
     const stamp = t.world.stamps.get(id)!
-    stamp.utilization = 2
+    stamp.utilization = 3
     stamp.ttl = 200 * DAY
     t.clock.t += 2 * DAY * 1000
     const { code, calls } = await t.go()

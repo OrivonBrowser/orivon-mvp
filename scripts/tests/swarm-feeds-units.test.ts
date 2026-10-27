@@ -158,7 +158,7 @@ describe('what the batches cost and when they need money', () => {
     expect(plan({ pointer: null, content: null }, { pointer: null, content: null })).toEqual(['buy pointer', 'buy content'])
     expect(plan({ pointer: stamp({}), content: stamp({ depth: 22, ttl: 30 * DAY }) })).toEqual([])
   })
-  it('dilutes the pointer batch at half full, and tops it up if that leaves it under its minimum', () => {
+  it('dilutes the pointer batch at three quarters full, and tops it up if that leaves it under its minimum', () => {
     expect(plan({ pointer: stamp({ fill: 0.75, ttl: 240 * DAY }), content: stamp({ depth: 22 }) })).toEqual(['dilute pointer'])
     expect(plan({ pointer: stamp({ fill: 0.75, ttl: 200 * DAY }), content: stamp({ depth: 22 }) })).toEqual(['dilute pointer', 'topup pointer'])
     expect(plan({ pointer: stamp({ ttl: 100 * DAY }), content: stamp({ depth: 22 }) })).toEqual(['topup pointer'])
