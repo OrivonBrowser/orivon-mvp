@@ -218,7 +218,7 @@ function startEns (config: HostConfig, deps: HostDeps, tunnel: RoutePace): { pro
     resolvers.push(offResolver(`the Ethereum servers set in Settings cannot be used: ${reach.off}`))
     return { protocol: defineProtocol(ENS, { resolvers }), lightClient: undefined }
   }
-  const lightClient = deps.startLightClient(config.lightClient, reach.fetch, deps.post, undefined, lightClientPace(paceOn(route.pace)))
+  const lightClient = deps.startLightClient(config.lightClient, reach.send, deps.post, undefined, lightClientPace(paceOn(route.pace)))
   resolvers.push(createEnsResolver({
     provider: lightClient.provider,
     ccipRequest: async (parameters, signal) => await guardedCcipRequest(parameters, route.ccip, DEFAULT_CCIP_LIMITS, signal)

@@ -25,7 +25,7 @@ const config = (overrides: Partial<LightClientConfig> = {}): LightClientConfig =
 function fetchOf (given: LightClientConfig, w: ReturnType<typeof world>, local: boolean = true): WebFetch {
   const result = lightClientFetch(given, w.remote, local ? w.local : undefined, 'the light client')
   if ('off' in result) throw new Error(`refused: ${result.off}`)
-  return result.fetch
+  return result.send
 }
 
 describe('lightClientFetch', () => {

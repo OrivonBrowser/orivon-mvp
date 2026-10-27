@@ -83,7 +83,7 @@ function startEns (config: HostConfig, deps: HostDeps, fetch: HostDeps['fetch'],
     resolvers.push(offResolver(`the Ethereum servers set in Settings cannot be used: ${reach.off}`))
     return defineProtocol(ENS, { resolvers })
   }
-  const provider = lazyProvider(() => deps.startLightClient(lightClient, reach.fetch, () => {}, tunnel, { syncWaitMs: paceOn(route).syncWaitMs, startAfterMs: 0 }))
+  const provider = lazyProvider(() => deps.startLightClient(lightClient, reach.send, () => {}, tunnel, { syncWaitMs: paceOn(route).syncWaitMs, startAfterMs: 0 }))
   const ccip = tunnelCcipDeps(fetch)
   resolvers.push(createEnsResolver({ provider, ccipRequest: async (parameters, signal) => await guardedCcipRequest(parameters, ccip, DEFAULT_CCIP_LIMITS, signal) }))
   return defineProtocol(ENS, { resolvers })

@@ -8,8 +8,8 @@ import type { WebFetch } from '../egress.js'
 import type { LightClientConfig } from '../protocol.js'
 import { isLocalLiteral, maskEndpoint } from './endpoint-mask.js'
 
-/** `fetch`, or why this lane may not start: said in words that hold no part of an address. */
-export type LightClientFetch = { readonly fetch: WebFetch } | { readonly off: string }
+/** The lane's fetch (`send`), or why this lane may not start: said in words that hold no part of an address. */
+export type LightClientFetch = { readonly send: WebFetch } | { readonly off: string }
 
 function refusalOf (config: LightClientConfig, local: WebFetch | undefined): string | undefined {
   const endpoints = [...config.executionRpcs, config.consensusRpc]
@@ -52,5 +52,5 @@ export function lightClientFetch (config: LightClientConfig, remote: WebFetch, l
     if (local === undefined) throw new EgressRefused(`${label} has no way to a server on this computer`)
     return await local(url, init)
   }
-  return { fetch: allowlisted([...config.executionRpcs, config.consensusRpc], split, label) }
+  return { send: allowlisted([...config.executionRpcs, config.consensusRpc], split, label) }
 }
