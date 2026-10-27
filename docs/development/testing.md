@@ -379,14 +379,18 @@ screenshot of each view (measured behaviour in the `orivon-electron` skill). An 
 in the main process raises a blocking error dialog, so no spec provokes one. Malformed calls to
 `window.orivon.*` are not covered yet.
 
-**Real pointer input, when a spec's synthetic input is not enough.** Playwright's mouse sends no
-window-manager focus change, so a bug that depends on what a real press does to focus (the main
-menu's hold-the-button reopen is one) needs real events. Write a short probe and run it under the
-headless runner: start `openbox` in its virtual display, launch the built e2e app with
-`launchElectron`, and drive the button with X11 XTest fake events (pointer move, button down, a
-pause, button up; Python `ctypes` over `libXtst.so.6` is enough). Read the outcome with
-`popoverShown`, and finish with `assertNoElectronSurvivors`. Nothing reaches the owner's screen. The
-probe is not part of the suite because it needs `openbox` and `libXtst`.
+**Real pointer input, when a spec's synthetic input is not enough.** Playwright's mouse is a debugger
+call: it sends no window-manager focus change and never meets the window's own hit test, so a bug that
+depends on what a real press does to focus (the main menu's hold-the-button reopen is one), or on a
+region the window answers for (a page's `-webkit-app-region: drag` swallows a real press but not a
+debugger click), needs real events. `test/support/native-pointer.ts`'s `pressPointer(x, y, button)`
+sends X11 XTest fake events (move, button down, button up) to the virtual display of the headless
+runner, so a spec calls it where `underVirtualDisplay()` holds; no window manager is needed for hit
+testing, `e2e-app-page-drag-regions` is the worked example. A press that depends on window-manager
+focus needs `openbox` in the virtual display as well (`test/support/with-window-manager.mjs`): write
+a short probe, read the outcome with `popoverShown`, and finish with `assertNoElectronSurvivors`. A
+page's own coordinates become screen coordinates by adding the window's content bounds and the view's
+bounds. Nothing reaches the owner's screen.
 
 **A page under Playwright is never hidden.** A debugger attached to a page keeps it shown, so a bug in whether a
 view's page is visible (a view removed from its window and added back stays hidden) cannot fail an ordinary spec, and `document.visibilityState` read through Playwright answers `visible`. Such a

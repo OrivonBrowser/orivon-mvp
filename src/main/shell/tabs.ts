@@ -10,7 +10,7 @@
 // link, form or script navigation that changes a tab's origin is caught by
 // wireView()'s did-navigate handler, which repartitions the same way a typed
 // cross-origin navigation does (repartitionView()'s own doc: the residual).
-import type { LoadURLOptions, View, WebContents } from 'electron'
+import type { LoadURLOptions, View, WebContents, WebContentsView } from 'electron'
 import { join } from 'node:path'
 import { captureFaviconInto } from '../browsing/favicon.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
@@ -123,6 +123,7 @@ export class TabManager {
         return this.liveWebContents(id)
       },
       openWindow: (url, loadOptions) => shell?.openWindow?.(url, loadOptions),
+      ...(shell?.adoptWindow === undefined ? {} : { adoptWindow: (view: WebContentsView, partition: string | undefined) => { shell.adoptWindow?.(view, partition) } }),
       atCapacity: () => this.atCapacity(),
       htmlFullscreenChanged: (id, entered) => { shell?.htmlFullscreenChanged(id, entered) },
       isClosing: () => this.disposed,
@@ -249,6 +250,9 @@ export class TabManager {
 
   /** createTab() for a trusted caller (the extension host), which has checked `target` itself. */
   openTrusted (target?: string, partition?: string): [string, Electron.WebContents] | undefined { return this.opener.openTrusted(target, partition) }
+
+  /** A popup Chromium already built, as a tab of this window: the first tab of a window a shift-click opened. */
+  adoptPopup (view: WebContentsView, partition: string | undefined, active = true): void { this.opener.adoptPopup(view, partition, active) }
 
   /** Shows one of the shell's own pages, in the tab that has it or a new one. */
   openInternal (page: InternalPageId, path = '/'): void { this.opener.openInternal(page, path) }
