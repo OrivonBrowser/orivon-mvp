@@ -91,7 +91,8 @@ describe('windowOpenHandler and a file: target', () => {
     processWindowBudget.reset()
     const { host, openLocalFile } = hostWith()
 
-    expect(windowOpenHandler(host, () => FILE_OPENER)(details('https://other.example/', 'new-window')).action).toBe('allow')
+    const popup = { ...details('https://other.example/', 'new-window'), features: 'width=500,height=400' }
+    expect(windowOpenHandler(host, () => FILE_OPENER)(popup).action).toBe('allow')
     windowOpenHandler(host, () => FILE_OPENER)(details('https://other.example/'))
     expect(host.openTab).toHaveBeenCalledWith('https://other.example/', true, undefined)
     expect(openLocalFile).not.toHaveBeenCalled()
