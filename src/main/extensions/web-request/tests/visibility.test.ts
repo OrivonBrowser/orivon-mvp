@@ -7,7 +7,7 @@ const all = (): boolean => true
 const none = (): boolean => false
 
 const page = (overrides: Partial<VisibleRequest> = {}): VisibleRequest => ({
-  url: 'https://site.example/a.js', fromPage: true, type: 'script', initiator: 'https://site.example', ...overrides
+  event: 'onBeforeRequest', url: 'https://site.example/a.js', fromPage: true, type: 'script', initiator: 'https://site.example', ...overrides
 })
 
 describe('requestVisibleTo', () => {
@@ -105,5 +105,37 @@ describe('isShellOwnUrl', () => {
     for (const url of ['https://orivon.example/', 'chrome-extension://abc/x', 'file:///x', 'about:blank']) {
       expect(isShellOwnUrl(url)).toBe(false)
     }
+  })
+})
+
+describe('requestVisibleTo for a navigation to a host Orivon serves', () => {
+  const served = (hostname: string): boolean => hostname === 'vitalik.eth' || hostname.endsWith('.ipfs.orivon')
+  const failed = (url: string, overrides: Partial<VisibleRequest> = {}): VisibleRequest =>
+    page({ event: 'onErrorOccurred', url, type: 'main_frame', initiator: undefined, ...overrides })
+
+  it('hides the error of a main-frame or sub-frame load, over http and https', () => {
+    for (const url of ['https://vitalik.eth/', 'http://vitalik.eth/', 'https://bafy.ipfs.orivon/a', 'https://vitalik.eth:1/']) {
+      expect(requestVisibleTo(ME, failed(url), all, none, served)).toBe(false)
+    }
+    expect(requestVisibleTo(ME, failed('https://vitalik.eth/', { type: 'sub_frame', initiator: 'https://site.example' }), all, none, served)).toBe(false)
+  })
+
+  it('shows every other event of the same load', () => {
+    for (const event of ['onBeforeRequest', 'onBeforeSendHeaders', 'onSendHeaders', 'onHeadersReceived', 'onResponseStarted', 'onBeforeRedirect', 'onCompleted'] as const) {
+      expect(requestVisibleTo(ME, failed('https://vitalik.eth/', { event }), all, none, served)).toBe(true)
+    }
+  })
+
+  it('shows the error of a subresource, since only a navigation can take the tab', () => {
+    expect(requestVisibleTo(ME, failed('https://vitalik.eth/app.js', { type: 'script', initiator: 'https://vitalik.eth' }), all, none, served)).toBe(true)
+  })
+
+  it('shows the error of a host no protocol serves', () => {
+    expect(requestVisibleTo(ME, failed('https://site.example/'), all, none, served)).toBe(true)
+    expect(requestVisibleTo(ME, failed('https://other.eth/'), all, none, served)).toBe(true)
+  })
+
+  it('serves nothing by default, so the rule is the caller\'s to switch on', () => {
+    expect(requestVisibleTo(ME, failed('https://vitalik.eth/'), all)).toBe(true)
   })
 })

@@ -70,6 +70,8 @@ export interface WebRequestDispatcherDeps {
   readonly hostAccess: (extensionId: string, hostPermissions: readonly string[], url: string, tabId: number | undefined) => boolean
   /** A registered app's origin: no extension sees a request that touches one. */
   readonly isAppOrigin: (url: string) => boolean
+  /** A host Orivon's protocols serve: no extension hears the error of a navigation to one. */
+  readonly servesHost: (hostname: string) => boolean
   /** The current URL of the page `webContentsId` is; undefined when it is gone. */
   readonly pageUrlOf: (webContentsId: number) => string | undefined
   /** Whether the extension holds a permission the loaded copy had stripped. */
@@ -159,9 +161,10 @@ export function createWebRequestDispatcher (deps: WebRequestDispatcherDeps): Web
         const hostPermissions = deps.held(entry.extensionId, 'webRequest') ? deps.hostPermissionsOf(entry.extensionId) : undefined
         visible = hostPermissions !== undefined && requestVisibleTo(
           entry.extensionId,
-          { url: base.url, fromPage, type: base.type, initiator: base.initiator, pageUrl },
+          { event, url: base.url, fromPage, type: base.type, initiator: base.initiator, pageUrl },
           (url) => deps.hostAccess(entry.extensionId, hostPermissions, url, tabId),
-          deps.isAppOrigin
+          deps.isAppOrigin,
+          deps.servesHost
         )
         visibleTo.set(entry.extensionId, visible)
       }
