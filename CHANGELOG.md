@@ -22,6 +22,7 @@ Each section below lists what that release carried; `[Unreleased]` is what has l
 
 - **The newest-release start page asks search engines not to index it**: the `index.html` that `latest.orivonstack.eth` opens now carries `<meta name="robots" content="noindex">`, as its `latest.orivonstack.com` twin does. A visitor sees the same page; the folder's CID changes on the next `sync`, the releases' do not.
 - **`.eth.limo` addresses inside a page load as `.eth`**: an image, script, stylesheet, font, media file or request a page loads from a `<name>.eth.limo` or `.eth.link` address now comes from the `.eth` name, checked on this computer, and a request from another origin can still read it. Frames keep loading through the gateway, since a `.eth` site refuses to be framed by another site; Settings > Web3 turns it off.
+- **Orivon's IPFS node is built from public source**: the node now comes from the public `orivon-ipfs-node` repository (MIT or Apache-2.0), built by its workflow and published as one pinned IPFS folder that the app checks by size and sha256. It resolves peers' `/dns` and `/dnsaddr` names over TCP to `1.1.1.1` and `1.0.0.1`, so it sends no datagrams, and its default bootstrap list gains the one peer reached by address alone.
 
 ### Added
 

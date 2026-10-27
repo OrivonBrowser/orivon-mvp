@@ -35,12 +35,20 @@ DNS-over-HTTPS first, so a resolver that hijacks DNS does not steer it at a serv
 no service. An option that is missing or unknown means `light-dht`, the mode that tells no service anything. A change of the setting stops the node, and its next
 start has the new argument.
 
+**Two ways to resolve a name.** An HTTP client in the node (a lookup service, DNS-over-HTTPS, an HTTP provider) resolves its
+host through the host's name lookup, which asks DNS-over-HTTPS first (`../local-node/node-dns.ts`). The node's peer-to-peer
+layers resolve the `/dns4`, `/dns6` and `/dnsaddr` names of peers themselves, over TCP to port 53 of `1.1.1.1` and `1.0.0.1`
+(Cloudflare's resolvers, never this computer's own), so the host sees them as TCP connections to two public addresses and
+the node needs no datagram. They are plain DNS, asked of Cloudflare whatever the Secure DNS setting says. With the whole browser on a tunnel and nodes following it, those connections go through the
+tunnel like the node's other streams.
+
 **Ready means the health endpoint answers.** The node reports `listening` and `ready` together when
 `GET /health` first answers (as soon as its listener is up; lookups happen on first use): it holds no peer set
 to count, so there is nothing to wait for beyond that.
 
-**What it opens.** Outbound TCP only (peers, the lookup services, DNS-over-HTTPS), one TCP listener on its
-loopback address, no UDP in practice (WASI has no QUIC), and in its data directory only `blocks.db` with its
+**What it opens.** Outbound TCP only (peers, the lookup services, HTTP providers, DNS-over-HTTPS, and the two resolvers above),
+one TCP listener on its loopback address, no UDP in this build (WASI has no QUIC, and its own resolver speaks TCP), and in its
+data directory only `blocks.db` with its
 `-wal` and `-shm` files (SQLite, its cache capped at 256 MB inside the node). The rules in
 [`../local-node/node-net.ts`](../local-node/node-net.ts) suffice as they are. SQLite also locks the database with a directory
 `blocks.db.lock` beside it, and a node killed in the middle of a write leaves that directory, after which every start fails with
