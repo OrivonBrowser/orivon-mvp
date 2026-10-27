@@ -127,6 +127,11 @@ export function beeClient ({ api, fetchFn = fetch, sleep = defaultSleep }) {
       await onChain.body?.cancel()
       return { id, found: onChain.status !== 404, usable: false, depth: 0, bucketDepth: 16, fill: 0, ttl: 0, immutable: true, label: '' }
     },
+    /** Every batch the node holds, usable or not. @returns {Promise<Stamp[]>} */
+    async stamps () {
+      const body = await json('GET', '/stamps')
+      return (body.stamps ?? []).map((/** @type {any} */ item) => stampOf(String(item.batchID), item))
+    },
     /**
      * Buys an immutable batch: `amount` is PLUR per chunk, the cost amount x 2^depth. Waits for the transaction.
      * @param {{ amount: bigint, depth: number, label: string }} batch

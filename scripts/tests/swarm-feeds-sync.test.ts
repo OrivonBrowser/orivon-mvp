@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { feedUpdateAddress } from '../../src/protocols/swarm/chunk.js'
 import { topicOf } from '../swarm-feeds/feed.mjs'
 import { DAY, perChunkFor } from '../swarm-feeds/policy.mjs'
-import { cid, newestIndex, OWNER, PLUR, PRICE, makeRun } from './swarm-feeds.test-helpers.js'
+import { cid, manualBatch, newestIndex, OWNER, PLUR, PRICE, makeRun } from './swarm-feeds.test-helpers.js'
 import type { Run } from './swarm-feeds.test-helpers.js'
 
 const topic = { explore: topicOf('explore'), latest: topicOf('latest') }
@@ -19,7 +19,7 @@ describe('sync: a first run', () => {
     const { code } = await t.go()
     expect(code).toBe(0)
     const [pointer, content] = t.world.buys
-    expect(t.world.buys.map((b) => [b.immutable, b.depth, b.label])).toEqual([[true, 18, 'orivon-pointer-2026-10-27'], [true, 22, 'orivon-content-2026-10-27']])
+    expect(t.world.buys.map((b) => [b.immutable, b.depth, b.label])).toEqual([[true, 18, 'orivon-pointers'], [true, 22, 'orivon-content']])
     expect(pointer!.amount).toBe(perChunkFor(240 * DAY, PRICE))
     expect(content!.amount).toBe(perChunkFor(35 * DAY, PRICE))
     expect(t.world.feeds.size).toBe(2)
@@ -253,6 +253,88 @@ describe('sync: the content batch', () => {
     expect(state.content.id).not.toBe(gone)
     expect(state.sites.latest.batch).toBe(state.content.id)
     expect(newestIndex(t.world, topic.latest)).toBe(0)
+  })
+})
+
+describe('sync: batches bought by hand', () => {
+  const bought = (t: Run): { pointer: string, content: string } => ({
+    pointer: manualBatch(t.world, { label: 'orivon-pointers', depth: 18, days: 240 }),
+    content: manualBatch(t.world, { label: 'orivon-content', depth: 22, days: 35 })
+  })
+
+  it('takes up the batch under each role label and buys nothing', async () => {
+    const t = fresh()
+    const batches = bought(t)
+    const { code } = await t.go()
+    expect(code).toBe(0)
+    expect(t.world.buys).toEqual([])
+    expect(t.state()).toMatchObject({ pointer: { id: batches.pointer }, content: { id: batches.content } })
+    expect(t.world.uploads.map((u) => u.batch)).toEqual([batches.content, batches.content])
+    expect(t.world.socs.get(feedUpdateAddress(OWNER, topic.explore, 0n))?.batch).toBe(batches.pointer)
+    expect(t.status()).toMatchObject({ ok: true, spentThisRun: '0.0000 xBZZ', pointerBatch: { id: batches.pointer }, contentBatch: { id: batches.content } })
+    expect(t.summary()).toMatch(/adopted the pointer batch .*instead of buying one[\s\S]*adopted the content batch .*instead of buying one/)
+  })
+
+  it('takes the longest-lived of several, and passes over what cannot serve', async () => {
+    const t = fresh()
+    manualBatch(t.world, { label: 'orivon-pointers', depth: 18, days: 100 })
+    const longest = manualBatch(t.world, { label: 'orivon-pointers', depth: 18, days: 300 })
+    manualBatch(t.world, { label: 'orivon-pointers', depth: 18, days: 500, immutable: false })
+    manualBatch(t.world, { label: 'orivon-pointers', depth: 18, days: 600, usable: false })
+    manualBatch(t.world, { label: 'orivon-pointers', depth: 18, days: 0 })
+    manualBatch(t.world, { label: 'somebody-elses', depth: 18, days: 900 })
+    const roomy = manualBatch(t.world, { label: 'orivon-content', depth: 22, days: 20 })
+    manualBatch(t.world, { label: 'orivon-content', depth: 22, days: 40, utilization: 52 })
+    expect((await t.go()).code).toBe(0)
+    expect(t.state()).toMatchObject({ pointer: { id: longest }, content: { id: roomy } })
+    expect(t.world.buys.map((b) => b.label)).toEqual([])
+  })
+
+  it('buys only the role that has nothing to take up', async () => {
+    const t = fresh()
+    const pointer = manualBatch(t.world, { label: 'orivon-pointers', depth: 18, days: 240 })
+    expect((await t.go()).code).toBe(0)
+    expect(t.world.buys.map((b) => b.label)).toEqual(['orivon-content'])
+    expect(t.state().pointer.id).toBe(pointer)
+  })
+
+  it('does not buy again when the state file is lost', async () => {
+    const t = fresh()
+    await t.go()
+    const before = t.state()
+    rmSync(join(t.dir, 'state', 'state.json'))
+    const { code } = await t.go()
+    expect(code).toBe(0)
+    expect(t.world.buys).toHaveLength(2)
+    expect(t.state()).toMatchObject({ pointer: { id: before.pointer.id }, content: { id: before.content.id } })
+    expect(t.world.socs.size).toBe(2)
+    expect(t.state().sites.explore).toMatchObject({ index: 0, manifest: before.sites.explore.manifest })
+    expect(t.journal()).toHaveLength(2)
+  })
+
+  it('takes up a batch before replacing one the node no longer knows', async () => {
+    const t = fresh()
+    await t.go()
+    const gone = t.state().content.id
+    t.world.stamps.delete(gone)
+    t.world.onChain.delete(gone)
+    const spare = manualBatch(t.world, { label: 'orivon-content', depth: 22, days: 30 })
+    t.clock.t += 2 * DAY * 1000
+    expect((await t.go()).code).toBe(0)
+    expect(t.world.buys).toHaveLength(2)
+    expect(t.state().content.id).toBe(spare)
+    expect(t.state().sites.explore.batch).toBe(spare)
+  })
+
+  it('only says what a dry run would take up, and keeps no state', async () => {
+    const t = fresh()
+    const batches = bought(t)
+    const { code, calls } = await t.go('sync', '--dry-run')
+    expect(code).toBe(0)
+    expect(t.logs.some((l) => l.includes(`would adopt the pointer batch ${batches.pointer}`))).toBe(true)
+    expect(t.logs.some((l) => l.includes('would buy'))).toBe(false)
+    expect(spends(calls)).toEqual([])
+    expect(existsSync(join(t.dir, 'state', 'state.json'))).toBe(false)
   })
 })
 

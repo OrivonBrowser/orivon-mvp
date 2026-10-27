@@ -2,7 +2,8 @@
  * Publishes each of Orivon's own sites to a Swarm sequence feed and keeps the feed current. A site is a folder pinned
  * in a pinning node's Kubo under an IPNS key; whenever a key moves to a new CID, that version is uploaded to a Bee node
  * and a feed update naming it is appended. ENS points at the feed's manifest, so a name never changes and IPNS stays the
- * trigger. Postage is two immutable batches: one for pointers (never replaced), one for site versions (replaced when
+ * trigger. Postage is two immutable batches (a batch the node already holds under the label orivon-pointers or
+ * orivon-content is taken up before one is bought): one for pointers (never replaced), one for site versions (replaced when
  * full, so old versions stop costing money). docs/development/packaging.md section Orivon's sites on Swarm has the why.
  *
  *   NAMES_FILE=<names.conf> node swarm-feeds.mjs [sync [--dry-run] | list | address]
@@ -134,9 +135,9 @@ async function buildStatus (ctx, sites, errors, live) {
     if (!live) return null
     try { return await read() } catch (error) { return { error: error instanceof Error ? error.message : String(error) } }
   }
-  const batch = async (/** @type {{ id: string, boughtAt?: string, retiredAt?: string, reason?: string }} */ held) => attempt(async () => {
+  const batch = async (/** @type {{ id: string, boughtAt?: string, adoptedAt?: string, retiredAt?: string, reason?: string }} */ held) => attempt(async () => {
     const stamp = await ctx.bee.stamp(held.id)
-    return { id: held.id, found: stamp.found, usable: stamp.usable, depth: stamp.depth, ttlDays: daysOf(stamp.ttl), fill: Math.round(stamp.fill * 100) / 100, boughtAt: held.boughtAt, retiredAt: held.retiredAt, reason: held.reason }
+    return { id: held.id, found: stamp.found, usable: stamp.usable, depth: stamp.depth, ttlDays: daysOf(stamp.ttl), fill: Math.round(stamp.fill * 100) / 100, boughtAt: held.boughtAt, adoptedAt: held.adoptedAt, retiredAt: held.retiredAt, reason: held.reason }
   })
   return {
     time: new Date(ctx.now()).toISOString(),
@@ -204,7 +205,7 @@ export async function run ({ env, args, fetchFn = fetch, spawnFn, now = Date.now
         if (id === undefined) { errors.push(`${site.key}: Kubo has no IPNS key of that name`); continue }
         try { current.push({ ...site, id, cid: await kubo.resolve(id) }) } catch (error) { errors.push(`${site.key}: ${error instanceof Error ? error.message : String(error)}`) }
       }
-      const observed = await observe(ctx)
+      const observed = await observe(ctx, { persist: !dryRun })
       const plan = planFor(ctx, observed)
       if (dryRun) {
         for (const step of plan) log(`would ${step.op} the ${step.role} batch (${bzz(step.cost)}): ${step.why}`)

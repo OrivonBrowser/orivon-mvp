@@ -101,6 +101,7 @@ export function fakeWorld () {
       stamp.full = false
       return reply(202, { batchID: stamp.id })
     }
+    if (path === '/stamps' && method === 'GET') return reply(200, { stamps: [...world.stamps.values()].map((s) => ({ ...(stampJson(s) as object), usable: s.usable })) })
     const stamp = /^\/stamps\/([0-9a-f]{64})$/.exec(path)
     if (stamp !== null) {
       const s = world.stamps.get(stamp[1]!)
@@ -165,6 +166,15 @@ export function fakeWorld () {
   return { world, fetchFn }
 }
 export type World = ReturnType<typeof fakeWorld>['world']
+
+let manual = 0
+/** A batch the owner bought by hand before the job ran: it is on the node and on chain, and the job's state knows nothing of it. */
+export function manualBatch (world: World, { label, depth, days, utilization = 0, immutable = true, usable = true }: { label: string, depth: number, days: number, utilization?: number, immutable?: boolean, usable?: boolean }): string {
+  const id = (0xabc000 + ++manual).toString(16).padStart(64, '0')
+  world.stamps.set(id, { id, depth, ttl: days * 86_400, utilization, usable, immutable, label, full: false, polls: 0 })
+  world.onChain.add(id)
+  return id
+}
 
 /** The newest feed index the world holds for a site, -1 for none. */
 export function newestIndex (world: World, topic: string): number {

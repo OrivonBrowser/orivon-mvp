@@ -8,11 +8,13 @@
  */
 import { BatchFullError } from './bee.mjs'
 import { topicOf } from './feed.mjs'
-import { bzz, checkPlan, costOf, DAY, perChunkFor, planBatches, topUpFor } from './policy.mjs'
+import { bzz, checkPlan, costOf, DAY, perChunkFor, planBatches, topUpFor, within } from './policy.mjs'
 import { saveState } from './store.mjs'
 
 const POLL_MS = 10_000
 const ROLES = /** @type {const} */ (['pointer', 'content'])
+/** The label each role's batch is bought with, and the one a batch carries to be taken up for that role. */
+export const LABELS = { pointer: 'orivon-pointers', content: 'orivon-content' }
 
 /** @param {Ctx} ctx */
 const save = (ctx) => { saveState(ctx.cfg.stateDir, ctx.state) }
@@ -36,17 +38,66 @@ async function waitFor (ctx, probe) {
   }
 }
 
-/** @param {Ctx} ctx @returns {Promise<{ price: bigint, wallet: { address: string, bzz: bigint, xdai: bigint }, seen: { pointer: any, content: any } }>} */
-export async function observe (ctx) {
+/**
+ * The batch a role takes up instead of buying: one the node holds under the role's label that is usable, immutable and
+ * not expired, and (for content) not already at the rotation fill; the longest-lived if several. A batch the state
+ * already uses or has retired is never taken.
+ * @param {{ stamps: import('./bee.mjs').Stamp[], role: 'pointer' | 'content', cfg: any, state: import('./store.mjs').State }} input
+ * @returns {import('./bee.mjs').Stamp | null}
+ */
+export function adoptable ({ stamps, role, cfg, state }) {
+  const taken = new Set([state.pointer?.id, state.content?.id, ...state.retired.map((batch) => batch.id)])
+  const label = LABELS[role]
+  return stamps
+    .filter((s) => s.found && s.usable && s.immutable && s.ttl > 0 && (s.label === label || s.label.startsWith(`${label}-`)) && !taken.has(s.id) && (role !== 'content' || s.fill < cfg.rotateAt))
+    .sort((a, b) => (a.ttl === b.ttl ? 0 : b.ttl > a.ttl ? 1 : -1))[0] ?? null
+}
+
+/**
+ * Records a batch the node already holds as the role's batch. `persist` false (a dry run) changes the state in memory
+ * only.
+ * @param {Ctx} ctx
+ * @param {'pointer' | 'content'} role
+ * @param {import('./bee.mjs').Stamp} picked
+ * @param {boolean} persist
+ */
+function adopt (ctx, role, picked, persist) {
+  // Updates and manifests are put onto an adopted pointer batch too: it may never have held them.
+  if (role === 'pointer' && hasPointerData(ctx)) ctx.state.restorePending = true
+  ctx.state[role] = { id: picked.id, depth: picked.depth, label: picked.label, adoptedAt: stamp(ctx) }
+  const what = `the ${role} batch ${picked.id} (label ${picked.label}, depth ${String(picked.depth)}, ${picked.ttl === Infinity ? 'no expiry' : `${String(Math.round(picked.ttl / DAY))} days left`}) instead of buying one`
+  ctx.log(`${persist ? '' : 'would '}adopt ${what}`)
+  if (!persist) return
+  save(ctx)
+  ctx.summary(`adopted ${what}`)
+}
+
+/**
+ * Reads the price, the wallet and each batch of the state. A role with no batch in the state, or whose batch is gone
+ * (and was not bought moments ago), first looks for a batch to take up, and only the plan that follows buys.
+ * @param {Ctx} ctx
+ * @param {{ persist: boolean }} options `persist` false: adopt in memory only (a dry run)
+ * @returns {Promise<{ price: bigint, wallet: { address: string, bzz: bigint, xdai: bigint }, seen: { pointer: any, content: any } }>}
+ */
+export async function observe (ctx, { persist }) {
   const price = await ctx.bee.price()
   const wallet = await ctx.bee.wallet()
   /** @type {{ pointer: any, content: any }} */
   const seen = { pointer: null, content: null }
+  /** @type {import('./bee.mjs').Stamp[] | null} */
+  let listed = null
   for (const role of ROLES) {
     const held = ctx.state[role]
-    if (held === null) continue
-    seen[role] = await ctx.bee.stamp(held.id)
-    if (seen[role].found && seen[role].usable && !seen[role].immutable) throw new Error(`batch ${held.id} is mutable, and this job only uses immutable batches: a full mutable one overwrites chunks that are still live`)
+    if (held !== null) {
+      seen[role] = await ctx.bee.stamp(held.id)
+      if (seen[role].found && seen[role].usable && !seen[role].immutable) throw new Error(`batch ${held.id} is mutable, and this job only uses immutable batches: a full mutable one overwrites chunks that are still live`)
+      if (seen[role].found || within(held.boughtAt, ctx.now(), 3 * ctx.cfg.waitMs)) continue
+    }
+    listed ??= await ctx.bee.stamps()
+    const picked = adoptable({ stamps: listed, role, cfg: ctx.cfg, state: ctx.state })
+    if (picked === null) continue
+    adopt(ctx, role, picked, persist)
+    seen[role] = picked
   }
   return { price, wallet, seen }
 }
@@ -79,7 +130,7 @@ async function buyBatch (ctx, role) {
   const perChunk = perChunkFor(limits.targetDays * DAY, await ctx.bee.price())
   const cost = costOf(perChunk, limits.depth)
   await spendOn(ctx, cost, `buy a ${role} batch`)
-  const label = `orivon-${role}-${stamp(ctx).slice(0, 10)}`
+  const label = LABELS[role]
   const id = await ctx.bee.buyBatch({ amount: perChunk, depth: limits.depth, label })
   const at = stamp(ctx)
   ctx.state[role] = { id, depth: limits.depth, label, boughtAt: at, changedAt: at }

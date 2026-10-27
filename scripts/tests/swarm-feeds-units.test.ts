@@ -9,6 +9,7 @@ import { resolveFeed } from '../../src/protocols/swarm/feed.js'
 import { DEFAULT_LIMITS } from '../../src/protocols/swarm/limits.js'
 import { A, fakeSwarm } from '../../src/protocols/swarm/tests/swarm.test-helpers.js'
 import { readSettings, UsageError } from '../swarm-feeds.mjs'
+import { adoptable } from '../swarm-feeds/batches.mjs'
 import { bmtRoot, buildUpdate, cacAddress, identifierHex, ownerOf, topicOf } from '../swarm-feeds/feed.mjs'
 import { bzz, checkPlan, costOf, DAY, FundsError, perChunkFor, planBatches, SpendBudget, SpendCapError, topUpFor, ttlAfterDilution, xdai } from '../swarm-feeds/policy.mjs'
 import { parseNames, readSignerKeyFile } from '../swarm-feeds/store.mjs'
@@ -192,5 +193,31 @@ describe('what the batches cost and when they need money', () => {
     expect(() => { checkPlan({ plan: steps, wallet, budget: new SpendBudget(60n * PLUR), minXdai: 10n ** 16n }) }).toThrow(SpendCapError)
     expect(() => { checkPlan({ plan: [{ op: 'buy', cost: 1n }], wallet: { ...wallet, xdai: 0n }, budget: new SpendBudget(PLUR), minXdai: 10n ** 16n }) }).toThrow(FundsError)
     expect(() => { checkPlan({ plan: [], wallet: { ...wallet, bzz: 0n, xdai: 0n }, budget: new SpendBudget(0n), minXdai: 10n ** 16n }) }).not.toThrow()
+  })
+})
+
+describe('which batch a role takes up', () => {
+  const stamp = (id: string, over: Record<string, unknown> = {}) => ({ id, found: true, usable: true, depth: 18, bucketDepth: 16, fill: 0, ttl: 100 * DAY, immutable: true, label: 'orivon-pointers', ...over })
+  const cfg = { rotateAt: 0.75 }
+  const state = (over: Record<string, unknown> = {}) => ({ pointer: null, content: null, retired: [], restorePending: false, sites: {}, version: 1, ...over }) as never
+
+  it('prefers the longest life, and one without an expiry beats any that ends', () => {
+    const stamps = [stamp('a', { ttl: 10 * DAY }), stamp('b', { ttl: Infinity }), stamp('c', { ttl: 900 * DAY })]
+    expect(adoptable({ stamps, role: 'pointer', cfg, state: state() })?.id).toBe('b')
+    expect(adoptable({ stamps: stamps.slice(0, 1), role: 'pointer', cfg, state: state() })?.id).toBe('a')
+  })
+  it('matches the role label (and a suffix of it), never the other role, and takes nothing the state uses or retired', () => {
+    const stamps = [stamp('a', { label: 'orivon-content' }), stamp('b', { label: 'orivon-pointers-2026' }), stamp('c', { label: 'orivon-pointersx' }), stamp('d', { label: 'orivon-content', ttl: 5 * DAY })]
+    expect(adoptable({ stamps, role: 'pointer', cfg, state: state() })?.id).toBe('b')
+    expect(adoptable({ stamps, role: 'content', cfg, state: state({ retired: [{ id: 'a' }] }) })?.id).toBe('d')
+    expect(adoptable({ stamps, role: 'content', cfg, state: state({ pointer: { id: 'd' }, retired: [{ id: 'a' }] }) })).toBeNull()
+  })
+  it('refuses a content batch already at the rotation fill, a mutable one, an unusable one and an expired one', () => {
+    const base = { label: 'orivon-content' }
+    for (const over of [{ fill: 0.75 }, { immutable: false }, { usable: false }, { ttl: 0 }, { found: false }]) {
+      expect(adoptable({ stamps: [stamp('a', { ...base, ...over })], role: 'content', cfg, state: state() })).toBeNull()
+    }
+    expect(adoptable({ stamps: [stamp('a', { ...base, fill: 0.74 })], role: 'content', cfg, state: state() })?.id).toBe('a')
+    expect(adoptable({ stamps: [stamp('a', { fill: 0.9 })], role: 'pointer', cfg, state: state() })?.id).toBe('a')
   })
 })

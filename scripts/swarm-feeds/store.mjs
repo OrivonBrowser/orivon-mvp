@@ -70,7 +70,7 @@ function writeAtomic (file, text) {
 }
 
 /**
- * pointer, content: `{ id, depth, label, boughtAt, changedAt }` or null. retired: content batches no longer topped up.
+ * pointer, content: `{ id, depth, label, boughtAt or adoptedAt, changedAt }` or null. retired: content batches no longer topped up.
  * sites[key]: topic, manifest (the feed's root reference), index and published (the newest update and the reference it
  * names), cid, reference and batch (the version uploaded and synced, and the batch holding it), pending (an upload
  * whose chunks are still being pushed).

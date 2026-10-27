@@ -225,8 +225,12 @@ overwriting an older one, so what was published stays readable until the batch e
 | Pointers (`POINTER_DEPTH` 18) | One small update per version, and the feed manifests | Never replaced: it is bought for `POINTER_TTL_TARGET_DAYS` (240) and topped up when under `POINTER_TTL_MIN_DAYS` (120). At `POINTER_DILUTE_AT` (0.5) fill its depth grows by one, then it is topped up again, since dilution halves the time left |
 | Content (`CONTENT_DEPTH` 22) | The site versions | Bought for `CONTENT_TTL_TARGET_DAYS` (35), topped up under `CONTENT_TTL_MIN_DAYS` (21), and replaced at `ROTATE_AT` (0.75) fill or when Bee answers 402 to an upload: every site's current version is uploaded again into the new batch, and the old batch is never topped up, so old versions leave the network when it expires |
 
-A batch Bee no longer knows (expired, or the state file is gone) is bought again; a new pointer batch is
-filled again from `socs.jsonl`, the journal of every signed update, so the feeds read as before. Sites are
+A role with no batch in the state, or whose batch Bee no longer knows (expired), first takes up a batch the node
+already holds under the role's label (`orivon-pointers`, `orivon-content`; the job buys under the same labels) that is
+immutable, usable and not expired, and for content not at the rotation fill, the longest-lived if there are several;
+it buys only when there is none. A batch bought by hand under the label is used as it is, and a lost `state.json`
+buys nothing twice. A pointer batch that is new to the state is filled again from `socs.jsonl`, the journal of every
+signed update, so the feeds read as before. Sites are
 handled one at a time: the version is streamed from Kubo through `tar` into a folder in `WORK_DIR`, packed
 into one tar, the folder removed, and the tar streamed to Bee, so the disk holds one site (twice, for a moment)
 and memory holds none. Keep `WORK_DIR` on a disk with room for twice the largest site. A site whose upload has
@@ -257,8 +261,8 @@ node swarm-feeds.mjs address     # the feed owner, and Bee's wallet (xBZZ and a 
 The job refuses a key file that group or others can read. Losing the key loses the right to update the feeds:
 an ENS name would then have to point at a new manifest. `STATE_DIR` (`$XDG_STATE_HOME/orivon-swarm-feeds`) holds
 `state.json` (batch ids, per-site progress), `socs.jsonl` (the journal, appended before each upload) and
-`status.json`; back up the first two, because without `state.json` the job cannot tell its batches from
-anyone else's and buys new ones (the old ones stay until they expire).
+`status.json`; back up the first two. Without `state.json` the job finds its batches again by label, and
+without `socs.jsonl` it cannot put the updates back onto a pointer batch it has to replace.
 
 Where the machine reaches Kubo over ssh, `IPFS_API=ssh://<user>@<host>[:<port>]` runs each RPC call as
 `ssh -o BatchMode=yes <user>@<host> curl -sS --fail -X POST '<IPFS_SSH_RPC>/api/v0/<path>'`
