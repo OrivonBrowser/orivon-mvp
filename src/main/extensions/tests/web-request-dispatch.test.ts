@@ -279,7 +279,8 @@ describe('observer events', () => {
   it('keep the error of a main-frame load of a name Orivon serves from every listener, and tell them of its other events and of other hosts', () => {
     const { dispatcher, fake } = setup({ servesHost: (hostname) => hostname.endsWith('.eth') })
     const host = fakeHost()
-    for (const event of ['onErrorOccurred', 'onBeforeRequest', 'onCompleted'] as const) dispatcher.addListener(apiEvent(host), event, 1, FILTER, [])
+    dispatcher.addListener(apiEvent(host), 'onErrorOccurred', 1, FILTER, [])
+    dispatcher.addListener(apiEvent(host), 'onCompleted', 2, FILTER, [])
     const load = { resourceType: 'mainFrame', frame: { ...top, parent: null }, url: 'https://vitalik.eth/' }
     fake.runs.get('onErrorOccurred')?.(electronRequest({ ...load, error: 'net::ERR_ABORTED' }))
     expect(host.send).not.toHaveBeenCalled()
