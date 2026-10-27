@@ -80,7 +80,7 @@ it('[app:installed-app-without-grants-is-asked-as-a-website] an installed app th
 
 // The location was blocked by the test above, so this app has one stored answer and nothing else. Its page is still showing: opening the address again would navigate it under the first read.
 it('[app:permission-query-reads-prompt-when-a-request-would-ask] an installed app that holds no grant reads prompt for a permission it would be asked about, and what the person decided for the rest', async () => {
-  const view = findViewShowing(app, chrome, `${BARE}/`) ?? await open(BARE)
+  const view: Page = (findViewShowing(app, chrome, `${BARE}/`) as Page | undefined) ?? await open(BARE)
   const state = async (name: string): Promise<string> => await view.evaluate(async (permission) => (await navigator.permissions.query({ name: permission } as never)).state, name)
   for (const name of ['camera', 'microphone', 'clipboard-read', 'midi', 'idle-detection', 'window-management']) expect(await state(name)).toBe('prompt')
   expect(await state('geolocation')).toBe('denied')
