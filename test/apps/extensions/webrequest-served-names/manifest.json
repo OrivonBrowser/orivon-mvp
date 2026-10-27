@@ -1,0 +1,11 @@
+{
+  "manifest_version": 2,
+  "name": "Orivon E2E served names",
+  "version": "1.0.0",
+  "description": "Fixture extension for test/extensions/e2e-extensions-webrequest-served-names.test.ts: sends a tab elsewhere when a .eth main-frame request fails, and records every main-frame event it hears.",
+  "permissions": ["webRequest", "tabs", "<all_urls>"],
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": true
+  }
+}
