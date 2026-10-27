@@ -80,7 +80,7 @@ function wrapQuery (askMain: (name: string) => Promise<unknown>): void {
       }
     }
   })
-  define(owner, 'query', { value: wrapped, writable: native.writable, enumerable: native.enumerable, configurable: native.configurable })
+  define(owner, 'query', { value: wrapped, writable: native.writable === true, enumerable: native.enumerable === true, configurable: native.configurable === true })
 }
 
 /** Fail-open like the other main-world installers: `executeInMainWorld` is `@experimental`, and without the wrapper the page reads the engine's answer. */
