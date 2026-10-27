@@ -167,7 +167,7 @@ describe.skipIf(!gnuTar)('packing a version for upload', () => {
     execFileSync('tar', ['-C', dir, '-cf', file, root])
     return readFileSync(file)
   }
-  const httpKubo = (body: Buffer) => kuboClient({ api: 'http://kubo.test', fetchFn: (async () => new Response(body)) as unknown as typeof fetch })
+  const httpKubo = (body: Buffer) => kuboClient({ api: 'http://kubo.test', fetchFn: (async () => new Response(new Uint8Array(body))) as unknown as typeof fetch })
 
   it('packs the site under its own paths, dotfiles included, and keeps only the tar on disk', async () => {
     const work = scratch()
