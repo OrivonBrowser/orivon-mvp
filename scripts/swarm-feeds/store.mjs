@@ -73,11 +73,11 @@ function writeAtomic (file, text) {
  * pointer, content: `{ id, depth, label, boughtAt or adoptedAt, changedAt }` or null. retired: content batches no longer topped up.
  * sites[key]: topic, manifest (the feed's root reference), index and published (the newest update and the reference it
  * names), cid, reference and batch (the version uploaded and synced, and the batch holding it), pending (an upload
- * whose chunks are still being pushed).
- * @typedef {{ version: 1, pointer: any, content: any, retired: { id: string, depth: number, retiredAt: string, reason: string }[], restorePending: boolean, sites: Record<string, any> }} State
+ * whose chunks are still being pushed). feedsFile: where the feeds file was last written and the SHA-256 of its text.
+ * @typedef {{ version: 1, pointer: any, content: any, retired: { id: string, depth: number, retiredAt: string, reason: string }[], restorePending: boolean, sites: Record<string, any>, feedsFile: { target: string, sha256: string } | null }} State
  * @returns {State}
  */
-export const emptyState = () => ({ version: 1, pointer: null, content: null, retired: [], restorePending: false, sites: {} })
+export const emptyState = () => ({ version: 1, pointer: null, content: null, retired: [], restorePending: false, sites: {}, feedsFile: null })
 
 /** @param {string} dir @returns {State} a missing file is a first run; a file that cannot be read stops the run */
 export function loadState (dir) {

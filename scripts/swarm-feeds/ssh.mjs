@@ -1,7 +1,8 @@
 /**
- * Running a command on another machine over `ssh`, for the two inputs that live on the pinning node: Kubo's RPC (curl
- * against its loopback port) and the names file (`cat`). The remote command is one string a shell reads, so every value in
- * it is single-quoted; the target itself is checked against a strict pattern, so it can never be taken for an ssh option.
+ * Running a command on another machine over `ssh`, for what lives on the pinning node: Kubo's RPC (curl against its
+ * loopback port), the names file (`cat`) and the feeds file the job writes there. The remote command is one string a
+ * shell reads, so every value in it is single-quoted; the target itself is checked against a strict pattern, so it can
+ * never be taken for an ssh option.
  */
 import { spawn } from 'node:child_process'
 import { PassThrough } from 'node:stream'
@@ -42,13 +43,17 @@ export const sshArgv = ({ user, host, port }, command) => ['-o', 'BatchMode=yes'
 const failure = (what, code, signal, stderr) => new Error(`${what} failed (${code === null ? `killed by ${String(signal)}` : `exit ${String(code)}`})${stderr.trim() === '' ? '' : `: ${stderr.trim().slice(-300)}`}`)
 
 /**
- * The whole stdout of a command, for small answers. A non-zero exit rejects, with what the command wrote to stderr.
- * @param {{ argv: string[], what: string, spawnFn?: SpawnFn, timeout?: number }} input
+ * The whole stdout of a command, for small answers; `input`, when given, is the command's stdin. A non-zero exit rejects,
+ * with what the command wrote to stderr.
+ * @param {{ argv: string[], what: string, spawnFn?: SpawnFn, timeout?: number, input?: string }} input
  * @returns {Promise<Buffer>}
  */
-export function sshRun ({ argv, what, spawnFn = spawn, timeout = 120_000 }) {
+export function sshRun ({ argv, what, spawnFn = spawn, timeout = 120_000, input }) {
   return new Promise((resolve, reject) => {
-    const child = spawnFn('ssh', argv, { stdio: ['ignore', 'pipe', 'pipe'], timeout })
+    const child = spawnFn('ssh', argv, { stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'], timeout })
+    // ssh that ends before reading its input is reported by its exit code, with what it wrote to stderr.
+    child.stdin?.on('error', () => {})
+    child.stdin?.end(input)
     /** @type {Buffer[]} */
     const out = []
     let stderr = ''
@@ -111,4 +116,18 @@ export async function readRemoteFile (url, spawnFn) {
   const target = parseSshUrl(url, { path: true })
   if (target === null || target.path === undefined) throw new Error(`"${url}" is not an ssh:// address`)
   return (await sshRun({ argv: sshArgv(target, `cat -- ${shellQuote(target.path)}`), what: `reading ${url}`, spawnFn, timeout: 60_000 })).toString('utf8')
+}
+
+/**
+ * Replaces a file on another machine, all at once: the text goes to `<path>.tmp`, which is then moved over the file.
+ * @param {string} url `ssh://user@host[:port]/absolute/path`
+ * @param {string} text
+ * @param {SpawnFn} [spawnFn]
+ * @returns {Promise<void>}
+ */
+export async function writeRemoteFile (url, text, spawnFn) {
+  const target = parseSshUrl(url, { path: true })
+  if (target === null || target.path === undefined) throw new Error(`"${url}" is not an ssh:// address`)
+  const temp = shellQuote(`${target.path}.tmp`)
+  await sshRun({ argv: sshArgv(target, `cat > ${temp} && mv ${temp} ${shellQuote(target.path)}`), what: `writing ${url}`, spawnFn, timeout: 60_000, input: text })
 }

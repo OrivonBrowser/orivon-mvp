@@ -9,11 +9,12 @@
  *   NAMES_FILE=<names.conf> node swarm-feeds.mjs [sync [--dry-run] | list | address]
  *
  * Runs from one file: `npx esbuild scripts/swarm-feeds.mjs --bundle --platform=node --format=esm --outfile=swarm-feeds.mjs`
- * (the bundle carries viem) and needs GNU `tar`. Run it where Bee runs; Kubo may be remote (IPFS_API, e.g. a tunnel).
+ * (the bundle carries viem and multiformats) and needs GNU `tar`. Run it where Bee runs; Kubo may be remote (IPFS_API, e.g. a tunnel).
  *
  * Settings come from the environment: NAMES_FILE (required: `<ipns-key> <ens names...>` per line; a path, or
- * ssh://user@host/absolute/path), SKIP_KEYS, SIGNER_KEY_FILE (the feed owner's private key, mode 600, never logged),
- * BEE_API, IPFS_API (http(s)://..., or ssh://user@host[:port] to run each RPC call as curl over ssh against
+ * ssh://user@host/absolute/path), FEEDS_FILE (optional, the same forms: `<ipns-key> bzz://<feed manifest>` per site,
+ * written after a sync, and again when the set of manifests changes, for scripts/ipfs-status.sh), SKIP_KEYS, SIGNER_KEY_FILE (the feed owner's
+ * private key, mode 600, never logged), BEE_API, IPFS_API (http(s)://..., or ssh://user@host[:port] to run each RPC call as curl over ssh against
  * IPFS_SSH_RPC there), STATE_DIR (state.json, socs.jsonl, status.json), WORK_DIR, SUMMARY_LOG, and the batch policy:
  * POINTER_DEPTH, POINTER_TTL_MIN_DAYS,
  * POINTER_TTL_TARGET_DAYS, POINTER_DILUTE_AT, CONTENT_DEPTH, CONTENT_TTL_MIN_DAYS, CONTENT_TTL_TARGET_DAYS, ROTATE_AT,
@@ -23,11 +24,12 @@
  */
 import { appendFileSync, readFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, posix, resolve } from 'node:path'
 import { isInvokedDirectly } from './cli.mjs'
 import { beeClient, defaultSleep } from './swarm-feeds/bee.mjs'
 import { checkAffordable, observe, planFor, restorePointer, runPlan, waitUsable } from './swarm-feeds/batches.mjs'
 import { ownerOf } from './swarm-feeds/feed.mjs'
+import { scoreId, updateFeedsFile } from './swarm-feeds/handoff.mjs'
 import { clearWork, kuboClient, packSite } from './swarm-feeds/kubo.mjs'
 import { bzz, DAY, PLUR_PER_BZZ, SpendBudget, WEI_PER_XDAI, xdai } from './swarm-feeds/policy.mjs'
 import { describeSites, syncSites } from './swarm-feeds/sites.mjs'
@@ -37,6 +39,12 @@ import { loadState, parseList, parseNames, readJournal, readSignerKeyFile, Usage
 export { UsageError }
 
 const USAGE = 'usage: swarm-feeds.mjs [sync [--dry-run] | list | address]'
+
+/** @param {string} file a path or an ssh:// address @returns {string} one spelling per file: the port spelled out, the path normalised */
+function placeOf (file) {
+  const ssh = parseSshUrl(file, { path: true })
+  return ssh === null ? resolve(file) : `ssh://${ssh.user}@${ssh.host}:${ssh.port ?? '22'}${posix.normalize(ssh.path ?? '')}`
+}
 
 /**
  * @param {Record<string, string | undefined>} env
@@ -60,17 +68,21 @@ export function readSettings (env) {
   }
   const cap = number('MAX_SPEND_BZZ', 100)
   const ipfsApi = env.IPFS_API ?? 'http://127.0.0.1:5001'
+  const feedsFile = env.FEEDS_FILE === '' ? undefined : env.FEEDS_FILE
   try {
     parseSshUrl(ipfsApi, { path: false })
     if (env.NAMES_FILE !== undefined) parseSshUrl(env.NAMES_FILE, { path: true })
+    if (feedsFile !== undefined) parseSshUrl(feedsFile, { path: true })
   } catch (error) {
-    throw new UsageError(`${error instanceof Error ? error.message : String(error)} (IPFS_API or NAMES_FILE)`)
+    throw new UsageError(`${error instanceof Error ? error.message : String(error)} (IPFS_API, NAMES_FILE or FEEDS_FILE)`)
   }
+  if (feedsFile !== undefined && env.NAMES_FILE !== undefined && placeOf(feedsFile) === placeOf(env.NAMES_FILE)) throw new UsageError('FEEDS_FILE must not be NAMES_FILE: the job would overwrite the list of names')
   return {
     beeApi: env.BEE_API ?? 'http://127.0.0.1:1633',
     ipfsApi,
     ipfsSshRpc: env.IPFS_SSH_RPC ?? 'http://127.0.0.1:5001',
     namesFile: env.NAMES_FILE,
+    feedsFile,
     skip: parseList(env.SKIP_KEYS),
     signerKeyFile: env.SIGNER_KEY_FILE ?? join(xdg('XDG_CONFIG_HOME', '.config'), 'orivon-swarm-feeds', 'feed-signer.key'),
     stateDir,
@@ -112,14 +124,17 @@ function parseArgs (args) {
 /** @param {number} seconds @returns {number | null} */
 const daysOf = (seconds) => (seconds === Infinity ? null : Math.round((seconds / DAY) * 10) / 10)
 
-/** The `list` table: one row per site of the names file, from the state. @param {any} state @param {{ key: string, names: string[] }[]} sites @returns {string} */
+/** @param {unknown} reference @returns {string} the Score id of a Swarm reference, a dash for none or one that is not 64 lowercase hex characters */
+const scoreCell = (reference) => (typeof reference === 'string' && /^[0-9a-f]{64}$/.test(reference) ? scoreId(reference) : '-')
+
+/** The `list` table: one row per site of the names file, from the state; Score id is what to add to the site's Web3 Score evaluation. @param {any} state @param {{ key: string, names: string[] }[]} sites @returns {string} */
 function listTable (state, sites) {
   const rows = sites.map(({ key, names }) => {
     const rec = state.sites[key] ?? {}
-    const cells = [key, names.join(', ') || '-', rec.manifest === undefined ? '-' : `bzz://${String(rec.manifest)}`, rec.index === undefined ? '-' : String(rec.index), rec.cid ?? '-', rec.reference ?? '-']
+    const cells = [key, names.join(', ') || '-', rec.manifest === undefined ? '-' : `bzz://${String(rec.manifest)}`, rec.index === undefined ? '-' : String(rec.index), rec.cid ?? '-', rec.reference ?? '-', scoreCell(rec.reference)]
     return `| ${cells.join(' | ')} |`
   })
-  return ['| Key | ENS names | Feed manifest | Newest index | IPFS CID | Swarm reference |', '|---|---|---|---|---|---|', ...rows].join('\n')
+  return ['| Key | ENS names | Feed manifest | Newest index | IPFS CID | Swarm reference | Score id |', '|---|---|---|---|---|---|---|', ...rows].join('\n')
 }
 
 /**
@@ -222,6 +237,9 @@ export async function run ({ env, args, fetchFn = fetch, spawnFn, now = Date.now
     } catch (error) {
       if (error instanceof UsageError) throw error
       errors.push(error instanceof Error ? error.message : String(error))
+    }
+    if (!dryRun && live && cfg.feedsFile !== undefined) {
+      try { await updateFeedsFile({ target: cfg.feedsFile, sites, ctx, spawnFn }) } catch (error) { errors.push(`the feeds file was not written: ${error instanceof Error ? error.message : String(error)}`) }
     }
     for (const message of errors) log(`error: ${message}`)
     if (!dryRun) writeStatus(cfg.stateDir, await buildStatus(ctx, sites, errors, live))

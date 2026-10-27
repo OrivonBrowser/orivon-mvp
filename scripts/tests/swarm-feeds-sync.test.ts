@@ -479,14 +479,14 @@ describe('sync: money and readiness', () => {
 })
 
 describe('list and address', () => {
-  it('lists each site with its manifest, newest index, CID and Swarm reference', async () => {
+  it('lists each site with its manifest, newest index, CID, Swarm reference and Score id', async () => {
     const t = fresh()
     await t.go()
     const { code } = await t.go('list')
     expect(code).toBe(0)
     const state = t.state()
-    expect(t.outs[0]).toContain('| Key | ENS names | Feed manifest | Newest index | IPFS CID | Swarm reference |')
-    expect(t.outs[0]).toContain(`| explore | explore.orivon.eth, explore.eth | bzz://${String(state.sites.explore.manifest)} | 0 | ${cid('a')} | ${String(state.sites.explore.reference)} |`)
+    expect(t.outs[0]).toContain('| Key | ENS names | Feed manifest | Newest index | IPFS CID | Swarm reference | Score id |')
+    expect(t.outs[0]).toContain(`| explore | explore.orivon.eth, explore.eth | bzz://${String(state.sites.explore.manifest)} | 0 | ${cid('a')} | ${String(state.sites.explore.reference)} | cid:bah5acgza`)
     expect(t.outs[0]).toContain(`| latest | latest.orivon.eth | bzz://${String(state.sites.latest.manifest)} | 0 |`)
   })
   it('prints the feed owner and the Bee wallet', async () => {
