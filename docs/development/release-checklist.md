@@ -239,7 +239,7 @@ forgotten.
       AppImage, the Windows installer, both dmgs and `ipfs.json` ([`packaging.md`](packaging.md)
       section Releases); its description lists the version's changes, the "Which file is mine?" table and the
       IPFS section; within about 15 minutes `ipfs://<cid>` from its notes opens in Orivon.
-- [ ] Pin the new release on the additional pinning service: `PINNING_ENDPOINT=<service url> PINNING_TOKEN=<token> node scripts/pin-extra.mjs --extra <file of name=cid lines> --prune` ([`scripts/README.md`](../../scripts/README.md)); `--dry-run` first prints what it would change.
+- [ ] Pin the new release on the additional pinning service: `PINNING_ENDPOINT=<service url> PINNING_TOKEN=<token> node scripts/pin-extra.mjs --extra <file of name=cid lines> --prune` ([`scripts/README.md`](../../scripts/README.md)); `--dry-run` first prints what it would change. Not for Filebase: its copy of the newest release follows the `latest-release` key by itself ([`packaging.md`](packaging.md) section On IPFS).
 - [ ] **The Microsoft Store package submitted** ([`packaging.md`](packaging.md) section The Microsoft Store package):
       after the release's workflow run is green, open the `store` job's page. Its summary says it submitted the package
       and shows the submission's status; Partner Center certifies it from there. A warning instead names what is

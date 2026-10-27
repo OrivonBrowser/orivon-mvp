@@ -57,6 +57,8 @@ export interface OverlayViewSpec {
   readonly square?: boolean
   readonly port: OverlayPort
   readonly onBlur: () => void
+  /** The view took the keyboard; runs inside the focus event itself. */
+  readonly onTake: () => void
   readonly onFocus: () => void
   /** A key pressed down in the page, before the page sees it; true drops it. */
   readonly onKey?: (key: OverlayKey) => boolean
@@ -103,7 +105,7 @@ export function createOverlayView (spec: OverlayViewSpec): OverlayViewHandle {
   contents.on('blur', () => { setImmediate(() => { if (Date.now() - reshownAt > RESHOW_BLUR_GRACE_MS) spec.onBlur() }) })
   // Deferred too: a view attached before its first page commits takes focus as it commits, and focus given back
   // from inside that change does not hold.
-  contents.on('focus', () => { setImmediate(spec.onFocus) })
+  contents.on('focus', () => { spec.onTake(); setImmediate(spec.onFocus) })
   contents.on('render-process-gone', spec.onGone)
   // A text box in a popup (the find bar, a prompt, the bookmark bubble) gets the edit menu a tab's text box gets, and
   // nothing else: no page item, and nothing that opens a tab.

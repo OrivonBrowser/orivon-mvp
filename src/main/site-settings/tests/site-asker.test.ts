@@ -6,8 +6,9 @@ import type { SiteAsksEngine } from '../site-asks-engine.js'
 function rig () {
   const request = vi.fn((): Promise<boolean> | undefined => Promise.resolve(true))
   const check = vi.fn((): boolean | undefined => true)
-  const engine = { request, check } as unknown as SiteAsksEngine<WebContents>
-  return { asker: createSiteAsker(engine), request, check }
+  const query = vi.fn((): 'granted' | 'denied' | 'prompt' | undefined => 'prompt')
+  const engine = { request, check, query } as unknown as SiteAsksEngine<WebContents>
+  return { asker: createSiteAsker(engine), request, check, query }
 }
 const contents = {} as WebContents
 
@@ -40,5 +41,28 @@ describe('the per-site asker', () => {
     const { asker, request } = rig()
     request.mockReturnValue(undefined)
     expect(asker.request?.(contents, 'geolocation', {})).toBeUndefined()
+  })
+})
+
+describe('what a page\'s query reads', () => {
+  it('turns the web name into a kind and hands the engine the frame\'s origin', () => {
+    const { asker, query } = rig()
+    expect(asker.query?.(contents, 'geolocation', 'https://a.example')).toBe('prompt')
+    expect(query).toHaveBeenCalledWith('location', contents, 'https://a.example')
+    asker.query?.(contents, 'camera', 'https://b.example')
+    expect(query).toHaveBeenLastCalledWith('camera', contents, 'https://b.example')
+  })
+
+  it('answers undefined, and does not call the engine, for a name it does not own', () => {
+    const { asker, query } = rig()
+    expect(asker.query?.(contents, 'notifications', 'https://a.example')).toBeUndefined()
+    expect(asker.query?.(contents, 'persistent-storage', 'https://a.example')).toBeUndefined()
+    expect(query).not.toHaveBeenCalled()
+  })
+
+  it('passes the engine\'s own undefined on for a non-tab', () => {
+    const { asker, query } = rig()
+    query.mockReturnValue(undefined)
+    expect(asker.query?.(contents, 'camera', 'https://a.example')).toBeUndefined()
   })
 })

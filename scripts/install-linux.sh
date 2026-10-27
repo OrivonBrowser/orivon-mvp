@@ -48,10 +48,12 @@ EOF
 # the release with the highest version that is not a draft and has an x86_64 AppImage. A release published but
 # not yet carrying its packages is skipped; one whose AppImage has no digest is picked and refused later.
 pick_with_python () {
-  python3 - "$1" <<'PYTHON'
+  local code
+  # The list reaches Python on stdin: one command-line argument is capped at 128 KiB on Linux, and GitHub's list is larger.
+  IFS= read -r -d '' code <<'PYTHON' || true
 import json, re, sys
 
-releases = json.loads(sys.argv[1])
+releases = json.loads(sys.stdin.read())
 version = re.compile(r"^[vV]?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$")
 asset_name = re.compile(r"^Orivon-.*-x86_64\.AppImage$")
 best = None
@@ -73,6 +75,7 @@ for release in releases if isinstance(releases, list) else []:
 if best:
     print("\n".join(best[1:]))
 PYTHON
+  printf '%s' "$1" | python3 -c "$code"
 }
 
 pick_with_jq () {

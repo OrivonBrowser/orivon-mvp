@@ -34,6 +34,13 @@ when its URL, its initiator or the page that made it is the origin of a register
 rule the data APIs apply (`../api/README.md`). The predicate arrives as a function, like host
 access, so the file stays free of the grants.
 
+**A name Orivon serves loads and fails in Orivon, never in an extension.** `visibility.ts` hides `onErrorOccurred` of a
+`main_frame` or `sub_frame` request to a host a protocol serves (`.eth` and every other top-level domain a protocol
+claims, and the `orivon` suffix), over `http` and `https`, from every extension. A name-resolution extension listens
+for exactly that error and answers it by sending the tab to a gateway or a page of its own, which takes the name out of
+Orivon's verified load. The name's other events stay visible, so a blocker still sees the request and may block it; the
+errors of every other host stay visible too. The predicate arrives as a function, like host access.
+
 **`windowId` is accepted and ignored.** A request carries a tab id, not a window id, and no
 blocker filters on a window. The filter parses it so a listener that passes one still registers.
 

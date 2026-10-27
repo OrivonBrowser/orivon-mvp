@@ -1,6 +1,7 @@
 // An installed app that holds no grant is asked for a site permission as a website is, and the person's answer is kept;
 // an installed app that holds grants has the permissions of its manifest and is never asked by a prompt. Both are served
-// from the loader's cache, and the page asks for the same thing: the person's location.
+// from the loader's cache, and the page asks for the same thing: the person's location. What the app's own
+// `permissions.query` reads for those permissions is checked with it.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/app-behaviours/e2e-app-site-permissions.test.ts
 import { afterAll, beforeAll, expect, it } from 'vitest'
@@ -73,6 +74,17 @@ it('[app:installed-app-without-grants-is-asked-as-a-website] an installed app th
   await view.waitForLoadState('load')
   await view.click('#geo')
   expect(await result(view)).toBe('code1')
+  await delay(300)
+  expect(await promptShown()).toBe(false)
+}, QA_TEST_TIMEOUT_MS)
+
+// The location was blocked by the test above, so this app has one stored answer and nothing else. Its page is still showing: opening the address again would navigate it under the first read.
+it('[app:permission-query-reads-prompt-when-a-request-would-ask] an installed app that holds no grant reads prompt for a permission it would be asked about, and what the person decided for the rest', async () => {
+  const view: Page = (findViewShowing(app, chrome, `${BARE}/`) as Page | undefined) ?? await open(BARE)
+  const state = async (name: string): Promise<string> => await view.evaluate(async (permission) => (await navigator.permissions.query({ name: permission } as never)).state, name)
+  for (const name of ['camera', 'microphone', 'clipboard-read', 'midi', 'idle-detection', 'window-management']) expect(await state(name)).toBe('prompt')
+  expect(await state('geolocation')).toBe('denied')
+  // Reading is not asking: no question opened, and nothing was stored for the kinds that were only read.
   await delay(300)
   expect(await promptShown()).toBe(false)
 }, QA_TEST_TIMEOUT_MS)

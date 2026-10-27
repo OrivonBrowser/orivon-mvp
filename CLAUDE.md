@@ -74,9 +74,13 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
 13. **Ask questions trough the tool** and never stop working until feedback/decision from owner is the only real bottleneck, owner may be sleeping, and his response should not be the reason for you to stop unless there is no other way around.
 14. **Merge session changes in a PR's by yourself**, unless owner decision is critical. Same for orivon-ports repo operations as well. This is preferred for faster development. Most of the times if you wait for my approval to merge a PR to main you will end un in a conflict loop, since development goes so fast. If you don't merge it state it very clearly at the end of the prompt. Don't do it when the user just asks for a quick reply.
 15. **Prevent heavy work from crashing VSCodium**, you should still stay highly productive, but pay attention on heavy tasks that may crash VSCodium at all, that shouldn't never happen
-16. **Use always latest Opus for planning and latest Sonnet for execution to save tokens (behave as opusplan but automatically)**, unless the user asks otherwise.
+16. **Use always latest Opus for planning/orchestration, latest Sonnet for execution/coding agent and latest Haiku as the reader, scribe, donkey work agent to save tokens (behave somewhat like opusplan but automatically)**
 17. **Fix long-term AI optimization issues**, if you find any issue you incur as AI and wastes too many tokens, ensure that the future AI's doesn't fall for the same issue as well, apply a long term automated or simpler solution to that problem or procedure
 22. **Always ask owner confirm before updating the CLAUDE.md**
+23. **Testing and debugging major changes/features includes testing interactively Windows and MacOS by default**
+24. **Every functionality should be debuggable when a problem incurs user reports a problem on orivon://report**
+25. **Batch reads, and hand searches to the `reader` agent.** Every turn re-reads the whole context, so independent reads, greps and `git` queries go in one turn, and a search of three or more steps goes to `reader` (Haiku), which returns file:line and the quoted lines.
+26. **Give each implementer one PR's worth of work.** A longer brief grows its context past the compaction point, and a compacted agent loses the detail it was working from.
 
 ## Commands
 

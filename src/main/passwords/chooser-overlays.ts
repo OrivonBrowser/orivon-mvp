@@ -114,6 +114,8 @@ function chooserHandler (win: OverlayWindow, mode: ChooserView['mode']): Overlay
           return undefined
       }
     },
+    // A press on the chooser under a box gives it the keyboard for an instant; the host hands it straight back.
+    focused: () => { if (mode === 'field') forms.chooserPressed() },
     closed: (reason) => {
       if (mode === 'field') forms.setKeys(null)
       // Escape is the person saying no: the chooser does not reopen by itself for this page.

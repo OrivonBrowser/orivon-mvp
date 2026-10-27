@@ -5,6 +5,7 @@
 // `webRequestBlocking` the same way.
 import { webContents } from 'electron'
 import { readExtensionManifest } from '../../broker/policy/extension-manifest.js'
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import type { ExtensionApiModule } from './api/api-types.js'
 import { hostAccessForPatterns } from './extension-host-access.js'
@@ -43,6 +44,7 @@ export const webRequestApi: ExtensionApiModule = {
       hostPermissionsOf,
       hostAccess: hostAccessForPatterns,
       isAppOrigin: ctx.isAppOrigin,
+      servesHost: (hostname) => BUILTIN_ADDRESSES.routesToVerifier(hostname),
       pageUrlOf,
       held: ctx.held,
       installedAt: (id) => ctx.extensions()?.list().find((entry) => entry.id === id)?.installedAt ?? 0

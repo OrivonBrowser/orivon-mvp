@@ -22,6 +22,25 @@ const PLAIN: ReadonlyMap<string, SiteKind> = new Map<string, SiteKind>([
   ['window-management', 'windowManagement']
 ])
 
+/**
+ * The names `navigator.permissions.query` takes for the kinds this asker owns. A Map, like `PLAIN`. Notifications
+ * are left out: their answers belong to `sessions/site-notifications.ts`, not to a per-site asker.
+ */
+const QUERY: ReadonlyMap<string, SiteKind> = new Map<string, SiteKind>([
+  ['camera', 'camera'],
+  ['microphone', 'microphone'],
+  ['geolocation', 'location'],
+  ['clipboard-read', 'clipboardRead'],
+  ['midi', 'midi'],
+  ['idle-detection', 'idle'],
+  ['window-management', 'windowManagement']
+])
+
+/** The kind a page's `navigator.permissions.query` name is about, or undefined when the asker does not own it. */
+export function queryKindOf (name: unknown): SiteKind | undefined {
+  return typeof name === 'string' ? QUERY.get(name) : undefined
+}
+
 /** Every Electron permission name a per-site asker answers: the gate's test pins its own restated list to this. */
 export const SITE_ASKED_PERMISSIONS: readonly string[] = ['media', ...PLAIN.keys()]
 

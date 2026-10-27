@@ -121,6 +121,10 @@ async function waitChip (chrome: Page, hidden: boolean, label?: string): Promise
   return last
 }
 
+/** What the page reads from `navigator.permissions.query`, which pages check before they ask. */
+const queryState = async (view: Page, name: string): Promise<string> =>
+  await view.evaluate(async (permission) => (await navigator.permissions.query({ name: permission } as never)).state, name)
+
 const userDataOf = async (app: App): Promise<string> => await app.evaluate(({ app: electron }) => electron.getPath('userData'))
 
 async function setScheme (app: App, pages: Page[], scheme: 'light' | 'dark'): Promise<void> {
@@ -157,7 +161,15 @@ it('asks once per site, remembers the answer across a page load, and the chip ch
     const view = await visit(app, chrome, `${origins.a}/`)
     await waitChip(chrome, true)
 
-    // Nothing shows, and nothing is asked, until the page asks.
+    // Nothing shows, and nothing is asked, until the page asks. A page that checks first reads that it would be asked,
+    // for each kind the prompt owns and the status is the engine's own object.
+    expect(await promptShown(app)).toBe(false)
+    expect(await queryState(view, 'camera')).toBe('prompt')
+    expect(await queryState(view, 'microphone')).toBe('prompt')
+    expect(await view.evaluate(async () => {
+      const status = await navigator.permissions.query({ name: 'camera' as PermissionName })
+      return { real: status instanceof PermissionStatus, onchange: status.onchange, name: navigator.permissions.query.name }
+    })).toEqual({ real: true, onchange: null, name: 'query' })
     expect(await promptShown(app)).toBe(false)
     await view.click('#cam')
     let prompt = await waitPrompt(app)
@@ -194,6 +206,8 @@ it('asks once per site, remembers the answer across a page load, and the chip ch
     // The same site, asked again after a reload, is not asked: the answer is remembered.
     await view.reload()
     await waitChip(chrome, true)
+    expect(await queryState(view, 'camera')).toBe('granted')
+    expect(await queryState(view, 'microphone')).toBe('prompt')
     await view.click('#cam')
     expect(await result(view, 'cam')).toBe('live')
     expect(await promptShown(app)).toBe(false)
@@ -204,6 +218,7 @@ it('asks once per site, remembers the answer across a page load, and the chip ch
     prompt = await waitPrompt(app)
     await answer(prompt, 'Block')
     expect(await result(second, 'cam')).toBe('ERR:NotAllowedError')
+    expect(await queryState(second, 'camera')).toBe('denied')
     await waitChip(chrome, false, 'Camera blocked on this page')
     expect((await chipOf(chrome)).className).toContain('blocked')
 
@@ -264,6 +279,7 @@ it('says what each kind wants, asks for camera and microphone once, and decides 
     expect(await result(view, 'both')).toBe('live,live')
 
     // Location: told before Allow what the person gets: the choice is kept and the page is still told no.
+    expect(await queryState(view, 'geolocation')).toBe('prompt')
     await view.click('#geo')
     prompt = await waitPrompt(app)
     expect(await textOf(prompt, '.sp-text')).toEqual(['wants to know your location'])
@@ -274,6 +290,8 @@ it('says what each kind wants, asks for camera and microphone once, and decides 
     try { await prompt.keyboard.press('Escape') } catch (error) { if (!/closed/.test(String(error))) throw error }
     expect(await waitFor(async () => !(await promptShown(app)))).toBe(true)
     expect(await result(view, 'geo')).toBe('code1')
+    // A page refused without being asked again reads denied until it loads anew.
+    expect(await queryState(view, 'geolocation')).toBe('denied')
     await clear(view, 'geo')
     await view.click('#geo')
     expect(await result(view, 'geo')).toBe('code1')
@@ -284,10 +302,13 @@ it('says what each kind wants, asks for camera and microphone once, and decides 
     // A new page asks again, and this time the question is answered.
     await view.reload()
     await clear(view, 'geo')
+    expect(await queryState(view, 'geolocation')).toBe('prompt')
     await view.click('#geo')
     prompt = await waitPrompt(app)
     await answer(prompt, 'Allow')
     expect(await result(view, 'geo')).toBe('code1')
+    // The allow is kept but the page is told no, so its query says the same.
+    expect(await queryState(view, 'geolocation')).toBe('denied')
 
     // Closing the question with its own button decides nothing either, and a navigation closes it.
     await view.reload()
@@ -298,6 +319,7 @@ it('says what each kind wants, asks for camera and microphone once, and decides 
     await prompt.waitForSelector('.site-prompt:not(.arming)')
     await prompt.click('.sp-close')
     expect(await waitFor(async () => !(await promptShown(app)))).toBe(true)
+    expect(await queryState(view, 'clipboard-read')).toBe('denied')
     await clear(view, 'clip')
     await view.click('#clip')
     await expectNoPrompt(app)
@@ -429,6 +451,9 @@ it('refuses without asking where the default is block, and asks about notificati
   try {
     await stubDialogs(blocked.app)
     const view = await visit(blocked.app, blocked.chrome, `${origins.a}/`)
+    // Settings' block reads as denied for the kind it covers, and the kind it leaves to a question as prompt.
+    expect(await queryState(view, 'camera')).toBe('denied')
+    expect(await queryState(view, 'microphone')).toBe('prompt')
     await view.click('#cam')
     expect(await result(view, 'cam')).toBe('ERR:NotAllowedError')
     await view.click('#notify')
@@ -479,6 +504,7 @@ it('records what the page gets for the APIs with no prompt, under the real gate'
       for (const name of ['camera', 'microphone', 'geolocation', 'midi', 'clipboard-read', 'notifications', 'idle-detection', 'window-management', 'persistent-storage', 'screen-wake-lock']) {
         out[`query:${name}`] = await settle(async () => (await navigator.permissions.query({ name } as never)).state)
       }
+      out['Notification.permission'] = Notification.permission
       out['h264'] = String(MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E, mp4a.40.2"'))
       out['hevc'] = String(MediaSource.isTypeSupported('video/mp4; codecs="hvc1.1.6.L93.B0"'))
       return out
@@ -486,7 +512,8 @@ it('records what the page gets for the APIs with no prompt, under the real gate'
     console.log(`PROBE ${JSON.stringify(probe)}`)
     expect(probe['h264']).toBe('true')
     expect(probe['query:camera']).toBe('granted')
-    expect(probe['query:geolocation']).not.toBe('granted')
+    // Every kind the per-site asker owns and nobody has decided reads that it would be asked.
+    for (const name of ['microphone', 'geolocation', 'midi', 'clipboard-read', 'idle-detection', 'window-management']) expect(probe[`query:${name}`]).toBe('prompt')
   } finally {
     await closeElectron(app)
   }
