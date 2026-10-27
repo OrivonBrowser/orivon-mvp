@@ -33,7 +33,6 @@ vi.mock('../question/ask-question.js', () => ({ askQuestion }))
 vi.mock('../../../loader/electron/serve.js', () => ({ isOriginServedFromCacheSync: (origin: string) => origin === 'https://app.example' }))
 
 const { wireView, makeTabView } = await import('../tab-view.js')
-const { MAX_NEW_WINDOWS_PER_MINUTE_PROCESS, processWindowBudget } = await import('../popups.js')
 type Record_ = Parameters<typeof wireView>[1]
 type Host = Record_['host']
 
@@ -309,96 +308,6 @@ describe('wireView -- window.open', () => {
     expect(host.adoptPopup).not.toHaveBeenCalled()
   })
 
-  it('opens a shift-click (new-window, no guest) in a new window rather than adopting a tab here', () => {
-    const wc = fakeContents()
-    const openedContents = fakeContents('https://other.example/')
-    const openWindow = vi.fn((): never => openedContents as never)
-    const host = fakeHost({ openWindow })
-    wireView('tab-1', record(wc, undefined, host))
-
-    const response = openHandler(wc)({ url: 'https://other.example/', disposition: 'new-window' })
-    const returned = response.createWindow?.({ webPreferences: {} } as never)
-
-    expect(openWindow).toHaveBeenCalledWith('https://other.example/', undefined)
-    expect(returned).toBe(openedContents)
-    expect(adoptedViews).toHaveLength(0)
-    expect(host.adoptPopup).not.toHaveBeenCalled()
-  })
-
-  it('rate-limits new-window opens per tab: one a second, and a small cap within a minute, falling back to an ordinary tab past either', () => {
-    // Electron's HandlerDetails carries no per-open user-gesture flag (measured against 44's own
-    // type), and a page's own synthetic, untrusted dispatchEvent click still reaches here with a
-    // real 'new-window' disposition (measured against a real launch) -- so a script could open
-    // windows without bound if nothing here budgeted them.
-    processWindowBudget.reset()
-    const wc = fakeContents()
-    const openWindow = vi.fn((): never => fakeContents('https://other.example/') as never)
-    const host = fakeHost({ openWindow })
-    wireView('tab-1', record(wc, undefined, host))
-    const openOnce = (): void => { openHandler(wc)({ url: 'https://other.example/', disposition: 'new-window' }).createWindow?.({ webPreferences: {} } as never) }
-
-    vi.useFakeTimers()
-    try {
-      vi.setSystemTime(0)
-      openOnce()
-      expect(openWindow).toHaveBeenCalledTimes(1)
-
-      // Under a second later: too soon, falls back to an ordinary (foreground) tab instead.
-      vi.setSystemTime(500)
-      openOnce()
-      expect(openWindow).toHaveBeenCalledTimes(1)
-      expect(host.openTab).toHaveBeenCalledWith('https://other.example/', true, undefined)
-
-      // Spaced a full second apart, up to the cap: each opens a real window.
-      for (let seconds = 2; seconds <= 5; seconds++) {
-        vi.setSystemTime(seconds * 1000)
-        openOnce()
-      }
-      expect(openWindow).toHaveBeenCalledTimes(5)
-
-      // A sixth, even spaced a full second later, exceeds the rolling-minute cap.
-      vi.setSystemTime(6_000)
-      openOnce()
-      expect(openWindow).toHaveBeenCalledTimes(5)
-
-      // Past a minute since the first, the oldest opens age out and one more is allowed again.
-      vi.setSystemTime(61_000)
-      openOnce()
-      expect(openWindow).toHaveBeenCalledTimes(6)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('also rate-limits new-window opens process-wide: a page that opens itself gets a fresh per-tab budget in every window, but not a fresh process one', () => {
-    // Each open below simulates a page shift-clicking itself: a BRAND NEW opener tab every time
-    // (wireView called fresh, its own windowOpenHandler and so its own per-tab budget), spaced a
-    // full second apart so the per-tab throttle alone would wave every one of them through, the
-    // same way each new window's own copy of the page would if only a per-tab budget existed --
-    // 5, 25, 125 windows. Only the shared process budget can catch this.
-    processWindowBudget.reset()
-    const openWindow = vi.fn((): never => fakeContents('https://other.example/') as never)
-    const openAsNewOpener = (): void => {
-      const wc = fakeContents()
-      const host = fakeHost({ openWindow })
-      wireView('tab-1', record(wc, undefined, host))
-      openHandler(wc)({ url: 'https://other.example/', disposition: 'new-window' }).createWindow?.({ webPreferences: {} } as never)
-    }
-
-    vi.useFakeTimers()
-    try {
-      const attempts = MAX_NEW_WINDOWS_PER_MINUTE_PROCESS + 10
-      for (let seconds = 0; seconds < attempts; seconds++) {
-        vi.setSystemTime(seconds * 1000)
-        openAsNewOpener()
-      }
-      expect(openWindow.mock.calls.length).toBeLessThan(attempts)
-      expect(openWindow.mock.calls.length).toBeLessThanOrEqual(MAX_NEW_WINDOWS_PER_MINUTE_PROCESS)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
   it('opens noopener as today\'s disconnected tab', () => {
     const wc = fakeContents()
     const host = fakeHost()
@@ -431,23 +340,6 @@ describe('wireView -- window.open', () => {
       postData: postBody.data,
       extraHeaders: 'content-type: application/x-www-form-urlencoded\n'
     })
-  })
-
-  it('sends a shift-click that routePopup would otherwise send straight to a tab, to a new window instead', () => {
-    // routePopup returns 'new-tab' here (noopener) before disposition is ever weighed, but a
-    // shift-click still reaches here with the same 'new-window' disposition it gets everywhere
-    // else -- it deserves a window, not a tab, same as any other shift-click.
-    const wc = fakeContents()
-    const openedWindow = fakeContents('https://other.example/')
-    const openWindow = vi.fn((): never => openedWindow as never)
-    const host = fakeHost({ openWindow })
-    wireView('tab-1', record(wc, undefined, host))
-
-    const response = openHandler(wc)({ url: 'https://other.example/', features: 'noopener', disposition: 'new-window' })
-
-    expect(response.action).toBe('deny')
-    expect(openWindow).toHaveBeenCalledWith('https://other.example/', undefined)
-    expect(host.openTab).not.toHaveBeenCalled()
   })
 
   it('keeps a plain window.open() to a noopener target an ordinary tab -- its disposition is never new-window', () => {

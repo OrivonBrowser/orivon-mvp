@@ -1,10 +1,11 @@
 // What an app stores in the browser comes back after the browser restarts. Two launches on one profile: the
-// first writes into IndexedDB, localStorage, a non-extractable key and the app's own files; the second reads
-// all of it back from a fresh process. Every check carries the id of the behaviour it protects, so a failure
+// first writes into IndexedDB, localStorage, a non-extractable key, the origin private file system and the app's
+// own files; the second reads all of it back from a fresh process. Every check carries the id of the behaviour it protects, so a failure
 // names what an app would lose (test/app-behaviours/catalogue.md).
 //
 // The page is a bare loopback origin made an app by the developer-only grant, so the e2e build is required:
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/app-behaviours/e2e-app-state-restart.test.ts
+import { createHash } from 'node:crypto'
 import { rm } from 'node:fs/promises'
 import type { ElectronApplication } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
@@ -22,7 +23,13 @@ afterAll(async () => {
 
 const MANIFEST = appManifest('state-restart', { fs: { quotaBytes: 1_048_576 } })
 
-it('[app:indexeddb-survives-restart] [app:localstorage-survives-restart] [app:non-extractable-cryptokey-survives-restart] [app:app-files-survive-restart] [app:atomic-write-by-rename] stored data is there after a restart', async () => {
+// 300,000 bytes in three writes through one writable: more than a page of the file system's own buffering, and every
+// byte value, so a store that truncates, pads or re-encodes shows in the digest.
+const OPFS_BYTES = 300_000
+const opfsPattern = (): Uint8Array => Uint8Array.from({ length: OPFS_BYTES }, (_, i) => (i * 31 + (i >> 8)) & 255)
+const sha256Hex = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex')
+
+it('[app:indexeddb-survives-restart] [app:localstorage-survives-restart] [app:non-extractable-cryptokey-survives-restart] [app:app-files-survive-restart] [app:atomic-write-by-rename] [app:opfs-survives-restart] stored data is there after a restart', async () => {
   const first = await launchShell()
   const profile = profileDirOf(first.app)
   if (profile === undefined) throw new Error('the launcher did not report a profile directory')
@@ -60,6 +67,19 @@ it('[app:indexeddb-survives-restart] [app:localstorage-survives-restart] [app:no
         return { extractable: key.extractable, renamed }
       })
       check('[app:non-extractable-cryptokey-survives-restart] the key was created non-extractable', written.extractable === false)
+      const opfsWritten = await view.evaluate(async (bytes) => {
+        const root = await navigator.storage.getDirectory()
+        const dir = await root.getDirectoryHandle('kept', { create: true })
+        const writable = await (await dir.getFileHandle('pack.bin', { create: true })).createWritable()
+        const data = new Uint8Array(bytes)
+        const third = Math.floor(data.length / 3)
+        await writable.write(data.subarray(0, third))
+        await writable.write(data.subarray(third, 2 * third))
+        await writable.write(data.subarray(2 * third))
+        await writable.close()
+        return (await (await dir.getFileHandle('pack.bin')).getFile()).size
+      }, Array.from(opfsPattern()))
+      check('[app:opfs-survives-restart] the file was written to the origin private file system', opfsWritten === OPFS_BYTES, String(opfsWritten))
       check('[app:atomic-write-by-rename] renaming a temporary file over an existing one succeeds', written.renamed === 'renamed', written.renamed)
       await closeElectron(first.app, { keepProfile: true })
       live = undefined
@@ -96,9 +116,20 @@ it('[app:indexeddb-survives-restart] [app:localstorage-survives-restart] [app:no
         const file = await orivon.fs.readFile('state.txt').then((bytes) => new TextDecoder().decode(bytes), (error: unknown) => `read failed: ${(error as { code?: string }).code ?? String(error)}`)
         return { record, extractable: key?.extractable, plain, setting: localStorage.getItem('app-setting'), file }
       })
+      const opfsRead = await again.evaluate(async () => {
+        const hex = (buffer: ArrayBuffer): string => Array.from(new Uint8Array(buffer), (b) => b.toString(16).padStart(2, '0')).join('')
+        try {
+          const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('kept')
+          const file = await (await dir.getFileHandle('pack.bin')).getFile()
+          return { size: file.size, sha256: hex(await crypto.subtle.digest('SHA-256', await file.arrayBuffer())) }
+        } catch (error) {
+          return { size: -1, sha256: `read failed: ${(error as Error).name}` }
+        }
+      })
       check('[app:indexeddb-survives-restart] the record written before the restart is in IndexedDB', JSON.stringify(read.record) === JSON.stringify({ note: 'kept in indexeddb', n: 42 }), JSON.stringify(read.record))
       check('[app:localstorage-survives-restart] the localStorage value is still there', read.setting === 'dark', String(read.setting))
       check('[app:non-extractable-cryptokey-survives-restart] the stored key still decrypts what it sealed, and is still non-extractable', read.plain === 'sealed text' && read.extractable === false, `${read.plain} / extractable ${String(read.extractable)}`)
+      check('[app:opfs-survives-restart] the file in the origin private file system is there with the same bytes', opfsRead.size === OPFS_BYTES && opfsRead.sha256 === sha256Hex(opfsPattern()), JSON.stringify(opfsRead))
       check('[app:app-files-survive-restart] [app:atomic-write-by-rename] the app file written by temp file then rename over an existing one holds the new contents', read.file === 'new contents', read.file)
     })
   } finally {

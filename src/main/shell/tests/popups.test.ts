@@ -30,6 +30,13 @@ describe('routePopup -- which window.open()/target=_blank calls keep their opene
     expect(routePopup(scripted(`${APP}popout`), inApp, APP_PARTITION, notAnApp)).toBe('adopt')
   })
 
+  it('opens a shift-click across sessions as a plain new tab or window: it is no popup waiting on an opener', () => {
+    const shiftClick = (url: string): Details => ({ url, features: '', disposition: 'new-window' })
+    expect(routePopup(shiftClick('https://github.example/'), inApp, undefined, notAnApp)).toBe('new-tab')
+    expect(routePopup(shiftClick('https://other.example/'), onWeb, undefined, notAnApp)).toBe('adopt')
+    expect(routePopup(shiftClick(`${APP}popout`), inApp, APP_PARTITION, notAnApp)).toBe('adopt')
+  })
+
   it('adopts a sign-in popup (window features) even though its target would otherwise get another session', () => {
     // OAuth: an app opens its identity provider in a sized popup and waits
     // for a postMessage back through window.opener. Chromium keeps a popup

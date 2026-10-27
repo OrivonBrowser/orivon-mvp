@@ -1,10 +1,14 @@
-// A computer whose clock runs behind the chain cannot start Helios: it refuses
-// any update signed in a slot the local clock has not reached yet. This file
-// measures how far behind the clock is, from the `Date` header of the servers
-// the light client already talks to, and lends that lead to Helios alone.
-// Nothing here weakens a proof: the clock only decides what is too new to
-// accept, and a wrong clock cannot make Helios accept a forged header. The
-// worst a lie does is hand it older, validly signed data, as a stale server can.
+// A computer whose clock is off from the chain's cannot start Helios. Behind,
+// it refuses any update signed in a slot the local clock has not reached yet;
+// ahead, it refuses a newest block more than 60 s older than the local clock.
+// This file measures how far off the clock is, from the `Date` header of the
+// servers the light client already talks to, and lends that lead (positive when
+// the clock is behind, negative when ahead) to Helios alone. Nothing here
+// weakens a proof: signatures are still checked, so a wrong clock cannot make
+// Helios accept a forged header. A negative lead lets it take a newest block up
+// to that much older than its 60 s bound, and only when a majority of the
+// servers asked agree on the time. The worst a lie does is hand it older,
+// validly signed data, as a stale server can.
 
 import type { WebFetch } from '../egress.js'
 
@@ -26,11 +30,12 @@ export interface ClockReading {
 }
 
 /**
- * How far the local clock is behind the servers, in ms: 0 when they say it is
- * not, `undefined` when they cannot be taken as one answer (too few, or no
- * majority of the `asked` servers agreeing within 30 s, or a lead no mistake
- * in a clock would explain). The middle of the largest group that agrees,
- * never one server's word, and a server that is off by itself is left out.
+ * How far the local clock is behind the servers, in ms, negative when it is
+ * ahead of them: 0 when they say it is right, `undefined` when they cannot be
+ * taken as one answer (too few, or no majority of the `asked` servers agreeing
+ * within 30 s, or a lead no mistake in a clock would explain). The middle of
+ * the largest group that agrees, never one server's word, and a server that is
+ * off by itself is left out.
  * `asked` counts the servers that were asked, not only those that answered,
  * so a few answers from servers of one operator cannot decide.
  */
@@ -45,8 +50,8 @@ export function clockLead (readings: readonly ClockReading[], asked: number = re
   }
   if (group.length < 2 || group.length * 2 <= asked) return undefined
   const median = group.length % 2 === 1 ? group[(group.length - 1) / 2]! : (group[group.length / 2 - 1]! + group[group.length / 2]!) / 2
-  if (median > MAX_LEAD_MS) return undefined
-  return median < MIN_LEAD_MS ? 0 : Math.round(median)
+  if (Math.abs(median) > MAX_LEAD_MS) return undefined
+  return Math.abs(median) < MIN_LEAD_MS ? 0 : Math.round(median)
 }
 
 /** One `Date` header read from `url`'s server, through the light client's own allowlisted fetch. */
@@ -83,14 +88,14 @@ function trueNow (): number {
   return original === undefined ? Date.now() : original.call(Date)
 }
 
-/** The lead Helios's clock has now, in ms; 0 is no correction. */
+/** The lead Helios's clock has now, in ms: positive when the computer's clock is behind, negative when ahead, 0 for no correction. */
 export function heliosClockLead (): number {
   return lead
 }
 
-/** A lead is set, never added to: the next measurement replaces it. A negative or non-finite one is ignored. */
+/** A lead is set, never added to: the next measurement replaces it. One that is not a number is taken as 0. */
 export function setHeliosClockLead (ms: number): void {
-  lead = Number.isFinite(ms) && ms > 0 ? Math.min(Math.round(ms), MAX_LEAD_MS) : 0
+  lead = Number.isFinite(ms) ? Math.max(-MAX_LEAD_MS, Math.min(Math.round(ms), MAX_LEAD_MS)) : 0
 }
 
 /**
