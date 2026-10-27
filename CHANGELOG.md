@@ -12,6 +12,7 @@ Each section below lists what that release carried; `[Unreleased]` is what has l
 
 ### Fixed
 
+- **A click on a password in the sign-in list fills it**: pressing a saved login, or "Use a strong password", in the list that opens under a password box closed the list and filled nothing, because the press moved the keyboard and the page reported the box as left. The press is now a choice, and the list stays open under its box until one is made.
 - **`.eth` names load on a fresh install again**: the bundled light-client checkpoint is now the first block of a finalized epoch that the beacon server bootstraps from, and a checkpoint that server answers 404 to is replaced in the same run.
 
 ### Changed
