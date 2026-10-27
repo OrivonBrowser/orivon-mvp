@@ -19,6 +19,7 @@ export interface SocRecord { identifier: string, signature: string, data: string
 
 /** A Kubo and a Bee node in memory, speaking just the routes the job calls, as Bee 2.8 answers them. */
 export function fakeWorld () {
+  let serial = 0
   const world = {
     price: PRICE,
     wallet: { address: '0xBee0000000000000000000000000000000000001', bzz: 500n * PLUR, xdai: 10n ** 18n },
@@ -74,7 +75,7 @@ export function fakeWorld () {
       const depth = Number(buy[2])
       if (world.wallet.bzz < amount << BigInt(depth)) return reply(400, { message: 'out of funds', code: 400 })
       world.wallet.bzz -= amount << BigInt(depth)
-      const id = (world.stamps.size + 1).toString(16).padStart(64, '0')
+      const id = (++serial).toString(16).padStart(64, '0')
       const label = url.searchParams.get('label') ?? ''
       const immutable = headers.get('immutable') === 'true'
       world.stamps.set(id, { id, depth, ttl: Number(amount / world.price) * 5, utilization: 0, usable: world.usableAfterPolls === 0, immutable, label, full: false, polls: 0 })

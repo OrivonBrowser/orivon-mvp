@@ -233,6 +233,7 @@ describe('sync: the content batch', () => {
     await t.go()
     const id = t.state().content.id
     t.world.stamps.get(id)!.ttl = 10 * DAY
+    t.clock.t += 2 * DAY * 1000
     const { code, calls } = await t.go()
     expect(code).toBe(0)
     expect(calls).toContain(`PATCH /stamps/topup/${id}/${String(perChunkFor(25 * DAY, PRICE))}`)
@@ -263,6 +264,7 @@ describe('sync: the pointer batch', () => {
     const stamp = t.world.stamps.get(id)!
     stamp.utilization = 2
     stamp.ttl = 200 * DAY
+    t.clock.t += 2 * DAY * 1000
     const { code, calls } = await t.go()
     expect(code).toBe(0)
     expect(calls).toContain(`PATCH /stamps/dilute/${id}/19`)
