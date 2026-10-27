@@ -178,7 +178,7 @@ export const telemetrySubsystem: Subsystem = {
       configured = { offReason, service: undefined }
       return
     }
-    // Deliberately NOT awaited, as updateCheckSubsystem: runAfterReady awaits every subsystem in order
+    // Deliberately NOT awaited: runAfterReady awaits every subsystem in order
     // before the shell window is created. Detached, it must catch its own errors.
     const service = buildService(ctx.app)
     configured = { offReason: undefined, service }

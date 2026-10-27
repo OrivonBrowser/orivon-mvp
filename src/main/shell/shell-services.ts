@@ -16,6 +16,8 @@ import { NYM_HELD_SETTINGS } from '../settings/settings-file.js'
 import { SettingsStore } from '../settings/settings-store.js'
 import { isDevEthName } from '../dev/eth-resolver.js'
 import type { UpdateOffer } from '../install/app-updates.js'
+import { createBrowserUpdate } from '../self-update/update-check-runner.js'
+import type { UpdateNotice } from '../self-update/update-notice.js'
 import { createScoreProviderClient, netFetchJson } from '../browsing/score-provider-client.js'
 import type { ScoreProviderClient } from '../browsing/score-provider-client.js'
 import { SHELL_PARTITION } from './shell-session.js'
@@ -74,6 +76,8 @@ const THUMBNAIL_WAIT_MS = 400
 
 export interface ShellServices {
   readonly bookmarks: BookmarkStore
+  /** A newer release of Orivon itself: what Settings shows of it, and the question that tells the person (`self-update/`). */
+  readonly browserUpdate: UpdateNotice
   /** The tabs and windows closed, newest first: what Reopen closed tab brings back. In memory. */
   readonly closedTabs: ClosedStack
   readonly commands: CommandBus
@@ -159,6 +163,7 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
     rmSync(join(userDataPath, 'app-use.json'), { force: true })
   } catch {}
   return {
+    browserUpdate: createBrowserUpdate({ app, windows, kiosk }),
     bookmarks: new BookmarkStore(join(userDataPath, 'bookmarks.json'), undefined, undefined, startsFromDefaultProfile() ? () => defaultBookmarks(currentDefaultProfileDir()) : undefined),
     closedTabs,
     commands: new CommandBus(),
