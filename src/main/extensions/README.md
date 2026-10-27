@@ -39,7 +39,9 @@ extension opens and moves (`extension-window-geometry.ts`: the `popup` type and 
 `extension-host-impl.ts`); and
 the camera and microphone for an extension's own page: the rules (`extension-media.ts`), the asker that joins them to the
 permission gate (`extension-media-asker.ts`: the window a page shows in, the loaded extensions, Settings' defaults), the
-answer kept per extension in `extension-prefs.ts`'s `media`, and the details page's section (`details-media.ts`).
+answer kept per extension in `extension-prefs.ts`'s `media`, and the details page's section (`details-media.ts`). The same
+rules say what the page's `navigator.permissions.query` reads for the camera and the microphone (`query`: `prompt` while
+the page would be asked), which is what a wallet's webcam check goes by before it asks.
 
 **What it depends on.** `electron` (every file except `side-panel-api.ts`, `side-panel-behavior-file.ts`,
 `side-panel-driver.ts`, `side-panel-gesture.ts`, `side-panel-options.ts`, `side-panel-pages.ts` (types only), `action-pins-runner.ts`, `action-pins.ts`, `base-manifest-source.ts`, `crx.ts`, `crx3-format.ts`,
