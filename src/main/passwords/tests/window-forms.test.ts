@@ -7,7 +7,7 @@ import type { FormSender } from '../form-watch-ipc.js'
 import { KEEP_MS, QUIET_MS, SUCCESS_WINDOW_MS } from '../save-offer.js'
 import { memoryVault } from '../vault.js'
 import type { PasswordVault, VaultState } from '../vault.js'
-import { createWindowForms, NO_LOGINS, SAVE_OVERLAY } from '../window-forms.js'
+import { createWindowForms, NO_LOGINS, PRESS_BLUR_MS, SAVE_OVERLAY } from '../window-forms.js'
 import type { WindowForms } from '../window-forms.js'
 
 const ORIGIN = 'https://site.example'
@@ -28,6 +28,8 @@ interface Rig {
   active: { id: string | null }
   suggests: string[]
   suggestCloses: { count: number }
+  /** Whether the chooser under a box is up, as the overlay host would say. */
+  suggestUp: { open: boolean }
 }
 
 function rig (over: { state?: VaultState, isPrivate?: boolean, refuseAsks?: boolean, contentsUrl?: string } = {}): Rig {
@@ -42,6 +44,7 @@ function rig (over: { state?: VaultState, isPrivate?: boolean, refuseAsks?: bool
   const active = { id: 't1' as string | null }
   const suggests: string[] = []
   const suggestCloses = { count: 0 }
+  const suggestUp = { open: false }
   const contents = { isDestroyed: () => false, mainFrame: { url: over.contentsUrl ?? `${ORIGIN}/login` } } as unknown as WebContents
   const forms = createWindowForms({} as ShellWindow, {
     vault,
@@ -63,13 +66,14 @@ function rig (over: { state?: VaultState, isPrivate?: boolean, refuseAsks?: bool
     send: (_contents, origin, command) => { sent.push({ origin, command }); return true },
     liveContents: () => contents,
     isActive: (tabId) => active.id === tabId,
-    openSuggest: (tabId) => { suggests.push(tabId) },
-    closeSuggest: () => { suggestCloses.count += 1 }
+    openSuggest: (tabId) => { suggests.push(tabId); suggestUp.open = true },
+    closeSuggest: () => { suggestCloses.count += 1; suggestUp.open = false },
+    isSuggestOpen: () => suggestUp.open
   })
   let pushes = 0
   forms.onChange(() => { pushes += 1 })
   return {
-    forms, vault, asks, cancelled, sent, settings, appTabs, active, suggests, suggestCloses,
+    forms, vault, asks, cancelled, sent, settings, appTabs, active, suggests, suggestCloses, suggestUp,
     advance: (ms) => {
       now += ms
       for (const timer of [...timers]) if (!timer.off && timer.at <= now) { timer.off = true; timer.run() }
@@ -519,6 +523,69 @@ describe('the chooser under a focused box', () => {
     const r = rig()
     r.forms.blur(r.sender())
     expect(r.suggestCloses.count).toBe(1)
+  })
+
+  describe('a press on the chooser', () => {
+    const elsewhere = { ...box, rect: { x: 50, y: 60, width: 3, height: 4 } }
+    const openUnder = async (): Promise<Rig> => {
+      const r = rig()
+      await r.vault.save({ origin: ORIGIN, username: 'ada', password: 'x' })
+      r.forms.focus(r.sender(), box)
+      return r
+    }
+
+    it('takes the keyboard from the box without closing the chooser or opening it again', async () => {
+      const r = await openUnder()
+      r.forms.chooserPressed()
+      r.forms.blur(r.sender())
+      r.forms.focus(r.sender(), box)
+      expect(r.suggestCloses.count).toBe(0)
+      expect(r.suggests).toEqual(['t1'])
+      expect(r.suggestUp.open).toBe(true)
+    })
+
+    it('answers one blur: the box losing focus afterwards closes the chooser', async () => {
+      const r = await openUnder()
+      r.forms.chooserPressed()
+      r.forms.blur(r.sender())
+      r.forms.blur(r.sender())
+      expect(r.suggestCloses.count).toBe(1)
+    })
+
+    it('does not excuse a blur that comes long after the press', async () => {
+      const r = await openUnder()
+      r.forms.chooserPressed()
+      r.advance(PRESS_BLUR_MS + 1)
+      r.forms.blur(r.sender())
+      expect(r.suggestCloses.count).toBe(1)
+    })
+
+    it('is forgotten when the page reports a focus of its own', async () => {
+      const r = await openUnder()
+      r.forms.chooserPressed()
+      r.forms.focus(r.sender(), elsewhere)
+      r.forms.blur(r.sender())
+      expect(r.suggestCloses.count).toBe(1)
+    })
+  })
+
+  it('moves the chooser to a box focused after it, and opens it again once it has closed', async () => {
+    const r = rig()
+    await r.vault.save({ origin: ORIGIN, username: 'ada', password: 'x' })
+    r.forms.focus(r.sender(), box)
+    r.forms.focus(r.sender(), { ...box, rect: { x: 50, y: 60, width: 3, height: 4 } })
+    expect(r.suggests).toEqual(['t1', 't1'])
+    r.suggestUp.open = false
+    r.forms.focus(r.sender(), { ...box, rect: { x: 50, y: 60, width: 3, height: 4 } })
+    expect(r.suggests).toEqual(['t1', 't1', 't1'])
+  })
+
+  it('does not open the chooser a second time under the box it is already open for', async () => {
+    const r = rig()
+    await r.vault.save({ origin: ORIGIN, username: 'ada', password: 'x' })
+    r.forms.focus(r.sender(), box)
+    r.forms.focus(r.sender(), box)
+    expect(r.suggests).toEqual(['t1'])
   })
 
   it('offers a key to the chooser that is open for that tab, and to no other', () => {

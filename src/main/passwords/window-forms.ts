@@ -18,6 +18,8 @@ export const SAVE_OVERLAY = 'password-save'
 export const FILL_OVERLAY = 'password-fill'
 export const SUGGEST_OVERLAY = 'password-suggest'
 const MAX_NAVIGATIONS = 8
+/** A press on the chooser under a box takes the keyboard from the page, which reports the box blurred within this long. */
+export const PRESS_BLUR_MS = 1000
 
 export interface FormsDeps {
   readonly vault: PasswordVault
@@ -37,6 +39,8 @@ export interface FormsDeps {
   /** Shows the chooser under the box the page reported; the tab's own place is the registry's to know. */
   readonly openSuggest: (tabId: string, field: FocusedField) => void
   readonly closeSuggest: () => void
+  /** Whether the chooser under a box is up now. */
+  readonly isSuggestOpen: () => boolean
 }
 
 /** What the chrome draws from: how many logins the page's sign-in form could use, and whether an offer to keep one is waiting. */
@@ -45,6 +49,8 @@ export const NO_LOGINS: LoginState = { count: 0, offer: false, signUp: false }
 
 /** What the save prompt shows of the pending credential: never the password itself. */
 export interface OfferView { kind: 'save' | 'update', origin: string, username: string }
+
+const sameRect = (a: FieldRect, b: FieldRect): boolean => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
 
 /** Where the field the person focused is, in the tab's own pixels, and how wide the page was when it said so. */
 export interface FocusedField { rect: FieldRect, viewWidth: number, signUp: boolean }
@@ -80,6 +86,8 @@ export interface WindowForms {
   focus: (sender: FormSender, message: Extract<FormMessage, { type: 'focus' }>) => void
   /** The box the chooser hung from lost focus. */
   blur: (sender: FormSender) => void
+  /** The chooser under a box took the keyboard because the person pressed it: the page's next blur is that press, not the person leaving the box. */
+  chooserPressed: () => void
   setKeys: (handler: KeyHandler | null) => void
   /** Whether the chooser under a box took this key of this tab; the key then never reaches the page. */
   keyFor: (tabId: string, key: string) => boolean
@@ -110,6 +118,9 @@ export function createWindowForms (window: ShellWindow, deps: FormsDeps): Window
   const listeners = new Set<() => void>()
   const notify = (): void => { for (const listener of [...listeners]) listener() }
   let keys: KeyHandler | null = null
+  let pressedAt: number | null = null
+  /** The box the chooser under a box was last opened for. */
+  let suggestedFor: { tabId: string, rect: FieldRect } | null = null
 
   const ready = (): boolean => !deps.isPrivate && deps.vault.state() === 'ready'
 
@@ -247,12 +258,25 @@ export function createWindowForms (window: ShellWindow, deps: FormsDeps): Window
       tab.focused = { rect: message.rect, viewWidth: message.viewWidth, signUp: message.signUp }
       tab.signUp = message.signUp
       tab.hasPassword = true
-      if (wantsSuggest(sender.tabId, tab)) deps.openSuggest(sender.tabId, tab.focused)
+      // A press on the chooser hands the keyboard to it and back: the page reports the box focused again, and the chooser already under that box stays as it is.
+      pressedAt = null
+      const rect = message.rect
+      const open = suggestedFor !== null && suggestedFor.tabId === sender.tabId && sameRect(suggestedFor.rect, rect) && deps.isSuggestOpen()
+      if (!open && wantsSuggest(sender.tabId, tab)) {
+        suggestedFor = { tabId: sender.tabId, rect }
+        deps.openSuggest(sender.tabId, tab.focused)
+      }
       notify()
     },
 
     blur () {
-      deps.closeSuggest()
+      const pressed = pressedAt !== null && deps.now() - pressedAt <= PRESS_BLUR_MS
+      pressedAt = null
+      if (!pressed) deps.closeSuggest()
+    },
+
+    chooserPressed () {
+      pressedAt = deps.now()
     },
 
     setKeys: (handler) => { keys = handler },
