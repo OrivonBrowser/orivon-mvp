@@ -9,7 +9,7 @@
 # left unsigned here, never attached to a release, and submitted to Partner Center by the release
 # workflow's store job (it stays a workflow artifact for upload by hand). The macOS packages of a
 # release are signed with a Developer ID and notarized (the `mac` block below), so Gatekeeper
-# opens them without asking. The schema here is electron-builder 26.x's, checked against the installed
+# does not refuse them. The schema here is electron-builder 26.x's, checked against the installed
 # node_modules/app-builder-lib/scheme.json.
 # The `win` and `mac` blocks also register Orivon with the system as a browser and as the handler of
 # `orivon:` links: `protocols` below, and build/installer.nsh for the Windows installer's registry

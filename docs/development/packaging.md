@@ -571,10 +571,12 @@ key, as a base64 `.p12`), `CSC_KEY_PASSWORD` (the `.p12`'s password), `APPLE_ID`
 `APPLE_APP_SPECIFIC_PASSWORD` (made for this use at account.apple.com, under Sign-In and Security) and
 `APPLE_TEAM_ID`. Only a release and a manual run read them, no other platform's step does (`CSC_LINK`
 would make electron-builder sign the Windows installer with it), and a pull request builds ad hoc. An
-empty secret stops the macOS job before it builds. The same step's checks mount each dmg and require the
-Developer ID signature, the hardened runtime, a stapled ticket and Gatekeeper's verdict
-`Notarized Developer ID`. `gh workflow run release.yml --ref <branch>` signs and notarizes a branch's
-build without publishing anything, which is how a change to this is tried.
+empty secret stops the macOS job before it builds. The step "Check the signature, mount each dmg and
+launch it" mounts each dmg and requires the Developer ID signature, the hardened runtime, a stapled
+ticket and Gatekeeper's verdict `Notarized Developer ID`. `gh workflow run release.yml --ref <branch>`
+signs and notarizes a branch's build without publishing anything, which is how a change to this is
+tried; it runs the branch's own build scripts with the secrets, so anyone who can push a branch to the
+repository can read them, and an environment limited to `main` and release tags would narrow that.
 
 The certificate lasts five years from its issue. Before it ends, make a new signing request, issue a new
 Developer ID Application certificate, and replace `CSC_LINK` and `CSC_KEY_PASSWORD`; releases already

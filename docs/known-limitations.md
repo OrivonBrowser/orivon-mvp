@@ -82,7 +82,7 @@ servers for data. None of them is trusted to be right; each of them sees what it
 ## Packages
 
 - **The Windows installer is not signed with a bought certificate.** SmartScreen warns on first
-  run (**More info**, then **Run anyway**). The macOS packages of a release are signed with an Apple
+  run (**More info**, then **Run anyway**). The macOS apps in a release's dmgs are signed with an Apple
   Developer ID and notarized, so they open without a refusal; a package built from source with
   `npm run package:mac` is signed ad hoc, and its first open is refused until you choose **Open
   Anyway** in **System Settings > Privacy & Security**.
