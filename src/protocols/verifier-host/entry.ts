@@ -14,6 +14,7 @@ import { createRequestFetch } from '../../loader/electron/request-fetch.js'
 import { createDirectFetch } from './direct-fetch.js'
 import { lookup } from 'node:dns/promises'
 import { createOutsideFetch } from './outside-fetch.js'
+import { createLocalRpcFetch } from './local-rpc-fetch.js'
 import { createRoutedFetch } from './routed-fetch.js'
 import { answerForFront } from './front-login.js'
 import { startHeliosLightClient } from './light-client/light-client.js'
@@ -64,7 +65,9 @@ function main (): void {
         // A tunnel profile's website's only way to the network: Node sockets to that profile's front, never `net`. A test build's fixture gateways are plain HTTP.
         routedFetch: (tunnel) => createRoutedFetch({ front: () => message.config.profileFronts?.[tunnel], allowHttp: FIXTURES_ALLOWED }),
         // What the person asked to run outside the tunnel leaves on Node's own sockets, to addresses this process resolves and checks.
-        outside: { send: createOutsideFetch(createDirectFetch({ allowPost: true }), resolveOutside), resolveHost: resolveOutside }
+        outside: { send: createOutsideFetch(createDirectFetch({ allowPost: true }), resolveOutside), resolveHost: resolveOutside },
+        // A server the person runs on this computer or their home network, at an address they typed in: Node sockets straight to it, never `net`, which a proxy or the tunnel's front would carry elsewhere.
+        localFetch: createLocalRpcFetch()
       })
       host.then(
         (running) => { post({ type: 'listening', fingerprint: running.fingerprint }) },

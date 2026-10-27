@@ -27,6 +27,7 @@ import { IPFS_NODE_IDENTITY, IPFS_NODE_WORDS } from '../ipfs-node/protocol.js'
 import { SWARM_NODE_IDENTITY, SWARM_NODE_WORDS } from '../swarm-node/protocol.js'
 import type { HostDeps, LightClient } from './service.js'
 import type { Fetch } from '../gateways/gateways.js'
+import { lightClientFetch } from './light-client/lane-fetch.js'
 import { paceOn, routeFor } from './pace.js'
 import type { RoutePace } from '../route-pace.js'
 
@@ -77,7 +78,12 @@ function startEns (config: HostConfig, deps: HostDeps, fetch: HostDeps['fetch'],
     resolvers.push(offResolver(config.lightClientOff ?? 'the Ethereum light client is not running, so no .eth name can be verified'))
     return defineProtocol(ENS, { resolvers })
   }
-  const provider = lazyProvider(() => deps.startLightClient(lightClient, allowlisted([...lightClient.executionRpcs, lightClient.consensusRpc], fetch, 'the light client'), () => {}, tunnel, { syncWaitMs: paceOn(route).syncWaitMs, startAfterMs: 0 }))
+  const reach = lightClientFetch(lightClient, fetch, deps.localFetch, 'the light client')
+  if ('off' in reach) {
+    resolvers.push(offResolver(`the Ethereum servers set in Settings cannot be used: ${reach.off}`))
+    return defineProtocol(ENS, { resolvers })
+  }
+  const provider = lazyProvider(() => deps.startLightClient(lightClient, reach.fetch, () => {}, tunnel, { syncWaitMs: paceOn(route).syncWaitMs, startAfterMs: 0 }))
   const ccip = tunnelCcipDeps(fetch)
   resolvers.push(createEnsResolver({ provider, ccipRequest: async (parameters, signal) => await guardedCcipRequest(parameters, ccip, DEFAULT_CCIP_LIMITS, signal) }))
   return defineProtocol(ENS, { resolvers })

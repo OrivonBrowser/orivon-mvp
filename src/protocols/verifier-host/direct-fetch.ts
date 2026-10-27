@@ -174,7 +174,7 @@ export async function sendNodeRequest (send: NodeRequest): Promise<Response> {
  * refused outright -- this function exists to reach one pinned name, never
  * to become a general resolver a redirect or a subrequest could retarget.
  */
-function pinnedLookup (hostname: string, addresses: readonly string[]): (askedHost: string, options: unknown, callback: (err: Error | null, address: string | LookupAddress[], family?: number) => void) => void {
+export function pinnedLookup (hostname: string, addresses: readonly string[]): (askedHost: string, options: unknown, callback: (err: Error | null, address: string | LookupAddress[], family?: number) => void) => void {
   const entries: LookupAddress[] = addresses.map((address) => ({ address, family: address.includes(':') ? 6 : 4 }))
   return (askedHost, options, callback) => {
     if (askedHost !== hostname) { callback(new Error(`pinned to ${hostname}, refusing a lookup for ${askedHost}`), ''); return }
