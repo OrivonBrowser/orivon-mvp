@@ -279,10 +279,13 @@ Type=oneshot
 EnvironmentFile=%h/.config/orivon-swarm-feeds/settings.env
 # settings.env: BEE_API=http://127.0.0.1:1733  IPFS_API=ssh://<user>@<host>  NAMES_FILE=ssh://<user>@<host>/<path>
 #               WORK_DIR=<a disk folder>  SUMMARY_LOG=<optional>
-ExecStart=/usr/bin/node %h/.local/lib/orivon-swarm-feeds/swarm-feeds.mjs
+ExecStart=/usr/bin/flock -n %t/orivon-swarm-feeds.lock /usr/bin/node %h/.local/lib/orivon-swarm-feeds/swarm-feeds.mjs
 
-# ~/.config/systemd/user/orivon-swarm-feeds.timer: OnBootSec=10min, OnUnitActiveSec=1h
+# ~/.config/systemd/user/orivon-swarm-feeds.timer: OnBootSec=10min, OnUnitActiveSec=10min
 ```
+
+Two runs at once would both write `state.json`. systemd never starts a unit that is still running, and the
+`flock` covers a run started by hand: start one the same way, with the same lock file.
 
 `status.json` is what each run leaves: `ok`, the wallet, each batch (`ttlDays`, `fill`, `usable`), and per site
 the feed manifest, the newest index, the IPFS CID and Swarm reference it carries, and `uploadPending`; its
