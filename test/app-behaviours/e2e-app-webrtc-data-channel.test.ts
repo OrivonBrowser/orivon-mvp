@@ -101,7 +101,7 @@ it('[app:app-webrtc-data-channel-exchanges-bytes] two pages of an app that holds
       })
       return pc.localDescription?.sdp ?? ''
     })
-    expect(offer, 'the caller made an offer').toContain('a=candidate:')
+    expect(offer, 'the caller\'s offer carries ICE candidates: the page gathered them from this computer\'s interfaces').toContain('a=candidate:')
 
     const answer = await peer.evaluate(async (remote) => {
       const hex = (buffer: ArrayBuffer): string => Array.from(new Uint8Array(buffer), (b) => b.toString(16).padStart(2, '0')).join('')
@@ -128,7 +128,7 @@ it('[app:app-webrtc-data-channel-exchanges-bytes] two pages of an app that holds
       })
       return pc.localDescription?.sdp ?? ''
     }, resolveMdnsNames(offer, addresses))
-    expect(answer, 'the peer made an answer').toContain('a=candidate:')
+    expect(answer, 'the peer\'s answer carries ICE candidates: the page gathered them from this computer\'s interfaces').toContain('a=candidate:')
     expect(`${offer}${answer}`, 'no candidate came from a STUN or TURN server').not.toMatch(/ typ (srflx|relay|prflx)/)
 
     await caller.evaluate(async (remote) => { await (window as RtcWindow).__rtc?.pc.setRemoteDescription({ type: 'answer', sdp: remote }) }, resolveMdnsNames(answer, addresses))
