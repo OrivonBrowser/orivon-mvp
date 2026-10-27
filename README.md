@@ -271,9 +271,9 @@ curl -fsSL https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scrip
 &nbsp;·&nbsp; also at [`download.orivonstack.eth`](https://download.orivonstack.eth.limo)
 
 Every release is also published on IPFS, and its `ipfs://` address is in the release notes. The
-Windows installer and the macOS `.dmg` are not signed with a bought certificate, so each system
-warns once before the first run ([what to click](docs/known-limitations.md#packages)); the one-line
-installs above do not warn.
+Windows installer is not signed with a bought certificate, so Windows warns once before the first
+run ([what to click](docs/known-limitations.md#packages)); the one-line installs above do not warn.
+The macOS app is signed with an Apple Developer ID and notarized.
 
 ### Run from source
 

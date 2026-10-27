@@ -86,7 +86,7 @@ rely on, row by row. A new feature adds its line here when it lands.
 
 - **Bug reports**: a form that shows the report in full before Send, an opt-in crash dump, deletion from the server, and a local log.
 - **Telemetry**: opt-in, with a first-run choice, a Settings switch, a privacy notice and erasure.
-- **Packages for Linux, Windows and macOS** on every GitHub release (deb, AppImage, NSIS installer, dmg for Apple silicon and Intel), also published on IPFS. On macOS a one-line Terminal command installs or updates Orivon with no Gatekeeper warning.
+- **Packages for Linux, Windows and macOS** on every GitHub release (deb, AppImage, NSIS installer, dmg for Apple silicon and Intel), also published on IPFS. The macOS apps are signed with a Developer ID and notarized by Apple, and a one-line Terminal command installs or updates Orivon there with no Gatekeeper warning.
 - **A Microsoft Store package** built with every Windows build and kept for upload to Partner Center (not on the release); a Store install is updated by the Store and looks for no update itself.
 - **winget**: every release's Windows installer is offered to winget-pkgs by the release workflow (`Orivon.Browser`, and `Orivon.Browser.Preview` for a pre-release), once the owner has stored the token and submitted the first version of each.
 - **Update check**: once a day, on by default (Settings > About turns it off), Orivon asks GitHub whether a newer release (pre-releases included) exists and links to its page; it installs nothing.

@@ -79,7 +79,7 @@ export function whichFileSection({ version, assets, routes, prerelease }) {
   if (has(exe)) row('Windows, from PowerShell', `\`${WIN_INSTALL}\``, 'Installs the newest release for your user and opens it, with no warning from Windows')
   if (routes.store) row('Windows, from the Microsoft Store', `[Orivon Browser](https://apps.microsoft.com/detail/${STORE_PRODUCT_ID.toLowerCase()})`, 'The Store installs and updates it')
   if (routes.winget) row('Windows, from a terminal', `\`winget install ${prerelease ? 'Orivon.Browser.Preview' : 'Orivon.Browser'}\``, 'winget downloads the installer above')
-  if (has(arm)) row('Mac with Apple silicon (M1 or later)', `\`${arm}\``, 'Open it and drag Orivon to Applications. macOS asks once: System Settings > Privacy & Security > Open Anyway')
+  if (has(arm)) row('Mac with Apple silicon (M1 or later)', `\`${arm}\``, 'Open it and drag Orivon to Applications. Apple has signed and checked the app')
   if (has(intel)) row('Mac with an Intel processor', `\`${intel}\``, 'The same, with the Intel file')
   if (has(arm) || has(intel)) row('Mac, from Terminal', `\`${MAC_INSTALL}\``, 'Installs the newest release for your Mac and opens it, with no question from macOS')
   if (has(deb)) row('Debian, Ubuntu, Linux Mint and the like (64-bit)', `\`${deb}\``, `\`sudo apt install ./${deb}\`. The only Linux file Orivon can be made the default browser from`)
