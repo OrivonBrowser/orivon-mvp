@@ -18,7 +18,10 @@ import { clickAddressBarRetrying, closeElectronApp, navigateToFixture, runPhase,
 import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 import { seedFixture } from './extensions-e2e-helpers.js'
 
-const SITE = { 'index.html': '<!doctype html><meta charset="utf-8"><title>served name fixture</title><body>served</body>' }
+const SITE = {
+  'index.html': '<!doctype html><meta charset="utf-8"><title>served name fixture</title><body>served</body>',
+  'slow.html': '<!doctype html><meta charset="utf-8"><title>slow name fixture</title><body>slow</body>'
+}
 const TEST_TIMEOUT_MS = 240_000
 /** How long a takeover would take to show after the failing request: the extension answers an event, then asks for the update. */
 const SETTLE_MS = 3_000
@@ -141,6 +144,20 @@ it('keeps a name Orivon serves out of reach of an extension that takes a tab els
       check('no .eth main-frame error reached the extension, so nothing took the tab', loaded.takeovers.length === 0 && !ethHeard.some((entry) => entry.event === 'onErrorOccurred'), JSON.stringify({ takeovers: loaded.takeovers, ethHeard }))
       check('a blocker still sees the name\'s other events', ['onBeforeRequest', 'onSendHeaders', 'onHeadersReceived', 'onResponseStarted', 'onCompleted'].every((event) => ethHeard.some((entry) => entry.event === event && entry.type === 'main_frame' && entry.url === 'https://fixture.eth/')), JSON.stringify(ethHeard.map((entry) => entry.event)))
 
+      // A load the person leaves before it finishes is aborted by the next navigation, and the extension is no more told of that than of a failure.
+      const slowUrl = 'https://fixture.eth/slow.html'
+      gateway.delayNext('site', 'slow.html', 30_000, 20)
+      await typeAddress(app, slowUrl)
+      const inFlight = await waitFor(async () => (await navLog(running)).some((nav) => nav.ev === 'start' && nav.url === slowUrl), 20_000)
+      await delay(SETTLE_MS)
+      await typeAddress(app, `${plainOrigin}/?away`)
+      const left = await waitFor(async () => (await navLog(running)).some((nav) => nav.ev === 'navigate' && nav.url === `${plainOrigin}/?away`), 20_000)
+      await delay(SETTLE_MS)
+      const afterAbort = await readExtension(running, extensionId)
+      const aborts = (await navLog(running)).filter((nav) => nav.url === slowUrl)
+      check('the slow name was still loading when the person left it', inFlight && left && !aborts.some((nav) => nav.ev === 'navigate'), JSON.stringify(aborts))
+      check('the extension heard no error of the aborted load and took no tab', afterAbort.takeovers.length === 0 && !afterAbort.heard.some((entry) => entry.event === 'onErrorOccurred' && entry.url === slowUrl) && !afterAbort.urls.some((url) => url.endsWith('/taken.html')), JSON.stringify({ takeovers: afterAbort.takeovers, errors: afterAbort.heard.filter((entry) => entry.event === 'onErrorOccurred') }))
+
       // The same name over plain http and on a port nothing listens on: both loads fail inside Orivon, and neither is the extension's to answer.
       for (const failing of ['http://fixture.eth/', 'https://fixture.eth:1/']) {
         await typeAddress(app, failing)
@@ -156,7 +173,6 @@ it('keeps a name Orivon serves out of reach of an extension that takes a tab els
       await typeAddress(app, refusedUrl)
       const told = await waitFor(async () => (await readExtension(running, extensionId)).heard.some((entry) => entry.event === 'onErrorOccurred' && entry.type === 'main_frame' && entry.url === refusedUrl), 20_000)
       check('the error of a host Orivon does not serve still reached the extension', told, JSON.stringify((await readExtension(running, extensionId)).heard.filter((entry) => entry.event === 'onErrorOccurred')))
-
     } finally {
       if (app !== undefined) {
         const evidence = await Promise.all([readExtension(app, extensionId), navLog(app)]).catch(() => undefined)
