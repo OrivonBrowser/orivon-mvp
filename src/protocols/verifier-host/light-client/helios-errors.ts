@@ -10,6 +10,8 @@ const FAILED_PROOF = /invalid (?:storage |account |code )?proof|proof (?:mismatc
 const OUT_OF_SYNC = /out of sync/i
 /** Helios's whole sync failure for an update signed in a slot this computer's clock has not reached, nothing quoted around it. */
 const CLOCK_BEHIND = /^(?:Error: )?(?:sync failed: )?invalid timestamp\s*$/i
+/** Helios's whole failure for a newest block older than its clock allows, nothing quoted around it; the number is how many seconds old the block is. */
+const HEAD_TOO_OLD = /^(?:Error: )?(?:sync failed: )?out of sync: (\d+) seconds behind\s*$/i
 
 /**
  * A revert becomes the `{ code: 3, data }` shape viem reads revert data from,
@@ -31,6 +33,12 @@ export function clockBehind (error: unknown): boolean {
   return CLOCK_BEHIND.test(error instanceof Error ? error.message : String(error))
 }
 
+/** How many seconds old Helios found the newest block, when it refused it as older than its clock allows: a clock that is ahead, or a server behind the chain. */
+export function outOfSync (error: unknown): number | undefined {
+  const match = HEAD_TOO_OLD.exec(error instanceof Error ? error.message : String(error))
+  return match === null ? undefined : Number(match[1])
+}
+
 /** Helios's failure when the consensus server answers 404 to the bootstrap request: the checkpoint it was given is not one that server starts a light client from. A 404 of any other request, and a failed request, are not it. */
 const BOOTSTRAP_MISSING = /could not fetch bootstrap:.*status: 404/s
 
@@ -41,3 +49,11 @@ export function bootstrapMissing (error: unknown): boolean {
 
 /** What Settings and a .eth error page say when the clock stands in the way and the servers' time could not be used to allow for it. */
 export const CLOCK_BEHIND_REASON = "this computer's clock is behind, so the chain's newest blocks look as if they come from the future. Setting the clock right, in the system's date and time settings, lets the light client start"
+
+/** What Settings and a .eth error page say when the newest block looks too old and the servers' time could not be used to tell why. */
+export const CLOCK_AHEAD_REASON = "the newest block looks too old by this computer's clock, which may be set ahead of the chain's. If it is, setting the clock right, in the system's date and time settings, lets the light client start"
+
+/** What they say when the servers agree this computer's clock is right, so the old block is a server's. */
+export function serverBehindReason (seconds: number): string {
+  return `the newest block the servers gave is ${String(seconds)} seconds old, though this computer's clock agrees with theirs, so a server is behind the chain`
+}
