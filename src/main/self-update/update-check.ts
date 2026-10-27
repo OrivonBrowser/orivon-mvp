@@ -1,11 +1,11 @@
-// Update check: notifies, never installs.
+// Update check: looks, never installs.
 //
 // Unsigned auto-install is not built: unsigned
 // electron-updater on Linux verifies only a SHA-512 fetched from the SAME
 // HOST that serves the binary, which is a standing remote-code-execution
 // channel keyed to a GitHub token -- weaker than what ADR-0005 demands of
 // third-party apps, which is the wrong way round for the browser's own
-// binary. This file checks and notifies, linking to the release. Signing the
+// binary. This file checks and links to the release. Signing the
 // update manifest with an offline key is the next upgrade.
 //
 // This file therefore contains no download, no signature/hash verification,
@@ -14,10 +14,10 @@
 //
 // STRUCTURE, innermost (pure) to outermost (real I/O): this file's own
 // decision table, then its checkForUpdate wrapper composing it around an
-// injected fetch -- both here and both tested. The real wiring
-// (persistence, the GitHub fetch, the notification)
-// is ./update-check-runner.ts, untested by design; the semver subset is
-// ./github-release-version.ts. Split across three files (Rule 2,
+// injected fetch -- both here and both tested. When to tell the person is
+// ./update-notice.ts; the real wiring (state file, the GitHub fetch) is
+// ./update-check-runner.ts, untested by design; the semver subset is
+// ./github-release-version.ts. Split across files (Rule 2,
 // docs/development/code-guidelines.md).
 
 import { compareVersions, parseVersion } from './github-release-version.js'
@@ -130,6 +130,8 @@ export interface CheckForUpdateResult {
   readonly shouldNotify: boolean
   readonly notifyVersion: string | null
   readonly release: ReleaseInfo | null
+  /** Why the source was not reached (offline, a rate limit, a server error), for the log; absent when it was. */
+  readonly failure?: string
 }
 
 /**
@@ -155,12 +157,17 @@ export async function checkForUpdate (input: CheckForUpdateInput): Promise<Check
 
   // A rejection is a source not reached, never a failure of this best-effort, background check.
   let reached = true
-  const release = await input.fetchLatestRelease().catch(() => { reached = false; return null })
+  let failure: string | undefined
+  const release = await input.fetchLatestRelease().catch((error: unknown) => {
+    reached = false
+    failure = error instanceof Error ? error.message : String(error)
+    return null
+  })
 
   const final = decideUpdateNotice({
     ...base,
     ...(release !== null ? { latestVersion: release.version } : {})
   })
 
-  return { checkedNow: true, reached, shouldNotify: final.shouldNotify, notifyVersion: final.notifyVersion, release }
+  return { checkedNow: true, reached, shouldNotify: final.shouldNotify, notifyVersion: final.notifyVersion, release, ...(failure !== undefined ? { failure } : {}) }
 }
