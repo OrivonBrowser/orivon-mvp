@@ -191,6 +191,10 @@ export interface TabShell {
    * every window the same way, from the same `services`). Absent in tests.
    * `loadOptions` -- see popups.ts's `loadOptionsFor`'s own doc. */
   openWindow?: (url: string, loadOptions?: LoadURLOptions) => WebContents
+  /** Makes Chromium's own popup webContents, already in `partition`, the only tab of a brand new window in this same
+   * process: what `openWindow` is for an open that carries a guest to adopt (popups.ts's `windowOpenHandler`).
+   * Absent in tests. */
+  adoptWindow?: (view: WebContentsView, partition: string | undefined) => void
   /** What every window of the process shares, for view-level code that needs a setting or a store (the context menu). Absent in tests. */
   services?: ShellServices
   /** Runs a command on this window, as a key or a menu row would. Absent in tests: nothing runs. */
@@ -265,6 +269,9 @@ export interface TabViewHost {
    * `loadOptions` -- see popups.ts's `loadOptionsFor`'s own doc. Undefined when the shell has none
    * (tests): the caller opens an ordinary tab here instead. */
   openWindow: (url: string, loadOptions?: LoadURLOptions) => WebContents | undefined
+  /** Chromium's own webContents for a shift-click, made the only tab of a new window: `openWindow`'s counterpart for an
+   * open that arrives with a guest. Undefined when the shell has none (tests): the caller adopts it as a tab here. */
+  adoptWindow?: (view: WebContentsView, partition: string | undefined) => void
   atCapacity: () => boolean
   htmlFullscreenChanged: (id: string, entered: boolean) => void
   /** The window is closing: nothing more is made or shown for it. */
