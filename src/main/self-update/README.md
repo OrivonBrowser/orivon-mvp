@@ -20,10 +20,13 @@ newest-release name. `update-test-seam.ts` is the test-build seam.
 `../shell/question/` and acts on the windows) and `install-update-notice.ts` (a shell installer on the app and its
 services). The rest, `update-test-seam.ts` included, imports nothing from Electron.
 
-**What it depends on.** `electron` (`update-check-runner.ts` alone, directly), `node:fs/promises`, `node:path`, the top-level
-`registry.ts`, `../shell/question/` (`askQuestion` and the question spec), `../shell/window-registry.ts`,
-`../os/install-default-browser-ask.ts` (`askPlace`, `RETRY_MS`), `../os/windows-store.ts`, `../route/own-requests.ts`
-and `../../broker/adapters/atomic-write.ts`.
+**What it depends on.** `electron` (`update-check-runner.ts` alone, directly), `node:fs/promises`, `node:path`,
+`../shell/question/` (`askQuestion` and the question spec), `../shell/window-registry.ts`,
+`../shell/shell-installers.ts` (the installer type `install-update-notice.ts` fills), `../pages/internal-ipc.ts` (the
+domain type `updates-domain.ts` fills), `../os/install-default-browser-ask.ts` (`askPlace`, `RETRY_MS`),
+`../os/windows-store.ts`, `../route/own-requests.ts` and `../../broker/adapters/atomic-write.ts`. The shell depends on
+this directory in turn (`shell-services.ts` builds the notice, `shell-installers.ts` runs the installer), as `os/` and
+the shell do on each other.
 
 **What it must never import.** [`../consent/`](../consent/) or [`../install/`](../install/): a browser update and an
 app grant are different questions, asked in different dialogs, under different rules.
@@ -38,7 +41,8 @@ delivers its updates, so Settings says that instead of offering the switch.
 the address bar: "Download from GitHub" opens the release page in a new Orivon tab, "Download from latest.orivonstack.eth"
 opens the start page of that name (it downloads the package for the visitor's system; `release-url.ts` holds the address
 as a constant, so no release list can name another page) in a new Orivon tab, and "Not now", Escape or a closed tab
-dismisses it. It is never an operating-system notification or message box (`npm run check:native-dialogs` refuses
+dismisses it. Both download buttons are guarded, so a click or key meant for the page under the panel opens neither
+page; the way out is not. It is never an operating-system notification or message box (`npm run check:native-dialogs` refuses
 both). With no window in use (minimised, hidden, behind the welcome screen or restore bar, another question open, full
 screen, or a kiosk) it waits and asks when one is, retrying every few seconds. There is no install button: nothing
 here downloads or installs a release. The look does not wait for the answer, so an hourly look still runs while a
@@ -47,7 +51,8 @@ question stays open in a tab the person left.
 **State.** `update-check-state.json` in the profile holds `lastCheckedAt`, `lastFoundVersion` (the newest release the
 last look found, while it is newer than the running version) and `lastNotifiedVersion`. A release found and not yet
 told is asked about at the next start, with no call to the network inside the same day. Each profile is its own
-process with its own file, so it is asked once in each profile.
+process with its own file, so it is asked once in each profile. A look, "Check now" and an answered question can all
+write it at once, so `update-notice.ts` runs the writes one after another, each carrying the state as it is then.
 
 **What a report says.** Every step logs a line starting `[self-update]` to the console log that `orivon://report`
 carries: a look that reached GitHub (newest tag, running version), one that did not (and why), a release found, a wait
