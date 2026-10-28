@@ -92,4 +92,8 @@ describe('isInternetHost', () => {
   it('refuses a name that can never resolve', () => {
     expect(isInternetHost('direct-execution.orivon.invalid')).toBe(false)
   })
+
+  it('judges a name as a name: one that resolves to this computer cannot be told from the spelling and is taken (T12 residual)', () => {
+    for (const host of ['127.0.0.1.nip.io', 'localtest.me']) expect(isInternetHost(host), host).toBe(true)
+  })
 })

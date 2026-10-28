@@ -19,7 +19,7 @@ export function namesThisComputer (host: string): boolean {
   return host === 'localhost' || host.endsWith('.localhost') || BUILTIN_ADDRESSES.routesToVerifier(host)
 }
 
-/** Whether a server's host, address literal or name, could be on the internet: no loopback, private, link-local or reserved literal, and no name that is this computer's, a local network's, one that never resolves, a single label or a spelling with a trailing dot. */
+/** Whether a server's host, address literal or name, could be on the internet: no loopback, private, link-local or reserved literal, and no name that is this computer's, a local network's, one that never resolves, a single label or a spelling with a trailing dot. A name is judged by its spelling, never by what it resolves to, so one that resolves to a private address is taken (T12). */
 export function isInternetHost (host: string): boolean {
   const bare = host.replace(/^\[|\]$/g, '')
   if (classifyAddress(bare) !== 'unparseable') return isPublicUnicast(bare)

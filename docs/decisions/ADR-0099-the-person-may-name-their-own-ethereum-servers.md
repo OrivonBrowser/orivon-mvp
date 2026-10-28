@@ -72,7 +72,11 @@ allowing the one local reach the person asked for by typing an address.
   and reported; they do not encrypt the file.
 - A server on the internet that the whole browser reaches outside the tunnel must answer on port 443 (`outside-fetch.ts`).
 - A Nym private window cannot use the person's servers; its light client asks Orivon's.
-- A secret shorter than four characters is not scrubbed from free text.
+- A secret shorter than four characters is not scrubbed from free text, and a path with nothing key-like in it (`/eth`) is not
+  scrubbed alone: the address that holds it is, and is shown with its path hidden.
+- A name on the internet is judged as a name, not by the address it resolves to: one that resolves to a private address is
+  reached by the lane's own route, the person's own choice (T12).
+- The checkpoint file, copied into every new profile and private window, names Orivon's beacon servers only.
 
 ## Reversibility
 
