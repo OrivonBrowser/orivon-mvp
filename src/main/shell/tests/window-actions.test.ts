@@ -113,11 +113,13 @@ describe('shellActions openSiteInfo for the tunnel button', () => {
     expect(inProfile.sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', undefined)
   })
 
-  it('opens it for a blank page that is no new tab as for a page with no origin: nothing', () => {
-    const { actions, sitePanel } = partsWith([{ id: 't1', url: 'about:blank', isNewTab: true, isInternal: false, blankInSession: true }], 't1', 'persist:tunnel-profile')
-    actions.openSiteInfo(anchor, 'tunnels')
-    expect(sitePanel.toggleTab).not.toHaveBeenCalled()
-    expect(sitePanel.toggle).not.toHaveBeenCalled()
+  it('opens it for a blank page that is no new tab as for a page with no origin: nothing, in a session of its own or the shared one', () => {
+    for (const partition of ['persist:tunnel-profile', undefined]) {
+      const { actions, sitePanel } = partsWith([{ id: 't1', url: 'about:blank', isNewTab: true, isInternal: false, blankPage: true }], 't1', partition)
+      actions.openSiteInfo(anchor, 'tunnels')
+      expect(sitePanel.toggleTab, String(partition)).not.toHaveBeenCalled()
+      expect(sitePanel.toggle, String(partition)).not.toHaveBeenCalled()
+    }
   })
 
   it('never opens the tab\'s popover for the shield or the key, which are about the page', () => {

@@ -14,7 +14,7 @@ import type { TabsSnapshot } from './tab-types.js'
 export function tabForTunnelPopover (state: TabsSnapshot, partitionOf: (id: string) => string | undefined, isApp: (origin: string) => boolean): string | undefined {
   const active = state.tabs.find((tab) => tab.id === state.activeTabId)
   if (active === undefined || active.isInternal) return undefined
-  if (active.isNewTab) return active.blankInSession === true ? undefined : active.id
+  if (active.isNewTab) return active.blankPage === true ? undefined : active.id
   if (active.tunnelChoice === undefined) return undefined
   const origin = originFromUrl(active.url)
   if (origin !== null && isApp(origin)) return undefined

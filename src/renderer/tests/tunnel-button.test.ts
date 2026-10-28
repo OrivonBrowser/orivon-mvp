@@ -98,7 +98,7 @@ describe('the tunnel button look when the page is not on the tunnel its tab chos
 })
 
 describe('the tunnel button on a blank page that is no new tab', () => {
-  const popup = { url: 'about:blank', isNewTab: true, isInternal: false, blankInSession: true } as TabState
+  const popup = { url: 'about:blank', isNewTab: true, isInternal: false, blankPage: true } as TabState
 
   it('is absent: the page is in a session of its own, which the new tab\'s words would not describe', () => {
     expect(tunnelButtonLook(popup, 'on', 'nym').hidden).toBe(true)

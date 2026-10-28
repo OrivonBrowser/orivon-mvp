@@ -575,19 +575,24 @@ describe('a blank page that is no new tab', () => {
     return buildTabState('t1', { isDashboardTab: false, ...record } as never, wc as never, env)
   }
 
-  it('is flagged when a blank page is in a session of its own: a popup a page opened with no address, or a tab whose address was refused', () => {
-    for (const partition of ['persist:tunnel-profile', 'persist:app-3f9c', 'orivon-route-tab-1']) {
-      expect(stateOf('about:blank', { partition }), partition).toMatchObject({ isNewTab: true, blankInSession: true })
+  it('is flagged on a blank page that is not the dashboard, in whatever session: a popup a page opened with no address, or a tab whose address was refused', () => {
+    for (const partition of [undefined, 'persist:tunnel-profile', 'persist:app-3f9c', 'orivon-route-tab-1']) {
+      expect(stateOf('about:blank', { partition }), String(partition)).toMatchObject({ isNewTab: true, blankPage: true })
     }
   })
 
-  it('is not flagged on a new tab: the dashboard, or a blank page in the shared session', () => {
-    expect(stateOf('about:blank', {})).toMatchObject({ isNewTab: true })
-    expect(stateOf('about:blank', {})).not.toHaveProperty('blankInSession')
-    expect(stateOf(env.dashboardUrl, { isDashboardTab: true })).not.toHaveProperty('blankInSession')
+  it('is flagged on a blank popup in the shared session, where a page writes into it as freely as into its own', () => {
+    expect(stateOf('about:blank', { partition: undefined, tunnelChoice: 'direct' })).toMatchObject({ isNewTab: true, blankPage: true, tunnelChoice: 'direct' })
+  })
+
+  it('is not flagged on the dashboard tab, whether it shows the dashboard or a refused address', () => {
+    expect(stateOf(env.dashboardUrl, { isDashboardTab: true })).not.toHaveProperty('blankPage')
+    expect(stateOf('about:blank', { isDashboardTab: true })).toMatchObject({ isNewTab: true })
+    expect(stateOf('about:blank', { isDashboardTab: true })).not.toHaveProperty('blankPage')
   })
 
   it('is not flagged on a page that shows something', () => {
-    expect(stateOf('https://news.example/', { partition: 'persist:tunnel-profile' })).not.toHaveProperty('blankInSession')
+    expect(stateOf('https://news.example/', { partition: 'persist:tunnel-profile' })).not.toHaveProperty('blankPage')
+    expect(stateOf('https://news.example/', {})).not.toHaveProperty('blankPage')
   })
 })

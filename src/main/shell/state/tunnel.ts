@@ -3,14 +3,14 @@ import type { ShellStatePart } from '../shell-state-parts.js'
 /**
  * Whether the page in front goes through a tunnel, and which, for the colour of the address bar's tunnel button and the name it
  * carries. A new tab shows no page: its look is the tunnel its first address will leave by, from the tab's choice or the browser's.
- * A blank page in a session of its own (a popup a page opened with no address) is no new tab: it has no look, as no page has one.
+ * A blank page in a tab that is not the dashboard's (a popup a page opened with no address) is no new tab: it has no look, as no page has one.
  */
 export const tunnelStatePart: ShellStatePart = {
   name: 'tunnel',
   read: ({ window, services }, tabs) => {
     if (tabs.activeTabId === null) return { tunnel: null, tunnelVia: null }
     const active = tabs.tabs.find((tab) => tab.id === tabs.activeTabId)
-    if (active?.isNewTab === true && active.blankInSession !== true) {
+    if (active?.isNewTab === true && active.blankPage !== true) {
       const look = services.tunnel.newTabLookOf(active.tunnelChoice)
       return { tunnel: look.mark, tunnelVia: look.via }
     }

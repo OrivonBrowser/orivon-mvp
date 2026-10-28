@@ -42,9 +42,9 @@ export interface TunnelButtonLook {
   readonly label: string
 }
 
-/** Whether the tab in front has the button: the new tab and every website have it; the shell's own pages and a blank page that is not a new tab (a popup opened with no address) do not. */
+/** Whether the tab in front has the button: the new tab and every website have it; the shell's own pages and a blank page in a tab that is not the dashboard's (a popup opened with no address) do not. */
 function hasButton (tab: TabState | undefined): tab is TabState {
-  return tab !== undefined && !tab.isInternal && tab.blankInSession !== true
+  return tab !== undefined && !tab.isInternal && tab.blankPage !== true
 }
 
 /**

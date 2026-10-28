@@ -39,8 +39,10 @@ describe('which tab the tunnel button\'s popover is about', () => {
     }
   })
 
-  it('is no tab for a blank page in a session of its own, which is no new tab', () => {
-    expect(tabForTunnelPopover(snapshot(tab({ isNewTab: true, url: 'about:blank', blankInSession: true, tunnelChoice: 'nym' })), inPartition('persist:tunnel-profile'), notApp)).toBeUndefined()
+  it('is no tab for a blank page that is no dashboard, whatever its session, which is no new tab', () => {
+    for (const session of [inPartition('persist:tunnel-profile'), shared]) {
+      expect(tabForTunnelPopover(snapshot(tab({ isNewTab: true, url: 'about:blank', blankPage: true, tunnelChoice: 'nym' })), session, notApp)).toBeUndefined()
+    }
   })
 
   it('reads the page from the tab\'s record, not from anything the chrome sent', () => {

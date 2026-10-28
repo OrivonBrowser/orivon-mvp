@@ -36,7 +36,8 @@ export function buildTabState (id: string, record: TabRecord | undefined, wc: We
     muted: record?.muted ?? false,
     audible: false,
     crashed: record?.crashed ?? null,
-    ...(url === BLANK_URL && record?.partition !== undefined ? { blankInSession: true } : {}),
+    // Only the dashboard's tab is a new tab to the tunnel button: any other blank page may be a popup its opener writes into, in any session.
+    ...(url === BLANK_URL && record?.isDashboardTab === false ? { blankPage: true } : {}),
     ...(record?.tunnelChoice === undefined ? {} : { tunnelChoice: record.tunnelChoice }),
     ...(record === undefined ? {} : signalState(record, wc))
   }

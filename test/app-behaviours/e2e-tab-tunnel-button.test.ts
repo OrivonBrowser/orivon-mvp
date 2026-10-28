@@ -233,3 +233,28 @@ it('[app:tab-tunnel-button-blank-popup-of-a-tunnelled-tab-has-no-button] a blank
     await closeElectron(app)
   }
 }, 6 * QA_TEST_TIMEOUT_MS)
+
+it('[app:tab-tunnel-button-blank-popup-in-the-shared-session-has-no-button] a blank popup a page opens in a tab with no tunnel stays in the shared session and is no new tab: its tunnel button is gone, and the page\'s comes back with the page', async () => {
+  const { app, chrome } = await start()
+  try {
+    await clickAddressBarRetrying(chrome, url())
+    expect((await waitForTab(chrome, { address: url(), title: 'direct' }, 60_000)).ok).toBe(true)
+    expect(await waitFor(() => findViewShowing(app, chrome, url()) !== undefined)).toBe(true)
+    const first = await activeId(chrome)
+    expect(await chrome.locator('#tunnel-btn').isVisible(), 'the page has the button before the popup opens').toBe(true)
+
+    // The page writes into the popup, so a tunnel the person set here could not hold for what it loads: a new tab's words would be false.
+    await (findViewShowing(app, chrome, url()) as Page).click('#blank')
+    expect(await waitFor(async () => (await tabIds(chrome)).length === 2 && await activeId(chrome) !== first)).toBe(true)
+    expect(await waitFor(async () => !(await chrome.locator('#tunnel-btn').isVisible())), 'the blank popup has no tunnel button').toBe(true)
+
+    const popup = await activeId(chrome)
+    await chrome.evaluate((tab) => { (window as unknown as { orivonShell: { closeTab: (id: string) => void } }).orivonShell.closeTab(tab) }, popup)
+    expect(await waitFor(async () => (await tabIds(chrome)).length === 1 && await activeId(chrome) === first)).toBe(true)
+    expect(await waitFor(async () => await chrome.locator('#tunnel-btn').isVisible()), 'the page\'s button is back').toBe(true)
+    expect(await attribute(chrome, 'data-tunnel')).toBeNull()
+    expect(await attribute(chrome, 'aria-label')).toBe('Tunnels')
+  } finally {
+    await closeElectron(app)
+  }
+}, 6 * QA_TEST_TIMEOUT_MS)

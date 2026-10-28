@@ -79,8 +79,8 @@ export interface TabState {
   sharing?: DisplaySurfaceKind
   /** Another page is showing this tab's contents. Absent reads as false. */
   shared?: boolean
-  /** The page is a blank one in a session of its own (an installed app's, a tunnel profile's or a temporary one): a popup a page opened with no address, or a tab whose address was refused. It is not the new tab the tunnel button is about. Absent reads as false. */
-  blankInSession?: boolean
+  /** The page is a blank one in a tab that is not the dashboard's, in whatever session: a popup a page opened with no address, which the page writes into, or a tab whose address was refused. It is not the new tab the tunnel button is about. Absent reads as false. */
+  blankPage?: boolean
   /** The tunnel the tab was told to send every website it opens through (`nym`, `socks5`), or `direct`. Absent when it has none. */
   tunnelChoice?: TabTunnelChoice
 }
