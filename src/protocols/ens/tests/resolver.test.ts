@@ -16,6 +16,7 @@ const universalResolverAbi = parseAbi([
   'error ResolverNotFound(bytes name)',
   'error HttpError(uint16 status, string message)',
   'error ResolverError(bytes errorData)',
+  'error UnreachableName(bytes name)',
   'error OffchainLookup(address sender, string[] urls, bytes callData, bytes4 callbackFunction, bytes extraData)'
 ])
 const contenthashAbi = parseAbi(['function contenthash(bytes32 node) view returns (bytes)'])
@@ -89,6 +90,20 @@ describe('the ENS resolver', () => {
   it('reports a name with no resolver as not found', async () => {
     const p = provider(() => { throw revert(encodeErrorResult({ abi: universalResolverAbi, errorName: 'ResolverNotFound', args: ['0x00'] })) })
     await expect(createEnsResolver({ provider: p, ccipRequest: noCcip }).resolve('nobody.eth')).rejects.toMatchObject({ failure: 'not-found' })
+  })
+
+  it("reports a name no resolver can reach as not found, whether the Universal Resolver or the name's resolver says so", async () => {
+    // ENSv2's mirror of the v1 registry answers a v1 name with no resolver this way, wrapped in ResolverError.
+    const unreachable = encodeErrorResult({ abi: universalResolverAbi, errorName: 'UnreachableName', args: ['0x00'] })
+    for (const data of [unreachable, encodeErrorResult({ abi: universalResolverAbi, errorName: 'ResolverError', args: [unreachable] })]) {
+      const p = provider(() => { throw revert(data) })
+      await expect(createEnsResolver({ provider: p, ccipRequest: noCcip }).resolve('nobody.vitalik.eth')).rejects.toMatchObject({ failure: 'not-found' })
+    }
+  })
+
+  it("reports any other revert of the name's resolver as unavailable", async () => {
+    const p = provider(() => { throw revert(encodeErrorResult({ abi: universalResolverAbi, errorName: 'ResolverError', args: ['0x12345678'] })) })
+    await expect(createEnsResolver({ provider: p, ccipRequest: noCcip }).resolve('broken.eth')).rejects.toMatchObject({ failure: 'unavailable' })
   })
 
   it('reports a failed offchain gateway as unavailable, never as a proven absence', async () => {
