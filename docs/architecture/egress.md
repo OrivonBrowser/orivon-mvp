@@ -38,7 +38,10 @@ that tunnel's profile), or, while the whole browser is on a tunnel, any app or w
 through the tunnel chosen in Settings ([`ADR-0089`](../decisions/ADR-0089-each-website-and-app-picks-its-own-tunnel-and-an-installed-apps-tunnel-is-set-as-a-websites-is.md),
 [`ADR-0082`](../decisions/ADR-0082-a-websites-tunnel-state-is-kept-per-origin-and-a-website-that-differs-from-the-default-has-storage-of-its-own.md),
 [`ADR-0084`](../decisions/ADR-0084-the-tunnel-can-carry-the-whole-browser-and-a-website-with-an-entry-lives-in-one-of-two-shared-profiles.md));
-every other app and website is *not routed*.
+every other app and website is *not routed*, except in a tab that carries a tunnel choice: every website opened in that tab,
+and in tabs opened from it, runs in that tunnel's profile until the tab closes, and the requests Orivon makes for the tab
+(the lookups about the page, the address bar's suggestions) leave by the same tunnel or are not made
+([`ADR-0101`](../decisions/ADR-0101-a-tab-can-carry-a-tunnel-choice-that-holds-for-every-website-it-opens.md)).
 
 ## The broker's sockets (durable)
 
@@ -68,15 +71,15 @@ every other app and website is *not routed*.
 
 | File | Reaches | For | Tunnel |
 |---|---|---|---|
-| `src/main/browsing/favicon-fetch.ts` | The site a tab shows, and the host that holds its icon | A tab's icon, fetched by main | Routed for a routed app, a website with its tunnel on (its profile's or the default session's) or a temporary routed tab (the lookup session). A website set to off while the whole browser is on the tunnel is looked up about on the system's proxy; not routed otherwise |
-| `src/main/browsing/score-provider-client.ts` | The Web3 Score provider the person chose | The page's judged level, by hash bucket | Routed for a routed app's or tunnelled website's page (`fetchThroughRoute`; with the whole browser on the tunnel the Web3 reads that cannot go through a session ride the verifier host's tunnelled fetch). A website set to off while the whole browser is on the tunnel is asked about on the system's proxy; a lookup about no origin (an install, an update check) follows the default, through the tunnel while the whole browser is on it (`ownFetch`). Not routed otherwise |
+| `src/main/browsing/favicon-fetch.ts` | The site a tab shows, and the host that holds its icon | A tab's icon, fetched by main | Routed for a routed app, a website with its tunnel on (its profile's or the default session's) a temporary routed tab (the lookup session), or a page a tab with a tunnel choice shows or is loading (that tunnel's profile session, ahead of the website's own entry). A website set to off while the whole browser is on the tunnel is looked up about on the system's proxy; not routed otherwise |
+| `src/main/browsing/score-provider-client.ts` | The Web3 Score provider the person chose | The page's judged level, by hash bucket | Routed for a routed app's, a tunnelled website's or a tunnel-choice tab's page (`fetchThroughRoute`; with the whole browser on the tunnel the Web3 reads that cannot go through a session ride the verifier host's tunnelled fetch). A website set to off while the whole browser is on the tunnel is asked about on the system's proxy; a lookup about no origin (an install, an update check) follows the default, through the tunnel while the whole browser is on it (`ownFetch`). Not routed otherwise |
 | `src/main/children/child-host.ts` | The app's own session: the pin, and `reach` for a third-party `https` | Serving an app's child host document and files | Takes the app's route, since its session is pointed at the app's front |
 | `src/main/consent/grant-prompt-origin.ts` | Nothing: uses only `isIP` | Writing an origin for the permission dialog | Loopback |
 | `src/main/dev/local-ddoc.ts` | A loopback address or a developer `.eth` name, in developer mode only | Reading the DDOC file a local origin serves | Loopback |
 | `src/main/diagnostics/report-runner.ts` | The usage-statistics server, when the person sends a bug report | Sending the report the person wrote | Tunnelled while the whole browser is on it (`ownFetch`): the report is sent through the tunnel or not at all. Not routed otherwise |
 | `src/main/install/app-install-subsystem.ts` | The `https` origin of an app | Reading an app's manifest to ask for its grants without installing it | A website with a tunnel of its own is read in that tunnel's profile session (`ownFetch`) whatever the browser-wide setting says; otherwise tunnelled while the whole browser is on it, or on the system's proxy for an app set to off. Not routed otherwise |
 | `src/main/local-files/local-partition.ts` | Nothing: reads a `file:` address | Serving a local file in a tab | Loopback |
-| `src/main/omnibox/suggest-net.ts` | The person's search engine's suggestion address | Suggestions while typing in the address bar | Tunnelled while the whole browser is on it (`ownFetch`): suggestions come through the tunnel or not at all. Not routed otherwise |
+| `src/main/omnibox/suggest-net.ts` | The person's search engine's suggestion address | Suggestions while typing in the address bar | Tunnelled while the whole browser is on it (`ownFetch`), and for a window whose active tab carries a tunnel choice, through that tunnel's profile session (`ownFetchForTab`): suggestions come through the tunnel or not at all. Not routed otherwise |
 | `src/main/pages/serve.ts` | The renderer's dev server on loopback, in a source run only | Answering an `orivon://` page in development | Loopback |
 | `src/main/route/front.ts` | Listens on `127.0.0.1`; opens streams only through the route's provider | The loopback HTTP proxy Chromium is pointed at for a routed app or website | Routed (this is the tunnel's local end) |
 | `src/main/route/dead-end.ts` | Listens on a random `127.0.0.1` port, accepts and closes; reads and sends nothing | The place a session is pointed at to stop it (a session made while the whole browser is on the tunnel, one that could not be pointed, the requests made with no session), so a stopped request fails at once and no other listener on this computer is shown a destination name | Loopback |
