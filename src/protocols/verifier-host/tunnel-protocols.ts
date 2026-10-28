@@ -124,6 +124,7 @@ function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefi
     endpoints: config.swarmEndpoints,
     route: nodeRouteOf(config, route),
     feedIndexes: stores.swarmFeedIndexes,
+    log: (line) => { console.error(`[verifier] ${line}`) },
     beforeMount: node.ensure
   })
 }

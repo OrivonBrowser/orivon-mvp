@@ -102,7 +102,11 @@ export class BlockCache implements BlockMemory {
 
   remember (partition: string, key: string, block: Uint8Array): void {
     if (block.length > CACHE_BYTES) return
-    this.blocks.set(`${partition}\n${key}`, block)
+    const id = `${partition}\n${key}`
+    const replaced = this.blocks.get(id)
+    if (replaced !== undefined) this.bytes -= replaced.length
+    this.blocks.delete(id)
+    this.blocks.set(id, block)
     this.bytes += block.length
     for (const [oldest, old] of this.blocks) {
       if (this.bytes <= CACHE_BYTES) break

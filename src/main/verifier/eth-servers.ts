@@ -1,5 +1,5 @@
 // Which Ethereum servers the light client asks: Orivon's, or the ones the person named in Settings. Their servers replace
-// Orivon's for the field they fill and are never added to them (ADR-0099). Pure: the values come in, the servers go out.
+// Orivon's for the field they fill and are never added to them (ADR-0100). Pure: the values come in, the servers go out.
 
 import { DEFAULT_ENDPOINTS } from './endpoints.js'
 import { displayEndpoint, isLocalLiteral, MASK, secretParts } from '../../protocols/verifier-host/light-client/endpoint-mask.js'
