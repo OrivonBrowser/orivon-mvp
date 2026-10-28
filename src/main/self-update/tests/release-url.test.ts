@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { RELEASES_URL, releaseUrl } from '../release-url.js'
+import { parseOmniboxInput } from '../../browsing/omnibox.js'
+import { LATEST_RELEASE_NAME, LATEST_RELEASE_URL, RELEASES_URL, releaseUrl } from '../release-url.js'
 
 describe('releaseUrl', () => {
   it('is the page of a release whose tag looks like a version', () => {
@@ -16,5 +17,13 @@ describe('releaseUrl', () => {
     expect(new URL(url).host).toBe('github.com')
     expect(url.startsWith(`${RELEASES_URL}/tag/`)).toBe(true)
     expect(url).not.toContain('evil.example/')
+  })
+})
+
+describe('the newest-release name', () => {
+  it('is the address the address bar makes of latest.orivonstack.eth, so a typed name and the button cannot drift apart', () => {
+    expect(LATEST_RELEASE_NAME).toBe('latest.orivonstack.eth')
+    expect(parseOmniboxInput(LATEST_RELEASE_NAME, () => false)).toEqual({ kind: 'url', url: LATEST_RELEASE_URL })
+    expect(LATEST_RELEASE_URL).toBe('https://latest.orivonstack.eth/')
   })
 })

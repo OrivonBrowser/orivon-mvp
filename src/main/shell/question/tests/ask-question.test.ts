@@ -127,6 +127,44 @@ describe('askQuestion', () => {
     await answer
   })
 
+  it('tells the caller once the panel has drawn, and not when the question ends before that', async () => {
+    const shown = rig()
+    const onShown = vi.fn()
+    const answer = shown.ask({ contents: shown.contents }, CONSENT, { onShown })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(onShown).not.toHaveBeenCalled()
+    shown.drawn()
+    expect(onShown).toHaveBeenCalledTimes(1)
+    slotClosed(shown.window, QUESTION_OVERLAY, 'escape')
+    await answer
+
+    const cold = rig()
+    const beforeDraw = vi.fn()
+    const coldAnswer = cold.ask({ contents: cold.contents }, CONSENT, { onShown: beforeDraw })
+    await vi.advanceTimersByTimeAsync(0)
+    slotClosed(cold.window, QUESTION_OVERLAY, 'escape')
+    cold.drawn()
+    await coldAnswer
+    expect(beforeDraw).not.toHaveBeenCalled()
+
+    const never = rig({ chromeVisible: false })
+    const unshown = vi.fn()
+    const gaveUp = never.ask({ contents: never.contents }, CONSENT, { onShown: unshown })
+    await vi.advanceTimersByTimeAsync(6000)
+    await gaveUp
+    expect(unshown).not.toHaveBeenCalled()
+
+    const gone = rig({ chromeVisible: false })
+    const closed = vi.fn()
+    const tabClosed = gone.ask({ contents: gone.contents }, CONSENT, { onShown: closed })
+    await vi.advanceTimersByTimeAsync(100)
+    gone.closeTab('t1')
+    tabSlotEvents.tabClosed(gone.window, 't1')
+    await vi.advanceTimersByTimeAsync(100)
+    await tabClosed
+    expect(closed).not.toHaveBeenCalled()
+  })
+
   it('lets a question from a tab behind wait for its tab while another tab holds the screen, instead of refusing it', async () => {
     const r = rig({ chromeVisible: false, active: 'other' })
     const answer = r.ask({ contents: r.contents }, CONSENT)

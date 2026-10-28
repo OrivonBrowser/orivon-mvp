@@ -1,26 +1,22 @@
-// Real wiring for ./update-check.ts: persistence, the GitHub fetch, and the
-// notification. Split out of that file (Rule 2, docs/development/code-
-// guidelines.md). Untested by design (same as window.ts/ipc.ts/index.ts) --
-// everything with a decision to get right lives in the two pure/injected
-// functions in ./update-check.ts, which ARE tested.
+// Real wiring for ./update-notice.ts: the state file, the GitHub fetch and the window the question is asked in.
+// Untested by design: everything with a decision to get right is in the pure and injected modules beside it.
 //
-// WHY THE ELECTRON IMPORT BELOW IS `import type`, AND WHY REAL ELECTRON
-// VALUES (Notification/net/shell) ARE IMPORTED DYNAMICALLY INSIDE THE
-// FUNCTIONS THAT USE THEM: same reasoning as src/telemetry/runner.ts's own
-// file header -- a top-level static value import from 'electron' is
-// silently broken under this repo's vitest (the package's entry point
-// outside a real Electron process is a string, not the API surface), and
-// this file has no test importing it, so a dynamic import inside each
-// function body is never reached at all while other tests merely import
-// sibling files.
+// `net` is imported dynamically inside the fetch: a top-level static value import from 'electron' is silently
+// broken under this repo's vitest (the package's entry point outside a real Electron process is a string), and
+// this file has no test importing it.
 import type { App } from 'electron'
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { Subsystem } from '../registry.js'
-import { checkForUpdate, type ReleaseInfo } from './update-check.js'
+import { writeFileAtomicAsync } from '../../broker/adapters/atomic-write.js'
 import { ownFetch } from '../route/own-requests.js'
-import { GITHUB_OWNER, GITHUB_REPO, releaseUrl } from './release-url.js'
+import type { WindowRegistry } from '../shell/window-registry.js'
 import { pickNewestRelease } from './newest-release.js'
+import { GITHUB_OWNER, GITHUB_REPO, releaseUrl } from './release-url.js'
+import type { ReleaseInfo } from './update-check.js'
+import { createUpdateNotice } from './update-notice.js'
+import type { NoticeState, UpdateNotice } from './update-notice.js'
+import { testUpdateFetch } from './update-test-seam.js'
+import { askInWindow, updatePlace } from './update-window.js'
 
 // The repository is spelled out as constants (./release-url.ts) rather than
 // parsed from package.json at runtime: a runtime parse of a free-text git URL
@@ -30,52 +26,31 @@ import { pickNewestRelease } from './newest-release.js'
 const RELEASES_API = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases?per_page=10`
 const FETCH_TIMEOUT_MS = 10_000
 
-interface PersistedState {
-  readonly lastCheckedAt?: number
-  readonly lastNotifiedVersion?: string
-}
-
-function statePath (app: App): string {
-  // app.getPath('userData') is the ADR-0003-sanctioned storage root -- never
-  // a hardcoded XDG/$HOME path (the hookify warn-hardcoded-user-paths rule).
-  return join(app.getPath('userData'), 'update-check-state.json')
-}
+const statePath = (app: App): string => join(app.getPath('userData'), 'update-check-state.json')
 
 /** Missing file (first run) or corrupt JSON both read back as "never checked" -- fail safe, never throw. */
-async function readState (path: string): Promise<PersistedState> {
+async function readState (path: string): Promise<NoticeState> {
   try {
-    const text = await readFile(path, 'utf8')
-    const parsed: unknown = JSON.parse(text)
+    const parsed: unknown = JSON.parse(await readFile(path, 'utf8'))
     if (typeof parsed !== 'object' || parsed === null) return {}
     const obj = parsed as Record<string, unknown>
-    const lastCheckedAt = typeof obj.lastCheckedAt === 'number' ? obj.lastCheckedAt : undefined
-    const lastNotifiedVersion = typeof obj.lastNotifiedVersion === 'string' ? obj.lastNotifiedVersion : undefined
     return {
-      ...(lastCheckedAt !== undefined ? { lastCheckedAt } : {}),
-      ...(lastNotifiedVersion !== undefined ? { lastNotifiedVersion } : {})
+      ...(typeof obj['lastCheckedAt'] === 'number' ? { lastCheckedAt: obj['lastCheckedAt'] } : {}),
+      ...(typeof obj['lastFoundVersion'] === 'string' ? { lastFoundVersion: obj['lastFoundVersion'] } : {}),
+      ...(typeof obj['lastNotifiedVersion'] === 'string' ? { lastNotifiedVersion: obj['lastNotifiedVersion'] } : {})
     }
   } catch {
     return {}
   }
 }
 
-/** Best effort: losing this write only costs one extra check next launch, not worth crashing over. */
-async function writeState (path: string, state: PersistedState): Promise<void> {
-  try {
-    await writeFile(path, JSON.stringify(state), 'utf8')
-  } catch (error) {
-    console.error('[orivon] update-check: failed to persist state:', error)
-  }
-}
-
 /**
  * The one function in this module that touches the network, and it only
- * ever reads metadata -- see the file header.
+ * ever reads metadata -- see ./update-check.ts.
  *
  * Uses Electron's net.fetch (Chromium's network stack, session-aware) rather
  * than Node's global fetch, per Electron's own guidance for main-process
- * requests (verified via context7 2026-08-26). Imported dynamically -- see
- * the file header.
+ * requests. Imported dynamically -- see the file header.
  */
 async function fetchLatestGithubRelease (): Promise<ReleaseInfo | null> {
   const { net } = await import('electron')
@@ -103,117 +78,25 @@ async function fetchLatestGithubRelease (): Promise<ReleaseInfo | null> {
 
   const newest = pickNewestRelease(body)
   if (newest === null) return null
-  const tagName = newest.tag
 
-  return {
-    version: tagName,
-    // Built from the known repo constants plus the tag name, NOT taken from
-    // the response's `html_url`. `html_url` is untrusted network input that
-    // would otherwise need validating before ever reaching
-    // shell.openExternal; constructing the URL ourselves from a tag that
-    // decideUpdateNotice has already confirmed is version-shaped removes
-    // that trust requirement rather than adding a check for it.
-    url: releaseUrl(tagName)
-  }
+  // Built from the known repo constants plus the tag name, NOT taken from the response's `html_url`: that is
+  // untrusted network input, and a tag that looks like a version needs no further check.
+  return { version: newest.tag, url: releaseUrl(newest.tag) }
 }
 
-/** Native OS notification. No-op if the platform does not support them (e.g. a headless CI box). */
-async function notifyUpdateAvailable (release: ReleaseInfo): Promise<void> {
-  const { Notification, shell } = await import('electron')
-  if (!Notification.isSupported()) return
-
-  const notification = new Notification({
-    title: 'Orivon update available',
-    body: `Version ${release.version} is available. Click to view the release.`
-  })
-  notification.on('click', () => {
-    // Not just `void` -- that silences the floating-promise lint concern but
-    // does NOT stop a rejection (openExternal can reject, e.g. no default
-    // handler registered for https: on a bare Linux install) from surfacing
-    // as an unhandled rejection at the process level.
-    shell.openExternal(release.url).catch((error) => {
-      console.error('[orivon] update-check: failed to open release URL:', error)
-    })
-  })
-  notification.show()
-}
-
-/** What "Check now" tells the person. */
-export interface UpdateAnswer {
-  /** False when the latest release could not be read: offline, or none published. */
-  readonly reached: boolean
-  readonly current: string
-  readonly latest: string | null
-  readonly newer: boolean
-  /** The release page, built from known parts, never taken from the response. */
-  readonly url: string | null
-}
-
-/** Asks now, whatever was asked last and whatever was said: no notification, no state written. */
-export async function checkUpdateNow (app: App, now: number = Date.now()): Promise<UpdateAnswer> {
-  const result = await checkForUpdate({ currentVersion: app.getVersion(), now, fetchLatestRelease: fetchLatestGithubRelease })
-  return { reached: result.release !== null, current: app.getVersion(), latest: result.release?.version ?? null, newer: result.shouldNotify, url: result.release?.url ?? null }
-}
-
-/**
- * Exported for src/main/subsystems.ts to call directly if the two-line
- * append (see updateCheckSubsystem below) is not what the integrator wants.
- */
-export async function runUpdateCheck (app: App, now: number = Date.now()): Promise<void> {
+/** The one update notice of a process: Settings reads its offer, the schedule runs it, and the question is asked in the window in use. */
+export function createBrowserUpdate (options: { app: App, windows: Pick<WindowRegistry, 'focused'>, kiosk: boolean }): UpdateNotice {
+  const { app, windows, kiosk } = options
   const path = statePath(app)
-  const state = await readState(path)
-
-  const result = await checkForUpdate({
+  const log = (line: string): void => { console.log(`[self-update] ${line}`) }
+  return createUpdateNotice({
     currentVersion: app.getVersion(),
-    now,
-    ...(state.lastCheckedAt !== undefined ? { lastCheckedAt: state.lastCheckedAt } : {}),
-    ...(state.lastNotifiedVersion !== undefined ? { lastNotifiedVersion: state.lastNotifiedVersion } : {}),
-    fetchLatestRelease: fetchLatestGithubRelease
+    now: Date.now,
+    read: async () => await readState(path),
+    write: async (state) => { await writeFileAtomicAsync(path, JSON.stringify(state)) },
+    fetchLatest: testUpdateFetch() ?? fetchLatestGithubRelease,
+    place: () => updatePlace(windows, kiosk),
+    ask: async (place, release) => await askInWindow(place, release, app.getVersion(), log),
+    log
   })
-
-  // Throttled, or the source was not reached: state is unchanged, so the next run tries again.
-  if (!result.checkedNow || !result.reached) return
-
-  const nextState: PersistedState = {
-    lastCheckedAt: now,
-    ...(result.shouldNotify && result.notifyVersion !== null
-      ? { lastNotifiedVersion: result.notifyVersion }
-      : (state.lastNotifiedVersion !== undefined ? { lastNotifiedVersion: state.lastNotifiedVersion } : {}))
-  }
-  await writeState(path, nextState)
-
-  if (result.shouldNotify && result.release !== null) {
-    await notifyUpdateAvailable(result.release)
-  }
-}
-
-/**
- * Not wired into src/main/subsystems.ts yet. Shaped as a ready-to-append
- * Subsystem so doing so is exactly the two lines subsystems.ts's own
- * comment promises:
- *
- *   import { updateCheckSubsystem } from './update-check-runner.js'
- *   ... and add `updateCheckSubsystem` to the array.
- */
-export const updateCheckSubsystem: Subsystem = {
-  name: 'update-check',
-  afterReady: (ctx) => {
-    // Deliberately NOT awaited. runAfterReady (registry.ts) awaits every
-    // subsystem in order before the shell window is created; this
-    // subsystem has no init-order dependency for anything else in the app,
-    // and awaiting a GitHub round trip (or a full network timeout while
-    // offline) here would add that latency to every single launch's
-    // time-to-window for a feature that is allowed to finish seconds late,
-    // or not at all.
-    //
-    // Because it is detached, runAfterReady's try/catch does NOT cover it
-    // (it only covers what afterReady itself returns/throws synchronously,
-    // and this returns undefined immediately) -- so this subsystem must
-    // catch its own errors, or a rejection here becomes an unhandled
-    // promise rejection at the process level instead of a reported
-    // subsystem failure.
-    void runUpdateCheck(ctx.app).catch((error) => {
-      console.error('[orivon] subsystem "update-check" failed:', error)
-    })
-  }
 }

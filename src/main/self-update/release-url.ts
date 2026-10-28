@@ -13,3 +13,9 @@ export function releaseUrl (tag: string | null): string {
   if (tag === null || !VERSION_TAG.test(tag)) return RELEASES_URL
   return `${RELEASES_URL}/tag/${encodeURIComponent(tag)}`
 }
+
+/** The name that follows the newest release the Orivon node keeps; what it opens is a start page that downloads the package for the visitor's system (`docs/development/packaging.md` section On IPFS). */
+export const LATEST_RELEASE_NAME = 'latest.orivonstack.eth'
+
+/** Where a tab opens that name, the address the address bar makes of it. Fixed, so no network answer can name another page. */
+export const LATEST_RELEASE_URL = `https://${LATEST_RELEASE_NAME}/`

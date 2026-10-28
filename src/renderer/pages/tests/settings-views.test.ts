@@ -91,6 +91,33 @@ describe('what "Check now" says', () => {
     expect(changes).toHaveLength(1)
   })
 
+  it('shows a release main found in the background when the page loads, without a Check', async () => {
+    const request = vi.fn(async () => ({ ok: true, answer: { reached: true, current: '1.0.0', latest: 'v1.1.0', newer: true, url: 'x' } }))
+    const updates = new UpdatesState({ request } as unknown as OrivonInternal, () => {})
+    await updates.load()
+    expect(request).toHaveBeenCalledWith('updates', { type: 'state' })
+    expect(updates.available()).toBe('1.1.0')
+    expect(updates.words()).toBe('v1.1.0 is available. You have 1.0.0.')
+  })
+
+  it('stays silent on load when nothing is on offer, in a private window, or when main does not answer', async () => {
+    for (const reply of [{ ok: true, answer: null }, { ok: false, reason: 'private' }, undefined]) {
+      const { updates, changes } = state(reply)
+      await updates.load()
+      expect(updates.words()).toBe('')
+      expect(updates.available()).toBeNull()
+      expect(changes).toHaveLength(0)
+    }
+  })
+
+  it('drops the release when main says it is no longer on offer', async () => {
+    const { updates } = state({ ok: true, answer: { reached: true, current: '1.0.0', latest: 'v1.1.0', newer: true, url: 'x' } })
+    await updates.load()
+    expect(updates.handle('updates.changed', null)).toBe(true)
+    expect(updates.available()).toBeNull()
+    expect(updates.words()).toBe('')
+  })
+
   it('ignores any other topic', () => {
     const { updates } = state(undefined)
     expect(updates.handle('settings.changed', {})).toBe(false)
