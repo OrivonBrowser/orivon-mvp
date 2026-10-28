@@ -6,11 +6,15 @@
 // popover (code-guidelines.md Rule 2).
 
 import { NYM_SWITCHED_OFF } from '../route/nym-subsystem.js'
+import { profileOrigin, SHARED_ORIGIN } from '../route/route-hub.js'
+import { choiceForSwitch } from '../route/tab-tunnel.js'
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import { isLocalFileKey, isolationKeyFromUrl, originFromUrl } from '../../broker/policy/origin.js'
 import type { SubsystemContext } from '../registry.js'
 import { buildSiteInfo } from './site-info.js'
 import type { SiteInfo, SiteTunnel, SiteTunnelKind, SiteTunnelProfile, SiteUpdate } from './site-info.js'
+import { NO_TABS, tabTunnel, tabVia, THIS_TAB } from './site-info-tab.js'
+import type { TabTunnels } from './site-info-tab.js'
 import { turnOffCapability, turnOnCapability } from './site-switches.js'
 import type { TurnOnResult } from './site-switches.js'
 import { buildSiteTrust, providerIdFor, withProviderVerdict } from '../browsing/site-trust.js'
@@ -114,6 +118,10 @@ export interface SiteInfoController {
   storageDeclarationFor: (url: string) => Promise<StorageDeclaration | null>
   /** Takes the update offered for `origin` (`../install/app-updates.ts`): refused for any CID but the pending offer. */
   applyUpdate: (origin: string, cid: string, caller?: DialogCaller) => Promise<ApplyOutcome>
+  /** The tunnel popover's facts about the tab `tabId`: the tunnel its websites go through and what it is doing. Undefined for a tab that is not open, and while routes are not running. */
+  tabInfoFor: (tabId: string) => SiteInfo | undefined
+  /** Gives the tab the tunnel `kind` for every website it opens, or none (null): false when it could not be done (the tab is gone, the tunnel cannot be chosen, the settings cannot be read, a window held to Nym, or the tab could not move to the session the choice calls for). */
+  setTabTunnel: (tabId: string, kind: SiteTunnelKind | null) => boolean
   /** Sends a website or an installed app through the tunnel `kind`, or through none (null): false when it could not be done (no address for that tunnel, Nym switched off, this computer, or the choice could not be kept). */
   setTunnel: (origin: string, kind: SiteTunnelKind | null) => Promise<boolean>
   /** Saves the address of the person's proxy from the menu: refused in a window held to Nym, invalid when it is not host:port. */
@@ -144,7 +152,7 @@ function nymSwitchedOff (routes: Routes): boolean {
 
 const TUNNELS: readonly SiteTunnelKind[] = ['nym', 'socks5']
 
-export function createSiteInfoController (ctx: SubsystemContext, trustSources: SiteTrustSources, deleteLocalFile: (key: string) => Promise<boolean> = async () => false, entry: AppEntry = NO_ENTRY, proxySetup: ProxySetup = NO_PROXY_SETUP): SiteInfoController {
+export function createSiteInfoController (ctx: SubsystemContext, trustSources: SiteTrustSources, deleteLocalFile: (key: string) => Promise<boolean> = async () => false, entry: AppEntry = NO_ENTRY, proxySetup: ProxySetup = NO_PROXY_SETUP, tabTunnels: TabTunnels = NO_TABS): SiteInfoController {
   // The extensions disclosure (docs/planning/extensions-exploration.md) -- see
   // README.md's Design notes for why this is computed once, ahead of the
   // registered/unregistered branch `siteInfoFor` makes below.
@@ -190,6 +198,33 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
       else sites += 1
     }
     return { sites, apps, everything: routes.hub.isEverywhere() && routes.defaultKind() === 'socks5' }
+  }
+
+  /** Why each tunnel cannot be chosen for a tab: the proxy has no address, Nym is switched off. */
+  function tabBlocked (routes: Routes): SiteTunnel['blocked'] {
+    return { ...(routes.targetOf('socks5') === undefined ? { socks5: 'no-proxy' as const } : {}), ...(nymSwitchedOff(routes) ? { nym: 'nym-off' as const } : {}) }
+  }
+
+  function tabInfoFor (tabId: string): SiteInfo | undefined {
+    const routes = ctx.routes
+    const tab = tabTunnels.choiceOf(tabId)
+    if (routes === undefined || tab === undefined) return undefined
+    const everywhere = routes.hub.isEverywhere()
+    const defaultKind = routes.defaultKind()
+    const via = tabVia(tab.choice, everywhere, defaultKind)
+    // The route the tab's websites share: their tunnel's profile when the tab chose one, the shared one while it follows the browser.
+    const route = via === null ? 'off' : routes.hub.state(tab.choice === undefined ? SHARED_ORIGIN : profileOrigin(via))
+    const tunnel = tabTunnel({ choice: tab.choice, everywhere, defaultKind, unreadable: routes.hub.unreadable(), blocked: tabBlocked(routes), proxy: { address: proxySetup.address(), users: proxyUsers(routes) } })
+    return {
+      ...EMPTY_SITE_INFO('', []),
+      displayOrigin: THIS_TAB,
+      tunnelKind: via ?? defaultKind,
+      everywhere,
+      tunnel,
+      ...(ctx.privateTunnel === 'nym' ? { tunnelHeld: 'nym' as const } : {}),
+      ...(route === 'off' ? {} : { route }),
+      ...(via === 'nym' ? { nym: routes.nym.state() } : {})
+    }
   }
 
   /** The tunnel switches of a website or an installed app; not for a local file or this computer. */
@@ -328,6 +363,19 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
 
     async testTunnel (kind) {
       return ctx.routes === undefined || ctx.privateTunnel === 'nym' ? null : await proxySetup.test(kind)
+    },
+
+    tabInfoFor,
+
+    setTabTunnel (tabId, kind) {
+      const routes = ctx.routes
+      if (routes === undefined || tabTunnels.choiceOf(tabId) === undefined || routes.hub.unreadable()) return false
+      // A window held to Nym keeps every switch where it is (the tab refuses any other choice too).
+      if (ctx.privateTunnel === 'nym' && kind !== 'nym') return false
+      if (kind !== null && (routes.targetOf(kind) === undefined || (kind === 'nym' && nymSwitchedOff(routes)))) return false
+      const choice = choiceForSwitch(kind, routes.hub.isEverywhere())
+      tabTunnels.set(tabId, choice)
+      return tabTunnels.choiceOf(tabId)?.choice === (choice ?? undefined)
     },
 
     async setTunnel (origin, kind) {

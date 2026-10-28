@@ -59,7 +59,8 @@ import { imageToDataUrl, previewSizeFor, TearDragController } from './tear-drag.
 import { captureTabPage } from './tab-view.js'
 import { WindowRegistry } from './window-registry.js'
 import { isTemporaryRoutePartition } from '../route/temporary-routes.js'
-import { tunnelLookFor } from '../route/tunnel-mark.js'
+import { newTabTunnelLook, pageTunnelLook } from './tunnel-look.js'
+import type { TabTunnelChoice } from '../route/tab-tunnel.js'
 import type { TunnelLook } from '../route/tunnel-mark.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import type { SubsystemContext } from '../registry.js'
@@ -113,7 +114,10 @@ export interface ShellServices {
   }
   /** What the address bar's tunnel button says about a page; null while the routes are not running or the page is not on the tunnel. */
   readonly tunnel: {
-    readonly lookOf: (url: string, partition: string | undefined) => TunnelLook
+    /** `choice` is the tunnel choice of the tab showing the page. */
+    readonly lookOf: (url: string, partition: string | undefined, choice?: TabTunnelChoice) => TunnelLook
+    /** The look of a new tab, which shows no website: the tunnel its first address will leave by. */
+    readonly newTabLookOf: (choice: TabTunnelChoice | undefined) => TunnelLook
     readonly onChange: (listener: () => void) => () => void
   }
   /** The nodes Orivon runs on this computer, for the Available networks popup and the dot on its button. */
@@ -204,14 +208,15 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
       onChange: (listener) => ctx.appUpdates?.onChange(listener) ?? (() => {})
     },
     tunnel: {
-      lookOf: (url, partition) => {
+      lookOf: (url, partition, choice) => {
         const origin = originFromUrl(url)
         const routes = ctx.routes
         if (origin === null || routes === undefined) return { mark: null, via: null }
         // The session a page runs in decides how it leaves, not only its own origin: a popup adopted into an app's session goes where the app does.
         const holder = partition === undefined ? session.defaultSession : session.fromPartition(partition)
-        return tunnelLookFor({ state: routes.hub.state(origin), temporary: isTemporaryRoutePartition(partition), own: routes.hub.kindOf(origin), session: routes.controller.tunnelOf(holder) })
+        return pageTunnelLook(routes, { origin, holder, temporary: isTemporaryRoutePartition(partition), choice })
       },
+      newTabLookOf: (choice) => ctx.routes === undefined ? { mark: null, via: null } : newTabTunnelLook(ctx.routes, choice),
       onChange: (listener) => ctx.routes?.hub.onChange(() => { listener() }) ?? (() => {})
     },
     networks: createNetworks(settings, ctx),

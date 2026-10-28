@@ -2,6 +2,7 @@
 // collection: opening one popover closes the others, and a tab can be sent to
 // another window. Assembled per window from the pieces window.ts made.
 import { isolationKeyFromUrl, originFromUrl } from '../../broker/policy/origin.js'
+import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import type { ShellActions } from '../ipc/ipc.js'
 import { copyLinkCommand, copyWebLinkCommand, emailLinkCommand } from '../os/share-commands.js'
 import { realShareDeps } from '../os/share-runner.js'
@@ -13,6 +14,7 @@ import { runChromeAction } from './chrome-actions.js'
 import { createPressStamps } from './press-stamps.js'
 import type { ShellServices } from './shell-services.js'
 import { tabDragActions } from './tab-drag-actions.js'
+import { tabForTunnelPopover } from './tunnel-popover-tab.js'
 import { moveToNewWindow, moveToWindow } from './tab-move.js'
 import { closeOthers, closeToRight, duplicateTab, newTabToRight, tabMenuFlags, toggleMute, togglePin } from './tab-commands.js'
 import { sleepBackgroundTab } from '../memory-saver/sleep-command.js'
@@ -102,6 +104,14 @@ export function shellActions (parts: WindowParts): ShellActions {
     },
     openSiteInfo: (anchor, page, url) => {
       const pressedAt = presses.take(page)
+      // The tunnel button of a new tab, and of a tab that carries a tunnel choice, is about the tab: no website has an origin to be about.
+      const tabId = page === 'tunnels' ? tabForTunnelPopover(tabs.getState(), url, isOriginServedFromCacheSync) : undefined
+      if (tabId !== undefined) {
+        panels.networks.close()
+        closeOverlays()
+        panels.siteInfo.toggleTab(anchor, tabId, pressedAt)
+        return
+      }
       const origin = url === undefined ? undefined : isolationKeyFromUrl(url) ?? undefined
       if (origin === undefined) return // no canonical origin -- nothing this popup can show
       panels.networks.close()

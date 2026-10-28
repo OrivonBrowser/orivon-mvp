@@ -72,3 +72,40 @@ describe('shellActions press', () => {
     expect(networks.toggle).toHaveBeenCalledExactlyOnceWith(anchor, expect.any(Number))
   })
 })
+
+describe('shellActions openSiteInfo for the tunnel button', () => {
+  const anchor = { x: 900, y: 40, width: 30, height: 30 }
+  function partsWith (tabs: unknown[], activeTabId: string | null): { actions: ReturnType<typeof shellActions>, sitePanel: { close: ReturnType<typeof vi.fn>, toggle: ReturnType<typeof vi.fn>, toggleTab: ReturnType<typeof vi.fn> }, closeOverlays: ReturnType<typeof vi.fn> } {
+    const sitePanel = { close: vi.fn(), toggle: vi.fn(), toggleTab: vi.fn() }
+    const parts = makeParts({})
+    ;(parts.entry as unknown as { tabs: unknown }).tabs = { getState: () => ({ tabs, activeTabId }) }
+    ;(parts.panels as unknown as { siteInfo: unknown }).siteInfo = sitePanel
+    return { actions: shellActions(parts), sitePanel, closeOverlays: parts.closeOverlays as unknown as ReturnType<typeof vi.fn> }
+  }
+
+  it('opens the popover for the new tab in front, with no address to be about', () => {
+    const { actions, sitePanel, closeOverlays } = partsWith([{ id: 't1', isNewTab: true, isInternal: false }], 't1')
+    actions.openSiteInfo(anchor, 'tunnels')
+    expect(sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', undefined)
+    expect(sitePanel.toggle).not.toHaveBeenCalled()
+    expect(closeOverlays).toHaveBeenCalled()
+  })
+
+  it('opens it for the tab when the page shown is a website of a tab with a choice, and for the website when the tab has none', () => {
+    const withChoice = partsWith([{ id: 't1', isNewTab: false, isInternal: false, tunnelChoice: 'nym' }], 't1')
+    withChoice.actions.openSiteInfo(anchor, 'tunnels', 'https://news.example/a')
+    expect(withChoice.sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', undefined)
+    const plain = partsWith([{ id: 't1', isNewTab: false, isInternal: false }], 't1')
+    plain.actions.openSiteInfo(anchor, 'tunnels', 'https://news.example/a')
+    expect(plain.sitePanel.toggleTab).not.toHaveBeenCalled()
+    expect(plain.sitePanel.toggle).toHaveBeenCalledExactlyOnceWith(anchor, 'https://news.example', 'tunnels', undefined)
+  })
+
+  it('never opens the tab\'s popover for the shield or the key, which are about the page', () => {
+    const { actions, sitePanel } = partsWith([{ id: 't1', isNewTab: true, isInternal: false }], 't1')
+    actions.openSiteInfo(anchor, 'main')
+    actions.openSiteInfo(anchor, 'web3')
+    expect(sitePanel.toggleTab).not.toHaveBeenCalled()
+    expect(sitePanel.toggle).not.toHaveBeenCalled()
+  })
+})

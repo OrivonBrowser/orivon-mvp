@@ -57,7 +57,9 @@ export function createWindowPanels ({ ctx, win, services, tabs, overlays, dirnam
     // The first visit is built after the windows, so it is read at the moment of use.
     { notLetIn: (origin) => firstVisitNow()?.notLetIn(origin), askAgain: async (origin) => await firstVisitNow()?.askAgain(origin) ?? false, changed: announceEntryChange },
     // The proxy's address is set from the tunnel menu as Settings sets it: through the same store, so it is checked, saved and followed the same way.
-    proxySetup(ctx, services.settings))
+    proxySetup(ctx, services.settings),
+    // The tunnel popover opened for a tab reads and sets the tab's own choice: the same call a test seam makes, so nothing else decides it.
+    { choiceOf: (id) => { const record = tabs.record(id); return record === undefined ? undefined : { choice: record.tunnelChoice } }, set: (id, choice) => { tabs.setTunnelChoice(id, choice) } })
 
   // The networks list is a panel inside this window rather than a second one -- ../networks/networks-panel.ts.
   const networks = createNetworksPanel(win, win.contentView, services.networks, dirname, () => tabs.activeWebContents())

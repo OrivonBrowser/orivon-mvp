@@ -10,6 +10,7 @@
 // what to show a switch for; whether it is on comes from the live grants.
 
 import type { NymState } from '../route/nym-status.js'
+import type { TabTunnelChoice } from '../route/tab-tunnel.js'
 import type { CapabilityKind, ConsentGranularity, Grant, Manifest, Pattern } from '../../contracts/index.js'
 import type { PickedPath } from '../../broker/broker-contracts.js'
 import { offerCapability } from '../consent/capability-row.js'
@@ -78,7 +79,8 @@ export type SiteTunnelProfile = SiteTunnelKind | 'direct'
 export interface SiteTunnel {
   readonly via: SiteTunnelKind | null
   readonly following: boolean
-  readonly subject: 'app' | 'site'
+  /** Whose tunnel the popover is about: an installed app, a website, or a tab (every website opened in it, ADR-0101). */
+  readonly subject: 'app' | 'site' | 'tab'
   /** Why each tunnel cannot be chosen now (a tunnel can always be given up). */
   readonly blocked: Readonly<Partial<Record<SiteTunnelKind, 'no-proxy' | 'nym-off' | 'not-kept'>>>
   /** The profile each choice would move a website into for the first time, so the person is told first. `off` is the choice of no tunnel. Never set for an app. */
@@ -91,6 +93,8 @@ export interface SiteTunnel {
   readonly defaultKind: SiteTunnelKind
   /** The person's own proxy: the address saved ('' when none), and what goes through it now, so a change of address can say who it moves. */
   readonly proxy: { readonly address: string, readonly users: { readonly sites: number, readonly apps: number, readonly everything: boolean } }
+  /** For a tab: the choice it carries; absent for a tab with none, whose websites follow their own entries. */
+  readonly tabChoice?: TabTunnelChoice
   /** The page does not choose its tunnel here: it runs in a temporary session opened through an app's tunnel, or in the session of the app that opened it. */
   readonly fixed?: 'temporary' | 'opened'
 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { choiceUnderHold, isTabTunnelChoice, profileForTab, setTabTunnelSource, tabChoiceOfContents, tabKindShowing, tunnelOfChoice } from '../tab-tunnel.js'
+import { choiceForSwitch, choiceUnderHold, isTabTunnelChoice, profileForTab, setTabTunnelSource, tabChoiceOfContents, tabKindShowing, tunnelForTab, tunnelOfChoice } from '../tab-tunnel.js'
 import type { TabTunnelChoice } from '../tab-tunnel.js'
 import type { Profile } from '../site-partition.js'
 
@@ -85,5 +85,38 @@ describe('what the shell tells the routes about its tabs', () => {
     expect(tabKindShowing('https://other.example')).toBeUndefined()
     setTabTunnelSource(undefined)
     expect(tabChoiceOfContents(7)).toBeUndefined()
+  })
+})
+
+describe('the tunnel a page leaves by in a tab with a choice', () => {
+  it('is the choice\'s tunnel for a tunnel choice, whatever the website\'s own entry says', () => {
+    for (const own of [undefined, 'direct', 'nym', 'socks5'] as const) expect(tunnelForTab('socks5', SITE, own)).toBe('socks5')
+  })
+
+  it('is none for a direct choice, unless the website has a tunnel of its own', () => {
+    expect(tunnelForTab('direct', SITE, undefined)).toBeUndefined()
+    expect(tunnelForTab('direct', SITE, 'direct')).toBeUndefined()
+    expect(tunnelForTab('direct', SITE, 'nym')).toBe('nym')
+  })
+
+  it('is none for this computer, which no choice sends through a tunnel', () => {
+    expect(tunnelForTab('nym', 'http://localhost:3000', undefined)).toBeUndefined()
+  })
+})
+
+describe('the choice a tab takes when the tunnel switch is moved', () => {
+  it('is the tunnel the switch was moved to', () => {
+    for (const everywhere of [false, true]) {
+      expect(choiceForSwitch('nym', everywhere)).toBe('nym')
+      expect(choiceForSwitch('socks5', everywhere)).toBe('socks5')
+    }
+  })
+
+  it('is none when the lit switch is turned off while the whole browser is not on a tunnel: the tab goes direct as it did before', () => {
+    expect(choiceForSwitch(null, false)).toBeNull()
+  })
+
+  it('is direct when the lit switch is turned off while the whole browser is on a tunnel, because having no choice would follow it', () => {
+    expect(choiceForSwitch(null, true)).toBe('direct')
   })
 })

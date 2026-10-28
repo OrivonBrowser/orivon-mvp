@@ -119,6 +119,8 @@ never use one of their exports at the top level of another.
 
 **A tab's tunnel choice reaches every place that picks its session, through `partitionForTab`.** `tab-partition.ts` answers "which session does this address belong in, in this tab?" from the address and the tab's choice together; the typed address, the checks before a navigation commits and the swap after it, a wake, a popup, a restored tab and the move when a website's entry changes all ask it and none asks `partitionForTarget` for a tab. A new way of creating a tab passes the choice of the tab it comes from through `TabViewHost`, or the tab opens with none.
 
+**The tunnel button reads a tab's choice twice, for the page and for the new tab.** `tunnel-look.ts` is the one place that turns "this page, in this tab, with this choice" (`pageTunnelLook`) or "the new tab with this choice" (`newTabTunnelLook`) into the button's look; the page's own state follows the tab's profile when the tab has a choice, and the new tab, which loads nothing, follows the choice or, with none, what the shared session will do for its next address. `tunnel-popover-tab.ts` decides, from the front tab and the address the button was pressed on, whether the tunnels popup opens for the tab or for a site: the main process reads the tab's record, never a field the chrome sent, and an installed app stays a site.
+
 **A tab's own state is a record and a list of signals, not a method on `TabManager`.** A feature that
 needs per-tab state adds a field to `TabRecord` and `TabState`, and a `TabSignal` in
 `tab-signals.ts` for what to watch on the `WebContents`; `tabClosing` in `tab-lifecycle.ts` tells it
