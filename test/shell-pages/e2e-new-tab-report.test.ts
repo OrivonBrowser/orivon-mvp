@@ -30,11 +30,14 @@ it('shows a small "Report a bug" button with a bug icon at the bottom right, and
     expect((await button.textContent())?.trim()).toBe('Report a bug')
     expect(await button.locator('svg').count()).toBe(1)
 
+    // It sits at the bottom of the page, which is the window's corner unless the window is too short for the rows.
+    await button.scrollIntoViewIfNeeded()
     const placed = await dashboard.evaluate(() => {
       const box = (document.querySelector('#report-bug') as HTMLElement).getBoundingClientRect()
-      return { right: window.innerWidth - box.right, bottom: window.innerHeight - box.bottom, width: box.width, height: box.height }
+      const page = document.documentElement
+      return { right: page.clientWidth - box.right, bottom: page.scrollHeight - (box.bottom + window.scrollY), width: box.width, height: box.height }
     })
-    // Pinned to the bottom right corner, and small: a pill, not a banner.
+    // At the bottom right corner of the page, and small: a pill, not a banner.
     expect(placed.right).toBeGreaterThanOrEqual(8)
     expect(placed.right).toBeLessThanOrEqual(24)
     expect(placed.bottom).toBeGreaterThanOrEqual(8)

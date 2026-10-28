@@ -36,6 +36,12 @@ html, body {
   color: var(--wink);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
+/* At least the window tall, and as tall as its rows when they need more: the "Report a bug" button is placed against its bottom edge. */
+body {
+  position: relative;
+  height: auto;
+  min-height: 100%;
+}
 
 /* Behind the page: the welcome screen's picture, the person's own, or the plain base colour, chosen by the
    data-background attribute that main.ts sets from the Settings choice. Until it is set the page shows the base
@@ -242,10 +248,12 @@ img.tile-icon { border-radius: 4px; object-fit: contain; }
 }
 .link-button:hover { color: #e2e8f0; }
 
-/* A small pill pinned to the window's bottom right, in the fixed light colours of the other text that sits on the picture. It is
-   last in the document, so nothing paints after it, and the dashboard's bottom padding keeps the last row of tiles clear of it. */
+/* A small pill at the bottom right of the page, in the fixed light colours of the other text that sits on the picture. In a window
+   taller than the page that is the window's corner; in a shorter one it follows the last row, inside the dashboard's bottom padding,
+   so it never covers a tile (a fixed button would, on a crowded page at the top of its scroll). It is last in the document, so
+   nothing paints after it. */
 .report-bug {
-  position: fixed;
+  position: absolute;
   right: 16px;
   bottom: 16px;
   display: inline-flex;
