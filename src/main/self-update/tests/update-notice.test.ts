@@ -21,6 +21,8 @@ interface Over {
   current?: string
   release?: ReleaseInfo | null
   fetch?: FetchLatestRelease
+  /** Runs inside the write, before the state counts as on disk. */
+  write?: (state: NoticeState) => Promise<void>
   place?: () => PlaceResult<string>
   ask?: (place: string, release: ReleaseInfo) => Promise<AskOutcome>
   now?: number
@@ -38,7 +40,7 @@ function setup (over: Over = {}) {
     currentVersion: over.current ?? '0.0.11',
     now: () => clock.now,
     read: async () => disk,
-    write: async (state) => { disk = state; writes.push(state) },
+    write: async (state) => { await over.write?.(state); disk = state; writes.push(state) },
     fetchLatest,
     place,
     ask,
@@ -275,6 +277,28 @@ describe('the update notice', () => {
     broken = false
     await s.notice.tryAsk()
     expect(s.ask).toHaveBeenCalledTimes(1)
+  })
+
+  it('writes the state file one write at a time, so two that finish together cannot mix their bytes, and the last state is the one kept', async () => {
+    let active = 0
+    let overlapped = false
+    const s = setup({ write: async () => { active += 1; overlapped ||= active > 1; await settled(); active -= 1 } })
+    await Promise.all([s.notice.runScheduled(), s.notice.checkNow()])
+    await s.notice.tryAsk()
+    expect(overlapped).toBe(false)
+    expect(s.writes.length).toBeGreaterThanOrEqual(2)
+    expect(s.disk()).toEqual({ lastCheckedAt: NOW, lastFoundVersion: 'v0.0.12', lastNotifiedVersion: 'v0.0.12' })
+  })
+
+  it('logs a write that failed, and writes again after it', async () => {
+    let fail = true
+    const s = setup({ place: () => BUSY, write: async () => { if (fail) throw new Error('disk full') } })
+    await s.notice.runScheduled()
+    await settled()
+    expect(s.logs.filter((line) => line.includes('could not remember the update state: disk full'))).toHaveLength(1)
+    fail = false
+    await s.notice.checkNow()
+    expect(s.disk()).toMatchObject({ lastFoundVersion: 'v0.0.12', lastNotifiedVersion: 'v0.0.12' })
   })
 
   it('never rejects', async () => {

@@ -116,12 +116,19 @@ export function createUpdateNotice<Place> (deps: NoticeDeps<Place>): UpdateNotic
     }
   }
 
+  /** Where the last write ends: the next one starts after it, so the state file is never written by two at once. */
+  let writing: Promise<void> = Promise.resolve()
+
+  /** Writes `state` as it is when this write's turn comes, so the last write carries the newest. A write that fails is logged and never blocks the next. */
   const persist = async (): Promise<void> => {
-    try {
-      await deps.write(state)
-    } catch (error) {
-      deps.log(`could not remember the update state: ${reasonOf(error)}`)
-    }
+    writing = writing.then(async () => {
+      try {
+        await deps.write(state)
+      } catch (error) {
+        deps.log(`could not remember the update state: ${reasonOf(error)}`)
+      }
+    })
+    await writing
   }
 
   /** The state to keep: the found and told versions as they are now, and the look's time (`checkedAt`, else the one kept). */
