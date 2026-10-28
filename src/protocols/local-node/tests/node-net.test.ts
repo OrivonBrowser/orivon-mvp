@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Datagram, LookupAddress } from '../../../contracts/index.js'
 import type { Bind, Dial, DialedSocket, Listen } from '../../../broker/broker-contracts.js'
 import { canonicalAddress } from '../../../broker/policy/address.js'
-import { DNS_PORT, MAX_ANSWERS, MAX_LISTENERS, MAX_SOCKETS, createNodeNet } from '../node-net.js'
+import { DNS_PORT, MAX_ACCEPTED, MAX_ANSWERS, MAX_LISTENERS, MAX_SOCKETS, createNodeNet } from '../node-net.js'
 import type { NodeNetDeps } from '../node-net.js'
 
 const API_PORT = 24_242
@@ -129,6 +129,20 @@ describe('connect', () => {
     await expect(net.connect({ host: '8.8.8.8', port: 80 })).resolves.toBeDefined()
   })
 
+  it('counts connections accepted on its API apart from the sockets it opens, and closes one past their own limit', async () => {
+    const incoming = Array.from({ length: MAX_ACCEPTED + 1 }, () => fakeSocket())
+    let next = 0
+    const listen: Listen = async () => ({ localAddress: '127.0.0.1', localPort: API_PORT, accept: async () => incoming[next++] ?? await new Promise(() => {}), destroy: async () => {} })
+    const { net } = harness({}, { listen })
+    for (let index = 0; index < MAX_SOCKETS; index++) await net.connect({ host: '8.8.8.8', port: 80 })
+    const server = await net.listen({ port: API_PORT })
+    const reader = server.connections.getReader()
+    for (let index = 0; index < MAX_ACCEPTED; index++) expect((await reader.read()).done).toBe(false)
+    void reader.read()
+    await vi.waitFor(() => { expect(incoming[MAX_ACCEPTED]?.destroyed).toEqual(['aborted']) })
+    expect(incoming.slice(0, MAX_ACCEPTED).every((socket) => socket.destroyed.length === 0)).toBe(true)
+  })
+
   it('gives a place back when the dial fails', async () => {
     let fail = true
     const dial: Dial = async () => { if (fail) throw new Error('refused'); return fakeSocket() }
@@ -224,22 +238,6 @@ describe('listen', () => {
     const reader = server.connections.getReader()
     const first = await reader.read()
     expect(first.value?.id).toMatch(/^local-node-tcp-/)
-  })
-
-  it('resets an accepted connection beyond the socket limit', async () => {
-    const accepted = fakeSocket()
-    const queue = [accepted]
-    const listen: Listen = async () => ({
-      localAddress: '127.0.0.1',
-      localPort: API_PORT,
-      accept: async () => queue.shift() ?? await new Promise<null>(() => {}),
-      destroy: async () => {}
-    })
-    const { net } = harness({}, { listen })
-    const server = await net.listen({ port: API_PORT, scope: 'local' })
-    for (let index = 0; index < MAX_SOCKETS; index++) await net.udpBind({ port: 0 })
-    void server.connections.getReader().read()
-    await vi.waitFor(() => { expect(accepted.destroyed).toEqual(['aborted']) })
   })
 })
 

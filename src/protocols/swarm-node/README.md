@@ -31,5 +31,13 @@ resolver's address is not matched to a query by the host; the node checks its ow
 (or `/topology`, or the `peer_set_size` its log prints when the API has no count) shows `READY_PEERS`
 connected peers.
 
+**It keeps 250 peers.** A Bee peer serves a light node a few chunks a second on credit, so the number of peers
+bounds how fast a file arrives, and `config.ts` asks for 250 where the node keeps 100 by itself. A start from a
+saved peer list reaches them in about two seconds; the mount that starts meanwhile waits a second or two longer for
+its first chunks, which the faster file more than repays. A first start finds its bootnodes over UDP DNS, which
+the WASI host serves on IPv4 only, so the node's resolver is refused its IPv6 servers at once
+([`../../shim/wasi-p2/README.md`](../../shim/wasi-p2/README.md)) and its first peer arrives about eight seconds
+after the start.
+
 **Test seams.** `ORIVON_SWARM_NODE_LIVE=1` runs the real node
 ([`test/web3/e2e-swarm-node-live.test.ts`](../../../test/web3/e2e-swarm-node-live.test.ts), never in CI).

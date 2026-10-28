@@ -1,6 +1,6 @@
 # ADR-0099: A Swarm file's leaves are read together from the node and checked one by one
 
-- **Status:** accepted. Amends [`ADR-0077`](ADR-0077-swarm-content-is-verified-chunk-by-chunk-from-a-local-node.md): its alternative "Reading a Swarm site through the node's `/bzz` route" stays rejected, and `/bytes` is read only as described here.
+- **Status:** accepted. Amends [`ADR-0077`](ADR-0077-swarm-content-is-verified-chunk-by-chunk-from-a-local-node.md): its alternative "Reading a Swarm site through the node's `/bzz` route" stays rejected, and `/bytes` is read only as described here. Its read-ahead of 256 leaves is amended by `d-0741`: 1024, with the node keeping 250 peers.
 - **Date:** 2026-10-27
 - **Type:** architecture / security
 - **Decided by:** AI recommendation accepted by default, under the owner's ask that Swarm load as fast as IPFS while staying trustless and served only by the person's own node
