@@ -36,6 +36,7 @@ Each section below lists what that release carried; `[Unreleased]` is what has l
 
 ### Added
 
+- **A tunnel for one tab, chosen before the first address**: the tunnel button is now on the new tab. Turn on Nym or your proxy there and the address you type, and every site that tab opens until it closes, goes through it from its first request; on a website the button says "Set for this tab". The new-tab page is not kept in the saved session until it navigates.
 - **Settings > Web3 can ask your own Ethereum servers**: choose Your own servers and name up to four Ethereum RPC addresses and a beacon server; a node on this computer or your home network works. They replace Orivon's, which are never asked in their place, and a key in an address is hidden in the log, on screen and in a bug report.
 - **Node shim: `/` and `/orivon` exist as directories**: a program that makes a folder by walking from `/` (`stat` each ancestor, `mkdir` the missing ones) now reaches the app's files. They list one entry, the next segment toward the files, and every write, removal, rename and open on them, and any path beside the files, still fails `EACCES`.
 - **Node shim: `crypto.randomInt`, `fs.mkdtemp`, `fs.cp` and `fs.copyFile`**: `randomInt` draws by rejection sampling over the platform's random values, in both forms; `copyFile`, `cp` (with `recursive`, `force`, `errorOnExist` and `filter`) and `mkdtemp` work on the app's own files and on a folder the person picked, in the callback and promise forms, with Node's errors.
