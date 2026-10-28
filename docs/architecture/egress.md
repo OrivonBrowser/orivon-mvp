@@ -122,11 +122,13 @@ passes the name on unresolved and a resolver that is asked for one learns which 
 
 | Way out | What it does with an onion address |
 |---|---|
-| A session's requests (a page, a subresource, a WebSocket, in the default session, a website's profile, an app's session, a temporary routed tab) | `route-subsystem.ts` cancels the request unless the session goes through the person's own SOCKS5 tunnel (`onion-guard.ts`). The embed session and the internal-pages session register their own request listeners and do not take this guard |
+| A session's requests (a page, a subresource, a WebSocket, in the default session, a website's profile, an app's session, a temporary routed tab) | `route-subsystem.ts` cancels the request unless the session goes through the person's own SOCKS5 tunnel (`onion-guard.ts`), and the sheet over the tab says why. The embed session and the internal-pages session register their own request listeners and do not take this guard (the last row covers them) |
 | A route to Nym (an app's `connect` and datagrams, a page through the front) | `nym-provider.ts` refuses it as `unreachable` before the host is asked for; the Nym host's own lookup is therefore never asked for an onion name |
 | Orivon's own requests (`ownFetch`) | Refused unless the request leaves through the tunnel of the person's own SOCKS5 address (`own-requests.ts`) |
 | An unrouted app's `orivon.net` | `chromium-resolver.ts` refuses the name before Chromium's resolver is asked |
 | A tab icon | `favicon-fetch.ts` fetches an icon at an onion address only for a routed page |
+| The verifier host's CCIP-Read and DNSLink lookups | `egress.ts` refuses a CCIP-Read address at an onion name, and `dnslink.ts` asks for no record of one, so neither a resolver nor a DNS-over-HTTPS server hears of the name |
+| Any name Chromium would resolve itself, from any session, process or code path | The `--host-resolver-rules` switch ends with clauses that find no onion name (`resolver-rules.ts`), after the rules already given. A request that goes through a proxy is not resolved here at all, so a name sent on to the person's own SOCKS5 tunnel is unaffected. This is the floor under the rows above, and covers the embed session and the internal-pages session, which register their own request listeners and take no guard |
 
 ## What the scan cannot see
 
