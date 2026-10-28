@@ -12,6 +12,7 @@ Each section below lists what that release carried; `[Unreleased]` is what has l
 
 ### Fixed
 
+- **An onion address typed with no scheme opens over http**: `name.onion` was sent to `https://name.onion/` and failed with a certificate or tunnel error, because an onion service serves plain http on port 80 and Tor already encrypts the connection. "Always use secure connections" leaves an `http://` onion address alone, and an explicit `https://` one stays https.
 - **A release is no longer lost when the system shows no notification**: the version used to count as told before anything was shown, so a system without notifications never told you of it. It now counts as told once the question has been on screen and you answered or dismissed it, so a question that could not be drawn is asked again.
 - **A `.eth` name that does not exist says so again under ENSv2**: a missing subname of a name ENS still serves from its first registry (`foo.vitalik.eth`) showed "Cannot check this site right now", because ENSv2's mirror of that registry answers it with an `UnreachableName` revert; Orivon now reads that as a proven absence and shows "Nothing here".
 - **A page that checks a permission before it asks no longer reads "denied"**: a camera, microphone, location, clipboard, MIDI, idle-detection or window-management permission nobody has decided now reads `prompt` to `navigator.permissions.query`, on websites and on an extension's own pages, so a wallet extension's webcam check reaches the question instead of saying it has no permission. A stored block and Settings' block still read `denied`.
@@ -35,6 +36,7 @@ Each section below lists what that release carried; `[Unreleased]` is what has l
 
 ### Added
 
+- **Settings > Web3 can ask your own Ethereum servers**: choose Your own servers and name up to four Ethereum RPC addresses and a beacon server; a node on this computer or your home network works. They replace Orivon's, which are never asked in their place, and a key in an address is hidden in the log, on screen and in a bug report.
 - **Node shim: `/` and `/orivon` exist as directories**: a program that makes a folder by walking from `/` (`stat` each ancestor, `mkdir` the missing ones) now reaches the app's files. They list one entry, the next segment toward the files, and every write, removal, rename and open on them, and any path beside the files, still fails `EACCES`.
 - **Node shim: `crypto.randomInt`, `fs.mkdtemp`, `fs.cp` and `fs.copyFile`**: `randomInt` draws by rejection sampling over the platform's random values, in both forms; `copyFile`, `cp` (with `recursive`, `force`, `errorOnExist` and `filter`) and `mkdtemp` work on the app's own files and on a folder the person picked, in the callback and promise forms, with Node's errors.
 

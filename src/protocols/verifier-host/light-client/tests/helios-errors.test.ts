@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ResolutionError } from '../../../resolution/records.js'
-import { bootstrapMissing, clockBehind, heliosError, outOfSync } from '../helios-errors.js'
+import { bootstrapFetchFailed, bootstrapMissing, clockBehind, heliosError, outOfSync } from '../helios-errors.js'
 
 describe('heliosError', () => {
   it("turns a revert into the shape viem reads revert data from, so OffchainLookup is seen", () => {
@@ -78,5 +78,25 @@ describe('bootstrapMissing', () => {
     ['nothing', '']
   ])('does not take %s for it', (_name, text) => {
     expect(bootstrapMissing(new Error(text))).toBe(false)
+  })
+})
+
+describe('bootstrapFetchFailed', () => {
+  it.each([
+    ['a 404', 'could not fetch bootstrap: rpc error on method: bootstrap, message: status: 404, message: not found'],
+    ['a request that failed', 'could not fetch bootstrap: rpc error on method: bootstrap, message: error sending request'],
+    ['a server error', 'sync failed: could not fetch bootstrap: status: 503']
+  ])('recognises Helios failing to get the bootstrap from the consensus server: %s', (_name, text) => {
+    expect(bootstrapFetchFailed(new Error(text))).toBe(true)
+    expect(bootstrapFetchFailed(text)).toBe(true)
+  })
+
+  it.each([
+    ['another request of the consensus server', 'could not fetch finality update: rpc error on method: finality_update, message: status: 404'],
+    ['the clock', 'invalid timestamp'],
+    ['the execution server', 'error sending request for url (https://rpc.example/): status 429'],
+    ['nothing', '']
+  ])('does not take %s for it', (_name, text) => {
+    expect(bootstrapFetchFailed(new Error(text))).toBe(false)
   })
 })

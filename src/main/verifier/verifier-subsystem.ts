@@ -36,7 +36,11 @@ import { VerifierStore } from './verifier-store.js'
 import { chooseNameEvidence } from './name-evidence.js'
 import { lastProvenance } from './kept-provenance.js'
 import type { NameEvidence } from './name-evidence.js'
-import { checkpointProblem, lightClientLog, lightClientView } from './status-view.js'
+import { lightClientLog, lightClientView } from './status-view.js'
+import { lightClientConfig } from './light-client-config.js'
+import { EthServersSource } from './eth-servers-source.js'
+import { ipfsReadFromNode, nodeEndpointNames, swarmEndpoints } from './node-endpoints.js'
+import type { EthServers } from './eth-servers.js'
 import type { LightClientView } from './status-view.js'
 import { ccipDirectFor, tunnelFront, tunnelProfileFronts, unproxiedGatewaysFor } from './host-proxy.js'
 import { HostLifecycle } from './host-lifecycle.js'
@@ -44,7 +48,7 @@ import { mountCeilingMs } from '../../protocols/verifier-host/pace.js'
 import { anyTabOnVerifiedOrigin } from './tab-on-verified-origin.js'
 import type { TabsOfWindow } from './tab-on-verified-origin.js'
 import { provideVerifierAccess } from './verifier-access.js'
-import { configureSwarmNode, swarmNode, swarmNodeEndpoint, swarmNodeState } from './swarm-node-subsystem.js'
+import { configureSwarmNode, swarmNode, swarmNodeState } from './swarm-node-subsystem.js'
 import { configureIpfsNode, ipfsNode, ipfsNodeEndpoint, ipfsNodeState } from './ipfs-node-subsystem.js'
 import type { LocalNodeSubsystem } from './local-node-subsystem.js'
 import { IPFS_NODE_IDENTITY } from '../../protocols/ipfs-node/protocol.js'
@@ -82,6 +86,8 @@ let enabledByPerson: () => boolean = () => true
 /** Where the person reads IPFS from, and whether the node may ask a lookup service. Read at each host start, so a change reaches the next. Until the settings are read, the defaults. */
 let ipfsSourceChoice: () => 'node' | 'gateways' = () => 'node'
 let ipfsLookupServiceChoice: () => boolean = () => true
+/** The Ethereum servers the light client asks: Orivon's, or the person's. Read at each host start and each time a view is drawn. */
+const ethServers = new EthServersSource()
 /** Puts the host to sleep so that its next request rebuilds its config. Set once the host exists. */
 let idleHost: () => void = () => {}
 /** The routes, published after this subsystem starts: read when the host's config is built. */
@@ -100,12 +106,13 @@ export function tunnelDefaultChanged (): void {
 }
 
 /** Lets the person's setting, and not only the environment, switch the light client off. Read each time the host builds its config and each time a view is drawn, so a change reaches the next start; `lightClientSettingChanged` makes that next start now. */
-export function configureVerifier (options: { lightClientEnabled: () => boolean, windows: () => readonly TabsOfWindow[], servedFromCache: (origin: string) => boolean, ipfsSource?: () => 'node' | 'gateways', ipfsLookupService?: () => boolean, swarmNodeEnabled?: () => boolean, nodesFollowTunnel?: () => boolean }): void {
+export function configureVerifier (options: { lightClientEnabled: () => boolean, windows: () => readonly TabsOfWindow[], servedFromCache: (origin: string) => boolean, ipfsSource?: () => 'node' | 'gateways', ipfsLookupService?: () => boolean, swarmNodeEnabled?: () => boolean, nodesFollowTunnel?: () => boolean, ethServers?: () => EthServers }): void {
   if (options.nodesFollowTunnel !== undefined) configureNodeRoute({ followTunnel: options.nodesFollowTunnel, nodesTunnel: () => routesOf()?.defaultKind() ?? 'nym' })
   if (options.ipfsSource !== undefined) ipfsSourceChoice = options.ipfsSource
   if (options.ipfsLookupService !== undefined) ipfsLookupServiceChoice = options.ipfsLookupService
   configureIpfsNode({ lookupService: () => ipfsLookupServiceChoice(), readFromNode: () => ipfsSourceChoice() === 'node' })
   if (options.swarmNodeEnabled !== undefined) configureSwarmNode({ enabled: options.swarmNodeEnabled })
+  if (options.ethServers !== undefined) ethServers.configure(options.ethServers)
   enabledByPerson = options.lightClientEnabled
   tabsOnVerifiedOrigin = () => anyTabOnVerifiedOrigin(options.windows(), options.servedFromCache)
 }
@@ -135,6 +142,13 @@ export function ipfsSettingsChanged (setting: 'source' | 'lookupService'): void 
 export function lightClientSettingChanged (): void {
   idleHost()
   changed()
+}
+
+/** The person changed which Ethereum servers are asked, or an address in their list: applied at once, when the servers asked are not the same ones. A host started with the light client off holds no servers, so it keeps running (and the nodes it carries with it). */
+export function ethServersChanged (): void {
+  if (!ethServers.changed()) return
+  if (lightClientSwitchedOff()) changed()
+  else lightClientSettingChanged()
 }
 
 /**
@@ -219,23 +233,15 @@ function verifierStore (): VerifierStore {
   return store
 }
 
-const renewal = new CheckpointRenewal({ store: verifierStore, switchedOff: () => lightClientSwitchedOff(), changed: () => { changed() }, hostRunning: () => !hostAsleep, restartHost: () => { idleHost(); startHost() } })
-
-/** The Bee-API origins Swarm reads from: the node Orivon runs, unless a test build names its own. */
-function swarmEndpoints (seam: EthTestSeam | undefined): readonly string[] {
-  return seam === undefined ? [swarmNodeEndpoint()] : seam.swarmEndpoints ?? []
+/** The beacon server the light client bootstraps from, and whether it is on this computer or a home network. */
+function consensusOf (): { readonly url: string, readonly local: boolean } {
+  const { consensusRpc, localEndpoints } = ethServers.current()
+  return { url: consensusRpc, local: localEndpoints.includes(consensusRpc) }
 }
 
-/** The nodes' own endpoints, by the name the popover gives them: only an ordinary build runs them (a test build's endpoints are fixtures and keep their own address). */
-function nodeEndpointNames (): Readonly<Record<string, string>> {
-  if (ethTestSeam() !== undefined) return {}
-  return { [ipfsNodeEndpoint()]: "Orivon's IPFS node", [swarmNodeEndpoint()]: "Orivon's Swarm node" }
-}
+const renewal = new CheckpointRenewal({ store: verifierStore, switchedOff: () => lightClientSwitchedOff(), changed: () => { changed() }, hostRunning: () => !hostAsleep, restartHost: () => { idleHost(); startHost() }, consensus: consensusOf })
 
-/** Whether IPFS is read from the node Orivon runs: the person's choice; a test build serves IPFS from its own endpoints, or from a fixture standing in for the node when it names one. */
-function ipfsFromNode (seam: EthTestSeam | undefined): boolean {
-  return seam === undefined ? ipfsSourceChoice() === 'node' : seam.ipfsNode !== undefined
-}
+const ipfsFromNode = (seam: EthTestSeam | undefined): boolean => ipfsReadFromNode(seam, ipfsSourceChoice())
 
 async function hostConfig (): Promise<HostConfig> {
   // Started before anything is awaited, so the requests waiting for the host count their time to start from its end.
@@ -245,16 +251,7 @@ async function hostConfig (): Promise<HostConfig> {
   const front = await tunnelFront(routesOf())
   hostThroughTunnel = front !== undefined
   const stored = verifierStore()
-  let lightClient: Pick<HostConfig, 'lightClient' | 'lightClientOff'>
-  if (lightClientSwitchedOff()) {
-    lightClient = { lightClient: undefined, lightClientOff: 'the Ethereum light client is switched off, so no .eth name can be verified' }
-  } else {
-    await renewing
-    const choice = renewal.chooseForStart()
-    lightClient = choice.ok
-      ? { lightClient: { executionRpcs: DEFAULT_ENDPOINTS.executionRpcs, consensusRpc: DEFAULT_ENDPOINTS.consensusRpc, checkpoint: choice.checkpoint.root } }
-      : { lightClient: undefined, lightClientOff: `the Ethereum light client cannot start: ${checkpointProblem(choice, renewal.problem())}` }
-  }
+  const lightClient = await lightClientConfig({ switchedOff: lightClientSwitchedOff(), renewing, renewal, servers: ethServers.forHost() })
   const gateways = seam?.gateways ?? DEFAULT_ENDPOINTS.gateways
   return {
     port: loopbackPort(),
@@ -350,6 +347,7 @@ export function verifierProcessInfo (): ProcessInfo | undefined {
 /** The light client's state in words, for the Settings section and the site-info popover. */
 export function verifierView (): LightClientView {
   const fetchProblem = renewal.problem()
+  const servers = ethServers.current()
   return lightClientView({
     lightClient,
     // A sleeping host reports no newer checkpoint, so the one it would start from is chosen again at the age it has now.
@@ -358,9 +356,10 @@ export function verifierView (): LightClientView {
     hostDown,
     hostAsleep: hostAsleep && hostDown === undefined,
     switchedOff: lightClientSwitchedOff(),
+    ownServers: servers.own,
     ...(ethTestSeam() === undefined && { swarmNode: swarmNodeState() }),
     ...(ipfsFromNode(ethTestSeam()) && { ipfsNode: { state: ipfsNodeState(), lookupService: ipfsLookupServiceChoice() } }),
-    endpoints: { ...DEFAULT_ENDPOINTS, checkpointBeaconApis: renewal.servers(), swarmEndpoints: swarmEndpoints(ethTestSeam()), ...(ipfsFromNode(ethTestSeam()) && { ipfsNodeEndpoints: [ipfsNodeEndpoint()] }) }
+    endpoints: { ...DEFAULT_ENDPOINTS, executionRpcs: servers.executionRpcs, consensusRpc: servers.consensusRpc, checkpointBeaconApis: renewal.servers(), swarmEndpoints: swarmEndpoints(ethTestSeam()), ...(ipfsFromNode(ethTestSeam()) && { ipfsNodeEndpoints: [ipfsNodeEndpoint()] }) }
   }, Date.now())
 }
 

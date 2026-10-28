@@ -7,6 +7,7 @@ certificate check each session applies, starting and restarting the verifier hos
 checkpoint ([`ADR-0031`](../../../docs/decisions/ADR-0031-helios-is-the-light-client.md)) and its renewal at run time from two beacon servers that agree ([`ADR-0092`](../../../docs/decisions/ADR-0092-when-no-checkpoint-is-recent-enough-two-beacon-servers-that-agree-supply-one.md)), what the
 host verified between runs (IPNS sequences, Swarm feed indexes, and the address scheme each `.eth` name's content was last found under), the per-site partition stamp, the gateway proxy check, and the
 wording of the status and a name's evidence for Settings and the site-info popover, and the light client's failures and syncs as lines of the main process's log, where a bug report finds them.
+Which Ethereum servers the light client asks is decided here: Orivon's ([`endpoints.ts`](endpoints.ts)), or the ones the person named in Settings > Web3 ([`eth-servers.ts`](eth-servers.ts) reads the three settings; [`eth-servers-source.ts`](eth-servers-source.ts) remembers what the running host was started with, so only a change to the servers restarts it; [`light-client-config.ts`](light-client-config.ts) builds the light client's part of the host's configuration from them, and the one log line that says the person's servers are asked).
 The person can switch the light client off in Settings or from the Available networks popup (`web3.lightClient`, read at each
 start of the host through `configureVerifier` and applied at once: see below); the environment switch still forces it off
 (`lightClientForcedOff`, the one place that reads it), and
@@ -27,7 +28,12 @@ import `electron`; the rest are `<name>.ts` decisions ([`../README.md`](../READM
 (this directory's own boundary, below).
 
 **What it must never import.** The verifier host's code, as opposed to its protocol types: it
-runs in another process, and only [`host-supervisor.ts`](host-supervisor.ts) talks to it.
+runs in another process, and only [`host-supervisor.ts`](host-supervisor.ts) talks to it. Three files of the host are
+the exception, because main and the host must apply one rule: `light-client/endpoint-mask.ts` (the mask every shown address goes
+through), `light-client/server-address.ts` (what a server address may be) and `local-rpc-fetch.ts` (how a server on this
+computer is reached, which `checkpoint-fetch-net.ts` uses for a beacon server of the person's that is local). They import
+nothing else of the host but each other, `direct-fetch.ts` (the Node sockets and pinned lookup that `local-rpc-fetch.ts` is built
+on, which imports only Node and the broker's address policy) and the types of `egress.ts`.
 
 **Owner stream.** `ens-ipfs`.
 
@@ -207,3 +213,15 @@ provenance (a file that failed its check, another content root), which replaces 
 cache or all history forgets them (`forgetKeptProvenance`).
 
 **A page that is not whole says so** ([`failed-files.ts`](failed-files.ts), [`failed-files-store.ts`](failed-files-store.ts), `partition-stamp.ts`'s `installFileFailureWatch`, [`ADR-0088`](../../../docs/decisions/ADR-0088-every-wait-on-the-load-path-comes-from-the-route-it-travels.md)). Chromium stops a tab's loading indicator when every request has ended, whether or not each was answered, so a stylesheet the verifier could not read (a `5xx`) leaves a page with text and no colours that looks finished. Each website session notes, per tab, the files (not a document or a frame; a `404` is a file the site lacks) answered with a failure, forgets one when the same address later arrives and all of them when the tab loads another document, and the shell state's `filesFailed` count shows the address bar's mark. Only pages the verifier serves are watched.
+
+**The person's servers replace Orivon's field by field, and nothing falls back.** A custom choice with an empty field keeps
+Orivon's for that field (`eth-servers.ts`'s `effectiveEthServers`). The checkpoint renewal still asks Orivon's two beacon
+servers for the finalized head and for each block root, so a block that only the person's server vouches for is never used;
+the person's beacon server is asked for the block root at the slot and for the bootstrap (`CheckpointRenewal`'s
+`consensusRpc`), and the roots recorded as unserved are forgotten when that server changes. The status page says what to
+do about a failure (`status-view.ts`'s `OWN_FAILED`, never an address) only when the host puts the failure on the
+person's servers (the `ownServersFailed` field of its failed status: every execution server they named is in trouble or
+none is mainnet, or their beacon server did not give the bootstrap). A clock that is behind, one of Orivon's servers
+failing beside a server of theirs, and a failure the host cannot place get the reason alone. A change to the servers
+puts a running host to sleep only while the light client is on, since a host started without one holds no servers
+(`verifier-subsystem.ts`'s `ethServersChanged`).

@@ -450,6 +450,23 @@ describe('the light client of a tunnel-profile website', () => {
       expect(page.body).not.toContain('FAKE-KEY')
     })
 
+    it('tells the shell why the shared client did not start, so the status page and a bug report say it, with no key in it', async () => {
+      const spied = deps({ startLightClient: vi.fn(() => quiet()) })
+      const host = await startHost(config({ lightClient: OWN }), spied)
+      running.push(host)
+      const statuses = spied.posted.filter((message) => message.type === 'status')
+      expect(statuses).toHaveLength(1)
+      expect(statuses[0]).toMatchObject({ status: { state: 'failed', reason: expect.stringMatching(/Ethereum servers set in Settings cannot be used: .*no way to a server on this computer/), retryAt: undefined } })
+      expect(JSON.stringify(spied.posted)).not.toContain('FAKE-KEY')
+    })
+
+    it('says nothing to the shell about a light client that starts', async () => {
+      const spied = deps({ localFetch, startLightClient: vi.fn(() => quiet()) })
+      const host = await startHost(config({ lightClient: OWN }), spied)
+      running.push(host)
+      expect(spied.posted.filter((message) => message.type === 'status')).toEqual([])
+    })
+
     it('starts no light client when a local address among the servers is not named local', async () => {
       const starts = vi.fn(() => quiet())
       const { localEndpoints: _named, ...unnamed } = OWN

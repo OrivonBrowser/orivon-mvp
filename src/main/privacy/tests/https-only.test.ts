@@ -53,6 +53,14 @@ describe('upgradeTarget', () => {
     expect(upgradeTarget('http://abc.ipfs.orivon/', none)).toBeNull()
   })
 
+  it('exempts an onion name, which Tor already encrypts, in every spelling', () => {
+    for (const url of ['http://abcdefghijklmnop.onion/', 'http://ABCDEFGHIJKLMNOP.ONION./x?q=1', 'http://sub.abcdefghijklmnop.onion:8080/']) {
+      expect(upgradeTarget(url, none)).toBeNull()
+    }
+    expect(upgradeTarget('http://onion.example.com/', none)).toBe('https://onion.example.com/')
+    expect(upgradeTarget('http://example.com/x.onion', none)).toBe('https://example.com/x.onion')
+  })
+
   it('exempts what the caller names, by host only', () => {
     const exempt = (host: string): boolean => host === 'kept.example'
     expect(upgradeTarget('http://kept.example:9000/x', exempt)).toBeNull()

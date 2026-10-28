@@ -98,3 +98,56 @@ describe('the IPFS rows', () => {
     expect(candidate.control.type === 'info' && candidate.control.text(state)).toBe('Not in use: a proxy is configured.')
   })
 })
+
+describe('the Ethereum server rows', () => {
+  function chosen (choice: string, held = false): SettingsState {
+    const state = stateWith({ forcedOff: false })
+    vi.spyOn(state, 'value').mockImplementation((key: string) => (key === 'web3.ethServers' ? choice : undefined))
+    vi.spyOn(state, 'isHeld').mockImplementation((key: string) => held && key === 'web3.ethServers')
+    return state
+  }
+
+  it('offers the choice between Orivon\'s servers and the person\'s own on its own setting, always shown', () => {
+    const candidate = row('web3-eth-servers')
+    expect(candidate.label).toBe('Ethereum servers')
+    expect(candidate.control.type === 'choice' && candidate.control.key).toBe('web3.ethServers')
+    expect(candidate.visible?.(chosen('orivon')) ?? true).toBe(true)
+  })
+
+  it('shows the address lists only once the person\'s own servers are chosen', () => {
+    for (const id of ['web3-eth-rpcs', 'web3-eth-beacon']) {
+      expect(row(id).visible?.(chosen('orivon')), id).toBe(false)
+      expect(row(id).visible?.(chosen('custom')), id).toBe(true)
+    }
+  })
+
+  it('draws each list with the full-width control of a list', () => {
+    for (const id of ['web3-eth-rpcs', 'web3-eth-beacon']) {
+      const { control } = row(id)
+      expect(control.type, id).toBe('custom')
+      expect(control.type === 'custom' && control.wide, id).toBe(true)
+    }
+  })
+
+  it('locks the choice in a private window held to Nym, which uses Orivon\'s servers', () => {
+    const control = row('web3-eth-servers').control
+    expect(control.type === 'choice' && control.locked?.(chosen('orivon', true))).toBe(true)
+    expect(control.type === 'choice' && control.locked?.(chosen('orivon', false))).toBe(false)
+  })
+
+  it('says in plain words what a server learns, that every answer is checked, that a local server is reached directly, and that a change applies at once', () => {
+    const help = row('web3-eth-servers').help ?? ''
+    expect(help).toMatch(/still checked on this computer/)
+    expect(help).toMatch(/learns the names you open/)
+    expect(help).toMatch(/reached directly, never through a tunnel/)
+    expect(help).toMatch(/Nym, Orivon's servers are always used/)
+    expect(help).toMatch(/A change applies at once\.$/)
+    expect(help).toMatch(/not tried when yours fail/)
+  })
+
+  it('sits among the switches, before the light client\'s state', () => {
+    const ids = web3.rows.map((candidate) => candidate.id)
+    expect(ids.indexOf('web3-eth-servers')).toBe(ids.indexOf('web3-eth-gateway') + 1)
+    expect(ids.indexOf('web3-eth-beacon')).toBeLessThan(ids.indexOf('web3-state'))
+  })
+})

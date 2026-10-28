@@ -24,6 +24,10 @@ served with a CSP that allows no network. `intro/` has no preload: it reports "E
 through its URL hash, which `intro-view.ts` watches. `pages/settings/apps-view.ts` imports [`src/protocols/builtin.ts`](../protocols/builtin.ts)
 for pure string work (showing `ipfs://<cid>` as an address). `site-info/` imports
 [`src/trust/domain-binding.ts`](../trust/domain-binding.ts) for the same, naming the home an app declares.
+`pages/settings/controls/endpoint-list-model.ts` imports two pure files of the verifier host,
+[`light-client/server-address.ts`](../protocols/verifier-host/light-client/server-address.ts) and
+[`light-client/endpoint-mask.ts`](../protocols/verifier-host/light-client/endpoint-mask.ts), so the page checks and shows an
+Ethereum server's address by the rule the settings store applies (`pages/settings/controls/README.md`).
 
 **What it must never import.** `electron`, `node:*`, or anything under [`src/main/`](../main/).
 This is a sandboxed renderer with no Node; reaching for it means the logic belongs in main.

@@ -63,11 +63,14 @@ describe('a private session\'s directory', () => {
   })
 
   it('held to Nym, begins with a settings file that holds the tunnel, through the store\'s own version and checks, and keeps the other choices', async () => {
-    await writeFile(join(home, 'settings.json'), JSON.stringify({ version: 1, values: { 'appearance.theme': 'dark', 'network.route.proxy': '127.0.0.1:9050', 'network.tunnel.everywhere': false, 'privacy.doNotTrack': 'not a boolean' } }))
+    await writeFile(join(home, 'settings.json'), JSON.stringify({ version: 1, values: { 'appearance.theme': 'dark', 'network.route.proxy': '127.0.0.1:9050', 'network.tunnel.everywhere': false, 'privacy.doNotTrack': 'not a boolean', 'web3.ethServers': 'custom', 'web3.ethRpcs': 'https://mainnet.infura.io/v3/FAKE-KEY-0123456789', 'web3.ethBeacon': 'https://beacon.example.com/x' } }))
     const dir = createPrivateDir(home, home, tmp, 'nym')
     const written = JSON.parse(await readFile(join(dir, 'settings.json'), 'utf8')) as { version: number, values: Record<string, unknown> }
     expect(written.version).toBe(2)
-    expect(written.values).toEqual({ 'appearance.theme': 'dark', 'network.route.proxy': '', 'network.route.kind': 'nym', 'network.tunnel.everywhere': true, 'network.nym.enabled': true })
+    expect(written.values).toEqual({ 'appearance.theme': 'dark', 'network.route.proxy': '', 'network.route.kind': 'nym', 'network.tunnel.everywhere': true, 'network.nym.enabled': true, 'web3.ethServers': 'orivon', 'web3.ethRpcs': '', 'web3.ethBeacon': '' })
+    // Orivon's Ethereum servers are asked in this window, and the person's own, with the key they may hold, are not even copied.
+    expect(JSON.stringify(written)).not.toContain('FAKE-KEY')
+    expect(readSettingBeforeReady(join(dir, 'settings.json'), 'web3.ethServers')).toBe('orivon')
     expect(everywhereBeforeReady(join(dir, 'settings.json'))).toBe(true)
     expect(readSettingBeforeReady(join(dir, 'settings.json'), 'network.route.kind')).toBe('nym')
     expect(readSettingBeforeReady(join(dir, 'settings.json'), 'network.nym.enabled')).toBe(true)

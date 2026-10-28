@@ -186,6 +186,8 @@ export interface FetcherDeps {
 /** At most one attempt in flight, and after a failure none until the wait has passed: a person who keeps opening `.eth` names offline asks the servers once per wait, not once per open. */
 export class CheckpointFetcher {
   private inFlight: Promise<FetchOutcome> | undefined
+  /** Counts `reset`s, so that an attempt begun before one is not held against what came after it. */
+  private generation = 0
   private failures = 0
   private retryAt = 0
   private last: FetchOutcome | undefined
@@ -207,14 +209,24 @@ export class CheckpointFetcher {
     return this.last?.ok === false ? this.last.problem : undefined
   }
 
+  /** Forgets every failure and the wait after it: the servers asked are not the ones that failed. An attempt in flight still ends, but leaves no failure behind. */
+  reset (): void {
+    this.generation += 1
+    this.failures = 0
+    this.retryAt = 0
+    this.last = undefined
+  }
+
   /** The attempt in flight, or a new one; within the wait after a failure, that failure again. */
   async renew (): Promise<FetchOutcome> {
     if (this.inFlight !== undefined) return await this.inFlight
     if (this.last?.ok === false && this.deps.now() < this.retryAt) return this.last
+    const { generation } = this
     const attempt = this.deps.run().catch((): FetchOutcome => ({ ok: false, problem: 'unreachable' }))
     this.inFlight = attempt
     try {
       const outcome = await attempt
+      if (generation !== this.generation) return outcome
       if (outcome.ok) {
         this.failures = 0
         this.retryAt = 0

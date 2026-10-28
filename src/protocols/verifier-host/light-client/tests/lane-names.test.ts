@@ -32,6 +32,17 @@ describe('publicText', () => {
     expect(text).toBe('error sending request for url (https://ethereum-beacon-api.publicnode.com/eth/v1/beacon/headers): timed out; https://eth.drpc.org/ answered 502')
   })
 
+  it('reads the execution lane as the first server still in use, once the first was dropped', () => {
+    const text = `error sending request for url (${names.execution}/): connection refused`
+    expect(publicText(text, names, CONFIG, ['https://b.rpc'])).toBe('error sending request for url (https://b.rpc/): connection refused')
+    expect(publicText(text, names, CONFIG, ['https://b.rpc'])).not.toContain('infura')
+  })
+
+  it('still leaves no part of a dropped server\'s address in the text', () => {
+    const text = publicText(`GET https://mainnet.infura.io/v3/${KEY} failed`, names, CONFIG, ['https://b.rpc'])
+    expect(text).not.toContain(KEY)
+  })
+
   it('leaves text that names nothing as it was', () => {
     expect(publicText('invalid timestamp', names, CONFIG)).toBe('invalid timestamp')
   })
