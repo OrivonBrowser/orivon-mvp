@@ -67,6 +67,17 @@ describe('secretParts', () => {
     expect(parts).toContain('user')
   })
 
+  it('names the address but not a path that holds no key, which would blank ordinary text wherever it appeared', () => {
+    expect(secretParts('https://rpc.ankr.com/eth')).toEqual(['https://rpc.ankr.com/eth'])
+    expect(secretParts('https://rpc.ankr.com/eth/')).toEqual(['https://rpc.ankr.com/eth/', 'https://rpc.ankr.com/eth'])
+  })
+
+  it('names a query as a whole, since a key after a ? is not always one that looks like it', () => {
+    const parts = secretParts('https://rpc.example.com/eth?apikey=demo')
+    expect(parts).toContain('/eth?apikey=demo')
+    expect(parts).toContain('https://rpc.example.com/eth?apikey=demo')
+  })
+
   it('names nothing for an address with no secret in it', () => {
     expect(secretParts('https://eth.drpc.org')).toEqual([])
     expect(secretParts('https://eth.drpc.org/')).toEqual([])
@@ -85,6 +96,12 @@ describe('maskText', () => {
     const masked = maskText(text, [url])
     expect(masked).not.toContain('0123456789abcdef')
     expect(masked).toContain('https://mainnet.infura.io/••••')
+  })
+
+  it('leaves the paths of other servers alone when the address masked has an ordinary path', () => {
+    const text = 'GET https://ethereum-beacon-api.publicnode.com/eth/v1/beacon/headers/finalized failed; also https://eth.drpc.org'
+    expect(maskText(text, ['https://rpc.ankr.com/eth'])).toBe(text)
+    expect(maskText('could not reach https://rpc.ankr.com/eth', ['https://rpc.ankr.com/eth'])).toBe('could not reach https://rpc.ankr.com/••••')
   })
 
   it('leaves text with no secret in it as it was', () => {

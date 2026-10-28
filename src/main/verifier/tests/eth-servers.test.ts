@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { forgetSecrets, noteSecret, scrub } from '../../diagnostics/secret-scrub.js'
 import { DEFAULT_ENDPOINTS } from '../endpoints.js'
 import { effectiveEthServers, ethServersLine, noteEthSecrets, sameEthServers } from '../eth-servers.js'
 import type { EthServerValues } from '../eth-servers.js'
@@ -87,6 +88,23 @@ describe('noteEthSecrets', () => {
   it('notes a local address with a key too, and a plain one not at all', () => {
     expect(noted(own(LOCAL))).toContainEqual([LOCAL, 'http://127.0.0.1:8545/••••'])
     expect(noted(own(HOME))).toEqual([])
+  })
+
+  describe('an address with an ordinary path, such as a public server\'s', () => {
+    afterEach(() => { forgetSecrets() })
+    const ANKR = 'https://rpc.ankr.com/eth'
+
+    it('notes the address and not the path, which a key is not', () => {
+      const seen = noted(own(ANKR))
+      expect(seen).toEqual([[ANKR, 'https://rpc.ankr.com/••••']])
+    })
+
+    it('leaves the lines about other servers readable once it is noted', () => {
+      noteEthSecrets(effectiveEthServers(own(ANKR)), noteSecret)
+      const line = 'GET https://ethereum-beacon-api.publicnode.com/eth/v1/beacon/headers/finalized failed; fallback https://eth.drpc.org; /ethers/lib'
+      expect(scrub(line)).toBe(line)
+      expect(scrub(`fetch ${ANKR} failed`)).toBe('fetch https://rpc.ankr.com/•••• failed')
+    })
   })
 })
 

@@ -49,24 +49,25 @@ export function displayEndpoint (url: string): string {
 }
 
 /**
- * Every string that would give the address's secret away if it were printed: the address as typed, its path and query, any
- * key-like path segment or query value, a key-like host label, and the credentials. Empty for an address that holds none.
+ * Every string that would give the address's secret away if it were printed: the address as typed, any key-like path segment or
+ * query value, the path and query as a whole when they hold one or the address has a query, a key-like host label, and the
+ * credentials. An ordinary path (`/eth`) is not one by itself, because it would blank every other line that holds the same
+ * letters. The address of a server with a path is named even then, since it is shown masked. Empty for an address that holds
+ * neither.
  */
 export function secretParts (url: string): string[] {
   const parsed = parse(url)
   if (parsed === undefined) return []
   const parts = new Set<string>()
-  const pathAndQuery = hasPath(parsed) || parsed.search !== '' ? `${parsed.pathname}${parsed.search}` : undefined
-  if (pathAndQuery !== undefined) {
-    parts.add(pathAndQuery)
-    for (const segment of parsed.pathname.split('/')) if (KEY_PART.test(segment)) parts.add(segment)
-    for (const [, value] of parsed.searchParams) if (KEY_PART.test(value)) parts.add(value)
-  }
+  const holdsPath = hasPath(parsed) || parsed.search !== ''
+  for (const segment of parsed.pathname.split('/')) if (KEY_PART.test(segment)) parts.add(segment)
+  for (const [, value] of parsed.searchParams) if (KEY_PART.test(value)) parts.add(value)
+  if (parts.size > 0 || parsed.search !== '') parts.add(`${parsed.pathname}${parsed.search}`)
   const label = bareHost(parsed.hostname).split('.').find(isKeyLabel)
   if (label !== undefined && canonicalAddress(bareHost(parsed.hostname)) === null) parts.add(label)
   if (parsed.username !== '') parts.add(decodeURIComponent(parsed.username))
   if (parsed.password !== '') parts.add(decodeURIComponent(parsed.password))
-  if (parts.size === 0) return []
+  if (parts.size === 0 && !holdsPath) return []
   parts.add(url)
   if (url.endsWith('/')) parts.add(url.slice(0, -1))
   return [...parts]
