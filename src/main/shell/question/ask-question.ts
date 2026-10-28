@@ -26,6 +26,8 @@ export interface AskOptions {
   readonly signal?: AbortSignal | undefined
   /** A new page in the tab ends the question: it was about the page that asked. */
   readonly endOnNavigation?: boolean | undefined
+  /** Called each time the panel is put up. A question that ends first (no toolbar in time, tab or window gone, queue full) never calls it, and its cancel looks like an Escape. */
+  readonly onShown?: (() => void) | undefined
 }
 
 export type AskQuestion = (target: QuestionTarget, spec: QuestionSpec, options?: AskOptions) => Promise<QuestionResult>
@@ -141,7 +143,7 @@ export function createAskQuestion (deps: AskQuestionDeps): AskQuestion {
       const show = (): void => {
         if (settled) return
         if (placeGone(place)) { settle(cancel); return }
-        id = holdQuestion(place.window, spec, settle)
+        id = holdQuestion(place.window, spec, settle, options.onShown)
         handle = requestSlot({
           window: place.window,
           tabId: place.tabId,

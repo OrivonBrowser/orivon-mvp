@@ -62,7 +62,9 @@ The question panel: every question the browser puts to the person is asked throu
 pointer or the focus on it) and answers the switches of a spec's `choices` (a row each, off unless the spec says; the answer names the ids left on, and main keeps only ids it offered), and
 `question/install-questions.ts` binds the ask to this process's windows. The panel is drawn in the window of the tab
 the question belongs to, under the address pill with its top edge inside the toolbar; a background tab's question waits
-for its tab, a kiosk draws it centred, and only a question asked when no shell window exists opens a native box.
+for its tab, a kiosk draws it centred, and only a question asked when no shell window exists opens a native box. A caller
+that must tell a question the person saw from one that ended unseen (no toolbar in time, tab or window gone) passes
+`options.onShown`: the cancel result is the same for an Escape and for both.
 `navigation-hold.ts` holds a tab's page where it is while a question about it is open (`holdNavigation`, nesting and
 released once): `tab-view.ts` drops a main-frame navigation, a redirect and a `window.open` the page starts meanwhile, so
 an answer cannot be given to a page that is no longer the one asked about. A change of address inside the document is
