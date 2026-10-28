@@ -1,15 +1,21 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { concat } from 'viem'
+import { DatabaseSync } from 'node:sqlite'
+import { bytesToHex, concat } from 'viem'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { buildFile, buildSite } from '../../../../test/apps/swarm-gateway/encode.mjs'
+import { GatewayPool } from '../../gateways/gateways.js'
 import type { NameRecord } from '../../resolution/records.js'
+import { ChunkSource } from '../../swarm/chunk-fetch.js'
+import type { SubtreeLeaf } from '../../swarm/chunk-fetch.js'
+import { DEFAULT_LIMITS } from '../../swarm/limits.js'
 import { createSwarmGatherer } from '../../swarm/gatherer.js'
 import type { FeedIndexStore } from '../../swarm/feed.js'
 import { referenceCid } from '../../swarm/reference.js'
 import { A, fakeSwarm, text } from '../../swarm/tests/swarm.test-helpers.js'
 import { SwarmChunkDatabase } from '../swarm-chunk-database.js'
+import { swarmChunkFile } from '../swarm-chunk-files.js'
 import { KeptChunkMemory } from '../swarm-chunk-memory.js'
 
 const SALT = 'ab'.repeat(32)
@@ -39,7 +45,7 @@ function database (salt = SALT): SwarmChunkDatabase {
 }
 
 describe('the memory in front of the chunk database', () => {
-  it('asks its cache first, then the disk, and answers a chunk it took from the disk from its cache after', () => {
+  it('answers from its cache without the disk, from the disk when asked there, and a chunk taken from the disk answers from the cache after', async () => {
     const store = new Map<string, Uint8Array>()
     const { ref } = buildFile(new Uint8Array(4096).fill(9), store)
     const chunk = store.get(ref)!
@@ -49,10 +55,38 @@ describe('the memory in front of the chunk database', () => {
 
     const disk = database()
     const memory = new KeptChunkMemory(disk)
+    expect(memory.recall(SITE, ref)).toBeUndefined()
+    expect(disk.fromDisk).toBe(0)
+    expect(await memory.recallKept(SITE, ref)).toEqual(chunk)
+    expect(disk.fromDisk).toBe(1)
     expect(memory.recall(SITE, ref)).toEqual(chunk)
-    expect(memory.recalledFromDisk()).toBe(1)
-    expect(memory.recall(SITE, ref)).toEqual(chunk)
-    expect(memory.recalledFromDisk()).toBe(1)
+    expect(disk.fromDisk).toBe(1)
+  })
+
+  it('reads the disk one chunk at a time, the event loop turning between two reads', async () => {
+    const store = new Map<string, Uint8Array>()
+    const refs = Array.from({ length: 20 }, (_, i) => buildFile(new Uint8Array(4096).fill(i + 1), store).ref)
+    const first = database()
+    for (const ref of refs) first.put(SITE, ref, store.get(ref)!)
+    first.close()
+
+    const memory = new KeptChunkMemory(database())
+    let turns = 0
+    let reading = true
+    const spin = (): void => {
+      turns++
+      if (reading) setImmediate(spin)
+    }
+    setImmediate(spin)
+    const answers = await Promise.all(refs.map(async (ref) => await memory.recallKept(SITE, ref)))
+    reading = false
+    expect(answers).toEqual(refs.map((ref) => store.get(ref)))
+    expect(turns).toBeGreaterThanOrEqual(refs.length)
+  })
+
+  it('answers undefined, never an error, when the disk fails', async () => {
+    const broken = { get: () => { throw new Error('the disk is gone') }, touch: () => {}, put: () => {} } as unknown as SwarmChunkDatabase
+    await expect(new KeptChunkMemory(broken).recallKept(SITE, 'ab'.repeat(32))).resolves.toBeUndefined()
   })
 
   it('writes what it remembers to the disk too', () => {
@@ -65,24 +99,73 @@ describe('the memory in front of the chunk database', () => {
     expect(database().get(SITE, ref)).toEqual(chunk)
   })
 
-  it('keeps the chunks of one route apart from those of another on the disk, as it does in memory', () => {
+  it('keeps the chunks of one route apart from those of another on the disk, as it does in memory', async () => {
     const store = new Map<string, Uint8Array>()
     const { ref } = buildFile(new Uint8Array(100).fill(3), store)
     const chunk = store.get(ref)!
     const disk = database()
     new KeptChunkMemory(disk, 'nym').remember(SITE, ref, chunk)
     disk.flush()
-    expect(new KeptChunkMemory(disk).recall(SITE, ref)).toBeUndefined()
-    expect(new KeptChunkMemory(disk, 'socks5').recall(SITE, ref)).toBeUndefined()
-    expect(new KeptChunkMemory(disk, 'nym').recall(SITE, ref)).toEqual(chunk)
+    expect(await new KeptChunkMemory(disk).recallKept(SITE, ref)).toBeUndefined()
+    expect(await new KeptChunkMemory(disk, 'socks5').recallKept(SITE, ref)).toBeUndefined()
+    expect(await new KeptChunkMemory(disk, 'nym').recallKept(SITE, ref)).toEqual(chunk)
   })
 
-  it('does not hand the disk to a site that did not fetch the chunk', () => {
+  it('does not hand the disk to a site that did not fetch the chunk', async () => {
     const store = new Map<string, Uint8Array>()
     const { ref } = buildFile(new Uint8Array(100).fill(3), store)
     const disk = database()
     new KeptChunkMemory(disk).remember(SITE, ref, store.get(ref)!)
-    expect(new KeptChunkMemory(disk).recall('https://two.example', ref)).toBeUndefined()
+    expect(await new KeptChunkMemory(disk).recallKept('https://two.example', ref)).toBeUndefined()
+  })
+})
+
+describe('a chunk source over the chunk database', () => {
+  const signal = new AbortController().signal
+
+  /** A file of six leaves under one intermediate chunk, and a source that reads it from `swarm` through `disk`. */
+  function file () {
+    const store = new Map<string, Uint8Array>()
+    const content = Uint8Array.from({ length: 6 * 4096 }, (_, i) => Math.imul(i ^ (i >>> 5), 2_246_822_519) >>> 24)
+    const parent = buildFile(content, store).ref
+    const refs = store.get(parent)!.subarray(8)
+    const leaves: SubtreeLeaf[] = Array.from({ length: 6 }, (_, i) => ({ address: bytesToHex(refs.subarray(i * 32, (i + 1) * 32)).slice(2), size: 4096, offset: i * 4096 }))
+    const sourceOver = (disk: SwarmChunkDatabase): { source: ChunkSource, requests: string[] } => {
+      const swarm = fakeSwarm(store)
+      const deps = { fetch: swarm.fetch, pool: new GatewayPool([A], 6), limits: DEFAULT_LIMITS }
+      return { source: new ChunkSource(deps, new KeptChunkMemory(disk), SITE), requests: swarm.requests }
+    }
+    return { store, parent, leaves, sourceOver }
+  }
+
+  it('reads the leaves of a file seen before from the disk, and asks the node for none', async () => {
+    const { store, parent, leaves, sourceOver } = file()
+    const first = database()
+    await Promise.all(sourceOver(first).source.leaves(parent, leaves, signal, () => {}))
+    first.close()
+
+    const second = database()
+    const { source, requests } = sourceOver(second)
+    expect(await Promise.all(source.leaves(parent, leaves, signal, () => {}))).toEqual(leaves.map((leaf) => store.get(leaf.address)))
+    expect(requests).toEqual([])
+    expect(second.fromDisk).toBe(6)
+  })
+
+  it('fetches again the leaves whose rows fail their address, in one request, and serves the right bytes', async () => {
+    const { store, parent, leaves, sourceOver } = file()
+    const first = database()
+    await Promise.all(sourceOver(first).source.leaves(parent, leaves, signal, () => {}))
+    first.close()
+    const raw = new DatabaseSync(join(dir, swarmChunkFile(SALT)))
+    for (const at of [1, 4]) raw.prepare('UPDATE chunk SET bytes = zeroblob(length(bytes)) WHERE address = ?').run(Buffer.from(leaves[at]!.address, 'hex'))
+    raw.close()
+
+    const second = database()
+    const { source, requests } = sourceOver(second)
+    expect(await Promise.all(source.leaves(parent, leaves, signal, () => {}))).toEqual(leaves.map((leaf) => store.get(leaf.address)))
+    expect(requests).toEqual([`${A}/bytes/${parent}`])
+    expect(second.refused).toBe(2)
+    expect(second.fromDisk).toBe(4)
   })
 })
 
@@ -195,8 +278,6 @@ describe('a Swarm gatherer over the chunk database', () => {
     const first = gathererOver(chunks, database())
     await read(await first.gatherer.mount('site.eth', [recordFor(root)], undefined, SITE), '/style.css')
     databases[0]!.close()
-    const { DatabaseSync } = await import('node:sqlite')
-    const { swarmChunkFile } = await import('../swarm-chunk-files.js')
     const raw = new DatabaseSync(join(dir, swarmChunkFile(SALT)))
     raw.exec('UPDATE chunk SET bytes = zeroblob(length(bytes))')
     raw.close()

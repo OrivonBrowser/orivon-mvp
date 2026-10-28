@@ -57,8 +57,11 @@ as it arrives, since the others' sizes wait on it.
 ([`../verifier-host/swarm-chunk-database.ts`](../verifier-host/swarm-chunk-database.ts), which says where, keyed how and cleared how):
 only content-addressed chunks (the ones `ChunkSource.get` and `ChunkSource.leaves` remember), never a single-owner chunk or a feed
 update, which are asked for because they may have changed. A chunk read back is hashed against its address again by the store, so
-nothing here trusts the disk. A mount with no partition keeps nothing in either place. The mount's log line, and a large file's,
-say how many chunks the memory took from disk for that mount or that read alone, whatever else was running.
+nothing here trusts the disk. The disk is the optional `BlockMemory.recallKept`, a slower store behind the cache that answers on a turn
+of the event loop of its own: `ChunkSource.get` asks it after the cache, and `ChunkSource.leaves` asks it for every leaf of a file
+before the rest go to the node in one `/bytes` request, so a file read from disk never holds the process, and this directory still
+imports nothing from `node:`. A mount with no partition keeps nothing in either place. The mount's log line, and a large file's,
+say how many chunks `recallKept` took from disk for that mount or that read alone, whatever else was running.
 
 **A reference is spelled as a CID.** 64 hex characters cannot be one host label, so the canonical
 spelling is a CIDv1 of codec swarm-manifest over keccak-256 ([`reference.ts`](reference.ts)), 61

@@ -111,6 +111,30 @@ describe('forgetting what the nodes and the host kept', () => {
     expect(swarmFiles()).toEqual([swarmChunkFile(SECOND)])
   })
 
+  it('still puts the host to sleep and deletes every chunk file, the current salt\'s too, when the salt could not be replaced, and then reports it', async () => {
+    touch(swarmChunkFile(SALT))
+    touch(`${swarmChunkFile(SALT)}-wal`)
+    touch(swarmChunkFile(OTHER))
+    touch('checkpoint.json')
+    const events: string[] = []
+    const failing = { ...deps(events, async () => { events.push('host exited') }, () => SALT), replaceSalt: () => { throw new Error('the salt file is read-only') } }
+    await expect(forgetNodeData(failing)).rejects.toThrow('the salt file is read-only')
+    expect(events).toEqual(['ipfs node forgotten', 'host asleep', 'host exited'])
+    expect(swarmFiles()).toEqual([])
+    expect(existsSync(join(dir, 'checkpoint.json'))).toBe(true)
+  })
+
+  it('reports the first failure when the IPFS node and the salt both fail', async () => {
+    touch(swarmChunkFile(SALT))
+    const failing = {
+      ...deps([]),
+      forgetIpfsNode: async () => { throw new Error('locked') },
+      replaceSalt: () => { throw new Error('read-only') }
+    }
+    await expect(forgetNodeData(failing)).rejects.toThrow('locked')
+    expect(swarmFiles()).toEqual([])
+  })
+
   it('still replaces the salt and deletes the chunk files when the IPFS node could not be forgotten, and then reports it', async () => {
     touch(swarmChunkFile(SALT))
     const events: string[] = []

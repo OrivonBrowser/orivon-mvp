@@ -18,7 +18,7 @@ start of the host through `configureVerifier` and applied at once: see below); t
 import `electron`; the rest are `<name>.ts` decisions ([`../README.md`](../README.md)).
 
 **What it depends on.** [`../../protocols/`](../../protocols/) (`verifier-host/protocol.ts`,
-`builtin.ts`, `resolution/`), [`../dev/eth-resolver.ts`](../dev/eth-resolver.ts),
+`verifier-host/swarm-chunk-files.ts`, `builtin.ts`, `resolution/`), [`../dev/eth-resolver.ts`](../dev/eth-resolver.ts),
 [`../../broker/`](../../broker/) (`grants/node-ledger-storage.ts`'s atomic write,
 `policy/pin.ts`), [`../../loader/fetch/`](../../loader/fetch/) (`verifier-origin.ts`,
 `content-root.ts`), [`../../trust/website-level.ts`](../../trust/website-level.ts),
@@ -28,10 +28,12 @@ import `electron`; the rest are `<name>.ts` decisions ([`../README.md`](../READM
 (this directory's own boundary, below).
 
 **What it must never import.** The verifier host's code, as opposed to its protocol types: it
-runs in another process, and only [`host-supervisor.ts`](host-supervisor.ts) talks to it. Three files of the host are
+runs in another process, and only [`host-supervisor.ts`](host-supervisor.ts) talks to it. Four files of the host are
 the exception, because main and the host must apply one rule: `light-client/endpoint-mask.ts` (the mask every shown address goes
-through), `light-client/server-address.ts` (what a server address may be) and `local-rpc-fetch.ts` (how a server on this
-computer is reached, which `checkpoint-fetch-net.ts` uses for a beacon server of the person's that is local). They import
+through), `light-client/server-address.ts` (what a server address may be), `local-rpc-fetch.ts` (how a server on this
+computer is reached, which `checkpoint-fetch-net.ts` uses for a beacon server of the person's that is local) and
+`swarm-chunk-files.ts` (which files in the verifier's directory hold kept Swarm chunks, so that main deletes, when data is
+cleared, exactly the files the host names and sweeps; it imports only `node:crypto`). The first three import
 nothing else of the host but each other, `direct-fetch.ts` (the Node sockets and pinned lookup that `local-rpc-fetch.ts` is built
 on, which imports only Node and the broker's address policy) and the types of `egress.ts`.
 

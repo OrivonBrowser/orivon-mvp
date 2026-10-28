@@ -6,7 +6,7 @@ and a cooldown record, and `askGateway`, the one request that classifies whateve
 [`gateway-health.ts`](gateway-health.ts), how long a gateway sits out after answering badly;
 [`stall.ts`](stall.ts), the clock of one transfer (a window for the first byte, a window with no byte, an outer cap); [`race.ts`](race.ts), one race across gateways for one answer (the first is asked, a second hedges it
 after a delay, the first verified answer wins); and [`cache.ts`](cache.ts), verified answers kept per
-partition with one in-flight fetch shared by every caller of a key. Two small neighbours serve the verifier host and the local nodes alike: [`allowlisted-fetch.ts`](allowlisted-fetch.ts), a fetch that reaches only a list of origins and follows no redirect, and [`doh-query.ts`](doh-query.ts), one DNS-over-HTTPS query and a host's A and AAAA answers as the provider wrote them. The IPFS and Swarm protocols read
+partition with one in-flight fetch shared by every caller of a key, and the `BlockMemory` interface a protocol keeps them in, which may have a slower store behind its cache (`recallKept`, read on a turn of the event loop of its own; the verifier host's Swarm chunks on disk). Two small neighbours serve the verifier host and the local nodes alike: [`allowlisted-fetch.ts`](allowlisted-fetch.ts), a fetch that reaches only a list of origins and follows no redirect, and [`doh-query.ts`](doh-query.ts), one DNS-over-HTTPS query and a host's A and AAAA answers as the provider wrote them. The IPFS and Swarm protocols read
 blocks and chunks through it.
 
 **Not tied to Electron.** Durable. It runs over an injected `fetch`.

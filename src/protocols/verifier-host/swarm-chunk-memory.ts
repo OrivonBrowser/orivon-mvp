@@ -8,6 +8,8 @@ import type { SwarmChunkDatabase } from './swarm-chunk-database.js'
 
 export class KeptChunkMemory implements BlockMemory {
   private readonly memory = new BlockCache()
+  /** The disk reads, one after another: each waits for the one before it and for a turn of the event loop of its own. */
+  private reading: Promise<unknown> = Promise.resolve()
 
   /**
    * `namespace` is what keeps the chunks of one route apart on disk, as the in-memory caches of the routes are
@@ -16,28 +18,45 @@ export class KeptChunkMemory implements BlockMemory {
    */
   constructor (private readonly database: SwarmChunkDatabase, private readonly namespace = '') {}
 
-  /** How many chunks `recall` has answered from disk, for the host's report log. */
-  recalledFromDisk = (): number => this.database.fromDisk
-
   remember (partition: string, key: string, block: Uint8Array): void {
     this.memory.remember(partition, key, block)
     this.database.put(this.site(partition), key, block)
   }
 
-  /** The cache first; a chunk only the disk has is checked there, and then answers from memory. */
+  /** The cache alone, which never waits; a hit also marks the chunk as used on disk, so what is read all day is not what goes first. */
   recall (partition: string, key: string): Uint8Array | undefined {
     const hot = this.memory.recall(partition, key)
-    if (hot !== undefined) {
-      this.database.touch(this.site(partition), key)
-      return hot
-    }
-    const kept = this.database.get(this.site(partition), key)
-    if (kept !== undefined) this.memory.remember(partition, key, kept)
-    return kept
+    if (hot !== undefined) this.database.touch(this.site(partition), key)
+    return hot
+  }
+
+  /**
+   * The disk behind the cache: a chunk only the disk has is hashed against its address there, and then answers from the
+   * cache. A read is hashed on the host's event loop (about a millisecond and a half for 4 KB), so the reads are made
+   * one at a time, each on its own turn of the loop: a file of a thousand chunks read from here lets every other request
+   * the host serves through between two of them.
+   */
+  recallKept (partition: string, key: string): Promise<Uint8Array | undefined> {
+    const answer = this.reading.then(async () => {
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
+      return this.readKept(partition, key)
+    })
+    this.reading = answer
+    return answer
   }
 
   share (partition: string, key: string, start: (signal: AbortSignal, onRefusal: (refusal: Refusal) => void) => Promise<Uint8Array>): SharedFetch {
     return this.memory.share(partition, key, start)
+  }
+
+  private readKept (partition: string, key: string): Uint8Array | undefined {
+    try {
+      const kept = this.database.get(this.site(partition), key)
+      if (kept !== undefined) this.memory.remember(partition, key, kept)
+      return kept
+    } catch {
+      return undefined
+    }
   }
 
   private site (partition: string): string {

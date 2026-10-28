@@ -53,7 +53,8 @@ export interface ForgetDeps {
  * The salt is replaced, so nothing kept can be asked for again; then the host exits (it holds its database open),
  * and its files go. An exit that does not come in `HOST_EXIT_WAIT_MS` is not waited for any longer. A step that
  * fails does not stop the others, so a store the IPFS node could not delete does not keep the Swarm chunks; the
- * first failure is thrown at the end.
+ * first failure is thrown at the end. When the salt could not be replaced, the host still exits and every chunk file
+ * goes, the file of the salt still in force too: nothing may keep serving what the person asked to forget.
  */
 export async function forgetNodeData (deps: ForgetDeps): Promise<void> {
   let failure: unknown
@@ -62,7 +63,13 @@ export async function forgetNodeData (deps: ForgetDeps): Promise<void> {
   } catch (error) {
     failure = error
   }
-  deps.replaceSalt()
+  let replaced = true
+  try {
+    deps.replaceSalt()
+  } catch (error) {
+    replaced = false
+    failure ??= error
+  }
   deps.sleepHost()
   let timer: ReturnType<typeof setTimeout> | undefined
   const limit = new Promise<void>((resolve) => { timer = setTimeout(resolve, HOST_EXIT_WAIT_MS) })
@@ -72,7 +79,7 @@ export async function forgetNodeData (deps: ForgetDeps): Promise<void> {
     clearTimeout(timer)
   }
   try {
-    await removeSwarmChunkFiles(deps.directory(), deps.currentSalt())
+    await removeSwarmChunkFiles(deps.directory(), replaced ? deps.currentSalt() : undefined)
   } catch (error) {
     failure ??= error
   }

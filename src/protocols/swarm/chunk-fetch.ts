@@ -29,6 +29,8 @@ interface Acceptance<T> {
   readonly verify: (address: string, bytes: Uint8Array) => Promise<T | undefined> | T | undefined
 }
 
+const ADDRESS = /^[0-9a-f]{64}$/
+
 /** How long an endpoint that sent a bad answer is not asked again. Swarm's usual endpoint is the one node on this machine, which a restart can make send a truncated answer once, so a lie costs it a pause, not the session. */
 export const QUARANTINE_MS = 30_000
 
@@ -133,9 +135,13 @@ export class ChunkSource {
 
   /** Throws a ResolutionError: `unverifiable` once an endpoint has lied, `unavailable` when none answered. */
   async get (address: string, signal: AbortSignal, onRefusal: (refusal: Refusal) => void): Promise<Uint8Array> {
-    if (!/^[0-9a-f]{64}$/.test(address)) throw new ResolutionError('unverifiable', `${address} is not a chunk address`)
+    if (!ADDRESS.test(address)) throw new ResolutionError('unverifiable', `${address} is not a chunk address`)
     const cached = this.memory.recall(this.partition, address)
     if (cached !== undefined) return cached
+    if (this.memory.recallKept !== undefined && !signal.aborted) {
+      const kept = await this.memory.recallKept(this.partition, address)
+      if (kept !== undefined) return kept
+    }
     // A shared fetch starts as it is made, and a caller already gone never joins it to stop it again.
     if (signal.aborted) throw signal.reason
     const shared = this.memory.share(this.partition, address, async (sharedSignal, sharedOnRefusal) => {
@@ -147,21 +153,53 @@ export class ChunkSource {
   }
 
   /**
-   * The leaves of the subtree under the intermediate chunk at `parent`, in order. Each is shared like any chunk: a read
-   * already fetching it is joined, and one that asks later joins this one. Those this call starts are asked of one
-   * endpoint in a single `/bytes` request for the whole subtree, at most 512 KB, since a 4 KB round trip each is what
-   * makes a file slow and a `Range` makes the node's answer many times slower. Each is used only once its bytes, under
-   * the size its parent declares, hash to the address its parent lists: the endpoint is trusted no more than over
-   * `/chunks`. A leaf that answer does not hold, or holds wrong, is fetched alone as `get` fetches it, so a node that
-   * cannot or will not answer in bulk costs time, never a byte. The `/bytes` request ends only once no read wants a leaf
-   * it has still to give, so a read that leaves never sends one that joined it to fetch every leaf alone.
+   * The leaves of the subtree under the intermediate chunk at `parent`, in order. A leaf the memory's cache holds is taken
+   * from it, and one only the store behind the cache holds (`recallKept`) from there, each read on a turn of the event
+   * loop of its own, so a file read mostly from the store never holds the process. Neither costs a request: the leaves
+   * neither holds go to `fetchLeaves`.
    */
   leaves (parent: string, leaves: readonly SubtreeLeaf[], signal: AbortSignal, onRefusal: (refusal: Refusal) => void): Array<Promise<Uint8Array>> {
-    if (signal.aborted || !/^[0-9a-f]{64}$/.test(parent)) return leaves.map(async (leaf) => await this.get(leaf.address, signal, onRefusal))
+    if (this.memory.recallKept === undefined || signal.aborted || !ADDRESS.test(parent)) return this.fetchLeaves(parent, leaves, signal, onRefusal)
+    const kept = leaves.map(async (leaf) => {
+      if (!ADDRESS.test(leaf.address)) return undefined
+      return this.memory.recall(this.partition, leaf.address) ?? await this.memory.recallKept?.(this.partition, leaf.address)
+    })
+    const rest = Promise.all(kept).then((found) => {
+      const missing: SubtreeLeaf[] = []
+      const slot = new Map<number, number>()
+      found.forEach((chunk, at) => {
+        if (chunk !== undefined) return
+        slot.set(at, missing.length)
+        missing.push(leaves[at]!)
+      })
+      return { slot, fetched: this.fetchLeaves(parent, missing, signal, onRefusal) }
+    })
+    return leaves.map(async (_leaf, at) => {
+      const chunk = await kept[at]
+      if (chunk !== undefined) return chunk
+      const { slot, fetched } = await rest
+      return await fetched[slot.get(at)!]!
+    })
+  }
+
+  /**
+   * The leaves of the subtree under `parent`, in order, each fetched from the endpoints unless the cache holds it. Each
+   * is shared like any chunk: a read already fetching it is joined, and one that asks later joins this one. Those this
+   * call starts are asked of one endpoint in a single `/bytes` request for the whole subtree, at most 512 KB, since a
+   * 4 KB round trip each is what makes a file slow and a `Range` makes the node's answer many times slower. Each is used
+   * only once its bytes, under the size its parent declares, hash to the address its parent lists: the endpoint is
+   * trusted no more than over `/chunks`. A leaf that answer does not hold, or holds wrong, is fetched alone as `get`
+   * fetches it, so a node that cannot or will not answer in bulk costs time, never a byte. The `/bytes` request ends
+   * only once no read wants a leaf it has still to give, so a read that leaves never sends one that joined it to fetch
+   * every leaf alone. Whether to send it is decided once every leaf this call owns is collected, which happens as the
+   * call is made, so it is given the leaves that need fetching all together and never one at a time.
+   */
+  private fetchLeaves (parent: string, leaves: readonly SubtreeLeaf[], signal: AbortSignal, onRefusal: (refusal: Refusal) => void): Array<Promise<Uint8Array>> {
+    if (signal.aborted || !ADDRESS.test(parent)) return leaves.map(async (leaf) => await this.get(leaf.address, signal, onRefusal))
     /** The leaves this call fetches, in order, each settled with its chunk from the bulk answer or undefined. */
     const owned: Array<{ readonly leaf: SubtreeLeaf, readonly answer: Pending<Uint8Array | undefined>, readonly wanted: AbortSignal }> = []
     const answers = leaves.map(async (leaf) => {
-      if (!/^[0-9a-f]{64}$/.test(leaf.address)) throw new ResolutionError('unverifiable', `${leaf.address} is not a chunk address`)
+      if (!ADDRESS.test(leaf.address)) throw new ResolutionError('unverifiable', `${leaf.address} is not a chunk address`)
       const kept = this.memory.recall(this.partition, leaf.address)
       if (kept !== undefined) return kept
       const shared = this.memory.share(this.partition, leaf.address, async (sharedSignal, sharedOnRefusal) => {

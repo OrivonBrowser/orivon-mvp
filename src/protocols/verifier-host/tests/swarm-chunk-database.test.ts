@@ -1,4 +1,5 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -202,7 +203,7 @@ describe('the Swarm chunk database', () => {
     reader.close()
   })
 
-  it('deletes the files of an older salt when it opens, and no other file', () => {
+  it('deletes the files of every other salt as it is made, before any chunk is kept, and no other file', () => {
     const [chunk] = chunks(1)
     const old = database({ salt: OTHER_SALT })
     old.put(SITE, chunk!.address, chunk!.bytes)
@@ -212,11 +213,33 @@ describe('the Swarm chunk database', () => {
     expect(readdirSync(dir)).toContain(swarmChunkFile(OTHER_SALT))
 
     const present = database()
-    expect(present.get(SITE, chunk!.address)).toBeUndefined()
-    const files = readdirSync(dir).filter((name) => name.startsWith('swarm-chunks-'))
-    expect(files).toContain(swarmChunkFile(SALT))
-    expect(files.every((name) => name.startsWith(swarmChunkFile(SALT)))).toBe(true)
+    expect(readdirSync(dir).filter((name) => name.startsWith('swarm-chunks-'))).toEqual([])
     expect(readdirSync(dir)).toContain('checkpoint.json')
+    expect(present.get(SITE, chunk!.address)).toBeUndefined()
+    expect(readdirSync(dir).filter((name) => name.startsWith('swarm-chunks-')).every((name) => name.startsWith(swarmChunkFile(SALT)))).toBe(true)
+  })
+
+  it('keeps the file of its own salt when it is made, and opens nothing', () => {
+    const [chunk] = chunks(1)
+    const first = database()
+    first.put(SITE, chunk!.address, chunk!.bytes)
+    first.close()
+    const files = readdirSync(dir)
+    expect(files).toContain(swarmChunkFile(SALT))
+    lines.length = 0
+    const again = database()
+    expect(readdirSync(dir)).toEqual(files)
+    expect(lines.filter((line) => line.includes('opened'))).toEqual([])
+    expect(again.fromDisk).toBe(0)
+  })
+
+  it('does not throw when there is no directory to sweep, or a file in it cannot be deleted', () => {
+    expect(() => database({ dir: join(dir, 'missing') })).not.toThrow()
+    const stuck = join(dir, swarmChunkFile(OTHER_SALT))
+    mkdirSync(stuck)
+    writeFileSync(join(stuck, 'inside'), 'x')
+    expect(() => database()).not.toThrow()
+    expect(readdirSync(dir)).toContain(swarmChunkFile(OTHER_SALT))
   })
 
   it('runs memory-only and says so once when the directory cannot be made', () => {
@@ -269,7 +292,7 @@ describe('the Swarm chunk database', () => {
     expect(lines.join('\n')).not.toContain(dir)
   })
 
-  it('leaves a file it cannot use because it is something else, and runs memory-only', () => {
+  it('makes again a file that holds some other layout, with a line, and keeps chunks in it after', () => {
     const path = join(dir, swarmChunkFile(SALT))
     const other = new DatabaseSync(path)
     other.exec('CREATE TABLE chunk (note TEXT); INSERT INTO chunk VALUES (\'mine\')')
@@ -277,12 +300,42 @@ describe('the Swarm chunk database', () => {
     const [chunk] = chunks(1)
     const store = database()
     store.put(SITE, chunk!.address, chunk!.bytes)
-    expect(store.get(SITE, chunk!.address)).toBeUndefined()
     store.close()
+    expect(database().get(SITE, chunk!.address)).toEqual(chunk!.bytes)
     const check = new DatabaseSync(path)
-    expect((check.prepare('SELECT note FROM chunk').get() as { note: string }).note).toBe('mine')
+    expect(() => check.prepare('SELECT note FROM chunk').get()).toThrow()
     check.close()
-    expect(lines.filter((line) => line.includes('could not be opened'))).toHaveLength(1)
+    expect(lines.filter((line) => line.includes('another layout'))).toHaveLength(1)
+  })
+
+  it('sets the layout number in a new file, and makes again a file of any other number', () => {
+    const [chunk, second] = chunks(2)
+    const path = join(dir, swarmChunkFile(SALT))
+    const first = database()
+    first.put(SITE, chunk!.address, chunk!.bytes)
+    first.close()
+    const version = (): number => {
+      const raw = new DatabaseSync(path)
+      try {
+        return (raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version
+      } finally {
+        raw.close()
+      }
+    }
+    const current = version()
+    expect(current).toBeGreaterThan(0)
+    expect(database().get(SITE, chunk!.address)).toEqual(chunk!.bytes)
+
+    const raw = new DatabaseSync(path)
+    raw.exec(`PRAGMA user_version = ${String(current + 1)}`)
+    raw.close()
+    const next = database()
+    expect(next.get(SITE, chunk!.address)).toBeUndefined()
+    next.put(SITE, second!.address, second!.bytes)
+    next.close()
+    expect(version()).toBe(current)
+    expect(database().get(SITE, second!.address)).toEqual(second!.bytes)
+    expect(lines.filter((line) => line.includes('another layout'))).toHaveLength(1)
   })
 
   it('creates the directory when it is missing', () => {
@@ -346,6 +399,56 @@ describe('the Swarm chunk database', () => {
     const again = database()
     again.get(SITE, kept[0]!.address)
     expect(lines).toContain(`swarm: the chunk store opened with ${String(5 * CHUNK)} bytes kept`)
+  })
+
+  it('counts the bytes it keeps from the rows it finds, not from a figure an earlier run left', () => {
+    const kept = chunks(6)
+    const first = database()
+    for (const chunk of kept) first.put(SITE, chunk.address, chunk.bytes)
+    first.close()
+    const raw = new DatabaseSync(join(dir, swarmChunkFile(SALT)))
+    raw.exec('DELETE FROM chunk WHERE id IN (1, 2); DELETE FROM age WHERE id IN (1, 2)')
+    raw.close()
+    lines.length = 0
+    const again = database()
+    again.get(SITE, kept[5]!.address)
+    expect(lines).toContain(`swarm: the chunk store opened with ${String(4 * CHUNK)} bytes kept`)
+  })
+
+  it('stamps new marks after the newest one in the file, whatever clock an earlier run kept', () => {
+    let minute = 1000
+    const options = { maxBytes: 8 * CHUNK, now: () => minute * 60_000 }
+    const first = chunks(8, 1)
+    const second = chunks(5, 2)
+    const store = database(options)
+    for (const chunk of first) store.put(SITE, chunk.address, chunk.bytes)
+    store.flush()
+    minute += 5
+    store.touch(SITE, first[0]!.address)
+    store.flush()
+    store.close()
+
+    const next = database(options)
+    for (const chunk of second) next.put(SITE, chunk.address, chunk.bytes)
+    next.flush()
+    expect(second.every((chunk) => next.get(SITE, chunk.address) !== undefined)).toBe(true)
+    expect(next.get(SITE, first[0]!.address)).toBeDefined()
+  })
+
+  it('cuts the write-ahead file back after a checkpoint instead of leaving it as large as it grew', () => {
+    const block = new Uint8Array(4104).fill(5)
+    const store = database()
+    const walBytes = (): number => {
+      try { return statSync(join(dir, `${swarmChunkFile(SALT)}-wal`)).size } catch { return 0 }
+    }
+    let peak = 0
+    for (let at = 0; at < 10_000; at++) {
+      store.put(SITE, createHash('sha256').update(String(at)).digest('hex'), block)
+      if (at % 64 === 0) peak = Math.max(peak, walBytes())
+    }
+    store.flush()
+    expect(peak).toBeGreaterThan(8 * 1024 * 1024)
+    expect(walBytes()).toBeLessThan(24 * 1024 * 1024)
   })
 
   it('opens nothing until it is used', () => {

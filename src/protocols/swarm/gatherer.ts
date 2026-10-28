@@ -35,11 +35,8 @@ export interface SwarmGathererOptions {
   /** A line for the report log: how long a mount and a large file took, how many chunks came from disk, and a bulk read that fell back. No line names a site or an address. */
   readonly log?: (line: string) => void
   /** Where verified chunks are kept between mounts. The host gives one that also keeps them on disk; unset, they are kept in memory for the life of this gatherer. */
-  readonly memory?: ChunkMemory
+  readonly memory?: BlockMemory
 }
-
-/** A `BlockMemory` that can say how many chunks its `recall` has taken from disk. */
-type ChunkMemory = BlockMemory & { readonly recalledFromDisk?: () => number }
 
 const DEFAULT_INDEX_DOCUMENT = 'index.html'
 /** A media type, optionally with a charset: nothing a header could be split on. */
@@ -56,18 +53,19 @@ function diskNote (chunks: number): string {
 }
 
 /**
- * `memory` adding to `tally` each chunk its `recall` takes from disk. A recall is synchronous, so the count before and
- * after it is that call's alone, whatever else is being read: each mount and each file read keeps a tally of its own.
+ * `memory` adding to `tally` each chunk its `recallKept` takes from disk. A lookup answers later and others run beside it,
+ * so what counts is that it found a chunk, not a count taken before and after: each mount and each file read keeps a
+ * tally of its own, whatever else is being read.
  */
-function counted (memory: ChunkMemory, tally: { chunks: number }): BlockMemory {
-  const fromDisk = memory.recalledFromDisk
-  if (fromDisk === undefined) return memory
+function counted (memory: BlockMemory, tally: { chunks: number }): BlockMemory {
+  const lookUp = memory.recallKept
+  if (lookUp === undefined) return memory
   return {
     remember: (partition, key, block) => { memory.remember(partition, key, block) },
-    recall: (partition, key) => {
-      const before = fromDisk()
-      const found = memory.recall(partition, key)
-      tally.chunks += fromDisk() - before
+    recall: (partition, key) => memory.recall(partition, key),
+    recallKept: async (partition, key) => {
+      const found = await lookUp.call(memory, partition, key)
+      if (found !== undefined) tally.chunks++
       return found
     },
     share: (partition, key, start) => memory.share(partition, key, start)
@@ -96,7 +94,7 @@ export function createSwarmGatherer (options: SwarmGathererOptions): DataGathere
   const deps: ChunkDeps | undefined = options.endpoints.length === 0
     ? undefined
     : { fetch: options.fetch, pool: new GatewayPool(options.endpoints, limits.perEndpointConcurrency, Date.now, options.route === undefined ? {} : { route: options.route }), limits, ...(options.log !== undefined && { log: options.log }) }
-  const memory: ChunkMemory = options.memory ?? new BlockCache()
+  const memory: BlockMemory = options.memory ?? new BlockCache()
 
   return {
     id: 'swarm',
