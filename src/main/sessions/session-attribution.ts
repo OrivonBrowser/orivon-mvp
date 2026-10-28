@@ -5,7 +5,7 @@
 // because the broker itself cannot compute this answer: it needs the
 // loader's bundle-cache state (isOriginServedFromCacheSync), and
 // src/broker/ must never import src/loader/ (../../broker/README.md).
-// ../shell/tab-view.ts's partitionForTarget already decides the same thing
+// ../shell/tab-partition.ts's partitionForTab already decides the same thing
 // for a navigating tab (a cache-served origin's own partition, the default
 // session for every other origin, granted or not: ADR-0044); this reuses it
 // rather than re-deriving the rule a second time.
@@ -16,7 +16,8 @@ import { app, session } from 'electron'
 import type { WebContents } from 'electron'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { publishSenderAttributed } from '../registry.js'
-import { partitionForTarget } from '../shell/tab-view.js'
+import { partitionForTab } from '../shell/tab-partition.js'
+import { tabChoiceOfContents } from '../route/tab-tunnel.js'
 import { isChildHostFor } from '../children/child-host.js'
 import { isLocalFileKey, isolationKeyFromUrl } from '../../broker/policy/origin.js'
 import { localPartitionFor } from '../local-files/partition.js'
@@ -50,8 +51,9 @@ const attributionRecords = new WeakMap<WebContents, AttributionRecord>()
 export const sessionAttributionSubsystem: Subsystem = {
   name: 'session-attribution',
   afterReady: (ctx: SubsystemContext) => {
-    const expectedSession = (origin: string): unknown => {
-      const partition = partitionForTarget(origin)
+    // The session `wc`'s tab puts `origin` in: a tab with a tunnel choice puts every website in its profile.
+    const expectedSession = (origin: string, wc: WebContents): unknown => {
+      const partition = partitionForTab(origin, tabChoiceOfContents(wc.id))
       return partition === undefined ? session.defaultSession : session.fromPartition(partition)
     }
 
@@ -70,7 +72,7 @@ export const sessionAttributionSubsystem: Subsystem = {
         const origin = isolationKeyFromUrl(url)
         attributionRecords.set(wc, {
           origin,
-          attributed: origin !== null && wc.session === expectedSession(origin)
+          attributed: origin !== null && wc.session === expectedSession(origin, wc)
         })
       })
     })
@@ -99,7 +101,7 @@ export const sessionAttributionSubsystem: Subsystem = {
       // No record yet (a call arriving before this WebContents' first
       // did-navigate, or one this subsystem never saw) -- the live check,
       // today's original rule, is the fallback.
-      return wc.session === expectedSession(origin)
+      return wc.session === expectedSession(origin, wc)
     })
   }
 }

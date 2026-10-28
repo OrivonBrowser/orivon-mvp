@@ -14,7 +14,7 @@ import { OmniboxService } from './omnibox-service.js'
 import type { OmniboxDeps } from './omnibox-service.js'
 import type { SuggestTab } from './suggest-sources.js'
 import { verbatimRow } from './verbatim-row.js'
-import { fetchViaNet } from './suggest-net.js'
+import { suggestFetchFor } from './suggest-net.js'
 import { testSuggestEndpoint } from './suggest-test-seam.js'
 
 const services = new WeakMap<ShellWindow, OmniboxService>()
@@ -62,7 +62,7 @@ function depsFor (ctx: WindowContext): OmniboxDeps {
           endpoint: testSuggestEndpoint() ?? SEARCH_ENGINES.find((candidate) => candidate.id === engine.id)?.suggestUrl ?? null,
           isPlainSearch,
           searchUrl: (query) => fillTemplate(engine.template, query),
-          fetch: fetchViaNet
+          fetch: suggestFetchFor(window.tabs.activeTunnelChoice())
         }
       }
     },

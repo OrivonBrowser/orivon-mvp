@@ -20,7 +20,7 @@ interface FakeContents extends EventEmitter {
   focus: ReturnType<typeof vi.fn>
   close: ReturnType<typeof vi.fn>
 }
-interface RecordedView { webContents: FakeContents, setBounds: ReturnType<typeof vi.fn>, setVisible: ReturnType<typeof vi.fn>, setBackgroundColor: ReturnType<typeof vi.fn> }
+interface RecordedView { webContents: FakeContents, partition?: string, setBounds: ReturnType<typeof vi.fn>, setVisible: ReturnType<typeof vi.fn>, setBackgroundColor: ReturnType<typeof vi.fn> }
 const createdViews: RecordedView[] = []
 
 function makeFakeWebContents (): FakeContents {
@@ -45,8 +45,9 @@ function makeFakeWebContents (): FakeContents {
 
 vi.mock('electron', () => ({
   nativeTheme: { shouldUseDarkColors: false },
-  WebContentsView: vi.fn().mockImplementation(function (this: RecordedView) {
+  WebContentsView: vi.fn().mockImplementation(function (this: RecordedView, options?: { webPreferences?: { partition?: string } }) {
     this.webContents = makeFakeWebContents()
+    if (options?.webPreferences?.partition !== undefined) this.partition = options.webPreferences.partition
     this.setBounds = vi.fn()
     this.setVisible = vi.fn()
     this.setBackgroundColor = vi.fn()
@@ -58,6 +59,7 @@ vi.mock('../../../loader/electron/serve.js', () => ({ isOriginServedFromCacheSyn
 const { TabManager } = await import('../tabs.js')
 const { provideVerifierAccess } = await import('../../verifier/verifier-access.js')
 const { setPinned } = await import('../tab-pin.js')
+const { setSiteRoutes } = await import('../../route/site-routes.js')
 const { closeOthers, closeToRight, duplicateTab, newTabToRight, othersToClose, rightToClose, tabMenuFlags, toggleMute, togglePin } = await import('../tab-commands.js')
 
 beforeEach(() => { createdViews.length = 0 })
@@ -506,5 +508,61 @@ describe('a gateway address reaching a tab', () => {
     expect(follow(wc, 'https://site.eth.limo/page.html#k')).toBe(true)
     expect(createdViews.length).toBe(views + 1)
     expect(createdViews.at(-1)?.webContents.loadURL).toHaveBeenCalledWith('https://site.eth/page.html#k')
+  })
+})
+
+describe('a tab with a tunnel choice', () => {
+  beforeEach(() => { setSiteRoutes({ profileFor: () => undefined }) })
+  afterEach(() => { setSiteRoutes(undefined) })
+
+  it('opens at its first address in the profile of its choice, and says so in its state', () => {
+    const manager = newManager()
+    const id = manager.createTab('https://news.example/', true, undefined, 'socks5')
+    expect(createdViews.at(-1)?.partition).toBe('persist:proxy-profile')
+    expect(manager.record(id)?.partition).toBe('persist:proxy-profile')
+    expect(manager.getState().tabs.find((tab) => tab.id === id)?.tunnelChoice).toBe('socks5')
+  })
+
+  it('opens a tab with no choice in the shared session, and reports no choice', () => {
+    const manager = newManager()
+    const id = manager.createTab('https://news.example/')
+    expect(createdViews.at(-1)?.partition).toBeUndefined()
+    expect(manager.getState().tabs.find((tab) => tab.id === id)).not.toHaveProperty('tunnelChoice')
+  })
+
+  it('takes a choice on the new-tab page, and keeps it for the first address typed there', () => {
+    const manager = newManager()
+    const id = manager.createTab()
+    manager.setTunnelChoice(id, 'nym')
+    expect(manager.record(id)?.tunnelChoice).toBe('nym')
+    expect(manager.activeTunnelChoice()).toBe('nym')
+    expect(manager.getState().tabs.find((tab) => tab.id === id)?.tunnelChoice).toBe('nym')
+    manager.navigate(id, 'https://news.example/')
+    expect(createdViews.at(-1)?.partition).toBe('persist:tunnel-profile')
+    expect(manager.record(id)?.tunnelChoice).toBe('nym')
+  })
+
+  it('gives a copy of the tab its choice, and a new tab beside it none', () => {
+    const manager = newManager()
+    const [a] = strip(manager, 1) as [string]
+    manager.setTunnelChoice(a, 'socks5')
+    duplicateTab(manager, a)
+    const [, copy] = order(manager) as [string, string]
+    expect(manager.record(copy)?.tunnelChoice).toBe('socks5')
+    expect(createdViews.at(-1)?.partition).toBe('persist:proxy-profile')
+    newTabToRight(manager, a)
+    const [, fresh] = order(manager) as [string, string]
+    expect(manager.record(fresh)?.tunnelChoice).toBeUndefined()
+  })
+
+  it('takes the choice away again, and a tab that is gone takes none', () => {
+    const manager = newManager()
+    const [a] = strip(manager, 1) as [string]
+    manager.setTunnelChoice(a, 'direct')
+    expect(manager.record(a)?.tunnelChoice).toBe('direct')
+    manager.setTunnelChoice(a, null)
+    expect(manager.record(a)).not.toHaveProperty('tunnelChoice')
+    expect(() => { manager.setTunnelChoice('missing', 'nym') }).not.toThrow()
+    expect(manager.activeTunnelChoice()).toBeUndefined()
   })
 })

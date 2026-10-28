@@ -35,6 +35,14 @@ describe('openSnapshot', () => {
     expect(openSnapshot(fake.tabs, { url: 'https://a.example/2', title: '', pinned: false, entries, index: 1 }, true)).toBeDefined()
   })
 
+  it('opens the tab with the tunnel choice it had, so its first address loads through it', () => {
+    const fake = fakeTabs()
+    const id = openSnapshot(fake.tabs, { url: 'https://a.example/', title: 'A', pinned: false, tunnelChoice: 'socks5' }, true)
+    expect(fake.records.get(id ?? '')?.tunnelChoice).toBe('socks5')
+    const plain = openSnapshot(fake.tabs, { url: 'https://b.example/', title: 'B', pinned: false }, true)
+    expect(fake.records.get(plain ?? '')).not.toHaveProperty('tunnelChoice')
+  })
+
   it('opens it behind the tab in front when asked', () => {
     const fake = fakeTabs()
     openSnapshot(fake.tabs, { url: 'https://a.example/', title: '', pinned: false }, false)
@@ -72,6 +80,18 @@ describe('openSnapshot', () => {
     expect(second).toBe(first)
     expect(fake.records.get(first ?? '')?.pinned).toBe(false)
     expect(fake.order).toHaveLength(1)
+  })
+
+  it('opens a page of the shell with the tunnel choice it had, and gives one already open none', () => {
+    const fake = fakeTabs()
+    const id = openSnapshot(fake.tabs, { url: 'orivon://history/', title: '', pinned: false, internal: { page: 'history', path: '/' }, tunnelChoice: 'nym' }, true)
+    expect(fake.records.get(id ?? '')?.tunnelChoice).toBe('nym')
+    expect(fake.calls).toEqual(['internal history/', `choice ${id ?? ''} nym`])
+    const again = openSnapshot(fake.tabs, { url: 'orivon://history/', title: '', pinned: false, internal: { page: 'history', path: '/' }, tunnelChoice: 'socks5' }, true)
+    expect(again).toBe(id)
+    expect(fake.records.get(id ?? '')?.tunnelChoice).toBe('nym')
+    const plain = openSnapshot(fake.tabs, { url: 'orivon://downloads/', title: '', pinned: false, internal: { page: 'downloads', path: '/' } }, true)
+    expect(fake.records.get(plain ?? '')).not.toHaveProperty('tunnelChoice')
   })
 
   it('opens nothing when the window has no room', () => {

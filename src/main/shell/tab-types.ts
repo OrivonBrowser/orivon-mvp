@@ -19,6 +19,7 @@ import type { DisplaySurfaceKind } from '../display-capture/types.js'
 import type { SiteKind } from '../site-settings/kinds.js'
 import type { TunnelMark } from '../route/tunnel-mark.js'
 import type { TunnelKind } from '../route/route-state.js'
+import type { TabTunnelChoice } from '../route/tab-tunnel.js'
 import type { SleepingTab, TabGroupState } from './tab-extra-types.js'
 
 export interface TabState {
@@ -78,6 +79,8 @@ export interface TabState {
   sharing?: DisplaySurfaceKind
   /** Another page is showing this tab's contents. Absent reads as false. */
   shared?: boolean
+  /** The tunnel the tab was told to send every website it opens through (`nym`, `socks5`), or `direct`. Absent when it has none. */
+  tunnelChoice?: TabTunnelChoice
 }
 
 /** What TabManager itself knows. Bookmarks are a separate store
@@ -189,12 +192,12 @@ export interface TabShell {
   /** Opens `url` as the only tab of a brand new window in this same process
    * -- so a private window's new window is private too (window.ts makes
    * every window the same way, from the same `services`). Absent in tests.
-   * `loadOptions` -- see popups.ts's `loadOptionsFor`'s own doc. */
-  openWindow?: (url: string, loadOptions?: LoadURLOptions) => WebContents
+   * `loadOptions` -- see popups.ts's `loadOptionsFor`'s own doc. `tunnelChoice` is the opening tab's, which the new window's tab keeps. */
+  openWindow?: (url: string, loadOptions?: LoadURLOptions, tunnelChoice?: TabTunnelChoice) => WebContents
   /** Makes Chromium's own popup webContents, already in `partition`, the only tab of a brand new window in this same
    * process: what `openWindow` is for an open that carries a guest to adopt (popups.ts's `windowOpenHandler`).
    * Absent in tests. */
-  adoptWindow?: (view: WebContentsView, partition: string | undefined) => void
+  adoptWindow?: (view: WebContentsView, partition: string | undefined, tunnelChoice?: TabTunnelChoice) => void
   /** What every window of the process shares, for view-level code that needs a setting or a store (the context menu). Absent in tests. */
   services?: ShellServices
   /** Runs a command on this window, as a key or a menu row would. Absent in tests: nothing runs. */
@@ -255,23 +258,24 @@ export interface TabViewHost {
    * click or a plain ctrl+click, from popups.ts's `windowOpenHandler`. `loadOptions` -- see
    * popups.ts's `loadOptionsFor`'s own doc. Returns the new (or, at the tab ceiling, the existing
    * active) tab's webContents, so a no-guest popup open can adopt a correctly-partitioned,
-   * sanitized tab instead of building its own unpartitioned view. */
-  openTab: (url: string, active?: boolean, loadOptions?: LoadURLOptions) => WebContents | undefined
+   * sanitized tab instead of building its own unpartitioned view. `tunnelChoice` is the opening tab's: every tab a page
+   * opens keeps it, and the new tab is made in the session it calls for before its first load. */
+  openTab: (url: string, active?: boolean, loadOptions?: LoadURLOptions, tunnelChoice?: TabTunnelChoice) => WebContents | undefined
   /** Makes Chromium's own popup webContents, already in `partition`, a tab.
-   * `active` -- see `openTab`'s own doc. */
-  adoptPopup: (view: WebContentsView, partition: string | undefined, active?: boolean) => void
+   * `active`, `tunnelChoice` -- see `openTab`'s own doc. */
+  adoptPopup: (view: WebContentsView, partition: string | undefined, active?: boolean, tunnelChoice?: TabTunnelChoice) => void
   /** A same-origin blob: URL in `partition` (the opener's own) -- popups.ts's own doc.
-   * `active`/`loadOptions` -- see `openTab`'s own doc. */
-  openBlobTab: (url: string, partition: string | undefined, active?: boolean, loadOptions?: LoadURLOptions) => WebContents | undefined
+   * `active`/`loadOptions`/`tunnelChoice` -- see `openTab`'s own doc. */
+  openBlobTab: (url: string, partition: string | undefined, active?: boolean, loadOptions?: LoadURLOptions, tunnelChoice?: TabTunnelChoice) => WebContents | undefined
   /** `url`, a local file, in a new tab of the local-files session: popups.ts's own doc. */
   openLocalFile: (url: string, active?: boolean) => Promise<WebContents | undefined>
   /** `url` in a new window instead of this one -- a shift-click (popups.ts's `windowOpenHandler`).
-   * `loadOptions` -- see popups.ts's `loadOptionsFor`'s own doc. Undefined when the shell has none
+   * `loadOptions` -- see popups.ts's `loadOptionsFor`'s own doc; `tunnelChoice` -- see `openTab`'s. Undefined when the shell has none
    * (tests): the caller opens an ordinary tab here instead. */
-  openWindow: (url: string, loadOptions?: LoadURLOptions) => WebContents | undefined
+  openWindow: (url: string, loadOptions?: LoadURLOptions, tunnelChoice?: TabTunnelChoice) => WebContents | undefined
   /** Chromium's own webContents for a shift-click, made the only tab of a new window: `openWindow`'s counterpart for an
    * open that arrives with a guest. Undefined when the shell has none (tests): the caller adopts it as a tab here. */
-  adoptWindow?: (view: WebContentsView, partition: string | undefined) => void
+  adoptWindow?: (view: WebContentsView, partition: string | undefined, tunnelChoice?: TabTunnelChoice) => void
   atCapacity: () => boolean
   htmlFullscreenChanged: (id: string, entered: boolean) => void
   /** The window is closing: nothing more is made or shown for it. */
@@ -349,4 +353,11 @@ export interface TabRecord {
   routedAway?: string
   /** The pages of the tab's history that its view does not hold (tab-outer-history.ts). Absent reads as none. */
   outer?: OuterHistory
+  /**
+   * The tunnel the tab sends every website it opens through, or `direct` for none (`../route/tab-tunnel.ts`). It lasts until the
+   * tab closes, goes to every tab the tab opens, comes back with a restored tab and is never written as a website's entry. Absent
+   * when the tab has none: its websites follow their own entries. What a visit leaves on disk is only the origin, listed as storage
+   * kept apart in the profile it ran in (`tab-tunnel-facts.ts`'s `noteTabVisit`), so that Settings and Clear browsing data reach it.
+   */
+  tunnelChoice?: TabTunnelChoice
 }

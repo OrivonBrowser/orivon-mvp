@@ -3,15 +3,16 @@ import { TabOpener } from '../tab-open.js'
 import type { TabOpenerHost } from '../tab-open.js'
 import type { TabFactory } from '../tab-factory.js'
 
-function setup (capacity = false): { opener: TabOpener, fresh: ReturnType<typeof vi.fn>, contents: object } {
+function setup (capacity = false): { opener: TabOpener, fresh: ReturnType<typeof vi.fn>, contents: object, trusted: ReturnType<typeof vi.fn> } {
   const contents = { loadURL: vi.fn(() => Promise.resolve()) }
   const fresh = vi.fn()
   const host: TabOpenerHost = {
     add: vi.fn(), activate: vi.fn(), changed: vi.fn(), atCapacity: () => capacity, activeId: () => 'front', records: () => [], freshTabInFront: fresh
   }
   const built = { id: 't1', target: 'file:///dashboard', record: { view: { webContents: contents } } }
-  const factory = { content: () => built, trusted: () => built }
-  return { opener: new TabOpener(host, factory as unknown as TabFactory), fresh, contents }
+  const trusted = vi.fn(() => built)
+  const factory = { content: () => built, trusted }
+  return { opener: new TabOpener(host, factory as unknown as TabFactory), fresh, contents, trusted }
 }
 
 describe('TabOpener.createTab: a fresh tab in front', () => {
@@ -48,5 +49,13 @@ describe('TabOpener.openTrusted: a fresh tab in front', () => {
     b.opener.openTrusted()
     expect(a.fresh).not.toHaveBeenCalled()
     expect(b.fresh).not.toHaveBeenCalled()
+  })
+})
+
+describe('TabOpener.openTrusted: a tab with a tunnel choice', () => {
+  it('hands the session and the choice to the factory, so the tab is built in the profile the choice calls for', () => {
+    const { opener, trusted } = setup()
+    opener.openTrusted('view-source:https://a.example/', 'persist:tunnel-profile', 'nym')
+    expect(trusted).toHaveBeenCalledWith('view-source:https://a.example/', 'persist:tunnel-profile', 'nym')
   })
 })

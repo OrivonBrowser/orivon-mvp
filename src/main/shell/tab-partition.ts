@@ -8,7 +8,8 @@ import { localPartitionFor, partitionAfterFileBlock as fileBlockTarget } from '.
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { isTemporaryRoutePartition } from '../route/temporary-routes.js'
-import { sitePartitionForOrigin } from '../route/site-routes.js'
+import { sitePartitionForTab } from '../route/site-routes.js'
+import type { TabTunnelChoice } from '../route/tab-tunnel.js'
 
 /** The `additionalArguments` flag marking a registered app's tab. Spelled
  * again in preload/routed/fetch.ts rather than imported, for the reason
@@ -36,18 +37,25 @@ export const APP_TAB_FLAG = '--orivon-app-tab'
  *
  * A website whose tunnel state differs from the browser's default runs in a session of its own
  * (`../route/site-partition.ts`), which an installed app never needs: its own partition is already apart.
+ * A tab with a tunnel choice puts every website it opens in that choice's profile (`../route/tab-tunnel.ts`), so
+ * every caller that decides a session for a tab passes the tab's choice (`partitionForTab`).
  *
  * `originFromUrl` derives an origin only for `http:`/`https:`, so a
  * `chrome-extension:` target always answers undefined: tabs.ts's
  * openTrusted() relies on this to put an extension-opened tab on
  * session.defaultSession, the one session extensions load into. */
-export function partitionForTarget (target: string): string | undefined {
+export function partitionForTab (target: string, choice: TabTunnelChoice | undefined): string | undefined {
   const local = localPartitionFor(target)
   if (local !== undefined) return local
   const origin = originFromUrl(target)
   if (origin === null) return undefined
   // A website whose tunnel state differs from the browser's default keeps its storage apart from the shared session.
-  return isOriginServedFromCacheSync(origin) ? partitionFor(origin) : sitePartitionForOrigin(origin)
+  return isOriginServedFromCacheSync(origin) ? partitionFor(origin) : sitePartitionForTab(origin, choice)
+}
+
+/** `partitionForTab` for a caller with no tab: the session an address gets from its own entry alone. */
+export function partitionForTarget (target: string): string | undefined {
+  return partitionForTab(target, undefined)
 }
 
 /** Where a navigation must move a tab's view, or undefined for "stay put".
@@ -72,19 +80,21 @@ export interface PartitionSwap {
  * current session for a blank page would throw away history for nothing. */
 export function partitionChanged (
   target: string,
-  currentPartition: string | undefined
+  currentPartition: string | undefined,
+  choice: TabTunnelChoice | undefined
 ): PartitionSwap | undefined {
   if (isolationKeyFromUrl(target) === null) return undefined
-  const next = partitionForTarget(target)
+  const next = partitionForTab(target, choice)
   return next === currentPartition ? undefined : { to: next }
 }
 
 /** `partitionChanged` for a navigation the page started: a page in a temporary routed session stays in it on the open web, where any other tab's view would go back to the shared session. */
 export function partitionChangedByPage (
   target: string,
-  currentPartition: string | undefined
+  currentPartition: string | undefined,
+  choice: TabTunnelChoice | undefined
 ): PartitionSwap | undefined {
-  const swap = partitionChanged(target, currentPartition)
+  const swap = partitionChanged(target, currentPartition, choice)
   return swap !== undefined && swap.to === undefined && isTemporaryRoutePartition(currentPartition) ? undefined : swap
 }
 

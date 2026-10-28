@@ -184,7 +184,7 @@ esecuzione; il sistema operativo e la sua versione, il tipo e il numero di proce
 installata e libera, la lingua, e la sessione del desktop (X11 o Wayland, e il nome del desktop); i
 numeri del produttore e del modello della scheda grafica, la versione del suo driver, e quali
 funzioni grafiche sono attive; le dimensioni e la scala di ogni schermo; quanta memoria usa ogni
-tipo di processo di Orivon; quante finestre e schede sono aperte, e se la finestra è privata; le
+tipo di processo di Orivon; quante finestre e schede sono aperte, quante di esse usano un tunnel e quale (un conteggio, mai un indirizzo), e se la finestra è privata; le
 estensioni installate (nome, identificativo, versione, attiva o no); per ciascuna delle otto app con più
 connessioni di rete, quante ne tiene aperte e quante ne può tenere (solo numeri, mai il nome o l'indirizzo dell'app); i valori di alcune
 impostazioni che cambiano il comportamento di Orivon (tema, cookie, Global Privacy Control, Do Not
@@ -192,7 +192,7 @@ Track, solo HTTPS, la modalità del DNS sicuro, risparmio di memoria ed energia,
 controllo ortografico, strumenti per sviluppatori, modalità sviluppatore delle estensioni, controllo
 degli aggiornamenti, il light client di Ethereum e se interroga i server di Orivon o i tuoi, da dove arrivano i contenuti
 `ipfs://` (il tuo nodo IPFS o i gateway pubblici), se il servizio di ricerca IPFS e il nodo Swarm
-sono attivi, e l'apertura degli indirizzi `.eth.limo` come nomi `.eth`), mai un indirizzo o una
+sono attivi, l'apertura degli indirizzi `.eth.limo` come nomi `.eth`, quale tunnel è scelto, se il tunnel Nym integrato è attivo, e se tutto passa dal tunnel), mai un indirizzo o una
 cartella; e gli ultimi dieci problemi registrati da
 Orivon (tipo, ora, processo, motivo, codice di uscita), senza i loro messaggi o indirizzi. In ogni
 parte di una segnalazione, il percorso della tua cartella home è sostituito da `~`.

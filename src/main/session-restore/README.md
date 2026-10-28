@@ -13,7 +13,7 @@ that contains a local file until the binary's file-protocol fuse has been read.
 [`../shell/`](../shell/) (types of tabs, windows and hooks; `tab-lifecycle.ts`; `eth-gateway-rule.ts`, the rule that maps a saved gateway address);
 [`../storage/`](../storage/) (the debounced write); [`../browsing/omnibox.ts`](../browsing/omnibox.ts)
 (the one rule for which addresses a tab may open); [`../window-state/placement.ts`](../window-state/placement.ts)
-(where a saved window may open on the displays there are now); [`../pages/internal-pages.ts`](../pages/internal-pages.ts); [`../local-files/file-fuse.ts`](../local-files/file-fuse.ts) and
+(where a saved window may open on the displays there are now); [`../pages/internal-pages.ts`](../pages/internal-pages.ts); [`../route/tab-tunnel.ts`](../route/tab-tunnel.ts) (`isTabTunnelChoice`, the type of the choice a tab's snapshot carries); [`../local-files/file-fuse.ts`](../local-files/file-fuse.ts) and
 [`../../broker/policy/origin.ts`](../../broker/policy/origin.ts) (`fuse-wait.ts`: a saved local file opens only once the fuse is read, so a restore
 or a reopen that holds one waits for it); [`../browsing/local-file-input.ts`](../browsing/local-file-input.ts).
 

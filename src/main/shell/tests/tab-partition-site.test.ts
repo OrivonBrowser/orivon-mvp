@@ -43,35 +43,35 @@ describe('a tab moving between the shared session and a profile', () => {
   it('moves from one tunnel\'s profile to the other\'s when the website\'s entry changes tunnel', () => {
     const PROXY = profilePartitionFor('socks5', SITE)
     setSiteRoutes({ profileFor: () => 'socks5' })
-    expect(partitionChanged(`${SITE}/`, TUNNEL)).toEqual({ to: PROXY })
-    expect(partitionChanged(`${SITE}/`, PROXY)).toBeUndefined()
+    expect(partitionChanged(`${SITE}/`, TUNNEL, undefined)).toEqual({ to: PROXY })
+    expect(partitionChanged(`${SITE}/`, PROXY, undefined)).toBeUndefined()
   })
 
   it('moves into the profile from the shared session, and back to the shared one from it', () => {
     setSiteRoutes({ profileFor: (origin) => origin === SITE ? 'nym' : undefined })
-    expect(partitionChanged(`${SITE}/`, undefined)).toEqual({ to: TUNNEL })
-    expect(partitionChanged(`${OTHER}/`, TUNNEL)).toEqual({ to: undefined })
-    expect(partitionChangedByPage(`${OTHER}/`, TUNNEL)).toEqual({ to: undefined })
+    expect(partitionChanged(`${SITE}/`, undefined, undefined)).toEqual({ to: TUNNEL })
+    expect(partitionChanged(`${OTHER}/`, TUNNEL, undefined)).toEqual({ to: undefined })
+    expect(partitionChangedByPage(`${OTHER}/`, TUNNEL, undefined)).toEqual({ to: undefined })
   })
 
   it('stays put between two websites of the same profile, so no tab reloads for a link between them', () => {
     setSiteRoutes({ profileFor: () => 'nym' })
-    expect(partitionChanged(`${SITE}/b`, TUNNEL)).toBeUndefined()
-    expect(partitionChanged(`${OTHER}/`, TUNNEL)).toBeUndefined()
+    expect(partitionChanged(`${SITE}/b`, TUNNEL, undefined)).toBeUndefined()
+    expect(partitionChanged(`${OTHER}/`, TUNNEL, undefined)).toBeUndefined()
   })
 
   it('moves from one profile straight to the other', () => {
     const profiles: Record<string, Profile> = { [SITE]: 'nym', [OTHER]: 'direct' }
     setSiteRoutes({ profileFor: (origin) => profiles[origin] })
-    expect(partitionChanged(`${OTHER}/`, TUNNEL)).toEqual({ to: DIRECT })
-    expect(partitionChanged(`${SITE}/`, DIRECT)).toEqual({ to: TUNNEL })
+    expect(partitionChanged(`${OTHER}/`, TUNNEL, undefined)).toEqual({ to: DIRECT })
+    expect(partitionChanged(`${SITE}/`, DIRECT, undefined)).toEqual({ to: TUNNEL })
   })
 
   it('moves back to the shared session once the website has no entry', () => {
     let profile: Profile | undefined = 'nym'
     setSiteRoutes({ profileFor: () => profile })
-    expect(partitionChanged(`${SITE}/`, TUNNEL)).toBeUndefined()
+    expect(partitionChanged(`${SITE}/`, TUNNEL, undefined)).toBeUndefined()
     profile = undefined
-    expect(partitionChanged(`${SITE}/`, TUNNEL)).toEqual({ to: undefined })
+    expect(partitionChanged(`${SITE}/`, TUNNEL, undefined)).toEqual({ to: undefined })
   })
 })

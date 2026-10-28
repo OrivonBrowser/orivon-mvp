@@ -28,4 +28,13 @@ describe('which tabs move when a website\'s tunnel changes', () => {
   it('leaves a tab whose address has no origin', () => {
     expect(tabMovesFor(SITE, [tab({ id: '1', url: 'about:blank' })], () => OWN)).toEqual([])
   })
+
+  it('asks for the session of each tab\'s own choice, so a website\'s entry changing never takes a tunnel tab out of its tunnel', () => {
+    const PROXY = 'persist:proxy-profile'
+    const tabs = [tab({ id: '1', tunnelChoice: 'socks5', partition: PROXY }), tab({ id: '2' }), tab({ id: '3', tunnelChoice: 'direct' })]
+    const asked: Array<[string, unknown]> = []
+    const moves = tabMovesFor(SITE, tabs, (url, choice) => { asked.push([url, choice]); return choice === 'socks5' ? PROXY : OWN })
+    expect(asked).toEqual([[`${SITE}/a`, 'socks5'], [`${SITE}/a`, undefined], [`${SITE}/a`, 'direct']])
+    expect(moves).toEqual([{ id: '2', url: `${SITE}/a`, to: OWN }, { id: '3', url: `${SITE}/a`, to: OWN }])
+  })
 })

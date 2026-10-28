@@ -121,7 +121,7 @@ describe('wireView -- a shift-click opens a window', () => {
 
     expect(returned).toBe(guest)
     expect(adoptedViews[0]?.options).toEqual({ webContents: guest, webPreferences: {} })
-    expect(adoptWindow).toHaveBeenCalledWith(adoptedViews[0], undefined)
+    expect(adoptWindow).toHaveBeenCalledWith(adoptedViews[0], undefined, undefined)
     expect(host.adoptPopup).not.toHaveBeenCalled()
   })
 
@@ -136,7 +136,7 @@ describe('wireView -- a shift-click opens a window', () => {
     const response = openHandler(wc)({ url: 'https://github.example/', disposition: 'new-window', features: '' })
 
     expect(response.action).toBe('deny')
-    expect(openWindow).toHaveBeenCalledWith('https://github.example/', undefined)
+    expect(openWindow).toHaveBeenCalledWith('https://github.example/', undefined, undefined)
     expect(adoptWindow).not.toHaveBeenCalled()
     expect(host.adoptPopup).not.toHaveBeenCalled()
   })
@@ -199,7 +199,7 @@ describe('wireView -- a shift-click opens a window', () => {
     const response = openHandler(wc)({ url: 'https://other.example/', disposition: 'new-window' })
     const returned = response.createWindow?.({ webPreferences: {} } as never)
 
-    expect(openWindow).toHaveBeenCalledWith('https://other.example/', undefined)
+    expect(openWindow).toHaveBeenCalledWith('https://other.example/', undefined, undefined)
     expect(returned).toBe(openedContents)
     expect(adoptedViews).toHaveLength(0)
     expect(host.adoptPopup).not.toHaveBeenCalled()
@@ -227,7 +227,7 @@ describe('wireView -- a shift-click opens a window', () => {
       vi.setSystemTime(500)
       openOnce()
       expect(openWindow).toHaveBeenCalledTimes(1)
-      expect(host.openTab).toHaveBeenCalledWith('https://other.example/', true, undefined)
+      expect(host.openTab).toHaveBeenCalledWith('https://other.example/', true, undefined, undefined)
 
       // Spaced a full second apart, up to the cap: each opens a real window.
       for (let seconds = 2; seconds <= 5; seconds++) {
@@ -292,7 +292,7 @@ describe('wireView -- a shift-click opens a window', () => {
     const response = openHandler(wc)({ url: 'https://other.example/', features: 'noopener', disposition: 'new-window' })
 
     expect(response.action).toBe('deny')
-    expect(openWindow).toHaveBeenCalledWith('https://other.example/', undefined)
+    expect(openWindow).toHaveBeenCalledWith('https://other.example/', undefined, undefined)
     expect(host.openTab).not.toHaveBeenCalled()
   })
 })
