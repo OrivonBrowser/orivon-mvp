@@ -94,7 +94,7 @@ describe.skipIf(!hasJspi)('a component that opens a socket', () => {
     })
     const { code, stdout } = run(connect)
     expect(await code).toBe(0)
-    expect(connect).toHaveBeenCalledWith({ host: '127.0.0.1', port: SOCKET_TARGET.port })
+    expect(connect).toHaveBeenCalledWith({ host: '127.0.0.1', port: SOCKET_TARGET.port, signal: expect.any(AbortSignal) })
     expect(stdout()).toBe(SOCKET_TARGET.message)
   })
 

@@ -11,7 +11,7 @@ import type { ShellServices } from '../shell/shell-services.js'
 import { IS_TEST_BUILD, ingestBaseUrl, modeInputsFromEnv, testOverrides } from '../../telemetry/mode.js'
 import type { InternalDomain } from '../pages/internal-ipc.js'
 import { BUILD_COMMIT } from './build-commit.js'
-import { buildDiagnostics, channelOf, reportedSettings } from './diagnostics-facts.js'
+import { appSocketReadings, buildDiagnostics, channelOf, reportedSettings } from './diagnostics-facts.js'
 import type { DiagnosticsFacts } from './diagnostics-facts.js'
 import { diagnostics } from './diagnostics-runner.js'
 import { readDumpBase64 } from './dump-files.js'
@@ -41,6 +41,7 @@ async function readFacts (services: ShellServices, ctx: SubsystemContext): Promi
   const gpuInfo = await app.getGPUInfo('basic').catch(() => undefined)
   const windows = services.windows.all().filter((window) => !window.window.isDestroyed())
   const processors = cpus()
+  const broker = ctx.broker
   return {
     commit: BUILD_COMMIT,
     channel: channelOf({ development: devModeEnabled() || (process.env['ELECTRON_RENDERER_URL'] ?? '') !== '', packaged: app.isPackaged, platform: process.platform, appImage: (process.env['APPIMAGE'] ?? '') !== '' }),
@@ -69,6 +70,7 @@ async function readFacts (services: ShellServices, ctx: SubsystemContext): Promi
       tabs: windows.reduce((sum, window) => sum + window.tabs.getState().tabs.length, 0),
       privateSession: services.isPrivate,
       extensions: (ctx.extensions?.list() ?? []).map(({ id, name, version, enabled }) => ({ id, name, version, enabled })),
+      appSockets: appSocketReadings(broker === undefined ? [] : broker.app.registeredOriginsSync().map((origin) => broker.app.socketUsageSync(origin))),
       settings: reportedSettings((key) => services.settings.get(key))
     },
     crashes: diagnostics()?.crashes() ?? []
