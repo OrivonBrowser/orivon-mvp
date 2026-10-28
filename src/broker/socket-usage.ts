@@ -2,9 +2,9 @@
 // `orivon://report` (both), so a user's report shows an app that ran out of sockets and how far it was from its allowance.
 
 import type { Manifest } from '../contracts/index.js'
-import type { SocketUsage } from './broker-contracts.js'
 import type { GrantLedger } from './grants/grant-ledger.js'
 import { socketAllowance } from './grants/resource-limits.js'
+import type { SocketUsage } from './handles/handle-contracts.js'
 import type { HandleTable } from './handles/handles.js'
 import { isolationKeyFromUrl } from './policy/origin.js'
 

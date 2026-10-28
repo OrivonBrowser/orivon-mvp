@@ -4,9 +4,8 @@
 // ./index.ts's header for what createBroker actually does, why its
 // dependency shape is fixed, and what `Broker` is for. No state lives here.
 
-import type { PersistedApp } from './grants/ledger-storage.js'
-import type { DestroyResource, FailableTcpServer, FailableTcpSocket, FailableUdpSocket } from './handles/handle-contracts.js'
-import type { LedgerStorage } from './grants/ledger-storage.js'
+import type { LedgerStorage, PersistedApp } from './grants/ledger-storage.js'
+import type { DestroyResource, FailableTcpServer, FailableTcpSocket, FailableUdpSocket, SocketUsage } from './handles/handle-contracts.js'
 import type { PortRange } from './policy/bind.js'
 import type { Resolver } from './policy/connect.js'
 import type { RouteBrokerOptions } from './route/provider.js'
@@ -210,15 +209,6 @@ export interface CreateBrokerOptions extends RouteBrokerOptions {
   readonly privateSessionGuard?: () => { readonly tempDir: string, readonly isPrivateDirName: (name: string) => boolean }
   /** Tells the person why their pick was refused, injected like `webContextHost` so the picker guard never imports `electron` itself. Omitted, the refusal stays silent to the person; the app-facing outcome (a plain cancellation, never a distinguishable error) is identical either way. */
   readonly notifyPickRefused?: (info: { readonly origin: string, readonly appName: string | undefined, readonly reason: string }) => void
-}
-
-/** One origin's sockets and calls in flight against its allowance, as `Broker.app.socketUsageSync` reports them. */
-export interface SocketUsage {
-  /** TCP sockets, listeners, UDP sockets and accepted connections: what the allowance counts. */
-  readonly open: number
-  /** Calls running now, among them every dial that has not answered yet; a call waiting for a slot is not counted. */
-  readonly inFlight: number
-  readonly allowance: number
 }
 
 /**
