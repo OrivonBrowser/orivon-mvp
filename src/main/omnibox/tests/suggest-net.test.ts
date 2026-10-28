@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { TabTunnelChoice } from '../../route/tab-tunnel.js'
 
 const { netFetch } = vi.hoisted(() => ({ netFetch: vi.fn(async () => new Response('net')) }))
 vi.mock('electron', () => ({ net: { fetch: netFetch } }))
@@ -16,23 +17,29 @@ function routes (everywhere: boolean, withProfile = true): void {
 }
 afterEach(() => { setOwnRequests(undefined); vi.clearAllMocks() })
 
+/** Asks as the omnibox does, with the request the suggestions use, and reads what came back. */
+async function ask (choice: TabTunnelChoice | undefined): Promise<string> {
+  const response = await suggestFetchFor(choice)(URL_ASKED, { credentials: 'omit', redirect: 'error', referrer: '', signal: new AbortController().signal, headers: {} })
+  return await new Response(response.body).text()
+}
+
 describe('how the address bar asks for suggestions', () => {
   it('through the browser\'s network stack for a tab with no choice, and for a direct one', async () => {
     routes(false)
-    for (const choice of [undefined, 'direct'] as const) expect(await (await suggestFetchFor(choice)(URL_ASKED)).text()).toBe('net')
+    for (const choice of [undefined, 'direct'] as const) expect(await ask(choice)).toBe('net')
     expect(profileFetch).not.toHaveBeenCalled()
   })
 
   it('through the whole-browser tunnel while it is on, for a tab with no choice', async () => {
     routes(true)
-    expect(await (await suggestFetchFor(undefined)(URL_ASKED)).text()).toBe('tunnel')
+    expect(await ask(undefined)).toBe('tunnel')
   })
 
   it('through the profile session of the tab\'s tunnel, whatever the whole browser is set to', async () => {
     for (const everywhere of [false, true]) {
       routes(everywhere)
-      expect(await (await suggestFetchFor('nym')(URL_ASKED)).text()).toBe('profile nym')
-      expect(await (await suggestFetchFor('socks5')(URL_ASKED)).text()).toBe('profile socks5')
+      expect(await ask('nym')).toBe('profile nym')
+      expect(await ask('socks5')).toBe('profile socks5')
     }
     expect(netFetch).not.toHaveBeenCalled()
     expect(tunnel).not.toHaveBeenCalled()
@@ -40,7 +47,7 @@ describe('how the address bar asks for suggestions', () => {
 
   it('not at all when the tab\'s tunnel cannot be had, and never directly', async () => {
     routes(false, false)
-    await expect(suggestFetchFor('nym')(URL_ASKED)).rejects.toThrow(/tunnel/)
+    await expect(ask('nym')).rejects.toThrow(/tunnel/)
     expect(netFetch).not.toHaveBeenCalled()
   })
 })

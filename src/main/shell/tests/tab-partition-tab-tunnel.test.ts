@@ -19,7 +19,7 @@ describe('the session a tab with a tunnel choice shows a website in', () => {
   it('is the tunnel\'s profile for every website the tab opens, entry or none', () => {
     entries({ [OTHER]: 'direct' })
     expect(partitionForTab(`${SITE}/a?b=1#c`, 'nym')).toBe(NYM)
-    expect(partitionForTab(`${OTHER}/`, 'nym')).toBe(profilePartitionFor('nym', OTHER))
+    expect(partitionForTab(`${OTHER}/`, 'nym')).toBe(NYM)
     expect(partitionForTab(`${SITE}/`, 'socks5')).toBe(PROXY)
   })
 
@@ -54,11 +54,20 @@ describe('the session a tab with a tunnel choice shows a website in', () => {
 })
 
 describe('a tab with a tunnel choice moving between sessions', () => {
-  it('moves from the shared session into the profile of its choice on the first address, and stays between websites', () => {
+  it('moves from the shared session into the profile of its choice on the first address, and stays between https websites', () => {
     entries()
     expect(partitionChanged(`${SITE}/`, undefined, 'nym')).toEqual({ to: NYM })
-    expect(partitionChanged(`${OTHER}/`, NYM, 'nym')).toEqual({ to: profilePartitionFor('nym', OTHER) })
+    expect(partitionChanged(`${OTHER}/`, NYM, 'nym')).toBeUndefined()
     expect(partitionChanged(`${SITE}/b`, NYM, 'nym')).toBeUndefined()
+  })
+
+  it('moves between the profile\'s kept session and its memory twin as a website may or may not be written to disk', () => {
+    entries()
+    const twin = profilePartitionFor('nym', 'http://plain.example')
+    expect(twin).not.toBe(NYM)
+    expect(partitionChanged('http://plain.example/', NYM, 'nym')).toEqual({ to: twin })
+    expect(partitionChanged(`${SITE}/`, twin, 'nym')).toEqual({ to: NYM })
+    expect(partitionChanged('http://plain.example/b', twin, 'nym')).toBeUndefined()
   })
 
   it('moves a website whose own entry is another tunnel into the tab\'s tunnel, and a website whose entry is off', () => {
@@ -70,7 +79,7 @@ describe('a tab with a tunnel choice moving between sessions', () => {
   it('moves back to the shared session only for this computer: a tab with a choice leaves its profile for nothing else', () => {
     entries()
     expect(partitionChanged('http://127.0.0.1:8080/', NYM, 'nym')).toEqual({ to: undefined })
-    expect(partitionChanged(`${OTHER}/`, NYM, 'nym')).not.toEqual({ to: undefined })
+    expect(partitionChanged(`${OTHER}/`, NYM, 'nym')).toBeUndefined()
   })
 
   it('does not move a direct tab off a website\'s own tunnel', () => {
