@@ -1,6 +1,7 @@
 import type { SiteInfo, SiteTunnel, SiteTunnelKind, SiteTunnelProfile } from '../../main/permissions/site-info.js'
 import { createSwitch } from './switch.js'
 import { tunnelIcon } from './icons.js'
+import { TAB_TUNNEL_FAILED } from './tab-words.js'
 import { ADDRESS_PROBLEM } from './tunnels-model.js'
 import type { AddressModel, TunnelListModel, TunnelRowModel } from './tunnels-model.js'
 
@@ -161,7 +162,7 @@ function renderAddress (address: AddressModel, callbacks: TunnelCallbacks): HTML
   return box
 }
 
-function renderRow (row: TunnelRowModel, noun: 'site' | 'app', callbacks: TunnelCallbacks): HTMLElement {
+function renderRow (row: TunnelRowModel, noun: 'site' | 'app' | 'tab', callbacks: TunnelCallbacks): HTMLElement {
   const el = document.createElement('div')
   el.className = 'tunnel-row'
   el.dataset['tunnel'] = row.kind.id
@@ -197,7 +198,7 @@ export function renderTunnelsPage (container: HTMLElement, info: SiteInfo, model
 
   const section = document.createElement('div')
   section.className = 'tunnel-section'
-  const noun = info.tunnel?.subject === 'app' ? 'app' : 'site'
+  const noun = info.tunnel?.subject ?? 'site'
   for (const row of model.rows) {
     section.append(renderRow(row, noun, callbacks))
     if (row.address !== null) section.append(renderAddress(row.address, callbacks))
@@ -212,7 +213,7 @@ export function renderTunnelsPage (container: HTMLElement, info: SiteInfo, model
   }
   for (const note of model.notes) section.append(paragraph(note.down ? 'route-line route-line-down' : 'route-line', note.text))
   if (model.empty !== null) section.append(paragraph('route-line', model.empty))
-  if (view.failed) section.append(paragraph('route-line route-line-down', TUNNEL_FAILED))
+  if (view.failed) section.append(paragraph('route-line route-line-down', noun === 'tab' ? TAB_TUNNEL_FAILED : TUNNEL_FAILED))
 
   if (view.notice !== null) {
     const notice = document.createElement('div')

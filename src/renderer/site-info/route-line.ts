@@ -5,11 +5,11 @@ import { nymRouteLine } from '../pages/shared/nym-words.js'
 // The words the tunnels page says for an origin the person routed through their tunnel, and when the tunnel is not
 // answering. Composed here, never from anything an app wrote.
 
-/** Whose traffic the line is about: an installed app or a website. */
-export type RouteSubject = 'app' | 'site'
+/** Whose traffic the line is about: an installed app, a website, or a tab (every website opened in it). */
+export type RouteSubject = 'app' | 'site' | 'tab'
 
 export function routeLineWords (route: SiteRoute, subject: RouteSubject = 'app', nym?: NymState): string {
-  const noun = subject === 'app' ? 'app' : 'site'
+  const noun = subject
   if (route === 'moving') return `This ${noun} is not on your tunnel yet, so its traffic is stopped. If this stays, reload the page.`
   // Through Nym the line also says what Nym is doing.
   if (nym !== undefined && route !== 'no-proxy') return nymRouteLine(route, nym, noun)
