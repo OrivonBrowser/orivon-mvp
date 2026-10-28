@@ -4,7 +4,7 @@
 export const ONION_NEEDS_TOR = 'An onion address opens only through a Tor tunnel, so its name is not looked up. Set your own SOCKS5 address in Settings, then Tunnels, and send this site through it.'
 
 /** The ideographic and fullwidth stops the URL parser reads as a dot. */
-const OTHER_DOTS = /[。．｡]/g
+const OTHER_DOTS = /[\u3002\uFF0E\uFF61]/g
 
 /** A name under `.onion` (RFC 7686), in any case and with the root dot, or `onion` itself. */
 export function isOnionHost (host: string): boolean {
