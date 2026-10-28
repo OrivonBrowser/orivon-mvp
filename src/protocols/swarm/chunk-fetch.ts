@@ -153,19 +153,20 @@ export class ChunkSource {
    * makes a file slow and a `Range` makes the node's answer many times slower. Each is used only once its bytes, under
    * the size its parent declares, hash to the address its parent lists: the endpoint is trusted no more than over
    * `/chunks`. A leaf that answer does not hold, or holds wrong, is fetched alone as `get` fetches it, so a node that
-   * cannot or will not answer in bulk costs time, never a byte.
+   * cannot or will not answer in bulk costs time, never a byte. The `/bytes` request ends only once no read wants a leaf
+   * it has still to give, so a read that leaves never sends one that joined it to fetch every leaf alone.
    */
   leaves (parent: string, leaves: readonly SubtreeLeaf[], signal: AbortSignal, onRefusal: (refusal: Refusal) => void): Array<Promise<Uint8Array>> {
     if (signal.aborted || !/^[0-9a-f]{64}$/.test(parent)) return leaves.map(async (leaf) => await this.get(leaf.address, signal, onRefusal))
     /** The leaves this call fetches, in order, each settled with its chunk from the bulk answer or undefined. */
-    const owned: Array<{ readonly leaf: SubtreeLeaf, readonly answer: Pending<Uint8Array | undefined> }> = []
+    const owned: Array<{ readonly leaf: SubtreeLeaf, readonly answer: Pending<Uint8Array | undefined>, readonly wanted: AbortSignal }> = []
     const answers = leaves.map(async (leaf) => {
       if (!/^[0-9a-f]{64}$/.test(leaf.address)) throw new ResolutionError('unverifiable', `${leaf.address} is not a chunk address`)
       const kept = this.memory.recall(this.partition, leaf.address)
       if (kept !== undefined) return kept
       const shared = this.memory.share(this.partition, leaf.address, async (sharedSignal, sharedOnRefusal) => {
         const answer = pending<Uint8Array | undefined>()
-        owned.push({ leaf, answer })
+        owned.push({ leaf, answer, wanted: sharedSignal })
         const fromBulk = await answer.promise
         if (fromBulk === undefined && sharedSignal.aborted) throw sharedSignal.reason
         const bytes = fromBulk ?? await fetchChunk(leaf.address, CAC, this.deps, sharedSignal, sharedOnRefusal)
@@ -176,8 +177,12 @@ export class ChunkSource {
     })
     let next = 0
     let stopped: string | undefined
+    const bulk = new AbortController()
+    for (const { wanted } of owned) {
+      wanted.addEventListener('abort', () => { if (owned.slice(next).every((leaf) => leaf.wanted.aborted)) bulk.abort(wanted.reason) }, { once: true })
+    }
     const alone = (): void => {
-      if (stopped !== undefined && next < owned.length && !signal.aborted) this.deps.log?.(`swarm: a bulk read gave ${String(next)} of ${String(owned.length)} leaves (${stopped}); the rest are read one by one`)
+      if (stopped !== undefined && next < owned.length && !bulk.signal.aborted) this.deps.log?.(`swarm: a bulk read gave ${String(next)} of ${String(owned.length)} leaves (${stopped}); the rest are read one by one`)
       for (; next < owned.length; next++) owned[next]!.answer.resolve(undefined)
     }
     const endpoint = this.deps.pool.candidates()[0]
@@ -223,7 +228,7 @@ export class ChunkSource {
           await reader.cancel().catch(() => {})
         }
       },
-      signal
+      bulk.signal
     ).catch((error: unknown) => { stopped = error instanceof Error ? error.message : String(error) }).finally(alone)
     return answers
   }

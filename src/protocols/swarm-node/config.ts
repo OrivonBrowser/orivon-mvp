@@ -12,9 +12,18 @@ export const PASSWORD_FILE = 'swarm-node.password'
 
 export const PROGRAM_NAME = 'swarm-node'
 
+/**
+ * Peers the node keeps. Each peer serves a light node only a few chunks a second on credit, so the peer count bounds
+ * how fast a file arrives: with the same read-ahead, 250 loaded the WebTorrent page in 24 to 26 s where the node's own
+ * 100 took 30, and only with 250 did reading further ahead (`../swarm/joiner.ts`) help. It costs about 45 MB and a tenth
+ * of a core more while the node sits idle. The node dials past this number to balance its neighbourhood, which can reach
+ * `node-net.ts`'s 300 sockets: a dial past them is refused, and the node counts it as a failed one.
+ */
+export const TARGET_PEERS = 250
+
 /** `argv[0]` is the program name; the node reads its config from the data directory and opens no control socket. */
 export function nodeArguments (): string[] {
-  return [PROGRAM_NAME, `--config=${GUEST_DATA_DIR}/${CONFIG_FILE}`, '--no-control-socket', '--no-disk-cache']
+  return [PROGRAM_NAME, `--config=${GUEST_DATA_DIR}/${CONFIG_FILE}`, '--no-control-socket', '--no-disk-cache', `--target-peers=${String(TARGET_PEERS)}`]
 }
 
 /** A light node on mainnet: no postage snapshot, no swap, no storage incentives. */

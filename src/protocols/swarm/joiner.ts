@@ -12,10 +12,11 @@ import type { SubtreeLeaf } from './chunk-fetch.js'
 /** Intermediate chunks fetched ahead of the one being walked, among the children of one intermediate chunk. */
 const WINDOW = 16
 /**
- * Leaves fetched ahead of the one being read, across the whole file: 1 MB, two intermediate chunks' leaves. Measured
- * on the node, a deeper read splits its throughput between more requests and finishes no sooner.
+ * Leaves fetched ahead of the one being read, across the whole file: 4 MB, eight intermediate chunks' leaves. The node
+ * answers each read with at most 64 chunks in flight, so more reads at once keep its peers busier; measured with its
+ * 250 peers, 1024 loaded an 8.9 MB file in 10 to 13 s, 512 in 14, and 256 in 20, with the node's thread near full at 1024.
  */
-export const AHEAD = 256
+export const AHEAD = 1024
 
 export type GetChunk = (address: string) => Promise<Uint8Array>
 /** The leaves under the intermediate chunk at `parent`, in order, each a chunk already checked against its address. */

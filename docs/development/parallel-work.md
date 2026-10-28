@@ -97,10 +97,14 @@ Two sessions in two directories physically cannot write the same file.
 ```bash
 git worktree add ../orivon-broker -b stream/broker
 cd ../orivon-broker
-npm install      # or symlink the main checkout's: ln -s <repo>/node_modules node_modules
+cp -al <repo>/node_modules node_modules   # hard links: instant, no extra disk
 ```
 
-A new worktree starts without `node_modules`, so it needs one of those two.
+A new worktree starts without `node_modules`. A hard-linked copy of the main checkout's is the one to use. A symlink to
+it, or a `node_modules/node_modules` link left inside a copy (what `ln -s` makes when `node_modules` already exists),
+makes a bundle resolve some packages in the other checkout, so it differs from CI's;
+`src/shim/worker/tests/runtime-bundle.test.ts` refuses such a bundle. Never `npm install` into a copy: npm rewrites its
+files in place, in every checkout that shares them. Install in the main checkout, then copy again.
 
 **Run `npm run install:electron` in a checkout after syncing `main` once.** It sets the fuses a package
 sets in that checkout's Electron binary, so a run from source stores and loads as a package does: the
