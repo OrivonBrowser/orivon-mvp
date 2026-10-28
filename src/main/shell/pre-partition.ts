@@ -31,12 +31,13 @@ interface NavigationEvent {
 export function repartitionBeforeCommit (wc: WebContents, id: string, record: TabRecord, shown: () => boolean): void {
   const view = record.view
   const handle = (event: NavigationEvent): void => {
-    if (!event.isMainFrame || event.defaultPrevented || !shown() || record.isDashboardTab || record.internalPage !== null) return
+    // A new-tab page moves with its first address, unless the tab has a tunnel choice: then even a link of the page itself is a first request.
+    if (!event.isMainFrame || event.defaultPrevented || !shown() || (record.isDashboardTab && record.tunnelChoice === undefined) || record.internalPage !== null) return
     if (isNavigationHeld(wc)) return
     // A link written the way the address bar shows an address (`ipfs://app.eth/`) loads at the URL
     // that scheme is served at (`./served-address.ts`), and that URL is the one whose partition counts.
     const url = BUILTIN_ADDRESSES.servedUrl(event.url) ?? event.url
-    const swap = partitionChanged(url, record.partition)
+    const swap = partitionChanged(url, record.partition, record.tunnelChoice)
     if (swap === undefined) return
     // A move to the shared session waits for `did-navigate` when the tab's session sends the address as the shared one would (a popup then keeps its opener); when it would send it differently, as a direct profile or an app set to off does for an address on the tunnel, the first request must not commit there, so the tab moves now and a popup's opener is cut.
     if (swap.to === undefined && (isTemporaryRoutePartition(record.partition) || sessionRoutesLike(record.partition, url))) return

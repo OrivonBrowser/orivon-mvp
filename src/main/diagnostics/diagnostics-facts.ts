@@ -72,6 +72,8 @@ export interface DiagnosticsFacts {
     readonly windows: number
     readonly tabs: number
     readonly privateSession: boolean
+    /** How many tabs carry each tunnel choice: counts only. */
+    readonly tunnels: { readonly tabs: { readonly nym: number, readonly socks5: number, readonly direct: number } }
     readonly extensions: readonly ExtensionReading[]
     readonly settings: Readonly<Record<string, string | boolean>>
   }
@@ -95,6 +97,7 @@ export const RECENT_CRASHES = 10
 export const REPORTED_SETTINGS: readonly SettingKey[] = [
   'appearance.theme', 'privacy.cookies', 'privacy.globalPrivacyControl', 'privacy.doNotTrack', 'privacy.httpsOnly', 'privacy.secureDns',
   'performance.memorySaver', 'performance.energySaver', 'startup.mode', 'spellcheck.enabled', 'developer.tools', 'extensions.developerMode', 'updates.check',
+  'network.route.kind', 'network.nym.enabled', 'network.tunnel.everywhere',
   ...(Object.keys(SETTINGS) as SettingKey[]).filter((key) => key.startsWith('web3.') && (SETTINGS[key].kind === 'bool' || SETTINGS[key].kind === 'enum'))
 ]
 

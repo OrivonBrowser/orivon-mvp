@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const repartitionView = vi.fn()
 vi.mock('../tab-parking.js', () => ({ repartitionView }))
 let own = true
-vi.mock('../tab-partition.js', () => ({ partitionForTarget: () => own ? 'persist:site-x' : undefined }))
+const asked: Array<[string, unknown]> = []
+vi.mock('../tab-partition.js', () => ({ partitionForTab: (url: string, choice: unknown) => { asked.push([url, choice]); return own ? 'persist:site-x' : undefined } }))
 
 const { installSiteSessions } = await import('../install-site-sessions.js')
 
@@ -48,7 +49,7 @@ function fakes (unreadable = false, settledFails = false): Fakes & { records: Ma
   }
 }
 
-beforeEach(() => { repartitionView.mockReset(); stop.mockClear(); own = true })
+beforeEach(() => { repartitionView.mockReset(); stop.mockClear(); own = true; asked.length = 0 })
 
 describe('moving tabs when a website\'s tunnel changes', () => {
   it('waits for the sessions to follow the switch, then moves the tabs on that website into the session its state calls for', async () => {
@@ -59,6 +60,15 @@ describe('moving tabs when a website\'s tunnel changes', () => {
     expect(repartitionView).not.toHaveBeenCalled()
     world.settle()
     await vi.waitFor(() => { expect(repartitionView).toHaveBeenCalledWith('t1', world.records.get('t1'), 'https://news.example/a', 'persist:site-x') })
+  })
+
+  it('asks for the session of the tab\'s own tunnel choice, so the change moves a tab only to where its choice allows', async () => {
+    const world = fakes()
+    ;(world.records.get('t1') as { tunnelChoice?: string }).tunnelChoice = 'nym'
+    world.install()
+    world.settle()
+    world.changeHub('https://news.example')
+    await vi.waitFor(() => { expect(asked).toEqual([['https://news.example/a', 'nym']]) })
   })
 
   it('moves nothing for a website none of whose tabs is open', async () => {

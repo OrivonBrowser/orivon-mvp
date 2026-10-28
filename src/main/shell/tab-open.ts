@@ -9,6 +9,7 @@ import { fileProtocolFuse, knownFileProtocolFuse } from '../local-files/file-fus
 import type { FileProtocolFuse } from '../local-files/file-fuse.js'
 import type { BuiltTab, TabFactory } from './tab-factory.js'
 import type { TabRecord } from './tab-types.js'
+import type { TabTunnelChoice } from '../route/tab-tunnel.js'
 
 export interface TabOpenerHost {
   add: (id: string, record: TabRecord) => void
@@ -41,11 +42,11 @@ export class TabOpener {
     return built.id
   }
 
-  /** `active`/`loadOptions` -- `addAndShow`'s own doc. Refuses rather than crashes at MAX_TABS
+  /** `active`/`loadOptions` -- `addAndShow`'s own doc. `tunnelChoice` is the choice of the tab this one is opened from, which it keeps. Refuses rather than crashes at MAX_TABS
    * -- a caller that uses the id (a split's partner) checks atCapacity() first. */
-  createTab (url?: string, active = true, loadOptions?: LoadURLOptions): string {
+  createTab (url?: string, active = true, loadOptions?: LoadURLOptions, tunnelChoice?: TabTunnelChoice): string {
     if (this.host.atCapacity()) return this.host.activeId() ?? ''
-    const built = this.factory.content(url)
+    const built = this.factory.content(url, tunnelChoice)
     const id = this.addAndShow(built, active, loadOptions)
     if (url === undefined && active) this.host.freshTabInFront?.(id, built.record.view.webContents)
     return id
@@ -54,9 +55,9 @@ export class TabOpener {
   /** A same-origin blob: URL a no-guest popup open wants (popups.ts's own doc), directly in
    * `partition` -- the opener's own; skips `createTab`'s partitionForTarget/sanitizeDirectUrl,
    * neither of which fits a URL with no origin of its own that nobody could ever type. */
-  openBlobTab (url: string, partition: string | undefined, active = true, loadOptions?: LoadURLOptions): string {
+  openBlobTab (url: string, partition: string | undefined, active = true, loadOptions?: LoadURLOptions, tunnelChoice?: TabTunnelChoice): string {
     if (this.host.atCapacity()) return this.host.activeId() ?? ''
-    return this.addAndShow(this.factory.blob(url, partition), active, loadOptions)
+    return this.addAndShow(this.factory.blob(url, partition, tunnelChoice), active, loadOptions)
   }
 
   /** A local file in a new tab of its local-files session, whole (query and fragment kept). Undefined for a URL `localFileKey` refuses, at MAX_TABS, and unless the binary's
@@ -117,8 +118,8 @@ export class TabOpener {
   }
 
   /** A popup Chromium already created (./popups.ts); it navigates itself. `active` -- `addAndShow`'s doc. */
-  adoptPopup (view: WebContentsView, partition: string | undefined, active = true): void {
-    const { id, record } = this.factory.popup(view, partition)
+  adoptPopup (view: WebContentsView, partition: string | undefined, active = true, tunnelChoice?: TabTunnelChoice): void {
+    const { id, record } = this.factory.popup(view, partition, tunnelChoice)
     this.host.add(id, record)
     if (active) this.host.activate(id)
     else this.host.changed()

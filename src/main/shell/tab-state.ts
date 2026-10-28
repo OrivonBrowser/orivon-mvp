@@ -36,6 +36,7 @@ export function buildTabState (id: string, record: TabRecord | undefined, wc: We
     muted: record?.muted ?? false,
     audible: false,
     crashed: record?.crashed ?? null,
+    ...(record?.tunnelChoice === undefined ? {} : { tunnelChoice: record.tunnelChoice }),
     ...(record === undefined ? {} : signalState(record, wc))
   }
   // The pages the tab's view does not hold are still Back and Forward (tab-outer-history.ts).

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ensureSiteSession, mustLeaveSession, sessionRoutesLike, setSiteRoutes, setSiteSessionEnsurer, siteProfileOf, sitePartitionForOrigin } from '../site-routes.js'
+import { ensureSiteSession, mustLeaveSession, keepSiteApart, sessionRoutesLike, setSiteRoutes, setSiteSessionEnsurer, siteProfileOf, sitePartitionForOrigin, sitePartitionForTab } from '../site-routes.js'
 import type { Profile } from '../site-partition.js'
 
 const SITE = 'https://news.example'
@@ -41,6 +41,48 @@ describe('the session a website must run in', () => {
     expect(siteProfileOf('direct-profile-memory')).toBe('direct')
     expect(siteProfileOf('persist:app-abc')).toBeUndefined()
     expect(siteProfileOf(undefined)).toBeUndefined()
+  })
+})
+
+describe('the session a website must run in, in a tab with a tunnel choice', () => {
+  it('is the website\'s own with no choice', () => {
+    setSiteRoutes({ profileFor: () => 'socks5' })
+    expect(sitePartitionForTab(SITE, undefined)).toBe(sitePartitionForOrigin(SITE))
+  })
+
+  it('is the tunnel\'s profile for a website with no entry, with an entry of off and with the other tunnel', () => {
+    for (const own of [undefined, 'direct', 'socks5'] as const) {
+      setSiteRoutes({ profileFor: () => own })
+      expect(sitePartitionForTab(SITE, 'nym')).toBe('persist:tunnel-profile')
+    }
+    for (const own of [undefined, 'direct', 'nym'] as const) {
+      setSiteRoutes({ profileFor: () => own })
+      expect(sitePartitionForTab(SITE, 'socks5')).toBe('persist:proxy-profile')
+    }
+    expect(sitePartitionForTab('http://news.example', 'socks5')).toBe('proxy-profile-memory')
+  })
+
+  it('is the direct profile for a direct choice, unless the website has a tunnel of its own', () => {
+    setSiteRoutes({ profileFor: () => undefined })
+    expect(sitePartitionForTab(SITE, 'direct')).toBe('persist:direct-profile')
+    setSiteRoutes({ profileFor: () => 'nym' })
+    expect(sitePartitionForTab(SITE, 'direct')).toBe('persist:tunnel-profile')
+  })
+
+  it('is the shared session for this computer whatever the choice, and until routes are running', () => {
+    expect(sitePartitionForTab(SITE, 'nym')).toBeUndefined()
+    setSiteRoutes({ profileFor: () => undefined })
+    for (const choice of ['nym', 'socks5', 'direct'] as const) expect(sitePartitionForTab('http://localhost:3000', choice)).toBeUndefined()
+  })
+})
+
+describe('recording that a tab\'s choice put a website in a profile', () => {
+  it('is handed to routes, and is nothing before they run', () => {
+    expect(() => { keepSiteApart(SITE, 'nym') }).not.toThrow()
+    const keep = vi.fn()
+    setSiteRoutes({ profileFor: () => undefined, keepApart: keep })
+    keepSiteApart(SITE, 'socks5')
+    expect(keep).toHaveBeenCalledWith(SITE, 'socks5')
   })
 })
 
@@ -97,6 +139,52 @@ describe('a load the shell\'s own move missed', () => {
 
   it('never judges this computer by the tunnel', () => {
     expect(mustLeaveSession('http://127.0.0.1:8080/', direct, cached, () => 'nym')).toBe(false)
+  })
+})
+
+describe('a load of a tab with a tunnel choice the shell\'s own move missed', () => {
+  const cached = (): boolean => false
+  const shared = { shared: true, via: undefined, temporary: false }
+  const direct = { shared: false, via: undefined, temporary: false }
+  const none = (): undefined => undefined
+
+  it('is refused in the shared session for a website that follows no entry, and in any session that is not the tunnel\'s', () => {
+    setSiteRoutes({ profileFor: () => undefined })
+    expect(mustLeaveSession(`${SITE}/`, shared, cached, none, 'nym')).toBe(true)
+    expect(mustLeaveSession(`${SITE}/`, direct, cached, none, 'socks5')).toBe(true)
+    expect(mustLeaveSession(`${SITE}/`, { shared: false, via: 'nym', temporary: false }, cached, none, 'socks5')).toBe(true)
+  })
+
+  it('is let through in the session of the tab\'s own tunnel, even for a website whose entry is off or the other tunnel', () => {
+    setSiteRoutes({ profileFor: () => 'direct' })
+    expect(mustLeaveSession(`${SITE}/`, { shared: false, via: 'socks5', temporary: false }, cached, none, 'socks5')).toBe(false)
+    setSiteRoutes({ profileFor: () => 'nym' })
+    expect(mustLeaveSession(`${SITE}/`, { shared: false, via: 'socks5', temporary: false }, cached, (origin) => origin === SITE ? 'nym' : undefined, 'socks5')).toBe(false)
+  })
+
+  it('is refused in the shared session for a direct choice, which puts the website in the direct profile, and let through there', () => {
+    setSiteRoutes({ profileFor: () => undefined })
+    expect(mustLeaveSession(`${SITE}/`, shared, cached, none, 'direct')).toBe(true)
+    expect(mustLeaveSession(`${SITE}/`, direct, cached, none, 'direct')).toBe(false)
+  })
+
+  it('keeps a website\'s own tunnel in a direct tab: its session must go through that tunnel', () => {
+    setSiteRoutes({ profileFor: () => 'nym' })
+    expect(mustLeaveSession(`${SITE}/`, direct, cached, (origin) => origin === SITE ? 'nym' : undefined, 'direct')).toBe(true)
+    expect(mustLeaveSession(`${SITE}/`, { shared: false, via: 'nym', temporary: false }, cached, (origin) => origin === SITE ? 'nym' : undefined, 'direct')).toBe(false)
+  })
+
+  it('never judges this computer, an app served from the cache or a temporary session by the choice', () => {
+    setSiteRoutes({ profileFor: () => undefined })
+    expect(mustLeaveSession('http://127.0.0.1:8080/', direct, cached, none, 'nym')).toBe(false)
+    expect(mustLeaveSession(`${SITE}/`, shared, () => true, none, 'nym')).toBe(false)
+    expect(mustLeaveSession(`${SITE}/`, { ...direct, temporary: true }, cached, none, 'nym')).toBe(false)
+  })
+
+  it('judges a load with no choice as it always was', () => {
+    setSiteRoutes({ profileFor: (origin) => origin === SITE ? 'nym' : undefined })
+    expect(mustLeaveSession(`${SITE}/`, shared, cached, none, undefined)).toBe(true)
+    expect(mustLeaveSession('https://other.example/', shared, cached, none, undefined)).toBe(false)
   })
 })
 

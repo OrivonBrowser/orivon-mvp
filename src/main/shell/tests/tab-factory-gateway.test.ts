@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const partitionForTarget = vi.fn((target: string) => (target.startsWith('https://site.eth') ? 'persist:site-eth' : undefined))
+const partitionForTab = vi.fn((target: string, _choice: unknown) => partitionForTarget(target))
 const appTabArgsFor = vi.fn((_target: string, _broker: unknown) => [] as string[])
 const makeTabView = vi.fn((_preload: string, _partition: string | undefined, _args: string[], _options?: { target: string }) => ({ webContents: { id: 1, once: vi.fn(), on: vi.fn(), off: vi.fn() } }))
 vi.mock('../tab-view.js', () => ({
   appTabArgsFor: (target: string, broker: unknown) => appTabArgsFor(target, broker),
   makeTabView: (preload: string, partition: string | undefined, args: string[], options?: { target: string }) => makeTabView(preload, partition, args, options),
   partitionForTarget: (target: string) => partitionForTarget(target),
+  partitionForTab: (target: string, choice: unknown) => partitionForTab(target, choice),
   wireView: vi.fn()
 }))
 vi.mock('../tab-backing.js', () => ({ paintBacking: vi.fn() }))
@@ -24,6 +26,7 @@ function factory (on: boolean): InstanceType<typeof TabFactory> {
 
 beforeEach(() => {
   partitionForTarget.mockClear()
+  partitionForTab.mockClear()
   appTabArgsFor.mockClear()
   makeTabView.mockClear()
   provideVerifierAccess({ start: () => {}, ready: async () => {}, servesName: () => true })
@@ -33,7 +36,7 @@ describe('a tab opened at a gateway address', () => {
   it('is built for the .eth name by content(): its session, its arguments and its first load', () => {
     const built = factory(true).content('https://site.eth.limo/p?q=1#f')
     expect(built.target).toBe('https://site.eth/p?q=1#f')
-    expect(partitionForTarget).toHaveBeenCalledWith('https://site.eth/p?q=1#f')
+    expect(partitionForTab).toHaveBeenCalledWith('https://site.eth/p?q=1#f', undefined)
     expect(appTabArgsFor.mock.calls[0]?.[0]).toBe('https://site.eth/p?q=1#f')
     expect(makeTabView.mock.calls[0]?.[1]).toBe('persist:site-eth')
     expect(built.record.partition).toBe('persist:site-eth')

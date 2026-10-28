@@ -8,6 +8,7 @@ import { devModeEnabled } from '../dev/dev-mode.js'
 import { ownFetch } from '../route/own-requests.js'
 import type { SubsystemContext } from '../registry.js'
 import type { ShellServices } from '../shell/shell-services.js'
+import { tabChoiceCounts } from '../shell/tab-tunnel-choice.js'
 import { IS_TEST_BUILD, ingestBaseUrl, modeInputsFromEnv, testOverrides } from '../../telemetry/mode.js'
 import type { InternalDomain } from '../pages/internal-ipc.js'
 import { BUILD_COMMIT } from './build-commit.js'
@@ -68,6 +69,7 @@ async function readFacts (services: ShellServices, ctx: SubsystemContext): Promi
       windows: windows.length,
       tabs: windows.reduce((sum, window) => sum + window.tabs.getState().tabs.length, 0),
       privateSession: services.isPrivate,
+      tunnels: { tabs: tabChoiceCounts(services.windows) },
       extensions: (ctx.extensions?.list() ?? []).map(({ id, name, version, enabled }) => ({ id, name, version, enabled })),
       settings: reportedSettings((key) => services.settings.get(key))
     },

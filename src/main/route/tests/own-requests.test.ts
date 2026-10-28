@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ownDirectSession, ownFetch, ownRequestsSettled, ownRequestsTunnelled, ownRouteFor, ownSiteSession, setOwnRequests } from '../own-requests.js'
+import { ownDirectSession, ownFetch, ownFetchForTab, ownRequestsSettled, ownRequestsTunnelled, ownRouteFor, ownSiteSession, setOwnRequests } from '../own-requests.js'
 
 const ordinary = vi.fn(async () => new Response('ordinary'))
 const tunnel = vi.fn(async () => new Response('tunnel'))
@@ -115,6 +115,39 @@ describe('where the name of a website with a tunnel of its own is looked up', ()
     expect(ownRouteFor('https://plain.example')).toBe('ordinary')
     tunnelled(true)
     expect(ownRouteFor('https://picked.example')).toBe('tunnel')
+  })
+})
+
+describe('a request made for a tab with a tunnel choice, about no website', () => {
+  const profileFetch = vi.fn((kind: string) => async () => new Response(`profile ${kind}`))
+  function tabWorld (everywhere = false, withProfile = true): void {
+    setOwnRequests({ everywhere: () => everywhere, isRouted: () => true, tunnel, direct, directSession: () => SESSION, ...(withProfile ? { profileFetch } : {}) })
+  }
+
+  it('is made in the tunnel\'s profile session, whatever the whole browser is set to', async () => {
+    for (const everywhere of [false, true]) {
+      tabWorld(everywhere)
+      expect(await (await ownFetchForTab(ordinary, 'nym')('https://suggest.example/?q=a')).text()).toBe('profile nym')
+      expect(await (await ownFetchForTab(ordinary, 'socks5')('https://suggest.example/?q=a')).text()).toBe('profile socks5')
+    }
+    expect(ordinary).not.toHaveBeenCalled()
+    expect(tunnel).not.toHaveBeenCalled()
+  })
+
+  it('is not made at all when there is no profile session to make it in, and never falls back to the ordinary way', async () => {
+    tabWorld(false, false)
+    await expect(ownFetchForTab(ordinary, 'nym')('https://suggest.example/?q=a')).rejects.toThrow(/tunnel/)
+    setOwnRequests(undefined)
+    await expect(ownFetchForTab(ordinary, 'socks5')('https://suggest.example/?q=a')).rejects.toThrow(/tunnel/)
+    expect(ordinary).not.toHaveBeenCalled()
+  })
+
+  it('is the ordinary own request for a tab with no tunnel choice, or a direct one', async () => {
+    tabWorld(true)
+    expect(await (await ownFetchForTab(ordinary, undefined)('https://suggest.example/?q=a')).text()).toBe('tunnel')
+    tabWorld(false)
+    expect(await (await ownFetchForTab(ordinary, undefined)('https://suggest.example/?q=a')).text()).toBe('ordinary')
+    expect(profileFetch).not.toHaveBeenCalled()
   })
 })
 

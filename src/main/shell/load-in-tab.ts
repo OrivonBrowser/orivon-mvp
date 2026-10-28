@@ -12,7 +12,7 @@ import type { TabRecord } from './tab-types.js'
 /** Moves the tab to a view of `target`'s session when the tab's own is not it, or its app-tab flag differs
  * (repartitionView's doc). False when the tab's view fits and the caller loads `target` in it. */
 export function repartitionForTarget (id: string, record: TabRecord, target: string, step = false): boolean {
-  const swap = partitionChanged(target, record.partition)
+  const swap = partitionChanged(target, record.partition, record.tunnelChoice)
   if (swap === undefined && !appTabFlagChanged(target, record.view, record.host.broker)) return false
   // swap.to can itself be undefined (PartitionSwap's own doc) -- ??
   // would wrongly read that as "no swap" and keep the old partition.
@@ -67,6 +67,6 @@ export function loadInTab (id: string, record: TabRecord, target: string): void 
 export function gatewayLinkTarget (record: TabRecord, url: string): string | undefined {
   const mapped = gatewayRedirectFor(record.host.services?.settings, url)
   if (mapped === undefined) return undefined
-  const moves = record.partition !== undefined || partitionChanged(mapped, record.partition) !== undefined || appTabFlagChanged(mapped, record.view, record.host.broker)
+  const moves = record.partition !== undefined || partitionChanged(mapped, record.partition, record.tunnelChoice) !== undefined || appTabFlagChanged(mapped, record.view, record.host.broker)
   return moves ? mapped : undefined
 }

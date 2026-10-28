@@ -35,7 +35,7 @@ export function openSnapshot (tabs: TabManager, snapshot: TabSnapshot, active: b
     }
     return opened.id
   }
-  const id = openNowFromBrowser(tabs, clean.url, active)
+  const id = openNowFromBrowser(tabs, clean.url, active, clean.tunnelChoice)
   const record = id === undefined ? undefined : tabs.record(id)
   if (record === undefined) return undefined
   record.pinned = clean.pinned

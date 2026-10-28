@@ -10,7 +10,7 @@ chrome asks (`omnibox.query`, `select`, `pick`, `close`) and what a choice does 
 `omnibox-overlay.ts` declares the dropdown, drawn by
 [`../../renderer/overlay/omnibox/`](../../renderer/overlay/omnibox/) and driven by
 [`../../renderer/chrome/address-suggest.ts`](../../renderer/chrome/address-suggest.ts). `omnibox-names.ts` holds the
-two names they share. `suggest-net.ts` binds the request to `net.fetch`, and `suggest-test-seam.ts` lets a test build
+two names they share. `suggest-net.ts` binds the request to `net.fetch`, through the tunnel of the active tab's choice when it has one (and not at all when that tunnel cannot be had), and `suggest-test-seam.ts` lets a test build
 point it at a local fixture.
 
 **Tied to Electron only in** `omnibox-overlay.ts`, `omnibox-actions.ts` and `suggest-net.ts`, through the overlay host and the

@@ -1,15 +1,9 @@
-// Owns every tab's WebContentsView and the state pushed to the chrome UI.
+// Owns every tab's WebContentsView and the state pushed to the chrome UI. Main holds truth: the chrome view sends
+// commands (newTab, navigate, back, ...) and receives a full ShellState snapshot after every change.
 //
-// Main holds truth (the shell's architecture):
-// the chrome view sends commands (newTab, navigate, back, ...) and receives a
-// full ShellState snapshot after every change. It never derives tab state
-// itself.
-//
-// T18 (security-model.md): every tab WebContents gets setWindowOpenHandler
-// wired so a popup becomes a tab, never an OS window. A redirect, clicked
-// link, form or script navigation that changes a tab's origin is caught by
-// wireView()'s did-navigate handler, which repartitions the same way a typed
-// cross-origin navigation does (repartitionView()'s own doc: the residual).
+// T18 (security-model.md): every tab WebContents gets setWindowOpenHandler wired so a popup becomes a tab, never an OS
+// window. A redirect, clicked link, form or script navigation that changes a tab's origin is caught by wireView()'s
+// did-navigate handler, which repartitions as a typed cross-origin navigation does (repartitionView()'s own doc: the residual).
 import type { LoadURLOptions, View, WebContents, WebContentsView } from 'electron'
 import { join } from 'node:path'
 import { captureFaviconInto } from '../browsing/favicon.js'
@@ -29,6 +23,8 @@ import type { NavigationEnv } from './tab-navigation.js'
 import { TabOpener } from './tab-open.js'
 import { watchNewTab } from './new-tab-focus.js'
 import { TabPanes } from './tab-panes.js'
+import { setTabTunnelChoice } from './tab-tunnel-choice.js'
+import type { TabTunnelChoice } from '../route/tab-tunnel.js'
 
 export type { TabState, TabsSnapshot, ShellState, Bounds } from './tab-types.js'
 import type { TabsSnapshot, Bounds, TabRecord, TabShell, TabViewHost } from './tab-types.js'
@@ -42,11 +38,8 @@ export class TabManager {
   /** Tab strip order, kept apart from the Map's insertion order. */
   private readonly order: string[] = []
   private activeId: string | null = null
-  /** Set once the window is closing: from then on no tab is activated, laid
-   * out or reported, because each of those asks the window for its bounds and
-   * a destroyed window throws. Teardown destroys the window first and its
-   * views' webContents after, so the views' `destroyed` events arrive here
-   * with the window already gone. */
+  /** Set once the window is closing: no tab is activated, laid out or reported from then on, because each asks the
+   * destroyed window for its bounds and throws; teardown destroys the window before its views, whose `destroyed` events arrive late. */
   private disposed = false
   private readonly listeners = new Set<(state: TabsSnapshot) => void>()
   /** The push a burst of page signals waits for: one per burst, however many tabs and signals made it. */
@@ -96,7 +89,7 @@ export class TabManager {
       attachView: (id, view) => { this.panes.swap(id, view) },
       paneCommitted: (id) => { this.panes.recheck(id) },
       paneClicked: (id) => { this.panes.clicked(id) },
-      openInSplit: (id, url) => { if (!this.atCapacity()) this.splits.split(id, this.createTab(url), 'right') },
+      openInSplit: (id, url) => { if (!this.atCapacity()) this.splits.split(id, this.createTab(url, true, undefined, this.tabs.get(id)?.tunnelChoice), 'right') },
       reload: (id) => { this.reload(id) },
       back: (id) => { this.back(id) },
       forward: (id) => { this.forward(id) },
@@ -106,15 +99,15 @@ export class TabManager {
         await captureFaviconInto(record, favicons, () => record.view.webContents.getURL(), () => this.tabs.get(id) === record, () => { this.changed() }, record.view.webContents.session)
       },
       forgetTab: (id) => { this.forgetTab(id, false) },
-      openTab: (url, active, loadOptions) => this.liveWebContents(this.openedByPage(() => this.createTab(url, active, loadOptions))),
-      adoptPopup: (view, partition, active) => {
+      openTab: (url, active, loadOptions, choice) => this.liveWebContents(this.openedByPage(() => this.createTab(url, active, loadOptions, choice))),
+      adoptPopup: (view, partition, active, choice) => {
         const before = this.order.length
         const opener = this.activeId
-        this.opener.adoptPopup(view, partition, active)
+        this.opener.adoptPopup(view, partition, active, choice)
         const id = this.order.at(-1)
         if (id !== undefined && this.order.length > before) this.afterOpen?.(id, opener)
       },
-      openBlobTab: (url, partition, active, loadOptions) => this.liveWebContents(this.openedByPage(() => this.opener.openBlobTab(url, partition, active, loadOptions))),
+      openBlobTab: (url, partition, active, loadOptions, choice) => this.liveWebContents(this.openedByPage(() => this.opener.openBlobTab(url, partition, active, loadOptions, choice))),
       openLocalFile: async (url, active) => {
         const opener = this.activeId
         const id = await this.opener.openLocalFile(url, active)
@@ -122,8 +115,8 @@ export class TabManager {
         this.afterOpen?.(id, opener)
         return this.liveWebContents(id)
       },
-      openWindow: (url, loadOptions) => shell?.openWindow?.(url, loadOptions),
-      ...(shell?.adoptWindow === undefined ? {} : { adoptWindow: (view: WebContentsView, partition: string | undefined) => { shell.adoptWindow?.(view, partition) } }),
+      openWindow: (url, loadOptions, choice) => shell?.openWindow?.(url, loadOptions, choice),
+      ...(shell?.adoptWindow === undefined ? {} : { adoptWindow: (view: WebContentsView, partition: string | undefined, choice?: TabTunnelChoice) => { shell.adoptWindow?.(view, partition, choice) } }),
       atCapacity: () => this.atCapacity(),
       htmlFullscreenChanged: (id, entered) => { shell?.htmlFullscreenChanged(id, entered) },
       isClosing: () => this.disposed,
@@ -190,16 +183,9 @@ export class TabManager {
     return () => { this.listeners.delete(cb) }
   }
 
-  /** The window is closing: closes every tab's views and stops reacting, so
-   * the `destroyed` events that follow find no fallback tab to activate, no
-   * bounds to ask for, no state to push and no `onEmpty` to fire.
-   *
-   * Routed through forgetTab(), not inlined: `this.disposed` is already true
-   * by the time each call runs, so every one exits right after the lifecycle
-   * seam's tabClosed and the actual close -- but tabClosed fires HERE, on a
-   * still-live webContents, never from the 'destroyed' event this close()
-   * triggers asynchronously later, by which point reading it (extension-
-   * host.ts's own `.session` check) throws. */
+  /** The window is closing: closes every tab's views and stops reacting, so the `destroyed` events that follow find no fallback tab,
+   * no bounds, no state to push and no `onEmpty` to fire. Routed through forgetTab(): `tabClosed` must fire HERE, on a live
+   * webContents, because reading `.session` after the asynchronous 'destroyed' throws (extension-host.ts). */
   dispose (): void {
     if (this.disposed) return
     this.disposed = true
@@ -236,8 +222,17 @@ export class TabManager {
     }
   }
 
-  /** A new tab: `active` and `loadOptions` are tab-open.ts's. */
-  createTab (url?: string, active = true, loadOptions?: LoadURLOptions): string { return this.opener.createTab(url, active, loadOptions) }
+  /** A new tab: `active`, `loadOptions` and `tunnelChoice` (the choice of the tab it is opened from) are tab-open.ts's. */
+  createTab (url?: string, active = true, loadOptions?: LoadURLOptions, tunnelChoice?: TabTunnelChoice): string { return this.opener.createTab(url, active, loadOptions, tunnelChoice) }
+
+  /** Tells a tab to send every website it opens through `choice` until it closes; `null` gives each website back its own entry (tab-tunnel-choice.ts). */
+  setTunnelChoice (id: string, choice: TabTunnelChoice | null): void {
+    const record = this.tabs.get(id)
+    if (record !== undefined) setTabTunnelChoice(id, record, choice)
+  }
+
+  /** The tunnel choice of the tab in front, for what asks on its behalf before it navigates (the address bar's suggestions). */
+  activeTunnelChoice (): TabTunnelChoice | undefined { return this.activeId === null ? undefined : this.tabs.get(this.activeId)?.tunnelChoice }
 
   /** A local file in a new tab of the local-files session; undefined for anything `localFileKey` refuses. */
   openLocalFile (url: string, active = true): Promise<string | undefined> { return this.opener.openLocalFile(url, active) }
@@ -246,13 +241,13 @@ export class TabManager {
   openLocalFileNow (url: string, active = true): string | undefined { return this.opener.openLocalFileNow(url, active) }
 
   /** A same-origin blob: URL a no-guest popup open wants, in the opener's `partition`. */
-  openBlobTab (url: string, partition: string | undefined, active = true, loadOptions?: LoadURLOptions): string { return this.opener.openBlobTab(url, partition, active, loadOptions) }
+  openBlobTab (url: string, partition: string | undefined, active = true, loadOptions?: LoadURLOptions, tunnelChoice?: TabTunnelChoice): string { return this.opener.openBlobTab(url, partition, active, loadOptions, tunnelChoice) }
 
   /** createTab() for a trusted caller (the extension host), which has checked `target` itself. */
   openTrusted (target?: string, partition?: string): [string, Electron.WebContents] | undefined { return this.opener.openTrusted(target, partition) }
 
   /** A popup Chromium already built, as a tab of this window: the first tab of a window a shift-click opened. */
-  adoptPopup (view: WebContentsView, partition: string | undefined, active = true): void { this.opener.adoptPopup(view, partition, active) }
+  adoptPopup (view: WebContentsView, partition: string | undefined, active = true, tunnelChoice?: TabTunnelChoice): void { this.opener.adoptPopup(view, partition, active, tunnelChoice) }
 
   /** Shows one of the shell's own pages, in the tab that has it or a new one. */
   openInternal (page: InternalPageId, path = '/'): void { this.opener.openInternal(page, path) }

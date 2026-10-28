@@ -111,13 +111,13 @@ describe('popupTargetIsApp -- routePopup\'s own isApp: a held grant counts, unli
 
 describe('partitionChanged -- when a navigation must swap the view', () => {
   it('does not swap between two ordinary, ungranted websites, which is what keeps back/forward alive (A109)', () => {
-    expect(partitionChanged(OTHER_SITE, undefined)).toBeUndefined()
+    expect(partitionChanged(OTHER_SITE, undefined, undefined)).toBeUndefined()
   })
 
   it('does not swap for a same-origin navigation inside a cache-served app', () => {
     served.add(APP)
     try {
-      expect(partitionChanged(`${APP}/other`, appPartition)).toBeUndefined()
+      expect(partitionChanged(`${APP}/other`, appPartition, undefined)).toBeUndefined()
     } finally {
       served.delete(APP)
     }
@@ -126,7 +126,7 @@ describe('partitionChanged -- when a navigation must swap the view', () => {
   it('swaps an ordinary tab into a cache-served origin\'s own partition when it reaches one', () => {
     served.add(APP)
     try {
-      expect(partitionChanged(APP, undefined)).toEqual({ to: appPartition })
+      expect(partitionChanged(APP, undefined, undefined)).toEqual({ to: appPartition })
     } finally {
       served.delete(APP)
     }
@@ -136,14 +136,14 @@ describe('partitionChanged -- when a navigation must swap the view', () => {
     // Without this the ordinary site would keep running inside the app's
     // isolated session -- its cookies, its storage, and whatever the cache
     // partition holds.
-    expect(partitionChanged(SITE, appPartition)).toEqual({ to: undefined })
+    expect(partitionChanged(SITE, appPartition, undefined)).toEqual({ to: undefined })
   })
 
   it('swaps straight from one cache-served partition to another', () => {
     const second = 'https://other-app.example'
     served.add(second)
     try {
-      expect(partitionChanged(second, appPartition)).toEqual({ to: partitionFor(originFromUrl(second) as string) })
+      expect(partitionChanged(second, appPartition, undefined)).toEqual({ to: partitionFor(originFromUrl(second) as string) })
     } finally {
       served.delete(second)
     }
@@ -156,13 +156,13 @@ describe('partitionChanged -- when a navigation must swap the view', () => {
     // granted or not, so a granted app shares that session too --
     // partitionChanged has no broker to even ask, and two granted origins
     // produce no swap between them.
-    expect(partitionChanged(APP, undefined)).toBeUndefined()
-    expect(partitionChanged(SITE, undefined)).toBeUndefined()
+    expect(partitionChanged(APP, undefined, undefined)).toBeUndefined()
+    expect(partitionChanged(SITE, undefined, undefined)).toBeUndefined()
   })
 
   it('never swaps for a target with no derivable origin, whatever the tab is in', () => {
-    expect(partitionChanged('about:blank', appPartition)).toBeUndefined()
-    expect(partitionChanged('about:blank', undefined)).toBeUndefined()
+    expect(partitionChanged('about:blank', appPartition, undefined)).toBeUndefined()
+    expect(partitionChanged('about:blank', undefined, undefined)).toBeUndefined()
   })
 })
 
@@ -237,16 +237,16 @@ describe('a local file runs in the local-files session', () => {
   })
 
   it('partitionChanged moves a default-session tab onto a file and back out onto a website', () => {
-    expect(partitionChanged(FILE, undefined)).toEqual({ to: LOCAL_FILES_PARTITION })
-    expect(partitionChanged(SITE, LOCAL_FILES_PARTITION)).toEqual({ to: undefined })
+    expect(partitionChanged(FILE, undefined, undefined)).toEqual({ to: LOCAL_FILES_PARTITION })
+    expect(partitionChanged(SITE, LOCAL_FILES_PARTITION, undefined)).toEqual({ to: undefined })
   })
 
   it('partitionChanged keeps a tab that goes from one local file to another', () => {
-    expect(partitionChanged('file:///home/u/app/other.html', LOCAL_FILES_PARTITION)).toBeUndefined()
+    expect(partitionChanged('file:///home/u/app/other.html', LOCAL_FILES_PARTITION, undefined)).toBeUndefined()
   })
 
   it('partitionChanged moves a tab from an app\'s partition onto a file', () => {
-    expect(partitionChanged(FILE, appPartition)).toEqual({ to: LOCAL_FILES_PARTITION })
+    expect(partitionChanged(FILE, appPartition, undefined)).toEqual({ to: LOCAL_FILES_PARTITION })
   })
 
   it('a local file is never an app tab, registered or not', () => {
@@ -278,9 +278,9 @@ describe('a recorded local file runs in a session of its own', () => {
   })
 
   it('partitionChanged moves a tab between the shared session and a recorded file\'s, both ways', () => {
-    expect(partitionChanged(FILE, LOCAL_FILES_PARTITION)).toEqual({ to: OWN })
-    expect(partitionChanged(SIBLING, OWN)).toEqual({ to: LOCAL_FILES_PARTITION })
-    expect(partitionChanged(FILE, OWN)).toBeUndefined()
+    expect(partitionChanged(FILE, LOCAL_FILES_PARTITION, undefined)).toEqual({ to: OWN })
+    expect(partitionChanged(SIBLING, OWN, undefined)).toEqual({ to: LOCAL_FILES_PARTITION })
+    expect(partitionChanged(FILE, OWN, undefined)).toBeUndefined()
   })
 })
 

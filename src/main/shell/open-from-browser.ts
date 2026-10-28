@@ -4,6 +4,7 @@
 import { localFileKey } from '../../broker/policy/origin.js'
 import { parseLocalFileInput } from '../browsing/local-file-input.js'
 import type { TabManager } from './tabs.js'
+import type { TabTunnelChoice } from '../route/tab-tunnel.js'
 
 /** What the opening of an address needs of a window's tabs. */
 export type BrowserTabs = Pick<TabManager, 'createTab' | 'openLocalFile' | 'openLocalFileNow' | 'navigate' | 'closeTab' | 'getState' | 'activeWebContents'>
@@ -15,11 +16,11 @@ export function openFromBrowser (tabs: Pick<BrowserTabs, 'createTab' | 'openLoca
 }
 
 /**
- * `openFromBrowser` for a caller that wants the tab's id (a restored tab gets its history and place). A local
- * file whose fuse answer is not in yet opens when the answer arrives and has no id here.
+ * `openFromBrowser` for a caller that wants the tab's id (a restored tab gets its history and place, and keeps its tunnel
+ * choice). A local file whose fuse answer is not in yet opens when the answer arrives and has no id here.
  */
-export function openNowFromBrowser (tabs: Pick<BrowserTabs, 'createTab' | 'openLocalFile' | 'openLocalFileNow'>, url: string, active = true): string | undefined {
-  if (localFileKey(url) === null) return tabs.createTab(url, active)
+export function openNowFromBrowser (tabs: Pick<BrowserTabs, 'createTab' | 'openLocalFile' | 'openLocalFileNow'>, url: string, active = true, tunnelChoice?: TabTunnelChoice): string | undefined {
+  if (localFileKey(url) === null) return tabs.createTab(url, active, undefined, tunnelChoice)
   const id = tabs.openLocalFileNow(url, active)
   if (id === undefined) void tabs.openLocalFile(url, active).catch((error: unknown) => { console.error('[shell] open local file failed:', error) })
   return id

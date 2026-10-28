@@ -6,6 +6,8 @@ import { sanitizeBrowserUrl } from '../browsing/local-file-input.js'
 import { internalUrl, isInternalPageId, parseInternalUrl } from '../pages/internal-pages.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
 import type { TabRecord } from '../shell/tab-types.js'
+import { isTabTunnelChoice } from '../route/tab-tunnel.js'
+import type { TabTunnelChoice } from '../route/tab-tunnel.js'
 
 export const MAX_TITLE_LENGTH = 300
 export const MAX_URL_LENGTH = 8192
@@ -31,6 +33,8 @@ export interface TabSnapshot {
   readonly index?: number
   /** Where in the window's `groups` the tab's group is. Absent for a tab in none. */
   readonly group?: number
+  /** The tunnel choice of the tab (`../route/tab-tunnel.ts`), so a restored or reopened tab loads its first address through it. Absent for a tab with none. */
+  readonly tunnelChoice?: TabTunnelChoice
 }
 
 function asObject (value: unknown): Record<string, unknown> | null {
@@ -61,6 +65,10 @@ function cleanHistory (rawEntries: unknown, rawIndex: unknown, shown: string): {
   return index !== -1 && entries[index]?.url === shown && entries.length > 1 ? { entries, index } : null
 }
 
+function cleanChoice (value: unknown): { tunnelChoice?: TabTunnelChoice } {
+  return isTabTunnelChoice(value) ? { tunnelChoice: value } : {}
+}
+
 function cleanGroupIndex (value: unknown): { group?: number } {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < MAX_SAVED_GROUPS ? { group: value } : {}
 }
@@ -82,7 +90,7 @@ export function sanitizeSnapshot (raw: unknown): TabSnapshot | null {
   const url = cleanUrl(candidate['url'])
   if (url === null) return null
   const history = cleanHistory(candidate['entries'], candidate['index'], url)
-  return { url, title, pinned, ...(history === null ? {} : history), ...cleanGroupIndex(candidate['group']) }
+  return { url, title, pinned, ...(history === null ? {} : history), ...cleanGroupIndex(candidate['group']), ...cleanChoice(candidate['tunnelChoice']) }
 }
 
 /** The window of at most `MAX_HISTORY_ENTRIES` entries around the one shown. */
@@ -121,14 +129,14 @@ export function snapshotOf (record: TabRecord, wc: WebContents): TabSnapshot | n
   if (record.sleeping != null) {
     const { url, title, entries, index } = record.sleeping
     // Address and title only: `pageState` holds what was typed into forms.
-    return sanitizeSnapshot({ url, title, pinned, ...boundHistory(entries.map((entry) => ({ url: entry.url, title: entry.title })), index) })
+    return sanitizeSnapshot({ url, title, pinned, tunnelChoice: record.tunnelChoice, ...boundHistory(entries.map((entry) => ({ url: entry.url, title: entry.title })), index) })
   }
   if (record.isDashboardTab || wc.isDestroyed()) return null
   const title = wc.getTitle()
   // A reader tab's article is held in memory with the tab: what comes back is the page it was read from.
   if (record.internalPage === 'reader') {
     const address = record.reader?.address
-    return address === undefined ? null : sanitizeSnapshot({ url: address, title, pinned })
+    return address === undefined ? null : sanitizeSnapshot({ url: address, title, pinned, tunnelChoice: record.tunnelChoice })
   }
   if (record.internalPage !== null) {
     const address = parseInternalUrl(wc.getURL()) ?? openedFrom.get(record)?.internal ?? { page: record.internalPage, path: '/' }
@@ -137,8 +145,8 @@ export function snapshotOf (record: TabRecord, wc: WebContents): TabSnapshot | n
   const url = wc.getURL()
   if (url === '') {
     const before = openedFrom.get(record)
-    return before === undefined ? null : sanitizeSnapshot({ ...before, title: title === '' ? before.title : title, pinned })
+    return before === undefined ? null : sanitizeSnapshot({ ...before, title: title === '' ? before.title : title, pinned, tunnelChoice: record.tunnelChoice })
   }
   openedFrom.delete(record)
-  return sanitizeSnapshot({ url, title, pinned, ...historyOf(wc) })
+  return sanitizeSnapshot({ url, title, pinned, tunnelChoice: record.tunnelChoice, ...historyOf(wc) })
 }

@@ -24,9 +24,10 @@ import { setSystemProxyProbe } from './system-proxy.js'
 import { createRequestFetch } from '../../loader/electron/request-fetch.js'
 import { prepareProfileSession, wakeProfileSession } from '../extensions/extensions-subsystem.js'
 import { servedOrigin } from './served-origin.js'
-import { mustLeaveSession, setSiteRoutes, setMadeSiteSessions, setSiteSessionEnsurer, siteProfileOf } from './site-routes.js'
+import { ensureSiteSession, mustLeaveSession, setSiteRoutes, setMadeSiteSessions, setSiteSessionEnsurer, siteProfileOf } from './site-routes.js'
 import { createSiteSessions } from './site-sessions.js'
-import { kindOfProfile } from './site-partition.js'
+import { kindOfProfile, profilePartition, profilePartitionFor } from './site-partition.js'
+import { tabChoiceOfContents, tabKindShowing } from './tab-tunnel.js'
 import type { SiteSession } from './site-sessions.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { announceWebsiteSession } from '../sessions/website-sessions.js'
@@ -35,6 +36,7 @@ import { createTemporaryRoutes, temporarySessionShowing } from './temporary-rout
 import { createNym } from './nym-launch.js'
 import { createRouteService } from './route-service.js'
 import { SHARED_ORIGIN } from './route-hub.js'
+import type { TunnelKind } from './route-state.js'
 import { tunnelDefaultChanged } from '../verifier/verifier-subsystem.js'
 import { RouteStore } from './route-store.js'
 import { profileIsolationSecret } from './isolation-secret.js'
@@ -109,7 +111,7 @@ export const routeSubsystem: Subsystem = {
       if (guarded.has(target)) return
       guarded.add(target)
       webRequestOwnerFor(target).onBeforeRequest(-2, { urls: ['http://*/*', 'https://*/*'], types: ['mainFrame'] }, () => true, (details, current) =>
-        details.resourceType === 'mainFrame' && mustLeaveSession(details.url, { shared: target === session.defaultSession, via: routes.controller.tunnelOf(target), temporary: isTemporary(target) }, isOriginServedFromCacheSync, routes.hub.kindOf) ? { cancel: true } : current)
+        details.resourceType === 'mainFrame' && mustLeaveSession(details.url, { shared: target === session.defaultSession, via: routes.controller.tunnelOf(target), temporary: isTemporary(target) }, isOriginServedFromCacheSync, routes.hub.kindOf, details.webContentsId === undefined ? undefined : tabChoiceOfContents(details.webContentsId)) ? { cancel: true } : current)
     }
     adopt = (made) => { routes.controller.adopt(made); guardLoads(made) }
     for (const earlier of created.splice(0)) adopt(earlier as Session)
@@ -132,10 +134,10 @@ export const routeSubsystem: Subsystem = {
     setDirectLookupSource(() => routes.everywhere() ? systemProxySession() : undefined)
     const tunnelFetch = createRequestFetch({ net, session: session.defaultSession, answer: answerRouteChallenge })
     const directFetch = createRequestFetch({ net, session: systemProxySession(), answer: (_info, callback) => { callback() } })
-    // A website with a tunnel of its own is asked about (its app manifest, its files by the loader) in that tunnel's profile session, never the default one, which is direct while the whole browser is off the tunnel and may be the other tunnel when it is on.
+    // A website with a tunnel of its own, or one a tab with a tunnel choice shows or is loading, is asked about (its app manifest, its files by the loader) in that tunnel's profile session, never the default one, which is direct while the whole browser is off the tunnel and may be the other tunnel when it is on.
     const siteTunnelled = (origin: string): boolean => {
       const profile = routes.hub.profileFor(origin)
-      return profile !== undefined && profile !== 'direct'
+      return (profile !== undefined && profile !== 'direct') || tabKindShowing(origin) !== undefined
     }
     const siteSession = async (origin: string): Promise<Session | undefined> => {
       if (!siteTunnelled(origin)) return undefined
@@ -148,7 +150,13 @@ export const routeSubsystem: Subsystem = {
       const routed = await siteSession(origin)
       return routed === undefined ? undefined : createRequestFetch({ net, session: routed, answer: answerRouteChallenge })
     }
-    setOwnRequests({ everywhere: routes.everywhere, isRouted: routes.hub.isRouted, tunnel: tunnelFetch, direct: directFetch, directSession: systemProxySession, settled: routes.controller.sharedSettled, siteTunnelled, siteSession, through, nodeEndpoint: routes.nodeEndpoint, onNodeRouteMoved: routes.onNodeRouteMoved })
+    // A request made for a tab with a tunnel choice, with no page to ask about (the address bar's suggestions): in that tunnel's profile session, held on its route until it is pointed.
+    const profileFetch = (kind: TunnelKind): typeof tunnelFetch => {
+      const partition = profilePartition(kind, true)
+      ensureSiteSession(partition, false)
+      return createRequestFetch({ net, session: session.fromPartition(partition), answer: answerRouteChallenge })
+    }
+    setOwnRequests({ everywhere: routes.everywhere, isRouted: routes.hub.isRouted, tunnel: tunnelFetch, direct: directFetch, directSession: systemProxySession, settled: routes.controller.sharedSettled, siteTunnelled, siteSession, through, profileFetch, nodeEndpoint: routes.nodeEndpoint, onNodeRouteMoved: routes.onNodeRouteMoved })
 
     const siteSessions = createSiteSessions({
       controller: routes.controller,
@@ -191,6 +199,7 @@ export const routeSubsystem: Subsystem = {
     })
     setSiteRoutes({
       profileFor: routes.hub.profileFor,
+      keepApart: (origin, profile) => { routes.store.keepApart(origin, profile) },
       sentLikeItsOwn: (partition, origin) => {
         const holder = partition === undefined ? session.defaultSession : session.fromPartition(partition)
         const here = routes.controller.tunnelOf(holder)
@@ -225,7 +234,15 @@ export const routeSubsystem: Subsystem = {
     isTemporary = temporary.owns
     // The sessions handed out are Electron's own (`sessionFor` above), so the casts only restore what the controller's narrow type hides.
     // A site open in a temporary session is looked up about through that session; an app's own session wins for an app.
-    setLookupSessionSource(async (origin) => await routes.controller.fetchSessionFor(origin) as Session | undefined
+    // A site a tab with a tunnel choice shows is looked up about through that tunnel's profile, ahead of the site's own entry: the page leaves by it.
+    const tabSession = (origin: string): Session | undefined => {
+      const kind = tabKindShowing(origin)
+      if (kind === undefined) return undefined
+      const partition = profilePartitionFor(kind, origin)
+      ensureSiteSession(partition, false)
+      return session.fromPartition(partition)
+    }
+    setLookupSessionSource(async (origin) => tabSession(origin) ?? await routes.controller.fetchSessionFor(origin) as Session | undefined
       ?? (temporary.count() === 0 ? undefined : temporarySessionShowing(webContents.getAllWebContents(), temporary.owns, origin) as Session | undefined))
     setLeavingRoutes({
       world: {

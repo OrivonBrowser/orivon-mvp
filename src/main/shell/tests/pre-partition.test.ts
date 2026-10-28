@@ -47,7 +47,7 @@ describe('repartitionBeforeCommit', () => {
     const { fire } = rig()
     const event = fire('will-navigate', { url: shown })
     expect(event.preventDefault).toHaveBeenCalled()
-    expect(partitionChanged).toHaveBeenCalledWith('https://app.eth/', undefined)
+    expect(partitionChanged).toHaveBeenCalledWith('https://app.eth/', undefined, undefined)
     await new Promise((resolve) => setImmediate(resolve))
     expect(repartitionView).toHaveBeenCalledWith('tab-1', expect.anything(), 'https://app.eth/', 'persist:app-1')
   })
@@ -101,6 +101,29 @@ describe('repartitionBeforeCommit', () => {
     partitionChanged.mockReturnValue({ to: 'persist:app-1' })
     expect(rig({ isDashboardTab: true }).fire('will-navigate').preventDefault).not.toHaveBeenCalled()
     expect(rig({ internalPage: 'settings' }).fire('will-navigate').preventDefault).not.toHaveBeenCalled()
+  })
+
+  describe('a tab with a tunnel choice', () => {
+    it('asks for the move with the tab\'s choice, so a link or redirect into a website without an entry still lands in the tunnel\'s profile', async () => {
+      partitionChanged.mockReturnValue({ to: 'persist:proxy-profile' })
+      const { fire } = rig({ partition: 'persist:proxy-profile', tunnelChoice: 'socks5' })
+      fire('will-navigate', { url: 'https://nowhere.example/' })
+      expect(partitionChanged).toHaveBeenCalledWith('https://nowhere.example/', 'persist:proxy-profile', 'socks5')
+    })
+
+    it('does not leave the new-tab page alone: its first address is a first request, and is moved before it commits', async () => {
+      partitionChanged.mockReturnValue({ to: 'persist:tunnel-profile' })
+      const { fire } = rig({ isDashboardTab: true, tunnelChoice: 'nym' })
+      const event = fire('will-navigate', { url: 'https://news.example/' })
+      expect(event.preventDefault).toHaveBeenCalled()
+      await new Promise((resolve) => setImmediate(resolve))
+      expect(repartitionView).toHaveBeenCalledWith('tab-1', expect.anything(), 'https://news.example/', 'persist:tunnel-profile')
+    })
+
+    it('still leaves an internal page alone', () => {
+      partitionChanged.mockReturnValue({ to: 'persist:tunnel-profile' })
+      expect(rig({ internalPage: 'settings', tunnelChoice: 'nym' }).fire('will-navigate').preventDefault).not.toHaveBeenCalled()
+    })
   })
 
   it('does not load the address when the tab\'s view was replaced before the turn ended', async () => {

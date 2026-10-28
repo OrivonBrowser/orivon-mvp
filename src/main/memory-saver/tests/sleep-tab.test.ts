@@ -2,16 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { env, fakeTabs, page } from './fakes.js'
 
 const blank = { webContents: { id: 'blank' } }
-const { makeTabView, wireView, closeParkedViews, repartitionView, partitionForTarget } = vi.hoisted(() => ({
+const { makeTabView, wireView, closeParkedViews, repartitionView, partitionForTab } = vi.hoisted(() => ({
   makeTabView: vi.fn(),
   wireView: vi.fn(),
   closeParkedViews: vi.fn(),
   repartitionView: vi.fn(),
-  partitionForTarget: vi.fn()
+  partitionForTab: vi.fn()
 }))
 vi.mock('../../shell/tab-view.js', () => ({ makeTabView, wireView }))
 vi.mock('../../shell/tab-parking.js', () => ({ closeParkedViews, repartitionView }))
-vi.mock('../../shell/tab-partition.js', () => ({ appTabViews: new WeakSet(), partitionForTarget }))
+vi.mock('../../shell/tab-partition.js', () => ({ appTabViews: new WeakSet(), partitionForTab }))
 vi.mock('../../overlays/tab-slots.js', () => ({ hasAsk: () => false }))
 
 const { reloadOrWake, sleepTab, sleepTabWhy, wakeTab } = await import('../sleep-tab.js')
@@ -22,7 +22,7 @@ beforeEach(() => {
   wireView.mockReset()
   closeParkedViews.mockReset()
   repartitionView.mockReset()
-  partitionForTarget.mockReset().mockReturnValue(undefined)
+  partitionForTab.mockReset().mockReturnValue(undefined)
 })
 
 function setup (over: Parameters<typeof page>[1] = {}) {
@@ -206,7 +206,7 @@ describe('wakeTab', () => {
     const record = records.get('a')
     const wc = { ...blank.webContents, isDestroyed: () => false, loadURL: vi.fn(), navigationHistory: { restore: vi.fn(async () => {}) } }
     if (record !== undefined) record.view = { webContents: wc } as never
-    partitionForTarget.mockReturnValue('persist:site-x')
+    partitionForTab.mockReturnValue('persist:site-x')
 
     wakeTab(tabs, 'a')
 
@@ -214,6 +214,22 @@ describe('wakeTab', () => {
     expect(wc.loadURL).not.toHaveBeenCalled()
     expect(wc.navigationHistory.restore).not.toHaveBeenCalled()
     expect(record?.sleeping).toBeNull()
+  })
+
+  it('wakes a tab that has a tunnel choice by asking for the session of its choice', async () => {
+    const { tabs, records } = setup()
+    await sleepTab(tabs, 'a', env())
+    const record = records.get('a')
+    const wc = { ...blank.webContents, isDestroyed: () => false, loadURL: vi.fn(), navigationHistory: { restore: vi.fn(async () => {}) } }
+    if (record !== undefined) { record.view = { webContents: wc } as never; record.tunnelChoice = 'socks5' }
+    partitionForTab.mockImplementation((_url: string, choice: unknown) => choice === 'socks5' ? 'persist:proxy-profile' : undefined)
+
+    wakeTab(tabs, 'a')
+
+    expect(partitionForTab).toHaveBeenCalledWith('https://a.example/page', 'socks5')
+    expect(repartitionView).toHaveBeenCalledWith('a', record, 'https://a.example/page', 'persist:proxy-profile')
+    expect(wc.loadURL).not.toHaveBeenCalled()
+    expect(record?.tunnelChoice).toBe('socks5')
   })
 
   it('leaves the new-tab page out of the history it gives back, the index shifted to match', async () => {

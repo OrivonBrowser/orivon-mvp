@@ -201,7 +201,7 @@ describe('wireView -- window.open', () => {
 
     expect(returned).toBe(guest)
     expect(adoptedViews[0]?.options).toEqual({ webContents: guest, webPreferences })
-    expect(host.adoptPopup).toHaveBeenCalledWith(adoptedViews[0], undefined, true)
+    expect(host.adoptPopup).toHaveBeenCalledWith(adoptedViews[0], undefined, true, undefined)
     expect(host.openTab).not.toHaveBeenCalled()
   })
 
@@ -231,7 +231,7 @@ describe('wireView -- window.open', () => {
     const response = openHandler(wc)({ url: 'https://accounts.example/auth', disposition: 'new-window', features: 'width=500' })
     response.createWindow?.({ webContents: fakeContents(), webPreferences: {} } as never)
 
-    expect(host.adoptPopup).toHaveBeenCalledWith(expect.anything(), 'persist:app', true)
+    expect(host.adoptPopup).toHaveBeenCalledWith(expect.anything(), 'persist:app', true, undefined)
     expect(host.openWindow).not.toHaveBeenCalled()
   })
 
@@ -245,7 +245,7 @@ describe('wireView -- window.open', () => {
     const response = openHandler(wc)({ url: 'https://other.example/', disposition: 'background-tab' })
     const returned = response.createWindow?.({ webPreferences: {} } as never)
 
-    expect(openTab).toHaveBeenCalledWith('https://other.example/', false, undefined)
+    expect(openTab).toHaveBeenCalledWith('https://other.example/', false, undefined, undefined)
     expect(returned).toBe(opened)
     expect(adoptedViews).toHaveLength(0)
     expect(host.adoptPopup).not.toHaveBeenCalled()
@@ -265,7 +265,7 @@ describe('wireView -- window.open', () => {
     const response = openHandler(wc)({ url: 'blob:https://other.example/1b4e28ba-2fa1', disposition: 'background-tab' })
     const returned = response.createWindow?.({ webPreferences: {} } as never)
 
-    expect(openBlobTab).toHaveBeenCalledWith('blob:https://other.example/1b4e28ba-2fa1', 'persist:other', false, undefined)
+    expect(openBlobTab).toHaveBeenCalledWith('blob:https://other.example/1b4e28ba-2fa1', 'persist:other', false, undefined, undefined)
     expect(returned).toBe(opened)
     expect(host.openTab).not.toHaveBeenCalled()
     expect(adoptedViews).toHaveLength(0)
@@ -281,7 +281,7 @@ describe('wireView -- window.open', () => {
     const response = openHandler(wc)({ url: 'blob:https://minter.example/1b4e28ba-2fa1', disposition: 'background-tab' })
 
     expect(response.action).toBe('deny')
-    expect(openTab).toHaveBeenCalledWith('blob:https://minter.example/1b4e28ba-2fa1', false, undefined)
+    expect(openTab).toHaveBeenCalledWith('blob:https://minter.example/1b4e28ba-2fa1', false, undefined, undefined)
     expect(openBlobTab).not.toHaveBeenCalled()
   })
 
@@ -302,7 +302,7 @@ describe('wireView -- window.open', () => {
     const response = openHandler(wc)({ url: `${APP}/other`, disposition: 'background-tab' })
     const returned = response.createWindow?.({ webPreferences: {} } as never)
 
-    expect(openTab).toHaveBeenCalledWith(`${APP}/other`, false, undefined)
+    expect(openTab).toHaveBeenCalledWith(`${APP}/other`, false, undefined, undefined)
     expect(returned).toBe(opened)
     expect(adoptedViews).toHaveLength(0)
     expect(host.adoptPopup).not.toHaveBeenCalled()
@@ -316,7 +316,17 @@ describe('wireView -- window.open', () => {
     const response = openHandler(wc)({ url: 'https://other.example/', features: 'noopener' })
 
     expect(response.action).toBe('deny')
-    expect(host.openTab).toHaveBeenCalledWith('https://other.example/', true, undefined)
+    expect(host.openTab).toHaveBeenCalledWith('https://other.example/', true, undefined, undefined)
+  })
+
+  it('hands the tab\'s tunnel choice to the tab a page opens, so its first request is made through it', () => {
+    const wc = fakeContents()
+    const host = fakeHost()
+    wireView('tab-1', { ...record(wc, undefined, host), tunnelChoice: 'socks5' })
+
+    openHandler(wc)({ url: 'https://other.example/', features: 'noopener' })
+
+    expect(host.openTab).toHaveBeenLastCalledWith('https://other.example/', true, undefined, 'socks5')
   })
 
   it('carries a modifier-click form submit\'s referrer and POST body to the tab it opens', () => {
@@ -339,7 +349,7 @@ describe('wireView -- window.open', () => {
       httpReferrer: referrer,
       postData: postBody.data,
       extraHeaders: 'content-type: application/x-www-form-urlencoded\n'
-    })
+    }, undefined)
   })
 
   it('keeps a plain window.open() to a noopener target an ordinary tab -- its disposition is never new-window', () => {
@@ -355,7 +365,7 @@ describe('wireView -- window.open', () => {
 
     expect(response.action).toBe('deny')
     expect(openWindow).not.toHaveBeenCalled()
-    expect(host.openTab).toHaveBeenCalledWith('https://other.example/', true, undefined)
+    expect(host.openTab).toHaveBeenCalledWith('https://other.example/', true, undefined, undefined)
   })
 
   it('refuses outright at the tab ceiling', () => {
@@ -555,9 +565,22 @@ describe('wireView -- context menu', () => {
     choose('Open Link in New Tab')
     choose('Open Link in New Window')
     choose('Open Link in Private Window')
-    expect(host.openTab).toHaveBeenCalledWith('https://example.com/a', false)
-    expect(host.openWindow).toHaveBeenCalledWith('https://example.com/a')
+    expect(host.openTab).toHaveBeenCalledWith('https://example.com/a', false, undefined, undefined)
+    expect(host.openWindow).toHaveBeenCalledWith('https://example.com/a', undefined, undefined)
     expect((shared['profiles'] as { openPrivate: ReturnType<typeof vi.fn> }).openPrivate).toHaveBeenCalledWith('https://example.com/a')
+  })
+
+  it('hands the tab\'s tunnel choice to the tab and the window a link is opened in', () => {
+    const wc = fakeContents()
+    const host = fakeHost({ services: services(false) as never })
+    wireView('tab-1', { ...record(wc, undefined, host), tunnelChoice: 'nym' })
+    wc.emit('context-menu', {}, LINK_PARAMS)
+
+    choose('Open Link in New Tab')
+    choose('Open Link in New Window')
+
+    expect(host.openTab).toHaveBeenCalledWith('https://example.com/a', false, undefined, 'nym')
+    expect(host.openWindow).toHaveBeenCalledWith('https://example.com/a', undefined, 'nym')
   })
 
   it('offers no private window from inside a private one', () => {
@@ -620,7 +643,7 @@ describe('wireView -- a tab that changes host', () => {
 
     openHandler(wc)({ url: 'https://other.example/', features: 'noopener' })
 
-    expect(after.openTab).toHaveBeenCalledWith('https://other.example/', true, undefined)
+    expect(after.openTab).toHaveBeenCalledWith('https://other.example/', true, undefined, undefined)
     expect(before.openTab).not.toHaveBeenCalled()
   })
 })
