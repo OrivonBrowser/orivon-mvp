@@ -376,6 +376,90 @@ describe('the light client of a tunnel-profile website', () => {
     })
   })
 
+  describe('a server the person runs on this computer or their home network', () => {
+    const OWN: LightClientConfig = {
+      executionRpcs: ['https://rpc.example/v3/FAKE-KEY-0123456789', 'http://192.168.1.20:8545/rpc/FAKE-KEY-0123456789'],
+      consensusRpc: 'http://127.0.0.1:5052',
+      checkpoint: `0x${'ab'.repeat(32)}`,
+      localEndpoints: ['http://192.168.1.20:8545/rpc/FAKE-KEY-0123456789', 'http://127.0.0.1:5052'],
+      ownServers: { execution: true, consensus: true }
+    }
+    const FRONT = { port: 1, username: 'u', password: 'p' }
+    const quiet = (): LightClient => ({ status: () => ({ state: 'off' }), provider: { request: async () => { throw new ResolutionError('not-synced', 'x') } } })
+    const local: string[] = []
+    const localFetch = async (url: string): Promise<Response> => { local.push(url); return new Response('{}') }
+    const asked = async (fetch: HostDeps['fetch'] | undefined): Promise<void> => {
+      await fetch?.('http://192.168.1.20:8545/rpc/FAKE-KEY-0123456789', { method: 'POST', body: '{}' })
+      await fetch?.('http://127.0.0.1:5052/eth/v1/beacon/headers')
+    }
+    const LOCAL_ASKED = ['http://192.168.1.20:8545/rpc/FAKE-KEY-0123456789', 'http://127.0.0.1:5052/eth/v1/beacon/headers']
+    afterEach(() => { local.length = 0 })
+
+    it('is never sent through the routed fetch of a tunnel-profile website\'s client, whose internet servers still are', async () => {
+      const starts: Array<{ route: TunnelRoute | undefined, fetch: HostDeps['fetch'] }> = []
+      const spied = deps({ localFetch, startLightClient: (_config, fetch, _report, route) => { starts.push({ route, fetch }); return quiet() } })
+      const host = await startHost(config({ lightClient: OWN }), spied)
+      running.push(host)
+      await get(host.port, 'unknown.eth', true)
+      const tunnelFetch = starts.find((start) => start.route === 'nym')?.fetch
+      await asked(tunnelFetch)
+      await tunnelFetch?.('https://rpc.example/v3/FAKE-KEY-0123456789', { method: 'POST', body: '{}' })
+      expect(local).toEqual(LOCAL_ASKED)
+      expect(spied.routed).toEqual(['https://rpc.example/v3/FAKE-KEY-0123456789'])
+      expect(spied.direct).toEqual([])
+    })
+
+    it('is never sent through the front while the whole browser is on the tunnel, nor through the outside fetch', async () => {
+      const starts: Array<HostDeps['fetch']> = []
+      const outside: string[] = []
+      const spied = deps({
+        localFetch,
+        startLightClient: (_config, fetch) => { starts.push(fetch); return quiet() },
+        outside: { send: async (url) => { outside.push(url); return new Response('{}') }, resolveHost: async () => ['93.184.216.34'] }
+      })
+      for (const ethereumOutside of [false, true]) {
+        local.length = 0
+        starts.length = 0
+        const host = await startHost(config({ lightClient: OWN, front: FRONT, ...(ethereumOutside && { ethereumOutside }) }), spied)
+        running.push(host)
+        await asked(starts[0])
+        expect(local, `outside ${String(ethereumOutside)}`).toEqual(LOCAL_ASKED)
+        expect(spied.direct).toEqual([])
+        expect(spied.routed).toEqual([])
+        expect(outside).toEqual([])
+      }
+    })
+
+    it('is never sent through the net fetch of a direct connection either', async () => {
+      const starts: Array<HostDeps['fetch']> = []
+      const spied = deps({ localFetch, startLightClient: (_config, fetch) => { starts.push(fetch); return quiet() } })
+      const host = await startHost(config({ lightClient: OWN }), spied)
+      running.push(host)
+      await asked(starts[0])
+      expect(local).toEqual(LOCAL_ASKED)
+      expect(spied.direct).toEqual([])
+    })
+
+    it('starts no light client, and says why, when the host has no way to a local server', async () => {
+      const starts = vi.fn(() => quiet())
+      const host = await startHost(config({ lightClient: OWN }), deps({ startLightClient: starts }))
+      running.push(host)
+      const page = await get(host.port, 'unknown.eth', false, '/', true)
+      expect(starts).not.toHaveBeenCalled()
+      expect(page.body).toContain('cannot be used')
+      expect(page.body).not.toContain('FAKE-KEY')
+    })
+
+    it('starts no light client when a local address among the servers is not named local', async () => {
+      const starts = vi.fn(() => quiet())
+      const { localEndpoints: _named, ...unnamed } = OWN
+      const host = await startHost(config({ lightClient: unnamed }), deps({ localFetch, startLightClient: starts }))
+      running.push(host)
+      await get(host.port, 'unknown.eth', false, '/', true)
+      expect(starts).not.toHaveBeenCalled()
+    })
+  })
+
   it('never starts for a website that is not in the tunnel profile', async () => {
     const starts = vi.fn(() => { throw new Error('unexpected') })
     const host = await startHost(config({ lightClient: undefined }), deps({ startLightClient: starts }))

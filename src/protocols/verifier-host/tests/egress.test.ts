@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { EgressRefused, allowlisted, guardedCcipRequest } from '../egress.js'
+import { EgressRefused, allowlisted, guardedCcipRequest, isInternetHost } from '../egress.js'
 import { RedirectRefused } from '../../gateways/gateways.js'
 import type { CcipDeps, WebFetch } from '../egress.js'
 import type { DirectFetch } from '../direct-fetch.js'
@@ -196,5 +196,16 @@ describe('guardedCcipRequest, through the tunnel (farEnd)', () => {
       await expect(guardedCcipRequest({ data: DATA, sender: SENDER, urls: [url] }, tunnelled(fetch)), url).rejects.toThrow(/no offchain gateway answered/)
     }
     expect(fetch.calls).toEqual([])
+  })
+})
+
+describe('isInternetHost', () => {
+  it('takes a public name and a public address literal', () => {
+    for (const host of ['eth.drpc.org', 'mainnet.infura.io', '8.8.8.8', '[2606:4700:4700::1111]', '[::ffff:8.8.8.8]']) expect(isInternetHost(host), host).toBe(true)
+  })
+
+  it('refuses every spelling of this computer or a local network, and a name no public server answers to', () => {
+    const refused = ['localhost', 'localhost.', 'foo.localhost', '127.0.0.1', '[::1]', '[::ffff:7f00:1]', '[::ffff:c0a8:114]', '192.168.1.20', '10.0.0.1', '169.254.169.254', '0.0.0.0', '100.64.0.1', '[fe80::1]', 'nas.local', 'printer.home.arpa', 'router', 'vitalik.eth', 'eth.drpc.org.']
+    for (const host of refused) expect(isInternetHost(host), host).toBe(false)
   })
 })
