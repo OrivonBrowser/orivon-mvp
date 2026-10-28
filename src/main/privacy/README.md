@@ -98,7 +98,7 @@ depends on it, and the answer comes with those rules.
 
 **HTTPS-only upgrades main-frame navigations only.** Mixed content is Chromium's own rule. What is left alone:
 loopback, private and link-local addresses, single-label names and a network's own suffixes (`.local`, `.lan`,
-`.internal`, `.home.arpa`, and the never-delegated `.home`, `.corp`, `.intranet`, `.private`), `.localhost`, the
+`.internal`, `.home.arpa`, and the never-delegated `.home`, `.corp`, `.intranet`, `.private`), `.localhost`, `.onion` names (an onion service serves plain http and Tor encrypts the connection end to end), the
 names a protocol routes to the verifier (which includes the developer `.eth` names), a named host with an explicit
 port (port 443 is usually another service there), and a host the person chose to continue to, until Orivon exits.
 An IP address is upgraded with its own port. A load of the
