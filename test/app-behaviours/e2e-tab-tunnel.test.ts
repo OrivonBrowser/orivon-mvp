@@ -2,7 +2,7 @@
 // session the website would have had with no choice. The choice is set on the tab through the test seam, before the tab
 // navigates, and then every way a tab reaches a website is tried: a typed address, a tile of the new-tab page, a link, a
 // script's navigation, a redirect, a sized and a featureless `window.open`, a middle-click into a new tab, Back and Forward
-// across a page outside the profile, and a sleep followed by a wake. Every name has a decoy on the same port on loopback
+// across a page outside the profile, and the wake of a tab that was asleep when it was given the choice. Every name has a decoy on the same port on loopback
 // (the host resolver maps the fixture's names there), so a request that skipped the tunnel lands on the decoy and counts a
 // hit. The last case runs with the whole browser on the tunnel: a direct tab reaches the website outside it, and keeps the
 // tunnel a website has of its own.
@@ -107,6 +107,18 @@ async function open (app: ElectronApplication, chrome: Page, url: string, title:
   return page
 }
 
+/**
+ * Closes every tab but `keep` and waits until `keep` is alone and in front. A popup or a tab the page opened takes the front
+ * and shows an address of its own; with it left open, the address typed next would go into it, and the page found for that
+ * address could be the opener's, which a hidden view cannot paint or be clicked.
+ */
+async function onlyTab (chrome: Page, keep: string): Promise<void> {
+  for (const id of await tabIds(chrome)) {
+    if (id !== keep) await chrome.evaluate((tab) => { (window as unknown as { orivonShell: { closeTab: (id: string) => void } }).orivonShell.closeTab(tab) }, id)
+  }
+  expect(await waitFor(async () => (await tabIds(chrome)).length === 1 && await activeId(chrome) === keep), 'the opener is the only tab and in front').toBe(true)
+}
+
 /** Waits for `name` to be asked of the tunnel more than `before` times, then checks nothing reached the decoy since `directBefore`. */
 async function viaTunnel (name: string, before: number, directBefore: number, what: string): Promise<void> {
   expect(await waitFor(() => asked(name) > before, 30_000), `${what}: ${name} was asked of the tunnel`).toBe(true)
@@ -125,7 +137,8 @@ it('[app:tab-tunnel-first-request-leaves-through-the-tunnel] a typed address, a 
   const { app, chrome } = await start()
   try {
     const directBefore = hosts.decoy.hits
-    await giveChoice(app, await activeId(chrome), 'socks5')
+    const first = await activeId(chrome)
+    await giveChoice(app, first, 'socks5')
 
     const asking = asked(A)
     let page = await open(app, chrome, urlA(), 'tunnelled')
@@ -145,9 +158,11 @@ it('[app:tab-tunnel-first-request-leaves-through-the-tunnel] a typed address, a 
 
     page = await open(app, chrome, urlA(), 'tunnelled')
     await leaveBy(page, '#sized', B, 'a sized window.open', directBefore)
+    await onlyTab(chrome, first)
 
     page = await open(app, chrome, urlA(), 'tunnelled')
     await leaveBy(page, '#bare', B, 'a featureless window.open', directBefore)
+    await onlyTab(chrome, first)
 
     page = await open(app, chrome, urlA(), 'tunnelled')
     const tabs = (await tabIds(chrome)).length
@@ -206,14 +221,14 @@ it('[app:tab-tunnel-back-forward-first-request-leaves-through-the-tunnel] Back t
   }
 }, 4 * QA_TEST_TIMEOUT_MS)
 
-it('[app:tab-tunnel-wake-first-request-leaves-through-the-tunnel] a tab set to a tunnel that was put to sleep loads its page through the tunnel when it wakes, never direct', async () => {
+it('[app:tab-tunnel-wake-first-request-leaves-through-the-tunnel] a sleeping tab given a tunnel choice loads its page through the tunnel when it wakes, never direct', async () => {
+  // A tab that already shows a website in a tunnel's profile does not sleep (a session other than the shared one keeps a tab awake),
+  // so the wake that matters is the one of a tab asleep in the shared session when the choice is set.
   const { app, chrome } = await start({ settings: { 'performance.sleepAfter': '15m' } })
   try {
     await app.evaluate(() => { (globalThis as unknown as { __orivonSleepIgnoreCapture: boolean }).__orivonSleepIgnoreCapture = true })
-    const directBefore = hosts.decoy.hits
     const sleeper = await activeId(chrome)
-    await giveChoice(app, sleeper, 'socks5')
-    await open(app, chrome, urlA(), 'tunnelled')
+    await open(app, chrome, urlA(), 'direct')
 
     await chrome.click('#new-tab')
     expect(await waitFor(async () => await activeId(chrome) !== sleeper)).toBe(true)
@@ -222,6 +237,8 @@ it('[app:tab-tunnel-wake-first-request-leaves-through-the-tunnel] a tab set to a
     const tab = chrome.locator(`.tab[data-id="${sleeper}"]`)
     expect(await waitFor(async () => (await tab.getAttribute('class'))?.split(' ').includes('sleeping') === true)).toBe(true)
 
+    await giveChoice(app, sleeper, 'socks5')
+    const directBefore = hosts.decoy.hits
     const before = asked(A)
     await tab.click()
     expect(await waitFor(async () => await activeId(chrome) === sleeper && (await tab.getAttribute('class'))?.split(' ').includes('sleeping') !== true)).toBe(true)
