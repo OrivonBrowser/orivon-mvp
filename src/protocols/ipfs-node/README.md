@@ -42,11 +42,20 @@ layers resolve the `/dns4`, `/dns6` and `/dnsaddr` names of peers themselves, ov
 the node needs no datagram. They are plain DNS, asked of Cloudflare whatever the Secure DNS setting says. With the whole browser on a tunnel and nodes following it, those connections go through the
 tunnel like the node's other streams.
 
+**A provider behind a relay.** A provider whose only address is `<relay address>/p2p/<relay id>/p2p-circuit/p2p/<peer>`
+can be fetched from: the node ranks it after every provider with a direct address, and reaches it through a circuit relay
+v2. The relay is whichever one the provider's record names, so the node's dial to it goes through the same `connect` rule
+as any peer's ([`../local-node/node-net.ts`](../local-node/node-net.ts)): a public address, by TCP, through the tunnel when
+the node follows it. The node only dials through a relay. It holds no reservation on one and is not reachable through
+one, so it still listens on loopback alone. The relay sees this computer's address and the provider's, and how much is
+sent, but not the content: the node and the provider encrypt the connection end to end, and every block is checked
+against its CID in any case. A transfer through a relay is as fast as the relay lets it be.
+
 **Ready means the health endpoint answers.** The node reports `listening` and `ready` together when
 `GET /health` first answers (as soon as its listener is up; lookups happen on first use): it holds no peer set
 to count, so there is nothing to wait for beyond that.
 
-**What it opens.** Outbound TCP only (peers, the lookup services, HTTP providers, DNS-over-HTTPS, and the two resolvers above),
+**What it opens.** Outbound TCP only (peers, a relay a provider's record names, the lookup services, HTTP providers, DNS-over-HTTPS, and the two resolvers above),
 one TCP listener on its loopback address, no UDP in this build (WASI has no QUIC, and its own resolver speaks TCP), and in its
 data directory only `blocks.db` with its
 `-wal` and `-shm` files (SQLite, its cache capped at 256 MB inside the node). The rules in
