@@ -148,6 +148,13 @@ describe('TCP', () => {
 })
 
 describe('UDP', () => {
+  it('refuses an IPv6 socket, which orivon.net could not send from, before anything is bound', () => {
+    const net = fakeNet({ udpBind: vi.fn() })
+    const create = fn<(family: string) => UdpSocket>(socketInterfaces(net), 'wasi:sockets/udp-create-socket', 'createUdpSocket')
+    expect(() => create('ipv6')).toThrow('not-supported')
+    expect(net.udpBind).not.toHaveBeenCalled()
+  })
+
   it('binds, receives what arrives from its connected peer only, and sends by the resolved name', async () => {
     const fake = createFakeUdpSocket({ localAddress: '0.0.0.0', localPort: 5353 })
     const net = fakeNet({ udpBind: vi.fn(async () => fake.socket as OrivonUdpSocket) })

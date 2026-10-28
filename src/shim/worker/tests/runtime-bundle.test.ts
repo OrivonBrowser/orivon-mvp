@@ -25,8 +25,14 @@ async function bundle (): Promise<string> {
     write: false,
     absWorkingDir: REPO_ROOT,
     plugins: [shimEsbuildPlugin()],
-    logLevel: 'silent'
+    logLevel: 'silent',
+    metafile: true
   })
+  // A package read from another checkout is bundled beside this one's copy, so the bundle differs from CI's.
+  const outside = Object.keys(built.metafile.inputs).filter((input) => input.startsWith('../'))
+  if (outside.length > 0) {
+    throw new Error(`the bundle read ${String(outside.length)} files outside this checkout, ${outside[0]!} first: its node_modules reaches another checkout's (a symlink, or a node_modules/node_modules link inside a copy); see docs/development/parallel-work.md`)
+  }
   const [output] = built.outputFiles
   if (output === undefined) throw new Error('esbuild produced no output for the Worker runtime')
   return output.text
