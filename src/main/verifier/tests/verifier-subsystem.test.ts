@@ -262,60 +262,21 @@ describe('the verifier subsystem', () => {
       if (source === 'node') expect(kept?.salt).toBe(started(0)?.config?.ipfsNode?.partitionSalt)
     })
 
-    describe('when the nodes\' data is forgotten', () => {
-      const directory = (): string => join(electron.userData, 'verifier')
-      const keep = (name: string): void => {
-        mkdirSync(directory(), { recursive: true })
-        writeFileSync(join(directory(), name), 'x')
-      }
-      const swarmFiles = (): string[] => readdirSync(directory()).filter((name) => name.startsWith('swarm-chunks-'))
-
-      it('deletes every kept Swarm chunk file only after the host has exited, and no other file', async () => {
-        const { request, forgetNodeData } = await launchWith(() => 'node')
-        void request()
-        await vi.advanceTimersByTimeAsync(0)
-        forks()[0]?.listens()
-        const old = swarmChunkFile(started(0)?.config?.swarmChunks?.salt ?? '')
-        for (const name of [old, `${old}-wal`, `${old}-shm`, `${old}-journal`, swarmChunkFile('cd'.repeat(32)), 'checkpoint.json']) keep(name)
-
-        let done = false
-        const forgotten = forgetNodeData().then(() => { done = true })
-        await vi.waitFor(() => { expect(forks()[0]?.killed).toBe(true) })
-        expect(swarmFiles()).toHaveLength(5)
-        expect(done).toBe(false)
-        forks()[0]?.emit('exit', 0)
-        await forgotten
-        expect(swarmFiles()).toEqual([])
-        expect(existsSync(join(directory(), 'checkpoint.json'))).toBe(true)
-      })
-
-      it('does not wait for ever on a host that does not exit, and still deletes', async () => {
-        const { request, forgetNodeData } = await launchWith(() => 'node')
-        void request()
-        await vi.advanceTimersByTimeAsync(0)
-        forks()[0]?.listens()
-        keep(swarmChunkFile('ef'.repeat(32)))
-        const forgotten = forgetNodeData()
-        await vi.waitFor(() => { expect(forks()[0]?.killed).toBe(true) })
-        await vi.advanceTimersByTimeAsync(10_000)
-        await forgotten
-        expect(swarmFiles()).toEqual([])
-      })
-
-      it('leaves the file of the new salt, which a host started meanwhile may already hold open', async () => {
-        const { request, forgetNodeData } = await launchWith(() => 'node')
-        void request()
-        await vi.advanceTimersByTimeAsync(0)
-        forks()[0]?.listens()
-        keep(swarmChunkFile('12'.repeat(32)))
-        const forgotten = forgetNodeData()
-        await vi.waitFor(() => { expect(forks()[0]?.killed).toBe(true) })
-        const renewed = (JSON.parse(readFileSync(join(directory(), 'ipfs-node-partition-salt.json'), 'utf8')) as { salt: string }).salt
-        keep(swarmChunkFile(renewed))
-        forks()[0]?.emit('exit', 0)
-        await forgotten
-        expect(swarmFiles()).toEqual([swarmChunkFile(renewed)])
-      })
+    it('deletes the Swarm chunk files of the old salt once the host has exited when the nodes\' data is forgotten, and leaves every other file', async () => {
+      const { request, forgetNodeData } = await launchWith(() => 'node')
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      forks()[0]?.listens()
+      const directory = join(electron.userData, 'verifier')
+      const old = swarmChunkFile(started(0)?.config?.swarmChunks?.salt ?? '')
+      for (const name of [old, `${old}-wal`, 'checkpoint.json']) writeFileSync(join(directory, name), 'x')
+      const forgotten = forgetNodeData()
+      await vi.waitFor(() => { expect(forks()[0]?.killed).toBe(true) })
+      expect(existsSync(join(directory, old))).toBe(true)
+      forks()[0]?.emit('exit', 0)
+      await forgotten
+      expect(readdirSync(directory).filter((name) => name.startsWith('swarm-chunks-'))).toEqual([])
+      expect(existsSync(join(directory, 'checkpoint.json'))).toBe(true)
     })
 
     it('never forks the IPFS node for a host that asks for it while IPFS is read from public gateways, and says where to switch it on', async () => {

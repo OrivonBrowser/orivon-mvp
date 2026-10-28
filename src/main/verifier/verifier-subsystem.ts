@@ -55,7 +55,7 @@ import { IPFS_NODE_IDENTITY } from '../../protocols/ipfs-node/protocol.js'
 import { SWARM_NODE_IDENTITY } from '../../protocols/swarm-node/protocol.js'
 import type { RouteService } from '../route/route-service.js'
 import { configureNodeRoute, ethereumOutsideTunnel, nodesMayServeTunnelSites, nodesRunThroughTunnel } from './node-route.js'
-import { removeSwarmChunkFiles } from './forget-swarm-chunks.js'
+import { forgetNodeData as forgetNodes } from './forget-node-data.js'
 
 /** A mount may wait for the light client to sync, resolve a name and follow its pointers: the host's own bound (verifier-host/pace.ts) and this much beyond it, so the host's answer is the one that comes. */
 const MOUNT_GRACE_MS = 5_000
@@ -162,33 +162,13 @@ export function swarmSettingChanged (): void {
   changed()
 }
 
-/** How long forgetting waits for the host's process to exit before it deletes what the process keeps open. */
-const HOST_EXIT_WAIT_MS = 10_000
-
-/** Resolves when the host's process, if one was told to leave, has exited (so its files are free), or after `HOST_EXIT_WAIT_MS`. */
-async function hostGone (): Promise<void> {
-  if (supervisor === undefined) return
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const limit = new Promise<void>((resolve) => { timer = setTimeout(resolve, HOST_EXIT_WAIT_MS) })
-  try {
-    await Promise.race([supervisor.whenGone(), limit])
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
 /**
  * Clearing cached data or all history: the IPFS node stops and its block store is deleted, and the salt its partition
  * keys are made with is replaced, so nothing it kept about the sites visited can be read back or asked for. The Swarm
- * chunks the host keeps are keyed by the same salt: the host exits first (it holds the file open), and its files go.
+ * chunks the host keeps are keyed by the same salt: the host exits, and its files go (`forget-node-data.ts`).
  */
 export async function forgetNodeData (): Promise<void> {
-  await ipfsNode.forget()
-  const salt = verifierStore().rotatePartitionSalt()
-  // The host holds the old salt from its start; its next request rebuilds its config with the new one.
-  idleHost()
-  await hostGone()
-  await removeSwarmChunkFiles(verifierStore().directory, salt)
+  await forgetNodes({ forgetIpfsNode: async () => { await ipfsNode.forget() }, replaceSalt: () => verifierStore().rotatePartitionSalt(), sleepHost: () => { idleHost() }, hostGone: async () => { await supervisor?.whenGone() }, directory: () => verifierStore().directory })
 }
 
 /** Whether this run was started with the light client forced off from outside (`ORIVON_ETH_LIGHT_CLIENT=off`): no setting changes that. */

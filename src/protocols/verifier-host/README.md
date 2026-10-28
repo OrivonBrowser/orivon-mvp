@@ -67,7 +67,7 @@ transaction (WAL, `synchronous = NORMAL`, 32 KB pages, since a chunk row is a li
 mount with a partition ([`swarm-chunk-memory.ts`](swarm-chunk-memory.ts) puts the in-memory cache in front of it); one that is not
 a database is deleted and made again once, and one that cannot be opened at all is logged once and the run keeps chunks in memory. The
 host's log says `swarm: the chunk store opened with N bytes kept`, and how many chunks a mount read from disk. Clearing cached data or all
-history replaces the salt, puts the host to sleep and deletes the files once its process has exited (`main/verifier/forget-swarm-chunks.ts`);
+history replaces the salt, puts the host to sleep and deletes the files once its process has exited (`main/verifier/forget-node-data.ts`);
 a host that opens its database also deletes every `swarm-chunks-*` file ([`swarm-chunk-files.ts`](swarm-chunk-files.ts)) whose id is
 not its own salt's, so a file main could not delete (Windows keeps an open file) goes at the next start.
 
