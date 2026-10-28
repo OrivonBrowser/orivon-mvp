@@ -45,7 +45,7 @@ export interface ClearDeps {
   readonly appSessions: () => Promise<ReadonlyArray<Pick<Session, 'clearData'>>>
   /** The network each `.eth` name was last found on: a record of the names visited, forgotten with the cache and with all history. */
   readonly forgetNameSchemes: () => Promise<void>
-  /** What the IPFS node kept about the sites it served: stopped, and its block store deleted, with the cache and with all history. */
+  /** What the IPFS node and the verifier host kept about the sites they served (blocks, Swarm chunks): deleted with the cache and with all history. */
   readonly forgetNodeData?: () => Promise<void>
   /** The Website level each site last earned, which stays while a site cannot be looked at again: forgotten with site data, the cache and all history. */
   readonly forgetEarnedLevels?: () => void

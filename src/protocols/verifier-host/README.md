@@ -19,10 +19,13 @@ as arguments, so everything else runs under plain vitest.
 map and the redirect rule, and from [`../../broker/policy/`](../../broker/policy/) the address
 classifier, all reused rather than copied; `@a16z/helios`.
 
+**What it also depends on, for the chunk store.** `node:sqlite`, `node:fs`, `node:path` and `node:crypto`: [`swarm-chunk-database.ts`](swarm-chunk-database.ts)
+is the one file here that writes the profile, and only its own `swarm-chunks-*` files.
+
 **What it must never import.** [`src/main/`](../../main/) beyond type-only imports: main starts it
 and talks to it over [`protocol.ts`](protocol.ts), and nothing else.
-[`../../main/verifier/`](../../main/verifier/) is its other side. The one exception runs the other way: three leaf files here
-(`light-client/endpoint-mask.ts`, `light-client/server-address.ts`, `local-rpc-fetch.ts`) are imported by main, and the first two by the
+[`../../main/verifier/`](../../main/verifier/) is its other side. The one exception runs the other way: four leaf files here
+(`light-client/endpoint-mask.ts`, `light-client/server-address.ts`, `local-rpc-fetch.ts`, `swarm-chunk-files.ts`) are imported by main, and the first two by the
 Settings page, because each holds a rule main and the host must apply alike.
 
 **A local node is asked for before each mount that reads from it.** [`node-link.ts`](node-link.ts) serves any
@@ -51,6 +54,42 @@ carries the key of the mount's partition (`partition-key.ts`; header `x-orivon-p
 **Owner stream.** `ens-ipfs`.
 
 ## Design notes
+
+**Verified Swarm chunks are kept on disk here, per site, and nowhere else.** [`swarm-chunk-database.ts`](swarm-chunk-database.ts) is one
+SQLite database (`node:sqlite`, no native module) at `<profile>/verifier/swarm-chunks-<id>.db`, where `<id>` is the first 16 hex
+characters of sha256 of the profile's partition salt; main hands the host the directory and the salt as `HostConfig.swarmChunks`, even
+when the IPFS node is off, and leaves it out when the profile cannot hold a salt. Rows are keyed by `partitionStoreKey(salt, partition)`
+(`partition-key.ts`, the key the IPFS node's store uses) and the chunk address, so the file holds no origin in plain text and one site's
+chunks are never another's hits; a site read through a tunnel is kept under the tunnel's name too ([`swarm-chunk-memory.ts`](swarm-chunk-memory.ts)'s
+namespace), as the routes' in-memory caches are kept apart. Only content-addressed chunks are kept, never a single-owner chunk or a feed
+update. At most 256 MB of chunk bytes are kept in all, least recently used first; the file is about a sixth larger (32 KB pages hold
+seven rows each, and the indexes), and its `-wal` is cut back to 8 MB after each checkpoint (`journal_size_limit`). Use is a count in
+the file that goes up once for each minute of use and once at the start of a run, so a clock that is wrong cannot age rows; it lives in
+a table of its own beside each row's size, and a row is marked at most once a minute, also when the memory in front answered it, so a
+mark never rewrites a 4 KB row. The bytes kept and the count are worked out from that table each time the file opens, never read from a
+figure an earlier run left, so a run that was cut short cannot leave either wrong.
+
+**The disk is read one chunk at a time, and written without waiting for the disk.** A row read back is hashed against its address
+again, on the host's event loop (about a millisecond and a half for 4 KB); a row that fails is deleted and the chunk fetched anew.
+`BlockMemory.recall` stays the cache alone, and `recallKept` is the disk behind it ([`swarm-chunk-memory.ts`](swarm-chunk-memory.ts)):
+each read waits for the one before and for a turn of the event loop of its own, and `ChunkSource.leaves` asks for every leaf of a file
+that way before it fetches the rest, so a file of a thousand chunks read from disk lets every other request through between two
+chunks instead of holding the host for a second and a half. Writes wait for 64 chunks or 250 ms and go in one transaction (WAL, 32 KB
+pages, since a chunk row is a little over 4 KB) with `synchronous = OFF`: with `NORMAL`, the commit that crosses SQLite's
+auto-checkpoint (1000 pages, 32 MB) runs the checkpoint's `fsync` inside that call, a stall of half a second every few
+dozen writes (1.9 s at worst), where `OFF` keeps every commit under ten milliseconds. What `OFF` risks is a file damaged by a crash of the
+computer, not of the process, and nothing here needs the file to survive that: each row is hashed on its way out, the counters are
+worked out when the file opens, and a file SQLite reports as damaged is deleted and made again.
+
+**Opening, remaking and sweeping.** The file is opened at the first Swarm mount with a partition. A file SQLite reports as damaged, at
+open or in use, is deleted and made again, once in a run, and so is one whose `user_version` is not this code's layout number (the file
+is a cache, so it is made again rather than read in a layout this code does not know); the second time the run keeps chunks in memory.
+One that fails any other way (a full or locked disk) is left as it is. Either way one line is logged. The host's log says `swarm: the
+chunk store opened with N bytes kept`, and how many chunks each mount, and each file of 256 KB or more, read from disk. Clearing cached
+data or all history replaces the salt, puts the host to sleep and deletes the files once its process has exited, or after 10 s
+(`main/verifier/forget-node-data.ts`), sparing the file of the salt in force then, or sparing none when the salt could not be replaced;
+the host deletes every `swarm-chunks-*` file ([`swarm-chunk-files.ts`](swarm-chunk-files.ts)) whose id is not its own salt's as it
+starts, before it opens anything, so a file main could not delete (Windows keeps an open file) goes at the next start.
 
 **Every request leaves through [`egress.ts`](egress.ts), over Electron's `net`, except a CCIP-Read
 request when no proxy is configured, and the DNS-tamper fallback below.** A configured proxy

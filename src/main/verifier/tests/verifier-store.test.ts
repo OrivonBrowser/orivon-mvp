@@ -279,3 +279,16 @@ describe('the partition salt', () => {
     expect(kept.partitionSalt()).toMatch(/^[0-9a-f]{64}$/)
   })
 })
+
+describe('where the Swarm chunks are kept', () => {
+  it('is the profile folder and the partition salt, the same salt the IPFS node keys its store with', () => {
+    const { store: kept, dir } = store()
+    expect(kept.swarmChunks()).toEqual({ dir, salt: kept.partitionSalt() })
+  })
+
+  it('is nothing, and no error, when the profile cannot hold a salt: the host then starts without it', () => {
+    const { dir } = store()
+    writeFileSync(dir, 'not a folder')
+    expect(new VerifierStore(dir).swarmChunks()).toBeUndefined()
+  })
+})

@@ -78,6 +78,11 @@ export class VerifierStore {
   private readonly feeds: FloorFile
   private readonly nameSchemes: FloorFile
 
+  /** The directory in the profile everything this keeps, and the verifier host's Swarm chunk files, are in. */
+  get directory (): string {
+    return this.dir
+  }
+
   constructor (dir: string) {
     this.checkpointPath = join(dir, 'checkpoint.json')
     this.saltPath = join(dir, 'ipfs-node-partition-salt.json')
@@ -154,6 +159,18 @@ export class VerifierStore {
     const kept = readJson(this.saltPath)
     if (typeof kept === 'object' && kept !== null && typeof (kept as { salt?: unknown }).salt === 'string' && /^[0-9a-f]{64}$/.test((kept as { salt: string }).salt)) return (kept as { salt: string }).salt
     return this.rotatePartitionSalt()
+  }
+
+  /**
+   * Where the verifier host keeps Swarm chunks and the salt it keys them with, or nothing when the profile cannot
+   * hold a salt: the chunks are an optimisation, and a profile that cannot be written to must not stop a host starting.
+   */
+  swarmChunks (): { readonly dir: string, readonly salt: string } | undefined {
+    try {
+      return { dir: this.dir, salt: this.partitionSalt() }
+    } catch {
+      return undefined
+    }
   }
 
   /** A new salt, so what the node kept under the old one can no longer be asked for: used when browsing data is cleared. */
