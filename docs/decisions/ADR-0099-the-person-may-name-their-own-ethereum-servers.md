@@ -26,6 +26,13 @@ lane (the direct one as well), so an error of its cannot quote an address. Every
 before the message is stored. Each of the person's execution servers is asked for its chain id as the client starts, and one
 that is not Ethereum mainnet is dropped with a sentence saying so.
 
+**The choice is three settings under Settings > Web3**: which servers (Orivon's or the person's), up to four execution
+addresses and one beacon address. Each address is checked when it is typed and again when it is saved, by one rule
+(`light-client/server-address.ts`), and refused with a reason that never repeats it. A saved address shows masked in the
+list. A private window held to Nym starts on Orivon's servers with both lists empty, so a key is not copied into a window whose
+point is that nothing of the person is. The secret-scrub registry (`diagnostics/secret-scrub.ts`) is told each part of the
+saved addresses and applied where a log line, a crash record and a report are made.
+
 ## Context
 
 The servers are fixed in code (`DEFAULT_ENDPOINTS`). People who run their own node, or hold an account with a provider, have
@@ -64,6 +71,8 @@ allowing the one local reach the person asked for by typing an address.
 - A key in an address is stored in plaintext wherever the address is stored. Masking and scrubbing cover what is shown, logged
   and reported; they do not encrypt the file.
 - A server on the internet that the whole browser reaches outside the tunnel must answer on port 443 (`outside-fetch.ts`).
+- A Nym private window cannot use the person's servers; its light client asks Orivon's.
+- A secret shorter than four characters is not scrubbed from free text.
 
 ## Reversibility
 
