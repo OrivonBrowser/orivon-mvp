@@ -18,6 +18,11 @@ export interface NoticeState {
 /** A window in use to ask in, or the reason there is none yet. */
 export type PlaceResult<Place> = { readonly place: Place } | { readonly waiting: string }
 
+/** How an ask ended: `seen` is false when the question closed before it was drawn, so the person never read it. */
+export interface AskOutcome {
+  readonly seen: boolean
+}
+
 /** What Settings is told: the answer of the last look, as words. */
 export interface UpdateAnswer {
   /** False when the latest release could not be read: offline, or none published. */
@@ -48,12 +53,12 @@ export interface NoticeDeps<Place> {
   /** Where to ask now. Never an operating-system box: no place means no question. */
   readonly place: () => PlaceResult<Place>
   /** Shows the question and resolves once the person has answered it or it was closed. */
-  readonly ask: (place: Place, release: ReleaseInfo) => Promise<void>
+  readonly ask: (place: Place, release: ReleaseInfo) => Promise<AskOutcome>
   readonly log: (line: string) => void
 }
 
 export interface UpdateNotice {
-  /** The scheduled look: throttled to once a day, then asks if a release is waiting. Never rejects. */
+  /** The scheduled look: throttled to once a day, then starts the question if a release is waiting, without waiting for the answer. Never rejects. */
   readonly runScheduled: () => Promise<void>
   /** Asks if a release is waiting and there is a window in use. Never rejects. */
   readonly tryAsk: () => Promise<void>
@@ -78,6 +83,9 @@ function isTold (told: string | undefined, tag: string): boolean {
 
 const reasonOf = (error: unknown): string => (error instanceof Error ? error.message : String(error)).slice(0, 200)
 
+/** A question that closed before it was drawn is asked again this many times, then waits for the next look. */
+const UNSEEN_ASKS = 3
+
 export function createUpdateNotice<Place> (deps: NoticeDeps<Place>): UpdateNotice {
   const current = deps.currentVersion
   let loaded = false
@@ -87,6 +95,8 @@ export function createUpdateNotice<Place> (deps: NoticeDeps<Place>): UpdateNotic
   let inFlight = false
   /** Set when a question could not be shown: it is not tried again until the next look. */
   let broken = false
+  /** Questions in a row that closed before they were drawn. */
+  let unseen = 0
   let lastWait: string | undefined
   const listeners = new Set<(offer: UpdateOffer | null) => void>()
 
@@ -124,6 +134,23 @@ export function createUpdateNotice<Place> (deps: NoticeDeps<Place>): UpdateNotic
     }
   }
 
+  /** The window to ask in. A throw while looking (a tab's contents torn down under the window) is a wait, not a failure. */
+  const placeNow = (): PlaceResult<Place> => {
+    try {
+      return deps.place()
+    } catch (error) {
+      return { waiting: `could not tell which window is in use: ${reasonOf(error)}` }
+    }
+  }
+
+  /** Counts `tag` as told, unless a newer release was told meanwhile: the told version never moves back. */
+  const markTold = (tag: string): void => {
+    const kept = state.lastNotifiedVersion === undefined ? null : parseVersion(state.lastNotifiedVersion)
+    const next = parseVersion(tag)
+    if (kept !== null && next !== null && compareVersions(kept, next) > 0) return
+    state = { ...state, lastNotifiedVersion: tag }
+  }
+
   /** Reads the file once; a release it names is on offer again only while it is newer than the running version. */
   const load = async (): Promise<void> => {
     if (loaded) return
@@ -142,7 +169,7 @@ export function createUpdateNotice<Place> (deps: NoticeDeps<Place>): UpdateNotic
     if (inFlight || broken) return
     const shown = offer()
     if (shown === null || !shown.pending) return
-    const where = deps.place()
+    const where = placeNow()
     if ('waiting' in where) {
       if (lastWait !== where.waiting) deps.log(`waiting for a window in use: ${where.waiting}`)
       lastWait = where.waiting
@@ -153,8 +180,16 @@ export function createUpdateNotice<Place> (deps: NoticeDeps<Place>): UpdateNotic
     try {
       await changing(async () => {
         deps.log(`asking about ${shown.latest}`)
-        await deps.ask(where.place, { version: shown.latest, url: shown.url })
-        state = { ...state, lastNotifiedVersion: shown.latest }
+        const { seen } = await deps.ask(where.place, { version: shown.latest, url: shown.url })
+        if (!seen) {
+          unseen += 1
+          if (unseen >= UNSEEN_ASKS) broken = true
+          deps.log(`the question about ${shown.latest} closed before it was shown${broken ? '; not asking again until the next look' : ''}`)
+          return
+        }
+        unseen = 0
+        markTold(shown.latest)
+        state = stateWith(undefined)
         await persist()
       })
     } catch (error) {
@@ -174,6 +209,7 @@ export function createUpdateNotice<Place> (deps: NoticeDeps<Place>): UpdateNotic
         await changing(async () => {
           await load()
           broken = false
+          unseen = 0
           const now = deps.now()
           const result = await checkForUpdate({
             currentVersion: current,
@@ -191,7 +227,8 @@ export function createUpdateNotice<Place> (deps: NoticeDeps<Place>): UpdateNotic
           state = stateWith(now)
           await persist()
         })
-        await tryAsk()
+        // Not awaited: the question can stay open for hours, and the next look must not wait behind it.
+        tryAsk().catch((error: unknown) => { deps.log(`the question failed: ${reasonOf(error)}`) })
       } catch (error) {
         deps.log(`the update check failed: ${reasonOf(error)}`)
       }

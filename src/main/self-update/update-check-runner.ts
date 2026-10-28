@@ -96,7 +96,7 @@ export function createBrowserUpdate (options: { app: App, windows: Pick<WindowRe
     write: async (state) => { await writeFileAtomicAsync(path, JSON.stringify(state)) },
     fetchLatest: testUpdateFetch() ?? fetchLatestGithubRelease,
     place: () => updatePlace(windows, kiosk),
-    ask: async (place, release) => { await askInWindow(place, release, app.getVersion(), log) },
+    ask: async (place, release) => await askInWindow(place, release, app.getVersion(), log),
     log
   })
 }

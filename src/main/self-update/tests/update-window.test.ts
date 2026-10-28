@@ -44,6 +44,7 @@ describe('where the update question may be asked', () => {
 })
 
 describe('asking about a release in a window', () => {
+  const drawnThenEscaped: AskQuestion = vi.fn(async (_target, _spec, options) => { options?.onShown?.(); return { response: 1, checkboxChecked: false } })
   const answering = (response: number, clicked?: true): AskQuestion => vi.fn(async () => ({ response, checkboxChecked: false, ...(clicked === true ? { clicked } : {}) }))
 
   it('asks in that window and tab, with the version shown without its v', async () => {
@@ -71,9 +72,17 @@ describe('asking about a release in a window', () => {
     expect(logA).toHaveBeenCalledWith('answer: not now')
     const closed = placeIn()
     const logB = vi.fn()
-    await askInWindow(closed.place, RELEASE, '0.0.11', logB, answering(1))
+    await askInWindow(closed.place, RELEASE, '0.0.11', logB, drawnThenEscaped)
     expect(closed.createTab).not.toHaveBeenCalled()
     expect(logB).toHaveBeenCalledWith('answer: closed without a choice')
+  })
+
+  it('says the person saw the question when it was drawn or a button was pressed, and that they did not when it closed before', async () => {
+    expect(await askInWindow(placeIn().place, RELEASE, '0.0.11', () => {}, drawnThenEscaped)).toEqual({ seen: true })
+    expect(await askInWindow(placeIn().place, RELEASE, '0.0.11', () => {}, answering(1, true))).toEqual({ seen: true })
+    const log = vi.fn()
+    expect(await askInWindow(placeIn().place, RELEASE, '0.0.11', log, answering(1))).toEqual({ seen: false })
+    expect(log).toHaveBeenCalledWith('answer: closed before it was shown')
   })
 
   it('opens nothing in a window that was closed meanwhile', async () => {

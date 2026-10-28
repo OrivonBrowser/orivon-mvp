@@ -20,7 +20,9 @@ export const installUpdateNotice: ShellInstaller = {
       // A kiosk is told through Settings only, so it has nothing to retry.
       const waiting = notice.offer()?.pending === true && !services.kiosk
       if (waiting && retry === undefined) {
-        retry = setInterval(() => { if (lookAllowed()) void notice.tryAsk() }, RETRY_MS)
+        retry = setInterval(() => {
+          if (lookAllowed()) notice.tryAsk().catch((error: unknown) => { console.error('[self-update] the question failed:', error) })
+        }, RETRY_MS)
         retry.unref()
       } else if (!waiting && retry !== undefined) {
         clearInterval(retry)

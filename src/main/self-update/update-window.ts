@@ -8,7 +8,7 @@ import type { WindowRegistry } from '../shell/window-registry.js'
 import { readUpdateChoice, updateQuestion } from './update-ask.js'
 import type { Installable } from './update-ask.js'
 import type { ReleaseInfo } from './update-check.js'
-import type { PlaceResult } from './update-notice.js'
+import type { AskOutcome, PlaceResult } from './update-notice.js'
 
 /** Not yet: the signed install is not built, so the question offers the release page alone. */
 const INSTALLABLE: Installable = { ok: false }
@@ -28,15 +28,23 @@ export function updatePlace (windows: Pick<WindowRegistry, 'focused'>, kiosk: bo
   return { place: found }
 }
 
-/** Asks about `release` in `place` and acts on the answer: the release page opens in a tab of that window. Resolves once answered or closed. */
+/**
+ * Asks about `release` in `place` and acts on the answer: the release page opens in a tab of that window. Resolves once
+ * answered or closed, and says whether the panel was ever up: an Escape after reading it and a cancel because the
+ * toolbar never came into view look the same in the result, and only the first is the person having been told.
+ */
 export async function askInWindow (
   place: AskPlace, release: ReleaseInfo, running: string, log: (line: string) => void, ask: AskQuestion = askQuestion
-): Promise<void> {
-  const { response, clicked } = await ask({ window: place.window, tabId: place.tabId }, updateQuestion(release.version.replace(/^v/i, ''), running.replace(/^v/i, ''), INSTALLABLE))
+): Promise<AskOutcome> {
+  let up = false
+  const spec = updateQuestion(release.version.replace(/^v/i, ''), running.replace(/^v/i, ''), INSTALLABLE)
+  const { response, clicked } = await ask({ window: place.window, tabId: place.tabId }, spec, { onShown: () => { up = true } })
+  const seen = up || clicked === true
   const choice = readUpdateChoice(response, INSTALLABLE)
-  log(choice === 'github' ? 'answer: the release page' : clicked === true ? 'answer: not now' : 'answer: closed without a choice')
+  log(choice === 'github' ? 'answer: the release page' : clicked === true ? 'answer: not now' : seen ? 'answer: closed without a choice' : 'answer: closed before it was shown')
   if (choice === 'github' && !place.window.window.isDestroyed()) {
     place.window.tabs.createTab(release.url)
     log('opened the release page in a tab')
   }
+  return { seen }
 }
