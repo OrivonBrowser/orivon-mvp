@@ -72,7 +72,17 @@ describe.skipIf(!LIVE)('ENS through the light client, live', () => {
       kinds[name] = record?.pointer.kind
       expect(record?.provenance.via).toBe('chain')
     }
-    expect(kinds).toEqual({ 'vitalik.eth': 'ipfs', 'ens.eth': 'ipfs', 'tornadocash.eth': 'ipfs', 'app.ens.eth': 'ipns-key', 'uniswap.eth': 'dnslink' })
+    expect(kinds).toEqual({ 'vitalik.eth': 'ipfs', 'ens.eth': 'swarm', 'tornadocash.eth': 'ipfs', 'app.ens.eth': 'ipns-key', 'uniswap.eth': 'dnslink' })
+  }, 240_000)
+
+  it("answers ENS's readiness names: an offchain name through CCIP-Read, and a missing subname of a v1 name as not found", async () => {
+    const root = await checkpoint()
+    const fetch = allowlisted([...DEFAULT_ENDPOINTS.executionRpcs, DEFAULT_ENDPOINTS.consensusRpc], async (url, init) => await nodeFetch(url, init), 'the light client')
+    const client = startHeliosLightClient({ executionRpcs: DEFAULT_ENDPOINTS.executionRpcs, consensusRpc: DEFAULT_ENDPOINTS.consensusRpc, checkpoint: root }, fetch, () => {})
+    await until(client, 120_000)
+    const resolver = createEnsResolver({ provider: client.provider, ccipRequest: async (p) => await guardedCcipRequest(p, { directFetch: ccipFetch, fetch: async (url, init) => await nodeFetch(url, init), resolveHost, direct: true }) })
+    await expect(resolver.resolve('test.offchaindemo.eth')).resolves.toEqual([])
+    await expect(resolver.resolve('orivon-unregistered.vitalik.eth')).rejects.toMatchObject({ failure: 'not-found' })
   }, 240_000)
 
   it('refuses the answer when the RPC alters a proof', async () => {
