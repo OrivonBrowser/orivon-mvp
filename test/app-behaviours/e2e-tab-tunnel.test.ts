@@ -1,7 +1,7 @@
 // A tab that carries a tunnel choice sends the first request of everything it opens through that tunnel, never from the
 // session the website would have had with no choice. The choice is set on the tab through the test seam, before the tab
 // navigates, and then every way a tab reaches a website is tried: a typed address, a tile of the new-tab page, a link, a
-// script's navigation, a redirect, a sized and a featureless `window.open`, a middle-click into a new tab, Back and Forward
+// script's navigation, a redirect, a sized and a featureless `window.open`, a middle-click into a new tab, an address opened in a new tab from the address bar with Alt+Enter and the source of one, Back and Forward
 // across a page outside the profile, and the wake of a tab that was asleep when it was given the choice. Every name has a decoy on the same port on loopback
 // (the host resolver maps the fixture's names there), so a request that skipped the tunnel lands on the decoy and counts a
 // hit. The last case runs with the whole browser on the tunnel: a direct tab reaches the website outside it, and keeps the
@@ -20,7 +20,7 @@ import type { Socks5Fixture } from '../../src/broker/route/tests/socks5-fixture.
 import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
 import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
 import { launchShell, QA_TEST_TIMEOUT_MS } from '../support/qa-helpers.js'
-import { activeTabInfo, delay, findViewShowing, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { activeTabInfo, delay, findViewShowing, popoverShown, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 const A = 'plain.socks.test'
 const B = 'other.socks.test'
@@ -178,6 +178,32 @@ it('[app:tab-tunnel-first-request-leaves-through-the-tunnel] a typed address, a 
     await closeElectron(app)
   }
 }, 8 * QA_TEST_TIMEOUT_MS)
+
+it('[app:tab-tunnel-address-bar-new-tab-leaves-through-the-tunnel] an address typed in a tab set to a tunnel and opened in a new tab with Alt+Enter, and the source of one, reach the website through it, never direct', async () => {
+  const { app, chrome } = await start()
+  try {
+    const directBefore = hosts.decoy.hits
+    await giveChoice(app, await activeId(chrome), 'socks5')
+
+    // The dropdown is open once the first row (the address as typed) shows; Alt+Enter opens it in a new tab.
+    const asking = asked(A)
+    await chrome.click('#address')
+    await chrome.keyboard.type(urlA(), { delay: 10 })
+    expect(await waitFor(async () => await popoverShown(app, 'overlay=omnibox'))).toBe(true)
+    await chrome.keyboard.press('Alt+Enter')
+    expect((await waitForTab(chrome, { address: urlA(), title: 'tunnelled' })).ok).toBe(true)
+    expect((await tabIds(chrome)).length, 'Alt+Enter opened a second tab').toBe(2)
+    await viaTunnel(A, asking, directBefore, 'Alt+Enter on a typed address')
+
+    // The source of an address typed in that tab opens in a tab that keeps the choice, and fetches the page through the tunnel.
+    const sourceOf = asked(B)
+    await clickAddressBarRetrying(chrome, `view-source:${urlB()}`)
+    expect(await waitFor(async () => (await tabIds(chrome)).length === 3)).toBe(true)
+    await viaTunnel(B, sourceOf, directBefore, 'a typed view-source address')
+  } finally {
+    await closeElectron(app)
+  }
+}, 4 * QA_TEST_TIMEOUT_MS)
 
 it('[app:tab-tunnel-new-tab-tile-first-request-leaves-through-the-tunnel] a tile of the new-tab page opened in a tab set to a tunnel reaches the website through it, never direct', async () => {
   const bookmarks = { version: 2, roots: { bar: [{ id: 'plain000001', kind: 'url', title: 'Plain', url: urlA(), added: 1 }], other: [], reading: [] } }

@@ -28,6 +28,16 @@ describe('openFromBrowser', () => {
     expect(calls).toEqual(['create https://example.com/ true', `file ${FILE} false`])
   })
 
+  it('hands the tab the tunnel choice it is given, and leaves a local file without one', () => {
+    const { tabs } = fakeTabs()
+    openFromBrowser(tabs, 'https://example.com/', false, 'nym')
+    expect(tabs.createTab).toHaveBeenLastCalledWith('https://example.com/', false, undefined, 'nym')
+    openFromBrowser(tabs, FILE, true, 'nym')
+    expect(tabs.openLocalFile).toHaveBeenLastCalledWith(FILE, true)
+    openFromBrowser(tabs, 'https://example.com/')
+    expect(tabs.createTab).toHaveBeenLastCalledWith('https://example.com/', true)
+  })
+
   it('never hands a file address with a host to a tab', () => {
     const { tabs, calls } = fakeTabs()
     openFromBrowser(tabs, 'file://server/share/a.html')

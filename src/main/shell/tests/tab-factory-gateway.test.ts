@@ -62,3 +62,16 @@ describe('a tab opened at a gateway address', () => {
     expect(factory(true).content('https://example.com/').target).toBe('https://example.com/')
   })
 })
+
+describe('a trusted tab opened with a tunnel choice', () => {
+  it('keeps the choice on its record and the session the caller named', () => {
+    const built = factory(false).trusted('view-source:https://a.example/', 'persist:tunnel-profile', 'nym')
+    expect(built.record.tunnelChoice).toBe('nym')
+    expect(built.record.partition).toBe('persist:tunnel-profile')
+    expect(makeTabView.mock.calls[0]?.[1]).toBe('persist:tunnel-profile')
+  })
+
+  it('has no choice when it is given none', () => {
+    expect('tunnelChoice' in factory(false).trusted('https://a.example/').record).toBe(false)
+  })
+})

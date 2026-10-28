@@ -11,13 +11,12 @@ const log = vi.spyOn(console, 'log').mockImplementation(() => {})
 const error = vi.spyOn(console, 'error').mockImplementation(() => {})
 const ensure = vi.fn()
 
-interface Fake { record: Record<string, unknown>, emitState: ReturnType<typeof vi.fn>, stop: ReturnType<typeof vi.fn> }
+interface Fake { record: Record<string, unknown>, emitState: ReturnType<typeof vi.fn> }
 
 function fake (over: Record<string, unknown> = {}, url = `${SITE}/page`, closing = false): Fake {
   const emitState = vi.fn()
-  const stop = vi.fn()
-  const record = { view: { webContents: { isDestroyed: () => false, getURL: () => url, stop } }, partition: undefined, isDashboardTab: false, internalPage: null, sleeping: null, host: { emitState, isClosing: () => closing }, ...over }
-  return { record, emitState, stop }
+  const record = { view: { webContents: { isDestroyed: () => false, getURL: () => url } }, partition: undefined, isDashboardTab: false, internalPage: null, sleeping: null, host: { emitState, isClosing: () => closing }, ...over }
+  return { record, emitState }
 }
 
 beforeEach(() => {
@@ -84,12 +83,34 @@ describe('giving a tab a tunnel choice', () => {
     expect(repartitionView).not.toHaveBeenCalled()
   })
 
-  it('stops the page\'s loads when the move cannot be made, so it is never left in the session it was in', () => {
+  it('gives the choice back when the move cannot be made and nothing moved, so the tab never claims a tunnel its page is not using', () => {
     repartitionView.mockImplementationOnce(() => { throw new Error('no view') })
-    const { record, stop } = fake()
+    const { record, emitState } = fake()
     setTabTunnelChoice('t1', record as never, 'nym')
-    expect(stop).toHaveBeenCalled()
+    expect('tunnelChoice' in record).toBe(false)
     expect(error).toHaveBeenCalled()
+    expect(emitState).toHaveBeenCalledTimes(1)
+  })
+
+  it('gives back a choice that was taken away when the move back cannot be made, so the page stays in the tunnel its tab names', () => {
+    repartitionView.mockImplementationOnce(() => { throw new Error('no view') })
+    const { record } = fake({ tunnelChoice: 'socks5', partition: 'persist:proxy-profile' })
+    setTabTunnelChoice('t1', record as never, null)
+    expect(record['tunnelChoice']).toBe('socks5')
+  })
+
+  it('keeps the choice and closes the view it left when the move stopped half-way, so no script of the page runs on in the session it was in', () => {
+    const { record } = fake()
+    const left = (record as { view: { webContents: { close: ReturnType<typeof vi.fn> } } }).view
+    left.webContents.close = vi.fn()
+    repartitionView.mockImplementationOnce((_id: string, moving: { view: unknown, partition: string }) => {
+      moving.view = { webContents: { isDestroyed: () => false, close: vi.fn() } }
+      moving.partition = 'persist:tunnel-profile'
+      throw new Error('no attach')
+    })
+    setTabTunnelChoice('t1', record as never, 'nym')
+    expect(record['tunnelChoice']).toBe('nym')
+    expect(left.webContents.close).toHaveBeenCalledTimes(1)
   })
 
   it('says the tunnel and the tab in the log, and never an address', () => {

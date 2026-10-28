@@ -1,6 +1,10 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { profilePartitionFor } from '../../route/site-partition.js'
+import { setSiteRoutes } from '../../route/site-routes.js'
 import { canViewSource, openTypedViewSource, openViewSource } from '../view-source.js'
 import type { SourceTabs } from '../view-source.js'
+
+afterEach(() => { setSiteRoutes(undefined) })
 
 function tabs (record: Record<string, unknown> | null = { partition: undefined, internalPage: null, isDashboardTab: false }, active: string | null = 'b'): SourceTabs & { openTrusted: ReturnType<typeof vi.fn>, moveTab: ReturnType<typeof vi.fn> } {
   return {
@@ -68,6 +72,26 @@ describe('openTypedViewSource', () => {
     const manager = tabs()
     manager.openTrusted.mockReturnValue(undefined)
     expect(openTypedViewSource(manager, 'https://a.example/')).toBe(false)
+  })
+})
+
+describe('the source of an address, in a window whose tab in front has a tunnel choice', () => {
+  const CHOICE_TAB = { partition: undefined, internalPage: null, isDashboardTab: false }
+
+  it.each(['nym', 'socks5', 'direct'] as const)('opens a typed address in the %s profile with the choice, so the first request never leaves from the shared session', (choice) => {
+    setSiteRoutes({ profileFor: () => undefined })
+    const manager = tabs({ ...CHOICE_TAB, tunnelChoice: choice })
+    expect(openTypedViewSource(manager, 'https://a.example/x')).toBe(true)
+    expect(manager.openTrusted).toHaveBeenCalledWith('view-source:https://a.example/x', profilePartitionFor(choice, 'https://a.example'), choice)
+  })
+
+  it('does the same for the page in front, and keeps this computer in the shared session as any tab with a choice does', () => {
+    setSiteRoutes({ profileFor: () => undefined })
+    const manager = tabs({ ...CHOICE_TAB, tunnelChoice: 'nym' })
+    expect(openViewSource(manager, 'https://a.example/')).toBe(true)
+    expect(manager.openTrusted).toHaveBeenLastCalledWith('view-source:https://a.example/', profilePartitionFor('nym', 'https://a.example'), 'nym')
+    expect(openTypedViewSource(manager, 'http://localhost:3000/')).toBe(true)
+    expect(manager.openTrusted).toHaveBeenLastCalledWith('view-source:http://localhost:3000/', undefined, 'nym')
   })
 })
 

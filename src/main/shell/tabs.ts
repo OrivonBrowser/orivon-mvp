@@ -244,7 +244,7 @@ export class TabManager {
   openBlobTab (url: string, partition: string | undefined, active = true, loadOptions?: LoadURLOptions, tunnelChoice?: TabTunnelChoice): string { return this.opener.openBlobTab(url, partition, active, loadOptions, tunnelChoice) }
 
   /** createTab() for a trusted caller (the extension host), which has checked `target` itself. */
-  openTrusted (target?: string, partition?: string): [string, Electron.WebContents] | undefined { return this.opener.openTrusted(target, partition) }
+  openTrusted (target?: string, partition?: string, tunnelChoice?: TabTunnelChoice): [string, Electron.WebContents] | undefined { return this.opener.openTrusted(target, partition, tunnelChoice) }
 
   /** A popup Chromium already built, as a tab of this window: the first tab of a window a shift-click opened. */
   adoptPopup (view: WebContentsView, partition: string | undefined, active = true, tunnelChoice?: TabTunnelChoice): void { this.opener.adoptPopup(view, partition, active, tunnelChoice) }

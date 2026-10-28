@@ -9,10 +9,11 @@ import type { TabTunnelChoice } from '../route/tab-tunnel.js'
 /** What the opening of an address needs of a window's tabs. */
 export type BrowserTabs = Pick<TabManager, 'createTab' | 'openLocalFile' | 'openLocalFileNow' | 'navigate' | 'closeTab' | 'getState' | 'activeWebContents'>
 
-/** Opens `url` in a new tab, in front unless `active` is false. */
-export function openFromBrowser (tabs: Pick<BrowserTabs, 'createTab' | 'openLocalFile'>, url: string, active = true): void {
+/** Opens `url` in a new tab, in front unless `active` is false. The tab keeps `tunnelChoice` (a local file has no use for one). */
+export function openFromBrowser (tabs: Pick<BrowserTabs, 'createTab' | 'openLocalFile'>, url: string, active = true, tunnelChoice?: TabTunnelChoice): void {
   if (localFileKey(url) !== null) void tabs.openLocalFile(url, active).catch((error: unknown) => { console.error('[shell] open local file failed:', error) })
-  else tabs.createTab(url, active)
+  else if (tunnelChoice === undefined) tabs.createTab(url, active)
+  else tabs.createTab(url, active, undefined, tunnelChoice)
 }
 
 /**
