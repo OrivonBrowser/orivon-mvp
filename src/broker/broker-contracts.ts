@@ -4,9 +4,8 @@
 // ./index.ts's header for what createBroker actually does, why its
 // dependency shape is fixed, and what `Broker` is for. No state lives here.
 
-import type { PersistedApp } from './grants/ledger-storage.js'
-import type { DestroyResource, FailableTcpServer, FailableTcpSocket, FailableUdpSocket } from './handles/handle-contracts.js'
-import type { LedgerStorage } from './grants/ledger-storage.js'
+import type { LedgerStorage, PersistedApp } from './grants/ledger-storage.js'
+import type { DestroyResource, FailableTcpServer, FailableTcpSocket, FailableUdpSocket, SocketUsage } from './handles/handle-contracts.js'
 import type { PortRange } from './policy/bind.js'
 import type { Resolver } from './policy/connect.js'
 import type { RouteBrokerOptions } from './route/provider.js'
@@ -291,6 +290,8 @@ export interface Broker {
     pickedPaths(origin: string): Promise<readonly PickedPath[]>
     /** A200: `GrantLedger.socketAllowance`, exposed read-only -- same category as `hasGrantsSync` above, never throws. Full reasoning: `src/loader/README.md` Design notes. */
     socketAllowanceSync(origin: string): number
+    /** What `origin` holds now against what it may hold, for `orivon://report`: open sockets, calls in flight, and the socket allowance. Allocates nothing and never throws. */
+    socketUsageSync(origin: string): SocketUsage
     /** Whether a system proxy applies to a direct dial of `host`:`port` by `origin`'s app (T20); false for a routed app. The loader dials with Node, which never sees the proxy, so it asks. Never throws. */
     reachBypassesProxy(origin: string, host: string, port: number): Promise<boolean>
   }

@@ -185,7 +185,8 @@ installata e libera, la lingua, e la sessione del desktop (X11 o Wayland, e il n
 numeri del produttore e del modello della scheda grafica, la versione del suo driver, e quali
 funzioni grafiche sono attive; le dimensioni e la scala di ogni schermo; quanta memoria usa ogni
 tipo di processo di Orivon; quante finestre e schede sono aperte, e se la finestra è privata; le
-estensioni installate (nome, identificativo, versione, attiva o no); i valori di alcune
+estensioni installate (nome, identificativo, versione, attiva o no); per ciascuna delle otto app con più
+connessioni di rete, quante ne tiene aperte e quante ne può tenere (solo numeri, mai il nome o l'indirizzo dell'app); i valori di alcune
 impostazioni che cambiano il comportamento di Orivon (tema, cookie, Global Privacy Control, Do Not
 Track, solo HTTPS, la modalità del DNS sicuro, risparmio di memoria ed energia, modalità di avvio,
 controllo ortografico, strumenti per sviluppatori, modalità sviluppatore delle estensioni, controllo
