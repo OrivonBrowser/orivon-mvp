@@ -197,6 +197,20 @@ for (const scheme of SCHEMES) {
         await chrome.click('#web3-score-btn')
         expect(await waitFor(async () => !(await popoverShown(app, 'overlay=web3-score')))).toBe(true)
 
+        await delay(450)
+        check('the tunnel button is on the new tab and plain, as no tunnel is chosen for the tab', await chrome.locator('#tunnel-btn').isVisible() && await chrome.getAttribute('#tunnel-btn', 'data-tunnel') === null && await chrome.getAttribute('#tunnel-btn', 'aria-label') === 'Tunnels')
+        await chrome.click('#tunnel-btn')
+        expect(await waitFor(async () => await popoverShown(app, '/site-info/'))).toBe(true)
+        const tabList = app.windows().find((w) => w.url().includes('/site-info/')) as Page
+        await tabList.waitForSelector('#tunnel-switch-nym')
+        expect(await popupSized(app, '/site-info/')).toBe(true)
+        await state(check, app, `tunnel-list-new-tab-${scheme}`, {
+          expected: 'The popup under the tunnel button on the new tab, headed "Tunnels" with "This tab" under it, lists two tunnels, Nym and your own SOCKS5 address, each with its logo and a switch that is off, and one sentence under them that says to pick a tunnel and every site opened in this tab goes through it; nothing is cut off, and the popup sits inside the window. The tunnel button at the right end of the address pill is open (pressed) and plain.',
+          action: 'Clicked the tunnel button on the new tab and waited for its list to be drawn.'
+        })
+        await chrome.click('#tunnel-btn')
+        expect(await waitFor(async () => !(await popoverShown(app, '/site-info/')))).toBe(true)
+
         const settingsPage = await openInternal(app, chrome, 'settings')
         await state(check, app, `settings-page-${scheme}`, {
           expected: 'orivon://settings is open in a new tab: a titled page with a navigation of sections and the selected section shown in full.',
