@@ -16,7 +16,10 @@ export interface SwarmLimits {
   readonly chunkTimeoutMs: number
   /** How long an optional `/feeds` answer is waited for: it is only a first guess, never worth a pause. */
   readonly feedGuessTimeoutMs: number
-  /** Per endpoint, so a hung one cannot starve the others of their own slots. */
+  /**
+   * Per endpoint, so a hung one cannot starve the others of their own slots. The endpoint is the node on this
+   * computer, and each 4 KB chunk is a round trip to it, so a file arrives about as fast as this many are asked at once.
+   */
   readonly perEndpointConcurrency: number
   /** How long the first attempt runs alone before a second endpoint is asked for the same chunk. */
   readonly hedgeDelayMs: number
@@ -31,6 +34,6 @@ export const DEFAULT_LIMITS: SwarmLimits = {
   maxFeedProbes: 64,
   chunkTimeoutMs: 30_000,
   feedGuessTimeoutMs: 3_000,
-  perEndpointConcurrency: 6,
+  perEndpointConcurrency: 64,
   hedgeDelayMs: 1_500
 }

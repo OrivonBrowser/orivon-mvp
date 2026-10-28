@@ -76,11 +76,15 @@ interface Update {
 
 /**
  * The newest update any endpoint can produce a signed chunk for, never below
- * the highest index seen before. Starting from a guess or that floor, it
- * probes forward by doubling steps until an index has no chunk, then halves
- * the gap. Only a 404 from every endpoint is the end of the feed: an
- * endpoint that does not answer ends the search as `unavailable`, never as
- * an older update. A chunk that fails its signature is a refusal, as anywhere.
+ * the highest index seen before. That floor, the index after it and an
+ * endpoint's guess are asked at once, so a feed with no new update costs one
+ * round; past the floor it jumps to a verified guess, then probes forward by
+ * doubling steps until an index has no chunk, and halves the gap, which a
+ * guess with no chunk also bounds. A floor whose update is gone does not end
+ * the search while a later one is found. Only a 404
+ * from every endpoint is the end of the feed: an endpoint that does not answer
+ * ends the search as `unavailable`, never as an older update. A chunk that
+ * fails its signature is a refusal, as anywhere.
  */
 async function newestUpdate (feed: FeedId, floor: bigint | undefined, deps: ChunkDeps, signal: AbortSignal, onRefusal: (refusal: Refusal) => void): Promise<Update> {
   let probes = 0
@@ -91,29 +95,51 @@ async function newestUpdate (feed: FeedId, floor: bigint | undefined, deps: Chun
     return soc === undefined ? undefined : { index, wrapped: soc.wrapped }
   }
 
-  const guess = await indexGuess(feed, deps, signal)
-  let known = guess !== undefined && guess >= (floor ?? 0n) ? await probe(guess) : undefined
-  known ??= await probe(floor ?? 0n)
-  if (known === undefined) throw new ResolutionError('unavailable', floor === undefined ? 'no endpoint has an update of this feed' : `no endpoint has update ${String(floor)} of this feed, which was seen before`)
-
-  let step = 1n
-  let miss = -1n
-  while (miss < 0n) {
-    const next = await probe(known.index + step)
-    if (next === undefined) {
-      miss = known.index + step
-    } else {
-      known = next
-      step *= 2n
+  const base = floor ?? 0n
+  const unneeded = new AbortController()
+  let guess: bigint | undefined
+  const guessing = indexGuess(feed, deps, AbortSignal.any([signal, unneeded.signal])).then((answer) => { guess = answer })
+  const after = probe(base + 1n)
+  after.catch(() => {})
+  try {
+    const atFloor = await probe(base)
+    const past = await after
+    if (atFloor !== undefined && past === undefined) return atFloor
+    // An update below the newest can be gone from the network, so a missing floor is not yet the end of the search.
+    let known = past
+    let step = 2n
+    let miss = -1n
+    await guessing
+    if (guess !== undefined && guess > base + 1n) {
+      const guessed = await probe(guess)
+      if (guessed === undefined) {
+        miss = guess
+      } else {
+        known = guessed
+        step = 1n
+      }
     }
+    if (known === undefined) throw new ResolutionError('unavailable', floor === undefined ? 'no endpoint has an update of this feed' : `no endpoint has update ${String(floor)} of this feed, which was seen before`)
+
+    while (miss < 0n) {
+      const next = await probe(known.index + step)
+      if (next === undefined) {
+        miss = known.index + step
+      } else {
+        known = next
+        step *= 2n
+      }
+    }
+    while (miss - known.index > 1n) {
+      const middle: bigint = known.index + (miss - known.index) / 2n
+      const found = await probe(middle)
+      if (found === undefined) miss = middle
+      else known = found
+    }
+    return known
+  } finally {
+    unneeded.abort()
   }
-  while (miss - known.index > 1n) {
-    const middle: bigint = known.index + (miss - known.index) / 2n
-    const found = await probe(middle)
-    if (found === undefined) miss = middle
-    else known = found
-  }
-  return known
 }
 
 /** The root reference an update carries: the reference in a legacy update, otherwise the update's own chunk is the root. */

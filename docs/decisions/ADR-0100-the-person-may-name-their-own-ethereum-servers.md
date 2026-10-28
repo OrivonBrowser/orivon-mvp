@@ -1,9 +1,9 @@
-# ADR-0099: The person may name their own Ethereum servers, and a local one is reached directly
+# ADR-0100: The person may name their own Ethereum servers, and a local one is reached directly
 
 - **Status:** accepted, provisional (see Reversibility). Amends [`ADR-0031`](ADR-0031-helios-is-the-light-client.md): the servers the light client asks are Orivon's by default and may be the person's instead.
 - **Date:** 2026-10-28
 - **Type:** security
-- **Decided by:** AI recommendation accepted by default; the owner's four questions on it (replace or fall back, a home network, a Nym window, which servers) are open and the defaults below are built until they answer
+- **Decided by:** owner (no fallback: the person's servers replace Orivon's, and `.eth` names wait and say so when they fail); AI recommendation accepted by default for the rest (a home network allowed, a Nym window held to Orivon's servers, both servers changeable), provisional until the owner says otherwise
 
 ## Decision
 
@@ -70,4 +70,4 @@ allowing the one local reach the person asked for by typing an address.
 - **Cost to reverse:** moderate. The lane fetch, the local fetch and the masking are separate files; the setting that names the
   servers is a table row.
 - **What would make us revisit:** a report of a leaked key, or a keyring path for secrets in general (the addresses would move
-  there); the owner choosing a fallback, a tunnel for local servers, or one field only.
+  there); the owner choosing a tunnel for local servers, one field only, or a Nym window that keeps the person's servers.
