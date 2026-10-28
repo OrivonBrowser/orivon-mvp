@@ -46,7 +46,7 @@ read by its intermediate chunks: the up to 128 leaves under one are asked for in
 makes the node's answer many times slower, so the bytes a read does not need are skipped. A leaf is used only once it hashes to the address its parent lists; a leaf
 the answer does not hold, or holds wrong, and every one after it, is fetched alone over `/chunks`,
 so a node that cannot answer in bulk costs time, never a byte. A failed bulk read is not held
-against the node. [`joiner.ts`](joiner.ts) keeps `AHEAD` leaves in flight across the whole file,
+against the node, and each leaf is shared with any other read of it, as a chunk is. [`joiner.ts`](joiner.ts) keeps `AHEAD` leaves in flight across the whole file,
 not one intermediate chunk at a time, and asks for each intermediate chunk's first child as soon
 as it arrives, since the others' sizes wait on it.
 

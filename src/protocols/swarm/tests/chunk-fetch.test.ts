@@ -76,6 +76,14 @@ describe('ChunkSource.get', () => {
     expect(swarm.requests).toHaveLength(2)
   })
 
+  it('asks nothing for a read already abandoned', async () => {
+    const { deps, one, swarm } = setup()
+    const gone = new AbortController()
+    gone.abort()
+    await expect(new ChunkSource(deps, new BlockCache(), 'https://one.example').get(one, gone.signal, () => {})).rejects.toBeDefined()
+    expect(swarm.requests).toEqual([])
+  })
+
   it('shares one request between callers asking for the same chunk at once', async () => {
     const { deps, one, swarm } = setup()
     const source = new ChunkSource(deps, new BlockCache(), 'https://one.example')
@@ -142,6 +150,31 @@ describe('ChunkSource.leaves', () => {
     expect(swarm.requests).toEqual([`${A}/bytes/${parent}`, ...leaves.map((leaf) => `${A}/chunks/${leaf.address}`)])
     expect(pool.candidates()).toEqual([A])
     expect(logged).toEqual([`swarm: a bulk read gave 0 of 4 leaves (${A} answered 404); the rest are read one by one`])
+  })
+
+  it('sends one /bytes request for two reads of one subtree at once, and joins a leaf another read is already fetching', async () => {
+    const { store, parent, leaves, swarm, source } = subtree(6)
+    const alone = source.get(leaves[2]!.address, signal, () => {})
+    const [first, second] = [source.leaves(parent, leaves, signal, () => {}), source.leaves(parent, leaves, signal, () => {})]
+    expect(await Promise.all([...first, ...second, alone])).toEqual([...leaves, ...leaves, leaves[2]!].map((leaf) => store.get(leaf.address)))
+    expect([...swarm.requests].sort()).toEqual([`${A}/bytes/${parent}`, `${A}/chunks/${leaves[2]!.address}`])
+  })
+
+  it('asks nothing for a read already abandoned', async () => {
+    const { parent, leaves, swarm, source } = subtree(4)
+    const gone = new AbortController()
+    gone.abort()
+    const answers = source.leaves(parent, leaves, gone.signal, () => {})
+    for (const answer of answers) await expect(answer).rejects.toBeDefined()
+    expect(swarm.requests).toEqual([])
+  })
+
+  it('counts a leaf kept twice once, so the cache never thinks itself fuller than it is', () => {
+    const memory = new BlockCache()
+    const block = new Uint8Array(4096)
+    for (let i = 0; i < 20_000; i++) memory.remember('https://one.example', 'ab'.repeat(32), block)
+    memory.remember('https://one.example', 'cd'.repeat(32), block)
+    expect(memory.recall('https://one.example', 'ab'.repeat(32))).toBe(block)
   })
 
   it('fetches alone the leaves past where a source\'s answer ended', async () => {

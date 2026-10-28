@@ -7,7 +7,7 @@
 
 ## Decision
 
-The Swarm gatherer reads the leaves under one intermediate chunk (up to 128 leaves of 4 KB, 512 KB of a file) in one `/bytes/<intermediate address>` request to the node for the whole subtree, whose leading bytes the read already holds are skipped. Each leaf is rebuilt as the chunk its parent lists (the span the parent declares, then its bytes) and used only once its address, recomputed from those bytes, is the one the parent lists. A leaf the answer does not hold, or holds wrong, and every leaf after it in that answer, is fetched alone over `/chunks` as before. The root, the intermediate chunks, manifest nodes and feed updates are still read over `/chunks` alone. A failed bulk read is not noted against the node, so it never cools the node for the per-chunk reads that follow.
+The Swarm gatherer reads the leaves under one intermediate chunk (up to 128 leaves of 4 KB, 512 KB of a file) in one `/bytes/<intermediate address>` request to the node for the whole subtree, whose leading bytes the read already holds are skipped. Each leaf is rebuilt as the chunk its parent lists (the span the parent declares, then its bytes) and used only once its address, recomputed from those bytes, is the one the parent lists. A leaf the answer does not hold, or holds wrong, and every leaf after it in that answer, is fetched alone over `/chunks` as before. The root, the intermediate chunks, manifest nodes and feed updates are still read over `/chunks` alone. A failed bulk read is not noted against the node, so it never cools the node for the per-chunk reads that follow. Each leaf is shared with every other read of it, as a chunk is, so a page and the first-visit keeper reading one file at once send one request per subtree between them.
 
 ## Context
 

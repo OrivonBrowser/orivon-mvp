@@ -132,6 +132,23 @@ describe('resolveFeed, with a /feeds answer as a first guess', () => {
     expect((await resolveFeed(FEED, deps(), memoryStore(), signal, noteRefusal)).root).toBe(targets[10])
   })
 
+  it('finds the newest update when the earliest ones are gone from the network', async () => {
+    const { deps, targets, swarm, chunks } = await feedWith(20)
+    chunks.delete(feedSocAddress(OWNER, TOPIC, 0n))
+    expect((await resolveFeed(FEED, deps(), memoryStore(), signal, noteRefusal)).root).toBe(targets[20])
+    chunks.delete(feedSocAddress(OWNER, TOPIC, 1n))
+    await expect(resolveFeed(FEED, deps(), memoryStore(), signal, noteRefusal)).rejects.toMatchObject({ failure: 'unavailable' })
+    swarm.feedHints.set(A, (20).toString(16).padStart(16, '0'))
+    expect((await resolveFeed(FEED, deps(), memoryStore(), signal, noteRefusal)).root).toBe(targets[20])
+  })
+
+  it('searches below a guess that has no update rather than walking past it again', async () => {
+    const { deps, targets, swarm, probesMade } = await feedWith(30)
+    swarm.feedHints.set(A, (33).toString(16).padStart(16, '0'))
+    expect((await resolveFeed(FEED, deps(), memoryStore(), signal, noteRefusal)).root).toBe(targets[30])
+    expect(probesMade()).toBeLessThanOrEqual(8)
+  })
+
   it('ignores a guess that is not hex, and one below the floor', async () => {
     const { deps, targets, swarm } = await feedWith(10)
     swarm.feedHints.set(A, 'not hex')

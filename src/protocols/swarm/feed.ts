@@ -79,7 +79,9 @@ interface Update {
  * the highest index seen before. That floor, the index after it and an
  * endpoint's guess are asked at once, so a feed with no new update costs one
  * round; past the floor it jumps to a verified guess, then probes forward by
- * doubling steps until an index has no chunk, and halves the gap. Only a 404
+ * doubling steps until an index has no chunk, and halves the gap, which a
+ * guess with no chunk also bounds. A floor whose update is gone does not end
+ * the search while a later one is found. Only a 404
  * from every endpoint is the end of the feed: an endpoint that does not answer
  * ends the search as `unavailable`, never as an older update. A chunk that
  * fails its signature is a refusal, as anywhere.
@@ -100,22 +102,25 @@ async function newestUpdate (feed: FeedId, floor: bigint | undefined, deps: Chun
   const after = probe(base + 1n)
   after.catch(() => {})
   try {
-    let known = await probe(base)
-    if (known === undefined) throw new ResolutionError('unavailable', floor === undefined ? 'no endpoint has an update of this feed' : `no endpoint has update ${String(floor)} of this feed, which was seen before`)
+    const atFloor = await probe(base)
     const past = await after
-    if (past === undefined) return known
-    known = past
+    if (atFloor !== undefined && past === undefined) return atFloor
+    // An update below the newest can be gone from the network, so a missing floor is not yet the end of the search.
+    let known = past
     let step = 2n
+    let miss = -1n
     await guessing
-    if (guess !== undefined && guess > known.index) {
+    if (guess !== undefined && guess > base + 1n) {
       const guessed = await probe(guess)
-      if (guessed !== undefined) {
+      if (guessed === undefined) {
+        miss = guess
+      } else {
         known = guessed
         step = 1n
       }
     }
+    if (known === undefined) throw new ResolutionError('unavailable', floor === undefined ? 'no endpoint has an update of this feed' : `no endpoint has update ${String(floor)} of this feed, which was seen before`)
 
-    let miss = -1n
     while (miss < 0n) {
       const next = await probe(known.index + step)
       if (next === undefined) {

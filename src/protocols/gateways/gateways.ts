@@ -213,7 +213,7 @@ export interface GatewayRequest {
   readonly timeoutMs: number
   /** The most the body may hold: with the route's pace it bounds the whole transfer, so a source that trickles for ever still ends. */
   readonly maxBytes: number
-  /** An extra request whose outcome says nothing about the gateway: it is not noted, so its failure cools nothing and its latency sets no hedge. */
+  /** An extra request whose outcome says nothing about the gateway: it is not noted, so its failure cools nothing and its time sets no hedge or route pace. */
   readonly unnoted?: boolean
 }
 
@@ -274,7 +274,7 @@ export async function askGateway<T> (
         note(outcome)
         throw new GatewayFailure(outcome, `${gateway} answered ${String(response.status)}`, response.status)
       }
-      route.observeFirstByte(pool.now() - startedAt)
+      if (req.unnoted !== true) route.observeFirstByte(pool.now() - startedAt)
       try {
         const value = await read(response, () => { clock.progress() })
         note({ kind: 'ok', latencyMs: pool.now() - startedAt })

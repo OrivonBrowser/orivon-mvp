@@ -13,12 +13,15 @@ import { buildFeedManifest, buildSite, feedKey, legacyUpdate, ownerOf, signFeedU
 const HOST = '127.0.0.1'
 
 /**
- * The bytes under the chunk at `address`, joined as a node's `/bytes` route joins them; undefined when a chunk is missing.
- * @param {Map<string, Uint8Array>} store @param {string} address @returns {Buffer | undefined}
+ * The bytes under the chunk at `address`, joined as a node's `/bytes` route joins them; undefined when a chunk is
+ * missing or `skip` says so. Each chunk joined is added to `seen`.
+ * @param {Map<string, Uint8Array>} store @param {string} address @param {(address: string) => boolean} skip @param {string[]} seen
+ * @returns {Buffer | undefined}
  */
-function joined (store, address) {
+function joined (store, address, skip, seen) {
   const chunk = store.get(address)
-  if (chunk === undefined) return undefined
+  if (chunk === undefined || skip(address)) return undefined
+  seen.push(address)
   const span = Buffer.from(chunk.subarray(0, 8))
   if (span[7] > 128) span[7] = 0
   const size = Number(span.readBigUInt64LE(0))
@@ -26,7 +29,7 @@ function joined (store, address) {
   if (size <= 4096) return payload.subarray(0, size)
   const parts = []
   for (let i = 0, at = 0; at < size; i++) {
-    const part = joined(store, payload.subarray(i * 32, (i + 1) * 32).toString('hex'))
+    const part = joined(store, payload.subarray(i * 32, (i + 1) * 32).toString('hex'), skip, seen)
     if (part === undefined) return undefined
     parts.push(part)
     at += part.length
@@ -68,10 +71,12 @@ export async function startSwarmFixture (options = {}) {
     }
     const subtree = /^\/bytes\/([0-9a-f]{64})$/.exec(url.pathname)
     if (subtree !== null) {
-      const body = joined(store, subtree[1])
+      // A chunk switched to tamper or redirect is not joined, so its leaf is asked for alone and the switch applies there.
+      const seen = []
+      const body = joined(store, subtree[1], (address) => tampered.has(address) || redirected.has(address), seen)
       if (body === undefined) { res.writeHead(404).end('not found'); return }
       if (tamperAll) body[Math.min(4096, body.length - 1)] ^= 0x01
-      const answer = () => { res.writeHead(200, { 'content-type': 'application/octet-stream' }).end(body) }
+      const answer = () => { answered += seen.length; res.writeHead(200, { 'content-type': 'application/octet-stream' }).end(body) }
       if (holding) held.push(answer)
       else answer()
       return
@@ -115,7 +120,7 @@ export async function startSwarmFixture (options = {}) {
         }
       }
     },
-    /** How many chunks it has answered with their bytes so far. */
+    /** How many chunks it has answered with their bytes so far, those joined into a `/bytes` answer included. */
     answeredChunks: () => answered,
     /** Answer the chunks held back so far, and every later one at once. */
     releaseChunks: () => { holding = false; for (const answer of held.splice(0)) answer() },

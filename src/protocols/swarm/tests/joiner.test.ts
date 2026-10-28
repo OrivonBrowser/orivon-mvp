@@ -9,6 +9,8 @@ import { cacAddress, readSpan, verifyCac } from '../chunk.js'
 const LIMITS: JoinLimits = { maxBytes: 1024 * 1024 * 1024, maxTreeDepth: 8 }
 const LEAF = 4096
 const MAX_CHUNK = 8 + LEAF
+/** A test that hashes hundreds of leaves to build its file: a CI runner takes seconds over it. */
+const BUILDS_A_LARGE_FILE_MS = 30_000
 
 const content = (size: number): Uint8Array => Uint8Array.from({ length: size }, (_, i) => (i * 31 + (i >> 8) * 7 + 1) & 255)
 
@@ -233,7 +235,7 @@ describe('openFile', () => {
     holding = false
     for (const release of held) release()
     expect(await reading).toEqual(bytes.subarray(120 * LEAF))
-  })
+  }, BUILDS_A_LARGE_FILE_MS)
 
   it('yields every byte before a malformed chunk further ahead, then refuses', async () => {
     const store = new Map<string, Uint8Array>()
