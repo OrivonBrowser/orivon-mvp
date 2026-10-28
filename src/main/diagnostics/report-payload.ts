@@ -1,10 +1,12 @@
 // The body of a bug report, built in main and never by the page: what the preview shows is this object, and
 // what is sent is the same object. Every field is cut to the length the server accepts (a report never goes
-// over a limit and is refused for it), and the person's home directory is replaced by `~` everywhere.
+// over a limit and is refused for it), the person's home directory is replaced by `~` everywhere, and so is a key
+// in an Ethereum server's address the person typed in Settings (secret-scrub.ts), before a field is cut.
 import type { CrashRecord } from './crash-records.js'
 import { redactDeep, redactHome } from './redact.js'
 import type { Diagnostics } from './diagnostics-facts.js'
 import { LOG_LINE_LIMIT, LOG_RING_LINES } from './log-ring.js'
+import { scrub, scrubDeep } from './secret-scrub.js'
 
 export const REPORT_SCHEMA = 1
 
@@ -105,8 +107,11 @@ export function fitDiagnostics (diagnostics: Diagnostics): Diagnostics {
   return fitted
 }
 
+/** What a report may say of `value`: the home directory is `~`, and no noted key is left. */
+const redacted = (value: string, home: string, ignoreCase: boolean): string => scrub(redactHome(value, home, ignoreCase))
+
 function crashOf (record: CrashRecord, home: string, ignoreCase: boolean): ReportCrash {
-  const text = (value: string, limit: number): string => cut(redactHome(value, home, ignoreCase), limit)
+  const text = (value: string, limit: number): string => cut(redacted(value, home, ignoreCase), limit)
   return {
     kind: record.kind,
     at: record.at,
@@ -122,16 +127,16 @@ function crashOf (record: CrashRecord, home: string, ignoreCase: boolean): Repor
 export function buildPayload (sources: ReportSources): ReportPayload {
   const { choices, home, ignoreCase } = sources
   const crash = sources.crash === undefined ? undefined : crashOf(sources.crash, home, ignoreCase)
-  const page = choices.page && sources.crash?.page !== undefined ? cut(redactHome(sources.crash.page, home, ignoreCase), LIMITS.page) : null
+  const page = choices.page && sources.crash?.page !== undefined ? cut(redacted(sources.crash.page, home, ignoreCase), LIMITS.page) : null
   return {
     schema: REPORT_SCHEMA,
     reportId: sources.reportId,
-    description: cut(redactHome(choices.description.trim(), home, ignoreCase), LIMITS.description),
+    description: cut(redacted(choices.description.trim(), home, ignoreCase), LIMITS.description),
     contact: cut(choices.contact.trim(), LIMITS.contact),
     version: wireVersion(sources.version),
     crash: crash ?? null,
-    diagnostics: choices.diagnostics ? fitDiagnostics(redactDeep(sources.diagnostics, home, ignoreCase)) : null,
-    log: choices.log ? sources.log.slice(-LIMITS.logLines).map((line) => cut(redactHome(line, home, ignoreCase), LIMITS.logLine)) : null,
+    diagnostics: choices.diagnostics ? fitDiagnostics(scrubDeep(redactDeep(sources.diagnostics, home, ignoreCase))) : null,
+    log: choices.log ? sources.log.slice(-LIMITS.logLines).map((line) => cut(redacted(line, home, ignoreCase), LIMITS.logLine)) : null,
     page,
     dump: choices.dump && sources.dump !== undefined ? { base64: sources.dump.base64(), bytes: sources.dump.bytes } : null
   }

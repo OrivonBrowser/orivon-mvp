@@ -49,6 +49,8 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Fresh v0.0.10 installs loaded no .eth name: the bundled checkpoint could not bootstrap. Checkpoints are now epoch-first blocks, and a refused one renews itself.
 - MetaMask now opens in the side panel when a dapp request follows a click, and reuses one popup window otherwise.
 - Settings > Appearance can change the new tab's background: the Orivon picture, your own picture, or none.
+- Settings > Web3 can swap Orivon's Ethereum servers for your own: up to four RPCs and a beacon server, keys hidden everywhere.
+- A new Orivon release is now announced inside the browser, once per version, never as an operating-system alert.
 
 ### In my head
 

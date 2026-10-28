@@ -177,7 +177,9 @@ export function installFormWatch (): void {
 
   document.addEventListener('focusout', () => {
     if (!focusReported) return
-    focusReported = false
+    // The page as a whole losing the keyboard (a press on Orivon's own chooser, another window) leaves the box focused:
+    // main may keep its chooser, so the box's own blur, whenever it comes, is still reported.
+    focusReported = !document.hasFocus()
     send({ type: 'blur' })
   }, true)
 

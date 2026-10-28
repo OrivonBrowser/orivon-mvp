@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { failoverRpc } from '../rpc-failover.js'
+import { failoverRpc, problemOf } from '../rpc-failover.js'
 
 const A = 'https://a.rpc'
 const B = 'https://b.rpc'
@@ -57,3 +57,51 @@ describe('failoverRpc', () => {
     await expect(failoverRpc([A, B], endpoints({}).fetch)(A, { method: 'POST', body: BODY })).rejects.toThrow(/ECONNREFUSED/)
   })
 })
+
+describe('failoverRpc -- which server failed, and why', () => {
+  const record = (): { problems: Map<string, string | undefined>, note: (endpoint: string, problem: string | undefined) => void } => {
+    const problems = new Map<string, string | undefined>()
+    return { problems, note: (endpoint, problem) => { problems.set(endpoint, problem) } }
+  }
+
+  it('records the status an endpoint answered, never its address, and forgets it once the endpoint answers', async () => {
+    const { problems, note } = record()
+    const busy = (): Response => new Response('busy', { status: 429 })
+    await failoverRpc([A, B], endpoints({ [A]: busy, [B]: ok }).fetch, note)(A, { method: 'POST', body: BODY })
+    expect(problems.get(A)).toBe('answered 429')
+    expect(problems.get(B)).toBeUndefined()
+    await failoverRpc([A, B], endpoints({ [A]: ok, [B]: ok }).fetch, note)(A, { method: 'POST', body: BODY })
+    expect(problems.get(A)).toBeUndefined()
+  })
+
+  it('records an error answer by its code, an unreadable one, and a refused connection by its code', async () => {
+    const { problems, note } = record()
+    const garbage = (): Response => new Response('<html>nope</html>')
+    const refused = async (): Promise<Response> => { throw Object.assign(new Error(`connect ECONNREFUSED ${A}/v3/SECRET`), { code: 'ECONNREFUSED' }) }
+    await failoverRpc([A, B], (async (url: string) => url === A ? await refused() : proofWindow()) as never, note)(A, { method: 'POST', body: BODY })
+    expect(problems.get(A)).toBe('could not be reached (ECONNREFUSED)')
+    expect(problems.get(B)).toBe('answered a JSON-RPC error (code -32602)')
+    await failoverRpc([A], endpoints({ [A]: garbage }).fetch, note)(A, { method: 'POST', body: BODY })
+    expect(problems.get(A)).toBe('answered something that is not JSON-RPC')
+  })
+
+  it('never carries text the server or the connection gave', async () => {
+    const { problems, note } = record()
+    const hostile = (): Response => new Response(JSON.stringify({ error: { code: -32000, message: 'invalid key SECRET-KEY-VALUE' } }))
+    await failoverRpc([A], endpoints({ [A]: hostile }).fetch, note)(A, { method: 'POST', body: BODY })
+    await failoverRpc([B], (async () => { throw new Error('fetch failed for https://b.rpc/v3/SECRET-KEY-VALUE') }) as never, note)(B, { method: 'POST', body: BODY }).catch(() => {})
+    expect([...problems.values()].join(' ')).not.toContain('SECRET')
+  })
+})
+
+describe('problemOf', () => {
+  it('reads a code or a name from an error, and nothing else of it', () => {
+    expect(problemOf(Object.assign(new Error('x https://k.example/SECRET'), { code: 'ECONNRESET' }))).toBe('could not be reached (ECONNRESET)')
+    expect(problemOf(Object.assign(new Error('net::ERR_NAME_NOT_RESOLVED'), { code: 'ERR_NAME_NOT_RESOLVED' }))).toBe('could not be reached (ERR_NAME_NOT_RESOLVED)')
+    expect(problemOf(new DOMException('timed out', 'TimeoutError'))).toBe('did not answer in time')
+    expect(problemOf(new Error('local fetch to 127.0.0.1 carried no bytes for 30000 ms'))).toBe('did not answer in time')
+    expect(problemOf(new Error('something SECRET'))).toBe('could not be reached')
+    expect(problemOf('SECRET')).toBe('could not be reached')
+  })
+})
+

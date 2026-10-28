@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildDiagnostics, channelOf, REPORTED_SETTINGS, reportedSettings } from '../diagnostics-facts.js'
+import { appSocketReadings, buildDiagnostics, channelOf, REPORTED_APPS, REPORTED_SETTINGS, reportedSettings } from '../diagnostics-facts.js'
 import type { CrashRecord } from '../crash-records.js'
 import { CRASH, FACTS } from './report-fixtures.js'
 
@@ -10,7 +10,7 @@ describe('buildDiagnostics', () => {
     expect(Object.keys(diagnostics)).toEqual(['app', 'system', 'gpu', 'displays', 'processes', 'browser', 'recentCrashes'])
     expect(Object.keys(diagnostics.app)).toEqual(['commit', 'channel', 'electron', 'chromium', 'node', 'v8', 'packaged', 'uptimeSec'])
     expect(Object.keys(diagnostics.system)).toEqual(['platform', 'release', 'arch', 'cpus', 'cpuModel', 'memoryMb', 'freeMemoryMb', 'locale', 'session', 'desktop', 'ozone'])
-    expect(Object.keys(diagnostics.browser)).toEqual(['windows', 'tabs', 'privateSession', 'extensions', 'settings'])
+    expect(Object.keys(diagnostics.browser)).toEqual(['windows', 'tabs', 'privateSession', 'extensions', 'appSockets', 'settings'])
   })
 
   it('rounds the uptime to whole seconds', () => {
@@ -43,6 +43,29 @@ describe('buildDiagnostics', () => {
   })
 })
 
+describe('appSocketReadings', () => {
+  it('lists the apps holding anything, the fullest first, and leaves out an idle one', () => {
+    expect(appSocketReadings([
+      { open: 0, inFlight: 0, allowance: 64 },
+      { open: 12, inFlight: 1, allowance: 64 },
+      { open: 384, inFlight: 0, allowance: 384 },
+      { open: 0, inFlight: 40, allowance: 64 }
+    ])).toEqual([
+      { open: 384, inFlight: 0, allowance: 384 },
+      { open: 12, inFlight: 1, allowance: 64 },
+      { open: 0, inFlight: 40, allowance: 64 }
+    ])
+  })
+
+  it('lists at most the busiest few, and only the three numbers of each', () => {
+    const many = Array.from({ length: 20 }, (_, index) => ({ open: index + 1, inFlight: 0, allowance: 64, origin: 'https://private.example' }))
+    const listed = appSocketReadings(many)
+    expect(listed).toHaveLength(REPORTED_APPS)
+    expect(listed[0]?.open).toBe(20)
+    expect(Object.keys(listed[0] ?? {})).toEqual(['open', 'inFlight', 'allowance'])
+  })
+})
+
 describe('channelOf', () => {
   const base = { development: false, packaged: true, platform: 'linux', appImage: false }
   it('names how this copy runs', () => {
@@ -57,8 +80,8 @@ describe('channelOf', () => {
 
 describe('reportedSettings', () => {
   it('lists the allowlist, and every web3 switch or choice, and no setting that is an address or text', () => {
-    for (const key of ['appearance.theme', 'privacy.secureDns', 'web3.lightClient', 'web3.ethGatewayRedirect', 'updates.check', 'developer.tools']) expect(REPORTED_SETTINGS).toContain(key)
-    for (const key of ['web3.scoreProvider', 'home.url', 'startup.pages', 'downloads.folder', 'performance.keepAwake']) expect(REPORTED_SETTINGS).not.toContain(key)
+    for (const key of ['appearance.theme', 'privacy.secureDns', 'web3.lightClient', 'web3.ethServers', 'web3.ethGatewayRedirect', 'updates.check', 'developer.tools']) expect(REPORTED_SETTINGS).toContain(key)
+    for (const key of ['web3.scoreProvider', 'web3.ethRpcs', 'web3.ethBeacon', 'home.url', 'startup.pages', 'downloads.folder', 'performance.keepAwake']) expect(REPORTED_SETTINGS).not.toContain(key)
   })
 
   it('reads values only, and skips anything that is not a string or a flag', () => {

@@ -3,7 +3,7 @@ import type { FromHost, LightClientConfig } from '../../protocol.js'
 import { REFRESH_RETRY_MS, SYNC_WAIT_MS, startHeliosLightClient } from '../light-client.js'
 import type { LightClient } from '../../service.js'
 import { heliosClockLead, resetHeliosClock } from '../clock.js'
-import { CLOCK_BEHIND_REASON } from '../helios-errors.js'
+import { CLOCK_AHEAD_REASON, CLOCK_BEHIND_REASON, serverBehindReason } from '../helios-errors.js'
 
 // startHeliosLightClient dynamically imports '@a16z/helios' (its own file
 // header explains why: the light client's own module-scope side effects,
@@ -57,6 +57,9 @@ afterEach(() => {
 async function synced (client: LightClient): Promise<void> {
   await vi.waitFor(() => { if (client.status().state !== 'synced') throw new Error('not synced yet') }, { timeout: 5_000 })
 }
+
+/** Servers whose clocks are `ahead` ms in front of this computer's: a negative number puts them behind it. */
+const serversAhead = (ahead: number) => (async () => new Response(null, { headers: { date: new Date(Date.now() + ahead).toUTCString() } })) as never
 
 describe('startHeliosLightClient -- one bad refresh does not fail every mount', () => {
   it('reaches synced after the initial sync', async () => {
@@ -247,8 +250,6 @@ describe('startHeliosLightClient -- one bad refresh does not fail every mount', 
 
 describe('startHeliosLightClient -- a computer whose clock is behind the chain', () => {
   const CLOCK_ERROR = 'sync failed: invalid timestamp'
-  /** Servers whose clocks are `ahead` ms in front of this computer's. */
-  const serversAhead = (ahead: number) => (async () => new Response(null, { headers: { date: new Date(Date.now() + ahead).toUTCString() } })) as never
   const failFirstSync = (): ReturnType<typeof fakeHelios> => {
     const helios = fakeHelios()
     helios.waitSynced = vi.fn().mockRejectedValueOnce(new Error(CLOCK_ERROR)).mockResolvedValue(undefined)
@@ -462,6 +463,174 @@ describe('startHeliosLightClient -- a computer whose clock is behind the chain',
   })
 })
 
+describe('startHeliosLightClient -- a computer whose clock is ahead of the chain', () => {
+  const OUT_OF_SYNC = 'Error: out of sync: 109 seconds behind'
+  const TWO_RPCS = { ...CONFIG, executionRpcs: ['https://rpc.example', 'https://rpc2.example'] }
+  const HEAD: HeadAnswer = { number: '0x1', timestamp: '0x658c1234' }
+  /** A fake Helios whose first read of the newest block fails as Helios does when the head looks too old by the local clock. */
+  const failFirstHead = (): ReturnType<typeof fakeHelios> => {
+    const helios = fakeHelios()
+    let reads = 0
+    helios.behavior.head = () => { if (reads++ === 0) throw new Error(OUT_OF_SYNC); return HEAD }
+    return helios
+  }
+  const failed = async (client: LightClient): Promise<void> => {
+    await vi.waitFor(() => { if (client.status().state !== 'failed') throw new Error('not failed yet') }, { timeout: 5_000 })
+  }
+
+  it("lends Helios the servers' time and starts it again at once, reporting how far ahead the clock is", async () => {
+    vi.mocked(createHeliosProvider).mockResolvedValue(failFirstHead() as never)
+    const client = startHeliosLightClient(TWO_RPCS, serversAhead(-95_000), () => {})
+    await synced(client)
+
+    expect(createHeliosProvider).toHaveBeenCalledTimes(2)
+    expect(heliosClockLead()).toBeLessThan(-93_000)
+    expect(heliosClockLead()).toBeGreaterThan(-97_000)
+    expect(client.status()).toMatchObject({ state: 'synced', clockLeadMs: heliosClockLead() })
+  })
+
+  it("says it in plain words when the servers' time cannot be used, and keeps trying by the ordinary backoff", async () => {
+    const helios = fakeHelios()
+    helios.behavior.head = () => { throw new Error(OUT_OF_SYNC) }
+    vi.mocked(createHeliosProvider).mockResolvedValue(helios as never)
+    const client = startHeliosLightClient(TWO_RPCS, (async () => { throw new Error('no route') }) as never, () => {})
+    await failed(client)
+
+    expect(createHeliosProvider).toHaveBeenCalledTimes(1)
+    expect(client.status()).toMatchObject({ state: 'failed', reason: CLOCK_AHEAD_REASON })
+    expect(heliosClockLead()).toBe(0)
+    await expect(client.provider.request({ method: 'eth_chainId' })).rejects.toMatchObject({ failure: 'not-synced', message: expect.stringContaining(CLOCK_AHEAD_REASON) as unknown })
+  })
+
+  it('says a server is behind the chain when the servers agree the clock is right', async () => {
+    const helios = fakeHelios()
+    helios.behavior.head = () => { throw new Error(OUT_OF_SYNC) }
+    vi.mocked(createHeliosProvider).mockResolvedValue(helios as never)
+    const client = startHeliosLightClient(TWO_RPCS, serversAhead(0), () => {})
+    await failed(client)
+
+    expect(createHeliosProvider).toHaveBeenCalledTimes(1)
+    expect(client.status()).toMatchObject({ state: 'failed', reason: serverBehindReason(109) })
+    expect(heliosClockLead()).toBe(0)
+  })
+
+  it('does not start again at once more than one time when the lead was not enough', async () => {
+    const helios = fakeHelios()
+    helios.behavior.head = () => { throw new Error(OUT_OF_SYNC) }
+    vi.mocked(createHeliosProvider).mockResolvedValue(helios as never)
+    const client = startHeliosLightClient(TWO_RPCS, serversAhead(-95_000), () => {})
+    await failed(client)
+
+    expect(createHeliosProvider).toHaveBeenCalledTimes(2)
+    // A lead was lent, so "set the clock right" is no longer the whole story: Helios's own words stand.
+    expect(client.status()).toMatchObject({ state: 'failed', reason: OUT_OF_SYNC })
+  })
+
+  it('does not lend a lead for a failure that is not about the head being too old', async () => {
+    const helios = fakeHelios()
+    helios.behavior.head = () => { throw new Error('transient RPC blip') }
+    vi.mocked(createHeliosProvider).mockResolvedValue(helios as never)
+    let asked = 0
+    const reach = (async () => { asked++; return new Response(null, { headers: { date: new Date(Date.now() - 95_000).toUTCString() } }) }) as never
+    const client = startHeliosLightClient(TWO_RPCS, reach, () => {})
+    await failed(client)
+
+    expect(asked).toBe(0)
+    expect(createHeliosProvider).toHaveBeenCalledTimes(1)
+    expect(heliosClockLead()).toBe(0)
+    expect(client.status()).toMatchObject({ state: 'failed', reason: 'transient RPC blip' })
+  })
+
+  describe('while it runs', () => {
+    /** A client that has synced on a lead of -95 s, with servers whose answer the test controls. */
+    async function running () {
+      const helios = failFirstHead()
+      vi.mocked(createHeliosProvider).mockResolvedValue(helios as never)
+      const world = { ahead: -95_000, asked: 0 }
+      const reach = (async () => {
+        world.asked++
+        return new Response(null, { headers: { date: new Date(Date.now() + world.ahead).toUTCString() } })
+      }) as never
+      const client = startHeliosLightClient(TWO_RPCS, reach, () => {})
+      await synced(client)
+      expect(heliosClockLead()).toBeLessThan(-93_000)
+      world.asked = 0
+      return { helios, client, world }
+    }
+
+    it('measures when a refresh goes out of sync, and allows for a clock that drifted ahead', async () => {
+      const helios = fakeHelios()
+      vi.mocked(createHeliosProvider).mockResolvedValue(helios as never)
+      const world = { ahead: 0, asked: 0 }
+      const reach = (async () => {
+        world.asked++
+        return new Response(null, { headers: { date: new Date(Date.now() + world.ahead).toUTCString() } })
+      }) as never
+      const client = startHeliosLightClient(TWO_RPCS, reach, () => {})
+      await synced(client)
+      expect(heliosClockLead()).toBe(0)
+
+      // Helios judges the head by the clock it is given, so it recovers once the lead is lent.
+      world.ahead = -95_000
+      helios.behavior.head = () => { if (heliosClockLead() === 0) throw new Error(OUT_OF_SYNC); return HEAD }
+      await vi.advanceTimersByTimeAsync(60_000 + 100)
+      expect(world.asked).toBe(0)
+      await vi.advanceTimersByTimeAsync(REFRESH_RETRY_MS + 100)
+      expect(client.status().state).not.toBe('synced')
+      await vi.advanceTimersByTimeAsync(REFRESH_RETRY_MS + 100)
+      expect(world.asked).toBeGreaterThan(0)
+      expect(heliosClockLead()).toBeLessThan(-93_000)
+      expect(client.status()).toMatchObject({ state: 'synced', clockLeadMs: heliosClockLead() })
+    })
+
+    it('does not measure for a refresh that fails for another reason', async () => {
+      const helios = fakeHelios()
+      vi.mocked(createHeliosProvider).mockResolvedValue(helios as never)
+      let asked = 0
+      const reach = (async () => { asked++; return new Response(null, { headers: { date: new Date().toUTCString() } }) }) as never
+      const client = startHeliosLightClient(TWO_RPCS, reach, () => {})
+      await synced(client)
+      helios.behavior.head = () => { throw new Error('down') }
+      await vi.advanceTimersByTimeAsync(60_000 + 100)
+      await vi.advanceTimersByTimeAsync(REFRESH_RETRY_MS + 100)
+      await vi.advanceTimersByTimeAsync(REFRESH_RETRY_MS + 100)
+      expect(asked).toBe(0)
+    })
+
+    it('measures again when the client stalls while a lead is lent', async () => {
+      const { helios, client, world } = await running()
+      world.ahead = 0
+      helios.behavior.head = () => { throw new Error('down') }
+      await vi.advanceTimersByTimeAsync(60_000 + 100)
+      await vi.advanceTimersByTimeAsync(REFRESH_RETRY_MS + 100)
+      expect(client.status().state).not.toBe('synced')
+      helios.behavior.head = () => HEAD
+      await vi.advanceTimersByTimeAsync(REFRESH_RETRY_MS + 100)
+      expect(heliosClockLead()).toBe(0)
+      expect(client.status()).not.toHaveProperty('clockLeadMs')
+    })
+
+    it('measures again when the system clock is set forward or the computer wakes while a lead is lent', async () => {
+      const { client, world } = await running()
+      vi.setSystemTime(Date.now() + 60_000)
+      world.ahead = -155_000
+      await vi.advanceTimersByTimeAsync(60_000 + 100)
+      expect(heliosClockLead()).toBeLessThan(-153_000)
+      expect(heliosClockLead()).toBeGreaterThan(-157_000)
+      expect(client.status()).toMatchObject({ state: 'synced', clockLeadMs: heliosClockLead() })
+    })
+
+    it('drops the lead when the system clock was set right while the client ran', async () => {
+      const { client, world } = await running()
+      vi.setSystemTime(Date.now() - 95_000)
+      world.ahead = 0
+      await vi.advanceTimersByTimeAsync(60_000 + 100)
+      expect(heliosClockLead()).toBe(0)
+      expect(client.status()).not.toHaveProperty('clockLeadMs')
+    })
+  })
+})
+
 describe('startHeliosLightClient -- a second client for the tunnel', () => {
   const answer = async (_url: string, _init?: RequestInit): Promise<Response> => new Response('{"jsonrpc":"2.0","id":1,"result":"0x1"}', { headers: { 'content-type': 'application/json' } })
 
@@ -478,11 +647,10 @@ describe('startHeliosLightClient -- a second client for the tunnel', () => {
     return { direct, tunnel, one: one as { executionRpc: string, consensusRpc: string }, two: two as { executionRpc: string, consensusRpc: string } }
   }
 
-  it('gives each Helios its own names for the two servers, the tunnel\'s resolving nowhere', async () => {
+  it('gives each Helios its own names for the two servers, every one resolving nowhere', async () => {
     const { one, two } = await bothClients()
-    expect(one).toMatchObject({ executionRpc: 'https://rpc.example', consensusRpc: 'https://beacon.example' })
-    expect(two.executionRpc).toMatch(/\.invalid/)
-    expect(two.consensusRpc).toMatch(/\.invalid/)
+    expect(one).toEqual(expect.objectContaining({ executionRpc: 'https://direct-execution.orivon.invalid', consensusRpc: 'https://direct-consensus.orivon.invalid' }))
+    expect(two).toEqual(expect.objectContaining({ executionRpc: 'https://nym-execution.orivon.invalid', consensusRpc: 'https://nym-consensus.orivon.invalid' }))
   })
 
   it('sends the tunnel client\'s requests to the tunnel\'s fetch alone, at the real servers', async () => {
@@ -493,11 +661,18 @@ describe('startHeliosLightClient -- a second client for the tunnel', () => {
     expect(direct).not.toHaveBeenCalled()
   })
 
-  it('keeps the first client\'s requests on its own fetch', async () => {
-    const { direct, tunnel } = await bothClients()
-    await globalThis.fetch(new Request('https://rpc.example', { method: 'POST', body: '{"jsonrpc":"2.0","id":1,"method":"eth_chainId"}' }))
-    await globalThis.fetch('https://beacon.example/eth/v1/beacon/headers')
+  it('keeps the first client\'s requests on its own fetch, at the real servers', async () => {
+    const { direct, tunnel, one } = await bothClients()
+    await globalThis.fetch(new Request(one.executionRpc, { method: 'POST', body: '{"jsonrpc":"2.0","id":1,"method":"eth_chainId"}' }))
+    await globalThis.fetch(`${one.consensusRpc}/eth/v1/beacon/headers`)
     expect(direct.mock.calls.map(([url]) => url)).toEqual(['https://rpc.example', 'https://beacon.example/eth/v1/beacon/headers'])
+    expect(tunnel).not.toHaveBeenCalled()
+  })
+
+  it('refuses the real address of a server, which Helios is never given', async () => {
+    const { direct, tunnel } = await bothClients()
+    await expect(globalThis.fetch(new Request('https://rpc.example', { method: 'POST', body: '{}' }))).rejects.toThrow(/no client of this process uses/)
+    expect(direct).not.toHaveBeenCalled()
     expect(tunnel).not.toHaveBeenCalled()
   })
 

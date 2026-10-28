@@ -162,7 +162,7 @@ for (const scheme of SCHEMES) {
         await (dashboardOf(app) as Page).waitForLoadState('load')
         await (dashboardOf(app) as Page).waitForSelector('html[data-settled="1"]')
         await state(check, app, `dashboard-startup-${scheme}`, {
-          expected: 'New-tab dashboard: wallpaper, the Orivon mark and name, a search box, then an "Orivon Featured" row of five tiles (Explore, WebTorrent, ASGARDEX, Ledger Wallet, The Lounge) that have icons and labels, with no other block under it; in a window too short for the rows, the lower part is cut at the window edge and scrolls; one tab titled "New Tab" in the strip; toolbar with back, forward and reload dimmed.',
+          expected: 'New-tab dashboard: wallpaper, the Orivon mark and name, a search box, then an "Orivon Featured" row of five tiles (Explore, WebTorrent, ASGARDEX, Ledger Wallet, The Lounge) that have icons and labels, with no other block under it; a small pill button with a bug icon and the text "Report a bug" in the bottom right corner of the page, over no tile, which in a window too short for the rows comes after the last row; in a window too short for the rows, the lower part is cut at the window edge and scrolls; one tab titled "New Tab" in the strip; toolbar with back, forward and reload dimmed.',
           action: 'Launched a fresh profile and waited for the dashboard to load and draw its rows.'
         })
 
@@ -395,6 +395,35 @@ for (const scheme of SCHEMES) {
         await state(check, app, `default-browser-ask-${scheme}`, {
           expected: 'A question panel floats over the page, directly under the address pill: the title "Make Orivon your default browser?", the message "Links you click in other programs will open in Orivon.", and three readable buttons in a row, Not now, Make default (the filled one) and Don\'t ask again. Text and buttons are fully inside the panel, nothing is cut, and the page and toolbar stay visible around it.',
           action: 'Seeded a profile first seen 20 days ago and last asked 9 days ago, focused a fixture page and ran the weekly check.',
+          ignore: [FIXTURE_ADDRESS]
+        })
+        await answerQuestion(app, 'Not now')
+        check('no native message box was opened', (await noNativeDialogs(app)).length === 0)
+      })
+    } finally {
+      await closeElectron(app)
+    }
+  }, QA_TEST_TIMEOUT_MS)
+
+  it.skipIf(!underVirtualDisplay())(`the update question offers both downloads and a way out inside its panel (${scheme})`, async () => {
+    const { app, chrome } = await launchShell({ scheme, env: { ORIVON_TEST_UPDATE_RELEASE: 'v99.0.0' } })
+    try {
+      await runPhase('visual state of the update question', async (check) => {
+        expect(await waitFor(() => dashboardOf(app) !== undefined)).toBe(true)
+        await stubNativeDialogs(app)
+        await prepareWindow(app)
+        await visit(app, chrome, `${server.origin}/`)
+        await focusWebContents(app, `${server.origin}/`)
+        await app.evaluate(() => { void (globalThis as unknown as { __orivonDevUpdateCheckNow?: () => Promise<void> }).__orivonDevUpdateCheckNow?.() })
+        const panel = await waitQuestion(app)
+        await panel.waitForSelector('.q:not(.arming)')
+        const said = await readQuestion(panel)
+        check('the question names the release and lists the way out first, then both downloads', said.title === 'Orivon 99.0.0 is available' && said.buttons.join('|') === 'Not now|Download from GitHub|Download from latest.orivonstack.eth', JSON.stringify(said))
+        const fit = await panelFits(panel)
+        check('the question card sits inside its view, uncut and unscrolled', fit.fits, fit.detail)
+        await state(check, app, `update-question-${scheme}`, {
+          expected: 'A question panel floats over the page, directly under the address pill: the title "Orivon 99.0.0 is available", the message "You have" followed by the running version, and three buttons, Not now as plain text on the left, then Download from GitHub (the filled one) and Download from latest.orivonstack.eth, wrapping onto a second row if they do not fit in one. Every label is whole and readable, nothing is cut, and the page and toolbar stay visible around it.',
+          action: 'Pointed the update check at a release newer than the running one, focused a fixture page and ran the check.',
           ignore: [FIXTURE_ADDRESS]
         })
         await answerQuestion(app, 'Not now')

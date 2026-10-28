@@ -50,7 +50,8 @@ export function classify ({ entries, baseHead, cwd, isMerged, isDirty, isFresh }
     else if (entry.detached || !entry.branch) keep('detached HEAD')
     else if (resolve(cwd).startsWith(resolve(entry.path))) keep('current directory')
     // A branch just created from main is "merged" too, and is about to be
-    // worked on. Its reflog says so even after main has moved past it.
+    // worked on. Its reflog says so even after main has moved past it, or it
+    // was fast-forwarded to main.
     else if (entry.head === baseHead) keep(`at ${BASE}, possibly just started`)
     else if (!isMerged(entry.branch)) keep('not merged')
     else if (isFresh(entry.branch)) keep('no commit since it was created, possibly just started')
@@ -58,6 +59,15 @@ export function classify ({ entries, baseHead, cwd, isMerged, isDirty, isFresh }
     else removable.push(entry)
   }
   return { removable, kept }
+}
+
+/**
+ * Whether a branch's reflog subjects show no commit made on it: only its creation, and moves to commits made elsewhere
+ * (a fast-forward to main, a reset). Such a branch is about to be worked on, however far main has moved past it.
+ * @param {string[]} subjects
+ */
+export function noCommitOfItsOwn (subjects) {
+  return subjects.length > 0 && subjects.every((subject) => /^(?:branch: Created from |(?:merge [^:]+|pull[^:]*): Fast-forward$|reset: moving to )/.test(subject))
 }
 
 const git = (args, cwd) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
@@ -73,11 +83,7 @@ export function findMergedWorktrees (root) {
     cwd: process.cwd(),
     isMerged: (branch) => succeeds(['merge-base', '--is-ancestor', `refs/heads/${branch}`, BASE]),
     isDirty: (path) => git(['status', '--porcelain'], path).trim() !== '',
-    isFresh: (branch) => {
-      const entries = git(['reflog', 'show', '--format=%gs', `refs/heads/${branch}`], root)
-        .split('\n').filter(Boolean)
-      return entries.length === 1 && entries[0].startsWith('branch: Created from')
-    }
+    isFresh: (branch) => noCommitOfItsOwn(git(['reflog', 'show', '--format=%gs', `refs/heads/${branch}`], root).split('\n').filter(Boolean))
   })
 }
 

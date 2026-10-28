@@ -192,6 +192,9 @@ export const EMBED_EVENT_CHANNEL = 'orivon-embed:event'
 /** A page's `alert`, `confirm` or `prompt`, from the wrapper a tab's preload puts over them: a synchronous send from any frame of the tab, answered by main once the person has. */
 export const PAGE_DIALOG_CHANNEL = 'orivon-page-dialog'
 
+/** A top frame's preload -> main, `ipcRenderer.invoke`: `{ name }`, the name a page gave `navigator.permissions.query` when the engine read it as denied. Main answers `granted`, `denied`, `prompt` or null from the sender's own frame (src/main/sessions/permission-query-ipc.ts). */
+export const PERMISSION_QUERY_CHANNEL = 'orivon-permission-query'
+
 /** Main -> a tab's top frame: `hidden`, a boolean, whether the tab is out of the person's sight (behind another tab, or its window minimized or hidden). The ordinary-tab preload turns it into the page's `document.visibilityState` and a `visibilitychange` event (src/preload/page-visibility.ts). */
 export const TAB_VISIBILITY_CHANNEL = 'orivon-tab:visibility'
 

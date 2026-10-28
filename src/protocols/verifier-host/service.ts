@@ -55,6 +55,12 @@ export interface HostDeps {
    * follows the tunnel.
    */
   readonly outside?: { readonly send: WebFetch, readonly resolveHost: (host: string) => Promise<readonly string[]> }
+  /**
+   * How the Ethereum light client reaches a server the person runs on this computer or their home network, at an address literal
+   * they typed in (`local-rpc-fetch.ts`): Node sockets to that address, never a proxy and never a tunnel, on every route. Absent in a
+   * host with no such path: a light client whose config names a local server then does not start.
+   */
+  readonly localFetch?: WebFetch
 }
 
 export interface RunningHost {

@@ -2,6 +2,7 @@
 // isolation user name and the host's secret as the password. The host may not be running yet, or may have restarted
 // on another port, so each use asks for its address first; a Nym that cannot run is a refusal, never a direct dial.
 
+import { isOnionHost, ONION_NEEDS_TOR } from '../../broker/route/onion.js'
 import { createSocks5Provider } from '../../broker/route/socks5.js'
 import { fail } from '../../broker/errors.js'
 import type { RouteProvider } from '../../broker/route/provider.js'
@@ -41,11 +42,19 @@ export function createNymProvider (nym: { ensure: () => Promise<NymEndpoint> }, 
   }
   return {
     dialBudgetMs: NYM_DIAL_BUDGET_MS,
-    connect: async (host, port, signal) => await (await through()).connect(host, port, signal),
+    connect: async (host, port, signal) => {
+      // Before the tunnel is asked for: its own lookup would send the name to a public resolver.
+      if (isOnionHost(host)) throw fail('unreachable', ONION_NEEDS_TOR)
+      return await (await through()).connect(host, port, signal)
+    },
     udp: async (signal) => {
       const provider = await through()
       if (provider.udp === undefined) throw fail('denied', 'Nym carries no datagrams')
-      return await provider.udp(signal)
+      const channel = await provider.udp(signal)
+      return { ...channel, send: async (datagram) => {
+        if (isOnionHost(datagram.host)) throw fail('unreachable', ONION_NEEDS_TOR)
+        await channel.send(datagram)
+      } }
     }
   }
 }

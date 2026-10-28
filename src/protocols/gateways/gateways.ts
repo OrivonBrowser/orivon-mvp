@@ -213,6 +213,8 @@ export interface GatewayRequest {
   readonly timeoutMs: number
   /** The most the body may hold: with the route's pace it bounds the whole transfer, so a source that trickles for ever still ends. */
   readonly maxBytes: number
+  /** An extra request whose outcome says nothing about the gateway: it is not noted, so its failure cools nothing and its time sets no hedge or route pace. */
+  readonly unnoted?: boolean
 }
 
 /**
@@ -238,6 +240,7 @@ export async function askGateway<T> (
 ): Promise<T> {
   return await pool.withSlot(gateway, async () => {
     const startedAt = pool.now()
+    const note = (outcome: GatewayOutcome): void => { if (req.unnoted !== true) pool.note(gateway, outcome) }
     // A request fails when it stops moving (no first byte in the route's time, or a body that goes quiet), never
     // because a clock written for a fast connection ran out while bytes were still arriving.
     const { route } = pool
@@ -248,13 +251,13 @@ export async function askGateway<T> (
         response = await fetch(req.url, { headers: { accept: req.accept }, signal: AbortSignal.any([signal, clock.signal]) })
       } catch (error) {
         if (signal.aborted) {
-          if (signal.reason instanceof Outrun) pool.note(gateway, { kind: 'timeout' })
+          if (signal.reason instanceof Outrun) note({ kind: 'timeout' })
           throw new GatewayFailure({ kind: 'cancelled' }, CANCELLED)
         }
         // A redirect is how some gateways refuse a single item (a content filter): it says nothing about
         // the gateway being up, so it must not cool it for the next item.
         const outcome: RecordedFailure = error instanceof RedirectRefused ? { kind: 'miss' } : { kind: clock.signal.aborted ? 'timeout' : 'unreachable' }
-        pool.note(gateway, outcome)
+        note(outcome)
         throw new GatewayFailure(outcome, `${gateway}: ${clock.reason === undefined ? message(error) : `${stalled(clock.reason)} (${message(error)})`}`)
       }
       clock.progress()
@@ -262,19 +265,19 @@ export async function askGateway<T> (
       if (response.status === 429 || (response.status === 503 && retryAfter !== null)) {
         await response.body?.cancel()
         const outcome: RecordedFailure = { kind: 'rate-limited', retryAfterMs: retryAfterMs(retryAfter, pool.now()) }
-        pool.note(gateway, outcome)
+        note(outcome)
         throw new GatewayFailure(outcome, `${gateway} answered ${String(response.status)}`)
       }
       if (!response.ok) {
         await response.body?.cancel()
         const outcome: RecordedFailure = SERVER_ERRORS.has(response.status) && !pool.serverErrorsAreAnswers ? { kind: 'server-error' } : { kind: 'miss' }
-        pool.note(gateway, outcome)
+        note(outcome)
         throw new GatewayFailure(outcome, `${gateway} answered ${String(response.status)}`, response.status)
       }
-      route.observeFirstByte(pool.now() - startedAt)
+      if (req.unnoted !== true) route.observeFirstByte(pool.now() - startedAt)
       try {
         const value = await read(response, () => { clock.progress() })
-        pool.note(gateway, { kind: 'ok', latencyMs: pool.now() - startedAt })
+        note({ kind: 'ok', latencyMs: pool.now() - startedAt })
         return value
       } catch (error) {
         // A hedge loser abandoned mid-body lands here as an abort too, and
@@ -283,7 +286,7 @@ export async function askGateway<T> (
         // TooLarge is the gateway sending something outside the block/record
         // spec, not an outage; anything else is a body that broke mid-read.
         const outcome: RecordedFailure = error instanceof TooLarge ? { kind: 'miss' } : { kind: clock.signal.aborted ? 'timeout' : 'unreachable' }
-        pool.note(gateway, outcome)
+        note(outcome)
         throw new GatewayFailure(outcome, `${gateway}: ${clock.reason === undefined ? message(error) : `${stalled(clock.reason)} (${message(error)})`}`)
       }
     } finally {

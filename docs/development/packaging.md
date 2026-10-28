@@ -8,12 +8,12 @@ Orivon is packaged for three systems by [`electron-builder`](https://www.electro
 | Linux (x64) | `orivon_<version>_amd64.deb` and `Orivon-<version>-x86_64.AppImage` | no (Linux packages are not) |
 | Windows (x64) | `Orivon-Setup-<version>-x64.exe`, an NSIS installer | no: SmartScreen warns on first run |
 | Windows (x64), Microsoft Store | `Orivon-Store-<version>-x64.appx` | no: the Store signs it after upload (section The Microsoft Store package) |
-| macOS | `Orivon-<version>-arm64.dmg` (Apple silicon) and `Orivon-<version>-x64.dmg` (Intel) | ad hoc: Gatekeeper asks once |
+| macOS | `Orivon-<version>-arm64.dmg` (Apple silicon) and `Orivon-<version>-x64.dmg` (Intel) | yes on a release: Developer ID and notarized (ad hoc in a pull request's build and in `npm run package:mac`) |
 
 The three systems are equal, and Linux is supported on X11 and Wayland both. Each GitHub release
 builds all of them and attaches them to itself (section Releases), except the Store package, which
-the workflow submits to Partner Center instead (section The Microsoft Store package). No certificate is bought, so the Windows installer and the macOS
-packages are not trusted by their systems out of the box (section Windows and macOS). Running from source stays supported on every system ([`setup.md`](setup.md)); its users
+the workflow submits to Partner Center instead (section The Microsoft Store package). No Windows certificate is bought, so Windows does not trust the
+installer out of the box (section Windows and macOS). Running from source stays supported on every system ([`setup.md`](setup.md)); its users
 and the package users count the same, and their telemetry works identically.
 
 > **Status.** CI builds every package on its own system, installs or mounts it, and launches it
@@ -144,7 +144,7 @@ under "On IPFS", which the workflow writes, and in the `ipfs.json` attached to i
   the release's files, the same blocks, plus an `index.html` that starts the download of the
   package for the visitor's system (the `.exe` on Windows, the Apple silicon or Intel `.dmg` on
   macOS, the `.deb` on Linux) and lists every file; on a phone, an unknown system or without
-  JavaScript it is only the list. The pinner composes that folder in the node's MFS and pins it as
+  JavaScript it is only the list. The page asks search engines not to index it. The pinner composes that folder in the node's MFS and pins it as
   `orivon-latest-release`, so its CID differs from the release's.
 - **Anyone can pin a release too.** The CID depends only on the files and the flags in
   `pin-releases.sh`, so `pin-releases.sh sync` (or `ipfs add` with those flags) on any Kubo node
@@ -177,6 +177,146 @@ WantedBy=timers.target
 `journalctl -u orivon-release-pinner` shows each run: a line per release pinned, refused or
 unpinned, and each move of the latest key. `ipfs key gen --type=ed25519 latest-release` creates the key
 once. A refused release is not downloaded again until its `ipfs.json` names another CID.
+
+**Filebase holds the live versions only.** `scripts/filebase-sync.mjs`, run from a timer on the pinning
+node, pins on Filebase the version each IPNS key of the node's Kubo points at (the newest release is
+among them, through the `latest-release` key's start page), the CIDs in a keep file, and the live pins
+of the DecentraWiki relay, and unpins everything else once it is two hours old: the version a key
+moved past, the per-file pins a folder upload leaves behind, the releases that are no longer the newest.
+Removal stops for a run when a key cannot be read or most of the keys seen last time are gone, and a
+version that fails to add is tried again after an hour, then two, up to a day. Filebase refuses a file
+or a block holding phrases a phishing page uses ("Authentication is required", "password to continue",
+and others it does not list) with an empty 403 on an upload, and never finishes pinning such a block by CID, so the
+script imports a CAR, which it does not filter; only a version over 300 MB goes by CID. Do not run
+`pin-extra.mjs` against the account this script prunes: it would pin the older releases again. The
+settings are in the script's header and the unit is:
+
+```ini
+# orivon-filebase-sync.service
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/orivon-filebase-sync/secrets.env   # FILEBASE_KEY=<IPFS RPC key>, root 0600
+Environment=KEEP_FILE=/etc/orivon-filebase-sync/keep.txt PROTECT_FILE=/var/lib/decentrawiki-relay/pins.jsonl
+Environment=STATE_FILE=/var/lib/orivon-filebase-sync/state.json SUMMARY_LOG=<the node's summary file>
+StateDirectory=orivon-filebase-sync
+ExecStart=/usr/local/bin/node /path/to/filebase-sync.mjs
+
+# orivon-filebase-sync.timer: OnBootSec=10min, OnUnitActiveSec=30min
+```
+
+It runs as root because the relay's state directory is private to the relay's user.
+
+#### Orivon's sites on Swarm
+
+`scripts/swarm-feeds.mjs` publishes each of Orivon's own sites to a Swarm sequence feed and keeps the feed
+current. It runs on a machine that runs a [Bee](https://docs.ethswarm.org) node and can reach the pinning
+node's Kubo RPC, directly or over ssh. The pinning node keeps the IPNS keys, stays the trigger (a key that
+moves to a new CID is a new version) and keeps its own copy of every site. A run reads the names file (one
+line per site: the IPNS key's name, then the ENS names it serves), and for each site that moved uploads the
+version to Bee and appends an update to the site's feed. The feed's owner is one secp256k1 key that never
+holds funds; Bee's wallet pays. `swarm-feeds.mjs list` prints each site's `bzz://` feed manifest, the address an
+ENS name's contenthash points at, and it does not change when a version does. It prints each site's **Score id**
+too: the Web3 Score identifier of the version in the Swarm reference column, `cid:` and the CIDv1 of that reference
+(codec swarm-manifest, keccak-256 multihash), so it always starts `cid:bah5acgza`. It is the id to add to the site's
+Web3 Score evaluation, and it changes with each version, as the reference does; a site with no version uploaded yet
+shows `-`.
+
+Postage is two **immutable** batches, because an immutable batch refuses a chunk it has no room for instead of
+overwriting an older one, so what was published stays readable until the batch expires:
+
+| Batch | Holds | Policy |
+|---|---|---|
+| Pointers (`POINTER_DEPTH` 18) | One small update per version, and the feed manifests | Never replaced: it is bought for `POINTER_TTL_TARGET_DAYS` (240) and topped up when under `POINTER_TTL_MIN_DAYS` (120). At `POINTER_DILUTE_AT` (0.75) fill its depth grows by one, then it is topped up again, since dilution halves the time left. Fill is the fullest bucket's share of its slots, only 4 at depth 18, so a lower threshold dilutes after a few hundred chunks; a bucket that does fill only refuses an upload, which dilutes the batch and retries |
+| Content (`CONTENT_DEPTH` 22) | The site versions | Bought for `CONTENT_TTL_TARGET_DAYS` (35), topped up under `CONTENT_TTL_MIN_DAYS` (21), and replaced at `ROTATE_AT` (0.75) fill or when Bee answers 402 to an upload: every site's current version is uploaded again into the new batch, and the old batch is never topped up, so old versions leave the network when it expires |
+
+A role with no batch in the state, or whose batch Bee no longer knows (expired), first takes up a batch the node
+already holds under the role's label (`orivon-pointers`, `orivon-content`; the job buys under the same labels) that is
+immutable, usable and not expired, and for content not at the rotation fill, the longest-lived if there are several;
+it buys only when there is none. A batch bought by hand under the label is used as it is, and a lost `state.json`
+buys nothing twice. A pointer batch that is new to the state is filled again from `socs.jsonl`, the journal of every
+signed update, so the feeds read as before. Sites are
+handled one at a time: the version is streamed from Kubo through `tar` into a folder in `WORK_DIR`, packed
+into one tar, the folder removed, and the tar streamed to Bee, so the disk holds one site (twice, for a moment)
+and memory holds none. Keep `WORK_DIR` on a disk with room for twice the largest site. A site whose upload has
+not finished syncing within `SYNC_TIMEOUT_MIN` gets no feed update that run, and the next run takes up the same
+upload. A run after days off finds the same state and carries on; one that starts while Bee is still starting or
+has no peers exits 1 and spends nothing.
+
+`MAX_SPEND_BZZ` (100) limits what one run may pay for purchases, top-ups and dilutions together: a step over it
+is refused and logged, and the run exits 1. When the wallet is short the run says which address to fund and
+buys nothing, never half of a purchase. At 196,236 PLUR per chunk and block, the first run costs about 50 xBZZ
+for the content batch and about 21 xBZZ for the pointer batch. `sync --dry-run` reads Bee and Kubo and
+prints what it would buy and upload; it spends and writes nothing.
+
+Build the one-file bundle (it carries `viem` and `multiformats`) and copy it to the machine that runs Bee; the script needs
+Node and GNU `tar` there:
+
+```sh
+npx esbuild scripts/swarm-feeds.mjs --bundle --platform=node --format=esm --outfile=swarm-feeds.mjs
+```
+
+Create the feed's key once, then read the two addresses to fund and to publish from:
+
+```sh
+mkdir -p ~/.config/orivon-swarm-feeds && (umask 077 && openssl rand -hex 32 > ~/.config/orivon-swarm-feeds/feed-signer.key)
+node swarm-feeds.mjs address     # the feed owner, and Bee's wallet (xBZZ and a little xDAI go there)
+```
+
+The job refuses a key file that group or others can read. Losing the key loses the right to update the feeds:
+an ENS name would then have to point at a new manifest. `STATE_DIR` (`$XDG_STATE_HOME/orivon-swarm-feeds`) holds
+`state.json` (batch ids, per-site progress), `socs.jsonl` (the journal, appended before each upload) and
+`status.json`; back up the first two. Without `state.json` the job finds its batches again by label, and
+without `socs.jsonl` it cannot put the updates back onto a pointer batch it has to replace.
+
+Where the machine reaches Kubo over ssh, `IPFS_API=ssh://<user>@<host>[:<port>]` runs each RPC call as
+`ssh -o BatchMode=yes <user>@<host> curl -sS --fail -X POST '<IPFS_SSH_RPC>/api/v0/<path>'`
+(`IPFS_SSH_RPC` is the RPC address as the node sees it, `http://127.0.0.1:5001` by default), and
+`NAMES_FILE=ssh://<user>@<host>/<absolute path>` reads the names file there with `cat`. ssh never asks a
+question, so the machine needs a key the node accepts without a passphrase prompt (an `IdentityFile` in
+`~/.ssh/config` for that host). Both settings also take a plain path or an http(s) URL. The unit and timer, as
+user units on the machine that runs Bee:
+
+```ini
+# ~/.config/systemd/user/orivon-swarm-feeds.service
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/orivon-swarm-feeds/settings.env
+# settings.env: BEE_API=http://127.0.0.1:1733  IPFS_API=ssh://<user>@<host>  NAMES_FILE=ssh://<user>@<host>/<path>
+#               WORK_DIR=<a disk folder>  SUMMARY_LOG=<optional>  FEEDS_FILE=ssh://<user>@<host>/<path>
+ExecStart=/usr/bin/flock -n %t/orivon-swarm-feeds.lock /usr/bin/node %h/.local/lib/orivon-swarm-feeds/swarm-feeds.mjs
+
+# ~/.config/systemd/user/orivon-swarm-feeds.timer: OnBootSec=10min, OnUnitActiveSec=10min
+```
+
+Two runs at once would both write `state.json`. systemd never starts a unit that is still running, and the
+`flock` covers a run started by hand: start one the same way, with the same lock file.
+
+`FEEDS_FILE` (optional; a path or `ssh://<user>@<host>/<absolute path>`, the forms `NAMES_FILE` takes, and never the
+names file itself) is where a sync leaves the feed manifests for the tools that check an ENS name against its site:
+a comment line, then one line per site that has a manifest, in names-file order.
+
+```
+# <ipns-key> bzz://<feed manifest>, one line per site. Written by swarm-feeds.mjs: do not edit.
+explore bzz://<64 hex>
+web3score bzz://<64 hex>
+```
+
+It is written after a sync that is not a dry run and replaced all at once (over ssh as `cat > <path>.tmp && mv
+<path>.tmp <path>`, every value single-quoted, the text on stdin). It is written only when its text differs from what the
+job wrote last to that place (`state.json` keeps the SHA-256), so a timer that finds nothing new never reaches the
+host: the job does not notice a file removed or edited on the host, and a `feedsFile` entry deleted from `state.json`
+makes the next run write it again. It is also written when `FEEDS_FILE` names another place, and, with no site holding a
+manifest yet, as the comment line alone. A file the job cannot write is an error of the run (exit 1, in `status.json`'s
+`errors`) and the sites are still published; the next run writes it. The status page reads it (section The status
+page).
+
+`NAMES_FILE` and `FEEDS_FILE` may not name the same file (the check normalises the path and spells out ssh's default
+port): the job would overwrite the list of names.
+
+`status.json` is what each run leaves: `ok`, the wallet, each batch (`ttlDays`, `fill`, `usable`), and per site
+the feed manifest, the newest index, the IPFS CID and Swarm reference it carries, and `uploadPending`; its
+`errors` hold the reasons of a failed run. `journalctl --user -u orivon-swarm-feeds` shows the run's log lines.
+`SKIP_KEYS` leaves keys out of a run. The settings are listed in the script's header.
 
 #### Keeping the node reachable
 
@@ -237,8 +377,18 @@ docs         docs.example.eth
 ```
 
 A key without a line is shown as "none expected"; a line whose key is not in the node's keystore is an error.
+
 The page names every key and the node's health, so it is served privately: the Orivon node's web server
 serves `OUT_DIR` over HTTPS behind a password. The script itself publishes nothing.
+
+A site that is also on Swarm (section Orivon's sites on Swarm) may have its names point at its feed
+instead. `FEEDS_FILE` (optional, a local path on the pinning node) is the file the Swarm job writes, `<ipns-key>
+bzz://<64 hex>` per line, `#` starting a comment; the job's own `FEEDS_FILE=ssh://<user>@<node>/<that path>` puts it
+there. A name is then right when its contenthash is its key's `ipns://` address or its key's feed: the page shows the
+feed beside the key's address and says "points at its Swarm feed" under a name that points at it, and a name that is
+wrong or empty is told to point at the feed, or at the `ipns://` address for a key with no feed. A `FEEDS_FILE` that
+cannot be read is a warning, and every name is then judged against the `ipns://` address alone, except that a name
+pointing at a Swarm address is a warning rather than an error, since the feed it should match is unknown.
 
 ```ini
 # orivon-ipfs-status.service
@@ -247,6 +397,7 @@ Type=oneshot
 User=<the user that runs the release pinner>
 Environment=IPFS_API=/ip4/127.0.0.1/tcp/5001 OUT_DIR=/path/to/status NAMES_FILE=/path/to/names.conf
 Environment=WATCHDOG_STATE=/var/lib/orivon-ipfs-watchdog/watchdog.json LATEST_KEY=latest-release
+# Optional, for a site that is also on Swarm: Environment=FEEDS_FILE=/path/to/feeds.txt
 ExecStart=/path/to/ipfs-status.sh run
 
 # orivon-ipfs-status.timer
@@ -485,12 +636,16 @@ PC": **More info**, then **Run anyway**. It installs for the current user into
 folder. Silent install: `Orivon-Setup-<version>-x64.exe /S`. A person who would rather not see the warning installs
 from the Microsoft Store instead (section The Microsoft Store package).
 
-**macOS.** The app is signed ad hoc, not with a Developer ID, and not notarized. Apple silicon
-refuses a binary with no signature at all, and packaging rewrites the Electron binary (its fuses,
-name and `Info.plist`), so the signature Electron shipped with no longer holds: electron-builder
-signs it again with `identity: "-"`. Hardened runtime is off, since it rejects an ad-hoc app
-loading the Electron framework, and it only matters for notarization. After dragging Orivon to
-Applications, the first open is refused: open **System Settings > Privacy & Security** and choose
+**macOS.** A release's apps are signed with a Developer ID Application certificate, run with the
+hardened runtime, and notarized by Apple with the ticket stapled to each app, so a Mac opens Orivon
+after a download without refusing it (section Signing). [`build/entitlements.mac.plist`](../../build/entitlements.mac.plist)
+gives the app and its helpers what the hardened runtime otherwise refuses: executable memory for V8 and
+WebAssembly, and the camera and microphone (`extendInfo` carries the reasons macOS shows when a page
+first asks). `npm run package:mac:signed` builds that. `npm run package:mac`, and the pull-request
+build, sign ad hoc instead (`identity: "-"`, hardened runtime off, no notarization), because
+Apple silicon refuses a binary with no signature at all, and packaging rewrites the Electron binary
+(its fuses, name and `Info.plist`), so the signature Electron shipped with no longer holds. An ad-hoc
+app is refused on its first open: open **System Settings > Privacy & Security** and choose
 **Open Anyway**, or run `xattr -dr com.apple.quarantine /Applications/Orivon.app`. The Intel dmg
 is built on an Apple silicon runner and launched there under Rosetta.
 
@@ -498,7 +653,7 @@ is built on an Apple silicon runner and launched there under Rosetta.
 `curl -fsSL https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/install-macos.sh | bash`,
 installs or updates Orivon with no Gatekeeper prompt. Gatekeeper only checks files that carry the
 `com.apple.quarantine` attribute, which a browser adds to a download and `curl` does not; Apple
-silicon still wants a signature, and the ad-hoc one the build has is enough. The script reads the
+silicon still wants a signature, and the build's is enough. The script reads the
 newest releases from GitHub's API and takes the newest non-pre-release that has a dmg for the Mac's
 architecture with a digest, else the newest pre-release that has one (a release whose packages are not
 attached yet is skipped). It downloads that dmg, compares its SHA-256 with the digest GitHub reports
@@ -561,11 +716,24 @@ download in transit, not against someone who controls the GitHub repository. The
 installs the AppImage it just built through it and starts the launcher with the packaged smoke check, and on pull
 requests and manual runs also installs the newest published release.
 
-**Signing later.** A Developer ID certificate (with notarization) and a Windows code-signing
-certificate would remove both warnings (the Store package has none to remove). electron-builder reads them from the environment
-(`CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`), so
-adding them is repository secrets, the matching `env:` lines in the workflow, and removing
-`identity: "-"` and `hardenedRuntime: false` from `mac:`.
+**Signing.** The release workflow's step "Package, sign and notarize" signs and notarizes the macOS
+apps from five repository secrets: `CSC_LINK` (the Developer ID Application certificate with its private
+key, as a base64 `.p12`), `CSC_KEY_PASSWORD` (the `.p12`'s password), `APPLE_ID`,
+`APPLE_APP_SPECIFIC_PASSWORD` (made for this use at account.apple.com, under Sign-In and Security) and
+`APPLE_TEAM_ID`. Only a release and a manual run read them, no other platform's step does (`CSC_LINK`
+would make electron-builder sign the Windows installer with it), and a pull request builds ad hoc. An
+empty secret stops the macOS job before it builds. The step "Check the signature, mount each dmg and
+launch it" mounts each dmg and requires the Developer ID signature, the hardened runtime, a stapled
+ticket and Gatekeeper's verdict `Notarized Developer ID`. `gh workflow run release.yml --ref <branch>`
+signs and notarizes a branch's build without publishing anything, which is how a change to this is
+tried; it runs the branch's own build scripts with the secrets, so anyone who can push a branch to the
+repository can read them, and an environment limited to `main` and release tags would narrow that.
+
+The certificate lasts five years from its issue. Before it ends, make a new signing request, issue a new
+Developer ID Application certificate, and replace `CSC_LINK` and `CSC_KEY_PASSWORD`; releases already
+notarized keep opening. The app-specific password stops working when the Apple ID's password changes:
+make a new one and replace `APPLE_APP_SPECIFIC_PASSWORD`. A Windows code-signing certificate would remove
+the SmartScreen warning; none is bought (the Store package has no warning to remove).
 
 ### Verifying the desktop entry
 

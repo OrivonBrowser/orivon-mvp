@@ -57,7 +57,14 @@ export function socketInterfaces (net: SocketNet, options: { readonly dropGraceM
     'wasi:sockets/tcp': { TcpSocket },
     'wasi:sockets/tcp-create-socket': { createTcpSocket: (family: IpAddressFamily): TcpSocket => new TcpSocket(context, family) },
     'wasi:sockets/udp': { UdpSocket, IncomingDatagramStream, OutgoingDatagramStream },
-    'wasi:sockets/udp-create-socket': { createUdpSocket: (family: IpAddressFamily): UdpSocket => new UdpSocket(net, names, family) },
+    'wasi:sockets/udp-create-socket': {
+      // orivon.net binds UDP on IPv4 only, so an IPv6 socket could send nothing: refused at once, a resolver asks
+      // its IPv4 servers instead of waiting out a timeout on each IPv6 one.
+      createUdpSocket: (family: IpAddressFamily): UdpSocket => {
+        if (family !== 'ipv4') throw 'not-supported'
+        return new UdpSocket(net, names, family)
+      }
+    },
     'wasi:sockets/ip-name-lookup': {
       ResolveAddressStream,
       resolveAddresses: (_network: Network, name: string): ResolveAddressStream => {

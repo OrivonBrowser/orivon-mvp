@@ -19,5 +19,7 @@
 import './extension-apis/register.js'
 import '../../vendor/electron-chrome-extensions/src/preload.js'
 import { installServiceWorkerPreloadHealthCheck } from './extension-sw-verify.js'
+import { installPermissionQueryInExtensionPage } from './permission-query.js'
 
 installServiceWorkerPreloadHealthCheck()
+installPermissionQueryInExtensionPage()

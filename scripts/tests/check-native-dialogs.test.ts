@@ -89,6 +89,48 @@ describe('what it allows', () => {
   })
 })
 
+describe('operating-system notifications', () => {
+  it.each([
+    ['a new Notification', 'new Notification({ title: \'x\' }).show()'],
+    ['a new Notification through the module', 'new electron.Notification({ title: \'x\' })'],
+    ['a new Notification with a space before the call', 'const n = new Notification  ({})'],
+    ['a named import', 'import { Notification } from \'electron\''],
+    ['a type import', 'import type { Notification } from \'electron\''],
+    ['a named import among others', 'import { app, Notification, shell } from \'electron\''],
+    ['an import spread over lines', 'import {\n  app,\n  Notification\n} from \'electron\''],
+    ['a dynamic import', 'const { Notification, shell } = await import(\'electron\')'],
+    ['a required module', 'const { Notification } = require(\'electron\')'],
+    ['a member of the module', 'const n = electron.Notification'],
+    ['a member of a dynamic import', '(await import(\'electron\')).Notification.isSupported()']
+  ])('catches %s', (_name, text) => {
+    const result = checkNativeDialogs(repo({ 'src/main/a.ts': `${text}\n` }))
+    expect(result.ok).toBe(false)
+    expect(result.offenders).toHaveLength(1)
+    expect(result.offenders[0]?.file).toBe('src/main/a.ts')
+  })
+
+  it('names the line the notification is on', () => {
+    expect(offenders({ 'src/main/a.ts': 'const a = 1\nimport {\n  Notification\n} from \'electron\'\n' })).toEqual(['src/main/a.ts:3'])
+  })
+
+  it('has no allow-list: the question panel\'s own file may not raise one either', () => {
+    expect(offenders({ 'src/main/shell/question/ask-question.ts': 'new Notification({})\n' })).toEqual(['src/main/shell/question/ask-question.ts:1'])
+  })
+
+  it('does not match words that merely contain the name, a comment, or a page\'s permission code', () => {
+    expect(offenders({
+      'src/main/a.ts': [
+        '// new Notification({}) would raise an operating-system box',
+        'export type NotificationDecision = \'allow\' | \'block\'',
+        'class NotificationDecisions {}',
+        'const siteNotifications = createSiteNotifications()',
+        'import { configureSiteNotifications } from \'./permission-gate.js\'',
+        'import { NotificationDecisions } from \'./notification-decisions.js\''
+      ].join('\n') + '\n'
+    })).toEqual([])
+  })
+})
+
 describe('failing safe', () => {
   it('fails when the directory is not a git tree, rather than reading it as clean', () => {
     const result = checkNativeDialogs(mkdtempSync(join(tmpdir(), 'orivon-not-git-')))

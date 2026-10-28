@@ -75,7 +75,7 @@ rather than editing here.
 | [`local-files/`](local-files/) | The sessions, handler and fence that make a document opened from this computer an origin of its exact path | the record of files allowed to use Orivon permissions (`local-file-apps.json`) | `local-partition.ts`, `refuse-file-scheme.ts`, `local-files-subsystem.ts` only |
 | [`sessions/`](sessions/) | What an Electron `Session` is allowed to do | each site's notification answer | `permission-gate.ts`, `web-context-host.ts`, `web-request-owner.ts`, `session-attribution.ts` |
 | [`keyring/`](keyring/) | The identity seed, OS-keyring-backed or session-only | the encrypted seed file | `electron-keychain.ts` only |
-| [`self-update/`](self-update/) | Check, notify, never install | last-check timestamp | `-runner` only |
+| [`self-update/`](self-update/) | Look for a newer release and tell the person in the window in use, never install | `lastCheckedAt`, `lastFoundVersion`, `lastNotifiedVersion` in `update-check-state.json` | `update-check-runner.ts` only; the window files reach it through the question panel |
 | [`dev/`](dev/) | Dev only: inert, gated, or compiled out | no | `local-ddoc.ts` only, lazily |
 | [`verifier/`](verifier/) | Start the `.eth` verifier, trust its certificate, choose its checkpoint | host process, checkpoint, IPNS sequences | `verifier-subsystem.ts` only |
 | [`embed/`](embed/) | The pages an app shows inside itself, in a `<webview>` (`ADR-0039`) | which app owns which guest | `embed-host.ts` and `embed-subsystem.ts` only |

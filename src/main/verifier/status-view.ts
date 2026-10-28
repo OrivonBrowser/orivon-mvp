@@ -8,6 +8,7 @@ import type { FetchProblem } from './checkpoint-fetch.js'
 import type { LightClientState } from '../../protocols/verifier-host/protocol.js'
 import type { SwarmNodeState } from '../../protocols/swarm-node/protocol.js'
 import type { IpfsNodeState } from '../../protocols/ipfs-node/protocol.js'
+import { displayEndpoint } from '../../protocols/verifier-host/light-client/endpoint-mask.js'
 
 export interface LightClientView {
   /** One word for the badge: off, waiting, starting, syncing, synced, failed, down. `waiting`: on, with no host running until a .eth address needs it. */
@@ -46,6 +47,8 @@ export interface VerifierFacts {
   /** No host process is running and nothing has failed: it has not been needed yet, or it slept after going unused. */
   readonly hostAsleep: boolean
   readonly switchedOff: boolean
+  /** Which of the Ethereum servers below the person named in Settings: said in the labels and the sentences, and the way back is named when they fail. */
+  readonly ownServers?: { readonly execution: boolean, readonly consensus: boolean }
   readonly swarmNode?: SwarmNodeState
   /** Present when the person reads IPFS from the node: what it is doing, and whether it may ask a lookup service. */
   readonly ipfsNode?: { readonly state: IpfsNodeState, readonly lookupService: boolean }
@@ -80,8 +83,8 @@ function age (seconds: number): string {
 
 const SOURCE_WORDS = { release: 'shipped with this release', 'this-install': 'last verified on this computer', fetched: 'fetched from beacon servers' } as const
 
-/** Why a try to fetch a fresh checkpoint came to nothing, as the end of a sentence. */
-function fetchFailure (problem: FetchProblem): string {
+/** Why a try to fetch a fresh checkpoint came to nothing, as the end of a sentence. `ownBeacon`: the beacon server the light client bootstraps from is the person's. */
+function fetchFailure (problem: FetchProblem, ownBeacon: boolean): string {
   switch (problem) {
     case 'unreachable': return 'a beacon server did not answer'
     case 'malformed': return 'a beacon server gave an answer that could not be read'
@@ -90,15 +93,30 @@ function fetchFailure (problem: FetchProblem): string {
     case 'future': return "the checkpoint the beacon servers gave is dated after this computer's clock, which may be set behind"
     case 'too-old': return "the checkpoint the beacon servers gave is older than a checkpoint may be, which suggests this computer's clock is ahead"
     case 'too-few-servers': return 'fewer than two beacon servers are set'
-    case 'no-bootstrap': return 'the beacon server would not start the light client from any recent finalized block'
+    case 'no-bootstrap': return `${beaconServer(ownBeacon)} would not start the light client from any recent finalized block`
   }
 }
 
-function behind (ms: number): string {
+const beaconServer = (own: boolean): string => own ? 'your beacon server' : 'the beacon server'
+
+/** The servers the person named, in a phrase for the sentence that says the chain is followed through them. */
+function ownWords (own: VerifierFacts['ownServers']): string | undefined {
+  if (own?.execution === true) return own.consensus ? 'your own servers' : 'your own Ethereum servers'
+  return own?.consensus === true ? 'your own beacon server' : undefined
+}
+
+const OWN_FAILED = " Orivon's servers are not asked instead, so .eth names wait. Check the servers you set in Settings > Web3, or choose Orivon's servers there."
+
+function duration (ms: number): string {
   const seconds = Math.round(ms / 1000)
   if (seconds < 90) return `${String(seconds)} seconds`
   const minutes = Math.round(seconds / 60)
   return minutes < 90 ? `${String(minutes)} minutes` : `${String(Math.round(minutes / 60))} hours`
+}
+
+/** How far this computer's clock is from the servers', as the end of a sentence: the lead is positive when it is behind, negative when ahead. */
+function clockOff (leadMs: number): string {
+  return `${duration(Math.abs(leadMs))} ${leadMs > 0 ? 'behind' : 'ahead of'} the servers'`
 }
 
 function hostsOf (urls: readonly string[]): string {
@@ -110,19 +128,19 @@ function utcMinute (seconds: number): string {
 }
 
 /** Why no checkpoint can be used, and what fixes it, as one sentence for Settings and the error page. */
-export function checkpointProblem (choice: Extract<CheckpointChoice, { ok: false }>, fetchProblem?: FetchProblem): string {
+export function checkpointProblem (choice: Extract<CheckpointChoice, { ok: false }>, fetchProblem?: FetchProblem, ownBeacon = false): string {
   if (choice.problem === 'clock-behind') return "this computer's clock is behind the checkpoint shipped with this release, so its age cannot be judged. Setting the clock right lets the light client start"
   const tried = fetchProblem === undefined
     ? 'Opening a .eth name asks two beacon servers for a fresh one'
-    : `A fresh one could not be fetched from the beacon servers: ${fetchFailure(fetchProblem)}`
-  if (choice.problem === 'not-served') return `the beacon server would not start the light client from the newest checkpoint (${SOURCE_WORDS[choice.source]}). ${tried}. Installing a newer release brings one too`
-  if (choice.skippedUnserved === true) return `a newer checkpoint has no bootstrap on the beacon server, and the newest one it would start from (${SOURCE_WORDS[choice.source]}) is ${age(choice.ageSeconds)} old, past the ${age(MAX_CHECKPOINT_AGE_SECONDS)} a checkpoint may be. ${tried}. Installing a newer release brings one too`
+    : `A fresh one could not be fetched from the beacon servers: ${fetchFailure(fetchProblem, ownBeacon)}`
+  if (choice.problem === 'not-served') return `${beaconServer(ownBeacon)} would not start the light client from the newest checkpoint (${SOURCE_WORDS[choice.source]}). ${tried}. Installing a newer release brings one too`
+  if (choice.skippedUnserved === true) return `a newer checkpoint has no bootstrap on ${beaconServer(ownBeacon)}, and the newest one it would start from (${SOURCE_WORDS[choice.source]}) is ${age(choice.ageSeconds)} old, past the ${age(MAX_CHECKPOINT_AGE_SECONDS)} a checkpoint may be. ${tried}. Installing a newer release brings one too`
   return `the newest checkpoint (${SOURCE_WORDS[choice.source]}) is ${age(choice.ageSeconds)} old, past the ${age(MAX_CHECKPOINT_AGE_SECONDS)} a checkpoint may be. ${tried}. Installing a newer release brings one too; if this computer's clock is wrong, setting it right may be enough`
 }
 
-function checkpointLine (choice: CheckpointChoice | undefined, fetchProblem: FetchProblem | undefined): string {
+function checkpointLine (choice: CheckpointChoice | undefined, fetchProblem: FetchProblem | undefined, ownBeacon: boolean): string {
   if (choice === undefined) return 'No checkpoint chosen.'
-  if (!choice.ok) return `No usable checkpoint: ${checkpointProblem(choice, fetchProblem)}.`
+  if (!choice.ok) return `No usable checkpoint: ${checkpointProblem(choice, fetchProblem, ownBeacon)}.`
   if (choice.source === 'fetched' && choice.fetchedFrom !== undefined) {
     return `Checkpoint ${age(choice.ageSeconds)} old, dated ${utcMinute(choice.checkpoint.timestamp)}. It was fetched while a .eth name was opened, because none stored here was recent enough; ${hostsOf(choice.fetchedFrom)} gave the same answer.`
   }
@@ -134,24 +152,26 @@ function summaryOf (facts: VerifierFacts, now: number): { state: LightClientView
   if (facts.hostDown !== undefined) return { state: 'down', summary: `The verifier is not running: ${facts.hostDown}.` }
   if (facts.switchedOff) return { state: 'off', summary: 'Switched off. No .eth name can be verified, so none loads.' }
   if (facts.checkpoint !== undefined && !facts.checkpoint.ok) {
-    const note = facts.checkpoint.problem !== 'clock-behind' && facts.checkpointFetchProblem !== undefined ? ` A fresh one could not be fetched: ${fetchFailure(facts.checkpointFetchProblem)}.` : ''
+    const ownBeacon = facts.ownServers?.consensus === true
+    const note = facts.checkpoint.problem !== 'clock-behind' && facts.checkpointFetchProblem !== undefined ? ` A fresh one could not be fetched: ${fetchFailure(facts.checkpointFetchProblem, ownBeacon)}.` : ''
     const refused = facts.checkpoint.problem === 'not-served' || (facts.checkpoint.problem === 'too-old' && facts.checkpoint.skippedUnserved === true)
-    return { state: 'failed', summary: refused ? `Not running: the beacon server would not start it from the checkpoint it was given, and no other is at hand.${note}` : `Not started: it needs a recent checkpoint to start from.${note}` }
+    return { state: 'failed', summary: refused ? `Not running: ${beaconServer(ownBeacon)} would not start it from the checkpoint it was given, and no other is at hand.${note}` : `Not started: it needs a recent checkpoint to start from.${note}` }
   }
   if (facts.hostAsleep) return { state: 'waiting', summary: 'On, and waiting. It starts when a .eth address is opened, and stops again after ten minutes without one.' }
   const s = facts.lightClient
+  const through = ownWords(facts.ownServers)
   switch (s.state) {
     case 'off': return { state: 'off', summary: 'Not running.' }
     case 'starting': return { state: 'starting', summary: 'Starting.' }
     case 'syncing': return { state: 'syncing', summary: `Catching up with the chain, since ${ago(now - s.since)}.` }
     case 'synced': {
-      // The block's time is the chain's; a clock that runs behind is made up for before they are compared.
+      // The block's time is the chain's; a clock that runs behind or ahead is made up for before they are compared.
       const headAge = now + (s.clockLeadMs ?? 0) - s.at
       return headAge > STALE_HEAD_MS
         ? { state: 'syncing', summary: `Behind the chain: the newest block it has verified, ${s.block.toLocaleString('en-US')}, was produced ${ago(headAge)}.` }
-        : { state: 'synced', summary: `Following the chain: block ${s.block.toLocaleString('en-US')}, produced ${ago(headAge)}.${s.clockLeadMs === undefined ? '' : ` This computer's clock is ${behind(s.clockLeadMs)} behind the servers', and the light client allows for it. Setting the clock right, in the system's date and time settings, removes the need.`}` }
+        : { state: 'synced', summary: `Following the chain${through === undefined ? '' : ` through ${through}`}: block ${s.block.toLocaleString('en-US')}, produced ${ago(headAge)}.${s.clockLeadMs === undefined ? '' : ` This computer's clock is ${clockOff(s.clockLeadMs)}, and the light client allows for it. Setting the clock right, in the system's date and time settings, removes the need.`}` }
     }
-    case 'failed': return { state: 'failed', summary: `Failed: ${s.reason}.${s.retryAt === undefined ? '' : ` Trying again ${s.retryAt <= now ? 'now' : `in ${String(Math.ceil((s.retryAt - now) / 1000))} s`}.`}` }
+    case 'failed': return { state: 'failed', summary: `Failed: ${s.reason}.${s.retryAt === undefined ? '' : ` Trying again ${s.retryAt <= now ? 'now' : `in ${String(Math.ceil((s.retryAt - now) / 1000))} s`}.`}${through !== undefined && s.ownServersFailed === true ? OWN_FAILED : ''}` }
   }
 }
 
@@ -162,13 +182,14 @@ export function lightClientView (facts: VerifierFacts, now: number): LightClient
     ...(head !== undefined && { block: head.block, headAt: head.at }),
     ...(facts.checkpoint?.ok === true && { checkpointAgeSeconds: facts.checkpoint.ageSeconds }),
     ...(facts.checkpoint?.ok === true && facts.checkpoint.source === 'fetched' && { checkpointFetched: true as const }),
-    checkpoint: checkpointLine(facts.checkpoint, facts.checkpointFetchProblem),
+    checkpoint: checkpointLine(facts.checkpoint, facts.checkpointFetchProblem, facts.ownServers?.consensus === true),
     about: ABOUT,
     ...(facts.swarmNode !== undefined && { swarmNode: swarmNodeView(facts.swarmNode) }),
     ...(facts.ipfsNode !== undefined && { ipfsNode: ipfsNodeView(facts.ipfsNode.state, facts.ipfsNode.lookupService) }),
     endpoints: [
-      { label: 'Ethereum RPCs', urls: facts.endpoints.executionRpcs },
-      { label: 'Beacon API', urls: [facts.endpoints.consensusRpc] },
+      // Shown masked: an address the person typed may hold a key.
+      { label: facts.ownServers?.execution === true ? 'Your Ethereum RPCs' : 'Ethereum RPCs', urls: facts.endpoints.executionRpcs.map(displayEndpoint) },
+      { label: facts.ownServers?.consensus === true ? 'Your beacon server' : 'Beacon API', urls: [displayEndpoint(facts.endpoints.consensusRpc)] },
       ...(facts.endpoints.checkpointBeaconApis === undefined ? [] : [{ label: 'Beacon servers for a fresh checkpoint, asked only when none is recent enough', urls: facts.endpoints.checkpointBeaconApis }]),
       ...(facts.ipfsNode === undefined
         ? [{ label: 'IPFS gateways', urls: facts.endpoints.gateways }]

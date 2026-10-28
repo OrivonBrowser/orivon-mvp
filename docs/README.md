@@ -120,6 +120,7 @@ Four reversals worth knowing about, because they are the ones people still repea
 | Does a given Node module, `electron` API, permission or protocol work in an app today? | [`planning/compatibility-matrix.md`](planning/compatibility-matrix.md) and its per-table pages in [`planning/compatibility/`](planning/compatibility/) |
 | What are we defending against? | [`architecture/security-model.md`](architecture/security-model.md) |
 | I am about to review the privilege boundary. What should I know first? | [`development/security-review-briefing.md`](development/security-review-briefing.md) |
+| Can one site change what another site gets, or the whole browser? | [`development/cross-site-state-checklist.md`](development/cross-site-state-checklist.md) |
 | What is undecided or contradictory? | [`open-questions.md`](open-questions.md); settled ones are in [`decisions/resolved-questions.md`](decisions/resolved-questions.md) |
 | How do I write a pull request here? | [`development/pr-blueprint.md`](development/pr-blueprint.md) |
 | What does a term mean? | [`glossary.md`](glossary.md) |

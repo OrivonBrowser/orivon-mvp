@@ -87,6 +87,46 @@ describe('a component writing a two-piece response then dropping its socket (no 
   })
 })
 
+describe('a component writing to a socket whose peer already ended its side, then dropping it', () => {
+  it('still lets the write land before the handle is closed', async () => {
+    const received: string[] = []
+    let ended = false
+    const writable = new WritableStream<Uint8Array>({
+      write: async (chunk) => {
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        if (!ended) received.push(new TextDecoder().decode(chunk))
+      }
+    })
+    const readable = new ReadableStream<Uint8Array>({ start (controller) { controller.close() } })
+    const brokerSocket: OrivonTcpSocket = {
+      id: 'peer-already-ended',
+      closed: new Promise(() => {}),
+      close: async () => { ended = true },
+      readable,
+      writable,
+      remoteAddress: '127.0.0.1',
+      remotePort: 443,
+      localAddress: '127.0.0.1',
+      localPort: 55555,
+      setNoDelay: async () => {},
+      setKeepAlive: async () => {}
+    }
+    const interfaces = socketInterfaces(connectClient(brokerSocket), { dropGraceMs: 1000 })
+    const createTcpSocket = (interfaces['wasi:sockets/tcp-create-socket'] as { createTcpSocket: (family: string) => TcpSocket }).createTcpSocket
+    const socket = createTcpSocket('ipv4')
+    socket.startConnect({}, v4(93, 184, 216, 34, 443))
+    await socket.subscribe().block()
+    const [, output]: [unknown, OutputStream] = socket.finishConnect()
+    await output.blockingWriteAndFlush(new TextEncoder().encode('REQUEST'))
+
+    socket[Symbol.dispose]()
+
+    const deadline = Date.now() + 2000
+    while (received.length === 0 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(received).toEqual(['REQUEST'])
+  })
+})
+
 describe('a component that wrote to a socket and dropped it without ever reading', () => {
   it('releases the read side too, after what it wrote has landed', async () => {
     const events: string[] = []

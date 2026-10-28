@@ -7,10 +7,11 @@ import { composeResolverRules } from '../resolver-rules.js'
 
 describe('composeResolverRules', () => {
   const suffixes = BUILTIN_ADDRESSES.routedSuffixes()
+  const ONION = 'MAP *.onion ~NOTFOUND,MAP *.onion. ~NOTFOUND,MAP onion ~NOTFOUND'
 
   it('puts developer names first, then every protocol host, then the rules already given', () => {
     expect(composeResolverRules({ devClauses: 'MAP freetube.eth 127.0.0.1:8875', port: 40001, suffixes, existing: 'MAP * ~NOTFOUND, EXCLUDE 127.0.0.1' }))
-      .toBe('MAP freetube.eth 127.0.0.1:8875,MAP *.eth 127.0.0.1:40001,MAP *.orivon 127.0.0.1:40001,MAP *.localhost 127.0.0.1,MAP * ~NOTFOUND, EXCLUDE 127.0.0.1')
+      .toBe('MAP freetube.eth 127.0.0.1:8875,MAP *.eth 127.0.0.1:40001,MAP *.orivon 127.0.0.1:40001,MAP *.localhost 127.0.0.1,MAP * ~NOTFOUND, EXCLUDE 127.0.0.1,' + ONION)
   })
 
   it('maps every .localhost name to the IPv4 loopback address, ahead of any rule already given, so a page under one never reaches an IPv6 server', () => {
@@ -21,8 +22,14 @@ describe('composeResolverRules', () => {
 
   it('is the protocol clauses and the localhost clause when nothing else is given, and the localhost clause even with no suffix', () => {
     expect(composeResolverRules({ devClauses: '', port: 40001, suffixes, existing: '' }))
-      .toBe('MAP *.eth 127.0.0.1:40001,MAP *.orivon 127.0.0.1:40001,MAP *.localhost 127.0.0.1')
-    expect(composeResolverRules({ devClauses: '', port: 40001, suffixes: [], existing: '' })).toBe('MAP *.localhost 127.0.0.1')
+      .toBe('MAP *.eth 127.0.0.1:40001,MAP *.orivon 127.0.0.1:40001,MAP *.localhost 127.0.0.1,' + ONION)
+    expect(composeResolverRules({ devClauses: '', port: 40001, suffixes: [], existing: '' })).toBe('MAP *.localhost 127.0.0.1,' + ONION)
+  })
+
+  it('refuses every onion name after the rules already given, so no resolver is asked for one and a rule of a test run still wins', () => {
+    const rules = composeResolverRules({ devClauses: '', port: 40001, suffixes, existing: 'MAP abc.onion 127.0.0.1:9' })
+    expect(rules.split(',').slice(-3)).toEqual(['MAP *.onion ~NOTFOUND', 'MAP *.onion. ~NOTFOUND', 'MAP onion ~NOTFOUND'])
+    expect(rules.indexOf('MAP abc.onion 127.0.0.1:9')).toBeLessThan(rules.indexOf('MAP *.onion ~NOTFOUND'))
   })
 })
 

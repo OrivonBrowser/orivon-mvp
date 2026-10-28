@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkOf, requestOf, SITE_ASKED_PERMISSIONS } from '../electron-names.js'
+import { checkOf, queryKindOf, requestOf, SITE_ASKED_PERMISSIONS } from '../electron-names.js'
 
 describe('requestOf', () => {
   it('maps a media request to the devices it names, camera and microphone together', () => {
@@ -63,6 +63,34 @@ describe('SITE_ASKED_PERMISSIONS', () => {
     expect([...SITE_ASKED_PERMISSIONS].sort()).toEqual(['clipboard-read', 'deprecated-sync-clipboard-read', 'geolocation', 'idle-detection', 'media', 'midi', 'midiSysex', 'window-management'])
     for (const name of SITE_ASKED_PERMISSIONS) {
       expect(requestOf(name, { mediaTypes: ['video'] }) ?? checkOf(name, {})).toBeDefined()
+    }
+  })
+})
+
+describe('queryKindOf', () => {
+  it.each([
+    ['camera', 'camera'],
+    ['microphone', 'microphone'],
+    ['geolocation', 'location'],
+    ['clipboard-read', 'clipboardRead'],
+    ['midi', 'midi'],
+    ['idle-detection', 'idle'],
+    ['window-management', 'windowManagement']
+  ])('maps the web name %s to %s', (name, kind) => {
+    expect(queryKindOf(name)).toBe(kind)
+  })
+
+  it('does not own a name the asker never asks about, nor anything that is not a string', () => {
+    for (const name of ['notifications', 'persistent-storage', 'screen-wake-lock', 'media', 'clipboard-write', '', '__proto__', 'toString', 'constructor']) {
+      expect(queryKindOf(name)).toBeUndefined()
+    }
+    for (const name of [undefined, null, 0, {}, ['camera']]) expect(queryKindOf(name)).toBeUndefined()
+  })
+
+  it('names only kinds whose requests the asker owns, so a query never reads a state a request does not honour', () => {
+    const owned = new Set(['camera', 'microphone', 'location', 'clipboardRead', 'midi', 'idle', 'windowManagement'])
+    for (const name of ['camera', 'microphone', 'geolocation', 'clipboard-read', 'midi', 'idle-detection', 'window-management']) {
+      expect(owned.has(queryKindOf(name) ?? '')).toBe(true)
     }
   })
 })

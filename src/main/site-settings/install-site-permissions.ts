@@ -3,7 +3,9 @@
 // once per site in a prompt under the address bar. The installer runs after
 // the settings are loaded and the broker exists, so the defaults and the
 // registered apps are both known.
+import { ipcMain } from 'electron'
 import { configureSiteNotifications, setNotificationsBlockedCheck } from '../sessions/permission-gate.js'
+import { registerPermissionQueryIpc } from '../sessions/permission-query-ipc.js'
 import { siteAsks } from '../sessions/site-asks.js'
 import { createWakeLockAsker } from '../sessions/wake-lock-asker.js'
 import type { ShellInstaller } from '../shell/shell-installers.js'
@@ -34,6 +36,9 @@ export const installSitePermissions: ShellInstaller = {
       access: pageAccess
     })
     siteAsks.add(createSiteAsker(engine))
+    // What a page's own permission query reads: the engine's check says denied for everything undecided, and each
+    // asker here (and the extension one, ahead of them) says which of those the person would in fact be asked about.
+    registerPermissionQueryIpc({ ipc: ipcMain, asks: siteAsks })
     siteAsks.add(createWakeLockAsker({ isTab: (contents) => services.windows.findTab(contents) !== null }))
     configureSiteNotifications({ isPrivate: services.isPrivate, isApp: (origin) => isAppOrigin(ctx, origin) })
     setNotificationsBlockedCheck(() => services.settings.get('sites.notifications') === 'block')

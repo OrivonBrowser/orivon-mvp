@@ -79,6 +79,8 @@ always succeeds, and an address in use is reported by `finish-listen` (`tcp.ts`)
 so a program that listens twice on a single-port grant collides with its own ephemeral listen and
 sees `address-in-use` -- correct, not a bug. Listening is IPv4 in this build whatever family the
 program's socket has, and a listener reports the address it bound with the port the server holds.
+A UDP socket is IPv4 only: `create-udp-socket` answers `not-supported` for IPv6, as a host without
+IPv6 does, so a resolver given IPv6 servers fails over to its IPv4 ones at once.
 
 **Sockets block only where POSIX does.** A connect and a lookup are started at once and answered
 `would-block` until `orivon.net` settles, and the program waits on a pollable: a non-blocking
@@ -101,8 +103,13 @@ quiet, and a busy program holding a hundred sockets grew its heap by
 about 35 MB a second. `Pollable.subscribe` (`io.ts`) arms the underlying wait once and fans a wake
 out to the polls currently waiting; a poll withdraws from the pollables that did not wake it.
 
-**A dropped TCP socket releases its read side, but only after what the program wrote has landed.** A program
-that writes and lets the socket go never reads it to its end, so its slot in the broker stayed taken. Dropping
-closes the writer, then cancels the reader once the peer has ended its side or `dropGraceMs` (five seconds) has
-passed. Cancelling at once would end the whole connection, since cancelling a socket's readable destroys it, and
-drop what the writer had not yet landed (`tests/tcp-dispose-race.test.ts`).
+**A dropped socket gives back what it held in the broker, whatever it had got to.** A program that drops a socket
+is closing a descriptor, and the origin's census must show it gone. One still connecting is abandoned with the
+`signal` the host passes to `orivon.net.connect`, so the dial stops and its slot among the origin's in-flight calls is free
+at once. One that connected has its handle closed; one that never wrote is closed at once. One that wrote is closed
+through its writable stream first and its handle only after the peer has ended its side or `dropGraceMs` (five
+seconds) has passed: a handle close travels the control channel, which can outrun a write still crossing the stream's
+port and drop it (`tests/tcp-dispose-race.test.ts`), and the Worker cannot see a write land, since a transferred
+stream settles when a chunk is posted. The grace is also what frees a socket whose peer never ends its side, which
+would otherwise hold the slot for ever (`tests/socket-release.test.ts`, against the real broker). A call that answers
+after the Worker is gone is closed by the page's server, not kept (`../worker/orivon-server.ts`).

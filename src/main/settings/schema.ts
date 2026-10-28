@@ -4,6 +4,8 @@
 // edited by hand cannot make one up.
 import { isAddressList, isEmptyOrAddress, MAX_LISTED_ADDRESSES } from './address-checks.js'
 import { isHostList, MAX_LISTED_HOSTS } from './list-checks.js'
+import { isEmptyOrBeaconUrl, isRpcList, MAX_RPCS } from './rpc-checks.js'
+import { MAX_ADDRESS_LENGTH } from '../../protocols/verifier-host/light-client/server-address.js'
 import { isEmptyOrProxyAddress } from './proxy-checks.js'
 import { isEmptyOrAbsolutePath } from './path-checks.js'
 import { CUSTOM_SEARCH_ENGINE, DEFAULT_SEARCH_ENGINE, DEFAULT_SEARCH_MODE, DEFAULT_WEB3_SEARCH_ENGINE, SEARCH_ENGINES, SEARCH_MODES, WEB3_SEARCH_ENGINES, isValidSearchTemplate } from '../browsing/search-engines.js'
@@ -106,6 +108,12 @@ const SPECS = {
   'updates.check': { kind: 'bool', default: true },
   // Whether `.eth` names are proven by a light client that runs on this computer. Applied at once.
   'web3.lightClient': { kind: 'bool', default: true },
+  // Whether the light client asks Orivon's servers, or the ones named below: those replace Orivon's for the field they fill and are never added to them, and Orivon's are not asked when they fail. Applied at once.
+  'web3.ethServers': { kind: 'enum', options: ['orivon', 'custom'], default: 'orivon', labels: { orivon: "Orivon's servers", custom: 'Your own servers' } },
+  // The person's Ethereum servers, one address a line, asked in order, read only while the choice above is 'custom'; empty keeps Orivon's. An address may hold a key: the value is never logged or reported, and is shown masked.
+  'web3.ethRpcs': { kind: 'text', default: '', maxLength: MAX_RPCS * (MAX_ADDRESS_LENGTH + 1), check: isRpcList },
+  // The person's beacon server, read only while the choice above is 'custom'; empty keeps Orivon's. Same care as above.
+  'web3.ethBeacon': { kind: 'text', default: '', maxLength: MAX_ADDRESS_LENGTH, check: isEmptyOrBeaconUrl },
   // Where IPFS content is read from: the node Orivon runs on this computer, or public gateways. Applied at once.
   'web3.ipfsSource': { kind: 'enum', options: ['node', 'gateways'], default: 'node', labels: { node: 'Your own IPFS node', gateways: 'Public IPFS gateways' } },
   // Whether the node may ask a lookup service, as well as the IPFS network, who holds a site. Applied at once; read only while the source is the node.

@@ -55,7 +55,7 @@ export function mountReport (root: HTMLElement, state: ReportState): void {
   const crashSelect = h('select', { className: 'select', id: 'report-crash' })
   const what = h('textarea', { className: 'textarea', id: 'report-what', rows: 6, placeholder: 'What were you doing, what did you expect, what happened instead?' })
   const contact = h('input', { className: 'text', id: 'report-contact', type: 'text', placeholder: 'An email address or a handle, if you want an answer' })
-  const diagnostics = box('report-diagnostics', 'Technical details', 'Versions, the computer and its graphics, the extensions installed, settings that are switches or choices, and the crashes recorded here. No page addresses and nothing you typed.')
+  const diagnostics = box('report-diagnostics', 'Technical details', 'Versions, the computer and its graphics, the extensions installed, how many connections each app has open, settings that are switches or choices, and the crashes recorded here. No page addresses and nothing you typed.')
   const log = box('report-log', 'Recent log', 'The last lines Orivon wrote about what it was doing. A line can name a page or a file Orivon was working with. Your home folder is replaced by ~.')
   const page = box('report-page', 'The crashed page\'s address', 'Which page was open in the tab that crashed.')
   const dump = box('report-dump', 'The crash dump', 'A memory snapshot of the crashed process. It may hold fragments of pages that were open.')

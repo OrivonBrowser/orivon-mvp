@@ -32,6 +32,7 @@ import { lightClientPace, paceOn, routeFor } from './pace.js'
 import { DIRECT_ROUTE } from '../route-pace.js'
 import type { RoutePace } from '../route-pace.js'
 import { GatewayConsent } from './gateway-consent.js'
+import { lightClientFetch } from './light-client/lane-fetch.js'
 
 export interface RunningProtocols {
   /** In the order their providers are tried. */
@@ -190,6 +191,7 @@ function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefi
     endpoints: config.swarmEndpoints,
     route: config.swarmNode === true && node !== undefined ? nodeRouteOf(config, route) : route,
     feedIndexes: stores.swarmFeedIndexes,
+    log: (line) => { console.error(`[verifier] ${line}`) },
     ...(config.swarmNode === true && node !== undefined && { beforeMount: node.ensure })
   })
 }
@@ -212,7 +214,15 @@ function startEns (config: HostConfig, deps: HostDeps, tunnel: RoutePace): { pro
     return { protocol: defineProtocol(ENS, { resolvers }), lightClient: undefined }
   }
   const route = ethereumRoute(config, deps, tunnel)
-  const lightClient = deps.startLightClient(config.lightClient, allowlisted([...config.lightClient.executionRpcs, config.lightClient.consensusRpc], route.web, 'the light client'), deps.post, undefined, lightClientPace(paceOn(route.pace)))
+  const reach = lightClientFetch(config.lightClient, route.web, deps.localFetch, 'the light client')
+  if ('off' in reach) {
+    // The main process logs a failed status and shows it on the status page and in a report; this host's own output reaches neither.
+    const reason = `the Ethereum servers set in Settings cannot be used: ${reach.off}`
+    deps.post({ type: 'status', status: { state: 'failed', reason, retryAt: undefined } })
+    resolvers.push(offResolver(reason))
+    return { protocol: defineProtocol(ENS, { resolvers }), lightClient: undefined }
+  }
+  const lightClient = deps.startLightClient(config.lightClient, reach.send, deps.post, undefined, lightClientPace(paceOn(route.pace)))
   resolvers.push(createEnsResolver({
     provider: lightClient.provider,
     ccipRequest: async (parameters, signal) => await guardedCcipRequest(parameters, route.ccip, DEFAULT_CCIP_LIMITS, signal)

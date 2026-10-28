@@ -11,7 +11,7 @@ import type { ShellServices } from '../shell/shell-services.js'
 import { IS_TEST_BUILD, ingestBaseUrl, modeInputsFromEnv, testOverrides } from '../../telemetry/mode.js'
 import type { InternalDomain } from '../pages/internal-ipc.js'
 import { BUILD_COMMIT } from './build-commit.js'
-import { buildDiagnostics, channelOf, reportedSettings } from './diagnostics-facts.js'
+import { appSocketReadings, buildDiagnostics, channelOf, reportedSettings } from './diagnostics-facts.js'
 import type { DiagnosticsFacts } from './diagnostics-facts.js'
 import { diagnostics } from './diagnostics-runner.js'
 import { readDumpBase64 } from './dump-files.js'
@@ -37,10 +37,21 @@ function base (): string {
   return ingestBaseUrl(IS_TEST_BUILD, testOverrides().url, modeInputsFromEnv(process.env, devModeEnabled(), false).development)
 }
 
+/** Every origin's connection counts, or none: a report that cannot read them is still a report. */
+function readAppSockets (broker: SubsystemContext['broker']): ReturnType<typeof appSocketReadings> {
+  if (broker === undefined) return []
+  try {
+    return appSocketReadings(broker.app.registeredOriginsSync().map((origin) => broker.app.socketUsageSync(origin)))
+  } catch {
+    return []
+  }
+}
+
 async function readFacts (services: ShellServices, ctx: SubsystemContext): Promise<DiagnosticsFacts> {
   const gpuInfo = await app.getGPUInfo('basic').catch(() => undefined)
   const windows = services.windows.all().filter((window) => !window.window.isDestroyed())
   const processors = cpus()
+  const broker = ctx.broker
   return {
     commit: BUILD_COMMIT,
     channel: channelOf({ development: devModeEnabled() || (process.env['ELECTRON_RENDERER_URL'] ?? '') !== '', packaged: app.isPackaged, platform: process.platform, appImage: (process.env['APPIMAGE'] ?? '') !== '' }),
@@ -69,6 +80,7 @@ async function readFacts (services: ShellServices, ctx: SubsystemContext): Promi
       tabs: windows.reduce((sum, window) => sum + window.tabs.getState().tabs.length, 0),
       privateSession: services.isPrivate,
       extensions: (ctx.extensions?.list() ?? []).map(({ id, name, version, enabled }) => ({ id, name, version, enabled })),
+      appSockets: readAppSockets(broker),
       settings: reportedSettings((key) => services.settings.get(key))
     },
     crashes: diagnostics()?.crashes() ?? []

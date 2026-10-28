@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { InternalCaller } from '../../pages/internal-ipc.js'
-import { updatesDomain } from '../updates-domain.js'
+import type { UpdateOffer } from '../update-notice.js'
+import { answerOfOffer, updatesDomain } from '../updates-domain.js'
 
 const CALLER = {} as InternalCaller
+const OFFER: UpdateOffer = { current: '1.0.0', latest: 'v1.1.0', url: 'https://github.com/OrivonBrowser/orivon-mvp/releases/tag/v1.1.0', pending: true }
 const ANSWER = { reached: true, current: '1.0.0', latest: 'v1.1.0', newer: true, url: 'https://github.com/x/y/releases/tag/v1.1.0' }
 
 describe('the updates domain', () => {
@@ -35,32 +37,39 @@ describe('the updates domain', () => {
     expect(await domain.handle(null, CALLER)).toBeUndefined()
   })
 
-  it('opens the page of the release the last check found, in the window that asked', async () => {
+  it('opens the page of the release on offer, in the window that asked, whichever look found it', async () => {
     const open = vi.fn()
-    const domain = updatesDomain(async () => ANSWER, false, () => {}, open)
-    await domain.handle({ type: 'check' }, CALLER)
+    const domain = updatesDomain(async () => ANSWER, false, () => {}, open, false, () => OFFER)
     expect(await domain.handle({ type: 'openRelease' }, CALLER)).toEqual({ ok: true })
     expect(open).toHaveBeenCalledWith(CALLER, 'https://github.com/OrivonBrowser/orivon-mvp/releases/tag/v1.1.0')
   })
 
-  it('opens nothing before a check found a newer release, or after one found none', async () => {
+  it('opens nothing while no newer release is on offer, and follows the offer as it changes', async () => {
     const open = vi.fn()
-    let newer = true
-    const domain = updatesDomain(async () => ({ ...ANSWER, newer }), false, () => {}, open)
+    let offer: UpdateOffer | null = null
+    const domain = updatesDomain(async () => ANSWER, false, () => {}, open, false, () => offer)
     expect(await domain.handle({ type: 'openRelease' }, CALLER)).toEqual({ ok: false, reason: 'none' })
-    await domain.handle({ type: 'check' }, CALLER)
-    newer = false
-    await domain.handle({ type: 'check' }, CALLER)
+    offer = OFFER
+    expect(await domain.handle({ type: 'openRelease' }, CALLER)).toEqual({ ok: true })
+    offer = null
     expect(await domain.handle({ type: 'openRelease' }, CALLER)).toEqual({ ok: false, reason: 'none' })
-    expect(open).not.toHaveBeenCalled()
+    expect(open).toHaveBeenCalledTimes(1)
   })
 
-  it('opens the list of releases, never an address taken from the answer, when the tag is not a version', async () => {
-    const open = vi.fn()
-    const domain = updatesDomain(async () => ({ ...ANSWER, latest: 'https://evil.example/', url: 'https://evil.example/' }), false, () => {}, open)
-    await domain.handle({ type: 'check' }, CALLER)
-    await domain.handle({ type: 'openRelease' }, CALLER)
-    expect(open).toHaveBeenCalledWith(CALLER, 'https://github.com/OrivonBrowser/orivon-mvp/releases')
+  it('answers what is on offer as a look would, and nothing when nothing is', async () => {
+    let offer: UpdateOffer | null = OFFER
+    const domain = updatesDomain(async () => ANSWER, false, () => {}, () => {}, false, () => offer)
+    expect(await domain.handle({ type: 'state' }, CALLER)).toEqual({ ok: true, answer: { reached: true, current: '1.0.0', latest: 'v1.1.0', newer: true, url: OFFER.url } })
+    offer = null
+    expect(await domain.handle({ type: 'state' }, CALLER)).toEqual({ ok: true, answer: null })
+    expect(answerOfOffer(null)).toBeNull()
+  })
+
+  it('has nothing to say in a private session or a Store install when asked what is on offer, and does not look', async () => {
+    const check = vi.fn(async () => ANSWER)
+    expect(await updatesDomain(check, true, () => {}, () => {}, false, () => OFFER).handle({ type: 'state' }, CALLER)).toEqual({ ok: true, answer: null })
+    expect(await updatesDomain(check, false, () => {}, () => {}, true, () => OFFER).handle({ type: 'state' }, CALLER)).toEqual({ ok: true, answer: null })
+    expect(check).not.toHaveBeenCalled()
   })
 
   it('opens nothing in a private session', async () => {

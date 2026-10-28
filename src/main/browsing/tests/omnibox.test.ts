@@ -120,6 +120,35 @@ describe('parseOmniboxInput', () => {
       })
     })
 
+    // An onion service serves plain http on port 80 and Tor encrypts the connection, so a schemeless onion name opens over http.
+    const ONION = 'orivonexampleonionaddresssentunresolvedtotheproxyxxxxxxx.onion'
+
+    it('a bare onion name defaults to http', () => {
+      expect(parseOmniboxInput(ONION)).toEqual({ kind: 'url', url: `http://${ONION}/` })
+    })
+
+    it('an onion name with a path, query or fragment defaults to http and keeps them', () => {
+      expect(parseOmniboxInput(`${ONION}/wiki/Main?x=1#top`)).toEqual({ kind: 'url', url: `http://${ONION}/wiki/Main?x=1#top` })
+    })
+
+    it('an onion name in capitals defaults to http, as the parser spells the host', () => {
+      expect(parseOmniboxInput(ONION.toUpperCase())).toEqual({ kind: 'url', url: `http://${ONION}/` })
+      expect(parseOmniboxInput(`${ONION.toUpperCase()}/Page`)).toEqual({ kind: 'url', url: `http://${ONION}/Page` })
+    })
+
+    it('an onion name that names a port keeps it over http', () => {
+      expect(parseOmniboxInput(`${ONION}:8080/x`)).toEqual({ kind: 'url', url: `http://${ONION}:8080/x` })
+    })
+
+    it('an explicit https scheme on an onion name is kept, not downgraded', () => {
+      expect(parseOmniboxInput(`https://${ONION}`)).toEqual({ kind: 'url', url: `https://${ONION}/` })
+    })
+
+    it('a path ending in .onion does not affect an ordinary domain\'s https default', () => {
+      expect(parseOmniboxInput('example.com/x.onion')).toEqual({ kind: 'url', url: 'https://example.com/x.onion' })
+      expect(parseOmniboxInput('onion.example.com')).toEqual({ kind: 'url', url: 'https://onion.example.com/' })
+    })
+
     // The check is on the HOST portion only -- a path segment that happens
     // to end in .eth must not flip an ordinary domain's default scheme.
     it('a path ending in .eth does not affect an ordinary domain\'s https default', () => {

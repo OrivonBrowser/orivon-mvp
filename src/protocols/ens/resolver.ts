@@ -4,7 +4,7 @@
 // proven, and a CCIP-Read request function that decides where offchain
 // lookups may go.
 
-import { BaseError, ContractFunctionRevertedError, createPublicClient, custom, decodeFunctionResult, encodeFunctionData, hexToBytes, parseAbi, toHex } from 'viem'
+import { BaseError, ContractFunctionRevertedError, createPublicClient, custom, decodeFunctionResult, encodeFunctionData, hexToBytes, parseAbi, toFunctionSelector, toHex } from 'viem'
 import type { Address, Hex } from 'viem'
 import { namehash, packetToBytes } from 'viem/ens'
 import { ResolutionError } from '../resolution/records.js'
@@ -30,6 +30,7 @@ const universalResolverAbi = parseAbi([
   'error ResolverNotContract(bytes name, address resolver)',
   'error ResolverNotFound(bytes name)',
   'error ReverseAddressMismatch(string primary, bytes primaryAddress)',
+  'error UnreachableName(bytes name)',
   'error UnsupportedResolverProfile(bytes4 selector)'
 ])
 
@@ -39,13 +40,26 @@ const contenthashAbi = parseAbi(['function contenthash(bytes32 node) view return
 const REVERT_FAILURES: Readonly<Record<string, ResolutionFailure>> = {
   ResolverNotFound: 'not-found',
   ResolverNotContract: 'not-found',
+  UnreachableName: 'not-found',
   UnsupportedResolverProfile: 'not-found',
   DNSEncodingFailed: 'invalid-name',
   // An offchain gateway that failed, or the name's resolver reverting, is
-  // not a proven absence: another try may answer.
+  // not a proven absence: another try may answer. The one resolver revert
+  // that is one is read by isUnreachableName.
   HttpError: 'unavailable',
   InvalidBatchGatewayResponse: 'unavailable',
   ResolverError: 'unavailable'
+}
+
+const UNREACHABLE_NAME = toFunctionSelector('UnreachableName(bytes)')
+
+/**
+ * A resolver's own revert that proves the name has no resolver. ENSv2's
+ * mirror of the v1 registry answers this way for a v1 name with none, and
+ * the Universal Resolver passes it on wrapped in ResolverError.
+ */
+function isUnreachableName (errorData: unknown): boolean {
+  return typeof errorData === 'string' && errorData.slice(0, 10).toLowerCase() === UNREACHABLE_NAME
 }
 
 export interface Eip1193Provider {
@@ -88,6 +102,7 @@ function failureOf (error: unknown): ResolutionError {
     const revert = error.walk((e) => e instanceof ContractFunctionRevertedError)
     if (revert instanceof ContractFunctionRevertedError) {
       const errorName = revert.data?.errorName ?? 'an unknown revert'
+      if (errorName === 'ResolverError' && isUnreachableName(revert.data?.args?.[0])) return new ResolutionError('not-found', "the name's resolver reverted with UnreachableName")
       return new ResolutionError(REVERT_FAILURES[errorName] ?? 'unavailable', `the Universal Resolver reverted with ${errorName}`)
     }
     // viem's own message ("An unknown RPC error occurred") names nothing; the deepest cause says what failed.

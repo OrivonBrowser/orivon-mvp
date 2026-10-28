@@ -37,8 +37,8 @@ describe('nodeYaml', () => {
 })
 
 describe('nodeArguments', () => {
-  it('names the program, reads the config from the data directory, and opens no control socket or disk cache', () => {
-    expect(nodeArguments()).toEqual(['swarm-node', `--config=${GUEST_DATA_DIR}/${CONFIG_FILE}`, '--no-control-socket', '--no-disk-cache'])
+  it('names the program, reads the config from the data directory, opens no control socket or disk cache, and keeps 250 peers', () => {
+    expect(nodeArguments()).toEqual(['swarm-node', `--config=${GUEST_DATA_DIR}/${CONFIG_FILE}`, '--no-control-socket', '--no-disk-cache', '--target-peers=250'])
   })
 })
 

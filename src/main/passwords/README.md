@@ -73,4 +73,9 @@ without submitting is never reported.
 
 **The chooser under a box never has the keyboard.** The person is typing in the page, so main reads the arrow
 keys, Enter (only with a row chosen) and Escape from the tab's input before the page does
-(`before-input-event`) and tells the chooser which row is chosen. A click on a row reaches it without moving focus.
+(`before-input-event`) and tells the chooser which row is chosen. A press on a row is a choice, never a reason to close
+or open the chooser: the press gives the chooser's view the keyboard for an instant (the overlay host hands it straight
+back), so the page reports its box blurred and then focused again. Main hears the view's own focus first
+(`chooserPressed`) and lets that one blur pass, and a focus reported for the box the chooser is already open under
+opens nothing, so the generated password, the rows and the early-click guard stay as the person saw them. A blur
+with no press before it, or one that comes long after, still closes it.

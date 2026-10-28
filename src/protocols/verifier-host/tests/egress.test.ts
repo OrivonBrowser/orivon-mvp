@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { EgressRefused, allowlisted, guardedCcipRequest } from '../egress.js'
+import { EgressRefused, allowlisted, guardedCcipRequest, isInternetHost } from '../egress.js'
 import { RedirectRefused } from '../../gateways/gateways.js'
 import type { CcipDeps, WebFetch } from '../egress.js'
 import type { DirectFetch } from '../direct-fetch.js'
@@ -110,6 +110,15 @@ describe('guardedCcipRequest', () => {
     expect(fetch.calls).toEqual([])
   })
 
+  it('refuses an onion name without resolving it', async () => {
+    const fetch = recordingDirect(() => json({ data: '0xfeed' }))
+    const asked: string[] = []
+    const resolving: CcipDeps = { directFetch: fetch, fetch: NO_FETCH, resolveHost: async (host) => { asked.push(host); return ['93.184.216.34'] }, direct: true }
+    await expect(guardedCcipRequest({ data: DATA, sender: SENDER, urls: ['https://abc.onion/{data}'] }, resolving)).rejects.toThrow(/no offchain gateway answered/)
+    expect(asked).toEqual([])
+    expect(fetch.calls).toEqual([])
+  })
+
   it('refuses any port but 443, before resolving or requesting', async () => {
     const fetch = recordingDirect(() => json({ data: '0xfeed' }))
     await expect(guardedCcipRequest({ data: DATA, sender: SENDER, urls: ['https://93.184.216.34:6379/{data}'] }, deps(fetch))).rejects.toThrow(/no offchain gateway answered/)
@@ -190,11 +199,30 @@ describe('guardedCcipRequest, through the tunnel (farEnd)', () => {
     expect(fetch.calls).toEqual([])
   })
 
+  it('refuses an onion name, which no resolver is asked about, here or at the far end', async () => {
+    const fetch = recording(() => json({ data: '0xfeed' }))
+    for (const url of ['https://abc.onion/{data}', 'https://ABC.onion./{data}']) {
+      await expect(guardedCcipRequest({ data: DATA, sender: SENDER, urls: [url] }, tunnelled(fetch)), url).rejects.toThrow(/no offchain gateway answered/)
+    }
+    expect(fetch.calls).toEqual([])
+  })
+
   it('refuses a name that only means something on a local network, which the far end would resolve on its own side', async () => {
     const fetch = recording(() => json({ data: '0xfeed' }))
     for (const url of ['https://router/{data}', 'https://nas.local/{data}', 'https://wiki.corp/{data}', 'https://printer.home.arpa/{data}', 'https://a.b.lan/{data}']) {
       await expect(guardedCcipRequest({ data: DATA, sender: SENDER, urls: [url] }, tunnelled(fetch)), url).rejects.toThrow(/no offchain gateway answered/)
     }
     expect(fetch.calls).toEqual([])
+  })
+})
+
+describe('isInternetHost', () => {
+  it('takes a public name and a public address literal', () => {
+    for (const host of ['eth.drpc.org', 'mainnet.infura.io', '8.8.8.8', '[2606:4700:4700::1111]', '[::ffff:8.8.8.8]']) expect(isInternetHost(host), host).toBe(true)
+  })
+
+  it('refuses every spelling of this computer or a local network, and a name no public server answers to', () => {
+    const refused = ['localhost', 'localhost.', 'foo.localhost', '127.0.0.1', '[::1]', '[::ffff:7f00:1]', '[::ffff:c0a8:114]', '192.168.1.20', '10.0.0.1', '169.254.169.254', '0.0.0.0', '100.64.0.1', '[fe80::1]', 'nas.local', 'printer.home.arpa', 'router', 'vitalik.eth', 'eth.drpc.org.']
+    for (const host of refused) expect(isInternetHost(host), host).toBe(false)
   })
 })

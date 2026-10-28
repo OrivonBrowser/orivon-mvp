@@ -12,7 +12,7 @@ whose effect is not read on demand (today the theme).
 **What it depends on.** [`../browsing/search-engines.ts`](../browsing/search-engines.ts) (the
 custom search template's check), [`../storage/`](../storage/) (the debounced write) and
 [`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts)
-(`writeFileAtomic`). `proxy-checks.ts` reads the `host:port` of the SOCKS5 proxy a routed app uses. No `electron` import: the theme applier is handed the object it sets.
+(`writeFileAtomic`). `proxy-checks.ts` reads the `host:port` of the SOCKS5 proxy a routed app uses. `rpc-checks.ts` holds the checks of the Ethereum server settings and asks [`../../protocols/verifier-host/light-client/server-address.ts`](../../protocols/verifier-host/light-client/server-address.ts) what an address may be: pure code, the one the Settings page asks too. A text setting may hold a key (the Ethereum server addresses do): it is never reported (a report states switches and choices only), and `NYM_HELD_SETTINGS` empties it for a private window held to Nym. No `electron` import: the theme applier is handed the object it sets.
 
 **What it must never import.** [`../shell/`](../shell/): the shell reads settings, never the reverse.
 

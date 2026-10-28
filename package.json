@@ -51,7 +51,8 @@
     "perf:probe": "node scripts/perf-probe.mjs",
     "package:linux": "node scripts/fetch-bundled-extensions.mjs --required && node scripts/fetch-local-nodes.mjs --required && node scripts/build-ordinary.mjs && electron-builder --linux --publish never",
     "package:win": "node scripts/fetch-bundled-extensions.mjs --required && node scripts/fetch-local-nodes.mjs --required && node scripts/build-ordinary.mjs && electron-builder --win --publish never",
-    "package:mac": "node scripts/fetch-bundled-extensions.mjs --required && node scripts/fetch-local-nodes.mjs --required && node scripts/build-ordinary.mjs && electron-builder --mac --publish never",
+    "package:mac": "node scripts/fetch-bundled-extensions.mjs --required && node scripts/fetch-local-nodes.mjs --required && node scripts/build-ordinary.mjs && electron-builder --mac --publish never -c.mac.identity=- -c.mac.hardenedRuntime=false -c.mac.notarize=false",
+    "package:mac:signed": "node scripts/fetch-bundled-extensions.mjs --required && node scripts/fetch-local-nodes.mjs --required && node scripts/build-ordinary.mjs && electron-builder --mac --publish never -c.forceCodeSigning=true",
     "postinstall": "node scripts/check-no-native-modules.mjs && node scripts/install-electron.mjs && node scripts/fetch-bundled-extensions.mjs && node scripts/fetch-local-nodes.mjs",
     "check:advisories": "node scripts/check-advisories.mjs"
   },
@@ -82,7 +83,7 @@
     "socks": "2.8.10",
     "stream-browserify": "^3.0.0",
     "tldts": "7.4.16",
-    "undici": "7.30.0",
+    "undici": "7.30.1",
     "util": "^0.12.5",
     "viem": "^2.56.8"
   },
@@ -96,7 +97,7 @@
     "@types/debug": "4.1.13",
     "@types/node": "^24.0.0",
     "@types/pngjs": "^6.0.5",
-    "electron": "^44.7.0",
+    "electron": "^44.9.1",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "express": "^4.22.3",

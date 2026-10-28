@@ -26,6 +26,14 @@ export interface LightClientConfig {
   readonly consensusRpc: string
   /** A finalized beacon block root, chosen by the shell. */
   readonly checkpoint: string
+  /**
+   * Of the addresses above, those the person named that are on this computer or their home network (`localhost`, or a loopback or
+   * private address literal). They are reached by `local-rpc-fetch.ts` and by nothing else, never through a proxy or a tunnel; the host
+   * checks each is such a literal and refuses to start the client if one is not, or if a local address above is missing from here.
+   */
+  readonly localEndpoints?: readonly string[]
+  /** Whether the execution servers, and the consensus server, are the person's own and not Orivon's (the person's replace Orivon's, they are never added to them). Absent: Orivon's. */
+  readonly ownServers?: { readonly execution: boolean, readonly consensus: boolean }
 }
 
 /** A mount needs the local node `node` (a kind's name): main starts it if it is not running. */
@@ -111,10 +119,14 @@ export type LightClientState =
   | { readonly state: 'off' }
   | { readonly state: 'starting' }
   | { readonly state: 'syncing', readonly since: number }
-  /** `at`: when the newest verified block was produced, in ms, so a head that stopped advancing shows its age. `clockLeadMs`: how far this computer's clock is behind the chain's, when the light client allows for it. */
+  /** `at`: when the newest verified block was produced, in ms, so a head that stopped advancing shows its age. `clockLeadMs`: how far this computer's clock is behind the chain's, negative when it is ahead, when the light client allows for it. */
   | { readonly state: 'synced', readonly block: number, readonly at: number, readonly clockLeadMs?: number }
-  /** `bootstrapMissing`: Helios could not start because the consensus server answered 404 to the bootstrap of the checkpoint it was given. */
-  | { readonly state: 'failed', readonly reason: string, readonly retryAt: number | undefined, readonly bootstrapMissing?: true }
+  /**
+   * `bootstrapMissing`: Helios could not start because the consensus server answered 404 to the bootstrap of the checkpoint it was given.
+   * `ownServersFailed`: a server the person named is why: every execution server they named is in trouble or none is mainnet, or their
+   * beacon server did not give the bootstrap. Absent when the clock, or one of Orivon's servers, may be the cause.
+   */
+  | { readonly state: 'failed', readonly reason: string, readonly retryAt: number | undefined, readonly bootstrapMissing?: true, readonly ownServersFailed?: true }
 
 export interface SiteProvenance {
   readonly host: string

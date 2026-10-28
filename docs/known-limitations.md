@@ -47,7 +47,8 @@ servers for data. None of them is trusted to be right; each of them sees what it
   `.eth` address is typed or opened and stops about ten minutes after the last one. It also runs
   once, two minutes after launch, when its newest checkpoint is more than seven days old. It
   follows the chain through `ethereum-beacon-api.publicnode.com` and one of three RPCs
-  (`eth.drpc.org`, `rpc.mevblocker.io`, `ethereum-rpc.publicnode.com`). When the checkpoint it came with and the
+  (`eth.drpc.org`, `rpc.mevblocker.io`, `ethereum-rpc.publicnode.com`), or through the servers you
+  name in Settings > Web3. When the checkpoint it came with and the
   one it stored are both over 14 days old (or the beacon server answers 404 to the bootstrap of the one in use), it first asks `ethereum-beacon-api.publicnode.com` and
   `lodestar-mainnet.chainsafe.io` for a fresh one and uses it only if both give the same answer; if they do not,
   or one cannot be reached, no `.eth` name loads until a newer release is installed or they agree.
@@ -55,6 +56,13 @@ servers for data. None of them is trusted to be right; each of them sees what it
   `ipfs.filebase.io`, `trustless-gateway.link`) learn the content you fetch, and for some names
   `name.web3.storage`, a DNS-over-HTTPS resolver (`cloudflare-dns.com`, `dns.google`) or a server
   the name's own resolver chooses learns the name. Settings > Web3 lists them all.
+- **Servers you name are told the names, and the file keeps their keys.** With Your own servers
+  chosen in Settings > Web3, only your servers are asked for what you fill in (a list or a
+  beacon server you leave empty keeps Orivon's server for it), and when they fail `.eth` names
+  wait: Orivon's servers are not asked in their place. A key in an address you typed is stored in your
+  settings file as typed, since the file is not encrypted; Orivon hides it wherever it shows or
+  records it, a private window held to Nym starts without your addresses, and an address on your
+  home network over `http` sends its key in the clear on that network.
 - **Servers can withhold, not lie.** A server can refuse to answer or answer slowly. It cannot
   hand you a wrong name record or a wrong byte without the check failing. The light client's root
   of trust is a chain checkpoint shipped with each release, or one fetched from two beacon servers that agreed
@@ -81,13 +89,12 @@ servers for data. None of them is trusted to be right; each of them sees what it
 
 ## Packages
 
-- **Windows and macOS packages are not signed with a bought certificate.** On Windows,
-  SmartScreen warns on first run (**More info**, then **Run anyway**). On macOS the app is signed
-  ad hoc and not notarized, so the first open is refused: choose **Open Anyway** in **System
-  Settings > Privacy & Security**. Whether macOS 26 still offers Open Anyway for it, or calls it
-  damaged with no way to open it, is unverified (*provisional*; a run on a real macOS 26 Mac
-  settles it). The one-line Terminal install in the [README](../README.md#download) avoids the
-  prompt entirely. [`development/packaging.md`](development/packaging.md) has the detail. Linux
+- **The Windows installer is not signed with a bought certificate.** SmartScreen warns on first
+  run (**More info**, then **Run anyway**). The macOS apps in a release's dmgs are signed with an Apple
+  Developer ID and notarized, so they open without a refusal; a package built from source with
+  `npm run package:mac` is signed ad hoc, and its first open is refused until you choose **Open
+  Anyway** in **System Settings > Privacy & Security**.
+  [`development/packaging.md`](development/packaging.md) has the detail. Linux
   packages are not signed on any distribution. The Microsoft Store package is signed by the Store and
   never warned; an install from it is updated by the Store and looks for no update itself.
 

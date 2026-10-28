@@ -5,6 +5,9 @@
 // every asker are unit-tested under plain vitest.
 import type { WebContents } from 'electron'
 
+/** What `navigator.permissions.query` reads for a page: the answer a request from it would get, or `prompt` where a request would ask the person. */
+export type QueryState = 'granted' | 'denied' | 'prompt'
+
 export interface SiteAsker {
   readonly name: string
   /** Answers a permission request, or `undefined` for a permission this asker
@@ -17,6 +20,16 @@ export interface SiteAsker {
    * only from what was already decided. `contents` is null when Electron
    * gives none, and an asker answers `undefined` for that too. */
   check?: (contents: WebContents | null, permission: string, requestingOrigin: string, details: unknown) => boolean | undefined
+  /**
+   * What a page's `navigator.permissions.query` reads, from the decision a request from the same page would take:
+   * `granted` for a stored allow, `denied` for a stored block, a Settings default of block or a refusal that comes
+   * without a question, `prompt` where a request would ask the person. Electron's own check can only say true or
+   * false, so the engine reads `denied` for everything undecided; this is how a page learns the difference.
+   * `permission` is the web name the page queried and `frameOrigin` the committed origin of the page's top frame,
+   * read by main from the sender and never from the page. An asker answers `undefined` for a name it does not own
+   * and for contents it does not speak for, and the engine's own answer then stands.
+   */
+  query?: (contents: WebContents, permission: string, frameOrigin: string) => QueryState | undefined
   /**
    * Run right after the gate told Electron a request was granted. A grant is told from a promise continuation, so
    * the asker cannot look after it from `request`; an asker whose grant has an expected consequence checks here
@@ -31,6 +44,7 @@ export interface SiteAsks {
   addFirst: (asker: SiteAsker) => void
   request: (contents: WebContents, permission: string, details: unknown) => Promise<boolean> | undefined
   check: (contents: WebContents | null, permission: string, requestingOrigin: string, details: unknown) => boolean | undefined
+  query: (contents: WebContents, permission: string, frameOrigin: string) => QueryState | undefined
   afterGrant: (contents: WebContents, permission: string, details: unknown) => void
 }
 
@@ -65,6 +79,18 @@ export function createSiteAsks (): SiteAsks {
           if (answer !== undefined) return answer
         } catch (error) {
           console.error(`[site-asks] ${asker.name} failed on ${permission}:`, error)
+        }
+      }
+      return undefined
+    },
+    query (contents, permission, frameOrigin) {
+      for (const asker of askers) {
+        if (asker.query === undefined) continue
+        try {
+          const answer = asker.query(contents, permission, frameOrigin)
+          if (answer !== undefined) return answer
+        } catch (error) {
+          console.error(`[site-asks] ${asker.name} failed on a ${permission} query:`, error)
         }
       }
       return undefined

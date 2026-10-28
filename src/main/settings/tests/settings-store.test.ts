@@ -325,6 +325,16 @@ describe('SettingsStore with a settings file that cannot be used', () => {
     expect(await readFile(`${file}.unreadable`, 'utf8')).toBe('{ not json')
   })
 
+  it('logs why the file cannot be read without quoting its text, which may hold a key not yet noted for the scrub', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await mkdir(join(dir, 'nested'), { recursive: true })
+    await writeFile(file, 'FAKE-KEY-0123456789abcdef is not json')
+    await new SettingsStore(file).load()
+    const logged = JSON.stringify(warn.mock.calls.map((call) => call.map((part) => part instanceof Error ? part.message : part)))
+    expect(logged).toContain('settings file unreadable')
+    expect(logged).not.toContain('FAKE')
+  })
+
   it('does the same for a file of a version this build does not read', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     await mkdir(join(dir, 'nested'), { recursive: true })
