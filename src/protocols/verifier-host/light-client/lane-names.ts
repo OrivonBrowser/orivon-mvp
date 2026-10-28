@@ -11,9 +11,12 @@ export const laneNames = (route: 'direct' | TunnelRoute): { readonly execution: 
   consensus: `https://${route}-consensus.orivon.invalid`
 })
 
-/** `text` as it may be shown or logged: each lane name read as the server it stands for (the execution lane as the first one asked), masked, and no part of a configured address left in it. */
-export function publicText (text: string, names: { readonly execution: string, readonly consensus: string }, config: Pick<LightClientConfig, 'executionRpcs' | 'consensusRpc'>): string {
-  const primary = config.executionRpcs[0]
+/**
+ * `text` as it may be shown or logged: each lane name read as the server it stands for (the execution lane as the first of `asked`, the
+ * servers still in use, which is all of the configured ones until a start drops one), masked, and no part of a configured address left in it.
+ */
+export function publicText (text: string, names: { readonly execution: string, readonly consensus: string }, config: Pick<LightClientConfig, 'executionRpcs' | 'consensusRpc'>, asked: readonly string[] = config.executionRpcs): string {
+  const primary = asked[0]
   let out = text
   if (primary !== undefined) out = out.split(names.execution).join(displayEndpoint(primary))
   out = out.split(names.consensus).join(displayEndpoint(config.consensusRpc))

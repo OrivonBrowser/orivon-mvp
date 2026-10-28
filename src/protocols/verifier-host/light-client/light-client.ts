@@ -162,7 +162,7 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
   }
 
   /** Helios's words, or a fetch's, as they may be shown or logged: the lane names read as the servers, masked, with no key in them. */
-  const clean = (text: string): string => publicText(text, names, config)
+  const clean = (text: string): string => publicText(text, names, config, asked)
   const cleaned = (error: unknown): unknown => {
     if (!(error instanceof Error)) return error
     const text = clean(error.message)

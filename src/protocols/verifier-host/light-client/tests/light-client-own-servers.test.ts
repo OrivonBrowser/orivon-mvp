@@ -107,6 +107,22 @@ describe('startHeliosLightClient -- servers the person named', () => {
     expect(JSON.stringify(status)).not.toContain(KEY)
   })
 
+  it('reads the execution lane in Helios\'s words as the server still in use, not the first one named, once that one was dropped', async () => {
+    vi.mocked(createHeliosProvider).mockImplementation((async (given: Names) => {
+      await globalThis.fetch(new Request(given.executionRpc, { method: 'POST', body: rpc }))
+      throw new Error(`error sending request for url (${given.executionRpc}/): status 429`)
+    }) as never)
+    const fetch = async (url: string, init?: RequestInit): Promise<Response> => {
+      if (String(init?.body).includes('eth_chainId')) return answerWith(url === A ? '0xaa36a7' : '0x1')
+      return new Response('no', { status: 429 })
+    }
+    const client = startHeliosLightClient(OWN, fetch as never, () => {})
+    await failed(client)
+    const status = client.status()
+    expect(status).toMatchObject({ state: 'failed', reason: 'b.rpc answered 429 (error sending request for url (https://b.rpc/): status 429)' })
+    expect(JSON.stringify(status)).not.toContain('infura')
+  })
+
   it('does not name a server that was in trouble in an earlier attempt when this attempt fails before asking any', async () => {
     let attempts = 0
     vi.mocked(createHeliosProvider).mockImplementation((async (given: Names) => {
