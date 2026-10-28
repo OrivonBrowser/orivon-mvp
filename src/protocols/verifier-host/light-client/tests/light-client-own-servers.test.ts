@@ -107,6 +107,23 @@ describe('startHeliosLightClient -- servers the person named', () => {
     expect(JSON.stringify(status)).not.toContain(KEY)
   })
 
+  it('does not name a server that was in trouble in an earlier attempt when this attempt fails before asking any', async () => {
+    let attempts = 0
+    vi.mocked(createHeliosProvider).mockImplementation((async (given: Names) => {
+      attempts++
+      if (attempts > 1) throw new Error('could not fetch bootstrap: error sending request: status: 404')
+      await globalThis.fetch(new Request(given.executionRpc, { method: 'POST', body: rpc }))
+      throw new Error('error sending request: status 429')
+    }) as never)
+    const fetch = async (_url: string, init?: RequestInit): Promise<Response> => String(init?.body).includes('eth_chainId') ? answerWith('0x1') : new Response('no', { status: 429 })
+    const client = startHeliosLightClient(OWN, fetch as never, () => {})
+    await failed(client)
+    expect(client.status()).toMatchObject({ state: 'failed', reason: 'mainnet.infura.io/•••• answered 429; b.rpc answered 429 (error sending request: status 429)' })
+    await vi.advanceTimersByTimeAsync(5_000 + 100)
+    await vi.waitFor(() => { if (attempts < 2 || client.status().state !== 'failed') throw new Error('not failed a second time yet') }, { timeout: 5_000 })
+    expect(client.status()).toMatchObject({ state: 'failed', reason: 'could not fetch bootstrap: error sending request: status: 404' })
+  })
+
   it('does not fold a server\'s trouble in while another of them is well', async () => {
     vi.mocked(createHeliosProvider).mockImplementation((async (given: Names) => {
       await globalThis.fetch(new Request(given.executionRpc, { method: 'POST', body: rpc }))

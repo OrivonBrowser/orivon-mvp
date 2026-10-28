@@ -123,7 +123,7 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
   installTimerScope()
   installHeliosClock()
   const names = laneNames(route)
-  /** The last trouble each execution server was seen in, by address: a status or a code, never the address or a server's text. */
+  /** The last trouble each execution server was seen in during this attempt to start, by address: a status or a code, never the address or a server's text. */
   const problems = new Map<string, string>()
   const noteProblem = (endpoint: string, problem: string | undefined): void => { if (problem === undefined) problems.delete(endpoint); else problems.set(endpoint, problem) }
   /** The execution servers in use: all of them, less those found on another chain. */
@@ -289,6 +289,7 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
   }
 
   const run = async (attempt: number): Promise<void> => {
+    problems.clear()
     setState({ state: 'syncing', since: Date.now() })
     try {
       await checkChain()
