@@ -203,13 +203,15 @@ describe('openFile', () => {
 
   it('keeps leaves in flight past the end of one intermediate chunk, never more than AHEAD of the byte read', async () => {
     const store = new Map<string, Uint8Array>()
-    const bytes = content(200 * LEAF)
-    // `content` repeats every 16 leaves; numbered leaves are 200 addresses.
-    for (let i = 0; i < 200; i++) bytes[i * LEAF] = i
+    const count = AHEAD + 200
+    const bytes = content(count * LEAF)
+    // `content` repeats every 16 leaves; numbered leaves are `count` addresses.
+    for (let i = 0; i < count; i++) bytes.set([i & 255, i >> 8], i * LEAF)
     const { ref } = buildFile(bytes, store)
-    const leafAt =(i: number): string => Buffer.from(cacAddress(makeChunk(spanBytes(LEAF), bytes.subarray(i * LEAF, (i + 1) * LEAF)))).toString('hex')
+    const leafAt = (i: number): string => Buffer.from(cacAddress(makeChunk(spanBytes(LEAF), bytes.subarray(i * LEAF, (i + 1) * LEAF)))).toString('hex')
     // The first child of each intermediate chunk is what tells the joiner its children's size: never held.
-    const firsts = new Set([leafAt(0), leafAt(128)])
+    const intermediates = Math.ceil(count / 128)
+    const firsts = new Set(Array.from({ length: intermediates }, (_, i) => leafAt(i * 128)))
     const asked = new Set<string>()
     const held: Array<() => void> = []
     let holding = true
@@ -224,9 +226,10 @@ describe('openFile', () => {
     const file = await openFile(get, ref, LIMITS)
     const reading = collect(file.read({ start: 120 * LEAF, end: bytes.length - 1 }))
     await vi.waitFor(() => { expect(asked.has(leafAt(150))).toBe(true) })
+    await vi.waitFor(() => { expect(asked.has(leafAt(120 + AHEAD - 1))).toBe(true) })
     await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(asked.size).toBeLessThanOrEqual(AHEAD + 2)
-    expect(asked.has(leafAt(199))).toBe(false)
+    expect(asked.size).toBeLessThanOrEqual(AHEAD + intermediates)
+    expect(asked.has(leafAt(120 + AHEAD + 40))).toBe(false)
     holding = false
     for (const release of held) release()
     expect(await reading).toEqual(bytes.subarray(120 * LEAF))

@@ -1,6 +1,6 @@
 // A Bee-API endpoint for the end-to-end suite: it holds the chunks of the
 // sites and feeds a test builds, and answers `/chunks/<hex>` like a node does,
-// and `/bytes/<hex>` with the joined bytes under a chunk, a `Range` honoured.
+// and `/bytes/<hex>` with the joined bytes under a chunk.
 // `/feeds/<owner>/<topic>` answers with the newest index header when asked to,
 // and with a 501 otherwise, as a node without that route does. It logs every
 // request, can flip a byte of any chunk, can answer a chunk with a redirect
@@ -68,16 +68,10 @@ export async function startSwarmFixture (options = {}) {
     }
     const subtree = /^\/bytes\/([0-9a-f]{64})$/.exec(url.pathname)
     if (subtree !== null) {
-      const whole = joined(store, subtree[1])
-      if (whole === undefined) { res.writeHead(404).end('not found'); return }
-      const range = /^bytes=(\d+)-(\d+)$/.exec(req.headers.range ?? '')
-      const from = range === null ? 0 : Number(range[1])
-      const to = range === null ? whole.length - 1 : Math.min(Number(range[2]), whole.length - 1)
-      const body = Buffer.from(whole.subarray(from, to + 1))
+      const body = joined(store, subtree[1])
+      if (body === undefined) { res.writeHead(404).end('not found'); return }
       if (tamperAll) body[Math.min(4096, body.length - 1)] ^= 0x01
-      const answer = () => {
-        res.writeHead(range === null ? 200 : 206, { 'content-type': 'application/octet-stream', ...(range !== null && { 'content-range': `bytes ${String(from)}-${String(to)}/${String(whole.length)}` }) }).end(body)
-      }
+      const answer = () => { res.writeHead(200, { 'content-type': 'application/octet-stream' }).end(body) }
       if (holding) held.push(answer)
       else answer()
       return

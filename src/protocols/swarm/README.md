@@ -42,8 +42,8 @@ A feed's end is only a 404 from every endpoint; an endpoint that does not answer
 
 **A file's leaves are read together.** Each 4 KB chunk is a round trip to the node, so a file is
 read by its intermediate chunks: the up to 128 leaves under one are asked for in a single
-`/bytes/<intermediate address>` request, with a `Range` for the ones the read needs
-(`ChunkSource.leaves`). A leaf is used only once it hashes to the address its parent lists; a leaf
+`/bytes/<intermediate address>` request for the whole subtree (`ChunkSource.leaves`); a `Range`
+makes the node's answer many times slower, so the bytes a read does not need are skipped. A leaf is used only once it hashes to the address its parent lists; a leaf
 the answer does not hold, or holds wrong, and every one after it, is fetched alone over `/chunks`,
 so a node that cannot answer in bulk costs time, never a byte. A failed bulk read is not held
 against the node. [`joiner.ts`](joiner.ts) keeps `AHEAD` leaves in flight across the whole file,

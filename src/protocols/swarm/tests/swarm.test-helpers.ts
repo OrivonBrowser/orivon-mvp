@@ -17,9 +17,9 @@ export interface FakeSwarm {
   readonly empty: Set<string>
   /** Endpoints answering `/feeds/...` with this index (hex, as the header carries it). Others answer 501, as a node without that route does. */
   readonly feedHints: Map<string, string>
-  /** How `/bytes/<hex>` answers: honouring a `Range` header as a node does, ignoring it with the whole subtree, or not at all (404). */
-  bytesRoute: 'ranges' | 'whole' | 'none'
-  /** Subtrees whose `/bytes` answer has one byte flipped, in the second leaf it sends. */
+  /** Whether `/bytes/<hex>` answers with the bytes under that chunk; without it, a 404. */
+  bytesRoute: boolean
+  /** Subtrees whose `/bytes` answer has one byte flipped, in its second leaf. */
   readonly tamperedBytes: Set<string>
 }
 
@@ -67,17 +67,11 @@ export function fakeSwarm (chunks: ReadonlyMap<string, Uint8Array>): FakeSwarm {
     }
     const subtree = /^\/bytes\/([0-9a-f]{64})$/.exec(parsed.pathname)
     if (subtree !== null) {
-      const whole = swarm.bytesRoute === 'none' || empty.has(endpoint) ? undefined : joined(chunks, subtree[1]!)
-      if (whole === undefined) return new Response('not found', { status: 404 })
-      const range = /^bytes=(\d+)-(\d+)$/.exec(init.headers.range ?? '')
-      const from = swarm.bytesRoute === 'ranges' && range !== null ? Number(range[1]) : 0
-      const to = swarm.bytesRoute === 'ranges' && range !== null ? Math.min(Number(range[2]), whole.length - 1) : whole.length - 1
-      const body = whole.slice(from, to + 1)
-      const flipped = Math.min(CHUNK_PAYLOAD_BYTES, body.length - 1)
+      const body = swarm.bytesRoute && !empty.has(endpoint) ? joined(chunks, subtree[1]!)?.slice() : undefined
+      if (body === undefined) return new Response('not found', { status: 404 })
+      const flipped = 2 * CHUNK_PAYLOAD_BYTES - 1
       if (swarm.tamperedBytes.has(subtree[1]!)) body[flipped] = body[flipped]! ^ 1
-      return from === 0 && to === whole.length - 1
-        ? new Response(body)
-        : new Response(body, { status: 206, headers: { 'content-range': `bytes ${String(from)}-${String(to)}/${String(whole.length)}` } })
+      return new Response(body)
     }
     if (parsed.pathname.startsWith('/feeds/')) {
       const hint = feedHints.get(endpoint)
@@ -92,7 +86,7 @@ export function fakeSwarm (chunks: ReadonlyMap<string, Uint8Array>): FakeSwarm {
     redirect: (address, only) => { redirected.set(address, only) },
     empty,
     feedHints,
-    bytesRoute: 'ranges',
+    bytesRoute: true,
     tamperedBytes: new Set()
   }
   return swarm

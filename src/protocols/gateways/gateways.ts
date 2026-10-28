@@ -213,8 +213,6 @@ export interface GatewayRequest {
   readonly timeoutMs: number
   /** The most the body may hold: with the route's pace it bounds the whole transfer, so a source that trickles for ever still ends. */
   readonly maxBytes: number
-  /** A `Range` header value, for a source that may answer with part of the body. */
-  readonly range?: string
   /** An extra request whose outcome says nothing about the gateway: it is not noted, so its failure cools nothing and its latency sets no hedge. */
   readonly unnoted?: boolean
 }
@@ -250,7 +248,7 @@ export async function askGateway<T> (
     try {
       let response: Response
       try {
-        response = await fetch(req.url, { headers: { accept: req.accept, ...(req.range !== undefined && { range: req.range }) }, signal: AbortSignal.any([signal, clock.signal]) })
+        response = await fetch(req.url, { headers: { accept: req.accept }, signal: AbortSignal.any([signal, clock.signal]) })
       } catch (error) {
         if (signal.aborted) {
           if (signal.reason instanceof Outrun) note({ kind: 'timeout' })

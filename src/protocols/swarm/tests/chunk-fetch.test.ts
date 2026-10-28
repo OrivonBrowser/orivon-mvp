@@ -106,14 +106,11 @@ describe('ChunkSource.leaves', () => {
     expect(logged).toEqual([])
   })
 
-  it('asks for only the leaves it was given, and uses only those from a source that sends the whole subtree', async () => {
-    for (const route of ['ranges', 'whole'] as const) {
-      const { store, parent, leaves, swarm, source } = subtree(10)
-      swarm.bytesRoute = route
-      const some = leaves.slice(3, 7)
-      expect(await Promise.all(source.leaves(parent, some, signal, () => {}))).toEqual(some.map((leaf) => store.get(leaf.address)))
-      expect(swarm.requests).toEqual([`${A}/bytes/${parent}`])
-    }
+  it('uses only the leaves it was given from the whole subtree the source sends', async () => {
+    const { store, parent, leaves, swarm, source } = subtree(10)
+    const some = leaves.slice(3, 7)
+    expect(await Promise.all(source.leaves(parent, some, signal, () => {}))).toEqual(some.map((leaf) => store.get(leaf.address)))
+    expect(swarm.requests).toEqual([`${A}/bytes/${parent}`])
   })
 
   it('asks nothing for leaves it keeps, and only from the first leaf it does not', async () => {
@@ -140,7 +137,7 @@ describe('ChunkSource.leaves', () => {
 
   it('fetches every leaf alone from a source without the route, and does not cool it for that', async () => {
     const { store, parent, leaves, swarm, source, pool, logged } = subtree(4)
-    swarm.bytesRoute = 'none'
+    swarm.bytesRoute = false
     expect(await Promise.all(source.leaves(parent, leaves, signal, () => {}))).toEqual(leaves.map((leaf) => store.get(leaf.address)))
     expect(swarm.requests).toEqual([`${A}/bytes/${parent}`, ...leaves.map((leaf) => `${A}/chunks/${leaf.address}`)])
     expect(pool.candidates()).toEqual([A])
@@ -151,7 +148,7 @@ describe('ChunkSource.leaves', () => {
     const { store, parent, leaves, swarm } = subtree(5)
     const cut: Fetch = async (url, init) => {
       const response = await swarm.fetch(url, init)
-      return url.includes('/bytes/') ? new Response((await response.arrayBuffer()).slice(0, 2 * 4096 + 10), { status: 206, headers: { 'content-range': `bytes 0-${String(5 * 4096 - 1)}/${String(5 * 4096)}` } }) : response
+      return url.includes('/bytes/') ? new Response((await response.arrayBuffer()).slice(0, 2 * 4096 + 10)) : response
     }
     const source = new ChunkSource({ fetch: cut, pool: new GatewayPool([A], 6), limits: DEFAULT_LIMITS })
     expect(await Promise.all(source.leaves(parent, leaves, signal, () => {}))).toEqual(leaves.map((leaf) => store.get(leaf.address)))

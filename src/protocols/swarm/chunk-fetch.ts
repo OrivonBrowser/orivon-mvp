@@ -114,8 +114,6 @@ function pending<T> (): Pending<T> {
   return { promise, resolve, reject }
 }
 
-const CONTENT_RANGE_START = /^bytes (\d+)-\d+\/(?:\d+|\*)$/
-
 /** A leaf rebuilt as the chunk its parent lists: the span its parent declares, then its bytes. */
 function leafChunk (bytes: Uint8Array, size: number): Uint8Array {
   const chunk = new Uint8Array(SPAN_BYTES + size)
@@ -150,7 +148,8 @@ export class ChunkSource {
 
   /**
    * The leaves of the subtree under the intermediate chunk at `parent`, in order. Those not kept are asked of one
-   * endpoint in a single `/bytes` request, a 4 KB round trip each being what makes a file slow, and each is used only
+   * endpoint in a single `/bytes` request for the whole subtree, at most 512 KB, since a 4 KB round trip each is what
+   * makes a file slow and a `Range` makes the node's answer many times slower. Each is used only
    * once its bytes, under the size its parent declares, hash to the address its parent lists: the endpoint is trusted
    * no more than over `/chunks`. A leaf that answer does not hold, or holds wrong, is fetched alone as `get` fetches
    * it, so a node that cannot or will not answer in bulk costs time, never a byte.
@@ -182,17 +181,9 @@ export class ChunkSource {
       const body = new Uint8Array(last.offset + last.size - from)
       void askGateway(
         this.deps.pool, this.deps.fetch, endpoint,
-        { url: `${endpoint}/bytes/${parent}`, accept: 'application/octet-stream', range: `bytes=${String(from)}-${String(from + body.length - 1)}`, timeoutMs: this.deps.limits.chunkTimeoutMs, maxBytes: body.length, unnoted: true },
+        { url: `${endpoint}/bytes/${parent}`, accept: 'application/octet-stream', timeoutMs: this.deps.limits.chunkTimeoutMs, maxBytes: from + body.length, unnoted: true },
         async (response, progress) => {
-          // A 200 is the whole subtree, which a source that ignores ranges sends; a 206 must start where it was asked to.
           let skip = from
-          if (response.status === 206) {
-            if (Number(CONTENT_RANGE_START.exec(response.headers.get('content-range') ?? '')?.[1]) !== from) {
-              stopped = `a range it was not asked for: ${response.headers.get('content-range') ?? 'none'}`
-              return
-            }
-            skip = 0
-          }
           stopped = 'the answer ended early'
           if (response.body === null) return
           const reader = response.body.getReader()
