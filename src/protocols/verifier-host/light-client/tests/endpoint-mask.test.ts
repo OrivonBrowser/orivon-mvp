@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { isLocalLiteral, maskEndpoint, maskText, secretParts } from '../endpoint-mask.js'
+import { displayEndpoint, isLocalLiteral, maskEndpoint, maskText, secretParts } from '../endpoint-mask.js'
+
+describe('displayEndpoint', () => {
+  it('keeps the scheme, so an address with no key reads as it was typed', () => {
+    expect(displayEndpoint('https://eth.drpc.org')).toBe('https://eth.drpc.org')
+    expect(displayEndpoint('http://192.168.1.20:8545/')).toBe('http://192.168.1.20:8545')
+  })
+
+  it('hides a key as maskEndpoint does, and never echoes text it cannot read', () => {
+    expect(displayEndpoint('http://127.0.0.1:8545/v3/FAKE-KEY')).toBe('http://127.0.0.1:8545/••••')
+    expect(displayEndpoint('SECRET inside')).toBe('an address that cannot be read')
+  })
+})
 
 describe('maskEndpoint', () => {
   it('shows the host alone for an address with no path', () => {

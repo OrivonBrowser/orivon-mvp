@@ -54,6 +54,11 @@ leave it behind. A fatal error (`start.ts` calls `recordFatal` before `app.exit(
 next start does not add an unclean-exit record for the same run. A renderer crash does not count: it says nothing
 about whether the browser itself ended well.
 
-**The redaction is the home directory and nothing else.** `~` replaces it in every string sent and in the preview. A
-username elsewhere (a path under `/Users` of another account, a name in a page address) is not found by it, which is
-why the page address is a box that is off by default.
+**The redaction is the home directory and the secrets main has noted.** `~` replaces the home directory in every string
+sent and in the preview. A username elsewhere (a path under `/Users` of another account, a name in a page address) is not
+found by it, which is why the page address is a box that is off by default. [`secret-scrub.ts`](secret-scrub.ts) keeps what
+main has told it is a secret (today the parts of the Ethereum server addresses the person typed, which may hold a key) with
+what shows in its place; `DiagnosticsService.log` and `record` apply it to a line and a crash before they keep it, and
+[`report-payload.ts`](report-payload.ts) applies it to every field before a field is cut, so a secret cut in two by a limit
+cannot survive half. Text of the person's that no one told it about, a secret under four characters and a page's own
+content are not covered.

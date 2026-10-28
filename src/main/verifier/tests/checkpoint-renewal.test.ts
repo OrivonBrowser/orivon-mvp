@@ -7,10 +7,13 @@ import { DEFAULT_ENDPOINTS } from '../endpoints.js'
 
 const answers = vi.hoisted(() => new Map<string, unknown>())
 const asked = vi.hoisted(() => [] as string[])
+/** The second argument of each ask: the local server the request is for, if any. */
+const askedLocal = vi.hoisted(() => [] as Array<string | undefined>)
 
 vi.mock('../checkpoint-fetch-net.js', () => ({
-  beaconJson: async (url: string) => {
+  beaconJson: async (url: string, local?: string) => {
     asked.push(url)
+    askedLocal.push(local)
     const answer = answers.get(url)
     if (answer === undefined) throw new (await import('../checkpoint-fetch.js')).NotFoundAnswer('404')
     return answer
@@ -33,9 +36,12 @@ function serve (root: string, slot = EPOCH_FIRST, head = EPOCH_FIRST + 31): void
   answers.set(`${CONSENSUS!}/eth/v1/beacon/light_client/bootstrap/${root}`, { data: { header: { beacon: { slot: String(slot) } } } })
 }
 
+const OWN = 'https://beacon.example.com'
+const LOCAL_OWN = 'http://127.0.0.1:5052'
+
 interface Harness { renewal: CheckpointRenewal, saved: Array<{ root: string, replacing: ReadonlySet<string> }>, restarts: () => number, host: { running: boolean }, stored: { value: StoredCheckpoint | undefined } }
 
-function harness (saveThrows = false, onSave: () => void = () => {}): Harness {
+function harness (saveThrows = false, onSave: () => void = () => {}, consensus?: () => { url: string, local: boolean }): Harness {
   const saved: Harness['saved'] = []
   const stored: Harness['stored'] = { value: undefined }
   const host = { running: true }
@@ -49,7 +55,7 @@ function harness (saveThrows = false, onSave: () => void = () => {}): Harness {
       onSave()
     }
   }
-  const renewal = new CheckpointRenewal({ store: () => store as never, switchedOff: () => false, changed: () => {}, hostRunning: () => host.running, restartHost: restart })
+  const renewal = new CheckpointRenewal({ store: () => store as never, switchedOff: () => false, changed: () => {}, hostRunning: () => host.running, restartHost: restart, ...(consensus !== undefined && { consensus }) })
   return { renewal, saved, restarts: () => restart.mock.calls.length, host, stored }
 }
 
@@ -64,6 +70,7 @@ describe('CheckpointRenewal', () => {
     vi.setSystemTime(NOW_MS)
     answers.clear()
     asked.length = 0
+    askedLocal.length = 0
   })
   afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 
@@ -161,5 +168,66 @@ describe('CheckpointRenewal', () => {
     expect(saved.map((s) => s.root)).toEqual([FRESH])
     expect(asked.some((url) => url.includes(`/bootstrap/${SHIPPED_ROOT}`))).toBe(false)
   })
-})
 
+  describe('with a beacon server of the person\'s', () => {
+    function serveOwn (root: string): void {
+      serve(root)
+      answers.set(`${OWN}/eth/v1/beacon/light_client/bootstrap/${root}`, { data: { header: { beacon: { slot: String(EPOCH_FIRST) } } } })
+    }
+
+    it('asks it, and not Orivon\'s, whether it serves the bootstrap of a fresh checkpoint', async () => {
+      const { renewal, saved } = harness(false, () => {}, () => ({ url: OWN, local: false }))
+      expect(renewal.consensusRpc()).toBe(OWN)
+      renewal.chooseForStart()
+      serveOwn(FRESH)
+      renewal.recoverUnserved()
+      await settle()
+      expect(saved.map((s) => s.root)).toEqual([FRESH])
+      expect(asked.some((url) => url === `${OWN}/eth/v1/beacon/light_client/bootstrap/${FRESH}`)).toBe(true)
+      expect(asked.some((url) => url.startsWith(`${CONSENSUS!}/eth/v1/beacon/light_client`))).toBe(false)
+    })
+
+    it('still asks Orivon\'s two servers for the finalized header and the block roots, which the person\'s server does not decide', async () => {
+      const { renewal } = harness(false, () => {}, () => ({ url: OWN, local: false }))
+      renewal.chooseForStart()
+      serveOwn(FRESH)
+      renewal.recoverUnserved()
+      await settle()
+      expect(asked).toContain(`${CONSENSUS!}/eth/v1/beacon/headers/finalized`)
+      expect(asked).toContain(`${OTHER!}/eth/v1/beacon/headers/finalized`)
+    })
+
+    it('marks a request to a server on this computer as local, and no other', async () => {
+      const { renewal } = harness(false, () => {}, () => ({ url: LOCAL_OWN, local: true }))
+      renewal.chooseForStart()
+      serve(FRESH)
+      answers.set(`${LOCAL_OWN}/eth/v1/beacon/light_client/bootstrap/${FRESH}`, { data: { header: { beacon: { slot: String(EPOCH_FIRST) } } } })
+      renewal.recoverUnserved()
+      await settle()
+      const toLocal = asked.map((url, index) => [url, askedLocal[index]] as const).filter(([url]) => url.startsWith(LOCAL_OWN))
+      expect(toLocal.length).toBeGreaterThan(0)
+      expect(toLocal.every(([, local]) => local === LOCAL_OWN)).toBe(true)
+      expect(askedLocal.filter((local) => local !== undefined)).toHaveLength(toLocal.length)
+    })
+
+    it('forgets the roots the old beacon server had no bootstrap for, because the new one may have them', async () => {
+      let server = { url: OWN, local: false }
+      const { renewal } = harness(false, () => {}, () => server)
+      renewal.chooseForStart()
+      renewal.recoverUnserved()
+      await settle()
+      expect(renewal.choose()).toMatchObject({ ok: false, problem: 'not-served' })
+      server = { url: 'https://other-beacon.example.com', local: false }
+      expect(renewal.choose()).toMatchObject({ ok: true, source: 'release' })
+    })
+
+    it('keeps them while the server is the same', async () => {
+      const { renewal } = harness(false, () => {}, () => ({ url: OWN, local: false }))
+      renewal.chooseForStart()
+      renewal.recoverUnserved()
+      await settle()
+      expect(renewal.choose()).toMatchObject({ ok: false, problem: 'not-served' })
+      expect(renewal.choose()).toMatchObject({ ok: false, problem: 'not-served' })
+    })
+  })
+})

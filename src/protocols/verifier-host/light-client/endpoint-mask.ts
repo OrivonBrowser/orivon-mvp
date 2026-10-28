@@ -42,6 +42,12 @@ export function maskEndpoint (url: string): string {
   return `${shownHost(parsed)}${port}${hasPath(parsed) || parsed.search !== '' ? `/${MASK}` : ''}`
 }
 
+/** The address with its scheme, masked as `maskEndpoint` masks it: how a server is named on a screen, in a log or in a sentence. */
+export function displayEndpoint (url: string): string {
+  const parsed = parse(url)
+  return parsed === undefined ? maskEndpoint(url) : `${parsed.protocol}//${maskEndpoint(url)}`
+}
+
 /**
  * Every string that would give the address's secret away if it were printed: the address as typed, its path and query, any
  * key-like path segment or query value, a key-like host label, and the credentials. Empty for an address that holds none.
@@ -70,10 +76,9 @@ export function secretParts (url: string): string[] {
 export function maskText (text: string, urls: readonly string[]): string {
   let masked = text
   for (const url of urls) {
-    const parsed = parse(url)
-    if (parsed === undefined) continue
+    if (parse(url) === undefined) continue
     const parts = secretParts(url).sort((a, b) => b.length - a.length)
-    const shown = `${parsed.protocol}//${maskEndpoint(url)}`
+    const shown = displayEndpoint(url)
     for (const part of parts) masked = masked.split(part).join(part === url || part === url.slice(0, -1) ? shown : MASK)
   }
   return masked

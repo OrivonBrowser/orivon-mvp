@@ -11,6 +11,7 @@ import { LogFile, logHeader, readLogTail, sessionOfLog } from './log-file.js'
 import { LOG_RING_LINES, LogRing } from './log-ring.js'
 import type { LogLevel } from './log-ring.js'
 import { cut, LIMITS } from './report-payload.js'
+import { scrub } from './secret-scrub.js'
 
 export interface ServiceEnv {
   /** `<userData>/diagnostics`. */
@@ -57,9 +58,9 @@ export class DiagnosticsService {
     this.marker = new RunMarkerFile(env.dir)
   }
 
-  /** The line sink for the console wrapper. */
+  /** The line sink for the console wrapper. A key in an Ethereum server's address reaches neither the ring nor the file (secret-scrub.ts). */
   log (level: LogLevel, text: string): void {
-    this.logFile.append(this.ring.push(level, text, new Date(this.env.now())))
+    this.logFile.append(this.ring.push(level, scrub(text), new Date(this.env.now())))
   }
 
   /** Whose log a report about `record` carries. Only the previous run's file is kept beside this run's, and it says which run it is. */
@@ -117,9 +118,9 @@ export class DiagnosticsService {
       process: cut(crash.process, LIMITS.process) || 'unknown',
       reason: cut(crash.reason, LIMITS.reason),
       exitCode: crash.exitCode,
-      message: cut(crash.message, LIMITS.message),
-      stack: cut(crash.stack, LIMITS.stack),
-      ...(crash.page === undefined || this.env.isPrivate ? {} : { page: cut(crash.page, LIMITS.page) }),
+      message: cut(scrub(crash.message), LIMITS.message),
+      stack: cut(scrub(crash.stack), LIMITS.stack),
+      ...(crash.page === undefined || this.env.isPrivate ? {} : { page: cut(scrub(crash.page), LIMITS.page) }),
       ...(crash.webContentsId === undefined ? {} : { webContentsId: crash.webContentsId })
     }
     this.store.add(record, this.env.now())

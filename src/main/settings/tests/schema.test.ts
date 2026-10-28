@@ -85,6 +85,15 @@ describe('the settings schema', () => {
   it('opens gateway addresses as .eth names unless told not to', () => {
     expect(SETTINGS['web3.ethGatewayRedirect']).toEqual({ kind: 'bool', default: true })
   })
+
+  it('asks Orivon\'s Ethereum servers unless the person chose their own, and keeps no address by default', () => {
+    expect(SETTINGS['web3.ethServers']).toMatchObject({ kind: 'enum', options: ['orivon', 'custom'], default: 'orivon', labels: { orivon: "Orivon's servers", custom: 'Your own servers' } })
+    expect(SETTINGS['web3.ethRpcs']).toMatchObject({ kind: 'text', default: '' })
+    expect(SETTINGS['web3.ethBeacon']).toMatchObject({ kind: 'text', default: '' })
+    expect(validateSetting(SETTINGS['web3.ethRpcs'], 'https://mainnet.example/v3/FAKE-KEY\nhttp://127.0.0.1:8545')).toBe('https://mainnet.example/v3/FAKE-KEY\nhttp://127.0.0.1:8545')
+    expect(validateSetting(SETTINGS['web3.ethRpcs'], 'http://mainnet.example/')).toBeUndefined()
+    expect(validateSetting(SETTINGS['web3.ethBeacon'], 'https://beacon.example/?key=1')).toBeUndefined()
+  })
 })
 
 describe('the Web3 Score provider setting', () => {

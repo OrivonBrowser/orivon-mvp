@@ -21,7 +21,9 @@ classifier, all reused rather than copied; `@a16z/helios`.
 
 **What it must never import.** [`src/main/`](../../main/) beyond type-only imports: main starts it
 and talks to it over [`protocol.ts`](protocol.ts), and nothing else.
-[`../../main/verifier/`](../../main/verifier/) is its other side.
+[`../../main/verifier/`](../../main/verifier/) is its other side. The one exception runs the other way: three leaf files here
+(`light-client/endpoint-mask.ts`, `light-client/server-address.ts`, `local-rpc-fetch.ts`) are imported by main, and the first two by the
+Settings page, because each holds a rule main and the host must apply alike.
 
 **A local node is asked for before each mount that reads from it.** [`node-link.ts`](node-link.ts) serves any
 kind of node by its name (`NodeLinks.to`). When `HostConfig.swarmNode` is set, the Swarm endpoint is the node
