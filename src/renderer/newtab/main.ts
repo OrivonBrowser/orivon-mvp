@@ -42,6 +42,10 @@ const bookmarksSection = document.querySelector<HTMLElement>('#bookmarks-section
 const bookmarksGrid = document.querySelector<HTMLDivElement>('#bookmarks-grid')
 const featuredGrid = document.querySelector<HTMLDivElement>('#featured-grid')
 const showHiddenButton = document.querySelector<HTMLButtonElement>('#featured-show-hidden')
+const reportBugButton = document.querySelector<HTMLButtonElement>('#report-bug')
+
+/** The page the "Report a bug" button opens in this tab. */
+const REPORT_URL = 'orivon://report/'
 
 /** Set on the root element, and announced as an event on the document, once every row has been drawn. Main reads both by these literal names. */
 const SETTLED_ATTRIBUTE = 'settled'
@@ -60,6 +64,13 @@ if (shell !== undefined) {
     const value = searchInput?.value.trim() ?? ''
     if (value.length > 0) shell.navigate(value)
   })
+
+  // Shown only with the bridge: without it the button would have nothing to ask.
+  if (reportBugButton !== null) {
+    reportBugButton.prepend(bugIcon())
+    reportBugButton.hidden = false
+    reportBugButton.addEventListener('click', () => { shell.navigate(REPORT_URL) })
+  }
 
   // Every row that main fills in; the page says it is settled once each has answered, or failed to.
   const drawing: Array<Promise<unknown>> = []
@@ -221,6 +232,25 @@ function letterIcon (name: string): HTMLSpanElement {
   mark.textContent = name.charAt(0).toUpperCase()
   mark.setAttribute('aria-hidden', 'true')
   return mark
+}
+
+/** Lucide's `bug` (ISC licence, https://lucide.dev), as the other hand-drawn icons here are. */
+function bugIcon (): SVGSVGElement {
+  const icon = svg('0 0 24 24')
+  icon.append(
+    path('m8 2 1.88 1.88', '2'),
+    path('M14.12 3.88 16 2', '2'),
+    path('M9 7.13v-1a3.003 3.003 0 1 1 6 0v1', '2'),
+    path('M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6', '2'),
+    path('M12 20v-9', '2'),
+    path('M6.53 9C4.6 8.8 3 7.1 3 5', '2'),
+    path('M6 13H2', '2'),
+    path('M3 21c0-2.1 1.7-3.9 3.8-4', '2'),
+    path('M20.97 5c0 2.1-1.6 3.8-3.5 4', '2'),
+    path('M22 13h-4', '2'),
+    path('M17.2 17c2.1.1 3.8 1.9 3.8 4', '2')
+  )
+  return icon
 }
 
 /** Lucide's `pin` (ISC licence, https://lucide.dev), as the other hand-drawn icons here are. */

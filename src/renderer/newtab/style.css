@@ -98,7 +98,7 @@ input:focus-visible {
 .dashboard {
   max-width: 640px;
   margin: 0 auto;
-  padding: 96px 24px 48px;
+  padding: 96px 24px 64px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -241,3 +241,31 @@ img.tile-icon { border-radius: 4px; object-fit: contain; }
   text-decoration: underline;
 }
 .link-button:hover { color: #e2e8f0; }
+
+/* A small pill pinned to the window's bottom right, in the fixed light colours of the other text that sits on the picture. It is
+   last in the document, so nothing paints after it, and the dashboard's bottom padding keeps the last row of tiles clear of it. */
+.report-bug {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px 0 10px;
+  border-radius: 15px;
+  border: 1px solid rgba(226, 232, 240, 0.18);
+  background: rgba(13, 14, 20, 0.45);
+  color: rgba(226, 232, 240, 0.75);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: color 150ms ease, border-color 150ms ease, background-color 150ms ease;
+}
+.report-bug[hidden] { display: none; }
+.report-bug:hover {
+  color: #e2e8f0;
+  border-color: rgba(226, 232, 240, 0.35);
+  background: rgba(13, 14, 20, 0.65);
+}
+.report-bug svg { width: 14px; height: 14px; flex: none; }
