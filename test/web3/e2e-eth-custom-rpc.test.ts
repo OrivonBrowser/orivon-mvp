@@ -38,7 +38,7 @@ async function startFixture (): Promise<Fixture> {
     const server = createServer((request, response) => {
       paths.push(request.url ?? '')
       const chunks: Buffer[] = []
-      request.on('data', (chunk: Buffer) => chunks.push(chunk))
+      request.on('data', (chunk: Buffer) => { chunks.push(chunk) })
       request.on('end', () => {
         let call: { id?: unknown, method?: unknown } = {}
         try { call = JSON.parse(Buffer.concat(chunks).toString('utf8')) as typeof call } catch { /* an unreadable body is answered below */ }
