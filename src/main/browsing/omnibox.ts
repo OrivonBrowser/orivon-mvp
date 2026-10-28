@@ -113,13 +113,17 @@ export function parseOmniboxInput (
   // and except a developer-mode `.eth` name from orivon-ports' names file,
   // which is a plain http server on loopback with no certificate to present.
   // Every other `.eth` name stays https: the verifier serves it (../verifier/).
+  // A `.onion` name defaults to http too: an onion service almost always
+  // serves plain http on port 80, its address is its own public key and Tor
+  // encrypts the connection end to end, so https adds nothing there.
   // Checked on the host portion only, so a path that happens to end in
-  // `.eth` (`example.com/x.eth`) is unaffected.
+  // `.eth` or `.onion` (`example.com/x.onion`) is unaffected.
   if (looksLikeHost(trimmed)) {
     const isBareHostPort =
       /^\[[0-9a-fA-F:]+\]:\d+$/.test(trimmed) || /^[^/?#]+:\d+([/?#].*)?$/.test(trimmed)
     const host = (trimmed.split(/[/?#]/)[0] ?? '').replace(/:\d+$/, '').toLowerCase()
-    const scheme = (isBareHostPort || (host.endsWith('.eth') && isDevEthName(host))) ? 'http://' : 'https://'
+    const isPlainHttpName = host.endsWith('.onion') || (host.endsWith('.eth') && isDevEthName(host))
+    const scheme = (isBareHostPort || isPlainHttpName) ? 'http://' : 'https://'
     try {
       return { kind: 'url', url: new URL(scheme + trimmed).toString() }
     } catch {

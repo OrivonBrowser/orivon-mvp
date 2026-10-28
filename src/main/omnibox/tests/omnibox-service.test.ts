@@ -3,6 +3,7 @@ import { OmniboxService, hostKey } from '../omnibox-service.js'
 import type { OmniboxDeps, Snapshot } from '../omnibox-service.js'
 import type { SuggestionRow } from '../suggest.js'
 import type { LateSource, SuggestContext, SuggestSource } from '../suggest-sources.js'
+import { parseOmniboxInput } from '../../browsing/omnibox.js'
 
 const page = (url: string, more: Partial<SuggestionRow> = {}): SuggestionRow => ({
   kind: 'history', title: url, address: url.replace(/^https?:\/\//, '').replace(/\/$/, ''), url, match: [], score: 10, ...more
@@ -34,6 +35,22 @@ describe('OmniboxService.query', () => {
     expect(second.seq).toBe(first.seq + 1)
     // The finished page is the first row, and the row it came from is not listed again.
     expect(first).toMatchObject({ count: 1, completion: 'mple.com' })
+  })
+
+  it('finishes an onion name from a page remembered over https, and opens it over http like any typed onion name', () => {
+    const onion = 'orivonexampleonionaddresssentunresolvedtotheproxyxxxxxxx.onion'
+    const classify = (text: string): string => {
+      const result = parseOmniboxInput(text)
+      return result.kind === 'reject' ? '' : result.url
+    }
+    const { service } = make([page(`https://${onion}/`, { completable: true })], { resolve: classify })
+    expect(service.query(onion.slice(0, 12), true).completion).toBe(onion.slice(12))
+    expect(service.pick(0, 'current', undefined)).toMatchObject({ type: 'go', target: `http://${onion}/` })
+    // Typed in full, the remembered https page is the same page as the first row and is not listed to be picked instead.
+    const full = make([page(`https://${onion}/`, { completable: true })], { resolve: classify, verbatim: (text) => ({ ...goTo(text), url: classify(text) }) }).service
+    full.query(onion, true)
+    expect(full.snapshot().rows.map((row) => row.kind)).toEqual(['verbatim'])
+    expect(full.pick(0, 'current', undefined)).toMatchObject({ type: 'go', target: onion })
   })
 
   it('finishes the text only when it was typed, and only with the setting on', () => {
