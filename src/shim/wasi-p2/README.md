@@ -79,6 +79,8 @@ always succeeds, and an address in use is reported by `finish-listen` (`tcp.ts`)
 so a program that listens twice on a single-port grant collides with its own ephemeral listen and
 sees `address-in-use` -- correct, not a bug. Listening is IPv4 in this build whatever family the
 program's socket has, and a listener reports the address it bound with the port the server holds.
+A UDP socket is IPv4 only: `create-udp-socket` answers `not-supported` for IPv6, as a host without
+IPv6 does, so a resolver given IPv6 servers fails over to its IPv4 ones at once.
 
 **Sockets block only where POSIX does.** A connect and a lookup are started at once and answered
 `would-block` until `orivon.net` settles, and the program waits on a pollable: a non-blocking
