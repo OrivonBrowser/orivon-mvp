@@ -1,7 +1,8 @@
 // A newer Orivon release is announced inside the browser: once per version, in the window in use, with the question
 // panel under the address bar, and never as an operating-system box or notification. GitHub is replaced by the test
 // seam (ORIVON_TEST_UPDATE_RELEASE) and the look runs when a case asks (`__orivonDevUpdateCheckNow`), since every
-// test launch forces the checks off. The release page is asserted by its address: the network is a black hole.
+// test launch forces the checks off. The pages a download button opens (the release page, the start page of
+// latest.orivonstack.eth) are asserted by their addresses: the network is a black hole.
 import { existsSync, readFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -12,11 +13,12 @@ import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } 
 import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
 import { focusWebContents, underVirtualDisplay } from '../support/focus-helpers.js'
 import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
-import { ABSENCE_SETTLE_MS, delay, findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, delay, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 120_000
 const TAG = 'v99.0.0'
 const RELEASE_PAGE = `https://github.com/OrivonBrowser/orivon-mvp/releases/tag/${TAG}`
+const LATEST_PAGE = 'https://latest.orivonstack.eth/'
 const FILE = 'update-check-state.json'
 
 let server: Server
@@ -88,7 +90,7 @@ run('asks in the window in use, in the question panel, and Not now writes the ve
     expect(said.title).toBe('Orivon 99.0.0 is available')
     expect(said.message).toMatch(/^You have \d+\.\d+\.\d+/)
     // The way out is drawn first, on the left, as in every question.
-    expect(said.buttons).toEqual(['Not now', 'Download from GitHub'])
+    expect(said.buttons).toEqual(['Not now', 'Download from GitHub', 'Download from latest.orivonstack.eth'])
     // Nothing is told until it was answered: the release is found and kept, not yet told.
     expect(state()?.lastFoundVersion).toBe(TAG)
     expect(state()?.lastNotifiedVersion).toBeUndefined()
@@ -130,6 +132,24 @@ run('Download from GitHub opens the release page in a new Orivon tab of that win
     await answerQuestion(app, 'Download from GitHub')
     expect((await waitForTab(chrome, { address: RELEASE_PAGE })).ok).toBe(true)
     expect(await waitFor(() => state()?.lastNotifiedVersion === TAG)).toBe(true)
+    expect(await noNativeDialogs(app)).toEqual([])
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+run('Download from latest.orivonstack.eth opens that name in a new Orivon tab, never the release page, and counts the version as told', async () => {
+  const { app, chrome, state } = await launched()
+  try {
+    await lookStarted(app)
+    await waitQuestion(app)
+    await answerQuestion(app, 'Download from latest.orivonstack.eth')
+    expect((await waitForTab(chrome, { address: LATEST_PAGE })).ok).toBe(true)
+    expect((await tabIds(chrome)).length).toBe(2)
+    expect(await waitFor(() => state()?.lastNotifiedVersion === TAG)).toBe(true)
+    expect(await waitFor(async () => await questionGone(app))).toBe(true)
+    expect(mainOutput(app)).toContain('[self-update] answer: latest.orivonstack.eth')
+    expect(mainOutput(app)).not.toContain('answer: the release page')
     expect(await noNativeDialogs(app)).toEqual([])
   } finally {
     await closeElectron(app)

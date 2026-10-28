@@ -13,8 +13,8 @@ what is on offer, and to open the release page. `update-schedule.ts` runs the lo
 setting is switched on. `newest-release.ts` picks the newest release from the list GitHub answers, pre-releases
 included (every release here is one), skipping drafts and tags that are not versions. `github-release-version.ts`
 parses release tags, and must not merge with the broker's version comparator (its header says why). `release-url.ts`
-builds the release page address from fixed constants and a tag that looks like a version. `update-test-seam.ts` is
-the test-build seam.
+builds the release page address from fixed constants and a tag that looks like a version, and holds the address of the
+newest-release name. `update-test-seam.ts` is the test-build seam.
 
 **Tied to Electron.** `update-check-runner.ts` (imports `net` dynamically), `update-window.ts` (draws the question through
 `../shell/question/` and acts on the windows) and `install-update-notice.ts` (a shell installer on the app and its
@@ -35,7 +35,9 @@ looks at nothing, and neither does a Microsoft Store install (`isStoreInstall`, 
 delivers its updates, so Settings says that instead of offering the switch.
 
 **The notice.** A newer release is asked about once per version, in the window in use, with the question panel under
-the address bar: "Download from GitHub" opens the release page in a new Orivon tab, "Not now", Escape or a closed tab
+the address bar: "Download from GitHub" opens the release page in a new Orivon tab, "Download from latest.orivonstack.eth"
+opens the start page of that name (it downloads the package for the visitor's system; `release-url.ts` holds the address
+as a constant, so no release list can name another page) in a new Orivon tab, and "Not now", Escape or a closed tab
 dismisses it. It is never an operating-system notification or message box (`npm run check:native-dialogs` refuses
 both). With no window in use (minimised, hidden, behind the welcome screen or restore bar, another question open, full
 screen, or a kiosk) it waits and asks when one is, retrying every few seconds. There is no install button: nothing
