@@ -1,6 +1,6 @@
 # ADR-0078: Orivon's own Swarm light node runs as WebAssembly in a utility process of its own
 
-- **Status:** accepted; **amended 2026-10-13 (`d-0613`)**: the node's files are published as one IPFS directory, pinned by the IPFS node that pins Orivon's releases, and a build fetches them by the CID in `resources/swarm-node/swarm-node.json`; a build without them has Swarm off.
+- **Status:** accepted; **amended 2026-10-13 (`d-0613`)**: the node's files are published as one IPFS directory, pinned by the IPFS node that pins Orivon's releases, and a build fetches them by the CID in `resources/swarm-node/swarm-node.json`; a build without them has Swarm off; **amended 2026-10-28 (`d-0741`)**: connections accepted on the node's loopback listeners count against 128 of their own, apart from the 300 sockets it opens.
 - **Date:** 2026-10-12
 - **Type:** architecture / security
 - **Decided by:** owner (no public gateways: `d-0603`; the node as WebAssembly in a utility process of its own: `d-0604`); AI recommendation accepted by default for the process shape

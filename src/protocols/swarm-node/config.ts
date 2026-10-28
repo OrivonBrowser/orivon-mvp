@@ -15,8 +15,9 @@ export const PROGRAM_NAME = 'swarm-node'
 /**
  * Peers the node keeps. Each peer serves a light node only a few chunks a second on credit, so the peer count bounds
  * how fast a file arrives: with the same read-ahead, 250 loaded the WebTorrent page in 24 to 26 s where the node's own
- * 100 took 30, and only with 250 did reading further ahead (`../swarm/joiner.ts`) help. It stays under `node-net.ts`'s
- * 300 sockets, and costs about 45 MB and a tenth of a core more while the node sits idle.
+ * 100 took 30, and only with 250 did reading further ahead (`../swarm/joiner.ts`) help. It costs about 45 MB and a tenth
+ * of a core more while the node sits idle. The node dials past this number to balance its neighbourhood, which can reach
+ * `node-net.ts`'s 300 sockets: a dial past them is refused, and the node counts it as a failed one.
  */
 export const TARGET_PEERS = 250
 

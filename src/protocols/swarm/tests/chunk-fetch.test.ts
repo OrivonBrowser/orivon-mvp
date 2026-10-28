@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { BlockCache } from '../../gateways/cache.js'
 import { GatewayPool } from '../../gateways/gateways.js'
 import type { Fetch } from '../../gateways/gateways.js'
@@ -166,6 +166,41 @@ describe('ChunkSource.leaves', () => {
     gone.abort()
     const answers = source.leaves(parent, leaves, gone.signal, () => {})
     for (const answer of answers) await expect(answer).rejects.toBeDefined()
+    expect(swarm.requests).toEqual([])
+  })
+
+  it('keeps its /bytes request for a read that joined its leaves when the read that started it leaves', async () => {
+    const { store, parent, leaves, swarm } = subtree(6)
+    const fetch: Fetch = async (url, init) => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      if (init.signal.aborted) throw init.signal.reason
+      return await swarm.fetch(url, init)
+    }
+    const source = new ChunkSource({ fetch, pool: new GatewayPool([A], 6), limits: DEFAULT_LIMITS }, new BlockCache(), 'https://one.example')
+    const gone = new AbortController()
+    const first = source.leaves(parent, leaves, gone.signal, () => {})
+    const second = source.leaves(parent, leaves, signal, () => {})
+    gone.abort()
+    for (const answer of first) await expect(answer).rejects.toBeDefined()
+    expect(await Promise.all(second)).toEqual(leaves.map((leaf) => store.get(leaf.address)))
+    expect(swarm.requests).toEqual([`${A}/bytes/${parent}`])
+  })
+
+  it('abandons its /bytes request once no read wants the leaves it has still to give', async () => {
+    const { parent, leaves, swarm } = subtree(6)
+    let bulk: AbortSignal | undefined
+    const fetch: Fetch = async (url, init) => {
+      if (!url.includes('/bytes/')) return await swarm.fetch(url, init)
+      bulk = init.signal
+      return await new Promise<Response>((_resolve, reject) => { init.signal.addEventListener('abort', () => { reject(init.signal.reason) }) })
+    }
+    const source = new ChunkSource({ fetch, pool: new GatewayPool([A], 6), limits: DEFAULT_LIMITS }, new BlockCache(), 'https://one.example')
+    const gone = new AbortController()
+    const answers = source.leaves(parent, leaves, gone.signal, () => {})
+    await vi.waitFor(() => { expect(bulk).toBeDefined() })
+    gone.abort()
+    for (const answer of answers) await expect(answer).rejects.toBeDefined()
+    await vi.waitFor(() => { expect(bulk?.aborted).toBe(true) })
     expect(swarm.requests).toEqual([])
   })
 
