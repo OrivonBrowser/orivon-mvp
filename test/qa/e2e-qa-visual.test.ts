@@ -405,6 +405,35 @@ for (const scheme of SCHEMES) {
     }
   }, QA_TEST_TIMEOUT_MS)
 
+  it.skipIf(!underVirtualDisplay())(`the update question offers both downloads and a way out inside its panel (${scheme})`, async () => {
+    const { app, chrome } = await launchShell({ scheme, env: { ORIVON_TEST_UPDATE_RELEASE: 'v99.0.0' } })
+    try {
+      await runPhase('visual state of the update question', async (check) => {
+        expect(await waitFor(() => dashboardOf(app) !== undefined)).toBe(true)
+        await stubNativeDialogs(app)
+        await prepareWindow(app)
+        await visit(app, chrome, `${server.origin}/`)
+        await focusWebContents(app, `${server.origin}/`)
+        await app.evaluate(() => { void (globalThis as unknown as { __orivonDevUpdateCheckNow?: () => Promise<void> }).__orivonDevUpdateCheckNow?.() })
+        const panel = await waitQuestion(app)
+        await panel.waitForSelector('.q:not(.arming)')
+        const said = await readQuestion(panel)
+        check('the question names the release and lists the way out first, then both downloads', said.title === 'Orivon 99.0.0 is available' && said.buttons.join('|') === 'Not now|Download from GitHub|Download from latest.orivonstack.eth', JSON.stringify(said))
+        const fit = await panelFits(panel)
+        check('the question card sits inside its view, uncut and unscrolled', fit.fits, fit.detail)
+        await state(check, app, `update-question-${scheme}`, {
+          expected: 'A question panel floats over the page, directly under the address pill: the title "Orivon 99.0.0 is available", the message "You have" followed by the running version, and three buttons, Not now as plain text on the left, then Download from GitHub (the filled one) and Download from latest.orivonstack.eth, wrapping onto a second row if they do not fit in one. Every label is whole and readable, nothing is cut, and the page and toolbar stay visible around it.',
+          action: 'Pointed the update check at a release newer than the running one, focused a fixture page and ran the check.',
+          ignore: [FIXTURE_ADDRESS]
+        })
+        await answerQuestion(app, 'Not now')
+        check('no native message box was opened', (await noNativeDialogs(app)).length === 0)
+      })
+    } finally {
+      await closeElectron(app)
+    }
+  }, QA_TEST_TIMEOUT_MS)
+
   it(`the dashboard and toolbar still fit in a narrow window (${scheme})`, async () => {
     const { app } = await launchShell({ scheme })
     try {

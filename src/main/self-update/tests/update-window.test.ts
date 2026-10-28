@@ -1,0 +1,103 @@
+import { describe, expect, it, vi } from 'vitest'
+import type { AskPlace } from '../../os/install-default-browser-ask.js'
+import type { AskOptions, AskQuestion } from '../../shell/question/ask-question.js'
+import { LATEST_RELEASE_URL } from '../release-url.js'
+import { askInWindow, updatePlace } from '../update-window.js'
+
+const RELEASE = { version: 'v0.0.12', url: 'https://github.com/OrivonBrowser/orivon-mvp/releases/tag/v0.0.12' }
+
+function placeIn (over: { fullScreen?: boolean, htmlFullScreen?: boolean, destroyed?: boolean } = {}) {
+  const createTab = vi.fn()
+  const place = {
+    window: {
+      window: { isFullScreen: () => over.fullScreen === true, isDestroyed: () => over.destroyed === true },
+      shortcutsSuspended: () => over.htmlFullScreen === true,
+      tabs: { createTab }
+    },
+    tabId: 't1'
+  } as unknown as AskPlace
+  return { place, createTab }
+}
+
+describe('where the update question may be asked', () => {
+  const windows = {} as never
+
+  it('asks in the window in use', () => {
+    const { place } = placeIn()
+    expect(updatePlace(windows, false, () => place)).toEqual({ place })
+  })
+
+  it('waits, and says why, while no window is in use', () => {
+    const result = updatePlace(windows, false, () => undefined)
+    expect(result).toEqual({ waiting: expect.stringContaining('no window is in use') })
+  })
+
+  it('never interrupts a full-screen window, nor a page holding the screen', () => {
+    expect(updatePlace(windows, false, () => placeIn({ fullScreen: true }).place)).toEqual({ waiting: 'the window is full screen' })
+    expect(updatePlace(windows, false, () => placeIn({ htmlFullScreen: true }).place)).toEqual({ waiting: 'the window is full screen' })
+  })
+
+  it('does not even look for a window in a kiosk', () => {
+    const look = vi.fn(() => placeIn().place)
+    expect(updatePlace(windows, true, look)).toEqual({ waiting: 'this is a kiosk' })
+    expect(look).not.toHaveBeenCalled()
+  })
+})
+
+describe('asking about a release in a window', () => {
+  const drawnThenEscaped: AskQuestion = vi.fn(async (_target: unknown, _spec: unknown, options?: AskOptions) => { options?.onShown?.(); return { response: 2, checkboxChecked: false } })
+  const answering = (response: number, clicked?: true): AskQuestion => vi.fn(async () => ({ response, checkboxChecked: false, ...(clicked === true ? { clicked } : {}) }))
+
+  it('asks in that window and tab, with the version shown without its v', async () => {
+    const { place } = placeIn()
+    const ask = answering(2, true)
+    await askInWindow(place, RELEASE, '0.0.11', () => {}, ask)
+    const [target, spec] = (ask as ReturnType<typeof vi.fn>).mock.calls[0] as [{ window: unknown, tabId: string }, { title: string, message: string, buttons: string[] }]
+    expect(target).toEqual({ window: place.window, tabId: 't1' })
+    expect(spec).toMatchObject({ title: 'Orivon 0.0.12 is available', message: 'You have 0.0.11.', buttons: ['Download from GitHub', 'Download from latest.orivonstack.eth', 'Not now'] })
+  })
+
+  it('opens the release page in a tab of that window when the person asks for it', async () => {
+    const { place, createTab } = placeIn()
+    const log = vi.fn()
+    await askInWindow(place, RELEASE, '0.0.11', log, answering(0, true))
+    expect(createTab).toHaveBeenCalledExactlyOnceWith(RELEASE.url)
+    expect(log).toHaveBeenCalledWith('answer: the release page')
+  })
+
+  it('opens the newest-release start page of latest.orivonstack.eth, a fixed address, when the person asks for that name', async () => {
+    const { place, createTab } = placeIn()
+    const log = vi.fn()
+    expect(await askInWindow(place, RELEASE, '0.0.11', log, answering(1, true))).toEqual({ seen: true })
+    expect(createTab).toHaveBeenCalledExactlyOnceWith('https://latest.orivonstack.eth/')
+    expect(createTab).toHaveBeenCalledExactlyOnceWith(LATEST_RELEASE_URL)
+    expect(log).toHaveBeenCalledWith('answer: latest.orivonstack.eth')
+  })
+
+  it('opens nothing on Not now, nor on a way out, and tells the two apart in the log', async () => {
+    const notNow = placeIn()
+    const logA = vi.fn()
+    await askInWindow(notNow.place, RELEASE, '0.0.11', logA, answering(2, true))
+    expect(notNow.createTab).not.toHaveBeenCalled()
+    expect(logA).toHaveBeenCalledWith('answer: not now')
+    const closed = placeIn()
+    const logB = vi.fn()
+    await askInWindow(closed.place, RELEASE, '0.0.11', logB, drawnThenEscaped)
+    expect(closed.createTab).not.toHaveBeenCalled()
+    expect(logB).toHaveBeenCalledWith('answer: closed without a choice')
+  })
+
+  it('says the person saw the question when it was drawn or a button was pressed, and that they did not when it closed before', async () => {
+    expect(await askInWindow(placeIn().place, RELEASE, '0.0.11', () => {}, drawnThenEscaped)).toEqual({ seen: true })
+    expect(await askInWindow(placeIn().place, RELEASE, '0.0.11', () => {}, answering(2, true))).toEqual({ seen: true })
+    const log = vi.fn()
+    expect(await askInWindow(placeIn().place, RELEASE, '0.0.11', log, answering(2))).toEqual({ seen: false })
+    expect(log).toHaveBeenCalledWith('answer: closed before it was shown')
+  })
+
+  it('opens nothing in a window that was closed meanwhile', async () => {
+    const { place, createTab } = placeIn({ destroyed: true })
+    await askInWindow(place, RELEASE, '0.0.11', () => {}, answering(0, true))
+    expect(createTab).not.toHaveBeenCalled()
+  })
+})

@@ -262,8 +262,18 @@ describe('checkForUpdate (async orchestrator, network fetch injected)', () => {
     const result = await checkForUpdate({ currentVersion: '1.0.0', now: NOW, fetchLatestRelease })
     expect(result.checkedNow).toBe(true)
     expect(result.reached).toBe(false)
+    expect(result.failure).toBe('offline')
     expect(result.shouldNotify).toBe(false)
     expect(result.release).toBeNull()
+  })
+
+  it('keeps the reason a fetch was refused, and names no reason for a source that was reached', async () => {
+    const refused = await checkForUpdate({ currentVersion: '1.0.0', now: NOW, fetchLatestRelease: async () => { throw new Error('the release source answered 403') } })
+    expect(refused.failure).toBe('the release source answered 403')
+    const odd = await checkForUpdate({ currentVersion: '1.0.0', now: NOW, fetchLatestRelease: async () => { throw 'plain text' } })
+    expect(odd.failure).toBe('plain text')
+    const reached = await checkForUpdate({ currentVersion: '1.0.0', now: NOW, fetchLatestRelease: async () => null })
+    expect(reached).not.toHaveProperty('failure')
   })
 
   it('does not re-notify for a release already recorded as notified', async () => {

@@ -6,14 +6,14 @@ import { DOUBLE_PRESS_MS, GUARD_MS, normaliseSpec, type QuestionResult, type Que
 
 const SPEC: QuestionSpec = normaliseSpec({ kind: 'consent', message: 'Allow?', buttons: ['Allow', 'Cancel'], cancelId: 1, guarded: [0] })
 
-function rig (spec: QuestionSpec = SPEC) {
+function rig (spec: QuestionSpec = SPEC, shown?: () => void) {
   const clock = { now: 1000 }
   const window = {} as unknown as ShellWindow
   const close = vi.fn()
   const send = vi.fn()
   const handler = createQuestionPanel(QUESTION_OVERLAY, () => clock.now)({ window, close, send } as unknown as OverlayWindow)
   const results: QuestionResult[] = []
-  const id = holdQuestion(window, spec, (result) => { results.push(result) })
+  const id = holdQuestion(window, spec, (result) => { results.push(result) }, shown)
   return { clock, window, close, send, handler, results, id }
 }
 
@@ -60,6 +60,47 @@ describe('the question handler', () => {
     r.handler.request({ id: r.id, button: 0 })
     expect(r.results).toEqual([{ clicked: true, response: 0, checkboxChecked: false }])
     expect(r.close).toHaveBeenCalledTimes(1)
+  })
+
+  describe('telling the holder the panel is up', () => {
+    it('waits for the page to report the question drawn: the show alone puts nothing on screen', () => {
+      const shown = vi.fn()
+      const r = rig(SPEC, shown)
+      r.handler.show?.({ id: r.id })
+      expect(shown).not.toHaveBeenCalled()
+      draw(r)
+      expect(shown).toHaveBeenCalledTimes(1)
+    })
+
+    it('tells once per show, however often the page reports, and again after the next show', () => {
+      const shown = vi.fn()
+      const r = rig(SPEC, shown)
+      r.handler.show?.({ id: r.id })
+      draw(r); draw(r)
+      expect(shown).toHaveBeenCalledTimes(1)
+      r.handler.show?.({ id: r.id })
+      expect(shown).toHaveBeenCalledTimes(1)
+      draw(r)
+      expect(shown).toHaveBeenCalledTimes(2)
+    })
+
+    it('never tells when the panel closes before the page reported, nor for a report that names another question', () => {
+      const shown = vi.fn()
+      const r = rig(SPEC, shown)
+      r.handler.show?.({ id: r.id })
+      draw(r, 'made-up')
+      r.handler.closed?.('request')
+      draw(r)
+      expect(shown).not.toHaveBeenCalled()
+    })
+
+    it('tells for a question with nothing guarded as well, since the page reports every drawing', () => {
+      const shown = vi.fn()
+      const r = rig(normaliseSpec({ kind: 'notice', message: 'Done', buttons: ['OK'], cancelId: 0 }), shown)
+      r.handler.show?.({ id: r.id })
+      draw(r)
+      expect(shown).toHaveBeenCalledTimes(1)
+    })
   })
 
   it('ignores a guarded button until the page has drawn, however long since the show', () => {

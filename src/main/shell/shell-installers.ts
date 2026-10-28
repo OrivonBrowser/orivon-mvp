@@ -27,6 +27,7 @@ import { installLoadErrors } from '../sad-tab/install-load-errors.js'
 import { installLoadingScreen } from '../loading-screen/install-loading-screen.js'
 import { installQuestions } from './question/install-questions.js'
 import { installSidePanel } from '../side-panel/install-side-panel.js'
+import { installUpdateNotice } from '../self-update/install-update-notice.js'
 import { installContentSettings } from '../site-settings/install-content-settings.js'
 import { installSitePermissions } from '../site-settings/install-site-permissions.js'
 import { installSiteSessions } from './install-site-sessions.js'
@@ -66,7 +67,8 @@ export const SHELL_INSTALLERS: readonly ShellInstaller[] = [
   installTabGroups,
   installTabSlots,
   installTabVisibility,
-  installTelemetrySites
+  installTelemetrySites,
+  installUpdateNotice
 ]
 
 /** An installer that throws is logged and skipped: one feature failing to wire must not stop the others or the first window. */
