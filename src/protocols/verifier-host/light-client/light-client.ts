@@ -8,7 +8,10 @@ import { ResolutionError } from '../../resolution/records.js'
 import { withTimeout } from '../../resolution/timing.js'
 import type { WebFetch } from '../egress.js'
 import { clockJump, heliosClockLead, installHeliosClock, measureClockLead, setHeliosClockLead } from './clock.js'
+import { checkMainnet, wrongChainText } from './chain-check.js'
+import { maskEndpoint } from './endpoint-mask.js'
 import { CLOCK_AHEAD_REASON, CLOCK_BEHIND_REASON, bootstrapMissing, clockBehind, heliosError, outOfSync, serverBehindReason } from './helios-errors.js'
+import { laneNames, publicText } from './lane-names.js'
 import { failoverRpc } from './rpc-failover.js'
 import { BLOCK_ROOT_PATTERN } from '../protocol.js'
 import type { FromHost, LightClientConfig, LightClientState, TunnelRoute } from '../protocol.js'
@@ -68,8 +71,8 @@ interface Lane {
   readonly consensus: string
   /** Where a request under `consensus` really goes. */
   readonly realConsensus: string
-  /** The execution RPC, tried endpoint by endpoint. */
-  readonly viaExecution: WebFetch
+  /** The execution RPC, tried endpoint by endpoint; replaced when a server is found to be on another chain. */
+  viaExecution: WebFetch
   readonly fetch: WebFetch
 }
 
@@ -78,13 +81,6 @@ interface Dispatcher {
   (input: string | URL | Request, init?: RequestInit): Promise<Response>
   lanes: Lane[]
 }
-
-/**
- * The names a client that runs for the websites of a tunnel's profile gives Helios for its two servers. They resolve nowhere:
- * the dispatcher below maps them back to the real servers and sends the request on that client's own fetch, so one process
- * can run a client for each route, though Helios reaches the network only through a global.
- */
-const tunnelNames = (route: TunnelRoute): { readonly execution: string, readonly consensus: string } => ({ execution: `https://${route}-execution.orivon.invalid`, consensus: `https://${route}-consensus.orivon.invalid` })
 
 function dispatcher (): Dispatcher {
   const existing = globalThis.fetch as Partial<Dispatcher>
@@ -126,8 +122,18 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
   if (primary === undefined) throw new Error('no execution RPC configured')
   installTimerScope()
   installHeliosClock()
-  const names = route === 'direct' ? { execution: primary, consensus: config.consensusRpc } : tunnelNames(route)
-  dispatcher().lanes.push({ ...names, realConsensus: config.consensusRpc, viaExecution: failoverRpc(config.executionRpcs, fetch), fetch })
+  const names = laneNames(route)
+  /** The last trouble each execution server was seen in during this attempt to start, by address: a status or a code, never the address or a server's text. */
+  const problems = new Map<string, string>()
+  const noteProblem = (endpoint: string, problem: string | undefined): void => { if (problem === undefined) problems.delete(endpoint); else problems.set(endpoint, problem) }
+  /** The execution servers in use: all of them, less those found on another chain. */
+  let asked = config.executionRpcs
+  const lane: Lane = { ...names, realConsensus: config.consensusRpc, viaExecution: failoverRpc(asked, fetch, noteProblem), fetch }
+  // A client of this route started before is replaced: only one lives in a process.
+  const lanes = dispatcher().lanes
+  const earlier = lanes.findIndex((other) => other.execution === lane.execution)
+  if (earlier >= 0) lanes.splice(earlier, 1)
+  lanes.push(lane)
   Object.defineProperty(globalThis, 'WebSocket', { value: undefined, configurable: true, writable: true })
 
   let state: LightClientState = { state: 'starting' }
@@ -153,6 +159,33 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
   const setState = (next: LightClientState): void => {
     state = next
     report({ type: 'status', status: next })
+  }
+
+  /** Helios's words, or a fetch's, as they may be shown or logged: the lane names read as the servers, masked, with no key in them. */
+  const clean = (text: string): string => publicText(text, names, config)
+  const cleaned = (error: unknown): unknown => {
+    if (!(error instanceof Error)) return error
+    const text = clean(error.message)
+    return text === error.message ? error : new Error(text)
+  }
+  /** The trouble of every execution server in use, when each has one and they are the person's own: the answer to "which server broke". */
+  const ownTrouble = (): string | undefined => {
+    if (config.ownServers?.execution !== true || asked.length === 0 || !asked.every((endpoint) => problems.has(endpoint))) return undefined
+    return asked.map((endpoint) => `${maskEndpoint(endpoint)} ${problems.get(endpoint) ?? ''}`).join('; ')
+  }
+  const reportedWrongChain = new Set<string>()
+  /** Drops a server of the person's that is not Ethereum mainnet, and fails the start when none is. */
+  const checkChain = async (): Promise<void> => {
+    if (config.ownServers?.execution !== true) return
+    const { usable, wrong } = await checkMainnet(config.executionRpcs, fetch)
+    asked = usable
+    lane.viaExecution = failoverRpc(asked, fetch, noteProblem)
+    for (const { endpoint, chainId } of wrong) {
+      if (reportedWrongChain.has(endpoint)) continue
+      reportedWrongChain.add(endpoint)
+      console.error(`[verifier] ${wrongChainText(endpoint, chainId)}; it is not used`)
+    }
+    if (usable.length === 0) throw new Error(wrong.map(({ endpoint, chainId }) => wrongChainText(endpoint, chainId)).join('; '))
   }
 
   /** The only step allowed to change `state`. Throws on failure; the
@@ -198,7 +231,7 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
       recheckClock().then(async () => { await refreshHead(client) }).then(
         () => { scheduleRefresh(client, REFRESH_MS) },
         (error: unknown) => {
-          console.error('[verifier] light client refresh failed:', message(error))
+          console.error('[verifier] light client refresh failed:', clean(message(error)))
           consecutiveFailures++
           // Still synced, without touching `state`, while the last proven
           // head is within its grace window AND this is the first failure
@@ -227,7 +260,7 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
     // during an outage, which would otherwise hit the endpoint up to 12x
     // more often than intended for as long as the outage lasts. Its own
     // failure is logged and never delays or cancels the next head refresh.
-    if (delayMs === REFRESH_MS) reportCheckpoint(client).catch((error: unknown) => { console.error('[verifier] light client checkpoint read failed:', message(error)) })
+    if (delayMs === REFRESH_MS) reportCheckpoint(client).catch((error: unknown) => { console.error('[verifier] light client checkpoint read failed:', clean(message(error))) })
   }
 
   /** Asks the servers this client talks to for the time, and sets the lead to what they said: 0 takes it back. `undefined`, with the lead kept, when they cannot tell. */
@@ -256,8 +289,10 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
   }
 
   const run = async (attempt: number): Promise<void> => {
+    problems.clear()
     setState({ state: 'syncing', since: Date.now() })
     try {
+      await checkChain()
       const { createHeliosProvider } = await import('@a16z/helios')
       const client = await createHeliosProvider({ executionRpc: names.execution, consensusRpc: names.consensus, checkpoint: config.checkpoint, network: 'mainnet', dbType: 'config' }, 'ethereum') as unknown as Helios
       helios = client
@@ -284,9 +319,10 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
         }
       }
       const delay = Math.min(FIRST_RETRY_MS * 2 ** attempt, MAX_RETRY_MS)
+      const foldTrouble = (text: string): string => { const trouble = ownTrouble(); return trouble === undefined ? text : `${trouble} (${text})` }
       synced = new Promise<void>((resolve) => { markSynced = resolve })
       // Plain words stand in for Helios's text where the clock may be the cause and the servers could not say; where they say it is right, a head too old is a server's.
-      const reason = behind && measured === undefined ? CLOCK_BEHIND_REASON : ahead && measured === undefined ? CLOCK_AHEAD_REASON : ahead && measured === 0 ? serverBehindReason(headAgeSeconds) : message(error)
+      const reason = behind && measured === undefined ? CLOCK_BEHIND_REASON : ahead && measured === undefined ? CLOCK_AHEAD_REASON : ahead && measured === 0 ? serverBehindReason(headAgeSeconds) : foldTrouble(clean(message(error)))
       setState({ state: 'failed', reason, retryAt: Date.now() + delay, ...(bootstrapMissing(error) && { bootstrapMissing: true as const }) })
       setTimeout(() => { void run(attempt + 1) }, delay).unref()
     }
@@ -313,7 +349,7 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
         try {
           return await client.request(args)
         } catch (error) {
-          throw heliosError(error)
+          throw heliosError(cleaned(error))
         }
       }
     }

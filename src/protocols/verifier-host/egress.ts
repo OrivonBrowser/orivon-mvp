@@ -57,6 +57,18 @@ const HEX = /^0x(?:[0-9a-fA-F]{2})*$/
 /** Names that only mean something on a local network: a tunnel's far end would resolve them on its own side. */
 const LOCAL_NAME = /\.(?:local|lan|internal|home\.arpa|corp|home|intranet|private)$/i
 
+/** Whether `host` is a name that reaches this computer or Orivon's own verifier: `localhost`, anything under it, and a protocol's host. */
+function namesThisComputer (host: string): boolean {
+  return host === 'localhost' || host.endsWith('.localhost') || BUILTIN_ADDRESSES.routesToVerifier(host)
+}
+
+/** Whether a server's host, address literal or name, could be on the internet: no loopback, private, link-local or reserved literal, and no name that is this computer's, a local network's, a single label or a spelling with a trailing dot. */
+export function isInternetHost (host: string): boolean {
+  const bare = host.replace(/^\[|\]$/g, '')
+  if (classifyAddress(bare) !== 'unparseable') return isPublicUnicast(bare)
+  return !namesThisComputer(bare) && !LOCAL_NAME.test(bare) && bare.includes('.') && !bare.endsWith('.')
+}
+
 type UrlCheck = { readonly ok: true, readonly addresses: readonly string[] } | { readonly ok: false, readonly refusal: string }
 
 /** Whether a URL may be requested at all, and if so, the address(es) it must be dialled at -- resolved here, and nowhere else, so nothing later re-resolves the name at connect time. */
@@ -75,7 +87,7 @@ async function checkUrl (raw: string, deps: CcipDeps): Promise<UrlCheck> {
     return isPublicUnicast(host) ? { ok: true, addresses: [host] } : { ok: false, refusal: `${host} is not a public address` }
   }
   // A protocol host resolves to the verifier itself, never to a public server.
-  if (host === 'localhost' || host.endsWith('.localhost') || BUILTIN_ADDRESSES.routesToVerifier(host)) return { ok: false, refusal: `${host} is not a public name` }
+  if (namesThisComputer(host)) return { ok: false, refusal: `${host} is not a public name` }
   // Through the tunnel the far end resolves the name: resolving it here as well would be a lookup from this computer that the tunnel was set to hide, and its answer is not the address that gets dialled. Any other proxy keeps the check on what this computer resolves.
   if (deps.farEnd === true) return LOCAL_NAME.test(host) || !host.includes('.') ? { ok: false, refusal: `${host} is not a public name` } : { ok: true, addresses: [] }
   const addresses = await deps.resolveHost(host)

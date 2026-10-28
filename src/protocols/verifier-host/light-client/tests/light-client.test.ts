@@ -647,11 +647,10 @@ describe('startHeliosLightClient -- a second client for the tunnel', () => {
     return { direct, tunnel, one: one as { executionRpc: string, consensusRpc: string }, two: two as { executionRpc: string, consensusRpc: string } }
   }
 
-  it('gives each Helios its own names for the two servers, the tunnel\'s resolving nowhere', async () => {
+  it('gives each Helios its own names for the two servers, every one resolving nowhere', async () => {
     const { one, two } = await bothClients()
-    expect(one).toMatchObject({ executionRpc: 'https://rpc.example', consensusRpc: 'https://beacon.example' })
-    expect(two.executionRpc).toMatch(/\.invalid/)
-    expect(two.consensusRpc).toMatch(/\.invalid/)
+    expect(one).toEqual(expect.objectContaining({ executionRpc: 'https://direct-execution.orivon.invalid', consensusRpc: 'https://direct-consensus.orivon.invalid' }))
+    expect(two).toEqual(expect.objectContaining({ executionRpc: 'https://nym-execution.orivon.invalid', consensusRpc: 'https://nym-consensus.orivon.invalid' }))
   })
 
   it('sends the tunnel client\'s requests to the tunnel\'s fetch alone, at the real servers', async () => {
@@ -662,11 +661,18 @@ describe('startHeliosLightClient -- a second client for the tunnel', () => {
     expect(direct).not.toHaveBeenCalled()
   })
 
-  it('keeps the first client\'s requests on its own fetch', async () => {
-    const { direct, tunnel } = await bothClients()
-    await globalThis.fetch(new Request('https://rpc.example', { method: 'POST', body: '{"jsonrpc":"2.0","id":1,"method":"eth_chainId"}' }))
-    await globalThis.fetch('https://beacon.example/eth/v1/beacon/headers')
+  it('keeps the first client\'s requests on its own fetch, at the real servers', async () => {
+    const { direct, tunnel, one } = await bothClients()
+    await globalThis.fetch(new Request(one.executionRpc, { method: 'POST', body: '{"jsonrpc":"2.0","id":1,"method":"eth_chainId"}' }))
+    await globalThis.fetch(`${one.consensusRpc}/eth/v1/beacon/headers`)
     expect(direct.mock.calls.map(([url]) => url)).toEqual(['https://rpc.example', 'https://beacon.example/eth/v1/beacon/headers'])
+    expect(tunnel).not.toHaveBeenCalled()
+  })
+
+  it('refuses the real address of a server, which Helios is never given', async () => {
+    const { direct, tunnel } = await bothClients()
+    await expect(globalThis.fetch(new Request('https://rpc.example', { method: 'POST', body: '{}' }))).rejects.toThrow(/no client of this process uses/)
+    expect(direct).not.toHaveBeenCalled()
     expect(tunnel).not.toHaveBeenCalled()
   })
 
