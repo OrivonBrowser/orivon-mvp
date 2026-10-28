@@ -67,7 +67,10 @@ export class CheckpointRenewal {
   /** Chooses afresh from the release's and the stored checkpoint. */
   choose (): CheckpointChoice {
     const server = this.consensusRpc()
-    if (this.bootstrapServer !== undefined && this.bootstrapServer !== server) this.unserved.clear()
+    if (this.bootstrapServer !== undefined && this.bootstrapServer !== server) {
+      this.unserved.clear()
+      this.fetcher.reset()
+    }
     this.bootstrapServer = server
     this.chosen = chooseCheckpoint(this.shipped(), this.deps.store().checkpoint(), Math.floor(Date.now() / 1000), MAX_CHECKPOINT_AGE_SECONDS, this.unserved)
     return this.chosen
@@ -118,8 +121,8 @@ export class CheckpointRenewal {
   }
 
   /**
-   * One attempt to fetch a checkpoint, stored as this install's own with the servers that agreed on it, so that Settings can
-   * say where it came from. It counts as a success only if a checkpoint the light client can start from is then at hand: a
+   * One attempt to fetch a checkpoint, stored as this install's own with the servers of Orivon's that agreed on it, so that
+   * Settings can say where it came from. It counts as a success only if a checkpoint the light client can start from is then at hand: a
    * server that hands back a root already given up (a backend that disagrees with the one that answered before) is a failed
    * attempt, and waits as one.
    */
@@ -131,7 +134,9 @@ export class CheckpointRenewal {
     if (!outcome.ok) return outcome
     try {
       const { root, timestamp, servers } = outcome.checkpoint
-      this.deps.store().saveFetchedCheckpoint({ root, timestamp }, servers, Math.floor(Date.now() / 1000), this.unserved)
+      // The file is copied into every new profile and private session, so it names Orivon's servers only: the person's own address may hold a key.
+      const orivons = this.servers()
+      this.deps.store().saveFetchedCheckpoint({ root, timestamp }, servers.filter((server) => orivons.includes(server)), Math.floor(Date.now() / 1000), this.unserved)
     } catch (error) {
       console.error('[verifier] could not keep the fetched checkpoint:', error)
     }

@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import shippedCheckpoint from '../mainnet-checkpoint.json'
 import { MAINNET_GENESIS_SECONDS, SECONDS_PER_SLOT } from '../checkpoint.js'
 import type { StoredCheckpoint } from '../checkpoint.js'
 import { CheckpointRenewal } from '../checkpoint-renewal.js'
 import { DEFAULT_ENDPOINTS } from '../endpoints.js'
+import { VerifierStore } from '../verifier-store.js'
 
 const answers = vi.hoisted(() => new Map<string, unknown>())
 const asked = vi.hoisted(() => [] as string[])
@@ -170,9 +174,15 @@ describe('CheckpointRenewal', () => {
   })
 
   describe('with a beacon server of the person\'s', () => {
+    /** The person's server vouches for `root` as the first block of the epoch at `slot` and serves its bootstrap. */
+    function serveBeaconOf (server: string, root: string, slot = EPOCH_FIRST): void {
+      answers.set(`${server}/eth/v1/beacon/blocks/${String(slot)}/root`, { data: { root } })
+      answers.set(`${server}/eth/v1/beacon/light_client/bootstrap/${root}`, { data: { header: { beacon: { slot: String(slot) } } } })
+    }
+
     function serveOwn (root: string): void {
       serve(root)
-      answers.set(`${OWN}/eth/v1/beacon/light_client/bootstrap/${root}`, { data: { header: { beacon: { slot: String(EPOCH_FIRST) } } } })
+      serveBeaconOf(OWN, root)
     }
 
     it('asks it, and not Orivon\'s, whether it serves the bootstrap of a fresh checkpoint', async () => {
@@ -197,17 +207,27 @@ describe('CheckpointRenewal', () => {
       expect(asked).toContain(`${OTHER!}/eth/v1/beacon/headers/finalized`)
     })
 
-    it('marks a request to a server on this computer as local, and no other', async () => {
-      const { renewal } = harness(false, () => {}, () => ({ url: LOCAL_OWN, local: true }))
+    it('tells every request which server is on this computer, so that the fetch can send that one alone straight', async () => {
+      const { renewal, saved } = harness(false, () => {}, () => ({ url: LOCAL_OWN, local: true }))
       renewal.chooseForStart()
       serve(FRESH)
-      answers.set(`${LOCAL_OWN}/eth/v1/beacon/light_client/bootstrap/${FRESH}`, { data: { header: { beacon: { slot: String(EPOCH_FIRST) } } } })
+      serveBeaconOf(LOCAL_OWN, FRESH)
       renewal.recoverUnserved()
       await settle()
-      const toLocal = asked.map((url, index) => [url, askedLocal[index]] as const).filter(([url]) => url.startsWith(LOCAL_OWN))
-      expect(toLocal.length).toBeGreaterThan(0)
-      expect(toLocal.every(([, local]) => local === LOCAL_OWN)).toBe(true)
-      expect(askedLocal.filter((local) => local !== undefined)).toHaveLength(toLocal.length)
+      expect(saved.map((s) => s.root)).toEqual([FRESH])
+      expect(asked.some((url) => url.startsWith(LOCAL_OWN))).toBe(true)
+      expect(asked.some((url) => url.startsWith(CONSENSUS!))).toBe(true)
+      expect(new Set(askedLocal)).toEqual(new Set([LOCAL_OWN]))
+    })
+
+    it('names no server as local when the person\'s is not', async () => {
+      const { renewal } = harness(false, () => {}, () => ({ url: OWN, local: false }))
+      renewal.chooseForStart()
+      serveOwn(FRESH)
+      renewal.recoverUnserved()
+      await settle()
+      expect(asked.length).toBeGreaterThan(0)
+      expect(new Set(askedLocal)).toEqual(new Set([undefined]))
     })
 
     it('forgets the roots the old beacon server had no bootstrap for, because the new one may have them', async () => {
@@ -228,6 +248,74 @@ describe('CheckpointRenewal', () => {
       await settle()
       expect(renewal.choose()).toMatchObject({ ok: false, problem: 'not-served' })
       expect(renewal.choose()).toMatchObject({ ok: false, problem: 'not-served' })
+    })
+
+    describe('once every checkpoint at hand has aged out', () => {
+      const LATER_MS = NOW_MS + 30 * 24 * 3600 * 1000
+      const LATER_EPOCH = Math.floor((LATER_MS / 1000 - 1800 - MAINNET_GENESIS_SECONDS) / SECONDS_PER_SLOT / 32) * 32
+
+      it('tries a beacon server named after a failure at once, and does not blame it for the old one\'s failure', async () => {
+        vi.setSystemTime(LATER_MS)
+        let server = { url: CONSENSUS!, local: false }
+        const { renewal, saved } = harness(false, () => {}, () => server)
+        serve(FRESH, LATER_EPOCH, LATER_EPOCH + 31)
+        answers.delete(`${CONSENSUS!}/eth/v1/beacon/light_client/bootstrap/${FRESH}`)
+        void renewal.start()
+        await settle()
+        expect(renewal.problem()).toBe('no-bootstrap')
+        expect(renewal.due()).toBe(false)
+
+        server = { url: OWN, local: false }
+        serveBeaconOf(OWN, FRESH, LATER_EPOCH)
+        expect(renewal.due()).toBe(true)
+        expect(renewal.problem()).toBeUndefined()
+        void renewal.start()
+        await settle()
+        expect(saved.map((s) => s.root)).toEqual([FRESH])
+      })
+    })
+
+    describe('what the checkpoint file says about where the checkpoint came from', () => {
+      it('names Orivon\'s two servers as the ones that agreed, and not the person\'s own, whose address may hold a key', async () => {
+        const own = `${OWN}/v1/FAKEKEY123456`
+        const { renewal, stored } = harness(false, () => {}, () => ({ url: own, local: false }))
+        renewal.chooseForStart()
+        serve(FRESH)
+        serveBeaconOf(own, FRESH)
+        renewal.recoverUnserved()
+        await settle()
+        expect(stored.value?.fetchedFrom).toEqual([CONSENSUS, OTHER])
+      })
+
+      it('names Orivon\'s two servers when they are the ones the light client bootstraps from', async () => {
+        const { renewal, stored } = harness()
+        renewal.chooseForStart()
+        serve(FRESH)
+        renewal.recoverUnserved()
+        await settle()
+        expect(stored.value?.fetchedFrom).toEqual([CONSENSUS, OTHER])
+      })
+
+      it('leaves no part of the person\'s address in checkpoint.json, which every new profile and private window is copied', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'orivon-renewal-'))
+        try {
+          const own = 'https://beacon-0123456789abcdef0123.example.com/v1/FAKEKEY123456'
+          const store = new VerifierStore(join(dir, 'verifier'))
+          const renewal = new CheckpointRenewal({ store: () => store, switchedOff: () => false, changed: () => {}, hostRunning: () => true, restartHost: () => {}, consensus: () => ({ url: own, local: false }) })
+          renewal.chooseForStart()
+          serve(FRESH)
+          serveBeaconOf(own, FRESH)
+          renewal.recoverUnserved()
+          await settle()
+          const written = readFileSync(join(dir, 'verifier', 'checkpoint.json'), 'utf8')
+          expect(JSON.parse(written)).toMatchObject({ root: FRESH, fetchedFrom: [CONSENSUS, OTHER] })
+          expect(written).not.toContain('FAKEKEY')
+          expect(written).not.toContain('0123456789abcdef0123')
+          expect(written).not.toContain('example.com')
+        } finally {
+          rmSync(dir, { recursive: true, force: true })
+        }
+      })
     })
   })
 })
