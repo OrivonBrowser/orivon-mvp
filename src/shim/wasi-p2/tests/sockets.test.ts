@@ -51,7 +51,7 @@ describe('TCP', () => {
     expect(() => socket.finishConnect()).toThrow('would-block')
     await socket.subscribe().block()
     const [input, output]: [InputStream, OutputStream] = socket.finishConnect()
-    expect(net.connect).toHaveBeenCalledWith({ host: 'example.com', port: 443 })
+    expect(net.connect).toHaveBeenCalledWith({ host: 'example.com', port: 443, signal: expect.any(AbortSignal) })
     expect(input.read(1n)).toEqual(new Uint8Array(0))
     expect(output.checkWrite()).toBeGreaterThan(0n)
     expect(socket.remoteAddress()).toEqual(v4(93, 184, 216, 34, 443))
@@ -63,7 +63,7 @@ describe('TCP', () => {
     socket.startConnect({}, v4(10, 0, 0, 7, 8080))
     await socket.subscribe().block()
     socket.finishConnect()
-    expect(net.connect).toHaveBeenCalledWith({ host: '10.0.0.7', port: 8080 })
+    expect(net.connect).toHaveBeenCalledWith({ host: '10.0.0.7', port: 8080, signal: expect.any(AbortSignal) })
   })
 
   it('reports a refused connect as its error code once finished, and closes the socket', async () => {
@@ -196,6 +196,32 @@ describe('what a dropped or failing socket leaves behind', () => {
     await vi.waitFor(() => { expect(fake.closed()).toBe(true) })
   })
 
+  it('abandons a connect still in flight when its socket is dropped, so the dial stops and frees its slot', () => {
+    const signals: AbortSignal[] = []
+    const socket = createTcp(socketInterfaces(fakeNet({ connect: async (opts) => { signals.push(opts.signal as AbortSignal); return await new Promise(() => {}) } })))
+    socket.startConnect({}, v4(1, 2, 3, 4, 80))
+    expect(signals).toHaveLength(1)
+    expect(signals[0]?.aborted).toBe(false)
+
+    socket[Symbol.dispose]()
+
+    expect(signals[0]?.aborted).toBe(true)
+  })
+
+  it('leaves a connect that already answered alone when its socket is dropped later', async () => {
+    const fake = createFakeTcpSocket()
+    const signals: AbortSignal[] = []
+    const socket = createTcp(socketInterfaces(fakeNet({ connect: async (opts) => { signals.push(opts.signal as AbortSignal); return fake.socket } })))
+    socket.startConnect({}, v4(1, 2, 3, 4, 80))
+    await socket.subscribe().block()
+    socket.finishConnect()
+
+    socket[Symbol.dispose]()
+
+    expect(signals[0]?.aborted).toBe(false)
+    await vi.waitFor(() => { expect(fake.closed()).toBe(true) })
+  })
+
   it('closes the connections a listener queued but the program never accepted', async () => {
     const server = createFakeTcpServer({ localAddress: '127.0.0.1', localPort: 4002 })
     const listening = async (): Promise<TcpSocket> => {
@@ -264,7 +290,7 @@ describe('resolved names', () => {
     socket.startConnect({}, v4(93, 184, 216, 34, 443))
     await socket.subscribe().block()
     socket.finishConnect()
-    expect(net.connect).toHaveBeenCalledWith({ host: '93.184.216.34', port: 443 })
+    expect(net.connect).toHaveBeenCalledWith({ host: '93.184.216.34', port: 443, signal: expect.any(AbortSignal) })
   })
 
   it('names a resolver that found nothing as name-unresolvable, and one that failed for now as temporary', async () => {

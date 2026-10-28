@@ -154,6 +154,7 @@ export function serveOrivon (port: MessagePort, orivon: object, runSpawnSync?: R
   const abandoning = new Map<number, AbortController>()
   let replies: ReplyWriter | undefined
   let nextId = 1
+  let disposed = false
 
   const post = (message: ServerMessage, transfer: Transferable[] = []): void => { port.postMessage(message, transfer) }
 
@@ -273,6 +274,13 @@ export function serveOrivon (port: MessagePort, orivon: object, runSpawnSync?: R
           abandoning.delete(request.id)
         }
       }
+      // dispose() ran while this call was still pending: no Worker is left to receive what it returned, so a handle
+      // is closed here rather than kept open in the broker for nobody.
+      if (disposed) {
+        release(value)
+        if (!sync) return
+        throw new Error('the Worker that asked has gone')
+      }
       if (sync && !crossesSynchronously(value)) {
         release(value)
         throw notSynchronous()
@@ -324,6 +332,7 @@ export function serveOrivon (port: MessagePort, orivon: object, runSpawnSync?: R
 
   return {
     dispose: async () => {
+      disposed = true
       port.onmessage = null
       port.close()
       for (const reader of readers.values()) void reader.cancel().catch(() => {})

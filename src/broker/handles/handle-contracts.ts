@@ -207,6 +207,15 @@ export interface OriginCounts {
   readonly revokedGrants: number
 }
 
+/** One origin's sockets and calls in flight against its allowance, as `Broker.app.socketUsageSync` reports them. */
+export interface SocketUsage {
+  /** TCP sockets, listeners, UDP sockets and accepted connections: what the allowance counts. */
+  readonly open: number
+  /** Calls running now, among them every dial that has not answered yet; a call waiting for a slot is not counted. */
+  readonly inFlight: number
+  readonly allowance: number
+}
+
 export interface HandleTableFault {
   readonly origin: string
   /** Null when the resource was never registered -- a refused acquisition. */
