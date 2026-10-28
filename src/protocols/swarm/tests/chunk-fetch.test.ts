@@ -4,8 +4,9 @@ import { GatewayPool } from '../../gateways/gateways.js'
 import type { Fetch } from '../../gateways/gateways.js'
 import { allowlisted } from '../../verifier-host/egress.js'
 import type { Refusal } from '../../resolution/providers.js'
+import { bytesToHex } from 'viem'
 import { ChunkSource, QUARANTINE_MS, fetchVerifiedSoc, lookUpSoc } from '../chunk-fetch.js'
-import type { ChunkDeps } from '../chunk-fetch.js'
+import type { ChunkDeps, SubtreeLeaf } from '../chunk-fetch.js'
 import { DEFAULT_LIMITS } from '../limits.js'
 import { buildFile, legacyUpdate, makeChunk, signFeedUpdate, spanBytes } from '../../../../test/apps/swarm-gateway/encode.mjs'
 import { A, B, TEST_KEY, TOPIC, bytes, fakeSwarm, asWebFetch } from './swarm.test-helpers.js'
@@ -75,11 +76,116 @@ describe('ChunkSource.get', () => {
     expect(swarm.requests).toHaveLength(2)
   })
 
+  it('asks nothing for a read already abandoned', async () => {
+    const { deps, one, swarm } = setup()
+    const gone = new AbortController()
+    gone.abort()
+    await expect(new ChunkSource(deps, new BlockCache(), 'https://one.example').get(one, gone.signal, () => {})).rejects.toBeDefined()
+    expect(swarm.requests).toEqual([])
+  })
+
   it('shares one request between callers asking for the same chunk at once', async () => {
     const { deps, one, swarm } = setup()
     const source = new ChunkSource(deps, new BlockCache(), 'https://one.example')
     await Promise.all([source.get(one, signal, () => {}), source.get(one, signal, () => {})])
     expect(swarm.requests).toHaveLength(1)
+  })
+})
+
+/** A file of `count` leaves, the last `tail` bytes long, under one intermediate chunk: the store, that chunk, and its leaves. */
+function subtree (count: number, tail = 4096) {
+  const store = new Map<string, Uint8Array>()
+  const content = Uint8Array.from({ length: (count - 1) * 4096 + tail }, (_, i) => (i * 7 + (i >> 12)) & 255)
+  const parent = buildFile(content, store).ref
+  const refs = store.get(parent)!.subarray(8)
+  const leaves: SubtreeLeaf[] = Array.from({ length: count }, (_, i) => ({ address: bytesToHex(refs.subarray(i * 32, (i + 1) * 32)).slice(2), size: i < count - 1 ? 4096 : tail, offset: i * 4096 }))
+  const swarm = fakeSwarm(store)
+  const pool = new GatewayPool([A], 6)
+  const logged: string[] = []
+  return { store, parent, leaves, swarm, pool, logged, source: new ChunkSource({ fetch: swarm.fetch, pool, limits: DEFAULT_LIMITS, log: (line) => { logged.push(line) } }, new BlockCache(), 'https://one.example') }
+}
+
+describe('ChunkSource.leaves', () => {
+  it('takes a subtree\'s leaves in one /bytes request, each the chunk its parent lists', async () => {
+    const { store, parent, leaves, swarm, source, logged } = subtree(10, 100)
+    const chunks = await Promise.all(source.leaves(parent, leaves, signal, () => {}))
+    expect(chunks).toEqual(leaves.map((leaf) => store.get(leaf.address)))
+    expect(swarm.requests).toEqual([`${A}/bytes/${parent}`])
+    expect(logged).toEqual([])
+  })
+
+  it('uses only the leaves it was given from the whole subtree the source sends', async () => {
+    const { store, parent, leaves, swarm, source } = subtree(10)
+    const some = leaves.slice(3, 7)
+    expect(await Promise.all(source.leaves(parent, some, signal, () => {}))).toEqual(some.map((leaf) => store.get(leaf.address)))
+    expect(swarm.requests).toEqual([`${A}/bytes/${parent}`])
+  })
+
+  it('asks nothing for leaves it keeps, and only from the first leaf it does not', async () => {
+    const { store, parent, leaves, swarm, source } = subtree(6)
+    await Promise.all([source.get(leaves[0]!.address, signal, () => {}), source.get(leaves[1]!.address, signal, () => {})])
+    swarm.requests.length = 0
+    expect(await Promise.all(source.leaves(parent, leaves, signal, () => {}))).toEqual(leaves.map((leaf) => store.get(leaf.address)))
+    expect(swarm.requests).toEqual([`${A}/bytes/${parent}`])
+    swarm.requests.length = 0
+    await Promise.all(source.leaves(parent, leaves, signal, () => {}))
+    expect(swarm.requests).toEqual([])
+  })
+
+  it('never uses a leaf the answer holds wrong: it and every leaf after it are fetched alone and checked', async () => {
+    const { store, parent, leaves, swarm, source, pool, logged } = subtree(5)
+    swarm.tamperedBytes.add(parent)
+    const refusals: Refusal[] = []
+    expect(await Promise.all(source.leaves(parent, leaves, signal, (r) => { refusals.push(r) }))).toEqual(leaves.map((leaf) => store.get(leaf.address)))
+    expect(swarm.requests).toEqual([`${A}/bytes/${parent}`, ...leaves.slice(1).map((leaf) => `${A}/chunks/${leaf.address}`)])
+    expect(refusals).toEqual([])
+    expect(pool.candidates()).toEqual([A])
+    expect(logged).toEqual(['swarm: a bulk read gave 1 of 5 leaves (a leaf that failed its address); the rest are read one by one'])
+  })
+
+  it('fetches every leaf alone from a source without the route, and does not cool it for that', async () => {
+    const { store, parent, leaves, swarm, source, pool, logged } = subtree(4)
+    swarm.bytesRoute = false
+    expect(await Promise.all(source.leaves(parent, leaves, signal, () => {}))).toEqual(leaves.map((leaf) => store.get(leaf.address)))
+    expect(swarm.requests).toEqual([`${A}/bytes/${parent}`, ...leaves.map((leaf) => `${A}/chunks/${leaf.address}`)])
+    expect(pool.candidates()).toEqual([A])
+    expect(logged).toEqual([`swarm: a bulk read gave 0 of 4 leaves (${A} answered 404); the rest are read one by one`])
+  })
+
+  it('sends one /bytes request for two reads of one subtree at once, and joins a leaf another read is already fetching', async () => {
+    const { store, parent, leaves, swarm, source } = subtree(6)
+    const alone = source.get(leaves[2]!.address, signal, () => {})
+    const [first, second] = [source.leaves(parent, leaves, signal, () => {}), source.leaves(parent, leaves, signal, () => {})]
+    expect(await Promise.all([...first, ...second, alone])).toEqual([...leaves, ...leaves, leaves[2]!].map((leaf) => store.get(leaf.address)))
+    expect([...swarm.requests].sort()).toEqual([`${A}/bytes/${parent}`, `${A}/chunks/${leaves[2]!.address}`])
+  })
+
+  it('asks nothing for a read already abandoned', async () => {
+    const { parent, leaves, swarm, source } = subtree(4)
+    const gone = new AbortController()
+    gone.abort()
+    const answers = source.leaves(parent, leaves, gone.signal, () => {})
+    for (const answer of answers) await expect(answer).rejects.toBeDefined()
+    expect(swarm.requests).toEqual([])
+  })
+
+  it('counts a leaf kept twice once, so the cache never thinks itself fuller than it is', () => {
+    const memory = new BlockCache()
+    const block = new Uint8Array(4096)
+    for (let i = 0; i < 20_000; i++) memory.remember('https://one.example', 'ab'.repeat(32), block)
+    memory.remember('https://one.example', 'cd'.repeat(32), block)
+    expect(memory.recall('https://one.example', 'ab'.repeat(32))).toBe(block)
+  })
+
+  it('fetches alone the leaves past where a source\'s answer ended', async () => {
+    const { store, parent, leaves, swarm } = subtree(5)
+    const cut: Fetch = async (url, init) => {
+      const response = await swarm.fetch(url, init)
+      return url.includes('/bytes/') ? new Response((await response.arrayBuffer()).slice(0, 2 * 4096 + 10)) : response
+    }
+    const source = new ChunkSource({ fetch: cut, pool: new GatewayPool([A], 6), limits: DEFAULT_LIMITS })
+    expect(await Promise.all(source.leaves(parent, leaves, signal, () => {}))).toEqual(leaves.map((leaf) => store.get(leaf.address)))
+    expect(swarm.requests).toEqual([`${A}/bytes/${parent}`, ...leaves.slice(2).map((leaf) => `${A}/chunks/${leaf.address}`)])
   })
 })
 
