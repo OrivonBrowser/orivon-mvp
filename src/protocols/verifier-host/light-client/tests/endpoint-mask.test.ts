@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { displayEndpoint, isLocalLiteral, maskEndpoint, maskText, secretParts } from '../endpoint-mask.js'
+import { displayEndpoint, isLocalLiteral, isWholeAddress, maskEndpoint, maskText, secretParts } from '../endpoint-mask.js'
 
 describe('displayEndpoint', () => {
   it('keeps the scheme, so an address with no key reads as it was typed', () => {
@@ -121,5 +121,15 @@ describe('isLocalLiteral', () => {
 
   it('refuses a literal that is not spelled in its canonical form', () => {
     for (const host of ['127.1', '2130706433', '0x7f.0.0.1', '0177.0.0.1', '010.0.0.1', '::0001']) expect(isLocalLiteral(host), host).toBe(false)
+  })
+})
+
+describe('isWholeAddress', () => {
+  it('is the address as typed, or with its trailing slash left off, and nothing else', () => {
+    const url = 'https://mainnet.example/v3/0123456789abcdef/'
+    expect(isWholeAddress(url, url)).toBe(true)
+    expect(isWholeAddress(url.slice(0, -1), url)).toBe(true)
+    expect(isWholeAddress('/v3/0123456789abcdef/', url)).toBe(false)
+    expect(isWholeAddress('https://mainnet.example/v3/0123456789abcde', 'https://mainnet.example/v3/0123456789abcdef')).toBe(false)
   })
 })

@@ -2,7 +2,7 @@
 // Orivon's for the field they fill and are never added to them (ADR-0100). Pure: the values come in, the servers go out.
 
 import { DEFAULT_ENDPOINTS } from './endpoints.js'
-import { displayEndpoint, isLocalLiteral, MASK, secretParts } from '../../protocols/verifier-host/light-client/endpoint-mask.js'
+import { displayEndpoint, isLocalLiteral, isWholeAddress, MASK, secretParts } from '../../protocols/verifier-host/light-client/endpoint-mask.js'
 
 /** The three settings, as the store holds them. The store has checked each, so a line is an address. */
 export interface EthServerValues {
@@ -46,7 +46,7 @@ export function sameEthServers (a: EthServers, b: EthServers): boolean {
 export function noteEthSecrets (servers: EthServers, note: (secret: string, shown: string) => void): void {
   const urls = [...(servers.own.execution ? servers.executionRpcs : []), ...(servers.own.consensus ? [servers.consensusRpc] : [])]
   for (const url of urls) {
-    for (const part of secretParts(url)) note(part, part === url || part === `${url}/` ? displayEndpoint(url) : MASK)
+    for (const part of secretParts(url)) note(part, isWholeAddress(part, url) ? displayEndpoint(url) : MASK)
   }
 }
 

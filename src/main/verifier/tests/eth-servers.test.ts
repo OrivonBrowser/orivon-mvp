@@ -85,6 +85,12 @@ describe('noteEthSecrets', () => {
     expect(seen).toContainEqual([`https://beacon.example.com/${KEY}2`, 'https://beacon.example.com/••••'])
   })
 
+  it('shows an address typed with a trailing slash masked too, however the log spells it', () => {
+    const seen = noted(own(`${INFURA}/`))
+    expect(seen).toContainEqual([`${INFURA}/`, 'https://mainnet.infura.io/••••'])
+    expect(seen).toContainEqual([INFURA, 'https://mainnet.infura.io/••••'])
+  })
+
   it('notes a local address with a key too, and a plain one not at all', () => {
     expect(noted(own(LOCAL))).toContainEqual([LOCAL, 'http://127.0.0.1:8545/••••'])
     expect(noted(own(HOME))).toEqual([])

@@ -73,6 +73,9 @@ export function secretParts (url: string): string[] {
   return [...parts]
 }
 
+/** Whether `part` of `secretParts(url)` is the address itself, as typed or with its trailing slash left off, and so shows as the masked address and not as `••••`. */
+export const isWholeAddress = (part: string, url: string): boolean => part === url || (url.endsWith('/') && part === url.slice(0, -1))
+
 /** `text` with each of `urls` shown masked, and no secret part of any of them left in it. */
 export function maskText (text: string, urls: readonly string[]): string {
   let masked = text
@@ -80,7 +83,7 @@ export function maskText (text: string, urls: readonly string[]): string {
     if (parse(url) === undefined) continue
     const parts = secretParts(url).sort((a, b) => b.length - a.length)
     const shown = displayEndpoint(url)
-    for (const part of parts) masked = masked.split(part).join(part === url || part === url.slice(0, -1) ? shown : MASK)
+    for (const part of parts) masked = masked.split(part).join(isWholeAddress(part, url) ? shown : MASK)
   }
   return masked
 }
