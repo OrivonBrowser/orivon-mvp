@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { classify, parseWorktreeList } from '../worktree-gc.mjs'
+import { classify, noCommitOfItsOwn, parseWorktreeList } from '../worktree-gc.mjs'
 
 const PORCELAIN = [
   'worktree /repo',
@@ -91,5 +91,22 @@ describe('classify', () => {
     })
     expect(removable).toEqual([])
     expect(kept.map((e) => e.reason)).toEqual(['locked', 'detached HEAD'])
+  })
+})
+
+describe('noCommitOfItsOwn', () => {
+  const created = 'branch: Created from origin/main'
+
+  it('is true for a branch only created, or since moved forward to commits made elsewhere', () => {
+    expect(noCommitOfItsOwn([created])).toBe(true)
+    expect(noCommitOfItsOwn(['merge origin/main: Fast-forward', created])).toBe(true)
+    expect(noCommitOfItsOwn(['pull --ff-only: Fast-forward', 'reset: moving to origin/main', created])).toBe(true)
+  })
+
+  it('is false once anything was committed on it, and for a branch with no reflog to read', () => {
+    expect(noCommitOfItsOwn(['commit: Fix the thing', created])).toBe(false)
+    expect(noCommitOfItsOwn(['merge origin/main: Fast-forward', 'commit (merge): Merge origin/main', created])).toBe(false)
+    expect(noCommitOfItsOwn(['cherry-pick: Fix the thing', created])).toBe(false)
+    expect(noCommitOfItsOwn([])).toBe(false)
   })
 })
