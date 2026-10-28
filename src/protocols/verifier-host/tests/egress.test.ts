@@ -110,6 +110,15 @@ describe('guardedCcipRequest', () => {
     expect(fetch.calls).toEqual([])
   })
 
+  it('refuses an onion name without resolving it', async () => {
+    const fetch = recordingDirect(() => json({ data: '0xfeed' }))
+    const asked: string[] = []
+    const resolving: CcipDeps = { directFetch: fetch, fetch: NO_FETCH, resolveHost: async (host) => { asked.push(host); return ['93.184.216.34'] }, direct: true }
+    await expect(guardedCcipRequest({ data: DATA, sender: SENDER, urls: ['https://abc.onion/{data}'] }, resolving)).rejects.toThrow(/no offchain gateway answered/)
+    expect(asked).toEqual([])
+    expect(fetch.calls).toEqual([])
+  })
+
   it('refuses any port but 443, before resolving or requesting', async () => {
     const fetch = recordingDirect(() => json({ data: '0xfeed' }))
     await expect(guardedCcipRequest({ data: DATA, sender: SENDER, urls: ['https://93.184.216.34:6379/{data}'] }, deps(fetch))).rejects.toThrow(/no offchain gateway answered/)
@@ -185,6 +194,14 @@ describe('guardedCcipRequest, through the tunnel (farEnd)', () => {
   it('still refuses http, a non-443 port, an address that is not public and a name of this computer, without fetching', async () => {
     const fetch = recording(() => json({ data: '0xfeed' }))
     for (const url of ['http://gateway.example/{data}', 'https://93.184.216.34:6379/{data}', 'https://127.0.0.1/{data}', 'https://localhost/{data}', 'https://x.localhost/{data}']) {
+      await expect(guardedCcipRequest({ data: DATA, sender: SENDER, urls: [url] }, tunnelled(fetch)), url).rejects.toThrow(/no offchain gateway answered/)
+    }
+    expect(fetch.calls).toEqual([])
+  })
+
+  it('refuses an onion name, which no resolver is asked about, here or at the far end', async () => {
+    const fetch = recording(() => json({ data: '0xfeed' }))
+    for (const url of ['https://abc.onion/{data}', 'https://ABC.onion./{data}']) {
       await expect(guardedCcipRequest({ data: DATA, sender: SENDER, urls: [url] }, tunnelled(fetch)), url).rejects.toThrow(/no offchain gateway answered/)
     }
     expect(fetch.calls).toEqual([])

@@ -78,3 +78,16 @@ describe('chromiumResolvers: the broker\'s names resolved by Chromium', () => {
     expect(decision).toMatchObject({ allowed: true, addresses: ['104.16.132.229'] })
   })
 })
+
+describe('chromiumResolvers: an onion name', () => {
+  it('is refused before Chromium is asked, so no resolver hears of it', async () => {
+    const asked: string[] = []
+    const { resolveHost, resolveLookup } = chromiumResolvers(async (host) => { asked.push(host); return { endpoints: [{ address: '127.0.0.1', family: 'ipv4' }] } })
+    for (const name of ['abc.onion', 'ABC.ONION.']) {
+      await expect(resolveHost(name), name).rejects.toMatchObject({ code: 'unreachable', message: expect.stringContaining('opens only through a Tor tunnel') })
+      await expect(resolveLookup(name), name).rejects.toMatchObject({ code: 'unreachable' })
+    }
+    expect(asked).toEqual([])
+  })
+})
+
